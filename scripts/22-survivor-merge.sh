@@ -59,12 +59,17 @@ if [ -f "$CNVNATOR_VCF" ]; then
   echo "  [OK] CNVnator CNVs found (VCF)"
 elif [ -f "$CNVNATOR_TXT" ]; then
   echo "  [OK] CNVnator CNVs found (TXT — converting to VCF)..."
-  # Convert CNVnator TXT to simple VCF
+  # Convert CNVnator TXT to simple VCF (with contig headers for bcftools)
   {
     echo "##fileformat=VCFv4.2"
     echo "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">"
     echo "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">"
     echo "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length\">"
+    # Add contig headers from reference .fai (required by bcftools sort)
+    REF_FAI="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai"
+    if [ -f "$REF_FAI" ]; then
+      awk '{printf "##contig=<ID=%s,length=%s>\n", $1, $2}' "$REF_FAI"
+    fi
     echo "#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO"
     awk '{
       split($2,a,":");
