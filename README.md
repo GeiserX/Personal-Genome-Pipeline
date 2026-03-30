@@ -86,7 +86,7 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:1.4.1` | ~30-60 min | Recommended |
 | 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator` | ~2-4 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:1.7.3` | ~2-4 hr | Optional |
-| 20 | [Mitochondrial](docs/20-mtoolbox.md) | MToolBox | `robertopreste/mtoolbox:latest` | ~15-30 min | Optional |
+| 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~15-30 min | Optional |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
 **Full analysis:** All 20 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.

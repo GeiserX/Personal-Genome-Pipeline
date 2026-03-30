@@ -110,6 +110,14 @@ Always use `--rm` for analysis containers to avoid accumulating stopped containe
 ### Always use --user root for write access
 Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
+## MToolBox Issues
+
+### MToolBox: No working Docker image exists
+- **Failed:** `robertopreste/mtoolbox:latest` — "repository does not exist or may require docker login"
+- **Also checked:** No image on quay.io/biocontainers, ghcr.io, or Docker Hub
+- **Root cause:** MToolBox was never officially containerized. GitHub issue #107 (Mar 2022) confirms: "Not at the moment."
+- **Fix:** Use GATK Mutect2 in mitochondrial mode instead (`broadinstitute/gatk:latest`). Mutect2 handles mitochondrial heteroplasmy detection natively and is well-maintained.
+
 ## CNVnator Issues
 
 ### CNVnator: Biocontainer tag with wrong build hash

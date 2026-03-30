@@ -158,7 +158,7 @@ docker pull lgalarno/telomerehunter:latest
 docker pull genepi/haplogrep3:latest
 docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
 docker pull quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
-docker pull robertopreste/mtoolbox:latest
+docker pull broadinstitute/gatk:4.6.1.0
 ```
 
 **Total Docker image size:** ~10-15 GB (compressed, after layer deduplication).
