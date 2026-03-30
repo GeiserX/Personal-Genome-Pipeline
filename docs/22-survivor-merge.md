@@ -1,8 +1,10 @@
 # Step 22: Structural Variant Consensus Merge
 
+> **EXPERIMENTAL:** This step uses a heuristic position-binning approach that may over-count calls from the same caller. Results should be treated as a rough intersection, not a true consensus merge. For production use, consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
+
 ## What This Does
 
-Merges structural variant (SV) calls from multiple independent callers -- Manta (step 4), Delly (step 19), and CNVnator (step 18) -- into a single high-confidence consensus set. Only SVs detected by two or more callers with overlapping breakpoints (within 1 kb) are retained.
+Performs a rough intersection of structural variant (SV) calls from multiple independent callers — Manta (step 4), Delly (step 19), and CNVnator (step 18). SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
 
 ## Why
 
@@ -12,7 +14,7 @@ Individual SV callers each have distinct biases and false-positive profiles:
 - **Delly**: Strongest for inversions and balanced translocations (paired-end + split-read + depth)
 - **CNVnator**: Best for large CNVs (read-depth only)
 
-Taking the intersection across callers dramatically reduces false positives. An SV confirmed by two independent algorithms using different signal types is far more likely to be real. This consensus approach is standard in clinical and research WGS pipelines.
+Taking the intersection across callers reduces false positives. An SV seen by two independent algorithms using different signal types is more likely to be real. Note that dedicated SV comparison tools (SURVIVOR, Jasmine) use breakpoint distance, size similarity, and strand matching for more accurate merging than the position-binning heuristic used here.
 
 ## Tool
 
@@ -77,7 +79,7 @@ A typical 30X WGS genome produces:
 - **Delly**: 5,000-15,000 SVs
 - **CNVnator**: 500-2,000 CNVs
 
-After consensus filtering, expect **200-1,000 high-confidence SVs**. These are the ones worth investigating further.
+After consensus filtering, expect **200-1,000 multi-caller SVs**. These have lower false-positive rates than single-caller calls, though the 1 kb binning heuristic is less precise than dedicated tools like SURVIVOR or Jasmine.
 
 SV types in the output:
 - **DEL** -- Deletion (missing segment)

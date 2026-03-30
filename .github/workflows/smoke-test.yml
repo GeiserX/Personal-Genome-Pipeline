@@ -1,0 +1,132 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/**', '.github/workflows/smoke-test.yml']
+  pull_request:
+    branches: [main]
+    paths: ['scripts/**', '.github/workflows/smoke-test.yml']
+
+jobs:
+  contract-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify ClinVar artifact contract is consistent
+        run: |
+          echo "Checking ClinVar path contract across scripts..."
+          FAIL=0
+
+          # setup.sh must create clinvar_chr.vcf.gz (chr-renamed) before clinvar_pathogenic_chr.vcf.gz
+          if ! grep -q 'clinvar_chr.vcf.gz' scripts/setup.sh; then
+            echo "FAIL: setup.sh does not create clinvar_chr.vcf.gz (chr-renamed ClinVar)"
+            FAIL=1
+          fi
+
+          # setup.sh must filter from clinvar_chr (not raw clinvar.vcf.gz)
+          if grep 'clinvar.vcf.gz -Oz' scripts/setup.sh | grep -qv 'clinvar_chr'; then
+            echo "FAIL: setup.sh filters from raw ClinVar instead of chr-renamed"
+            FAIL=1
+          fi
+
+          # setup.sh must include Likely_pathogenic
+          if ! grep -q 'Likely_pathogenic' scripts/setup.sh; then
+            echo "FAIL: setup.sh does not include Likely_pathogenic variants"
+            FAIL=1
+          fi
+
+          # validate-setup.sh must check clinvar_pathogenic_chr.vcf.gz (what step 6 uses)
+          if ! grep -q 'clinvar_pathogenic_chr\|clinvar_chr' scripts/validate-setup.sh; then
+            echo "FAIL: validate-setup.sh does not check the ClinVar file step 6 needs"
+            FAIL=1
+          fi
+
+          # step 6 must use clinvar/clinvar_pathogenic_chr.vcf.gz
+          if ! grep -q 'clinvar/clinvar_pathogenic_chr.vcf.gz' scripts/06-clinvar-screen.sh; then
+            echo "FAIL: step 6 does not reference clinvar/clinvar_pathogenic_chr.vcf.gz"
+            FAIL=1
+          fi
+
+          [ "$FAIL" -eq 0 ] && echo "OK: ClinVar contract is consistent"
+          exit "$FAIL"
+
+      - name: Verify output paths in HTML report match actual scripts
+        run: |
+          echo "Checking HTML report path references..."
+          FAIL=0
+
+          # Haplogroup must reference mito/ (not haplogrep/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep -q 'haplogrep/'; then
+            echo "FAIL: HTML report references haplogrep/ but step 12 writes to mito/"
+            FAIL=1
+          fi
+
+          # Mitochondrial must reference mito/ (not mtoolbox/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep -q 'mtoolbox/'; then
+            echo "FAIL: HTML report references mtoolbox/ but step 20 writes to mito/"
+            FAIL=1
+          fi
+
+          # Clinical filter must reference clinical/ (not vep/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep 'clinical.*vcf.gz' | grep -q '/vep/'; then
+            echo "FAIL: HTML report looks for clinical VCF in vep/ instead of clinical/"
+            FAIL=1
+          fi
+
+          [ "$FAIL" -eq 0 ] && echo "OK: HTML report paths are consistent"
+          exit "$FAIL"
+
+      - name: Verify Docker image tags are consistent
+        run: |
+          echo "Checking Docker image consistency between setup.sh and scripts..."
+          FAIL=0
+
+          # Extract images from setup.sh
+          SETUP_IMAGES=$(grep -oP '"[^"]+:[^"]+"' scripts/setup.sh | tr -d '"' | sort)
+
+          # Check key images used in scripts are also in setup.sh
+          for IMG in "python:3.11-slim" "pgscatalog/plink2:2.00a5.10"; do
+            if ! echo "$SETUP_IMAGES" | grep -qF "$IMG"; then
+              echo "FAIL: $IMG used in scripts but not in setup.sh image list"
+              FAIL=1
+            fi
+          done
+
+          # Check t1k tag matches
+          SETUP_T1K=$(echo "$SETUP_IMAGES" | grep t1k || true)
+          SCRIPT_T1K=$(grep -roh 't1k:[^ "]*' scripts/08-hla-typing.sh 2>/dev/null | head -1 || true)
+          if [ -n "$SETUP_T1K" ] && [ -n "$SCRIPT_T1K" ] && [ "$SETUP_T1K" != "$SCRIPT_T1K" ]; then
+            echo "WARN: t1k tag mismatch: setup=$SETUP_T1K script=$SCRIPT_T1K"
+          fi
+
+          [ "$FAIL" -eq 0 ] && echo "OK: Docker images are consistent"
+          exit "$FAIL"
+
+      - name: Verify experimental steps are marked
+        run: |
+          echo "Checking experimental step markers..."
+          FAIL=0
+
+          for SCRIPT in scripts/21-cyrius.sh scripts/22-survivor-merge.sh scripts/26-ancestry.sh; do
+            if [ -f "$SCRIPT" ] && ! head -5 "$SCRIPT" | grep -qi 'experimental'; then
+              echo "FAIL: $SCRIPT should be marked as EXPERIMENTAL"
+              FAIL=1
+            fi
+          done
+
+          [ "$FAIL" -eq 0 ] && echo "OK: Experimental steps are properly marked"
+          exit "$FAIL"
+
+  shellcheck-new-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck steps 21-27
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: scripts
+          additional_files: '21-cyrius.sh 22-survivor-merge.sh 23-clinical-filter.sh 24-html-report.sh 25-prs.sh 26-ancestry.sh 27-cpic-lookup.sh'
+          severity: warning

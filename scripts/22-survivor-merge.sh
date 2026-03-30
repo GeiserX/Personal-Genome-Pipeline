@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# 22-survivor-merge.sh — Merge SV calls from multiple callers into consensus set
+# 22-survivor-merge.sh — [EXPERIMENTAL] Merge SV calls from multiple callers
 # Usage: ./scripts/22-survivor-merge.sh <sample_name>
 #
-# Merges structural variants from Manta, Delly, and CNVnator using SURVIVOR.
-# Variants called by 2+ callers at overlapping positions are high-confidence.
+# Finds structural variants called by 2+ callers at overlapping positions.
+# Uses a simplified bcftools-based approach (no SURVIVOR Docker image).
+#
+# EXPERIMENTAL: This uses a heuristic position-binning approach that may
+# over-count calls from the same caller. Results should be treated as a
+# rough intersection, not a true consensus merge. For production use,
+# consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
 #
 # Requires: Output from steps 4 (Manta), 19 (Delly), and/or 18 (CNVnator)
 set -euo pipefail
@@ -113,55 +118,66 @@ docker run --rm --user root \
     cat ${FILE_LIST}
   "
 
-# Use bcftools-based merge approach (SURVIVOR Docker image availability is unreliable)
-# Strategy: intersect Manta and Delly, keep SVs with overlapping breakpoints within 1kb
-echo "[2/3] Finding consensus SVs (breakpoints within 1kb)..."
+# Strategy: Extract BED-like positions from each caller separately, then find
+# positions seen in 2+ callers using per-caller tagging.
+echo "[2/3] Finding consensus SVs (breakpoints within 1kb, 2+ callers)..."
 
-# For each pair of callers, find overlapping SVs using bcftools isec
-# Simplified approach: extract BED from each, use overlap logic
+# Step A: Extract SV positions per caller as "caller\tchr\tbin\tsvtype" for counting
 docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
   bash -c "
-    # Extract SV positions from each caller as BED-like format
+    CALLER_IDX=0
     for VCF_FILE in ${SV_FILES[*]}; do
-      bcftools view -f PASS \"\$VCF_FILE\" 2>/dev/null || bcftools view \"\$VCF_FILE\" 2>/dev/null
-    done | grep -v '^#' | \
+      CALLER_IDX=\$((CALLER_IDX + 1))
+      (bcftools view -f PASS \"\$VCF_FILE\" 2>/dev/null || bcftools view \"\$VCF_FILE\" 2>/dev/null) | \
+        grep -v '^#' | \
+        awk -F'\t' -v caller=\$CALLER_IDX '{
+          chrom=\$1; pos=\$2; info=\$8;
+          end=pos;
+          if(match(info, /END=[0-9]+/)) end=substr(info, RSTART+4, RLENGTH-4);
+          svtype=\"UNK\";
+          if(match(info, /SVTYPE=[A-Z]+/)) svtype=substr(info, RSTART+7, RLENGTH-7);
+          bin=int(pos/1000);
+          # Output: chrom, pos, end, svtype, caller_id, 8-col VCF line
+          printf \"%s\t%s\t%s\t%s\t%s\t%s\t%s\t.\tN\t<%s>\t.\tPASS\tSVTYPE=%s;END=%s\n\",
+            chrom, bin, svtype, caller, pos, chrom, pos, svtype, svtype, end;
+        }'
+    done > /genome/${SAMPLE}/sv_merged/all_sv_tagged.tsv
+
+    # Step B: Find bins seen by 2+ distinct callers, emit one clean 8-col VCF record each
+    # Uses pipe-delimited caller string (mawk-compatible — no nested arrays)
     awk -F'\t' '{
-      chrom=\$1; pos=\$2; info=\$8;
-      end=pos;
-      if(match(info, /END=[0-9]+/)) {
-        end=substr(info, RSTART+4, RLENGTH-4);
-      }
-      svtype=\"UNK\";
-      if(match(info, /SVTYPE=[A-Z]+/)) {
-        svtype=substr(info, RSTART+7, RLENGTH-7);
-      }
-      key=chrom\"_\"int(pos/1000)\"_\"svtype;
-      count[key]++;
-      if(count[key]==1) {
-        lines[key]=\$0;
-        ends[key]=end;
+      key=\$1\"_\"\$2\"_\"\$3;
+      caller=\$4;
+      if(!(key in seen)) {
+        seen[key]=caller;
+        line[key]=\$6\"\t\"\$7\"\t.\tN\t\"\$10\"\t.\tPASS\t\"\$13;
+      } else if(index(seen[key], caller) == 0) {
+        seen[key]=seen[key]\"|\"caller;
       }
     } END {
-      for(k in count) {
-        if(count[k] >= 2) print lines[k];
+      for(k in seen) {
+        n=split(seen[k], a, \"|\");
+        if(n >= 2) print line[k];
       }
-    }' | sort -k1,1V -k2,2n > /genome/${SAMPLE}/sv_merged/consensus_raw.txt
+    }' /genome/${SAMPLE}/sv_merged/all_sv_tagged.tsv | \
+      sort -k1,1V -k2,2n > /genome/${SAMPLE}/sv_merged/consensus_raw.txt
 
-    # Create VCF from consensus
-    echo '##fileformat=VCFv4.2' > /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
-    echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"SV type\">' >> /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
-    echo '##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">' >> /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
-    echo '##INFO=<ID=CALLERS,Number=1,Type=Integer,Description=\"Number of callers\">' >> /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
-    echo '#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO' >> /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
-    cat /genome/${SAMPLE}/sv_merged/consensus_raw.txt >> /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
+    # Step C: Build a valid VCF
+    {
+      echo '##fileformat=VCFv4.2'
+      echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"SV type\">'
+      echo '##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">'
+      printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+      cat /genome/${SAMPLE}/sv_merged/consensus_raw.txt
+    } > /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
 
     # Compress and index
     bcftools sort /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf -Oz \
-      -o /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz 2>/dev/null || true
-    bcftools index -t /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz 2>/dev/null || true
+      -o /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz
+    bcftools index -t /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz
   "
 
 echo "[3/3] Counting results..."
@@ -182,5 +198,5 @@ echo ""
 echo "  Output: ${OUTDIR}/${SAMPLE}_sv_consensus.vcf.gz"
 echo "============================================"
 echo ""
-echo "High-confidence SVs are those called by 2+ independent methods."
-echo "Single-caller SVs have a higher false positive rate."
+echo "Multi-caller SVs (2+ callers) have lower false-positive rates than single-caller calls."
+echo "Note: 1kb position binning is approximate — see docs for limitations."

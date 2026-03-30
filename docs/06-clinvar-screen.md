@@ -31,7 +31,7 @@ docker run --rm \
   bcftools isec \
     -n =2 -w 1 \
     /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    /genome/reference/clinvar_pathogenic_chr.vcf.gz \
+    /genome/clinvar/clinvar_pathogenic_chr.vcf.gz \
     -Oz -o /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
 
 # Step 2: Index the result

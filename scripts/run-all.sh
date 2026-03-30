@@ -113,10 +113,17 @@ echo "  [B5] CPSR cancer predisposition..."
 bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
-# Wait for quick jobs
-wait $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION $PID_HLA 2>/dev/null || true
+# Wait for quick jobs, counting failures
+PHASE3_FAIL=0
+for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION $PID_HLA; do
+  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
+done
 echo ""
-echo "  Quick analyses complete."
+if [ "$PHASE3_FAIL" -gt 0 ]; then
+  echo "  WARNING: ${PHASE3_FAIL} quick analysis step(s) failed."
+else
+  echo "  Quick analyses complete."
+fi
 
 # --- Group C: Heavy jobs (2-4 hours each) ---
 # These are CPU+RAM intensive — run sequentially or limit parallelism
@@ -135,69 +142,102 @@ bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
 PID_DELLY=$!
 
 # Wait for Manta before running duphold and AnnotSV
-wait $PID_MANTA 2>/dev/null || true
-echo "  Manta complete. Running SV post-processing..."
+PID_DUPHOLD=""
+PID_ANNOTSV=""
+if wait "$PID_MANTA" 2>/dev/null; then
+  echo "  Manta complete. Running SV post-processing..."
 
-echo "  [B6] duphold SV quality annotation..."
-bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
-PID_DUPHOLD=$!
+  echo "  [B6] duphold SV quality annotation..."
+  bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
+  PID_DUPHOLD=$!
 
-echo "  [B7] AnnotSV structural variant annotation..."
-bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
-PID_ANNOTSV=$!
+  echo "  [B7] AnnotSV structural variant annotation..."
+  bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
+  PID_ANNOTSV=$!
+else
+  PHASE3_FAIL=$((PHASE3_FAIL + 1))
+  echo "  WARNING: Manta failed — skipping duphold and AnnotSV."
+fi
 
-# Wait for everything
-wait $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR 2>/dev/null || true
-wait $PID_VEP $PID_CNVNATOR $PID_DELLY 2>/dev/null || true
-wait $PID_DUPHOLD $PID_ANNOTSV 2>/dev/null || true
+# Wait for remaining Phase 3 jobs
+for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_DUPHOLD $PID_ANNOTSV; do
+  [ -z "$PID" ] && continue
+  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
+done
+
+if [ "$PHASE3_FAIL" -gt 0 ]; then
+  echo ""
+  echo "  WARNING: ${PHASE3_FAIL} Phase 3 step(s) had errors. Check individual step output above."
+fi
 
 # Phase 4: Post-processing (uses outputs from Phase 3)
 echo ""
 echo "[Phase 4] Running post-processing steps..."
 
-echo "  [D1] CYP2D6 star alleles (Cyrius)..."
-bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" 2>/dev/null &
+# Post-processing steps: log errors instead of swallowing them
+POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
+: > "$POST_LOG"
+
+echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
+bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CYRIUS=$!
 
-echo "  [D2] SV consensus merge..."
-bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D2] SV consensus merge [experimental]..."
+bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_SURVIVOR=$!
 
 echo "  [D3] Clinical variant filter..."
-bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" 2>/dev/null &
+bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CLINICAL=$!
 
-echo "  [D4] Polygenic Risk Scores..."
-bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D4] Polygenic Risk Scores [exploratory]..."
+bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_PRS=$!
 
-echo "  [D5] Ancestry PCA..."
-bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D5] Ancestry PCA [experimental]..."
+bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_ANCESTRY=$!
 
 echo "  [D6] CPIC drug-gene recommendations..."
-bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" 2>/dev/null &
+bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CPIC=$!
 
-wait $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC 2>/dev/null || true
-echo "  Post-processing complete."
+PHASE4_FAIL=0
+for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC; do
+  wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
+done
+if [ "$PHASE4_FAIL" -gt 0 ]; then
+  echo "  WARNING: ${PHASE4_FAIL} post-processing step(s) had errors."
+  echo "  See: ${POST_LOG}"
+else
+  echo "  Post-processing complete."
+fi
+
+REPORT_FAIL=0
 
 echo "  [D7] HTML summary report..."
-bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" 2>/dev/null || true
+bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
 echo ""
 echo "[Report] Generating summary report..."
-bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" 2>/dev/null || echo "  (report generation had warnings — check output manually)"
+bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" 2>/dev/null || { echo "  (report generation had warnings — check output manually)"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 PIPELINE_END=$(date +%s)
 ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
+TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
+
 echo ""
 echo "============================================"
-echo "  Pipeline complete for: ${SAMPLE}"
+if [ "$TOTAL_FAIL" -gt 0 ]; then
+  echo "  Pipeline finished with errors for: ${SAMPLE}"
+  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
+else
+  echo "  Pipeline complete for: ${SAMPLE}"
+fi
 echo "  All results in: ${GENOME_DIR}/${SAMPLE}/"
 echo "  Total runtime: ${HOURS}h ${MINUTES}m"
 echo "  Finished: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -208,10 +248,10 @@ echo "  HTML Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html"
 echo "  Text Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt"
 echo "  VCF:            ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
-echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/pharmcat/"
+echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/vcf/ (PharmCAT reports alongside VCF)"
 echo "  CYP2D6:         ${GENOME_DIR}/${SAMPLE}/cyrius/"
 echo "  CPIC drugs:     ${GENOME_DIR}/${SAMPLE}/cpic/"
-echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_clinical.vcf.gz"
+echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"
 echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
 echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
 echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"
@@ -221,3 +261,5 @@ echo "Next steps:"
 echo "  1. Open the PharmCAT HTML report in a browser — it's the most actionable output"
 echo "  2. Review ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt for a quick summary"
 echo "  3. See docs/interpreting-results.md for help understanding your results"
+
+exit "$TOTAL_FAIL"

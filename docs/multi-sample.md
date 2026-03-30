@@ -104,7 +104,7 @@ done
 
 ## Structural Variant Comparison
 
-SVs called by multiple callers in one person are high-confidence. SVs shared between family members add even more confidence:
+SVs called by multiple callers in one person have lower false-positive rates. SVs shared between family members add further confidence:
 
 ```bash
 # Compare Manta SVs between two samples

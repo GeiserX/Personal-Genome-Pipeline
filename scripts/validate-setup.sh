@@ -215,10 +215,21 @@ else
     # Check if raw ClinVar exists but chr-prefixed version is missing
     if [ -f "${GENOME_DIR}/clinvar/clinvar.vcf.gz" ]; then
       warn "ClinVar raw VCF found but chr-prefixed version missing."
-      echo "       Run the bcftools rename command from docs/00-reference-setup.md to create clinvar_chr.vcf.gz"
+      echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
     else
       fail "ClinVar VCF not found at: ${CLINVAR}"
       echo "       Download and prepare it — see docs/00-reference-setup.md"
+    fi
+  fi
+
+  # --- ClinVar pathogenic subset (required by step 6) ---
+  CLINVAR_PATH="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
+  if [ -f "$CLINVAR_PATH" ]; then
+    pass "ClinVar pathogenic subset: present"
+  else
+    if [ -f "$CLINVAR" ]; then
+      warn "ClinVar chr-prefixed found but pathogenic subset missing."
+      echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
     fi
   fi
 
@@ -464,7 +475,7 @@ if [ -n "$SAMPLE" ]; then
       info "Suggested: Path C (VCF already available)"
       echo "       Start with:  ./scripts/06-clinvar-screen.sh ${SAMPLE}"
       if $HAS_BAM; then
-        echo "       BAM also available — all 20 steps can run."
+        echo "       BAM also available — all 27 steps can run."
       else
         echo "       No BAM found — BAM-dependent steps (4, 10, 15, 16, 18, 19, 20) will be skipped."
       fi

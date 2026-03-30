@@ -80,7 +80,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 **What it tells you:** How your genes affect drug metabolism. This is immediately actionable — it can change which medications your doctor prescribes.
 
-**Where to look:** `${SAMPLE}/pharmcat/` — open the HTML report in a browser.
+**Where to look:** `${SAMPLE}/vcf/` — PharmCAT writes its reports alongside the VCF. Open the HTML report in a browser.
 
 **Key genes to check:**
 | Gene | Affects | Common Impact |
@@ -129,7 +129,7 @@ If you run Manta or Delly, you will see many **BND** calls — often hundreds or
 - **Most BND calls are artifacts** of repetitive regions, segmental duplications, or mobile elements
 - A typical genome has 1,000-3,000 BND calls from Manta and 5,000+ from Delly
 - **Fewer than 5 are likely real** inter-chromosomal translocations in a healthy genome
-- BND calls require **multi-caller support** (called by both Manta and Delly at the same breakpoints) to be considered high-confidence
+- BND calls require **multi-caller support** (called by both Manta and Delly at overlapping breakpoints) to be considered credible
 - Unless a BND disrupts a known disease gene AND is confirmed by a second caller, it can be safely ignored
 
 ### How Many Is Normal?
@@ -143,7 +143,7 @@ A typical human genome has:
 ### Which Callers to Trust?
 
 If you ran multiple SV callers:
-- **Called by 2+ callers (Manta + Delly, or Manta + CNVnator):** High confidence
+- **Called by 2+ callers (Manta + Delly, or Manta + CNVnator):** Lower false-positive rate
 - **Called by 1 caller only:** Lower confidence, may be false positive
 - **duphold DHFFC < 0.7 for deletions:** High confidence (depth drops as expected)
 - **duphold DHBFC > 1.3 for duplications:** High confidence (depth rises as expected)
@@ -359,7 +359,7 @@ awk '$1 == "deletion" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
 awk '$1 == "duplication" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
 ```
 
-**Multi-caller confidence:** CNVs found by both Manta AND CNVnator are high-confidence. Cross-reference by checking if the same genomic region appears in both output files.
+**Multi-caller overlap:** CNVs found by both Manta AND CNVnator have lower false-positive rates. Cross-reference by checking if the same genomic region appears in both output files.
 
 ---
 
@@ -383,7 +383,7 @@ bcftools view -f PASS ${SAMPLE}_sv.vcf.gz | grep -cv '^#'
 - Most are small deletions (<1kb)
 - PASS filter reduces count significantly
 
-**Three-caller consensus:** SVs detected by Manta + Delly + CNVnator (or any 2 of 3) are very high confidence. Single-caller calls, especially large ones, should be viewed with caution.
+**Multi-caller overlap:** SVs detected by Manta + Delly + CNVnator (or any 2 of 3) have substantially lower false-positive rates. Single-caller calls, especially large ones, should be viewed with caution.
 
 ---
 

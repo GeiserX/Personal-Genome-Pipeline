@@ -6,6 +6,11 @@
 # polygenic risk scores from your VCF. PRS are NOT diagnostic — they estimate
 # relative genetic predisposition compared to population averages.
 #
+# IMPORTANT: Raw PRS scores from a single sample are NOT directly interpretable.
+# They only become meaningful when compared against a population distribution.
+# Most GWAS-derived scores also have ancestry bias (European-centric).
+# Treat these as exploratory, not clinical.
+#
 # Requires: VCF from step 3
 set -euo pipefail
 
@@ -82,7 +87,7 @@ docker run --rm --user root \
     --out "/genome/${SAMPLE}/prs/${SAMPLE}" \
     --threads 4 \
     --memory 6000 \
-    --set-all-var-ids '@:#:$r:$a' \
+    --set-all-var-ids '@:#' \
     --new-id-max-allele-len 100
 
 echo ""
@@ -121,7 +126,8 @@ for CONDITION in "${!PGS_IDS[@]}"; do
     chr_col && pos_col && ea_col && ew_col {
       chr=$chr_col; pos=$pos_col; ea=$ea_col; ew=$ew_col;
       if(chr!="" && pos!="" && ea!="" && ew!="") {
-        # Match plink2 variant ID format: chr:pos:ref:alt
+        # Add chr prefix if missing to match GRCh38 VCF contig names
+        if(chr !~ /^chr/) chr="chr"chr;
         printf "%s:%s\t%s\t%s\n", chr, pos, ea, ew;
       }
     }' > "$FORMATTED" 2>/dev/null || true
