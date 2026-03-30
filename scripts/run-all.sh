@@ -234,7 +234,7 @@ echo ""
 echo "============================================"
 if [ "$TOTAL_FAIL" -gt 0 ]; then
   echo "  Pipeline finished with errors for: ${SAMPLE}"
-  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL})"
+  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
 else
   echo "  Pipeline complete for: ${SAMPLE}"
 fi

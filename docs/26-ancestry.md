@@ -90,7 +90,7 @@ This pipeline does not perform joint PCA. The single-sample output is included a
 
 - Reference data (1000G SNPs and population labels) is downloaded once and cached in `${GENOME_DIR}/ancestry_ref/`. Delete this directory to force re-download.
 - LD pruning parameters (window=50, step=5, r2=0.2) are standard for ancestry PCA.
-- The 10 PCs computed cover the vast majority of population-level genetic variation. More PCs rarely add meaningful signal.
+- 10 PCs are computed by default. For single-sample PCA this is more than sufficient; additional PCs would not add interpretable signal without a reference cohort.
 - For a more complete ancestry analysis, consider uploading your VCF to tools like [Gnomix](https://github.com/AI-sandbox/gnomix) or using the PLINK `--admixture` approach.
 
 ## Links
