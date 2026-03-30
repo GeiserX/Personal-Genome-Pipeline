@@ -83,10 +83,7 @@ This pipeline does not perform the joint PCA step (it would require downloading 
 
 ### What to expect
 
-For a Southern European individual, you would typically see:
-- PC1 near the European cluster (far from African values)
-- PC2 between Northern European and Mediterranean values
-- PC3 distant from the South Asian cluster
+Because this is single-sample PCA, the absolute PC values do not correspond to positions on a 1000G population plot. The eigenvalues indicate how much of your genome's total SNP variation is captured by each axis, but they cannot tell you which population cluster you fall into without a joint projection. To get population-placement results, you would need to run joint PCA with the full 1000G genotype data (see the limitation section above).
 
 ## Limitations
 

@@ -79,7 +79,7 @@ A typical 30X WGS genome produces:
 - **Delly**: 5,000-15,000 SVs
 - **CNVnator**: 500-2,000 CNVs
 
-After consensus filtering, expect **200-1,000 high-confidence SVs**. These are the ones worth investigating further.
+After consensus filtering, expect **200-1,000 multi-caller SVs**. These have lower false-positive rates than single-caller calls, though the 1 kb binning heuristic is less precise than dedicated tools like SURVIVOR or Jasmine.
 
 SV types in the output:
 - **DEL** -- Deletion (missing segment)

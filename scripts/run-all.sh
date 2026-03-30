@@ -226,9 +226,16 @@ ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
+TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL))
+
 echo ""
 echo "============================================"
-echo "  Pipeline complete for: ${SAMPLE}"
+if [ "$TOTAL_FAIL" -gt 0 ]; then
+  echo "  Pipeline finished with errors for: ${SAMPLE}"
+  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL})"
+else
+  echo "  Pipeline complete for: ${SAMPLE}"
+fi
 echo "  All results in: ${GENOME_DIR}/${SAMPLE}/"
 echo "  Total runtime: ${HOURS}h ${MINUTES}m"
 echo "  Finished: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -252,3 +259,5 @@ echo "Next steps:"
 echo "  1. Open the PharmCAT HTML report in a browser — it's the most actionable output"
 echo "  2. Review ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt for a quick summary"
 echo "  3. See docs/interpreting-results.md for help understanding your results"
+
+exit "$TOTAL_FAIL"
