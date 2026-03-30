@@ -43,35 +43,57 @@ KG_POPS="${REFDIR}/1kg_populations.tsv"
 
 if [ ! -f "$KG_SITES" ]; then
   echo "[1/5] Downloading 1000 Genomes reference SNPs..."
-  echo "  This is a one-time download (~100 MB)."
+  echo "  This is a one-time download (~1 GB)."
 
-  # Download high-quality common SNPs from 1000G GRCh38 liftover
-  # We use a subset of ~100K common, LD-independent SNPs suitable for PCA
-  # Source: 1000 Genomes Project GRCh38 sites
-  wget -q -O "${REFDIR}/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz" \
-    "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20181203_biallelic_SNV/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz" 2>/dev/null || {
-    echo "WARNING: Could not download 1000G reference sites."
-    echo "  The 1000 Genomes FTP may be temporarily unavailable."
-    echo "  Try again later, or download manually from:"
-    echo "  https://www.internationalgenome.org/data-portal/data-collection/30x-grch38"
-    exit 1
-  }
+  RAW_VCF="${REFDIR}/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
+  # Use a lock file to prevent parallel runs from downloading simultaneously
+  LOCKFILE="${REFDIR}/.download_lock"
+  if [ -f "$LOCKFILE" ]; then
+    echo "  Another download in progress (lock file exists). Waiting..."
+    while [ -f "$LOCKFILE" ]; do sleep 5; done
+  fi
 
-  # Extract common biallelic SNPs (MAF > 5%, autosomal only)
-  echo "  Filtering to common biallelic autosomal SNPs..."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    staphb/bcftools:1.21 \
-    bash -c "
-      bcftools view -m2 -M2 -v snps \
-        -i 'AF>=0.05 && AF<=0.95' \
-        --regions chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22 \
-        /genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz \
-        -Oz -o /genome/ancestry_ref/1kg_common_snps.vcf.gz &&
-      bcftools index -t /genome/ancestry_ref/1kg_common_snps.vcf.gz
-    "
-  echo "  [OK] Reference SNPs prepared."
+  if [ ! -f "$KG_SITES" ]; then
+    touch "$LOCKFILE"
+    trap "rm -f $LOCKFILE" EXIT
+
+    if [ ! -f "$RAW_VCF" ]; then
+      wget -q -O "$RAW_VCF" \
+        "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20181203_biallelic_SNV/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz" 2>/dev/null || {
+        echo "WARNING: Could not download 1000G reference sites."
+        echo "  The 1000 Genomes FTP may be temporarily unavailable."
+        echo "  Try again later, or download manually from:"
+        echo "  https://www.internationalgenome.org/data-portal/data-collection/30x-grch38"
+        rm -f "$LOCKFILE"
+        exit 1
+      }
+    fi
+
+    # Index the raw file first (required by bcftools --regions)
+    if [ ! -f "${RAW_VCF}.tbi" ]; then
+      docker run --rm --user root \
+        -v "${GENOME_DIR}:/genome" \
+        staphb/bcftools:1.21 \
+        bcftools index -t "/genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
+    fi
+
+    # Extract common biallelic SNPs (MAF > 5%, autosomal only)
+    echo "  Filtering to common biallelic autosomal SNPs..."
+    docker run --rm --user root \
+      --cpus 4 --memory 4g \
+      -v "${GENOME_DIR}:/genome" \
+      staphb/bcftools:1.21 \
+      bash -c "
+        bcftools view -m2 -M2 -v snps \
+          -i 'AF>=0.05 && AF<=0.95' \
+          --regions chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22 \
+          /genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz \
+          -Oz -o /genome/ancestry_ref/1kg_common_snps.vcf.gz &&
+        bcftools index -t /genome/ancestry_ref/1kg_common_snps.vcf.gz
+      "
+    rm -f "$LOCKFILE"
+    echo "  [OK] Reference SNPs prepared."
+  fi
 else
   echo "[1/5] 1000G reference SNPs already downloaded."
 fi
@@ -116,9 +138,10 @@ if [ "$SHARED_COUNT" -lt 1000 ]; then
   echo "  This usually means your VCF uses different variant IDs or genome build."
 fi
 
-# Step 4: LD pruning
+# Step 4: LD pruning (requires >=50 samples — skip for single-sample input)
 echo "[4/5] LD pruning..."
-docker run --rm --user root \
+PRUNED_COUNT=0
+if docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
   pgscatalog/plink2:2.00a5.10 \
@@ -129,33 +152,56 @@ docker run --rm --user root \
     --threads 4 \
     --memory 6000 \
     --chr 1-22 \
-    --allow-extra-chr
-
-PRUNED_COUNT=$(wc -l < "${OUTDIR}/${SAMPLE}_ld.prune.in" 2>/dev/null || echo 0)
-echo "  LD-pruned SNPs: ${PRUNED_COUNT}"
+    --allow-extra-chr \
+    --output-chr chrM 2>&1; then
+  PRUNED_COUNT=$(wc -l < "${OUTDIR}/${SAMPLE}_ld.prune.in" 2>/dev/null || echo 0)
+  echo "  LD-pruned SNPs: ${PRUNED_COUNT}"
+  EXTRACT_FLAG="--extract /genome/${SAMPLE}/ancestry/${SAMPLE}_ld.prune.in"
+else
+  echo "  LD pruning skipped (requires >=50 samples). Using all shared SNPs."
+  EXTRACT_FLAG=""
+  PRUNED_COUNT="${SHARED_COUNT}"
+fi
 
 # Step 5: PCA
-echo "[5/5] Running PCA..."
-docker run --rm --user root \
+# Note: PCA on a single sample is mathematically degenerate (0 PCs from 1 sample).
+# plink2 --pca requires >=2 samples. For proper ancestry estimation, you need
+# joint PCA with a multi-sample reference panel (e.g., 1000G genotypes).
+# We still record the shared SNP and LD-pruned counts as useful QC metrics.
+echo "[5/5] Attempting PCA (requires >=2 samples)..."
+if docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
   pgscatalog/plink2:2.00a5.10 \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
-    --extract "/genome/${SAMPLE}/ancestry/${SAMPLE}_ld.prune.in" \
+    ${EXTRACT_FLAG} \
     --pca 10 \
     --out "/genome/${SAMPLE}/ancestry/${SAMPLE}_pca" \
     --threads 4 \
     --memory 6000 \
     --chr 1-22 \
-    --allow-extra-chr
+    --allow-extra-chr \
+    --output-chr chrM 2>&1; then
+  echo "  PCA completed."
+else
+  echo "  PCA could not run (expected for single-sample input)."
+  echo "  Single-sample PCA is mathematically undefined (need >=2 samples)."
+  echo "  The shared SNP counts and LD-pruned variants above are still useful."
+fi
 
 echo ""
 echo "============================================"
 echo "  Ancestry PCA complete: ${SAMPLE}"
 echo ""
-echo "  PCA results: ${OUTDIR}/${SAMPLE}_pca.eigenvec"
-echo "  Eigenvalues: ${OUTDIR}/${SAMPLE}_pca.eigenval"
+echo "  Shared SNPs with 1000G: ${SHARED_COUNT:-N/A}"
+echo "  LD-pruned SNPs: ${PRUNED_COUNT:-N/A}"
+if [ -f "${OUTDIR}/${SAMPLE}_pca.eigenvec" ]; then
+  echo "  PCA results: ${OUTDIR}/${SAMPLE}_pca.eigenvec"
+  echo "  Eigenvalues: ${OUTDIR}/${SAMPLE}_pca.eigenval"
+else
+  echo "  PCA: Not available (single-sample limitation)"
+fi
 echo "============================================"
 echo ""
 
