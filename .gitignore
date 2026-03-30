@@ -1,9 +1,43 @@
+# Python
 __pycache__/
 *.pyc
+
+# macOS
 .DS_Store
+
+# Genomics data files (too large for git)
 *.bam
 *.bam.bai
+*.cram
+*.cram.crai
+*.vcf
 *.vcf.gz
 *.vcf.gz.tbi
 *.vcf.gz.csi
+*.bcf
+*.bcf.csi
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.ora
+
+# Reference files
+*.fasta
+*.fasta.fai
+*.fa
+*.fa.fai
+*.mmi
+*.dict
+
+# Archives
 *.tar.gz
+*.tgz
+
+# ROOT files (CNVnator intermediate)
+*.root
+
+# Temporary / intermediate
+*.tmp
+*.log
+nohup.out
