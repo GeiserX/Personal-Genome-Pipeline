@@ -88,7 +88,9 @@ docker run --rm --user root \
     --threads 4 \
     --memory 6000 \
     --set-all-var-ids '@:#' \
-    --new-id-max-allele-len 100
+    --new-id-max-allele-len 100 \
+    --chr 1-22 \
+    --allow-extra-chr
 
 echo ""
 echo "[3/3] Calculating polygenic risk scores..."
