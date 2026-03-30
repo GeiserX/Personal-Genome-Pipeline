@@ -227,6 +227,90 @@ VEP classifies variant impact as:
 
 ---
 
+## CNVnator Results (Step 18)
+
+CNVnator detects **copy number variants** using read depth analysis — complementary to Manta's paired-end/split-read approach.
+
+**Where to look:** `${SAMPLE}/cnvnator/${SAMPLE}_cnvs.txt`
+
+**Format:** Each line has: type, region, size, normalized_RD, e-value1, e-value2, e-value3, e-value4, q0
+
+**What to expect:**
+- 3,000-4,000 total CNVs (mostly deletions)
+- 1,500-2,000 significant (e-value < 0.01)
+- Calls at chromosome starts (chr1:1-10000) are telomeric artifacts — ignore them
+
+**Filtering:**
+```bash
+# Significant CNVs only (e-value < 0.01)
+awk '$5 < 0.01' ${SAMPLE}_cnvs.txt
+
+# Large deletions (>100kb, potentially clinically relevant)
+awk '$1 == "deletion" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
+
+# Large duplications
+awk '$1 == "duplication" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
+```
+
+**Multi-caller confidence:** CNVs found by both Manta AND CNVnator are high-confidence. Cross-reference by checking if the same genomic region appears in both output files.
+
+---
+
+## Delly Results (Step 19)
+
+Delly is a third structural variant caller, detecting deletions, duplications, inversions, and translocations.
+
+**Where to look:** `${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz`
+
+**Quick summary:**
+```bash
+# Count SVs by type
+bcftools query -f '%INFO/SVTYPE\n' ${SAMPLE}_sv.vcf.gz | sort | uniq -c
+
+# Filter PASS variants only
+bcftools view -f PASS ${SAMPLE}_sv.vcf.gz | grep -cv '^#'
+```
+
+**What to expect:**
+- 5,000-15,000 total SV calls
+- Most are small deletions (<1kb)
+- PASS filter reduces count significantly
+
+**Three-caller consensus:** SVs detected by Manta + Delly + CNVnator (or any 2 of 3) are very high confidence. Single-caller calls, especially large ones, should be viewed with caution.
+
+---
+
+## Mitochondrial Variants (Step 20)
+
+GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions — the proportion of your mitochondria carrying each variant.
+
+**Where to look:** `${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz`
+
+**Key field:** `AF` (allele fraction) indicates heteroplasmy level:
+
+| AF Level | Meaning |
+|---|---|
+| >0.95 | Homoplasmic — fixed in all mitochondria (haplogroup-defining) |
+| 0.10-0.95 | Heteroplasmic — clinically significant range |
+| 0.03-0.10 | Low-level heteroplasmy — often age-related somatic |
+| <0.03 | Near detection limit |
+
+**What to expect:**
+- 50-70 PASS variants total
+- 25-35 homoplasmic (haplogroup variants)
+- 25-35 low-level heteroplasmic (mostly <5%)
+- Poly-C tract variants at positions 302-310 are sequencing artifacts
+
+**When to investigate further:**
+- Heteroplasmic variant at a known disease position (check [MitoMap](https://www.mitomap.org/))
+- m.3243A>G (MELAS) at >10% heteroplasmy
+- m.8344A>G (MERRF) at >10% heteroplasmy
+- Any position in MT-ATP6, MT-ND genes with AF >0.10
+
+**Cross-reference:** Compare with step 12 (haplogrep3) — your homoplasmic variants should match your assigned haplogroup.
+
+---
+
 ## What to Do Next
 
 1. **Print your PharmCAT report** and bring it to your next doctor visit
