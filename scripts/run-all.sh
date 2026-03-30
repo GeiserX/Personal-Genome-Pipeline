@@ -3,10 +3,12 @@
 # Usage: ./run-all.sh <sample_name> <sex: male|female>
 #
 # Assumes:
+# - FASTQ files at $GENOME_DIR/<sample>/fastq/ OR
 # - BAM already exists at $GENOME_DIR/<sample>/aligned/<sample>_sorted.bam
-# - VCF already exists at $GENOME_DIR/<sample>/vcf/<sample>.vcf.gz
-# - Manta SV VCF exists at $GENOME_DIR/<sample>/manta/results/variants/diploidSV.vcf.gz
-# - GRCh38 reference + ClinVar at $GENOME_DIR/reference/
+# - Reference genome at $GENOME_DIR/reference/
+# - ClinVar database at $GENOME_DIR/clinvar/
+#
+# Steps run in parallel where possible. Total time: ~6-12 hours on 16 cores.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <sex: male|female>}
@@ -16,50 +18,136 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 
 echo "============================================"
-echo "  Medical Genomics Pipeline"
+echo "  Genomics Pipeline — Full Analysis"
 echo "  Sample: ${SAMPLE}, Sex: ${SEX}"
 echo "  Data: ${GENOME_DIR}/${SAMPLE}/"
 echo "============================================"
 echo ""
 
-# These can run in parallel (independent of each other)
-echo "[1/9] AnnotSV — Structural variant annotation..."
-bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
-PID_ANNOTSV=$!
+# Phase 1: Alignment (if FASTQ exists but BAM doesn't)
+BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+if [ ! -f "$BAM" ]; then
+  echo "[Phase 1] Alignment — FASTQ to sorted BAM..."
+  bash "${SCRIPT_DIR}/02-alignment.sh" "$SAMPLE"
+else
+  echo "[Phase 1] BAM already exists, skipping alignment."
+fi
+echo ""
 
-echo "[2/9] ClinVar screen — Known pathogenic variants..."
+# Phase 2: Variant Calling (if VCF doesn't exist)
+VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+if [ ! -f "$VCF" ]; then
+  echo "[Phase 2] Variant calling — DeepVariant..."
+  bash "${SCRIPT_DIR}/03-deepvariant.sh" "$SAMPLE"
+else
+  echo "[Phase 2] VCF already exists, skipping variant calling."
+fi
+echo ""
+
+# Phase 3: Parallel analyses (all independent after BAM + VCF exist)
+echo "[Phase 3] Running parallel analyses..."
+echo ""
+
+# --- Group A: Quick jobs (minutes each) ---
+echo "  Starting quick analyses..."
+
+echo "  [A1] ClinVar screen..."
 bash "${SCRIPT_DIR}/06-clinvar-screen.sh" "$SAMPLE" &
 PID_CLINVAR=$!
 
-echo "[3/9] ExpansionHunter — STR expansion screening..."
-bash "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX" &
-PID_EH=$!
+echo "  [A2] PharmCAT pharmacogenomics..."
+bash "${SCRIPT_DIR}/07-pharmacogenomics.sh" "$SAMPLE" &
+PID_PHARMCAT=$!
 
-echo "[4/9] TelomereHunter — Telomere length estimation..."
-bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
-PID_TH=$!
-
-echo "[5/9] ROH analysis — Consanguinity screening..."
+echo "  [A3] ROH analysis..."
 bash "${SCRIPT_DIR}/11-roh-analysis.sh" "$SAMPLE" &
 PID_ROH=$!
 
+echo "  [A4] Mito haplogroup..."
+bash "${SCRIPT_DIR}/12-mito-haplogroup.sh" "$SAMPLE" &
+PID_HAPLO=$!
+
+echo "  [A5] indexcov coverage QC..."
+bash "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX" &
+PID_INDEXCOV=$!
+
+echo "  [A6] Imputation prep..."
+bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE" &
+PID_IMPUTATION=$!
+
+# --- Group B: Medium jobs (10-60 minutes each) ---
+echo "  Starting medium analyses..."
+
+echo "  [B1] Manta structural variants..."
+bash "${SCRIPT_DIR}/04-manta.sh" "$SAMPLE" &
+PID_MANTA=$!
+
+echo "  [B2] ExpansionHunter STR screening..."
+bash "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX" &
+PID_EH=$!
+
+echo "  [B3] TelomereHunter telomere length..."
+bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
+PID_TH=$!
+
+echo "  [B4] MToolBox mitochondrial analysis..."
+bash "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE" &
+PID_MTOOLBOX=$!
+
+echo "  [B5] CPSR cancer predisposition..."
+bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
+PID_CPSR=$!
+
 # Wait for quick jobs
-wait $PID_CLINVAR $PID_ROH $PID_EH
+wait $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION 2>/dev/null || true
 echo ""
-echo "[6/9] Imputation prep — MIS-ready VCFs..."
-bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE"
+echo "  Quick analyses complete."
 
-echo "[7/9] HLA typing — T1K Class I+II..."
-bash "${SCRIPT_DIR}/08-hla-typing.sh" "$SAMPLE"
+# --- Group C: Heavy jobs (2-4 hours each) ---
+# These are CPU+RAM intensive — run sequentially or limit parallelism
+echo "  Starting heavy analyses..."
 
-echo "[8/9] VEP annotation — Functional impact prediction..."
-bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE"
+echo "  [C1] VEP functional annotation..."
+bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE" &
+PID_VEP=$!
 
-# Wait for remaining parallel jobs
-wait $PID_ANNOTSV $PID_TH
+echo "  [C2] CNVnator depth-based CNV calling..."
+bash "${SCRIPT_DIR}/18-cnvnator.sh" "$SAMPLE" &
+PID_CNVNATOR=$!
+
+echo "  [C3] Delly structural variant calling..."
+bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
+PID_DELLY=$!
+
+# Wait for Manta before running duphold and AnnotSV
+wait $PID_MANTA 2>/dev/null || true
+echo "  Manta complete. Running SV post-processing..."
+
+echo "  [B6] duphold SV quality annotation..."
+bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
+PID_DUPHOLD=$!
+
+echo "  [B7] AnnotSV structural variant annotation..."
+bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
+PID_ANNOTSV=$!
+
+# Wait for everything
+wait $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR 2>/dev/null || true
+wait $PID_VEP $PID_CNVNATOR $PID_DELLY 2>/dev/null || true
+wait $PID_DUPHOLD $PID_ANNOTSV 2>/dev/null || true
 
 echo ""
 echo "============================================"
 echo "  Pipeline complete for: ${SAMPLE}"
 echo "  All results in: ${GENOME_DIR}/${SAMPLE}/"
 echo "============================================"
+echo ""
+echo "Key outputs:"
+echo "  VCF:            ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
+echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/pharmcat/"
+echo "  VEP annotation: ${GENOME_DIR}/${SAMPLE}/vep/"
+echo "  CPSR report:    ${GENOME_DIR}/${SAMPLE}/cpsr/"
+echo "  Manta SVs:      ${GENOME_DIR}/${SAMPLE}/manta/"
+echo "  duphold QC:     ${GENOME_DIR}/${SAMPLE}/duphold/"
+echo "  AnnotSV:        ${GENOME_DIR}/${SAMPLE}/annotsv/"
