@@ -1,0 +1,79 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck on all scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: scripts
+          severity: warning
+
+  no-personal-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for personal paths or data leaks
+        run: |
+          echo "Scanning for personal data in scripts and docs..."
+          FAIL=0
+          # Check for common personal path patterns
+          if grep -rn '/mnt/user\|/home/[a-z]' scripts/ docs/ 2>/dev/null; then
+            echo "FAIL: Found personal paths in scripts/docs"
+            FAIL=1
+          fi
+          # Check for hardcoded hostnames
+          if grep -rn 'internal-host\|internal-host\|ts\.net' scripts/ docs/ 2>/dev/null; then
+            echo "FAIL: Found hardcoded hostnames"
+            FAIL=1
+          fi
+          # Check for hardcoded sample names (but allow 'your_name' placeholders)
+          if grep -rn 'SAMPLE=sample1\|SAMPLE=sample2' scripts/ docs/ 2>/dev/null; then
+            echo "FAIL: Found hardcoded sample names"
+            FAIL=1
+          fi
+          if [ "$FAIL" -eq 1 ]; then
+            exit 1
+          fi
+          echo "OK: No personal data found"
+
+  markdown-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for broken internal links
+        run: |
+          echo "Checking internal markdown links..."
+          FAIL=0
+          # Extract markdown links and check if target files exist
+          for md in docs/*.md README.md; do
+            grep -oP '\[.*?\]\(((?!http)[^)]+)\)' "$md" 2>/dev/null | \
+              grep -oP '\(([^)]+)\)' | tr -d '()' | while read -r link; do
+                # Handle anchors
+                file=$(echo "$link" | cut -d'#' -f1)
+                if [ -n "$file" ]; then
+                  # Resolve relative to the markdown file's directory
+                  dir=$(dirname "$md")
+                  target="${dir}/${file}"
+                  if [ ! -f "$target" ]; then
+                    echo "BROKEN: ${md} -> ${link} (file not found: ${target})"
+                    echo "1" > /tmp/link_fail
+                  fi
+                fi
+              done
+          done
+          if [ -f /tmp/link_fail ]; then
+            exit 1
+          fi
+          echo "OK: All internal links valid"
