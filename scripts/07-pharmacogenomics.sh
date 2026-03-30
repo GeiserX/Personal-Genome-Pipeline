@@ -40,7 +40,7 @@ docker run --rm \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   pgkb/pharmcat:2.15.5 \
   java -jar /pharmcat/pharmcat.jar \
-    -vcf "/data/${SAMPLE}.preprocessed.vcf" \
+    -vcf "/data/${SAMPLE}.preprocessed.vcf.bgz" \
     -o /data/ \
     -bf "$SAMPLE" \
     -reporterJson
