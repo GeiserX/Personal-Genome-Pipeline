@@ -26,7 +26,7 @@ jobs:
           fi
 
           # setup.sh must filter from clinvar_chr (not raw clinvar.vcf.gz)
-          if grep -q 'clinvar.vcf.gz -Oz' scripts/setup.sh | grep -v 'clinvar_chr'; then
+          if grep 'clinvar.vcf.gz -Oz' scripts/setup.sh | grep -qv 'clinvar_chr'; then
             echo "FAIL: setup.sh filters from raw ClinVar instead of chr-renamed"
             FAIL=1
           fi
@@ -57,20 +57,20 @@ jobs:
           echo "Checking HTML report path references..."
           FAIL=0
 
-          # Haplogroup must reference mito/ (not haplogrep/)
-          if grep -q 'haplogrep/' scripts/24-html-report.sh; then
+          # Haplogroup must reference mito/ (not haplogrep/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep -q 'haplogrep/'; then
             echo "FAIL: HTML report references haplogrep/ but step 12 writes to mito/"
             FAIL=1
           fi
 
-          # Mitochondrial must reference mito/ (not mtoolbox/)
-          if grep -q 'mtoolbox/' scripts/24-html-report.sh; then
+          # Mitochondrial must reference mito/ (not mtoolbox/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep -q 'mtoolbox/'; then
             echo "FAIL: HTML report references mtoolbox/ but step 20 writes to mito/"
             FAIL=1
           fi
 
-          # Clinical filter must reference clinical/ (not vep/)
-          if grep 'clinical.*vcf.gz' scripts/24-html-report.sh | grep -q '/vep/'; then
+          # Clinical filter must reference clinical/ (not vep/) — exclude comments
+          if grep -v '^\s*#' scripts/24-html-report.sh | grep 'clinical.*vcf.gz' | grep -q '/vep/'; then
             echo "FAIL: HTML report looks for clinical VCF in vep/ instead of clinical/"
             FAIL=1
           fi

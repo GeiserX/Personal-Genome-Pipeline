@@ -1,5 +1,7 @@
 # Step 22: Structural Variant Consensus Merge
 
+> **EXPERIMENTAL:** This step uses a heuristic position-binning approach that may over-count calls from the same caller. Results should be treated as a rough intersection, not a true consensus merge. For production use, consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
+
 ## What This Does
 
 Merges structural variant (SV) calls from multiple independent callers -- Manta (step 4), Delly (step 19), and CNVnator (step 18) -- into a single high-confidence consensus set. Only SVs detected by two or more callers with overlapping breakpoints (within 1 kb) are retained.

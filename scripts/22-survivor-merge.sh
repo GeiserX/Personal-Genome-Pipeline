@@ -147,16 +147,19 @@ docker run --rm --user root \
     done > /genome/${SAMPLE}/sv_merged/all_sv_tagged.tsv
 
     # Step B: Find bins seen by 2+ distinct callers, emit one clean 8-col VCF record each
+    # Uses pipe-delimited caller string (mawk-compatible — no nested arrays)
     awk -F'\t' '{
       key=\$1\"_\"\$2\"_\"\$3;
-      callers[key][\$4]=1;
-      if(!(key in line)) {
-        # Store the first clean VCF record for this bin
+      caller=\$4;
+      if(!(key in seen)) {
+        seen[key]=caller;
         line[key]=\$6\"\t\"\$7\"\t.\tN\t\"\$10\"\t.\tPASS\t\"\$14;
+      } else if(index(seen[key], caller) == 0) {
+        seen[key]=seen[key]\"|\"caller;
       }
     } END {
-      for(k in callers) {
-        n=0; for(c in callers[k]) n++;
+      for(k in seen) {
+        n=split(seen[k], a, \"|\");
         if(n >= 2) print line[k];
       }
     }' /genome/${SAMPLE}/sv_merged/all_sv_tagged.tsv | \

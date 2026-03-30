@@ -113,10 +113,17 @@ echo "  [B5] CPSR cancer predisposition..."
 bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
-# Wait for quick jobs
-wait $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION $PID_HLA 2>/dev/null || true
+# Wait for quick jobs, counting failures
+PHASE3_FAIL=0
+for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION $PID_HLA; do
+  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
+done
 echo ""
-echo "  Quick analyses complete."
+if [ "$PHASE3_FAIL" -gt 0 ]; then
+  echo "  WARNING: ${PHASE3_FAIL} quick analysis step(s) failed."
+else
+  echo "  Quick analyses complete."
+fi
 
 # --- Group C: Heavy jobs (2-4 hours each) ---
 # These are CPU+RAM intensive — run sequentially or limit parallelism
@@ -135,7 +142,7 @@ bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
 PID_DELLY=$!
 
 # Wait for Manta before running duphold and AnnotSV
-wait $PID_MANTA 2>/dev/null || true
+wait "$PID_MANTA" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 echo "  Manta complete. Running SV post-processing..."
 
 echo "  [B6] duphold SV quality annotation..."
@@ -146,10 +153,15 @@ echo "  [B7] AnnotSV structural variant annotation..."
 bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
 PID_ANNOTSV=$!
 
-# Wait for everything
-wait $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR 2>/dev/null || true
-wait $PID_VEP $PID_CNVNATOR $PID_DELLY 2>/dev/null || true
-wait $PID_DUPHOLD $PID_ANNOTSV 2>/dev/null || true
+# Wait for remaining Phase 3 jobs
+for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_DUPHOLD $PID_ANNOTSV; do
+  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
+done
+
+if [ "$PHASE3_FAIL" -gt 0 ]; then
+  echo ""
+  echo "  WARNING: ${PHASE3_FAIL} Phase 3 step(s) had errors. Check individual step output above."
+fi
 
 # Phase 4: Post-processing (uses outputs from Phase 3)
 echo ""
@@ -220,7 +232,7 @@ echo "  HTML Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html"
 echo "  Text Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt"
 echo "  VCF:            ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
-echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/pharmcat/"
+echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/vcf/ (PharmCAT reports alongside VCF)"
 echo "  CYP2D6:         ${GENOME_DIR}/${SAMPLE}/cyrius/"
 echo "  CPIC drugs:     ${GENOME_DIR}/${SAMPLE}/cpic/"
 echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"

@@ -69,7 +69,7 @@ EH_FILE=$(find "${SAMPLE_DIR}/expansion_hunter" -maxdepth 1 -name "*_eh.vcf" 2>/
 if [ -n "$EH_FILE" ] && [ -f "$EH_FILE" ]; then
   EH_STATUS="Complete"
   # Check key loci — REPCN (repeat copy number) is FORMAT field 3 (GT:SO:REPCN:...)
-  for LOCUS in HTT FMR1 C9orf72 ATXN1 DMPK; do
+  for LOCUS in HTT FMR1 C9ORF72 ATXN1 DMPK; do
     REPEAT=$(grep -w "$LOCUS" "$EH_FILE" 2>/dev/null | head -1 | \
       awk -F'\t' '{split($10,a,":"); print a[3]}' || echo "N/A")
     EH_DETAILS="${EH_DETAILS}<tr><td>${LOCUS}</td><td>${REPEAT:-N/A}</td></tr>"
