@@ -1,9 +1,12 @@
 # Genomics Pipeline
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![CI](https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml/badge.svg)](https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml)
 [![Docker](https://img.shields.io/badge/runs%20with-Docker-0db7ed?logo=docker)](https://www.docker.com/)
 [![Platform](https://img.shields.io/badge/platform-linux%20amd64-lightgrey)]()
 [![GRCh38](https://img.shields.io/badge/genome-GRCh38%2Fhg38-green)]()
+[![Steps](https://img.shields.io/badge/analysis%20steps-20-orange)]()
+[![Privacy](https://img.shields.io/badge/data%20privacy-100%25%20local-brightgreen)]()
 
 **Analyze your own whole genome sequencing (WGS) data on consumer hardware.** No cloud accounts, no subscriptions, no bioinformatics degree required.
 
