@@ -155,35 +155,47 @@ wait $PID_DUPHOLD $PID_ANNOTSV 2>/dev/null || true
 echo ""
 echo "[Phase 4] Running post-processing steps..."
 
-echo "  [D1] CYP2D6 star alleles (Cyrius)..."
-bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" 2>/dev/null &
+# Post-processing steps: log errors instead of swallowing them
+POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
+: > "$POST_LOG"
+
+echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
+bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CYRIUS=$!
 
-echo "  [D2] SV consensus merge..."
-bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D2] SV consensus merge [experimental]..."
+bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_SURVIVOR=$!
 
 echo "  [D3] Clinical variant filter..."
-bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" 2>/dev/null &
+bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CLINICAL=$!
 
-echo "  [D4] Polygenic Risk Scores..."
-bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D4] Polygenic Risk Scores [exploratory]..."
+bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_PRS=$!
 
-echo "  [D5] Ancestry PCA..."
-bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" 2>/dev/null &
+echo "  [D5] Ancestry PCA [experimental]..."
+bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_ANCESTRY=$!
 
 echo "  [D6] CPIC drug-gene recommendations..."
-bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" 2>/dev/null &
+bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CPIC=$!
 
-wait $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC 2>/dev/null || true
-echo "  Post-processing complete."
+PHASE4_FAIL=0
+for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC; do
+  wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
+done
+if [ "$PHASE4_FAIL" -gt 0 ]; then
+  echo "  WARNING: ${PHASE4_FAIL} post-processing step(s) had errors."
+  echo "  See: ${POST_LOG}"
+else
+  echo "  Post-processing complete."
+fi
 
 echo "  [D7] HTML summary report..."
-bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" 2>/dev/null || true
+bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || echo "  WARNING: HTML report generation failed. See ${POST_LOG}"
 
 # Generate summary report
 echo ""
@@ -211,7 +223,7 @@ echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
 echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/pharmcat/"
 echo "  CYP2D6:         ${GENOME_DIR}/${SAMPLE}/cyrius/"
 echo "  CPIC drugs:     ${GENOME_DIR}/${SAMPLE}/cpic/"
-echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_clinical.vcf.gz"
+echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"
 echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
 echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
 echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"

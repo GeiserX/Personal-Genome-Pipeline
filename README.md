@@ -116,12 +116,12 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
-| 21 | [CYP2D6 Star Alleles](docs/21-cyrius.md) | Cyrius | `python:3.11-slim` | ~10 min | Optional |
-| 22 | [SV Consensus Merge](docs/22-survivor-merge.md) | bcftools | `staphb/bcftools:1.21` | ~5 min | If steps 4+19 run |
+| 21 | [CYP2D6 Star Alleles](docs/21-cyrius.md) | Cyrius | `python:3.11-slim` | ~10 min | Experimental |
+| 22 | [SV Consensus Merge](docs/22-survivor-merge.md) | bcftools | `staphb/bcftools:1.21` | ~5 min | Experimental |
 | 23 | [Clinical Filter](docs/23-clinical-filter.md) | bcftools +split-vep | `staphb/bcftools:1.21` | ~5-10 min | If step 13 run |
 | 24 | [HTML Report](docs/24-html-report.md) | bash + bcftools | `staphb/bcftools:1.21` | ~1-3 min | Recommended |
-| 25 | [Polygenic Risk Scores](docs/25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Optional |
-| 26 | [Ancestry PCA](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Optional |
+| 25 | [Polygenic Risk Scores](docs/25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
+| 26 | [Ancestry PCA](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
 | 27 | [CPIC Recommendations](docs/27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
@@ -325,12 +325,14 @@ ${GENOME_DIR}/
     vcf/
       ${SAMPLE}.vcf.gz                 # Variant calls
       ${SAMPLE}.vcf.gz.tbi             # VCF index
+      ${SAMPLE}.report.html            # PharmCAT report (step 7)
     manta/                             # Structural variants (step 4)
     annotsv/                           # Annotated SVs (step 5)
     clinvar/                           # ClinVar hits (step 6)
-    pharmcat/                          # Pharmacogenomics report (step 7)
+    clinical/                          # Clinically filtered variants (step 23)
     vep/                               # Functional annotation (step 13)
     cpsr/                              # Cancer predisposition (step 17)
+    mito/                              # Haplogroup + mitochondrial variants (steps 12, 20)
     ...                                # Other analysis directories
 ```
 

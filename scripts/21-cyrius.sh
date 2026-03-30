@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# 21-cyrius.sh — CYP2D6 star allele calling using Illumina's Cyrius
+# 21-cyrius.sh — [EXPERIMENTAL] CYP2D6 star allele calling using Cyrius
 # Usage: ./scripts/21-cyrius.sh <sample_name>
 #
 # CYP2D6 is the hardest pharmacogene to call because of its pseudogene (CYP2D7)
 # and complex structural variants (gene deletions, duplications, hybrids).
-# PharmCAT's internal CYP2D6 caller is limited for WGS data.
 # Cyrius uses depth-based analysis specifically designed for CYP2D6.
+#
+# EXPERIMENTAL: Cyrius is installed at runtime via pip (unpinned version) and
+# may return "None" for complex CYP2D6 arrangements. Verify results against
+# PharmCAT or clinical lab calls before acting on them.
 #
 # Requires: Sorted BAM with index
 set -euo pipefail

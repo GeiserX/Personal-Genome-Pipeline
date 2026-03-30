@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# 26-ancestry.sh — Ancestry estimation via PCA against 1000 Genomes reference
+# 26-ancestry.sh — [EXPERIMENTAL] Ancestry-informative PCA from WGS VCF
 # Usage: ./scripts/26-ancestry.sh <sample_name>
 #
-# Projects your sample onto principal components computed from the 1000 Genomes
-# Project reference panel. This shows where you fall relative to global
-# population clusters (European, African, East Asian, South Asian, American).
+# EXPERIMENTAL: This runs PCA on a SINGLE sample intersected with 1000 Genomes
+# reference sites. Without joint PCA against the actual 1000G genotypes, the
+# resulting principal components are NOT directly interpretable for ancestry.
+# The PCs only become meaningful when projected alongside reference samples.
+#
+# This step is included as a starting point. For proper ancestry estimation,
+# you need multi-sample PCA with a reference panel (not implemented here).
 #
 # Requires: VCF from step 3, reference panel (downloaded automatically)
 set -euo pipefail
