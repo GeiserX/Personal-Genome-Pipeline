@@ -127,7 +127,9 @@ docker run --rm --user root \
     --indep-pairwise 50 5 0.2 \
     --out "/genome/${SAMPLE}/ancestry/${SAMPLE}_ld" \
     --threads 4 \
-    --memory 6000
+    --memory 6000 \
+    --chr 1-22 \
+    --allow-extra-chr
 
 PRUNED_COUNT=$(wc -l < "${OUTDIR}/${SAMPLE}_ld.prune.in" 2>/dev/null || echo 0)
 echo "  LD-pruned SNPs: ${PRUNED_COUNT}"
@@ -144,7 +146,9 @@ docker run --rm --user root \
     --pca 10 \
     --out "/genome/${SAMPLE}/ancestry/${SAMPLE}_pca" \
     --threads 4 \
-    --memory 6000
+    --memory 6000 \
+    --chr 1-22 \
+    --allow-extra-chr
 
 echo ""
 echo "============================================"
