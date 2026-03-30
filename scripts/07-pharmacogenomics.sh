@@ -22,16 +22,28 @@ for f in "$VCF" "$REF"; do
   fi
 done
 
+# Step 1: Preprocess VCF (normalize, filter to PGx positions)
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
   pgkb/pharmcat:2.15.5 \
-  java -jar /pharmcat/pharmcat.jar \
+  python3 /pharmcat/pharmcat_vcf_preprocessor.py \
     -vcf "/data/${SAMPLE}.vcf.gz" \
-    -refFasta /ref/Homo_sapiens_assembly38.fasta \
+    -refFna /ref/Homo_sapiens_assembly38.fasta \
     -o /data/ \
     -bf "$SAMPLE"
+
+# Step 2: Run PharmCAT on preprocessed VCF
+docker run --rm \
+  --cpus 2 --memory 4g \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  pgkb/pharmcat:2.15.5 \
+  java -jar /pharmcat/pharmcat.jar \
+    -vcf "/data/${SAMPLE}.preprocessed.vcf" \
+    -o /data/ \
+    -bf "$SAMPLE" \
+    -reporterJson
 
 echo "=== PharmCAT complete ==="
 echo "Report: ${OUTPUT_DIR}/${SAMPLE}.report.html"
