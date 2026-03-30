@@ -351,6 +351,42 @@ It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com 
 
 ---
 
+## Why Run Locally?
+
+### Cost Comparison
+
+| Approach | Cost | What You Get | Data Privacy |
+|---|---|---|---|
+| **This pipeline** | $0 (free, open source) | Full 20-step analysis | Your data never leaves your machine |
+| Clinical WGS interpretation | $500-5,000 | 1-page report, selected genes only | Lab retains your data |
+| Nebula/Dante report | $0-200 (included/add-on) | Web dashboard, limited depth | Data on company servers |
+| 23andMe Health | $229 | ~10 health reports from array data | Data shared with research partners |
+| Genetic counselor consultation | $200-500/hour | Expert interpretation of specific findings | HIPAA-protected |
+
+**The pipeline is complementary, not a replacement.** Use it for comprehensive self-analysis, then bring specific findings to a genetic counselor or physician for clinical interpretation.
+
+### Privacy and Security
+
+Your genome is the most permanent piece of personal data you have. Unlike a password, you cannot change it if it leaks.
+
+**This pipeline is 100% local:**
+- No data is uploaded to any server, cloud, or API
+- No internet connection is required after initial setup (reference downloads + Docker images)
+- No telemetry, no analytics, no tracking
+- Every tool runs in a Docker container with no network access to external services
+
+**Recommendations for securing your data:**
+- Store genomic data on an encrypted filesystem (LUKS on Linux, FileVault on macOS, BitLocker on Windows)
+- Never upload raw FASTQ/BAM/VCF files to unencrypted cloud storage
+- If using a NAS, enable encryption at rest
+- Be cautious with VCF files in particular — they are small enough to accidentally email or upload
+- Consider who has physical access to the machine where your data is stored
+- If you delete your data, use `shred` (Linux) or secure erase — standard file deletion leaves data recoverable
+
+**GDPR note:** If you are in the EU, your genomic data is classified as "special category personal data" under GDPR Article 9. Processing it locally for personal use is lawful. Sharing it with third parties (including cloud services) may require explicit consent and appropriate safeguards.
+
+---
+
 ## Disclaimer
 
 This pipeline is for **educational and research purposes only**. It is not a medical device and has not been clinically validated. Genomic findings should always be discussed with a qualified healthcare professional before making any medical decisions. The authors are not responsible for any actions taken based on pipeline output.
