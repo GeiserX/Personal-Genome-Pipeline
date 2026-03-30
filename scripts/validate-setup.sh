@@ -283,6 +283,8 @@ else
     "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"
     "quay.io/biocontainers/goleft:0.2.4--h9ee0642_1"
     "broadinstitute/gatk:4.6.1.0"
+    "python:3.11-slim"
+    "pgscatalog/plink2:2.00a5.10"
   )
 
   PULLED=0

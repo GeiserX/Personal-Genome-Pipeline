@@ -151,6 +151,40 @@ wait $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR 2>/dev/null || true
 wait $PID_VEP $PID_CNVNATOR $PID_DELLY 2>/dev/null || true
 wait $PID_DUPHOLD $PID_ANNOTSV 2>/dev/null || true
 
+# Phase 4: Post-processing (uses outputs from Phase 3)
+echo ""
+echo "[Phase 4] Running post-processing steps..."
+
+echo "  [D1] CYP2D6 star alleles (Cyrius)..."
+bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" 2>/dev/null &
+PID_CYRIUS=$!
+
+echo "  [D2] SV consensus merge..."
+bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" 2>/dev/null &
+PID_SURVIVOR=$!
+
+echo "  [D3] Clinical variant filter..."
+bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" 2>/dev/null &
+PID_CLINICAL=$!
+
+echo "  [D4] Polygenic Risk Scores..."
+bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" 2>/dev/null &
+PID_PRS=$!
+
+echo "  [D5] Ancestry PCA..."
+bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" 2>/dev/null &
+PID_ANCESTRY=$!
+
+echo "  [D6] CPIC drug-gene recommendations..."
+bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" 2>/dev/null &
+PID_CPIC=$!
+
+wait $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC 2>/dev/null || true
+echo "  Post-processing complete."
+
+echo "  [D7] HTML summary report..."
+bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" 2>/dev/null || true
+
 # Generate summary report
 echo ""
 echo "[Report] Generating summary report..."
@@ -170,15 +204,18 @@ echo "  Finished: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
 echo ""
 echo "Key outputs:"
-echo "  Report:         ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt"
+echo "  HTML Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html"
+echo "  Text Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt"
 echo "  VCF:            ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
 echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/pharmcat/"
-echo "  VEP annotation: ${GENOME_DIR}/${SAMPLE}/vep/"
+echo "  CYP2D6:         ${GENOME_DIR}/${SAMPLE}/cyrius/"
+echo "  CPIC drugs:     ${GENOME_DIR}/${SAMPLE}/cpic/"
+echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_clinical.vcf.gz"
+echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
+echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
+echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"
 echo "  CPSR report:    ${GENOME_DIR}/${SAMPLE}/cpsr/"
-echo "  Manta SVs:      ${GENOME_DIR}/${SAMPLE}/manta/"
-echo "  duphold QC:     ${GENOME_DIR}/${SAMPLE}/duphold/"
-echo "  AnnotSV:        ${GENOME_DIR}/${SAMPLE}/annotsv/"
 echo ""
 echo "Next steps:"
 echo "  1. Open the PharmCAT HTML report in a browser — it's the most actionable output"

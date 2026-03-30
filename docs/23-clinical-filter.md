@@ -10,7 +10,7 @@ The biggest challenge after running VEP annotation is: "I have millions of varia
 
 ## Tool
 
-bcftools (already installed — no new Docker image needed)
+bcftools + `bcftools +split-vep` plugin (parses VEP CSQ fields structurally — no grep)
 
 ## Docker Image
 
@@ -28,7 +28,7 @@ bcftools (already installed — no new Docker image needed)
 
 ## What Gets Filtered
 
-The script produces two variant sets that are merged:
+The script produces up to three variant sets (depending on VEP annotations available) that are merged:
 
 ### HIGH Impact Variants
 - Stop-gained (premature stop codon — breaks the protein)
@@ -36,13 +36,20 @@ The script produces two variant sets that are merged:
 - Splice donor/acceptor (disrupts splicing — breaks the protein)
 - Start-lost (no translation initiation)
 
-Expected count: 100-200 per genome.
+Expected count: 100-200 per genome. Uses `bcftools +split-vep -s worst` to select the most severe consequence per variant.
 
 ### Rare MODERATE Impact Variants
 - Missense variants (amino acid change) with gnomAD allele frequency < 1%
 - In-frame insertions/deletions with gnomAD AF < 1%
 
-Expected count: 200-400 per genome after frequency filtering.
+Expected count: 200-400 per genome after frequency filtering. If VEP output lacks gnomAD frequencies (`--af_gnomade`), all MODERATE variants are included.
+
+### ClinVar Pathogenic/Likely Pathogenic (Conditional)
+- Variants with `CLIN_SIG` containing "pathogenic" (covers both pathogenic and likely_pathogenic)
+- Only runs if VEP was run with `--everything` or `--check_existing` (which populates the CLIN_SIG field)
+- Does not use `-s worst` — a variant is included if ANY transcript annotation has a pathogenic ClinVar entry
+
+Expected count: 10-50 per genome (depends on ClinVar version).
 
 ## Output
 
@@ -52,6 +59,7 @@ Expected count: 200-400 per genome after frequency filtering.
 | `${SAMPLE}_clinical_summary.tsv` | Human-readable tab-delimited table | < 1 MB |
 | `${SAMPLE}_high_impact.vcf.gz` | HIGH impact variants only | < 2 MB |
 | `${SAMPLE}_rare_moderate.vcf.gz` | Rare MODERATE variants only | < 3 MB |
+| `${SAMPLE}_clinvar_pathogenic.vcf.gz` | ClinVar P/LP only (if CLIN_SIG available) | < 1 MB |
 
 ## Runtime
 
@@ -91,5 +99,7 @@ The `_clinical.vcf.gz` file is small enough to load in [IGV Web](https://igv.org
 ## Notes
 
 - No additional Docker images required — uses the same bcftools image as other steps
+- Uses `bcftools +split-vep` to parse VEP's pipe-delimited CSQ annotation structurally (not grep)
 - The VEP VCF is compressed and indexed automatically if needed
 - PASS filter is applied to exclude low-quality variant calls
+- Available CSQ subfields are auto-detected — ClinVar and gnomAD filters are skipped gracefully if not present
