@@ -1,0 +1,39 @@
+# Step 12: Mitochondrial Haplogroup
+
+## What This Does
+Determines maternal lineage ancestry from mitochondrial DNA variants. Also screens for pathogenic mtDNA mutations.
+
+## Why
+Mitochondrial haplogroup reveals deep maternal ancestry and can identify mtDNA disease variants. Some haplogroups have known health associations (e.g., longevity, metabolic traits).
+
+## Tool
+- **haplogrep3** (Medical University of Innsbruck)
+
+## Docker Image
+```
+genepi/haplogrep3
+```
+
+## Command
+```bash
+SAMPLE=your_sample
+GENOMA_DIR=/path/to/genome/data
+
+# Step 1: Extract chrM variants from VCF
+docker run --rm -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
+  bcftools view -r chrM /data/${SAMPLE}.vcf.gz -Oz -o /data/${SAMPLE}_chrM.vcf.gz
+
+# Step 2: Run haplogrep3
+docker run --rm -v ${GENOMA_DIR}/${SAMPLE}:/data genepi/haplogrep3 \
+  classify \
+    --input /data/vcf/${SAMPLE}_chrM.vcf.gz \
+    --output /data/mito/${SAMPLE}_haplogroup.txt \
+    --extend-report
+
+# Output: haplogroup classification with quality score
+```
+
+## Interpretation
+- Common European haplogroups: H, U, J, T, K, V, W, X
+- Output includes quality score (0-1): >0.9 = high confidence
+- Discordant variants may indicate heteroplasmy (mixture of mtDNA types)
