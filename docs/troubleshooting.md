@@ -429,6 +429,23 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 ---
 
+### Step 3: DeepVariant GPU acceleration (not worth it)
+
+**Symptom:** You want to use GPU acceleration for DeepVariant to speed it up.
+
+**Reality:** DeepVariant's GPU Docker image requires **CUDA 11.3** with specific NVIDIA driver versions. This is an older CUDA version that conflicts with newer driver stacks on most systems (2024+).
+
+**Why it's not worth the hassle:**
+1. The GPU image (`google/deepvariant:1.6.0-gpu`) requires `nvidia-docker2` runtime and a compatible NVIDIA driver
+2. CUDA 11.3 needs driver version 465.19.01+ but < 520 on some configurations
+3. The `make_examples` step (which takes most of the time) is **I/O-bound, not compute-bound** — GPU barely helps
+4. Only `call_variants` benefits from GPU, and it's already the fastest step
+5. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
+
+**Recommendation:** Use the CPU image (`google/deepvariant:1.6.0`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
+
+---
+
 ### Step 3: DeepVariant crashes on Mac (amd64 emulation)
 
 **Symptom:** DeepVariant container exits with code 137 or crashes with memory errors on Apple Silicon Mac.
@@ -578,6 +595,37 @@ All pipeline scripts already include this. If running manually, do not omit it.
 --repeat-specs /pathogenic_repeats/GRCh38/    # v2.5.5 (weisburd image)
 # NOT: --variant-catalog /path/to/catalog.json  # v5.x syntax
 ```
+
+---
+
+### Step 13: bcftools +split-vep and INFO/CSQ field parsing
+
+**Symptom:** You're trying to extract VEP annotations from the annotated VCF using `bcftools query` or `bcftools +split-vep`, but the output is empty or garbled.
+
+**Cause:** VEP stores all annotations in a single `INFO/CSQ` field as a pipe-delimited string. This is not a standard VCF INFO field — it is a compound annotation that requires special handling.
+
+**Common mistakes:**
+
+1. **Using `bcftools query -f '%INFO/CSQ'` directly:** This dumps the raw pipe-delimited string, which is unreadable. Use `bcftools +split-vep` instead.
+
+2. **Wrong column names in +split-vep:** The column names in CSQ depend on your VEP command-line options. Check the VCF header for the actual field order:
+   ```bash
+   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+     bcftools view -h /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz | grep "^##INFO=<ID=CSQ"
+   # The "Format:" part shows the pipe-delimited column order
+   ```
+
+3. **Forgetting to specify -f (format) in +split-vep:** Without `-f`, it outputs all fields. Specify the ones you want:
+   ```bash
+   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+     bcftools +split-vep \
+       /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz \
+       -f '%CHROM %POS %Consequence %SYMBOL %SIFT %PolyPhen %gnomADe_AF\n' \
+       -d
+   # -d picks only the most severe consequence per variant
+   ```
+
+4. **gnomAD field naming confusion:** Depending on VEP version and cache, the gnomAD frequency field may be named `gnomADe_AF`, `gnomAD_AF`, `AF`, or `MAX_AF`. Always check the CSQ header first.
 
 ---
 

@@ -50,7 +50,9 @@ Nebula was acquired by ProPhase Labs and rebranded as DNA Complete. They use **M
 
 ### Data Access
 
-Download your data from the DNA Complete portal. Both FASTQ and VCF are available. **Important:** Data access may require an active subscription. Download everything immediately after receiving results.
+Download your data from the DNA Complete portal. Both FASTQ and VCF are available.
+
+> **Download Window Warning:** Data access requires an active subscription. If your subscription lapses, you may lose access to your raw data. **Download everything immediately after receiving results.** Do not assume you can come back later.
 
 ### Entry Point
 
@@ -68,9 +70,29 @@ Italian company using Illumina NovaSeq. Standard Illumina output.
 - Data download portal can be unreliable. Try different browsers or times of day.
 - Some older samples were sequenced on BGI platforms. Check your delivery email for platform details.
 
+> **Download Window Warning:** Dante Labs data downloads expire **30 days** after your results are ready. After this window, the data may be archived or permanently deleted. Multiple users on Reddit have reported losing access to their raw data. **Download within 30 days.** If you miss the window, contact support — some users have been able to get extensions, but it is not guaranteed.
+
 ### Entry Point
 
 All three formats (FASTQ, BAM, VCF) are typically provided. Use whichever entry point matches your goals.
+
+---
+
+## Sequencing.com
+
+US-based service offering 30X WGS with a web-based analysis marketplace.
+
+### Known Issues
+
+- Data may need to be **unarchived** before download. This can take **24-72 hours** from the time you request it. Plan ahead.
+- The download portal sometimes offers only VCF without BAM/FASTQ unless you specifically request raw data.
+- Analysis marketplace reports are proprietary and not directly usable by this pipeline — you need the raw FASTQ or BAM.
+
+> **Download Window Warning:** If you do not download your data for an extended period, Sequencing.com may archive it to cold storage. Retrieval from cold storage can take **1-3 business days**. If you are planning to run this pipeline, request data unarchiving immediately after receiving results.
+
+### Entry Point
+
+Any path, depending on what format you download (FASTQ/BAM/VCF).
 
 ---
 
@@ -81,6 +103,8 @@ Research-focused sequencing service. Cheapest option for 30X WGS (~$200-400).
 ### What You'll Receive
 
 Typically FASTQ only (paired-end, gzipped). BAM and VCF may be available at extra cost or on request.
+
+> **Download Window Warning:** Novogene provides data via their cloud portal for a limited time (typically **90 days**). After that, data may be permanently deleted. BGI Direct has similar policies. Download your FASTQ files as soon as they are available.
 
 ### BGI/MGI FASTQ Quirks
 
@@ -236,6 +260,60 @@ docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.21 \
 ```
 
 **Alternative (quicker but less accurate):** Use Picard LiftoverVcf to convert VCF coordinates. This can introduce artifacts at complex regions and is not recommended for clinical use.
+
+---
+
+## Download Checklist
+
+Regardless of vendor, follow this checklist before starting the pipeline:
+
+### 1. Download Everything Available
+
+Even if you only plan to use VCF, download FASTQ and BAM too. Storage is cheap; re-sequencing is not.
+
+| Priority | File | Why |
+|---|---|---|
+| **Critical** | FASTQ (R1 + R2) | Raw data. Can regenerate everything else. |
+| **High** | BAM + BAI | Skip alignment (saves 1-2 hours). Needed for SV calling. |
+| **Medium** | VCF + TBI | Quick start for annotation steps. |
+| **Low** | Lab report PDF | Reference for comparing your pipeline results |
+| **Low** | QC metrics | Coverage stats, insert size distribution |
+
+### 2. Verify Download Integrity
+
+Large files can be silently truncated during download:
+
+```bash
+# Check FASTQ integrity
+gzip -t ${SAMPLE}_R1.fastq.gz && echo "R1 OK" || echo "R1 CORRUPT"
+gzip -t ${SAMPLE}_R2.fastq.gz && echo "R2 OK" || echo "R2 CORRUPT"
+
+# Check BAM integrity
+docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+  samtools quickcheck /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+  && echo "BAM OK" || echo "BAM CORRUPT"
+
+# Check VCF integrity
+docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+  bcftools view -h /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz > /dev/null \
+  && echo "VCF OK" || echo "VCF CORRUPT"
+```
+
+If any file is corrupt, re-download with `wget -c` (supports resume).
+
+### 3. Check Expected File Sizes
+
+If a file is suspiciously small, the download likely failed:
+
+| File | Expected Size (30X WGS) | Suspicious If |
+|---|---|---|
+| FASTQ (each, gzipped) | 30-45 GB | < 10 GB |
+| BAM | 80-120 GB | < 40 GB |
+| VCF (bgzipped) | 80-200 MB | < 10 MB |
+
+### 4. Back Up Before Running
+
+The pipeline creates output alongside your input data. Before running anything, copy your raw FASTQ/BAM/VCF to a separate backup location. If something goes wrong, you want to avoid re-downloading from a vendor whose download window may have expired.
 
 ---
 

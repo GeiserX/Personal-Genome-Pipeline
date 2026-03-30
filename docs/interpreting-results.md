@@ -2,6 +2,55 @@
 
 You've run the pipeline. Now you have directories full of VCFs, TSVs, and HTML reports. This guide explains what to look at first and what it all means — no bioinformatics degree required.
 
+## Before You Panic: What Every Genome Looks Like
+
+If this is your first time looking at your own genomic data, the numbers can be alarming. Here is what a **completely normal, healthy person's genome** looks like:
+
+| Finding | Normal Range | Why It Seems Scary |
+|---|---|---|
+| Total variants | 4.5-5.5 million | Sounds like millions of "mutations" — but >99.9% are normal human variation |
+| ClinVar pathogenic hits | 0-10 | Everyone carries a few recessive disease variants. You need TWO copies (one from each parent) to be affected |
+| HIGH impact variants (VEP) | 100-150 | Most are heterozygous in non-essential genes. Having one broken copy is fine. |
+| Structural variants | 5,000-10,000 | Most are in non-coding regions. Your parents had them too. |
+| Heteroplasmic mitochondrial variants | 20-40 | Low-level heteroplasmy (<5%) is universal and age-related |
+| VUS (Variants of Uncertain Significance) | 20-200+ | "Uncertain" means **not enough data yet**, not "probably bad" |
+
+### The VUS Trap
+
+The single biggest source of unnecessary anxiety in personal genomics is **VUS — Variants of Uncertain Significance**. These are variants where:
+
+- There is not enough scientific evidence to classify them as either pathogenic or benign
+- The vast majority will eventually be reclassified as **benign** as more data accumulates
+- They are **not actionable** — no clinical decision should be made based on a VUS
+- CPSR may report dozens or hundreds of VUS. This is normal and expected.
+
+**Rule of thumb:** If a variant is classified as VUS, treat it the same as if it were not tested. Do not Google it. Do not change your behavior. Check back in 1-2 years when ClinVar may have reclassified it.
+
+### ClinVar Star Ratings
+
+Not all ClinVar classifications are equally reliable. Each entry has a **review status** indicated by stars:
+
+| Stars | Review Status | Reliability |
+|---|---|---|
+| 0 | No assertion criteria | Low — submitter did not explain their reasoning |
+| 1 | Single submitter, criteria provided | Moderate — one lab's interpretation |
+| 2 | Two or more submitters, no conflict | Good — multiple labs agree |
+| 3 | Expert panel reviewed | High — reviewed by specialists |
+| 4 | Practice guideline | Highest — established clinical standard |
+
+**Focus on 2+ star entries.** Single-submitter (1-star) pathogenic calls are sometimes reclassified. If you find a scary-looking pathogenic variant with 0-1 stars, check the ClinVar entry directly at [ncbi.nlm.nih.gov/clinvar](https://www.ncbi.nlm.nih.gov/clinvar/) — look at the "Review status" and "Last evaluated" date.
+
+### Carrier Status Is Not Disease
+
+The most common "pathogenic" finding in any genome is **heterozygous carrier status for recessive conditions**. This means:
+
+- You have ONE copy of a variant that causes disease when BOTH copies are affected
+- You are **not affected** and will never develop the condition
+- The only relevance is for **family planning**: if your partner carries the same gene, each child has a 25% chance of being affected
+- Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), MUTYH (colorectal cancer risk), HFE (hemochromatosis)
+
+---
+
 ## Start Here: The Three Most Important Outputs
 
 ### 1. ClinVar Screen (Step 6)
@@ -72,6 +121,16 @@ Unlike SNPs (single letter changes), structural variants are large rearrangement
 - **Inversions (INV):** A chunk is flipped backwards
 - **Translocations (BND):** A chunk moved to a different chromosome
 - **Insertions (INS):** New DNA inserted
+
+### A Note About BND (Breakend) Calls
+
+If you run Manta or Delly, you will see many **BND** calls — often hundreds or thousands. BND indicates a "breakend" where one end of a read pair maps to a different chromosome or a distant location. This sounds alarming ("translocation!") but:
+
+- **Most BND calls are artifacts** of repetitive regions, segmental duplications, or mobile elements
+- A typical genome has 1,000-3,000 BND calls from Manta and 5,000+ from Delly
+- **Fewer than 5 are likely real** inter-chromosomal translocations in a healthy genome
+- BND calls require **multi-caller support** (called by both Manta and Delly at the same breakpoints) to be considered high-confidence
+- Unless a BND disrupts a known disease gene AND is confirmed by a second caller, it can be safely ignored
 
 ### How Many Is Normal?
 
@@ -198,6 +257,23 @@ VEP annotates every variant with:
 - **PolyPhen score:** Predicts if change is benign (<0.15), possibly damaging (0.15-0.85), or probably damaging (>0.85)
 - **gnomAD frequency:** How common this variant is in the general population
 
+### gnomAD Frequency: Your Best Sanity Check
+
+The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population (~140,000 exomes + ~76,000 genomes).
+
+**Key principle:** A variant that is common in healthy people is almost certainly benign, regardless of what any prediction tool says.
+
+| gnomAD AF | Interpretation | Action |
+|---|---|---|
+| > 5% (0.05) | Common polymorphism | Benign. Ignore. |
+| 1-5% | Low-frequency variant | Almost certainly benign |
+| 0.1-1% | Uncommon | Probably benign, but check ClinVar |
+| 0.01-0.1% | Rare | Worth investigating if in a disease gene |
+| < 0.01% | Very rare | Potentially significant. Check ClinVar + literature |
+| Absent | Novel or ultra-rare | Could be significant OR a sequencing artifact. Verify with a second method |
+
+**If a variant is "pathogenic" in ClinVar but has gnomAD AF > 1%:** The ClinVar entry may be outdated or wrong. Truly pathogenic variants for severe diseases are almost always rare (< 0.1%) because natural selection removes them from the population.
+
 ### Filtering Strategy
 
 For finding potentially significant variants in the annotated VCF:
@@ -224,6 +300,37 @@ VEP classifies variant impact as:
 | MODIFIER | Intronic, intergenic, UTR | Usually non-functional |
 
 **Everyone has ~100-150 HIGH impact variants.** Most are in one copy (heterozygous) of non-essential genes. Don't panic at the number.
+
+### Quick Variant Filtering Recipes
+
+Copy-paste these commands to extract the most clinically relevant variants. All assume your VEP-annotated VCF is at `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`.
+
+```bash
+VEP_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf"
+
+# 1. Homozygous loss-of-function variants (most likely to cause disease)
+grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep "1/1" | head -20
+
+# 2. Rare HIGH-impact variants (gnomAD AF < 0.1%)
+#    These are the variants most likely to be clinically significant
+grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep -v "gnomADe_AF=0\.[0-9]" | head -20
+
+# 3. Compound heterozygous candidates: genes with 2+ heterozygous variants
+#    (potential autosomal recessive — needs manual curation)
+grep -v "^#" "$VEP_VCF" | grep "0/1" | grep -oP 'SYMBOL=[^;|]+' | \
+  sort | uniq -c | sort -rn | awk '$1 >= 2' | head -20
+
+# 4. Known ACMG actionable genes (59 genes recommended for return of results)
+#    Quick check if any HIGH/MODERATE variants land in these genes
+ACMG_GENES="BRCA1|BRCA2|MLH1|MSH2|MSH6|PMS2|APC|MUTYH|TP53|RB1|MEN1|RET|VHL|SDHB|SDHD|TSC1|TSC2|WT1|NF2|PTEN|STK11|BMPR1A|SMAD4|CDH1|PALB2|CHEK2|ATM|NBN|BARD1|RAD51C|RAD51D|BRIP1"
+grep -v "^#" "$VEP_VCF" | grep -E "HIGH|MODERATE" | grep -E "$ACMG_GENES" | head -20
+
+# 5. PharmCAT-relevant variants not caught by step 7
+#    (PharmCAT misses some alleles — check CYP2D6, DPYD, UGT1A1 manually)
+grep -v "^#" "$VEP_VCF" | grep -E "CYP2D6|CYP2C19|CYP2C9|DPYD|UGT1A1|SLCO1B1|TPMT|NUDT15" | head -20
+```
+
+**Important:** These are starting points, not definitive screens. Any interesting finding should be cross-referenced with ClinVar and ideally confirmed by a second method (Sanger sequencing or a clinical lab).
 
 ---
 
@@ -318,6 +425,33 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 3. **Read the CPSR HTML report** — it's designed for clinical interpretation and will highlight anything that needs attention
 4. **If you find something concerning:** Don't panic. Discuss with a genetic counselor. Many "pathogenic" variants have incomplete penetrance (not everyone with the variant gets the disease)
 5. **For carrier status findings:** Relevant mainly for family planning. If both partners carry the same recessive condition, each child has a 25% chance of being affected
+
+---
+
+## Re-running with Updated Databases
+
+Genomic databases are updated continuously. Variants classified as VUS today may be reclassified next year. Periodic re-analysis is one of the most valuable things you can do.
+
+### What to Update and When
+
+| Database | Update Frequency | Pipeline Steps Affected | How to Update |
+|---|---|---|---|
+| ClinVar | Weekly | Step 6 (ClinVar screen) | Re-download from NCBI FTP (see [00-reference-setup.md](00-reference-setup.md)) |
+| VEP cache | Every 6 months | Step 13 (VEP annotation) | Download new release from Ensembl FTP |
+| PCGR/CPSR data | Every 6-12 months | Step 17 (CPSR) | Download new bundle from PCGR GitHub releases |
+| PharmCAT | Every few months | Step 7 (pharmacogenomics) | Pull new Docker image (`docker pull pgkb/pharmcat:latest`) |
+
+### Recommended Re-analysis Schedule
+
+- **Every 6 months:** Re-run steps 6 (ClinVar) and 17 (CPSR) with updated databases. These are the fastest steps (~35 minutes total) and the most likely to have new classifications.
+- **Every 12 months:** Re-run step 13 (VEP) with updated cache for new gnomAD frequencies and consequence predictions.
+- **After major database releases:** ClinVar periodically reclassifies large batches of variants. Follow [@ClinVarUpdates](https://twitter.com/ClinVarUpdates) or check the NCBI blog for announcements.
+
+### What You Do NOT Need to Re-run
+
+- Steps 2-3 (alignment + variant calling): Your variants don't change. Only re-run if a major DeepVariant version is released with improved accuracy.
+- Steps 4, 18, 19 (SV callers): Structural variant calling is compute-intensive and results don't change with database updates.
+- Step 10 (telomere): Telomere content doesn't change with database updates.
 
 ---
 

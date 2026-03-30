@@ -327,11 +327,23 @@ No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enou
 **Q: My data is aligned to hg19/GRCh37. What do I?**
 Extract FASTQ from your BAM (`samtools fastq`) and re-align to GRCh38 using step 2. LiftOver is an alternative but introduces artifacts. Re-alignment is cleaner.
 
+**Q: I found a pathogenic variant. Should I be worried?**
+Probably not. Everyone carries 2-10 pathogenic variants, almost all heterozygous (one copy) for recessive conditions. This means you're a **carrier**, not affected. Only worry if: (1) the variant is in a **dominant** gene, (2) you have **two** pathogenic variants in the same recessive gene, or (3) it is in a cancer predisposition gene (BRCA1/2, MLH1, etc.). See [interpreting-results.md](docs/interpreting-results.md) for details.
+
+**Q: What are VUS? Should I worry about them?**
+VUS (Variants of Uncertain Significance) mean there is not enough evidence to classify the variant as pathogenic or benign. The majority will eventually be reclassified as benign. They are **not actionable** — do not change your medical care based on a VUS. Check back in 1-2 years with an updated ClinVar database.
+
+**Q: How often should I re-run the analysis?**
+ClinVar and other databases are updated monthly. Re-running the ClinVar screen (step 6, ~5 minutes) and CPSR (step 17, ~30 minutes) every 6-12 months with updated databases can catch newly classified variants. The compute-heavy steps (alignment, variant calling) do not need to be re-run unless you get new sequencing data.
+
 **Q: Is this clinically validated?**
 No. This is a research/educational pipeline. It uses the same tools as clinical labs (DeepVariant, VEP, ClinVar, PharmCAT) but has not been through clinical validation. Always discuss findings with a healthcare provider.
 
 **Q: What about long-read sequencing (Nanopore, PacBio)?**
 This pipeline is designed for short-read Illumina/BGI data. Long-read data requires different alignment (minimap2 with `-ax map-ont` or `pbmm2`) and variant calling tools (Clair3 for SNPs, Sniffles2 for SVs). A long-read branch may be added in the future.
+
+**Q: My vendor's download link expired. Can I still get my data?**
+It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com archives to cold storage (1-3 day retrieval). DNA Complete requires an active subscription. Novogene/BGI keep data for ~90 days. **Always download your raw data immediately.** See [docs/vendor-guide.md](docs/vendor-guide.md) for vendor-specific details.
 
 ---
 
