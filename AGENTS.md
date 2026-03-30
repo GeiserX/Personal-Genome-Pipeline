@@ -68,6 +68,8 @@ genomics-pipeline/
     interpreting-results.md    # Plain-language guide for non-experts
     multi-sample.md            # Comparing two or more samples (partners, family)
     glossary.md                # Alphabetical glossary of genomics terms
+    quick-test.md              # Verify setup with public test data
+    resources.md               # Free courses, databases, and learning resources
     troubleshooting.md         # Comprehensive troubleshooting by symptom
     lessons-learned.md         # Every failure and fix (KEEP UPDATED)
   scripts/

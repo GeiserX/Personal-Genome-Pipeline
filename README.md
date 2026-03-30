@@ -95,9 +95,18 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 
 ## Quick Start
 
-### Step 0: Validate Your Setup
+### Step 0: Quick Test (Optional)
 
-Before running anything, verify that all prerequisites are in place:
+Verify everything works on a small public dataset before committing to a full run:
+
+```bash
+# See docs/quick-test.md for full instructions
+# Tests VCF-only steps in under 5 minutes using GIAB NA12878 data
+```
+
+### Step 0.5: Validate Your Setup
+
+Before running on your own data, verify that all prerequisites are in place:
 
 ```bash
 export GENOME_DIR=/path/to/your/data
@@ -401,9 +410,16 @@ See [docs/lessons-learned.md](docs/lessons-learned.md) for every failure encount
 
 ---
 
+## Learn More
+
+- [docs/interpreting-results.md](docs/interpreting-results.md) — what your results mean, with examples
+- [docs/multi-sample.md](docs/multi-sample.md) — comparing two or more genomes (partners, family)
+- [docs/resources.md](docs/resources.md) — free courses, databases, and tools for learning genomics
+- [docs/quick-test.md](docs/quick-test.md) — verify your setup with public test data
+
 ## Contributing
 
-Found a bug? Have a tool suggestion? Open an issue or PR. The pipeline is designed to be extended -- each step is a standalone script with its own documentation.
+Found a bug? Have a tool suggestion? See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. The pipeline is designed to be extended -- each step is a standalone script with its own documentation.
 
 ## License
 
