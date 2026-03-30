@@ -142,19 +142,26 @@ bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
 PID_DELLY=$!
 
 # Wait for Manta before running duphold and AnnotSV
-wait "$PID_MANTA" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
-echo "  Manta complete. Running SV post-processing..."
+PID_DUPHOLD=""
+PID_ANNOTSV=""
+if wait "$PID_MANTA" 2>/dev/null; then
+  echo "  Manta complete. Running SV post-processing..."
 
-echo "  [B6] duphold SV quality annotation..."
-bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
-PID_DUPHOLD=$!
+  echo "  [B6] duphold SV quality annotation..."
+  bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
+  PID_DUPHOLD=$!
 
-echo "  [B7] AnnotSV structural variant annotation..."
-bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
-PID_ANNOTSV=$!
+  echo "  [B7] AnnotSV structural variant annotation..."
+  bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
+  PID_ANNOTSV=$!
+else
+  PHASE3_FAIL=$((PHASE3_FAIL + 1))
+  echo "  WARNING: Manta failed — skipping duphold and AnnotSV."
+fi
 
 # Wait for remaining Phase 3 jobs
 for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_DUPHOLD $PID_ANNOTSV; do
+  [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done
 

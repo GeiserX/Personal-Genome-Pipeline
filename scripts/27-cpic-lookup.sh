@@ -2,11 +2,12 @@
 # 27-cpic-lookup.sh — Look up CPIC drug-gene recommendations from PharmCAT results
 # Usage: ./scripts/27-cpic-lookup.sh <sample_name>
 #
-# Parses PharmCAT output to extract gene phenotypes, then queries the CPIC API
-# for actionable drug-gene recommendations. Produces a plain-text report of
-# medications that require dosing adjustments based on your pharmacogenomic profile.
+# Parses PharmCAT output to extract gene phenotypes, then looks up CPIC
+# drug-gene recommendations using a built-in static table. Produces a
+# plain-text report of medications that may require dosing adjustments
+# based on your pharmacogenomic profile.
 #
-# Requires: PharmCAT output from step 7, internet connection for CPIC API
+# Requires: PharmCAT output from step 7. No internet connection needed.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}

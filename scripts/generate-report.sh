@@ -136,7 +136,7 @@ HAPLO_FILE="${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt"
 if [ -f "$HAPLO_FILE" ]; then
   echo "## Mitochondrial Haplogroup"
   echo "---"
-  HAPLO=$(awk -F'\t' 'NR==2 {print $2}' "$HAPLO_FILE" 2>/dev/null || echo "N/A")
+  HAPLO=$(awk -F'\t' 'NR==2 {gsub(/"/, "", $2); print $2}' "$HAPLO_FILE" 2>/dev/null || echo "N/A")
   echo "  Haplogroup: ${HAPLO}"
   echo ""
 fi
@@ -210,7 +210,7 @@ echo "---"
 NOT_RUN=""
 [ ! -f "${SAMPLE_DIR}/vcf/${SAMPLE}.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - Variant Calling (step 3)\n"
 [ ! -d "${SAMPLE_DIR}/clinvar" ] && NOT_RUN="${NOT_RUN}  - ClinVar Screen (step 6)\n"
-! find "${SAMPLE_DIR}/vcf" "${SAMPLE_DIR}/pharmcat" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q . && NOT_RUN="${NOT_RUN}  - PharmCAT (step 7)\n"
+! { find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/dev/null; find "${SAMPLE_DIR}/pharmcat" -maxdepth 1 -name "*.report.html" 2>/dev/null; } | grep -q . && NOT_RUN="${NOT_RUN}  - PharmCAT (step 7)\n"
 [ ! -d "${SAMPLE_DIR}/manta" ] && NOT_RUN="${NOT_RUN}  - Manta SVs (step 4)\n"
 [ ! -d "${SAMPLE_DIR}/expansion_hunter" ] && NOT_RUN="${NOT_RUN}  - ExpansionHunter (step 9)\n"
 [ ! -d "${SAMPLE_DIR}/cpsr" ] && NOT_RUN="${NOT_RUN}  - CPSR (step 17)\n"

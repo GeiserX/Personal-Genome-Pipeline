@@ -106,7 +106,7 @@ fi
 # Step 12 writes to mito/ (not haplogrep/)
 HAPLOGROUP="N/A"
 if [ -f "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" ]; then
-  HAPLOGROUP=$(awk -F'\t' 'NR==2 {print $2}' "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" 2>/dev/null || echo "N/A")
+  HAPLOGROUP=$(awk -F'\t' 'NR==2 {gsub(/"/, "", $2); print $2}' "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" 2>/dev/null || echo "N/A")
 fi
 
 # --- Telomere ---

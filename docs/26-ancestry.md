@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Estimates your genetic ancestry by running principal component analysis (PCA) on your sample using common SNPs shared with the 1000 Genomes Project reference panel. The resulting principal components place you relative to global population clusters: European, African, East Asian, South Asian, and American (admixed).
+Runs principal component analysis (PCA) on your sample using common SNPs shared with the 1000 Genomes Project reference panel. Because this is single-sample PCA (not a joint projection with the 1000G cohort), the resulting PC values capture your genome's internal variance structure but are **not directly comparable** to published population cluster plots. See [Single-sample limitation](#single-sample-limitation) below for details.
 
 ## Why
 

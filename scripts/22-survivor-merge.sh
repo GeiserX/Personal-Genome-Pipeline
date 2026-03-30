@@ -153,7 +153,7 @@ docker run --rm --user root \
       caller=\$4;
       if(!(key in seen)) {
         seen[key]=caller;
-        line[key]=\$6\"\t\"\$7\"\t.\tN\t\"\$10\"\t.\tPASS\t\"\$14;
+        line[key]=\$6\"\t\"\$7\"\t.\tN\t\"\$10\"\t.\tPASS\t\"\$13;
       } else if(index(seen[key], caller) == 0) {
         seen[key]=seen[key]\"|\"caller;
       }
