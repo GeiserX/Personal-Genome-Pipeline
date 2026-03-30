@@ -549,6 +549,41 @@ No universal "normal" range — compare between samples of the same age, sequenc
 
 ---
 
+## Investigating Specific Variants
+
+Found something interesting? These free tools help you dig deeper:
+
+### Visual Inspection
+
+- **[IGV Web](https://igv.org/app/)** — Load your BAM file (or a region of it) to visually inspect read-level evidence for a variant. Essential for confirming structural variants and checking for sequencing artifacts.
+- **[gene.iobio](https://gene.iobio.io/)** — Clinically-driven variant interrogation tool. Load your VCF and BAM, search for specific genes, and see coverage, variant calls, and population frequency in one view.
+- **[UCSC Genome Browser](https://genome.ucsc.edu/)** — Search for any genomic coordinate to see the surrounding genes, conservation, regulatory elements, and known variants.
+
+### Database Lookups
+
+- **[ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/)** — Search by rsID, gene name, or genomic position. Check the review status (stars) and submission history.
+- **[gnomAD](https://gnomad.broadinstitute.org/)** — Search any variant to see its population frequency across ~216,000 individuals. If common in gnomAD, almost certainly benign.
+- **[OMIM](https://www.omim.org/)** — The definitive catalog of genetic disorders. Search by gene name to understand what conditions it causes and the inheritance pattern.
+- **[GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/)** — Expert-written disease descriptions for genetic conditions. The single best resource for understanding a specific genetic disease.
+
+---
+
+## Annotation Tool Disagreement
+
+An important caveat: **different annotation tools may classify the same variant differently**.
+
+VEP (used in step 13), SnpEff, and ANNOVAR are the three most common variant annotation tools. Studies have shown that they disagree on consequence predictions for ~5-10% of variants, particularly at splice sites and multi-transcript genes.
+
+**What this means for you:**
+- If VEP says a variant is "HIGH impact" but ClinVar says it is benign, **trust ClinVar** (human-reviewed evidence > computational prediction)
+- If VEP and ClinVar agree on pathogenicity, confidence is high
+- If you find a potentially significant variant using VEP that is NOT in ClinVar, search gnomAD for its population frequency before drawing conclusions
+- For the most important findings, consider running a second annotation tool as validation
+
+The pipeline uses VEP because it is the most widely used and well-maintained tool, with direct gnomAD frequency integration. But no single tool is perfect.
+
+---
+
 ## Important Caveats
 
 - **This is not a clinical diagnosis.** These tools use the same algorithms as clinical labs, but the pipeline has not been clinically validated.

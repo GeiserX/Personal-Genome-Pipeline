@@ -395,6 +395,58 @@ if [ -n "$SAMPLE" ]; then
       fi
     fi
 
+    # Validate genome build (GRCh38) if BAM or VCF exists
+    if $HAS_BAM && command -v docker >/dev/null 2>&1; then
+      echo ""
+      info "Checking genome build of BAM..."
+      BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/samtools:1.20 \
+        samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
+        grep "^@SQ" | grep "SN:chr1" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
+      if [ -z "$BAM_CHR1_LEN" ] || [ "$BAM_CHR1_LEN" = "0" ]; then
+        # Try without chr prefix (hg19 style)
+        BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/samtools:1.20 \
+          samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
+          grep "^@SQ" | grep "SN:1[[:space:]]" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
+        if [ -n "$BAM_CHR1_LEN" ] && [ "$BAM_CHR1_LEN" != "0" ]; then
+          fail "BAM uses chromosome names WITHOUT 'chr' prefix (hg19/GRCh37 style)"
+          echo "       This pipeline requires GRCh38 (hg38) with 'chr' prefix."
+          echo "       Extract FASTQ and re-align: samtools fastq -> step 2 (alignment)"
+          echo "       See docs/vendor-guide.md for build conversion instructions."
+        fi
+      elif [ "$BAM_CHR1_LEN" = "248956422" ]; then
+        pass "BAM genome build: GRCh38 (chr1 length = 248,956,422)"
+      elif [ "$BAM_CHR1_LEN" = "249250621" ]; then
+        fail "BAM genome build: GRCh37/hg19 (chr1 length = 249,250,621)"
+        echo "       This pipeline requires GRCh38. Re-align from FASTQ."
+      else
+        warn "BAM chr1 length (${BAM_CHR1_LEN}) does not match known builds"
+        echo "       Expected: 248956422 (GRCh38) or 249250621 (GRCh37)"
+      fi
+    fi
+
+    if $HAS_VCF && command -v docker >/dev/null 2>&1; then
+      VCF_CONTIG=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+        bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
+        grep "^##contig=<ID=chr1," | head -1 || echo "")
+      if [ -n "$VCF_CONTIG" ]; then
+        VCF_CHR1_LEN=$(echo "$VCF_CONTIG" | sed 's/.*length=//' | tr -d '>' || echo "0")
+        if [ "$VCF_CHR1_LEN" = "248956422" ]; then
+          pass "VCF genome build: GRCh38"
+        elif [ "$VCF_CHR1_LEN" = "249250621" ]; then
+          fail "VCF genome build: GRCh37/hg19 — not compatible with this pipeline"
+        fi
+      else
+        # Check for non-chr prefix
+        VCF_NO_CHR=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+          bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
+          grep "^##contig=<ID=1," | head -1 || echo "")
+        if [ -n "$VCF_NO_CHR" ]; then
+          fail "VCF uses chromosome names WITHOUT 'chr' prefix (likely GRCh37)"
+          echo "       This pipeline requires GRCh38 with 'chr' prefix."
+        fi
+      fi
+    fi
+
     # Suggest pipeline entry path
     echo ""
     if $HAS_ORA && ! $HAS_FASTQ && ! $HAS_BAM && ! $HAS_VCF; then
