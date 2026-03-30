@@ -90,7 +90,8 @@ docker run --rm --user root \
     --set-all-var-ids '@:#' \
     --new-id-max-allele-len 100 \
     --chr 1-22 \
-    --allow-extra-chr
+    --allow-extra-chr \
+    --output-chr chrM
 
 echo ""
 echo "[3/3] Calculating polygenic risk scores..."
@@ -130,7 +131,11 @@ for CONDITION in "${!PGS_IDS[@]}"; do
       if(chr!="" && pos!="" && ea!="" && ew!="") {
         # Add chr prefix if missing to match GRCh38 VCF contig names
         if(chr !~ /^chr/) chr="chr"chr;
-        printf "%s:%s\t%s\t%s\n", chr, pos, ea, ew;
+        key=chr":"pos"\t"ea;
+        if(!(key in seen)) {
+          seen[key]=1;
+          printf "%s:%s\t%s\t%s\n", chr, pos, ea, ew;
+        }
       }
     }' > "$FORMATTED" 2>/dev/null || true
 
@@ -149,12 +154,12 @@ for CONDITION in "${!PGS_IDS[@]}"; do
     plink2 \
       --pfile "/genome/${SAMPLE}/prs/${SAMPLE}" \
       --score "/genome/${SAMPLE}/prs/${PGS_ID}_formatted.tsv" 1 2 3 \
-        header-read \
         ignore-dup-ids \
         no-mean-imputation \
       --out "/genome/${SAMPLE}/prs/${PGS_ID}" \
       --threads 4 \
-      --memory 3000 2>/dev/null || true
+      --memory 3000 \
+      --allow-extra-chr 2>/dev/null || true
 
   # Extract score from .sscore file
   SSCORE="${OUTDIR}/${PGS_ID}.sscore"
