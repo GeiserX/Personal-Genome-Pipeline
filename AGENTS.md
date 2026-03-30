@@ -1,0 +1,111 @@
+# AGENTS.md — Genomics Pipeline
+
+Instructions for AI agents working on this repository.
+
+## Project Context
+
+This is a public, open-source WGS (Whole Genome Sequencing) analysis pipeline designed for consumer hardware. It must be:
+- **Generic**: No personal data, no hardcoded paths, no user-specific defaults
+- **Reproducible**: Every command must work on any Linux amd64 machine with Docker
+- **Well-documented**: Target audience includes non-bioinformaticians analyzing their own genome data
+
+## Critical Rules
+
+### No Personal Information
+- NEVER commit personal paths (e.g., `/data/`, server hostnames, IP addresses)
+- NEVER use specific sample names as defaults (use `your_name` or `$SAMPLE` placeholder)
+- All environment variables must require user to set them: `${VAR:?Set VAR to...}`
+- Docker mount point is always `:/genome` (not locale-specific)
+
+### Script Conventions
+- Shebang: `#!/usr/bin/env bash`
+- Error handling: `set -euo pipefail`
+- Parameters: `SAMPLE=${1:?Usage: $0 <sample_name>}`
+- Environment: `GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}`
+- Docker: always use `--cpus N --memory Xg` limits, `-v "${GENOME_DIR}:/genome"` mount, `--rm` flag
+- Add `--user root` when the container needs write access to bind mounts
+- Validate all input files exist before running Docker commands
+- Print clear status messages: step name, input files, output location
+
+### Documentation Conventions
+- Each pipeline step has a matching doc in `docs/XX-name.md` and script in `scripts/XX-name.sh`
+- Docs must include: What it does, Why, Tool name, Docker image, Command, Output, Runtime estimate, Notes
+- README.md step table must stay in sync with actual docs and scripts
+- All Docker images must include the exact tag (not just `:latest` unless no versioned tags exist)
+
+### Lessons Learned
+- **ALWAYS update `docs/lessons-learned.md`** when encountering a new failure, workaround, or non-obvious behavior
+- Include: what failed, why it failed, and the fix
+- This is the most valuable document for future users — every Docker image issue, permission error, path confusion, and tool quirk should be recorded here
+
+### Testing Changes
+- After modifying any script, verify:
+  1. No personal paths remain (`grep -r '/mnt/user\|internal-host\|sample1\|sample2' scripts/ docs/`)
+  2. All scripts use `GENOME_DIR` not `GENOMA_DIR`
+  3. Docker mount is `:/genome` not `:/genoma`
+  4. `shellcheck` passes on all scripts (if available)
+
+### Git Practices
+- Commit messages: descriptive, multi-line for large changes
+- Never force-push to main
+- Keep commits atomic: docs + scripts for the same feature in one commit
+
+## Architecture
+
+```
+genomics-pipeline/
+  README.md                    # Main entry point, pipeline overview, quick start
+  LICENSE                      # GPL-3.0
+  AGENTS.md                    # This file
+  .gitignore                   # Excludes BAM, VCF, tar.gz, etc.
+  docs/
+    00-reference-setup.md      # One-time reference data downloads
+    01-ora-to-fastq.md         # Step docs (one per pipeline step)
+    ...
+    20-mtoolbox.md
+    hardware-requirements.md   # Disk, RAM, CPU, runtime breakdown
+    vendor-guide.md            # Data formats from each WGS vendor
+    interpreting-results.md    # Plain-language guide for non-experts
+    lessons-learned.md         # Every failure and fix (KEEP UPDATED)
+  scripts/
+    01-ora-to-fastq.sh         # Step scripts (one per pipeline step)
+    ...
+    20-mtoolbox.sh
+    run-all.sh                 # Orchestrator: runs all steps with parallelism
+```
+
+## Data Flow
+
+```
+User's FASTQ/BAM/VCF
+  │
+  ├─ Step 2: minimap2 alignment (FASTQ → BAM)
+  ├─ Step 3: DeepVariant variant calling (BAM → VCF)
+  │
+  ├─ VCF-dependent steps: 6, 7, 9, 11, 12, 13, 14, 17
+  ├─ BAM-dependent steps: 4, 10, 15, 16, 18, 19, 20
+  └─ Both: 5 (needs Manta VCF from step 4)
+```
+
+## When Adding a New Step
+
+1. Create `docs/NN-tool-name.md` following the template of existing docs
+2. Create `scripts/NN-tool-name.sh` following the script conventions above
+3. Update `README.md` step table with the new step
+4. Update `scripts/run-all.sh` to include the new step in the appropriate phase
+5. Update `docs/00-reference-setup.md` if new reference data or Docker images are needed
+6. Update `docs/interpreting-results.md` if the output needs explanation
+7. Add the Docker image to the pre-pull list in `docs/00-reference-setup.md`
+8. Test on at least one sample before committing
+
+## Common Issues When Developing
+
+- **Docker image not found**: Biocontainer tags change frequently. Use `docker search` or check quay.io/biocontainers directly.
+- **Permission denied in container**: Add `--user root`. Most bioinformatics images run as non-root.
+- **0-byte output**: Usually means the input path was wrong inside the container. Double-check the `:/genome` mount mapping.
+- **PCGR/CPSR path confusion**: `--pcgr_dir` should point to the PARENT of `data/`, not `data/` itself. CPSR appends `/data` internally.
+- **VEP cache download**: Use `wget -c` (resume-capable), not VEP's `INSTALL.pl` which can't resume 26 GB downloads.
+
+## Audience Reminder
+
+Every decision should be evaluated through the lens of: "Would a non-bioinformatician who just received their WGS data be able to follow this?" If the answer is no, add more documentation, clearer error messages, or a simpler default.

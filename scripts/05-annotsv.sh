@@ -16,16 +16,23 @@ echo "=== AnnotSV: ${SAMPLE} ==="
 echo "Input: ${MANTA_VCF}"
 echo "Output: ${OUTPUT_DIR}/"
 
+if [ ! -f "$MANTA_VCF" ]; then
+  echo "ERROR: Manta VCF not found: ${MANTA_VCF}" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
-docker run --rm \
+# Determine relative path of Manta VCF within SAMPLE_DIR
+MANTA_REL=$(echo "$MANTA_VCF" | sed "s|${GENOME_DIR}/||")
+
+docker run --rm --user root \
   --cpus 4 --memory 8g \
-  -v "${SAMPLE_DIR}:/data" \
-  -v "${OUTPUT_DIR}:/output" \
+  -v "${GENOME_DIR}:/genome" \
   getwilds/annotsv:latest \
   AnnotSV \
-    -SVinputFile "/data/$(echo "$MANTA_VCF" | sed "s|${SAMPLE_DIR}/||")" \
-    -outputFile "/output/${SAMPLE}_sv_annotated.tsv" \
+    -SVinputFile "/genome/${MANTA_REL}" \
+    -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \
     -genomeBuild GRCh38 \
     -annotationMode both
 

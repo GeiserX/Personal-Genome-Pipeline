@@ -33,7 +33,7 @@ docker run --rm \
   sigven/pcgr:1.4.1 \
   cpsr \
     --input_vcf /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    --pcgr_dir /genome/pcgr_data/data \
+    --pcgr_dir /genome/pcgr_data \
     --output_dir /genome/${SAMPLE}/cpsr \
     --genome_assembly grch38 \
     --sample_id ${SAMPLE} \

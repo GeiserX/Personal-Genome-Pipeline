@@ -11,21 +11,33 @@ BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/telomere/${SAMPLE}"
 
 echo "=== TelomereHunter: ${SAMPLE} ==="
+echo "Input BAM: ${BAM}"
+echo "Output: ${OUTPUT_DIR}"
 echo "WARNING: This reads the entire BAM (~30-40GB). Takes 30-60 minutes."
+
+for f in "$BAM" "${BAM}.bai"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$OUTPUT_DIR"
 
 docker run --rm \
   --cpus 4 --memory 4g \
   --user root \
-  -v "${SAMPLE_DIR}/aligned:/bam" \
-  -v "${OUTPUT_DIR}:/output" \
+  -v "${GENOME_DIR}:/genome" \
   lgalarno/telomerehunter:latest \
-  telomerehunter -ibt "/bam/${SAMPLE}_sorted.bam" -o /output -p "$SAMPLE"
+  telomerehunter \
+    -ibt "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    -o "/genome/${SAMPLE}/telomere/${SAMPLE}" \
+    -p "$SAMPLE"
 
 echo "=== TelomereHunter complete ==="
-SUMMARY="${OUTPUT_DIR}/tumor_TelomerCnt_${SAMPLE}/${SAMPLE}_tumor_summary.tsv"
+SUMMARY="${OUTPUT_DIR}/${SAMPLE}/${SAMPLE}_summary.tsv"
 if [ -f "$SUMMARY" ]; then
   echo "Summary: $SUMMARY"
-  TEL_CONTENT=$(awk -F'\t' 'NR==2 {print $NF}' "$SUMMARY")
+  TEL_CONTENT=$(awk -F'\t' 'NR==2 {print $11}' "$SUMMARY")
   echo "Telomere content: ${TEL_CONTENT}"
 fi

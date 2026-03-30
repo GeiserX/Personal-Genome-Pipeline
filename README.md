@@ -1,6 +1,6 @@
 # Genomics Pipeline
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/runs%20with-Docker-0db7ed?logo=docker)](https://www.docker.com/)
 [![Platform](https://img.shields.io/badge/platform-linux%20amd64-lightgrey)]()
 [![GRCh38](https://img.shields.io/badge/genome-GRCh38%2Fhg38-green)]()
@@ -342,4 +342,4 @@ Found a bug? Have a tool suggestion? Open an issue or PR. The pipeline is design
 
 ## License
 
-MIT
+GPL-3.0 — see [LICENSE](LICENSE)

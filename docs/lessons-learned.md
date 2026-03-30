@@ -110,6 +110,17 @@ Always use `--rm` for analysis containers to avoid accumulating stopped containe
 ### Always use --user root for write access
 Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
+## CPSR/PCGR Issues
+
+### CPSR: --pcgr_dir path confusion
+- **Failed:** `cpsr --pcgr_dir /genome/pcgr_data/data` → "Data directory (/genome/pcgr_data/data/data) does not exist"
+- **Root cause:** CPSR internally appends `/data` to whatever `--pcgr_dir` you pass. If you point to the `data/` directory inside the extracted bundle, it looks for `data/data/`.
+- **Fix:** Point `--pcgr_dir` to the **parent** of the `data/` directory: `--pcgr_dir /genome/pcgr_data` (not `/genome/pcgr_data/data`)
+
+### CPSR: Docker image is inside PCGR
+- **Failed:** `sigven/cpsr:2.0.0` does not exist on Docker Hub
+- **Fix:** Use `sigven/pcgr:1.4.1` which bundles both `pcgr` and `cpsr` binaries at `/usr/local/bin/`
+
 ## Michigan Imputation Server Notes
 
 ### Minimum 20 samples per job
