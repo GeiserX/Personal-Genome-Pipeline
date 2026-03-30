@@ -9,7 +9,7 @@ Using multiple SV callers and intersecting their results dramatically reduces fa
 - **CNVnator** (step 18): Best for large CNVs via read-depth only
 - **Delly**: Most balanced — uses all three signal types, especially strong for inversions and translocations
 
-SVs called by 2+ callers are high-confidence. This consensus approach is standard in clinical WGS pipelines.
+SVs called by 2+ callers have lower false-positive rates than single-caller calls. Multi-caller intersection is a common strategy in WGS pipelines, though dedicated tools like SURVIVOR or Jasmine provide more precise breakpoint-aware merging than simple position overlap.
 
 ## Tool
 - **Delly** (Rausch et al., Bioinformatics 2012)

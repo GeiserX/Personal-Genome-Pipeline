@@ -213,20 +213,22 @@ else
   echo "  Post-processing complete."
 fi
 
+REPORT_FAIL=0
+
 echo "  [D7] HTML summary report..."
-bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || echo "  WARNING: HTML report generation failed. See ${POST_LOG}"
+bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
 echo ""
 echo "[Report] Generating summary report..."
-bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" 2>/dev/null || echo "  (report generation had warnings — check output manually)"
+bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" 2>/dev/null || { echo "  (report generation had warnings — check output manually)"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 PIPELINE_END=$(date +%s)
 ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
-TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL))
+TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
 
 echo ""
 echo "============================================"

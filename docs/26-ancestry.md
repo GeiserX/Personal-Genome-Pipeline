@@ -11,7 +11,7 @@ Knowing your genetic ancestry is useful for two practical reasons:
 1. **PRS interpretation**: Polygenic risk scores (step 25) are ancestry-dependent. Knowing where you fall on the ancestry spectrum helps contextualize your scores.
 2. **Variant filtering**: Some variants are common in one population but rare in another. Ancestry helps distinguish benign population-specific variants from truly rare findings.
 
-It is also just interesting to see where your genome places you on the global genetic map.
+Note: This step produces single-sample PCA, which is a starting point but cannot place you on a population map without joint analysis. See [Interpreting Results](#interpreting-results) for details.
 
 ## Tool
 
@@ -62,28 +62,22 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. Reference data is 
 
 ## Interpreting Results
 
-The `eigenvec` file contains your sample's coordinates on 10 principal components. The first few PCs capture the major axes of human genetic variation:
-
-| PC | What it separates |
-|---|---|
-| PC1 | African vs non-African ancestry |
-| PC2 | European vs East Asian ancestry |
-| PC3 | South Asian ancestry |
-| PC4+ | Finer-grained population structure |
+The `eigenvec` file contains your sample's coordinates on 10 principal components. The `eigenval` file shows how much variance each PC explains.
 
 ### Single-sample limitation
 
-This script runs PCA on your sample alone, not jointly with the 1000G reference panel. The absolute PC values from a single-sample PCA are **not directly comparable** to published 1000G PCA plots. To properly place yourself on the global ancestry map, you would need to:
+This script runs PCA on **your sample alone**, not jointly with the 1000G reference panel. This is a fundamental limitation: in population-structure PCA (Price et al. 2006), the PC axes are defined by the variance across many individuals. With a single sample, the axes instead capture internal genotype variance (e.g., heterozygosity patterns), which does not map onto population-level structure.
 
-1. Merge your sample with the 1000G genotype data
-2. Run joint PCA on the combined dataset
-3. Plot your sample against the 1000G population clusters
+The PC values from this step are **not comparable** to published 1000G PCA plots, where PC1 separates African from non-African ancestry and PC2 separates European from East Asian. Those axis interpretations require joint PCA across a multi-population cohort.
 
-This pipeline does not perform the joint PCA step (it would require downloading the full 1000G genotype files, roughly 30-50 GB). The single-sample PCA still provides useful information about how much of your genome's variation is captured by each axis.
+To properly place yourself on a population map, you would need to:
 
-### What to expect
+1. Download the full 1000G genotype data (~30-50 GB)
+2. Merge your sample with the 1000G samples
+3. Run joint PCA on the combined dataset
+4. Plot your sample against the 1000G population clusters
 
-Because this is single-sample PCA, the absolute PC values do not correspond to positions on a 1000G population plot. The eigenvalues indicate how much of your genome's total SNP variation is captured by each axis, but they cannot tell you which population cluster you fall into without a joint projection. To get population-placement results, you would need to run joint PCA with the full 1000G genotype data (see the limitation section above).
+This pipeline does not perform joint PCA. The single-sample output is included as a starting point for users who want to extend it with their own reference panel.
 
 ## Limitations
 

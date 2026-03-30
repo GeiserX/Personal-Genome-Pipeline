@@ -94,6 +94,6 @@ awk '$5 < 0.01 && $3 > 1000' ${SAMPLE}_cnvs.txt
 
 ## Notes
 - Run AFTER alignment (step 2). Independent of Manta — can run in parallel.
-- CNVnator and Manta overlap on ~60-70% of true CNVs. Variants called by both are high-confidence.
+- CNVnator and Manta overlap on ~60-70% of true CNVs. Variants called by both have lower false-positive rates than single-caller calls.
 - The ROOT file format is from CERN's ROOT framework — the Docker image includes all dependencies.
 - For maximum sensitivity, intersect CNVnator calls with Manta and Delly (step 19) for a consensus call set.
