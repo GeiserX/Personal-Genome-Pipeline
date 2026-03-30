@@ -170,11 +170,14 @@ docker run --rm --user root \
     }' /genome/${SAMPLE}/sv_merged/all_sv_tagged.tsv | \
       sort -k1,1V -k2,2n > /genome/${SAMPLE}/sv_merged/consensus_raw.txt
 
-    # Step C: Build a valid VCF
+    # Step C: Build a valid VCF with contig headers
     {
       echo '##fileformat=VCFv4.2'
       echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"SV type\">'
       echo '##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">'
+      if [ -f /genome/reference/Homo_sapiens_assembly38.fasta.fai ]; then
+        awk '{printf \"##contig=<ID=%s,length=%s>\\n\", \$1, \$2}' /genome/reference/Homo_sapiens_assembly38.fasta.fai
+      fi
       printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
       cat /genome/${SAMPLE}/sv_merged/consensus_raw.txt
     } > /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf
