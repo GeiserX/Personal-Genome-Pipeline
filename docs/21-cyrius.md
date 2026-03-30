@@ -1,12 +1,14 @@
 # Step 21: CYP2D6 Star Allele Calling with Cyrius
 
+> **EXPERIMENTAL:** Cyrius is installed via pip at runtime inside a generic Python container, which is fragile (network dependency, version drift). Results should be cross-referenced with PharmCAT's CYP2D6 call.
+
 ## What This Does
 
-Calls CYP2D6 star alleles (diplotypes) from your WGS BAM using Illumina's Cyrius tool. CYP2D6 is the single most important pharmacogene -- it metabolizes roughly 25% of clinically used drugs -- but its highly homologous pseudogene (CYP2D7) and frequent structural rearrangements (deletions, duplications, gene-pseudogene hybrids) make it extremely difficult to genotype from short reads.
+Calls CYP2D6 star alleles (diplotypes) from your WGS BAM using Illumina's Cyrius tool. CYP2D6 is the single most important pharmacogene — it metabolizes roughly 25% of clinically used drugs — but its highly homologous pseudogene (CYP2D7) and frequent structural rearrangements (deletions, duplications, gene-pseudogene hybrids) make it extremely difficult to genotype from short reads.
 
 ## Why
 
-PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calling is limited for WGS data. Cyrius was purpose-built by Illumina to resolve CYP2D6 using read-depth patterns across the CYP2D6/CYP2D7 region. Running Cyrius separately gives you a high-confidence CYP2D6 diplotype that you can cross-reference with PharmCAT's results.
+PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calling is limited for WGS data. Cyrius was purpose-built by Illumina to resolve CYP2D6 using read-depth patterns across the CYP2D6/CYP2D7 region. Running Cyrius separately gives you a CYP2D6 diplotype that you can cross-reference with PharmCAT's results.
 
 ## Tool
 
@@ -78,12 +80,12 @@ Codeine, tramadol, oxycodone, tamoxifen, ondansetron, atomoxetine, most tricycli
 
 - Cyrius works best with 30X+ WGS data. Lower coverage may produce uncertain calls.
 - Rare hybrid alleles (e.g., *36, *68) may not be resolved.
-- The pip-install-at-runtime approach adds startup time. If you run this frequently, consider building a custom Docker image with Cyrius pre-installed.
+- The pip-install-at-runtime approach adds startup time and requires internet. If you run this frequently, consider building a custom Docker image with Cyrius pre-installed.
 - Cyrius only calls CYP2D6. For other pharmacogenes, rely on PharmCAT (step 7).
 
 ## Notes
 
-- The script runs two docker invocations because the manifest file must be created inside the container. Only the second invocation actually produces results.
+- The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation.
 - Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call. If they disagree, Cyrius is generally more reliable for WGS data.
 - Feed the Cyrius result into CPIC lookups (step 27) for actionable drug recommendations.
 

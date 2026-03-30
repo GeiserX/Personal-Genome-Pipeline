@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Estimates your genetic ancestry by running principal component analysis (PCA) on your sample using common SNPs shared with the 1000 Genomes Project reference panel. The resulting principal components place you relative to global population clusters: European, African, East Asian, South Asian, and American (admixed).
+Runs principal component analysis (PCA) on your sample using common SNPs shared with the 1000 Genomes Project reference panel. Because this is single-sample PCA (not a joint projection with the 1000G cohort), the resulting PC values capture your genome's internal variance structure but are **not directly comparable** to published population cluster plots. See [Single-sample limitation](#single-sample-limitation) below for details.
 
 ## Why
 
@@ -11,7 +11,7 @@ Knowing your genetic ancestry is useful for two practical reasons:
 1. **PRS interpretation**: Polygenic risk scores (step 25) are ancestry-dependent. Knowing where you fall on the ancestry spectrum helps contextualize your scores.
 2. **Variant filtering**: Some variants are common in one population but rare in another. Ancestry helps distinguish benign population-specific variants from truly rare findings.
 
-It is also just interesting to see where your genome places you on the global genetic map.
+Note: This step produces single-sample PCA, which is a starting point but cannot place you on a population map without joint analysis. See [Interpreting Results](#interpreting-results) for details.
 
 ## Tool
 
@@ -62,31 +62,22 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. Reference data is 
 
 ## Interpreting Results
 
-The `eigenvec` file contains your sample's coordinates on 10 principal components. The first few PCs capture the major axes of human genetic variation:
-
-| PC | What it separates |
-|---|---|
-| PC1 | African vs non-African ancestry |
-| PC2 | European vs East Asian ancestry |
-| PC3 | South Asian ancestry |
-| PC4+ | Finer-grained population structure |
+The `eigenvec` file contains your sample's coordinates on 10 principal components. The `eigenval` file shows how much variance each PC explains.
 
 ### Single-sample limitation
 
-This script runs PCA on your sample alone, not jointly with the 1000G reference panel. The absolute PC values from a single-sample PCA are **not directly comparable** to published 1000G PCA plots. To properly place yourself on the global ancestry map, you would need to:
+This script runs PCA on **your sample alone**, not jointly with the 1000G reference panel. This is a fundamental limitation: in population-structure PCA (Price et al. 2006), the PC axes are defined by the variance across many individuals. With a single sample, the axes instead capture internal genotype variance (e.g., heterozygosity patterns), which does not map onto population-level structure.
 
-1. Merge your sample with the 1000G genotype data
-2. Run joint PCA on the combined dataset
-3. Plot your sample against the 1000G population clusters
+The PC values from this step are **not comparable** to published 1000G PCA plots, where PC1 separates African from non-African ancestry and PC2 separates European from East Asian. Those axis interpretations require joint PCA across a multi-population cohort.
 
-This pipeline does not perform the joint PCA step (it would require downloading the full 1000G genotype files, roughly 30-50 GB). The single-sample PCA still provides useful information about how much of your genome's variation is captured by each axis.
+To properly place yourself on a population map, you would need to:
 
-### What to expect
+1. Download the full 1000G genotype data (~30-50 GB)
+2. Merge your sample with the 1000G samples
+3. Run joint PCA on the combined dataset
+4. Plot your sample against the 1000G population clusters
 
-For a Southern European individual, you would typically see:
-- PC1 near the European cluster (far from African values)
-- PC2 between Northern European and Mediterranean values
-- PC3 distant from the South Asian cluster
+This pipeline does not perform joint PCA. The single-sample output is included as a starting point for users who want to extend it with their own reference panel.
 
 ## Limitations
 
@@ -99,7 +90,7 @@ For a Southern European individual, you would typically see:
 
 - Reference data (1000G SNPs and population labels) is downloaded once and cached in `${GENOME_DIR}/ancestry_ref/`. Delete this directory to force re-download.
 - LD pruning parameters (window=50, step=5, r2=0.2) are standard for ancestry PCA.
-- The 10 PCs computed cover the vast majority of population-level genetic variation. More PCs rarely add meaningful signal.
+- 10 PCs are computed by default. For single-sample PCA this is more than sufficient; additional PCs would not add interpretable signal without a reference cohort.
 - For a more complete ancestry analysis, consider uploading your VCF to tools like [Gnomix](https://github.com/AI-sandbox/gnomix) or using the PLINK `--admixture` approach.
 
 ## Links

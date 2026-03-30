@@ -179,7 +179,7 @@ docker run --rm --user root \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bash -c "bcftools concat -a \
+  bash -c "bcftools concat -a -D \
     ${MERGE_FILES} | \
     bcftools sort -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"

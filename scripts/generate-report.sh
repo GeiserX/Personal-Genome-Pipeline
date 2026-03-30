@@ -59,19 +59,22 @@ if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
 fi
 
 # ---------- PharmCAT (Step 7) ----------
-PHARMCAT_DIR="${SAMPLE_DIR}/pharmcat"
-if [ -d "$PHARMCAT_DIR" ]; then
-  REPORT_JSON=$(find "$PHARMCAT_DIR" -name "*.report.json" 2>/dev/null | head -1)
-  if [ -n "$REPORT_JSON" ]; then
-    echo "## Pharmacogenomics (PharmCAT)"
-    echo "---"
-    echo "  Report: $(basename "$REPORT_JSON")"
-    HTML=$(find "$PHARMCAT_DIR" -name "*.report.html" 2>/dev/null | head -1)
-    if [ -n "$HTML" ]; then
-      echo "  HTML report: $(basename "$HTML") (open in browser for full details)"
-    fi
-    echo ""
+# PharmCAT writes reports alongside the VCF in vcf/
+PHARMCAT_REPORT=""
+for DIR in "${SAMPLE_DIR}/vcf" "${SAMPLE_DIR}/pharmcat"; do
+  [ -d "$DIR" ] || continue
+  PHARMCAT_REPORT=$(find "$DIR" -maxdepth 1 -name "*.report.json" 2>/dev/null | head -1)
+  [ -n "$PHARMCAT_REPORT" ] && break
+done
+if [ -n "$PHARMCAT_REPORT" ]; then
+  echo "## Pharmacogenomics (PharmCAT)"
+  echo "---"
+  echo "  Report: $(basename "$PHARMCAT_REPORT")"
+  PHARMCAT_HTML=$(find "$(dirname "$PHARMCAT_REPORT")" -maxdepth 1 -name "*.report.html" 2>/dev/null | head -1)
+  if [ -n "$PHARMCAT_HTML" ]; then
+    echo "  HTML report: $(basename "$PHARMCAT_HTML") (open in browser for full details)"
   fi
+  echo ""
 fi
 
 # ---------- Manta SVs (Step 4) ----------
@@ -109,7 +112,7 @@ if [ -d "$TEL_DIR" ]; then
   if [ -n "$SUMMARY" ]; then
     echo "## Telomere Length (TelomereHunter)"
     echo "---"
-    TEL_CONTENT=$(awk -F'\t' 'NR==2 {print $2}' "$SUMMARY" 2>/dev/null || echo "N/A")
+    TEL_CONTENT=$(awk -F'\t' 'NR==2 {print $11}' "$SUMMARY" 2>/dev/null || echo "N/A")
     echo "  Telomere content: ${TEL_CONTENT}"
     echo ""
   fi
@@ -133,7 +136,7 @@ HAPLO_FILE="${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt"
 if [ -f "$HAPLO_FILE" ]; then
   echo "## Mitochondrial Haplogroup"
   echo "---"
-  HAPLO=$(cat "$HAPLO_FILE" 2>/dev/null || echo "N/A")
+  HAPLO=$(awk -F'\t' 'NR==2 {gsub(/"/, "", $2); print $2}' "$HAPLO_FILE" 2>/dev/null || echo "N/A")
   echo "  Haplogroup: ${HAPLO}"
   echo ""
 fi
@@ -207,7 +210,7 @@ echo "---"
 NOT_RUN=""
 [ ! -f "${SAMPLE_DIR}/vcf/${SAMPLE}.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - Variant Calling (step 3)\n"
 [ ! -d "${SAMPLE_DIR}/clinvar" ] && NOT_RUN="${NOT_RUN}  - ClinVar Screen (step 6)\n"
-[ ! -d "${SAMPLE_DIR}/pharmcat" ] && NOT_RUN="${NOT_RUN}  - PharmCAT (step 7)\n"
+PHARMCAT_FOUND=0; find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q . && PHARMCAT_FOUND=1; find "${SAMPLE_DIR}/pharmcat" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q . && PHARMCAT_FOUND=1; [ "$PHARMCAT_FOUND" -eq 0 ] && NOT_RUN="${NOT_RUN}  - PharmCAT (step 7)\n"
 [ ! -d "${SAMPLE_DIR}/manta" ] && NOT_RUN="${NOT_RUN}  - Manta SVs (step 4)\n"
 [ ! -d "${SAMPLE_DIR}/expansion_hunter" ] && NOT_RUN="${NOT_RUN}  - ExpansionHunter (step 9)\n"
 [ ! -d "${SAMPLE_DIR}/cpsr" ] && NOT_RUN="${NOT_RUN}  - CPSR (step 17)\n"

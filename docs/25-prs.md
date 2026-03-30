@@ -47,7 +47,7 @@ pgscatalog/plink2:2.00a5.10
 ## What the Script Does Internally
 
 1. Downloads GRCh38-harmonized scoring files from the PGS Catalog FTP (one-time, cached in `${GENOME_DIR}/prs_scores/`)
-2. Converts your VCF to plink2 binary format (pgen/pvar/psam), assigning variant IDs in `chr:pos:ref:alt` format
+2. Converts your VCF to plink2 binary format (pgen/pvar/psam), assigning variant IDs in `chr:pos` format (matching PGS Catalog convention)
 3. For each scoring file, reformats the PGS Catalog columns (chromosome, position, effect allele, weight) into plink2's `--score` input format
 4. Runs `plink2 --score` for each condition, producing a `.sscore` file with the aggregate score and the number of variants matched
 5. Collects all results into a summary TSV

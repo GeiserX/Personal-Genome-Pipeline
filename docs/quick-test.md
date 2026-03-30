@@ -63,8 +63,8 @@ docker run --rm --user root \
 # Should see ClinVar hits
 ls -la ${GENOME_DIR}/${SAMPLE}/clinvar/
 
-# Should see PharmCAT HTML report
-ls -la ${GENOME_DIR}/${SAMPLE}/pharmcat/*.html
+# Should see PharmCAT HTML report (written alongside VCF)
+ls -la ${GENOME_DIR}/${SAMPLE}/vcf/*.report.html
 
 # Should see ROH output
 ls -la ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt

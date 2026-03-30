@@ -54,10 +54,11 @@ if [ -d "${SAMPLE_DIR}/clinvar/isec" ]; then
 fi
 
 # --- PharmCAT ---
+# Step 7 writes to vcf/ (PharmCAT outputs alongside the VCF)
 PHARMCAT_STATUS="Not run"
-if find "${SAMPLE_DIR}/pharmcat" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q .; then
+if find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q .; then
   PHARMCAT_STATUS="Complete"
-elif find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q .; then
+elif find "${SAMPLE_DIR}/pharmcat" -maxdepth 1 -name "*.report.html" 2>/dev/null | grep -q .; then
   PHARMCAT_STATUS="Complete"
 fi
 
@@ -67,10 +68,10 @@ EH_DETAILS=""
 EH_FILE=$(find "${SAMPLE_DIR}/expansion_hunter" -maxdepth 1 -name "*_eh.vcf" 2>/dev/null | head -1)
 if [ -n "$EH_FILE" ] && [ -f "$EH_FILE" ]; then
   EH_STATUS="Complete"
-  # Check key loci
-  for LOCUS in HTT FMR1 C9orf72 ATXN1 DMPK; do
+  # Check key loci — REPCN (repeat copy number) is FORMAT field 3 (GT:SO:REPCN:...)
+  for LOCUS in HTT FMR1 C9ORF72 ATXN1 DMPK; do
     REPEAT=$(grep -w "$LOCUS" "$EH_FILE" 2>/dev/null | head -1 | \
-      awk -F'\t' '{split($10,a,":"); print a[5]}' || echo "N/A")
+      awk -F'\t' '{split($10,a,":"); print a[3]}' || echo "N/A")
     EH_DETAILS="${EH_DETAILS}<tr><td>${LOCUS}</td><td>${REPEAT:-N/A}</td></tr>"
   done
 fi
@@ -102,16 +103,19 @@ if [ -f "${SAMPLE_DIR}/vcf/${SAMPLE}_roh.txt" ]; then
 fi
 
 # --- Haplogroup ---
+# Step 12 writes to mito/ (not haplogrep/)
 HAPLOGROUP="N/A"
-if [ -f "${SAMPLE_DIR}/haplogrep/${SAMPLE}_haplogroup.txt" ]; then
-  HAPLOGROUP=$(awk -F'\t' 'NR==2 {print $2}' "${SAMPLE_DIR}/haplogrep/${SAMPLE}_haplogroup.txt" 2>/dev/null || echo "N/A")
+if [ -f "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" ]; then
+  HAPLOGROUP=$(awk -F'\t' 'NR==2 {gsub(/"/, "", $2); print $2}' "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" 2>/dev/null || echo "N/A")
 fi
 
 # --- Telomere ---
+# Step 10 writes to telomere/${SAMPLE}/${SAMPLE}/${SAMPLE}_summary.tsv
+# tel_content (GC-corrected telomeric reads per million) is column 11
 TELOMERE="N/A"
-TEL_FILE=$(find "${SAMPLE_DIR}" -path "*/telomerehunter/*_summary.tsv" 2>/dev/null | head -1)
-if [ -n "$TEL_FILE" ] && [ -f "$TEL_FILE" ]; then
-  TELOMERE=$(awk -F'\t' 'NR==2 {print $2}' "$TEL_FILE" 2>/dev/null || echo "N/A")
+TEL_FILE="${SAMPLE_DIR}/telomere/${SAMPLE}/${SAMPLE}/${SAMPLE}_summary.tsv"
+if [ -f "$TEL_FILE" ]; then
+  TELOMERE=$(awk -F'\t' 'NR==2 {print $11}' "$TEL_FILE" 2>/dev/null || echo "N/A")
 fi
 
 # --- Clinical filter ---
@@ -127,15 +131,17 @@ if [ -f "${SAMPLE_DIR}/clinical/${SAMPLE}_high_impact.vcf.gz" ]; then
 fi
 
 # --- Mitochondrial ---
+# Step 20 writes to mito/ (not mtoolbox/). Heteroplasmy is detected via AF field, not GT.
 MITO_PASS="N/A"
 MITO_HETERO="N/A"
-MITO_FILE="${SAMPLE_DIR}/mtoolbox/${SAMPLE}_chrM_filtered.vcf.gz"
+MITO_FILE="${SAMPLE_DIR}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
 if [ -f "$MITO_FILE" ]; then
   MITO_PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS -H "/genome/${SAMPLE}/mtoolbox/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
+    bcftools view -f PASS -H "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
+  # Heteroplasmic = AF < 0.95 (not homoplasmic)
   MITO_HETERO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS -H "/genome/${SAMPLE}/mtoolbox/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
-    awk -F'\t' '{split($10,a,":"); if(a[1]=="0/1") c++} END {print c+0}' || echo "N/A")
+    bcftools query -f '[%AF]\n' -i 'FILTER="PASS"' "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
+    awk '{if($1+0 < 0.95) c++} END {print c+0}' || echo "N/A")
 fi
 
 # --- CNVnator ---

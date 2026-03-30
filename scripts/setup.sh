@@ -124,16 +124,28 @@ else
       "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi"
   fi
 
-  # Create pathogenic-only subset for step 6
-  CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
-  if [ ! -f "$CLINVAR_PATH" ]; then
-    echo "Creating pathogenic variant subset..."
+  # Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
+  CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
+  if [ ! -f "$CLINVAR_CHR" ]; then
+    echo "Creating chr-prefixed ClinVar..."
     docker run --rm --user root \
       -v "${GENOME_DIR}:/genome" \
       staphb/bcftools:1.21 \
-      bash -c "bcftools view -i 'CLNSIG~\"Pathogenic\"' /genome/clinvar/clinvar.vcf.gz -Oz \
-        -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz && \
-        bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz"
+      bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
+        bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz &&
+        bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz'
+  fi
+
+  # Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
+  CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
+  if [ ! -f "$CLINVAR_PATH" ]; then
+    echo "Creating pathogenic/likely pathogenic subset..."
+    docker run --rm --user root \
+      -v "${GENOME_DIR}:/genome" \
+      staphb/bcftools:1.21 \
+      bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
+        -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
+        bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
   fi
   echo "[OK] ClinVar database downloaded and indexed."
 fi
@@ -151,17 +163,19 @@ IMAGES=(
   "quay.io/biocontainers/manta:1.6.0--h9ee0642_2"
   "getwilds/annotsv:latest"
   "pgkb/pharmcat:2.15.5"
-  "quay.io/biocontainers/t1k:1.0.9--h4ac6f70_0"
+  "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"
   "weisburd/expansionhunter:latest"
   "lgalarno/telomerehunter:latest"
-  "genepi/haplogrep3:v3.2.1"
+  "genepi/haplogrep3:latest"
   "ensemblorg/ensembl-vep:release_112.0"
   "sigven/pcgr:1.4.1"
   "brentp/duphold:latest"
-  "quay.io/biocontainers/goleft:0.2.4--0"
+  "quay.io/biocontainers/goleft:0.2.4--h9ee0642_1"
   "quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11"
   "quay.io/biocontainers/delly:1.7.3--hd6466ae_0"
   "broadinstitute/gatk:4.6.1.0"
+  "python:3.11-slim"
+  "pgscatalog/plink2:2.00a5.10"
 )
 
 PULLED=0

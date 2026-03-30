@@ -41,7 +41,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | ClinVar VCF + index | ~200 MB | ~200 MB | Updated monthly |
 | VEP cache (Ensembl 112) | ~22 GB | ~30 GB | Largest single download |
 | PCGR/CPSR data bundle | ~21 GB | ~30 GB | ClinVar + gnomAD + panels |
-| Docker images (all 20 steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
+| Docker images (all 27 steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
 | **Subtotal (shared)** | **~55 GB** | **~80 GB** | |
 
 ### Total Disk Requirements
