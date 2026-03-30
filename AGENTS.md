@@ -66,6 +66,8 @@ genomics-pipeline/
     hardware-requirements.md   # Disk, RAM, CPU, runtime breakdown
     vendor-guide.md            # Data formats from each WGS vendor
     interpreting-results.md    # Plain-language guide for non-experts
+    multi-sample.md            # Comparing two or more samples (partners, family)
+    glossary.md                # Alphabetical glossary of genomics terms
     troubleshooting.md         # Comprehensive troubleshooting by symptom
     lessons-learned.md         # Every failure and fix (KEEP UPDATED)
   scripts/

@@ -455,6 +455,100 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 
 ---
 
+## Example Outputs: What Correct Results Look Like
+
+Sanitized examples from a real 30X WGS run, so you know what to expect.
+
+### Variant Calling (Step 3)
+
+```
+bcftools stats output:
+SN  0  number of samples:     1
+SN  0  number of records:     5560412
+SN  0  number of SNPs:        4198753
+SN  0  number of indels:      1361659
+SN  0  number of multiallelic sites:  45231
+
+# PASS variants only: 4,650,000-4,700,000
+# Ti/Tv ratio: 2.05-2.10 (if < 1.8, something is wrong)
+```
+
+### ClinVar Screen (Step 6)
+
+```
+Pathogenic/Likely Pathogenic hits: 4
+
+  chr2:47637270 T>C (rs80338939)      — GJB2 carrier (hearing loss, recessive)
+  chr1:45331175 G>A (rs36053993)      — MUTYH carrier (CRC risk, recessive)
+  chr10:124774641 C>T (rs28936670)    — ACADSB carrier (metabolic, recessive)
+```
+
+All heterozygous (0/1) = carrier status only. This is a completely normal result.
+
+### PharmCAT (Step 7)
+
+The HTML report will show a table like:
+
+```
+Gene        Diplotype           Phenotype              Affected Drugs
+CYP2C19    *1/*17              Rapid Metabolizer       PPIs, SSRIs, clopidogrel
+CYP2C9     *1/*1               Normal Metabolizer      Warfarin, NSAIDs
+NAT2       *5/*6               Slow Acetylator         Isoniazid, caffeine
+DPYD       *1/*1               Normal Metabolizer      5-FU (safe at standard dose)
+SLCO1B1    *1a/*1a             Normal Function         Statins (standard dosing)
+```
+
+Typically 18-21 of 23 genes will have confident calls. CYP2D6 may be "Inconclusive" from short-read WGS (known limitation).
+
+### ExpansionHunter (Step 9)
+
+```json
+{
+  "LocusResults": {
+    "HTT": { "Genotype": "17/19" },
+    "FMR1": { "Genotype": "29" },
+    "C9orf72": { "Genotype": "2/3" },
+    "ATXN1": { "Genotype": "29/29" },
+    "DMPK": { "Genotype": "12/13" }
+  }
+}
+```
+
+All values well below disease thresholds = ALL CLEAR.
+
+### CPSR (Step 17)
+
+The HTML report tier summary:
+
+```
+Tier 1 (Pathogenic/Likely pathogenic):    0 variants
+Tier 2 (VUS with evidence):              3 variants
+Tier 3 (VUS limited evidence):           21 variants
+Tier 4 (Likely benign/Benign):           ~53,000 variants
+```
+
+Zero Tier 1 = ALL CLEAR for cancer predisposition. The VUS count varies widely (20-200+) and is not cause for concern.
+
+### ROH (Step 11)
+
+```
+# Autosomal ROH > 5 MB: 0
+# Total autosomal ROH: 47.3 MB (all segments < 3 MB)
+# Conclusion: No evidence of parental relatedness
+```
+
+Normal outbred individual. If total ROH > 100 MB or any segment > 10 MB, investigate further.
+
+### Telomere Length (Step 10)
+
+```
+tel_content: 553.52
+```
+
+No universal "normal" range — compare between samples of the same age, sequenced on the same platform.
+
+---
+
 ## Important Caveats
 
 - **This is not a clinical diagnosis.** These tools use the same algorithms as clinical labs, but the pipeline has not been clinically validated.

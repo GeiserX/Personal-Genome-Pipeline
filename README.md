@@ -307,6 +307,7 @@ ${GENOME_DIR}/
 For detailed solutions, see:
 - [docs/troubleshooting.md](docs/troubleshooting.md) — comprehensive troubleshooting guide organized by symptom
 - [docs/lessons-learned.md](docs/lessons-learned.md) — every failure encountered during development
+- [docs/glossary.md](docs/glossary.md) — alphabetical glossary of genomics terms
 
 ---
 
@@ -335,6 +336,9 @@ VUS (Variants of Uncertain Significance) mean there is not enough evidence to cl
 
 **Q: How often should I re-run the analysis?**
 ClinVar and other databases are updated monthly. Re-running the ClinVar screen (step 6, ~5 minutes) and CPSR (step 17, ~30 minutes) every 6-12 months with updated databases can catch newly classified variants. The compute-heavy steps (alignment, variant calling) do not need to be re-run unless you get new sequencing data.
+
+**Q: I ran the pipeline on two people (me and my partner). How do I compare?**
+See [docs/multi-sample.md](docs/multi-sample.md) for carrier cross-screening, pharmacogenomics comparison, and family analysis.
 
 **Q: Is this clinically validated?**
 No. This is a research/educational pipeline. It uses the same tools as clinical labs (DeepVariant, VEP, ClinVar, PharmCAT) but has not been through clinical validation. Always discuss findings with a healthcare provider.
