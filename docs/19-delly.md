@@ -16,7 +16,7 @@ SVs called by 2+ callers are high-confidence. This consensus approach is standar
 
 ## Docker Image
 ```
-quay.io/biocontainers/delly:1.2.9--ha41ced6_0
+quay.io/biocontainers/delly:1.7.3--hd6466ae_0
 ```
 
 ## Command
@@ -25,7 +25,7 @@ quay.io/biocontainers/delly:1.2.9--ha41ced6_0
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:1.2.9--ha41ced6_0 \
+  quay.io/biocontainers/delly:1.7.3--hd6466ae_0 \
   delly call \
     -g /genome/reference/Homo_sapiens_assembly38.fasta \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
@@ -53,7 +53,7 @@ Delly also has a dedicated CNV mode using read-depth only (similar to CNVnator):
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:1.2.9--ha41ced6_0 \
+  quay.io/biocontainers/delly:1.7.3--hd6466ae_0 \
   delly cnv \
     -g /genome/reference/Homo_sapiens_assembly38.fasta \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_cnv.bcf \

@@ -140,7 +140,7 @@ docker pull google/deepvariant:1.6.0
 
 # SV callers
 docker pull quay.io/biocontainers/manta:1.6.0--h9ee0642_2
-docker pull quay.io/biocontainers/delly:1.2.9--ha41ced6_0
+docker pull quay.io/biocontainers/delly:1.7.3--hd6466ae_0
 docker pull quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7
 docker pull brentp/duphold:latest
 

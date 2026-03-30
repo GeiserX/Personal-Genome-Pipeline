@@ -110,6 +110,12 @@ Always use `--rm` for analysis containers to avoid accumulating stopped containe
 ### Always use --user root for write access
 Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
+## Delly Issues
+
+### Delly: Biocontainer tag doesn't exist
+- **Failed:** `quay.io/biocontainers/delly:1.2.9--ha41ced6_0` — manifest not found
+- **Fix:** Use `quay.io/biocontainers/delly:1.7.3--hd6466ae_0` (latest as of Mar 2026). Biocontainer tags are version-specific and change frequently — always verify at quay.io/repository/biocontainers/delly.
+
 ## CPSR/PCGR Issues
 
 ### CPSR: --pcgr_dir path confusion
