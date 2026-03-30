@@ -110,6 +110,12 @@ Always use `--rm` for analysis containers to avoid accumulating stopped containe
 ### Always use --user root for write access
 Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
+## CNVnator Issues
+
+### CNVnator: Biocontainer tag with wrong build hash
+- **Failed:** `quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7` — manifest not found
+- **Fix:** Use `quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11`. Biocontainer hashes encode the conda build hash and change between builds. Always verify at quay.io/repository/biocontainers/cnvnator.
+
 ## Delly Issues
 
 ### Delly: Biocontainer tag doesn't exist

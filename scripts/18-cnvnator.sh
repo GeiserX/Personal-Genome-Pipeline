@@ -28,7 +28,7 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-IMAGE="quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7"
+IMAGE="quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11"
 
 echo "[1/5] Extracting read mapping..."
 docker run --rm --user root \

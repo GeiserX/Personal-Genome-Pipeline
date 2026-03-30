@@ -14,7 +14,7 @@ Manta (step 4) detects SVs from discordant read pairs and split reads, which wor
 
 ## Docker Image
 ```
-quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7
+quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
 ```
 
 ## Command
@@ -23,7 +23,7 @@ quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7 \
+  quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11 \
   cnvnator \
     -root /genome/${SAMPLE}/cnvnator/${SAMPLE}.root \
     -tree /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
@@ -32,7 +32,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7 \
+  quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11 \
   cnvnator \
     -root /genome/${SAMPLE}/cnvnator/${SAMPLE}.root \
     -his 1000 \
@@ -42,7 +42,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7 \
+  quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11 \
   cnvnator \
     -root /genome/${SAMPLE}/cnvnator/${SAMPLE}.root \
     -stat 1000
@@ -51,7 +51,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7 \
+  quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11 \
   cnvnator \
     -root /genome/${SAMPLE}/cnvnator/${SAMPLE}.root \
     -partition 1000
@@ -60,7 +60,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/cnvnator:0.4.1--py312hc02a2a2_7 \
+  quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11 \
   cnvnator \
     -root /genome/${SAMPLE}/cnvnator/${SAMPLE}.root \
     -call 1000 \
