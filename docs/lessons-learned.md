@@ -37,7 +37,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 - **Fix:** Add `--user root` flag to `docker run`
 
 ### TelomereHunter: pip install on host fails
-- **Failed:** `pip install telomerehunter` on Unraid gives `UnicodeDecodeError` — Python environment issues on Unraid
+- **Failed:** `pip install telomerehunter` on the host gives `UnicodeDecodeError` — Python environment issues
 - **Fix:** Use Docker image `lgalarno/telomerehunter:latest` instead of native install
 
 ### HLA-LA: Graph not serialized (3 failures)
@@ -91,19 +91,19 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 ```bash
 docker run --cpus 4 --memory 8g ...
 ```
-Without limits, tools like DeepVariant or minimap2 will consume ALL available RAM and crash the Unraid array.
+Without limits, tools like DeepVariant or minimap2 will consume ALL available RAM and crash the host.
 
 ### Build for amd64 from macOS
 ```bash
 docker build --platform linux/amd64 ...
 ```
-macOS is arm64; Unraid servers are amd64. Images built on Mac without `--platform` won't run on servers.
+macOS is arm64; most Linux servers are amd64. Images built on Mac without `--platform` won't run on amd64 servers.
 
 ### Use --rm for one-shot containers
 Always use `--rm` for analysis containers to avoid accumulating stopped containers. Use `-d` (detached) for long-running jobs.
 
 ### Always use --user root for write access
-Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes on Unraid, add `--user root` to avoid permission issues.
+Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
 ## Michigan Imputation Server Notes
 

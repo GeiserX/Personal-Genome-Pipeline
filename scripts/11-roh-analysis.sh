@@ -5,15 +5,15 @@
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-VCF="${GENOMA_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-OUTPUT="${GENOMA_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+OUTPUT="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt"
 
 echo "=== ROH Analysis: ${SAMPLE} ==="
 
 docker run --rm \
   --cpus 2 --memory 2g \
-  -v "${GENOMA_DIR}/${SAMPLE}/vcf:/data" \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   staphb/bcftools:1.21 \
   bcftools roh --AF-dflt 0.4 -o "/data/${SAMPLE}_roh.txt" "/data/${SAMPLE}.vcf.gz"
 

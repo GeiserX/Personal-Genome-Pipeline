@@ -5,8 +5,8 @@
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-SAMPLE_DIR="${GENOMA_DIR}/${SAMPLE}"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/telomere/${SAMPLE}"
 

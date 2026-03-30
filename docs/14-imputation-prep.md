@@ -17,11 +17,11 @@ staphb/bcftools:1.21
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 # Step 1: Filter to PASS variants only
 docker run --rm \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   staphb/bcftools:1.21 \
   bcftools view -f PASS \
     /data/${SAMPLE}.vcf.gz \
@@ -29,21 +29,21 @@ docker run --rm \
 
 # Step 2: Index the filtered VCF
 docker run --rm \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   staphb/bcftools:1.21 \
   bcftools index -t /data/${SAMPLE}_pass.vcf.gz
 
 # Step 3: Split by chromosome (chr1-22, autosomes only)
 for CHR in $(seq 1 22); do
   docker run --rm \
-    -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+    -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
     staphb/bcftools:1.21 \
     bcftools view -r chr${CHR} \
       /data/${SAMPLE}_pass.vcf.gz \
       -Oz -o /data/imputation/chr${CHR}.vcf.gz
 
   docker run --rm \
-    -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+    -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
     staphb/bcftools:1.21 \
     bcftools index -t /data/imputation/chr${CHR}.vcf.gz
 done
@@ -65,4 +65,4 @@ done
 - Servers accept `.vcf.gz` format — ensure files are bgzipped (bcftools output is bgzipped by default)
 - Sex chromosomes (chrX) can be submitted separately with ploidy-aware settings
 - Results include phased haplotypes and imputation quality scores (R-squared) — filter imputed variants with R2 < 0.3
-- Create the output directory before running: `mkdir -p ${GENOMA_DIR}/${SAMPLE}/vcf/imputation`
+- Create the output directory before running: `mkdir -p ${GENOME_DIR}/${SAMPLE}/vcf/imputation`

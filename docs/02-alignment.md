@@ -22,21 +22,21 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 ## Commands
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
-REF=${GENOMA_DIR}/reference/Homo_sapiens_assembly38.fasta
+GENOME_DIR=/path/to/your/data
+REF=${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta
 
 # Step 1: Create minimap2 index (one-time, ~30 min)
-minimap2 -d ${GENOMA_DIR}/reference/GRCh38.mmi $REF
+minimap2 -d ${GENOME_DIR}/reference/GRCh38.mmi $REF
 
 # Step 2: Align + sort (4-8 hours for 30X WGS)
 minimap2 -a -x map-hifi -t 16 \
-  ${GENOMA_DIR}/reference/GRCh38.mmi \
-  ${GENOMA_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
-  ${GENOMA_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
-| samtools sort -@ 8 -o ${GENOMA_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
+  ${GENOME_DIR}/reference/GRCh38.mmi \
+  ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
+  ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
+| samtools sort -@ 8 -o ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
 # Step 3: Index BAM
-samtools index ${GENOMA_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
+samtools index ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
 # Output: ~30-40GB BAM + ~9MB BAI index
 ```

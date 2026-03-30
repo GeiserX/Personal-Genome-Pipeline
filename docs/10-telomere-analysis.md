@@ -17,10 +17,10 @@ lgalarno/telomerehunter:latest
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 docker run --rm --user root \
-  -v ${GENOMA_DIR}/${SAMPLE}:/data \
+  -v ${GENOME_DIR}/${SAMPLE}:/data \
   lgalarno/telomerehunter:latest \
   telomerehunter \
     -ibt /data/aligned/${SAMPLE}_sorted.bam \

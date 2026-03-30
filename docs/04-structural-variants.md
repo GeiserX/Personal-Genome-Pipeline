@@ -17,24 +17,24 @@ quay.io/biocontainers/manta:1.6.0--h9ee0642_2
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 # Step 1: Configure Manta
 docker run --rm \
   --cpus 8 --memory 16g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
   configManta.py \
-    --bam /genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-    --referenceFasta /genoma/reference/Homo_sapiens_assembly38.fasta \
-    --runDir /genoma/${SAMPLE}/manta
+    --bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+    --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+    --runDir /genome/${SAMPLE}/manta
 
 # Step 2: Run Manta
 docker run --rm \
   --cpus 8 --memory 16g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
-  /genoma/${SAMPLE}/manta/runWorkflow.py -j 8
+  /genome/${SAMPLE}/manta/runWorkflow.py -j 8
 
 # Output: diploidSV.vcf.gz (~7-9K structural variants)
 ```

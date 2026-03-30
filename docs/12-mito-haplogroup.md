@@ -17,14 +17,14 @@ genepi/haplogrep3
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 # Step 1: Extract chrM variants from VCF
-docker run --rm -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
   bcftools view -r chrM /data/${SAMPLE}.vcf.gz -Oz -o /data/${SAMPLE}_chrM.vcf.gz
 
 # Step 2: Run haplogrep3
-docker run --rm -v ${GENOMA_DIR}/${SAMPLE}:/data genepi/haplogrep3 \
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/data genepi/haplogrep3 \
   classify \
     --input /data/vcf/${SAMPLE}_chrM.vcf.gz \
     --output /data/mito/${SAMPLE}_haplogroup.txt \

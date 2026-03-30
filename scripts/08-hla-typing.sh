@@ -8,11 +8,11 @@
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-BAM="${GENOMA_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOMA_DIR}/reference/Homo_sapiens_assembly38.fasta"
-IDX_DIR="${GENOMA_DIR}/t1k_idx"
-OUTPUT_DIR="${GENOMA_DIR}/${SAMPLE}/hla_t1k"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+IDX_DIR="${GENOME_DIR}/t1k_idx"
+OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/hla_t1k"
 
 echo "=== T1K HLA Typing: ${SAMPLE} ==="
 mkdir -p "$OUTPUT_DIR"
@@ -32,27 +32,27 @@ fi
 if [ ! -f "${IDX_DIR}/hlaidx_grch38/_dna_coord.fa" ]; then
   echo "Building coordinate file from reference genome (this takes ~30 min)..."
   docker run --rm --cpus 4 --memory 8g \
-    -v "${GENOMA_DIR}:/genoma" \
+    -v "${GENOME_DIR}:/genome" \
     quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
     t1k-build.pl \
-      -d "/genoma/t1k_idx/hlaidx/hla.dat" \
-      -g "/genoma/reference/Homo_sapiens_assembly38.fasta" \
-      -o /genoma/t1k_idx/hlaidx_grch38
+      -d "/genome/t1k_idx/hlaidx/hla.dat" \
+      -g "/genome/reference/Homo_sapiens_assembly38.fasta" \
+      -o /genome/t1k_idx/hlaidx_grch38
 fi
 
 # Step 3: Run HLA typing
 echo "Running T1K genotyping..."
 docker run --rm \
   --cpus 4 --memory 8g \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
   run-t1k \
-    -b "/genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    -f "/genoma/t1k_idx/hlaidx_grch38/_dna_seq.fa" \
-    -c "/genoma/t1k_idx/hlaidx_grch38/_dna_coord.fa" \
+    -b "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    -f "/genome/t1k_idx/hlaidx_grch38/_dna_seq.fa" \
+    -c "/genome/t1k_idx/hlaidx_grch38/_dna_coord.fa" \
     --preset hla-wgs \
     -t 4 \
-    --od "/genoma/${SAMPLE}/hla_t1k/" \
+    --od "/genome/${SAMPLE}/hla_t1k/" \
     -o "${SAMPLE}_hla"
 
 echo "=== T1K complete ==="

@@ -5,10 +5,10 @@
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-VCF="${GENOMA_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-CACHE_DIR="${GENOMA_DIR}/vep_cache"
-OUTPUT_DIR="${GENOMA_DIR}/${SAMPLE}/vep"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+CACHE_DIR="${GENOME_DIR}/vep_cache"
+OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/vep"
 
 echo "=== VEP Annotation: ${SAMPLE} ==="
 mkdir -p "$OUTPUT_DIR"
@@ -32,12 +32,12 @@ fi
 docker run --rm \
   --cpus 4 --memory 8g \
   --user root \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
   ensemblorg/ensembl-vep:release_112.0 \
   vep \
-    --input_file "/genoma/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
-    --output_file "/genoma/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
+    --input_file "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
     --vcf \
     --cache \
     --offline \

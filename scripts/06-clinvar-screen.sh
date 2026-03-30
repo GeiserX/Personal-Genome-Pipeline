@@ -4,33 +4,33 @@
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-VCF="${GENOMA_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-CLINVAR="${GENOMA_DIR}/reference/clinvar_pathogenic_chr.vcf.gz"
-OUTPUT_DIR="${GENOMA_DIR}/${SAMPLE}/clinvar"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+CLINVAR="${GENOME_DIR}/reference/clinvar_pathogenic_chr.vcf.gz"
+OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Extract PASS variants only
 docker run --rm --cpus 2 --memory 2g \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools view -f PASS "/genoma/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
-    -Oz -o "/genoma/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz"
+  bcftools view -f PASS "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    -Oz -o "/genome/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz"
 
 docker run --rm --cpus 1 --memory 1g \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools index -t "/genoma/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz"
+  bcftools index -t "/genome/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz"
 
 # Step 2: Intersect with ClinVar pathogenic
 docker run --rm --cpus 2 --memory 2g \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools isec -p "/genoma/${SAMPLE}/clinvar/isec" \
-    "/genoma/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz" \
-    /genoma/reference/clinvar_pathogenic_chr.vcf.gz
+  bcftools isec -p "/genome/${SAMPLE}/clinvar/isec" \
+    "/genome/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz" \
+    /genome/reference/clinvar_pathogenic_chr.vcf.gz
 
 echo "=== ClinVar screen complete ==="
 echo "Shared variants: ${OUTPUT_DIR}/isec/0002.vcf (in both sample AND ClinVar)"

@@ -21,33 +21,33 @@ staphb/bcftools:1.21
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 # Step 1: Intersect sample VCF with ClinVar pathogenic database
 docker run --rm \
   --cpus 2 --memory 4g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   staphb/bcftools:1.21 \
   bcftools isec \
     -n =2 -w 1 \
-    /genoma/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    /genoma/reference/clinvar_pathogenic_chr.vcf.gz \
-    -Oz -o /genoma/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
+    /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
+    /genome/reference/clinvar_pathogenic_chr.vcf.gz \
+    -Oz -o /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
 
 # Step 2: Index the result
 docker run --rm \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   staphb/bcftools:1.21 \
-  bcftools index -t /genoma/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
+  bcftools index -t /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
 
 # Step 3: Extract human-readable summary
 docker run --rm \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   staphb/bcftools:1.21 \
   bcftools query \
     -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/CLNSIG\t%INFO/CLNDN\n' \
-    /genoma/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz \
-    > /genoma/${SAMPLE}/clinvar/${SAMPLE}_clinvar_summary.tsv
+    /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz \
+    > /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_summary.tsv
 ```
 
 ## Output

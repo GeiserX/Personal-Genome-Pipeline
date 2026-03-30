@@ -21,19 +21,19 @@ quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
-mkdir -p ${GENOMA_DIR}/${SAMPLE}/hla
+mkdir -p ${GENOME_DIR}/${SAMPLE}/hla
 
 docker run --rm \
   --cpus 4 --memory 8g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
   run-t1k \
-    -b /genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-    -f /genoma/t1k_idx/hlaidx_grch38_rna_seq.fa \
+    -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+    -f /genome/t1k_idx/hlaidx_grch38_rna_seq.fa \
     --preset hla \
-    -o /genoma/${SAMPLE}/hla/${SAMPLE}_t1k \
+    -o /genome/${SAMPLE}/hla/${SAMPLE}_t1k \
     -t 4
 ```
 
@@ -47,14 +47,14 @@ For a second opinion or when T1K results are ambiguous:
 ```bash
 docker run --rm \
   --cpus 8 --memory 16g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   jiachenzdocker/hla-la:latest \
   HLA-LA.pl \
-    --BAM /genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+    --BAM /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     --graph PRG_MHC_GRCh38_withIMGT \
     --sampleID ${SAMPLE} \
     --maxThreads 8 \
-    --workingDir /genoma/${SAMPLE}/hla_la
+    --workingDir /genome/${SAMPLE}/hla_la
 ```
 
 - Docker image is 4.5GB (includes pre-built graph)

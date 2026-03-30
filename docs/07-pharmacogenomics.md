@@ -17,13 +17,13 @@ pgkb/pharmcat:2.15.5
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 # PharmCAT needs the reference genome for VCF preprocessing
 docker run --rm \
   --cpus 2 --memory 4g \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
-  -v ${GENOMA_DIR}/reference:/ref \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/reference:/ref \
   pgkb/pharmcat:2.15.5 \
   java -jar /pharmcat/pharmcat.jar \
     -vcf /data/${SAMPLE}.vcf.gz \

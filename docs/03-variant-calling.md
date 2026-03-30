@@ -21,17 +21,17 @@ google/deepvariant:1.6.0
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 docker run --rm \
   --cpus 16 --memory 32g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   google/deepvariant:1.6.0 \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=WGS \
-    --ref=/genoma/reference/Homo_sapiens_assembly38.fasta \
-    --reads=/genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-    --output_vcf=/genoma/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
+    --ref=/genome/reference/Homo_sapiens_assembly38.fasta \
+    --reads=/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+    --output_vcf=/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     --num_shards=16
 
 # Output: ~93MB VCF with ~5.5M total variants (~4.6M PASS)

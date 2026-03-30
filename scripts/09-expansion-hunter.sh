@@ -7,10 +7,10 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <male|female>}
 SEX=${2:?Usage: $0 <sample_name> <male|female>}
-GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
-SAMPLE_DIR="${GENOMA_DIR}/${SAMPLE}"
+GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOMA_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 
 echo "=== ExpansionHunter: ${SAMPLE} (${SEX}) ==="
@@ -18,15 +18,15 @@ mkdir -p "$OUTPUT_DIR"
 
 docker run --rm \
   --cpus 4 --memory 4g \
-  -v "${GENOMA_DIR}:/genoma" \
+  -v "${GENOME_DIR}:/genome" \
   --entrypoint /ExpansionHunter/bin/ExpansionHunter \
   weisburd/expansionhunter:latest \
-    --bam "/genoma/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    --ref-fasta /genoma/reference/Homo_sapiens_assembly38.fasta \
+    --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    --ref-fasta /genome/reference/Homo_sapiens_assembly38.fasta \
     --repeat-specs /pathogenic_repeats/GRCh38/ \
-    --vcf "/genoma/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.vcf" \
-    --json "/genoma/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.json" \
-    --log "/genoma/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.log" \
+    --vcf "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.vcf" \
+    --json "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.json" \
+    --log "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.log" \
     --sex "$SEX"
 
 echo "=== ExpansionHunter complete ==="

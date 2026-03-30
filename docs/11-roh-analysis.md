@@ -17,15 +17,15 @@ staphb/bcftools:1.21
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 docker run --rm \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   staphb/bcftools:1.21 \
   bcftools roh \
     --AF-dflt 0.4 \
     /data/${SAMPLE}.vcf.gz \
-    > ${GENOMA_DIR}/${SAMPLE}/roh/${SAMPLE}_roh.txt
+    > ${GENOME_DIR}/${SAMPLE}/roh/${SAMPLE}_roh.txt
 
 # Output: tab-delimited ROH segments with chromosomal coordinates and length
 ```

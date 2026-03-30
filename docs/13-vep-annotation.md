@@ -21,11 +21,11 @@ ensemblorg/ensembl-vep:release_112.0
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 docker run --rm \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
-  -v ${GENOMA_DIR}/vep_cache:/vep_cache \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/vep_cache:/vep_cache \
   ensemblorg/ensembl-vep:release_112.0 \
   vep \
     --input_file /data/${SAMPLE}.vcf.gz \
@@ -57,7 +57,7 @@ After annotation, filter to actionable variants:
 ```bash
 # Extract HIGH and MODERATE impact variants with AF <1%
 docker run --rm \
-  -v ${GENOMA_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   staphb/bcftools:1.21 \
   bcftools view -i 'INFO/CSQ[*] ~ "HIGH" || INFO/CSQ[*] ~ "MODERATE"' \
     /data/${SAMPLE}_vep.vcf \

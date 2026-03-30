@@ -3,22 +3,22 @@
 # Usage: ./run-all.sh <sample_name> <sex: male|female>
 #
 # Assumes:
-# - BAM already exists at $GENOMA_DIR/<sample>/aligned/<sample>_sorted.bam
-# - VCF already exists at $GENOMA_DIR/<sample>/vcf/<sample>.vcf.gz
-# - Manta SV VCF exists at $GENOMA_DIR/<sample>/manta/results/variants/diploidSV.vcf.gz
-# - GRCh38 reference + ClinVar at $GENOMA_DIR/reference/
+# - BAM already exists at $GENOME_DIR/<sample>/aligned/<sample>_sorted.bam
+# - VCF already exists at $GENOME_DIR/<sample>/vcf/<sample>.vcf.gz
+# - Manta SV VCF exists at $GENOME_DIR/<sample>/manta/results/variants/diploidSV.vcf.gz
+# - GRCh38 reference + ClinVar at $GENOME_DIR/reference/
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <sex: male|female>}
 SEX=${2:?Usage: $0 <sample_name> <sex: male|female>}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-export GENOMA_DIR=${GENOMA_DIR:?Set GENOMA_DIR to your genomics data root}
+export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 
 echo "============================================"
 echo "  Medical Genomics Pipeline"
 echo "  Sample: ${SAMPLE}, Sex: ${SEX}"
-echo "  Data: ${GENOMA_DIR}/${SAMPLE}/"
+echo "  Data: ${GENOME_DIR}/${SAMPLE}/"
 echo "============================================"
 echo ""
 
@@ -61,5 +61,5 @@ wait $PID_ANNOTSV $PID_TH
 echo ""
 echo "============================================"
 echo "  Pipeline complete for: ${SAMPLE}"
-echo "  All results in: ${GENOMA_DIR}/${SAMPLE}/"
+echo "  All results in: ${GENOME_DIR}/${SAMPLE}/"
 echo "============================================"

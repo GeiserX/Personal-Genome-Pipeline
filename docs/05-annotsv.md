@@ -17,17 +17,17 @@ getwilds/annotsv:latest
 ## Command
 ```bash
 SAMPLE=your_sample
-GENOMA_DIR=/path/to/genome/data
+GENOME_DIR=/path/to/your/data
 
 docker run --rm \
   --cpus 4 --memory 8g \
-  -v ${GENOMA_DIR}:/genoma \
+  -v ${GENOME_DIR}:/genome \
   getwilds/annotsv:latest \
   AnnotSV \
-    -SVinputFile /genoma/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
+    -SVinputFile /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
     -genomeBuild GRCh38 \
-    -outputFile /genoma/${SAMPLE}/annotsv/${SAMPLE}_annotsv \
-    -outputDir /genoma/${SAMPLE}/annotsv
+    -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_annotsv \
+    -outputDir /genome/${SAMPLE}/annotsv
 ```
 
 ## Output
