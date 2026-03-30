@@ -204,6 +204,53 @@ if [ -f "$MITO_VCF" ]; then
   echo ""
 fi
 
+# ---------- SV Consensus Merge (Step 22) ----------
+SV_MERGE_VCF="${SAMPLE_DIR}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz"
+if [ -f "$SV_MERGE_VCF" ]; then
+  echo "## SV Consensus Merge"
+  echo "---"
+  CONSENSUS_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+    bcftools view -H "/genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
+  echo "  Consensus SVs (2+ callers): ${CONSENSUS_COUNT}"
+  echo ""
+fi
+
+# ---------- Clinical Filter (Step 23) ----------
+CLINICAL_VCF="${SAMPLE_DIR}/clinical/${SAMPLE}_clinical.vcf.gz"
+if [ -f "$CLINICAL_VCF" ]; then
+  echo "## Clinical Variant Filter"
+  echo "---"
+  CLINICAL_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+    bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
+  echo "  Clinical variants: ${CLINICAL_COUNT}"
+  echo ""
+fi
+
+# ---------- PRS (Step 25) ----------
+PRS_SUMMARY="${SAMPLE_DIR}/prs/${SAMPLE}_prs_summary.tsv"
+if [ -f "$PRS_SUMMARY" ] && [ "$(wc -l < "$PRS_SUMMARY")" -gt 1 ]; then
+  echo "## Polygenic Risk Scores"
+  echo "---"
+  tail -n +2 "$PRS_SUMMARY" | while IFS=$'\t' read -r CONDITION PGS_ID SCORE USED TOTAL; do
+    printf "  %-35s %s (%s/%s variants)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
+  done
+  echo ""
+  echo "  NOTE: Raw PRS scores are NOT directly interpretable without a"
+  echo "  population reference panel. See docs/25-prs.md."
+  echo ""
+fi
+
+# ---------- CPIC (Step 27) ----------
+CPIC_REPORT="${SAMPLE_DIR}/cpic/${SAMPLE}_cpic_recommendations.txt"
+if [ -f "$CPIC_REPORT" ]; then
+  echo "## CPIC Drug-Gene Recommendations"
+  echo "---"
+  echo "  Report: ${CPIC_REPORT}"
+  AFFECTED=$(grep -c 'Affected drugs:' "$CPIC_REPORT" 2>/dev/null || echo "0")
+  echo "  Genes with non-standard phenotypes requiring drug adjustments: ${AFFECTED}"
+  echo ""
+fi
+
 # ---------- Steps Not Run ----------
 echo "## Steps Not Run"
 echo "---"
@@ -215,6 +262,11 @@ PHARMCAT_FOUND=0; find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/
 [ ! -d "${SAMPLE_DIR}/expansion_hunter" ] && NOT_RUN="${NOT_RUN}  - ExpansionHunter (step 9)\n"
 [ ! -d "${SAMPLE_DIR}/cpsr" ] && NOT_RUN="${NOT_RUN}  - CPSR (step 17)\n"
 [ ! -d "${SAMPLE_DIR}/vep" ] && NOT_RUN="${NOT_RUN}  - VEP Annotation (step 13)\n"
+[ ! -f "${SAMPLE_DIR}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - SV Consensus Merge (step 22)\n"
+[ ! -f "${SAMPLE_DIR}/clinical/${SAMPLE}_clinical.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - Clinical Filter (step 23)\n"
+[ ! -f "${SAMPLE_DIR}/prs/${SAMPLE}_prs_summary.tsv" ] && NOT_RUN="${NOT_RUN}  - PRS (step 25)\n"
+[ ! -d "${SAMPLE_DIR}/ancestry" ] && NOT_RUN="${NOT_RUN}  - Ancestry PCA (step 26)\n"
+[ ! -f "${SAMPLE_DIR}/cpic/${SAMPLE}_cpic_recommendations.txt" ] && NOT_RUN="${NOT_RUN}  - CPIC Recommendations (step 27)\n"
 if [ -z "$NOT_RUN" ]; then
   echo "  All major steps completed."
 else
