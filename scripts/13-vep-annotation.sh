@@ -11,6 +11,12 @@ CACHE_DIR="${GENOME_DIR}/vep_cache"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/vep"
 
 echo "=== VEP Annotation: ${SAMPLE} ==="
+
+if [ ! -f "$VCF" ]; then
+  echo "ERROR: VCF not found: ${VCF}" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 # Check if cache exists

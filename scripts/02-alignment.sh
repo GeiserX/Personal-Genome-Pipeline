@@ -66,4 +66,4 @@ docker run --rm \
 echo "=== Alignment complete ==="
 echo "BAM: ${OUTPUT_DIR}/${SAMPLE}_sorted.bam"
 echo "Index: ${OUTPUT_DIR}/${SAMPLE}_sorted.bam.bai"
-ls -lh "$OUTPUT_DIR"/${SAMPLE}_sorted.bam 2>/dev/null || true
+ls -lh "${OUTPUT_DIR}/${SAMPLE}_sorted.bam" 2>/dev/null || true
