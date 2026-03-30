@@ -45,7 +45,12 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 - **Failed attempt 2:** Copied graph files to `graphs/PRG_MHC_GRCh38_withIMGT/` — "graph not complete"
 - **Failed attempt 3:** Ran `--action prepareGraph` in detached container — container exited during prep, graph still not serialized
 - **Root cause:** HLA-LA requires a pre-serialized graph (~40GB RAM to prepare, takes hours). No standard Docker image includes it.
-- **Fix:** Use `jiachenzdocker/hla-la:latest` (4.5GB image with pre-built graph) OR switch to T1K
+- **Fix:** Use `jiachenzdocker/hla-la:latest` (27.5GB image with pre-built graph) OR switch to T1K
+
+### HLA-LA: Binary crash with pre-built graph image
+- **Failed:** `jiachenzdocker/hla-la:latest` — read extraction succeeds but `HLA-LA` C++ binary crashes during graph alignment even with 32GB RAM and 8 threads. Error: "HLA-LA execution not successful."
+- **Root cause:** Likely an incompatibility between the pre-built binary and the BAM data format, or an unmet memory requirement (the graph deserialization may need >32GB)
+- **Status:** UNSOLVED. HLA-LA from WGS BAMs is unreliable in Docker. Alternative: use Sanitas clinical HLA typing results, or use arcas-hla or T1K with partial coordinates
 
 ### T1K: Coordinate file with wrong values
 - **Failed:** `t1k-build.pl -d hla.dat -g reference.fasta.fai` produced coordinate file with `chr19 -1 -1 +` for all HLA genes

@@ -24,7 +24,8 @@ Takes raw sequencing data (ORA/FASTQ) through alignment, variant calling, and 12
 | 12 | [Mitochondrial Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `genepi/haplogrep3` | `.vcf.gz` (chrM) | haplogroup |
 | 13 | [Functional Annotation](docs/13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_112.0` | `.vcf.gz` | annotated VCF |
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | `.vcf.gz` | chr-split VCFs |
-| 15 | [CYP2D6 Calling](docs/15-cyp2d6.md) | Cyrius | `quay.io/biocontainers/cyrius` | `sorted.bam` | CYP2D6 star alleles |
+| 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:latest` | `diploidSV.vcf.gz` + BAM | quality-annotated SV VCF |
+| 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft` | `sorted.bam` | coverage + sex check |
 
 ## Prerequisites
 
