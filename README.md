@@ -1,14 +1,28 @@
-# Genomics Pipeline
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Genomics Pipeline banner" width="900"/>
+</p>
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![CI](https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml/badge.svg)](https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml)
-[![Docker](https://img.shields.io/badge/runs%20with-Docker-0db7ed?logo=docker)](https://www.docker.com/)
-[![Platform](https://img.shields.io/badge/platform-linux%20amd64-lightgrey)]()
-[![GRCh38](https://img.shields.io/badge/genome-GRCh38%2Fhg38-green)]()
-[![Steps](https://img.shields.io/badge/analysis%20steps-27-orange)]()
-[![Privacy](https://img.shields.io/badge/data%20privacy-100%25%20local-brightgreen)]()
+<h1 align="center">Genomics Pipeline</h1>
 
-**Analyze your own whole genome sequencing (WGS) data on consumer hardware.** No cloud accounts, no subscriptions, no bioinformatics degree required.
+<p align="center">
+  <strong>Analyze your own whole genome sequencing (WGS) data on consumer hardware.</strong><br>
+  No cloud accounts, no subscriptions, no bioinformatics degree required.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/GeiserX/genomics-pipeline?style=flat-square" alt="License"></a>
+  <a href="https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/genomics-pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/GeiserX/genomics-pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/genomics-pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
+  <a href="https://geiserx.github.io/genomics-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
+  <img src="https://img.shields.io/badge/analysis%20steps-27-f97316?style=flat-square" alt="27 steps">
+  <img src="https://img.shields.io/badge/data%20privacy-100%25%20local-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="100% Local">
+  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
+</p>
 
 This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 27 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
