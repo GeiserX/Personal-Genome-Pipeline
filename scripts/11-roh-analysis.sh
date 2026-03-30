@@ -11,6 +11,13 @@ OUTPUT="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt"
 
 echo "=== ROH Analysis: ${SAMPLE} ==="
 
+for f in "$VCF" "${VCF}.tbi"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \

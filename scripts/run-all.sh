@@ -24,6 +24,14 @@ echo "  Data: ${GENOME_DIR}/${SAMPLE}/"
 echo "============================================"
 echo ""
 
+# Pre-flight check
+echo "[Pre-flight] Validating setup..."
+if ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}" 2>/dev/null; then
+  echo "WARNING: Setup validation reported issues. Proceeding anyway..."
+  echo "         Run ./scripts/validate-setup.sh ${SAMPLE} for details."
+  echo ""
+fi
+
 # Phase 1: Alignment (if FASTQ exists but BAM doesn't)
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 if [ ! -f "$BAM" ]; then

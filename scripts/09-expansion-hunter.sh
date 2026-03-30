@@ -14,6 +14,14 @@ REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 
 echo "=== ExpansionHunter: ${SAMPLE} (${SEX}) ==="
+
+for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$OUTPUT_DIR"
 
 docker run --rm \

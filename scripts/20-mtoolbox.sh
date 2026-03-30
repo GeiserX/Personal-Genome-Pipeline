@@ -28,7 +28,7 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 GATK_IMAGE="broadinstitute/gatk:4.6.1.0"
-SAMTOOLS_IMAGE="staphb/samtools:1.21"
+SAMTOOLS_IMAGE="staphb/samtools:1.20"
 
 echo "[1/4] Extracting chrM reads..."
 docker run --rm --user root \

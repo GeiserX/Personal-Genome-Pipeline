@@ -66,12 +66,14 @@ genomics-pipeline/
     hardware-requirements.md   # Disk, RAM, CPU, runtime breakdown
     vendor-guide.md            # Data formats from each WGS vendor
     interpreting-results.md    # Plain-language guide for non-experts
+    troubleshooting.md         # Comprehensive troubleshooting by symptom
     lessons-learned.md         # Every failure and fix (KEEP UPDATED)
   scripts/
     01-ora-to-fastq.sh         # Step scripts (one per pipeline step)
     ...
     20-mtoolbox.sh
     run-all.sh                 # Orchestrator: runs all steps with parallelism
+    validate-setup.sh          # Pre-flight check: Docker, refs, images, sample
 ```
 
 ## Data Flow

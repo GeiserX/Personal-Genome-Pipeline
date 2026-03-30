@@ -11,6 +11,14 @@ OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/imputation"
 MIS_DIR="${OUTPUT_DIR}/mis_ready"
 
 echo "=== Imputation Prep: ${SAMPLE} ==="
+
+for f in "$VCF" "${VCF}.tbi"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$MIS_DIR"
 
 # Step 1: Split by chromosome

@@ -6,10 +6,18 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-CLINVAR="${GENOME_DIR}/reference/clinvar_pathogenic_chr.vcf.gz"
+CLINVAR="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
+
+for f in "$VCF" "${VCF}.tbi" "$CLINVAR" "${CLINVAR}.tbi"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Extract PASS variants only
@@ -30,7 +38,7 @@ docker run --rm --cpus 2 --memory 2g \
   staphb/bcftools:1.21 \
   bcftools isec -p "/genome/${SAMPLE}/clinvar/isec" \
     "/genome/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz" \
-    /genome/reference/clinvar_pathogenic_chr.vcf.gz
+    /genome/clinvar/clinvar_pathogenic_chr.vcf.gz
 
 echo "=== ClinVar screen complete ==="
 echo "Shared variants: ${OUTPUT_DIR}/isec/0002.vcf (in both sample AND ClinVar)"

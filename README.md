@@ -95,6 +95,17 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 
 ## Quick Start
 
+### Step 0: Validate Your Setup
+
+Before running anything, verify that all prerequisites are in place:
+
+```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/validate-setup.sh your_name
+```
+
+This checks Docker, disk space, reference data, Docker images, and sample files. Fix any `[FAIL]` items before proceeding.
+
 ### Path A: I Have FASTQ Files (Raw Reads)
 
 Most common if you downloaded data from Nebula, Dante Labs, Novogene, BGI, or any sequencing provider.
@@ -293,7 +304,9 @@ ${GENOME_DIR}/
 | "No such image" on `docker pull` | Image name/tag changed | Check the exact image name in the step's documentation. Biocontainer tags change frequently. |
 | Very slow on macOS | Rosetta 2 emulation overhead | Expected. Consider running on a Linux machine or cloud instance for heavy steps. |
 
-For the full list of every failure encountered during development, see [docs/lessons-learned.md](docs/lessons-learned.md).
+For detailed solutions, see:
+- [docs/troubleshooting.md](docs/troubleshooting.md) — comprehensive troubleshooting guide organized by symptom
+- [docs/lessons-learned.md](docs/lessons-learned.md) — every failure encountered during development
 
 ---
 

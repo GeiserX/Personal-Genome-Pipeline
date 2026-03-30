@@ -15,6 +15,14 @@ IDX_DIR="${GENOME_DIR}/t1k_idx"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/hla_t1k"
 
 echo "=== T1K HLA Typing: ${SAMPLE} ==="
+
+for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Build HLA reference index (one-time, ~5 min)
