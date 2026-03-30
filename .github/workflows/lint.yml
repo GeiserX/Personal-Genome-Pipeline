@@ -55,15 +55,15 @@ jobs:
       - name: Check for broken internal links
         run: |
           echo "Checking internal markdown links..."
-          FAIL=0
-          # Extract markdown links and check if target files exist
+          rm -f /tmp/link_fail
           for md in docs/*.md README.md; do
-            grep -oP '\[.*?\]\(((?!http)[^)]+)\)' "$md" 2>/dev/null | \
-              grep -oP '\(([^)]+)\)' | tr -d '()' | while read -r link; do
-                # Handle anchors
+            # Extract markdown links: [text](target)
+            grep -oP '\]\([^)]+\)' "$md" 2>/dev/null | \
+              grep -oP '\(([^)]+)\)' | tr -d '()' | \
+              grep -v '^http' | grep -v '^#' | \
+              while read -r link; do
                 file=$(echo "$link" | cut -d'#' -f1)
                 if [ -n "$file" ]; then
-                  # Resolve relative to the markdown file's directory
                   dir=$(dirname "$md")
                   target="${dir}/${file}"
                   if [ ! -f "$target" ]; then
