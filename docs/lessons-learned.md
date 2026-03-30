@@ -130,6 +130,20 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** `quay.io/biocontainers/delly:1.2.9--ha41ced6_0` — manifest not found
 - **Fix:** Use `quay.io/biocontainers/delly:1.7.3--hd6466ae_0` (latest as of Mar 2026). Biocontainer tags are version-specific and change frequently — always verify at quay.io/repository/biocontainers/delly.
 
+### Delly: SV annotation phase takes 2-3 hours
+- **Observed:** Delly's "SV annotation" step runs for 2-3 hours at 100% CPU on a 30X WGS genome. No new log output appears during this time, which can look like the process is stuck.
+- **This is normal.** Delly genotypes every candidate SV site against the reference, which is CPU-intensive. Total runtime for 30X WGS: ~3-4 hours.
+- **Tip:** Use `docker stats` to confirm the container is still using CPU. If CPU is at 0%, the process may actually be stuck.
+
+### Delly: Output is BCF format, not VCF
+- **Gotcha:** Delly writes BCF (binary VCF), not VCF. The output file has a `.bcf` extension.
+- **Fix:** Convert with `bcftools view input.bcf -Oz -o output.vcf.gz` and index with `bcftools index -t output.vcf.gz`. The pipeline script handles this automatically.
+
+### CNVnator: ROOT file appears empty (266 bytes) during tree extraction
+- **Observed:** During the `-tree` step, the `.root` file stays at 266 bytes (just the ROOT header) until the entire BAM is parsed.
+- **This is normal.** For a 30X WGS (~80GB BAM), the tree step takes ~5-10 minutes. The ROOT file grows to ~900MB-1.2GB only at the very end when the tree is flushed to disk.
+- **If the container exits and the file is still 266 bytes:** Check if a corrupt `.root` file from a previous failed run is blocking it. Delete and retry.
+
 ## CPSR/PCGR Issues
 
 ### CPSR: --pcgr_dir path confusion
