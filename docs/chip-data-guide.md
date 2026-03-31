@@ -41,130 +41,85 @@ If you have raw data from a consumer genotyping service instead of whole genome 
 
 ## Step 2: Convert Raw Data to GRCh38 VCF
 
-This conversion has three stages: raw text to plink format, liftover from GRCh37 to GRCh38, and export to VCF.
+### Why This Is Non-Trivial
+
+Consumer chip raw data files contain genotype calls (e.g., "AG" at a position) but do **not** tell you which allele is the reference allele on the human genome. To create a valid VCF, every position needs its REF allele looked up from a reference FASTA. Without this step, homozygous ALT calls get written as REF/REF and heterozygous calls can have ref/alt swapped — silently corrupting all downstream analysis.
+
+The conversion requires three stages:
+1. **Import** raw genotypes using plink2 (handles 23andMe/AncestryDNA format natively)
+2. **Fix ref/alt** using plink2's `--ref-from-fa` with a GRCh37 reference FASTA
+3. **Liftover** coordinates from GRCh37 to GRCh38
 
 ### Prerequisites
 
-Download the GRCh37-to-GRCh38 liftover chain file (one-time, ~500 KB):
+One-time downloads (~3.5 GB total):
 
 ```bash
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-mkdir -p "${GENOME_DIR}/liftover"
+mkdir -p "${GENOME_DIR}/liftover" "${GENOME_DIR}/reference_hg19"
+
+# GRCh37 reference FASTA (needed for ref/alt resolution, ~3 GB)
+wget -q -O "${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta.gz" \
+  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz"
+gunzip "${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta.gz"
+
+# Index the reference
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  staphb/samtools:1.21 \
+  samtools faidx /genome/reference_hg19/human_g1k_v37.fasta
+
+# GRCh37-to-GRCh38 liftover chain file (~500 KB)
 wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
   "https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19ToHg38.over.chain.gz"
 ```
 
-### Conversion Script
+### Conversion Workflow
 
-Place your raw data file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt` (or `.csv` for MyHeritage), then run:
+Place your raw data file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`, then:
 
 ```bash
 SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
-RAW_FILE="${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt"
-OUTDIR="${GENOME_DIR}/${SAMPLE}/vcf"
-mkdir -p "$OUTDIR"
+mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
 
-# --- Stage 1: Convert raw genotypes to plink2 format ---
-
-# Detect format and convert to a simple 5-column TSV: chr, pos, id, ref, alt, genotype
-# (23andMe and AncestryDNA are tab-separated; MyHeritage is CSV)
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  python:3.11-slim \
-  python3 -c "
-import csv, sys, gzip, os
-
-sample = '${SAMPLE}'
-raw = '/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt'
-# Try .csv for MyHeritage
-if not os.path.exists(raw):
-    raw = '/genome/${SAMPLE}/raw/${SAMPLE}_raw.csv'
-
-out_path = f'/genome/${SAMPLE}/raw/${SAMPLE}_cleaned.tsv'
-count = 0
-
-with open(raw) as f:
-    # Skip comment lines (23andMe/AncestryDNA use # comments)
-    lines = [l for l in f if not l.startswith('#')]
-
-with open(out_path, 'w') as out:
-    reader = csv.reader(lines, delimiter='\t' if '\t' in lines[0] else ',')
-    header = next(reader)  # skip header row
-    for row in reader:
-        if len(row) < 4:
-            continue
-        rsid, chrom, pos, genotype = row[0], row[1], row[2], row[3]
-        # Skip indels (D/I), no-calls (--), and MT/X/Y for now
-        if genotype in ('--', '00', 'DD', 'DI', 'II', 'D', 'I'):
-            continue
-        if chrom in ('MT', 'X', 'Y', 'XY', '0'):
-            continue
-        # Add chr prefix if missing
-        if not chrom.startswith('chr'):
-            chrom = 'chr' + chrom
-        out.write(f'{chrom}\t{pos}\t{rsid}\t{genotype}\n')
-        count += 1
-
-print(f'Converted {count} autosomal SNPs')
-"
-
-# --- Stage 2: Create a minimal VCF on GRCh37 coordinates ---
+# --- Stage 1: Import raw genotypes and fix ref/alt ---
+#
+# plink2 --23file handles 23andMe and AncestryDNA tab-separated formats.
+# --ref-from-fa resolves which allele is reference at each position.
+# Without --ref-from-fa, the VCF will have wrong REF/ALT assignments.
+#
+# For MyHeritage CSV: convert to 23andMe-like TSV first (see note below).
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  python:3.11-slim \
-  python3 -c "
-sample = '${SAMPLE}'
-tsv = f'/genome/${SAMPLE}/raw/${SAMPLE}_cleaned.tsv'
-vcf = f'/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf'
+  pgscatalog/plink2:2.00a5.10 \
+  plink2 \
+    --23file "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" "${SAMPLE}" \
+    --ref-from-fa "/genome/reference_hg19/human_g1k_v37.fasta" \
+    --export vcf bgz \
+    --out "/genome/${SAMPLE}/raw/${SAMPLE}_hg19" \
+    --chr 1-22 \
+    --snps-only just-acgt \
+    --output-chr chr26
 
-with open(vcf, 'w') as out:
-    out.write('##fileformat=VCFv4.2\n')
-    out.write('##INFO=<ID=RS,Number=1,Type=String,Description=\"rsID\">\n')
-    out.write('##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n')
-    for i in range(1, 23):
-        out.write(f'##contig=<ID=chr{i}>\n')
-    out.write(f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample}\n')
-
-    with open(tsv) as f:
-        for line in f:
-            chrom, pos, rsid, geno = line.strip().split('\t')
-            if len(geno) != 2:
-                continue
-            a1, a2 = geno[0], geno[1]
-            if a1 == a2:
-                # Homozygous — we don't know which is ref without a lookup,
-                # so write as-is. Liftover + bcftools norm will fix.
-                out.write(f'{chrom}\t{pos}\t{rsid}\t{a1}\t.\t.\tPASS\t.\tGT\t0/0\n')
-            else:
-                out.write(f'{chrom}\t{pos}\t{rsid}\t{a1}\t{a2}\t.\tPASS\t.\tGT\t0/1\n')
-
-print('VCF created')
-"
-
-# --- Stage 3: Liftover to GRCh38 ---
-
-# Sort and compress the hg19 VCF
+# Index the hg19 VCF
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bash -c "
-    bcftools sort /genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf -Oz \
-      -o /genome/${SAMPLE}/raw/${SAMPLE}_hg19_sorted.vcf.gz &&
-    bcftools index -t /genome/${SAMPLE}/raw/${SAMPLE}_hg19_sorted.vcf.gz
-  "
+  bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz"
 
-# Liftover using Picard
+# --- Stage 2: Liftover to GRCh38 ---
+
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   broadinstitute/picard:latest \
   java -jar /usr/picard/picard.jar LiftoverVcf \
-    I=/genome/${SAMPLE}/raw/${SAMPLE}_hg19_sorted.vcf.gz \
-    O=/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
+    I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
+    O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
     R=/genome/reference/Homo_sapiens_assembly38.fasta \
-    REJECT=/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz \
+    REJECT="/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" \
     WARN_ON_MISSING_CONTIG=true
 
 # Index the final VCF
@@ -173,23 +128,24 @@ docker run --rm --user root \
   staphb/bcftools:1.21 \
   bcftools index -t "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
-echo "Done. VCF at: ${OUTDIR}/${SAMPLE}.vcf.gz"
+echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 ```
 
-**Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with 400,000-600,000 variants. Some variants (~5-15%) will be rejected during liftover because they map to regions that changed between builds.
+**Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with 400,000-600,000 autosomal SNPs. Some variants (~5-15%) will be rejected during liftover because they map to regions that changed between builds.
 
-### Alternative: Imputation First
+> **MyHeritage CSV format:** plink2's `--23file` expects tab-separated data with columns: rsID, chromosome, position, genotype. MyHeritage CSVs use a different column layout. Convert first: strip the header, reorder columns to match 23andMe format, and replace commas with tabs.
 
-For much better PRS and ancestry results, consider imputing your chip data before running the pipeline. Imputation fills in ~40 million positions from your 600K by using population reference panels.
+> **X/Y/MT chromosomes:** This workflow restricts to autosomes (`--chr 1-22`). Mitochondrial and sex chromosome SNPs from your chip are not converted. For mitochondrial haplogroup estimation from chip data, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) accept raw 23andMe files directly.
 
-1. Prepare chromosome-split VCFs from the hg19 data (step 14 in this pipeline)
-2. Upload to the [Michigan Imputation Server](https://imputationserver.sph.umich.edu/) or [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/)
-3. Select the TOPMed or 1000G reference panel, GRCh38 output
-4. Download the imputed VCF and use it as your pipeline input
+### Optional: Imputation
 
-Imputation typically takes a few hours on the server side. The imputed VCF will have ~40M variants with imputation quality scores (R2). Filter to R2 > 0.3 for downstream use.
+Imputation can expand your 600K chip variants to ~40M by predicting untyped genotypes from population reference panels. This significantly improves PRS variant matching.
 
-> **Note:** Imputation servers may require a minimum number of samples or have usage policies. Single-sample imputation works on both servers listed above.
+1. Prepare per-chromosome VCFs from the hg19 data
+2. Upload to the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) — accepts single-sample submissions and outputs GRCh38 natively
+3. Download the imputed VCF, filter to R2 > 0.3, and use as your pipeline input
+
+> **Note on Michigan Imputation Server:** MIS may require multiple samples per job (see [step 14 docs](14-imputation-prep.md)). TOPMed is generally more accessible for single-sample chip data. Check each server's current policies before uploading.
 
 ---
 
@@ -203,14 +159,12 @@ Imputation typically takes a few hours on the server side. The imputed VCF will 
 | **7** | PharmCAT | Pharmacogenomic star alleles from SNP genotypes | This is one of the **best uses** of chip data. Most PGx-relevant positions are common SNPs that arrays cover well. CYP2D6 will still be limited. |
 | **11** | ROH analysis | Runs of homozygosity from SNP genotypes | Works, but resolution is lower (~600K markers vs 5M). Large ROH (>5 MB) are still detectable. |
 | **25** | PRS | Polygenic risk scores from common variants | Works **very well** — PRS scoring files are derived from GWAS arrays that overlap heavily with consumer chips. Variant matching rate may actually be higher than with WGS. |
-| **26** | Ancestry PCA | Principal component analysis against 1000G | Works well for ancestry estimation. Common SNPs are what PCA uses. |
 | **27** | CPIC lookup | Drug-gene recommendations | Works if step 7 (PharmCAT) succeeds. |
 
 ### Works with Limitations
 
 | Step | Name | Limitation |
 |---|---|---|
-| **12** | Mito haplogroup | Only if your chip includes mitochondrial SNPs (23andMe does, ~3,000 mt positions). May assign a less specific haplogroup than WGS. |
 | **13** | VEP annotation | Runs, but annotating 600K variants is much less useful than annotating 5M. The rare, potentially significant variants are the ones arrays miss. |
 | **17** | CPSR | Runs, but cancer predisposition screening on chip data has very low sensitivity. Most pathogenic variants in cancer genes are rare and not on the chip. A negative CPSR result from chip data does NOT rule out cancer predisposition. |
 
@@ -225,11 +179,13 @@ Imputation typically takes a few hours on the server side. The imputed VCF will 
 | **8** | HLA typing (T1K) | Needs reads spanning HLA region |
 | **9** | ExpansionHunter | Needs reads spanning repeat regions |
 | **10** | TelomereHunter | Needs telomeric reads |
+| **12** | Mito haplogroup | The conversion workflow produces autosomal-only VCF. For mt haplogroup from chip data, use [HaploGrep](https://haplogrep.i-med.ac.at/) directly with your raw file. |
 | **16** | Coverage QC (indexcov) | No BAM to assess coverage |
 | **20** | Mito variant calling (Mutect2) | Needs BAM |
 | **21** | CYP2D6 (Cyrius) | Needs BAM |
 | **22** | SV consensus merge | No SV calls |
 | **23** | Clinical filter | Requires VEP-annotated VCF with gnomAD. Limited value on chip data. |
+| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools or upload to a service like [DNA Painter](https://dnapainter.com/). |
 
 ---
 
@@ -240,17 +196,16 @@ Imputation typically takes a few hours on the server side. The imputed VCF will 
 | Analysis | Usefulness | Confidence |
 |---|---|---|
 | **Pharmacogenomics** | High | Good — most PGx SNPs are on the chip |
-| **Ancestry / haplogroup** | High | Good for continental-level ancestry |
 | **Carrier screening** | Low-moderate | Only finds carriers for variants on the chip |
 | **Cancer predisposition** | Very low | Most pathogenic variants are rare and NOT on the chip |
 | **Polygenic risk scores** | Moderate | Reasonable, but fewer matched variants than WGS or imputed data |
+| **Ancestry** | N/A via pipeline | Use your provider's ancestry tools or HaploGrep for mt haplogroup |
 
 ### From chip data + imputation
 
 | Analysis | Usefulness | Confidence |
 |---|---|---|
 | **PRS** | High | Comparable to WGS for well-imputed regions |
-| **Ancestry PCA** | High | Excellent with millions of imputed SNPs |
 | **ClinVar screening** | Moderate | Imputed rare variants have lower confidence (check R2 scores) |
 | **PharmCAT** | High | Same as chip alone (PGx SNPs are directly genotyped) |
 
@@ -270,13 +225,11 @@ Imputation typically takes a few hours on the server side. The imputed VCF will 
 Download raw data from 23andMe / MyHeritage / AncestryDNA
          |
          v
-Convert to GRCh38 VCF (instructions above)
+Convert to GRCh38 VCF (plink2 + liftover, see above)
          |
          +---> Step 7:  PharmCAT -----> Step 27: CPIC drug-gene report
          |
          +---> Step 25: PRS (polygenic risk scores)
-         |
-         +---> Step 26: Ancestry PCA
          |
          +---> Step 6:  ClinVar screen (limited but useful)
          |
@@ -285,9 +238,9 @@ Convert to GRCh38 VCF (instructions above)
     (optional)
          |
          v
-Impute via Michigan/TOPMed server
+Impute via TOPMed server
          |
-         +---> Re-run steps 25, 26 with imputed VCF (better PRS, better PCA)
+         +---> Re-run step 25 with imputed VCF (better PRS)
 ```
 
 **Minimum useful run** (takes ~15 minutes): Steps 7 + 27 (pharmacogenomics + drug recommendations). This is the single highest-value analysis you can do with chip data.
@@ -313,7 +266,7 @@ Impute via Michigan/TOPMed server
 | Approach | Cost | Variants | Best For |
 |---|---|---|---|
 | Chip alone | $0 (already have data) | ~600K | PharmCAT, basic PRS |
-| Chip + imputation | $0 (free servers) | ~40M (imputed) | Better PRS, ancestry |
+| Chip + imputation | $0 (free servers) | ~40M (imputed) | Better PRS |
 | Budget WGS (Novogene) | $200-400 | ~5M (observed) | Full pipeline |
 | Standard WGS (Nebula, Dante) | $300-600 | ~5M (observed) | Full pipeline + data retention |
 
