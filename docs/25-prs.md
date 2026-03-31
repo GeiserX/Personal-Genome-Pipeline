@@ -80,10 +80,13 @@ The summary TSV contains a raw score for each condition. Here is what the column
 - They are NOT percentiles. A raw score of 0.5 does not mean 50th percentile.
 - They are NOT probabilities. A high score does not mean you will develop the condition.
 - They are NOT comparable across conditions. A score of 10 for CAD and 10 for T2D mean entirely different things.
+- They are NOT stable across arbitrary pipeline changes. If you change the PGS file version, genome build harmonization, or variant matching rules, you need to recompute and reinterpret the score.
 
 ### How to make them meaningful
 
 Raw PRS become useful only when compared against a population distribution. To convert your score into a percentile, you need a reference panel of thousands of individuals with scores computed using the same scoring file. The PGS Catalog provides some population-level statistics, but full percentile calculation requires a reference cohort (not included in this pipeline).
+
+Comparing two people is only defensible when both were scored with the same PGS ID, the same scoring file version, the same genome build conventions, and the same preprocessing. Even then, treat the comparison as directional rather than clinically calibrated unless you also have a matched reference distribution.
 
 As a rough guide:
 - Score near the population mean = average genetic risk

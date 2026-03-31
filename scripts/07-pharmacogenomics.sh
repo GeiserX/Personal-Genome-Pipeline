@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PharmCAT — Clinical pharmacogenomics (star alleles + drug recommendations)
 # Input: VCF.gz + GRCh38 reference
-# Output: HTML report with metabolizer status for 23 pharmacogenes
+# Output: HTML + JSON reports with metabolizer status for 23 pharmacogenes
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -12,7 +12,7 @@ OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/vcf"
 
 echo "=== PharmCAT: ${SAMPLE} ==="
 echo "Input VCF: ${VCF}"
-echo "Output: ${OUTPUT_DIR}/${SAMPLE}.report.html"
+echo "Outputs: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
 
 # Validate inputs
 for f in "$VCF" "$REF"; do
@@ -46,7 +46,7 @@ docker run --rm \
     -reporterJson
 
 echo "=== PharmCAT complete ==="
-echo "Report: ${OUTPUT_DIR}/${SAMPLE}.report.html"
+echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
 echo ""
 echo "Key genes covered: CYP2C19, CYP2D6, CYP2B6, CYP3A5, UGT1A1, DPYD, NAT2, TPMT"
 echo "NOTE: CYP2D6 may return 'Not called' — use Cyrius (BAM-based) for CYP2D6."
