@@ -77,6 +77,7 @@ genomics-pipeline/
     01-ora-to-fastq.sh         # Step scripts (one per pipeline step)
     ...
     27-cpic-lookup.sh
+    chip-to-vcf.sh             # Chip data converter (23andMe/MyHeritage/AncestryDNA → GRCh38 VCF)
     run-all.sh                 # Orchestrator: runs all steps with parallelism
     validate-setup.sh          # Pre-flight check: Docker, refs, images, sample
     generate-report.sh         # Text summary report aggregating all outputs
@@ -127,6 +128,16 @@ User's FASTQ/BAM/VCF
 - **LD pruning requires >=50 samples**. PCA requires >=2. Single-sample ancestry is fundamentally limited.
 - **PRS guardrail**: Raw PRS scores are NOT percentiles, absolute risks, or portable labels across tool versions. Never describe them that way unless you have an ancestry-matched reference cohort scored with the exact same PGS file and preprocessing.
 - **Ancestry guardrail**: Treat the current single-sample ancestry step as overlap/QC plus a starting point for downstream projection work, not as a population-placement tool by itself.
+
+### Chip Data Conversion (bcftools vs plink)
+- **NEVER use plink 1.9 → plink2 for single-sample chip-to-VCF conversion.** plink's `.bim` format encodes monomorphic sites with only one allele (A1=0). For single-sample data, ALL homozygous positions are monomorphic. `--ref-from-fa` cannot fix these because there's no second allele to work with. Result: all homozygous ALT genotypes silently become homozygous REF (0/0 with ALT=.). Verified empirically: rs9939609 (FTO) genotype=AA, REF=T → plink outputs `REF=A, ALT=., GT=0/0` (WRONG) instead of `REF=T, ALT=A, GT=1/1`.
+- **Use `bcftools convert --tsv2vcf -f <reference.fa>`** instead. It reads the FASTA directly and correctly handles all three genotype classes (hom-ref, het, hom-alt). Typical output from 609K MyHeritage GSA chip: ~430K hom-ref, ~107K het, ~66K hom-alt.
+- **MyHeritage CSV needs pre-conversion** to TSV format (strip quotes, comments, headers; rearrange columns).
+- **hg19 VCF needs chr prefix** before liftover — `bcftools annotate --rename-chrs` converts numeric chromosomes (1, 2, ...) to chr-prefixed names (chr1, chr2, ...) required by the chain file.
+- **Picard LiftoverVcf warns about ~900 swapped REF/ALT** variants between builds — these are not recovered by default.
+- **PharmCAT on chip data**: calls many genes correctly (CYP2B6, CYP4F2, DPYD, NUDT15) but misses CYP2C19 (25 missing positions), VKORC1 (1 missing position), and miscalls CYP3A5 (4 missing positions on MyHeritage GSA).
+- **ROH on chip data** requires `-G30` flag because chip VCFs lack FORMAT/PL tags.
+- **PRS on chip data** requires `no-mean-imputation` flag (single sample lacks allele frequencies). Matches ~12% of large scoring files vs ~28% from WGS.
 
 ### bcftools
 - **`bcftools sort` requires `##contig` headers** — fails silently or errors on VCFs without them. Always inject contig headers from the reference `.fai` when building VCFs.

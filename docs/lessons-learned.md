@@ -183,3 +183,35 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - TOPMed Freeze 8 (r2): 132K samples, 705M variants, GRCh38 native
 - Uses `chr` prefix (which GRCh38 BAMs already have)
 - HRC r1.1 (32K samples) is European-centric but hg19 only
+
+## Chip Data Conversion (Genotyping Arrays → VCF)
+
+### plink silently corrupts single-sample homozygous ALT genotypes
+- **What failed:** `plink --23file` (1.9) to import + `plink2 --ref-from-fa force` to fix REF/ALT
+- **Why:** For single-sample data, ALL homozygous positions are monomorphic. plink's `.bim` stores only one allele for these. `--ref-from-fa` cannot create a proper ALT because there's no second allele slot. Homozygous ALT genotypes silently become homozygous REF.
+- **Verified:** rs9939609 (FTO), genotype=AA, REF=T. plink: `REF=A, ALT=., GT=0/0` (WRONG). bcftools: `REF=T, ALT=A, GT=1/1` (CORRECT). ~66K positions (11%) corrupted.
+- **Fix:** Use `bcftools convert --tsv2vcf -f <reference.fa>`. Single command, no intermediate binary format.
+
+### plink 1.9 --23file quirks
+- `--allow-extra-chr` cannot be used with `--23file`
+- Female samples with Y calls (MyHeritage GSA PAR region) error with sex=F
+- Sex inference defaults to male unless explicitly set
+
+### MyHeritage CSV must be converted to TSV
+- Quoted CSV with `"RSID","CHROMOSOME","POSITION","RESULT"` columns
+- Strip `##` comments, header, quotes; convert commas to tabs
+
+### bcftools hg19 VCF needs chr prefix before liftover
+- hg19 reference uses numeric chromosomes; chain file expects chr prefix
+- `bcftools annotate --rename-chrs` between conversion and liftover
+
+### PharmCAT chip vs WGS results (MyHeritage GSA, verified 2026-03-31)
+- **Correct:** CYP2B6 (*1/*6), CYP4F2 (*1/*6), DPYD (*5/*5), NUDT15 (*1/*2)
+- **Missed:** CYP2C19 (25 missing), VKORC1 (1 missing)
+- **Wrong:** CYP3A5 *1/*1 (should be *3/*3, 4 missing positions)
+- Total: 888 missing PGx positions from the GSA chip
+
+### ROH and PRS need special flags for chip data
+- ROH: `-G30` required (no FORMAT/PL in chip VCF)
+- PRS: `no-mean-imputation` required (single sample lacks allele frequencies)
+- PRS matching: chip ~12% of large scoring files vs WGS ~28%
