@@ -1,7 +1,7 @@
 # Step 17: Cancer Predisposition Screening with CPSR
 
 ## What This Does
-Screens germline variants against ACMG SF v3.2 (Secondary Findings) and curated cancer predisposition gene panels to identify clinically actionable cancer risk variants.
+Screens germline variants against curated cancer predisposition gene panels to identify clinically actionable cancer risk variants. Uses ACMG SF v3.2 (Secondary Findings) gene lists, which also include cardiac and metabolic genes — CPSR focuses on the cancer-related subset.
 
 ## Why
 ClinVar screening (step 6) finds known pathogenic variants, but CPSR applies ACMG/AMP classification criteria to novel or rare variants in cancer predisposition genes — catching variants ClinVar hasn't yet classified.
@@ -61,6 +61,7 @@ docker run --rm \
 
 ## Notes
 - The 21GB data bundle only needs to be downloaded once — shared across all samples.
+- **Data bundle staleness:** The default bundle (`grch38.20220203`) dates from February 2022. ClinVar, CancerMine, and UniProt annotations inside the bundle are frozen at that date. Check the [PCGR releases page](https://github.com/sigven/pcgr/releases) periodically for updated bundles — newer bundles include more recent ClinVar classifications and gene-disease annotations.
 - Use `--panel_id 0` for comprehensive screening (all ACMG SF genes).
 - `--classify_all` ensures all variants in target genes get ACMG classification, not just known pathogenic.
 - CPSR is complementary to ClinVar screening — ClinVar finds known variants, CPSR classifies novel ones.

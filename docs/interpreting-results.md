@@ -24,7 +24,9 @@ The single biggest source of unnecessary anxiety in personal genomics is **VUS �
 - They are **not actionable** — no clinical decision should be made based on a VUS
 - CPSR may report dozens or hundreds of VUS. This is normal and expected.
 
-**Rule of thumb:** If a variant is classified as VUS, treat it the same as if it were not tested. Do not Google it. Do not change your behavior. Check back in 1-2 years when ClinVar may have reclassified it.
+**Rule of thumb:** If a variant is classified as VUS, treat it the same as if it were not tested. Check back in 1-2 years when ClinVar may have reclassified it.
+
+**Exception:** A VUS in a high-penetrance gene (BRCA1, BRCA2, TP53, MLH1/MSH2) may warrant discussion with a genetic counselor, especially if you have a matching family history. For these genes, even uncertain findings can inform screening decisions.
 
 ### ClinVar Star Ratings
 
@@ -47,7 +49,8 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 - You have ONE copy of a variant that causes disease when BOTH copies are affected
 - You are **not affected** and will never develop the condition
 - The only relevance is for **family planning**: if your partner carries the same gene, each child has a 25% chance of being affected
-- Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), MUTYH (colorectal cancer risk), HFE (hemochromatosis)
+- **Exception — MUTYH**: heterozygous carriers have a modestly elevated colorectal cancer risk (~2x population risk). MUTYH biallelic carriers have a much higher risk, but even single-carrier status warrants earlier colonoscopy screening (discuss with your doctor)
+- Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), HFE (hemochromatosis)
 
 ---
 
@@ -97,7 +100,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening across ACMG SF v3.2 genes (81 genes associated with hereditary cancer syndromes).
+**What it tells you:** Cancer predisposition screening across ACMG SF v3.2 genes (81 genes associated with hereditary conditions including cancer, cardiac, and metabolic syndromes). CPSR focuses on the cancer-related subset.
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 
@@ -174,6 +177,8 @@ The output VCF lists each tested locus with the number of repeats found. Key loc
 | ATXN1 | ATXN1 | <33 | — | >39 | Spinocerebellar ataxia 1 |
 | C9orf72 | C9orf72 | <24 | — | >30 | ALS / Frontotemporal dementia |
 | DMPK | DMPK | <35 | — | >50 | Myotonic dystrophy type 1 |
+
+**FMR1 intermediate zone (45-54 repeats):** Not affected, but repeats may expand in offspring. Carriers should receive genetic counseling. Premutation (55-200) carries risk of FXTAS (males >50) and FXPOI.
 
 **"ALL CLEAR"** means no locus exceeded its disease threshold.
 
@@ -259,7 +264,7 @@ VEP annotates every variant with:
 
 ### gnomAD Frequency: Your Best Sanity Check
 
-The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population (~140,000 exomes + ~76,000 genomes).
+The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. gnomAD v4 contains ~807,000 exomes and ~76,000 genomes; if your VEP cache uses an older release, the counts will differ but the principle is the same.
 
 **Key principle:** A variant that is common in healthy people is almost certainly benign, regardless of what any prediction tool says.
 
@@ -562,7 +567,7 @@ Found something interesting? These free tools help you dig deeper:
 ### Database Lookups
 
 - **[ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/)** — Search by rsID, gene name, or genomic position. Check the review status (stars) and submission history.
-- **[gnomAD](https://gnomad.broadinstitute.org/)** — Search any variant to see its population frequency across ~216,000 individuals. If common in gnomAD, almost certainly benign.
+- **[gnomAD](https://gnomad.broadinstitute.org/)** — Search any variant to see its population frequency across 800,000+ individuals (v4). If common in gnomAD, almost certainly benign.
 - **[OMIM](https://www.omim.org/)** — The definitive catalog of genetic disorders. Search by gene name to understand what conditions it causes and the inheritance pattern.
 - **[GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/)** — Expert-written disease descriptions for genetic conditions. The single best resource for understanding a specific genetic disease.
 
