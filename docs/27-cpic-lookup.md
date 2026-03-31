@@ -122,6 +122,7 @@ Only genes where you are NOT a normal metabolizer appear here. For each, the rep
 - Run this step after PharmCAT (step 7). For CYP2D6, also run Cyrius (step 21) and manually compare.
 - The output report is printed to stdout as well as written to file.
 - You can add or modify gene-drug pairs by editing the `CPIC_DRUGS` associative array in the script.
+- For maintenance, review the hard-coded CPIC table at least quarterly or whenever you bump PharmCAT, so the lookup stays aligned with current guideline pairs.
 - For the most up-to-date CPIC recommendations, always check [cpicpgx.org](https://cpicpgx.org/) directly.
 
 ## Links
