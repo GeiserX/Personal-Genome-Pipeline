@@ -62,7 +62,7 @@ docker run --rm \
 
 ## Limitations
 - **CYP2D6** often returns `Not called` — gene has pseudogene homology that confounds VCF-based calling. Use Cyrius or StellarPGx (BAM-based) if CYP2D6 is critical.
-- PharmCAT may disagree with lab reports on complex haplotypes (e.g., NAT2). When in doubt, trust PharmCAT + raw VCF over lab transcription.
+- PharmCAT may disagree with lab reports on complex haplotypes (e.g., NAT2). Discrepancies can arise from different genome builds (hg19 vs hg38), different star allele definitions, or different variant calling pipelines. When a discrepancy matters clinically, compare both sets of raw variant calls and consult the PharmVar database for the current allele definitions — do not blindly trust either source.
 - PharmCAT output structure changes across releases. If you upgrade PharmCAT, re-test step 27 (`27-cpic-lookup.sh`) because it parses the JSON output directly.
 
 ## Maintenance
