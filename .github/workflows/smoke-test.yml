@@ -6,7 +6,6 @@ on:
     paths: ['scripts/**', '.github/workflows/smoke-test.yml']
   pull_request:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/smoke-test.yml']
 
 jobs:
   contract-validation:
