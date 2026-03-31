@@ -207,25 +207,7 @@ PacBio HiFi reads are highly accurate (>Q20) and 10-20 kb long. Different tools 
 
 These services use genotyping chips that test ~600,000-700,000 specific positions. This is **not whole genome sequencing** -- it covers ~0.02% of your genome.
 
-### What You Can Do
-
-1. **Convert to VCF** using tools like `plink` or custom scripts
-2. **Run ClinVar screening** (step 6) on the converted VCF
-3. **Run PharmCAT** (step 7) for pharmacogenomics -- though coverage of PGx positions varies by chip version
-
-### What You Cannot Do
-
-- Alignment (step 2) -- no raw reads exist
-- Variant calling (step 3) -- genotypes are already called by the array
-- Structural variants (steps 4, 18, 19) -- arrays can't detect SVs
-- Telomere analysis (step 10) -- requires actual sequencing reads
-- Functional annotation (step 13) -- limited value with only ~600K variants
-
-### Imputation
-
-You can dramatically increase coverage by imputing (predicting) missing genotypes using the [Michigan Imputation Server](https://imputationserver.sph.umich.edu/) or [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/). This can fill in ~40 million positions from your 600K, but the accuracy depends on your ancestry and the reference panel used.
-
-**Note:** Imputation servers typically require 20+ samples per job. Single-sample submissions may be rejected.
+For detailed conversion instructions, which pipeline steps work, imputation guidance, and what to realistically expect from chip data, see the **[chip data guide](chip-data-guide.md)**.
 
 ---
 
