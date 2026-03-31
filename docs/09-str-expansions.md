@@ -20,7 +20,7 @@ weisburd/expansionhunter:latest
 | Disease | Gene | Repeat Unit | Normal | Pathogenic |
 |---|---|---|---|---|
 | Huntington's | HTT | CAG | <27 | >35 |
-| Fragile X | FMR1 | CGG | <45 | >55 (premutation) / >200 (full) |
+| Fragile X | FMR1 | CGG | <45 | ≥55 (premutation) / >200 (full) |
 | Friedreich's Ataxia | FXN | GAA | <33 | >66 |
 | ALS/FTD | C9ORF72 | GGCCCC | <24 | >30 |
 | Myotonic Dystrophy 1 | DMPK | CTG | <35 | >50 |
