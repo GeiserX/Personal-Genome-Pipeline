@@ -45,10 +45,11 @@ If you have raw data from a consumer genotyping service instead of whole genome 
 
 Consumer chip raw data files contain genotype calls (e.g., "AG" at a position) but do **not** tell you which allele is the reference allele on the human genome. To create a valid VCF, every position needs its REF allele looked up from a reference FASTA. Without this step, homozygous ALT calls get written as REF/REF and heterozygous calls can have ref/alt swapped — silently corrupting all downstream analysis.
 
-The conversion requires three stages:
-1. **Import** raw genotypes using plink 1.9 (`--23file` handles 23andMe/AncestryDNA format natively)
-2. **Fix ref/alt** using plink2's `--ref-from-fa` with a GRCh37 reference FASTA
-3. **Liftover** coordinates from GRCh37 to GRCh38
+The conversion requires two stages:
+1. **Import + fix ref/alt** in a single step using `bcftools convert --tsv2vcf` with a GRCh37 reference FASTA
+2. **Liftover** coordinates from GRCh37 to GRCh38
+
+> **Why not plink?** An earlier version of this guide used plink 1.9 (`--23file`) + plink2 (`--ref-from-fa`). That pipeline silently corrupts homozygous ALT genotypes in single-sample data because plink's binary format cannot represent both alleles for monomorphic sites. `bcftools convert --tsv2vcf` reads the reference FASTA directly and handles all genotype classes correctly.
 
 ### Prerequisites
 
@@ -78,53 +79,61 @@ wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
 
 ### Conversion Workflow
 
-Place your raw data file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`, then:
+All three vendor formats need to be converted to a tab-separated file with columns: `rsID  chromosome  position  genotype` (23andMe/AncestryDNA are already in this format). Then `bcftools convert --tsv2vcf` creates a proper VCF by looking up each position's reference allele from the FASTA.
+
+A ready-to-use script is provided at `scripts/chip-to-vcf.sh`. You can also run the steps manually:
 
 ```bash
 SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
 
-# --- Stage 1a: Import raw genotypes (plink 1.9) ---
+# --- Pre-step: Convert MyHeritage CSV to TSV ---
+# (Skip this for 23andMe/AncestryDNA — their files are already TSV)
 #
-# --23file is a plink 1.9 flag (NOT available in plink2).
-# It reads 23andMe and AncestryDNA tab-separated formats natively.
+# MyHeritage CSVs have quoted fields and a different header.
+# Strip comments, headers, and quotes, then rearrange to TSV.
+
+grep -v "^#" "${GENOME_DIR}/${SAMPLE}/raw/MyHeritage_raw_dna_data.csv" | \
+  grep -v "^RSID" | \
+  sed 's/"//g' | \
+  awk -F',' '{print $1"\t"$2"\t"$3"\t"$4}' \
+  > "${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt"
+
+# --- Stage 1: Import genotypes + fix ref/alt (single step) ---
 #
-# For MyHeritage CSV: convert to 23andMe-like TSV first (see note below).
+# bcftools convert --tsv2vcf reads the TSV and looks up the REF allele
+# from the FASTA at each position. This correctly handles:
+#   - Homozygous reference (e.g., AA where REF=A → GT 0/0)
+#   - Heterozygous (e.g., AG where REF=A → GT 0/1)
+#   - Homozygous ALT (e.g., AA where REF=T → GT 1/1)
+# The -c flag maps columns: ID=rsid, CHROM=chromosome, POS=position, AA=genotype
 
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/plink:1.90b7.7--h18e278d_1 \
-  plink \
-    --23file "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" "${SAMPLE}" "${SAMPLE}" \
-    --out "/genome/${SAMPLE}/raw/${SAMPLE}_imported" \
-    --output-chr chr26 \
-    --allow-extra-chr
-
-# --- Stage 1b: Fix ref/alt and export VCF (plink2) ---
-#
-# --ref-from-fa resolves which allele is reference at each position.
-# Without this step, the VCF will have wrong REF/ALT assignments.
-# 'force' modifier allows overriding alleles even when plink guessed wrong.
-
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
-  plink2 \
-    --bfile "/genome/${SAMPLE}/raw/${SAMPLE}_imported" \
-    --fa "/genome/reference_hg19/human_g1k_v37.fasta" \
-    --ref-from-fa force \
-    --chr 1-22 \
-    --snps-only just-acgt \
-    --export vcf bgz \
-    --out "/genome/${SAMPLE}/raw/${SAMPLE}_hg19" \
-    --output-chr chr26
-
-# Index the hg19 VCF
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz"
+  bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
+    -f /genome/reference_hg19/human_g1k_v37.fasta \
+    -s "${SAMPLE}" \
+    -c ID,CHROM,POS,AA \
+    -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz"
+
+# Add "chr" prefix (required by the liftover chain file)
+printf '%s\n' $(seq 1 22) X Y MT | \
+  awk '{print $1" chr"$1}' > "${GENOME_DIR}/reference_hg19/chr_rename.txt"
+
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  staphb/bcftools:1.21 \
+  bcftools annotate \
+    --rename-chrs /genome/reference_hg19/chr_rename.txt \
+    "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
+    -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
+
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  staphb/bcftools:1.21 \
+  bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Stage 2: Liftover to GRCh38 ---
 
@@ -132,7 +141,7 @@ docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   broadinstitute/picard:latest \
   java -jar /usr/picard/picard.jar LiftoverVcf \
-    I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
+    I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
     O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
     R=/genome/reference/Homo_sapiens_assembly38.fasta \
@@ -143,16 +152,16 @@ docker run --rm --user root \
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools index -t "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+  bcftools index -t -f "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 ```
 
-**Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with 400,000-600,000 autosomal SNPs. Some variants (~5-15%) will be rejected during liftover because they map to regions that changed between builds.
+**Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with ~600,000 SNPs. Typical breakdown: ~430K hom-ref, ~107K het, ~66K hom-alt, ~1K missing. Some variants (~0.3%) are rejected during liftover; ~900 have swapped REF/ALT between builds.
 
-> **MyHeritage CSV format:** plink2's `--23file` expects tab-separated data with columns: rsID, chromosome, position, genotype. MyHeritage CSVs use a different column layout. Convert first: strip the header, reorder columns to match 23andMe format, and replace commas with tabs.
+> **X/Y/MT chromosomes:** All chromosomes are converted. For mitochondrial haplogroup estimation from chip data, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) accept raw 23andMe files directly.
 
-> **X/Y/MT chromosomes:** This workflow restricts to autosomes (`--chr 1-22`). Mitochondrial and sex chromosome SNPs from your chip are not converted. For mitochondrial haplogroup estimation from chip data, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) accept raw 23andMe files directly.
+> **23andMe / AncestryDNA:** These are already tab-separated. Skip the MyHeritage CSV conversion pre-step and place your file directly at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`.
 
 ### Optional: Imputation
 
@@ -173,9 +182,9 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | Step | Name | Why It Works | Notes |
 |---|---|---|---|
 | **6** | ClinVar screen | Checks your variants against known pathogenic entries | You'll only find pathogenic variants that happen to be on the chip. Most clinically significant rare variants will be missed. |
-| **7** | PharmCAT | Pharmacogenomic star alleles from SNP genotypes | This is one of the **best uses** of chip data. Most PGx-relevant positions are common SNPs that arrays cover well. CYP2D6 will still be limited. |
-| **11** | ROH analysis | Runs of homozygosity from SNP genotypes | Works, but resolution is lower (~600K markers vs 5M). Large ROH (>5 MB) are still detectable. |
-| **25** | PRS | Polygenic risk scores from common variants | Works **very well** — PRS scoring files are derived from GWAS arrays that overlap heavily with consumer chips. Variant matching rate may actually be higher than with WGS. |
+| **7** | PharmCAT | Pharmacogenomic star alleles from SNP genotypes | Calls many genes (CYP2B6, CYP4F2, DPYD, NUDT15, TPMT, SLCO1B1, UGT1A1) but **misses key genes** like CYP2C19 and VKORC1 on some chip versions due to missing positions. Expect 888+ missing PGx positions. Always compare with WGS results if available. |
+| **11** | ROH analysis | Runs of homozygosity from SNP genotypes | Works, but requires the `-G30` flag (chip VCFs lack PL tags). Large ROH (>1 MB) are detectable. |
+| **25** | PRS | Polygenic risk scores from common variants | Works with `no-mean-imputation` flag (single sample lacks allele frequencies). Matches ~12% of large scoring files (vs ~28% from WGS). Scores are not directly comparable to WGS scores. |
 | **27** | CPIC lookup | Drug-gene recommendations | Works if step 7 (PharmCAT) succeeds. |
 
 ### Works with Limitations
@@ -212,10 +221,10 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 
 | Analysis | Usefulness | Confidence |
 |---|---|---|
-| **Pharmacogenomics** | High | Good — most PGx SNPs are on the chip |
+| **Pharmacogenomics** | Moderate-High | Calls many genes correctly, but misses some critical ones (e.g., CYP2C19, VKORC1) depending on chip version. Some calls may differ from WGS (e.g., CYP3A5). |
 | **Carrier screening** | Low-moderate | Only finds carriers for variants on the chip |
 | **Cancer predisposition** | Very low | Most pathogenic variants are rare and NOT on the chip |
-| **Polygenic risk scores** | Moderate | Reasonable, but fewer matched variants than WGS or imputed data |
+| **Polygenic risk scores** | Low-Moderate | Matches ~12% of large scoring files. Raw scores differ substantially from WGS and are not comparable without a matched reference cohort. |
 | **Ancestry** | N/A via pipeline | Use your provider's ancestry tools or HaploGrep for mt haplogroup |
 
 ### From chip data + imputation
@@ -242,7 +251,7 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 Download raw data from 23andMe / MyHeritage / AncestryDNA
          |
          v
-Convert to GRCh38 VCF (plink2 + liftover, see above)
+Convert to GRCh38 VCF (bcftools + liftover, see above)
          |
          +---> Step 7:  PharmCAT -----> Step 27: CPIC drug-gene report
          |
@@ -270,7 +279,7 @@ Impute via TOPMed server
 
 2. **PRS from chip data is reasonable but less precise** than PRS from WGS. The scoring files may reference variants that aren't on your chip and can't be imputed.
 
-3. **PharmCAT coverage depends on chip version.** 23andMe v5 covers most CYP2C19, CYP2C9, and DPYD positions. Older chip versions (v3, v4) cover fewer PGx SNPs. PharmCAT will report "Not called" for genes without sufficient data.
+3. **PharmCAT coverage depends on chip version.** In our smoke test with MyHeritage GSA chip data, PharmCAT correctly called CYP2B6, CYP4F2, DPYD, NUDT15, TPMT, and UGT1A1 — but **failed to call CYP2C19** (25 missing positions) and **VKORC1** (1 missing position), and **miscalled CYP3A5** as \*1/\*1 instead of \*3/\*3 (4 missing positions). 23andMe v5 may cover more PGx positions. PharmCAT will report "Not called" for genes without sufficient data — this is preferable to a wrong call.
 
 4. **Imputed genotypes are predictions, not observations.** Imputation accuracy varies by ancestry and local linkage disequilibrium. Common variants (MAF > 5%) impute well. Rare variants (MAF < 1%) impute poorly and should not be used for clinical decisions.
 
