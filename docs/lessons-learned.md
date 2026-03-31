@@ -110,6 +110,17 @@ Always use `--rm` for analysis containers to avoid accumulating stopped containe
 ### Always use --user root for write access
 Most bioinformatics containers run as non-root users. If writing to bind-mounted volumes, add `--user root` to avoid permission issues.
 
+## CI / Workflow Issues
+
+### ShellCheck warnings still fail the GitHub Action
+- **Observed:** `ludeeus/action-shellcheck@master` exits non-zero even when configured with `severity: warning`
+- **Impact:** Once the check is required on `main`, "warning-only" findings still block merges
+- **Fix:** Clear ShellCheck warnings before enabling required status checks, or explicitly relax the workflow instead of assuming warnings are advisory only
+
+### Protect `main` only after CI is green
+- **Observed:** Required status checks become a trap if you enable branch protection while the default branch or active PR branch is still red
+- **Fix:** Get `Lint` and `Smoke Tests` green first, then enable required checks, block force-pushes, and block deletion
+
 ## MToolBox Issues
 
 ### MToolBox: No working Docker image exists
