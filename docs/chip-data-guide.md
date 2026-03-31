@@ -46,13 +46,13 @@ If you have raw data from a consumer genotyping service instead of whole genome 
 Consumer chip raw data files contain genotype calls (e.g., "AG" at a position) but do **not** tell you which allele is the reference allele on the human genome. To create a valid VCF, every position needs its REF allele looked up from a reference FASTA. Without this step, homozygous ALT calls get written as REF/REF and heterozygous calls can have ref/alt swapped — silently corrupting all downstream analysis.
 
 The conversion requires three stages:
-1. **Import** raw genotypes using plink2 (handles 23andMe/AncestryDNA format natively)
+1. **Import** raw genotypes using plink 1.9 (`--23file` handles 23andMe/AncestryDNA format natively)
 2. **Fix ref/alt** using plink2's `--ref-from-fa` with a GRCh37 reference FASTA
 3. **Liftover** coordinates from GRCh37 to GRCh38
 
 ### Prerequisites
 
-One-time downloads (~3.5 GB total):
+One-time downloads (~3.5 GB total, plus the GRCh38 reference from [step 00](00-reference-setup.md)):
 
 ```bash
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
@@ -74,6 +74,8 @@ wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
   "https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19ToHg38.over.chain.gz"
 ```
 
+> **GRCh38 reference required:** The liftover step (stage 3) needs `Homo_sapiens_assembly38.fasta` in `${GENOME_DIR}/reference/`. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.
+
 ### Conversion Workflow
 
 Place your raw data file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`, then:
@@ -83,24 +85,39 @@ SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
 
-# --- Stage 1: Import raw genotypes and fix ref/alt ---
+# --- Stage 1a: Import raw genotypes (plink 1.9) ---
 #
-# plink2 --23file handles 23andMe and AncestryDNA tab-separated formats.
-# --ref-from-fa resolves which allele is reference at each position.
-# Without --ref-from-fa, the VCF will have wrong REF/ALT assignments.
+# --23file is a plink 1.9 flag (NOT available in plink2).
+# It reads 23andMe and AncestryDNA tab-separated formats natively.
 #
 # For MyHeritage CSV: convert to 23andMe-like TSV first (see note below).
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
+  quay.io/biocontainers/plink:1.90b7.7--h18e278d_1 \
+  plink \
+    --23file "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" "${SAMPLE}" "${SAMPLE}" \
+    --out "/genome/${SAMPLE}/raw/${SAMPLE}_imported" \
+    --output-chr chr26 \
+    --allow-extra-chr
+
+# --- Stage 1b: Fix ref/alt and export VCF (plink2) ---
+#
+# --ref-from-fa resolves which allele is reference at each position.
+# Without this step, the VCF will have wrong REF/ALT assignments.
+# 'force' modifier allows overriding alleles even when plink guessed wrong.
+
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
   pgscatalog/plink2:2.00a5.10 \
   plink2 \
-    --23file "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" "${SAMPLE}" \
-    --ref-from-fa "/genome/reference_hg19/human_g1k_v37.fasta" \
-    --export vcf bgz \
-    --out "/genome/${SAMPLE}/raw/${SAMPLE}_hg19" \
+    --bfile "/genome/${SAMPLE}/raw/${SAMPLE}_imported" \
+    --fa "/genome/reference_hg19/human_g1k_v37.fasta" \
+    --ref-from-fa force \
     --chr 1-22 \
     --snps-only just-acgt \
+    --export vcf bgz \
+    --out "/genome/${SAMPLE}/raw/${SAMPLE}_hg19" \
     --output-chr chr26
 
 # Index the hg19 VCF
