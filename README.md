@@ -37,7 +37,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - You're a biohacker, researcher, or patient advocate who wants full control over your genomic data
 - You can't afford a $500/hour genetics consultant but you have a computer and curiosity
 
-> **Not WGS?** If you have genotyping array data (23andMe, AncestryDNA, MyHeritage), this pipeline won't work directly. Those services test ~600K positions, not the full 3 billion. You can convert array data to VCF and use some downstream steps (ClinVar screening, pharmacogenomics), but alignment and variant calling require actual sequencing reads. See the [vendor guide](docs/vendor-guide.md) for details.
+> **Only have 23andMe / MyHeritage / AncestryDNA?** You can still run pharmacogenomics, polygenic risk scores, ClinVar screening, and ROH analysis. See the **[chip data guide](docs/chip-data-guide.md)** for step-by-step conversion instructions and which pipeline steps work with ~600K SNP array data.
 
 ---
 
@@ -352,6 +352,7 @@ ${GENOME_DIR}/
 | Very slow on macOS | Rosetta 2 emulation overhead | Expected. Consider running on a Linux machine or cloud instance for heavy steps. |
 
 For detailed solutions, see:
+- [docs/chip-data-guide.md](docs/chip-data-guide.md) — using 23andMe/MyHeritage/AncestryDNA data with this pipeline
 - [docs/troubleshooting.md](docs/troubleshooting.md) — comprehensive troubleshooting guide organized by symptom
 - [docs/lessons-learned.md](docs/lessons-learned.md) — every failure encountered during development
 - [docs/glossary.md](docs/glossary.md) — alphabetical glossary of genomics terms
@@ -364,7 +365,7 @@ For detailed solutions, see:
 $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante Labs: ~$300-600. Sequencing.com: $399. Novogene (research): ~$200-400. The pipeline itself is free.
 
 **Q: I only have 23andMe/AncestryDNA data. Can I use this?**
-Partially. Those services use genotyping arrays (~600K positions), not full sequencing (~3 billion). You can convert the raw data to VCF and run ClinVar screening (step 6) and some annotation steps, but you can't run alignment, variant calling, or structural variant analysis. For the full pipeline, you need actual WGS data.
+Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or single-sample ancestry PCA. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
 On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 27-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + MToolBox + haplogrep3).
