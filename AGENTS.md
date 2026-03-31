@@ -116,6 +116,7 @@ User's FASTQ/BAM/VCF
 - Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
 - JSON output structure: `genes` is `{source → {gene_name → data}}` (dict of dicts), NOT a list. `sourceDiplotypes` contains `allele1`/`allele2` objects with `.name` field.
 - Star allele calls may differ from other pipelines (e.g., Sanitas hg19 vs our hg38 DeepVariant). PharmCAT 2.15.5 definitions update frequently.
+- **Pipeline pin vs upstream**: The pipeline is currently pinned to PharmCAT `2.15.5` for reproducibility, but upstream PharmCAT releases continue to ship new guideline content and parser-relevant format changes. Latest known upstream release at the time of this note was `v3.2.0` (Feb 2026). Before bumping the Docker tag, revalidate both step 7 and step 27 end-to-end.
 
 ### plink2 (PRS / Ancestry)
 - **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).
@@ -123,6 +124,8 @@ User's FASTQ/BAM/VCF
 - **`--set-all-var-ids '@:#'`**: The `@` placeholder includes the full contig name (including `chr`). Do NOT use `chr@:#` or you get `chrchr1:pos`.
 - **Scoring file duplicates**: Large PGS Catalog files (e.g., PGS000014 with 7M variants) contain duplicate variant:allele pairs. Deduplicate before `--score` or plink2 errors.
 - **LD pruning requires >=50 samples**. PCA requires >=2. Single-sample ancestry is fundamentally limited.
+- **PRS guardrail**: Raw PRS scores are NOT percentiles, absolute risks, or portable labels across tool versions. Never describe them that way unless you have an ancestry-matched reference cohort scored with the exact same PGS file and preprocessing.
+- **Ancestry guardrail**: Treat the current single-sample ancestry step as overlap/QC plus a starting point for downstream projection work, not as a population-placement tool by itself.
 
 ### bcftools
 - **`bcftools sort` requires `##contig` headers** — fails silently or errors on VCFs without them. Always inject contig headers from the reference `.fai` when building VCFs.
@@ -134,17 +137,20 @@ User's FASTQ/BAM/VCF
 ### Cyrius (CYP2D6)
 - Returns `None/None` for both samples — common limitation of short-read WGS due to CYP2D7 homology and structural rearrangements.
 
-## Database Update Cadence
+## Knowledge Base / Tool Update Cadence
 
-| Database | Update Frequency | Re-run Steps | Time |
+| Resource / Tool | Update Frequency | Re-run Steps | Time |
 |---|---|---|---|
 | ClinVar | Monthly | 6 (ClinVar screen) | ~5 min |
-| VEP cache | Every 6 months (Ensembl release) | 13, 23 | ~3 hr |
-| PCGR/CPSR data | Annually | 17 | ~45 min |
-| PharmCAT | Check quarterly | 7, 27 | ~15 min |
+| Ensembl / VEP cache | Each Ensembl release (~4-6 months) | 13, 23 | ~3 hr |
+| PCGR/CPSR data | Annually or when upstream bundle changes materially | 17 | ~45 min |
+| PharmCAT upstream release | Check quarterly | 7, 27 | ~15-30 min validation |
+| CPIC static lookup table | Check quarterly or when CPIC adds/updates guideline pairs | 27 | ~15 min code refresh |
 | PGS Catalog | Check quarterly | 25 | ~30 min |
 
 ClinVar is the highest-value update — new pathogenic classifications happen monthly.
+Before bumping PharmCAT, validate the preprocessor flags, JSON parsing in step 27, and any phenotype/diplotype changes on a known test sample.
+For a public pipeline, keep PGS IDs, PharmCAT Docker tags, and the CPIC lookup table explicitly versioned in git so result changes are auditable over time.
 
 ## Common Issues When Developing
 
