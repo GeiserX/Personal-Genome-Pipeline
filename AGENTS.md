@@ -75,9 +75,13 @@ genomics-pipeline/
   scripts/
     01-ora-to-fastq.sh         # Step scripts (one per pipeline step)
     ...
-    20-mtoolbox.sh
+    27-cpic-lookup.sh
     run-all.sh                 # Orchestrator: runs all steps with parallelism
     validate-setup.sh          # Pre-flight check: Docker, refs, images, sample
+    generate-report.sh         # Text summary report aggregating all outputs
+  .github/workflows/
+    lint.yml                   # ShellCheck + markdownlint
+    smoke-test.yml             # Dry-run validation of all scripts
 ```
 
 ## Data Flow
@@ -88,8 +92,9 @@ User's FASTQ/BAM/VCF
   ├─ Step 2: minimap2 alignment (FASTQ → BAM)
   ├─ Step 3: DeepVariant variant calling (BAM → VCF)
   │
-  ├─ VCF-dependent steps: 6, 7, 9, 11, 12, 13, 14, 17
-  ├─ BAM-dependent steps: 4, 10, 15, 16, 18, 19, 20
+  ├─ VCF-dependent steps: 6, 7, 9, 11, 12, 13, 14, 17, 25, 26
+  ├─ BAM-dependent steps: 4, 10, 15, 16, 18, 19, 20, 21
+  ├─ Post-VCF-analysis: 22 (SV merge), 23 (clinical filter), 24 (report), 27 (CPIC)
   └─ Both: 5 (needs Manta VCF from step 4)
 ```
 
@@ -103,6 +108,43 @@ User's FASTQ/BAM/VCF
 6. Update `docs/interpreting-results.md` if the output needs explanation
 7. Add the Docker image to the pre-pull list in `docs/00-reference-setup.md`
 8. Test on at least one sample before committing
+
+## Tool-Specific Gotchas (Learned from Real Execution)
+
+### PharmCAT 2.15.5
+- **Two-step workflow**: Preprocessor (`pharmcat_vcf_preprocessor.py` with `-refFna`) → main jar (`pharmcat.jar`). The old `-refFasta` flag on the jar no longer exists.
+- Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
+- JSON output structure: `genes` is `{source → {gene_name → data}}` (dict of dicts), NOT a list. `sourceDiplotypes` contains `allele1`/`allele2` objects with `.name` field.
+- Star allele calls may differ from other pipelines (e.g., Sanitas hg19 vs our hg38 DeepVariant). PharmCAT 2.15.5 definitions update frequently.
+
+### plink2 (PRS / Ancestry)
+- **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).
+- **`--output-chr chrM`** preserves `chr` prefix in output. Without it, `--chr 1-22` strips prefix → variant IDs become `1:pos` instead of `chr1:pos`.
+- **`--set-all-var-ids '@:#'`**: The `@` placeholder includes the full contig name (including `chr`). Do NOT use `chr@:#` or you get `chrchr1:pos`.
+- **Scoring file duplicates**: Large PGS Catalog files (e.g., PGS000014 with 7M variants) contain duplicate variant:allele pairs. Deduplicate before `--score` or plink2 errors.
+- **LD pruning requires >=50 samples**. PCA requires >=2. Single-sample ancestry is fundamentally limited.
+
+### bcftools
+- **`bcftools sort` requires `##contig` headers** — fails silently or errors on VCFs without them. Always inject contig headers from the reference `.fai` when building VCFs.
+- **`set -euo pipefail` + `find | grep -q`**: If the directory doesn't exist, `find` exits 1, which poisons pipefail even with `2>/dev/null`. Use per-directory flag variables instead.
+
+### VEP
+- Running without `--af_gnomade` produces VCF lacking gnomAD frequencies. The clinical filter (step 23) then can't filter by population frequency, resulting in thousands of unfiltered MODERATE variants.
+
+### Cyrius (CYP2D6)
+- Returns `None/None` for both samples — common limitation of short-read WGS due to CYP2D7 homology and structural rearrangements.
+
+## Database Update Cadence
+
+| Database | Update Frequency | Re-run Steps | Time |
+|---|---|---|---|
+| ClinVar | Monthly | 6 (ClinVar screen) | ~5 min |
+| VEP cache | Every 6 months (Ensembl release) | 13, 23 | ~3 hr |
+| PCGR/CPSR data | Annually | 17 | ~45 min |
+| PharmCAT | Check quarterly | 7, 27 | ~15 min |
+| PGS Catalog | Check quarterly | 25 | ~30 min |
+
+ClinVar is the highest-value update — new pathogenic classifications happen monthly.
 
 ## Common Issues When Developing
 
