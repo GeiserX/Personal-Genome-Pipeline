@@ -55,7 +55,7 @@ if [ ! -f "$KG_SITES" ]; then
 
   if [ ! -f "$KG_SITES" ]; then
     touch "$LOCKFILE"
-    trap "rm -f $LOCKFILE" EXIT
+    trap 'rm -f "$LOCKFILE"' EXIT
 
     if [ ! -f "$RAW_VCF" ]; then
       wget -q -O "$RAW_VCF" \
@@ -156,10 +156,10 @@ if docker run --rm --user root \
     --output-chr chrM 2>&1; then
   PRUNED_COUNT=$(wc -l < "${OUTDIR}/${SAMPLE}_ld.prune.in" 2>/dev/null || echo 0)
   echo "  LD-pruned SNPs: ${PRUNED_COUNT}"
-  EXTRACT_FLAG="--extract /genome/${SAMPLE}/ancestry/${SAMPLE}_ld.prune.in"
+  EXTRACT_ARGS=(--extract "/genome/${SAMPLE}/ancestry/${SAMPLE}_ld.prune.in")
 else
   echo "  LD pruning skipped (requires >=50 samples). Using all shared SNPs."
-  EXTRACT_FLAG=""
+  EXTRACT_ARGS=()
   PRUNED_COUNT="${SHARED_COUNT}"
 fi
 
@@ -175,7 +175,7 @@ if docker run --rm --user root \
   pgscatalog/plink2:2.00a5.10 \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
-    ${EXTRACT_FLAG} \
+    "${EXTRACT_ARGS[@]}" \
     --pca 10 \
     --out "/genome/${SAMPLE}/ancestry/${SAMPLE}_pca" \
     --threads 4 \

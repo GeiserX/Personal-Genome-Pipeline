@@ -116,7 +116,7 @@ User's FASTQ/BAM/VCF
 - Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
 - JSON output structure: `genes` is `{source → {gene_name → data}}` (dict of dicts), NOT a list. `sourceDiplotypes` contains `allele1`/`allele2` objects with `.name` field.
 - Star allele calls may differ from other pipelines (e.g., Sanitas hg19 vs our hg38 DeepVariant). PharmCAT 2.15.5 definitions update frequently.
-- **Pipeline pin vs upstream**: The pipeline is currently pinned to PharmCAT `2.15.5` for reproducibility, but upstream PharmCAT releases continue to ship new guideline content and parser-relevant format changes. Latest known upstream release at the time of this note was `v3.2.0` (Feb 2026). Before bumping the Docker tag, revalidate both step 7 and step 27 end-to-end.
+- **Pipeline pin vs upstream**: The pipeline is currently pinned to PharmCAT `2.15.5` for reproducibility, but upstream PharmCAT releases continue to ship new guideline content and parser-relevant format changes. Before bumping the Docker tag, revalidate both step 7 and step 27 end-to-end — the JSON structure and preprocessor flags have changed between major versions.
 
 ### plink2 (PRS / Ancestry)
 - **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).

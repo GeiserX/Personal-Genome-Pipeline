@@ -231,7 +231,7 @@ PRS_SUMMARY="${SAMPLE_DIR}/prs/${SAMPLE}_prs_summary.tsv"
 if [ -f "$PRS_SUMMARY" ] && [ "$(wc -l < "$PRS_SUMMARY")" -gt 1 ]; then
   echo "## Polygenic Risk Scores"
   echo "---"
-  tail -n +2 "$PRS_SUMMARY" | while IFS=$'\t' read -r CONDITION PGS_ID SCORE USED TOTAL; do
+  tail -n +2 "$PRS_SUMMARY" | while IFS=$'\t' read -r CONDITION _PGS_ID SCORE USED TOTAL; do
     printf "  %-35s %s (%s/%s variants)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
   done
   echo ""
