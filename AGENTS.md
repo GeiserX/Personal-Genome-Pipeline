@@ -65,6 +65,7 @@ genomics-pipeline/
     20-mtoolbox.md
     hardware-requirements.md   # Disk, RAM, CPU, runtime breakdown
     vendor-guide.md            # Data formats from each WGS vendor
+    chip-data-guide.md         # Using 23andMe/MyHeritage/AncestryDNA chip data
     interpreting-results.md    # Plain-language guide for non-experts
     multi-sample.md            # Comparing two or more samples (partners, family)
     glossary.md                # Alphabetical glossary of genomics terms
