@@ -24,9 +24,9 @@ The single biggest source of unnecessary anxiety in personal genomics is **VUS �
 - They are **not actionable** — no clinical decision should be made based on a VUS
 - CPSR may report dozens or hundreds of VUS. This is normal and expected.
 
-**Rule of thumb:** If a variant is classified as VUS, treat it the same as if it were not tested. Check back in 1-2 years when ClinVar may have reclassified it.
+**Rule of thumb:** If a variant is classified as VUS, treat it the same as if it were not tested. Do not change screening or management based on a VUS. Check back in 1-2 years when ClinVar may have reclassified it.
 
-**Exception:** A VUS in a high-penetrance gene (BRCA1, BRCA2, TP53, MLH1/MSH2) may warrant discussion with a genetic counselor, especially if you have a matching family history. For these genes, even uncertain findings can inform screening decisions.
+**One nuance:** If you have a strong family history of a condition AND a VUS appears in the relevant high-penetrance gene (e.g., BRCA1/2, TP53, MLH1/MSH2), it may be worth mentioning to a genetic counselor — not to act on the VUS, but because the family history itself may warrant enhanced screening regardless of the variant's classification.
 
 ### ClinVar Star Ratings
 
@@ -100,7 +100,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening across ACMG SF v3.2 genes (81 genes associated with hereditary conditions including cancer, cardiac, and metabolic syndromes). CPSR focuses on the cancer-related subset.
+**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers ~200+ genes). This is broader than the 81-gene ACMG SF v3.2 list and focused specifically on cancer predisposition.
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 

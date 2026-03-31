@@ -63,7 +63,9 @@ CPIC_DRUGS=(
   # IFNL3/peginterferon is largely historical — DAAs (sofosbuvir, etc.) have replaced
   # interferon-based HCV therapy. Retained for completeness.
   ["IFNL3"]="peginterferon-alfa-2a,peginterferon-alfa-2b"
-  ["CYP2B6"]="efavirenz,methadone"
+  # CYP2B6-methadone was evaluated by CPIC (2024) but classified as optional, not
+  # a direct prescribing recommendation. Only efavirenz has actionable CPIC guidance.
+  ["CYP2B6"]="efavirenz"
   ["RYR1"]="desflurane,enflurane,halothane,isoflurane,methoxyflurane,sevoflurane,succinylcholine"
   ["CACNA1S"]="desflurane,enflurane,halothane,isoflurane,methoxyflurane,sevoflurane,succinylcholine"
   ["G6PD"]="rasburicase,dapsone,chloroquine,primaquine,nitrofurantoin,methylene-blue"
