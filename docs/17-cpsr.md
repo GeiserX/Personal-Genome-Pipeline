@@ -1,7 +1,7 @@
 # Step 17: Cancer Predisposition Screening with CPSR
 
 ## What This Does
-Screens germline variants against curated cancer predisposition gene panels to identify clinically actionable cancer risk variants. Uses ACMG SF v3.2 (Secondary Findings) gene lists, which also include cardiac and metabolic genes — CPSR focuses on the cancer-related subset.
+Screens germline variants against curated cancer predisposition gene panels to identify clinically actionable cancer risk variants. CPSR uses its own panels sourced from Genomics England PanelApp and other curated databases — these are cancer-focused and distinct from the 81-gene ACMG SF v3.2 list (which also includes cardiac and metabolic genes not covered by CPSR).
 
 ## Why
 ClinVar screening (step 6) finds known pathogenic variants, but CPSR applies ACMG/AMP classification criteria to novel or rare variants in cancer predisposition genes — catching variants ClinVar hasn't yet classified.
@@ -45,7 +45,7 @@ docker run --rm \
 ## Panel Options
 | Panel ID | Description |
 |---|---|
-| 0 | Full ACMG SF v3.2 (81 genes) — recommended |
+| 0 | Comprehensive cancer superpanel (~200+ genes) — recommended |
 | 1 | Adult-onset hereditary cancer |
 | 2 | Childhood-onset hereditary cancer |
 | 3 | Lynch syndrome |
