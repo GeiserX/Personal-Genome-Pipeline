@@ -45,7 +45,7 @@ docker run --rm \
 ## Panel Options
 | Panel ID | Description |
 |---|---|
-| 0 | Comprehensive cancer superpanel (~200+ genes) — recommended |
+| 0 | Comprehensive cancer superpanel (500+ genes) — recommended |
 | 1 | Adult-onset hereditary cancer |
 | 2 | Childhood-onset hereditary cancer |
 | 3 | Lynch syndrome |

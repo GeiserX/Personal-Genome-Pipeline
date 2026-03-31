@@ -100,7 +100,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers ~200+ genes). This is broader than the 81-gene ACMG SF v3.2 list and focused specifically on cancer predisposition.
+**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). This is broader than the 81-gene ACMG SF v3.2 list and focused specifically on cancer predisposition.
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 
