@@ -141,16 +141,23 @@ User's FASTQ/BAM/VCF
 
 | Resource / Tool | Update Frequency | Re-run Steps | Time |
 |---|---|---|---|
-| ClinVar | Monthly | 6 (ClinVar screen) | ~5 min |
-| Ensembl / VEP cache | Each Ensembl release (~4-6 months) | 13, 23 | ~3 hr |
+| ClinVar | Monthly full release (first Thursday) + optional weekly Monday deltas | 6 (ClinVar screen) | ~5 min |
+| Ensembl / VEP cache | Each Ensembl release (~6 months; release 115 current, 116 expected Apr 2026) | 13, 23 | ~3 hr |
 | PCGR/CPSR data | Annually or when upstream bundle changes materially | 17 | ~45 min |
-| PharmCAT upstream release | Check quarterly | 7, 27 | ~15-30 min validation |
-| CPIC static lookup table | Check quarterly or when CPIC adds/updates guideline pairs | 27 | ~15 min code refresh |
-| PGS Catalog | Check quarterly | 25 | ~30 min |
+| PharmCAT upstream release | Check quarterly; latest known upstream was 3.2.0 (2026-02-25) while pipeline stays pinned to 2.15.5 | 7, 27 | ~15-30 min validation |
+| CPIC / ClinPGx guideline surface | Check quarterly and whenever a relevant drug-gene pair changes upstream | 27 | ~15 min code refresh |
+| PGS Catalog | Check quarterly against the latest release page; treat scoring-file version changes as result-changing events | 25 | ~30 min |
 
 ClinVar is the highest-value update — new pathogenic classifications happen monthly.
 Before bumping PharmCAT, validate the preprocessor flags, JSON parsing in step 27, and any phenotype/diplotype changes on a known test sample.
 For a public pipeline, keep PGS IDs, PharmCAT Docker tags, and the CPIC lookup table explicitly versioned in git so result changes are auditable over time.
+
+### Minimal Revalidation Before Publishing Updates
+
+1. **ClinVar / VEP refresh**: run step 6 and step 23 on one known sample, then compare pathogenic hit counts and filtered clinical variant counts against the previous run.
+2. **PharmCAT / CPIC refresh**: run step 7 and step 27 on one known sample, then diff diplotypes, phenotypes, and recommendation text before accepting the update.
+3. **PGS Catalog refresh**: rerun step 25 and compare both `variants_used/variants_total` and raw score deltas. If the scoring file version changed, treat the new output as a new baseline, not as directly comparable to the old one.
+4. **Documentation refresh**: update pinned versions, cadence notes, and any changed interpretation guardrails in docs before merging.
 
 ## Common Issues When Developing
 

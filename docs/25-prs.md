@@ -113,6 +113,12 @@ Check the `Variants_Used / Variants_Total` ratio. If fewer than 50% of scoring v
 - The script prefers GRCh38-harmonized scoring files. If unavailable, it falls back to the original (which may be on GRCh37 and produce poor variant matching).
 - You can add more PGS IDs by editing the `PGS_IDS` associative array in the script. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
 
+## Maintenance
+
+- Recheck the PGS Catalog against its latest release page at least quarterly before treating this step as "current."
+- A scoring file update is a **result-changing event**. If the harmonized file version/date changes, rerun step 25 and treat the output as a new baseline.
+- If you publish or compare PRS results over time, keep the `PGS ID`, the harmonized scoring file version/date, and the pipeline commit together so score changes remain auditable.
+
 ## Links
 
 - [PGS Catalog](https://www.pgscatalog.org/)

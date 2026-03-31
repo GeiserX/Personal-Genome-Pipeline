@@ -64,3 +64,8 @@ docker run --rm \
 - **CYP2D6** often returns `Not called` — gene has pseudogene homology that confounds VCF-based calling. Use Cyrius or StellarPGx (BAM-based) if CYP2D6 is critical.
 - PharmCAT may disagree with lab reports on complex haplotypes (e.g., NAT2). When in doubt, trust PharmCAT + raw VCF over lab transcription.
 - PharmCAT output structure changes across releases. If you upgrade PharmCAT, re-test step 27 (`27-cpic-lookup.sh`) because it parses the JSON output directly.
+
+## Maintenance
+- The pipeline is pinned to `pgkb/pharmcat:2.15.5` for reproducibility, but upstream PharmCAT keeps moving. Latest known upstream release when this doc was last checked was `3.2.0` (2026-02-25).
+- Treat **step 7 and step 27 as one upgrade unit**. If you bump PharmCAT, rerun both on a known sample and diff diplotypes, phenotypes, JSON structure, and CPIC recommendation text before merging.
+- Recheck CPIC / ClinPGx guidance at least quarterly, or sooner if a drug-gene pair you expose in step 27 gets a meaningful update upstream.
