@@ -63,25 +63,25 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 
 ```
 FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNPs/indels) ──> VCF
-              (minimap2)                  │        │
-                                          │        ├──> ClinVar Screen
-                                          │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
-                                          │        ├──> VEP Annotation ──> Clinical Filter
-                                          │        ├──> CPSR (Cancer Predisposition)
-                                          │        ├──> ExpansionHunter (STRs)
-                                          │        ├──> ROH Analysis
-                                          │        ├──> PRS (Polygenic Risk Scores)
-                                          │        ├──> Ancestry PCA
-                                          │        └──> Imputation Prep
-                                          │
-                                          ├──> Manta (SVs) ──┐
-                                          ├──> Delly (SVs) ──┼──> SV Consensus ──> duphold ──> AnnotSV
-                                          ├──> CNVnator (CNVs)┘
-                                          ├──> Cyrius (CYP2D6)
-                                          ├──> TelomereHunter
-                                          ├──> indexcov (Coverage QC)
-                                          ├──> MToolBox (Mitochondrial)
-                                          └──> Haplogrep3 (mtDNA haplogroup)
+              (minimap2)                 │        │
+                                         │        ├──> ClinVar Screen
+                                         │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
+                                         │        ├──> VEP Annotation ──> Clinical Filter
+                                         │        ├──> CPSR (Cancer Predisposition)
+                                         │        ├──> ExpansionHunter (STRs)
+                                         │        ├──> ROH Analysis
+                                         │        ├──> PRS (Polygenic Risk Scores)
+                                         │        ├──> Ancestry PCA
+                                         │        └──> Imputation Prep
+                                         │
+                                         ├──> Manta (SVs) ───┐
+                                         ├──> Delly (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
+                                         ├──> CNVnator (CNVs)┘
+                                         ├──> Cyrius (CYP2D6)
+                                         ├──> TelomereHunter
+                                         ├──> indexcov (Coverage QC)
+                                         ├──> MToolBox (Mitochondrial)
+                                         └──> Haplogrep3 (mtDNA haplogroup)
                                                               └──> HTML Report (aggregates all)
 ```
 
