@@ -259,7 +259,7 @@ Key observations:
 
 ## Practical Example: chr22-Only Benchmark
 
-Running all three callers on the full genome takes 4-10 hours each. For a quick comparison, restrict calling to chromosome 22 only (~1-2% of the genome). This takes 5-30 minutes per caller.
+Running all three callers on the full genome takes 2-12 hours each (FreeBayes being the slowest at 8-12h single-threaded). For a quick script validation, you can restrict calling to chromosome 22 only (~1-2% of the genome, takes 3-8 minutes per caller), but **full-genome runs are strongly recommended for meaningful benchmarking**.
 
 ### Step 1: Run All Three Callers on chr22
 
@@ -382,9 +382,9 @@ benchmark/
 
 ---
 
-## Real-World chr22 Benchmark Results
+## Real-World chr22 Quick-Test Results
 
-These are actual results from a 30X WGS sample processed on an Intel i5-14500 (consumer desktop).
+These are actual results from a 30X WGS sample on chr22 only, useful for validating scripts work correctly. Full-genome numbers will differ (higher Jaccard concordance, lower FreeBayes false-positive ratio when PASS-filtered).
 
 ### Variant Counts (chr22, All Variants)
 
@@ -409,11 +409,14 @@ Key observations from real data:
 - **FreeBayes vs everything** has very low concordance (~14-16%) because it calls ~200K extra variants that neither DeepVariant nor GATK find.
 - **GATK is the most conservative** with only 1,830 unique variants vs DeepVariant, while FreeBayes is the most liberal.
 
-### Runtime (chr22)
+### Runtime
 
-| Caller | chr22 Time | Threads | Memory |
-|---|---|---|---|
-| DeepVariant 1.6.0 | ~8 min | 8 | 32 GB |
-| GATK HC 4.6.1 | ~6 min | 8 | 32 GB |
-| FreeBayes 1.3.6 | ~5 min | 1 (single-threaded) | 16 GB |
-| Strelka2 2.9.10 | ~3 min | 8 | 16 GB |
+| Caller | chr22 | Full Genome (est.) | Threads | Memory |
+|---|---|---|---|---|
+| DeepVariant 1.6.0 | ~8 min | ~3-5 hours | 8 | 32 GB |
+| GATK HC 4.6.1 | ~6 min | ~2-4 hours | 8 | 32 GB |
+| FreeBayes 1.3.6 | ~5 min | ~8-12 hours | 1 (single-threaded) | 16 GB |
+| Strelka2 2.9.10 | ~3 min | ~2-4 hours | 8 | 16 GB |
+| TIDDIT 3.9.5 | N/A (full genome only) | ~30-60 min | 4 | 8 GB |
+
+FreeBayes is the bottleneck — it is single-threaded with no parallelism flag. Plan accordingly when running all callers.
