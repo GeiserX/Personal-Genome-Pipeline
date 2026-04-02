@@ -161,7 +161,65 @@ docker pull quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
 docker pull broadinstitute/gatk:4.6.1.0
 ```
 
-**Total Docker image size:** ~10-15 GB (compressed, after layer deduplication).
+## Alternative Callers (Optional, for Benchmarking)
+
+Only needed if you plan to run alternative variant callers. See [benchmarking.md](benchmarking.md).
+
+```bash
+# Alternative aligners
+docker pull quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
+
+# Alternative variant callers (GATK image already pulled above)
+docker pull quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
+
+# Alternative SV callers
+docker pull quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
+docker pull quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
+
+# Benchmarking (truth set evaluation)
+docker pull jmcdani20/hap.py:v0.3.12
+```
+
+### GATK Sequence Dictionary
+
+GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If you don't have one:
+
+```bash
+docker run --rm --user root \
+  -v ${GENOME_DIR}:/genome \
+  broadinstitute/gatk:4.6.1.0 \
+  gatk CreateSequenceDictionary \
+    -R /genome/reference/Homo_sapiens_assembly38.fasta
+```
+
+### BWA-MEM2 Index
+
+BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Build once (~1 hour, ~6 GB):
+
+```bash
+docker run --rm --user root \
+  --cpus 8 --memory 24g \
+  -v ${GENOME_DIR}:/genome \
+  quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
+  bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
+# Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
+```
+
+### GIAB Truth Set (for hap.py Benchmarking)
+
+Download the GIAB HG001 (NA12878) truth set for benchmarking variant callers:
+
+```bash
+mkdir -p ${GENOME_DIR}/giab
+cd ${GENOME_DIR}/giab
+
+# HG001/NA12878 truth set (GRCh38)
+wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
+```
+
+**Total Docker image size:** ~10-15 GB (compressed, after layer deduplication). Alternative tools add ~3-5 GB.
 
 ## Disk Space Summary
 

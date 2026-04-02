@@ -78,6 +78,12 @@ genomics-pipeline/
     ...
     27-cpic-lookup.sh
     chip-to-vcf.sh             # Chip data converter (23andMe/MyHeritage/AncestryDNA → GRCh38 VCF)
+    02a-alignment-bwamem2.sh   # Alternative aligner (BWA-MEM2, outputs to aligned_bwamem2/)
+    03a-gatk-haplotypecaller.sh # Alternative caller (GATK HC, outputs to vcf_gatk/)
+    03b-freebayes.sh           # Alternative caller (FreeBayes, outputs to vcf_freebayes/)
+    04a-tiddit.sh              # Alternative SV caller (TIDDIT, outputs to sv_tiddit/)
+    04b-strelka2-germline.sh   # Alternative SV caller (Strelka2, outputs to sv_strelka2/)
+    benchmark-variants.sh      # Concordance benchmarking (bcftools isec / hap.py)
     run-all.sh                 # Orchestrator: runs all steps with parallelism
     validate-setup.sh          # Pre-flight check: Docker, refs, images, sample
     generate-report.sh         # Text summary report aggregating all outputs
@@ -138,6 +144,16 @@ User's FASTQ/BAM/VCF
 - **PharmCAT on chip data**: calls many genes correctly (CYP2B6, CYP4F2, DPYD, NUDT15) but misses CYP2C19 (25 missing positions), VKORC1 (1 missing position), and miscalls CYP3A5 (4 missing positions on MyHeritage GSA).
 - **ROH on chip data** requires `-G30` flag because chip VCFs lack FORMAT/PL tags.
 - **PRS on chip data** requires `no-mean-imputation` flag (single sample lacks allele frequencies). Matches ~12% of large scoring files vs ~28% from WGS.
+
+### Alternative Callers & Benchmarking (v0.2.0)
+- **Output isolation**: Alternative tools write to separate directories (vcf_gatk/, vcf_freebayes/, aligned_bwamem2/, sv_tiddit/, sv_strelka2/) to never overwrite default outputs.
+- **INTERVALS env var**: All alternative caller scripts support `INTERVALS=chr22` (or any region) for quick testing. GATK uses `--intervals`, FreeBayes uses `--region`.
+- **Strelka2 + minimap2 caveat**: Strelka2's SomaticEVS model was trained on BWA-MEM data. minimap2 does not produce XS tags and reports doubled AS scores. SNP precision drops noticeably. Use BWA-MEM2 alignments for best Strelka2 results.
+- **FreeBayes is single-threaded**: No parallelism flag. Full WGS takes ~8-12 hours. Use `INTERVALS` to restrict to a chromosome for testing.
+- **GATK needs .dict file**: Unlike DeepVariant, GATK HaplotypeCaller requires `Homo_sapiens_assembly38.dict` alongside the FASTA. Generate with `gatk CreateSequenceDictionary`.
+- **BWA-MEM2 index files**: Created alongside the FASTA (not in a separate directory). Check for `.bwt.2bit.64` to verify index exists.
+- **TIDDIT >=3.9 needs BWA index or `--skip_assembly`**: TIDDIT's local assembly requires BWA index files. With minimap2 alignments, always use `--skip_assembly`.
+- **benchmark-variants.sh**: Two modes — pairwise (`bcftools isec`) and truth set (`hap.py`). Pairwise mode auto-discovers all vcf*/ directories.
 
 ### bcftools
 - **`bcftools sort` requires `##contig` headers** — fails silently or errors on VCFs without them. Always inject contig headers from the reference `.fai` when building VCFs.

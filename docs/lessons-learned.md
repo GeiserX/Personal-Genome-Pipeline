@@ -184,6 +184,53 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - Uses `chr` prefix (which GRCh38 BAMs already have)
 - HRC r1.1 (32K samples) is European-centric but hg19 only
 
+## Alternative Variant Caller Issues
+
+### FreeBayes 1.3.7: SIGILL crash (exit code 132)
+- **Failed:** `quay.io/biocontainers/freebayes:1.3.7--h1870644_0` — `freebayes --version` works, but actual variant calling triggers `SIGILL` (illegal instruction, exit code 132)
+- **Tested on:** Intel i5-14500
+- **Root cause:** Likely a build-time CPU optimization mismatch in the 1.3.7 biocontainer binary
+- **Fix:** Use `quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2` which works correctly
+
+### FreeBayes: Single-threaded, no parallelism
+- **Observed:** FreeBayes has no `-t` or `--threads` flag. Full 30X WGS takes 8-12 hours.
+- **Workaround:** Use `--region chr22` (or `INTERVALS=chr22`) for quick testing (~20-40 min)
+- **For production:** Consider GNU parallel with per-chromosome regions, then merge VCFs
+
+### GATK HaplotypeCaller: bcftools index fails on existing .tbi
+- **Failed:** `bcftools index -t` fails with "index file exists" after GATK already creates its own `.tbi`
+- **Fix:** Use `bcftools index -ft` (with `-f` force flag) to overwrite the GATK-generated index
+
+### GATK HaplotypeCaller: Requires .dict file
+- **Failed:** GATK HaplotypeCaller fails if `Homo_sapiens_assembly38.dict` is missing
+- **Fix:** Generate once with `gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38.fasta`
+
+### bcftools isec: -R vs -r for region strings
+- **Failed:** `bcftools isec -R chr22` treats `-R` (uppercase) as a BED file path, fails with "file not found"
+- **Fix:** Use `-r chr22` (lowercase) for region strings. `-R` expects a file.
+
+### TIDDIT >=3.9: Requires BWA index for local assembly
+- **Failed:** `tiddit --sv` exits with "The reference must be indexed using bwa index; run bwa index, or skip local assembly (--skip_assembly)"
+- **Root cause:** TIDDIT 3.9+ uses local assembly for breakpoint refinement, which requires BWA index files alongside the reference
+- **Fix:** Use `--skip_assembly` when using minimap2 alignments (no BWA index available). If using BWA-MEM2 alignment, the index files are compatible.
+
+### TIDDIT: Image tag 3.7.0 doesn't exist on quay.io
+- **Failed:** `quay.io/biocontainers/tiddit:3.7.0--py312h24f4cff_1` — manifest unknown
+- **Fix:** Use `quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0`. Always verify tags at quay.io/repository/biocontainers/tiddit.
+
+### Strelka2: --callRegions needs bgzipped + tabixed BED
+- **Failed:** `--callRegions reference.fasta.fai` → "Can't find expected call-regions bed index file"
+- **Fix:** Create a proper bgzipped BED file with tabix index. Use GATK container for bgzip/tabix (not in bcftools or samtools staphb images).
+
+### bgzip/tabix not in staphb/samtools or staphb/bcftools images
+- **Observed:** Neither `staphb/samtools:1.20` nor `staphb/bcftools:1.21` include `bgzip` or `tabix` in PATH
+- **Fix:** Use `broadinstitute/gatk:4.6.1.0` which has both at `/usr/bin/bgzip` and `/usr/bin/tabix`. Or use `bcftools view -Oz` as a bgzip alternative.
+
+### FreeBayes chr22 variant count (3x more than DeepVariant)
+- **Observed:** FreeBayes calls ~247K variants on chr22 vs DeepVariant ~91K and GATK ~69K
+- **Interpretation:** The ~200K FreeBayes-unique variants are mostly false positives. FreeBayes maximizes sensitivity at the cost of precision.
+- **Recommendation:** Always quality-filter FreeBayes output with `bcftools filter` or `vcffilter` before use.
+
 ## Chip Data Conversion (Genotyping Arrays → VCF)
 
 ### plink silently corrupts single-sample homozygous ALT genotypes

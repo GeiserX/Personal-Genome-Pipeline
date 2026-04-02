@@ -127,6 +127,21 @@ These run after the core pipeline completes and combine outputs from earlier ste
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
 **Full analysis:** All 27 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.
 
+#### Alternative Tools (Benchmarking)
+
+No single variant caller is universally best. The pipeline includes alternative tools that output to separate directories so you can compare results without overwriting the defaults.
+
+| Script | Tool | Alternative To | Output Directory |
+|---|---|---|---|
+| [02a](scripts/02a-alignment-bwamem2.sh) | BWA-MEM2 | minimap2 (step 2) | `aligned_bwamem2/` |
+| [03a](scripts/03a-gatk-haplotypecaller.sh) | GATK HaplotypeCaller | DeepVariant (step 3) | `vcf_gatk/` |
+| [03b](scripts/03b-freebayes.sh) | FreeBayes | DeepVariant (step 3) | `vcf_freebayes/` |
+| [04a](scripts/04a-tiddit.sh) | TIDDIT | Manta (step 4) | `sv_tiddit/` |
+| [04b](scripts/04b-strelka2-germline.sh) | Strelka2 | Manta (step 4) | `sv_strelka2/` |
+| [benchmark](scripts/benchmark-variants.sh) | bcftools isec / hap.py | — | `benchmark/` |
+
+See [docs/benchmarking.md](docs/benchmarking.md) for how to run and interpret results, and [docs/tool-rationale.md](docs/tool-rationale.md) for why each default was chosen.
+
 ---
 
 ## Quick Start

@@ -53,6 +53,41 @@ if [ ! -f "$VCF" ]; then
 else
   echo "[Phase 2] VCF already exists, skipping variant calling."
 fi
+
+# Phase 2b: Extra callers (optional, for benchmarking)
+EXTRA_CALLERS=${EXTRA_CALLERS:-""}
+if [ -n "$EXTRA_CALLERS" ]; then
+  echo "[Phase 2b] Running extra variant callers: ${EXTRA_CALLERS}"
+  PHASE2B_PIDS=()
+  IFS=',' read -ra CALLERS <<< "$EXTRA_CALLERS"
+  for CALLER in "${CALLERS[@]}"; do
+    CALLER=$(echo "$CALLER" | tr -d ' ')
+    case "$CALLER" in
+      gatk)
+        echo "  Starting GATK HaplotypeCaller..."
+        bash "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      freebayes)
+        echo "  Starting FreeBayes..."
+        bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      *)
+        echo "  WARNING: Unknown caller '${CALLER}'. Skipping."
+        ;;
+    esac
+  done
+  PHASE2B_FAIL=0
+  for PID in "${PHASE2B_PIDS[@]}"; do
+    wait "$PID" 2>/dev/null || PHASE2B_FAIL=$((PHASE2B_FAIL + 1))
+  done
+  if [ "$PHASE2B_FAIL" -gt 0 ]; then
+    echo "  WARNING: ${PHASE2B_FAIL} extra caller(s) failed."
+  else
+    echo "  Extra callers complete."
+  fi
+fi
 echo ""
 
 # Phase 3: Parallel analyses (all independent after BAM + VCF exist)
@@ -213,9 +248,17 @@ else
   echo "  Post-processing complete."
 fi
 
+# Phase 4b: Benchmarking (optional)
+BENCHMARK=${BENCHMARK:-false}
+if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
+  echo ""
+  echo "  [D7] Variant caller benchmarking..."
+  bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG}"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
+fi
+
 REPORT_FAIL=0
 
-echo "  [D7] HTML summary report..."
+echo "  [D8] HTML summary report..."
 bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
