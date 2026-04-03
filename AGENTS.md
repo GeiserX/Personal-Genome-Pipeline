@@ -149,7 +149,8 @@ User's FASTQ/BAM/VCF
 - **Output isolation**: Alternative tools write to separate directories (vcf_gatk/, vcf_freebayes/, aligned_bwamem2/, sv_tiddit/, sv_strelka2/) to never overwrite default outputs.
 - **INTERVALS env var**: All alternative caller scripts support `INTERVALS=chr22` (or any region) for quick testing. GATK uses `--intervals`, FreeBayes uses `--region`.
 - **Strelka2 + minimap2 caveat**: Strelka2's SomaticEVS model was trained on BWA-MEM data. minimap2 does not produce XS tags and reports doubled AS scores. SNP precision drops noticeably. Use BWA-MEM2 alignments for best Strelka2 results.
-- **FreeBayes is single-threaded**: No parallelism flag. Full WGS takes ~8-12 hours. Use `INTERVALS` to restrict to a chromosome for testing.
+- **FreeBayes is single-threaded**: No parallelism flag. Full WGS takes ~9 hours. Needs `--memory 32g` (peaks at ~13 GB). Use `INTERVALS` to restrict to a chromosome for testing.
+- **GATK full-genome is slow**: 8.6 hours on i5-14500 with 8 threads despite good parallelism. Comparable to FreeBayes in wall-clock time.
 - **GATK needs .dict file**: Unlike DeepVariant, GATK HaplotypeCaller requires `Homo_sapiens_assembly38.dict` alongside the FASTA. Generate with `gatk CreateSequenceDictionary`.
 - **BWA-MEM2 index files**: Created alongside the FASTA (not in a separate directory). Check for `.bwt.2bit.64` to verify index exists.
 - **TIDDIT >=3.9 needs BWA index or `--skip_assembly`**: TIDDIT's local assembly requires BWA index files. With minimap2 alignments, always use `--skip_assembly`.

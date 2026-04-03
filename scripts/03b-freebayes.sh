@@ -3,6 +3,8 @@
 # Alternative to step 03 (DeepVariant). Outputs to vcf_freebayes/ to avoid conflicts.
 # Input: sorted BAM + GRCh38 reference (.fasta + .fai)
 # Output: VCF.gz in $GENOME_DIR/<sample>/vcf_freebayes/
+# Runtime: ~9 hours single-threaded for 30X WGS
+# Memory: peaks at ~13 GB for full genome; needs 32 GB allocation for safety margin
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -40,7 +42,7 @@ fi
 FREEBAYES_ARGS+=("/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam")
 
 docker run --rm \
-  --cpus 4 --memory 16g \
+  --cpus 4 --memory 32g \
   --user root \
   -v "${GENOME_DIR}:/genome" \
   quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2 \

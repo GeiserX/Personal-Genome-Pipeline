@@ -192,6 +192,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Root cause:** Likely a build-time CPU optimization mismatch in the 1.3.7 biocontainer binary
 - **Fix:** Use `quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2` which works correctly
 
+### FreeBayes: Memory grows to ~13 GB on full genome
+- **Observed:** FreeBayes memory usage grows unpredictably during full-genome runs: 463MB at 30 min, 6.4GB at 60 min, 12.7GB at 90 min, then stabilizes ~12GB
+- **Original limit:** `--memory 16g` was too tight — would have OOM-killed at 80% usage
+- **Fix:** Use `--memory 32g` for full-genome runs. Peak observed was 12.8GB but growth is non-linear and region-dependent.
+
 ### FreeBayes: Single-threaded, no parallelism
 - **Observed:** FreeBayes has no `-t` or `--threads` flag. Full 30X WGS takes 8-12 hours.
 - **Workaround:** Use `--region chr22` (or `INTERVALS=chr22`) for quick testing (~20-40 min)

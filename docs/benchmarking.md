@@ -382,41 +382,44 @@ benchmark/
 
 ---
 
-## Real-World chr22 Quick-Test Results
+## Real-World Full-Genome Benchmark Results
 
-These are actual results from a 30X WGS sample on chr22 only, useful for validating scripts work correctly. Full-genome numbers will differ (higher Jaccard concordance, lower FreeBayes false-positive ratio when PASS-filtered).
+These are actual results from a 30X WGS sample (Intel i5-14500, 64GB RAM).
 
-### Variant Counts (chr22, All Variants)
+### Variant Counts (Full Genome)
 
-| Caller | Total | SNPs | Indels | Other/MNPs |
+| Caller | Total | SNPs | Indels | MNPs/Other |
 |---|---|---|---|---|
-| DeepVariant 1.6.0 | 90,864 | 72,152 | 18,791 | — |
-| GATK HC 4.6.1 | 69,415 | 56,969 | 12,489 | — |
-| FreeBayes 1.3.6 | 247,498 | 229,827 | 11,398 | 10,160 |
+| DeepVariant 1.6.0 | 5,558,877 | — | — | — |
+| GATK HC 4.6.1 | 4,662,941 | 3,829,614 | 836,747 | 0 |
+| FreeBayes 1.3.6 | 20,059,293 | 18,825,881 | 867,375 | 625,201 |
+| Strelka2 2.9.10 | 5,565,634 | — | — | — |
+| TIDDIT 3.9.5 | 5,346 SVs | 2,299 DEL | 639 DUP | 204 INV |
 
-FreeBayes calls nearly 3x more variants than DeepVariant and 3.5x more than GATK on the same data. The vast majority of the extra FreeBayes calls are likely false positives.
+FreeBayes calls **4x more variants** than DeepVariant. The ~16M FreeBayes-unique calls are overwhelmingly false positives. GATK is the most conservative. Strelka2 and DeepVariant are very close in total count.
 
-### Pairwise Concordance (chr22, All Variants)
+### Pairwise Concordance (Full Genome, All Variants)
 
 | Caller A | Caller B | Shared | A Unique | B Unique | Jaccard |
 |---|---|---|---|---|---|
-| DeepVariant | GATK | 67,585 | 23,279 | 1,830 | 0.729 |
-| DeepVariant | FreeBayes | 45,858 | 45,006 | 201,640 | 0.157 |
-| GATK | FreeBayes | 38,438 | 30,977 | 209,060 | 0.138 |
+| DeepVariant | GATK | 4,492,079 | 1,072,475 | 170,862 | **0.783** |
+| DeepVariant | FreeBayes | 3,772,065 | 1,792,489 | 16,287,228 | 0.173 |
+| GATK | FreeBayes | 3,495,334 | 1,167,607 | 16,563,959 | 0.165 |
 
-Key observations from real data:
-- **DeepVariant vs GATK** agree on ~73% of variants (Jaccard 0.729). This is lower than the typical 95%+ because these are all variants (not just PASS SNPs). Filtering to PASS SNPs would increase concordance.
-- **FreeBayes vs everything** has very low concordance (~14-16%) because it calls ~200K extra variants that neither DeepVariant nor GATK find.
-- **GATK is the most conservative** with only 1,830 unique variants vs DeepVariant, while FreeBayes is the most liberal.
+Key observations:
+- **DeepVariant vs GATK** share 4.5M variants (Jaccard 0.783). GATK has very few unique calls (171K) while DeepVariant has 1.07M unique — suggesting DeepVariant captures more real variants that GATK misses.
+- **FreeBayes vs everything** has low concordance (~17%) because it calls 16.3M extra variants. These need aggressive quality filtering before use.
+- **GATK is the most conservative** — nearly all GATK calls (96%) are also found by DeepVariant, making it a high-confidence subset.
+- Filtering to **PASS SNPs only** would significantly increase concordance (expected Jaccard >0.95 for DV vs GATK).
 
-### Runtime
+### Runtime (Full Genome, 30X WGS)
 
-| Caller | chr22 | Full Genome (est.) | Threads | Memory |
-|---|---|---|---|---|
-| DeepVariant 1.6.0 | ~8 min | ~3-5 hours | 8 | 32 GB |
-| GATK HC 4.6.1 | ~6 min | ~2-4 hours | 8 | 32 GB |
-| FreeBayes 1.3.6 | ~5 min | ~8-12 hours | 1 (single-threaded) | 16 GB |
-| Strelka2 2.9.10 | ~3 min | ~2-4 hours | 8 | 16 GB |
-| TIDDIT 3.9.5 | N/A (full genome only) | ~30-60 min | 4 | 8 GB |
+| Caller | Runtime | Threads | Peak Memory |
+|---|---|---|---|
+| DeepVariant 1.6.0 | ~3-5 hours | 8 | 32 GB |
+| GATK HC 4.6.1 | 8.6 hours (518 min) | 8 | 4.3 GB |
+| FreeBayes 1.3.6 | 9.3 hours | 1 (single-threaded) | 12.8 GB |
+| Strelka2 2.9.10 | 72 min | 8 | 1 GB |
+| TIDDIT 3.9.5 | 7 min | 4 | <1 GB |
 
-FreeBayes is the bottleneck — it is single-threaded with no parallelism flag. Plan accordingly when running all callers.
+FreeBayes is the bottleneck — single-threaded with no parallelism flag. It also requires **32 GB memory** for full-genome runs (peaked at 12.8 GB but grows unpredictably through complex regions). Plan accordingly when running all callers.
