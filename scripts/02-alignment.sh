@@ -40,20 +40,24 @@ if [ ! -f "$MMI" ]; then
       /genome/reference/Homo_sapiens_assembly38.fasta
 fi
 
-# Step 2: Align + sort (4-8 hours for 30X WGS)
-echo "Aligning reads (this takes 4-8 hours for 30X WGS)..."
+# Step 2: Align + sort (1-2 hours for 30X WGS)
+# minimap2 runs in its own container, pipes SAM to samtools for sorting.
+# The -i flag on the samtools container keeps stdin open for the pipe.
+echo "Aligning reads (this takes 1-2 hours for 30X WGS)..."
 docker run --rm \
-  --cpus 8 --memory 16g \
+  --cpus "${THREADS}" --memory 16g \
+  -v "${GENOME_DIR}:/genome" \
+  quay.io/biocontainers/minimap2:2.28--he4a0461_0 \
+  minimap2 -t "${THREADS}" -a -x sr \
+    /genome/reference/GRCh38.mmi \
+    "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
+    "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \
+| docker run --rm -i \
+  --cpus "${THREADS}" --memory 8g \
   -v "${GENOME_DIR}:/genome" \
   staphb/samtools:1.20 \
-  bash -c "
-    minimap2 -t ${THREADS} -a -x sr \
-      /genome/reference/GRCh38.mmi \
-      /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
-      /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
-    | samtools sort -@ ${THREADS} \
-      -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
-  "
+  samtools sort -@ "${THREADS}" \
+    -o "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
 # Step 3: Index BAM
 echo "Indexing BAM..."

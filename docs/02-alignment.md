@@ -11,8 +11,8 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 - **samtools** — sort + index the alignment
 
 ## Docker Images
-- `staphb/samtools:1.20` (includes samtools)
-- minimap2 is typically run natively or via `quay.io/biocontainers/minimap2`
+- `quay.io/biocontainers/minimap2:2.28--he4a0461_0` (minimap2 aligner)
+- `staphb/samtools:1.20` (samtools sort + index)
 
 ## Prerequisites
 - GRCh38 reference genome (`Homo_sapiens_assembly38.fasta`)
@@ -28,8 +28,8 @@ REF=${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta
 # Step 1: Create minimap2 index (one-time, ~30 min)
 minimap2 -d ${GENOME_DIR}/reference/GRCh38.mmi $REF
 
-# Step 2: Align + sort (4-8 hours for 30X WGS)
-minimap2 -a -x map-hifi -t 16 \
+# Step 2: Align + sort (1-2 hours for 30X WGS)
+minimap2 -a -x sr -t 16 \
   ${GENOME_DIR}/reference/GRCh38.mmi \
   ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
   ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
@@ -45,9 +45,9 @@ samtools index ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 - CPU: 16+ cores recommended
 - RAM: 16GB+ (minimap2 loads full index into memory)
 - Disk: ~30-40GB per sample (BAM file)
-- Time: 4-8 hours for 30X WGS
+- Time: 1-2 hours for 30X WGS
 
 ## Notes
-- Use `-x map-hifi` for Illumina short reads (despite the name, works well)
-- Alternative: `bwa-mem2` is equally valid but minimap2 is faster
+- Use `-x sr` for Illumina short reads (short-read preset)
+- Alternative: `bwa-mem2` is equally valid but minimap2 is faster (see `scripts/02a-alignment-bwamem2.sh`)
 - The BAM index (`.bai`) must always accompany the BAM file

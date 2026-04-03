@@ -90,7 +90,7 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](docs/01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
-| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
+| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
 | 3 | [Variant Calling](docs/03-variant-calling.md) | DeepVariant | `google/deepvariant:1.6.0` | ~2-4 hr | Yes |
 | 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta` | ~20 min | Recommended |
 | 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:latest` | ~10 min | If step 4 run |
@@ -436,7 +436,7 @@ Your genome is the most permanent piece of personal data you have. Unlike a pass
 - No data is uploaded to any server, cloud, or API
 - No internet connection is required after initial setup (reference downloads + Docker images)
 - No telemetry, no analytics, no tracking
-- Every tool runs in a Docker container with no network access to external services
+- Every tool runs in a Docker container; the pipeline does not intentionally connect to external services at runtime
 
 **Recommendations for securing your data:**
 - Store genomic data on an encrypted filesystem (LUKS on Linux, FileVault on macOS, BitLocker on Windows)

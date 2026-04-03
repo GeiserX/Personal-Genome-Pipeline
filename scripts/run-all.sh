@@ -260,8 +260,8 @@ BENCHMARK=${BENCHMARK:-false}
 if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   echo ""
   echo "  [D7] Variant caller benchmarking..."
-  echo "  NOTE: Pairwise benchmarking requires 2+ caller VCFs (vcf/, vcf_gatk/, vcf_freebayes/)."
-  echo "  Set EXTRA_CALLERS=gatk,freebayes to run alternative callers in Phase 2b."
+  echo "  NOTE: Pairwise benchmarking requires 2+ caller VCFs (vcf/, vcf_gatk/, vcf_freebayes/, vcf_strelka2/)."
+  echo "  Set EXTRA_CALLERS=gatk,freebayes,strelka2 to run alternative callers in Phase 2b."
   bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG}"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
 fi
 

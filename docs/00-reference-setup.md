@@ -134,6 +134,7 @@ Pull all images in advance to avoid download delays during analysis:
 
 ```bash
 # Core pipeline
+docker pull quay.io/biocontainers/minimap2:2.28--he4a0461_0
 docker pull staphb/samtools:1.20
 docker pull staphb/bcftools:1.21
 docker pull google/deepvariant:1.6.0
