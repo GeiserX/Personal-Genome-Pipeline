@@ -1,25 +1,30 @@
 #!/usr/bin/env bash
-# Strelka2 — Alternative germline SV + small variant caller
-# Alternative to step 04 (Manta). Outputs to sv_strelka2/ to avoid conflicts.
+# Strelka2 — Alternative germline small variant caller (SNVs + indels)
+# Alternative to step 03 (DeepVariant). Outputs to vcf_strelka2/ to avoid conflicts.
+# Strelka2 is a SMALL VARIANT caller (SNVs + indels up to ~49 bp), NOT a structural
+# variant caller. It complements Manta, which handles SVs (>50 bp).
 # Input: sorted BAM + GRCh38 reference
-# Output: germline variants VCF in $GENOME_DIR/<sample>/sv_strelka2/
-# Runtime: ~2-4 hours per 30X genome
+# Output: germline variants VCF in $GENOME_DIR/<sample>/vcf_strelka2/
+# Runtime: ~1-2 hours per 30X genome
 #
-# NOTE: Strelka2's SomaticEVS scoring model is optimized for BWA-MEM alignments.
+# NOTE: Strelka2's scoring model is optimized for BWA-MEM alignments.
 # When used with minimap2-aligned BAMs, SNP precision may be reduced due to:
 #   - Missing XS (suboptimal alignment score) tags that BWA-MEM produces
 #   - Different AS (alignment score) scaling between minimap2 and BWA-MEM
-# Indel and SV calls are less affected. Consider this when interpreting results
-# from minimap2 alignments.
+# For best results, use BWA-MEM2 alignments (scripts/02a-alignment-bwamem2.sh).
+#
+# Reference: Kim et al. Strelka2: fast and accurate calling of germline and
+# somatic variants. Nature Methods (2018). https://doi.org/10.1038/s41592-018-0051-x
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
-OUTPUT_DIR="${SAMPLE_DIR}/sv_strelka2"
-THREADS=8
+OUTPUT_DIR="${SAMPLE_DIR}/vcf_strelka2"
+THREADS=${THREADS:-8}
 
 echo "=== Strelka2 Germline Calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -47,24 +52,26 @@ docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "$STRELKA_IMAGE" \
   configureStrelkaGermlineWorkflow.py \
-    --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
-    --runDir "/genome/${SAMPLE}/sv_strelka2"
+    --runDir "/genome/${SAMPLE}/vcf_strelka2"
 
 # Step 2: Run the workflow
-echo "[2/2] Running Strelka2 (this takes 2-4 hours for 30X WGS)..."
+echo "[2/2] Running Strelka2 (this takes 1-2 hours for 30X WGS)..."
 docker run --rm --user root \
   --cpus "$THREADS" --memory 16g \
   -v "${GENOME_DIR}:/genome" \
   "$STRELKA_IMAGE" \
-  "/genome/${SAMPLE}/sv_strelka2/runWorkflow.py" \
+  "/genome/${SAMPLE}/vcf_strelka2/runWorkflow.py" \
     -m local \
     -j "$THREADS"
 
 VARIANT_COUNT=$(docker run --rm \
   -v "${GENOME_DIR}:/genome" \
   "$BCFTOOLS_IMAGE" \
-  bcftools view -H "/genome/${SAMPLE}/sv_strelka2/results/variants/variants.vcf.gz" | wc -l)
+  bcftools stats "/genome/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" \
+  | grep '^SN' | grep 'number of records' | awk '{print $NF}')
+VARIANT_COUNT=${VARIANT_COUNT:-unknown}
 
 echo "=== Strelka2 complete ==="
 echo "Total variants called: ${VARIANT_COUNT}"

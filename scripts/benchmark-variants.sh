@@ -33,7 +33,7 @@ done
 BENCHMARK_DIR="${GENOME_DIR}/${SAMPLE}/benchmark"
 SUMMARY="${BENCHMARK_DIR}/summary.txt"
 TSV="${BENCHMARK_DIR}/comparison.tsv"
-REF="${GENOME_DIR}/reference/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
+REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 
 # --- Discover available caller VCFs ---
 declare -a CALLER_NAMES=()
@@ -42,6 +42,7 @@ declare -a CALLER_VCFS=()
 DV_VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 GATK_VCF="${GENOME_DIR}/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz"
 FB_VCF="${GENOME_DIR}/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
+SK_VCF="${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz"
 
 if [ -f "$DV_VCF" ]; then
   CALLER_NAMES+=("DeepVariant")
@@ -54,6 +55,10 @@ fi
 if [ -f "$FB_VCF" ]; then
   CALLER_NAMES+=("FreeBayes")
   CALLER_VCFS+=("$FB_VCF")
+fi
+if [ -f "$SK_VCF" ]; then
+  CALLER_NAMES+=("Strelka2")
+  CALLER_VCFS+=("$SK_VCF")
 fi
 
 NUM_CALLERS=${#CALLER_VCFS[@]}
@@ -115,6 +120,12 @@ if [ -n "$TRUTH_VCF" ]; then
   echo "=== Truth Set Benchmarking (hap.py) ==="
   echo "Truth VCF: ${TRUTH_VCF}"
   [ -n "$REGIONS_BED" ] && echo "Confident regions: ${REGIONS_BED}"
+  echo ""
+  echo "WARNING: Truth set benchmarking is only meaningful when the query VCF was"
+  echo "generated from the SAME biological sample as the truth set. If the truth set"
+  echo "is HG002, the query VCF must also come from HG002 sequencing data. Running"
+  echo "hap.py against a non-matching sample produces meaningless precision/recall."
+  echo ""
 
   # Build the TSV header
   printf "Caller\tSNP_TP\tSNP_FP\tSNP_FN\tSNP_Precision\tSNP_Recall\tSNP_F1\tINDEL_TP\tINDEL_FP\tINDEL_FN\tINDEL_Precision\tINDEL_Recall\tINDEL_F1\n" > "$TSV"
@@ -155,7 +166,7 @@ if [ -n "$TRUTH_VCF" ]; then
       /opt/hap.py/bin/hap.py \
         "${TRUTH_CONTAINER_PATH}" \
         "${VCF_CONTAINER}" \
-        -r /genome/reference/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna \
+        -r /genome/reference/Homo_sapiens_assembly38.fasta \
         ${REGIONS_FLAG} \
         -o "${PREFIX}" \
         --engine=vcfeval
@@ -189,7 +200,7 @@ if [ -n "$TRUTH_VCF" ]; then
     # Default empty fields to N/A
     for var in SNP_TP SNP_FP SNP_FN SNP_PREC SNP_RECALL SNP_F1 \
                INDEL_TP INDEL_FP INDEL_FN INDEL_PREC INDEL_RECALL INDEL_F1; do
-      [ -z "${!var}" ] && eval "${var}=N/A"
+      [ -z "${!var}" ] && printf -v "$var" '%s' 'N/A'
     done
 
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
@@ -255,6 +266,19 @@ else
       # Clean previous run if present
       rm -rf "$ISEC_HOST"
 
+      # Normalize both VCFs (decompose MNPs, left-align indels) for fair comparison
+      NORM_A="/genome/${SAMPLE}/benchmark/.norm_a.vcf.gz"
+      NORM_B="/genome/${SAMPLE}/benchmark/.norm_b.vcf.gz"
+      docker run --rm \
+        --cpus 2 --memory 4g \
+        --user root \
+        -v "${GENOME_DIR}:/genome" \
+        staphb/bcftools:1.21 \
+        bash -c "
+          bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta ${VCF_A} -Oz -o ${NORM_A} && bcftools index -t ${NORM_A} &&
+          bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta ${VCF_B} -Oz -o ${NORM_B} && bcftools index -t ${NORM_B}
+        "
+
       # shellcheck disable=SC2086
       docker run --rm \
         --cpus 2 --memory 4g \
@@ -262,8 +286,12 @@ else
         -v "${GENOME_DIR}:/genome" \
         staphb/bcftools:1.21 \
         bcftools isec -p "${ISEC_DIR}" \
+          -f PASS \
           ${ISEC_REGIONS_FLAG} \
-          "${VCF_A}" "${VCF_B}"
+          "${NORM_A}" "${NORM_B}"
+
+      # Clean up normalized temp files
+      rm -f "${BENCHMARK_DIR}/.norm_a.vcf.gz"* "${BENCHMARK_DIR}/.norm_b.vcf.gz"*
 
       # Count variants in each output file
       # 0000.vcf = unique to A
@@ -302,7 +330,8 @@ else
     done < <(tail -n +2 "$TSV")
     echo ""
     echo "NOTE: Jaccard index = shared / (A_unique + B_unique + shared)."
-    echo "A value of 1.0 means perfect agreement; typical WGS callers agree on ~95%+ of SNPs."
+    echo "Computed on PASS variants after normalization (bcftools norm -m-both)."
+    echo "A value of 1.0 means perfect agreement; typical WGS callers agree on ~95%+ of PASS SNPs."
   } | tee -a "$SUMMARY"
 fi
 

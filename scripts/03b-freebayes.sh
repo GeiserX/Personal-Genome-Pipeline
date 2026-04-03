@@ -10,7 +10,8 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_freebayes"
 INTERVALS=${INTERVALS:-""}
@@ -39,7 +40,7 @@ FREEBAYES_ARGS=(-f /genome/reference/Homo_sapiens_assembly38.fasta)
 if [ -n "$INTERVALS" ]; then
   FREEBAYES_ARGS+=(--region "$INTERVALS")
 fi
-FREEBAYES_ARGS+=("/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam")
+FREEBAYES_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
 docker run --rm \
   --cpus 4 --memory 32g \

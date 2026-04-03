@@ -96,6 +96,8 @@ echo "Jaccard: $(echo "scale=4; $SHARED / $UNION" | bc)"
 
 Compare caller output against a known-correct truth set. This gives you absolute precision, recall, and F1 scores.
 
+**Important:** Truth set benchmarking is only valid when the query VCF was generated from the **same biological sample** as the truth set. If the truth set is HG002, you must sequence HG002 DNA, align it, call variants, and then compare those calls against the HG002 truth VCF. Running hap.py with your personal sample against the HG002 truth set produces meaningless precision/recall numbers because the "true" variants are different for every individual.
+
 The Genome in a Bottle (GIAB) consortium publishes validated truth sets for several reference samples. The most widely used is **HG002** (Ashkenazi Jewish male), which has the most comprehensive high-confidence calls.
 
 ---
@@ -149,7 +151,9 @@ ${GENOME_DIR}/giab/
 [hap.py](https://github.com/Illumina/hap.py) (Illumina) is the standard benchmarking tool for SNP and indel callers. It decomposes complex variants, performs genotype matching, and reports precision/recall/F1 stratified by variant type.
 
 ```bash
-SAMPLE=your_sample
+# IMPORTANT: SAMPLE must be the GIAB sample that matches the truth set.
+# If using HG002 truth, you must have sequenced and called variants on HG002.
+SAMPLE=HG002
 GENOME_DIR=/path/to/your/data
 TRUTH_VCF="/genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 CONF_BED="/genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
@@ -374,8 +378,7 @@ benchmark/
 
 ## Tips
 
-- **PASS filter matters.** Always filter to PASS variants before comparing. Unfiltered FreeBayes output includes many low-quality calls that inflate false positive counts.
-- **Normalize before comparing.** `bcftools isec` does position-based matching. For more precise indel comparison, normalize both VCFs first with `bcftools norm -m-both -f ref.fasta`.
+- **PASS filter and normalization are applied automatically.** The `benchmark-variants.sh` script filters to PASS variants and normalizes VCFs with `bcftools norm -m-both` before running `bcftools isec`. This decomposes MNPs and left-aligns indels for fairer comparison. Without this, representation differences between callers (especially FreeBayes) depress Jaccard values.
 - **hap.py handles normalization internally.** It decomposes complex variants and performs genotype-aware matching, so it is more accurate than raw `bcftools isec` for truth set evaluation.
 - **chr22 is representative but not definitive.** It is a good proxy for genome-wide performance on autosomes, but does not test difficult regions (centromeres, segmental duplications, sex chromosomes).
 - **Runtime scales with region size.** Full-genome hap.py takes 30-60 minutes per caller. chr22-only takes 1-3 minutes.
@@ -398,7 +401,9 @@ These are actual results from a 30X WGS sample (Intel i5-14500, 64GB RAM).
 
 FreeBayes calls **4x more variants** than DeepVariant. The ~16M FreeBayes-unique calls are overwhelmingly false positives. GATK is the most conservative. Strelka2 and DeepVariant are very close in total count.
 
-### Pairwise Concordance (Full Genome, All Variants)
+### Pairwise Concordance (Full Genome, All Variants, Pre-Normalization)
+
+**Note:** These numbers were computed on raw (unfiltered, unnormalized) VCFs. The `benchmark-variants.sh` script now applies PASS filtering and `bcftools norm -m-both` normalization before comparison, which will produce higher Jaccard values (especially for DV vs GATK, expected >0.95 for PASS SNPs).
 
 | Caller A | Caller B | Shared | A Unique | B Unique | Jaccard |
 |---|---|---|---|---|---|

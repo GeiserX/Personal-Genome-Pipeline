@@ -11,7 +11,8 @@ THREADS=${THREADS:-8}
 INTERVALS=${INTERVALS:-""}
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 REF_DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_gatk"
@@ -42,7 +43,7 @@ mkdir -p "$OUTPUT_DIR"
 GATK_CMD=(
   gatk HaplotypeCaller
   -R /genome/reference/Homo_sapiens_assembly38.fasta
-  -I "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+  -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
   -O "/genome/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz"
   --native-pair-hmm-threads "$THREADS"
   -ERC NONE

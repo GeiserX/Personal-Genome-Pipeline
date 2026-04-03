@@ -50,7 +50,7 @@ The alignment step is the single longest step in the pipeline when starting from
 |---|---|---|---|
 | **Script** | `scripts/03-deepvariant.sh` | `scripts/03a-gatk-haplotypecaller.sh` | `scripts/03b-freebayes.sh` |
 | **Output directory** | `vcf/` | `vcf_gatk/` | `vcf_freebayes/` |
-| **Docker image** | `google/deepvariant:1.6.0` | `broadinstitute/gatk:4.6.1.0` | `quay.io/biocontainers/freebayes:1.3.7` |
+| **Docker image** | `google/deepvariant:1.6.0` | `broadinstitute/gatk:4.6.1.0` | `quay.io/biocontainers/freebayes:1.3.6` |
 | **Algorithm** | Deep learning (CNN) | Local haplotype assembly + PairHMM | Bayesian haplotype-based |
 | **SNP F1 (30X)** | ~0.999 | ~0.998 | ~0.994 |
 | **Indel F1 (30X)** | ~0.994 | ~0.983 | ~0.960 |
@@ -60,6 +60,16 @@ The alignment step is the single longest step in the pipeline when starting from
 | **GVCF output** | Yes | Yes | No |
 | **Region restriction** | No (`INTERVALS` not supported) | Yes (`INTERVALS` env var) | Yes (`INTERVALS` env var) |
 | **Extra reference files** | FASTA + FAI | FASTA + FAI + .dict | FASTA + FAI |
+
+### Strelka2: a fourth small variant caller
+
+Strelka2 (`scripts/03c-strelka2-germline.sh`, output to `vcf_strelka2/`) is a fourth option for SNV and indel calling. Despite sometimes being grouped with SV tools because it ships alongside Manta, Strelka2's germline mode is a **small variant caller** — it calls SNVs and indels up to ~49 bp, not structural variants. See [Kim et al. 2018](https://doi.org/10.1038/s41592-018-0051-x).
+
+Key characteristics:
+- **Fast:** ~1-2 hours on 30X WGS with 8 threads (fastest of the four callers)
+- **Good accuracy:** Comparable to GATK for SNPs and indels
+- **BWA-MEM2 recommended:** Strelka2's scoring model relies on XS (suboptimal alignment score) tags. minimap2 does not produce these, causing reduced SNP precision. Use BWA-MEM2 alignments for best results.
+- **Complements Manta:** In Illumina's intended workflow, Manta detects SVs and Strelka2 detects small variants — they are complementary, not alternatives to each other
 
 ### Default: DeepVariant
 
@@ -141,14 +151,13 @@ Manta is the primary SV caller because:
 - **Complementary signal.** Because it uses a completely different detection method (depth binning) than Manta or Delly (paired-end and split-read), CNVnator's calls provide independent confirmation.
 - **Limited SV types.** Only detects deletions and duplications. Does not call inversions, translocations, or insertions.
 
-### Additional SV callers (not yet in the pipeline)
-
-Two additional SV callers are planned for future releases (see [ROADMAP.md](../ROADMAP.md)):
+### Additional SV caller: TIDDIT
 
 | Tool | Strength | Limitation | Status |
 |---|---|---|---|
-| **TIDDIT** | Large inversions, translocations; low memory usage | Lower sensitivity for small SVs | Planned (v0.2.0) |
-| **Strelka2** (germline mode) | Catches small indels (20-50 bp) that Manta misses | SNP precision drops with minimap2 alignments (needs BWA-MEM2 for XS tags) | Planned (v0.2.0) |
+| **TIDDIT** | Large inversions, translocations; low memory usage | Lower sensitivity for small SVs; needs BWA index for assembly mode | Available (v0.2.0) |
+
+**Note:** Strelka2 was previously listed here but is a **small variant caller** (SNVs + indels up to ~49 bp), not a structural variant caller. It has been reclassified under section 2 (SNP/Indel Calling) as `scripts/03c-strelka2-germline.sh`. See [Kim et al. 2018](https://doi.org/10.1038/s41592-018-0051-x).
 
 ### Key tradeoffs
 
