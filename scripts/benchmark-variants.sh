@@ -96,6 +96,12 @@ for i in $(seq 0 $((NUM_CALLERS - 1))); do
   fi
 done
 
+# Validate regions BED (used by both modes)
+if [ -n "$REGIONS_BED" ] && [ ! -f "$REGIONS_BED" ]; then
+  echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2
+  exit 1
+fi
+
 # Validate truth mode inputs
 if [ -n "$TRUTH_VCF" ]; then
   for f in "$TRUTH_VCF" "$REF"; do
@@ -104,10 +110,6 @@ if [ -n "$TRUTH_VCF" ]; then
       exit 1
     fi
   done
-  if [ -n "$REGIONS_BED" ] && [ ! -f "$REGIONS_BED" ]; then
-    echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2
-    exit 1
-  fi
 fi
 
 mkdir -p "$BENCHMARK_DIR"
@@ -180,7 +182,7 @@ if [ -n "$TRUTH_VCF" ]; then
     # Extract SNP and INDEL metrics from summary.csv
     # Columns: Type,Filter,TRUTH.TOTAL,TRUTH.TP,TRUTH.FN,QUERY.TOTAL,QUERY.FP,QUERY.UNK,FP.gt,METRIC.Recall,METRIC.Precision,METRIC.Frac_NA,METRIC.F1_Score
     SNP_LINE=$(awk -F',' '$1=="SNP" && $2=="PASS"' "$HAPPY_CSV" || true)
-    INDEL_LINE=$(awk -F',' '$1=="Indel" && $2=="PASS"' "$HAPPY_CSV" || true)
+    INDEL_LINE=$(awk -F',' '$1=="INDEL" && $2=="PASS"' "$HAPPY_CSV" || true)
 
     SNP_TP=$(echo "$SNP_LINE" | awk -F',' '{print $4}')
     SNP_FP=$(echo "$SNP_LINE" | awk -F',' '{print $7}')
@@ -243,11 +245,14 @@ else
     echo ""
   } > "$SUMMARY"
 
-  [ -n "${INTERVALS:-}" ] && echo "Restricted to regions: ${INTERVALS}"
-
   ISEC_REGIONS_FLAG=""
-  if [ -n "${INTERVALS:-}" ]; then
+  if [ -n "$REGIONS_BED" ]; then
+    REGIONS_BED_CONTAINER="${REGIONS_BED/#$GENOME_DIR//genome}"
+    ISEC_REGIONS_FLAG="-R ${REGIONS_BED_CONTAINER}"
+    echo "Restricted to regions BED: ${REGIONS_BED}"
+  elif [ -n "${INTERVALS:-}" ]; then
     ISEC_REGIONS_FLAG="-r ${INTERVALS}"
+    echo "Restricted to region: ${INTERVALS}"
   fi
 
   for i in $(seq 0 $((NUM_CALLERS - 1))); do
@@ -266,8 +271,8 @@ else
       rm -rf "$ISEC_HOST"
 
       # Normalize both VCFs (decompose MNPs, left-align indels) for fair comparison
-      NORM_A="/genome/${SAMPLE}/benchmark/.norm_a.vcf.gz"
-      NORM_B="/genome/${SAMPLE}/benchmark/.norm_b.vcf.gz"
+      NORM_A="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_a.vcf.gz"
+      NORM_B="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_b.vcf.gz"
       docker run --rm \
         --cpus 2 --memory 4g \
         --user root \
@@ -290,7 +295,7 @@ else
           "${NORM_A}" "${NORM_B}"
 
       # Clean up normalized temp files
-      rm -f "${BENCHMARK_DIR}/.norm_a.vcf.gz"* "${BENCHMARK_DIR}/.norm_b.vcf.gz"*
+      rm -f "${BENCHMARK_DIR}/.norm_${CALLER_A}_${CALLER_B}_a.vcf.gz"* "${BENCHMARK_DIR}/.norm_${CALLER_A}_${CALLER_B}_b.vcf.gz"*
 
       # Count variants in each output file
       # 0000.vcf = unique to A

@@ -2,7 +2,7 @@
 
 ## Why Benchmark Callers?
 
-No single variant caller is universally best. Each tool uses a different algorithm -- deep learning (DeepVariant), local haplotype assembly (GATK HaplotypeCaller), or Bayesian haplotype-based calling (FreeBayes) -- and each makes different tradeoffs between precision and recall. A variant found by one caller may be missed by another, and vice versa.
+No single variant caller is universally best. Each tool uses a different algorithm -- deep learning (DeepVariant), local haplotype assembly (GATK HaplotypeCaller), Bayesian haplotype-based calling (FreeBayes), or heuristic scoring (Strelka2) -- and each makes different tradeoffs between precision and recall. A variant found by one caller may be missed by another, and vice versa.
 
 Benchmarking lets you:
 
@@ -19,24 +19,26 @@ For background on caller performance differences, see:
 
 ## Available Alternative Caller Scripts
 
-The pipeline ships with three variant callers. Each writes output to a separate directory so they can run in parallel without conflicts.
+The pipeline ships with four variant callers. Each writes output to a separate directory so they can run in parallel without conflicts.
 
 | Script | Caller | Output Directory | Description |
 |---|---|---|---|
 | `scripts/03-deepvariant.sh` | DeepVariant 1.6.0 | `vcf/` | Default caller. Deep learning model, highest precision and F1. |
 | `scripts/03a-gatk-haplotypecaller.sh` | GATK HaplotypeCaller 4.6.1 | `vcf_gatk/` | Gold standard in clinical labs. Good precision/recall balance, GVCF support. |
 | `scripts/03b-freebayes.sh` | FreeBayes 1.3.6 | `vcf_freebayes/` | Bayesian caller. Highest sensitivity, most false positives, single-threaded. |
+| `scripts/03c-strelka2-germline.sh` | Strelka2 2.9.10 | `vcf_strelka2/` | Fast heuristic caller (SNVs + indels). Best with BWA-MEM2 alignments. |
 
-All three scripts accept the same arguments:
+All four scripts accept the same arguments:
 
 ```bash
 export GENOME_DIR=/path/to/your/data
 ./scripts/03-deepvariant.sh your_sample
 ./scripts/03a-gatk-haplotypecaller.sh your_sample
 ./scripts/03b-freebayes.sh your_sample
+./scripts/03c-strelka2-germline.sh your_sample
 ```
 
-GATK and FreeBayes also accept an `INTERVALS` environment variable to restrict calling to a specific region (see the chr22 example below).
+GATK and FreeBayes also accept an `INTERVALS` environment variable to restrict calling to a specific region (see the chr22 example below). Strelka2 and TIDDIT always process the full genome.
 
 An alternative aligner is also available:
 
@@ -263,9 +265,9 @@ Key observations:
 
 ## Practical Example: chr22-Only Benchmark
 
-Running all three callers on the full genome takes 2-12 hours each (FreeBayes being the slowest at 8-12h single-threaded). For a quick script validation, you can restrict calling to chromosome 22 only (~1-2% of the genome, takes 3-8 minutes per caller), but **full-genome runs are strongly recommended for meaningful benchmarking**.
+Running all four callers on the full genome takes 1-12 hours each (FreeBayes being the slowest at 8-12h single-threaded, Strelka2 the fastest at ~1h). For a quick script validation, you can restrict GATK and FreeBayes to chromosome 22 only (~1-2% of the genome, takes 3-8 minutes per caller), but **full-genome runs are strongly recommended for meaningful benchmarking**.
 
-### Step 1: Run All Three Callers on chr22
+### Step 1: Run Callers on chr22 (GATK + FreeBayes)
 
 ```bash
 export GENOME_DIR=/path/to/your/data
@@ -332,6 +334,20 @@ for CALLER_DIR in vcf vcf_gatk vcf_freebayes; do
       --threads 4 \
       -l chr22
 done
+
+# Strelka2 has a different output path structure
+docker run --rm \
+  --cpus 4 --memory 16g \
+  -v "${GENOME_DIR}:/genome" \
+  jmcdani20/hap.py:v0.3.12 \
+  /opt/hap.py/bin/hap.py \
+    /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz \
+    "/genome/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" \
+    -r /genome/reference/Homo_sapiens_assembly38.fasta \
+    -f /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed \
+    -o "/genome/${SAMPLE}/benchmark/vcf_strelka2_vs_truth_chr22" \
+    --threads 4 \
+    -l chr22
 ```
 
 ### Step 4: Compare Summary CSVs
