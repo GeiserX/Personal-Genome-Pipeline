@@ -283,7 +283,7 @@ INTERVALS=chr22 ./scripts/03a-gatk-haplotypecaller.sh "$SAMPLE"
 INTERVALS=chr22 ./scripts/03b-freebayes.sh "$SAMPLE"
 ```
 
-For DeepVariant, extract chr22 from an existing full-genome VCF:
+For pairwise comparison (Step 2), extract chr22 from the DeepVariant full-genome VCF so both inputs cover the same region:
 
 ```bash
 docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
@@ -294,6 +294,8 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
   bcftools index -t "/genome/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz"
 ```
+
+> **Note:** The chr22 extract is only needed for Step 2 (pairwise `bcftools isec`). Step 3 (hap.py truth) uses the full-genome VCF with `-l chr22`, which hap.py handles internally.
 
 ### Step 2: Pairwise Concordance
 
@@ -442,7 +444,7 @@ FreeBayes calls **4x more variants** than DeepVariant. The ~16M FreeBayes-unique
 | GATK | FreeBayes | 3,495,334 | 1,167,607 | 16,563,959 | 0.165 |
 
 Key observations:
-- **DeepVariant vs GATK** share 4.5M variants (Jaccard 0.783). GATK has very few unique calls (171K) while DeepVariant has 1.07M unique — suggesting DeepVariant captures more real variants that GATK misses.
+- **DeepVariant vs GATK** share 4.5M variants (Jaccard 0.783). GATK has very few unique calls (171K) while DeepVariant has 1.07M unique. Without truth set labeling, these unique counts reflect disagreement, not necessarily true/false positives — some DeepVariant-unique calls may be real variants GATK missed, and some may be DeepVariant-specific artifacts.
 - **FreeBayes vs everything** has low concordance (~17%) because it calls 16.3M extra variants. These need aggressive quality filtering before use.
 - **GATK is the most conservative** — nearly all GATK calls (96%) are also found by DeepVariant, making it a high-confidence subset.
 - Filtering to **PASS SNPs only** would significantly increase concordance (expected Jaccard >0.95 for DV vs GATK).

@@ -57,7 +57,7 @@ The alignment step is the single longest step in the pipeline when starting from
 | **Runtime (30X, 8 cores)** | 2-4 hours (CPU) | 4-8 hours | 8-20+ hours |
 | **GPU support** | Yes (significant speedup) | No | No |
 | **Multi-threading** | Yes (`--num_shards`) | Yes (`--native-pair-hmm-threads`) | No (single-threaded) |
-| **GVCF output** | Yes | Yes | No |
+| **GVCF output** | Yes | Yes (script uses normal VCF; switch to `-ERC GVCF` for cohort workflows) | No |
 | **Region restriction** | No (`INTERVALS` not supported) | Yes (`INTERVALS` env var) | Yes (`INTERVALS` env var) |
 | **Extra reference files** | FASTA + FAI | FASTA + FAI + .dict | FASTA + FAI |
 
@@ -84,7 +84,7 @@ DeepVariant is the default because:
 
 - **Clinical reproducibility.** GATK HaplotypeCaller is the gold standard in clinical genetics labs and CLIA-certified pipelines. If you need to compare your calls with a clinical lab report, running GATK alongside DeepVariant helps identify discrepancies.
 - **Cohort calling.** GATK's GVCF mode (`-ERC GVCF`) produces per-sample genomic VCFs that can be joint-genotyped across a cohort with `GenomicsDBImport` + `GenotypeGVCFs`. This is the standard workflow for family studies and population-scale projects.
-- **Balanced performance.** GATK sits between DeepVariant (highest precision) and FreeBayes (highest sensitivity). It misses fewer real variants than DeepVariant at the cost of a slightly higher false positive rate.
+- **Balanced performance.** GATK sits between DeepVariant (highest precision) and FreeBayes (highest sensitivity), offering a different precision/recall tradeoff that can complement either tool.
 
 ### FreeBayes: when to use it
 

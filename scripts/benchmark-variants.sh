@@ -97,9 +97,17 @@ for i in $(seq 0 $((NUM_CALLERS - 1))); do
 done
 
 # Validate regions BED (used by both modes)
-if [ -n "$REGIONS_BED" ] && [ ! -f "$REGIONS_BED" ]; then
-  echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2
-  exit 1
+if [ -n "$REGIONS_BED" ]; then
+  if [ ! -f "$REGIONS_BED" ]; then
+    echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2
+    exit 1
+  fi
+  case "$REGIONS_BED" in
+    "${GENOME_DIR}"*) ;;
+    *) echo "ERROR: --regions path must be under GENOME_DIR (${GENOME_DIR})." >&2
+       echo "The container only mounts GENOME_DIR as /genome." >&2
+       exit 1 ;;
+  esac
 fi
 
 # Validate truth mode inputs
@@ -110,6 +118,12 @@ if [ -n "$TRUTH_VCF" ]; then
       exit 1
     fi
   done
+  case "$TRUTH_VCF" in
+    "${GENOME_DIR}"*) ;;
+    *) echo "ERROR: --truth path must be under GENOME_DIR (${GENOME_DIR})." >&2
+       echo "The container only mounts GENOME_DIR as /genome." >&2
+       exit 1 ;;
+  esac
 fi
 
 mkdir -p "$BENCHMARK_DIR"

@@ -75,6 +75,8 @@ if [ -n "$EXTRA_CALLERS" ]; then
         ;;
       strelka2)
         echo "  Starting Strelka2..."
+        echo "  NOTE: Strelka2 is using the default minimap2 BAM. For best SNP precision,"
+        echo "        align with BWA-MEM2 first, then run: ALIGN_DIR=aligned_bwamem2 ./scripts/03c-strelka2-germline.sh $SAMPLE"
         bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;

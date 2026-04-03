@@ -4,15 +4,15 @@ Where the pipeline is headed. Items are grouped by priority and roughly ordered 
 
 ---
 
-## v0.2.0 — Variant caller benchmarking & alternative tools
+## v0.2.0 — Variant caller benchmarking & alternative tools ✅
 
-The pipeline currently ships one tool per step with no way to compare. Bioinformaticians routinely benchmark callers against each other because no single tool is universally superior ([PLOS ONE comparison](https://doi.org/10.1371/journal.pone.0339891), [UMCCR BWA vs minimap2](https://umccr.org/blog/bwa-mem-vs-minimap2/)). Thanks to [@madmolecularman](https://github.com/madmolecularman) for pushing this direction.
+Alternative callers, benchmarking infrastructure, and tool rationale documentation. Thanks to [@madmolecularman](https://github.com/madmolecularman) for pushing this direction.
 
-- [ ] **Alternative aligner: BWA-MEM2** — add BWA-MEM2 alongside minimap2. BWA-MEM2 produces different SAM tags (XS suboptimal alignment score) that some callers depend on — Strelka2 in particular has reduced SNP precision with minimap2 alignments due to missing XS tags and doubled AS scores
-- [ ] **Alternative SNP callers: GATK HaplotypeCaller + FreeBayes** — add as optional callers alongside DeepVariant. DeepVariant leads in precision and F1; GATK balances precision/recall; FreeBayes maximizes sensitivity at the cost of higher false positives. Different callers catch different variants — no single caller finds everything
-- [ ] **Concordance benchmarking script** — given a GIAB truth set (HG002 or NA12878) and one or more caller VCFs, run Illumina's [hap.py](https://github.com/Illumina/hap.py) or RTG vcfeval to produce precision/recall/F1 stratified by variant type (SNP vs indel) and genomic region. Output a comparison table and optional Venn diagram of caller-unique and shared calls
-- [ ] **Alternative SV callers: TIDDIT + Strelka2** — add alongside Manta/Delly for broader SV sensitivity. TIDDIT excels at large inversions and translocations; Strelka2 germline mode catches small indels that Manta misses
-- [ ] **Documented tool rationale** — for each step, document why the default was chosen with references to benchmarking data, so users can make informed decisions about which callers to run
+- [x] **Alternative aligner: BWA-MEM2** (`scripts/02a-alignment-bwamem2.sh` → `aligned_bwamem2/`) — produces XS tags needed by Strelka2. All alternative caller scripts accept `ALIGN_DIR=aligned_bwamem2`
+- [x] **Alternative SNP callers: GATK HaplotypeCaller + FreeBayes + Strelka2** — three optional callers alongside DeepVariant, each writing to isolated output directories (`vcf_gatk/`, `vcf_freebayes/`, `vcf_strelka2/`). Note: Strelka2 is a small variant caller (SNVs + indels ≤49bp), not an SV caller
+- [x] **Concordance benchmarking script** (`scripts/benchmark-variants.sh`) — two modes: pairwise concordance (`bcftools isec` with PASS filter + normalization) and truth set benchmarking (`hap.py`). Auto-discovers all caller VCFs
+- [x] **Alternative SV caller: TIDDIT** (`scripts/04a-tiddit.sh` → `sv_tiddit/`) — excels at large inversions and translocations; auto-detects BWA index for assembly mode
+- [x] **Documented tool rationale** (`docs/tool-rationale.md`) — per-step rationale with references to benchmarking data and decision matrices
 
 ## v0.3.0 — Multi-sample & joint analysis
 
