@@ -260,9 +260,11 @@ BENCHMARK=${BENCHMARK:-false}
 if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   # Count available caller VCFs (need at least 2 for pairwise comparison)
   CALLER_COUNT=0
-  for d in vcf vcf_gatk vcf_freebayes vcf_strelka2; do
+  for d in vcf vcf_gatk vcf_freebayes; do
     [ -f "${GENOME_DIR}/${SAMPLE}/${d}/${SAMPLE}.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   done
+  # Strelka2 writes to a different path
+  [ -f "${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   if [ "$CALLER_COUNT" -ge 2 ]; then
     echo ""
     echo "  [D7] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
