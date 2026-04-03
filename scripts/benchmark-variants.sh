@@ -112,7 +112,7 @@ fi
 
 # Validate truth mode inputs
 if [ -n "$TRUTH_VCF" ]; then
-  for f in "$TRUTH_VCF" "$REF"; do
+  for f in "$TRUTH_VCF" "${TRUTH_VCF}.tbi" "$REF"; do
     if [ ! -f "$f" ]; then
       echo "ERROR: File not found: ${f}" >&2
       exit 1
