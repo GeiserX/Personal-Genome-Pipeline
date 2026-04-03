@@ -22,6 +22,8 @@ The biggest gap in v0.1.x is that every step runs on a single sample in isolatio
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
 - [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
 - [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
+- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
+- [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
 - [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with GEMINI-style inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
 ## v0.4.0 — Expanded annotation & clinical interpretation
@@ -33,6 +35,7 @@ Current annotation is VEP-only with basic ClinVar screening. Clinical-grade inte
 - [ ] **REVEL scores** — ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification
 - [ ] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier. Complements REVEL with structural context
 - [ ] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores. Essential for interpreting novel variants in loss-of-function-intolerant genes
+- [ ] **vcfanno annotation engine** — add arbitrary annotation tracks (gnomAD, CADD, SpliceAI, custom BEDs) to VCFs via TOML config; faster than VEP for bulk annotation, complements rather than replaces it
 - [ ] **Variant database with inheritance queries** — load annotated VCFs into a queryable store (GEMINI or modern successor) supporting inheritance model filtering: de novo, compound het, X-linked, autosomal recessive/dominant
 - [ ] **pypgx alongside PharmCAT** — broader PGx star allele calling including CYP2D6 structural variation detection from WGS reads, filling the gap left by Cyrius
 
@@ -54,6 +57,10 @@ Upgrade pinned tools where the pipeline currently runs on older versions, and fi
 - [ ] **PCGR/CPSR data bundle refresh** — the current `grch38.20220203` bundle is from Feb 2022; upgrade to the latest available bundle
 - [ ] **Long-read support** — add an optional ONT/PacBio alignment path (minimap2 `map-ont`, pbmm2 for HiFi), long-read-aware variant calling (Clair3 for SNPs, Sniffles2 and cuteSV for SVs), and [pb-StarPhase](https://github.com/PacificBiosciences/pb-StarPhase) for long-read pharmacogenomics
 - [ ] **Whole exome sequencing (WES) entry path** — support for targeted/exome BAMs with coverage thresholds, on-target rate QC (Picard CollectHsMetrics), and adjusted variant caller parameters. WES is where most rare disease diagnosis and cancer research is moving. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
+- [ ] **FastQC + MultiQC QC reporting** — per-FASTQ quality metrics and an aggregated HTML report combining all QC outputs (flagstat, mosdepth, FastQC) in one view
+- [ ] **mosdepth coverage statistics** — fast per-base and per-region depth from BAM; more detailed than indexcov, producing coverage distributions and threshold reports
+- [ ] **Octopus variant caller** — haplotype-aware Bayesian caller as a 5th benchmarking alternative or FreeBayes replacement (FreeBayes is slow and memory-heavy)
+- [ ] **GRIDSS structural variant caller** — assembly-based SV caller for complex rearrangements; strengthens SV consensus (step 22) alongside Manta/Delly
 - [ ] **CYP2D6 star allele calling** — evaluate StellarPGx or Aldy as replacements for Cyrius, which returns None/None on most short-read WGS samples
 - [ ] **Somatic variant calling** — optional tumor-only mode with Mutect2 for users who have matched tumor/normal WGS (rare but requested)
 
