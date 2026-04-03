@@ -73,6 +73,11 @@ if [ -n "$EXTRA_CALLERS" ]; then
         bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
+      strelka2)
+        echo "  Starting Strelka2..."
+        bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
       *)
         echo "  WARNING: Unknown caller '${CALLER}'. Skipping."
         ;;

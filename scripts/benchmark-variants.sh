@@ -150,7 +150,6 @@ if [ -n "$TRUTH_VCF" ]; then
   for i in $(seq 0 $((NUM_CALLERS - 1))); do
     CALLER="${CALLER_NAMES[$i]}"
     VCF="${CALLER_VCFS[$i]}"
-    VCF_CONTAINER="/genome/${SAMPLE}/${VCF//${GENOME_DIR}\/${SAMPLE}\//}"
     VCF_CONTAINER="${VCF/#$GENOME_DIR//genome}"
     PREFIX="/genome/${SAMPLE}/benchmark/happy_${CALLER}"
 

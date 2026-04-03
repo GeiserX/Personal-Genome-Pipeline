@@ -172,8 +172,10 @@ docker pull quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
 # Alternative variant callers (GATK image already pulled above)
 docker pull quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
 
-# Alternative SV callers
+# Alternative SV caller
 docker pull quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
+
+# Alternative small variant caller (SNVs + indels, complements Manta)
 docker pull quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
 
 # Benchmarking (truth set evaluation)
@@ -207,16 +209,23 @@ docker run --rm --user root \
 
 ### GIAB Truth Set (for hap.py Benchmarking)
 
-Download the GIAB HG001 (NA12878) truth set for benchmarking variant callers:
+Download a GIAB truth set for benchmarking variant callers. **HG002** (Ashkenazi Jewish male) is preferred because its truth set covers more difficult genomic regions. HG001 (NA12878) is an alternative used in the [quick test](quick-test.md).
+
+**Important:** Truth set benchmarking only works when the query VCF comes from the **same biological sample** as the truth set. You must sequence HG002 (or HG001) DNA, not your own sample. See [benchmarking.md](benchmarking.md) for details.
 
 ```bash
 mkdir -p ${GENOME_DIR}/giab
 cd ${GENOME_DIR}/giab
 
-# HG001/NA12878 truth set (GRCh38)
-wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
-wget https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
+# HG002 truth set (recommended, GRCh38 v4.2.1)
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
+
+# Alternative: HG001/NA12878 (used in quick-test.md)
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
 ```
 
 **Total Docker image size:** ~10-15 GB (compressed, after layer deduplication). Alternative tools add ~3-5 GB.
