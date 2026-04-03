@@ -128,6 +128,13 @@ if [ -n "$TRUTH_VCF" ]; then
   echo "is HG002, the query VCF must also come from HG002 sequencing data. Running"
   echo "hap.py against a non-matching sample produces meaningless precision/recall."
   echo ""
+  if [ -z "$REGIONS_BED" ]; then
+    echo "WARNING: No --regions BED provided. For GIAB truth sets, you should provide"
+    echo "the high-confidence regions BED (e.g., HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed)."
+    echo "Without it, variants outside confident regions inflate FP/FN counts and make"
+    echo "precision/recall harder to interpret."
+    echo ""
+  fi
 
   # Build the TSV header
   printf "Caller\tSNP_TP\tSNP_FP\tSNP_FN\tSNP_Precision\tSNP_Recall\tSNP_F1\tINDEL_TP\tINDEL_FP\tINDEL_FN\tINDEL_Precision\tINDEL_Recall\tINDEL_F1\n" > "$TSV"

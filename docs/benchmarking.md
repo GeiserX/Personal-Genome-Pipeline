@@ -361,7 +361,12 @@ cat "${GENOME_DIR}/${SAMPLE}/benchmark/vcf_gatk_vs_truth_chr22.summary.csv"
 
 echo "=== FreeBayes ==="
 cat "${GENOME_DIR}/${SAMPLE}/benchmark/vcf_freebayes_vs_truth_chr22.summary.csv"
+
+echo "=== Strelka2 ==="
+cat "${GENOME_DIR}/${SAMPLE}/benchmark/vcf_strelka2_vs_truth_chr22.summary.csv"
 ```
+
+> **Note:** The file names above (`vcf_vs_truth_chr22.*`) are from the manual hap.py examples. The automated `benchmark-variants.sh --truth` script uses `happy_<Caller>.*` naming (e.g., `happy_DeepVariant.summary.csv`).
 
 ---
 
@@ -371,23 +376,32 @@ After a full benchmarking run, expect these files in `${GENOME_DIR}/${SAMPLE}/be
 
 ```
 benchmark/
-  dv_vs_gatk/                      # Pairwise: DeepVariant vs GATK
+  # Pairwise mode (benchmark-variants.sh without --truth):
+  isec_DeepVariant_vs_GATK/        # Pairwise: DeepVariant vs GATK
     0000.vcf                       #   Unique to DeepVariant
     0001.vcf                       #   Unique to GATK
     0002.vcf                       #   Shared (DV perspective)
     0003.vcf                       #   Shared (GATK perspective)
     sites.txt                      #   Per-site presence table
-  dv_vs_fb/                        # Pairwise: DeepVariant vs FreeBayes
+  isec_DeepVariant_vs_FreeBayes/   # Pairwise: DeepVariant vs FreeBayes
     ...
-  deepvariant_vs_truth.summary.csv # hap.py: DeepVariant precision/recall
-  deepvariant_vs_truth.extended.csv
-  deepvariant_vs_truth.vcf.gz      # TP/FP/FN annotated VCF
-  gatk_vs_truth.summary.csv        # hap.py: GATK precision/recall
-  gatk_vs_truth.extended.csv
-  gatk_vs_truth.vcf.gz
-  freebayes_vs_truth.summary.csv   # hap.py: FreeBayes precision/recall
-  freebayes_vs_truth.extended.csv
-  freebayes_vs_truth.vcf.gz
+  isec_GATK_vs_FreeBayes/          # Pairwise: GATK vs FreeBayes
+    ...
+  summary.txt                      # Human-readable results table
+  comparison.tsv                   # Machine-readable TSV
+
+  # Truth mode (benchmark-variants.sh --truth <vcf> --regions <bed>):
+  happy_DeepVariant.summary.csv    # hap.py: DeepVariant precision/recall
+  happy_DeepVariant.extended.csv
+  happy_DeepVariant.vcf.gz         # TP/FP/FN annotated VCF
+  happy_GATK.summary.csv           # hap.py: GATK precision/recall
+  happy_GATK.extended.csv
+  happy_GATK.vcf.gz
+  happy_FreeBayes.summary.csv      # hap.py: FreeBayes precision/recall
+  happy_FreeBayes.extended.csv
+  happy_FreeBayes.vcf.gz
+  summary.txt                      # Human-readable results table
+  comparison.tsv                   # Machine-readable TSV
 ```
 
 ---

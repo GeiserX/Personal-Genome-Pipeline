@@ -278,13 +278,13 @@ ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
-TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
+TOTAL_FAIL=$((${PHASE2B_FAIL:-0} + PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
 
 echo ""
 echo "============================================"
 if [ "$TOTAL_FAIL" -gt 0 ]; then
   echo "  Pipeline finished with errors for: ${SAMPLE}"
-  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
+  echo "  ${TOTAL_FAIL} step(s) failed (Phase 2b: ${PHASE2B_FAIL:-0}, Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
 else
   echo "  Pipeline complete for: ${SAMPLE}"
 fi
