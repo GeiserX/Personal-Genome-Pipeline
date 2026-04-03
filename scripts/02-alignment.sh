@@ -56,7 +56,7 @@ docker run --rm \
   --cpus "${THREADS}" --memory 8g \
   -v "${GENOME_DIR}:/genome" \
   staphb/samtools:1.20 \
-  samtools sort -@ "${THREADS}" \
+  samtools sort -@ 4 -m 1G \
     -o "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
 # Step 3: Index BAM

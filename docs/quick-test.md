@@ -46,13 +46,11 @@ docker run --rm --user root \
 
 ### Step 2: Run VCF-Only Steps
 
-If you extracted chr22 above, point the pipeline at it:
+If you extracted chr22 above, symlink it so the pipeline finds it (safe to rerun):
 ```bash
-# Replace the full VCF with the chr22 extract
-mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_full.vcf.gz
-mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_full.vcf.gz.tbi
-mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
-mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi
+# Symlink the chr22 extract as the default VCF (preserves the original)
+ln -sf ${SAMPLE}_chr22.vcf.gz     ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+ln -sf ${SAMPLE}_chr22.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi
 ```
 
 Then run the VCF-only steps (they expect `${SAMPLE}.vcf.gz`):
