@@ -46,6 +46,16 @@ docker run --rm --user root \
 
 ### Step 2: Run VCF-Only Steps
 
+If you extracted chr22 above, point the pipeline at it:
+```bash
+# Replace the full VCF with the chr22 extract
+mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_full.vcf.gz
+mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_full.vcf.gz.tbi
+mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+mv ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi
+```
+
+Then run the VCF-only steps (they expect `${SAMPLE}.vcf.gz`):
 ```bash
 # ClinVar screen (~1 min)
 ./scripts/06-clinvar-screen.sh ${SAMPLE}

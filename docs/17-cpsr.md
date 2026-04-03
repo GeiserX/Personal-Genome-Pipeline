@@ -62,7 +62,7 @@ docker run --rm \
 ## Notes
 - The 21GB data bundle only needs to be downloaded once — shared across all samples.
 - **Data bundle staleness:** The default bundle (`grch38.20220203`) dates from February 2022. ClinVar, CancerMine, and UniProt annotations inside the bundle are frozen at that date. Check the [PCGR releases page](https://github.com/sigven/pcgr/releases) periodically for updated bundles — newer bundles include more recent ClinVar classifications and gene-disease annotations.
-- Use `--panel_id 0` for comprehensive screening (all ACMG SF genes).
+- Use `--panel_id 0` for the comprehensive cancer superpanel (500+ genes). Note: this is broader than ACMG SF but cancer-focused — it does not replace a full ACMG incidental-findings screen.
 - `--classify_all` ensures all variants in target genes get ACMG classification, not just known pathogenic.
 - CPSR is complementary to ClinVar screening — ClinVar finds known variants, CPSR classifies novel ones.
 - The same data bundle is used by PCGR for somatic analysis (not relevant for germline WGS).

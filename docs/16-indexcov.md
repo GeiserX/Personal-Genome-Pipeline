@@ -24,7 +24,7 @@ docker run --rm \
   quay.io/biocontainers/goleft:0.2.4--h9ee0642_1 \
   goleft indexcov \
   --directory /genome/${SAMPLE}/indexcov \
-  /genome/${SAMPLE}/sorted.bam
+  /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
 ## Output Files

@@ -51,7 +51,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 | **Structural Variants** | Deletions, duplications, inversions, translocations (3 callers + consensus) | 4, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP: SIFT, PolyPhen, gnomAD frequencies) | 13 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
-| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, ancestry PCA | 11, 12, 26 |
+| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, single-sample ancestry PCA | 11, 12, 26 |
 | **Telomere Length** | Biological age proxy from telomere content | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
