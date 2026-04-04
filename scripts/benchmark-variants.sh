@@ -311,7 +311,7 @@ else
         -v "${GENOME_DIR}:/genome" \
         staphb/bcftools:1.21 \
         bcftools isec -p "${ISEC_DIR}" \
-          -f PASS \
+          -f .,PASS \
           ${ISEC_REGIONS_FLAG} \
           "${NORM_A}" "${NORM_B}"
 
@@ -323,9 +323,9 @@ else
       # 0001.vcf = unique to B
       # 0002.vcf = shared (from A's perspective)
       # 0003.vcf = shared (from B's perspective)
-      A_UNIQUE=$(grep -cv '^#' "${ISEC_HOST}/0000.vcf" 2>/dev/null || echo "0")
-      B_UNIQUE=$(grep -cv '^#' "${ISEC_HOST}/0001.vcf" 2>/dev/null || echo "0")
-      SHARED=$(grep -cv '^#' "${ISEC_HOST}/0002.vcf" 2>/dev/null || echo "0")
+      A_UNIQUE=$(grep -c '^[^#]' "${ISEC_HOST}/0000.vcf" 2>/dev/null || echo "0")
+      B_UNIQUE=$(grep -c '^[^#]' "${ISEC_HOST}/0001.vcf" 2>/dev/null || echo "0")
+      SHARED=$(grep -c '^[^#]' "${ISEC_HOST}/0002.vcf" 2>/dev/null || echo "0")
 
       # Jaccard = shared / (A_unique + B_unique + shared)
       DENOM=$((A_UNIQUE + B_UNIQUE + SHARED))
