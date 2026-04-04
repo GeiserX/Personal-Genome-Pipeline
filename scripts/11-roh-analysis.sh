@@ -18,11 +18,23 @@ for f in "$VCF" "${VCF}.tbi"; do
   fi
 done
 
+# Auto-detect chip data: if FORMAT/PL is absent, use -G30 (genotype-only mode)
+HAS_PL=$(docker run --rm \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  staphb/bcftools:1.21 \
+  bcftools view -h "/data/${SAMPLE}.vcf.gz" | grep -c '##FORMAT=<ID=PL' || true)
+
+ROH_FLAGS=(--AF-dflt 0.4)
+if [ "${HAS_PL}" -eq 0 ]; then
+  echo "  No FORMAT/PL tag detected (chip data) — using -G30 genotype-only mode"
+  ROH_FLAGS+=(-G30)
+fi
+
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   staphb/bcftools:1.21 \
-  bcftools roh --AF-dflt 0.4 -o "/data/${SAMPLE}_roh.txt" "/data/${SAMPLE}.vcf.gz"
+  bcftools roh "${ROH_FLAGS[@]}" -o "/data/${SAMPLE}_roh.txt" "/data/${SAMPLE}.vcf.gz"
 
 echo "=== ROH complete ==="
 echo "Results: ${OUTPUT}"

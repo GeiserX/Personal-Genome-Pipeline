@@ -35,6 +35,16 @@ SUMMARY="${BENCHMARK_DIR}/summary.txt"
 TSV="${BENCHMARK_DIR}/comparison.tsv"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 
+# --- Path validation helper ---
+# Canonicalize GENOME_DIR and verify paths are within it (prevents sibling prefix matches)
+GENOME_DIR_REAL=$(realpath -e "$GENOME_DIR") || { echo "ERROR: GENOME_DIR does not exist: ${GENOME_DIR}" >&2; exit 1; }
+
+within_genome_dir() {
+  local p
+  p=$(realpath -e "$1" 2>/dev/null) || return 1
+  [[ "$p" == "$GENOME_DIR_REAL" || "$p" == "$GENOME_DIR_REAL"/* ]]
+}
+
 # --- Discover available caller VCFs ---
 declare -a CALLER_NAMES=()
 declare -a CALLER_VCFS=()
@@ -96,34 +106,40 @@ for i in $(seq 0 $((NUM_CALLERS - 1))); do
   fi
 done
 
+# Validate reference FASTA (needed by both pairwise normalization and truth mode)
+for f in "$REF" "${REF}.fai"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
 # Validate regions BED (used by both modes)
 if [ -n "$REGIONS_BED" ]; then
   if [ ! -f "$REGIONS_BED" ]; then
     echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2
     exit 1
   fi
-  case "$REGIONS_BED" in
-    "${GENOME_DIR}"*) ;;
-    *) echo "ERROR: --regions path must be under GENOME_DIR (${GENOME_DIR})." >&2
-       echo "The container only mounts GENOME_DIR as /genome." >&2
-       exit 1 ;;
-  esac
+  if ! within_genome_dir "$REGIONS_BED"; then
+    echo "ERROR: --regions path must be under GENOME_DIR (${GENOME_DIR})." >&2
+    echo "The container only mounts GENOME_DIR as /genome." >&2
+    exit 1
+  fi
 fi
 
 # Validate truth mode inputs
 if [ -n "$TRUTH_VCF" ]; then
-  for f in "$TRUTH_VCF" "${TRUTH_VCF}.tbi" "$REF"; do
+  for f in "$TRUTH_VCF" "${TRUTH_VCF}.tbi"; do
     if [ ! -f "$f" ]; then
       echo "ERROR: File not found: ${f}" >&2
       exit 1
     fi
   done
-  case "$TRUTH_VCF" in
-    "${GENOME_DIR}"*) ;;
-    *) echo "ERROR: --truth path must be under GENOME_DIR (${GENOME_DIR})." >&2
-       echo "The container only mounts GENOME_DIR as /genome." >&2
-       exit 1 ;;
-  esac
+  if ! within_genome_dir "$TRUTH_VCF"; then
+    echo "ERROR: --truth path must be under GENOME_DIR (${GENOME_DIR})." >&2
+    echo "The container only mounts GENOME_DIR as /genome." >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$BENCHMARK_DIR"
@@ -299,10 +315,10 @@ else
         --user root \
         -v "${GENOME_DIR}:/genome" \
         staphb/bcftools:1.21 \
-        bash -c "
-          bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta ${VCF_A} -Oz -o ${NORM_A} && bcftools index -t ${NORM_A} &&
-          bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta ${VCF_B} -Oz -o ${NORM_B} && bcftools index -t ${NORM_B}
-        "
+        bash -euo pipefail -c \
+          'bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$1" -Oz -o "$2" && bcftools index -t "$2" &&
+           bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$3" -Oz -o "$4" && bcftools index -t "$4"' \
+          _ "${VCF_A}" "${NORM_A}" "${VCF_B}" "${NORM_B}"
 
       # shellcheck disable=SC2086
       docker run --rm \
@@ -355,8 +371,8 @@ else
     done < <(tail -n +2 "$TSV")
     echo ""
     echo "NOTE: Jaccard index = shared / (A_unique + B_unique + shared)."
-    echo "Computed on PASS variants after normalization (bcftools norm -m-both)."
-    echo "A value of 1.0 means perfect agreement; typical WGS callers agree on ~95%+ of PASS SNPs."
+    echo "Computed on PASS and unfiltered (.) variants after normalization (bcftools norm -m-both)."
+    echo "A value of 1.0 means perfect agreement; typical WGS callers agree on ~95%+ of SNPs."
   } | tee -a "$SUMMARY"
 fi
 

@@ -24,10 +24,10 @@ docker run --rm \
   staphb/bcftools:1.21 \
   bcftools roh \
     --AF-dflt 0.4 \
-    /data/${SAMPLE}.vcf.gz \
-    > ${GENOME_DIR}/${SAMPLE}/roh/${SAMPLE}_roh.txt
+    -o /data/${SAMPLE}_roh.txt \
+    /data/${SAMPLE}.vcf.gz
 
-# Output: tab-delimited ROH segments with chromosomal coordinates and length
+# Output: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt (tab-delimited ROH segments)
 ```
 
 ## Interpretation
@@ -44,6 +44,7 @@ docker run --rm \
 | >10 MB | Recent identity-by-descent (IBD), possible UPD if single chromosome |
 
 ## Important Notes
+- The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode
 - `--AF-dflt 0.4` sets a default allele frequency when population AF data is unavailable — suitable for single-sample WGS
 - **Known false-positive regions** (centromeric/pericentromeric, always appear as ROH in WGS):
   - chr1: 125-143 MB
