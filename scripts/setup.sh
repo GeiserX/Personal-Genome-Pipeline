@@ -8,7 +8,7 @@
 #   3. All Docker images (~10-15 GB)
 #   4. Validates the setup
 #
-# VEP cache (~26 GB) and PCGR data (~21 GB) are downloaded separately
+# VEP cache (~26 GB) and PCGR ref data (~5 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
 set -euo pipefail
 
@@ -163,13 +163,13 @@ IMAGES=(
   "google/deepvariant:1.6.0"
   "quay.io/biocontainers/manta:1.6.0--h9ee0642_2"
   "getwilds/annotsv:latest"
-  "pgkb/pharmcat:2.15.5"
+  "pgkb/pharmcat:3.2.0"
   "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"
   "weisburd/expansionhunter:latest"
   "lgalarno/telomerehunter:latest"
   "genepi/haplogrep3:latest"
   "ensemblorg/ensembl-vep:release_112.0"
-  "sigven/pcgr:1.4.1"
+  "sigven/pcgr:2.2.5"
   "brentp/duphold:latest"
   "quay.io/biocontainers/goleft:0.2.4--h9ee0642_1"
   "quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11"
@@ -177,6 +177,14 @@ IMAGES=(
   "broadinstitute/gatk:4.6.1.0"
   "python:3.11-slim"
   "pgscatalog/plink2:2.00a5.10"
+  "quay.io/biocontainers/fastp:1.3.1--h43da1c4_0"
+  "quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0"
+  "quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
+  "quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5"
+  "quay.io/biocontainers/gridss:2.13.2--h96c455f_6"
+  "dancooke/octopus:0.7.4"
+  "hkubal/clair3:v2.0.0"
+  "quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
 )
 
 PULLED=0
@@ -221,14 +229,15 @@ fi
 echo ""
 
 PCGRDIR="${GENOME_DIR}/pcgr_data"
-if [ -d "$PCGRDIR" ] && [ -d "${PCGRDIR}/data" ]; then
-  echo "[OK] PCGR/CPSR data bundle already present."
+if [ -d "$PCGRDIR" ] && [ -d "${PCGRDIR}/20250314/data" ]; then
+  echo "[OK] PCGR/CPSR ref data bundle already present."
 else
-  echo "[SKIP] PCGR/CPSR data (~21 GB) — needed for step 17 (cancer predisposition)"
-  echo "  Download from: https://github.com/sigven/pcgr/releases"
-  echo "    mkdir -p ${PCGRDIR}"
-  echo "    wget -c -P ${PCGRDIR} https://github.com/sigven/pcgr/releases/download/v1.4.1/pcgr_data_grch38.tar.gz"
-  echo "    tar xzf ${PCGRDIR}/pcgr_data_grch38.tar.gz -C ${PCGRDIR}"
+  echo "[SKIP] PCGR/CPSR ref data (~5 GB) — needed for step 17 (cancer predisposition)"
+  echo "  Download:"
+  echo "    mkdir -p ${PCGRDIR} && cd ${PCGRDIR}"
+  echo "    wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"
+  echo "    tar xzf pcgr_ref_data.20250314.grch38.tgz"
+  echo "    mkdir -p 20250314 && mv data/ 20250314/"
 fi
 
 ###############################################################################

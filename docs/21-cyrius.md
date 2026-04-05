@@ -82,16 +82,44 @@ Codeine, tramadol, oxycodone, tamoxifen, ondansetron, atomoxetine, most tricycli
 - Rare hybrid alleles (e.g., *36, *68) may not be resolved.
 - The pip-install-at-runtime approach adds startup time and requires internet. If you run this frequently, consider building a custom Docker image with Cyrius pre-installed.
 - Cyrius only calls CYP2D6. For other pharmacogenes, rely on PharmCAT (step 7).
+- **Cyrius has not been updated since May 2021** (v1.1.1). A 2025 study (BCyrius, PMID 39901590) found Cyrius fails to call or miscalls 50/360 simulated samples (13.9%) due to its outdated star allele database. Consider Aldy as an alternative (see below).
+
+## Recommended Alternative: Aldy
+
+[Aldy](https://github.com/0xTCG/aldy) v4.8.3 is the strongest CYP2D6 caller currently available for short-read WGS data. A systematic comparison (Twesigomwe et al. 2020, PMID 32789024) found Aldy was "the best performing algorithm in calling CYP2D6 structural variants." It identifies 92.2% of currently defined minor star alleles (vs 85.6% for Cyrius) and is actively maintained with the current PharmVar database.
+
+Aldy also calls 37 additional pharmacogenes (CYP2C19, CYP2B6, UGT1A1, NAT2, DPYD, SLCO1B1, etc.), which can supplement PharmCAT results.
+
+**To use Aldy instead of Cyrius:**
+
+```bash
+# Install in a Python container (one-time, or build a custom image)
+docker run --rm --user root \
+  -v ${GENOME_DIR}:/genome \
+  python:3.11-slim \
+  bash -c "
+    pip install -q aldy==4.8.3 &&
+    aldy genotype \
+      -p illumina \
+      -g CYP2D6 \
+      -o /genome/${SAMPLE}/cyrius/${SAMPLE}_aldy_cyp2d6.aldy \
+      /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
+  "
+```
+
+> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution. This is why it is documented here as an optional recommendation rather than replacing Cyrius in the pipeline script. A GPL-compatible alternative (pypgx) is planned for v0.4.0.
 
 ## Notes
 
 - The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation.
-- Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call. If they disagree, Cyrius is generally more reliable for WGS data.
+- Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call. If they disagree, Cyrius is generally more reliable for WGS data (though Aldy is more reliable than both for CYP2D6).
 - Feed the Cyrius result into CPIC lookups (step 27) for actionable drug recommendations.
 
 ## Links
 
 - [Cyrius GitHub](https://github.com/Illumina/Cyrius)
+- [Aldy GitHub](https://github.com/0xTCG/aldy) — recommended alternative
 - [PharmGKB CYP2D6](https://www.pharmgkb.org/gene/PA128)
 - [CPIC CYP2D6 guidelines](https://cpicpgx.org/genes-drugs/)
 - [Chen et al. 2021 (Cyrius paper)](https://doi.org/10.1038/s41397-021-00244-y)
+- [Twesigomwe et al. 2020 (CYP2D6 caller comparison)](https://doi.org/10.1038/s41525-020-0135-2)

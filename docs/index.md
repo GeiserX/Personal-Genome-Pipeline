@@ -1,6 +1,6 @@
 # Genomics Pipeline Documentation
 
-Analyze your own whole genome sequencing (WGS) data on consumer hardware. 27 analysis steps, all running locally in Docker.
+Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 analysis steps, all running locally in Docker.
 
 [Back to GitHub repository](https://github.com/GeiserX/genomics-pipeline)
 
@@ -21,6 +21,7 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 27 ana
 | # | Step | Doc |
 |---|---|---|
 | 1 | ORA to FASTQ (Illumina decompression) | [01-ora-to-fastq.md](01-ora-to-fastq.md) |
+| 1b | fastp QC + Trimming | [01b-fastp-qc.md](01b-fastp-qc.md) |
 | 2 | Alignment (minimap2 + samtools) | [02-alignment.md](02-alignment.md) |
 | 3 | Variant Calling (DeepVariant) | [03-variant-calling.md](03-variant-calling.md) |
 | 4 | Structural Variants (Manta) | [04-structural-variants.md](04-structural-variants.md) |
@@ -36,6 +37,7 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 27 ana
 | 14 | Imputation Prep | [14-imputation-prep.md](14-imputation-prep.md) |
 | 15 | SV Quality (duphold) | [15-duphold.md](15-duphold.md) |
 | 16 | Coverage QC (indexcov) | [16-indexcov.md](16-indexcov.md) |
+| 16b | Coverage Statistics (mosdepth) | [16b-mosdepth.md](16b-mosdepth.md) |
 | 17 | Cancer Predisposition (CPSR) | [17-cpsr.md](17-cpsr.md) |
 | 18 | CNV Calling (CNVnator) | [18-cnvnator.md](18-cnvnator.md) |
 | 19 | SV Calling (Delly) | [19-delly.md](19-delly.md) |
@@ -52,6 +54,8 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 27 ana
 | 25 | Polygenic Risk Scores | [25-prs.md](25-prs.md) |
 | 26 | Ancestry PCA | [26-ancestry.md](26-ancestry.md) |
 | 27 | CPIC Drug Recommendations | [27-cpic-lookup.md](27-cpic-lookup.md) |
+| 28 | MultiQC Aggregation | [28-multiqc.md](28-multiqc.md) |
+| 29 | Somatic Variants (Mutect2) | [29-mutect2-somatic.md](29-mutect2-somatic.md) |
 
 ## Guides
 
@@ -61,3 +65,5 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 27 ana
 - [Lessons Learned](lessons-learned.md) -- failures encountered during development
 - [Glossary](glossary.md) -- genomics terminology
 - [Resources](resources.md) -- free courses, databases, and tools
+- [Long-Read Guide](long-read-guide.md) -- ONT and PacBio support
+- [WES Guide](wes-guide.md) -- whole exome sequencing entry path

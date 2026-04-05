@@ -125,6 +125,8 @@ if data is None:
     sys.exit(0)
 
 # Extract gene results — handle multiple PharmCAT JSON versions
+# NOTE: PharmCAT 3.x renamed 'wildtypeAllele' to 'referenceAllele' in JSON output.
+# This parser does not use that property, but downstream consumers should be aware.
 if 'genes' in data and isinstance(data['genes'], dict):
     # PharmCAT 2.15+ format: genes -> {source -> {gene_name -> data}}
     for source, gene_dict in data['genes'].items():

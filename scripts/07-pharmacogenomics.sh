@@ -27,8 +27,8 @@ docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
-  pgkb/pharmcat:2.15.5 \
-  python3 /pharmcat/pharmcat_vcf_preprocessor.py \
+  pgkb/pharmcat:3.2.0 \
+  python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
     -refFna /ref/Homo_sapiens_assembly38.fasta \
     -o /data/ \
@@ -38,12 +38,13 @@ docker run --rm \
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  pgkb/pharmcat:2.15.5 \
+  pgkb/pharmcat:3.2.0 \
   java -jar /pharmcat/pharmcat.jar \
     -vcf "/data/${SAMPLE}.preprocessed.vcf.bgz" \
     -o /data/ \
     -bf "$SAMPLE" \
-    -reporterJson
+    -reporterJson \
+    -reporterHtml
 
 echo "=== PharmCAT complete ==="
 echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"

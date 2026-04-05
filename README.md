@@ -19,12 +19,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
-  <img src="https://img.shields.io/badge/analysis%20steps-27-f97316?style=flat-square" alt="27 steps">
+  <img src="https://img.shields.io/badge/analysis%20steps-31-f97316?style=flat-square" alt="31 steps">
   <img src="https://img.shields.io/badge/data%20privacy-100%25%20local-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="100% Local">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 27 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 31 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
 **Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
 
@@ -45,44 +45,45 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 
 | Category | What It Finds | Steps |
 |---|---|---|
-| **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 18, 19 |
+| **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
 | **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (ACMG SF v3.2) | 6, 17 |
 | **Pharmacogenomics** | Drug-gene interactions (21+ genes, CYP2C19, CYP2D6, DPYD, etc.) | 7, 21, 27 |
-| **Structural Variants** | Deletions, duplications, inversions, translocations (3 callers + consensus) | 4, 5, 15, 18, 19, 22 |
+| **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP: SIFT, PolyPhen, gnomAD frequencies) | 13 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, single-sample ancestry PCA | 11, 12, 26 |
 | **Telomere Length** | Biological age proxy from telomere content | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
-| **Quality Control** | Coverage uniformity, sex chromosome verification, SV false positive filtering | 15, 16 |
+| **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, SV filtering | 1b, 15, 16, 16b, 28 |
 
 ---
 
 ## Pipeline Overview
 
 ```
-FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNPs/indels) ──> VCF
-              (minimap2)                 │        │
-                                         │        ├──> ClinVar Screen
-                                         │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
-                                         │        ├──> VEP Annotation ──> Clinical Filter
-                                         │        ├──> CPSR (Cancer Predisposition)
-                                         │        ├──> ExpansionHunter (STRs)
-                                         │        ├──> ROH Analysis
-                                         │        ├──> PRS (Polygenic Risk Scores)
-                                         │        ├──> Ancestry PCA
-                                         │        └──> Imputation Prep
-                                         │
-                                         ├──> Manta (SVs) ───┐
-                                         ├──> Delly (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
-                                         ├──> CNVnator (CNVs)┘
-                                         ├──> Cyrius (CYP2D6)
-                                         ├──> TelomereHunter
-                                         ├──> indexcov (Coverage QC)
-                                         ├──> MToolBox (Mitochondrial)
-                                         └──> Haplogrep3 (mtDNA haplogroup)
-                                                              └──> HTML Report (aggregates all)
+FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNPs/indels) ──> VCF
+                               (minimap2)                 │        │
+                                                          │        ├──> ClinVar Screen
+                                                          │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
+                                                          │        ├──> VEP Annotation ──> Clinical Filter
+                                                          │        ├──> CPSR (Cancer Predisposition)
+                                                          │        ├──> ExpansionHunter (STRs)
+                                                          │        ├──> ROH Analysis
+                                                          │        ├──> PRS (Polygenic Risk Scores)
+                                                          │        ├──> Ancestry PCA
+                                                          │        └──> Imputation Prep
+                                                          │
+                                                          ├──> Manta (SVs) ────┐
+                                                          ├──> Delly (SVs) ────┤
+                                                          ├──> GRIDSS (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
+                                                          ├──> CNVnator (CNVs) ┘
+                                                          ├──> Cyrius (CYP2D6)
+                                                          ├──> TelomereHunter
+                                                          ├──> mosdepth + indexcov (Coverage QC)
+                                                          ├──> MToolBox (Mitochondrial)
+                                                          └──> Haplogrep3 (mtDNA haplogroup)
+                                                                         └──> HTML Report + MultiQC
 ```
 
 ### All Steps
@@ -90,6 +91,7 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](docs/01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
+| 1b | [QC & Trimming](docs/01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.1` | ~15-30 min | Recommended |
 | 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
 | 3 | [Variant Calling](docs/03-variant-calling.md) | DeepVariant | `google/deepvariant:1.6.0` | ~2-4 hr | Yes |
 | 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta` | ~20 min | Recommended |
@@ -97,7 +99,7 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | 6 | [ClinVar Screen](docs/06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
 | 7 | [Pharmacogenomics](docs/07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:2.15.5` | ~10 min | Yes |
 | 8 | [HLA Typing](docs/08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
-| 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `weisburd/expansionhunter` | ~15 min | Recommended |
+| 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
 | 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
 | 11 | [ROH Analysis](docs/11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
 | 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `genepi/haplogrep3` | ~1 min | Optional |
@@ -105,7 +107,8 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
 | 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:latest` | ~20 min | If step 4 run |
 | 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft` | ~5 sec | Recommended |
-| 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:1.4.1` | ~30-60 min | Recommended |
+| 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.13` | ~10 min | Recommended |
+| 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
 | 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator` | ~2-4 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:1.7.3` | ~2-4 hr | Optional |
 | 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~15-30 min | Optional |
@@ -123,9 +126,11 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 25 | [Polygenic Risk Scores](docs/25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
 | 26 | [Ancestry PCA](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
 | 27 | [CPIC Recommendations](docs/27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
+| 28 | [MultiQC Report](docs/28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.33` | ~1 min | Recommended |
+| 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~2-6 hr | Experimental |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
-**Full analysis:** All 27 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.
+**Full analysis:** All 31 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.
 
 #### Alternative Tools (Benchmarking)
 
@@ -138,6 +143,8 @@ No single variant caller is universally best. The pipeline includes alternative 
 | [03b](scripts/03b-freebayes.sh) | FreeBayes | DeepVariant (step 3) | `vcf_freebayes/` |
 | [04a](scripts/04a-tiddit.sh) | TIDDIT | Manta (step 4) | `sv_tiddit/` |
 | [03c](scripts/03c-strelka2-germline.sh) | Strelka2 | DeepVariant (step 3) | `vcf_strelka2/` |
+| [03d](scripts/03d-octopus.sh) | Octopus | DeepVariant (step 3) | `vcf_octopus/` |
+| [04b](scripts/04b-gridss.sh) | GRIDSS | Manta (step 4) | `sv_gridss/` |
 | [benchmark](scripts/benchmark-variants.sh) | bcftools isec / hap.py | — | `benchmark/` |
 
 See [docs/benchmarking.md](docs/benchmarking.md) for how to run and interpret results, and [docs/tool-rationale.md](docs/tool-rationale.md) for why each default was chosen.
@@ -181,6 +188,7 @@ mkdir -p ${GENOME_DIR}/reference
 # See docs/00-reference-setup.md for details
 
 # 3. Run the pipeline
+./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~15-30 min)
 ./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (~1-2 hr)
 ./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF (~2-4 hr)
 ./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (~5 min)
@@ -230,6 +238,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 
 ```bash
 ./scripts/01-ora-to-fastq.sh $SAMPLE   # ORA -> FASTQ
+./scripts/01b-fastp-qc.sh $SAMPLE      # QC + adapter trimming
 ./scripts/02-alignment.sh $SAMPLE       # FASTQ -> BAM
 # ... continue as Path A
 ```
@@ -334,6 +343,7 @@ ${GENOME_DIR}/
   pcgr_data/                           # CPSR/PCGR data bundle (~21 GB)
   ${SAMPLE}/
     fastq/                             # Raw FASTQ files (R1 + R2)
+    fastq_trimmed/                     # QC-trimmed FASTQs + fastp reports (step 1b)
     aligned/
       ${SAMPLE}_sorted.bam             # Aligned reads
       ${SAMPLE}_sorted.bam.bai         # BAM index
@@ -383,7 +393,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or single-sample ancestry PCA. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 27-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + MToolBox + haplogrep3).
+On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 31-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + MToolBox + haplogrep3).
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.
@@ -420,7 +430,7 @@ It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com 
 
 | Approach | Cost | What You Get | Data Privacy |
 |---|---|---|---|
-| **This pipeline** | $0 (free, open source) | Full 27-step analysis | Your data never leaves your machine |
+| **This pipeline** | $0 (free, open source) | Full 31-step analysis | Your data never leaves your machine |
 | Clinical WGS interpretation | $500-5,000 | 1-page report, selected genes only | Lab retains your data |
 | Nebula/Dante report | $0-200 (included/add-on) | Web dashboard, limited depth | Data on company servers |
 | 23andMe Health | $229 | ~10 health reports from array data | Data shared with research partners |

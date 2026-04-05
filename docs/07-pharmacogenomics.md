@@ -7,12 +7,12 @@ Clinical-grade pharmacogenomic analysis — determines how you metabolize drugs 
 Identifies which drugs work well, which need dose adjustments, and which to avoid entirely. Covers 23 pharmacogenes affecting hundreds of medications.
 
 ## Tool
-- **PharmCAT** v2.15.5 (Pharmacogenomics Clinical Annotation Tool, CPIC/PharmGKB)
-- This pipeline is intentionally pinned to `2.15.5` for reproducibility. Newer PharmCAT releases may exist upstream, but step 7 and step 27 should be revalidated together before changing versions.
+- **PharmCAT** v3.2.0 (Pharmacogenomics Clinical Annotation Tool, CPIC/PharmGKB)
+- Upgraded from 2.15.5 to 3.2.0 in v0.3.0. See `docs/lessons-learned.md` for migration notes (preprocessor rename, reporter flags, JSON property changes).
 
 ## Docker Image
 ```
-pgkb/pharmcat:2.15.5
+pgkb/pharmcat:3.2.0
 ```
 
 ## Command
@@ -25,8 +25,8 @@ docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   -v ${GENOME_DIR}/reference:/ref \
-  pgkb/pharmcat:2.15.5 \
-  python3 /pharmcat/pharmcat_vcf_preprocessor.py \
+  pgkb/pharmcat:3.2.0 \
+  python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf /data/${SAMPLE}.vcf.gz \
     -refFna /ref/Homo_sapiens_assembly38.fasta \
     -o /data/ \
@@ -36,12 +36,13 @@ docker run --rm \
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  pgkb/pharmcat:2.15.5 \
+  pgkb/pharmcat:3.2.0 \
   java -jar /pharmcat/pharmcat.jar \
     -vcf /data/${SAMPLE}.preprocessed.vcf.bgz \
     -o /data/ \
     -bf ${SAMPLE} \
-    -reporterJson
+    -reporterJson \
+    -reporterHtml
 ```
 
 ## Output
@@ -66,6 +67,6 @@ docker run --rm \
 - PharmCAT output structure changes across releases. If you upgrade PharmCAT, re-test step 27 (`27-cpic-lookup.sh`) because it parses the JSON output directly.
 
 ## Maintenance
-- The pipeline is pinned to `pgkb/pharmcat:2.15.5` for reproducibility, but upstream PharmCAT keeps moving. Latest known upstream release when this doc was last checked was `3.2.0` (2026-02-25).
+- The pipeline is pinned to `pgkb/pharmcat:3.2.0` for reproducibility. Upgraded from 2.15.5 in v0.3.0 (Apr 2026). Breaking changes in the 3.x series are documented in `docs/lessons-learned.md`.
 - Treat **step 7 and step 27 as one upgrade unit**. If you bump PharmCAT, rerun both on a known sample and diff diplotypes, phenotypes, JSON structure, and CPIC recommendation text before merging.
 - Recheck CPIC / ClinPGx guidance at least quarterly, or sooner if a drug-gene pair you expose in step 27 gets a meaningful update upstream.

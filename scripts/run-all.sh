@@ -35,8 +35,18 @@ if ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}" 2>/dev/null; then
   echo ""
 fi
 
-# Phase 1: Alignment (if FASTQ exists but BAM doesn't)
+# Phase 0.5: fastp QC + trimming (if FASTQ exists but BAM doesn't)
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+R1="${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz"
+if [ ! -f "$BAM" ] && [ -f "$R1" ] && [ "${SKIP_TRIM:-false}" != "true" ]; then
+  echo "[Phase 0.5] fastp QC + adapter trimming..."
+  bash "${SCRIPT_DIR}/01b-fastp-qc.sh" "$SAMPLE"
+elif [ "${SKIP_TRIM:-false}" = "true" ]; then
+  echo "[Phase 0.5] fastp skipped (SKIP_TRIM=true)."
+fi
+echo ""
+
+# Phase 1: Alignment (if FASTQ exists but BAM doesn't)
 if [ ! -f "$BAM" ]; then
   echo "[Phase 1] Alignment — FASTQ to sorted BAM..."
   bash "${SCRIPT_DIR}/02-alignment.sh" "$SAMPLE"
@@ -78,6 +88,11 @@ if [ -n "$EXTRA_CALLERS" ]; then
         echo "  NOTE: Strelka2 is using the default minimap2 BAM. For best SNP precision,"
         echo "        align with BWA-MEM2 first, then run: ALIGN_DIR=aligned_bwamem2 ./scripts/03c-strelka2-germline.sh $SAMPLE"
         bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      octopus)
+        echo "  Starting Octopus..."
+        bash "${SCRIPT_DIR}/03d-octopus.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
       *)
@@ -124,6 +139,10 @@ echo "  [A5] indexcov coverage QC..."
 bash "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX" &
 PID_INDEXCOV=$!
 
+echo "  [A8] mosdepth coverage stats..."
+bash "${SCRIPT_DIR}/16b-mosdepth.sh" "$SAMPLE" &
+PID_MOSDEPTH=$!
+
 echo "  [A6] Imputation prep..."
 bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE" &
 PID_IMPUTATION=$!
@@ -157,7 +176,7 @@ PID_CPSR=$!
 
 # Wait for quick jobs, counting failures
 PHASE3_FAIL=0
-for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_IMPUTATION $PID_HLA; do
+for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_MOSDEPTH $PID_IMPUTATION $PID_HLA; do
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done
 echo ""
@@ -183,6 +202,10 @@ echo "  [C3] Delly structural variant calling..."
 bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
 PID_DELLY=$!
 
+echo "  [C4] GRIDSS assembly-based SV calling..."
+bash "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE" &
+PID_GRIDSS=$!
+
 # Wait for Manta before running duphold and AnnotSV
 PID_DUPHOLD=""
 PID_ANNOTSV=""
@@ -202,7 +225,7 @@ else
 fi
 
 # Wait for remaining Phase 3 jobs
-for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_DUPHOLD $PID_ANNOTSV; do
+for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV; do
   [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done
@@ -244,8 +267,12 @@ echo "  [D6] CPIC drug-gene recommendations..."
 bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CPIC=$!
 
+echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
+bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+PID_SOMATIC=$!
+
 PHASE4_FAIL=0
-for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC; do
+for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC $PID_SOMATIC; do
   wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
 done
 if [ "$PHASE4_FAIL" -gt 0 ]; then
@@ -260,26 +287,29 @@ BENCHMARK=${BENCHMARK:-false}
 if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   # Count available caller VCFs (need at least 2 for pairwise comparison)
   CALLER_COUNT=0
-  for d in vcf vcf_gatk vcf_freebayes; do
+  for d in vcf vcf_gatk vcf_freebayes vcf_octopus; do
     [ -f "${GENOME_DIR}/${SAMPLE}/${d}/${SAMPLE}.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   done
   # Strelka2 writes to a different path
   [ -f "${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   if [ "$CALLER_COUNT" -ge 2 ]; then
     echo ""
-    echo "  [D7] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
+    echo "  [D8] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
     bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG}"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
   else
     echo ""
-    echo "  [D7] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
+    echo "  [D8] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
     echo "  Set EXTRA_CALLERS=gatk,freebayes,strelka2 to run alternative callers in Phase 2b."
   fi
 fi
 
 REPORT_FAIL=0
 
-echo "  [D8] HTML summary report..."
+echo "  [D9] HTML summary report..."
 bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+
+echo "  [D10] MultiQC aggregated QC report..."
+bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: MultiQC report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
 echo ""
@@ -318,6 +348,7 @@ echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.
 echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
 echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
 echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"
+echo "  Somatic calls:  ${GENOME_DIR}/${SAMPLE}/somatic/"
 echo "  CPSR report:    ${GENOME_DIR}/${SAMPLE}/cpsr/"
 echo ""
 echo "Next steps:"

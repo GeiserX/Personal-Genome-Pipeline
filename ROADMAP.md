@@ -14,17 +14,22 @@ Alternative callers, benchmarking infrastructure, and tool rationale documentati
 - [x] **Alternative SV caller: TIDDIT** (`scripts/04a-tiddit.sh` → `sv_tiddit/`) — excels at large inversions and translocations; auto-detects BWA index for assembly mode
 - [x] **Documented tool rationale** (`docs/tool-rationale.md`) — per-step rationale with references to benchmarking data and decision matrices
 
-## v0.3.0 — Multi-sample & joint analysis
+## v0.3.0 — Tool upgrades, QC, & expanded coverage
 
-The biggest gap in v0.1.x is that every step runs on a single sample in isolation. v0.3.0 focuses on making the pipeline useful for families and cohorts.
+Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/genomics-pipeline/issues/14)), fill coverage gaps, and add new sequencing platform support. Thanks to [@madmolecularman](https://github.com/madmolecularman) for driving the QC discussion.
 
-- [ ] **Joint PCA with 1000 Genomes reference panel** — project sample PCs onto a reference PCA, replacing the current single-sample ancestry stub (step 26) with real population placement
-- [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
-- [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
-- [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
-- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
-- [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
-- [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with GEMINI-style inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
+- [x] **fastp QC + adapter trimming** (`scripts/01b-fastp-qc.sh` → `fastq_trimmed/`) — pre-alignment step: adapter removal, quality trimming, polyG tail removal, JSON+HTML reports. Default on, skippable with `SKIP_TRIM=true`. Addresses [#14](https://github.com/GeiserX/genomics-pipeline/issues/14)
+- [x] **mosdepth coverage statistics** (`scripts/16b-mosdepth.sh`) — fast per-base and per-region depth from BAM; coverage distributions, threshold reports, and WES on-target rate
+- [x] **MultiQC aggregation** (`scripts/28-multiqc.sh`) — single HTML report combining fastp, samtools flagstat, mosdepth, and other QC outputs
+- [x] **ExpansionHunter upgrade to v5.0.0** — new `--variant-catalog` flag replacing `--variant-catalog-format`, biocontainers image replacing deprecated weisburd image
+- [x] **PharmCAT upgrade to 3.2.0** — preprocessor renamed (no `.py`), explicit reporter flags (`-reporterJson -reporterHtml`), `wildtypeAllele` → `referenceAllele` in JSON, NAT2 calling added. Step 7 and step 27 updated together
+- [x] **PCGR/CPSR upgrade to 2.2.5** — upgraded from 1.4.1 to 2.2.5 with new ref data bundle (`20250314`), separate VEP cache mount, and completely rewritten CLI
+- [x] **Octopus variant caller** (`scripts/03d-octopus.sh` → `vcf_octopus/`) — haplotype-aware Bayesian caller as a 5th benchmarking alternative. Auto-discovered by `benchmark-variants.sh`
+- [x] **GRIDSS structural variant caller** (`scripts/04b-gridss.sh` → `sv_gridss/`) — assembly-based SV caller for complex rearrangements; strengthens SV consensus alongside Manta/Delly. Requires BWA index and 32GB RAM
+- [x] **CYP2D6 star allele calling** — evaluated Aldy v4.8.3 (best CYP2D6 SV caller per Twesigomwe 2020), StellarPGx (broken Docker), and BCyrius (no public repo). Aldy documented as recommended optional replacement for Cyrius in `docs/21-cyrius.md`. Note: Aldy uses an academic-only license (IURTC) incompatible with GPL-3.0, so it cannot be a required dependency. pypgx (v0.4.0) remains the long-term GPL-compatible replacement
+- [x] **Long-read support** (`scripts/02b-alignment-longread.sh`, `scripts/03e-clair3.sh`, `scripts/04c-sniffles2.sh`) — ONT and PacBio HiFi alignment (minimap2 `map-ont`/`map-hifi`), Clair3 v2.0.0 variant calling, Sniffles2 SV calling. Comprehensive guide in `docs/long-read-guide.md`
+- [x] **Whole exome sequencing (WES) entry path** — comprehensive guide in `docs/wes-guide.md` covering per-step compatibility, capture BED files, `DATA_TYPE=WES` env var, coverage QC metrics, and limitations. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
+- [x] **Somatic variant calling** (`scripts/29-mutect2-somatic.sh`) — [EXPERIMENTAL] tumor-only Mutect2 mode with gnomAD germline resource and Panel of Normals filtering. Marked experimental due to high false positive rate without matched normal
 
 ## v0.4.0 — Expanded annotation & clinical interpretation
 
@@ -48,21 +53,17 @@ The 27 bash scripts work but lack built-in parallelism, resume-on-failure, and H
 - [ ] **Snakemake alternative** — optional Snakemake wrapper for HPC environments that prefer it over Nextflow
 - [ ] This unlocks: automatic parallelism via DAG-based step ordering, resume on failure, Singularity/Apptainer for HPC clusters, and optional cloud portability
 
-## v0.6.0 — Tool upgrades & expanded coverage
+## v0.6.0 — Multi-sample & joint analysis
 
-Upgrade pinned tools where the pipeline currently runs on older versions, and fill known coverage gaps.
+Every step currently runs on a single sample in isolation. v0.6.0 focuses on making the pipeline useful for families and cohorts.
 
-- [ ] **ExpansionHunter v5.x** — upgrade from v2.5.5 to v5.x (new `--variant-catalog` flag, expanded locus catalog, better long-repeat estimation)
-- [ ] **PharmCAT upgrade evaluation** — validate PharmCAT 3.x against the current v2.15.5 pin; update step 7 and step 27 together if JSON structure and preprocessor flags are stable
-- [ ] **PCGR/CPSR data bundle refresh** — the current `grch38.20220203` bundle is from Feb 2022; upgrade to the latest available bundle
-- [ ] **Long-read support** — add an optional ONT/PacBio alignment path (minimap2 `map-ont`, pbmm2 for HiFi), long-read-aware variant calling (Clair3 for SNPs, Sniffles2 and cuteSV for SVs), and [pb-StarPhase](https://github.com/PacificBiosciences/pb-StarPhase) for long-read pharmacogenomics
-- [ ] **Whole exome sequencing (WES) entry path** — support for targeted/exome BAMs with coverage thresholds, on-target rate QC (Picard CollectHsMetrics), and adjusted variant caller parameters. WES is where most rare disease diagnosis and cancer research is moving. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
-- [ ] **FastQC + MultiQC QC reporting** — per-FASTQ quality metrics and an aggregated HTML report combining all QC outputs (flagstat, mosdepth, FastQC) in one view
-- [ ] **mosdepth coverage statistics** — fast per-base and per-region depth from BAM; more detailed than indexcov, producing coverage distributions and threshold reports
-- [ ] **Octopus variant caller** — haplotype-aware Bayesian caller as a 5th benchmarking alternative or FreeBayes replacement (FreeBayes is slow and memory-heavy)
-- [ ] **GRIDSS structural variant caller** — assembly-based SV caller for complex rearrangements; strengthens SV consensus (step 22) alongside Manta/Delly
-- [ ] **CYP2D6 star allele calling** — evaluate StellarPGx or Aldy as replacements for Cyrius, which returns None/None on most short-read WGS samples
-- [ ] **Somatic variant calling** — optional tumor-only mode with Mutect2 for users who have matched tumor/normal WGS (rare but requested)
+- [ ] **Joint PCA with 1000 Genomes reference panel** — project sample PCs onto a reference PCA, replacing the current single-sample ancestry stub (step 26) with real population placement
+- [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
+- [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
+- [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
+- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
+- [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
+- [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with GEMINI-style inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
 ## v0.7.0 — Reporting & user experience
 

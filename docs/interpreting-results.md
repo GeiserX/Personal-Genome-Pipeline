@@ -425,6 +425,35 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 ---
 
+## Somatic Variants (Step 29) [EXPERIMENTAL]
+
+Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired during your lifetime rather than inherited. From blood-derived WGS, the main category of interest is **clonal hematopoiesis (CHIP)**.
+
+**Where to look:** `${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz`
+
+**Key field:** `AF` (allele fraction) indicates the clone size:
+
+| AF Range | Likely Source |
+|---|---|
+| 0.45-0.55 | Heterozygous germline (false positive) |
+| ~1.0 | Homozygous germline (false positive) |
+| 0.01-0.10 | Potential low-frequency somatic (CHIP candidate) |
+| 0.10-0.40 | Ambiguous -- could be somatic, mosaic, or noisy germline |
+
+**What to expect:**
+- Thousands of PASS calls in a healthy individual -- the vast majority are germline false positives
+- True somatic variants are rare: a healthy 40-year-old might have 0-20 genuine CHIP mutations detectable at 30X
+- Without a matched normal sample, germline variants that are rare in gnomAD will often pass all filters
+
+**CHIP genes to check:** DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, PPM1D, CBL. CHIP prevalence increases with age and is associated with elevated cardiovascular risk and risk of hematologic malignancies.
+
+**Important caveats:**
+- This step has a much higher false positive rate than any other step in the pipeline
+- Do not interpret PASS variants as confirmed somatic without cross-referencing with the germline VCF (step 3) and gnomAD frequencies (step 13)
+- If a variant is also called at ~50% AF by DeepVariant in step 3, it is almost certainly germline
+
+---
+
 ## What to Do Next
 
 1. **Print your PharmCAT report** and bring it to your next doctor visit

@@ -53,6 +53,7 @@ DV_VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 GATK_VCF="${GENOME_DIR}/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz"
 FB_VCF="${GENOME_DIR}/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
 SK_VCF="${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz"
+OCT_VCF="${GENOME_DIR}/${SAMPLE}/vcf_octopus/${SAMPLE}.vcf.gz"
 
 if [ -f "$DV_VCF" ]; then
   CALLER_NAMES+=("DeepVariant")
@@ -70,6 +71,10 @@ if [ -f "$SK_VCF" ]; then
   CALLER_NAMES+=("Strelka2")
   CALLER_VCFS+=("$SK_VCF")
 fi
+if [ -f "$OCT_VCF" ]; then
+  CALLER_NAMES+=("Octopus")
+  CALLER_VCFS+=("$OCT_VCF")
+fi
 
 NUM_CALLERS=${#CALLER_VCFS[@]}
 
@@ -84,8 +89,10 @@ if [ "$NUM_CALLERS" -lt 2 ] && [ -z "$TRUTH_VCF" ]; then
   echo "ERROR: Need at least 2 caller VCFs for pairwise comparison." >&2
   echo "Found VCFs in these locations:" >&2
   echo "  vcf/           (DeepVariant) — run scripts/03-deepvariant.sh" >&2
-  echo "  vcf_gatk/      (GATK)       — run GATK HaplotypeCaller" >&2
-  echo "  vcf_freebayes/ (FreeBayes)  — run FreeBayes" >&2
+  echo "  vcf_gatk/      (GATK)       — run scripts/03a-gatk-haplotypecaller.sh" >&2
+  echo "  vcf_freebayes/ (FreeBayes)  — run scripts/03b-freebayes.sh" >&2
+  echo "  vcf_strelka2/  (Strelka2)   — run scripts/03c-strelka2-germline.sh" >&2
+  echo "  vcf_octopus/   (Octopus)    — run scripts/03d-octopus.sh" >&2
   echo "" >&2
   echo "Or use --truth <vcf> --regions <bed> for single-caller truth set benchmarking." >&2
   exit 1

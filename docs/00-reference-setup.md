@@ -84,23 +84,24 @@ tar xzf tmp/homo_sapiens_vep_112_GRCh38.tar.gz
 
 > **Warning:** The VEP `INSTALL.pl` script downloads to a temporary directory that may lack write permissions inside Docker. Always download manually with `wget -c`. See [lessons-learned.md](lessons-learned.md) for details.
 
-## PCGR/CPSR Data Bundle (~21 GB)
+## PCGR/CPSR Ref Data Bundle (~5 GB)
 
-Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases.
+Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases. PCGR 2.x uses a separate, smaller ref data bundle — VEP cache is mounted independently (reuse the cache from step 13 above).
 
 ```bash
 mkdir -p ${GENOME_DIR}/pcgr_data
 cd ${GENOME_DIR}/pcgr_data
 
-# Download (~21 GB, may take 30-60 minutes)
-wget -c http://insilico.hpc.uio.no/pcgr/pcgr.databundle.grch38.20220203.tgz
+# Download (~5 GB)
+wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz
 
-# Extract (~30 GB extracted)
-tar xzf pcgr.databundle.grch38.20220203.tgz
-# Creates: ${GENOME_DIR}/pcgr_data/data/grch38/
+# Extract and organize into version-stamped directory
+tar xzf pcgr_ref_data.20250314.grch38.tgz
+mkdir -p 20250314 && mv data/ 20250314/
+# Creates: ${GENOME_DIR}/pcgr_data/20250314/data/
 
-# Optional: delete the tarball to save 21 GB
-# rm pcgr.databundle.grch38.20220203.tgz
+# Optional: delete the tarball to save 5 GB
+# rm pcgr_ref_data.20250314.grch38.tgz
 ```
 
 ## T1K HLA Reference (Optional)
@@ -128,6 +129,26 @@ docker run --rm --cpus 4 --memory 8g \
 
 > **Note:** HLA typing from WGS is challenging. T1K coordinates may have ~50% unmapped alleles. For clinical HLA typing, dedicated lab assays are more reliable. See [lessons-learned.md](lessons-learned.md#t1k-coordinate-file-with-wrong-values).
 
+## Somatic Calling Resources (Optional, for Step 29)
+
+Only needed if you plan to run step 29 (somatic variant calling with Mutect2 tumor-only mode). These resources significantly reduce false positives. See [29-mutect2-somatic.md](29-mutect2-somatic.md) for details.
+
+```bash
+mkdir -p ${GENOME_DIR}/somatic
+
+# gnomAD AF-only VCF (~6.5 GB) — germline allele frequencies for filtering
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz \
+  -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz.tbi \
+  -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz.tbi
+
+# Panel of Normals (~1 GB) — recurrent technical artifacts from 1000 Genomes
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz \
+  -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz.tbi \
+  -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz.tbi
+```
+
 ## Docker Images — Pre-Pull All
 
 Pull all images in advance to avoid download delays during analysis:
@@ -148,7 +169,7 @@ docker pull brentp/duphold:latest
 # Annotation
 docker pull getwilds/annotsv:latest
 docker pull ensemblorg/ensembl-vep:release_112.0
-docker pull sigven/pcgr:1.4.1
+docker pull sigven/pcgr:2.2.5
 
 # Pharmacogenomics
 docker pull pgkb/pharmcat:2.15.5
@@ -240,8 +261,9 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | VEP cache | 26 GB | 30 GB | Largest single database |
 | PCGR/CPSR data bundle | 21 GB | 30 GB | Second largest |
 | T1K HLA index | 50 MB | 450 MB | Optional |
+| Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
 | Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
-| **Total** | **~60 GB** | **~80 GB** | |
+| **Total** | **~68 GB** | **~88 GB** | |
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 

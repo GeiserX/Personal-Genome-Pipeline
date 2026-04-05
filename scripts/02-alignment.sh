@@ -8,8 +8,16 @@ SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-R1="${SAMPLE_DIR}/fastq/${SAMPLE}_R1.fastq.gz"
-R2="${SAMPLE_DIR}/fastq/${SAMPLE}_R2.fastq.gz"
+
+# Prefer trimmed FASTQs (from fastp step 01b) over raw
+if [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" ] && [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" ]; then
+  FASTQ_SUBDIR="fastq_trimmed"
+  echo "Using trimmed FASTQs from fastp."
+else
+  FASTQ_SUBDIR="fastq"
+fi
+R1="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz"
+R2="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 MMI="${GENOME_DIR}/reference/GRCh38.mmi"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned"
@@ -50,8 +58,8 @@ docker run --rm \
   quay.io/biocontainers/minimap2:2.28--he4a0461_0 \
   minimap2 -t "${THREADS}" -a -x sr \
     /genome/reference/GRCh38.mmi \
-    "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
-    "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \
+    "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
+    "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz" \
 | docker run --rm -i \
   --cpus "${THREADS}" --memory 8g \
   -v "${GENOME_DIR}:/genome" \

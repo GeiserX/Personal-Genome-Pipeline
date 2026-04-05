@@ -91,7 +91,7 @@ docker run --rm -it \
    | Delly | `delly:1.2.9--ha41ced6_0` | `delly:1.7.3--hd6466ae_0` |
    | ExpansionHunter | `expansionhunter:5.0.0--hd03093a_1` | `weisburd/expansionhunter:latest` |
    | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `getwilds/annotsv:latest` |
-   | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:1.4.1` (bundles both) |
+   | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:2.2.5` (bundles both) |
    | SnpSift | `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` | `quay.io/biocontainers/snpeff:5.2--hdfd78af_1` (bundled) |
    | MToolBox | `robertopreste/mtoolbox:latest` | Does not exist. Use `broadinstitute/gatk:4.6.1.0` instead |
 
@@ -663,28 +663,39 @@ ls ${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38/
 
 ---
 
-### Step 17: CPSR `--pcgr_dir` path confusion
+### Step 17: CPSR data directory or CLI issues
 
-**Symptom:** `Data directory (/genome/pcgr_data/data/data) does not exist`
+**Symptom (PCGR 2.x):** `refdata_dir not found` or similar errors about missing bundle paths.
 
-**Cause:** CPSR internally appends `/data` to whatever path you provide as `--pcgr_dir`. If you point it to the `data/` subdirectory, it looks for `data/data/`.
+**Cause:** PCGR 2.x uses a completely different CLI and volume mount structure from 1.x. The old `--pcgr_dir` flag no longer exists. You now need `--refdata_dir` and `--vep_dir` as separate arguments, each with its own Docker volume mount.
 
-**Fix:** Point `--pcgr_dir` to the **parent** of the `data/` directory:
+**Fix:** Ensure you have the correct data bundle and mount structure:
 ```bash
-# CORRECT:
---pcgr_dir /genome/pcgr_data
-# This makes CPSR look for: /genome/pcgr_data/data/grch38/ (exists)
-
-# WRONG:
---pcgr_dir /genome/pcgr_data/data
-# This makes CPSR look for: /genome/pcgr_data/data/data/ (does NOT exist)
+# PCGR 2.x requires four separate volume mounts:
+docker run --rm --user root \
+  -v ${GENOME_DIR}/vep_cache:/mnt/.vep \
+  -v ${GENOME_DIR}/pcgr_data/20250314:/mnt/bundle \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/mnt/inputs \
+  -v ${GENOME_DIR}/${SAMPLE}/cpsr:/mnt/outputs \
+  sigven/pcgr:2.2.5 cpsr \
+    --refdata_dir /mnt/bundle \
+    --vep_dir /mnt/.vep \
+    ...
 ```
 
-**Additional CPSR issue — wrong Docker image:**
+If you have the old 1.x data bundle (`pcgr.databundle.grch38.20220203.tgz`), it is **not compatible** with PCGR 2.x. Download the new bundle:
+```bash
+cd ${GENOME_DIR}/pcgr_data
+wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz
+tar xzf pcgr_ref_data.20250314.grch38.tgz
+mkdir -p 20250314 && mv data/ 20250314/
+```
+
+**Additional CPSR issue -- wrong Docker image:**
 CPSR does not have its own Docker image. It is bundled inside the PCGR image:
 ```bash
 # CORRECT:
-docker run ... sigven/pcgr:1.4.1 cpsr ...
+docker run ... sigven/pcgr:2.2.5 cpsr ...
 
 # WRONG (image does not exist):
 docker run ... sigven/cpsr:2.0.0 ...

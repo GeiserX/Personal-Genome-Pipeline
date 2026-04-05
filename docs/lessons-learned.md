@@ -157,14 +157,23 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 
 ## CPSR/PCGR Issues
 
-### CPSR: --pcgr_dir path confusion
+### CPSR: --pcgr_dir path confusion (PCGR 1.x, historical)
 - **Failed:** `cpsr --pcgr_dir /genome/pcgr_data/data` → "Data directory (/genome/pcgr_data/data/data) does not exist"
-- **Root cause:** CPSR internally appends `/data` to whatever `--pcgr_dir` you pass. If you point to the `data/` directory inside the extracted bundle, it looks for `data/data/`.
-- **Fix:** Point `--pcgr_dir` to the **parent** of the `data/` directory: `--pcgr_dir /genome/pcgr_data` (not `/genome/pcgr_data/data`)
+- **Root cause:** CPSR 1.x internally appends `/data` to whatever `--pcgr_dir` you pass. If you point to the `data/` directory inside the extracted bundle, it looks for `data/data/`.
+- **Fix (1.x):** Point `--pcgr_dir` to the **parent** of the `data/` directory: `--pcgr_dir /genome/pcgr_data` (not `/genome/pcgr_data/data`)
+- **Superseded by PCGR 2.x** — the `--pcgr_dir` flag no longer exists. See migration notes below.
 
 ### CPSR: Docker image is inside PCGR
 - **Failed:** `sigven/cpsr:2.0.0` does not exist on Docker Hub
-- **Fix:** Use `sigven/pcgr:1.4.1` which bundles both `pcgr` and `cpsr` binaries at `/usr/local/bin/`
+- **Fix:** Use `sigven/pcgr:2.2.5` which bundles both `pcgr` and `cpsr` binaries at `/usr/local/bin/`
+
+### PCGR 2.x Migration (1.4.1 to 2.2.5)
+- **CLI completely changed:** The `--pcgr_dir` flag is gone. Replaced by `--refdata_dir` (for the ref data bundle) and `--vep_dir` (for the VEP cache). These are separate mount points inside the container.
+- **Docker volumes changed:** PCGR 1.x used a single `-v ${GENOME_DIR}:/genome` mount. PCGR 2.x requires four separate mounts: VEP cache (`:/mnt/.vep`), ref data bundle (`:/mnt/bundle`), input VCFs (`:/mnt/inputs`), and outputs (`:/mnt/outputs`).
+- **Data bundle is smaller and different:** The old monolithic ~21 GB bundle (`pcgr.databundle.grch38.20220203.tgz`) that included VEP cache is replaced by a smaller ~5 GB ref data bundle (`pcgr_ref_data.20250314.grch38.tgz`). VEP cache is now provided separately (reuse the same cache from step 13).
+- **Bundle extraction requires extra step:** After `tar xzf`, the extracted `data/` directory must be moved into a version-stamped directory: `mkdir -p 20250314 && mv data/ 20250314/`. The `--refdata_dir` mount points to this version directory.
+- **Docker tag:** `sigven/pcgr:1.4.1` → `sigven/pcgr:2.2.5`. The image still bundles both `pcgr` and `cpsr` binaries.
+- **Old data bundle is incompatible:** If you have the 1.x bundle, you must download the 2.x bundle fresh. The directory structure and expected paths are completely different.
 
 ## Michigan Imputation Server Notes
 
@@ -267,3 +276,68 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - ROH: `-G30` required (no FORMAT/PL in chip VCF)
 - PRS: `no-mean-imputation` required (single sample lacks allele frequencies)
 - PRS matching: chip ~12% of large scoring files vs WGS ~28%
+
+## v0.3.0 Tool Additions (Apr 2026)
+
+### ExpansionHunter v5.0.0: Completely different CLI from v2.5.5
+- **Old (v2.5.5):** `--bam`, `--ref-fasta`, `--repeat-specs` (directory), `--vcf`, `--json`, `--log` (all required)
+- **New (v5.0.0):** `--reads`, `--reference`, `--variant-catalog` (single JSON), `--output-prefix`, `--threads`
+- **The `--log` flag is gone** in v5.0.0. Do NOT pass it or the command will fail.
+- **Biocontainer image:** `quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5`. Binary is `ExpansionHunter` (on PATH, not at `/ExpansionHunter/bin/`).
+- **Bundled catalog:** `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json` (31 loci). No need to download separately.
+
+### GRIDSS: Requires BWA index (not minimap2)
+- **Failed:** GRIDSS exits with "BWA index not found" when using default minimap2 alignment
+- **Fix:** Either (a) align with BWA-MEM2 first (`02a-alignment-bwamem2.sh`), or (b) generate BWA index files separately. The `04b-gridss.sh` script validates this and prints instructions.
+- **Note:** GRIDSS outputs ALL SVs as BND (breakend) notation. Standard DEL/DUP/INV types require post-processing conversion for SURVIVOR merge compatibility.
+
+### GRIDSS: 32 GB memory requirement
+- **Observed:** GRIDSS assembly-based SV calling needs ~28 GB JVM heap for 30X WGS
+- **Fix:** Container runs with `--memory 32g` and `-Xmx28g` JVM argument. Will fail silently on machines with < 32 GB RAM.
+
+### GRIDSS: ENCODE blacklist download
+- **Observed:** GRIDSS benefits from an ENCODE blacklist to suppress known artifact regions
+- **Fix:** Script auto-downloads `ENCFF356LFX.bed.gz` (hg38 blacklist) from ENCODE on first run. If download fails (offline), GRIDSS runs without it (lower precision but still functional).
+
+### fastp: Maximum 16 threads despite --workers flag
+- **Observed:** fastp accepts `-w` (workers) up to 16. Values above 16 are clamped to 16. The `-w` flag controls I/O worker threads; actual adapter detection is single-threaded.
+- **Recommendation:** Use `-w` matching `THREADS` up to 16. For most WGS runs, `-w 4` is sufficient.
+
+### fastp: BGI/MGI adapter auto-detection
+- **Observed:** fastp's `--detect_adapter_for_pe` works for Illumina, BGI, and MGI adapters without specifying adapter sequences. BGI/MGI adapters are compiled into fastp's `knownadapters.h`.
+- **No action needed:** The `--detect_adapter_for_pe` flag handles all common sequencing platforms.
+
+### mosdepth: --fast-mode skips per-base output
+- **Observed:** `--fast-mode` uses a simpler, faster counting method and does NOT write the per-base `.per-base.bed.gz` file. This saves ~2 GB of output and cuts runtime by ~40%.
+- **Fix:** Always use `--fast-mode` unless per-base resolution is specifically needed.
+
+### MultiQC: Auto-discovers fastp JSON by content, not filename
+- **Observed:** MultiQC identifies fastp output by looking for `"before_filtering": {` in JSON files, not by filename pattern. Files must end in `.json`.
+- **Tip:** Ensure fastp's `-j` output uses `.json` extension.
+
+### Octopus: No issues observed
+- Docker image `dancooke/octopus:0.7.4` works out of the box for germline calling
+- Supports `--threads` for parallelism (unlike FreeBayes)
+- Typical memory: 8-12 GB for 30X WGS (much less than FreeBayes peak of 13 GB)
+
+## PharmCAT 3.x Migration (2.15.5 to 3.2.0)
+
+### Preprocessor script renamed (no .py extension)
+- **Old (2.15.5):** `python3 /pharmcat/pharmcat_vcf_preprocessor.py`
+- **New (3.2.0):** `python3 /pharmcat/pharmcat_vcf_preprocessor`
+- **Impact:** Step 7 preprocessor command must drop the `.py` suffix or the container exits with "No such file"
+
+### Reporter flags: must be explicit for both formats
+- **Old (2.15.5):** `-reporterJson` produced JSON; HTML was always generated by default
+- **New (3.2.0):** If ANY format flag is specified, ONLY those formats are produced. To get both HTML and JSON, you must pass `-reporterJson -reporterHtml`
+- **Impact:** Step 7 now passes both flags explicitly. Without `-reporterHtml`, the HTML report (used for manual review) would silently stop being generated.
+
+### JSON property rename: wildtypeAllele to referenceAllele
+- **Old (2.15.5):** `wildtypeAllele` property in gene result JSON objects
+- **New (3.2.0):** Renamed to `referenceAllele`
+- **Impact:** Step 27's JSON parser does not use this property directly, so no code change was needed. Any downstream scripts or notebooks that parse `wildtypeAllele` must be updated.
+
+### New features in 3.2.0
+- **NAT2 calling:** PharmCAT 3.x includes improved NAT2 acetylator status calling
+- **BCF support:** Preprocessor now accepts BCF input files directly (no conversion needed)
+- **Single-gene calling:** New `-g` flag allows running PharmCAT on a single gene (useful for targeted re-analysis)

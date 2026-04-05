@@ -245,14 +245,16 @@ else
   fi
 
   # --- PCGR data bundle (optional) ---
-  PCGR_DIR="${GENOME_DIR}/pcgr_data/data/grch38"
+  PCGR_DIR="${GENOME_DIR}/pcgr_data/20250314/data"
   if [ -d "$PCGR_DIR" ]; then
-    pass "PCGR/CPSR data bundle: present"
+    pass "PCGR/CPSR ref data bundle: present"
   else
-    warn "PCGR data bundle not found at: ${PCGR_DIR}"
-    echo "       Required for step 17 (CPSR cancer predisposition). Download ~21 GB:"
-    echo "       wget -c http://insilico.hpc.uio.no/pcgr/pcgr.databundle.grch38.20220203.tgz"
-    echo "       See docs/00-reference-setup.md for full instructions."
+    warn "PCGR ref data bundle not found at: ${PCGR_DIR}"
+    echo "       Required for step 17 (CPSR cancer predisposition). Download ~5 GB:"
+    echo "       cd ${GENOME_DIR}/pcgr_data"
+    echo "       wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"
+    echo "       tar xzf pcgr_ref_data.20250314.grch38.tgz && mkdir -p 20250314 && mv data/ 20250314/"
+    echo "       See docs/17-cpsr.md for full instructions."
   fi
 
   # --- GATK sequence dictionary (optional) ---
@@ -287,8 +289,8 @@ else
     "brentp/duphold:latest"
     "getwilds/annotsv:latest"
     "ensemblorg/ensembl-vep:release_112.0"
-    "sigven/pcgr:1.4.1"
-    "pgkb/pharmcat:2.15.5"
+    "sigven/pcgr:2.2.5"
+    "pgkb/pharmcat:3.2.0"
     "weisburd/expansionhunter:latest"
     "lgalarno/telomerehunter:latest"
     "genepi/haplogrep3:latest"
@@ -297,6 +299,14 @@ else
     "broadinstitute/gatk:4.6.1.0"
     "python:3.11-slim"
     "pgscatalog/plink2:2.00a5.10"
+    "quay.io/biocontainers/fastp:1.3.1--h43da1c4_0"
+    "quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0"
+    "quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
+    "quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5"
+    "quay.io/biocontainers/gridss:2.13.2--h96c455f_6"
+    "dancooke/octopus:0.7.4"
+    "hkubal/clair3:v2.0.0"
+    "quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
   )
 
   PULLED=0

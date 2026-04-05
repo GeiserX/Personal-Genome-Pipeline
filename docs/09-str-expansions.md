@@ -7,14 +7,14 @@ Screens for pathogenic repeat expansions — a class of mutations invisible to b
 STR expansions cause ~40 known neurological/neuromuscular diseases including Huntington's, Fragile X, Friedreich's ataxia, ALS/FTD, myotonic dystrophy, and multiple spinocerebellar ataxias.
 
 ## Tool
-- **ExpansionHunter** v2.5.5 (Illumina) — note: v5.x is available upstream with an expanded catalog and `--variant-catalog` flag, but the Docker image used here ships v2.5.5
+- **ExpansionHunter** v5.0.0 (Illumina) — upgraded from v2.5.5. Adds multithreading, improved long-repeat estimation, and a bundled GRCh38 variant catalog (31 pathogenic loci)
 
 ## Docker Image
 ```
-weisburd/expansionhunter:latest
+quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
 ```
-- Binary: `/ExpansionHunter/bin/ExpansionHunter`
-- GRCh38 catalogs: `/pathogenic_repeats/GRCh38/` (38 disease loci)
+- Binary: `ExpansionHunter` (on PATH)
+- GRCh38 catalog: `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json` (31 pathogenic loci)
 
 ## Key Disease Thresholds
 | Disease | Gene | Repeat Unit | Normal | Pathogenic |
