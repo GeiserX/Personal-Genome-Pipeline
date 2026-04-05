@@ -179,8 +179,8 @@ These steps work unchanged:
 
 ```bash
 # Manta: add --exome manually until scripts support DATA_TYPE
-# mosdepth: use --by flag with capture BED
-./scripts/16b-mosdepth.sh $SAMPLE          # Coverage stats (needs CAPTURE_BED)
+# mosdepth: pass capture BED for on-target coverage stats
+CAPTURE_BED=${GENOME_DIR}/reference/your_capture.bed ./scripts/16b-mosdepth.sh $SAMPLE
 ```
 
 ### 7. Skip These Steps

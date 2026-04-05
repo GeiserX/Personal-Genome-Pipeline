@@ -26,13 +26,13 @@ if [ ! -f "$VCF" ]; then
   exit 1
 fi
 
-if [ ! -d "${VEP_DIR}" ]; then
-  echo "ERROR: VEP cache not found at ${VEP_DIR}/" >&2
-  echo "Download and extract it first:" >&2
-  echo "  mkdir -p ${VEP_DIR}" >&2
-  echo "  PCGR 2.2.5 requires VEP release-113 cache (different from step 13's release-112):" >&2
-  echo "  wget -c -P ${VEP_DIR} https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz" >&2
-  echo "  tar xzf ${VEP_DIR}/homo_sapiens_vep_113_GRCh38.tar.gz -C ${VEP_DIR}" >&2
+if [ ! -d "${VEP_DIR}/homo_sapiens/113_GRCh38" ]; then
+  echo "ERROR: VEP release-113 cache not found at ${VEP_DIR}/homo_sapiens/113_GRCh38/" >&2
+  echo "PCGR 2.2.5 requires the VEP 113 cache (different from step 13's release-112)." >&2
+  echo "Download and extract it:" >&2
+  echo "  mkdir -p ${VEP_DIR}/tmp" >&2
+  echo "  wget -c -P ${VEP_DIR}/tmp https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz" >&2
+  echo "  tar xzf ${VEP_DIR}/tmp/homo_sapiens_vep_113_GRCh38.tar.gz -C ${VEP_DIR}" >&2
   exit 1
 fi
 

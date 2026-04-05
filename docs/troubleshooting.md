@@ -567,9 +567,11 @@ docker run --rm \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
   pgkb/pharmcat:3.2.0 \
-  java -cp /pharmcat/pharmcat.jar org.pharmgkb.pharmcat.VcfPreprocessor \
+  python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
-    -refFasta /ref/Homo_sapiens_assembly38.fasta
+    -refFna /ref/Homo_sapiens_assembly38.fasta \
+    -o /data/ \
+    -bf "$SAMPLE"
 ```
 
 ---

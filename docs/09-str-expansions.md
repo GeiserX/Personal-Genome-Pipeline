@@ -38,8 +38,17 @@ FMR1 (Fragile X) has four distinct clinical zones — the intermediate zone (45-
 | Premutation | 55-200 | Risk of FXTAS (tremor/ataxia, males >50), FXPOI (premature ovarian insufficiency). Offspring at risk of full expansion. |
 | Full mutation | >200 | Fragile X syndrome (intellectual disability, behavioral features). Penetrance varies by sex and methylation. |
 
+## Command
+
+```bash
+./scripts/09-expansion-hunter.sh your_name male
+# or: ./scripts/09-expansion-hunter.sh your_name female
+```
+
+The second argument (`male`/`female`) is **required** — it affects X-linked loci (FMR1, AR): males have one allele, females have two.
+
 ## Notes
-- This is v2.5.5, NOT v5.x. The flag is `--repeat-specs` (directory), not `--variant-catalog`
-- `--log` is REQUIRED (missing it causes silent exit)
-- `--sex` affects X-linked loci (FMR1, AR): males have one allele, females have two
+- Uses ExpansionHunter **v5.0.0** (`quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5`)
+- v5 CLI: `--reads`, `--reference`, `--variant-catalog` (JSON file), `--output-prefix` (auto-generates .vcf, .json)
+- The 31-locus GRCh38 variant catalog is bundled inside the container at `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json`
 - Short-read WGS can reliably detect expansions up to ~150 repeats; very large expansions (>1000) are less accurate

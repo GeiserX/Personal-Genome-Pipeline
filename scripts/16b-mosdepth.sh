@@ -39,18 +39,34 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # mosdepth flags:
-#   --by 500        Window size for per-region coverage (500bp bins)
+#   --by 500        Window size for per-region coverage (500bp bins; WGS default)
+#   --by <BED>      Capture BED for on-target coverage (WES; set CAPTURE_BED env var)
 #   --fast-mode     Skip per-base output (saves disk + time), keep distributions
 #   --threads       Decompression threads (mosdepth uses 1 main + N decompression)
 #   --thresholds    Report fraction of bases at these coverage thresholds
 #   --no-per-base   Omit the large per-base BED (redundant with --fast-mode)
+
+# Use capture BED for WES on-target coverage, or 500bp bins for WGS
+if [ -n "${CAPTURE_BED:-}" ]; then
+  if [ ! -f "${CAPTURE_BED}" ]; then
+    echo "ERROR: CAPTURE_BED not found: ${CAPTURE_BED}" >&2
+    exit 1
+  fi
+  # Compute container-relative path for the BED file
+  CAPTURE_BED_REL="${CAPTURE_BED#"${GENOME_DIR}/"}"
+  BY_FLAG="/genome/${CAPTURE_BED_REL}"
+  echo "Using capture BED for WES on-target coverage: ${CAPTURE_BED}"
+else
+  BY_FLAG="500"
+fi
+
 echo "Computing coverage statistics..."
 docker run --rm --user root \
   --cpus "${THREADS}" --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0 \
   mosdepth \
-    --by 500 \
+    --by "${BY_FLAG}" \
     --fast-mode \
     --threads "${THREADS}" \
     --thresholds 1,5,10,15,20,30,50 \

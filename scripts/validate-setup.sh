@@ -233,15 +233,25 @@ else
     fi
   fi
 
-  # --- VEP cache (optional) ---
+  # --- VEP cache — release-112 for step 13 (optional) ---
   VEP_DIR="${GENOME_DIR}/vep_cache/homo_sapiens"
-  if [ -d "$VEP_DIR" ]; then
-    pass "VEP cache directory: present"
+  if [ -d "${VEP_DIR}/112_GRCh38" ]; then
+    pass "VEP 112 cache (step 13): present"
   else
-    warn "VEP cache not found at: ${VEP_DIR}"
+    warn "VEP 112 cache not found at: ${VEP_DIR}/112_GRCh38"
     echo "       Required for step 13 (VEP annotation). Download ~26 GB:"
     echo "       wget -c https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz"
     echo "       See docs/00-reference-setup.md for full instructions."
+  fi
+
+  # --- VEP cache — release-113 for step 17/CPSR (optional) ---
+  if [ -d "${VEP_DIR}/113_GRCh38" ]; then
+    pass "VEP 113 cache (step 17 CPSR): present"
+  else
+    warn "VEP 113 cache not found at: ${VEP_DIR}/113_GRCh38"
+    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 112."
+    echo "       wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
+    echo "       See docs/17-cpsr.md for full instructions."
   fi
 
   # --- PCGR data bundle (optional) ---

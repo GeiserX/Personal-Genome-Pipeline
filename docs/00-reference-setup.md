@@ -111,6 +111,7 @@ mkdir -p 20250314 && mv data/ 20250314/
 PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-112 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`112_GRCh38/` and `113_GRCh38/`).
 
 ```bash
+mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
 # Download VEP 113 cache (~26 GB)
