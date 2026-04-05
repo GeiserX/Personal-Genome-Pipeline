@@ -325,8 +325,10 @@ grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep -v "gnomADe_AF=0\.[0-9]" | head -20
 grep -v "^#" "$VEP_VCF" | grep "0/1" | grep -oP 'SYMBOL=[^;|]+' | \
   sort | uniq -c | sort -rn | awk '$1 >= 2' | head -20
 
-# 4. Known ACMG actionable genes (59 genes recommended for return of results)
+# 4. Known ACMG actionable genes (81 genes in ACMG SF v3.2)
 #    Quick check if any HIGH/MODERATE variants land in these genes
+#    Note: this is a partial list of cancer-related genes for illustration.
+#    See https://www.nature.com/articles/s41436-023-02171-w for the full 81-gene list.
 ACMG_GENES="BRCA1|BRCA2|MLH1|MSH2|MSH6|PMS2|APC|MUTYH|TP53|RB1|MEN1|RET|VHL|SDHB|SDHD|TSC1|TSC2|WT1|NF2|PTEN|STK11|BMPR1A|SMAD4|CDH1|PALB2|CHEK2|ATM|NBN|BARD1|RAD51C|RAD51D|BRIP1"
 grep -v "^#" "$VEP_VCF" | grep -E "HIGH|MODERATE" | grep -E "$ACMG_GENES" | head -20
 

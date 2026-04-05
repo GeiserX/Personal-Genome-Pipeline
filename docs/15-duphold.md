@@ -29,9 +29,9 @@ docker run --rm \
   brentp/duphold:latest \
   duphold \
   -v /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
-  -b /genome/${SAMPLE}/sorted.bam \
+  -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
   -f /genome/reference/Homo_sapiens_assembly38.fasta \
-  -o /genome/${SAMPLE}/manta/results/variants/diploidSV.duphold.vcf.gz
+  -o /genome/${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
 ```
 
 ## Filtering Examples

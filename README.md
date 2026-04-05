@@ -51,7 +51,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 | **Structural Variants** | Deletions, duplications, inversions, translocations (3 callers + consensus) | 4, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP: SIFT, PolyPhen, gnomAD frequencies) | 13 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
-| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, ancestry PCA | 11, 12, 26 |
+| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, single-sample ancestry PCA | 11, 12, 26 |
 | **Telomere Length** | Biological age proxy from telomere content | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
@@ -90,7 +90,7 @@ FASTQ/BAM ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNP
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](docs/01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
-| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
+| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
 | 3 | [Variant Calling](docs/03-variant-calling.md) | DeepVariant | `google/deepvariant:1.6.0` | ~2-4 hr | Yes |
 | 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta` | ~20 min | Recommended |
 | 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:latest` | ~10 min | If step 4 run |
@@ -126,6 +126,21 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
 **Full analysis:** All 27 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.
+
+#### Alternative Tools (Benchmarking)
+
+No single variant caller is universally best. The pipeline includes alternative tools that output to separate directories so you can compare results without overwriting the defaults.
+
+| Script | Tool | Alternative To | Output Directory |
+|---|---|---|---|
+| [02a](scripts/02a-alignment-bwamem2.sh) | BWA-MEM2 | minimap2 (step 2) | `aligned_bwamem2/` |
+| [03a](scripts/03a-gatk-haplotypecaller.sh) | GATK HaplotypeCaller | DeepVariant (step 3) | `vcf_gatk/` |
+| [03b](scripts/03b-freebayes.sh) | FreeBayes | DeepVariant (step 3) | `vcf_freebayes/` |
+| [04a](scripts/04a-tiddit.sh) | TIDDIT | Manta (step 4) | `sv_tiddit/` |
+| [03c](scripts/03c-strelka2-germline.sh) | Strelka2 | DeepVariant (step 3) | `vcf_strelka2/` |
+| [benchmark](scripts/benchmark-variants.sh) | bcftools isec / hap.py | — | `benchmark/` |
+
+See [docs/benchmarking.md](docs/benchmarking.md) for how to run and interpret results, and [docs/tool-rationale.md](docs/tool-rationale.md) for why each default was chosen.
 
 ---
 
@@ -421,7 +436,7 @@ Your genome is the most permanent piece of personal data you have. Unlike a pass
 - No data is uploaded to any server, cloud, or API
 - No internet connection is required after initial setup (reference downloads + Docker images)
 - No telemetry, no analytics, no tracking
-- Every tool runs in a Docker container with no network access to external services
+- Every tool runs in a Docker container; the pipeline does not intentionally connect to external services at runtime
 
 **Recommendations for securing your data:**
 - Store genomic data on an encrypted filesystem (LUKS on Linux, FileVault on macOS, BitLocker on Windows)

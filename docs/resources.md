@@ -26,7 +26,7 @@ Free resources for understanding your genomic data, organized from most accessib
 ### Variant Interpretation
 
 - **[ClinGen](https://www.clinicalgenome.org/)** — The Clinical Genome Resource. Maintains gene-disease validity assessments and variant interpretation standards. Useful for understanding how variants are classified.
-- **[ACMG SF v3.2 Gene List](https://www.nature.com/articles/s41436-023-02171-w)** — The 81 genes that ACMG recommends reporting incidental findings for. These are the genes CPSR screens. Understanding this list helps you prioritize findings.
+- **[ACMG SF v3.2 Gene List](https://www.nature.com/articles/s41436-023-02171-w)** — The 81 genes that ACMG recommends reporting incidental findings for. Note: CPSR uses its own cancer-focused panels (Genomics England PanelApp), not the ACMG SF list — CPSR covers 500+ cancer genes but omits non-cancer ACMG genes (cardiac, metabolic). A negative CPSR result does not constitute a complete ACMG incidental-findings screen.
 - **[MitoMap](https://www.mitomap.org/)** — The human mitochondrial genome database. Look up any mitochondrial variant from step 20 to check its disease association and heteroplasmy significance.
 - **[GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/)** — Expert-authored, peer-reviewed descriptions of genetic conditions. If you find a pathogenic variant, the GeneReviews entry for the associated condition is the best single resource for understanding it.
 

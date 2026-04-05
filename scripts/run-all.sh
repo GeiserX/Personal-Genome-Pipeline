@@ -53,6 +53,48 @@ if [ ! -f "$VCF" ]; then
 else
   echo "[Phase 2] VCF already exists, skipping variant calling."
 fi
+
+# Phase 2b: Extra callers (optional, for benchmarking)
+EXTRA_CALLERS=${EXTRA_CALLERS:-""}
+if [ -n "$EXTRA_CALLERS" ]; then
+  echo "[Phase 2b] Running extra variant callers: ${EXTRA_CALLERS}"
+  PHASE2B_PIDS=()
+  IFS=',' read -ra CALLERS <<< "$EXTRA_CALLERS"
+  for CALLER in "${CALLERS[@]}"; do
+    CALLER=$(echo "$CALLER" | tr -d ' ')
+    case "$CALLER" in
+      gatk)
+        echo "  Starting GATK HaplotypeCaller..."
+        bash "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      freebayes)
+        echo "  Starting FreeBayes..."
+        bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      strelka2)
+        echo "  Starting Strelka2..."
+        echo "  NOTE: Strelka2 is using the default minimap2 BAM. For best SNP precision,"
+        echo "        align with BWA-MEM2 first, then run: ALIGN_DIR=aligned_bwamem2 ./scripts/03c-strelka2-germline.sh $SAMPLE"
+        bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
+        PHASE2B_PIDS+=($!)
+        ;;
+      *)
+        echo "  WARNING: Unknown caller '${CALLER}'. Skipping."
+        ;;
+    esac
+  done
+  PHASE2B_FAIL=0
+  for PID in "${PHASE2B_PIDS[@]}"; do
+    wait "$PID" 2>/dev/null || PHASE2B_FAIL=$((PHASE2B_FAIL + 1))
+  done
+  if [ "$PHASE2B_FAIL" -gt 0 ]; then
+    echo "  WARNING: ${PHASE2B_FAIL} extra caller(s) failed."
+  else
+    echo "  Extra callers complete."
+  fi
+fi
 echo ""
 
 # Phase 3: Parallel analyses (all independent after BAM + VCF exist)
@@ -213,9 +255,30 @@ else
   echo "  Post-processing complete."
 fi
 
+# Phase 4b: Benchmarking (optional)
+BENCHMARK=${BENCHMARK:-false}
+if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
+  # Count available caller VCFs (need at least 2 for pairwise comparison)
+  CALLER_COUNT=0
+  for d in vcf vcf_gatk vcf_freebayes; do
+    [ -f "${GENOME_DIR}/${SAMPLE}/${d}/${SAMPLE}.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
+  done
+  # Strelka2 writes to a different path
+  [ -f "${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
+  if [ "$CALLER_COUNT" -ge 2 ]; then
+    echo ""
+    echo "  [D7] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
+    bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG}"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
+  else
+    echo ""
+    echo "  [D7] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
+    echo "  Set EXTRA_CALLERS=gatk,freebayes,strelka2 to run alternative callers in Phase 2b."
+  fi
+fi
+
 REPORT_FAIL=0
 
-echo "  [D7] HTML summary report..."
+echo "  [D8] HTML summary report..."
 bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
@@ -228,13 +291,13 @@ ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
-TOTAL_FAIL=$((PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
+TOTAL_FAIL=$((${PHASE2B_FAIL:-0} + PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
 
 echo ""
 echo "============================================"
 if [ "$TOTAL_FAIL" -gt 0 ]; then
   echo "  Pipeline finished with errors for: ${SAMPLE}"
-  echo "  ${TOTAL_FAIL} step(s) failed (Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
+  echo "  ${TOTAL_FAIL} step(s) failed (Phase 2b: ${PHASE2B_FAIL:-0}, Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
 else
   echo "  Pipeline complete for: ${SAMPLE}"
 fi

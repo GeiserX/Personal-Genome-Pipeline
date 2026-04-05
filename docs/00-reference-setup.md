@@ -134,6 +134,7 @@ Pull all images in advance to avoid download delays during analysis:
 
 ```bash
 # Core pipeline
+docker pull quay.io/biocontainers/minimap2:2.28--he4a0461_0
 docker pull staphb/samtools:1.20
 docker pull staphb/bcftools:1.21
 docker pull google/deepvariant:1.6.0
@@ -161,7 +162,74 @@ docker pull quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
 docker pull broadinstitute/gatk:4.6.1.0
 ```
 
-**Total Docker image size:** ~10-15 GB (compressed, after layer deduplication).
+## Alternative Callers (Optional, for Benchmarking)
+
+Only needed if you plan to run alternative variant callers. See [benchmarking.md](benchmarking.md).
+
+```bash
+# Alternative aligners
+docker pull quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
+
+# Alternative variant callers (GATK image already pulled above)
+docker pull quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
+
+# Alternative SV caller
+docker pull quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
+
+# Alternative small variant caller (SNVs + indels, complements Manta)
+docker pull quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
+
+# Benchmarking (truth set evaluation)
+docker pull jmcdani20/hap.py:v0.3.12
+```
+
+### GATK Sequence Dictionary
+
+GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If you don't have one:
+
+```bash
+docker run --rm --user root \
+  -v ${GENOME_DIR}:/genome \
+  broadinstitute/gatk:4.6.1.0 \
+  gatk CreateSequenceDictionary \
+    -R /genome/reference/Homo_sapiens_assembly38.fasta
+```
+
+### BWA-MEM2 Index
+
+BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Build once (~1 hour, ~6 GB):
+
+```bash
+docker run --rm --user root \
+  --cpus 8 --memory 24g \
+  -v ${GENOME_DIR}:/genome \
+  quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
+  bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
+# Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
+```
+
+### GIAB Truth Set (for hap.py Benchmarking)
+
+Download a GIAB truth set for benchmarking variant callers. **HG002** (Ashkenazi Jewish male) is preferred because its truth set covers more difficult genomic regions. HG001 (NA12878) is an alternative used in the [quick test](quick-test.md).
+
+**Important:** Truth set benchmarking only works when the query VCF comes from the **same biological sample** as the truth set. You must sequence HG002 (or HG001) DNA, not your own sample. See [benchmarking.md](benchmarking.md) for details.
+
+```bash
+mkdir -p ${GENOME_DIR}/giab
+cd ${GENOME_DIR}/giab
+
+# HG002 truth set (recommended, GRCh38 v4.2.1)
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
+
+# Alternative: HG001/NA12878 (used in quick-test.md)
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
+```
+
+**Total Docker image size:** ~10-15 GB (compressed, after layer deduplication). Alternative tools add ~3-5 GB.
 
 ## Disk Space Summary
 

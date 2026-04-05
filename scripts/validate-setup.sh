@@ -277,6 +277,7 @@ if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
 else
   # All images from docs/00-reference-setup.md
   IMAGES=(
+    "quay.io/biocontainers/minimap2:2.28--he4a0461_0"
     "staphb/samtools:1.20"
     "staphb/bcftools:1.21"
     "google/deepvariant:1.6.0"

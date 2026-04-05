@@ -4,15 +4,15 @@ Where the pipeline is headed. Items are grouped by priority and roughly ordered 
 
 ---
 
-## v0.2.0 — Variant caller benchmarking & alternative tools
+## v0.2.0 — Variant caller benchmarking & alternative tools ✅
 
-The pipeline currently ships one tool per step with no way to compare. Bioinformaticians routinely benchmark callers against each other because no single tool is universally superior ([PLOS ONE comparison](https://doi.org/10.1371/journal.pone.0339891), [UMCCR BWA vs minimap2](https://umccr.org/blog/bwa-mem-vs-minimap2/)). Thanks to [@madmolecularman](https://github.com/madmolecularman) for pushing this direction.
+Alternative callers, benchmarking infrastructure, and tool rationale documentation. Thanks to [@madmolecularman](https://github.com/madmolecularman) for pushing this direction.
 
-- [ ] **Alternative aligner: BWA-MEM2** — add BWA-MEM2 alongside minimap2. BWA-MEM2 produces different SAM tags (XS suboptimal alignment score) that some callers depend on — Strelka2 in particular has reduced SNP precision with minimap2 alignments due to missing XS tags and doubled AS scores
-- [ ] **Alternative SNP callers: GATK HaplotypeCaller + FreeBayes** — add as optional callers alongside DeepVariant. DeepVariant leads in precision and F1; GATK balances precision/recall; FreeBayes maximizes sensitivity at the cost of higher false positives. Different callers catch different variants — no single caller finds everything
-- [ ] **Concordance benchmarking script** — given a GIAB truth set (HG002 or NA12878) and one or more caller VCFs, run Illumina's [hap.py](https://github.com/Illumina/hap.py) or RTG vcfeval to produce precision/recall/F1 stratified by variant type (SNP vs indel) and genomic region. Output a comparison table and optional Venn diagram of caller-unique and shared calls
-- [ ] **Alternative SV callers: TIDDIT + Strelka2** — add alongside Manta/Delly for broader SV sensitivity. TIDDIT excels at large inversions and translocations; Strelka2 germline mode catches small indels that Manta misses
-- [ ] **Documented tool rationale** — for each step, document why the default was chosen with references to benchmarking data, so users can make informed decisions about which callers to run
+- [x] **Alternative aligner: BWA-MEM2** (`scripts/02a-alignment-bwamem2.sh` → `aligned_bwamem2/`) — produces XS tags needed by Strelka2. All alternative caller scripts accept `ALIGN_DIR=aligned_bwamem2`
+- [x] **Alternative SNP callers: GATK HaplotypeCaller + FreeBayes + Strelka2** — three optional callers alongside DeepVariant, each writing to isolated output directories (`vcf_gatk/`, `vcf_freebayes/`, `vcf_strelka2/`). Note: Strelka2 is a small variant caller (SNVs + indels ≤49bp), not an SV caller
+- [x] **Concordance benchmarking script** (`scripts/benchmark-variants.sh`) — two modes: pairwise concordance (`bcftools isec` with PASS filter + normalization) and truth set benchmarking (`hap.py`). Auto-discovers all caller VCFs
+- [x] **Alternative SV caller: TIDDIT** (`scripts/04a-tiddit.sh` → `sv_tiddit/`) — excels at large inversions and translocations; auto-detects BWA index for assembly mode
+- [x] **Documented tool rationale** (`docs/tool-rationale.md`) — per-step rationale with references to benchmarking data and decision matrices
 
 ## v0.3.0 — Multi-sample & joint analysis
 
@@ -22,6 +22,8 @@ The biggest gap in v0.1.x is that every step runs on a single sample in isolatio
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
 - [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
 - [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
+- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
+- [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
 - [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with GEMINI-style inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
 ## v0.4.0 — Expanded annotation & clinical interpretation
@@ -33,6 +35,7 @@ Current annotation is VEP-only with basic ClinVar screening. Clinical-grade inte
 - [ ] **REVEL scores** — ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification
 - [ ] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier. Complements REVEL with structural context
 - [ ] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores. Essential for interpreting novel variants in loss-of-function-intolerant genes
+- [ ] **vcfanno annotation engine** — add arbitrary annotation tracks (gnomAD, CADD, SpliceAI, custom BEDs) to VCFs via TOML config; faster than VEP for bulk annotation, complements rather than replaces it
 - [ ] **Variant database with inheritance queries** — load annotated VCFs into a queryable store (GEMINI or modern successor) supporting inheritance model filtering: de novo, compound het, X-linked, autosomal recessive/dominant
 - [ ] **pypgx alongside PharmCAT** — broader PGx star allele calling including CYP2D6 structural variation detection from WGS reads, filling the gap left by Cyrius
 
@@ -54,6 +57,10 @@ Upgrade pinned tools where the pipeline currently runs on older versions, and fi
 - [ ] **PCGR/CPSR data bundle refresh** — the current `grch38.20220203` bundle is from Feb 2022; upgrade to the latest available bundle
 - [ ] **Long-read support** — add an optional ONT/PacBio alignment path (minimap2 `map-ont`, pbmm2 for HiFi), long-read-aware variant calling (Clair3 for SNPs, Sniffles2 and cuteSV for SVs), and [pb-StarPhase](https://github.com/PacificBiosciences/pb-StarPhase) for long-read pharmacogenomics
 - [ ] **Whole exome sequencing (WES) entry path** — support for targeted/exome BAMs with coverage thresholds, on-target rate QC (Picard CollectHsMetrics), and adjusted variant caller parameters. WES is where most rare disease diagnosis and cancer research is moving. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
+- [ ] **FastQC + MultiQC QC reporting** — per-FASTQ quality metrics and an aggregated HTML report combining all QC outputs (flagstat, mosdepth, FastQC) in one view
+- [ ] **mosdepth coverage statistics** — fast per-base and per-region depth from BAM; more detailed than indexcov, producing coverage distributions and threshold reports
+- [ ] **Octopus variant caller** — haplotype-aware Bayesian caller as a 5th benchmarking alternative or FreeBayes replacement (FreeBayes is slow and memory-heavy)
+- [ ] **GRIDSS structural variant caller** — assembly-based SV caller for complex rearrangements; strengthens SV consensus (step 22) alongside Manta/Delly
 - [ ] **CYP2D6 star allele calling** — evaluate StellarPGx or Aldy as replacements for Cyrius, which returns None/None on most short-read WGS samples
 - [ ] **Somatic variant calling** — optional tumor-only mode with Mutect2 for users who have matched tumor/normal WGS (rare but requested)
 
