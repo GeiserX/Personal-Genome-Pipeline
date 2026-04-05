@@ -97,7 +97,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
 | 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta` | ~20 min | Recommended |
 | 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:latest` | ~10 min | If step 4 run |
 | 6 | [ClinVar Screen](docs/06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
-| 7 | [Pharmacogenomics](docs/07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:2.15.5` | ~10 min | Yes |
+| 7 | [Pharmacogenomics](docs/07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:3.2.0` | ~10 min | Yes |
 | 8 | [HLA Typing](docs/08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
 | 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
 | 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
@@ -276,9 +276,9 @@ That's it. Every analysis tool runs inside Docker -- no conda environments, no P
 | GRCh38 reference FASTA + index | ~3.5 GB | All steps |
 | ClinVar database | ~200 MB | Step 6 (ClinVar screen) |
 | VEP cache | ~26 GB | Step 13 (VEP annotation) |
-| PCGR/CPSR data bundle | ~21 GB | Step 17 (cancer predisposition) |
+| PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | Step 17 (cancer predisposition) |
 | Docker images (all steps) | ~10-15 GB | All steps |
-| **Total one-time setup** | **~60-65 GB** | |
+| **Total one-time setup** | **~70-75 GB** | |
 
 See [docs/00-reference-setup.md](docs/00-reference-setup.md) for download instructions.
 
@@ -319,8 +319,8 @@ Different vendors deliver data in different formats. Here's what you need to kno
 | **Sequencing.com** | FASTQ + BAM + VCF | Any path | Standard Illumina |
 | **Novogene / BGI** | FASTQ | Path A | BGI read names differ from Illumina but work fine |
 | **Illumina DRAGEN (clinical)** | ORA or BAM + VCF | Path D (ORA) or Path B/C | ORA needs decompression first |
-| **Oxford Nanopore** | POD5/FAST5 + BAM | Not supported | Long-read data needs different tools (Clair3, Sniffles2) |
-| **PacBio HiFi** | HiFi BAM | Not supported | Needs PacBio-specific pipeline (pbmm2, DeepVariant PacBio model) |
+| **Oxford Nanopore** | POD5/FAST5 + BAM | [Long-read guide](docs/long-read-guide.md) | minimap2 + Clair3 + Sniffles2 |
+| **PacBio HiFi** | HiFi BAM | [Long-read guide](docs/long-read-guide.md) | minimap2 + Clair3 + Sniffles2 |
 | **23andMe / Ancestry / MyHeritage** | Genotyping array TSV | Partial (VCF steps only) | Not WGS -- convert to VCF first |
 
 See [docs/vendor-guide.md](docs/vendor-guide.md) for detailed conversion instructions for each vendor.
@@ -340,7 +340,7 @@ ${GENOME_DIR}/
     clinvar.vcf.gz                     # ClinVar database
     clinvar.vcf.gz.tbi                 # ClinVar index
   vep_cache/                           # VEP annotation cache (~30 GB)
-  pcgr_data/                           # CPSR/PCGR data bundle (~21 GB)
+  pcgr_data/                           # CPSR/PCGR data bundle (~5 GB)
   ${SAMPLE}/
     fastq/                             # Raw FASTQ files (R1 + R2)
     fastq_trimmed/                     # QC-trimmed FASTQs + fastp reports (step 1b)
@@ -417,7 +417,7 @@ See [docs/multi-sample.md](docs/multi-sample.md) for carrier cross-screening, ph
 No. This is a research/educational pipeline. It uses the same tools as clinical labs (DeepVariant, VEP, ClinVar, PharmCAT) but has not been through clinical validation. Always discuss findings with a healthcare provider.
 
 **Q: What about long-read sequencing (Nanopore, PacBio)?**
-This pipeline is designed for short-read Illumina/BGI data. Long-read data requires different alignment (minimap2 with `-ax map-ont` or `pbmm2`) and variant calling tools (Clair3 for SNPs, Sniffles2 for SVs). A long-read branch may be added in the future.
+Supported since v0.3.0. See the [long-read guide](docs/long-read-guide.md) for ONT and PacBio HiFi workflows using minimap2, Clair3, and Sniffles2. Most downstream VCF-based steps work as-is.
 
 **Q: My vendor's download link expired. Can I still get my data?**
 It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com archives to cold storage (1-3 day retrieval). DNA Complete requires an active subscription. Novogene/BGI keep data for ~90 days. **Always download your raw data immediately.** See [docs/vendor-guide.md](docs/vendor-guide.md) for vendor-specific details.

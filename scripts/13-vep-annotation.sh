@@ -6,7 +6,8 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+VCF_DIR=${VCF_DIR:-vcf}
+VCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
 CACHE_DIR="${GENOME_DIR}/vep_cache"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/vep"
 
@@ -42,7 +43,7 @@ docker run --rm \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
   ensemblorg/ensembl-vep:release_112.0 \
   vep \
-    --input_file "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
     --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
     --vcf \
     --cache \

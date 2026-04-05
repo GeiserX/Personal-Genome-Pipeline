@@ -165,7 +165,6 @@ IMAGES=(
   "getwilds/annotsv:latest"
   "pgkb/pharmcat:3.2.0"
   "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"
-  "weisburd/expansionhunter:latest"
   "lgalarno/telomerehunter:latest"
   "genepi/haplogrep3:latest"
   "ensemblorg/ensembl-vep:release_112.0"
@@ -238,6 +237,20 @@ else
   echo "    wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"
   echo "    tar xzf pcgr_ref_data.20250314.grch38.tgz"
   echo "    mkdir -p 20250314 && mv data/ 20250314/"
+fi
+echo ""
+
+# VEP 113 cache for CPSR (separate from step 13's release-112 cache)
+VEP113="${VEPDIR}/homo_sapiens/113_GRCh38"
+if [ -d "$VEP113" ]; then
+  echo "[OK] VEP 113 cache (for CPSR) already present."
+else
+  echo "[SKIP] VEP 113 cache (~26 GB) — needed for step 17 (CPSR uses PCGR 2.2.5 which bundles VEP 113)"
+  echo "  This is separate from the release-112 cache used by step 13. Both coexist in vep_cache/."
+  echo "  Download:"
+  echo "    mkdir -p ${VEPDIR}"
+  echo "    wget -c -P ${VEPDIR} https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
+  echo "    tar xzf ${VEPDIR}/homo_sapiens_vep_113_GRCh38.tar.gz -C ${VEPDIR}"
 fi
 
 ###############################################################################

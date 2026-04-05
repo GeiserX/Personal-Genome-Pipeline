@@ -43,6 +43,7 @@ if [ ! -f "$BAM" ] && [ -f "$R1" ] && [ "${SKIP_TRIM:-false}" != "true" ]; then
   bash "${SCRIPT_DIR}/01b-fastp-qc.sh" "$SAMPLE"
 elif [ "${SKIP_TRIM:-false}" = "true" ]; then
   echo "[Phase 0.5] fastp skipped (SKIP_TRIM=true)."
+  export FASTQ_SUBDIR=fastq
 fi
 echo ""
 

@@ -143,7 +143,9 @@ The script auto-detects input files in this order:
 3. `fastq/your_sample.fq.gz`
 4. `fastq/your_sample.bam` (unaligned BAM)
 
-Override with: `INPUT=/path/to/reads.fastq.gz PLATFORM=ont ./scripts/02b-alignment-longread.sh your_sample`
+Override with: `INPUT=${GENOME_DIR}/your_sample/fastq/custom_reads.fastq.gz PLATFORM=ont ./scripts/02b-alignment-longread.sh your_sample`
+
+> **Note:** The INPUT path must be inside `GENOME_DIR` because Docker only mounts that directory. If your reads are elsewhere, symlink them into the sample's `fastq/` directory first.
 
 ### Step 3: Variant Calling (SNPs + Indels)
 
@@ -231,8 +233,8 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh "$SAMPLE"
 # 2. Or copy the Clair3 VCF to the expected vcf/ directory
 ./scripts/07-pharmacogenomics.sh "$SAMPLE"
 
-# VEP annotation
-./scripts/13-vep-annotation.sh "$SAMPLE"
+# VEP annotation (uses VCF from Clair3)
+VCF_DIR=vcf_clair3 ./scripts/13-vep-annotation.sh "$SAMPLE"
 
 # Annotate Sniffles2 SVs
 SV_VCF="${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" ./scripts/05-annotsv.sh "$SAMPLE"
@@ -350,9 +352,16 @@ The Docker image `hkubal/clair3:v2.0.0` bundles models at `/opt/models/`. If you
 
 ### "VCF downstream steps fail on Clair3 output"
 
-Some downstream steps expect the VCF at the default `vcf/` path. Either:
-1. Symlink: `ln -s ../vcf_clair3/${SAMPLE}.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
-2. Or set `VCF_DIR=vcf_clair3` if the step supports it
+Steps 6 (ClinVar), 13 (VEP), and 17 (CPSR) accept a `VCF_DIR` env var:
+```bash
+VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh your_sample
+VCF_DIR=vcf_clair3 ./scripts/13-vep-annotation.sh your_sample
+```
+For steps that don't support `VCF_DIR` (e.g., PharmCAT), symlink the Clair3 VCF:
+```bash
+ln -s ../vcf_clair3/${SAMPLE}.vcf.gz ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+ln -s ../vcf_clair3/${SAMPLE}.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi
+```
 
 ---
 

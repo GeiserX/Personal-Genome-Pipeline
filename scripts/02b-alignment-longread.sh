@@ -51,6 +51,20 @@ done
 # Allow explicit override via INPUT env var
 INPUT_FILE="${INPUT:-${INPUT_FILE}}"
 
+# Validate INPUT is inside GENOME_DIR (Docker only mounts GENOME_DIR)
+if [ -n "${INPUT_FILE}" ] && [ -f "${INPUT_FILE}" ]; then
+  case "$INPUT_FILE" in
+    "${GENOME_DIR}/"*)
+      ;;
+    *)
+      echo "ERROR: INPUT path must be inside GENOME_DIR (${GENOME_DIR})." >&2
+      echo "  The Docker container only mounts GENOME_DIR. Move or symlink your file:" >&2
+      echo "  ln -s \"${INPUT_FILE}\" \"${SAMPLE_DIR}/fastq/\"" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 if [ -z "$INPUT_FILE" ] || [ ! -f "$INPUT_FILE" ]; then
   echo "ERROR: No long-read input file found." >&2
   echo "Looked for:" >&2

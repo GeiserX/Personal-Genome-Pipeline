@@ -2,7 +2,7 @@
 
 One-time downloads required before running the pipeline. Total download: ~60 GB. Total disk after extraction: ~80 GB.
 
-> **Estimated time:** 1-3 hours depending on internet speed. VEP cache (26 GB) and PCGR data bundle (21 GB) are the largest downloads.
+> **Estimated time:** 1-3 hours depending on internet speed. VEP caches (26 GB each for steps 13 and 17) are the largest downloads.
 
 ## GRCh38 Reference Genome
 
@@ -86,7 +86,9 @@ tar xzf tmp/homo_sapiens_vep_112_GRCh38.tar.gz
 
 ## PCGR/CPSR Ref Data Bundle (~5 GB)
 
-Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases. PCGR 2.x uses a separate, smaller ref data bundle — VEP cache is mounted independently (reuse the cache from step 13 above).
+Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases. PCGR 2.x uses a separate, smaller ref data bundle — VEP cache is mounted independently.
+
+> **Important:** PCGR 2.2.5 bundles VEP 113, which requires a **release-113** cache — different from the release-112 cache used by step 13 above. See the next section for the VEP 113 download.
 
 ```bash
 mkdir -p ${GENOME_DIR}/pcgr_data
@@ -103,6 +105,24 @@ mkdir -p 20250314 && mv data/ 20250314/
 # Optional: delete the tarball to save 5 GB
 # rm pcgr_ref_data.20250314.grch38.tgz
 ```
+
+## VEP 113 Cache for CPSR (~26 GB)
+
+PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-112 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`112_GRCh38/` and `113_GRCh38/`).
+
+```bash
+cd ${GENOME_DIR}/vep_cache/tmp
+
+# Download VEP 113 cache (~26 GB)
+wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
+
+# Extract alongside the existing release-112 cache
+cd ${GENOME_DIR}/vep_cache
+tar xzf tmp/homo_sapiens_vep_113_GRCh38.tar.gz
+# Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38/
+```
+
+> If you only run step 13 (VEP annotation) and skip step 17 (CPSR), you only need the release-112 cache. If you only run step 17, you only need release-113.
 
 ## T1K HLA Reference (Optional)
 
@@ -172,10 +192,10 @@ docker pull ensemblorg/ensembl-vep:release_112.0
 docker pull sigven/pcgr:2.2.5
 
 # Pharmacogenomics
-docker pull pgkb/pharmcat:2.15.5
+docker pull pgkb/pharmcat:3.2.0
 
 # Specialized
-docker pull weisburd/expansionhunter:latest
+docker pull quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
 docker pull lgalarno/telomerehunter:latest
 docker pull genepi/haplogrep3:latest
 docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
@@ -259,11 +279,12 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | GRCh38 FASTA + FAI | 3.1 GB | 3.1 GB | Same size (not compressed) |
 | ClinVar DB (all versions) | 200 MB | 400 MB | Including chr-prefixed and pathogenic-only |
 | VEP cache | 26 GB | 30 GB | Largest single database |
-| PCGR/CPSR data bundle | 21 GB | 30 GB | Second largest |
+| PCGR/CPSR data bundle | 5 GB | 5 GB | Smaller in PCGR 2.x |
+| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 112 cache |
 | T1K HLA index | 50 MB | 450 MB | Optional |
 | Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
 | Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
-| **Total** | **~68 GB** | **~88 GB** | |
+| **Total** | **~78 GB** | **~96 GB** | |
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 
@@ -277,6 +298,7 @@ echo "Checking reference setup..."
 [ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"
 [ -f "${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz" ] && echo "  ClinVar (chr): OK" || echo "  ClinVar: MISSING"
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
-[ -d "${GENOME_DIR}/pcgr_data/data/grch38" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
+[ -d "${GENOME_DIR}/pcgr_data/20250314/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
+[ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && echo "  VEP 113 cache (CPSR): OK" || echo "  VEP 113 cache (CPSR): MISSING"
 echo "Done."
 ```

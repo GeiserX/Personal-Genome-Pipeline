@@ -9,8 +9,10 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
-# Prefer trimmed FASTQs (from fastp step 01b) over raw
-if [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" ] && [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" ]; then
+# Allow explicit override (e.g., FASTQ_SUBDIR=fastq to use raw reads even when trimmed exist)
+if [ -n "${FASTQ_SUBDIR:-}" ]; then
+  echo "Using explicit FASTQ_SUBDIR=${FASTQ_SUBDIR}."
+elif [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" ] && [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" ]; then
   FASTQ_SUBDIR="fastq_trimmed"
   echo "Using trimmed FASTQs from fastp."
 else

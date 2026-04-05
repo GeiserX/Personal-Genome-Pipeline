@@ -18,11 +18,11 @@ CPSR binary is at `/usr/local/bin/cpsr` inside this image. Requires a separate r
 ## Prerequisites
 
 ### 1. VEP Cache
-If you already have the VEP cache from step 13, reuse it. Otherwise:
+PCGR 2.2.5 bundles VEP 113, which requires the **release-113** cache. This is different from the release-112 cache used by step 13 — both coexist in the same `vep_cache/` directory under different subdirectories (`112_GRCh38/` and `113_GRCh38/`).
 ```bash
 mkdir -p ${GENOME_DIR}/vep_cache
-wget -c -P ${GENOME_DIR}/vep_cache https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz
-tar xzf ${GENOME_DIR}/vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz -C ${GENOME_DIR}/vep_cache
+wget -c -P ${GENOME_DIR}/vep_cache https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
+tar xzf ${GENOME_DIR}/vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz -C ${GENOME_DIR}/vep_cache
 ```
 
 ### 2. PCGR Ref Data Bundle
@@ -78,7 +78,7 @@ docker run --rm --user root \
 - The ref data bundle (~5 GB) and VEP cache only need to be downloaded once — shared across all samples.
 - **PCGR 2.x breaking changes:** The CLI changed completely from 1.x. The old `--pcgr_dir` flag (which internally appended `/data`) is replaced by `--refdata_dir` and `--vep_dir` as separate mount points. The single monolithic data bundle is split into a smaller ref data bundle + the standard Ensembl VEP cache. Docker volume mounts changed from a single `:/genome` to four separate mounts for VEP, bundle, inputs, and outputs.
 - **Data bundle freshness:** The `20250314` bundle dates from March 2025. Check the [PCGR releases page](https://github.com/sigven/pcgr/releases) periodically for updated bundles — newer bundles include more recent ClinVar classifications and gene-disease annotations.
-- **VEP cache reuse:** If you already downloaded the VEP cache for step 13, the same directory works here. No duplicate download needed.
+- **VEP cache version:** PCGR 2.2.5 requires VEP release-113 cache, while step 13 uses release-112. Both coexist in `vep_cache/homo_sapiens/` (subdirectories `112_GRCh38/` and `113_GRCh38/`). You need both if running both steps.
 - Use `--panel_id 0` for the comprehensive cancer superpanel (500+ genes). Note: this is broader than ACMG SF but cancer-focused — it does not replace a full ACMG incidental-findings screen.
 - `--classify_all` ensures all variants in target genes get ACMG classification, not just known pathogenic.
 - CPSR is complementary to ClinVar screening — ClinVar finds known variants, CPSR classifies novel ones.

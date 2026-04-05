@@ -5,7 +5,8 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+VCF_DIR=${VCF_DIR:-vcf}
+VCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
 CLINVAR="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 
@@ -24,7 +25,7 @@ mkdir -p "$OUTPUT_DIR"
 docker run --rm --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \
   staphb/bcftools:1.21 \
-  bcftools view -f PASS "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+  bcftools view -f PASS "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
     -Oz -o "/genome/${SAMPLE}/clinvar/${SAMPLE}_pass.vcf.gz"
 
 docker run --rm --cpus 1 --memory 1g \

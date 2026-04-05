@@ -291,7 +291,6 @@ else
     "ensemblorg/ensembl-vep:release_112.0"
     "sigven/pcgr:2.2.5"
     "pgkb/pharmcat:3.2.0"
-    "weisburd/expansionhunter:latest"
     "lgalarno/telomerehunter:latest"
     "genepi/haplogrep3:latest"
     "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"

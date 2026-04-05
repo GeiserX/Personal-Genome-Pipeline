@@ -89,7 +89,7 @@ docker run --rm -it \
    |---|---|---|
    | CNVnator | `cnvnator:0.4.1--py312hc02a2a2_7` | `cnvnator:0.4.1--py312h99c8fb2_11` |
    | Delly | `delly:1.2.9--ha41ced6_0` | `delly:1.7.3--hd6466ae_0` |
-   | ExpansionHunter | `expansionhunter:5.0.0--hd03093a_1` | `weisburd/expansionhunter:latest` |
+   | ExpansionHunter | `weisburd/expansionhunter:latest` (v2.5.5) | `quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5` |
    | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `getwilds/annotsv:latest` |
    | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:2.2.5` (bundles both) |
    | SnpSift | `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` | `quay.io/biocontainers/snpeff:5.2--hdfd78af_1` (bundled) |
@@ -560,13 +560,13 @@ docker run --rm --user root -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
     -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_norm.vcf.gz
 ```
 
-**Note:** PharmCAT includes a VCF preprocessor. If direct input fails, try the preprocessor first:
+**Note:** PharmCAT 3.2.0 includes a VCF preprocessor. If direct input fails, try the preprocessor first:
 ```bash
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
-  pgkb/pharmcat:2.15.5 \
+  pgkb/pharmcat:3.2.0 \
   java -cp /pharmcat/pharmcat.jar org.pharmgkb.pharmcat.VcfPreprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
     -refFasta /ref/Homo_sapiens_assembly38.fasta
@@ -576,24 +576,26 @@ docker run --rm \
 
 ### Step 9: ExpansionHunter fails immediately
 
-**Symptom:** Container exits with "the option '--log' is required but missing".
+**Symptom:** ExpansionHunter crashes with model or catalog errors.
 
-**Cause:** The `weisburd/expansionhunter:latest` image (v2.5.5) requires the `--log` parameter, which is not optional.
+**Cause:** The pipeline uses ExpansionHunter v5.0.0 (`quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5`). The v5 CLI is different from the old v2.5.5 (`weisburd/expansionhunter:latest`).
 
-**Fix:** Ensure the command includes `--log`:
+**Key v5 CLI changes from v2.5.5:**
+- `--bam` → `--reads`
+- `--ref-fasta` → `--reference`
+- `--repeat-specs <directory>` → `--variant-catalog <file.json>`
+- `--vcf`/`--json`/`--log` → `--output-prefix` (auto-generates .vcf, .json)
+- The variant catalog (31 pathogenic GRCh38 loci) is bundled inside the container at `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json`
+
+**Fix:** If running manually, use the v5 syntax:
 ```bash
---log "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.log"
-```
-All pipeline scripts already include this. If running manually, do not omit it.
-
-**Symptom:** ExpansionHunter uses `--variant-catalog` but the image expects `--repeat-specs`.
-
-**Cause:** Version mismatch. The `weisburd/expansionhunter` image uses v2.5.5 which expects `--repeat-specs` pointing to a directory, not `--variant-catalog` pointing to a single JSON file (v5.x syntax).
-
-**Fix:** Use the correct syntax for the image:
-```bash
---repeat-specs /pathogenic_repeats/GRCh38/    # v2.5.5 (weisburd image)
-# NOT: --variant-catalog /path/to/catalog.json  # v5.x syntax
+ExpansionHunter \
+  --reads /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+  --reference /genome/reference/Homo_sapiens_assembly38.fasta \
+  --variant-catalog /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
+  --output-prefix /genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh \
+  --threads 4 \
+  --sex male
 ```
 
 ---

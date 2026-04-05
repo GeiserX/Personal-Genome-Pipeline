@@ -7,9 +7,14 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-MANTA_VCF="${SAMPLE_DIR}/manta/results/variants/diploidSV.vcf.gz"
-# Fall back to manta2/ if a second Manta run was used
-[ ! -f "$MANTA_VCF" ] && MANTA_VCF="${SAMPLE_DIR}/manta2/results/variants/diploidSV.vcf.gz"
+# Allow SV_VCF env var override (e.g., for Sniffles2 long-read SVs)
+if [ -n "${SV_VCF:-}" ]; then
+  MANTA_VCF="$SV_VCF"
+else
+  MANTA_VCF="${SAMPLE_DIR}/manta/results/variants/diploidSV.vcf.gz"
+  # Fall back to manta2/ if a second Manta run was used
+  [ ! -f "$MANTA_VCF" ] && MANTA_VCF="${SAMPLE_DIR}/manta2/results/variants/diploidSV.vcf.gz"
+fi
 OUTPUT_DIR="${SAMPLE_DIR}/annotsv"
 
 echo "=== AnnotSV: ${SAMPLE} ==="
