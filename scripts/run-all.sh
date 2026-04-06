@@ -262,32 +262,32 @@ fi
 echo ""
 echo "[Phase 4] Running post-processing steps..."
 
-# Post-processing steps: log errors instead of swallowing them
-POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
-: > "$POST_LOG"
+# Post-processing steps: per-step log files to avoid interleaved output
+POST_LOG_DIR="${GENOME_DIR}/${SAMPLE}"
+POST_LOG="${POST_LOG_DIR}/post_processing.log"
 
 echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" > "${POST_LOG_DIR}/21_cyrius.log" 2>&1 &
 PID_CYRIUS=$!
 
 echo "  [D2] SV consensus merge [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" > "${POST_LOG_DIR}/22_survivor.log" 2>&1 &
 PID_SURVIVOR=$!
 
 echo "  [D3] Clinical variant filter..."
-_throttle; bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" > "${POST_LOG_DIR}/23_clinical.log" 2>&1 &
 PID_CLINICAL=$!
 
 echo "  [D4] Polygenic Risk Scores [exploratory]..."
-_throttle; bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" > "${POST_LOG_DIR}/25_prs.log" 2>&1 &
 PID_PRS=$!
 
 echo "  [D5] Ancestry PCA [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" > "${POST_LOG_DIR}/26_ancestry.log" 2>&1 &
 PID_ANCESTRY=$!
 
 echo "  [D6] CPIC drug-gene recommendations..."
-_throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" > "${POST_LOG_DIR}/27_cpic.log" 2>&1 &
 PID_CPIC=$!
 
 # Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
@@ -295,7 +295,7 @@ PID_CPIC=$!
 PID_SOMATIC=""
 if [ "${SOMATIC:-false}" = "true" ] || [ "${SOMATIC:-0}" = "1" ]; then
   echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
-  _throttle; bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+  _throttle; bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" > "${POST_LOG_DIR}/29_somatic.log" 2>&1 &
   PID_SOMATIC=$!
 else
   echo "  [D7] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
@@ -308,10 +308,19 @@ for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_C
 done
 if [ "$PHASE4_FAIL" -gt 0 ]; then
   echo "  WARNING: ${PHASE4_FAIL} post-processing step(s) had errors."
-  echo "  See: ${POST_LOG}"
+  echo "  See per-step logs: ${POST_LOG_DIR}/2*_*.log"
 else
   echo "  Post-processing complete."
 fi
+
+# Aggregate per-step logs into one combined log for easy review
+: > "$POST_LOG"
+for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
+  [ -f "$logf" ] || continue
+  echo "=== $(basename "$logf") ===" >> "$POST_LOG"
+  cat "$logf" >> "$POST_LOG"
+  echo "" >> "$POST_LOG"
+done
 
 # Phase 4b: Benchmarking (optional)
 BENCHMARK=${BENCHMARK:-false}
@@ -326,7 +335,7 @@ if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   if [ "$CALLER_COUNT" -ge 2 ]; then
     echo ""
     echo "  [D8] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
-    bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG}"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
+    bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" > "${POST_LOG_DIR}/benchmark.log" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG_DIR}/benchmark.log"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
   else
     echo ""
     echo "  [D8] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
@@ -337,15 +346,15 @@ fi
 REPORT_FAIL=0
 
 echo "  [D9] HTML summary report..."
-bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/24_html_report.log" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG_DIR}/24_html_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 echo "  [D10] MultiQC aggregated QC report..."
-bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: MultiQC report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" > "${POST_LOG_DIR}/28_multiqc.log" 2>&1 || { echo "  WARNING: MultiQC report generation failed. See ${POST_LOG_DIR}/28_multiqc.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report
 echo ""
 echo "[Report] Generating summary report..."
-bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/generate_report.log" 2>&1 || { echo "  WARNING: Report generation failed. See ${POST_LOG_DIR}/generate_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 PIPELINE_END=$(date +%s)
 ELAPSED=$(( PIPELINE_END - PIPELINE_START ))

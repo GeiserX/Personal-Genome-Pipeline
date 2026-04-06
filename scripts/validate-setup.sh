@@ -414,7 +414,7 @@ if [ -n "$SAMPLE" ]; then
         pass "BAM index (.bai) present"
       else
         warn "BAM index not found. Create it before running BAM-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" staphb/samtools:1.20 \\"
+        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
         echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
       fi
     fi
@@ -431,7 +431,7 @@ if [ -n "$SAMPLE" ]; then
         pass "VCF index (.tbi) present"
       else
         warn "VCF index not found. Create it before running VCF-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" staphb/bcftools:1.21 \\"
+        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
         echo "         bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
       fi
     fi
@@ -440,12 +440,12 @@ if [ -n "$SAMPLE" ]; then
     if $HAS_BAM && command -v docker >/dev/null 2>&1; then
       echo ""
       info "Checking genome build of BAM..."
-      BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/samtools:1.20 \
+      BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
         samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
         grep "^@SQ" | grep "SN:chr1" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
       if [ -z "$BAM_CHR1_LEN" ] || [ "$BAM_CHR1_LEN" = "0" ]; then
         # Try without chr prefix (hg19 style)
-        BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/samtools:1.20 \
+        BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
           grep "^@SQ" | grep "SN:1[[:space:]]" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
         if [ -n "$BAM_CHR1_LEN" ] && [ "$BAM_CHR1_LEN" != "0" ]; then
@@ -466,7 +466,7 @@ if [ -n "$SAMPLE" ]; then
     fi
 
     if $HAS_VCF && command -v docker >/dev/null 2>&1; then
-      VCF_CONTIG=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+      VCF_CONTIG=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
         bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
         grep "^##contig=<ID=chr1," | head -1 || echo "")
       if [ -n "$VCF_CONTIG" ]; then
@@ -478,7 +478,7 @@ if [ -n "$SAMPLE" ]; then
         fi
       else
         # Check for non-chr prefix
-        VCF_NO_CHR=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+        VCF_NO_CHR=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
           bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
           grep "^##contig=<ID=1," | head -1 || echo "")
         if [ -n "$VCF_NO_CHR" ]; then
