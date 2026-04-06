@@ -100,7 +100,7 @@ These steps require genome-wide data and produce incorrect or meaningless result
 | **16** | indexcov (Coverage QC) | Designed for whole-genome BAMs. Reports normalized coverage across 16kb windows, which is meaningless when 98% of the genome has zero coverage by design. Use mosdepth with `--by ${CAPTURE_BED}` instead (step 16b). |
 | **18** | CNVnator | Detects CNVs from read-depth signal across the genome. WES has coverage in ~2% of the genome, making genome-wide read-depth analysis impossible. For exome CNV calling, dedicated tools like ExomeDepth or XHMM are needed (not currently in this pipeline). |
 | **19** | Delly | Relies on discordant read pairs and split reads across the genome. WES read pairs that span capture boundaries look like structural variant evidence to Delly, causing massive false positive rates. |
-| **20** | MToolBox (Mito variants) | GATK Mutect2 mitochondrial mode expects reads covering the full mtDNA circle. Most exome kits capture few or no mitochondrial regions, so heteroplasmy detection fails. If your kit does capture mtDNA, step 12 (haplogrep3) still works. |
+| **20** | Mito analysis (GATK Mutect2) | Mutect2 mitochondrial mode expects reads covering the full mtDNA circle. Most exome kits capture few or no mitochondrial regions, so heteroplasmy detection fails. If your kit does capture mtDNA, step 12 (haplogrep3) still works. |
 | **26** | Ancestry PCA | PCA requires hundreds of thousands of evenly-distributed common variants across the genome. WES captures only coding variants, which are biased toward conserved regions and not representative of population-level genetic variation. Results will be unreliable. |
 
 ---

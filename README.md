@@ -254,7 +254,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 | **CPU** | 4 cores | 16+ cores | DeepVariant scales linearly with cores |
 | **RAM** | 16 GB | 32 GB | Some steps need 8-16 GB; pipeline limits each container |
 | **Disk** | 500 GB free | 1 TB+ | See [detailed breakdown](docs/hardware-requirements.md) |
-| **Internet** | Broadband | 100+ Mbps | ~100 GB of one-time downloads (reference genome, databases, Docker images) |
+| **Internet** | Broadband | 100+ Mbps | ~70-75 GB of one-time downloads (reference genome, databases, Docker images) |
 | **OS** | Linux (amd64) | Ubuntu 22.04+ | macOS/ARM works but slower (see below) |
 
 > **Disk space is the #1 surprise.** A single 30X WGS sample produces 60-90 GB of FASTQ, 30-80 GB of BAM, plus reference genomes and databases. See [docs/hardware-requirements.md](docs/hardware-requirements.md) for the full breakdown.

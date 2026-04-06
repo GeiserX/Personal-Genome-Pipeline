@@ -6,7 +6,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 - **1 sample:** 500 GB free disk, 16 GB RAM, 4+ CPU cores
 - **2 samples:** 1 TB free disk, 32 GB RAM, 8+ CPU cores (recommended)
-- **First-time setup downloads:** ~60-65 GB (reference genome, databases, Docker images)
+- **First-time setup downloads:** ~70-75 GB (reference genome, databases, Docker images)
 - **Total time per sample:** 6-12 hours on a 16-core desktop
 
 ---
@@ -39,10 +39,10 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 |---|---|---|---|
 | GRCh38 FASTA + index | ~1 GB | ~3.5 GB | Core reference genome |
 | ClinVar VCF + index | ~200 MB | ~200 MB | Updated monthly |
-| VEP cache (Ensembl 112) | ~22 GB | ~30 GB | Largest single download |
-| PCGR/CPSR data bundle | ~21 GB | ~30 GB | ClinVar + gnomAD + panels |
-| Docker images (all 27 steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
-| **Subtotal (shared)** | **~55 GB** | **~80 GB** | |
+| VEP cache (Ensembl 112) | ~26 GB | ~30 GB | Largest single download |
+| PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | ~35 GB | ClinVar + gnomAD + panels |
+| Docker images (all steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
+| **Subtotal (shared)** | **~70 GB** | **~85 GB** | |
 
 ### Total Disk Requirements
 
@@ -139,10 +139,10 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 |---|---|---|
 | GRCh38 reference | ~1 GB | Fast download |
 | ClinVar | ~200 MB | Fast download |
-| VEP cache | ~22 GB | Slow servers, `wget -c` recommended for resume |
-| PCGR data bundle | ~21 GB | Can be slow |
+| VEP cache | ~26 GB | Slow servers, `wget -c` recommended for resume |
+| PCGR + VEP 113 cache | ~31 GB | Can be slow |
 | Docker images | ~10-15 GB | Pulled automatically by `docker run` |
-| **Total** | **~55-60 GB** | |
+| **Total** | **~70-75 GB** | |
 
 ### Ongoing Downloads
 

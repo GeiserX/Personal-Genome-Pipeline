@@ -161,7 +161,7 @@ Some providers deliver CRAM instead of BAM (40-60% smaller). Convert to BAM firs
 ```bash
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.21 \
+  staphb/samtools:1.20 \
   samtools view -b \
     -T /genome/reference/Homo_sapiens_assembly38.fasta \
     -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
@@ -170,7 +170,7 @@ docker run --rm \
 # Index the BAM
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.21 \
+  staphb/samtools:1.20 \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
@@ -232,7 +232,7 @@ samtools view -H your_file.bam | grep "^@SQ" | head -3
 **Best approach (recommended):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
 # Extract paired-end FASTQ from BAM
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
   bash -c "samtools sort -n /genome/${SAMPLE}/old_hg19.bam | \
            samtools fastq -1 /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
                           -2 /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz -"

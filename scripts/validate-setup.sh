@@ -503,7 +503,7 @@ if [ -n "$SAMPLE" ]; then
       info "Suggested: Path C (VCF already available)"
       echo "       Start with:  ./scripts/06-clinvar-screen.sh ${SAMPLE}"
       if $HAS_BAM; then
-        echo "       BAM also available — all 27 steps can run."
+        echo "       BAM also available — all pipeline steps can run."
       else
         echo "       No BAM found — BAM-dependent steps (4, 10, 15, 16, 18, 19, 20) will be skipped."
       fi
