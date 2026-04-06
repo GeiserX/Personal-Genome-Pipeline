@@ -49,7 +49,7 @@ These steps take a VCF or BAM and work identically regardless of read technology
 |---|---|---|
 | 5 | AnnotSV | Takes any SV VCF — point it at Sniffles2 output |
 | 6 | ClinVar Screen | VCF-only, technology-independent |
-| 7 | PharmCAT | VCF-only — requires symlink to `vcf/` (see below) |
+| 7 | PharmCAT | VCF-only — requires VCF + `.tbi` symlinked to `vcf/` (see below) |
 | 11 | ROH Analysis | VCF-only via plink2 |
 | 12 | Mito Haplogroup | VCF-only via haplogrep3 |
 | 13 | VEP Annotation | VCF-only |
@@ -228,9 +228,11 @@ SAMPLE=your_sample
 VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh "$SAMPLE"
 
 # PharmCAT (uses VCF from Clair3)
-# Note: PharmCAT needs the VCF at the default location, so either:
-# 1. Symlink: ln -s vcf_clair3/${SAMPLE}.vcf.gz vcf/${SAMPLE}.vcf.gz
-# 2. Or copy the Clair3 VCF to the expected vcf/ directory
+# PharmCAT needs the VCF + .tbi index at the default vcf/ location.
+# Symlink or copy both files:
+mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
+ln -sf "../vcf_clair3/${SAMPLE}.vcf.gz" "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+ln -sf "../vcf_clair3/${SAMPLE}.vcf.gz.tbi" "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi"
 ./scripts/07-pharmacogenomics.sh "$SAMPLE"
 
 # VEP annotation (uses VCF from Clair3)

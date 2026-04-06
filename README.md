@@ -107,7 +107,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
 | 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:latest` | ~20 min | If step 4 run |
 | 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft` | ~5 sec | Recommended |
-| 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.13` | ~10 min | Recommended |
+| 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0` | ~10 min | Recommended |
 | 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
 | 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator` | ~2-4 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:1.7.3` | ~2-4 hr | Optional |
