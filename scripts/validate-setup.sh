@@ -228,8 +228,11 @@ else
     pass "ClinVar pathogenic subset: present"
   else
     if [ -f "$CLINVAR" ]; then
-      warn "ClinVar chr-prefixed found but pathogenic subset missing."
+      fail "ClinVar chr-prefixed found but pathogenic subset missing (step 6 will fail)."
       echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
+    else
+      fail "ClinVar pathogenic subset not found (step 6 will fail)."
+      echo "       Download and prepare it — see docs/00-reference-setup.md"
     fi
   fi
 

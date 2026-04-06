@@ -31,18 +31,19 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-# GRIDSS requires BWA index files alongside the reference
-BWA_MISSING=false
+# GRIDSS requires classic BWA index files (.amb .ann .bwt .pac .sa) alongside the reference.
+# NOTE: BWA-MEM2 index files (.bwt.2bit.64 etc.) are NOT compatible — GRIDSS bundles
+# classic bwa internally for its realignment step and needs the classic format.
+BWA_MISSING=""
 for ext in amb ann bwt pac sa; do
   if [ ! -f "${REF}.${ext}" ]; then
-    BWA_MISSING=true
-    break
+    BWA_MISSING="${BWA_MISSING} .${ext}"
   fi
 done
-# Also check the 2bit.64 format from BWA-MEM2
-if $BWA_MISSING && [ ! -f "${REF}.bwt.2bit.64" ]; then
-  echo "ERROR: BWA index not found for reference." >&2
-  echo "GRIDSS requires a BWA index. Generate it with:" >&2
+if [ -n "$BWA_MISSING" ]; then
+  echo "ERROR: Classic BWA index files missing:${BWA_MISSING}" >&2
+  echo "GRIDSS requires classic bwa index files (NOT BWA-MEM2's .bwt.2bit.64)." >&2
+  echo "Generate them (~1 hour) with:" >&2
   echo "  docker run --rm -v \"\${GENOME_DIR}:/genome\" quay.io/biocontainers/bwa:0.7.18--he4a0461_1 \\" >&2
   echo "    bwa index /genome/reference/Homo_sapiens_assembly38.fasta" >&2
   exit 1

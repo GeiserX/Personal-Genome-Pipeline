@@ -14,10 +14,14 @@ echo "=== PharmCAT: ${SAMPLE} ==="
 echo "Input VCF: ${VCF}"
 echo "Outputs: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
 
-# Validate inputs
-for f in "$VCF" "$REF"; do
+# Validate inputs (PharmCAT requires both VCF and its tabix index)
+for f in "$VCF" "${VCF}.tbi" "$REF"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: File not found: ${f}" >&2
+    if [ "$f" = "${VCF}.tbi" ]; then
+      echo "  PharmCAT requires a tabix index. Generate it with:" >&2
+      echo "  docker run --rm -v \"\${GENOME_DIR}:/genome\" staphb/bcftools:1.21 bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" >&2
+    fi
     exit 1
   fi
 done

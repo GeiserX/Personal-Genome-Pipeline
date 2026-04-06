@@ -145,7 +145,7 @@ The script auto-detects input files in this order:
 
 Override with: `INPUT=${GENOME_DIR}/your_sample/fastq/custom_reads.fastq.gz PLATFORM=ont ./scripts/02b-alignment-longread.sh your_sample`
 
-> **Note:** The INPUT path must be inside `GENOME_DIR` because Docker only mounts that directory. If your reads are elsewhere, symlink them into the sample's `fastq/` directory first.
+> **Note:** The INPUT path must be **physically** inside `GENOME_DIR` because Docker only mounts that directory. Symlinks that point outside `GENOME_DIR` will not work — Docker cannot follow them. Copy or move the file instead.
 
 ### Step 3: Variant Calling (SNPs + Indels)
 

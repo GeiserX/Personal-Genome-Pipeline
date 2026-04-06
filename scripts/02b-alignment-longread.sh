@@ -51,15 +51,24 @@ done
 # Allow explicit override via INPUT env var
 INPUT_FILE="${INPUT:-${INPUT_FILE}}"
 
-# Validate INPUT is inside GENOME_DIR (Docker only mounts GENOME_DIR)
+# Validate INPUT is physically inside GENOME_DIR (Docker only mounts GENOME_DIR).
+# Resolve symlinks so a link under GENOME_DIR pointing outside still fails.
 if [ -n "${INPUT_FILE}" ] && [ -f "${INPUT_FILE}" ]; then
-  case "$INPUT_FILE" in
-    "${GENOME_DIR}/"*)
+  REAL_INPUT=$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$INPUT_FILE" 2>/dev/null \
+    || readlink -f "$INPUT_FILE" 2>/dev/null \
+    || echo "$INPUT_FILE")
+  REAL_GENOME=$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$GENOME_DIR" 2>/dev/null \
+    || readlink -f "$GENOME_DIR" 2>/dev/null \
+    || echo "$GENOME_DIR")
+  case "$REAL_INPUT" in
+    "${REAL_GENOME}/"*)
       ;;
     *)
-      echo "ERROR: INPUT path must be inside GENOME_DIR (${GENOME_DIR})." >&2
-      echo "  The Docker container only mounts GENOME_DIR. Move or symlink your file:" >&2
-      echo "  ln -s \"${INPUT_FILE}\" \"${SAMPLE_DIR}/fastq/\"" >&2
+      echo "ERROR: INPUT path must be physically inside GENOME_DIR (${GENOME_DIR})." >&2
+      echo "  Resolved INPUT: ${REAL_INPUT}" >&2
+      echo "  Resolved GENOME_DIR: ${REAL_GENOME}" >&2
+      echo "  The Docker container only mounts GENOME_DIR. Copy or move your file:" >&2
+      echo "  cp \"${INPUT_FILE}\" \"${SAMPLE_DIR}/fastq/\"" >&2
       exit 1
       ;;
   esac

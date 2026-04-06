@@ -43,7 +43,7 @@ export GENOME_DIR=/path/to/data
 
 ## Prerequisites
 
-GRIDSS requires a **BWA index** alongside the reference FASTA. If you used BWA-MEM2 for alignment (step 02a), the index already exists. Otherwise, generate it:
+GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
 
 ```bash
 docker run --rm -v "${GENOME_DIR}:/genome" \

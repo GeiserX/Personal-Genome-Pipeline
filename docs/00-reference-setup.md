@@ -1,6 +1,6 @@
 # Step 0: Reference Data Setup
 
-One-time downloads required before running the pipeline. Total download: ~60 GB. Total disk after extraction: ~80 GB.
+One-time downloads required before running the pipeline. Total download: ~78 GB. Total disk after extraction: ~96 GB.
 
 > **Estimated time:** 1-3 hours depending on internet speed. VEP caches (26 GB each for steps 13 and 17) are the largest downloads.
 
@@ -202,6 +202,17 @@ docker pull genepi/haplogrep3:latest
 docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
 docker pull quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
 docker pull broadinstitute/gatk:4.6.1.0
+
+# QC & reporting
+docker pull quay.io/biocontainers/fastp:1.3.1--h43da1c4_0
+docker pull quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0
+docker pull quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0
+
+# Alternative / new callers
+docker pull dancooke/octopus:0.7.4
+docker pull quay.io/biocontainers/gridss:2.13.2--h96c455f_6
+docker pull hkubal/clair3:v2.0.0
+docker pull quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0
 ```
 
 ## Alternative Callers (Optional, for Benchmarking)
