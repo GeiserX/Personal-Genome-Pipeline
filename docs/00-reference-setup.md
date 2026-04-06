@@ -1,6 +1,6 @@
 # Step 0: Reference Data Setup
 
-One-time downloads required before running the pipeline. Total download: ~78 GB. Total disk after extraction: ~96 GB.
+One-time downloads required before running the pipeline. Core downloads: ~70-75 GB. Including all optional resources (somatic, T1K, GIAB): ~78 GB download, ~96 GB after extraction.
 
 > **Estimated time:** 1-3 hours depending on internet speed. VEP caches (26 GB each for steps 13 and 17) are the largest downloads.
 

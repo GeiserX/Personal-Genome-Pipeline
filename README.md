@@ -159,7 +159,7 @@ Verify everything works on a small public dataset before committing to a full ru
 
 ```bash
 # See docs/quick-test.md for full instructions
-# Tests VCF-only steps in under 5 minutes using GIAB NA12878 data
+# VCF-only steps finish in under 5 minutes — see docs/quick-test.md for full guide (~30 min including downloads)
 ```
 
 ### Step 0.5: Validate Your Setup
@@ -394,7 +394,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 31-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
+On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. All 30 default steps take ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`, bringing the total to 31). Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.
@@ -431,7 +431,7 @@ It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com 
 
 | Approach | Cost | What You Get | Data Privacy |
 |---|---|---|---|
-| **This pipeline** | $0 (free, open source) | Full 31-step analysis | Your data never leaves your machine |
+| **This pipeline** | $0 (free, open source) | 30 default + 1 opt-in analysis steps | Your data never leaves your machine |
 | Clinical WGS interpretation | $500-5,000 | 1-page report, selected genes only | Lab retains your data |
 | Nebula/Dante report | $0-200 (included/add-on) | Web dashboard, limited depth | Data on company servers |
 | 23andMe Health | $229 | ~10 health reports from array data | Data shared with research partners |
