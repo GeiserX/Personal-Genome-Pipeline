@@ -86,4 +86,5 @@ mosdepth output is automatically detected by MultiQC. The `mosdepth.global.dist.
 
 - `--fast-mode` skips per-base output (saves ~10 GB of disk for 30X WGS) while keeping all distributions and thresholds
 - Supports `ALIGN_DIR` variable to use alternative alignments: `ALIGN_DIR=aligned_bwamem2 ./scripts/16b-mosdepth.sh sample`
+- Supports `CAPTURE_BED` for WES on-target coverage: `CAPTURE_BED=${GENOME_DIR}/captures/my_panel.bed ./scripts/16b-mosdepth.sh sample`. **The BED file must be inside `GENOME_DIR`** — the Docker container only mounts `GENOME_DIR` as `/genome/`, so paths outside it are invisible to the container
 - mosdepth uses 1 main thread + N decompression threads, so `--threads 4` actually uses 5 threads total

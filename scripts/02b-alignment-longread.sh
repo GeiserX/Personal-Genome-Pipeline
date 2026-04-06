@@ -51,15 +51,19 @@ done
 # Allow explicit override via INPUT env var
 INPUT_FILE="${INPUT:-${INPUT_FILE}}"
 
+# Resolve GENOME_DIR once (Docker resolves symlinks for bind mounts, so the
+# container-relative path must be computed from the real filesystem path).
+_resolve() {
+  python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$1" 2>/dev/null \
+    || readlink -f "$1" 2>/dev/null \
+    || echo "$1"
+}
+REAL_GENOME=$(_resolve "$GENOME_DIR")
+
 # Validate INPUT is physically inside GENOME_DIR (Docker only mounts GENOME_DIR).
 # Resolve symlinks so a link under GENOME_DIR pointing outside still fails.
 if [ -n "${INPUT_FILE}" ] && [ -f "${INPUT_FILE}" ]; then
-  REAL_INPUT=$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$INPUT_FILE" 2>/dev/null \
-    || readlink -f "$INPUT_FILE" 2>/dev/null \
-    || echo "$INPUT_FILE")
-  REAL_GENOME=$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$GENOME_DIR" 2>/dev/null \
-    || readlink -f "$GENOME_DIR" 2>/dev/null \
-    || echo "$GENOME_DIR")
+  REAL_INPUT=$(_resolve "$INPUT_FILE")
   case "$REAL_INPUT" in
     "${REAL_GENOME}/"*)
       ;;
@@ -103,8 +107,10 @@ mkdir -p "$OUTPUT_DIR"
 MINIMAP2_IMAGE="quay.io/biocontainers/minimap2:2.28--he4a0461_0"
 SAMTOOLS_IMAGE="staphb/samtools:1.20"
 
-# Compute container-relative input path
-INPUT_RELPATH="${INPUT_FILE#"${GENOME_DIR}/"}"
+# Compute container-relative input path from resolved paths.
+# Docker resolves symlinks on bind mounts, so /genome/ maps to REAL_GENOME.
+REAL_INPUT=${REAL_INPUT:-$(_resolve "$INPUT_FILE")}
+INPUT_RELPATH="${REAL_INPUT#"${REAL_GENOME}/"}"
 
 # Align + sort
 # Long-read minimap2 does NOT use a pre-built .mmi index — the preset-specific index

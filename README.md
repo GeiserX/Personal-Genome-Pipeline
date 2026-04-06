@@ -266,6 +266,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 | Docker | 20.10+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | bash | 4.0+ | Pre-installed on Linux/macOS |
 | wget or curl | Any | For downloading references |
+| python3 *(optional)* | 3.6+ | Used by long-read alignment (02b) for symlink resolution. Falls back to `readlink -f` on GNU/Linux if absent |
 
 That's it. Every analysis tool runs inside Docker -- no conda environments, no Python version conflicts, no compilation.
 
