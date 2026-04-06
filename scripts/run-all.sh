@@ -313,15 +313,6 @@ else
   echo "  Post-processing complete."
 fi
 
-# Aggregate per-step logs into one combined log for easy review
-: > "$POST_LOG"
-for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
-  [ -f "$logf" ] || continue
-  echo "=== $(basename "$logf") ===" >> "$POST_LOG"
-  cat "$logf" >> "$POST_LOG"
-  echo "" >> "$POST_LOG"
-done
-
 # Phase 4b: Benchmarking (optional)
 BENCHMARK=${BENCHMARK:-false}
 if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
@@ -355,6 +346,15 @@ bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" > "${POST_LOG_DIR}/28_multiqc.log" 
 echo ""
 echo "[Report] Generating summary report..."
 bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/generate_report.log" 2>&1 || { echo "  WARNING: Report generation failed. See ${POST_LOG_DIR}/generate_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+
+# Aggregate all per-step logs into one combined log for easy review
+: > "$POST_LOG"
+for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
+  [ -f "$logf" ] || continue
+  echo "=== $(basename "$logf") ===" >> "$POST_LOG"
+  cat "$logf" >> "$POST_LOG"
+  echo "" >> "$POST_LOG"
+done
 
 PIPELINE_END=$(date +%s)
 ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
