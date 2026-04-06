@@ -41,14 +41,19 @@ docker run --rm --user root \
     samtools index /genome/${SAMPLE}/mito/${SAMPLE}_chrM.bam
   "
 
-echo "[2/4] Collecting chrM interval list..."
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  "$GATK_IMAGE" \
-  gatk CreateSequenceDictionary \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
-    -O /genome/reference/Homo_sapiens_assembly38.dict 2>/dev/null || true
+echo "[2/4] Checking sequence dictionary..."
+if [ ! -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict" ]; then
+  echo "  Creating sequence dictionary..."
+  docker run --rm --user root \
+    --cpus 2 --memory 4g \
+    -v "${GENOME_DIR}:/genome" \
+    "$GATK_IMAGE" \
+    gatk CreateSequenceDictionary \
+      -R /genome/reference/Homo_sapiens_assembly38.fasta \
+      -O /genome/reference/Homo_sapiens_assembly38.dict
+else
+  echo "  Sequence dictionary already exists, skipping."
+fi
 
 echo "[3/4] Running Mutect2 in mitochondrial mode..."
 docker run --rm --user root \

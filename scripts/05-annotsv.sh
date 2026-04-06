@@ -34,7 +34,7 @@ MANTA_REL=$(echo "$MANTA_VCF" | sed "s|${GENOME_DIR}/||")
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
-  getwilds/annotsv:latest \
+  getwilds/annotsv:3.4.4 \
   AnnotSV \
     -SVinputFile "/genome/${MANTA_REL}" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \

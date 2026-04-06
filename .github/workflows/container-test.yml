@@ -1,0 +1,75 @@
+name: Container Smoke Test
+
+on:
+  push:
+    branches: [main]
+    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh']
+  pull_request:
+    branches: [main]
+    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh']
+  workflow_dispatch:
+  schedule:
+    # Monthly check that upstream images are still pullable
+    - cron: '0 6 1 * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pull-and-verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Representative subset — one per registry/publisher to catch auth/rename issues
+          - image: staphb/bcftools:1.21
+            cmd: "bcftools --version"
+          - image: quay.io/biocontainers/minimap2:2.28--he4a0461_0
+            cmd: "minimap2 --version"
+          - image: brentp/duphold:v0.2.3
+            cmd: "duphold --help"
+          - image: getwilds/annotsv:3.4.4
+            cmd: "AnnotSV -help"
+          - image: broadinstitute/picard:3.4.0
+            cmd: "java -jar /usr/picard/picard.jar --version"
+          - image: pgkb/pharmcat:3.2.0
+            cmd: "pharmcat_pipeline --version"
+          - image: python:3.11-slim
+            cmd: "python3 --version"
+    steps:
+      - name: Pull ${{ matrix.image }}
+        run: docker pull "${{ matrix.image }}"
+
+      - name: Verify ${{ matrix.image }}
+        run: docker run --rm "${{ matrix.image }}" ${{ matrix.cmd }} || echo "WARN: cmd exited non-zero (some tools use non-zero for --help)"
+
+  versions-env-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Dockerfile.deps matches versions.env
+        run: |
+          echo "Checking that .github/docker-deps/Dockerfile matches versions.env..."
+          . ./versions.env
+          FAIL=0
+
+          while IFS= read -r line; do
+            # Extract image from FROM lines: "FROM image:tag AS alias"
+            img=$(echo "$line" | grep '^FROM ' | awk '{print $2}')
+            [ -z "$img" ] && continue
+
+            # Check if this image is in versions.env
+            if ! grep -qF "$img" versions.env; then
+              echo "FAIL: Dockerfile has $img but it's not in versions.env"
+              FAIL=1
+            fi
+          done < .github/docker-deps/Dockerfile
+
+          [ "$FAIL" -eq 0 ] && echo "OK: Dockerfile and versions.env are in sync"
+          exit "$FAIL"

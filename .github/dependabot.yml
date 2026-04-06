@@ -22,3 +22,26 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "docker"
+    directory: "/.github/docker-deps"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "automated"
+    groups:
+      biocontainers:
+        patterns:
+          - "quay.io/biocontainers/*"
+      core-tools:
+        patterns:
+          - "staphb/*"
+          - "broadinstitute/*"
+          - "google/*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

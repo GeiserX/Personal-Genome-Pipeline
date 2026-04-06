@@ -28,7 +28,7 @@ docker run --rm \
   --cpus 4 --memory 4g \
   --user root \
   -v "${GENOME_DIR}:/genome" \
-  lgalarno/telomerehunter:latest \
+  lgalarno/telomerehunter:latest \  # No versioned tags from publisher
   telomerehunter \
     -ibt "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/telomere/${SAMPLE}" \

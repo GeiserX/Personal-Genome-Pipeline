@@ -3,9 +3,17 @@ name: Smoke Tests
 on:
   push:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/smoke-test.yml']
+    paths: ['scripts/**', 'versions.env', '.github/workflows/smoke-test.yml']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   contract-validation:
@@ -79,25 +87,30 @@ jobs:
 
       - name: Verify Docker image tags are consistent
         run: |
-          echo "Checking Docker image consistency between setup.sh and scripts..."
+          echo "Checking Docker image consistency between versions.env and scripts..."
           FAIL=0
 
-          # Extract images from setup.sh
-          SETUP_IMAGES=$(grep -oP '"[^"]+:[^"]+"' scripts/setup.sh | tr -d '"' | sort)
+          # Source versions.env as the single source of truth
+          . ./versions.env
 
-          # Check key images used in scripts are also in setup.sh
-          for IMG in "python:3.11-slim" "pgscatalog/plink2:2.00a5.10"; do
-            if ! echo "$SETUP_IMAGES" | grep -qF "$IMG"; then
-              echo "FAIL: $IMG used in scripts but not in setup.sh image list"
+          # Check key images used in scripts match versions.env
+          for pair in \
+            "scripts/05-annotsv.sh:$ANNOTSV_IMAGE" \
+            "scripts/15-duphold.sh:$DUPHOLD_IMAGE" \
+            "scripts/chip-to-vcf.sh:$PICARD_IMAGE"; do
+            SCRIPT="${pair%%:*}"
+            IMG="${pair#*:}"
+            if [ -f "$SCRIPT" ] && ! grep -qF "$IMG" "$SCRIPT"; then
+              echo "FAIL: $SCRIPT does not use $IMG from versions.env"
               FAIL=1
             fi
           done
 
           # Check t1k tag matches
-          SETUP_T1K=$(echo "$SETUP_IMAGES" | grep t1k || true)
+          . ./versions.env
           SCRIPT_T1K=$(grep -roh 't1k:[^ "]*' scripts/08-hla-typing.sh 2>/dev/null | head -1 || true)
-          if [ -n "$SETUP_T1K" ] && [ -n "$SCRIPT_T1K" ] && [ "$SETUP_T1K" != "$SCRIPT_T1K" ]; then
-            echo "WARN: t1k tag mismatch: setup=$SETUP_T1K script=$SCRIPT_T1K"
+          if [ -n "$SCRIPT_T1K" ] && ! echo "$T1K_IMAGE" | grep -qF "$SCRIPT_T1K"; then
+            echo "WARN: t1k tag mismatch: versions.env=$T1K_IMAGE script=$SCRIPT_T1K"
           fi
 
           [ "$FAIL" -eq 0 ] && echo "OK: Docker images are consistent"
@@ -124,7 +137,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: ShellCheck steps 21-27
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: scripts
           additional_files: '21-cyrius.sh 22-survivor-merge.sh 23-clinical-filter.sh 24-html-report.sh 25-prs.sh 26-ancestry.sh 27-cpic-lookup.sh'

@@ -134,7 +134,7 @@ echo "--- Stage 2: Liftover to GRCh38 (Picard LiftoverVcf) ---"
 
 docker run --rm --user root --cpus 2 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/picard:latest \
+  broadinstitute/picard:3.4.0 \
   java -jar /usr/picard/picard.jar LiftoverVcf \
     I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
     O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \

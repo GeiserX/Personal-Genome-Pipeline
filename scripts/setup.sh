@@ -27,6 +27,25 @@ fi
 
 export GENOME_DIR
 
+# Source image versions from the canonical manifest
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
+# Download helper with retry and resume
+_download() {
+  local url="$1" dest="$2" attempts="${3:-3}"
+  for i in $(seq 1 "$attempts"); do
+    if wget -c -O "$dest" "$url"; then
+      return 0
+    fi
+    echo "  Attempt ${i}/${attempts} failed for $(basename "$dest")..."
+    sleep $((i * 5))
+  done
+  echo "ERROR: Failed to download after ${attempts} attempts: $(basename "$dest")"
+  return 1
+}
+
 echo "============================================"
 echo "  Genomics Pipeline — Setup"
 echo "  Data directory: ${GENOME_DIR}"
@@ -78,21 +97,18 @@ else
   echo "  Size: ~3.1 GB (FASTA) + ~2 MB (index)"
 
   if [ ! -f "$FASTA" ]; then
-    wget -c -O "$FASTA" \
-      "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta" || {
-      echo "ERROR: Failed to download reference genome."
+    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta" "$FASTA" || {
       echo "  Try manually: wget -c -O ${FASTA} 'https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta'"
       exit 1
     }
   fi
 
   if [ ! -f "$FAI" ]; then
-    wget -c -O "$FAI" \
-      "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai" || {
+    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
       echo "  Generating index with samtools..."
       docker run --rm --user root \
         -v "${GENOME_DIR}:/genome" \
-        staphb/samtools:1.20 \
+        "$SAMTOOLS_IMAGE" \
         samtools faidx /genome/reference/Homo_sapiens_assembly38.fasta
     }
   fi
@@ -116,12 +132,10 @@ if [ -f "$CLINVAR" ] && [ -f "$CLINVAR_TBI" ]; then
 else
   echo "Downloading ClinVar database..."
   if [ ! -f "$CLINVAR" ]; then
-    wget -c -O "$CLINVAR" \
-      "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+    _download "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz" "$CLINVAR" || exit 1
   fi
   if [ ! -f "$CLINVAR_TBI" ]; then
-    wget -c -O "$CLINVAR_TBI" \
-      "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi"
+    _download "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" "$CLINVAR_TBI" || exit 1
   fi
 
   # Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
@@ -130,7 +144,7 @@ else
     echo "Creating chr-prefixed ClinVar..."
     docker run --rm --user root \
       -v "${GENOME_DIR}:/genome" \
-      staphb/bcftools:1.21 \
+      "$BCFTOOLS_IMAGE" \
       bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
         bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz &&
         bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz'
@@ -142,7 +156,7 @@ else
     echo "Creating pathogenic/likely pathogenic subset..."
     docker run --rm --user root \
       -v "${GENOME_DIR}:/genome" \
-      staphb/bcftools:1.21 \
+      "$BCFTOOLS_IMAGE" \
       bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
         -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
         bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
@@ -156,34 +170,35 @@ fi
 echo ""
 echo "=== Phase 3: Docker Images (~10-15 GB total) ==="
 
+# Image list sourced from versions.env
 IMAGES=(
-  "quay.io/biocontainers/minimap2:2.28--he4a0461_0"
-  "staphb/samtools:1.20"
-  "staphb/bcftools:1.21"
-  "google/deepvariant:1.6.0"
-  "quay.io/biocontainers/manta:1.6.0--h9ee0642_2"
-  "getwilds/annotsv:latest"
-  "pgkb/pharmcat:3.2.0"
-  "quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0"
-  "lgalarno/telomerehunter:latest"
-  "genepi/haplogrep3:latest"
-  "ensemblorg/ensembl-vep:release_112.0"
-  "sigven/pcgr:2.2.5"
-  "brentp/duphold:latest"
-  "quay.io/biocontainers/goleft:0.2.4--h9ee0642_1"
-  "quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11"
-  "quay.io/biocontainers/delly:1.7.3--hd6466ae_0"
-  "broadinstitute/gatk:4.6.1.0"
-  "python:3.11-slim"
-  "pgscatalog/plink2:2.00a5.10"
-  "quay.io/biocontainers/fastp:1.3.1--h43da1c4_0"
-  "quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0"
-  "quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
-  "quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5"
-  "quay.io/biocontainers/gridss:2.13.2--h96c455f_6"
-  "dancooke/octopus:0.7.4"
-  "hkubal/clair3:v2.0.0"
-  "quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
+  "$MINIMAP2_IMAGE"
+  "$SAMTOOLS_IMAGE"
+  "$BCFTOOLS_IMAGE"
+  "$DEEPVARIANT_IMAGE"
+  "$MANTA_IMAGE"
+  "$ANNOTSV_IMAGE"
+  "$PHARMCAT_IMAGE"
+  "$T1K_IMAGE"
+  "$TELOMEREHUNTER_IMAGE"
+  "$HAPLOGREP3_IMAGE"
+  "$VEP_IMAGE"
+  "$PCGR_IMAGE"
+  "$DUPHOLD_IMAGE"
+  "$GOLEFT_IMAGE"
+  "$CNVNATOR_IMAGE"
+  "$DELLY_IMAGE"
+  "$GATK_IMAGE"
+  "$PYTHON_IMAGE"
+  "$PLINK2_IMAGE"
+  "$FASTP_IMAGE"
+  "$MOSDEPTH_IMAGE"
+  "$MULTIQC_IMAGE"
+  "$EXPANSIONHUNTER_IMAGE"
+  "$GRIDSS_IMAGE"
+  "$OCTOPUS_IMAGE"
+  "$CLAIR3_IMAGE"
+  "$SNIFFLES_IMAGE"
 )
 
 PULLED=0
@@ -205,6 +220,12 @@ for IMG in "${IMAGES[@]}"; do
 done
 
 echo "[OK] Docker images: ${PULLED} pulled, ${SKIPPED} already present, ${FAILED} failed."
+
+if [ "$FAILED" -gt 0 ]; then
+  echo ""
+  echo "ERROR: ${FAILED} Docker image(s) failed to pull. Fix the issues above and re-run setup."
+  exit 1
+fi
 
 ###############################################################################
 # Phase 4: Optional Downloads (instructions only)

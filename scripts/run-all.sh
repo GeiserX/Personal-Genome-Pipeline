@@ -17,22 +17,44 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 
+# Concurrency control — limit parallel Docker containers to prevent host oversubscription
+# Default: half the CPU count, clamped to [4, 12]
+_detect_max_jobs() {
+  local cpus
+  cpus=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+  local max=$(( cpus / 2 ))
+  [ "$max" -lt 4 ] && max=4
+  [ "$max" -gt 12 ] && max=12
+  echo "$max"
+}
+MAX_JOBS=${MAX_JOBS:-$(_detect_max_jobs)}
+
+_throttle() {
+  while [ "$(jobs -rp | wc -l)" -ge "$MAX_JOBS" ]; do
+    wait -n 2>/dev/null || sleep 2
+  done
+}
+
 PIPELINE_START=$(date +%s)
 
 echo "============================================"
 echo "  Genomics Pipeline — Full Analysis"
 echo "  Sample: ${SAMPLE}, Sex: ${SEX}"
 echo "  Data: ${GENOME_DIR}/${SAMPLE}/"
+echo "  Max parallel jobs: ${MAX_JOBS} (override: MAX_JOBS=N)"
 echo "  Started: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
 echo ""
 
-# Pre-flight check (show full output so users see what failed)
+# Pre-flight check — abort on failure unless explicitly skipped
 echo "[Pre-flight] Validating setup..."
-if ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}"; then
+if [ "${SKIP_VALIDATION:-false}" = "true" ]; then
+  echo "  Skipping validation (SKIP_VALIDATION=true)."
+elif ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}"; then
   echo ""
-  echo "WARNING: Setup validation reported issues above. Proceeding anyway..."
-  echo ""
+  echo "ERROR: Setup validation failed. Fix the issues above before running the pipeline."
+  echo "  To bypass: SKIP_VALIDATION=true ./scripts/run-all.sh $SAMPLE $SEX"
+  exit 1
 fi
 
 # Phase 0.5: fastp QC + trimming (if FASTQ exists but BAM doesn't)
@@ -76,24 +98,24 @@ if [ -n "$EXTRA_CALLERS" ]; then
     case "$CALLER" in
       gatk)
         echo "  Starting GATK HaplotypeCaller..."
-        bash "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE" &
+        _throttle; bash "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
       freebayes)
         echo "  Starting FreeBayes..."
-        bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
+        _throttle; bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
       strelka2)
         echo "  Starting Strelka2..."
         echo "  NOTE: Strelka2 is using the default minimap2 BAM. For best SNP precision,"
         echo "        align with BWA-MEM2 first, then run: ALIGN_DIR=aligned_bwamem2 ./scripts/03c-strelka2-germline.sh $SAMPLE"
-        bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
+        _throttle; bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
       octopus)
         echo "  Starting Octopus..."
-        bash "${SCRIPT_DIR}/03d-octopus.sh" "$SAMPLE" &
+        _throttle; bash "${SCRIPT_DIR}/03d-octopus.sh" "$SAMPLE" &
         PHASE2B_PIDS+=($!)
         ;;
       *)
@@ -121,58 +143,58 @@ echo ""
 echo "  Starting quick analyses..."
 
 echo "  [A1] ClinVar screen..."
-bash "${SCRIPT_DIR}/06-clinvar-screen.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/06-clinvar-screen.sh" "$SAMPLE" &
 PID_CLINVAR=$!
 
 echo "  [A2] PharmCAT pharmacogenomics..."
-bash "${SCRIPT_DIR}/07-pharmacogenomics.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/07-pharmacogenomics.sh" "$SAMPLE" &
 PID_PHARMCAT=$!
 
 echo "  [A3] ROH analysis..."
-bash "${SCRIPT_DIR}/11-roh-analysis.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/11-roh-analysis.sh" "$SAMPLE" &
 PID_ROH=$!
 
 echo "  [A4] Mito haplogroup..."
-bash "${SCRIPT_DIR}/12-mito-haplogroup.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/12-mito-haplogroup.sh" "$SAMPLE" &
 PID_HAPLO=$!
 
 echo "  [A5] indexcov coverage QC..."
-bash "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX" &
+_throttle; bash "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX" &
 PID_INDEXCOV=$!
 
 echo "  [A8] mosdepth coverage stats..."
-bash "${SCRIPT_DIR}/16b-mosdepth.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/16b-mosdepth.sh" "$SAMPLE" &
 PID_MOSDEPTH=$!
 
 echo "  [A6] Imputation prep..."
-bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE" &
 PID_IMPUTATION=$!
 
 echo "  [A7] HLA typing (T1K)..."
-bash "${SCRIPT_DIR}/08-hla-typing.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/08-hla-typing.sh" "$SAMPLE" &
 PID_HLA=$!
 
 # --- Group B: Medium jobs (10-60 minutes each) ---
 echo "  Starting medium analyses..."
 
 echo "  [B1] Manta structural variants..."
-bash "${SCRIPT_DIR}/04-manta.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/04-manta.sh" "$SAMPLE" &
 PID_MANTA=$!
 
 echo "  [B2] ExpansionHunter STR screening..."
-bash "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX" &
+_throttle; bash "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX" &
 PID_EH=$!
 
 echo "  [B3] TelomereHunter telomere length..."
-bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
 PID_TH=$!
 
 echo "  [B4] MToolBox mitochondrial analysis..."
-bash "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE" &
 PID_MTOOLBOX=$!
 
 echo "  [B5] CPSR cancer predisposition..."
-bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
 # Wait for quick jobs, counting failures
@@ -192,19 +214,19 @@ fi
 echo "  Starting heavy analyses..."
 
 echo "  [C1] VEP functional annotation..."
-bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE" &
 PID_VEP=$!
 
 echo "  [C2] CNVnator depth-based CNV calling..."
-bash "${SCRIPT_DIR}/18-cnvnator.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/18-cnvnator.sh" "$SAMPLE" &
 PID_CNVNATOR=$!
 
 echo "  [C3] Delly structural variant calling..."
-bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
 PID_DELLY=$!
 
 echo "  [C4] GRIDSS assembly-based SV calling..."
-bash "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE" &
+_throttle; bash "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE" &
 PID_GRIDSS=$!
 
 # Wait for Manta before running duphold and AnnotSV
@@ -214,11 +236,11 @@ if wait "$PID_MANTA" 2>/dev/null; then
   echo "  Manta complete. Running SV post-processing..."
 
   echo "  [B6] duphold SV quality annotation..."
-  bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
+  _throttle; bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
   PID_DUPHOLD=$!
 
   echo "  [B7] AnnotSV structural variant annotation..."
-  bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
+  _throttle; bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
   PID_ANNOTSV=$!
 else
   PHASE3_FAIL=$((PHASE3_FAIL + 1))
@@ -245,27 +267,27 @@ POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
 : > "$POST_LOG"
 
 echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
-bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CYRIUS=$!
 
 echo "  [D2] SV consensus merge [experimental]..."
-bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_SURVIVOR=$!
 
 echo "  [D3] Clinical variant filter..."
-bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CLINICAL=$!
 
 echo "  [D4] Polygenic Risk Scores [exploratory]..."
-bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_PRS=$!
 
 echo "  [D5] Ancestry PCA [experimental]..."
-bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_ANCESTRY=$!
 
 echo "  [D6] CPIC drug-gene recommendations..."
-bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+_throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CPIC=$!
 
 # Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
@@ -273,7 +295,7 @@ PID_CPIC=$!
 PID_SOMATIC=""
 if [ "${SOMATIC:-false}" = "true" ] || [ "${SOMATIC:-0}" = "1" ]; then
   echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
-  bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+  _throttle; bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
   PID_SOMATIC=$!
 else
   echo "  [D7] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
@@ -365,4 +387,4 @@ echo "  1. Open the PharmCAT HTML report in a browser — it's the most actionab
 echo "  2. Review ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt for a quick summary"
 echo "  3. See docs/interpreting-results.md for help understanding your results"
 
-exit "$TOTAL_FAIL"
+exit "$(( TOTAL_FAIL > 0 ? 1 : 0 ))"

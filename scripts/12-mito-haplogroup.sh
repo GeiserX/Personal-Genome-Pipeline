@@ -39,7 +39,7 @@ echo "Classifying haplogroup..."
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}:/data" \
-  genepi/haplogrep3 \
+  genepi/haplogrep3:latest \  # No versioned tags from publisher
   classify \
     --input "/data/vcf/${SAMPLE}_chrM.vcf.gz" \
     --output "/data/mito/${SAMPLE}_haplogroup.txt" \

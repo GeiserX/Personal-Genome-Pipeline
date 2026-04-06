@@ -33,7 +33,7 @@ mkdir -p "$OUTPUT_DIR"
 docker run --rm \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
-  brentp/duphold:latest \
+  brentp/duphold:v0.2.3 \
   duphold \
     -v "/genome/${SAMPLE}/$(echo "$MANTA_VCF" | sed "s|${SAMPLE_DIR}/||")" \
     -b "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
