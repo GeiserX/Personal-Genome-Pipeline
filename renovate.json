@@ -15,19 +15,19 @@
     },
     {
       "description": "Group biocontainer image updates",
-      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "matchDatasources": ["docker"],
       "matchPackagePatterns": ["^quay\\.io/biocontainers/"],
       "groupName": "biocontainers"
     },
     {
       "description": "Group core tool image updates",
-      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "matchDatasources": ["docker"],
       "matchPackagePatterns": ["^staphb/", "^broadinstitute/", "^google/"],
       "groupName": "core-tools"
     },
     {
       "description": "Prefix Docker image commits",
-      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "matchDatasources": ["docker"],
       "commitMessagePrefix": "deps"
     },
     {
@@ -52,10 +52,10 @@
     },
     {
       "customType": "regex",
-      "description": "Docker images in shell scripts (docker run commands)",
+      "description": "Hardcoded Docker images in shell scripts",
       "fileMatch": ["^scripts/.*\\.sh$"],
       "matchStrings": [
-        "(?:docker run[^\\n]*\\n(?:\\s+--?\\S+[^\\n]*\\n)*)\\s+(?<depName>[a-z][a-z0-9./_-]+):(?<currentValue>[^\\s\\\\\"]+)\\s"
+        "(?<depName>(?:quay\\.io/biocontainers|staphb|broadinstitute|google|ensemblorg|sigven|pgkb|brentp|getwilds|lgalarno|genepi|dancooke|hkubal|pgscatalog)/[a-z][a-z0-9._-]+):(?<currentValue>[^\\s\\\\\"']+)"
       ],
       "datasourceTemplate": "docker"
     },

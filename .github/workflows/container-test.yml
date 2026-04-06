@@ -3,10 +3,10 @@ name: Container Smoke Test
 on:
   push:
     branches: [main]
-    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh', '.github/workflows/container-test.yml']
+    paths: ['versions.env', 'scripts/setup.sh', '.github/workflows/container-test.yml']
   pull_request:
     branches: [main]
-    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh', '.github/workflows/container-test.yml']
+    paths: ['versions.env', 'scripts/setup.sh', '.github/workflows/container-test.yml']
   workflow_dispatch:
   schedule:
     # Monthly check that upstream images are still pullable
@@ -52,26 +52,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Verify Dockerfile.deps matches versions.env
-        run: |
-          echo "Checking that .github/docker-deps/Dockerfile matches versions.env..."
-          FAIL=0
-
-          while IFS= read -r line; do
-            # Extract image from FROM lines: "FROM image:tag AS alias"
-            img=$(echo "$line" | grep '^FROM ' | awk '{print $2}')
-            [ -z "$img" ] && continue
-
-            # Check if this image is in versions.env
-            if ! grep -qF "$img" versions.env; then
-              echo "FAIL: Dockerfile has $img but it's not in versions.env"
-              FAIL=1
-            fi
-          done < .github/docker-deps/Dockerfile
-
-          [ "$FAIL" -eq 0 ] && echo "OK: Dockerfile and versions.env are in sync"
-          exit "$FAIL"
 
       - name: Verify smoke-test matrix matches versions.env
         run: |

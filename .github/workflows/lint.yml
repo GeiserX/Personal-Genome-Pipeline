@@ -130,8 +130,8 @@ jobs:
           while IFS='=' read -r var value; do
             # Skip comments and empty lines
             [[ "$var" =~ ^#.*$ || -z "$var" ]] && continue
-            # Strip quotes
-            image=$(echo "$value" | tr -d '"')
+            # Strip quotes and inline comments
+            image=$(echo "$value" | tr -d '"' | sed 's/#.*//' | xargs)
             # Split into base name and tag
             base="${image%%:*}"
             tag="${image##*:}"
@@ -154,15 +154,19 @@ jobs:
 
             # Check docs that reference this base image (skip :latest-only images)
             [ "$tag" = "latest" ] && continue
+            # Version prefix without build hash (e.g. 1.6.0 from 1.6.0--h9ee0642_2)
+            vtag="${tag%%--*}"
             # Extract the short name (last segment) for matching in docs
             short="${base##*/}"
             for f in docs/*.md README.md CONTRIBUTING.md; do
               [ -f "$f" ] || continue
+              # Skip files with intentionally historical/failed image tags
+              case "$f" in docs/lessons-learned.md|docs/troubleshooting.md) continue ;; esac
               if grep -qF "$short" "$f" 2>/dev/null; then
                 # Doc references this image — check for stale tags
-                # Match patterns: `image:tag`, docker pull image:tag
-                if grep -oP "${base}:\K[^\s\`\"\\\\)>]+" "$f" 2>/dev/null | grep -qvF "$tag"; then
-                  stale=$(grep -oP "${base}:\K[^\s\`\"\\\\)>]+" "$f" 2>/dev/null | grep -vF "$tag" | head -1)
+                # Accept both full tag (1.6.0--hash) and display prefix (1.6.0)
+                stale=$(grep -oP "${base}:\K[^\s\`\"\\\\)>]+" "$f" 2>/dev/null | grep -vF "$tag" | grep -vF "$vtag" | head -1)
+                if [ -n "$stale" ]; then
                   echo "FAIL: ${f} has stale tag ${base}:${stale} (expected :${tag})"
                   FAIL=1
                 fi
