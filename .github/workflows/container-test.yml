@@ -3,10 +3,10 @@ name: Container Smoke Test
 on:
   push:
     branches: [main]
-    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh']
+    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh', '.github/workflows/container-test.yml']
   pull_request:
     branches: [main]
-    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh']
+    paths: ['versions.env', '.github/docker-deps/Dockerfile', 'scripts/setup.sh', '.github/workflows/container-test.yml']
   workflow_dispatch:
   schedule:
     # Monthly check that upstream images are still pullable
@@ -76,10 +76,11 @@ jobs:
       - name: Verify smoke-test matrix matches versions.env
         run: |
           echo "Checking that container-test matrix images exist in versions.env..."
-          FAIL=0
+          rm -f /tmp/matrix_fail
 
-          # Extract image values from the matrix block in this workflow
-          grep 'image:' .github/workflows/container-test.yml | awk '{print $3}' | tr -d '"' | while read -r img; do
+          # Extract only "- image: <value>" lines from the YAML matrix block
+          # These always start with leading whitespace, a dash, and "image:"
+          grep -E '^\s+- image:' .github/workflows/container-test.yml | awk '{print $3}' | while read -r img; do
             if ! grep -qF "$img" versions.env; then
               echo "FAIL: container-test.yml matrix has $img but it's not in versions.env"
               echo "1" > /tmp/matrix_fail
