@@ -32,11 +32,11 @@ jobs:
           - image: quay.io/biocontainers/minimap2:2.28--he4a0461_0
             cmd: "minimap2 --version"
           - image: brentp/duphold:v0.2.3
-            cmd: "duphold --help"
+            cmd: "duphold --version"
           - image: getwilds/annotsv:3.4.4
-            cmd: "AnnotSV -help"
+            cmd: "AnnotSV --version"
           - image: broadinstitute/picard:3.4.0
-            cmd: "java -jar /usr/picard/picard.jar --version"
+            cmd: "java -jar /usr/picard/picard.jar ViewSam --version true"
           - image: pgkb/pharmcat:3.2.0
             cmd: "pharmcat_pipeline --version"
           - image: python:3.11-slim
@@ -46,7 +46,7 @@ jobs:
         run: docker pull "${{ matrix.image }}"
 
       - name: Verify ${{ matrix.image }}
-        run: docker run --rm "${{ matrix.image }}" ${{ matrix.cmd }} || echo "WARN: cmd exited non-zero (some tools use non-zero for --help)"
+        run: docker run --rm "${{ matrix.image }}" ${{ matrix.cmd }}
 
   versions-env-sync:
     runs-on: ubuntu-latest

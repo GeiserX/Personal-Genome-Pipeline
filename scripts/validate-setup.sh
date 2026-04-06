@@ -323,6 +323,7 @@ else
     "$OCTOPUS_IMAGE"
     "$CLAIR3_IMAGE"
     "$SNIFFLES_IMAGE"
+    "$PICARD_IMAGE"
   )
 
   PULLED=0
@@ -338,7 +339,7 @@ else
     pass "All ${#IMAGES[@]} Docker images are pulled"
   else
     pass "${PULLED}/${#IMAGES[@]} Docker images already pulled"
-    warn "${#MISSING_IMAGES[@]} Docker image(s) not yet pulled:"
+    fail "${#MISSING_IMAGES[@]} Docker image(s) not yet pulled:"
     for img in "${MISSING_IMAGES[@]}"; do
       echo "         docker pull ${img}"
     done
