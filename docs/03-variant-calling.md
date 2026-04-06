@@ -34,6 +34,9 @@ docker run --rm \
     --output_vcf=/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     --num_shards=16
 
+# For WES data, use MODEL_TYPE=WES:
+# MODEL_TYPE=WES ./scripts/03-deepvariant.sh your_sample
+
 # Output: ~93MB VCF with ~5.5M total variants (~4.6M PASS)
 ```
 

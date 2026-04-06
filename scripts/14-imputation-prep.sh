@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Imputation Prep — Split VCF by chromosome for Michigan Imputation Server upload
-# Creates PASS-only, bgzipped, tabix-indexed VCFs per chromosome
+# Creates PASS/unfiltered, bgzipped, tabix-indexed VCFs per chromosome
 # NOTE: MIS requires 20+ samples per job. Single WGS = mainly useful for phasing.
 set -euo pipefail
 
@@ -42,7 +42,7 @@ for chr in $(seq 1 22); do
   docker run --rm --cpus 2 --memory 2g \
     -v "${GENOME_DIR}/${SAMPLE}:/data" \
     staphb/bcftools:1.21 bash -c "
-      bcftools view -f PASS -Oz -o /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz /data/imputation/${SAMPLE}_chr${chr}.vcf.gz
+      bcftools view -f PASS,. -Oz -o /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz /data/imputation/${SAMPLE}_chr${chr}.vcf.gz
       bcftools index -t /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz
     "
 done

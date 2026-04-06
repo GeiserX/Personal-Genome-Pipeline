@@ -27,11 +27,11 @@ echo "  Started: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
 echo ""
 
-# Pre-flight check
+# Pre-flight check (show full output so users see what failed)
 echo "[Pre-flight] Validating setup..."
-if ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}" 2>/dev/null; then
-  echo "WARNING: Setup validation reported issues. Proceeding anyway..."
-  echo "         Run ./scripts/validate-setup.sh ${SAMPLE} for details."
+if ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}"; then
+  echo ""
+  echo "WARNING: Setup validation reported issues above. Proceeding anyway..."
   echo ""
 fi
 
@@ -268,12 +268,20 @@ echo "  [D6] CPIC drug-gene recommendations..."
 bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
 PID_CPIC=$!
 
-echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
-bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
-PID_SOMATIC=$!
+# Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
+# Enable with: SOMATIC=true ./scripts/run-all.sh sample sex
+PID_SOMATIC=""
+if [ "${SOMATIC:-false}" = "true" ] || [ "${SOMATIC:-0}" = "1" ]; then
+  echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
+  bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 &
+  PID_SOMATIC=$!
+else
+  echo "  [D7] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
+fi
 
 PHASE4_FAIL=0
 for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC $PID_SOMATIC; do
+  [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
 done
 if [ "$PHASE4_FAIL" -gt 0 ]; then

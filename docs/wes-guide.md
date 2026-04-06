@@ -78,13 +78,13 @@ These steps operate on VCF data and do not depend on genome-wide BAM coverage. T
 | **25** | PRS | Matches scoring file variants against your VCF. Expect ~5-15% variant matching (vs ~28% from WGS) because most PRS scoring files include non-coding variants |
 | **27** | CPIC Recommendations | Operates on PharmCAT output |
 
-### Needs Adjustment (DATA_TYPE=WES)
+### Needs Adjustment
 
-These steps require different parameters when processing WES data. The actual script changes are planned for a future PR -- this section documents what changes and why.
+These steps require different parameters when processing WES data.
 
 | Step | Name | What Changes | Why |
 |---|---|---|---|
-| **3** | DeepVariant | `--model_type=WES` instead of `--model_type=WGS` | DeepVariant has separate trained models for WGS and WES. The WES model is calibrated for the higher depth, sharper coverage boundaries, and different error profiles of exome data. Using the WGS model on WES data inflates false positive rates at capture region boundaries. |
+| **3** | DeepVariant | `MODEL_TYPE=WES ./scripts/03-deepvariant.sh sample` | DeepVariant has separate trained models for WGS and WES. The WES model is calibrated for the higher depth, sharper coverage boundaries, and different error profiles of exome data. Using the WGS model on WES data inflates false positive rates at capture region boundaries. |
 | **4** | Manta (SVs) | Add `--exome` flag to `configManta.py` | Without `--exome`, Manta expects genome-wide coverage and misinterprets off-target regions (zero coverage) as evidence of large deletions. The `--exome` flag restricts analysis to the capture regions and adjusts depth expectations. |
 | **9** | ExpansionHunter | Limited to captured loci only | ExpansionHunter estimates repeat lengths from reads spanning the repeat region. For WES, only loci that fall within capture regions have sufficient coverage. Most clinically important repeat expansions (Huntington's HTT, Fragile X FMR1, ALS C9orf72) are in UTRs or introns and are **not captured** by standard exome kits. Expect very few usable results. |
 | **16b** | mosdepth | `--by ${CAPTURE_BED}` instead of genome-wide | Calculates on-target coverage (mean depth within capture regions) rather than genome-wide coverage. Without the BED file, mosdepth reports ~2X mean coverage across the whole genome, which is technically correct but completely misleading for WES. |
@@ -156,12 +156,8 @@ Alignment works identically for WES and WGS data. minimap2 does not need differe
 ### 4. Call Variants
 
 ```bash
-# When DATA_TYPE=WES is supported in the script, DeepVariant
-# will automatically use --model_type=WES
-./scripts/03-deepvariant.sh $SAMPLE
+MODEL_TYPE=WES ./scripts/03-deepvariant.sh $SAMPLE
 ```
-
-> **Until the scripts are updated:** You can run DeepVariant manually with `--model_type=WES`. See [step 3 docs](03-variant-calling.md) for the full Docker command and replace `--model_type=WGS` with `--model_type=WES`.
 
 ### 5. Run VCF-Based Analysis
 

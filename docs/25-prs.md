@@ -88,10 +88,7 @@ Raw PRS become useful only when compared against a population distribution. To c
 
 Comparing two people is only defensible when both were scored with the same PGS ID, the same scoring file version, the same genome build conventions, and the same preprocessing. Even then, treat the comparison as directional rather than clinically calibrated unless you also have a matched reference distribution.
 
-As a rough guide:
-- Score near the population mean = average genetic risk
-- Score >1 standard deviation above mean = elevated risk (top ~16%)
-- Score >2 standard deviations above mean = high risk (top ~2.5%)
+**Do not convert raw scores to percentiles using generic SD thresholds.** The mapping between a raw score and a population percentile depends on the score distribution in a matched reference cohort (same ancestry, same scoring file, same preprocessing). Without that cohort, statements like "top 16%" or "top 2.5%" are not grounded. See the [PGS Catalog Calculator interpretation guide](https://pgsc-calc.readthedocs.io/) and the ACMG points-to-consider for PRS reporting.
 
 ### Variant matching
 

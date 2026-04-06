@@ -20,16 +20,18 @@ SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 docker run --rm --user root \
-  -v ${GENOME_DIR}/${SAMPLE}:/data \
+  --cpus 4 --memory 4g \
+  -v ${GENOME_DIR}:/genome \
   lgalarno/telomerehunter:latest \
   telomerehunter \
-    -ibt /data/aligned/${SAMPLE}_sorted.bam \
-    -o /data/telomere \
-    -p ${SAMPLE} \
-    --tumor_only
+    -ibt /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+    -o /genome/${SAMPLE}/telomere/${SAMPLE} \
+    -p ${SAMPLE}
 
-# Output: telomere content report in /data/telomere/${SAMPLE}/
+# Output: telomere content report in ${GENOME_DIR}/${SAMPLE}/telomere/${SAMPLE}/
 ```
+
+TelomereHunter uses `-ibt` (input BAM tumor) for a single-sample analysis. No `--tumor_only` flag is needed — when only `-ibt` is provided (without `-ibc` for a matched control BAM), TelomereHunter runs in single-sample mode automatically.
 
 ## Key Metric
 - **`tel_content`** — GC-corrected telomeric reads per million mapped reads
@@ -38,7 +40,6 @@ docker run --rm --user root \
 
 ## Important Notes
 - `--user root` is REQUIRED — Docker container cannot write output files without root permissions
-- `--tumor_only` mode is REQUIRED for germline WGS (there is no matched normal sample)
 - Short-read WGS (150bp reads) systematically underestimates true telomere length because reads cannot span long repetitive regions
 - Results are useful as a **relative comparison** between samples, NOT as an absolute telomere length measurement
 - Long-read sequencing (PacBio/ONT) provides more accurate telomere length if absolute values are needed

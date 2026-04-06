@@ -11,8 +11,19 @@ SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-R1="${SAMPLE_DIR}/fastq/${SAMPLE}_R1.fastq.gz"
-R2="${SAMPLE_DIR}/fastq/${SAMPLE}_R2.fastq.gz"
+
+# Detect trimmed FASTQs (same logic as 02-alignment.sh)
+if [ -n "${FASTQ_SUBDIR:-}" ]; then
+  echo "Using explicit FASTQ_SUBDIR=${FASTQ_SUBDIR}."
+elif [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" ] && \
+     [ -f "${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" ]; then
+  FASTQ_SUBDIR="fastq_trimmed"
+else
+  FASTQ_SUBDIR="fastq"
+fi
+
+R1="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz"
+R2="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 BWA_INDEX="${REF}.bwt.2bit.64"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned_bwamem2"
@@ -57,8 +68,8 @@ docker run --rm \
   quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
   bwa-mem2 mem -t "${THREADS}" \
     /genome/reference/Homo_sapiens_assembly38.fasta \
-    "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
-    "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \
+    "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
+    "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz" \
     -o "/genome/${SAMPLE}/aligned_bwamem2/${SAMPLE}.sam"
 
 # Step 3: Sort + compress with samtools

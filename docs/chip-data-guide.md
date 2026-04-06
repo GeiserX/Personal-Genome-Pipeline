@@ -159,7 +159,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 **Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with ~600,000 SNPs. Typical breakdown: ~430K hom-ref, ~107K het, ~66K hom-alt, ~1K missing. Some variants (~0.3%) are rejected during liftover; ~900 have swapped REF/ALT between builds.
 
-> **X/Y/MT chromosomes:** All chromosomes are converted. For mitochondrial haplogroup estimation from chip data, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) accept raw 23andMe files directly.
+> **X/Y/MT chromosomes:** All chromosomes are converted (MT is renamed to chrM to match GRCh38 convention). Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
 
 > **23andMe / AncestryDNA:** These are already tab-separated. Skip the MyHeritage CSV conversion pre-step and place your file directly at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`.
 
@@ -205,7 +205,7 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | **8** | HLA typing (T1K) | Needs reads spanning HLA region |
 | **9** | ExpansionHunter | Needs reads spanning repeat regions |
 | **10** | TelomereHunter | Needs telomeric reads |
-| **12** | Mito haplogroup | The conversion workflow produces autosomal-only VCF. For mt haplogroup from chip data, use [HaploGrep](https://haplogrep.i-med.ac.at/) directly with your raw file. |
+| **12** | Mito haplogroup | Chip arrays cover very few mtDNA positions. For mt haplogroup from chip data, use [HaploGrep](https://haplogrep.i-med.ac.at/) directly with your raw file — it accepts raw 23andMe/AncestryDNA format. |
 | **16** | Coverage QC (indexcov) | No BAM to assess coverage |
 | **20** | Mito variant calling (Mutect2) | Needs BAM |
 | **21** | CYP2D6 (Cyrius) | Needs BAM |

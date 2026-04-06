@@ -10,7 +10,8 @@
 # rough intersection, not a true consensus merge. For production use,
 # consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
 #
-# Requires: Output from steps 4 (Manta), 19 (Delly), and/or 18 (CNVnator)
+# Requires: Output from steps 4 (Manta), 19 (Delly), 4b (GRIDSS), 4c (Sniffles2),
+#           4d (TIDDIT), and/or 18 (CNVnator) — any 2+ callers suffice
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -48,6 +49,36 @@ if [ -f "$DELLY_VCF" ]; then
   echo "  [OK] Delly SVs found"
 else
   echo "  [--] Delly SVs not found (run step 19 first)"
+fi
+
+# GRIDSS
+GRIDSS_VCF="${GENOME_DIR}/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz"
+if [ -f "$GRIDSS_VCF" ]; then
+  SV_FILES+=("/genome/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz")
+  CALLERS="${CALLERS}GRIDSS "
+  echo "  [OK] GRIDSS SVs found"
+else
+  echo "  [--] GRIDSS SVs not found (run step 4b first)"
+fi
+
+# Sniffles2 (long-read SV caller)
+SNIFFLES_VCF="${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
+if [ -f "$SNIFFLES_VCF" ]; then
+  SV_FILES+=("/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz")
+  CALLERS="${CALLERS}Sniffles2 "
+  echo "  [OK] Sniffles2 SVs found"
+else
+  echo "  [--] Sniffles2 SVs not found (long-read only, step 4c)"
+fi
+
+# TIDDIT
+TIDDIT_VCF="${GENOME_DIR}/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz"
+if [ -f "$TIDDIT_VCF" ]; then
+  SV_FILES+=("/genome/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz")
+  CALLERS="${CALLERS}TIDDIT "
+  echo "  [OK] TIDDIT SVs found"
+else
+  echo "  [--] TIDDIT SVs not found (run step 4d first)"
 fi
 
 # CNVnator (convert to VCF format if only TXT exists)
@@ -101,7 +132,7 @@ echo ""
 if [ ${#SV_FILES[@]} -lt 2 ]; then
   echo "ERROR: Need at least 2 SV callers for consensus merge."
   echo "  Found: ${CALLERS:-none}"
-  echo "  Run steps 4 (Manta) and 19 (Delly) first."
+  echo "  Run at least 2 of: steps 4 (Manta), 19 (Delly), 4b (GRIDSS), 4c (Sniffles2), 4d (TIDDIT), 18 (CNVnator)."
   exit 1
 fi
 

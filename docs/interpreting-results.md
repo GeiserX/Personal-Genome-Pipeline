@@ -9,7 +9,7 @@ If this is your first time looking at your own genomic data, the numbers can be 
 | Finding | Normal Range | Why It Seems Scary |
 |---|---|---|
 | Total variants | 4.5-5.5 million | Sounds like millions of "mutations" — but >99.9% are normal human variation |
-| ClinVar pathogenic hits | 0-10 | Everyone carries a few recessive disease variants. You need TWO copies (one from each parent) to be affected |
+| ClinVar pathogenic hits (step 6) | 0-10 | Step 6 screens against Pathogenic/Likely_pathogenic only. Most hits are recessive carriers — you need TWO copies to be affected |
 | HIGH impact variants (VEP) | 100-150 | Most are heterozygous in non-essential genes. Having one broken copy is fine. |
 | Structural variants | 5,000-10,000 | Most are in non-coding regions. Your parents had them too. |
 | Heteroplasmic mitochondrial variants | 20-40 | Low-level heteroplasmy (<5%) is universal and age-related |
@@ -64,12 +64,11 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 **How to read it:**
 - Each line in the output VCF is a variant in your genome that matches a known ClinVar entry
-- The `CLNSIG` field tells you the clinical significance: `Pathogenic`, `Likely_pathogenic`, `Benign`, `Likely_benign`, `Uncertain_significance`
-- **Focus on `Pathogenic` and `Likely_pathogenic` only**
+- Step 6 intersects against the **pathogenic-only** ClinVar subset (Pathogenic + Likely_pathogenic). Every hit in this output is at a position ClinVar classifies as disease-associated — benign/VUS entries are excluded at the database level
+- The `CLNSIG` field confirms the classification
 
 **What to expect:**
-- Everyone has 50-100+ ClinVar matches, most are benign or uncertain
-- 0-5 pathogenic/likely pathogenic hits is typical
+- 0-10 pathogenic/likely pathogenic hits is typical for a 30X WGS
 - Most pathogenic hits are **carrier status** (heterozygous) for recessive conditions — you carry one copy but aren't affected
 - A heterozygous pathogenic variant in a recessive gene (like GJB2 for hearing loss) means you're a **carrier**, not affected
 - A homozygous pathogenic variant, or a heterozygous variant in a dominant gene, needs attention

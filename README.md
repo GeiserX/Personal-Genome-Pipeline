@@ -20,7 +20,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
   <img src="https://img.shields.io/badge/analysis%20steps-31-f97316?style=flat-square" alt="31 steps">
-  <img src="https://img.shields.io/badge/data%20privacy-100%25%20local-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="100% Local">
+  <img src="https://img.shields.io/badge/data%20privacy-local%20processing-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="Local Processing">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
 </p>
 
@@ -443,11 +443,11 @@ It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com 
 
 Your genome is the most permanent piece of personal data you have. Unlike a password, you cannot change it if it leaks.
 
-**This pipeline is 100% local:**
+**This pipeline keeps your data local:**
 - No data is uploaded to any server, cloud, or API
-- No internet connection is required after initial setup (reference downloads + Docker images)
 - No telemetry, no analytics, no tracking
-- Every tool runs in a Docker container; the pipeline does not intentionally connect to external services at runtime
+- The core pipeline (steps 1-24) runs fully offline after initial setup (reference downloads + Docker images)
+- Steps 25 (PRS) and 26 (Ancestry) download scoring files and reference panels from public FTP servers at runtime. No sample data is uploaded — only metadata files are fetched. These downloads are cached after the first run
 
 **Recommendations for securing your data:**
 - Store genomic data on an encrypted filesystem (LUKS on Linux, FileVault on macOS, BitLocker on Windows)

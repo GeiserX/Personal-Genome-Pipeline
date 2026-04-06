@@ -37,11 +37,19 @@ REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 
 # --- Path validation helper ---
 # Canonicalize GENOME_DIR and verify paths are within it (prevents sibling prefix matches)
-GENOME_DIR_REAL=$(realpath -e "$GENOME_DIR") || { echo "ERROR: GENOME_DIR does not exist: ${GENOME_DIR}" >&2; exit 1; }
+# Uses python3 (macOS) with readlink -f fallback (GNU/Linux) — realpath -e is not portable.
+_resolve() {
+  python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$1" 2>/dev/null \
+    || readlink -f "$1" 2>/dev/null \
+    || echo "$1"
+}
+GENOME_DIR_REAL=$(_resolve "$GENOME_DIR")
+[ -d "$GENOME_DIR_REAL" ] || { echo "ERROR: GENOME_DIR does not exist: ${GENOME_DIR}" >&2; exit 1; }
 
 within_genome_dir() {
   local p
-  p=$(realpath -e "$1" 2>/dev/null) || return 1
+  p=$(_resolve "$1")
+  [ -e "$p" ] || return 1
   [[ "$p" == "$GENOME_DIR_REAL" || "$p" == "$GENOME_DIR_REAL"/* ]]
 }
 

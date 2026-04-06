@@ -106,11 +106,14 @@ docker run --rm --user root --cpus 2 --memory 4g \
 echo ""
 echo "--- Adding chr prefix to chromosome names ---"
 
+# Build chr-prefix rename map. GRCh38 uses chrM (not chrMT) for mitochondria.
 CHR_RENAME="${GENOME_DIR}/reference_hg19/chr_rename.txt"
-if [ ! -f "$CHR_RENAME" ]; then
-  printf '%s\n' $(seq 1 22) X Y MT | \
-    awk '{print $1" chr"$1}' > "$CHR_RENAME"
-fi
+{
+  seq 1 22 | awk '{print $1" chr"$1}'
+  echo "X chrX"
+  echo "Y chrY"
+  echo "MT chrM"
+} > "$CHR_RENAME"
 
 docker run --rm --user root --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \

@@ -55,6 +55,9 @@ docker run --rm \
 - `${SAMPLE}_clinvar_summary.tsv` — tab-separated summary with columns: CHROM, POS, REF, ALT, CLNSIG, CLNDN
 
 ## Interpreting Results
+
+This step screens against **Pathogenic and Likely_pathogenic variants only** — benign and VUS entries are excluded at the database level (see step 00 reference setup). Every hit in the output is at a position ClinVar classifies as disease-associated.
+
 | Scenario | Meaning | Action |
 |---|---|---|
 | Heterozygous + autosomal recessive | Healthy carrier | Note for family planning only |
@@ -64,7 +67,7 @@ docker run --rm \
 
 ## Important Notes
 - Most hits will be **heterozygous carriers of recessive conditions** — this is normal and expected
-- A typical 30X WGS will show 20-50 ClinVar pathogenic overlaps, the vast majority being benign carrier states
+- A typical 30X WGS shows 0-10 pathogenic/likely pathogenic overlaps. The majority are benign carrier states for recessive conditions
 - Focus review on: homozygous pathogenic, any autosomal dominant pathogenic, and compound heterozygous variants in the same gene
 - The ClinVar pathogenic database must be chr-prefixed to match the BAM/VCF coordinate system (done in step 00)
 - ClinVar is updated monthly — re-download periodically to catch newly classified variants
