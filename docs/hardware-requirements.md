@@ -37,12 +37,12 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 | Resource | Download Size | Extracted Size | Notes |
 |---|---|---|---|
-| GRCh38 FASTA + index | ~1 GB | ~3.5 GB | Core reference genome |
+| GRCh38 FASTA + index | ~3.1 GB | ~3.5 GB | Core reference genome (not compressed) |
 | ClinVar VCF + index | ~200 MB | ~200 MB | Updated monthly |
 | VEP cache (Ensembl 112) | ~26 GB | ~30 GB | Largest single download |
 | PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | ~35 GB | ClinVar + gnomAD + panels |
 | Docker images (all steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
-| **Subtotal (shared)** | **~70 GB** | **~85 GB** | |
+| **Subtotal (shared)** | **~73 GB** | **~85 GB** | |
 
 ### Total Disk Requirements
 
@@ -137,7 +137,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 
 | Resource | Size | Notes |
 |---|---|---|
-| GRCh38 reference | ~1 GB | Fast download |
+| GRCh38 reference | ~3.1 GB | Not compressed, fast download |
 | ClinVar | ~200 MB | Fast download |
 | VEP cache | ~26 GB | Slow servers, `wget -c` recommended for resume |
 | PCGR + VEP 113 cache | ~31 GB | Can be slow |
@@ -149,7 +149,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 - **ClinVar updates:** ~200 MB/month (optional but recommended for latest pathogenic variant classifications)
 - **Docker image updates:** Variable (only when you want newer tool versions)
 
-> **Offline operation:** After the initial setup, the entire pipeline runs offline. No internet required during analysis. All databases and caches are local.
+> **Offline operation:** After the initial setup, the core pipeline runs offline. A few steps fetch small public resources on first use if not already present: step 4b downloads the ENCODE blacklist (~50 KB), and steps 25/26 download scoring files and reference panels from public FTP servers. All downloads are cached after the first run. No sample data is ever uploaded.
 
 ---
 

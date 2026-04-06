@@ -110,7 +110,8 @@ jobs:
           . ./versions.env
           SCRIPT_T1K=$(grep -roh 't1k:[^ "]*' scripts/08-hla-typing.sh 2>/dev/null | head -1 || true)
           if [ -n "$SCRIPT_T1K" ] && ! echo "$T1K_IMAGE" | grep -qF "$SCRIPT_T1K"; then
-            echo "WARN: t1k tag mismatch: versions.env=$T1K_IMAGE script=$SCRIPT_T1K"
+            echo "FAIL: t1k tag mismatch: versions.env=$T1K_IMAGE script=$SCRIPT_T1K"
+            FAIL=1
           fi
 
           [ "$FAIL" -eq 0 ] && echo "OK: Docker images are consistent"
