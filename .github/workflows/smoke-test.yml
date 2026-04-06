@@ -19,7 +19,7 @@ jobs:
   contract-validation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Verify ClinVar artifact contract is consistent
         run: |
@@ -134,10 +134,10 @@ jobs:
   shellcheck-new-steps:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: ShellCheck steps 21-27
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         with:
           scandir: scripts
           additional_files: '21-cyrius.sh 22-survivor-merge.sh 23-clinical-filter.sh 24-html-report.sh 25-prs.sh 26-ancestry.sh 27-cpic-lookup.sh'

@@ -51,12 +51,11 @@ jobs:
   versions-env-sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Verify Dockerfile.deps matches versions.env
         run: |
           echo "Checking that .github/docker-deps/Dockerfile matches versions.env..."
-          . ./versions.env
           FAIL=0
 
           while IFS= read -r line; do
@@ -73,3 +72,21 @@ jobs:
 
           [ "$FAIL" -eq 0 ] && echo "OK: Dockerfile and versions.env are in sync"
           exit "$FAIL"
+
+      - name: Verify smoke-test matrix matches versions.env
+        run: |
+          echo "Checking that container-test matrix images exist in versions.env..."
+          FAIL=0
+
+          # Extract image values from the matrix block in this workflow
+          grep 'image:' .github/workflows/container-test.yml | awk '{print $3}' | tr -d '"' | while read -r img; do
+            if ! grep -qF "$img" versions.env; then
+              echo "FAIL: container-test.yml matrix has $img but it's not in versions.env"
+              echo "1" > /tmp/matrix_fail
+            fi
+          done
+
+          if [ -f /tmp/matrix_fail ]; then
+            exit 1
+          fi
+          echo "OK: All matrix images exist in versions.env"

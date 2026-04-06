@@ -1,0 +1,7 @@
+# Require owner review for infrastructure and automation changes
+.github/            @GeiserX
+versions.env        @GeiserX
+scripts/setup.sh    @GeiserX
+scripts/run-all.sh  @GeiserX
+scripts/validate-setup.sh @GeiserX
+.coderabbit.yaml    @GeiserX

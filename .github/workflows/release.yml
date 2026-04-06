@@ -17,7 +17,7 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -35,13 +35,19 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
 
+          # Verify the tag exists in the repo
+          if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "ERROR: Tag ${TAG} does not exist in this repository" >&2
+            exit 1
+          fi
+
           # Find previous tag
           PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | grep -v "^${TAG}$" | head -1)
 
           if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..HEAD"
+            RANGE="${PREV_TAG}..${TAG}"
           else
-            RANGE="HEAD"
+            RANGE="${TAG}"
           fi
 
           {
@@ -60,7 +66,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
