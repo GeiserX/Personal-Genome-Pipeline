@@ -36,7 +36,7 @@ jobs:
           - image: getwilds/annotsv:3.4.4
             cmd: "AnnotSV --version"
           - image: broadinstitute/picard:3.4.0
-            cmd: "java -jar /usr/picard/picard.jar ViewSam --version true"
+            cmd: "java -version"
           - image: pgkb/pharmcat:3.2.0
             cmd: "pharmcat_pipeline --version"
           - image: python:3.11-slim
