@@ -121,28 +121,56 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Verify versions.env images match scripts
+      - name: Verify Docker image tags are consistent across scripts and docs
         run: |
-          echo "Checking versions.env against setup.sh and scripts..."
+          echo "Checking Docker image tags across versions.env, scripts, and docs..."
           FAIL=0
 
-          # Source versions.env
-          . ./versions.env
+          # Parse versions.env: extract image_name:tag pairs
+          while IFS='=' read -r var value; do
+            # Skip comments and empty lines
+            [[ "$var" =~ ^#.*$ || -z "$var" ]] && continue
+            # Strip quotes
+            image=$(echo "$value" | tr -d '"')
+            # Split into base name and tag
+            base="${image%%:*}"
+            tag="${image##*:}"
+            [ "$base" = "$tag" ] && continue  # no tag found
 
-          # Check that key images used in scripts match versions.env
-          check_image() {
-            local script="$1" expected="$2" label="$3"
-            if [ -f "$script" ] && ! grep -qF "$expected" "$script"; then
-              echo "FAIL: ${label} not found in ${script} (expected: ${expected})"
-              FAIL=1
-            fi
-          }
+            # Check all scripts that reference this base image
+            for f in scripts/*.sh; do
+              if grep -qF "$base" "$f" 2>/dev/null; then
+                # Script references this image — verify it uses the right tag
+                # Allow ${VAR} references (script sources versions.env)
+                if grep -qE '\$\{?[A-Z_]*IMAGE\}?' "$f" && grep -qF 'versions.env' "$f"; then
+                  continue  # script sources versions.env, OK
+                fi
+                if ! grep -qF "${base}:${tag}" "$f"; then
+                  echo "FAIL: ${f} references ${base} but not with tag ${tag}"
+                  FAIL=1
+                fi
+              fi
+            done
 
-          check_image scripts/15-duphold.sh "$DUPHOLD_IMAGE" "DUPHOLD_IMAGE"
-          check_image scripts/05-annotsv.sh "$ANNOTSV_IMAGE" "ANNOTSV_IMAGE"
-          check_image scripts/chip-to-vcf.sh "$PICARD_IMAGE" "PICARD_IMAGE"
+            # Check docs that reference this base image (skip :latest-only images)
+            [ "$tag" = "latest" ] && continue
+            # Extract the short name (last segment) for matching in docs
+            short="${base##*/}"
+            for f in docs/*.md README.md CONTRIBUTING.md; do
+              [ -f "$f" ] || continue
+              if grep -qF "$short" "$f" 2>/dev/null; then
+                # Doc references this image — check for stale tags
+                # Match patterns: `image:tag`, docker pull image:tag
+                if grep -oP "${base}:\K[^\s\`\"\\\\)>]+" "$f" 2>/dev/null | grep -qvF "$tag"; then
+                  stale=$(grep -oP "${base}:\K[^\s\`\"\\\\)>]+" "$f" 2>/dev/null | grep -vF "$tag" | head -1)
+                  echo "FAIL: ${f} has stale tag ${base}:${stale} (expected :${tag})"
+                  FAIL=1
+                fi
+              fi
+            done
+          done < versions.env
 
           if [ "$FAIL" -eq 0 ]; then
-            echo "OK: versions.env is consistent with scripts"
+            echo "OK: All Docker image tags are consistent"
           fi
           exit "$FAIL"

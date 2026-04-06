@@ -1,0 +1,77 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on the first day of the month"],
+  "labels": ["dependencies", "automated"],
+  "prConcurrentLimit": 10,
+
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "commitMessagePrefix": "ci",
+      "labels": ["ci", "automated"]
+    },
+    {
+      "description": "Group biocontainer image updates",
+      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "matchPackagePatterns": ["^quay\\.io/biocontainers/"],
+      "groupName": "biocontainers"
+    },
+    {
+      "description": "Group core tool image updates",
+      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "matchPackagePatterns": ["^staphb/", "^broadinstitute/", "^google/"],
+      "groupName": "core-tools"
+    },
+    {
+      "description": "Prefix Docker image commits",
+      "matchManagers": ["custom.versions-env", "custom.scripts", "custom.docs-pull", "custom.docs-backtick"],
+      "commitMessagePrefix": "deps"
+    },
+    {
+      "description": "Skip major version bumps",
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Images pinned to :latest — no versioned tags from publisher",
+      "matchPackageNames": ["lgalarno/telomerehunter", "genepi/haplogrep3"],
+      "enabled": false
+    }
+  ],
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Docker images in versions.env (single source of truth)",
+      "fileMatch": ["^versions\\.env$"],
+      "matchStrings": ["_IMAGE=\"(?<depName>[^:]+):(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Docker images in shell scripts (docker run commands)",
+      "fileMatch": ["^scripts/.*\\.sh$"],
+      "matchStrings": [
+        "(?:docker run[^\\n]*\\n(?:\\s+--?\\S+[^\\n]*\\n)*)\\s+(?<depName>[a-z][a-z0-9./_-]+):(?<currentValue>[^\\s\\\\\"]+)\\s"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Docker images in docs (docker pull commands)",
+      "fileMatch": ["\\.md$"],
+      "matchStrings": ["docker pull (?<depName>[a-z][a-z0-9./_-]+):(?<currentValue>[^\\s`\"]+)"],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Docker images in docs (backtick-wrapped references)",
+      "fileMatch": ["\\.md$"],
+      "matchStrings": ["`(?<depName>(?:quay\\.io/biocontainers|staphb|broadinstitute|google|ensemblorg|sigven|pgkb|brentp|getwilds|lgalarno|genepi|dancooke|hkubal|pgscatalog)/[a-z][a-z0-9._-]+):(?<currentValue>[^`]+)`"],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}
