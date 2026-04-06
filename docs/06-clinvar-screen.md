@@ -20,39 +20,28 @@ staphb/bcftools:1.21
 
 ## Command
 ```bash
-SAMPLE=your_sample
-GENOME_DIR=/path/to/your/data
+export GENOME_DIR=/path/to/data
+./scripts/06-clinvar-screen.sh <sample_name>
 
-# Step 1: Intersect sample VCF with ClinVar pathogenic database
-docker run --rm \
-  --cpus 2 --memory 4g \
-  -v ${GENOME_DIR}:/genome \
-  staphb/bcftools:1.21 \
-  bcftools isec \
-    -n =2 -w 1 \
-    /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    /genome/clinvar/clinvar_pathogenic_chr.vcf.gz \
-    -Oz -o /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
-
-# Step 2: Index the result
-docker run --rm \
-  -v ${GENOME_DIR}:/genome \
-  staphb/bcftools:1.21 \
-  bcftools index -t /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz
-
-# Step 3: Extract human-readable summary
-docker run --rm \
-  -v ${GENOME_DIR}:/genome \
-  staphb/bcftools:1.21 \
-  bcftools query \
-    -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/CLNSIG\t%INFO/CLNDN\n' \
-    /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf.gz \
-    > /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_summary.tsv
+# For long-read Clair3 output:
+VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 ```
 
+### What the Script Does
+
+1. Filters the sample VCF to PASS variants only (`bcftools view -f PASS`)
+2. Intersects the PASS VCF against the ClinVar pathogenic subset using `bcftools isec -p`
+3. Reports the count of shared variants (positions in both the sample and ClinVar pathogenic)
+
 ## Output
-- `${SAMPLE}_clinvar_hits.vcf.gz` — VCF of sample variants overlapping ClinVar pathogenic entries
-- `${SAMPLE}_clinvar_summary.tsv` — tab-separated summary with columns: CHROM, POS, REF, ALT, CLNSIG, CLNDN
+
+| File | Description |
+|---|---|
+| `clinvar/${SAMPLE}_pass.vcf.gz` | PASS-only subset of the sample VCF (intermediate) |
+| `clinvar/isec/0000.vcf` | Variants unique to the sample |
+| `clinvar/isec/0001.vcf` | Variants unique to ClinVar pathogenic |
+| `clinvar/isec/0002.vcf` | **Shared variants — your pathogenic hits** |
+| `clinvar/isec/0003.vcf` | Shared variants (ClinVar's perspective) |
 
 ## Interpreting Results
 

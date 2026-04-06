@@ -114,7 +114,7 @@ If you have run WGS before, the variant counts from WES will look very different
 | Total variants | ~4-5 million | ~30,000-50,000 |
 | PASS variants | ~4.5 million | ~25,000-40,000 |
 | Coding variants | ~20,000-25,000 | ~20,000-25,000 |
-| ClinVar hits (pathogenic + LP) | 5-15 typical | 5-15 typical |
+| ClinVar hits (pathogenic + LP) | 0-10 typical | 0-10 typical |
 | PharmCAT gene calls | 20+ genes | 20+ genes |
 | VEP HIGH impact | 100-200 | 80-150 |
 

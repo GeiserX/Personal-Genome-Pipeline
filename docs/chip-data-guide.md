@@ -119,8 +119,13 @@ docker run --rm --user root \
     -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz"
 
 # Add "chr" prefix (required by the liftover chain file)
-printf '%s\n' $(seq 1 22) X Y MT | \
-  awk '{print $1" chr"$1}' > "${GENOME_DIR}/reference_hg19/chr_rename.txt"
+# Build chr-prefix rename map (MT -> chrM to match GRCh38)
+{
+  seq 1 22 | awk '{print $1" chr"$1}'
+  echo "X chrX"
+  echo "Y chrY"
+  echo "MT chrM"
+} > "${GENOME_DIR}/reference_hg19/chr_rename.txt"
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \

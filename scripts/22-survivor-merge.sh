@@ -167,7 +167,7 @@ docker run --rm --user root \
     CALLER_IDX=0
     for VCF_FILE in ${SV_FILES[*]}; do
       CALLER_IDX=\$((CALLER_IDX + 1))
-      (bcftools view -f PASS \"\$VCF_FILE\" 2>/dev/null || bcftools view \"\$VCF_FILE\" 2>/dev/null) | \
+      bcftools view -f PASS,. \"\$VCF_FILE\" 2>/dev/null | \
         grep -v '^#' | \
         awk -F'\t' -v caller=\$CALLER_IDX '{
           chrom=\$1; pos=\$2; info=\$8;

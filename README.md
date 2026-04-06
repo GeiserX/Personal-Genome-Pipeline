@@ -403,7 +403,7 @@ No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enou
 Extract FASTQ from your BAM (`samtools fastq`) and re-align to GRCh38 using step 2. LiftOver is an alternative but introduces artifacts. Re-alignment is cleaner.
 
 **Q: I found a pathogenic variant. Should I be worried?**
-Probably not. Everyone carries 2-10 pathogenic variants, almost all heterozygous (one copy) for recessive conditions. This means you're a **carrier**, not affected. Only worry if: (1) the variant is in a **dominant** gene, (2) you have **two** pathogenic variants in the same recessive gene, or (3) it is in a cancer predisposition gene (BRCA1/2, MLH1, etc.). See [interpreting-results.md](docs/interpreting-results.md) for details.
+Probably not. A typical genome shows 0-10 pathogenic/likely pathogenic ClinVar hits, almost all heterozygous (one copy) for recessive conditions. This means you're a **carrier**, not affected. Only worry if: (1) the variant is in a **dominant** gene, (2) you have **two** pathogenic variants in the same recessive gene, or (3) it is in a cancer predisposition gene (BRCA1/2, MLH1, etc.). See [interpreting-results.md](docs/interpreting-results.md) for details.
 
 **Q: What are VUS? Should I worry about them?**
 VUS (Variants of Uncertain Significance) mean there is not enough evidence to classify the variant as pathogenic or benign. The majority will eventually be reclassified as benign. They are **not actionable** — do not change your medical care based on a VUS. Check back in 1-2 years with an updated ClinVar database.
@@ -446,8 +446,8 @@ Your genome is the most permanent piece of personal data you have. Unlike a pass
 **This pipeline keeps your data local:**
 - No data is uploaded to any server, cloud, or API
 - No telemetry, no analytics, no tracking
-- The core pipeline (steps 1-24) runs fully offline after initial setup (reference downloads + Docker images)
-- Steps 25 (PRS) and 26 (Ancestry) download scoring files and reference panels from public FTP servers at runtime. No sample data is uploaded — only metadata files are fetched. These downloads are cached after the first run
+- After completing [reference setup](docs/00-reference-setup.md) (which pre-downloads all databases and Docker images), the core pipeline runs offline
+- A few steps fetch small public resources on first use if not already present: step 4b downloads the ENCODE blacklist (~50 KB), step 13 can download the VEP cache (~26 GB) if skipped during setup, and steps 25/26 download scoring files and reference panels from public FTP servers. No sample data is ever uploaded. All downloads are cached after the first run
 
 **Recommendations for securing your data:**
 - Store genomic data on an encrypted filesystem (LUKS on Linux, FileVault on macOS, BitLocker on Windows)
