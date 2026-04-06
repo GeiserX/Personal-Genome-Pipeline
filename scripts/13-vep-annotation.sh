@@ -47,16 +47,10 @@ docker run --rm \
     --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
     --vcf \
     --cache \
+    --dir_cache /opt/vep/.vep \
     --offline \
     --assembly GRCh38 \
-    --sift b \
-    --polyphen b \
-    --regulatory \
-    --symbol \
-    --canonical \
-    --biotype \
-    --af_gnomade \
-    --max_af \
+    --everything \
     --force_overwrite \
     --fork 4
 

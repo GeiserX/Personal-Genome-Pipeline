@@ -41,10 +41,10 @@ mkdir -p "$OUTPUT_DIR"
 # mosdepth flags:
 #   --by 500        Window size for per-region coverage (500bp bins; WGS default)
 #   --by <BED>      Capture BED for on-target coverage (WES; set CAPTURE_BED env var)
-#   --fast-mode     Skip per-base output (saves disk + time), keep distributions
+#   --fast-mode     Use faster algorithm (does NOT skip per-base output by itself)
+#   --no-per-base   Omit the large per-base BED (saves ~3-5 GB per WGS sample)
 #   --threads       Decompression threads (mosdepth uses 1 main + N decompression)
 #   --thresholds    Report fraction of bases at these coverage thresholds
-#   --no-per-base   Omit the large per-base BED (redundant with --fast-mode)
 
 # Use capture BED for WES on-target coverage, or 500bp bins for WGS
 if [ -n "${CAPTURE_BED:-}" ]; then
@@ -68,6 +68,7 @@ docker run --rm --user root \
   mosdepth \
     --by "${BY_FLAG}" \
     --fast-mode \
+    --no-per-base \
     --threads "${THREADS}" \
     --thresholds 1,5,10,15,20,30,50 \
     "/genome/${SAMPLE}/mosdepth/${SAMPLE}" \

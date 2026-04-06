@@ -98,7 +98,8 @@ if [ -d "$EH_DIR" ]; then
   if [ -n "$EH_JSON" ]; then
     echo "## Repeat Expansions (ExpansionHunter)"
     echo "---"
-    LOCI=$(grep -c '"LocusId"' "$EH_JSON" 2>/dev/null || echo "0")
+    # EH JSON uses locus names as top-level keys; count objects with a Genotype field
+    LOCI=$(jq '[to_entries[] | select(.value | type=="object" and has("Genotype"))] | length' "$EH_JSON" 2>/dev/null || grep -c '"Genotype"' "$EH_JSON" 2>/dev/null || echo "0")
     echo "  Loci tested: ${LOCI}"
     echo "  (See interpreting-results.md for disease thresholds)"
     echo ""
