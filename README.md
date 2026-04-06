@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/GeiserX/personal-genome-pipeline?style=flat-square" alt="License"></a>
-  <a href="https://github.com/GeiserX/personal-genome-pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/personal-genome-pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
-  <a href="https://github.com/GeiserX/personal-genome-pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/personal-genome-pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/GeiserX/Personal-Genome-Pipeline?style=flat-square" alt="License"></a>
+  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/Personal-Genome-Pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
   <a href="https://geiserx.github.io/personal-genome-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
 </p>

@@ -2,7 +2,7 @@
 
 Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 analysis steps, all running locally in Docker.
 
-[Back to GitHub repository](https://github.com/GeiserX/personal-genome-pipeline)
+[Back to GitHub repository](https://github.com/GeiserX/Personal-Genome-Pipeline)
 
 ---
 

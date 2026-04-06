@@ -16,9 +16,9 @@ Alternative callers, benchmarking infrastructure, and tool rationale documentati
 
 ## v0.3.0 — Tool upgrades, QC, & expanded coverage
 
-Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/personal-genome-pipeline/issues/14)), fill coverage gaps, and add new sequencing platform support. Thanks to [@madmolecularman](https://github.com/madmolecularman) for driving the QC discussion.
+Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Personal-Genome-Pipeline/issues/14)), fill coverage gaps, and add new sequencing platform support. Thanks to [@madmolecularman](https://github.com/madmolecularman) for driving the QC discussion.
 
-- [x] **fastp QC + adapter trimming** (`scripts/01b-fastp-qc.sh` → `fastq_trimmed/`) — pre-alignment step: adapter removal, quality trimming, polyG tail removal, JSON+HTML reports. Default on, skippable with `SKIP_TRIM=true`. Addresses [#14](https://github.com/GeiserX/personal-genome-pipeline/issues/14)
+- [x] **fastp QC + adapter trimming** (`scripts/01b-fastp-qc.sh` → `fastq_trimmed/`) — pre-alignment step: adapter removal, quality trimming, polyG tail removal, JSON+HTML reports. Default on, skippable with `SKIP_TRIM=true`. Addresses [#14](https://github.com/GeiserX/Personal-Genome-Pipeline/issues/14)
 - [x] **mosdepth coverage statistics** (`scripts/16b-mosdepth.sh`) — fast per-base and per-region depth from BAM; coverage distributions, threshold reports, and WES on-target rate
 - [x] **MultiQC aggregation** (`scripts/28-multiqc.sh`) — single HTML report combining fastp, samtools flagstat, mosdepth, and other QC outputs
 - [x] **ExpansionHunter upgrade to v5.0.0** — new `--variant-catalog` flag replacing `--variant-catalog-format`, biocontainers image replacing deprecated weisburd image
@@ -106,4 +106,4 @@ These are out of scope for this pipeline and unlikely to be added.
 
 ---
 
-Suggestions and contributions welcome via [issues](https://github.com/GeiserX/personal-genome-pipeline/issues) or [pull requests](https://github.com/GeiserX/personal-genome-pipeline/pulls).
+Suggestions and contributions welcome via [issues](https://github.com/GeiserX/Personal-Genome-Pipeline/issues) or [pull requests](https://github.com/GeiserX/Personal-Genome-Pipeline/pulls).
