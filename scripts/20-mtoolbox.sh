@@ -7,6 +7,10 @@
 #       GATK Mutect2 in mitochondrial mode is the standard alternative.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
@@ -27,8 +31,6 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-GATK_IMAGE="broadinstitute/gatk:4.6.1.0"
-SAMTOOLS_IMAGE="staphb/samtools:1.20"
 
 echo "[1/4] Extracting chrM reads..."
 docker run --rm --user root \

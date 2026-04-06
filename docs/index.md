@@ -43,7 +43,7 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 ana
 | 19 | SV Calling (Delly) | [19-delly.md](19-delly.md) |
 | 20 | Mitochondrial (GATK Mutect2) | [20-mtoolbox.md](20-mtoolbox.md) |
 
-### Post-Processing (Steps 21-27)
+### Post-Processing (Steps 21-29)
 
 | # | Step | Doc |
 |---|---|---|

@@ -181,7 +181,7 @@ CAPTURE_BED=${GENOME_DIR}/reference/your_capture.bed ./scripts/16b-mosdepth.sh $
 
 ### 7. Skip These Steps
 
-Do **not** run: TelomereHunter (10), indexcov (16), CNVnator (18), Delly (19), GRIDSS (4b), MToolBox (20), Ancestry PCA (26).
+Do **not** run: TelomereHunter (10), indexcov (16), CNVnator (18), Delly (19), GRIDSS (4b), Mito analysis (20), Ancestry PCA (26).
 
 ---
 

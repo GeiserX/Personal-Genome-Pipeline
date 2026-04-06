@@ -4,6 +4,10 @@
 # Output: HTML + JSON reports with metabolizer status for 23 pharmacogenes
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
@@ -31,7 +35,7 @@ docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
-  pgkb/pharmcat:3.2.0 \
+  "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
     -refFna /ref/Homo_sapiens_assembly38.fasta \
@@ -42,7 +46,7 @@ docker run --rm \
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  pgkb/pharmcat:3.2.0 \
+  "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
     -vcf "/data/${SAMPLE}.preprocessed.vcf.bgz" \
     -o /data/ \

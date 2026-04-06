@@ -30,7 +30,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | CPSR report + data | 50-200 MB | Step 17 | Keep |
 | CNVnator ROOT file + calls | 5-15 GB | Step 18 | ROOT file can be deleted |
 | Delly BCF + VCF | 5-20 MB | Step 19 | Keep VCF, delete BCF |
-| MToolBox output | 50-200 MB | Step 20 | Keep |
+| Mito analysis output | 50-200 MB | Step 20 | Keep |
 | **Subtotal per sample** | **150-250 GB** | | |
 
 ### Shared Reference Data (One-Time)
@@ -126,7 +126,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
               ├──> Step 18 (CNVnator, ~2-4 hr)    ← These 3 use BAM, need RAM
               ├──> Step 19 (Delly, ~2-4 hr)        ← Run 1-2 at a time
               ├──> Step 10 (TelomereHunter, ~1 hr)
-              └──> Step 20 (MToolBox, ~15-30 min)
+              └──> Step 20 (GATK Mutect2 mito, ~15-30 min)
 ```
 
 ---
@@ -166,7 +166,6 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 2. **Delete intermediate files:**
    - CNVnator `.root` files (5-15 GB each)
    - Delly `.bcf` files (after converting to VCF)
-   - `*_singleton.fastq.gz` from MToolBox chrM extraction
 
 3. **Compress VEP output:**
    ```bash

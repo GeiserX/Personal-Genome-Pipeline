@@ -4,6 +4,10 @@
 # Output: sorted BAM + BAI index in $GENOME_DIR/<sample>/aligned/
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-8}
@@ -45,7 +49,7 @@ if [ ! -f "$MMI" ]; then
   docker run --rm \
     --cpus 8 --memory 16g \
     -v "${GENOME_DIR}:/genome" \
-    quay.io/biocontainers/minimap2:2.28--he4a0461_0 \
+    "${MINIMAP2_IMAGE}" \
     minimap2 -d /genome/reference/GRCh38.mmi \
       /genome/reference/Homo_sapiens_assembly38.fasta
 fi
@@ -57,7 +61,7 @@ echo "Aligning reads (this takes 1-2 hours for 30X WGS)..."
 docker run --rm \
   --cpus "${THREADS}" --memory 16g \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/minimap2:2.28--he4a0461_0 \
+  "${MINIMAP2_IMAGE}" \
   minimap2 -t "${THREADS}" -a -x sr \
     /genome/reference/GRCh38.mmi \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
@@ -65,7 +69,7 @@ docker run --rm \
 | docker run --rm -i \
   --cpus "${THREADS}" --memory 8g \
   -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools sort -@ 4 -m 1G \
     -o "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
@@ -74,7 +78,7 @@ echo "Indexing BAM..."
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
 echo "=== Alignment complete ==="

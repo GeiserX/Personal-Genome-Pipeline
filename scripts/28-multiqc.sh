@@ -41,7 +41,7 @@ if [ -f "$BAM" ] && [ ! -f "$FLAGSTAT" ]; then
   docker run --rm --user root \
     --cpus 2 --memory 2g \
     -v "${GENOME_DIR}:/genome" \
-    staphb/samtools:1.20 \
+    "${SAMTOOLS_IMAGE}" \
     samtools flagstat "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     > "$FLAGSTAT" 2>/dev/null || true
 fi

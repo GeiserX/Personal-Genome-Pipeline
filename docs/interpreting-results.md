@@ -252,7 +252,7 @@ Your mitochondrial haplogroup traces your maternal ancestry lineage. It's determ
 
 ### Medical Relevance
 
-Mitochondrial haplogroups have weak associations with some diseases (Parkinson's, diabetes, longevity), but these are population-level statistics, not individual predictions. The main clinical value is in step 20 (MToolBox), which detects disease-causing mitochondrial variants and heteroplasmy.
+Mitochondrial haplogroups have weak associations with some diseases (Parkinson's, diabetes, longevity), but these are population-level statistics, not individual predictions. The main clinical value is in step 20 (GATK Mutect2 mitochondrial mode), which detects disease-causing mitochondrial variants and heteroplasmy.
 
 ---
 

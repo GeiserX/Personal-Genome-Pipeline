@@ -5,6 +5,10 @@
 # Output: comparison tables in $GENOME_DIR/<sample>/benchmark/
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name> [--truth <vcf> --regions <bed>]}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 shift
@@ -329,7 +333,7 @@ else
         --cpus 2 --memory 4g \
         --user root \
         -v "${GENOME_DIR}:/genome" \
-        staphb/bcftools:1.21 \
+        "${BCFTOOLS_IMAGE}" \
         bash -euo pipefail -c \
           'bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$1" -Oz -o "$2" && bcftools index -t "$2" &&
            bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$3" -Oz -o "$4" && bcftools index -t "$4"' \
@@ -340,7 +344,7 @@ else
         --cpus 2 --memory 4g \
         --user root \
         -v "${GENOME_DIR}:/genome" \
-        staphb/bcftools:1.21 \
+        "${BCFTOOLS_IMAGE}" \
         bcftools isec -p "${ISEC_DIR}" \
           -f .,PASS \
           ${ISEC_REGIONS_FLAG} \

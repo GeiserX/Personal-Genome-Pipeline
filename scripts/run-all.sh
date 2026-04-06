@@ -189,7 +189,7 @@ echo "  [B3] TelomereHunter telomere length..."
 _throttle; bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
 PID_TH=$!
 
-echo "  [B4] MToolBox mitochondrial analysis..."
+echo "  [B4] GATK Mutect2 mitochondrial analysis..."
 _throttle; bash "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE" &
 PID_MTOOLBOX=$!
 

@@ -12,6 +12,10 @@
 # Runtime: ~1-3 hours for 30X long-read WGS depending on read length and throughput.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 PLATFORM=${PLATFORM:?Set PLATFORM to ont or hifi}
@@ -104,8 +108,6 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-MINIMAP2_IMAGE="quay.io/biocontainers/minimap2:2.28--he4a0461_0"
-SAMTOOLS_IMAGE="staphb/samtools:1.20"
 
 # Compute container-relative input path from resolved paths.
 # Docker resolves symlinks on bind mounts, so /genome/ maps to REAL_GENOME.

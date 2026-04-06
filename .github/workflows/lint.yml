@@ -139,12 +139,12 @@ jobs:
 
             # Check all scripts that reference this base image
             for f in scripts/*.sh; do
-              if grep -qF "$base:" "$f" 2>/dev/null; then
-                # Script references this image — verify it uses the right tag
-                # Allow ${VAR} references (script sources versions.env)
-                if grep -qE '\$\{?[A-Z_]*IMAGE\}?' "$f" && grep -qF 'versions.env' "$f"; then
-                  continue  # script sources versions.env, OK
-                fi
+              # Scripts that source versions.env use image variables — skip
+              if grep -qF 'versions.env' "$f"; then
+                continue
+              fi
+              # Check for hardcoded references with wrong tag
+              if grep -qF "${base}:" "$f" 2>/dev/null; then
                 if ! grep -qF "${base}:${tag}" "$f"; then
                   echo "FAIL: ${f} references ${base} but not with tag ${tag}"
                   FAIL=1

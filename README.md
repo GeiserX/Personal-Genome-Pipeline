@@ -81,7 +81,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
                                                           ├──> Cyrius (CYP2D6)
                                                           ├──> TelomereHunter
                                                           ├──> mosdepth + indexcov (Coverage QC)
-                                                          ├──> MToolBox (Mitochondrial)
+                                                          ├──> GATK Mutect2 (Mitochondrial)
                                                           └──> Haplogrep3 (mtDNA haplogroup)
                                                                          └──> HTML Report + MultiQC
 ```
@@ -130,7 +130,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~2-6 hr | Experimental |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
-**Full analysis:** All 31 steps = ~12-20 hours. Steps 4/18/19 and 10/12/20 can run in parallel.
+**Full analysis:** All 30 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
 
 #### Alternative Tools (Benchmarking)
 
@@ -264,7 +264,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 | Software | Version | Install |
 |---|---|---|
 | Docker | 20.10+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
-| bash | 4.0+ | Pre-installed on Linux/macOS |
+| bash | 4.0+ | Pre-installed on Linux; macOS ships 3.2 — install via `brew install bash` |
 | wget or curl | Any | For downloading references |
 | python3 *(optional)* | 3.6+ | Used by long-read alignment (02b) for symlink resolution. Falls back to `readlink -f` on GNU/Linux if absent |
 
@@ -394,7 +394,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 31-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + MToolBox + haplogrep3).
+On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 31-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.
