@@ -1,17 +1,17 @@
-# Step 26: Ancestry Estimation via PCA
+# Step 26: Ancestry SNP Intersection [EXPERIMENTAL]
 
 ## What This Does
 
-Runs principal component analysis (PCA) on your sample using common SNPs shared with the 1000 Genomes Project reference panel. Because this is single-sample PCA (not a joint projection with the 1000G cohort), the resulting PC values capture your genome's internal variance structure but are **not directly comparable** to published population cluster plots. See [Single-sample limitation](#single-sample-limitation) below for details.
+Intersects your sample's common SNPs with the 1000 Genomes Project reference panel and runs LD pruning. The script attempts single-sample PCA with plink2, but **single-sample PCA is mathematically degenerate** — PCA defines axes from variance across a cohort (Price et al. 2006), so one sample cannot produce interpretable principal components. The output is best understood as a prepared SNP set for users who want to extend it with joint multi-sample PCA against a reference panel.
 
 ## Why
 
-Knowing your genetic ancestry is useful for two practical reasons:
+The intermediate outputs (shared SNPs, LD-pruned variant set) are useful for two reasons:
 
-1. **PRS interpretation**: Polygenic risk scores (step 25) are ancestry-dependent. Knowing where you fall on the ancestry spectrum helps contextualize your scores.
-2. **Variant filtering**: Some variants are common in one population but rare in another. Ancestry helps distinguish benign population-specific variants from truly rare findings.
+1. **PRS interpretation**: Polygenic risk scores (step 25) are ancestry-dependent. The ancestry SNP set helps identify which population reference to use.
+2. **Variant filtering**: Population-specific variant frequencies help distinguish benign variants from truly rare findings.
 
-Note: This step produces single-sample PCA, which is a starting point but cannot place you on a population map without joint analysis. See [Interpreting Results](#interpreting-results) for details.
+**This step does NOT produce a usable ancestry estimate.** For ancestry analysis from WGS, you need joint PCA or admixture analysis against a multi-population reference panel (not implemented here). For a quick ancestry check, consumer services (23andMe, AncestryDNA) or tools like [Gnomix](https://github.com/AI-sandbox/gnomix) with a reference cohort are more appropriate.
 
 ## Tool
 

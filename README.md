@@ -46,13 +46,13 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 | Category | What It Finds | Steps |
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
-| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (ACMG SF v3.2) | 6, 17 |
+| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels) | 6, 17 |
 | **Pharmacogenomics** | Drug-gene interactions (21+ genes, CYP2C19, CYP2D6, DPYD, etc.) | 7, 21, 27 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP: SIFT, PolyPhen, gnomAD frequencies) | 13 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
-| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, single-sample ancestry PCA | 11, 12, 26 |
-| **Telomere Length** | Biological age proxy from telomere content | 10 |
+| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, ancestry SNP intersection | 11, 12, 26 |
+| **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
 | **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, SV filtering | 1b, 15, 16, 16b, 28 |
@@ -71,7 +71,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
                                                           │        ├──> ExpansionHunter (STRs)
                                                           │        ├──> ROH Analysis
                                                           │        ├──> PRS (Polygenic Risk Scores)
-                                                          │        ├──> Ancestry PCA
+                                                          │        ├──> Ancestry SNPs
                                                           │        └──> Imputation Prep
                                                           │
                                                           ├──> Manta (SVs) ────┐
@@ -124,7 +124,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 23 | [Clinical Filter](docs/23-clinical-filter.md) | bcftools +split-vep | `staphb/bcftools:1.21` | ~5-10 min | If step 13 run |
 | 24 | [HTML Report](docs/24-html-report.md) | bash + bcftools | `staphb/bcftools:1.21` | ~1-3 min | Recommended |
 | 25 | [Polygenic Risk Scores](docs/25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
-| 26 | [Ancestry PCA](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
+| 26 | [Ancestry SNPs](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
 | 27 | [CPIC Recommendations](docs/27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
 | 28 | [MultiQC Report](docs/28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.33` | ~1 min | Recommended |
 | 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~2-6 hr | Experimental |
@@ -391,7 +391,7 @@ For detailed solutions, see:
 $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante Labs: ~$300-600. Sequencing.com: $399. Novogene (research): ~$200-400. The pipeline itself is free.
 
 **Q: I only have 23andMe/AncestryDNA data. Can I use this?**
-Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or single-sample ancestry PCA. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
+Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
 On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. The full 31-step pipeline takes ~12-20 hours. Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + MToolBox + haplogrep3).

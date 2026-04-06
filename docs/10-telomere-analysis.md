@@ -1,10 +1,10 @@
 # Step 10: Telomere Length Estimation
 
 ## What This Does
-Estimates telomere content from WGS BAM files by quantifying telomeric repeat reads (TTAGGG/CCCTAA). Provides a biological age proxy based on telomere attrition.
+Estimates relative telomere content from WGS BAM files by quantifying telomeric repeat reads (TTAGGG/CCCTAA).
 
 ## Why
-Telomere length correlates with cellular aging and is a biomarker for age-related disease risk. Shorter telomeres are associated with cardiovascular disease, cancer predisposition, and reduced lifespan. Comparing telomere content between individuals of similar age provides a relative aging benchmark.
+Telomere length correlates with cellular aging at a population level. Comparing telomere content between individuals of similar age, sequenced on the same platform, provides a rough relative comparison. However, telomere length alone is not established as a clinically important standalone risk marker for individuals — it provides only a rough estimate of aging rate and is influenced by many non-age factors (genetics, cell type, technical variables).
 
 ## Tool
 - **TelomereHunter** (German Cancer Research Center)

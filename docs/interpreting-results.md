@@ -49,7 +49,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 - You have ONE copy of a variant that causes disease when BOTH copies are affected
 - You are **not affected** and will never develop the condition
 - The only relevance is for **family planning**: if your partner carries the same gene, each child has a 25% chance of being affected
-- **Exception — MUTYH**: heterozygous carriers have a modestly elevated colorectal cancer risk (~2x population risk). MUTYH biallelic carriers have a much higher risk, but even single-carrier status warrants earlier colonoscopy screening (discuss with your doctor)
+- **Note — MUTYH**: Biallelic (homozygous or compound het) MUTYH carriers have a well-established high colorectal cancer risk. For **monoallelic** (single-copy) carriers, the evidence is more nuanced: some meta-analyses show a modest risk increase, but a counseling framework for moderate-penetrance CRC genes (Genetics in Medicine) notes that risk estimates for monoallelic MUTYH are conflicting and that screening recommendations (e.g., earlier colonoscopy) were historically tied to carriers with a CRC family history. Discuss with a genetic counselor, especially if you have a family history of CRC
 - Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), HFE (hemochromatosis)
 
 ---
@@ -80,7 +80,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 2. PharmCAT Report (Step 7)
 
-**What it tells you:** How your genes affect drug metabolism. This is immediately actionable — it can change which medications your doctor prescribes.
+**What it tells you:** How your genes affect drug metabolism. These results are clinically relevant and should be shared with your prescribing physician.
 
 **Where to look:** `${SAMPLE}/vcf/` — PharmCAT writes its reports alongside the VCF. Open the HTML report in a browser.
 
@@ -95,7 +95,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 | NAT2 | Isoniazid (TB), caffeine | Slow acetylators have more side effects |
 | UGT1A1 | Irinotecan, atazanavir | *28/*28 = Gilbert syndrome (elevated bilirubin) |
 
-**What to do:** Print the PharmCAT report and give it to your doctor. It's the single most actionable output of this entire pipeline.
+**What to do:** Share the PharmCAT report with your prescribing physician or pharmacist. PharmCAT is a research tool — its authors explicitly note that missing positions, unphased input, and undetected structural variation (especially CYP2D6) can affect genotype and phenotype calls. The report is a valuable starting point for pharmacogenomic-guided prescribing, but clinical confirmation may be warranted before making medication changes, especially for high-risk drugs (DPYD, CYP2D6-dependent opioids).
 
 ### 3. CPSR Report (Step 17)
 
@@ -169,17 +169,21 @@ Some regions of DNA have short sequences repeated many times (e.g., CAG CAG CAG.
 
 The output VCF lists each tested locus with the number of repeats found. Key loci:
 
-| Locus | Gene | Normal | Premutation | Full Expansion | Disease |
+| Locus | Gene | Normal | Intermediate / Premutation | Pathogenic | Disease |
 |---|---|---|---|---|---|
-| HTT | HTT | <27 | 27-35 | >36 | Huntington's disease |
-| FMR1 | FMR1 | <45 | 55-200 | >200 | Fragile X syndrome |
+| HTT | HTT | <=26 | 27-35 (mutable normal); 36-39 (reduced penetrance) | >=40 (full penetrance) | Huntington's disease |
+| FMR1 | FMR1 | <45 | 45-54 (intermediate); 55-200 (premutation) | >200 | Fragile X syndrome |
 | ATXN1 | ATXN1 | <33 | — | >39 | Spinocerebellar ataxia 1 |
-| C9orf72 | C9orf72 | <24 | — | >30 | ALS / Frontotemporal dementia |
-| DMPK | DMPK | <35 | — | >50 | Myotonic dystrophy type 1 |
+| C9orf72 | C9orf72 | <24 | 24-30 (gray zone, lab cutoffs vary) | Typically hundreds-thousands | ALS / Frontotemporal dementia |
+| DMPK | DMPK | <35 | 35-49 (premutation) | >=50 | Myotonic dystrophy type 1 |
+
+**HTT 36-39 repeats (reduced penetrance):** Individuals in this range may or may not develop Huntington's disease. The risk increases with repeat length but is not certain. GeneReviews classifies >=40 as full penetrance and 36-39 as reduced penetrance. Alleles of 27-35 ("mutable normal") do not cause disease but may expand in offspring.
+
+**C9orf72 gray zone:** The exact pathogenic threshold for C9orf72 is not established. Laboratory cutoffs are discordant (JNNP 2021 review). Clearly pathogenic expansions are typically hundreds to thousands of repeats. Short-read WGS has limited ability to size very large expansions accurately.
 
 **FMR1 intermediate zone (45-54 repeats):** Not affected, but repeats may expand in offspring. Carriers should receive genetic counseling. Premutation (55-200) carries risk of FXTAS (males >50) and FXPOI.
 
-**"ALL CLEAR"** means no locus exceeded its disease threshold.
+**"ALL CLEAR"** means no locus exceeded its clearly pathogenic threshold. Intermediate-range results should be discussed with a genetic counselor.
 
 ---
 
@@ -187,20 +191,21 @@ The output VCF lists each tested locus with the number of repeats found. Key loc
 
 ### What It Means
 
-Telomeres are protective caps at the ends of chromosomes that shorten with age. TelomereHunter measures `tel_content` — the normalized telomere read count.
+Telomeres are protective caps at the ends of chromosomes that shorten with cell division. TelomereHunter measures `tel_content` — the normalized telomere read count — as a proxy for relative telomere content.
 
 ### How to Interpret
 
-- **Higher = longer telomeres** (younger biological age)
-- **Lower = shorter telomeres** (older biological age)
-- There is no universal "normal" range — compare between samples of similar age
+- **Higher `tel_content` = more telomeric reads** (generally correlates with longer telomeres)
+- **Lower `tel_content` = fewer telomeric reads** (generally correlates with shorter telomeres)
+- There is no universal "normal" range — compare between samples of similar age, sequenced on the same platform
 - Typical `tel_content` for 30X WGS: 300-800 (varies by sequencing platform and coverage)
 
 ### Limitations
 
-- This is a rough estimate, not a clinical telomere length measurement
-- Short-read WGS underestimates telomere length compared to dedicated assays (TRF, FlowFISH)
-- Useful for relative comparisons between samples run on the same platform, not absolute measurements
+- **Not a clinical telomere length measurement.** TelomereHunter was developed for cancer genome analysis, not as a validated healthy-population aging assay
+- **Not a "biological age" readout.** While telomere length correlates with aging at a population level, it is a rough estimate of aging rate and is not established as a clinically important standalone risk marker for individuals (see Vaiserman & Krasnienkov, "Telomere Length as a Marker of Biological Age," 2021)
+- Short-read WGS systematically underestimates telomere length compared to dedicated assays (TRF, FlowFISH)
+- Useful only for **relative comparisons** between samples run on the same platform — not absolute measurements and not individual health predictions
 
 ---
 
@@ -259,11 +264,11 @@ VEP annotates every variant with:
 - **Consequence type:** missense, nonsense, synonymous, splice site, etc.
 - **SIFT score:** Predicts if amino acid change is tolerated (>0.05) or damaging (<0.05)
 - **PolyPhen score:** Predicts if change is benign (<0.15), possibly damaging (0.15-0.85), or probably damaging (>0.85)
-- **gnomAD frequency:** How common this variant is in the general population
+- **gnomAD exome frequency:** How common this variant is in gnomAD exome data
 
 ### gnomAD Frequency: Your Best Sanity Check
 
-The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. gnomAD v4 contains ~807,000 exomes and ~76,000 genomes; if your VEP cache uses an older release, the counts will differ but the principle is the same.
+The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. This pipeline uses VEP's `--af_gnomade` flag, which annotates with **gnomAD exome** frequencies only (not the combined exome+genome dataset). This means non-coding variants outside exome capture regions will lack gnomAD frequency annotations even if they appear in the gnomAD genome dataset. For coding variants (the most clinically relevant), exome frequencies are well-powered.
 
 **Key principle:** A variant that is common in healthy people is almost certainly benign, regardless of what any prediction tool says.
 
@@ -416,9 +421,14 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 **When to investigate further:**
 - Heteroplasmic variant at a known disease position (check [MitoMap](https://www.mitomap.org/))
-- m.3243A>G (MELAS) at >10% heteroplasmy
-- m.8344A>G (MERRF) at >10% heteroplasmy
+- m.3243A>G (MELAS) or m.8344A>G (MERRF) at detectable heteroplasmy levels
 - Any position in MT-ATP6, MT-ND genes with AF >0.10
+
+**Important caveats about heteroplasmy thresholds:**
+- There is **no single absolute heteroplasmy threshold** that determines clinical significance. Thresholds vary by variant and by tissue (ClinGen/MSeqDR mtDNA interpretation specifications)
+- **Blood underrepresents heteroplasmy** for many mitochondrial diseases. WGS from blood-derived DNA may show lower heteroplasmy levels than affected tissues (muscle, nerve). m.3243A>G in particular shows different clinical phenotypes at very different heteroplasmy levels across tissues
+- The AF values from this pipeline reflect blood-derived DNA only. A low or absent heteroplasmy level in blood does **not** rule out clinically significant heteroplasmy in other tissues
+- For any detected pathogenic mtDNA variant, discuss with a specialist who can order tissue-specific testing if warranted
 
 **Cross-reference:** Compare with step 12 (haplogrep3) — your homoplasmic variants should match your assigned haplogroup.
 
@@ -455,7 +465,7 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 
 ## What to Do Next
 
-1. **Print your PharmCAT report** and bring it to your next doctor visit
+1. **Share your PharmCAT report** with your prescribing physician or pharmacist
 2. **Review ClinVar pathogenic hits** — check if any are in dominant genes or if you're homozygous for recessive genes
 3. **Read the CPSR HTML report** — it's designed for clinical interpretation and will highlight anything that needs attention
 4. **If you find something concerning:** Don't panic. Discuss with a genetic counselor. Many "pathogenic" variants have incomplete penetrance (not everyone with the variant gets the disease)
