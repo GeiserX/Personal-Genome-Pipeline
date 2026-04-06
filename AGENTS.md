@@ -1,4 +1,4 @@
-# AGENTS.md — Genomics Pipeline
+# AGENTS.md — Personal Genome Pipeline
 
 Instructions for AI agents working on this repository.
 
@@ -53,7 +53,7 @@ This is a public, open-source WGS (Whole Genome Sequencing) analysis pipeline de
 ## Architecture
 
 ```
-genomics-pipeline/
+personal-genome-pipeline/
   README.md                    # Main entry point, pipeline overview, quick start
   LICENSE                      # GPL-3.0
   AGENTS.md                    # This file

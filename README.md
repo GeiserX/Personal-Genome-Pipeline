@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/banner.svg" alt="Genomics Pipeline banner" width="900"/>
+  <img src="docs/images/banner.svg" alt="Personal Genome Pipeline banner" width="900"/>
 </p>
 
-<h1 align="center">Genomics Pipeline</h1>
+<h1 align="center">Personal Genome Pipeline</h1>
 
 <p align="center">
   <strong>Analyze your own whole genome sequencing (WGS) data on consumer hardware.</strong><br>
@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/GeiserX/genomics-pipeline?style=flat-square" alt="License"></a>
-  <a href="https://github.com/GeiserX/genomics-pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/genomics-pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
-  <a href="https://github.com/GeiserX/genomics-pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/genomics-pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/GeiserX/personal-genome-pipeline?style=flat-square" alt="License"></a>
+  <a href="https://github.com/GeiserX/personal-genome-pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/personal-genome-pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/GeiserX/personal-genome-pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/personal-genome-pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
-  <a href="https://geiserx.github.io/genomics-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
+  <a href="https://geiserx.github.io/personal-genome-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
 </p>
 
 <p align="center">

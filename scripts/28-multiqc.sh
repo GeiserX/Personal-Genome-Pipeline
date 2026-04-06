@@ -59,7 +59,7 @@ docker run --rm --user root \
     -f \
     -o "/genome/${SAMPLE}/multiqc" \
     -n "multiqc_report.html" \
-    --title "${SAMPLE} — Genomics Pipeline QC"
+    --title "${SAMPLE} — Personal Genome Pipeline QC"
 
 echo "=== MultiQC complete ==="
 echo "Report: ${OUTPUT_DIR}/multiqc_report.html"

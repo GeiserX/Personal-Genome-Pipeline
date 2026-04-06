@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validate-setup.sh — Verify all prerequisites before running the genomics pipeline
+# validate-setup.sh — Verify all prerequisites before running the Personal Genome Pipeline
 # Usage: ./scripts/validate-setup.sh [sample_name]
 #
 # Checks system requirements, reference data, Docker images, and (optionally)

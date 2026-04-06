@@ -38,7 +38,7 @@ _throttle() {
 PIPELINE_START=$(date +%s)
 
 echo "============================================"
-echo "  Genomics Pipeline — Full Analysis"
+echo "  Personal Genome Pipeline — Full Analysis"
 echo "  Sample: ${SAMPLE}, Sex: ${SEX}"
 echo "  Data: ${GENOME_DIR}/${SAMPLE}/"
 echo "  Max parallel jobs: ${MAX_JOBS} (override: MAX_JOBS=N)"

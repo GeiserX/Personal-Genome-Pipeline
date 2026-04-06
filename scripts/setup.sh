@@ -47,7 +47,7 @@ _download() {
 }
 
 echo "============================================"
-echo "  Genomics Pipeline — Setup"
+echo "  Personal Genome Pipeline — Setup"
 echo "  Data directory: ${GENOME_DIR}"
 echo "============================================"
 echo ""

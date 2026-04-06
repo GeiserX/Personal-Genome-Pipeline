@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Definitive reference for diagnosing and fixing problems with the genomics pipeline. Organized by symptom so you can Ctrl+F your error message and find the fix.
+Definitive reference for diagnosing and fixing problems with the Personal Genome Pipeline. Organized by symptom so you can Ctrl+F your error message and find the fix.
 
 **Before troubleshooting:** Run `docker info` to confirm Docker is running, and check `docker stats` for resource usage. Most failures are either Docker resource limits or wrong file paths inside containers.
 
@@ -1095,7 +1095,7 @@ If any output is significantly smaller than expected (especially 0 bytes), see [
 
 ### Opening a GitHub issue
 
-File an issue at: **[github.com/GeiserX/genomics-pipeline/issues](https://github.com/GeiserX/genomics-pipeline/issues)**
+File an issue at: **[github.com/GeiserX/personal-genome-pipeline/issues](https://github.com/GeiserX/personal-genome-pipeline/issues)**
 
 Include:
 - Which step failed (step number and script name)

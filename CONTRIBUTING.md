@@ -1,4 +1,4 @@
-# Contributing to Genomics Pipeline
+# Contributing to Personal Genome Pipeline
 
 Thank you for your interest in contributing. This pipeline aims to be the most accessible WGS analysis tool for non-bioinformaticians. Every contribution should be evaluated through that lens.
 
@@ -6,7 +6,7 @@ Thank you for your interest in contributing. This pipeline aims to be the most a
 
 ### Reporting Bugs
 
-[Open an issue](https://github.com/GeiserX/genomics-pipeline/issues/new) with:
+[Open an issue](https://github.com/GeiserX/personal-genome-pipeline/issues/new) with:
 - Which step failed (step number and script name)
 - Full error message (copy-paste, not screenshot)
 - Your platform (OS, Docker version, CPU architecture)
