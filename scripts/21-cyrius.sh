@@ -16,6 +16,9 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 
+# shellcheck source=versions.env
+source "$(dirname "$0")/versions.env"
+
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 BAI="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/cyrius"
@@ -46,7 +49,7 @@ docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
   -w /tmp \
-  python:3.11-slim \
+  "${PYTHON_IMAGE}" \
   bash -c "
     pip install -q cyrius 2>/dev/null &&
     echo '/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam' > /tmp/manifest.txt &&

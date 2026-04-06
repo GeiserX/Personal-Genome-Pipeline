@@ -139,7 +139,7 @@ jobs:
 
             # Check all scripts that reference this base image
             for f in scripts/*.sh; do
-              if grep -qF "$base" "$f" 2>/dev/null; then
+              if grep -qF "$base:" "$f" 2>/dev/null; then
                 # Script references this image — verify it uses the right tag
                 # Allow ${VAR} references (script sources versions.env)
                 if grep -qE '\$\{?[A-Z_]*IMAGE\}?' "$f" && grep -qF 'versions.env' "$f"; then
