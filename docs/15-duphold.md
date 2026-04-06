@@ -11,7 +11,7 @@ Manta (step 4) calls structural variants from paired-end and split-read evidence
 
 ## Docker Image
 ```
-brentp/duphold:latest
+brentp/duphold:v0.2.3
 ```
 
 ## Annotations Added
@@ -26,7 +26,7 @@ brentp/duphold:latest
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  brentp/duphold:latest \
+  brentp/duphold:v0.2.3 \
   duphold \
   -v /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
   -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \

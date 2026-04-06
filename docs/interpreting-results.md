@@ -484,7 +484,7 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 | ClinVar | Weekly | Step 6 (ClinVar screen) | Re-download from NCBI FTP (see [00-reference-setup.md](00-reference-setup.md)) |
 | VEP cache | Every 6 months | Step 13 (VEP annotation) | Download new release from Ensembl FTP |
 | PCGR/CPSR data | Every 6-12 months | Step 17 (CPSR) | Download new bundle from PCGR GitHub releases |
-| PharmCAT | Every few months | Step 7 (pharmacogenomics) | Pull new Docker image (`docker pull pgkb/pharmcat:latest`) |
+| PharmCAT | Every few months | Step 7 (pharmacogenomics) | Pull new Docker image (`docker pull pgkb/pharmcat:3.2.0`) |
 
 ### Recommended Re-analysis Schedule
 

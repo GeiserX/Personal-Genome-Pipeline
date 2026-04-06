@@ -6,7 +6,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 
 ### AnnotSV: Official image doesn't exist
 - **Failed:** `bioinfochrustrasbourg/annotsv:3.4.4` — no such image on Docker Hub
-- **Fix:** Use `getwilds/annotsv:latest` instead (Fred Hutch maintained)
+- **Fix:** Use `getwilds/annotsv:3.4.4` instead (Fred Hutch maintained)
 
 ### SnpEff/SnpSift: Combined package
 - **Failed:** `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` — no such manifest

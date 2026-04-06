@@ -90,7 +90,7 @@ docker run --rm -it \
    | CNVnator | `cnvnator:0.4.1--py312hc02a2a2_7` | `cnvnator:0.4.1--py312h99c8fb2_11` |
    | Delly | `delly:1.2.9--ha41ced6_0` | `delly:1.7.3--hd6466ae_0` |
    | ExpansionHunter | `weisburd/expansionhunter:latest` (v2.5.5) | `quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5` |
-   | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `getwilds/annotsv:latest` |
+   | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `getwilds/annotsv:3.4.4` |
    | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:2.2.5` (bundles both) |
    | SnpSift | `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` | `quay.io/biocontainers/snpeff:5.2--hdfd78af_1` (bundled) |
    | MToolBox | `robertopreste/mtoolbox:latest` | Does not exist. Use `broadinstitute/gatk:4.6.1.0` instead |
@@ -518,7 +518,7 @@ If the Manta VCF is valid but AnnotSV still produces nothing, try running with v
 ```bash
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  getwilds/annotsv:latest \
+  getwilds/annotsv:3.4.4 \
   AnnotSV \
     -SVinputFile "/genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_test.tsv" \

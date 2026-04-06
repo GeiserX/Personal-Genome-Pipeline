@@ -185,10 +185,10 @@ docker pull google/deepvariant:1.6.0
 docker pull quay.io/biocontainers/manta:1.6.0--h9ee0642_2
 docker pull quay.io/biocontainers/delly:1.7.3--hd6466ae_0
 docker pull quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
-docker pull brentp/duphold:latest
+docker pull brentp/duphold:v0.2.3
 
 # Annotation
-docker pull getwilds/annotsv:latest
+docker pull getwilds/annotsv:3.4.4
 docker pull ensemblorg/ensembl-vep:release_112.0
 docker pull sigven/pcgr:2.2.5
 

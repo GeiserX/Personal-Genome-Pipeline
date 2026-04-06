@@ -72,7 +72,7 @@ The CI pipeline enforces this with automated scanning.
 ### Docker Images
 
 - Always specify exact tags (e.g., `staphb/bcftools:1.21`, not `:latest`)
-- Exception: images with no versioned tags (e.g., `getwilds/annotsv:latest`)
+- Exception: images with no versioned tags (e.g., `lgalarno/telomerehunter:latest`)
 - Verify the image exists and is publicly pullable before committing
 - Document the image in `docs/lessons-learned.md` if there are any gotchas
 
