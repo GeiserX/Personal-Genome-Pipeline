@@ -92,24 +92,24 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](docs/01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
 | 1b | [QC & Trimming](docs/01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.1` | ~15-30 min | Recommended |
-| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
+| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `quay.io/biocontainers/minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
 | 3 | [Variant Calling](docs/03-variant-calling.md) | DeepVariant | `google/deepvariant:1.6.0` | ~2-4 hr | Yes |
-| 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta` | ~20 min | Recommended |
-| 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:latest` | ~10 min | If step 4 run |
+| 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta:1.6.0` | ~20 min | Recommended |
+| 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:3.4.4` | ~10 min | If step 4 run |
 | 6 | [ClinVar Screen](docs/06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
 | 7 | [Pharmacogenomics](docs/07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:3.2.0` | ~10 min | Yes |
 | 8 | [HLA Typing](docs/08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
 | 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
 | 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
 | 11 | [ROH Analysis](docs/11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
-| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `genepi/haplogrep3` | ~1 min | Optional |
+| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `genepi/haplogrep3:latest`\* | ~1 min | Optional |
 | 13 | [VEP Annotation](docs/13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_112.0` | ~2-4 hr | Recommended |
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
-| 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:latest` | ~20 min | If step 4 run |
-| 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft` | ~5 sec | Recommended |
+| 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |
+| 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.4` | ~5 sec | Recommended |
 | 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0` | ~10 min | Recommended |
 | 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
-| 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator` | ~2-4 hr | Optional |
+| 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator:0.4.1` | ~2-4 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:1.7.3` | ~2-4 hr | Optional |
 | 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~15-30 min | Optional |
 

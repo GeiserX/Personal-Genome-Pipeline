@@ -7,6 +7,10 @@
 # estimate; mosdepth reads actual alignments for precise per-base depth.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-4}
@@ -64,7 +68,7 @@ echo "Computing coverage statistics..."
 docker run --rm --user root \
   --cpus "${THREADS}" --memory 4g \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0 \
+  "${MOSDEPTH_IMAGE}" \
   mosdepth \
     --by "${BY_FLAG}" \
     --fast-mode \

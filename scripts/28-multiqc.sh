@@ -7,6 +7,10 @@
 # Supported tools in this pipeline: fastp (JSON), mosdepth, samtools flagstat/stats.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
@@ -53,7 +57,7 @@ echo "Running MultiQC..."
 docker run --rm --user root \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0 \
+  "${MULTIQC_IMAGE}" \
   multiqc \
     "/genome/${SAMPLE}" \
     -f \

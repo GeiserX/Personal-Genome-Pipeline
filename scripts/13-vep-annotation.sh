@@ -4,6 +4,10 @@
 # Requires: VEP cache (~17GB download, one-time)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR}/../versions.env"
+
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 VCF_DIR=${VCF_DIR:-vcf}
@@ -41,7 +45,7 @@ docker run --rm \
   --user root \
   -v "${GENOME_DIR}:/genome" \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
-  ensemblorg/ensembl-vep:release_112.0 \
+  "${VEP_IMAGE}" \
   vep \
     --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
     --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \

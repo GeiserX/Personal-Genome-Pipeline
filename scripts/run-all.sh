@@ -345,7 +345,7 @@ bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WA
 # Generate summary report
 echo ""
 echo "[Report] Generating summary report..."
-bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" 2>/dev/null || { echo "  (report generation had warnings — check output manually)"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
+bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" >> "$POST_LOG" 2>&1 || { echo "  WARNING: Report generation failed. See ${POST_LOG}"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 PIPELINE_END=$(date +%s)
 ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
