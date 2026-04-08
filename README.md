@@ -62,32 +62,68 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 
 ## Pipeline Overview
 
-```
-FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬──> DeepVariant (SNPs/indels) ──> VCF
-                               (minimap2)                 │        │
-                                                          │        ├──> ClinVar Screen
-                                                          │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
-                                                          │        ├──> VEP Annotation ──> vcfanno (CADD/SpliceAI/REVEL/AM)
-                                                          │        │                           └──> slivar (prioritization)
-                                                          │        │                           └──> Clinical Filter
-                                                          │        ├──> CPSR (Cancer Predisposition)
-                                                          │        ├──> ExpansionHunter (STRs)
-                                                          │        ├──> ROH Analysis
-                                                          │        ├──> PRS (Polygenic Risk Scores)
-                                                          │        ├──> Ancestry SNPs
-                                                          │        └──> Imputation Prep
-                                                          │
-                                                          ├──> Manta (SVs) ────┐
-                                                          ├──> Delly (SVs) ────┤
-                                                          ├──> GRIDSS (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
-                                                          ├──> CNVnator (CNVs) ┘
-                                                          ├──> pypgx (23-gene PGx + CYP2D6 SV)
-                                                          ├──> Cyrius (CYP2D6)
-                                                          ├──> TelomereHunter
-                                                          ├──> mosdepth + indexcov (Coverage QC)
-                                                          ├──> GATK Mutect2 (Mitochondrial)
-                                                          └──> Haplogrep3 (mtDNA haplogroup)
-                                                                         └──> HTML Report + MultiQC
+```mermaid
+graph LR
+    FASTQ["FASTQ"] --> fastp["fastp<br/><small>QC + trim</small>"]
+    fastp --> align["minimap2<br/><small>Alignment</small>"]
+    align --> BAM["Sorted BAM"]
+    BAM --> DV["DeepVariant<br/><small>SNPs + indels</small>"]
+    DV --> VCF["VCF"]
+
+    %% VCF-based analyses
+    VCF --> clinvar["ClinVar Screen"]
+    VCF --> pharmcat["PharmCAT<br/><small>PGx</small>"]
+    pharmcat --> cpic["CPIC<br/><small>Drug recs</small>"]
+    VCF --> vep["VEP<br/><small>Annotation</small>"]
+    vep --> vcfanno["vcfanno<br/><small>CADD / SpliceAI<br/>REVEL / AlphaMissense</small>"]
+    vcfanno --> slivar["slivar<br/><small>Prioritization</small>"]
+    vcfanno --> clinical["Clinical Filter"]
+    VCF --> cpsr["CPSR<br/><small>Cancer predisposition</small>"]
+    VCF --> eh["ExpansionHunter<br/><small>STRs</small>"]
+    VCF --> roh["ROH Analysis"]
+    VCF --> prs["PRS<br/><small>Polygenic risk</small>"]
+    VCF --> ancestry["Ancestry SNPs"]
+
+    %% BAM-based analyses
+    BAM --> manta["Manta<br/><small>SVs</small>"]
+    BAM --> delly["Delly<br/><small>SVs</small>"]
+    BAM --> gridss["GRIDSS<br/><small>SVs</small>"]
+    BAM --> cnvnator["CNVnator<br/><small>CNVs</small>"]
+    manta --> consensus["SV Consensus"]
+    delly --> consensus
+    gridss --> consensus
+    cnvnator --> consensus
+    consensus --> duphold["duphold"]
+    duphold --> annotsv["AnnotSV"]
+
+    BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
+    BAM --> cyrius["Cyrius<br/><small>CYP2D6</small>"]
+    BAM --> telomere["TelomereHunter"]
+    BAM --> coverage["mosdepth<br/>+ indexcov"]
+    BAM --> mito["Mutect2<br/><small>Mitochondrial</small>"]
+    BAM --> haplo["Haplogrep3<br/><small>mtDNA haplogroup</small>"]
+
+    %% Reporting
+    clinical --> report["HTML Report<br/>+ MultiQC"]
+    slivar --> report
+    clinvar --> report
+    pharmcat --> report
+    cpsr --> report
+
+    %% Styling
+    classDef input fill:#0ea5e9,stroke:#0284c7,color:#fff
+    classDef core fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    classDef analysis fill:#10b981,stroke:#059669,color:#fff
+    classDef sv fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef annotation fill:#ec4899,stroke:#db2777,color:#fff
+    classDef report fill:#ef4444,stroke:#dc2626,color:#fff
+
+    class FASTQ,BAM,VCF input
+    class fastp,align,DV core
+    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
+    class manta,delly,gridss,cnvnator,consensus,duphold,annotsv sv
+    class vep,vcfanno,slivar,clinical annotation
+    class report report
 ```
 
 ### All Steps
