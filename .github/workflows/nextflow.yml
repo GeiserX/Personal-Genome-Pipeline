@@ -41,7 +41,10 @@ jobs:
         run: python3 -m json.tool assets/schema_input.json > /dev/null
 
       - name: Run stub test
-        run: nextflow run main.nf -profile test,docker -stub
+        run: |
+          # Disable trace/reports — non-root Docker images cannot write .command.trace
+          printf 'trace.enabled=false\ndag.enabled=false\ntimeline.enabled=false\nreport.enabled=false\n' > ci.config
+          nextflow run main.nf -profile test,docker -stub -c ci.config
 
       - name: Check Nextflow module container tags match versions.env
         run: |
