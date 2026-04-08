@@ -60,8 +60,8 @@ process VEP {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_vep.vcf.gz
-    tabix -p vcf ${meta.id}_vep.vcf.gz
+    touch ${meta.id}_vep.vcf.gz
+    touch ${meta.id}_vep.vcf.gz.tbi
     touch ${meta.id}_vep.vcf_summary.html
 
     cat <<-END_VERSIONS > versions.yml

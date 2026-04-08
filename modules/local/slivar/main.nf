@@ -109,9 +109,9 @@ process SLIVAR {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_prioritized.vcf.gz
-    tabix -p vcf ${meta.id}_prioritized.vcf.gz
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_compound_hets.vcf.gz
+    touch ${meta.id}_prioritized.vcf.gz
+    touch ${meta.id}_prioritized.vcf.gz.tbi
+    touch ${meta.id}_compound_hets.vcf.gz
     printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n' > ${meta.id}_slivar_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml

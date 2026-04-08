@@ -169,8 +169,8 @@ TOML_END
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_annotated.vcf.gz
-    tabix -p vcf ${meta.id}_annotated.vcf.gz
+    touch ${meta.id}_annotated.vcf.gz
+    touch ${meta.id}_annotated.vcf.gz.tbi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

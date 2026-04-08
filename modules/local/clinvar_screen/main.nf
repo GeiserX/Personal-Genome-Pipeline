@@ -60,8 +60,8 @@ process CLINVAR_SCREEN {
     """
     mkdir -p isec
     touch isec/0000.vcf isec/0001.vcf isec/0002.vcf isec/0003.vcf
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_pass.vcf.gz
-    tabix -p vcf ${meta.id}_pass.vcf.gz
+    touch ${meta.id}_pass.vcf.gz
+    touch ${meta.id}_pass.vcf.gz.tbi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
