@@ -92,8 +92,8 @@ process SURVIVOR_MERGE {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_sv_consensus.vcf.gz
-    tabix -p vcf ${meta.id}_sv_consensus.vcf.gz
+    touch ${meta.id}_sv_consensus.vcf.gz
+    touch ${meta.id}_sv_consensus.vcf.gz.tbi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

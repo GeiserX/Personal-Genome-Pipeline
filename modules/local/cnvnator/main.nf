@@ -94,7 +94,7 @@ process CNVNATOR {
     stub:
     """
     touch ${meta.id}_cnvs.txt
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_cnvs.vcf.gz
+    touch ${meta.id}_cnvs.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

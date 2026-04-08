@@ -72,7 +72,7 @@ process MITO_VARIANTS {
     stub:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${prefix}_chrM_filtered.vcf.gz
+    touch ${prefix}_chrM_filtered.vcf.gz
     touch ${prefix}_chrM_mutect2.vcf.gz.stats
 
     cat <<-END_VERSIONS > versions.yml

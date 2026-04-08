@@ -37,7 +37,7 @@ process PHARMCAT_PREPROCESS {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}.preprocessed.vcf.bgz
+    touch ${meta.id}.preprocessed.vcf.bgz
     """
 }
 

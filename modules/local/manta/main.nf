@@ -54,8 +54,8 @@ process MANTA {
     stub:
     """
     mkdir -p results/variants
-    echo '##fileformat=VCFv4.2' | bgzip > results/variants/diploidSV.vcf.gz
-    echo '##fileformat=VCFv4.2' | bgzip > results/variants/candidateSV.vcf.gz
+    touch results/variants/diploidSV.vcf.gz
+    touch results/variants/candidateSV.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

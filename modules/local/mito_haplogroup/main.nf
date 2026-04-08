@@ -39,8 +39,8 @@ process MITO_EXTRACT_CHRM {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_chrM.vcf.gz
-    tabix -p vcf ${meta.id}_chrM.vcf.gz
+    touch ${meta.id}_chrM.vcf.gz
+    touch ${meta.id}_chrM.vcf.gz.tbi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -204,8 +204,8 @@ process CLINICAL_FILTER {
 
     stub:
     """
-    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_clinical.vcf.gz
-    tabix -p vcf ${meta.id}_clinical.vcf.gz
+    touch ${meta.id}_clinical.vcf.gz
+    touch ${meta.id}_clinical.vcf.gz.tbi
     printf 'CHROM\\tPOS\\tREF\\tALT\\tGT\\tIMPACT\\tGENE\\tCADD_PHRED\\tREVEL\\tAM_CLASS\\tCSQ_EXCERPT\\n' > ${meta.id}_clinical_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml
