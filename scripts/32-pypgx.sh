@@ -108,14 +108,15 @@ docker run --rm --user root \
       fi
     fi
 
-    # Phase 3a: BAM-based genes — SV detection via read depth
-    # Omits --variants to avoid pseudogene-confounded VCF calls (CYP2D6/CYP2D7)
+    # Phase 3a: BAM-based genes — SV detection via read depth + VCF variants
+    # Uses both --variants and --depth-of-coverage per upstream WGS workflow
     if [ -n "$DOC" ]; then
       for GENE in $BAM_GENES; do
-        echo "--- Calling ${GENE} (read-depth SV detection) ---"
+        echo "--- Calling ${GENE} (BAM + VCF) ---"
         EXTRA=""
         [ -f "$CTRL" ] && EXTRA="--control-statistics $CTRL"
         pypgx run-ngs-pipeline "$GENE" "${OUTBASE}/${GENE}" \
+          --variants "$VCF" \
           --depth-of-coverage "$DOC" \
           --assembly GRCh38 \
           --force \
@@ -272,7 +273,6 @@ try:
                 a1 = a1_obj.get('name', '?') if a1_obj else '?'
                 a2 = a2_obj.get('name', '?') if a2_obj else '?'
                 pharmcat_data[gene_name] = f'{a1}/{a2}'
-            break
     elif 'genes' in data and isinstance(data['genes'], list):
         for entry in data['genes']:
             gene = entry.get('geneSymbol', entry.get('gene', ''))

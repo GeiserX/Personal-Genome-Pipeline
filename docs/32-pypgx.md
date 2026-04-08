@@ -8,7 +8,7 @@ Comprehensive pharmacogenomic star allele calling for 23 clinically actionable g
 
 PharmCAT (step 7) calls ~23 genes from VCF data alone. This works well for simple SNP-based star alleles but fails for genes with structural variation — CYP2D6, CYP2A6, GSTM1, and GSTT1 all have common whole-gene deletions and duplications that VCF callers cannot represent. CYP2D6 alone affects 25% of all prescribed drugs, and PharmCAT frequently returns "Not called" for it.
 
-Cyrius (step 21) was designed specifically for CYP2D6 but fails on most WGS samples due to CYP2D7 pseudogene homology. pypgx uses a different read-depth algorithm that handles this homology more robustly.
+Cyrius (step 21) was designed specifically for CYP2D6 but can fail on some WGS samples due to CYP2D7 pseudogene homology. pypgx uses a different read-depth algorithm that handles this homology more robustly.
 
 pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1, GSTT1, and IFNL3.
 
@@ -97,9 +97,9 @@ CYP2D6 is the most complex pharmacogene. It has a tandemly duplicated pseudogene
 - **Gene duplication (*1x2, *2x2, etc.)**: Extra functional copies. Can produce ultra-rapid metabolizer status.
 - **CYP2D6/CYP2D7 hybrids (*36, *13, etc.)**: Recombination between gene and pseudogene.
 
-pypgx detects these by analyzing read depth across the CYP2D6/CYP2D7 locus. A drop in coverage indicates deletion; elevated coverage indicates duplication. This is fundamentally impossible from VCF data alone, which is why PharmCAT returns "Not called" for CYP2D6 in most WGS samples.
+pypgx detects these by analyzing read depth across the CYP2D6/CYP2D7 locus. A drop in coverage indicates deletion; elevated coverage indicates duplication. VCF data alone cannot represent these copy number changes, which is why PharmCAT returns "Not called" for CYP2D6 in most WGS samples.
 
-The BAM-based calling for CYP2D6 omits the `--vcf` flag intentionally, so pypgx relies entirely on read-depth patterns for SV detection rather than mixing in potentially misleading VCF calls from the pseudogene-confounded region.
+The BAM-based calling uses both `--variants` and `--depth-of-coverage` per the upstream pypgx WGS workflow, combining SNV/haplotype information with read-depth SV detection for the most complete genotype call.
 
 ## Output
 
@@ -166,8 +166,8 @@ The two tools are complementary. PharmCAT provides drug recommendations for the 
 - Star allele definitions evolve. pypgx 0.26.0 uses a specific PharmVar database snapshot that may not include the latest allele definitions.
 - SV detection accuracy depends on sequencing depth. 30X WGS is adequate; lower depths produce less reliable copy number calls.
 - pypgx does not produce drug recommendations directly. Consult [CPIC guidelines](https://cpicpgx.org/guidelines/) to translate diplotypes into clinical actions. Note: step 27 (CPIC lookup) currently parses PharmCAT output only and cannot read pypgx results.
-- **BAM-based SV genes (CYP2D6, CYP2A6, GSTM1) may fail** with pypgx 0.26.0 due to a pandas 2.x compatibility bug in the genotyping module (`'Series' object has no attribute 'Haplotype1'`). GSTT1 and all VCF-based genes are unaffected. For CYP2D6, use Cyrius (step 21) or Aldy as alternatives. This is an upstream pypgx issue — monitor [pypgx releases](https://github.com/sbslee/pypgx/releases) for a fix.
-- Individual gene failures do not stop the pipeline. However, if **all** genes fail, the script exits with status 1 before generating the summary TSV — this signals a systemic problem (e.g., wrong BAM path, corrupted index, missing pypgx-bundle). Investigate per-gene logs in the output directory. For partial failures, check the summary TSV for "FAILED" entries.
+- **BAM-based SV genes (CYP2D6, CYP2A6, GSTM1, GSTT1) may fail** with pypgx 0.26.0 due to a pandas 2.x compatibility bug in the genotyping module (`'Series' object has no attribute 'Haplotype1'`). In practice, GSTT1 often succeeds while CYP2D6, CYP2A6, and GSTM1 fail. All VCF-based genes are unaffected. For CYP2D6, Cyrius (step 21) or Aldy are alternatives. This is an upstream pypgx issue — monitor [pypgx releases](https://github.com/sbslee/pypgx/releases) for a fix.
+- Individual gene failures do not stop the pipeline. However, if **all** genes fail, the script exits with status 1 before generating the summary TSV — this signals a systemic problem (e.g., wrong BAM path, corrupted index, missing pypgx-bundle). Rerun with verbose output to identify the root cause. For partial failures, check the summary TSV for "FAILED" entries.
 
 ## Maintenance
 

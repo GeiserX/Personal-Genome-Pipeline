@@ -258,7 +258,8 @@ if [ -f "$PYPGX_SUMMARY" ]; then
   echo "## pypgx Pharmacogenomics (23 genes)"
   echo "---"
   PYPGX_TOTAL=$(tail -n +2 "$PYPGX_SUMMARY" | wc -l | tr -d ' ')
-  PYPGX_GENES=$(tail -n +2 "$PYPGX_SUMMARY" | { grep -cv 'FAILED' || true; })
+  # Count genes with actual diplotype calls (exclude FAILED and N/A)
+  PYPGX_GENES=$(tail -n +2 "$PYPGX_SUMMARY" | awk -F'\t' '$2 != "FAILED" && $2 != "N/A" {n++} END {print n+0}')
   echo "  Genes called: ${PYPGX_GENES}/${PYPGX_TOTAL}"
   # Highlight CYP2D6 (the key gene PharmCAT can't call)
   CYP2D6=$(awk -F'\t' '$1=="CYP2D6" {print $2; exit}' "$PYPGX_SUMMARY" 2>/dev/null)
@@ -268,10 +269,12 @@ if [ -f "$PYPGX_SUMMARY" ]; then
   # Show PharmCAT comparison if available
   PYPGX_COMPARE="${SAMPLE_DIR}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
   if [ -f "$PYPGX_COMPARE" ]; then
-    MISMATCHES=$(tail -n +2 "$PYPGX_COMPARE" 2>/dev/null | { grep -cEv '	Yes$' || true; })
-    echo "  PharmCAT vs pypgx discrepancies: ${MISMATCHES}"
-    if [ "$MISMATCHES" -gt 0 ]; then
-      echo "  (Discrepancies are expected — see docs/32-pypgx.md)"
+    # Count only real conflicts (both tools called the gene but disagree)
+    CONFLICTS=$(tail -n +2 "$PYPGX_COMPARE" 2>/dev/null | awk -F'\t' '$4 == "No" {n++} END {print n+0}')
+    SCOPE_DIFF=$(tail -n +2 "$PYPGX_COMPARE" 2>/dev/null | awk -F'\t' '$4 == "pypgx only" || $4 == "PharmCAT only" {n++} END {print n+0}')
+    echo "  PharmCAT vs pypgx conflicts: ${CONFLICTS}"
+    if [ "$SCOPE_DIFF" -gt 0 ]; then
+      echo "  Scope differences (only one tool called): ${SCOPE_DIFF}"
     fi
     echo ""
   fi
