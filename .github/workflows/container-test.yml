@@ -44,7 +44,7 @@ jobs:
           - image: quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
             cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
           - image: quay.io/biocontainers/slivar:0.3.3--h5f107b1_0
-            cmd: "bash -c 'slivar 2>&1 | grep -q slivar'"
+            cmd: "bash -c 'slivar 2>&1 | grep -q \"slivar version\"'"
           - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
             cmd: "pypgx --version"
     steps:
