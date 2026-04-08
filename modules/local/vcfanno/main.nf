@@ -47,7 +47,7 @@ process VCFANNO {
     script:
     // Build TOML for chr-prefixed tracks (SpliceAI, REVEL, AlphaMissense)
     def chr_toml = ""
-    if (spliceai_snv.name != 'NO_FILE') {
+    if (spliceai_snv) {
         chr_toml += """
 [[annotation]]
 file="${spliceai_snv}"
@@ -56,7 +56,7 @@ names=["SpliceAI"]
 ops=["self"]
 """
     }
-    if (spliceai_indel.name != 'NO_FILE') {
+    if (spliceai_indel) {
         chr_toml += """
 [[annotation]]
 file="${spliceai_indel}"
@@ -65,7 +65,7 @@ names=["SpliceAI_indel"]
 ops=["self"]
 """
     }
-    if (revel.name != 'NO_FILE') {
+    if (revel) {
         chr_toml += """
 [[annotation]]
 file="${revel}"
@@ -74,7 +74,7 @@ names=["REVEL"]
 ops=["self"]
 """
     }
-    if (alphamissense.name != 'NO_FILE') {
+    if (alphamissense) {
         chr_toml += """
 [[annotation]]
 file="${alphamissense}"
@@ -86,7 +86,7 @@ ops=["self","self"]
 
     // Build TOML for no-chr tracks (CADD)
     def nochr_toml = ""
-    if (cadd_snv.name != 'NO_FILE') {
+    if (cadd_snv) {
         nochr_toml += """
 [[annotation]]
 file="${cadd_snv}"
@@ -95,7 +95,7 @@ names=["CADD_PHRED"]
 ops=["self"]
 """
     }
-    if (cadd_indel.name != 'NO_FILE') {
+    if (cadd_indel) {
         nochr_toml += """
 [[annotation]]
 file="${cadd_indel}"
@@ -105,9 +105,8 @@ ops=["self"]
 """
     }
 
-    def has_nochr = cadd_snv.name != 'NO_FILE' || cadd_indel.name != 'NO_FILE'
-    def has_chr   = spliceai_snv.name != 'NO_FILE' || spliceai_indel.name != 'NO_FILE' || revel.name != 'NO_FILE' || alphamissense.name != 'NO_FILE'
-
+    def has_nochr = (cadd_snv || cadd_indel) ? true : false
+    def has_chr   = (spliceai_snv || spliceai_indel || revel || alphamissense) ? true : false
     """
     CURRENT_VCF="${vcf}"
 

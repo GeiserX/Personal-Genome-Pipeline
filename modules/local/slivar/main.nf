@@ -34,7 +34,7 @@ process SLIVAR {
     task.ext.when == null || task.ext.when
 
     script:
-    def has_constraint = gnomad_constraint.name != 'NO_FILE'
+    def has_constraint = gnomad_constraint ? true : false
     """
     # --- Generate PED file for single sample ---
     SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)

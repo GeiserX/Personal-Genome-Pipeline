@@ -41,8 +41,8 @@ workflow PGX {
     if (params.clinvar) {
         CLINVAR_SCREEN(
             ch_vcf,
-            ch_clinvar.first(),
-            ch_clinvar_index.first(),
+            ch_clinvar,
+            ch_clinvar_index,
             ch_reference
         )
         ch_versions = ch_versions.mix(CLINVAR_SCREEN.out.versions)
@@ -60,9 +60,9 @@ workflow PGX {
 
         PYPGX(
             ch_bam,
-            ch_reference.first(),
-            ch_reference_fai.first(),
-            ch_pypgx_bundle.first()
+            ch_reference,
+            ch_reference_fai,
+            ch_pypgx_bundle
         )
         ch_pypgx_results = PYPGX.out.results
         ch_pypgx_summary = PYPGX.out.summary

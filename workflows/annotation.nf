@@ -22,19 +22,19 @@ workflow ANNOTATION {
     ch_vcf                // channel: [meta, vcf, vcf_index]
     ch_reference          // channel: path — reference FASTA
     ch_vep_cache          // channel: path — VEP cache directory or []
-    ch_cadd_snv           // channel: path — CADD SNV file or NO_FILE
-    ch_cadd_snv_index     // channel: path — CADD SNV index or NO_FILE
-    ch_cadd_indel         // channel: path — CADD indel file or NO_FILE
-    ch_cadd_indel_index   // channel: path — CADD indel index or NO_FILE
-    ch_spliceai_snv       // channel: path — SpliceAI SNV VCF or NO_FILE
-    ch_spliceai_snv_index // channel: path — SpliceAI SNV index or NO_FILE
-    ch_spliceai_indel     // channel: path — SpliceAI indel VCF or NO_FILE
-    ch_spliceai_indel_index // channel: path — SpliceAI indel index or NO_FILE
-    ch_revel              // channel: path — REVEL file or NO_FILE
-    ch_revel_index        // channel: path — REVEL index or NO_FILE
-    ch_alphamissense      // channel: path — AlphaMissense file or NO_FILE
-    ch_alphamissense_index // channel: path — AlphaMissense index or NO_FILE
-    ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or NO_FILE
+    ch_cadd_snv           // channel: path — CADD SNV file or []
+    ch_cadd_snv_index     // channel: path — CADD SNV index or []
+    ch_cadd_indel         // channel: path — CADD indel file or []
+    ch_cadd_indel_index   // channel: path — CADD indel index or []
+    ch_spliceai_snv       // channel: path — SpliceAI SNV VCF or []
+    ch_spliceai_snv_index // channel: path — SpliceAI SNV index or []
+    ch_spliceai_indel     // channel: path — SpliceAI indel VCF or []
+    ch_spliceai_indel_index // channel: path — SpliceAI indel index or []
+    ch_revel              // channel: path — REVEL file or []
+    ch_revel_index        // channel: path — REVEL index or []
+    ch_alphamissense      // channel: path — AlphaMissense file or []
+    ch_alphamissense_index // channel: path — AlphaMissense index or []
+    ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or []
 
     main:
     ch_versions = Channel.empty()
@@ -51,9 +51,8 @@ workflow ANNOTATION {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vep')) {
         VEP(
             ch_current_vcf,
-            ch_reference.first(),
-            ch_vep_cache.first()
-        )
+            ch_reference,
+            ch_vep_cache        )
         ch_versions = ch_versions.mix(VEP.out.versions)
         ch_vep_vcf  = VEP.out.vcf
 
@@ -71,19 +70,18 @@ workflow ANNOTATION {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vcfanno')) {
         VCFANNO(
             ch_current_vcf,
-            ch_cadd_snv.first(),
-            ch_cadd_snv_index.first(),
-            ch_cadd_indel.first(),
-            ch_cadd_indel_index.first(),
-            ch_spliceai_snv.first(),
-            ch_spliceai_snv_index.first(),
-            ch_spliceai_indel.first(),
-            ch_spliceai_indel_index.first(),
-            ch_revel.first(),
-            ch_revel_index.first(),
-            ch_alphamissense.first(),
-            ch_alphamissense_index.first()
-        )
+            ch_cadd_snv,
+            ch_cadd_snv_index,
+            ch_cadd_indel,
+            ch_cadd_indel_index,
+            ch_spliceai_snv,
+            ch_spliceai_snv_index,
+            ch_spliceai_indel,
+            ch_spliceai_indel_index,
+            ch_revel,
+            ch_revel_index,
+            ch_alphamissense,
+            ch_alphamissense_index        )
         ch_versions     = ch_versions.mix(VCFANNO.out.versions)
         ch_enriched_vcf = VCFANNO.out.vcf
 
@@ -101,8 +99,7 @@ workflow ANNOTATION {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('slivar')) {
         SLIVAR(
             ch_current_vcf,
-            ch_gnomad_constraint.first()
-        )
+            ch_gnomad_constraint        )
         ch_versions  = ch_versions.mix(SLIVAR.out.versions)
         ch_slivar_vcf = SLIVAR.out.vcf
     }
