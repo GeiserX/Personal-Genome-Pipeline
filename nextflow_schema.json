@@ -67,6 +67,153 @@
                 }
             }
         },
+        "tool_selection": {
+            "title": "Tool selection",
+            "type": "object",
+            "description": "Control which analysis tools to run.",
+            "properties": {
+                "tools": {
+                    "type": "string",
+                    "description": "Comma-separated list of tools to run. SV tools (manta,delly,cnvnator,duphold,annotsv,survivor_merge), ancestry, and pypgx are opt-in.",
+                    "default": "pharmcat,cpic,vep,vcfanno,slivar,clinical_filter,cpsr,roh,prs,mito_haplogroup,hla_typing,expansion_hunter,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "fa_icon": "fas fa-toolbox"
+                }
+            }
+        },
+        "annotation_databases": {
+            "title": "Annotation databases",
+            "type": "object",
+            "description": "Paths to annotation databases. Modules skip gracefully when not provided.",
+            "properties": {
+                "vep_cache": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "VEP offline cache directory (release 112).",
+                    "fa_icon": "fas fa-database"
+                },
+                "vep_cache_cpsr": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "VEP cache for CPSR (release 113, separate from VEP's 112 cache).",
+                    "fa_icon": "fas fa-database"
+                },
+                "pcgr_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "PCGR/CPSR reference data bundle directory.",
+                    "fa_icon": "fas fa-database"
+                },
+                "pypgx_bundle": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "pypgx-bundle reference data directory for star allele calling.",
+                    "fa_icon": "fas fa-database"
+                },
+                "cadd_snv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD whole-genome pre-scored SNV file (tsv.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_snv_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD SNV tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_indel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD whole-genome pre-scored indel file (tsv.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_indel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD indel tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_snv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI pre-scored SNV VCF (vcf.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_snv_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI SNV tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_indel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI pre-scored indel VCF (vcf.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_indel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI indel tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "revel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "REVEL pathogenicity scores file.",
+                    "fa_icon": "fas fa-file"
+                },
+                "revel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "REVEL tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "alphamissense": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "AlphaMissense pathogenicity scores file.",
+                    "fa_icon": "fas fa-file"
+                },
+                "alphamissense_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "AlphaMissense tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "gnomad_constraint": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "gnomAD gene constraint TSV (LOEUF, pLI scores).",
+                    "fa_icon": "fas fa-file"
+                }
+            }
+        },
+        "clinical_genetics": {
+            "title": "Clinical & population genetics",
+            "type": "object",
+            "description": "Paths to clinical and population genetics reference data.",
+            "properties": {
+                "pgs_scoring": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "PGS Catalog scoring files directory.",
+                    "fa_icon": "fas fa-chart-bar"
+                },
+                "ancestry_ref": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Ancestry reference panel for PCA projection.",
+                    "fa_icon": "fas fa-globe"
+                },
+                "expansion_catalog": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "ExpansionHunter variant catalog JSON.",
+                    "fa_icon": "fas fa-dna"
+                }
+            }
+        },
         "resource_limits": {
             "title": "Resource limits",
             "type": "object",
@@ -96,6 +243,9 @@
     "allOf": [
         { "$ref": "#/definitions/input_output_options" },
         { "$ref": "#/definitions/reference_data" },
+        { "$ref": "#/definitions/tool_selection" },
+        { "$ref": "#/definitions/annotation_databases" },
+        { "$ref": "#/definitions/clinical_genetics" },
         { "$ref": "#/definitions/resource_limits" }
     ]
 }
