@@ -42,8 +42,17 @@ jobs:
 
       - name: Run stub test
         run: |
-          # Disable trace/reports — non-root Docker images cannot write .command.trace
-          printf 'trace.enabled=false\ndag.enabled=false\ntimeline.enabled=false\nreport.enabled=false\n' > ci.config
+          # Override Docker user + disable reports for CI:
+          # Many bioinformatics images run as non-root, causing permission
+          # issues with Nextflow work directories on GitHub Actions runners.
+          cat > ci.config <<'CICONF'
+          trace.enabled = false
+          dag.enabled = false
+          timeline.enabled = false
+          report.enabled = false
+          docker.userEmulation = false
+          docker.runOptions = '-u 0:0'
+          CICONF
           nextflow run main.nf -profile test,docker -stub -c ci.config
 
       - name: Check Nextflow module container tags match versions.env
