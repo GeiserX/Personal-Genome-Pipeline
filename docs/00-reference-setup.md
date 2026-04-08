@@ -435,10 +435,26 @@ echo "Checking reference setup..."
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && echo "  VEP 113 cache (CPSR): OK" || echo "  VEP 113 cache (CPSR): MISSING"
 
 echo "Annotation databases (optional, for steps 30-31):"
-[ -f "${GENOME_DIR}/annotations/whole_genome_SNVs.tsv.gz" ] && echo "  CADD SNVs: OK" || echo "  CADD SNVs: not downloaded"
-[ -f "${GENOME_DIR}/annotations/spliceai_scores.raw.snv.hg38.vcf.gz" ] && echo "  SpliceAI SNVs: OK" || echo "  SpliceAI SNVs: not downloaded"
-[ -f "${GENOME_DIR}/annotations/revel_grch38.tsv.gz" ] && echo "  REVEL: OK" || echo "  REVEL: not downloaded"
-[ -f "${GENOME_DIR}/annotations/AlphaMissense_hg38.tsv.gz" ] && echo "  AlphaMissense: OK" || echo "  AlphaMissense: not downloaded"
-[ -f "${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv" ] && echo "  gnomAD constraint: OK" || echo "  gnomAD constraint: not downloaded"
+for DB_PAIR in \
+  "whole_genome_SNVs.tsv.gz:CADD SNVs" \
+  "gnomad.genomes.r4.0.indel.tsv.gz:CADD indels" \
+  "spliceai_scores.raw.snv.hg38.vcf.gz:SpliceAI SNVs" \
+  "spliceai_scores.raw.indel.hg38.vcf.gz:SpliceAI indels" \
+  "revel_grch38.tsv.gz:REVEL" \
+  "AlphaMissense_hg38.tsv.gz:AlphaMissense" \
+  "gnomad_v4.1_constraint.tsv:gnomAD constraint"; do
+  DB_FILE="${DB_PAIR%%:*}"
+  DB_NAME="${DB_PAIR#*:}"
+  if [ -f "${GENOME_DIR}/annotations/${DB_FILE}" ]; then
+    # Check for .tbi index (not needed for plain TSV files)
+    if [[ "$DB_FILE" == *.vcf.gz ]] || [[ "$DB_FILE" == *.tsv.gz && "$DB_FILE" != *constraint* ]]; then
+      [ -f "${GENOME_DIR}/annotations/${DB_FILE}.tbi" ] && echo "  ${DB_NAME}: OK (+index)" || echo "  ${DB_NAME}: OK (WARNING: .tbi index missing)"
+    else
+      echo "  ${DB_NAME}: OK"
+    fi
+  else
+    echo "  ${DB_NAME}: not downloaded"
+  fi
+done
 echo "Done."
 ```

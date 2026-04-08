@@ -16,6 +16,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 
+# Validate sample name to prevent shell injection in bash -c strings
+if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
+  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
+  exit 1
+fi
+
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 VEP_DIR="${SAMPLE_DIR}/vep"
 ANNOT_DIR="${GENOME_DIR}/annotations"
@@ -372,5 +378,5 @@ echo ""
 echo "  # Variants with high SpliceAI score (>= 0.5):"
 echo "  bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/SpliceAI\n' -i 'INFO/SpliceAI!=\".\"' ${OUTPUT_FILE} | head"
 echo ""
-echo "  # AlphaMissense pathogenic variants:"
-echo "  bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AM_pathogenicity\t%INFO/AM_class\n' -i 'INFO/AM_class=\"pathogenic\"' ${OUTPUT_FILE} | head"
+echo "  # AlphaMissense likely pathogenic variants:"
+echo "  bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AM_pathogenicity\t%INFO/AM_class\n' -i 'INFO/AM_class=\"likely_pathogenic\"' ${OUTPUT_FILE} | head"

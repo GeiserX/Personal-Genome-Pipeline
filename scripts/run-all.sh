@@ -197,7 +197,7 @@ echo "  [B5] CPSR cancer predisposition..."
 _throttle; bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
-echo "  [B6b] pypgx pharmacogenomics (23 genes + CYP2D6 SV)..."
+echo "  [B6] pypgx pharmacogenomics (23 genes + CYP2D6 SV)..."
 _throttle; bash "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE" &
 PID_PYPGX=$!
 
@@ -239,11 +239,11 @@ PID_ANNOTSV=""
 if wait "$PID_MANTA" 2>/dev/null; then
   echo "  Manta complete. Running SV post-processing..."
 
-  echo "  [B6] duphold SV quality annotation..."
+  echo "  [B7] duphold SV quality annotation..."
   _throttle; bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
   PID_DUPHOLD=$!
 
-  echo "  [B7] AnnotSV structural variant annotation..."
+  echo "  [B8] AnnotSV structural variant annotation..."
   _throttle; bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
   PID_ANNOTSV=$!
 else
@@ -301,7 +301,7 @@ echo "  [D6] CPIC drug-gene recommendations..."
 _throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" > "${POST_LOG_DIR}/27_cpic.log" 2>&1 &
 PID_CPIC=$!
 
-echo "  [D8] slivar variant prioritization + compound hets..."
+echo "  [D7] slivar variant prioritization + compound hets..."
 _throttle; bash "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE" > "${POST_LOG_DIR}/31_slivar.log" 2>&1 &
 PID_SLIVAR=$!
 
@@ -309,11 +309,11 @@ PID_SLIVAR=$!
 # Enable with: SOMATIC=true ./scripts/run-all.sh sample sex
 PID_SOMATIC=""
 if [ "${SOMATIC:-false}" = "true" ] || [ "${SOMATIC:-0}" = "1" ]; then
-  echo "  [D7] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
+  echo "  [D8] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
   _throttle; bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" > "${POST_LOG_DIR}/29_somatic.log" 2>&1 &
   PID_SOMATIC=$!
 else
-  echo "  [D7] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
+  echo "  [D8] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
 fi
 
 PHASE4_FAIL=0
@@ -323,7 +323,7 @@ for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_C
 done
 if [ "$PHASE4_FAIL" -gt 0 ]; then
   echo "  WARNING: ${PHASE4_FAIL} post-processing step(s) had errors."
-  echo "  See per-step logs: ${POST_LOG_DIR}/2*_*.log"
+  echo "  See per-step logs: ${POST_LOG_DIR}/*_*.log"
 else
   echo "  Post-processing complete."
 fi
@@ -340,21 +340,21 @@ if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   [ -f "${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   if [ "$CALLER_COUNT" -ge 2 ]; then
     echo ""
-    echo "  [D8] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
+    echo "  [D9] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
     bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" > "${POST_LOG_DIR}/benchmark.log" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG_DIR}/benchmark.log"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
   else
     echo ""
-    echo "  [D8] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
+    echo "  [D9] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
     echo "  Set EXTRA_CALLERS=gatk,freebayes,strelka2 to run alternative callers in Phase 2b."
   fi
 fi
 
 REPORT_FAIL=0
 
-echo "  [D9] HTML summary report..."
+echo "  [D10] HTML summary report..."
 bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/24_html_report.log" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG_DIR}/24_html_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
-echo "  [D10] MultiQC aggregated QC report..."
+echo "  [D11] MultiQC aggregated QC report..."
 bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" > "${POST_LOG_DIR}/28_multiqc.log" 2>&1 || { echo "  WARNING: MultiQC report generation failed. See ${POST_LOG_DIR}/28_multiqc.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
 
 # Generate summary report

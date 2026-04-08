@@ -4,7 +4,7 @@ Adds pathogenicity scores (CADD, SpliceAI, REVEL, AlphaMissense) to VEP-annotate
 
 ## Why
 
-VEP (step 13) provides functional impact predictions, but clinical-grade variant interpretation benefits from additional pathogenicity scores. CADD captures deleteriousness across coding and non-coding variants; SpliceAI finds cryptic splice-disrupting variants missed by rule-based methods; REVEL and AlphaMissense score missense variants using ensemble and structural approaches respectively.
+VEP (step 13) provides functional impact predictions, but thorough variant interpretation benefits from additional pathogenicity scores. CADD captures deleteriousness across coding and non-coding variants; SpliceAI finds cryptic splice-disrupting variants missed by rule-based methods; REVEL and AlphaMissense score missense variants using ensemble and structural approaches respectively.
 
 vcfanno annotates in a single streaming pass per database, making it much faster than re-running VEP with plugins.
 
@@ -72,7 +72,7 @@ export GENOME_DIR=/path/to/your/data
 | `SpliceAI` | SpliceAI | Splice impact prediction (delta scores for AG/AL/DG/DL) |
 | `REVEL` | REVEL v1.3 | Ensemble missense pathogenicity score (0-1) |
 | `AM_pathogenicity` | AlphaMissense | Structure-informed missense pathogenicity (0-1) |
-| `AM_class` | AlphaMissense | Classification: benign, ambiguous, or pathogenic |
+| `AM_class` | AlphaMissense | Classification: benign, ambiguous, or likely_pathogenic |
 
 ## Interpretation
 
@@ -84,9 +84,9 @@ See [docs/interpreting-results.md](interpreting-results.md) for score thresholds
 # Variants with CADD PHRED >= 20 (top 1% most deleterious)
 bcftools view -i 'INFO/CADD_PHRED>=20' ${SAMPLE}_annotated.vcf.gz | head
 
-# AlphaMissense pathogenic variants
+# AlphaMissense likely pathogenic variants
 bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AM_class\n' \
-  -i 'INFO/AM_class="pathogenic"' ${SAMPLE}_annotated.vcf.gz
+  -i 'INFO/AM_class="likely_pathogenic"' ${SAMPLE}_annotated.vcf.gz
 
 # High REVEL score missense variants (ClinGen moderate evidence)
 bcftools view -i 'INFO/REVEL>=0.644' ${SAMPLE}_annotated.vcf.gz

@@ -169,7 +169,7 @@ Manta is the primary SV caller because:
 | Large CNV focus | CNVnator alone or CNVnator + Manta |
 | Inversions / translocations | Delly (strongest for these SV types) |
 
-The consensus merge (step 22) keeps only SVs called by two or more callers, reducing false positives at the cost of losing some real single-caller-only events. For clinical-grade SV analysis, consider also running AnnotSV (step 5) on the consensus set.
+The consensus merge (step 22) keeps only SVs called by two or more callers, reducing false positives at the cost of losing some real single-caller-only events. For more thorough SV analysis, consider also running AnnotSV (step 5) on the consensus set.
 
 ---
 
@@ -186,9 +186,9 @@ Run all available callers and compare. This gives you the broadest view of your 
 
 **Time estimate:** ~12-24 hours total (callers can run in parallel after alignment).
 
-### Clinical-grade analysis
+### High-confidence analysis
 
-Use a consensus of two or more callers. Variants called by multiple independent tools have lower false positive rates. This is the approach used by most clinical WGS pipelines.
+Use a consensus of two or more callers. Variants called by multiple independent tools have lower false positive rates. This is the approach used by many production WGS pipelines.
 
 **Recommended configuration:**
 - Alignment: BWA-MEM2 (clinical compatibility, XS tags)

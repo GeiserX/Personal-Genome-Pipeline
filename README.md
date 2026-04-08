@@ -462,7 +462,7 @@ ClinVar and other databases are updated monthly. Re-running the ClinVar screen (
 See [docs/multi-sample.md](docs/multi-sample.md) for carrier cross-screening, pharmacogenomics comparison, and family analysis.
 
 **Q: Is this clinically validated?**
-No. This is a research/educational pipeline. It uses the same tools as clinical labs (DeepVariant, VEP, ClinVar, PharmCAT) but has not been through clinical validation. Always discuss findings with a healthcare provider.
+No. This is a research/educational pipeline. It uses well-known open-source tools (DeepVariant, VEP, ClinVar, PharmCAT) but has not been through clinical validation. The tools themselves are research-grade and their results should not be treated as clinical diagnoses. Always discuss findings with a healthcare provider.
 
 **Q: What about long-read sequencing (Nanopore, PacBio)?**
 Supported since v0.3.0. See the [long-read guide](docs/long-read-guide.md) for ONT and PacBio HiFi workflows using minimap2, Clair3, and Sniffles2. Most downstream VCF-based steps work as-is.

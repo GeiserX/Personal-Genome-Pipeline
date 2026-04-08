@@ -15,7 +15,7 @@ slivar (by Brent Pedersen, author of vcfanno, mosdepth, duphold) is a streaming 
 
 ## Docker Images
 
-```
+```text
 quay.io/biocontainers/slivar:0.3.3--h5f107b1_0    # compound het detection
 staphb/bcftools:1.21                                # variant filtering via split-vep
 ```
@@ -37,21 +37,25 @@ export GENOME_DIR=/path/to/your/data
 - PASS variants with MODERATE VEP impact (missense, in-frame indel)
 - gnomAD allele frequency < 1% (or missing)
 - At least one deleterious predictor hit (if vcfanno annotations available):
-  - CADD PHRED >= 20
+  - CADD PHRED >= 20 (SNV and/or indel tags, whichever are present)
   - REVEL >= 0.5
   - AlphaMissense "likely_pathogenic"
-  - SpliceAI delta >= 0.2
+  - SpliceAI annotation present (presence check only — bcftools cannot parse the pipe-delimited delta scores; threshold filtering at >= 0.2 is done in step 23)
 - Without vcfanno: all rare MODERATE variants included (same as step 23)
+- Only annotation tags that exist in the VCF header are referenced — partial installs (e.g., CADD SNVs only) work correctly
 
 ### Tier 3: clinvar_pathogenic
-- ClinVar pathogenic or likely_pathogenic (from VEP CLIN_SIG field)
+- PASS variants with ClinVar pathogenic or likely_pathogenic (from VEP CLIN_SIG field)
+- Excludes `conflicting_interpretations_of_pathogenicity` (the substring match `~"pathogenic"` would otherwise include these)
 - No frequency filter (pathogenic variants can be common carriers)
 
 All tiers are merged and deduplicated into a single prioritized VCF.
 
 ## Compound Heterozygote Detection
 
-slivar's `compound-hets` command groups heterozygous variants by gene from the prioritized VCF and reports pairs that could form compound heterozygotes (two different damaging variants in the same gene, one from each parent).
+slivar's `compound-hets` command groups heterozygous variants by gene from the prioritized VCF and reports pairs that could form compound heterozygotes (two different damaging variants in the same gene, one from each parent). It requires a PED file (`--ped`) describing sample relationships. For singleton samples (no trio), the `--allow-non-trios` flag is required.
+
+The command outputs VCF to stdout with `INFO/slivar_comphet` annotations linking partner variants. Each VCF record represents a unique variant; the `slivar_comphet` field lists all its compound-het partners (format: `sample/GENE/PAIR_ID/chrom/pos/ref/alt`, comma-separated). A gene with N variants produces up to C(N,2) pairs but only N VCF records. The script counts unique pair IDs from this field and exports a human-readable TSV with columns: GENE, CHROM, POS, REF, ALT, IMPACT, Consequence, GT -- sorted by gene so that compound-het partners appear in consecutive rows.
 
 **Important:** With single-sample unphased data, these are *candidates only*. The two variants might be on the same haplotype (cis) rather than different haplotypes (trans). Trio data or read-backed phasing is needed to confirm true compound hets.
 
@@ -74,7 +78,8 @@ Variants in constrained genes are more likely to be pathogenic -- these genes ar
 |---|---|
 | `slivar/${SAMPLE}_prioritized.vcf.gz` | All prioritized variants (merged, deduplicated) |
 | `slivar/${SAMPLE}_slivar_summary.tsv` | Human-readable table with gene constraint |
-| `slivar/${SAMPLE}_compound_hets.tsv` | Compound het candidate pairs |
+| `slivar/${SAMPLE}_compound_hets.vcf.gz` | Compound het candidate variants (VCF) |
+| `slivar/${SAMPLE}_compound_hets.tsv` | Compound het candidates (human-readable TSV) |
 | `slivar/${SAMPLE}_rare_high.vcf.gz` | Tier 1: HIGH impact |
 | `slivar/${SAMPLE}_rare_moderate_del.vcf.gz` | Tier 2: MODERATE + deleterious |
 | `slivar/${SAMPLE}_clinvar_path.vcf.gz` | Tier 3: ClinVar P/LP |
@@ -89,7 +94,7 @@ A typical 30X WGS sample produces:
 - **rare_high:** 50-200 variants (loss-of-function in rare alleles)
 - **rare_moderate_deleterious:** 200-1,000 variants (depends on predictor availability)
 - **clinvar_pathogenic:** 0-10 variants (most are heterozygous carriers)
-- **compound het candidates:** 0-20 pairs (most are false positives in unphased data)
+- **compound het candidates:** 1,000-2,000 pairs across 100-200 genes (combinatorial: N variants in a gene = N*(N-1)/2 pairs; most are false positives in unphased data)
 
 Focus review on:
 1. Variants in **constrained genes** (CONSTRAINED=YES)

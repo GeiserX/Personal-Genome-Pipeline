@@ -10,6 +10,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+
+# Validate sample name to prevent shell injection in bash -c / python3 -c strings
+if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
+  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
+  exit 1
+fi
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/pypgx"
@@ -34,6 +40,15 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
+# Validate pypgx-bundle (required for Beagle phasing panels and CNV models)
+PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
+if [ ! -d "$PYPGX_BUNDLE" ]; then
+  echo "ERROR: pypgx-bundle not found at ${PYPGX_BUNDLE}" >&2
+  echo "  Download it (370 MB, one-time) with:" >&2
+  echo "  cd ${GENOME_DIR}/reference && git clone --branch 0.26.0 --depth 1 https://github.com/sbslee/pypgx-bundle.git" >&2
+  exit 1
+fi
+
 # Curated gene list: CPIC Level A/B + key genes PharmCAT misses
 # BAM-based (structural variation): CYP2D6, CYP2A6, GSTM1, GSTT1
 # VCF-based (additional coverage): CYP1A2, CYP2B6, CYP2C9, CYP2C19, CYP3A4, CYP3A5,
@@ -48,40 +63,75 @@ echo "VCF-based: ${VCF_GENES}"
 echo ""
 
 # Run all genes in a single Docker container to avoid repeated startup overhead.
-# BAM-based genes (SV detection via read depth) omit --vcf.
-# VCF-based genes include --vcf for variant data.
+# pypgx requires a two-phase setup before calling genes:
+#   1. prepare-depth-of-coverage — compute read depth from BAM for SV genes
+#   2. compute-control-statistics — normalize read depth using a control gene (VDR)
+# Then per-gene calling:
+#   - SV genes: --depth-of-coverage + --control-statistics (no --variants to avoid
+#     pseudogene-confounded VCF calls in CYP2D6/CYP2D7 region)
+#   - VCF genes: --variants only
 # Individual gene failures are logged but do not stop the loop.
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
+  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
   "${PYPGX_IMAGE}" \
   bash -c '
     SAMPLE="'"${SAMPLE}"'"
     BAM_GENES="'"${BAM_GENES}"'"
     VCF_GENES="'"${VCF_GENES}"'"
     OUTBASE="/genome/${SAMPLE}/pypgx"
+    BAM="/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+    VCF="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+    DOC="${OUTBASE}/depth_of_coverage.zip"
+    CTRL="${OUTBASE}/control_statistics.zip"
     FAILED=""
     SUCCEEDED=0
 
-    # BAM-based genes (structural variation detection from read depth)
-    for GENE in $BAM_GENES; do
-      echo "--- Calling ${GENE} (BAM-based, SV detection) ---"
-      pypgx run-ngs-pipeline "$GENE" \
-        --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-        --assembly GRCh38 \
-        --output-dir "${OUTBASE}/${GENE}/" 2>&1 \
-        && SUCCEEDED=$((SUCCEEDED + 1)) \
-        || { echo "WARNING: ${GENE} failed"; FAILED="${FAILED} ${GENE}"; }
-    done
+    # Phase 1: Prepare depth of coverage for all SV genes (one-time, from BAM)
+    echo "--- Preparing depth of coverage for SV genes ---"
+    if ! pypgx prepare-depth-of-coverage \
+      "$DOC" "$BAM" --assembly GRCh38 2>&1; then
+      echo "ERROR: prepare-depth-of-coverage failed — cannot call SV genes"
+      # Fall through to VCF-only genes; mark all BAM genes as failed
+      for GENE in $BAM_GENES; do FAILED="${FAILED} ${GENE}"; done
+      DOC=""
+    fi
 
-    # VCF-based genes
+    # Phase 2: Compute control statistics from VDR for read-depth normalization
+    if [ -n "$DOC" ]; then
+      echo "--- Computing control statistics (VDR) ---"
+      if ! pypgx compute-control-statistics \
+        VDR "$CTRL" "$BAM" --assembly GRCh38 2>&1; then
+        echo "WARNING: compute-control-statistics failed; SV calling proceeds without normalization"
+        CTRL=""
+      fi
+    fi
+
+    # Phase 3a: BAM-based genes — SV detection via read depth
+    # Omits --variants to avoid pseudogene-confounded VCF calls (CYP2D6/CYP2D7)
+    if [ -n "$DOC" ]; then
+      for GENE in $BAM_GENES; do
+        echo "--- Calling ${GENE} (read-depth SV detection) ---"
+        EXTRA=""
+        [ -f "$CTRL" ] && EXTRA="--control-statistics $CTRL"
+        pypgx run-ngs-pipeline "$GENE" "${OUTBASE}/${GENE}" \
+          --depth-of-coverage "$DOC" \
+          --assembly GRCh38 \
+          --force \
+          $EXTRA 2>&1 \
+          && SUCCEEDED=$((SUCCEEDED + 1)) \
+          || { echo "WARNING: ${GENE} failed"; FAILED="${FAILED} ${GENE}"; }
+      done
+    fi
+
+    # Phase 3b: VCF-based genes — star alleles from variant calls only
     for GENE in $VCF_GENES; do
       echo "--- Calling ${GENE} (VCF-based) ---"
-      pypgx run-ngs-pipeline "$GENE" \
-        --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-        --vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+      pypgx run-ngs-pipeline "$GENE" "${OUTBASE}/${GENE}" \
+        --variants "$VCF" \
         --assembly GRCh38 \
-        --output-dir "${OUTBASE}/${GENE}/" 2>&1 \
+        --force 2>&1 \
         && SUCCEEDED=$((SUCCEEDED + 1)) \
         || { echo "WARNING: ${GENE} failed"; FAILED="${FAILED} ${GENE}"; }
     done
@@ -91,6 +141,8 @@ docker run --rm --user root \
     if [ -n "$FAILED" ]; then
       echo "Failed genes:${FAILED}"
     fi
+    # Exit non-zero if ALL genes failed
+    [ "$SUCCEEDED" -gt 0 ] || exit 1
   '
 
 echo ""
@@ -100,6 +152,7 @@ echo "Extracting results and building summary..."
 docker run --rm --user root \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
+  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
   "${PYPGX_IMAGE}" \
   python3 -c "
 import os, sys, zipfile, csv, io
@@ -116,46 +169,47 @@ rows = []
 for gene in all_genes:
     results_zip = f'{outbase}/{gene}/results.zip'
     if not os.path.isfile(results_zip):
-        rows.append([gene, 'FAILED', 'N/A', 'N/A', 'N/A', 'BAM' if gene in bam_genes else 'BAM+VCF'])
+        rows.append([gene, 'FAILED', 'N/A', 'N/A', 'BAM' if gene in bam_genes else 'VCF'])
         continue
 
     diplotype = 'N/A'
     phenotype = 'N/A'
-    activity_score = 'N/A'
-
     try:
         import subprocess
-        dip_out = subprocess.run(
-            ['pypgx', 'print-data', results_zip, 'diplotype'],
+        # pypgx print-data results.zip outputs a TSV with columns:
+        # [sample] Genotype Phenotype Haplotype1 Haplotype2 ...
+        out = subprocess.run(
+            ['pypgx', 'print-data', results_zip],
             capture_output=True, text=True
         )
-        if dip_out.returncode == 0:
-            for line in dip_out.stdout.strip().split('\n'):
-                if line and not line.startswith('Sample'):
-                    parts = line.split('\t')
-                    if len(parts) >= 2:
-                        diplotype = parts[1]
-
-        phen_out = subprocess.run(
-            ['pypgx', 'print-data', results_zip, 'phenotype'],
-            capture_output=True, text=True
-        )
-        if phen_out.returncode == 0:
-            for line in phen_out.stdout.strip().split('\n'):
-                if line and not line.startswith('Sample'):
-                    parts = line.split('\t')
-                    if len(parts) >= 2:
-                        phenotype = parts[1]
+        if out.returncode == 0:
+            lines = out.stdout.rstrip().split('\n')
+            if len(lines) >= 2:
+                headers = lines[0].split('\t')
+                values = lines[1].split('\t')
+                if 'Genotype' in headers:
+                    idx = headers.index('Genotype')
+                    if idx < len(values):
+                        diplotype = values[idx]
+                if 'Phenotype' in headers:
+                    idx = headers.index('Phenotype')
+                    if idx < len(values):
+                        phenotype = values[idx]
     except Exception as e:
         print(f'WARNING: Error extracting {gene}: {e}', file=sys.stderr)
 
-    sv_detected = 'Yes' if any(x in (diplotype or '') for x in ['DEL', 'DUP', 'x2', 'x3', '*5']) else 'No'
-    source = 'BAM' if gene in bam_genes else 'BAM+VCF'
-    rows.append([gene, diplotype, phenotype, activity_score, sv_detected, source])
+    # SV detection only meaningful for BAM-based genes (read-depth analysis)
+    # '*5' = gene deletion in CYP2D6 context; 'x2'/'x3' = duplications
+    source = 'BAM' if gene in bam_genes else 'VCF'
+    if gene in bam_genes:
+        sv_detected = 'Yes' if any(x in (diplotype or '') for x in ['DEL', 'DUP', 'x2', 'x3', '*5']) else 'No'
+    else:
+        sv_detected = 'N/A'
+    rows.append([gene, diplotype, phenotype, sv_detected, source])
 
 with open(summary_path, 'w', newline='') as f:
     w = csv.writer(f, delimiter='\t')
-    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'ActivityScore', 'SV_detected', 'Source'])
+    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'SV_detected', 'Source'])
     w.writerows(rows)
 
 print(f'Summary written: {summary_path}')

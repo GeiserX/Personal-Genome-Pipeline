@@ -1,6 +1,6 @@
 # Personal Genome Pipeline Documentation
 
-Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 analysis steps, all running locally in Docker.
+Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 default analysis steps (+ 1 opt-in somatic), all running locally in Docker.
 
 [Back to GitHub repository](https://github.com/GeiserX/Personal-Genome-Pipeline)
 
@@ -43,7 +43,7 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 ana
 | 19 | SV Calling (Delly) | [19-delly.md](19-delly.md) |
 | 20 | Mitochondrial (GATK Mutect2) | [20-mtoolbox.md](20-mtoolbox.md) |
 
-### Post-Processing (Steps 21-29)
+### Post-Processing (Steps 21-32)
 
 | # | Step | Doc |
 |---|---|---|
@@ -56,6 +56,9 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 31 ana
 | 27 | CPIC Drug Recommendations | [27-cpic-lookup.md](27-cpic-lookup.md) |
 | 28 | MultiQC Aggregation | [28-multiqc.md](28-multiqc.md) |
 | 29 | Somatic Variants (Mutect2) | [29-mutect2-somatic.md](29-mutect2-somatic.md) |
+| 30 | Annotation Enrichment (vcfanno) | [30-vcfanno.md](30-vcfanno.md) |
+| 31 | Variant Prioritization (slivar) | [31-slivar.md](31-slivar.md) |
+| 32 | Pharmacogenomics (pypgx) | [32-pypgx.md](32-pypgx.md) |
 
 ## Guides
 
