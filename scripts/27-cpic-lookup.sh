@@ -147,8 +147,7 @@ if 'genes' in data and isinstance(data['genes'], dict):
             diplotype = f'{a1}/{a2}'
             phenotypes = dip.get('phenotypes', [])
             phenotype = phenotypes[0] if phenotypes else 'N/A'
-            if phenotype != 'No Result':
-                print(f'{gene_name}\t{diplotype}\t{phenotype}')
+            print(f'{gene_name}\t{diplotype}\t{phenotype}')
         break  # Only use first source (CPIC)
 elif 'genes' in data and isinstance(data['genes'], list):
     # PharmCAT older list format
@@ -201,8 +200,13 @@ while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
     continue
   fi
 
-  # Skip normal metabolizers — no dosing changes needed
+  # Skip normal metabolizers — no dosing adjustment signal detected
   if echo "$PHENOTYPE" | grep -qi "normal\|typical\|extensive"; then
+    continue
+  fi
+
+  # Flag uncallable genes — absence from report ≠ normal
+  if echo "$PHENOTYPE" | grep -qi "no result\|N/A\|indeterminate"; then
     continue
   fi
 
@@ -216,7 +220,26 @@ while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
   fi
 done < "${OUTDIR}/${SAMPLE}_phenotypes.tsv" 2>/dev/null || true
 
+# List genes that could not be called — absence from report ≠ normal
+echo "Uncallable Genes:" >> "$OUTPUT"
+echo "─────────────────" >> "$OUTPUT"
 echo "" >> "$OUTPUT"
+UNCALLED=0
+while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
+  if echo "$PHENOTYPE" | grep -qi "no result\|N/A\|indeterminate"; then
+    echo "  ${GENE} — ${PHENOTYPE} (not callable from available data)" >> "$OUTPUT"
+    UNCALLED=$((UNCALLED + 1))
+  fi
+done < "${OUTDIR}/${SAMPLE}_phenotypes.tsv" 2>/dev/null || true
+if [ "$UNCALLED" -eq 0 ]; then
+  echo "  None — all genes were successfully called." >> "$OUTPUT"
+fi
+echo "" >> "$OUTPUT"
+echo "NOTE: Uncallable genes may lack coverage, have complex structural" >> "$OUTPUT"
+echo "variants, or require data not present in your VCF. Their absence" >> "$OUTPUT"
+echo "from the recommendations section does NOT mean normal function." >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
 echo "─────────────────────────────────────────────────────────────" >> "$OUTPUT"
 echo "DISCLAIMER: These recommendations are based on CPIC clinical" >> "$OUTPUT"
 echo "guidelines. Always consult your healthcare provider before" >> "$OUTPUT"
