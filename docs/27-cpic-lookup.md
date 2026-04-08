@@ -101,7 +101,7 @@ Only genes where you are NOT a normal metabolizer appear here. For each, the rep
 - All drugs with CPIC recommendations for that gene
 - A link to the CPIC guidelines
 
-**Normal/typical/extensive metabolizers are intentionally skipped** -- they require no dosing changes.
+**Normal/typical/extensive metabolizers are intentionally skipped** -- no dosing adjustment signal was detected from the currently callable variants. Genes that could not be called (No Result / N/A / Indeterminate) are listed separately at the end of the report — their absence from the recommendations section does NOT mean normal function.
 
 ### What to do with the results
 
