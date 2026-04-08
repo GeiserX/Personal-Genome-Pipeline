@@ -1,1 +1,2 @@
 sample,vcf,vcf_index,bam,bam_index
+stub_sample,assets/stub/sample.vcf.gz,assets/stub/sample.vcf.gz.tbi,,

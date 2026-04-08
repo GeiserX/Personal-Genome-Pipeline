@@ -66,18 +66,18 @@ Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rat
 
 ### Staged delivery
 
-- [x] **PR 1a — Scaffold + PharmCAT** (v0.5.0-alpha): Nextflow scaffold (`main.nf`, `nextflow.config`, schema, samplesheet), PharmCAT module, ClinVar screen module, channel-branching architecture validation, nf-test, Docker profile
+- [x] **PR 1a — Scaffold + PharmCAT** (alpha scaffold): Nextflow scaffold (`main.nf`, `nextflow.config`, schema, samplesheet), PharmCAT module, ClinVar screen module, channel-branching architecture validation, stub tests, Docker profile. Not yet a usable execution path — validates architecture only
 - [ ] **PR 1b — Core PGx modules** (v0.5.0-beta): pypgx, ROH, mito haplogroup modules
 - [ ] **PR 2 — Annotation & clinical** (v0.5.1): VEP, vcfanno, slivar, clinical filter, CPSR, PRS, ancestry, CPIC, Cyrius
-- [ ] **PR 3 — SV & full DAG** (v0.5.2): Manta, Delly, CNVnator, duphold, SURVIVOR, ExpansionHunter, TelomereHunter, Mutect2-mito, mosdepth, report generation
+- [ ] **PR 3 — SV & full DAG** (v0.5.2): ExpansionHunter, TelomereHunter, Mutect2-mito, mosdepth, SV annotation (AnnotSV), report generation. Note: SV calling (Manta, Delly, CNVnator) is covered by sarek — these are included only for standalone users who supply raw BAM without upstream SV calls
 
 ### Parallel track: nf-core module contributions
 
 PharmCAT, pypgx, and slivar modules contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license — independent of the pipeline's GPL-3.0 license. These modules become available to all 147 nf-core pipelines.
 
-### Bash scripts: permanent
+### Bash scripts
 
-The bash scripts remain a first-class execution path for non-bioinformaticians. After PR 3 validation, they move to `scripts/legacy/` (maintained for compatibility, not actively developed). New features go Nextflow-only.
+The bash scripts remain in `scripts/` as a maintained, simpler alternative for users who do not need workflow orchestration. After PR 3 validates the Nextflow path end-to-end, new features will be Nextflow-first. Bash scripts will continue to receive bug fixes and tool version bumps but not new analysis steps.
 
 ## v0.6.0 — Multi-sample & joint analysis
 

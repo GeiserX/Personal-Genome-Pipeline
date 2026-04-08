@@ -40,7 +40,7 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 | `clinvar/${SAMPLE}_pass.vcf.gz` | PASS-only subset of the sample VCF (intermediate) |
 | `clinvar/isec/0000.vcf` | Variants unique to the sample |
 | `clinvar/isec/0001.vcf` | Variants unique to ClinVar pathogenic |
-| `clinvar/isec/0002.vcf` | **Shared variants — your pathogenic hits** |
+| `clinvar/isec/0002.vcf` | **Shared variants — positions overlapping ClinVar pathogenic entries** |
 | `clinvar/isec/0003.vcf` | Shared variants (ClinVar's perspective) |
 
 ## Interpreting Results
@@ -50,9 +50,15 @@ This step screens against **Pathogenic and Likely_pathogenic variants only** —
 | Scenario | Meaning | Action |
 |---|---|---|
 | Heterozygous + autosomal recessive | Healthy carrier | Note for family planning only |
-| Homozygous + autosomal recessive | Affected | Investigate — confirm with phenotype |
-| Any genotype + autosomal dominant | Potentially affected | Investigate — check penetrance and phenotype |
+| Homozygous + autosomal recessive | Possibly affected — requires clinical confirmation | Investigate — confirm with clinical evaluation and ClinVar review status |
+| Any genotype + autosomal dominant | Possibly affected — requires clinical confirmation | Investigate — check penetrance, ClinVar review status, and phenotype |
 | Compound het (two variants, same gene) | Potentially affected (recessive) | Check if variants are on different alleles (phasing) |
+
+## Limitations
+
+- This screen does **not** surface ClinVar review status (star ratings / CLNREVSTAT) or conflict flags. A variant classified as "Pathogenic" by one submitter may have conflicting interpretations from others. Always check the full ClinVar entry before acting on any result.
+- Overlaps are position-based (`bcftools isec`) — representation differences between callers can cause both false positives and missed overlaps. The Nextflow module normalizes VCFs before intersection; the bash script relies on upstream normalization.
+- Results are **research-grade**, not clinical diagnoses. Do not make medical decisions based solely on this output.
 
 ## Important Notes
 - Most hits will be **heterozygous carriers of recessive conditions** — this is normal and expected
