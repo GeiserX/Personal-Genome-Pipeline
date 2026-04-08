@@ -1,0 +1,101 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/nextflow_schema.json",
+    "title": "Personal Genome Pipeline Parameters",
+    "description": "Post-processing & clinical interpretation for whole genome sequencing",
+    "type": "object",
+    "definitions": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "description": "Define where the pipeline should find input data and save output data.",
+            "required": ["input", "outdir"],
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/csv",
+                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index).",
+                    "fa_icon": "fas fa-file-csv"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The output directory where results will be saved.",
+                    "default": "./results",
+                    "fa_icon": "fas fa-folder-open"
+                },
+                "publish_dir_mode": {
+                    "type": "string",
+                    "description": "Method used to save pipeline results to output directory.",
+                    "default": "copy",
+                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
+                    "fa_icon": "fas fa-copy"
+                }
+            }
+        },
+        "reference_data": {
+            "title": "Reference data",
+            "type": "object",
+            "description": "Paths to reference files required by the pipeline.",
+            "required": ["reference"],
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to GRCh38 reference FASTA file.",
+                    "fa_icon": "fas fa-dna"
+                },
+                "genome": {
+                    "type": "string",
+                    "description": "Genome build identifier.",
+                    "default": "GRCh38",
+                    "enum": ["GRCh38"],
+                    "fa_icon": "fas fa-book"
+                },
+                "clinvar": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to ClinVar pathogenic VCF (bgzipped). Optional — skip ClinVar screen if not provided.",
+                    "fa_icon": "fas fa-database"
+                },
+                "clinvar_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to ClinVar pathogenic VCF tabix index (.tbi).",
+                    "fa_icon": "fas fa-database"
+                }
+            }
+        },
+        "resource_limits": {
+            "title": "Resource limits",
+            "type": "object",
+            "description": "Set maximum resource limits for the pipeline.",
+            "properties": {
+                "max_cpus": {
+                    "type": "integer",
+                    "description": "Maximum number of CPUs that can be requested for any single job.",
+                    "default": 16,
+                    "fa_icon": "fas fa-microchip"
+                },
+                "max_memory": {
+                    "type": "string",
+                    "description": "Maximum amount of memory that can be requested for any single job.",
+                    "default": "64.GB",
+                    "fa_icon": "fas fa-memory"
+                },
+                "max_time": {
+                    "type": "string",
+                    "description": "Maximum amount of time that can be requested for any single job.",
+                    "default": "48.h",
+                    "fa_icon": "fas fa-clock"
+                }
+            }
+        }
+    },
+    "allOf": [
+        { "$ref": "#/definitions/input_output_options" },
+        { "$ref": "#/definitions/reference_data" },
+        { "$ref": "#/definitions/resource_limits" }
+    ]
+}
