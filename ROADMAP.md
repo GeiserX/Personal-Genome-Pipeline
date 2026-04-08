@@ -73,7 +73,7 @@ Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rat
 
 ### Parallel track: nf-core module contributions
 
-PharmCAT, pypgx, and slivar modules contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license — independent of the pipeline's GPL-3.0 license. These modules become available to all 147 nf-core pipelines.
+PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license — independent of the pipeline's GPL-3.0 license. Once merged, these modules will be available to all nf-core pipelines.
 
 ### Bash scripts
 

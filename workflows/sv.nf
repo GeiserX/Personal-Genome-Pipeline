@@ -59,7 +59,7 @@ workflow SV {
     ch_cnvnator_calls = Channel.empty()
     ch_cnvnator_vcf   = Channel.empty()
     if (params.tools && params.tools.split(',').contains('cnvnator')) {
-        CNVNATOR(ch_bam, ch_reference)
+        CNVNATOR(ch_bam, ch_reference, ch_reference_fai)
         ch_cnvnator_calls = CNVNATOR.out.cnv_calls
         ch_cnvnator_vcf   = CNVNATOR.out.cnv_vcf
         ch_versions       = ch_versions.mix(CNVNATOR.out.versions)
@@ -71,6 +71,9 @@ workflow SV {
     // DUPHOLD: depth-based SV quality annotation on Manta output
     //
     ch_duphold_vcf = Channel.empty()
+    if (params.tools && params.tools.split(',').contains('duphold') && !params.tools.split(',').contains('manta')) {
+        log.warn "duphold requires manta output — add 'manta' to --tools or duphold will produce no output"
+    }
     if (params.tools && params.tools.split(',').contains('duphold')) {
         // Combine Manta SV VCF with BAM for duphold input
         ch_duphold_input = ch_manta_vcf
@@ -90,6 +93,9 @@ workflow SV {
     // ANNOTSV: ACMG pathogenicity classification of duphold-filtered SVs
     //
     ch_annotsv_tsv = Channel.empty()
+    if (params.tools && params.tools.split(',').contains('annotsv') && !params.tools.split(',').contains('duphold')) {
+        log.warn "annotsv requires duphold output — add 'duphold' (and 'manta') to --tools or annotsv will produce no output"
+    }
     if (params.tools && params.tools.split(',').contains('annotsv')) {
         ANNOTSV(ch_duphold_vcf)
         ch_annotsv_tsv = ANNOTSV.out.annotated_tsv

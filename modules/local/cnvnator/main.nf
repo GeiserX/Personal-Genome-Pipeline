@@ -24,6 +24,7 @@ process CNVNATOR {
     input:
     tuple val(meta), path(bam), path(bai)
     path(reference)
+    path(reference_fai)
 
     output:
     tuple val(meta), path("${meta.id}_cnvs.txt"),    emit: cnv_calls
@@ -69,7 +70,7 @@ process CNVNATOR {
         echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">'
         echo '##INFO=<ID=END,Number=1,Type=Integer,Description="End position">'
         echo '##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="SV length">'
-        awk '{printf "##contig=<ID=%s,length=%s>\\n", \$1, \$2}' ${reference}.fai || true
+        awk '{printf "##contig=<ID=%s,length=%s>\\n", \$1, \$2}' ${reference_fai} || true
         printf '#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\n'
         awk '{
             split(\$2,a,":");
@@ -81,9 +82,14 @@ process CNVNATOR {
         }' ${meta.id}_cnvs.txt
     } > ${meta.id}_cnvs_unsorted.vcf
 
-    # Sort, compress, and index (bcftools available in container)
-    bcftools sort ${meta.id}_cnvs_unsorted.vcf -Oz -o ${meta.id}_cnvs.vcf.gz || true
-    bcftools index -t ${meta.id}_cnvs.vcf.gz 2>/dev/null || true
+    # Sort, compress, and index — fail on real errors, emit header-only VCF if no calls
+    if grep -q -v '^#' ${meta.id}_cnvs_unsorted.vcf; then
+        bcftools sort ${meta.id}_cnvs_unsorted.vcf -Oz -o ${meta.id}_cnvs.vcf.gz
+        bcftools index -t ${meta.id}_cnvs.vcf.gz
+    else
+        bcftools view -h ${meta.id}_cnvs_unsorted.vcf | bgzip -c > ${meta.id}_cnvs.vcf.gz
+        bcftools index -t ${meta.id}_cnvs.vcf.gz
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

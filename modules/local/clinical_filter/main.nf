@@ -49,6 +49,11 @@ process CLINICAL_FILTER {
     HAS_AM=0
 
     VEP_FIELDS=\$(bcftools +split-vep -l ${vcf} 2>/dev/null || echo "")
+    if ! echo "\${VEP_FIELDS}" | grep -q 'IMPACT'; then
+        echo "ERROR: CLINICAL_FILTER requires a VEP-annotated VCF with CSQ/IMPACT field." >&2
+        echo "Enable 'vep' in --tools before 'clinical_filter'." >&2
+        exit 1
+    fi
     echo "\${VEP_FIELDS}" | grep -q 'gnomADe_AF' && HAS_GNOMAD=1
     echo "\${VEP_FIELDS}" | grep -q 'CLIN_SIG' && HAS_CLINVAR=1
 
@@ -73,9 +78,9 @@ process CLINICAL_FILTER {
                 -i 'IMPACT="MODERATE" && (gnomADe_AF<0.01 || gnomADe_AF=".")' \\
                 -Oz -o ${meta.id}_rare_moderate.vcf.gz
     else
-        bcftools view -f PASS ${vcf} | \\
-            bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT="MODERATE"' \\
-                -Oz -o ${meta.id}_rare_moderate.vcf.gz
+        # Without gnomAD AF, skip rarity filter — emit header-only VCF to avoid thousands of unfiltered MODERATE variants
+        echo "WARN: gnomADe_AF not found — skipping rare MODERATE tier" >&2
+        bcftools view -h ${vcf} | bgzip -c > ${meta.id}_rare_moderate.vcf.gz
     fi
     bcftools index -t ${meta.id}_rare_moderate.vcf.gz
 

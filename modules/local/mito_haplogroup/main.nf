@@ -53,7 +53,7 @@ process MITO_HAPLOGROUP {
     tag "$meta.id"
     label 'process_single'
 
-    container 'genepi/haplogrep3:latest'
+    container 'jtb114/haplogrep3:latest'
 
     publishDir "${params.outdir}/${meta.id}/mito", mode: params.publish_dir_mode
 

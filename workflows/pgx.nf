@@ -18,13 +18,15 @@ workflow PGX {
     take:
     ch_vcf            // channel: [meta, vcf, vcf_index]
     ch_reference      // channel: val(path) — reference FASTA
+    ch_reference_fai  // channel: val(path) — reference FASTA index
     ch_clinvar        // channel: val(path) — ClinVar VCF or []
     ch_clinvar_index  // channel: val(path) — ClinVar VCF index or []
     ch_bam            // channel: [meta, bam, bai]
     ch_pypgx_bundle   // channel: val(path) — pypgx-bundle directory
 
     main:
-    ch_versions = Channel.empty()
+    ch_versions    = Channel.empty()
+    ch_clinvar_dir = Channel.empty()
 
     //
     // BRANCH 1: PharmCAT pharmacogenomics
@@ -45,7 +47,8 @@ workflow PGX {
             ch_clinvar_index,
             ch_reference
         )
-        ch_versions = ch_versions.mix(CLINVAR_SCREEN.out.versions)
+        ch_clinvar_dir = CLINVAR_SCREEN.out.isec_dir
+        ch_versions    = ch_versions.mix(CLINVAR_SCREEN.out.versions)
     }
 
     //
@@ -55,9 +58,6 @@ workflow PGX {
     ch_pypgx_results  = Channel.empty()
     ch_pypgx_summary  = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('pypgx')) {
-        // ch_reference is a path; derive the .fai from it
-        ch_reference_fai = ch_reference.map { ref -> file("${ref}.fai") }
-
         PYPGX(
             ch_bam,
             ch_reference,
@@ -83,6 +83,7 @@ workflow PGX {
     }
 
     emit:
+    clinvar_dir          = ch_clinvar_dir
     pharmcat_html        = PHARMCAT.out.html_report
     pharmcat_json        = PHARMCAT.out.json_report
     pypgx_results        = ch_pypgx_results

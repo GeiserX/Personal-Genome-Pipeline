@@ -38,7 +38,7 @@ process CYRIUS {
     """
     pip install -q cyrius 2>/dev/null
 
-    echo '${bam}' > manifest.txt
+    echo "${bam}" > manifest.txt
 
     star_caller \\
         --manifest manifest.txt \\

@@ -54,8 +54,8 @@ workflow {
         .fromPath(params.input, checkIfExists: true)
         .splitCsv(header: true, strip: true)
         .map { row ->
-            if (!row.sample || !row.vcf) {
-                error "Samplesheet must have 'sample' and 'vcf' columns. Got: ${row.keySet()}"
+            if (!row.sample || !row.vcf || !row.vcf_index) {
+                error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
             }
             def meta = [id: row.sample]
             def vcf = file(row.vcf, checkIfExists: true)
@@ -129,6 +129,7 @@ workflow {
     PGX(
         ch_vcf,
         ch_reference,
+        ch_reference_fai,
         ch_clinvar,
         ch_clinvar_index,
         ch_bam,
@@ -196,18 +197,19 @@ workflow {
     // Uses remainder:true so samples without a given output get null → EMPTY.
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta] }
-        .join(PGX.out.pharmcat_html.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pharmcat_html.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.clinical_vcf.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
         .map { items ->
             def meta     = items[1]
-            def pharmcat = items[2] ?: empty
-            def clinical = items[3] ?: empty
-            def cpsr     = items[4] ?: empty
-            def slivar   = items[5] ?: empty
-            // clinvar_dir is EMPTY placeholder — detail lives in ClinVar publishDir
-            [meta, empty, pharmcat, clinical, cpsr, slivar]
+            def clinvar  = items[2] ?: empty
+            def pharmcat = items[3] ?: empty
+            def clinical = items[4] ?: empty
+            def cpsr     = items[5] ?: empty
+            def slivar   = items[6] ?: empty
+            [meta, clinvar, pharmcat, clinical, cpsr, slivar]
         }
 
     // Collect QC files for MultiQC (versions + mosdepth summaries)
