@@ -110,6 +110,9 @@ workflow ANNOTATION {
     //
     ch_clinical_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('clinical_filter')) {
+        if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
+            log.warn "clinical_filter requires VEP-annotated input — add 'vep' to --tools for proper filtering"
+        }
         CLINICAL_FILTER(
             ch_current_vcf
         )

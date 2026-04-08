@@ -11,7 +11,7 @@ The pipeline is being ported to [Nextflow](https://www.nextflow.io/) DSL2. This 
 ### Prerequisites
 
 1. **Docker** (already required for the bash pipeline)
-2. **Java 11+** (Nextflow runtime requirement)
+2. **Java 11-21** (Nextflow runtime requirement)
 3. **Nextflow** — install with:
    ```bash
    curl -s https://get.nextflow.io | bash
