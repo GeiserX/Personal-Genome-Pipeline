@@ -217,15 +217,16 @@ print(f'Summary written: {summary_path}')
 print(f'Genes called: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)}')
 " 2>&1
 
-# Cross-reference with PharmCAT if output exists
+# Cross-reference with PharmCAT if output exists (newest report wins)
 PHARMCAT_JSON=""
 for DIR in "${GENOME_DIR}/${SAMPLE}/pharmcat" "${GENOME_DIR}/${SAMPLE}/vcf"; do
-  for FILE in "${DIR}"/*.report.json "${DIR}"/*_pharmcat.json; do
-    if [ -f "$FILE" ] 2>/dev/null; then
-      PHARMCAT_JSON="$FILE"
-      break 2
-    fi
-  done
+  [ -d "$DIR" ] || continue
+  CANDIDATE=$(find "$DIR" -maxdepth 1 \( -name "*.report.json" -o -name "*_pharmcat.json" \) -print0 2>/dev/null \
+    | xargs -0 ls -t 2>/dev/null | head -1)
+  if [ -n "$CANDIDATE" ]; then
+    PHARMCAT_JSON="$CANDIDATE"
+    break
+  fi
 done
 
 if [ -n "$PHARMCAT_JSON" ]; then

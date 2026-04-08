@@ -59,11 +59,12 @@ if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
 fi
 
 # ---------- PharmCAT (Step 7) ----------
-# PharmCAT writes reports alongside the VCF in vcf/
+# PharmCAT writes reports alongside the VCF in vcf/ (newest report wins)
 PHARMCAT_REPORT=""
 for DIR in "${SAMPLE_DIR}/vcf" "${SAMPLE_DIR}/pharmcat"; do
   [ -d "$DIR" ] || continue
-  PHARMCAT_REPORT=$(find "$DIR" -maxdepth 1 -name "*.report.json" 2>/dev/null | head -1)
+  PHARMCAT_REPORT=$(find "$DIR" -maxdepth 1 -name "*.report.json" -print0 2>/dev/null \
+    | xargs -0 ls -t 2>/dev/null | head -1)
   [ -n "$PHARMCAT_REPORT" ] && break
 done
 if [ -n "$PHARMCAT_REPORT" ]; then
