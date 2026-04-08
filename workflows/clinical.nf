@@ -40,7 +40,7 @@ workflow CLINICAL {
     // MODULE 1: CPSR — Cancer predisposition screening
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cpsr')) {
-        CPSR(ch_vcf, ch_pcgr_data.first(), ch_vep_cache_cpsr.first())
+        CPSR(ch_vcf, ch_pcgr_data, ch_vep_cache_cpsr)
         ch_cpsr_html = CPSR.out.html_report
         ch_versions  = ch_versions.mix(CPSR.out.versions)
     }
@@ -58,7 +58,7 @@ workflow CLINICAL {
     // MODULE 3: PRS — Polygenic risk scores
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('prs')) {
-        PRS(ch_vcf, ch_pgs_scoring.first())
+        PRS(ch_vcf, ch_pgs_scoring)
         ch_prs_scores = PRS.out.scores
         ch_versions   = ch_versions.mix(PRS.out.versions)
     }
@@ -67,7 +67,7 @@ workflow CLINICAL {
     // MODULE 4: ANCESTRY — Population PCA
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('ancestry')) {
-        ANCESTRY(ch_vcf, ch_ancestry_ref.first())
+        ANCESTRY(ch_vcf, ch_ancestry_ref)
         ch_ancestry_results = ANCESTRY.out.ancestry_tsv
         ch_versions         = ch_versions.mix(ANCESTRY.out.versions)
     }

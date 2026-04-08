@@ -42,7 +42,7 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'hla_typing'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('hla_typing')) {
-        HLA_TYPING(ch_bam, ch_reference.first())
+        HLA_TYPING(ch_bam, ch_reference)
         ch_hla_alleles = HLA_TYPING.out.hla_alleles
         ch_versions    = ch_versions.mix(HLA_TYPING.out.versions)
     }
@@ -54,10 +54,9 @@ workflow BAM_ANALYSIS {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('expansion_hunter')) {
         EXPANSION_HUNTER(
             ch_bam,
-            ch_reference.first(),
-            ch_reference_fai.first(),
-            ch_expansion_catalog.first()
-        )
+            ch_reference,
+            ch_reference_fai,
+            ch_expansion_catalog        )
         ch_expansion_vcf = EXPANSION_HUNTER.out.vcf
         ch_versions      = ch_versions.mix(EXPANSION_HUNTER.out.versions)
     }
@@ -89,10 +88,9 @@ workflow BAM_ANALYSIS {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mito_variants')) {
         MITO_VARIANTS(
             ch_bam,
-            ch_reference.first(),
-            ch_reference_fai.first(),
-            ch_reference_dict.first()
-        )
+            ch_reference,
+            ch_reference_fai,
+            ch_reference_dict        )
         ch_mito_vcf = MITO_VARIANTS.out.mito_vcf
         ch_versions = ch_versions.mix(MITO_VARIANTS.out.versions)
     }
@@ -102,7 +100,7 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'cyrius'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cyrius')) {
-        CYRIUS(ch_bam, ch_reference.first())
+        CYRIUS(ch_bam, ch_reference)
         ch_cyrius_results = CYRIUS.out.cyp2d6_results
         ch_versions       = ch_versions.mix(CYRIUS.out.versions)
     }
