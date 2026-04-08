@@ -224,15 +224,32 @@ done < "${OUTDIR}/${SAMPLE}_phenotypes.tsv" 2>/dev/null || true
 echo "Uncallable Genes:" >> "$OUTPUT"
 echo "─────────────────" >> "$OUTPUT"
 echo "" >> "$OUTPUT"
+# Check if PharmCAT parsing failed entirely
+PARSE_FAILED=false
+if [ -f "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ] && [ -s "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ]; then
+  FIRST_LINE=$(head -1 "${OUTDIR}/${SAMPLE}_phenotypes.tsv")
+  case "$FIRST_LINE" in
+    NO_JSON_FOUND*|UNKNOWN_FORMAT*)
+      PARSE_FAILED=true
+      ;;
+  esac
+fi
+
 UNCALLED=0
-while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
-  if echo "$PHENOTYPE" | grep -qi "no result\|N/A\|indeterminate"; then
-    echo "  ${GENE} — ${PHENOTYPE} (not callable from available data)" >> "$OUTPUT"
-    UNCALLED=$((UNCALLED + 1))
+if [ "$PARSE_FAILED" = true ]; then
+  echo "  WARNING: PharmCAT output could not be parsed. ALL genes are uncallable." >> "$OUTPUT"
+  echo "  No gene results can be trusted from this run." >> "$OUTPUT"
+  UNCALLED=1
+else
+  while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
+    if echo "$PHENOTYPE" | grep -qi "no result\|N/A\|indeterminate"; then
+      echo "  ${GENE} — ${PHENOTYPE} (not callable from available data)" >> "$OUTPUT"
+      UNCALLED=$((UNCALLED + 1))
+    fi
+  done < "${OUTDIR}/${SAMPLE}_phenotypes.tsv" 2>/dev/null || true
+  if [ "$UNCALLED" -eq 0 ]; then
+    echo "  None — all genes were successfully called." >> "$OUTPUT"
   fi
-done < "${OUTDIR}/${SAMPLE}_phenotypes.tsv" 2>/dev/null || true
-if [ "$UNCALLED" -eq 0 ]; then
-  echo "  None — all genes were successfully called." >> "$OUTPUT"
 fi
 echo "" >> "$OUTPUT"
 echo "NOTE: Uncallable genes may lack coverage, have complex structural" >> "$OUTPUT"

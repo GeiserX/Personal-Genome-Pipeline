@@ -1,8 +1,8 @@
-# Nextflow Execution (v0.5.0+)
+# Nextflow Execution (v0.5.0 — Alpha)
 
-Starting with v0.5.0, the pipeline can be run via [Nextflow](https://www.nextflow.io/) as an alternative to the bash scripts. Nextflow provides DAG-based parallelism, robust resume-on-failure, and container orchestration.
+The pipeline is being ported to [Nextflow](https://www.nextflow.io/) DSL2. This is currently an **alpha scaffold** covering PharmCAT and ClinVar screening only. More modules are being added in staged PRs (see [ROADMAP.md](../ROADMAP.md)).
 
-> **The bash scripts remain first-class.** If you prefer the simplicity of `./scripts/run-all.sh`, nothing has changed. Nextflow is an additional execution path for users who want workflow engine features.
+> **The bash scripts are the recommended execution path today.** The Nextflow path does not yet cover all pipeline steps. Use Nextflow only if you want to validate the architecture or contribute to development.
 
 ---
 
