@@ -4,7 +4,7 @@
 Intersects your sample VCF against the ClinVar database of known pathogenic variants, identifying any positions where your genome carries a clinically reported disease variant.
 
 ## Why
-ClinVar is the gold standard for known disease-causing variants. This screen catches pathogenic SNPs and indels that have been reported in clinical settings — carrier status, dominant disease risk, and pharmacogenomic flags.
+ClinVar is the most widely used public database of clinically reported variants. This screen catches pathogenic SNPs and indels that have been submitted by clinical labs — carrier status, dominant disease risk, and pharmacogenomic flags. Note that ClinVar entries vary in evidence quality (see star ratings in [interpreting-results.md](interpreting-results.md)).
 
 ## Tool
 - **bcftools isec** — VCF intersection to find overlapping variants

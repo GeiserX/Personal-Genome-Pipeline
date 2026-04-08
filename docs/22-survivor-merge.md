@@ -109,7 +109,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 - Run this step only after completing at least two of: step 4 (Manta), step 19 (Delly), step 18 (CNVnator).
 - All three callers are independent of each other and can run in parallel after alignment.
 - The consensus VCF can be annotated with VEP or loaded into IGV for visual inspection.
-- For clinical-grade SV analysis, consider also running AnnotSV on the consensus set.
+- For more thorough SV analysis, consider also running AnnotSV on the consensus set.
 
 ## Links
 

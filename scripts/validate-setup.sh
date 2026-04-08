@@ -270,6 +270,54 @@ else
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
+  # --- Annotation databases (optional, for steps 30-31) ---
+  ANNOT_DIR="${GENOME_DIR}/annotations"
+  ANNOT_COUNT=0
+  ANNOT_TOTAL=7
+  ANNOT_MISSING=()
+  if [ -f "${ANNOT_DIR}/whole_genome_SNVs.tsv.gz" ] && [ -f "${ANNOT_DIR}/whole_genome_SNVs.tsv.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("CADD SNVs (whole_genome_SNVs.tsv.gz + .tbi)")
+  fi
+  if [ -f "${ANNOT_DIR}/gnomad.genomes.r4.0.indel.tsv.gz" ] && [ -f "${ANNOT_DIR}/gnomad.genomes.r4.0.indel.tsv.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("CADD indels (gnomad.genomes.r4.0.indel.tsv.gz + .tbi)")
+  fi
+  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("SpliceAI SNVs (spliceai_scores.raw.snv.hg38.vcf.gz + .tbi)")
+  fi
+  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("SpliceAI indels (spliceai_scores.raw.indel.hg38.vcf.gz + .tbi)")
+  fi
+  if [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz" ] && [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("REVEL (revel_grch38.tsv.gz + .tbi)")
+  fi
+  if [ -f "${ANNOT_DIR}/AlphaMissense_hg38.tsv.gz" ] && [ -f "${ANNOT_DIR}/AlphaMissense_hg38.tsv.gz.tbi" ]; then
+    ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  else
+    ANNOT_MISSING+=("AlphaMissense (AlphaMissense_hg38.tsv.gz + .tbi)")
+  fi
+  [ -f "${ANNOT_DIR}/gnomad_v4.1_constraint.tsv" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1)) || ANNOT_MISSING+=("gnomAD constraint (gnomad_v4.1_constraint.tsv)")
+  if [ "$ANNOT_COUNT" -eq "$ANNOT_TOTAL" ]; then
+    pass "Annotation databases: all ${ANNOT_TOTAL} present (CADD SNVs+indels, SpliceAI SNVs+indels, REVEL, AlphaMissense, gnomAD constraint)"
+  elif [ "$ANNOT_COUNT" -gt 0 ]; then
+    warn "Annotation databases: ${ANNOT_COUNT}/${ANNOT_TOTAL} present. Steps 30-31 will degrade gracefully for missing tracks."
+    for missing in "${ANNOT_MISSING[@]}"; do
+      echo "         Missing: ${missing}"
+    done
+    echo "       See docs/00-reference-setup.md for download instructions."
+  else
+    info "Annotation databases not downloaded (steps 30-31 will be skipped). See docs/00-reference-setup.md"
+  fi
+
   # --- GATK sequence dictionary (optional) ---
   DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
   if [ -f "$DICT" ]; then
@@ -324,6 +372,9 @@ else
     "$CLAIR3_IMAGE"
     "$SNIFFLES_IMAGE"
     "$PICARD_IMAGE"
+    "$VCFANNO_IMAGE"
+    "$SLIVAR_IMAGE"
+    "$PYPGX_IMAGE"
   )
 
   PULLED=0

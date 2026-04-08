@@ -24,7 +24,7 @@ Cyrius is installed via `pip install cyrius` inside the container at runtime. No
 
 ## Input
 
-- Sorted BAM with index from alignment (step 1):
+- Sorted BAM with index from alignment (step 2):
   - `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`
   - `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai`
 
@@ -86,7 +86,7 @@ Codeine, tramadol, oxycodone, tamoxifen, ondansetron, atomoxetine, most tricycli
 
 ## Recommended Alternative: Aldy
 
-[Aldy](https://github.com/0xTCG/aldy) v4.8.3 is the strongest CYP2D6 caller currently available for short-read WGS data. A systematic comparison (Twesigomwe et al. 2020, PMID 32789024) found Aldy was "the best performing algorithm in calling CYP2D6 structural variants." It identifies 92.2% of currently defined minor star alleles (vs 85.6% for Cyrius) and is actively maintained with the current PharmVar database.
+[Aldy](https://github.com/0xTCG/aldy) v4.8.3 is a leading CYP2D6 caller for short-read WGS data. A systematic comparison (Twesigomwe et al. 2020, PMID 32789024) found Aldy was "the best performing algorithm in calling CYP2D6 structural variants." It identifies 92.2% of currently defined minor star alleles (vs 85.6% for Cyrius) and is actively maintained with the current PharmVar database.
 
 Aldy also calls 37 additional pharmacogenes (CYP2C19, CYP2B6, UGT1A1, NAT2, DPYD, SLCO1B1, etc.), which can supplement PharmCAT results.
 
@@ -107,13 +107,13 @@ docker run --rm --user root \
   "
 ```
 
-> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution. This is why it is documented here as an optional recommendation rather than replacing Cyrius in the pipeline script. A GPL-compatible alternative (pypgx) is planned for v0.4.0.
+> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution. This is why it is documented here as an optional recommendation rather than replacing Cyrius in the pipeline script. A GPL-compatible alternative (pypgx) is available in step 32.
 
 ## Notes
 
 - The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation.
-- Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call. If they disagree, Cyrius is generally more reliable for WGS data (though Aldy is more reliable than both for CYP2D6).
-- Feed the Cyrius result into CPIC lookups (step 27) for actionable drug recommendations.
+- Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call and pypgx (step 32). Cyrius can fail on some WGS samples due to CYP2D7 pseudogene homology; pypgx handles this more robustly. If all three disagree, Aldy (see above) has the broadest star allele coverage among available callers.
+- Step 27 (CPIC lookup) currently reads PharmCAT JSON only. To translate a Cyrius diplotype into drug recommendations, consult [CPIC guidelines](https://cpicpgx.org/guidelines/) manually.
 
 ## Links
 

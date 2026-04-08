@@ -10,7 +10,7 @@ If this is your first time looking at your own genomic data, the numbers can be 
 |---|---|---|
 | Total variants | 4.5-5.5 million | Sounds like millions of "mutations" — but >99.9% are normal human variation |
 | ClinVar pathogenic hits (step 6) | 0-10 | Step 6 screens against Pathogenic/Likely_pathogenic only. Most hits are recessive carriers — you need TWO copies to be affected |
-| HIGH impact variants (VEP) | 100-150 | Most are heterozygous in non-essential genes. Having one broken copy is fine. |
+| HIGH impact variants (VEP) | 100-150 | Most are heterozygous in non-essential genes. For recessive genes, one copy is typically tolerated (but see haploinsufficiency). |
 | Structural variants | 5,000-10,000 | Most are in non-coding regions. Your parents had them too. |
 | Heteroplasmic mitochondrial variants | 20-40 | Low-level heteroplasmy (<5%) is universal and age-related |
 | VUS (Variants of Uncertain Significance) | 20-200+ | "Uncertain" means **not enough data yet**, not "probably bad" |
@@ -47,8 +47,8 @@ Not all ClinVar classifications are equally reliable. Each entry has a **review 
 The most common "pathogenic" finding in any genome is **heterozygous carrier status for recessive conditions**. This means:
 
 - You have ONE copy of a variant that causes disease when BOTH copies are affected
-- You are **not affected** and will never develop the condition
-- The only relevance is for **family planning**: if your partner carries the same gene, each child has a 25% chance of being affected
+- For most recessive conditions, heterozygous carriers are **not clinically affected** (though some carrier states confer subtle phenotypic effects — e.g., sickle cell trait, HFE carriers and iron loading)
+- The primary relevance is for **family planning**: if your partner carries the same gene, each child has a 25% chance of being affected
 - **Note — MUTYH**: Biallelic (homozygous or compound het) MUTYH carriers have a well-established high colorectal cancer risk. For **monoallelic** (single-copy) carriers, the evidence is more nuanced: some meta-analyses show a modest risk increase, but a counseling framework for moderate-penetrance CRC genes (Genetics in Medicine) notes that risk estimates for monoallelic MUTYH are conflicting and that screening recommendations (e.g., earlier colonoscopy) were historically tied to carriers with a CRC family history. Discuss with a genetic counselor, especially if you have a family history of CRC
 - Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), HFE (hemochromatosis)
 
@@ -309,6 +309,79 @@ VEP classifies variant impact as:
 | MODIFIER | Intronic, intergenic, UTR | Usually non-functional |
 
 **Everyone has ~100-150 HIGH impact variants.** Most are in one copy (heterozygous) of non-essential genes. Don't panic at the number.
+
+---
+
+## Pathogenicity Scores (Step 30 — vcfanno)
+
+If you ran step 30, your VCF now includes quantitative pathogenicity scores beyond VEP's qualitative SIFT/PolyPhen predictions. These scores are widely used as computational evidence in variant interpretation (see ClinGen's PP3/BP4 calibration framework).
+
+### CADD (Combined Annotation Dependent Depletion)
+
+Scores **all** variant types (coding, non-coding, splice, regulatory). Uses a PHRED-like scale where higher = more deleterious.
+
+| CADD PHRED | Interpretation | Context |
+|---|---|---|
+| < 10 | Likely benign | Bottom 90% of genome variation |
+| 10-20 | Uncertain | Top 10%, but most are still benign |
+| 20-25 | Potentially deleterious | Top 1% — investigate if in a disease gene |
+| 25-30 | Likely deleterious | Top 0.3% — strong candidate for pathogenicity |
+| > 30 | Highly deleterious | Top 0.1% — likely damaging if in a constrained gene |
+
+**When to use CADD:** Best for non-coding and splice-region variants where SIFT/PolyPhen don't apply. For missense variants, REVEL and AlphaMissense are more specific.
+
+### REVEL (Rare Exome Variant Ensemble Learner)
+
+Scores **missense variants only**. Combines 13 individual tools into a single 0-1 score. Recommended by ClinGen for ACMG PP3/BP4 evidence.
+
+| REVEL Score | ClinGen Evidence Level | Interpretation |
+|---|---|---|
+| < 0.290 | BP4_Supporting | Supporting evidence of benign |
+| 0.290-0.644 | No evidence | Uncertain significance |
+| 0.644-0.773 | PP3_Moderate | Moderate evidence of pathogenicity |
+| 0.773-0.932 | PP3_Strong | Strong evidence of pathogenicity |
+| > 0.932 | PP3_Very Strong | Very strong evidence of pathogenicity |
+
+**When to use REVEL:** First-line score for evaluating missense variants. If REVEL >= 0.644, investigate the variant seriously.
+
+### AlphaMissense
+
+DeepMind's protein-structure-informed **missense** classifier. Uses AlphaFold2 protein structure predictions to assess amino acid substitution impact.
+
+| am_pathogenicity | am_class | Interpretation |
+|---|---|---|
+| < 0.34 | likely_benign | Predicted benign by protein structure analysis |
+| 0.34-0.564 | ambiguous | Uncertain — use other evidence |
+| > 0.564 | likely_pathogenic | Predicted damaging based on protein structure |
+
+**When to use AlphaMissense:** Complements REVEL. If both REVEL and AlphaMissense agree a variant is damaging, this strengthens the computational evidence (ClinGen PP3). If they disagree, investigate further.
+
+### SpliceAI
+
+Deep learning model predicting **splice-altering** variants. Scores four types of splice disruption: acceptor gain (AG), acceptor loss (AL), donor gain (DG), donor loss (DL).
+
+| Max Delta Score | Interpretation |
+|---|---|
+| < 0.2 | Unlikely to affect splicing |
+| 0.2-0.5 | May affect splicing — investigate |
+| 0.5-0.8 | Likely affects splicing |
+| > 0.8 | Strong evidence of splice disruption |
+
+**When to use SpliceAI:** VEP already flags canonical splice site variants (GT/AG dinucleotides). SpliceAI catches **cryptic** splice variants — intronic or exonic variants that create new splice sites or disrupt existing ones through more subtle mechanisms.
+
+### gnomAD Gene Constraint (Step 23 summary)
+
+These are per-gene metrics (not per-variant) added to the clinical filter summary TSV. They measure how intolerant a gene is to different types of mutations.
+
+| Metric | Threshold | Meaning |
+|---|---|---|
+| LOEUF < 0.35 | Constrained for loss-of-function | Gene is intolerant to LoF mutations — a HIGH impact variant here is more likely to cause disease |
+| pLI >= 0.9 | Loss-of-function intolerant | Same as LOEUF but older metric. LOEUF is preferred. |
+| mis_Z > 3.09 | Constrained for missense | Gene is intolerant to missense mutations — a REVEL-high missense here is more concerning |
+
+**Combining scores:** A rare variant (gnomAD AF < 0.01%) with CADD > 25, in a constrained gene (LOEUF < 0.35), with ClinVar pathogenic classification, is a high-confidence pathogenic finding. Any one of these alone is insufficient.
+
+---
 
 ### Quick Variant Filtering Recipes
 
@@ -621,7 +694,7 @@ VEP (used in step 13), SnpEff, and ANNOVAR are the three most common variant ann
 
 **What this means for you:**
 - If VEP says a variant is "HIGH impact" but ClinVar says it is benign, **trust ClinVar** (human-reviewed evidence > computational prediction)
-- If VEP and ClinVar agree on pathogenicity, confidence is high
+- If VEP and ClinVar agree on pathogenicity, this strengthens the interpretation
 - If you find a potentially significant variant using VEP that is NOT in ClinVar, search gnomAD for its population frequency before drawing conclusions
 - For the most important findings, consider running a second annotation tool as validation
 

@@ -78,7 +78,7 @@ The CI pipeline enforces this with automated scanning.
 
 ## Adding a New Pipeline Step
 
-1. **Choose a step number.** Steps 1-29 are taken. New steps should use 30+.
+1. **Choose a step number.** Steps 1-32 are taken. New steps should use 33+.
 2. **Verify the Docker image works.** Pull it, run it manually on test data, confirm the output.
 3. **Create the script** following the template of existing scripts.
 4. **Create the documentation** following the template of existing docs.

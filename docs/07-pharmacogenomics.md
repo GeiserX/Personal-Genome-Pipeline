@@ -1,7 +1,7 @@
 # Step 7: Pharmacogenomics (PharmCAT)
 
 ## What This Does
-Clinical-grade pharmacogenomic analysis — determines how you metabolize drugs based on your DNA. The same tool hospitals use for precision medicine.
+Pharmacogenomic analysis — determines how you metabolize drugs based on your DNA using PharmCAT, a widely used research tool developed by CPIC/PharmGKB. Note: PharmCAT is a research tool, not a clinically validated diagnostic. Results should be confirmed by a certified laboratory before making prescribing decisions.
 
 ## Why
 Identifies which drugs work well, which need dose adjustments, and which to avoid entirely. Covers 23 pharmacogenes affecting hundreds of medications.

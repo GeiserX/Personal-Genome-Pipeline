@@ -59,11 +59,12 @@ if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
 fi
 
 # ---------- PharmCAT (Step 7) ----------
-# PharmCAT writes reports alongside the VCF in vcf/
+# PharmCAT writes reports alongside the VCF in vcf/ (newest report wins)
 PHARMCAT_REPORT=""
 for DIR in "${SAMPLE_DIR}/vcf" "${SAMPLE_DIR}/pharmcat"; do
   [ -d "$DIR" ] || continue
-  PHARMCAT_REPORT=$(find "$DIR" -maxdepth 1 -name "*.report.json" 2>/dev/null | head -1)
+  PHARMCAT_REPORT=$(find "$DIR" -maxdepth 1 -name "*.report.json" -print0 2>/dev/null \
+    | xargs -0 ls -t 2>/dev/null | head -1)
   [ -n "$PHARMCAT_REPORT" ] && break
 done
 if [ -n "$PHARMCAT_REPORT" ]; then
@@ -252,6 +253,51 @@ if [ -f "$CPIC_REPORT" ]; then
   echo ""
 fi
 
+# ---------- pypgx Pharmacogenomics (Step 32) ----------
+PYPGX_SUMMARY="${SAMPLE_DIR}/pypgx/${SAMPLE}_pypgx_summary.tsv"
+if [ -f "$PYPGX_SUMMARY" ]; then
+  echo "## pypgx Pharmacogenomics (23 genes)"
+  echo "---"
+  PYPGX_TOTAL=$(tail -n +2 "$PYPGX_SUMMARY" | wc -l | tr -d ' ')
+  # Count genes with actual diplotype calls (exclude FAILED and N/A)
+  PYPGX_GENES=$(tail -n +2 "$PYPGX_SUMMARY" | awk -F'\t' '$2 != "FAILED" && $2 != "N/A" {n++} END {print n+0}')
+  echo "  Genes called: ${PYPGX_GENES}/${PYPGX_TOTAL}"
+  # Highlight CYP2D6 (the key gene PharmCAT can't call)
+  CYP2D6=$(awk -F'\t' '$1=="CYP2D6" {print $2; exit}' "$PYPGX_SUMMARY" 2>/dev/null)
+  CYP2D6="${CYP2D6:-not called}"
+  echo "  CYP2D6 diplotype: ${CYP2D6}"
+  echo ""
+  # Show PharmCAT comparison if available
+  PYPGX_COMPARE="${SAMPLE_DIR}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
+  if [ -f "$PYPGX_COMPARE" ]; then
+    # Count only real conflicts (both tools called the gene but disagree)
+    CONFLICTS=$(tail -n +2 "$PYPGX_COMPARE" 2>/dev/null | awk -F'\t' '$4 == "No" {n++} END {print n+0}')
+    SCOPE_DIFF=$(tail -n +2 "$PYPGX_COMPARE" 2>/dev/null | awk -F'\t' '$4 == "pypgx only" || $4 == "PharmCAT only" {n++} END {print n+0}')
+    echo "  PharmCAT vs pypgx conflicts: ${CONFLICTS}"
+    if [ "$SCOPE_DIFF" -gt 0 ]; then
+      echo "  Scope differences (only one tool called): ${SCOPE_DIFF}"
+    fi
+    echo ""
+  fi
+fi
+
+# ---------- slivar Variant Prioritization (Step 31) ----------
+SLIVAR_SUMMARY="${SAMPLE_DIR}/slivar/${SAMPLE}_slivar_summary.tsv"
+if [ -f "$SLIVAR_SUMMARY" ]; then
+  echo "## Variant Prioritization (slivar)"
+  echo "---"
+  PRIORITIZED=$(tail -n +2 "$SLIVAR_SUMMARY" | wc -l | tr -d ' ')
+  echo "  Prioritized variants: ${PRIORITIZED}"
+  COMP_HETS="${SAMPLE_DIR}/slivar/${SAMPLE}_compound_hets.tsv"
+  if [ -f "$COMP_HETS" ]; then
+    CH_VARIANTS=$(tail -n +2 "$COMP_HETS" | wc -l | tr -d ' ')
+    CH_GENES=$(tail -n +2 "$COMP_HETS" | awk -F'\t' '{print $1}' | sort -u | wc -l | tr -d ' ')
+    echo "  Compound het candidates: ${CH_VARIANTS} variants across ${CH_GENES} genes"
+    echo "  (Candidates only — unphased single-sample data. See docs/31-slivar.md)"
+  fi
+  echo ""
+fi
+
 # ---------- Steps Not Run ----------
 echo "## Steps Not Run"
 echo "---"
@@ -268,6 +314,9 @@ PHARMCAT_FOUND=0; find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/
 [ ! -f "${SAMPLE_DIR}/prs/${SAMPLE}_prs_summary.tsv" ] && NOT_RUN="${NOT_RUN}  - PRS (step 25)\n"
 [ ! -d "${SAMPLE_DIR}/ancestry" ] && NOT_RUN="${NOT_RUN}  - Ancestry PCA (step 26)\n"
 [ ! -f "${SAMPLE_DIR}/cpic/${SAMPLE}_cpic_recommendations.txt" ] && NOT_RUN="${NOT_RUN}  - CPIC Recommendations (step 27)\n"
+[ ! -f "${SAMPLE_DIR}/vep/${SAMPLE}_annotated.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - vcfanno Annotation Enrichment (step 30)\n"
+[ ! -f "${SAMPLE_DIR}/slivar/${SAMPLE}_slivar_summary.tsv" ] && NOT_RUN="${NOT_RUN}  - slivar Variant Prioritization (step 31)\n"
+[ ! -f "${SAMPLE_DIR}/pypgx/${SAMPLE}_pypgx_summary.tsv" ] && NOT_RUN="${NOT_RUN}  - pypgx Pharmacogenomics (step 32)\n"
 if [ -z "$NOT_RUN" ]; then
   echo "  All major steps completed."
 else
