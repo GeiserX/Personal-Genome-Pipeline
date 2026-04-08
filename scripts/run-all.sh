@@ -197,7 +197,7 @@ echo "  [B5] CPSR cancer predisposition..."
 _throttle; bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
-echo "  [B6b] pypgx pharmacogenomics (88 genes + CYP2D6 SV)..."
+echo "  [B6b] pypgx pharmacogenomics (23 genes + CYP2D6 SV)..."
 _throttle; bash "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE" &
 PID_PYPGX=$!
 
@@ -364,7 +364,7 @@ bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/generate_re
 
 # Aggregate all per-step logs into one combined log for easy review
 : > "$POST_LOG"
-for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
+for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/3[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
   [ -f "$logf" ] || continue
   echo "=== $(basename "$logf") ===" >> "$POST_LOG"
   cat "$logf" >> "$POST_LOG"

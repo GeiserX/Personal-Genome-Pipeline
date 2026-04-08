@@ -47,7 +47,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
 | **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels) | 6, 17 |
-| **Pharmacogenomics** | Drug-gene interactions (88 genes, CYP2C19, CYP2D6 SV, DPYD, etc.) | 7, 21, 27, 32 |
+| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.) | 7, 21, 27, 32 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
@@ -81,7 +81,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
                                                           ├──> Delly (SVs) ────┤
                                                           ├──> GRIDSS (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
                                                           ├──> CNVnator (CNVs) ┘
-                                                          ├──> pypgx (88-gene PGx + CYP2D6 SV)
+                                                          ├──> pypgx (23-gene PGx + CYP2D6 SV)
                                                           ├──> Cyrius (CYP2D6)
                                                           ├──> TelomereHunter
                                                           ├──> mosdepth + indexcov (Coverage QC)

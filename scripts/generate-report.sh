@@ -255,7 +255,7 @@ fi
 # ---------- pypgx Pharmacogenomics (Step 32) ----------
 PYPGX_SUMMARY="${SAMPLE_DIR}/pypgx/${SAMPLE}_pypgx_summary.tsv"
 if [ -f "$PYPGX_SUMMARY" ]; then
-  echo "## pypgx Pharmacogenomics (88 genes)"
+  echo "## pypgx Pharmacogenomics (23 genes)"
   echo "---"
   PYPGX_GENES=$(tail -n +2 "$PYPGX_SUMMARY" | wc -l | tr -d ' ')
   echo "  Genes called: ${PYPGX_GENES}"

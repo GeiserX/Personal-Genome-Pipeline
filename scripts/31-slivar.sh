@@ -178,7 +178,10 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
   [ "$HAS_CADD" -eq 1 ] && PREDICTOR_PARTS+=('INFO/CADD_PHRED>=20')
   [ "$HAS_REVEL" -eq 1 ] && PREDICTOR_PARTS+=('INFO/REVEL>=0.5')
   [ "$HAS_AM" -eq 1 ] && PREDICTOR_PARTS+=('INFO/AM_class="likely_pathogenic"')
-  [ "$HAS_SPLICEAI" -eq 1 ] && PREDICTOR_PARTS+=('INFO/SpliceAI>=0.2')
+  # Note: SpliceAI is a pipe-delimited string, not a numeric field.
+  # bcftools cannot numerically compare sub-fields, so we use presence check only.
+  # Variants with SpliceAI annotations are included; threshold filtering happens in step 23.
+  [ "$HAS_SPLICEAI" -eq 1 ] && PREDICTOR_PARTS+=('INFO/SpliceAI!="."')
 
   if [ ${#PREDICTOR_PARTS[@]} -gt 0 ]; then
     PREDICTOR_EXPR=$(printf ' || %s' "${PREDICTOR_PARTS[@]}")

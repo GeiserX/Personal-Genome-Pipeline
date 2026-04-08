@@ -242,16 +242,34 @@ SPLICEAI_COUNT=0
 SPLICEAI_FILE=""
 if [ "$HAS_SPLICEAI" -eq 1 ]; then
   echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting cryptic splice variants (SpliceAI delta >= 0.2)..."
-  # SpliceAI INFO field format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|...
-  # We check if any delta score >= 0.2
+  # SpliceAI INFO field from vcfanno is a pipe-delimited string:
+  #   ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL
+  # bcftools cannot numerically compare sub-fields within a string, so we use
+  # awk to parse the SpliceAI value and check if any delta score >= 0.2.
   docker run --rm --user root \
     --cpus 4 --memory 4g \
     -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
-    bash -c "bcftools view -f PASS -i 'INFO/SpliceAI_SNV_DS_AG>=0.2 || INFO/SpliceAI_SNV_DS_AL>=0.2 || INFO/SpliceAI_SNV_DS_DG>=0.2 || INFO/SpliceAI_SNV_DS_DL>=0.2 || INFO/SpliceAI_INDEL_DS_AG>=0.2 || INFO/SpliceAI_INDEL_DS_AL>=0.2 || INFO/SpliceAI_INDEL_DS_DG>=0.2 || INFO/SpliceAI_INDEL_DS_DL>=0.2' \
-      ${CONTAINER_INPUT} \
-      -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
-    bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
+    bash -c "bcftools view -f PASS -i 'INFO/SpliceAI!=\".\"' ${CONTAINER_INPUT} | \
+      awk -F'\t' 'BEGIN{OFS=\"\t\"} /^#/{print;next} {
+        dominated=0
+        n=split(\$8, info_arr, \";\")
+        for(i=1;i<=n;i++){
+          if(info_arr[i] ~ /^SpliceAI=/){
+            sub(/^SpliceAI=/,\"\",info_arr[i])
+            split(info_arr[i],sp,\"|\")
+            for(j=3;j<=6;j++) if(sp[j]+0>=0.2) dominated=1
+          }
+          if(info_arr[i] ~ /^SpliceAI_indel=/){
+            sub(/^SpliceAI_indel=/,\"\",info_arr[i])
+            split(info_arr[i],sp,\"|\")
+            for(j=3;j<=6;j++) if(sp[j]+0>=0.2) dominated=1
+          }
+        }
+        if(dominated) print
+      }' | \
+      bgzip -c > /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
+    tabix -p vcf /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
 
   SPLICEAI_COUNT=$(docker run --rm \
     -v "${GENOME_DIR}:/genome" \

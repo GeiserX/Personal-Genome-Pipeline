@@ -275,9 +275,9 @@ else
   ANNOT_COUNT=0
   ANNOT_TOTAL=5
   [ -f "${ANNOT_DIR}/whole_genome_SNVs.tsv.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  [ -f "${ANNOT_DIR}/spliceai_scores.masked.snv.hg38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  [ -f "${ANNOT_DIR}/revel_grch38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  [ -f "${ANNOT_DIR}/AlphaMissense_hg38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/AlphaMissense_hg38.tsv.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
   [ -f "${ANNOT_DIR}/gnomad_v4.1_constraint.tsv" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
   if [ "$ANNOT_COUNT" -eq "$ANNOT_TOTAL" ]; then
     pass "Annotation databases: all ${ANNOT_TOTAL} present (CADD, SpliceAI, REVEL, AlphaMissense, gnomAD constraint)"
