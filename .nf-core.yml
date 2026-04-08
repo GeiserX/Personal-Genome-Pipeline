@@ -1,0 +1,18 @@
+# nf-core lint configuration
+# This pipeline uses nf-core template patterns but is NOT an official nf-core pipeline.
+# Skip branding and naming checks that only apply to nf-core organization pipelines.
+
+repository_type: pipeline
+nf_core_version: '3.2.0'
+
+lint:
+  # Skip checks that require nf-core organization membership
+  pipeline_name_conventions: false
+  # Skip checks for nf-core-specific CI workflows
+  actions_ci: false
+  actions_awstest: false
+  actions_awsfulltest: false
+  # Skip nf-core branding requirements
+  readme: false
+  # Skip multiqc (will be added in PR 3)
+  multiqc_config: false

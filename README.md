@@ -14,6 +14,7 @@
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/Personal-Genome-Pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
+  <a href="https://www.nextflow.io/"><img src="https://img.shields.io/badge/runs%20with-Nextflow-3ac486?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDIgMTlIMjJMMTIgMloiLz48L3N2Zz4=&logoColor=white" alt="Nextflow"></a>
   <a href="https://geiserx.github.io/personal-genome-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
 </p>
 
@@ -285,6 +286,26 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 ./scripts/02-alignment.sh $SAMPLE       # FASTQ -> BAM
 # ... continue as Path A
 ```
+
+### Nextflow (Alternative)
+
+If you prefer workflow engine features (automatic parallelism, robust resume, HPC/Singularity support), run via Nextflow instead of the bash scripts:
+
+```bash
+# Install Nextflow (one-time)
+curl -s https://get.nextflow.io | bash && sudo mv nextflow /usr/local/bin/
+
+# Create a samplesheet pointing to your VCF + BAM
+cat > samplesheet.csv << 'EOF'
+sample,vcf,vcf_index,bam,bam_index
+your_name,/path/to/your.vcf.gz,/path/to/your.vcf.gz.tbi,/path/to/sorted.bam,/path/to/sorted.bam.bai
+EOF
+
+# Run
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker
+```
+
+See [docs/nextflow.md](docs/nextflow.md) for full details, sarek integration, and bash vs Nextflow comparison.
 
 ---
 

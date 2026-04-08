@@ -60,6 +60,10 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 | 31 | Variant Prioritization (slivar) | [31-slivar.md](31-slivar.md) |
 | 32 | Pharmacogenomics (pypgx) | [32-pypgx.md](32-pypgx.md) |
 
+## Execution
+
+- [Nextflow](nextflow.md) -- run via Nextflow (DAG parallelism, resume, HPC/Singularity support)
+
 ## Guides
 
 - [Interpreting Results](interpreting-results.md) -- what your results mean
