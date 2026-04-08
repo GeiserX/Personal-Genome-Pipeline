@@ -270,6 +270,24 @@ else
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
+  # --- Annotation databases (optional, for steps 30-31) ---
+  ANNOT_DIR="${GENOME_DIR}/annotations"
+  ANNOT_COUNT=0
+  ANNOT_TOTAL=5
+  [ -f "${ANNOT_DIR}/whole_genome_SNVs.tsv.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/spliceai_scores.masked.snv.hg38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/revel_grch38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/AlphaMissense_hg38.vcf.gz" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  [ -f "${ANNOT_DIR}/gnomad_v4.1_constraint.tsv" ] && ANNOT_COUNT=$((ANNOT_COUNT + 1))
+  if [ "$ANNOT_COUNT" -eq "$ANNOT_TOTAL" ]; then
+    pass "Annotation databases: all ${ANNOT_TOTAL} present (CADD, SpliceAI, REVEL, AlphaMissense, gnomAD constraint)"
+  elif [ "$ANNOT_COUNT" -gt 0 ]; then
+    warn "Annotation databases: ${ANNOT_COUNT}/${ANNOT_TOTAL} present. Steps 30-31 will use what's available."
+    echo "       See docs/00-reference-setup.md for download instructions."
+  else
+    info "Annotation databases not downloaded (steps 30-31 will be skipped). See docs/00-reference-setup.md"
+  fi
+
   # --- GATK sequence dictionary (optional) ---
   DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
   if [ -f "$DICT" ]; then
@@ -324,6 +342,9 @@ else
     "$CLAIR3_IMAGE"
     "$SNIFFLES_IMAGE"
     "$PICARD_IMAGE"
+    "$VCFANNO_IMAGE"
+    "$SLIVAR_IMAGE"
+    "$PYPGX_IMAGE"
   )
 
   PULLED=0

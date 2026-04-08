@@ -42,7 +42,29 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | VEP cache (Ensembl 112) | ~26 GB | ~30 GB | Largest single download |
 | PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | ~35 GB | ClinVar + gnomAD + panels |
 | Docker images (all steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
-| **Subtotal (shared)** | **~73 GB** | **~85 GB** | |
+| **Subtotal (core)** | **~73 GB** | **~85 GB** | |
+
+### Annotation Databases (Optional, for Steps 30-31)
+
+These databases enable deeper pathogenicity scoring via vcfanno (step 30) and variant prioritization via slivar (step 31). All are optional — the pipeline detects which are present and skips missing tracks.
+
+| Resource | Download Size | Notes |
+|---|---|---|
+| CADD v1.7 whole-genome SNVs | ~81.5 GB | Non-commercial license |
+| CADD v1.7 gnomAD indels | ~1.2 GB | Non-commercial license |
+| SpliceAI pre-scored (SNV + indel) | ~20 GB | Apache 2.0 |
+| REVEL v1.3 scores | ~526 MB | Free for research |
+| AlphaMissense scores | ~613 MB | CC BY-NC-SA 4.0 |
+| gnomAD v4.1 gene constraint | ~91 MB | ODC-ODbL |
+| gnomAD AF ZIP (slivar) | ~1 GB | For population frequency filtering |
+| **Subtotal (annotation)** | **~104 GB** | |
+
+### Total Shared Data
+
+| Scenario | Download Size |
+|---|---|
+| Core pipeline only | ~73 GB |
+| Core + annotation enrichment | ~177 GB |
 
 ### Total Disk Requirements
 
@@ -110,10 +132,13 @@ On a 16-core / 32 GB desktop (e.g., AMD Ryzen 9 5950X):
 | Variant Calling | 3 | 2-4 hours | No (needs BAM from step 2) |
 | Quick Analyses | 4, 5, 6, 7, 9, 11, 12, 16 | ~1 hour total | Yes (all independent after step 3) |
 | Heavy Annotation | 13, 17 | 2-5 hours total | Yes (both use VCF) |
+| Annotation Enrichment | 30 | ~5-15 min | After step 13 |
+| Variant Prioritization | 31 | ~5-10 min | After step 30 |
+| pypgx Pharmacogenomics | 32 | ~20-40 min | Yes (uses BAM, parallel with phase 3) |
 | Optional SV Callers | 18, 19 | 2-4 hours each | Yes (both use BAM) |
 | Optional Mito/Telomere | 10, 20 | 1-2 hours total | Yes (both use BAM) |
-| **Total (sequential)** | All 20 | **12-20 hours** | |
-| **Total (parallelized)** | All 20 | **6-10 hours** | |
+| **Total (sequential)** | All 34 | **12-22 hours** | |
+| **Total (parallelized)** | All 34 | **6-12 hours** | |
 
 ### Parallelization Strategy
 
@@ -121,10 +146,11 @@ After step 3 (variant calling) completes, many steps can run simultaneously:
 
 ```
 Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
-              ├──> Step 13 (VEP, ~2-4 hr)
+              ├──> Step 13 (VEP, ~2-4 hr) ──> Step 30 (vcfanno, ~15 min) ──> Step 31 (slivar)
               ├──> Step 17 (CPSR, ~30-60 min)
               ├──> Step 18 (CNVnator, ~2-4 hr)    ← These 3 use BAM, need RAM
               ├──> Step 19 (Delly, ~2-4 hr)        ← Run 1-2 at a time
+              ├──> Step 32 (pypgx, ~20-40 min)     ← Uses BAM, parallel with above
               ├──> Step 10 (TelomereHunter, ~1 hr)
               └──> Step 20 (GATK Mutect2 mito, ~15-30 min)
 ```
@@ -142,7 +168,9 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 | VEP cache | ~26 GB | Slow servers, `wget -c` recommended for resume |
 | PCGR + VEP 113 cache | ~31 GB | Can be slow |
 | Docker images | ~10-15 GB | Pulled automatically by `docker run` |
-| **Total** | **~70-75 GB** | |
+| **Core total** | **~70-75 GB** | |
+| Annotation databases (steps 30-31) | ~104 GB | Optional — CADD, SpliceAI, REVEL, AlphaMissense |
+| **Full total** | **~175 GB** | |
 
 ### Ongoing Downloads
 

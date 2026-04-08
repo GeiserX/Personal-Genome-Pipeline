@@ -170,6 +170,120 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz.tbi
 ```
 
+## Annotation Databases (Optional, for Steps 30-31)
+
+Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
+
+> **Total download:** ~104 GB (CADD is 83 GB alone). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
+
+### CADD v1.7 Pre-scored (SNVs + Indels) — ~83 GB
+
+The most widely used deleteriousness metric. Scores all possible SNVs genome-wide plus gnomAD indels.
+
+> **License:** Free for non-commercial/academic use. Commercial use requires a license from the University of Washington. The pipeline does not redistribute CADD data — users download directly from the source.
+
+```bash
+mkdir -p ${GENOME_DIR}/annotations
+cd ${GENOME_DIR}/annotations
+
+# Whole-genome SNV scores (~81.5 GB, pre-indexed)
+wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/whole_genome_SNVs.tsv.gz
+wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/whole_genome_SNVs.tsv.gz.tbi
+
+# gnomAD v4.0 indel scores (~1.2 GB, pre-indexed)
+wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/gnomad.genomes.r4.0.indel.tsv.gz
+wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/gnomad.genomes.r4.0.indel.tsv.gz.tbi
+```
+
+> **Note:** CADD TSVs use chromosome names without `chr` prefix (1, 2, 3...). vcfanno handles this via column mapping in the TOML config — no manual renaming needed.
+
+### SpliceAI Pre-scored — ~20 GB
+
+Deep learning splice-site variant prediction. Catches pathogenic intronic variants that VEP's rule-based splice prediction misses.
+
+```bash
+cd ${GENOME_DIR}/annotations
+
+# SNV splice scores (~15.5 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz.tbi
+
+# Indel splice scores (~4.5 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz.tbi
+```
+
+> **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
+
+### REVEL v1.3 — ~526 MB
+
+Ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification.
+
+```bash
+cd ${GENOME_DIR}/annotations
+
+# Download and prepare for vcfanno
+wget -c https://zenodo.org/record/7072866/files/revel-v1.3_all_chromosomes.zip
+unzip revel-v1.3_all_chromosomes.zip
+
+# Convert to tabix-indexed TSV for GRCh38
+# Extract GRCh38 columns, add chr prefix, sort, bgzip, index
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  staphb/bcftools:1.21 \
+  bash -c '
+    cd /genome/annotations
+    cat revel_with_transcript_ids | tr "," "\t" > revel_tabbed.tsv
+    # Header line
+    head -1 revel_tabbed.tsv | sed "s/^/#/" > revel_grch38.tsv
+    # Extract GRCh38 rows (col3=grch38_pos), skip header, add chr prefix, sort
+    tail -n+2 revel_tabbed.tsv | \
+      awk -F"\t" "\$3 != \".\" {print \"chr\"\$1\"\t\"\$3\"\t\"\$4\"\t\"\$5\"\t\"\$8}" | \
+      sort -k1,1V -k2,2n >> revel_grch38.tsv
+    bgzip revel_grch38.tsv
+    tabix -s 1 -b 2 -e 2 revel_grch38.tsv.gz
+    # Clean up intermediates
+    rm -f revel_tabbed.tsv revel_with_transcript_ids revel-v1.3_all_chromosomes.zip
+  '
+```
+
+> **Thresholds:** ClinGen recommends REVEL >= 0.644 as supporting evidence of pathogenicity (PP3_Moderate) and >= 0.932 for strong evidence (PP3_Strong) for missense variants.
+
+### AlphaMissense — ~613 MB
+
+DeepMind's protein-structure-informed missense classifier. Complements REVEL with structural context. Covers all ~71 million possible human missense variants.
+
+> **License:** CC BY-NC-SA 4.0 (non-commercial, share-alike). The pipeline does not redistribute these scores.
+
+```bash
+cd ${GENOME_DIR}/annotations
+
+# Download pre-scored GRCh38 predictions
+wget -c https://storage.googleapis.com/dm_alphamissense/AlphaMissense_hg38.tsv.gz
+
+# Index for vcfanno (skip header lines starting with #)
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  staphb/bcftools:1.21 \
+  tabix -s 1 -b 2 -e 2 -S 1 /genome/annotations/AlphaMissense_hg38.tsv.gz
+```
+
+> **Thresholds:** am_pathogenicity < 0.34 = likely benign, > 0.564 = likely pathogenic.
+
+### gnomAD v4.1 Constraint Metrics — ~91 MB
+
+Per-gene loss-of-function intolerance scores. Essential for interpreting novel variants in constrained genes.
+
+```bash
+cd ${GENOME_DIR}/annotations
+
+# Gene-level constraint table
+wget -c -O gnomad_v4.1_constraint.tsv \
+  https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/constraint/gnomad.v4.1.constraint_metrics.tsv
+```
+
+> **Key metrics:** LOEUF (oe_lof_upper) < 0.35 = constrained for LoF; pLI >= 0.9 = intolerant to LoF; missense Z > 3.09 = constrained for missense.
+
 ## Docker Images — Pre-Pull All
 
 Pull all images in advance to avoid download delays during analysis:
@@ -207,6 +321,11 @@ docker pull broadinstitute/gatk:4.6.1.0
 docker pull quay.io/biocontainers/fastp:1.3.1--h43da1c4_0
 docker pull quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0
 docker pull quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0
+
+# Annotation enrichment (v0.4.0)
+docker pull quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
+docker pull quay.io/biocontainers/slivar:0.3.3--h5f107b1_0
+docker pull quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
 
 # Alternative / new callers
 docker pull dancooke/octopus:0.7.4
@@ -295,8 +414,10 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 112 cache |
 | T1K HLA index | 50 MB | 450 MB | Optional |
 | Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
+| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~104 GB | ~104 GB | Optional (step 30-31) |
 | Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
-| **Total** | **~78 GB** | **~96 GB** | |
+| **Total (core)** | **~78 GB** | **~96 GB** | Without annotation databases |
+| **Total (with annotation enrichment)** | **~182 GB** | **~200 GB** | With all v0.4.0 databases |
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 
@@ -312,5 +433,12 @@ echo "Checking reference setup..."
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
 [ -d "${GENOME_DIR}/pcgr_data/20250314/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && echo "  VEP 113 cache (CPSR): OK" || echo "  VEP 113 cache (CPSR): MISSING"
+
+echo "Annotation databases (optional, for steps 30-31):"
+[ -f "${GENOME_DIR}/annotations/whole_genome_SNVs.tsv.gz" ] && echo "  CADD SNVs: OK" || echo "  CADD SNVs: not downloaded"
+[ -f "${GENOME_DIR}/annotations/spliceai_scores.raw.snv.hg38.vcf.gz" ] && echo "  SpliceAI SNVs: OK" || echo "  SpliceAI SNVs: not downloaded"
+[ -f "${GENOME_DIR}/annotations/revel_grch38.tsv.gz" ] && echo "  REVEL: OK" || echo "  REVEL: not downloaded"
+[ -f "${GENOME_DIR}/annotations/AlphaMissense_hg38.tsv.gz" ] && echo "  AlphaMissense: OK" || echo "  AlphaMissense: not downloaded"
+[ -f "${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv" ] && echo "  gnomAD constraint: OK" || echo "  gnomAD constraint: not downloaded"
 echo "Done."
 ```

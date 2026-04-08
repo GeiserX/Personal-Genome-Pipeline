@@ -252,6 +252,45 @@ if [ -f "$CPIC_REPORT" ]; then
   echo ""
 fi
 
+# ---------- pypgx Pharmacogenomics (Step 32) ----------
+PYPGX_SUMMARY="${SAMPLE_DIR}/pypgx/${SAMPLE}_pypgx_summary.tsv"
+if [ -f "$PYPGX_SUMMARY" ]; then
+  echo "## pypgx Pharmacogenomics (88 genes)"
+  echo "---"
+  PYPGX_GENES=$(tail -n +2 "$PYPGX_SUMMARY" | wc -l | tr -d ' ')
+  echo "  Genes called: ${PYPGX_GENES}"
+  # Highlight CYP2D6 (the key gene PharmCAT can't call)
+  CYP2D6=$(grep -P '^CYP2D6\t' "$PYPGX_SUMMARY" 2>/dev/null | cut -f2 || echo "not called")
+  echo "  CYP2D6 diplotype: ${CYP2D6}"
+  echo ""
+  # Show PharmCAT comparison if available
+  PYPGX_COMPARE="${SAMPLE_DIR}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
+  if [ -f "$PYPGX_COMPARE" ]; then
+    MISMATCHES=$(grep -c 'No$' "$PYPGX_COMPARE" 2>/dev/null || echo "0")
+    echo "  PharmCAT vs pypgx discrepancies: ${MISMATCHES}"
+    if [ "$MISMATCHES" -gt 0 ]; then
+      echo "  (Discrepancies are expected — see docs/32-pypgx.md)"
+    fi
+    echo ""
+  fi
+fi
+
+# ---------- slivar Variant Prioritization (Step 31) ----------
+SLIVAR_SUMMARY="${SAMPLE_DIR}/slivar/${SAMPLE}_slivar_summary.tsv"
+if [ -f "$SLIVAR_SUMMARY" ]; then
+  echo "## Variant Prioritization (slivar)"
+  echo "---"
+  PRIORITIZED=$(tail -n +2 "$SLIVAR_SUMMARY" | wc -l | tr -d ' ')
+  echo "  Prioritized variants: ${PRIORITIZED}"
+  COMP_HETS="${SAMPLE_DIR}/slivar/${SAMPLE}_compound_hets.tsv"
+  if [ -f "$COMP_HETS" ]; then
+    CH_COUNT=$(tail -n +2 "$COMP_HETS" | wc -l | tr -d ' ')
+    echo "  Compound het candidates: ${CH_COUNT} pairs"
+    echo "  (Candidates only — unphased single-sample data. See docs/31-slivar.md)"
+  fi
+  echo ""
+fi
+
 # ---------- Steps Not Run ----------
 echo "## Steps Not Run"
 echo "---"
@@ -268,6 +307,9 @@ PHARMCAT_FOUND=0; find "${SAMPLE_DIR}/vcf" -maxdepth 1 -name "*.report.html" 2>/
 [ ! -f "${SAMPLE_DIR}/prs/${SAMPLE}_prs_summary.tsv" ] && NOT_RUN="${NOT_RUN}  - PRS (step 25)\n"
 [ ! -d "${SAMPLE_DIR}/ancestry" ] && NOT_RUN="${NOT_RUN}  - Ancestry PCA (step 26)\n"
 [ ! -f "${SAMPLE_DIR}/cpic/${SAMPLE}_cpic_recommendations.txt" ] && NOT_RUN="${NOT_RUN}  - CPIC Recommendations (step 27)\n"
+[ ! -f "${SAMPLE_DIR}/vep/${SAMPLE}_annotated.vcf.gz" ] && NOT_RUN="${NOT_RUN}  - vcfanno Annotation Enrichment (step 30)\n"
+[ ! -d "${SAMPLE_DIR}/slivar" ] && NOT_RUN="${NOT_RUN}  - slivar Variant Prioritization (step 31)\n"
+[ ! -d "${SAMPLE_DIR}/pypgx" ] && NOT_RUN="${NOT_RUN}  - pypgx Pharmacogenomics (step 32)\n"
 if [ -z "$NOT_RUN" ]; then
   echo "  All major steps completed."
 else

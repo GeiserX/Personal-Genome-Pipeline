@@ -197,6 +197,10 @@ echo "  [B5] CPSR cancer predisposition..."
 _throttle; bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
 PID_CPSR=$!
 
+echo "  [B6b] pypgx pharmacogenomics (88 genes + CYP2D6 SV)..."
+_throttle; bash "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE" &
+PID_PYPGX=$!
+
 # Wait for quick jobs, counting failures
 PHASE3_FAIL=0
 for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_MOSDEPTH $PID_IMPUTATION $PID_HLA; do
@@ -248,7 +252,7 @@ else
 fi
 
 # Wait for remaining Phase 3 jobs
-for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV; do
+for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV; do
   [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done
@@ -265,6 +269,13 @@ echo "[Phase 4] Running post-processing steps..."
 # Post-processing steps: per-step log files to avoid interleaved output
 POST_LOG_DIR="${GENOME_DIR}/${SAMPLE}"
 POST_LOG="${POST_LOG_DIR}/post_processing.log"
+
+# vcfanno annotation enrichment (must complete before clinical filter)
+# Adds CADD, SpliceAI, REVEL, AlphaMissense scores to VEP VCF
+echo "  [D0] vcfanno annotation enrichment..."
+bash "${SCRIPT_DIR}/30-vcfanno.sh" "$SAMPLE" > "${POST_LOG_DIR}/30_vcfanno.log" 2>&1 || \
+  echo "  WARNING: vcfanno failed (annotation databases may not be downloaded). See ${POST_LOG_DIR}/30_vcfanno.log"
+echo ""
 
 echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
 _throttle; bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" > "${POST_LOG_DIR}/21_cyrius.log" 2>&1 &
@@ -290,6 +301,10 @@ echo "  [D6] CPIC drug-gene recommendations..."
 _throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" > "${POST_LOG_DIR}/27_cpic.log" 2>&1 &
 PID_CPIC=$!
 
+echo "  [D8] slivar variant prioritization + compound hets..."
+_throttle; bash "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE" > "${POST_LOG_DIR}/31_slivar.log" 2>&1 &
+PID_SLIVAR=$!
+
 # Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
 # Enable with: SOMATIC=true ./scripts/run-all.sh sample sex
 PID_SOMATIC=""
@@ -302,7 +317,7 @@ else
 fi
 
 PHASE4_FAIL=0
-for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC $PID_SOMATIC; do
+for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC $PID_SLIVAR $PID_SOMATIC; do
   [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
 done
@@ -388,6 +403,8 @@ echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.
 echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
 echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
 echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"
+echo "  pypgx PGx:      ${GENOME_DIR}/${SAMPLE}/pypgx/"
+echo "  Slivar:         ${GENOME_DIR}/${SAMPLE}/slivar/"
 echo "  Somatic calls:  ${GENOME_DIR}/${SAMPLE}/somatic/"
 echo "  CPSR report:    ${GENOME_DIR}/${SAMPLE}/cpsr/"
 echo ""

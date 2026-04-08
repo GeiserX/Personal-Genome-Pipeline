@@ -310,6 +310,79 @@ VEP classifies variant impact as:
 
 **Everyone has ~100-150 HIGH impact variants.** Most are in one copy (heterozygous) of non-essential genes. Don't panic at the number.
 
+---
+
+## Pathogenicity Scores (Step 30 — vcfanno)
+
+If you ran step 30, your VCF now includes quantitative pathogenicity scores beyond VEP's qualitative SIFT/PolyPhen predictions. These scores are the current standard in clinical genomics.
+
+### CADD (Combined Annotation Dependent Depletion)
+
+Scores **all** variant types (coding, non-coding, splice, regulatory). Uses a PHRED-like scale where higher = more deleterious.
+
+| CADD PHRED | Interpretation | Context |
+|---|---|---|
+| < 10 | Likely benign | Bottom 90% of genome variation |
+| 10-20 | Uncertain | Top 10%, but most are still benign |
+| 20-25 | Potentially deleterious | Top 1% — investigate if in a disease gene |
+| 25-30 | Likely deleterious | Top 0.3% — strong candidate for pathogenicity |
+| > 30 | Highly deleterious | Top 0.1% — likely damaging if in a constrained gene |
+
+**When to use CADD:** Best for non-coding and splice-region variants where SIFT/PolyPhen don't apply. For missense variants, REVEL and AlphaMissense are more specific.
+
+### REVEL (Rare Exome Variant Ensemble Learner)
+
+Scores **missense variants only**. Combines 13 individual tools into a single 0-1 score. Recommended by ClinGen for ACMG PP3/BP4 evidence.
+
+| REVEL Score | ClinGen Evidence Level | Interpretation |
+|---|---|---|
+| < 0.290 | BP4_Supporting | Supporting evidence of benign |
+| 0.290-0.644 | No evidence | Uncertain significance |
+| 0.644-0.773 | PP3_Moderate | Moderate evidence of pathogenicity |
+| 0.773-0.932 | PP3_Strong | Strong evidence of pathogenicity |
+| > 0.932 | PP3_Very Strong | Very strong evidence of pathogenicity |
+
+**When to use REVEL:** First-line score for evaluating missense variants. If REVEL >= 0.644, investigate the variant seriously.
+
+### AlphaMissense
+
+DeepMind's protein-structure-informed **missense** classifier. Uses AlphaFold2 protein structure predictions to assess amino acid substitution impact.
+
+| am_pathogenicity | am_class | Interpretation |
+|---|---|---|
+| < 0.34 | likely_benign | Predicted benign by protein structure analysis |
+| 0.34-0.564 | ambiguous | Uncertain — use other evidence |
+| > 0.564 | likely_pathogenic | Predicted damaging based on protein structure |
+
+**When to use AlphaMissense:** Complements REVEL. If both REVEL and AlphaMissense agree a variant is pathogenic, confidence is high. If they disagree, investigate further.
+
+### SpliceAI
+
+Deep learning model predicting **splice-altering** variants. Scores four types of splice disruption: acceptor gain (AG), acceptor loss (AL), donor gain (DG), donor loss (DL).
+
+| Max Delta Score | Interpretation |
+|---|---|
+| < 0.2 | Unlikely to affect splicing |
+| 0.2-0.5 | May affect splicing — investigate |
+| 0.5-0.8 | Likely affects splicing |
+| > 0.8 | Almost certainly affects splicing |
+
+**When to use SpliceAI:** VEP already flags canonical splice site variants (GT/AG dinucleotides). SpliceAI catches **cryptic** splice variants — intronic or exonic variants that create new splice sites or disrupt existing ones through more subtle mechanisms.
+
+### gnomAD Gene Constraint (Step 23 summary)
+
+These are per-gene metrics (not per-variant) added to the clinical filter summary TSV. They measure how intolerant a gene is to different types of mutations.
+
+| Metric | Threshold | Meaning |
+|---|---|---|
+| LOEUF < 0.35 | Constrained for loss-of-function | Gene is intolerant to LoF mutations — a HIGH impact variant here is more likely to cause disease |
+| pLI >= 0.9 | Loss-of-function intolerant | Same as LOEUF but older metric. LOEUF is preferred. |
+| mis_Z > 3.09 | Constrained for missense | Gene is intolerant to missense mutations — a REVEL-high missense here is more concerning |
+
+**Combining scores:** A rare variant (gnomAD AF < 0.01%) with CADD > 25, in a constrained gene (LOEUF < 0.35), with ClinVar pathogenic classification, is a high-confidence pathogenic finding. Any one of these alone is insufficient.
+
+---
+
 ### Quick Variant Filtering Recipes
 
 Copy-paste these commands to extract the most clinically relevant variants. All assume your VEP-annotated VCF is at `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`.

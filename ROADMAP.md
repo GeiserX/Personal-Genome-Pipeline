@@ -31,18 +31,18 @@ Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Per
 - [x] **Whole exome sequencing (WES) entry path** — comprehensive guide in `docs/wes-guide.md` covering per-step compatibility, capture BED files, `DATA_TYPE=WES` env var, coverage QC metrics, and limitations. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
 - [x] **Somatic variant calling** (`scripts/29-mutect2-somatic.sh`) — [EXPERIMENTAL] tumor-only Mutect2 mode with gnomAD germline resource and Panel of Normals filtering. Marked experimental due to high false positive rate without matched normal
 
-## v0.4.0 — Expanded annotation & clinical interpretation
+## v0.4.0 — Expanded annotation & clinical interpretation ✅
 
-Current annotation is VEP-only with basic ClinVar screening. Clinical-grade interpretation benefits from deeper pathogenicity scoring and structured querying.
+Deep pathogenicity scoring, structured variant querying, and broader pharmacogenomics. All new annotation tracks are optional — scripts detect which databases are present and degrade gracefully.
 
-- [ ] **CADD scores** — integrate Combined Annotation Dependent Depletion scores for all variants (coding + non-coding), the most widely used deleteriousness metric
-- [ ] **SpliceAI** — deep learning splice-site variant prediction. Catches pathogenic intronic variants that VEP's rule-based splice prediction misses
-- [ ] **REVEL scores** — ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification
-- [ ] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier. Complements REVEL with structural context
-- [ ] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores. Essential for interpreting novel variants in loss-of-function-intolerant genes
-- [ ] **vcfanno annotation engine** — add arbitrary annotation tracks (gnomAD, CADD, SpliceAI, custom BEDs) to VCFs via TOML config; faster than VEP for bulk annotation, complements rather than replaces it
-- [ ] **Variant database with inheritance queries** — load annotated VCFs into a queryable store (GEMINI or modern successor) supporting inheritance model filtering: de novo, compound het, X-linked, autosomal recessive/dominant
-- [ ] **pypgx alongside PharmCAT** — broader PGx star allele calling including CYP2D6 structural variation detection from WGS reads, filling the gap left by Cyrius
+- [x] **CADD scores** — Combined Annotation Dependent Depletion scores for all variants via vcfanno. Pre-scored whole-genome SNVs (~81.5 GB) + gnomAD indels (~1.2 GB). PHRED >= 20 flagged as clinically interesting
+- [x] **SpliceAI** — deep learning splice-site variant predictions via vcfanno. Pre-scored files (~20 GB). Delta score >= 0.2 flagged for cryptic splice variants
+- [x] **REVEL scores** — ensemble missense pathogenicity scoring via vcfanno (~526 MB). ClinGen-recommended thresholds: >= 0.644 (PP3_Moderate), >= 0.932 (PP3_Very Strong)
+- [x] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier via vcfanno (~613 MB). Thresholds: < 0.34 benign, > 0.564 pathogenic
+- [x] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores (~91 MB). Integrated into clinical filter summary TSV and slivar output
+- [x] **vcfanno annotation engine** (`scripts/30-vcfanno.sh`) — adds CADD, SpliceAI, REVEL, AlphaMissense to VEP VCFs via TOML config in a single pass. Handles CADD chr prefix mismatch with two-pass approach
+- [x] **Variant prioritization with inheritance queries** (`scripts/31-slivar.sh`) — slivar (GEMINI successor) for streaming VCF filtering with JS expressions. Rare HIGH/MODERATE variants, ClinVar pathogenic, compound het detection, gene constraint enrichment
+- [x] **pypgx alongside PharmCAT** (`scripts/32-pypgx.sh`) — 88-gene star allele calling including CYP2D6 structural variation from BAM read depth. Cross-validates with PharmCAT on shared genes
 
 ## v0.5.0 — Workflow engine integration
 
@@ -63,7 +63,7 @@ Every step currently runs on a single sample in isolation. v0.6.0 focuses on mak
 - [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
 - [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
 - [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
-- [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with GEMINI-style inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
+- [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with slivar inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
 ## v0.7.0 — Reporting & user experience
 

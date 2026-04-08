@@ -19,12 +19,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
-  <img src="https://img.shields.io/badge/analysis%20steps-31-f97316?style=flat-square" alt="31 steps">
+  <img src="https://img.shields.io/badge/analysis%20steps-34-f97316?style=flat-square" alt="34 steps">
   <img src="https://img.shields.io/badge/data%20privacy-local%20processing-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="Local Processing">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 31 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 34 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
 **Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
 
@@ -47,9 +47,10 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
 | **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels) | 6, 17 |
-| **Pharmacogenomics** | Drug-gene interactions (21+ genes, CYP2C19, CYP2D6, DPYD, etc.) | 7, 21, 27 |
+| **Pharmacogenomics** | Drug-gene interactions (88 genes, CYP2C19, CYP2D6 SV, DPYD, etc.) | 7, 21, 27, 32 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
-| **Functional Annotation** | Impact prediction for every variant (VEP: SIFT, PolyPhen, gnomAD frequencies) | 13 |
+| **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
+| **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, ancestry SNP intersection | 11, 12, 26 |
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
@@ -66,7 +67,9 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
                                (minimap2)                 │        │
                                                           │        ├──> ClinVar Screen
                                                           │        ├──> PharmCAT (PGx) ──> CPIC Recommendations
-                                                          │        ├──> VEP Annotation ──> Clinical Filter
+                                                          │        ├──> VEP Annotation ──> vcfanno (CADD/SpliceAI/REVEL/AM)
+                                                          │        │                           └──> slivar (prioritization)
+                                                          │        │                           └──> Clinical Filter
                                                           │        ├──> CPSR (Cancer Predisposition)
                                                           │        ├──> ExpansionHunter (STRs)
                                                           │        ├──> ROH Analysis
@@ -78,6 +81,7 @@ FASTQ ──> fastp (QC/trim) ──> Alignment ──> Sorted BAM ──┬─�
                                                           ├──> Delly (SVs) ────┤
                                                           ├──> GRIDSS (SVs) ───┼──> SV Consensus ──> duphold ──> AnnotSV
                                                           ├──> CNVnator (CNVs) ┘
+                                                          ├──> pypgx (88-gene PGx + CYP2D6 SV)
                                                           ├──> Cyrius (CYP2D6)
                                                           ├──> TelomereHunter
                                                           ├──> mosdepth + indexcov (Coverage QC)
@@ -128,9 +132,12 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 27 | [CPIC Recommendations](docs/27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
 | 28 | [MultiQC Report](docs/28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.33` | ~1 min | Recommended |
 | 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~2-6 hr | Experimental |
+| 30 | [Annotation Enrichment](docs/30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.7` | ~5-15 min | If step 13 run |
+| 31 | [Variant Prioritization](docs/31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.3` | ~5-10 min | If step 13 run |
+| 32 | [pypgx Pharmacogenomics](docs/32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.26.0` | ~20-40 min | Recommended |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
-**Full analysis:** All 30 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
+**Full analysis:** All 33 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
 
 #### Alternative Tools (Benchmarking)
 
@@ -254,7 +261,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 | **CPU** | 4 cores | 16+ cores | DeepVariant scales linearly with cores |
 | **RAM** | 16 GB | 32 GB | Some steps need 8-16 GB; pipeline limits each container |
 | **Disk** | 500 GB free | 1 TB+ | See [detailed breakdown](docs/hardware-requirements.md) |
-| **Internet** | Broadband | 100+ Mbps | ~70-75 GB of one-time downloads (reference genome, databases, Docker images) |
+| **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~104 GB optional annotation databases |
 | **OS** | Linux (amd64) | Ubuntu 22.04+ | macOS/ARM works but slower (see below) |
 
 > **Disk space is the #1 surprise.** A single 30X WGS sample produces 60-90 GB of FASTQ, 30-80 GB of BAM, plus reference genomes and databases. See [docs/hardware-requirements.md](docs/hardware-requirements.md) for the full breakdown.
@@ -279,7 +286,9 @@ That's it. Every analysis tool runs inside Docker -- no conda environments, no P
 | VEP cache | ~26 GB | Step 13 (VEP annotation) |
 | PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | Step 17 (cancer predisposition) |
 | Docker images (all steps) | ~10-15 GB | All steps |
-| **Total one-time setup** | **~70-75 GB** | |
+| Annotation databases (CADD, SpliceAI, REVEL, AlphaMissense) | ~104 GB | Steps 30-31 (optional) |
+| **Total one-time setup (core)** | **~70-75 GB** | |
+| **Total with annotation enrichment** | **~175 GB** | |
 
 See [docs/00-reference-setup.md](docs/00-reference-setup.md) for download instructions.
 
@@ -356,7 +365,9 @@ ${GENOME_DIR}/
     annotsv/                           # Annotated SVs (step 5)
     clinvar/                           # ClinVar hits (step 6)
     clinical/                          # Clinically filtered variants (step 23)
-    vep/                               # Functional annotation (step 13)
+    vep/                               # Functional annotation (steps 13, 30)
+    slivar/                            # Prioritized variants (step 31)
+    pypgx/                             # pypgx PGx star alleles (step 32)
     cpsr/                              # Cancer predisposition (step 17)
     mito/                              # Haplogroup + mitochondrial variants (steps 12, 20)
     ...                                # Other analysis directories
@@ -394,7 +405,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. All 30 default steps take ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`, bringing the total to 31). Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
+On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. All 33 default steps take ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`, bringing the total to 34). Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.
@@ -431,7 +442,7 @@ It depends on the vendor. Dante Labs deletes data after 30 days. Sequencing.com 
 
 | Approach | Cost | What You Get | Data Privacy |
 |---|---|---|---|
-| **This pipeline** | $0 (free, open source) | 30 default + 1 opt-in analysis steps | Your data never leaves your machine |
+| **This pipeline** | $0 (free, open source) | 33 default + 1 opt-in analysis steps | Your data never leaves your machine |
 | Clinical WGS interpretation | $500-5,000 | 1-page report, selected genes only | Lab retains your data |
 | Nebula/Dante report | $0-200 (included/add-on) | Web dashboard, limited depth | Data on company servers |
 | 23andMe Health | $229 | ~10 health reports from array data | Data shared with research partners |
