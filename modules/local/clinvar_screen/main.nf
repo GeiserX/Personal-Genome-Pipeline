@@ -21,6 +21,7 @@ process CLINVAR_SCREEN {
     tuple val(meta), path(vcf), path(vcf_index)
     path(clinvar)
     path(clinvar_index)
+    path(reference)
 
     output:
     tuple val(meta), path("isec/"),              emit: isec_dir
@@ -33,16 +34,34 @@ process CLINVAR_SCREEN {
 
     script:
     """
-    # Step 1: Extract PASS variants
-    bcftools view -f PASS ${vcf} -Oz -o ${meta.id}_pass.vcf.gz
+    # Step 1: Extract PASS variants and left-normalize
+    bcftools view -f PASS ${vcf} | \
+        bcftools norm -m -any -f ${reference} -Oz -o ${meta.id}_pass.vcf.gz
     bcftools index -t ${meta.id}_pass.vcf.gz
 
-    # Step 2: Intersect with ClinVar pathogenic
-    bcftools isec -p isec ${meta.id}_pass.vcf.gz ${clinvar}
+    # Step 2: Normalize ClinVar for consistent representation
+    bcftools norm -m -any -f ${reference} ${clinvar} -Oz -o clinvar_norm.vcf.gz
+    bcftools index -t clinvar_norm.vcf.gz
+
+    # Step 3: Intersect with ClinVar pathogenic
+    bcftools isec -p isec ${meta.id}_pass.vcf.gz clinvar_norm.vcf.gz
 
     # Log hit count
     HITS=\$(grep -c -v '^#' isec/0002.vcf 2>/dev/null || echo 0)
     echo "ClinVar pathogenic hits: \${HITS}"
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    mkdir -p isec
+    touch isec/0000.vcf isec/0001.vcf isec/0002.vcf isec/0003.vcf
+    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}_pass.vcf.gz
+    tabix -p vcf ${meta.id}_pass.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

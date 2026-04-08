@@ -34,6 +34,11 @@ process PHARMCAT_PREPROCESS {
         -o ./ \\
         -bf ${meta.id}
     """
+
+    stub:
+    """
+    echo '##fileformat=VCFv4.2' | bgzip > ${meta.id}.preprocessed.vcf.bgz
+    """
 }
 
 process PHARMCAT {
@@ -69,6 +74,17 @@ process PHARMCAT {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         pharmcat: \$(java -jar /pharmcat/pharmcat.jar -version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '3.2.0')
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}.report.html ${meta.id}.report.json
+    touch ${meta.id}.match.json ${meta.id}.phenotype.json
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: 3.2.0
     END_VERSIONS
     """
 }

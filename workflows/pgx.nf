@@ -38,7 +38,8 @@ workflow PGX {
         CLINVAR_SCREEN(
             ch_vcf,
             ch_clinvar.first(),
-            ch_clinvar_index.first()
+            ch_clinvar_index.first(),
+            ch_reference
         )
         ch_versions = ch_versions.mix(CLINVAR_SCREEN.out.versions)
     }
