@@ -1,8 +1,8 @@
-# Nextflow Execution (v0.5.0 — Alpha)
+# Nextflow Execution (v0.5.0)
 
-The pipeline is being ported to [Nextflow](https://www.nextflow.io/) DSL2. This is currently an **alpha scaffold** covering PharmCAT and ClinVar screening only. More modules are being added in staged PRs (see [ROADMAP.md](../ROADMAP.md)).
+The pipeline has a full [Nextflow](https://www.nextflow.io/) DSL2 execution path covering all analysis steps. It is organized into 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 24 modules.
 
-> **The bash scripts are the recommended execution path today.** The Nextflow path does not yet cover all pipeline steps. Use Nextflow only if you want to validate the architecture or contribute to development.
+> **Both execution paths are maintained.** The bash scripts (`run-all.sh`) remain the simpler option for single-machine use. Nextflow adds automatic parallelism, content-hash resume, and HPC/Singularity support.
 
 ---
 
@@ -106,13 +106,29 @@ nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
 ```
 results/
 ├── sample1/
-│   ├── pharmcat/
-│   │   ├── sample1.report.html
-│   │   └── sample1.report.json
-│   └── clinvar/
-│       ├── isec/
-│       │   └── 0002.vcf          # Shared pathogenic variants
-│       └── sample1_pass.vcf.gz
+│   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
+│   ├── clinvar/            # ClinVar pathogenic variant screen
+│   ├── pypgx/              # pypgx star allele calling (optional)
+│   ├── cpic/               # CPIC drug-gene recommendations (optional)
+│   ├── vep/                # VEP variant annotation
+│   ├── vcfanno/            # Enriched VCF (CADD, SpliceAI, REVEL, AlphaMissense)
+│   ├── slivar/             # Prioritized variants + compound hets
+│   ├── clinical_filter/    # Clinically relevant variant subset
+│   ├── cpsr/               # Cancer predisposition report
+│   ├── roh/                # Runs of homozygosity
+│   ├── prs/                # Polygenic risk scores
+│   ├── ancestry/           # Ancestry PCA (optional)
+│   ├── mito_haplogroup/    # Mitochondrial haplogroup
+│   ├── hla/                # HLA typing
+│   ├── expansion_hunter/   # Repeat expansion calls
+│   ├── telomere_hunter/    # Telomere length estimation
+│   ├── mosdepth/           # Coverage statistics
+│   ├── mito_variants/      # Mitochondrial variant calling
+│   ├── cyrius/             # CYP2D6 star allele (Cyrius)
+│   ├── manta/              # SV calling (optional)
+│   ├── delly/              # SV calling (optional)
+│   ├── cnvnator/           # CNV calling (optional)
+│   └── report/             # Consolidated HTML report
 └── pipeline_info/
     ├── timeline_*.html
     ├── report_*.html
@@ -141,7 +157,7 @@ results/
 
 This pipeline uses [nf-core](https://nf-co.re/) template patterns and tooling for code quality, but is **not an official nf-core pipeline** (it uses a GPL-3.0 license; nf-core requires MIT).
 
-Individual modules (PharmCAT, pypgx, slivar) are contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license for use by the broader community.
+Individual modules (PharmCAT, pypgx, slivar) will be contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license for use by the broader community.
 
 ### Acknowledgement
 
