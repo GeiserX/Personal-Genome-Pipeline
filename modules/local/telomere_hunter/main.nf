@@ -16,7 +16,6 @@ process TELOMERE_HUNTER {
     label 'process_high'
 
     container 'lgalarno/telomerehunter:latest'
-    containerOptions '--user root:root'
 
     publishDir "${params.outdir}/${meta.id}/telomere", mode: params.publish_dir_mode
 
