@@ -20,7 +20,7 @@ process PYPGX {
     publishDir "${params.outdir}/${meta.id}/pypgx", mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index)
     path(reference)
     path(reference_fai)
     path(pypgx_bundle)
@@ -39,6 +39,11 @@ process PYPGX {
     """
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
+
+    # Link pypgx bundle to expected location (bash script mounts at /root/pypgx-bundle)
+    if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "EMPTY" ]; then
+        ln -sf "\$(pwd)/${pypgx_bundle}" /root/pypgx-bundle 2>/dev/null || true
+    fi
 
     DOC="\$OUTBASE/depth_of_coverage.zip"
     CTRL="\$OUTBASE/control_statistics.zip"
@@ -72,7 +77,7 @@ process PYPGX {
         EXTRA=""
         [ -f "\$CTRL" ] && EXTRA="--control-statistics \$CTRL"
         pypgx run-ngs-pipeline "\$GENE" "\$OUTBASE/\${GENE}" \\
-          --variants ${bam.baseName}.vcf.gz \\
+          --variants ${vcf} \\
           --depth-of-coverage "\$DOC" \\
           --assembly GRCh38 \\
           --force \\
@@ -86,7 +91,7 @@ process PYPGX {
     for GENE in ${vcf_genes}; do
       echo "--- Calling \${GENE} (VCF-based) ---"
       pypgx run-ngs-pipeline "\$GENE" "\$OUTBASE/\${GENE}" \\
-        --variants ${bam.baseName}.vcf.gz \\
+        --variants ${vcf} \\
         --assembly GRCh38 \\
         --force 2>&1 \\
         && SUCCEEDED=\$((SUCCEEDED + 1)) \\

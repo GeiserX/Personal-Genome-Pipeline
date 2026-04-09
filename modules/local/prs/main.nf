@@ -57,7 +57,7 @@ process PRS {
 
         # Format scoring file: extract chr:pos, effect_allele, effect_weight
         FORMATTED="\${PGS_ID}_formatted.tsv"
-        zcat "\${SCORE_FILE}" 2>/dev/null || cat "\${SCORE_FILE}" | grep -v "^#" | \\
+        (zcat "\${SCORE_FILE}" 2>/dev/null || cat "\${SCORE_FILE}") | grep -v "^#" | \\
             awk -F'\\t' 'NR==1 {
                 for(i=1;i<=NF;i++) {
                     if(\$i=="chr_name") chr_col=i;

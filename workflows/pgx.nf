@@ -58,8 +58,14 @@ workflow PGX {
     ch_pypgx_results  = Channel.empty()
     ch_pypgx_summary  = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('pypgx')) {
+        // Join BAM and VCF channels by sample ID so pypgx gets both per sample
+        ch_bam_vcf = ch_bam
+            .map { meta, bam, bai -> [meta.id, meta, bam, bai] }
+            .join(ch_vcf.map { meta, vcf, idx -> [meta.id, vcf, idx] })
+            .map { id, meta, bam, bai, vcf, idx -> tuple(meta, bam, bai, vcf, idx) }
+
         PYPGX(
-            ch_bam,
+            ch_bam_vcf,
             ch_reference,
             ch_reference_fai,
             ch_pypgx_bundle
