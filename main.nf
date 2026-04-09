@@ -174,6 +174,9 @@ workflow {
     // HLA reference database (IPD-IMGT/HLA hla.dat)
     ch_hla_dat = Channel.value(params.hla_dat ? file(params.hla_dat, checkIfExists: true) : [])
 
+    // Slivar static binary
+    ch_slivar_bin = Channel.value(params.slivar_bin ? file(params.slivar_bin, checkIfExists: true) : [])
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
     // ═══════════════════════════════════════════════════════════════════
@@ -206,7 +209,8 @@ workflow {
         ch_revel_index,
         ch_alphamissense,
         ch_alphamissense_index,
-        ch_gnomad_constraint
+        ch_gnomad_constraint,
+        ch_slivar_bin
     )
 
     // ═══════════════════════════════════════════════════════════════════

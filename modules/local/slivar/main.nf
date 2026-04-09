@@ -15,13 +15,14 @@ process SLIVAR {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/slivar:0.3.3--h5f107b1_0'
+    container 'staphb/bcftools:1.21'
 
     publishDir "${params.outdir}/${meta.id}/slivar", mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(gnomad_constraint)
+    path(slivar_bin)
 
     output:
     tuple val(meta), path("*_prioritized.vcf.gz"),     emit: vcf
@@ -36,6 +37,10 @@ process SLIVAR {
     script:
     def has_constraint = gnomad_constraint ? true : false
     """
+    # --- Install slivar binary ---
+    cp ${slivar_bin} /usr/local/bin/slivar
+    chmod +x /usr/local/bin/slivar
+
     # --- Generate PED file for single sample ---
     SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)
     echo -e "\${SAMPLE_NAME}\\t\${SAMPLE_NAME}\\t0\\t0\\t0\\t-9" > ${meta.id}.ped

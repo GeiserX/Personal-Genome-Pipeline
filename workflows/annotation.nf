@@ -35,6 +35,7 @@ workflow ANNOTATION {
     ch_alphamissense      // channel: path — AlphaMissense file or []
     ch_alphamissense_index // channel: path — AlphaMissense index or []
     ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or []
+    ch_slivar_bin         // channel: path — pre-built slivar static binary
 
     main:
     ch_versions = Channel.empty()
@@ -102,7 +103,8 @@ workflow ANNOTATION {
         }
         SLIVAR(
             ch_current_vcf,
-            ch_gnomad_constraint        )
+            ch_gnomad_constraint,
+            ch_slivar_bin        )
         ch_versions  = ch_versions.mix(SLIVAR.out.versions)
         ch_slivar_vcf = SLIVAR.out.vcf
     }
