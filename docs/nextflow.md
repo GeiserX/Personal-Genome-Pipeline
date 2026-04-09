@@ -27,14 +27,18 @@ sample,vcf,vcf_index,bam,bam_index
 sample1,/path/to/sample1.vcf.gz,/path/to/sample1.vcf.gz.tbi,/path/to/sample1_sorted.bam,/path/to/sample1_sorted.bam.bai
 EOF
 
-# 2. Run
+# 2. Run (default tools need no external databases)
 nextflow run main.nf \
     --input samplesheet.csv \
     --reference /path/to/Homo_sapiens_assembly38.fasta \
-    --clinvar /path/to/clinvar_pathogenic_chr.vcf.gz \
-    --clinvar_index /path/to/clinvar_pathogenic_chr.vcf.gz.tbi \
     --outdir ./results \
     -profile docker
+
+# 3. To enable database-requiring tools, add them to --tools with their flags:
+#    --tools '...,vep,slivar,clinical_filter'  + --vep_cache /path/to/vep_cache
+#    --tools '...,cpsr'                        + --pcgr_data + --vep_cache_cpsr
+#    --tools '...,clinvar'                     + --clinvar + --clinvar_index
+#    --tools '...,expansion_hunter'            + --expansion_catalog
 ```
 
 ### Resume After Failure
@@ -198,7 +202,7 @@ The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip 
 
 ### CI validation scope
 
-The CI test suite validates that all modules wire up correctly using `-stub` dry runs. It does **not** run real bioinformatics tools on real data. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts, PCA eigenvectors) against expected values.
+The CI test suite validates the stub-testable subset of modules using `-stub` dry runs (tools that do not require external databases). It does **not** cover database-dependent tools (vep, cpsr, clinvar, expansion_hunter) or run real bioinformatics tools on real data. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts, PCA eigenvectors) against expected values.
 
 ---
 

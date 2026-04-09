@@ -290,7 +290,19 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 A Nextflow DSL2 execution path (v0.5.0) covers post-calling interpretation and clinical analysis — it accepts VCF + BAM from any upstream caller and runs the same pharmacogenomics, annotation, and clinical steps as the bash scripts. Both paths are maintained and produce biologically equivalent results (output file names and report scope may differ).
 
 ```bash
+# Minimal run — default tools need no external databases
 nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker
+
+# Enable database-requiring tools (VEP, CPSR, ClinVar, ExpansionHunter)
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter' \
+    --vep_cache /path/to/vep_cache \
+    --pcgr_data /path/to/pcgr_data \
+    --vep_cache_cpsr /path/to/vep_cache_113 \
+    --clinvar /path/to/clinvar.vcf.gz \
+    --clinvar_index /path/to/clinvar.vcf.gz.tbi \
+    --expansion_catalog /path/to/variant_catalog.json \
+    -profile docker
 ```
 
 See [docs/nextflow.md](docs/nextflow.md) for samplesheet format, tool selection, sarek integration, and bash vs Nextflow comparison.
