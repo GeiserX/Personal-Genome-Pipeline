@@ -26,7 +26,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - uses: nf-core/setup-nextflow@v2
+      - uses: nf-core/setup-nextflow@561fcfc7146dcb12e3871909b635ab092a781f34 # v2.0.0
 
       - name: Validate Nextflow config
         run: nextflow config main.nf -profile docker
@@ -34,10 +34,10 @@ jobs:
       - name: Validate pipeline entry point
         run: nextflow run main.nf -help
 
-      - name: Validate nextflow_schema.json
+      - name: Validate nextflow_schema.json syntax
         run: python3 -m json.tool nextflow_schema.json > /dev/null
 
-      - name: Validate samplesheet schema
+      - name: Validate samplesheet schema syntax
         run: python3 -m json.tool assets/schema_input.json > /dev/null
 
       - name: Run stub test

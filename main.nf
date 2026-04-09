@@ -27,6 +27,31 @@ if (!params.reference) {
     error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
 }
 
+// ─── Fail-fast: warn when enabled tools lack required databases ────────
+def tools_list = params.tools ? params.tools.split(',').collect{it.trim()} : []
+
+def db_requirements = [
+    ['vep',              'vep_cache',      '--vep_cache'],
+    ['cpsr',             'pcgr_data',      '--pcgr_data'],
+    ['cpsr',             'vep_cache_cpsr', '--vep_cache_cpsr'],
+    ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
+]
+
+db_requirements.each { tool, param_name, flag ->
+    if (tools_list.contains(tool) && !params[param_name]) {
+        log.warn "Tool '${tool}' is enabled but ${flag} is not set — it will likely fail or produce empty output. " +
+                 "Either provide ${flag} or remove '${tool}' from --tools."
+    }
+}
+
+// ClinVar: paired inputs required together
+if (params.clinvar && !params.clinvar_index) {
+    error "When --clinvar is provided, --clinvar_index must also be provided."
+}
+if (!params.clinvar && params.clinvar_index) {
+    error "When --clinvar_index is provided, --clinvar must also be provided."
+}
+
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT WORKFLOWS
