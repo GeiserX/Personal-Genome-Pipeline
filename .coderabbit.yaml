@@ -11,6 +11,7 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    auto_pause_after_reviewed_commits: 0
     ignore_title_keywords:
       - "WIP"
       - "DO NOT REVIEW"

@@ -44,6 +44,12 @@ db_requirements.each { tool, param_name, flag ->
     }
 }
 
+// cpic requires pharmcat (it parses PharmCAT JSON output)
+if (tools_list.contains('cpic') && !tools_list.contains('pharmcat')) {
+    error "Tool 'cpic' is enabled in --tools but 'pharmcat' is not. " +
+          "CPIC lookup requires PharmCAT JSON output — add 'pharmcat' to --tools or remove 'cpic'."
+}
+
 // ClinVar: paired inputs required together
 if (params.clinvar && !params.clinvar_index) {
     error "When --clinvar is provided, --clinvar_index must also be provided."

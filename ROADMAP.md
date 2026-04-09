@@ -66,7 +66,7 @@ Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rat
 
 ### Delivery
 
-All 27 modules across 6 workflows are implemented and CI-validated (stub tests). The Nextflow path is usable for post-calling interpretation and produces biologically equivalent results to the bash scripts. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+All 27 modules across 6 workflows are implemented. The stub-testable subset (tools that do not require external databases) is CI-validated; database-dependent tools (vep, cpsr, clinvar, expansion_hunter) are validated manually. The Nextflow path is usable for post-calling interpretation and produces biologically equivalent results to the bash scripts. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
 
 - [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 27 modules, `--tools` gating, stub CI, Docker + Singularity profiles
 
