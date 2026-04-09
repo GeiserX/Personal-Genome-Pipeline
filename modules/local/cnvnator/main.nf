@@ -77,7 +77,7 @@ process CNVNATOR {
             split(a[2],b,"-");
             svtype="DEL"; alt="<DEL>"; svlen=-(b[2]-b[1]);
             if(\$1=="duplication") { svtype="DUP"; alt="<DUP>"; svlen=b[2]-b[1]; }
-            printf "%s\\t%s\\t.\\tN\\t%s\\t.\\tPASS\\tSVTYPE=%s;END=%s;SVLEN=%d\\n",
+            printf "%s\\t%s\\t.\\tN\\t%s\\t.\\t.\\tSVTYPE=%s;END=%s;SVLEN=%d\\n",
                 a[1], b[1], alt, svtype, b[2], svlen;
         }' ${meta.id}_cnvs.txt
     } > ${meta.id}_cnvs_unsorted.vcf

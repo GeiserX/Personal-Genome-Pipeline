@@ -57,6 +57,10 @@ workflow {
             if (!row.sample || !row.vcf || !row.vcf_index) {
                 error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
             }
+            // Sanitize sample ID — used in shell commands, file paths, and HTML output
+            if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
+                error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
+            }
             def meta = [id: row.sample]
             def vcf = file(row.vcf, checkIfExists: true)
             def vcf_index = file(row.vcf_index, checkIfExists: true)
