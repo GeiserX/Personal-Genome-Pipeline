@@ -62,19 +62,38 @@ process ANCESTRY {
         echo "  PCA results will be limited without population reference."
     fi
 
-    # Step 2: Convert VCF to plink2 format (with optional ref panel intersection)
+    # Step 2: Convert VCF to plink2 format (assigns position-based IDs)
+    # Must convert BEFORE extraction — plink2 applies --extract before
+    # --set-all-var-ids, so VCF with '.' IDs won't match the snplist.
     plink2 \\
         --vcf ${vcf} \\
-        \${EXTRACT_REF} \\
         --set-all-var-ids '@:#' \\
         --new-id-max-allele-len 100 \\
         --make-pgen \\
-        --out ${meta.id} \\
+        --out ${meta.id}_converted \\
         --threads ${task.cpus} \\
         --memory \$(( ${task.memory.toMega()} - 500 )) \\
         --chr 1-22 \\
         --allow-extra-chr \\
         --output-chr chrM 2>&1
+
+    # Step 2b: Extract reference panel intersection (IDs now match)
+    if [ -n "\${EXTRACT_REF}" ]; then
+        plink2 \\
+            --pfile ${meta.id}_converted \\
+            \${EXTRACT_REF} \\
+            --make-pgen \\
+            --out ${meta.id} \\
+            --threads ${task.cpus} \\
+            --memory \$(( ${task.memory.toMega()} - 500 )) 2>&1
+    else
+        plink2 \\
+            --pfile ${meta.id}_converted \\
+            --make-pgen \\
+            --out ${meta.id} \\
+            --threads ${task.cpus} \\
+            --memory \$(( ${task.memory.toMega()} - 500 )) 2>&1
+    fi
 
     # Step 3: LD pruning on autosomal SNPs
     LD_PRUNE_OK=false
