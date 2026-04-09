@@ -70,6 +70,7 @@ process MITO_HAPLOGROUP {
     script:
     """
     haplogrep3 classify \\
+        --tree phylotree-fu-rcrs@1.2 \\
         --input ${chrm_vcf} \\
         --output ${meta.id}_haplogroup.txt \\
         --extend-report
