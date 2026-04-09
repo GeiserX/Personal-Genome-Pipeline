@@ -1,8 +1,8 @@
 # Nextflow Execution (v0.5.0)
 
-The pipeline has a full [Nextflow](https://www.nextflow.io/) DSL2 execution path covering all analysis steps. It is organized into 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 24 modules.
+The pipeline has a [Nextflow](https://www.nextflow.io/) DSL2 execution path for **post-calling interpretation and clinical analysis**. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, variant annotation, clinical screening, structural variant analysis, and reporting across 6 workflows with 24 modules.
 
-> **Both execution paths are maintained.** The bash scripts (`run-all.sh`) remain the simpler option for single-machine use. Nextflow adds automatic parallelism, content-hash resume, and HPC/Singularity support.
+> **Both execution paths are maintained.** The bash scripts (`run-all.sh`) remain the simpler option for single-machine use. Nextflow adds automatic parallelism, content-hash resume, and HPC/Singularity support. Both paths produce biologically equivalent results, though output file names and report scope may differ.
 
 ---
 
@@ -56,8 +56,10 @@ Only the failed and downstream steps re-run.
 | `sample` | Yes | Sample identifier (used as output directory name) |
 | `vcf` | Yes | Path to bgzipped VCF (`.vcf.gz`) |
 | `vcf_index` | Yes | Path to tabix index (`.vcf.gz.tbi`) |
-| `bam` | No | Path to aligned BAM (needed for BAM-based steps like pypgx) |
-| `bam_index` | No | Path to BAM index (`.bam.bai`) |
+| `bam` | No* | Path to aligned BAM (needed for BAM-based steps like pypgx) |
+| `bam_index` | No* | Path to BAM index (`.bam.bai`) |
+
+\* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, expansion_hunter, telomere_hunter, cyrius, hla_typing, mito_variants) require BAM input. **Provide BAM for full analysis.**
 
 ### Using Sarek Output
 
@@ -113,22 +115,22 @@ results/
 │   ├── vep/                # VEP variant annotation
 │   ├── vcfanno/            # Enriched VCF (CADD, SpliceAI, REVEL, AlphaMissense)
 │   ├── slivar/             # Prioritized variants + compound hets
-│   ├── clinical_filter/    # Clinically relevant variant subset
+│   ├── clinical/           # Clinically relevant variant subset
 │   ├── cpsr/               # Cancer predisposition report
 │   ├── roh/                # Runs of homozygosity
 │   ├── prs/                # Polygenic risk scores
 │   ├── ancestry/           # Ancestry PCA (optional)
-│   ├── mito_haplogroup/    # Mitochondrial haplogroup
+│   ├── mito/               # Mitochondrial haplogroup
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls
-│   ├── telomere_hunter/    # Telomere length estimation
-│   ├── mosdepth/           # Coverage statistics
+│   ├── telomere/           # Telomere length estimation
+│   ├── coverage/           # Coverage statistics (mosdepth)
 │   ├── mito_variants/      # Mitochondrial variant calling
 │   ├── cyrius/             # CYP2D6 star allele (Cyrius)
 │   ├── manta/              # SV calling (optional)
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvnator/           # CNV calling (optional)
-│   └── report/             # Consolidated HTML report
+│   └── *_report.html       # Consolidated HTML report (published to sample root)
 └── pipeline_info/
     ├── timeline_*.html
     ├── report_*.html
@@ -150,6 +152,49 @@ results/
 | Target audience | Non-bioinformaticians | Bioinformaticians, HPC users |
 
 **Recommendation:** If you're comfortable with bash and running on a single machine, use the bash scripts. If you want automatic parallelism, robust resume, or HPC support, use Nextflow.
+
+---
+
+## Known Limitations & Design Decisions
+
+### Post-calling scope
+
+This Nextflow pipeline is a **post-calling interpretation pipeline**, not a FASTQ-to-results pipeline. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, annotation, clinical screening, structural variant calling, and reporting. Alignment and primary variant calling are handled upstream.
+
+### Bash vs Nextflow parity
+
+Both execution paths (bash `run-all.sh` and Nextflow `main.nf`) aim for **biologically equivalent results** — the same clinical conclusions, gene calls, and risk assessments. However, they are **not output-identical**: file names, directory structure, report formatting, and intermediate files may differ. When in doubt, the bash scripts are the reference implementation.
+
+### Reference databases not auto-downloaded
+
+Several tools require large reference databases that are **not automatically downloaded** by the pipeline. You must obtain and provide paths for these yourself:
+
+| Parameter | Required by | Size |
+|-----------|------------|------|
+| `--vep_cache` | VEP annotation | ~15 GB |
+| `--pcgr_data` | CPSR cancer predisposition | ~20 GB |
+| `--pypgx_bundle` | PyPGx star allele calling | ~2 GB |
+| `--cadd_snv`, `--spliceai_snv`, etc. | vcfanno score annotation | ~100 GB total |
+| `--gnomad_constraint` | Slivar gene constraint | ~5 MB |
+| `--pgs_scoring` | Polygenic risk scores | varies |
+
+Tools run without their databases will either be skipped (if gated by `--tools`) or produce degraded output with warnings.
+
+### Ancestry reference panel
+
+The `--ancestry_ref` parameter expects a **single VCF file** (not a directory). Single-sample PCA without a multi-population reference panel produces mathematically limited results — the module will run but report `pca_status: skipped_single_sample`. For meaningful ancestry estimation, provide a reference panel VCF containing multiple population samples.
+
+### SV consensus merge (experimental)
+
+The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb position binning) rather than the full SURVIVOR or Jasmine algorithm. CNVnator calls (depth-based, no PASS/FAIL marking) are treated equally with paired-end callers in the "2+ callers" consensus. For production SV analysis, consider running SURVIVOR or Jasmine externally.
+
+### Security model
+
+This pipeline is designed for **personal, single-user use** on trusted data. Sample names are sanitized (alphanumeric, `.`, `_`, `-` only), and HTML report fields from VCF INFO are escaped to prevent XSS. However, it is **not hardened for multi-tenant or untrusted-input scenarios**. Do not expose the pipeline or its outputs as a web service without additional security review.
+
+### CI validation scope
+
+The CI test suite validates that all modules wire up correctly using `-stub` dry runs. It does **not** run real bioinformatics tools on real data. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts, PCA eigenvectors) against expected values.
 
 ---
 

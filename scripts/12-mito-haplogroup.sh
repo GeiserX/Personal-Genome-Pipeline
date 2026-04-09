@@ -36,10 +36,11 @@ docker run --rm \
 
 # Step 2: Run haplogrep3
 echo "Classifying haplogroup..."
+source "$(dirname "$0")/../versions.env" 2>/dev/null || HAPLOGREP3_IMAGE="jtb114/haplogrep3:latest"
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}:/data" \
-  genepi/haplogrep3:latest \
+  ${HAPLOGREP3_IMAGE} \
   classify \
     --input "/data/vcf/${SAMPLE}_chrM.vcf.gz" \
     --output "/data/mito/${SAMPLE}_haplogroup.txt" \
