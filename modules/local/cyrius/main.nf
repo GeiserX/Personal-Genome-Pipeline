@@ -42,7 +42,7 @@ process CYRIUS {
 
     echo "${bam}" > manifest.txt
 
-    star_caller \\
+    cyrius \\
         --manifest manifest.txt \\
         --genome 38 \\
         --prefix ${prefix}_cyp2d6 \\
