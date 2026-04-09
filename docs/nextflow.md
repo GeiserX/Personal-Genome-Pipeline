@@ -192,6 +192,10 @@ The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb posi
 
 This pipeline is designed for **personal, single-user use** on trusted data. Sample names are sanitized (alphanumeric, `.`, `_`, `-` only), and HTML report fields from VCF INFO are escaped to prevent XSS. However, it is **not hardened for multi-tenant or untrusted-input scenarios**. Do not expose the pipeline or its outputs as a web service without additional security review.
 
+### Cyrius runtime installation
+
+The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on first run** and means Nextflow's container-only reproducibility guarantee does not fully apply to this module. The version is pinned to avoid floating dependencies. The matching bash script (`scripts/21-cyrius.sh`) has the same limitation.
+
 ### CI validation scope
 
 The CI test suite validates that all modules wire up correctly using `-stub` dry runs. It does **not** run real bioinformatics tools on real data. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts, PCA eigenvectors) against expected values.

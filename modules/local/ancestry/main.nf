@@ -102,15 +102,20 @@ process ANCESTRY {
         PCA_OK=true
     fi
 
-    # Count actual shared variants (intersection of ref panel and sample)
+    # Count variants actually loaded into plink2 (post-extraction)
+    LOADED_COUNT=0
     if [ -f "${meta.id}.pvar" ]; then
-        SHARED_COUNT=\$(grep -c -v '^#' ${meta.id}.pvar 2>/dev/null || echo "0")
+        LOADED_COUNT=\$(grep -c -v '^#' ${meta.id}.pvar 2>/dev/null || echo "0")
     fi
 
     # Step 5: Summary file with QC metrics
     echo -e "metric\\tvalue" > ${meta.id}_ancestry.tsv
-    if [ "\${SHARED_COUNT}" -gt 0 ]; then
-        echo -e "ref_panel_shared_snps\\t\${SHARED_COUNT}" >> ${meta.id}_ancestry.tsv
+    if [ "\${LOADED_COUNT}" -gt 0 ]; then
+        if [ "${has_ref}" = "true" ] && [ -n "\${EXTRACT_REF}" ]; then
+            echo -e "ref_panel_shared_snps\\t\${LOADED_COUNT}" >> ${meta.id}_ancestry.tsv
+        else
+            echo -e "autosomal_snps\\t\${LOADED_COUNT}" >> ${meta.id}_ancestry.tsv
+        fi
     fi
     if [ "\${LD_PRUNE_OK}" = true ] && [ -f "${meta.id}_ld.prune.in" ]; then
         PRUNED=\$(wc -l < ${meta.id}_ld.prune.in)

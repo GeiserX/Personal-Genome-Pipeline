@@ -37,7 +37,7 @@ workflow SV {
     // MANTA: paired-end + split-read SV caller
     //
     ch_manta_vcf = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('manta')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('manta')) {
         MANTA(ch_bam, ch_reference, ch_reference_fai)
         ch_manta_vcf = MANTA.out.diploid_sv
         ch_versions  = ch_versions.mix(MANTA.out.versions)
@@ -47,7 +47,7 @@ workflow SV {
     // DELLY: paired-end + split-read + read-depth SV caller
     //
     ch_delly_vcf = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('delly')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('delly')) {
         DELLY(ch_bam, ch_reference, ch_reference_fai)
         ch_delly_vcf = DELLY.out.sv_vcf
         ch_versions  = ch_versions.mix(DELLY.out.versions)
@@ -58,7 +58,7 @@ workflow SV {
     //
     ch_cnvnator_calls = Channel.empty()
     ch_cnvnator_vcf   = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('cnvnator')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cnvnator')) {
         CNVNATOR(ch_bam, ch_reference, ch_reference_fai)
         ch_cnvnator_calls = CNVNATOR.out.cnv_calls
         ch_cnvnator_vcf   = CNVNATOR.out.cnv_vcf
@@ -71,10 +71,10 @@ workflow SV {
     // DUPHOLD: depth-based SV quality annotation on Manta output
     //
     ch_duphold_vcf = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('duphold') && !params.tools.split(',').contains('manta')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('duphold') && !params.tools.split(',').collect{it.trim()}.contains('manta')) {
         log.warn "duphold requires manta output — add 'manta' to --tools or duphold will produce no output"
     }
-    if (params.tools && params.tools.split(',').contains('duphold')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('duphold')) {
         // Combine Manta SV VCF with BAM for duphold input
         ch_duphold_input = ch_manta_vcf
             .join(ch_bam)
@@ -93,10 +93,10 @@ workflow SV {
     // ANNOTSV: ACMG pathogenicity classification of duphold-filtered SVs
     //
     ch_annotsv_tsv = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('annotsv') && !params.tools.split(',').contains('duphold')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv') && !params.tools.split(',').collect{it.trim()}.contains('duphold')) {
         log.warn "annotsv requires duphold output — add 'duphold' (and 'manta') to --tools or annotsv will produce no output"
     }
-    if (params.tools && params.tools.split(',').contains('annotsv')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv')) {
         ANNOTSV(ch_duphold_vcf)
         ch_annotsv_tsv = ANNOTSV.out.annotated_tsv
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
@@ -108,7 +108,7 @@ workflow SV {
     // SURVIVOR_MERGE: bcftools-based heuristic merge of 2+ callers
     //
     ch_merged_sv = Channel.empty()
-    if (params.tools && params.tools.split(',').contains('survivor_merge')) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('survivor_merge')) {
         // Collect all available SV VCFs by meta.id
         ch_all_sv_vcfs = Channel.empty()
             .mix(
