@@ -43,6 +43,7 @@ process VEP {
         --offline \\
         --assembly GRCh38 \\
         --everything \\
+        --af_gnomade \\
         --force_overwrite \\
         --fork ${task.cpus} \\
         --fasta ${reference} \\
