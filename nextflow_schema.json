@@ -75,7 +75,7 @@
                 "tools": {
                     "type": "string",
                     "description": "Comma-separated list of tools to run. SV tools (manta,delly,cnvnator,duphold,annotsv,survivor_merge), ancestry, and pypgx are opt-in.",
-                    "default": "pharmcat,cpic,vep,vcfanno,slivar,clinical_filter,cpsr,roh,prs,mito_haplogroup,hla_typing,expansion_hunter,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "default": "clinvar,pharmcat,cpic,vep,vcfanno,slivar,clinical_filter,cpsr,roh,prs,mito_haplogroup,hla_typing,expansion_hunter,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
             }
@@ -83,7 +83,7 @@
         "annotation_databases": {
             "title": "Annotation databases",
             "type": "object",
-            "description": "Paths to annotation databases. Modules skip gracefully when not provided.",
+            "description": "Paths to annotation databases. Some tools (VEP, CPSR, ExpansionHunter) require their databases and will fail at startup if enabled without them. Others produce degraded output with warnings.",
             "properties": {
                 "vep_cache": {
                     "type": "string",

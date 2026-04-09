@@ -39,8 +39,8 @@ def db_requirements = [
 
 db_requirements.each { tool, param_name, flag ->
     if (tools_list.contains(tool) && !params[param_name]) {
-        log.warn "Tool '${tool}' is enabled but ${flag} is not set — it will likely fail or produce empty output. " +
-                 "Either provide ${flag} or remove '${tool}' from --tools."
+        error "Tool '${tool}' is enabled in --tools but ${flag} is not set. " +
+              "Either provide ${flag} or remove '${tool}' from --tools."
     }
 }
 
@@ -86,6 +86,13 @@ workflow {
             if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
                 error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
             }
+            // Validate BAM/BAI are provided together
+            if (row.bam && !row.bam_index) {
+                error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
+            }
+            if (!row.bam && row.bam_index) {
+                error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
+            }
             def meta = [id: row.sample]
             def vcf = file(row.vcf, checkIfExists: true)
             def vcf_index = file(row.vcf_index, checkIfExists: true)
@@ -106,9 +113,9 @@ workflow {
 
     // ─── Reference genome ───────────────────────────────────────────────
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
-    ch_reference_fai  = Channel.value(file("${params.reference}.fai"))
+    ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
     ch_reference_dict = Channel.value(
-        file(params.reference.replaceAll(/\.(fasta|fa)$/, '.dict'))
+        file(params.reference.replaceAll(/\.(fasta|fa)$/, '.dict'), checkIfExists: true)
     )
 
     // ─── Optional reference databases ───────────────────────────────────
