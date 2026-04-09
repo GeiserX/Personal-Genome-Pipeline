@@ -171,6 +171,9 @@ workflow {
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
 
+    // HLA reference database (IPD-IMGT/HLA hla.dat)
+    ch_hla_dat = Channel.value(params.hla_dat ? file(params.hla_dat, checkIfExists: true) : [])
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
     // ═══════════════════════════════════════════════════════════════════
@@ -225,7 +228,8 @@ workflow {
         ch_reference,
         ch_reference_fai,
         ch_reference_dict,
-        ch_expansion_catalog
+        ch_expansion_catalog,
+        ch_hla_dat
     )
 
     // ═══════════════════════════════════════════════════════════════════

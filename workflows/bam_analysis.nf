@@ -25,6 +25,7 @@ workflow BAM_ANALYSIS {
     ch_reference_fai     // channel: val(path) — reference .fai index
     ch_reference_dict    // channel: val(path) — reference .dict
     ch_expansion_catalog // channel: val(path) — ExpansionHunter variant catalog JSON
+    ch_hla_dat           // channel: val(path) — Pre-downloaded IPD-IMGT/HLA hla.dat
 
     main:
     ch_versions = Channel.empty()
@@ -42,7 +43,7 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'hla_typing'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('hla_typing')) {
-        HLA_TYPING(ch_bam, ch_reference)
+        HLA_TYPING(ch_bam, ch_reference, ch_hla_dat)
         ch_hla_alleles = HLA_TYPING.out.hla_alleles
         ch_versions    = ch_versions.mix(HLA_TYPING.out.versions)
     }

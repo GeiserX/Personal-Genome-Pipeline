@@ -155,7 +155,8 @@ with open(summary_path, 'w', newline='') as f:
     w.writerow(['Gene', 'Diplotype', 'Phenotype', 'SV_detected', 'Source'])
     w.writerows(rows)
 
-print(f'Summary: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)} genes called')
+called = sum(1 for r in rows if r[1] != 'FAILED')
+print(f'Summary: {called}/{len(rows)} genes called')
 "
 
     cat <<-END_VERSIONS > versions.yml
