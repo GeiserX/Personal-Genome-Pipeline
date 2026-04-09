@@ -72,7 +72,7 @@ workflow SV {
     //
     ch_duphold_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('duphold') && !params.tools.split(',').collect{it.trim()}.contains('manta')) {
-        log.warn "duphold requires manta output — add 'manta' to --tools or duphold will produce no output"
+        error "Tool 'duphold' requires 'manta' output — add 'manta' to --tools or remove 'duphold'."
     }
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('duphold')) {
         // Combine Manta SV VCF with BAM for duphold input
@@ -94,7 +94,7 @@ workflow SV {
     //
     ch_annotsv_tsv = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv') && !params.tools.split(',').collect{it.trim()}.contains('duphold')) {
-        log.warn "annotsv requires duphold output — add 'duphold' (and 'manta') to --tools or annotsv will produce no output"
+        error "Tool 'annotsv' requires 'duphold' (and 'manta') output — add both to --tools or remove 'annotsv'."
     }
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv')) {
         ANNOTSV(ch_duphold_vcf)

@@ -121,7 +121,7 @@ workflow {
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
     ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
     ch_reference_dict = Channel.value(
-        file(params.reference.replaceAll(/\.(fasta|fa)$/, '.dict'), checkIfExists: true)
+        file(params.reference.replaceAll(/\.(fasta|fa|fna)$/, '.dict'), checkIfExists: true)
     )
 
     // ─── Optional reference databases ───────────────────────────────────

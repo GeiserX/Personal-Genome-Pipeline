@@ -42,7 +42,7 @@ process PYPGX {
 
     # Link pypgx bundle to expected location (bash script mounts at /root/pypgx-bundle)
     if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "EMPTY" ]; then
-        ln -sf "\$(pwd)/${pypgx_bundle}" /root/pypgx-bundle 2>/dev/null || true
+        ln -sf "\$(pwd)/${pypgx_bundle}" /root/pypgx-bundle
     fi
 
     DOC="\$OUTBASE/depth_of_coverage.zip"
