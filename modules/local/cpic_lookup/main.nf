@@ -114,7 +114,9 @@ elif "geneResults" in data:
         if diplotype or phenotype:
             gene_results.append((gene, diplotype, phenotype))
 else:
-    print("WARNING: Unknown PharmCAT JSON format", file=sys.stderr)
+    print("ERROR: Unknown PharmCAT JSON format — no gene results extracted", file=sys.stderr)
+    print("  Available top-level keys: " + ", ".join(data.keys() if data else []), file=sys.stderr)
+    sys.exit(1)
 
 # --- Write phenotypes TSV ---
 with open(phenotypes_path, "w") as f:
