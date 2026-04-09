@@ -24,6 +24,7 @@ process HLA_TYPING {
     input:
     tuple val(meta), path(bam), path(bai)
     path(reference)
+    path(hla_dat)
 
     output:
     tuple val(meta), path("*_hla_genotype.tsv"), emit: hla_alleles
@@ -35,12 +36,9 @@ process HLA_TYPING {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    # Step 1: Build HLA reference index
-    t1k-build.pl -o hlaidx --download IPD-IMGT/HLA
-
-    # Step 2: Build coordinate file from reference genome
+    # Step 1: Build coordinate file from reference genome using pre-downloaded hla.dat
     t1k-build.pl \\
-        -d hlaidx/hla.dat \\
+        -d ${hla_dat} \\
         -g ${reference} \\
         -o hlaidx_grch38
 
