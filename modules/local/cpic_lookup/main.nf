@@ -76,24 +76,22 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
 gene_results = []  # list of (gene, diplotype, phenotype)
 
 if "genes" in data and isinstance(data["genes"], dict):
-    # PharmCAT 2.15+ format: genes -> {source -> {gene_name -> data}}
-    for source, gene_dict in data["genes"].items():
-        if not isinstance(gene_dict, dict):
+    # PharmCAT 3.x format: genes -> {gene_name -> gene_data}
+    for gene_name, g in data["genes"].items():
+        if not isinstance(g, dict):
             continue
-        for gene_name, g in gene_dict.items():
-            dips = g.get("sourceDiplotypes", [])
-            if not dips:
-                continue
-            dip = dips[0]
-            a1_obj = dip.get("allele1")
-            a2_obj = dip.get("allele2")
-            a1 = a1_obj.get("name", "?") if a1_obj else "?"
-            a2 = a2_obj.get("name", "?") if a2_obj else "?"
-            diplotype = f"{a1}/{a2}"
-            phenotypes = dip.get("phenotypes", [])
-            phenotype = phenotypes[0] if phenotypes else "N/A"
-            gene_results.append((gene_name, diplotype, phenotype))
-        break  # Only use first source (CPIC)
+        dips = g.get("sourceDiplotypes", [])
+        if not dips:
+            continue
+        dip = dips[0]
+        a1_obj = dip.get("allele1")
+        a2_obj = dip.get("allele2")
+        a1 = a1_obj.get("name", "?") if a1_obj else "?"
+        a2 = a2_obj.get("name", "?") if a2_obj else "?"
+        diplotype = f"{a1}/{a2}"
+        phenotypes = dip.get("phenotypes", [])
+        phenotype = phenotypes[0] if phenotypes else "N/A"
+        gene_results.append((gene_name, diplotype, phenotype))
 elif "genes" in data and isinstance(data["genes"], list):
     # PharmCAT older list format
     for gene_entry in data["genes"]:
