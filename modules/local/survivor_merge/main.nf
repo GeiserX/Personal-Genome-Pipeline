@@ -23,6 +23,7 @@ process SURVIVOR_MERGE {
 
     input:
     tuple val(meta), path(sv_vcfs)
+    path(reference_fai)
 
     output:
     tuple val(meta), path("${meta.id}_sv_consensus.vcf.gz"),     emit: merged_vcf
@@ -70,11 +71,14 @@ process SURVIVOR_MERGE {
     }' all_sv_tagged.tsv | \\
         sort -k1,1V -k2,2n > consensus_raw.txt
 
-    # Build a valid VCF with contig headers
+    # Build a valid VCF with contig headers from reference FAI
     {
         echo '##fileformat=VCFv4.2'
         echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="SV type">'
         echo '##INFO=<ID=END,Number=1,Type=Integer,Description="End position">'
+        if [ -f "${reference_fai}" ]; then
+            awk -F'\\t' '{printf "##contig=<ID=%s,length=%s>\\n", \$1, \$2}' "${reference_fai}"
+        fi
         printf '#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\n'
         cat consensus_raw.txt
     } > ${meta.id}_sv_consensus_unsorted.vcf

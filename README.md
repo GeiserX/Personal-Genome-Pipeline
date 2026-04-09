@@ -289,7 +289,7 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 
 ### Nextflow
 
-A full Nextflow DSL2 execution path (v0.5.0) covers all pipeline steps with automatic parallelism, content-hash resume, and HPC/Singularity support. Both bash and Nextflow paths are maintained and produce semantically equivalent results.
+A Nextflow DSL2 execution path (v0.5.0) covers post-calling interpretation and clinical analysis — it accepts VCF + BAM from any upstream caller and runs the same pharmacogenomics, annotation, and clinical steps as the bash scripts. Both paths are maintained and produce biologically equivalent results (output file names and report scope may differ).
 
 ```bash
 nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker

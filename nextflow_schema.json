@@ -202,8 +202,8 @@
                 },
                 "ancestry_ref": {
                     "type": "string",
-                    "format": "directory-path",
-                    "description": "Ancestry reference panel for PCA projection.",
+                    "format": "file-path",
+                    "description": "Ancestry reference panel VCF for PCA projection.",
                     "fa_icon": "fas fa-globe"
                 },
                 "expansion_catalog": {

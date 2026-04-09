@@ -121,7 +121,7 @@ workflow SV {
                 [meta, vcfs.flatten()]
             }
 
-        SURVIVOR_MERGE(ch_all_sv_vcfs)
+        SURVIVOR_MERGE(ch_all_sv_vcfs, ch_reference_fai)
         ch_merged_sv = SURVIVOR_MERGE.out.merged_vcf
         ch_versions  = ch_versions.mix(SURVIVOR_MERGE.out.versions)
     }

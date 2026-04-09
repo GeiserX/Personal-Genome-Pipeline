@@ -50,6 +50,8 @@ process HTML_REPORT {
                     gene="."; clnsig=".";
                     if(match(\$8,/GENEINFO=[^;]+/)) gene=substr(\$8,RSTART+9,RLENGTH-9);
                     if(match(\$8,/CLNSIG=[^;]+/)) clnsig=substr(\$8,RSTART+7,RLENGTH-7);
+                    gsub(/&/,"\\&amp;",gene); gsub(/</,"\\&lt;",gene); gsub(/>/,"\\&gt;",gene); gsub(/"/,"\\&quot;",gene);
+                    gsub(/&/,"\\&amp;",clnsig); gsub(/</,"\\&lt;",clnsig); gsub(/>/,"\\&gt;",clnsig); gsub(/"/,"\\&quot;",clnsig);
                     printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$4,\$5,gene"|"clnsig;
                 }' || true)
         fi

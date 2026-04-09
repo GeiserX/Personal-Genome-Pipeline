@@ -102,6 +102,11 @@ process ANCESTRY {
         PCA_OK=true
     fi
 
+    # Count actual shared variants (intersection of ref panel and sample)
+    if [ -f "${meta.id}.pvar" ]; then
+        SHARED_COUNT=\$(grep -c -v '^#' ${meta.id}.pvar 2>/dev/null || echo "0")
+    fi
+
     # Step 5: Summary file with QC metrics
     echo -e "metric\\tvalue" > ${meta.id}_ancestry.tsv
     if [ "\${SHARED_COUNT}" -gt 0 ]; then
