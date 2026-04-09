@@ -97,6 +97,9 @@ workflow ANNOTATION {
     //
     ch_slivar_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('slivar')) {
+        if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
+            error "slivar requires VEP-annotated input (IMPACT/CSQ fields). Add 'vep' to --tools or remove 'slivar'."
+        }
         SLIVAR(
             ch_current_vcf,
             ch_gnomad_constraint        )
@@ -111,7 +114,7 @@ workflow ANNOTATION {
     ch_clinical_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('clinical_filter')) {
         if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
-            log.warn "clinical_filter requires VEP-annotated input — add 'vep' to --tools for proper filtering"
+            error "clinical_filter requires VEP-annotated input (IMPACT field). Add 'vep' to --tools or remove 'clinical_filter'."
         }
         CLINICAL_FILTER(
             ch_current_vcf

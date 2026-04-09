@@ -11,7 +11,7 @@ Mitochondrial haplogroup reveals deep maternal ancestry and can identify mtDNA d
 
 ## Docker Image
 ```
-genepi/haplogrep3
+jtb114/haplogrep3
 ```
 
 ## Command
@@ -24,7 +24,7 @@ docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
   bcftools view -r chrM /data/${SAMPLE}.vcf.gz -Oz -o /data/${SAMPLE}_chrM.vcf.gz
 
 # Step 2: Run haplogrep3
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/data genepi/haplogrep3 \
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/data jtb114/haplogrep3 \
   classify \
     --input /data/vcf/${SAMPLE}_chrM.vcf.gz \
     --output /data/mito/${SAMPLE}_haplogroup.txt \
