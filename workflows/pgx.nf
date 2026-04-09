@@ -30,11 +30,16 @@ workflow PGX {
 
     //
     // BRANCH 1: PharmCAT pharmacogenomics
-    // Runs on every sample unconditionally
     //
-    PHARMCAT_PREPROCESS(ch_vcf, ch_reference)
-    PHARMCAT(PHARMCAT_PREPROCESS.out.preprocessed_vcf)
-    ch_versions = ch_versions.mix(PHARMCAT.out.versions)
+    ch_pharmcat_html = Channel.empty()
+    ch_pharmcat_json = Channel.empty()
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('pharmcat')) {
+        PHARMCAT_PREPROCESS(ch_vcf, ch_reference)
+        PHARMCAT(PHARMCAT_PREPROCESS.out.preprocessed_vcf)
+        ch_pharmcat_html = PHARMCAT.out.html_report
+        ch_pharmcat_json = PHARMCAT.out.json_report
+        ch_versions = ch_versions.mix(PHARMCAT.out.versions)
+    }
 
     //
     // BRANCH 2: ClinVar pathogenic screen
@@ -81,8 +86,9 @@ workflow PGX {
     //
     ch_cpic_recommendations = Channel.empty()
     ch_cpic_phenotypes      = Channel.empty()
-    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cpic')) {
-        CPIC_LOOKUP(PHARMCAT.out.json_report)
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cpic') &&
+        params.tools.split(',').collect{it.trim()}.contains('pharmcat')) {
+        CPIC_LOOKUP(ch_pharmcat_json)
         ch_cpic_recommendations = CPIC_LOOKUP.out.recommendations
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
         ch_versions             = ch_versions.mix(CPIC_LOOKUP.out.versions)
@@ -90,8 +96,8 @@ workflow PGX {
 
     emit:
     clinvar_dir          = ch_clinvar_dir
-    pharmcat_html        = PHARMCAT.out.html_report
-    pharmcat_json        = PHARMCAT.out.json_report
+    pharmcat_html        = ch_pharmcat_html
+    pharmcat_json        = ch_pharmcat_json
     pypgx_results        = ch_pypgx_results
     pypgx_summary        = ch_pypgx_summary
     cpic_recommendations = ch_cpic_recommendations

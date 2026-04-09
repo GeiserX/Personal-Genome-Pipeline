@@ -50,6 +50,10 @@ process HTML_REPORT {
                     gene="."; clnsig=".";
                     if(match(\$8,/GENEINFO=[^;]+/)) gene=substr(\$8,RSTART+9,RLENGTH-9);
                     if(match(\$8,/CLNSIG=[^;]+/)) clnsig=substr(\$8,RSTART+7,RLENGTH-7);
+                    # Escape all fields rendered into HTML
+                    gsub(/&/,"\\&amp;",\$1); gsub(/</,"\\&lt;",\$1); gsub(/>/,"\\&gt;",\$1);
+                    gsub(/&/,"\\&amp;",\$4); gsub(/</,"\\&lt;",\$4); gsub(/>/,"\\&gt;",\$4);
+                    gsub(/&/,"\\&amp;",\$5); gsub(/</,"\\&lt;",\$5); gsub(/>/,"\\&gt;",\$5);
                     gsub(/&/,"\\&amp;",gene); gsub(/</,"\\&lt;",gene); gsub(/>/,"\\&gt;",gene); gsub(/"/,"\\&quot;",gene);
                     gsub(/&/,"\\&amp;",clnsig); gsub(/</,"\\&lt;",clnsig); gsub(/>/,"\\&gt;",clnsig); gsub(/"/,"\\&quot;",clnsig);
                     printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$4,\$5,gene"|"clnsig;
@@ -190,10 +194,12 @@ EOF
     # Card: Slivar
     cat >> ${meta.id}_report.html << EOF
   <div class="card">
-    <h2>Slivar Compound-Het / De Novo</h2>
+    <h2>Variant Prioritization (Slivar)</h2>
     <div class="stat"><span class="label">Status</span>
       <span class="value"><span class="badge \$([ "\$SLIVAR_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${SLIVAR_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Filtered variants</span><span class="value">\${SLIVAR_COUNT}</span></div>
+    <div class="stat"><span class="label">Prioritized variants</span><span class="value">\${SLIVAR_COUNT}</span></div>
+    <div class="stat"><span class="label">Tip</span>
+      <span class="value" style="font-weight:normal;font-size:13px">Rare HIGH/MODERATE + deleterious + ClinVar pathogenic tiers</span></div>
   </div>
 EOF
 

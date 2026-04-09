@@ -6,9 +6,10 @@
     and complex structural variants (deletions, duplications, hybrids).
     Cyrius uses depth-based analysis specifically designed for CYP2D6.
 
-    EXPERIMENTAL: Cyrius is installed at runtime via pip and may return "None"
-    for complex CYP2D6 arrangements. Verify results against PharmCAT or
-    clinical lab calls before acting on them.
+    NOTE: Cyrius is installed at runtime via pip (pinned to 1.1.1) because no
+    pre-built container image exists. This requires network access on first run.
+    The tool may return "None" for complex CYP2D6 arrangements. Verify results
+    against PharmCAT or clinical lab calls before acting on them.
 
     Equivalent to: scripts/21-cyrius.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -35,8 +36,9 @@ process CYRIUS {
 
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
+    def cyrius_version = '1.1.1'
     """
-    pip install -q cyrius 2>/dev/null
+    pip install -q 'cyrius==${cyrius_version}'
 
     echo "${bam}" > manifest.txt
 
@@ -49,7 +51,7 @@ process CYRIUS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cyrius: \$(pip show cyrius 2>/dev/null | grep Version | sed 's/Version: //' || echo 'unknown')
+        cyrius: ${cyrius_version}
     END_VERSIONS
     """
 
