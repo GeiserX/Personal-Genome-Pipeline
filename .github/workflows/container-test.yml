@@ -39,7 +39,7 @@ jobs:
             cmd: "java -version"
           - image: pgkb/pharmcat:3.2.0
             cmd: "pharmcat_pipeline --version"
-          - image: python:3.11-slim
+          - image: python:3.11
             cmd: "python3 --version"
           - image: quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
             cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
