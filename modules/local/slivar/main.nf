@@ -126,7 +126,7 @@ process SLIVAR {
         -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t%Existing_variation[\\t%GT]\\n' \\
         -s worst -d > ${meta.id}_variants_raw.tsv 2>/dev/null || true
 
-    if [ "${has_constraint}" = "true" ] && [ -f "${gnomad_constraint}" ]; then
+    if [ "${has_constraint}" = "true" ] && [ -f "${gnomad_constraint}" ] && command -v python3 &>/dev/null; then
         # Join with gnomAD constraint metrics (LOEUF, pLI, mis_z)
         python3 -c "
 import csv, sys
