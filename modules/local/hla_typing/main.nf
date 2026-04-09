@@ -45,10 +45,19 @@ process HLA_TYPING {
         -o hlaidx_grch38
 
     # Step 3: Run HLA typing
+    # Locate build output (file naming varies across T1K versions)
+    SEQ_FA=\$(ls hlaidx_grch38/*dna_seq.fa 2>/dev/null | head -1)
+    COORD_FA=\$(ls hlaidx_grch38/*dna_coord.fa 2>/dev/null | head -1)
+    if [ -z "\$SEQ_FA" ] || [ -z "\$COORD_FA" ]; then
+        echo "ERROR: t1k-build did not produce expected output files in hlaidx_grch38/"
+        ls -la hlaidx_grch38/ 2>/dev/null
+        exit 1
+    fi
+
     run-t1k \\
         -b ${bam} \\
-        -f hlaidx_grch38/_dna_seq.fa \\
-        -c hlaidx_grch38/_dna_coord.fa \\
+        -f "\$SEQ_FA" \\
+        -c "\$COORD_FA" \\
         --preset hla-wgs \\
         -t ${task.cpus} \\
         --od ./ \\
