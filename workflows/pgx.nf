@@ -43,9 +43,9 @@ workflow PGX {
 
     //
     // BRANCH 2: ClinVar pathogenic screen
-    // Runs IN PARALLEL with PharmCAT — only if --clinvar is provided
+    // Requires both --clinvar database AND 'clinvar' in --tools
     //
-    if (params.clinvar) {
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('clinvar') && params.clinvar) {
         CLINVAR_SCREEN(
             ch_vcf,
             ch_clinvar,

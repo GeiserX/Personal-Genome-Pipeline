@@ -80,7 +80,6 @@ graph LR
     vcfanno --> slivar["slivar<br/><small>Prioritization</small>"]
     vcfanno --> clinical["Clinical Filter"]
     VCF --> cpsr["CPSR<br/><small>Cancer predisposition</small>"]
-    VCF --> eh["ExpansionHunter<br/><small>STRs</small>"]
     VCF --> roh["ROH Analysis"]
     VCF --> prs["PRS<br/><small>Polygenic risk</small>"]
     VCF --> ancestry["Ancestry SNPs"]
@@ -88,15 +87,14 @@ graph LR
     %% BAM-based analyses
     BAM --> manta["Manta<br/><small>SVs</small>"]
     BAM --> delly["Delly<br/><small>SVs</small>"]
-    BAM --> gridss["GRIDSS<br/><small>SVs</small>"]
     BAM --> cnvnator["CNVnator<br/><small>CNVs</small>"]
+    manta --> duphold["duphold"]
+    duphold --> annotsv["AnnotSV"]
     manta --> consensus["SV Consensus"]
     delly --> consensus
-    gridss --> consensus
     cnvnator --> consensus
-    consensus --> duphold["duphold"]
-    duphold --> annotsv["AnnotSV"]
 
+    BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
     BAM --> cyrius["Cyrius<br/><small>CYP2D6</small>"]
     BAM --> telomere["TelomereHunter"]
@@ -122,7 +120,7 @@ graph LR
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
     class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
-    class manta,delly,gridss,cnvnator,consensus,duphold,annotsv sv
+    class manta,delly,cnvnator,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
 ```

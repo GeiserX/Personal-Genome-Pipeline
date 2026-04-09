@@ -1,10 +1,12 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    HTML_REPORT — Consolidated HTML report of all pipeline results
+    HTML_REPORT — Summary HTML report of key pipeline results
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Generates a self-contained HTML file summarising variant calling, ClinVar hits,
-    pharmacogenomics, cancer predisposition, clinical filtering, and slivar outputs.
+    Generates a self-contained HTML file summarising ClinVar hits, pharmacogenomics,
+    cancer predisposition (CPSR), clinical filtering, and slivar variant prioritization.
     Each input section is optional — when a path is empty the section is omitted.
+    NOTE: BAM-analysis outputs (HLA, ExpansionHunter, telomere, Cyrius, coverage) and
+    SV outputs are not included — see their individual output directories for results.
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -64,12 +64,11 @@ Snakemake's Python DSL and HPC scheduler integration are genuine strengths, but 
 
 Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rather than duplicate that work, this pipeline focuses on what sarek does NOT cover: pharmacogenomics, PRS, ancestry, telomere, repeat expansions, clinical interpretation, and reporting. The Nextflow pipeline accepts sarek output (VCF + BAM) as its primary input.
 
-### Staged delivery
+### Delivery
 
-- [x] **PR 1a — Scaffold + PharmCAT** (alpha scaffold): Nextflow scaffold (`main.nf`, `nextflow.config`, schema, samplesheet), PharmCAT module, ClinVar screen module, channel-branching architecture validation, stub tests, Docker profile. Not yet a usable execution path — validates architecture only
-- [ ] **PR 1b — Core PGx modules** (v0.5.0-beta): pypgx, ROH, mito haplogroup modules
-- [ ] **PR 2 — Annotation & clinical** (v0.5.1): VEP, vcfanno, slivar, clinical filter, CPSR, PRS, ancestry, CPIC, Cyrius
-- [ ] **PR 3 — SV & full DAG** (v0.5.2): ExpansionHunter, TelomereHunter, Mutect2-mito, mosdepth, SV annotation (AnnotSV), report generation. Note: SV calling (Manta, Delly, CNVnator) is covered by sarek — these are included only for standalone users who supply raw BAM without upstream SV calls
+All 24 modules across 6 workflows are implemented and CI-validated (stub tests). The Nextflow path is usable for post-calling interpretation and produces biologically equivalent results to the bash scripts. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+
+- [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 24 modules, `--tools` gating, stub CI, Docker + Singularity profiles
 
 ### Parallel track: nf-core module contributions
 
