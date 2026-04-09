@@ -287,11 +287,15 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 # ... continue as Path A
 ```
 
-### Nextflow (Alpha — In Development)
+### Nextflow
 
-A Nextflow DSL2 execution path is under development (v0.5.0). It currently covers PharmCAT and ClinVar screening as an architecture scaffold. More modules are being added in staged PRs. The bash scripts above are the recommended execution path today.
+A full Nextflow DSL2 execution path (v0.5.0) covers all pipeline steps with automatic parallelism, content-hash resume, and HPC/Singularity support. Both bash and Nextflow paths are maintained and produce semantically equivalent results.
 
-See [docs/nextflow.md](docs/nextflow.md) for the current status, sarek integration plans, and bash vs Nextflow comparison.
+```bash
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker
+```
+
+See [docs/nextflow.md](docs/nextflow.md) for samplesheet format, tool selection, sarek integration, and bash vs Nextflow comparison.
 
 ---
 
