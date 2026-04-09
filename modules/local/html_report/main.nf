@@ -31,11 +31,11 @@ process HTML_REPORT {
     task.ext.when == null || task.ext.when
 
     script:
-    def has_clinvar  = clinvar_dir   && !clinvar_dir.name.equals('EMPTY')   ? true : false
-    def has_pharmcat = pharmcat_html && !pharmcat_html.name.equals('EMPTY') ? true : false
-    def has_clinical = clinical_vcf  && !clinical_vcf.name.equals('EMPTY')  ? true : false
-    def has_cpsr     = cpsr_html     && !cpsr_html.name.equals('EMPTY')     ? true : false
-    def has_slivar   = slivar_vcf    && !slivar_vcf.name.equals('EMPTY')    ? true : false
+    def has_clinvar  = clinvar_dir   && !clinvar_dir.name.startsWith('EMPTY')   ? true : false
+    def has_pharmcat = pharmcat_html && !pharmcat_html.name.startsWith('EMPTY') ? true : false
+    def has_clinical = clinical_vcf  && !clinical_vcf.name.startsWith('EMPTY')  ? true : false
+    def has_cpsr     = cpsr_html     && !cpsr_html.name.startsWith('EMPTY')     ? true : false
+    def has_slivar   = slivar_vcf    && !slivar_vcf.name.startsWith('EMPTY')    ? true : false
     """
     #!/usr/bin/env bash
     set -euo pipefail

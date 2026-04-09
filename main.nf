@@ -121,7 +121,13 @@ workflow {
     // ─── Optional reference databases ───────────────────────────────────
     // Empty list [] = "no file" — standard Nextflow pattern for optional path inputs.
     // Processes check truthiness (e.g., `if (myfile)`) to skip absent databases.
-    def empty = file("${projectDir}/assets/stub/EMPTY")
+    // Per-slot sentinel files avoid Nextflow staging collisions when multiple
+    // optional report inputs are all absent in the same process invocation.
+    def empty_clinvar  = file("${projectDir}/assets/stub/EMPTY_CLINVAR")
+    def empty_pharmcat = file("${projectDir}/assets/stub/EMPTY_PHARMCAT")
+    def empty_clinical = file("${projectDir}/assets/stub/EMPTY_CLINICAL")
+    def empty_cpsr     = file("${projectDir}/assets/stub/EMPTY_CPSR")
+    def empty_slivar   = file("${projectDir}/assets/stub/EMPTY_SLIVAR")
 
     // ClinVar
     ch_clinvar       = params.clinvar       ? Channel.value(file(params.clinvar, checkIfExists: true))       : Channel.value([])
@@ -240,11 +246,11 @@ workflow {
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
         .map { items ->
             def meta     = items[1]
-            def clinvar  = items[2] ?: empty
-            def pharmcat = items[3] ?: empty
-            def clinical = items[4] ?: empty
-            def cpsr     = items[5] ?: empty
-            def slivar   = items[6] ?: empty
+            def clinvar  = items[2] ?: empty_clinvar
+            def pharmcat = items[3] ?: empty_pharmcat
+            def clinical = items[4] ?: empty_clinical
+            def cpsr     = items[5] ?: empty_cpsr
+            def slivar   = items[6] ?: empty_slivar
             [meta, clinvar, pharmcat, clinical, cpsr, slivar]
         }
 
