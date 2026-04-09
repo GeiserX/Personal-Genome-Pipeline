@@ -43,6 +43,7 @@ process ANCESTRY {
         plink2 \\
             --vcf ${ref_panel} \\
             --set-all-var-ids '@:#' \\
+            --output-chr chrM \\
             --write-snplist \\
             --out ref_vars \\
             --chr 1-22 \\
