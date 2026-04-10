@@ -37,9 +37,8 @@ process SLIVAR {
     script:
     def has_constraint = gnomad_constraint ? true : false
     """
-    # --- Install slivar binary (workdir copy for Singularity compatibility) ---
-    cp ${slivar_bin} ./slivar
-    chmod +x ./slivar
+    # --- Make slivar binary executable (staged into workdir by Nextflow) ---
+    chmod +x ${slivar_bin}
     export PATH="\${PWD}:\${PATH}"
 
     # --- Generate PED file for single sample ---
