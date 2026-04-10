@@ -31,10 +31,12 @@ if (!params.reference) {
 def tools_list = params.tools ? params.tools.split(',').collect{it.trim()} : []
 
 def db_requirements = [
-    ['vep',              'vep_cache',      '--vep_cache'],
-    ['cpsr',             'pcgr_data',      '--pcgr_data'],
-    ['cpsr',             'vep_cache_cpsr', '--vep_cache_cpsr'],
+    ['vep',              'vep_cache',         '--vep_cache'],
+    ['cpsr',             'pcgr_data',         '--pcgr_data'],
+    ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
     ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
+    ['hla_typing',       'hla_dat',           '--hla_dat'],
+    ['slivar',           'slivar_bin',        '--slivar_bin'],
 ]
 
 db_requirements.each { tool, param_name, flag ->

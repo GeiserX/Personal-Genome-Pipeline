@@ -74,8 +74,8 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run. SV tools (manta,delly,cnvnator,duphold,annotsv,survivor_merge), ancestry, and pypgx are opt-in.",
-                    "default": "clinvar,pharmcat,cpic,vep,vcfanno,slivar,clinical_filter,cpsr,roh,prs,mito_haplogroup,hla_typing,expansion_hunter,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "description": "Comma-separated list of tools to run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (ancestry, pypgx, SV callers) are opt-in.",
+                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
             }
@@ -211,6 +211,18 @@
                     "format": "file-path",
                     "description": "ExpansionHunter variant catalog JSON.",
                     "fa_icon": "fas fa-dna"
+                },
+                "hla_dat": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Pre-downloaded IPD-IMGT/HLA hla.dat file for T1K HLA typing.",
+                    "fa_icon": "fas fa-file"
+                },
+                "slivar_bin": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
+                    "fa_icon": "fas fa-file"
                 }
             }
         },
