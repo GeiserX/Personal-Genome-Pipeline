@@ -37,9 +37,10 @@ process SLIVAR {
     script:
     def has_constraint = gnomad_constraint ? true : false
     """
-    # --- Install slivar binary ---
-    cp ${slivar_bin} /usr/local/bin/slivar
-    chmod +x /usr/local/bin/slivar
+    # --- Install slivar binary (workdir copy for Singularity compatibility) ---
+    cp ${slivar_bin} ./slivar
+    chmod +x ./slivar
+    export PATH="\${PWD}:\${PATH}"
 
     # --- Generate PED file for single sample ---
     SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)

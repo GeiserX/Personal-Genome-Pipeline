@@ -25,7 +25,6 @@ process CYRIUS {
 
     input:
     tuple val(meta), path(bam), path(bai)
-    path(reference)
 
     output:
     tuple val(meta), path("*_cyp2d6.tsv"), emit: cyp2d6_results

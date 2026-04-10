@@ -37,7 +37,15 @@ workflow REPORTING {
     // MODULE 2: Cross-sample MultiQC aggregation
     //
     if (params.tools && params.tools.split(',').collect{ it.trim() }.contains('multiqc')) {
-        MULTIQC(ch_multiqc_files.collect())
+        // Guard: only run MultiQC when real QC inputs exist (not just versions.yml).
+        // VCF-only runs produce no mosdepth summaries and MultiQC would fail with
+        // "No analysis results found" and create no output files.
+        ch_multiqc_files
+            .collect()
+            .filter { files -> files.any { f -> !f.name.endsWith('versions.yml') } }
+            .set { ch_multiqc_gated }
+
+        MULTIQC(ch_multiqc_gated)
         ch_multiqc_html = MULTIQC.out.report
         ch_versions     = ch_versions.mix(MULTIQC.out.versions)
     }
