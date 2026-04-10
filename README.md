@@ -295,13 +295,17 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -
 
 # Enable database-requiring tools (VEP, CPSR, ClinVar, ExpansionHunter)
 nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
-    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter' \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,pypgx,ancestry' \
     --vep_cache /path/to/vep_cache \
     --pcgr_data /path/to/pcgr_data \
     --vep_cache_cpsr /path/to/vep_cache_113 \
     --clinvar /path/to/clinvar.vcf.gz \
     --clinvar_index /path/to/clinvar.vcf.gz.tbi \
     --expansion_catalog /path/to/variant_catalog.json \
+    --hla_dat /path/to/hla.dat \
+    --slivar_bin /path/to/slivar \
+    --pypgx_bundle /path/to/pypgx-bundle \
+    --ancestry_ref /path/to/1kg_common_snps.vcf.gz \
     -profile docker
 ```
 

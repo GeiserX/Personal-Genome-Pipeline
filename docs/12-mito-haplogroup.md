@@ -26,6 +26,7 @@ docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
 # Step 2: Run haplogrep3
 docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/data jtb114/haplogrep3 \
   classify \
+    --tree phylotree-fu-rcrs@1.2 \
     --input /data/vcf/${SAMPLE}_chrM.vcf.gz \
     --output /data/mito/${SAMPLE}_haplogroup.txt \
     --extend-report

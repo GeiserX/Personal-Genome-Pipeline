@@ -37,6 +37,9 @@ def db_requirements = [
     ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
     ['hla_typing',       'hla_dat',           '--hla_dat'],
     ['slivar',           'slivar_bin',        '--slivar_bin'],
+    ['clinvar',          'clinvar',           '--clinvar'],
+    ['clinvar',          'clinvar_index',     '--clinvar_index'],
+    ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
 ]
 
 db_requirements.each { tool, param_name, flag ->
