@@ -142,9 +142,10 @@ with open(recommendations_path, "w") as out:
 
     affected_count = 0
     for gene, diplotype, phenotype in gene_results:
-        # Skip normal metabolizers
+        # Skip normal metabolizers (exact word match to avoid substring false positives)
         phenotype_lower = phenotype.lower()
-        if any(kw in phenotype_lower for kw in ["normal", "typical", "extensive"]):
+        phenotype_words = set(phenotype_lower.replace('-', ' ').split())
+        if phenotype_words & {"normal", "typical", "extensive"}:
             continue
         # Skip uncallable
         if any(kw in phenotype_lower for kw in ["no result", "n/a", "indeterminate"]):

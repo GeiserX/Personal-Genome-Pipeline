@@ -200,8 +200,8 @@ while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
     continue
   fi
 
-  # Skip normal metabolizers — no dosing adjustment signal detected
-  if echo "$PHENOTYPE" | grep -qi "normal\|typical\|extensive"; then
+  # Skip normal metabolizers — exact word match to avoid substring false positives
+  if echo "$PHENOTYPE" | grep -qiw "normal\|typical\|extensive"; then
     continue
   fi
 

@@ -101,7 +101,7 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'cyrius'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cyrius')) {
-        CYRIUS(ch_bam, ch_reference)
+        CYRIUS(ch_bam)
         ch_cyrius_results = CYRIUS.out.cyp2d6_results
         ch_versions       = ch_versions.mix(CYRIUS.out.versions)
     }

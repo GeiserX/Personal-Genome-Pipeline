@@ -181,7 +181,7 @@ Several tools require large reference databases that are **not automatically dow
 | `--gnomad_constraint` | Slivar gene constraint | ~5 MB |
 | `--pgs_scoring` | Polygenic risk scores | varies |
 
-Tools run without their databases will either be skipped (if gated by `--tools`) or produce degraded output with warnings.
+Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunter, HLA typing, pypgx) will **fail at startup** if enabled in `--tools` without their required parameters. Annotation scores (CADD, SpliceAI, REVEL, AlphaMissense, gnomAD constraint) are optional enrichments — vcfanno and slivar degrade gracefully without them.
 
 ### Ancestry reference panel
 
