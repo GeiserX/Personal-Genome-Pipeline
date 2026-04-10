@@ -82,7 +82,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 **What it tells you:** How your genes affect drug metabolism. These results are clinically relevant and should be shared with your prescribing physician.
 
-**Where to look:** `${SAMPLE}/vcf/` — PharmCAT writes its reports alongside the VCF. Open the HTML report in a browser.
+**Where to look:** `${SAMPLE}/pharmcat/` (Nextflow) or `${SAMPLE}/vcf/` (bash scripts) — PharmCAT writes its reports there. Open the HTML report in a browser.
 
 **Key genes to check:**
 | Gene | Affects | Common Impact |

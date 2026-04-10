@@ -63,7 +63,7 @@ Only the failed and downstream steps re-run.
 | `bam` | No* | Path to aligned BAM (needed for BAM-based steps like pypgx) |
 | `bam_index` | No* | Path to BAM index (`.bam.bai`) |
 
-\* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, expansion_hunter, telomere_hunter, cyrius, hla_typing, mito_variants) require BAM input. **Provide BAM for full analysis.**
+\* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) require BAM input. **Provide BAM for full analysis.**
 
 ### Using Sarek Output
 
@@ -116,8 +116,7 @@ results/
 │   ├── clinvar/            # ClinVar pathogenic variant screen
 │   ├── pypgx/              # pypgx star allele calling (optional)
 │   ├── cpic/               # CPIC drug-gene recommendations (optional)
-│   ├── vep/                # VEP variant annotation
-│   ├── vcfanno/            # Enriched VCF (CADD, SpliceAI, REVEL, AlphaMissense)
+│   ├── vep/                # VEP + vcfanno enriched VCF (CADD, SpliceAI, REVEL, AlphaMissense)
 │   ├── slivar/             # Prioritized variants + compound hets
 │   ├── clinical/           # Clinically relevant variant subset
 │   ├── cpsr/               # Cancer predisposition report

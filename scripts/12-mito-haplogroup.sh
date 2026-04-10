@@ -42,6 +42,7 @@ docker run --rm \
   -v "${GENOME_DIR}/${SAMPLE}:/data" \
   ${HAPLOGREP3_IMAGE} \
   classify \
+    --tree phylotree-fu-rcrs@1.2 \
     --input "/data/vcf/${SAMPLE}_chrM.vcf.gz" \
     --output "/data/mito/${SAMPLE}_haplogroup.txt" \
     --extend-report
