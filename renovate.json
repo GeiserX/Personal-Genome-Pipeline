@@ -37,7 +37,7 @@
     },
     {
       "description": "Images pinned to :latest — no versioned tags from publisher",
-      "matchPackageNames": ["lgalarno/telomerehunter", "genepi/haplogrep3"],
+      "matchPackageNames": ["lgalarno/telomerehunter", "jtb114/haplogrep3"],
       "enabled": false
     }
   ],

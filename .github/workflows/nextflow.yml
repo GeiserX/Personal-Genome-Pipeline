@@ -1,0 +1,86 @@
+name: Nextflow
+
+on:
+  push:
+    branches: [main]
+    paths: ['main.nf', 'nextflow.config', 'modules/**', 'workflows/**', 'conf/**', 'nextflow_schema.json', '.github/workflows/nextflow.yml']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nextflow-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: nf-core/setup-nextflow@561fcfc7146dcb12e3871909b635ab092a781f34 # v2.0.0
+
+      - name: Validate Nextflow config
+        run: nextflow config main.nf -profile docker
+
+      - name: Validate pipeline entry point
+        run: nextflow run main.nf -help
+
+      - name: Validate nextflow_schema.json syntax
+        run: python3 -m json.tool nextflow_schema.json > /dev/null
+
+      - name: Validate samplesheet schema syntax
+        run: python3 -m json.tool assets/schema_input.json > /dev/null
+
+      - name: Run stub test
+        run: |
+          # Override Docker user + disable reports for CI:
+          # Many bioinformatics images run as non-root, causing permission
+          # issues with Nextflow work directories on GitHub Actions runners.
+          cat > ci.config <<'CICONF'
+          trace.enabled = false
+          dag.enabled = false
+          timeline.enabled = false
+          report.enabled = false
+          docker.userEmulation = false
+          docker.runOptions = '-u 0:0'
+          CICONF
+          nextflow run main.nf -profile test,docker -stub -c ci.config
+
+      - name: Check Nextflow module container tags match versions.env
+        run: |
+          echo "Checking Nextflow module container tags against versions.env..."
+          . ./versions.env
+          FAIL=0
+
+          for nf_file in modules/local/*/main.nf; do
+            [ -f "$nf_file" ] || continue
+            # Extract container directives and check against versions.env
+            # Use temp file to propagate failures out of the loop
+            grep -oP "container\s+'[^']+'" "$nf_file" | sed "s/container '//;s/'//" > /tmp/nf_images.txt
+            while read -r image; do
+              base="${image%%:*}"
+              tag="${image##*:}"
+              [ "$base" = "$tag" ] && continue
+
+              match=$(grep -F "$base" versions.env | head -1 || true)
+              if [ -n "$match" ]; then
+                env_tag=$(echo "$match" | grep -oP ':\K[^"]+' | tr -d '"')
+                if [ "$tag" != "$env_tag" ]; then
+                  echo "FAIL: $nf_file uses ${base}:${tag} but versions.env has ${base}:${env_tag}"
+                  FAIL=1
+                fi
+              fi
+            done < /tmp/nf_images.txt
+          done
+
+          [ "$FAIL" -eq 0 ] && echo "OK: Nextflow container tags match versions.env"
+          exit "$FAIL"

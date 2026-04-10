@@ -39,12 +39,11 @@ jobs:
             cmd: "java -version"
           - image: pgkb/pharmcat:3.2.0
             cmd: "pharmcat_pipeline --version"
-          - image: python:3.11-slim
+          - image: python:3.11
             cmd: "python3 --version"
           - image: quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
             cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
-          - image: quay.io/biocontainers/slivar:0.3.3--h5f107b1_0
-            cmd: "bash -c 'slivar 2>&1 | grep -q \"slivar version\"'"
+          # slivar uses staphb/bcftools + pre-built binary (no dedicated container)
           - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
             cmd: "pypgx --version"
     steps:

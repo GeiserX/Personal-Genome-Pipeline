@@ -44,14 +44,39 @@ Deep pathogenicity scoring, structured variant querying, and broader pharmacogen
 - [x] **Variant prioritization with inheritance queries** (`scripts/31-slivar.sh`) — slivar (GEMINI successor) for streaming VCF filtering with JS expressions. Rare HIGH/MODERATE variants, ClinVar pathogenic, compound het detection, gene constraint enrichment
 - [x] **pypgx alongside PharmCAT** (`scripts/32-pypgx.sh`) — 23-gene curated star allele calling including CYP2D6 structural variation from BAM read depth. Cross-validates with PharmCAT on shared genes
 
-## v0.5.0 — Workflow engine integration
+## v0.5.0 — Nextflow workflow engine
 
-The 44 bash scripts work but lack built-in parallelism, resume-on-failure, and HPC portability. The [nf-core](https://nf-co.re/) ecosystem (147 community pipelines including [sarek](https://nf-co.re/sarek) with 15 variant callers and [raredisease](https://github.com/nf-core/raredisease) for clinical genomics) demonstrates the community standard.
+The bash scripts work but lack built-in parallelism, resume-on-failure, and HPC portability. v0.5.0 adds a [Nextflow](https://www.nextflow.io/) DSL2 execution path alongside the existing bash scripts (which remain first-class).
 
-- [ ] **Nextflow DSL2 wrapper** — convert the pipeline into a Nextflow workflow with channels and processes, preserving the current Docker-based execution model
-- [ ] **nf-core module compatibility** — use [nf-core/modules](https://github.com/nf-core/modules) where they exist (BWA-MEM2, DeepVariant, VEP, Manta, bcftools) for community-maintained containers and automated testing
-- [ ] **Snakemake alternative** — optional Snakemake wrapper for HPC environments that prefer it over Nextflow
-- [ ] This unlocks: automatic parallelism via DAG-based step ordering, resume on failure, Singularity/Apptainer for HPC clusters, and optional cloud portability
+### Why Nextflow over Snakemake?
+
+Both are mature workflow engines. We chose Nextflow because:
+
+- **nf-core ecosystem**: 147 community pipelines including [sarek](https://nf-co.re/sarek) (WGS variant calling) and [raredisease](https://github.com/nf-core/raredisease) (clinical genomics). Sarek's output is our primary input — channel compatibility matters.
+- **nf-core/modules**: 1000+ reusable modules. We can both use existing modules and contribute novel ones (PharmCAT, pypgx, slivar) under MIT.
+- **Container-first design**: Nextflow's `container` directive maps directly to our Docker-based architecture. Singularity support is automatic.
+- **Resume**: Content-hash caching is more robust than file-existence checks.
+- **Industry momentum**: Seqera/Nextflow has commercial backing; major sequencing centers standardize on Nextflow.
+
+Snakemake's Python DSL and HPC scheduler integration are genuine strengths, but the nf-core ecosystem size and sarek compatibility are decisive.
+
+### Scope: Post-processing focus
+
+Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rather than duplicate that work, this pipeline focuses on what sarek does NOT cover: pharmacogenomics, PRS, ancestry, telomere, repeat expansions, clinical interpretation, and reporting. The Nextflow pipeline accepts sarek output (VCF + BAM) as its primary input.
+
+### Delivery
+
+All 27 modules across 6 workflows are implemented. The stub-testable subset (tools that do not require external databases) is CI-validated; database-dependent tools (vep, cpsr, clinvar, expansion_hunter) are validated manually. The Nextflow path is usable for post-calling interpretation and produces biologically equivalent results to the bash scripts. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+
+- [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 27 modules, `--tools` gating, stub CI, Docker + Singularity profiles
+
+### Parallel track: nf-core module contributions
+
+PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license — independent of the pipeline's GPL-3.0 license. Once merged, these modules will be available to all nf-core pipelines.
+
+### Bash scripts
+
+The bash scripts remain in `scripts/` as a maintained, simpler alternative for users who do not need workflow orchestration. After PR 3 validates the Nextflow path end-to-end, new features will be Nextflow-first. Bash scripts will continue to receive bug fixes and tool version bumps but not new analysis steps.
 
 ## v0.6.0 — Multi-sample & joint analysis
 

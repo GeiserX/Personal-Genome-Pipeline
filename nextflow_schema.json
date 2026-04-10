@@ -1,0 +1,263 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/nextflow_schema.json",
+    "title": "Personal Genome Pipeline Parameters",
+    "description": "Post-processing & clinical interpretation for whole genome sequencing",
+    "type": "object",
+    "definitions": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "description": "Define where the pipeline should find input data and save output data.",
+            "required": ["input", "outdir"],
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/csv",
+                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index).",
+                    "fa_icon": "fas fa-file-csv"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The output directory where results will be saved.",
+                    "default": "./results",
+                    "fa_icon": "fas fa-folder-open"
+                },
+                "publish_dir_mode": {
+                    "type": "string",
+                    "description": "Method used to save pipeline results to output directory.",
+                    "default": "copy",
+                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
+                    "fa_icon": "fas fa-copy"
+                }
+            }
+        },
+        "reference_data": {
+            "title": "Reference data",
+            "type": "object",
+            "description": "Paths to reference files required by the pipeline.",
+            "required": ["reference"],
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to GRCh38 reference FASTA file.",
+                    "fa_icon": "fas fa-dna"
+                },
+                "genome": {
+                    "type": "string",
+                    "description": "Genome build identifier.",
+                    "default": "GRCh38",
+                    "enum": ["GRCh38"],
+                    "fa_icon": "fas fa-book"
+                },
+                "clinvar": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to ClinVar pathogenic VCF (bgzipped). Optional — skip ClinVar screen if not provided.",
+                    "fa_icon": "fas fa-database"
+                },
+                "clinvar_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to ClinVar pathogenic VCF tabix index (.tbi).",
+                    "fa_icon": "fas fa-database"
+                }
+            }
+        },
+        "tool_selection": {
+            "title": "Tool selection",
+            "type": "object",
+            "description": "Control which analysis tools to run.",
+            "properties": {
+                "tools": {
+                    "type": "string",
+                    "description": "Comma-separated list of tools to run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (ancestry, pypgx, SV callers) are opt-in.",
+                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "fa_icon": "fas fa-toolbox"
+                }
+            }
+        },
+        "annotation_databases": {
+            "title": "Annotation databases",
+            "type": "object",
+            "description": "Paths to annotation databases. Some tools (VEP, CPSR, ExpansionHunter) require their databases and will fail at startup if enabled without them. Others produce degraded output with warnings.",
+            "properties": {
+                "vep_cache": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "VEP offline cache directory (release 112).",
+                    "fa_icon": "fas fa-database"
+                },
+                "vep_cache_cpsr": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "VEP cache for CPSR (release 113, separate from VEP's 112 cache).",
+                    "fa_icon": "fas fa-database"
+                },
+                "pcgr_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "PCGR/CPSR reference data bundle directory.",
+                    "fa_icon": "fas fa-database"
+                },
+                "pypgx_bundle": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "pypgx-bundle reference data directory for star allele calling.",
+                    "fa_icon": "fas fa-database"
+                },
+                "cadd_snv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD whole-genome pre-scored SNV file (tsv.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_snv_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD SNV tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_indel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD whole-genome pre-scored indel file (tsv.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cadd_indel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "CADD indel tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_snv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI pre-scored SNV VCF (vcf.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_snv_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI SNV tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_indel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI pre-scored indel VCF (vcf.gz).",
+                    "fa_icon": "fas fa-file"
+                },
+                "spliceai_indel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "SpliceAI indel tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "revel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "REVEL pathogenicity scores file.",
+                    "fa_icon": "fas fa-file"
+                },
+                "revel_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "REVEL tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "alphamissense": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "AlphaMissense pathogenicity scores file.",
+                    "fa_icon": "fas fa-file"
+                },
+                "alphamissense_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "AlphaMissense tabix index (.tbi).",
+                    "fa_icon": "fas fa-file"
+                },
+                "gnomad_constraint": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "gnomAD gene constraint TSV (LOEUF, pLI scores).",
+                    "fa_icon": "fas fa-file"
+                }
+            }
+        },
+        "clinical_genetics": {
+            "title": "Clinical & population genetics",
+            "type": "object",
+            "description": "Paths to clinical and population genetics reference data.",
+            "properties": {
+                "pgs_scoring": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "PGS Catalog scoring files directory.",
+                    "fa_icon": "fas fa-chart-bar"
+                },
+                "ancestry_ref": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Ancestry reference panel VCF for PCA projection.",
+                    "fa_icon": "fas fa-globe"
+                },
+                "expansion_catalog": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "ExpansionHunter variant catalog JSON.",
+                    "fa_icon": "fas fa-dna"
+                },
+                "hla_dat": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Pre-downloaded IPD-IMGT/HLA hla.dat file for T1K HLA typing.",
+                    "fa_icon": "fas fa-file"
+                },
+                "slivar_bin": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
+                    "fa_icon": "fas fa-file"
+                }
+            }
+        },
+        "resource_limits": {
+            "title": "Resource limits",
+            "type": "object",
+            "description": "Set maximum resource limits for the pipeline.",
+            "properties": {
+                "max_cpus": {
+                    "type": "integer",
+                    "description": "Maximum number of CPUs that can be requested for any single job.",
+                    "default": 16,
+                    "fa_icon": "fas fa-microchip"
+                },
+                "max_memory": {
+                    "type": "string",
+                    "description": "Maximum amount of memory that can be requested for any single job.",
+                    "default": "64.GB",
+                    "fa_icon": "fas fa-memory"
+                },
+                "max_time": {
+                    "type": "string",
+                    "description": "Maximum amount of time that can be requested for any single job.",
+                    "default": "48.h",
+                    "fa_icon": "fas fa-clock"
+                }
+            }
+        }
+    },
+    "allOf": [
+        { "$ref": "#/definitions/input_output_options" },
+        { "$ref": "#/definitions/reference_data" },
+        { "$ref": "#/definitions/tool_selection" },
+        { "$ref": "#/definitions/annotation_databases" },
+        { "$ref": "#/definitions/clinical_genetics" },
+        { "$ref": "#/definitions/resource_limits" }
+    ]
+}

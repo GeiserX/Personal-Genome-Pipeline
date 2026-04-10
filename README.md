@@ -14,6 +14,7 @@
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/GeiserX/Personal-Genome-Pipeline/lint.yml?style=flat-square&label=CI" alt="CI"></a>
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
+  <a href="https://www.nextflow.io/"><img src="https://img.shields.io/badge/runs%20with-Nextflow-3ac486?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDIgMTlIMjJMMTIgMloiLz48L3N2Zz4=&logoColor=white" alt="Nextflow"></a>
   <a href="https://geiserx.github.io/personal-genome-pipeline"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square&logo=github" alt="Docs"></a>
 </p>
 
@@ -79,7 +80,6 @@ graph LR
     vcfanno --> slivar["slivar<br/><small>Prioritization</small>"]
     vcfanno --> clinical["Clinical Filter"]
     VCF --> cpsr["CPSR<br/><small>Cancer predisposition</small>"]
-    VCF --> eh["ExpansionHunter<br/><small>STRs</small>"]
     VCF --> roh["ROH Analysis"]
     VCF --> prs["PRS<br/><small>Polygenic risk</small>"]
     VCF --> ancestry["Ancestry SNPs"]
@@ -87,15 +87,14 @@ graph LR
     %% BAM-based analyses
     BAM --> manta["Manta<br/><small>SVs</small>"]
     BAM --> delly["Delly<br/><small>SVs</small>"]
-    BAM --> gridss["GRIDSS<br/><small>SVs</small>"]
     BAM --> cnvnator["CNVnator<br/><small>CNVs</small>"]
+    manta --> duphold["duphold"]
+    duphold --> annotsv["AnnotSV"]
     manta --> consensus["SV Consensus"]
     delly --> consensus
-    gridss --> consensus
     cnvnator --> consensus
-    consensus --> duphold["duphold"]
-    duphold --> annotsv["AnnotSV"]
 
+    BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
     BAM --> cyrius["Cyrius<br/><small>CYP2D6</small>"]
     BAM --> telomere["TelomereHunter"]
@@ -121,7 +120,7 @@ graph LR
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
     class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
-    class manta,delly,gridss,cnvnator,consensus,duphold,annotsv sv
+    class manta,delly,cnvnator,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
 ```
@@ -142,7 +141,7 @@ graph LR
 | 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
 | 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
 | 11 | [ROH Analysis](docs/11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
-| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `genepi/haplogrep3:latest`\* | ~1 min | Optional |
+| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3:latest`\* | ~1 min | Optional |
 | 13 | [VEP Annotation](docs/13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_112.0` | ~2-4 hr | Recommended |
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
 | 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |
@@ -285,6 +284,32 @@ ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then fo
 ./scripts/02-alignment.sh $SAMPLE       # FASTQ -> BAM
 # ... continue as Path A
 ```
+
+### Nextflow
+
+A Nextflow DSL2 execution path (v0.5.0) covers post-calling interpretation and clinical analysis — it accepts VCF + BAM from any upstream caller and runs the same pharmacogenomics, annotation, and clinical steps as the bash scripts. Both paths are maintained and produce biologically equivalent results (output file names and report scope may differ).
+
+```bash
+# Minimal run — default tools need no external databases
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker
+
+# Enable database-requiring tools (VEP, CPSR, ClinVar, ExpansionHunter)
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,pypgx,ancestry' \
+    --vep_cache /path/to/vep_cache \
+    --pcgr_data /path/to/pcgr_data \
+    --vep_cache_cpsr /path/to/vep_cache_113 \
+    --clinvar /path/to/clinvar.vcf.gz \
+    --clinvar_index /path/to/clinvar.vcf.gz.tbi \
+    --expansion_catalog /path/to/variant_catalog.json \
+    --hla_dat /path/to/hla.dat \
+    --slivar_bin /path/to/slivar \
+    --pypgx_bundle /path/to/pypgx-bundle \
+    --ancestry_ref /path/to/1kg_common_snps.vcf.gz \
+    -profile docker
+```
+
+See [docs/nextflow.md](docs/nextflow.md) for samplesheet format, tool selection, sarek integration, and bash vs Nextflow comparison.
 
 ---
 

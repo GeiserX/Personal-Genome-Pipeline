@@ -23,26 +23,28 @@ mkdir -p "$OUTPUT_DIR"
 echo "Extracting chrM variants..."
 docker run --rm \
   --cpus 1 --memory 1g \
-  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf" \
   staphb/bcftools:1.21 \
-  bcftools view -r chrM "/data/${SAMPLE}.vcf.gz" \
-    -Oz -o "/data/${SAMPLE}_chrM.vcf.gz"
+  bcftools view -r chrM "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    -Oz -o "/genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz"
 
 docker run --rm \
   --cpus 1 --memory 1g \
-  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf" \
   staphb/bcftools:1.21 \
-  bcftools index -t "/data/${SAMPLE}_chrM.vcf.gz"
+  bcftools index -t "/genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz"
 
 # Step 2: Run haplogrep3
 echo "Classifying haplogroup..."
+source "$(dirname "$0")/../versions.env" 2>/dev/null || HAPLOGREP3_IMAGE="jtb114/haplogrep3:latest"
 docker run --rm \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}/${SAMPLE}:/data" \
-  genepi/haplogrep3:latest \
+  -v "${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE}" \
+  ${HAPLOGREP3_IMAGE} \
   classify \
-    --input "/data/vcf/${SAMPLE}_chrM.vcf.gz" \
-    --output "/data/mito/${SAMPLE}_haplogroup.txt" \
+    --tree phylotree-fu-rcrs@1.2 \
+    --input "/genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz" \
+    --output "/genome/${SAMPLE}/mito/${SAMPLE}_haplogroup.txt" \
     --extend-report
 
 echo "=== Haplogrep3 complete ==="

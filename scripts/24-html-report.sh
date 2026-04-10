@@ -11,6 +11,16 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTPUT="${SAMPLE_DIR}/${SAMPLE}_report.html"
 
+# HTML-escape a string to prevent XSS from VCF/tool-derived values
+html_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  printf '%s' "$s"
+}
+
 echo "============================================"
 echo "  Step 24: HTML Report Generator"
 echo "  Sample: ${SAMPLE}"
@@ -48,6 +58,12 @@ if [ -d "${SAMPLE_DIR}/clinvar/isec" ]; then
         gene="."; clnsig=".";
         if(match($8,/GENEINFO=[^;]+/)) gene=substr($8,RSTART+9,RLENGTH-9);
         if(match($8,/CLNSIG=[^;]+/)) clnsig=substr($8,RSTART+7,RLENGTH-7);
+        # Escape HTML special characters
+        gsub(/&/,"\\&amp;",$1); gsub(/</,"\\&lt;",$1); gsub(/>/,"\\&gt;",$1);
+        gsub(/&/,"\\&amp;",$4); gsub(/</,"\\&lt;",$4); gsub(/>/,"\\&gt;",$4);
+        gsub(/&/,"\\&amp;",$5); gsub(/</,"\\&lt;",$5); gsub(/>/,"\\&gt;",$5);
+        gsub(/&/,"\\&amp;",gene); gsub(/</,"\\&lt;",gene); gsub(/>/,"\\&gt;",gene); gsub(/"/,"\\&quot;",gene);
+        gsub(/&/,"\\&amp;",clnsig); gsub(/</,"\\&lt;",clnsig); gsub(/>/,"\\&gt;",clnsig); gsub(/"/,"\\&quot;",clnsig);
         printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",$1,$2,$4,$5,gene"|"clnsig;
       }' || true)
   fi
@@ -72,7 +88,8 @@ if [ -n "$EH_FILE" ] && [ -f "$EH_FILE" ]; then
   for LOCUS in HTT FMR1 C9ORF72 ATXN1 DMPK; do
     REPEAT=$(grep -w "$LOCUS" "$EH_FILE" 2>/dev/null | head -1 | \
       awk -F'\t' '{split($10,a,":"); print a[3]}' || echo "N/A")
-    EH_DETAILS="${EH_DETAILS}<tr><td>${LOCUS}</td><td>${REPEAT:-N/A}</td></tr>"
+      REPEAT_ESC=$(html_escape "${REPEAT:-N/A}")
+    EH_DETAILS="${EH_DETAILS}<tr><td>${LOCUS}</td><td>${REPEAT_ESC}</td></tr>"
   done
 fi
 
@@ -107,6 +124,7 @@ fi
 HAPLOGROUP="N/A"
 if [ -f "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" ]; then
   HAPLOGROUP=$(awk -F'\t' 'NR==2 {gsub(/"/, "", $2); print $2}' "${SAMPLE_DIR}/mito/${SAMPLE}_haplogroup.txt" 2>/dev/null || echo "N/A")
+  HAPLOGROUP=$(html_escape "$HAPLOGROUP")
 fi
 
 # --- Telomere ---
@@ -116,6 +134,7 @@ TELOMERE="N/A"
 TEL_FILE="${SAMPLE_DIR}/telomere/${SAMPLE}/${SAMPLE}/${SAMPLE}_summary.tsv"
 if [ -f "$TEL_FILE" ]; then
   TELOMERE=$(awk -F'\t' 'NR==2 {print $11}' "$TEL_FILE" 2>/dev/null || echo "N/A")
+  TELOMERE=$(html_escape "$TELOMERE")
 fi
 
 # --- Clinical filter ---
@@ -212,7 +231,7 @@ cat >> "$OUTPUT" << EOF
 <div class="header">
   <h1>Genomic Analysis Report</h1>
   <div class="meta">
-    Sample: <strong>${SAMPLE}</strong> &nbsp;|&nbsp;
+    Sample: <strong>$(html_escape "${SAMPLE}")</strong> &nbsp;|&nbsp;
     Generated: $(date '+%Y-%m-%d %H:%M') &nbsp;|&nbsp;
     Pipeline: <a href="https://github.com/GeiserX/Personal-Genome-Pipeline" style="color:#aed6f1">Personal-Genome-Pipeline</a>
   </div>

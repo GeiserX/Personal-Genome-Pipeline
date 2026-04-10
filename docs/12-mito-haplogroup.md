@@ -11,7 +11,7 @@ Mitochondrial haplogroup reveals deep maternal ancestry and can identify mtDNA d
 
 ## Docker Image
 ```
-genepi/haplogrep3
+jtb114/haplogrep3
 ```
 
 ## Command
@@ -20,14 +20,15 @@ SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 # Step 1: Extract chrM variants from VCF
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/data staphb/bcftools:1.21 \
-  bcftools view -r chrM /data/${SAMPLE}.vcf.gz -Oz -o /data/${SAMPLE}_chrM.vcf.gz
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf staphb/bcftools:1.21 \
+  bcftools view -r chrM /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz
 
 # Step 2: Run haplogrep3
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/data genepi/haplogrep3 \
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE} jtb114/haplogrep3 \
   classify \
-    --input /data/vcf/${SAMPLE}_chrM.vcf.gz \
-    --output /data/mito/${SAMPLE}_haplogroup.txt \
+    --tree phylotree-fu-rcrs@1.2 \
+    --input /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz \
+    --output /genome/${SAMPLE}/mito/${SAMPLE}_haplogroup.txt \
     --extend-report
 
 # Output: haplogroup classification with quality score
