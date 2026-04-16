@@ -1,0 +1,9 @@
+description: "Whole genome sequencing analysis pipeline for consumer hardware. 100% local, Docker-powered, free and open source."
+personalNote: "A comprehensive pipeline that takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and produces a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition, polygenic risk scores, ancestry, telomere length, and more."
+keyFeatures:
+  - "31 analysis steps covering SNPs, indels, SVs, CNVs, repeat expansions, PGx, and more"
+  - "100% local processing — your genome never leaves your machine"
+  - "Supports short-read (Illumina) and long-read (ONT, PacBio) sequencing"
+  - "Resource-limited Docker containers — won't crash your desktop or NAS"
+  - "Comprehensive docs for non-bioinformaticians"
+techStack: "Bash, Docker, DeepVariant, VEP, PharmCAT, bcftools, Manta, Delly, plink2"
