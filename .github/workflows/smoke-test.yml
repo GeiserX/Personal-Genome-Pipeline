@@ -6,6 +6,7 @@ on:
     paths: ['scripts/**', 'versions.env', '.github/workflows/smoke-test.yml']
   pull_request:
     branches: [main]
+    paths: ['scripts/**', 'versions.env', '.github/workflows/smoke-test.yml']
   workflow_dispatch:
 
 permissions:
