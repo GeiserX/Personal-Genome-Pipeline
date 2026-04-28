@@ -1,4 +1,4 @@
-# AGENTS.md — Personal Genome Pipeline
+# CLAUDE.md — Personal Genome Pipeline
 
 Instructions for AI agents working on this repository.
 
@@ -56,7 +56,7 @@ This is a public, open-source WGS (Whole Genome Sequencing) analysis pipeline de
 personal-genome-pipeline/
   README.md                    # Main entry point, pipeline overview, quick start
   LICENSE                      # GPL-3.0
-  AGENTS.md                    # This file
+  CLAUDE.md                    # This file
   .gitignore                   # Excludes BAM, VCF, tar.gz, etc.
   docs/
     00-reference-setup.md      # One-time reference data downloads
