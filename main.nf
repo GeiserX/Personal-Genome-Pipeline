@@ -15,56 +15,6 @@ nextflow.enable.dsl = 2
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    VALIDATE INPUTS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-if (!params.input) {
-    error "Please provide a samplesheet with --input <samplesheet.csv>"
-}
-
-if (!params.reference) {
-    error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
-}
-
-// ─── Fail-fast: warn when enabled tools lack required databases ────────
-def tools_list = params.tools ? params.tools.split(',').collect{it.trim()} : []
-
-def db_requirements = [
-    ['vep',              'vep_cache',         '--vep_cache'],
-    ['cpsr',             'pcgr_data',         '--pcgr_data'],
-    ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
-    ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
-    ['hla_typing',       'hla_dat',           '--hla_dat'],
-    ['slivar',           'slivar_bin',        '--slivar_bin'],
-    ['clinvar',          'clinvar',           '--clinvar'],
-    ['clinvar',          'clinvar_index',     '--clinvar_index'],
-    ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
-]
-
-db_requirements.each { tool, param_name, flag ->
-    if (tools_list.contains(tool) && !params[param_name]) {
-        error "Tool '${tool}' is enabled in --tools but ${flag} is not set. " +
-              "Either provide ${flag} or remove '${tool}' from --tools."
-    }
-}
-
-// cpic requires pharmcat (it parses PharmCAT JSON output)
-if (tools_list.contains('cpic') && !tools_list.contains('pharmcat')) {
-    error "Tool 'cpic' is enabled in --tools but 'pharmcat' is not. " +
-          "CPIC lookup requires PharmCAT JSON output — add 'pharmcat' to --tools or remove 'cpic'."
-}
-
-// ClinVar: paired inputs required together
-if (params.clinvar && !params.clinvar_index) {
-    error "When --clinvar is provided, --clinvar_index must also be provided."
-}
-if (!params.clinvar && params.clinvar_index) {
-    error "When --clinvar_index is provided, --clinvar must also be provided."
-}
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT WORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -83,6 +33,51 @@ include { REPORTING    } from './workflows/reporting'
 */
 
 workflow {
+
+    // ─── Validate inputs ────────────────────────────────────────────────
+    if (!params.input) {
+        error "Please provide a samplesheet with --input <samplesheet.csv>"
+    }
+
+    if (!params.reference) {
+        error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
+    }
+
+    // Fail-fast: warn when enabled tools lack required databases
+    def tools_list = params.tools ? params.tools.split(',').collect { it.trim() } : []
+
+    def db_requirements = [
+        ['vep',              'vep_cache',         '--vep_cache'],
+        ['cpsr',             'pcgr_data',         '--pcgr_data'],
+        ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
+        ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
+        ['hla_typing',       'hla_dat',           '--hla_dat'],
+        ['slivar',           'slivar_bin',        '--slivar_bin'],
+        ['clinvar',          'clinvar',           '--clinvar'],
+        ['clinvar',          'clinvar_index',     '--clinvar_index'],
+        ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
+    ]
+
+    db_requirements.each { tool, param_name, flag ->
+        if (tools_list.contains(tool) && !params[param_name]) {
+            error "Tool '${tool}' is enabled in --tools but ${flag} is not set. " +
+                  "Either provide ${flag} or remove '${tool}' from --tools."
+        }
+    }
+
+    // cpic requires pharmcat (it parses PharmCAT JSON output)
+    if (tools_list.contains('cpic') && !tools_list.contains('pharmcat')) {
+        error "Tool 'cpic' is enabled in --tools but 'pharmcat' is not. " +
+              "CPIC lookup requires PharmCAT JSON output — add 'pharmcat' to --tools or remove 'cpic'."
+    }
+
+    // ClinVar: paired inputs required together
+    if (params.clinvar && !params.clinvar_index) {
+        error "When --clinvar is provided, --clinvar_index must also be provided."
+    }
+    if (!params.clinvar && params.clinvar_index) {
+        error "When --clinvar_index is provided, --clinvar must also be provided."
+    }
 
     // ─── Parse samplesheet ──────────────────────────────────────────────
     // Expected columns: sample,vcf,vcf_index,bam,bam_index
@@ -288,21 +283,16 @@ workflow {
         ch_report_inputs,
         ch_multiqc_files
     )
-}
 
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    COMPLETION HANDLER
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-workflow.onComplete {
-    if (workflow.success) {
-        log.info ""
-        log.info "Pipeline completed successfully!"
-        log.info "Results: ${params.outdir}"
-        log.info ""
-    } else {
-        log.error "Pipeline failed. Check .nextflow.log for details."
+    // ─── Completion handler ─────────────────────────────────────────────
+    workflow.onComplete {
+        if (workflow.success) {
+            log.info ""
+            log.info "Pipeline completed successfully!"
+            log.info "Results: ${params.outdir}"
+            log.info ""
+        } else {
+            log.error "Pipeline failed. Check .nextflow.log for details."
+        }
     }
 }

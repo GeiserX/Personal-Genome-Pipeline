@@ -17,7 +17,7 @@ process PYPGX {
 
     container 'quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0'
 
-    publishDir "${params.outdir}/${meta.id}/pypgx", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/pypgx" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index)

@@ -19,7 +19,7 @@ process VCFANNO {
 
     container 'quay.io/biocontainers/vcfanno:0.3.7--he881be0_0'
 
-    publishDir "${params.outdir}/${meta.id}/vep", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)

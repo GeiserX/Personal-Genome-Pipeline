@@ -21,7 +21,7 @@ process CYRIUS {
 
     container 'python:3.11'
 
-    publishDir "${params.outdir}/${meta.id}/cyrius", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/cyrius" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai)

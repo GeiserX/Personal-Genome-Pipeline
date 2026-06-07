@@ -16,7 +16,7 @@ process ANCESTRY {
 
     container 'pgscatalog/plink2:2.00a5.10'
 
-    publishDir "${params.outdir}/${meta.id}/ancestry", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/ancestry" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)

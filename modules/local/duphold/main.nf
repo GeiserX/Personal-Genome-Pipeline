@@ -15,7 +15,7 @@ process DUPHOLD {
 
     container 'brentp/duphold:v0.2.3'
 
-    publishDir "${params.outdir}/${meta.id}/sv_filtered", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/sv_filtered" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(sv_vcf), path(bam), path(bai)

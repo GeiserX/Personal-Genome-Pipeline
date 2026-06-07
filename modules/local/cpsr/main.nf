@@ -15,7 +15,7 @@ process CPSR {
 
     container 'sigven/pcgr:2.2.5'
 
-    publishDir "${params.outdir}/${meta.id}/cpsr", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/cpsr" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
