@@ -17,7 +17,7 @@ process CPIC_LOOKUP {
 
     container 'python:3.11'
 
-    publishDir "${params.outdir}/${meta.id}/cpic", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/cpic" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(pharmcat_json)

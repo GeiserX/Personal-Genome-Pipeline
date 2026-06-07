@@ -15,7 +15,7 @@ process DELLY {
 
     container 'quay.io/biocontainers/delly:1.7.3--hd6466ae_0'
 
-    publishDir "${params.outdir}/${meta.id}/delly", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/delly" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai)

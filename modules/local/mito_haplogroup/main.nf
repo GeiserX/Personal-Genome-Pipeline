@@ -55,7 +55,7 @@ process MITO_HAPLOGROUP {
 
     container 'jtb114/haplogrep3:latest'
 
-    publishDir "${params.outdir}/${meta.id}/mito", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(chrm_vcf), path(chrm_vcf_index)

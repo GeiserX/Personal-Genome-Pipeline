@@ -16,7 +16,7 @@ process ROH {
 
     container 'staphb/bcftools:1.21'
 
-    publishDir "${params.outdir}/${meta.id}/roh", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/roh" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)

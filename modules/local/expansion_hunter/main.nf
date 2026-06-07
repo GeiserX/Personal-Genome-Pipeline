@@ -16,7 +16,7 @@ process EXPANSION_HUNTER {
 
     container 'quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5'
 
-    publishDir "${params.outdir}/${meta.id}/expansion_hunter", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/expansion_hunter" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai)

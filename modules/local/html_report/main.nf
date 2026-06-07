@@ -18,7 +18,7 @@ process HTML_REPORT {
 
     container 'staphb/bcftools:1.21'
 
-    publishDir "${params.outdir}/${meta.id}", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(clinvar_dir), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf)

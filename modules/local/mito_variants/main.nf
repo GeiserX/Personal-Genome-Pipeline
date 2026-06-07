@@ -21,7 +21,7 @@ process MITO_VARIANTS {
 
     container 'broadinstitute/gatk:4.6.1.0'
 
-    publishDir "${params.outdir}/${meta.id}/mito", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai)
