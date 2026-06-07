@@ -19,7 +19,7 @@ process CNVNATOR {
 
     container 'quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11'
 
-    publishDir "${params.outdir}/${meta.id}/cnvnator", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/cnvnator" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(bam), path(bai)

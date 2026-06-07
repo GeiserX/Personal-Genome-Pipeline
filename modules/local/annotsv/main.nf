@@ -14,7 +14,7 @@ process ANNOTSV {
 
     container 'getwilds/annotsv:3.4.4'
 
-    publishDir "${params.outdir}/${meta.id}/annotsv", mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/annotsv" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(sv_vcf)
