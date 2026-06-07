@@ -283,21 +283,16 @@ workflow {
         ch_report_inputs,
         ch_multiqc_files
     )
-}
 
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    COMPLETION HANDLER
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-workflow.onComplete {
-    if (workflow.success) {
-        log.info ""
-        log.info "Pipeline completed successfully!"
-        log.info "Results: ${params.outdir}"
-        log.info ""
-    } else {
-        log.error "Pipeline failed. Check .nextflow.log for details."
+    // ─── Completion handler ─────────────────────────────────────────────
+    workflow.onComplete {
+        if (workflow.success) {
+            log.info ""
+            log.info "Pipeline completed successfully!"
+            log.info "Results: ${params.outdir}"
+            log.info ""
+        } else {
+            log.error "Pipeline failed. Check .nextflow.log for details."
+        }
     }
 }
