@@ -19,6 +19,10 @@ concurrency:
 jobs:
   shellcheck:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -30,6 +34,10 @@ jobs:
 
   actionlint:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -44,6 +52,10 @@ jobs:
 
   gitleaks:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -60,6 +72,10 @@ jobs:
 
   no-personal-data:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -89,6 +105,10 @@ jobs:
 
   markdown-links:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -120,6 +140,10 @@ jobs:
 
   version-consistency:
     runs-on: [self-hosted, linux, x64]
+    # Do not run untrusted fork PR code on the self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
