@@ -88,7 +88,7 @@ The CI pipeline enforces this with automated scanning.
    - `scripts/validate-setup.sh` — add image check and reference data check
    - `docs/interpreting-results.md` — add output interpretation
    - `docs/00-reference-setup.md` — if new reference data is needed
-   - `AGENTS.md` — if the architecture tree changes
+   - `CLAUDE.md` — if the architecture tree changes
 6. **Document failures** in `docs/lessons-learned.md` if you hit any issues during development.
 7. **Test** on at least one 30X WGS sample.
 8. **Open a PR** with all changes in a single commit.

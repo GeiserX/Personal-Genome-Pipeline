@@ -29,7 +29,7 @@ Requirements: 16+ cores recommended, 500 GB disk per sample, Docker. Runs on Lin
 ### Testing Changes
 
 After modifying any script, verify:
-1. No personal paths remain (`grep -r '/mnt/user\|internal-host\|sample1\|sample2' scripts/ docs/`)
+1. No personal paths or identifiers remain — grep `scripts/` and `docs/` for your own home paths, server hostnames, and names (e.g. `grep -ri '/mnt/user\|/Users/\|/home/' scripts/ docs/`)
 2. All scripts use `GENOME_DIR` not `GENOMA_DIR`
 3. Docker mount is `:/genome` not `:/genoma`
 4. `shellcheck` passes on all scripts
