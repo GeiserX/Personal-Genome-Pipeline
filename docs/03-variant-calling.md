@@ -7,11 +7,11 @@ Identifies all positions where the sample's DNA differs from the reference genom
 The VCF file is the foundation for ALL downstream analyses: ClinVar screening, pharmacogenomics, PRS, ROH, etc.
 
 ## Tool
-- **DeepVariant** v1.6.0 — Google's deep learning variant caller (state-of-the-art accuracy)
+- **DeepVariant** v1.10.0 — Google's deep learning variant caller (state-of-the-art accuracy)
 
 ## Docker Image
 ```
-google/deepvariant:1.6.0
+google/deepvariant:1.10.0
 ```
 
 ## Prerequisites
@@ -26,7 +26,7 @@ GENOME_DIR=/path/to/your/data
 docker run --rm \
   --cpus 16 --memory 32g \
   -v ${GENOME_DIR}:/genome \
-  google/deepvariant:1.6.0 \
+  google/deepvariant:1.10.0 \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=WGS \
     --ref=/genome/reference/Homo_sapiens_assembly38.fasta \

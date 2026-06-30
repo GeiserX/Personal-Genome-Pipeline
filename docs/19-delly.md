@@ -16,7 +16,7 @@ SVs called by 2+ callers have lower false-positive rates than single-caller call
 
 ## Docker Image
 ```
-quay.io/biocontainers/delly:1.7.3--hd6466ae_0
+quay.io/biocontainers/delly:2.1.0--h3752d28_0
 ```
 
 ## Command
@@ -25,7 +25,7 @@ quay.io/biocontainers/delly:1.7.3--hd6466ae_0
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:1.7.3--hd6466ae_0 \
+  quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
   delly call \
     -g /genome/reference/Homo_sapiens_assembly38.fasta \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
@@ -53,7 +53,7 @@ Delly also has a dedicated CNV mode using read-depth only (similar to CNVnator):
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:1.7.3--hd6466ae_0 \
+  quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
   delly cnv \
     -g /genome/reference/Homo_sapiens_assembly38.fasta \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_cnv.bcf \

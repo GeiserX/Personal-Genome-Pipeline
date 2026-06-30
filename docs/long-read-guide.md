@@ -167,7 +167,7 @@ Clair3 uses deep-learning models trained specifically on long-read error profile
 
 #### Option B: DeepVariant (long-read mode)
 
-DeepVariant 1.6.0+ also supports long reads with dedicated models:
+DeepVariant 1.10.0+ also supports long reads with dedicated models:
 
 ```bash
 SAMPLE=your_sample
@@ -175,7 +175,7 @@ SAMPLE=your_sample
 docker run --rm \
   --cpus 8 --memory 32g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.6.0 \
+  google/deepvariant:1.10.0 \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=ONT_R104 \
     --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
@@ -252,7 +252,7 @@ SV_VCF="${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" ./scripts/05-an
 | samtools | `staphb/samtools:1.20` | ~200 MB |
 | Clair3 | `hkubal/clair3:v2.0.2` | ~3 GB (includes all models) |
 | Sniffles2 | `quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0` | ~200 MB |
-| DeepVariant | `google/deepvariant:1.6.0` | ~5 GB |
+| DeepVariant | `google/deepvariant:1.10.0` | ~5 GB |
 
 Pre-pull images before your first run:
 
@@ -350,7 +350,7 @@ The Docker image `hkubal/clair3:v2.0.2` bundles models at `/opt/models/`. If you
 
 - Use `--model_type=ONT_R104` for ONT (not `ONT` alone)
 - Use `--model_type=PACBIO` for PacBio HiFi
-- DeepVariant 1.6.0 requires the exact model type string — check the DeepVariant release notes for your version
+- DeepVariant 1.10.0 requires the exact model type string — check the DeepVariant release notes for your version
 
 ### "VCF downstream steps fail on Clair3 output"
 
