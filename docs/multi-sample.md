@@ -11,8 +11,8 @@ The most immediately useful multi-sample analysis: checking whether both partner
 ### Quick Cross-Check
 
 ```bash
-PARTNER_A="sample1"
-PARTNER_B="sample2"
+PARTNER_A="sample_a"
+PARTNER_B="sample_b"
 
 # Extract pathogenic ClinVar hits for each partner
 for SAMPLE in $PARTNER_A $PARTNER_B; do
