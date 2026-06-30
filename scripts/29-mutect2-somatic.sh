@@ -22,7 +22,7 @@ REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 REF_DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
 OUTPUT_DIR="${SAMPLE_DIR}/somatic"
 
-GATK_IMAGE="broadinstitute/gatk:4.6.1.0"
+GATK_IMAGE="broadinstitute/gatk:4.6.2.0"
 BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # Optional resources (improve filtering if present)

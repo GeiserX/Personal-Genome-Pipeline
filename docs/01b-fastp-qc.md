@@ -25,7 +25,7 @@ DeepVariant uses base quality as one of its 6 input channels. Adapter bases carr
 
 ## Tool
 
-**fastp** v1.3.1 — all-in-one FASTQ preprocessor with SIMD acceleration and parallel compression.
+**fastp** v1.3.6 — all-in-one FASTQ preprocessor with SIMD acceleration and parallel compression.
 
 - Paper: Chen et al., Bioinformatics 2018 (doi:10.1093/bioinformatics/bty560)
 - Source: [github.com/OpenGene/fastp](https://github.com/OpenGene/fastp)
@@ -33,7 +33,7 @@ DeepVariant uses base quality as one of its 6 input channels. Adapter bases carr
 ## Docker Image
 
 ```
-quay.io/biocontainers/fastp:1.3.1--h43da1c4_0
+quay.io/biocontainers/fastp:1.3.6--h43da1c4_0
 ```
 
 ## Command

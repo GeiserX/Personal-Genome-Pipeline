@@ -16,7 +16,7 @@ Step 12 (haplogrep3) assigns your mitochondrial haplogroup from chrM variants al
 
 ## Docker Image
 ```
-broadinstitute/gatk:4.6.1.0
+broadinstitute/gatk:4.6.2.0
 ```
 
 ## Command

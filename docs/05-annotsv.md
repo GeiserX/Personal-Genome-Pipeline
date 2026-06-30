@@ -11,7 +11,7 @@ Raw Manta output contains thousands of SVs with no clinical interpretation. Anno
 
 ## Docker Image
 ```
-getwilds/annotsv:3.4.4
+quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
 ```
 
 ## Command
@@ -22,7 +22,7 @@ GENOME_DIR=/path/to/your/data
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  getwilds/annotsv:3.4.4 \
+  quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
   AnnotSV \
     -SVinputFile /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
     -genomeBuild GRCh38 \

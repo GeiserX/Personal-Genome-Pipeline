@@ -17,7 +17,7 @@ Without MultiQC, you need to open separate reports from each tool (fastp HTML, m
 
 ## Tool
 
-**MultiQC** v1.33 — aggregate bioinformatics QC reports.
+**MultiQC** v1.35 — aggregate bioinformatics QC reports.
 
 - Paper: Ewels et al., Bioinformatics 2016 (doi:10.1093/bioinformatics/btw354)
 - Source: [github.com/MultiQC/MultiQC](https://github.com/MultiQC/MultiQC)
@@ -25,7 +25,7 @@ Without MultiQC, you need to open separate reports from each tool (fastp HTML, m
 ## Docker Image
 
 ```
-quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0
+quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
 ```
 
 ## Command

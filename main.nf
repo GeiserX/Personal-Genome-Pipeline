@@ -71,6 +71,12 @@ workflow {
               "CPIC lookup requires PharmCAT JSON output — add 'pharmcat' to --tools or remove 'cpic'."
     }
 
+    // stranger requires expansion_hunter (it annotates EH STR VCF output)
+    if (tools_list.contains('stranger') && !tools_list.contains('expansion_hunter')) {
+        error "Tool 'stranger' is enabled in --tools but 'expansion_hunter' is not. " +
+              "Stranger annotates ExpansionHunter VCF output — add 'expansion_hunter' to --tools or remove 'stranger'."
+    }
+
     // ClinVar: paired inputs required together
     if (params.clinvar && !params.clinvar_index) {
         error "When --clinvar is provided, --clinvar_index must also be provided."

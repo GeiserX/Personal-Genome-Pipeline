@@ -12,7 +12,7 @@ process ANNOTSV {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'getwilds/annotsv:3.4.4'
+    container 'quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0'
 
     publishDir { "${params.outdir}/${meta.id}/annotsv" }, mode: params.publish_dir_mode
 

@@ -129,11 +129,11 @@ User's FASTQ/BAM/VCF
 
 ## Tool-Specific Gotchas
 
-### PharmCAT 2.15.5
-- **Two-step workflow**: Preprocessor (`pharmcat_vcf_preprocessor.py` with `-refFna`) then main jar (`pharmcat.jar`). The old `-refFasta` flag no longer exists.
+### PharmCAT 3.2.0
+- **Two-step workflow**: Preprocessor (`pharmcat_vcf_preprocessor` with `-refFna`) then main jar (`pharmcat.jar`). NOTE: since 3.0 the preprocessor script lost its `.py` extension and the Python package was renamed `preprocessor` → `pcat`. The old `-refFasta` flag is long gone.
 - Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
-- JSON output: `genes` is `{source -> {gene_name -> data}}` (dict of dicts, NOT a list). `sourceDiplotypes` contains `allele1`/`allele2` objects with `.name` field.
-- Pipeline pinned to 2.15.5. Before bumping, revalidate steps 7 and 27 end-to-end — JSON structure and preprocessor flags change between versions.
+- **3.x JSON changes vs 2.15.x**: `wildtypeAllele` → `referenceAllele`; the HTML report is **no longer emitted unless `-reporterHtml` is passed explicitly**. The `genes` map may be flat (`{gene -> data}`) or nested (`{source -> {gene -> data}}`). `sourceDiplotypes` (or `recommendationDiplotypes`) carry `allele1`/`allele2` objects with a `.name`. The CPIC consumers (`scripts/27-cpic-lookup.sh` + `modules/local/cpic_lookup`) now **auto-detect both shapes** and **fail loud** — a recognized report yielding zero genes is reported as a parse failure, never "all genes were successfully called". Guarded by `tests/test_cpic_parser.py`.
+- Pipeline pinned to **3.2.0** (latest). Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions. Capturing a real `report.json` as a parser fixture is tracked follow-up.
 
 ### plink2 (PRS / Ancestry)
 - **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).

@@ -11,7 +11,7 @@ Coverage QC catches alignment problems, sample swaps, and sequencing artifacts e
 
 ## Docker Image
 ```
-quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
+quay.io/biocontainers/goleft:0.2.6--he881be0_1
 ```
 
 ## Command
@@ -21,7 +21,7 @@ mkdir -p ${GENOME_DIR}/${SAMPLE}/indexcov
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/goleft:0.2.4--h9ee0642_1 \
+  quay.io/biocontainers/goleft:0.2.6--he881be0_1 \
   goleft indexcov \
   --directory /genome/${SAMPLE}/indexcov \
   /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam

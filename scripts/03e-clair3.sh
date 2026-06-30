@@ -22,7 +22,7 @@ BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_clair3"
 
-CLAIR3_IMAGE="hkubal/clair3:v2.0.0"
+CLAIR3_IMAGE="hkubal/clair3:v2.0.2"
 BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # Select model path based on platform

@@ -28,7 +28,7 @@ mkdir -p "$OUTPUT_DIR"
 docker run --rm \
   --cpus 1 --memory 1g \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/goleft:0.2.4--h9ee0642_1 \
+  quay.io/biocontainers/goleft:0.2.6--he881be0_1 \
   goleft indexcov \
     --directory "/genome/${SAMPLE}/indexcov" \
     "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"

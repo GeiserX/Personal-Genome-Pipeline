@@ -12,6 +12,7 @@
 
 include { HLA_TYPING       } from '../modules/local/hla_typing/main'
 include { EXPANSION_HUNTER } from '../modules/local/expansion_hunter/main'
+include { STRANGER         } from '../modules/local/stranger/main'
 include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
@@ -33,6 +34,7 @@ workflow BAM_ANALYSIS {
     // Initialise output channels with empty defaults
     ch_hla_alleles      = Channel.empty()
     ch_expansion_vcf    = Channel.empty()
+    ch_stranger_vcf     = Channel.empty()
     ch_telomere_results = Channel.empty()
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
@@ -60,6 +62,17 @@ workflow BAM_ANALYSIS {
             ch_expansion_catalog        )
         ch_expansion_vcf = EXPANSION_HUNTER.out.vcf
         ch_versions      = ch_versions.mix(EXPANSION_HUNTER.out.versions)
+    }
+
+    //
+    // MODULE 2b: Stranger (STR clinical annotation)
+    // Gates on: params.tools contains 'stranger'
+    // Requires expansion_hunter to also be in params.tools (enforced in main.nf)
+    //
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('stranger')) {
+        STRANGER(ch_expansion_vcf)
+        ch_stranger_vcf = STRANGER.out.vcf
+        ch_versions     = ch_versions.mix(STRANGER.out.versions)
     }
 
     //
@@ -109,6 +122,7 @@ workflow BAM_ANALYSIS {
     emit:
     hla_alleles      = ch_hla_alleles
     expansion_vcf    = ch_expansion_vcf
+    stranger_vcf     = ch_stranger_vcf
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     mito_vcf         = ch_mito_vcf

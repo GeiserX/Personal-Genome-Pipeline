@@ -44,3 +44,16 @@ __pycache__/
 *.tmp
 *.log
 nohup.out
+
+# Nextflow run artifacts (never commit)
+work/
+.nextflow/
+.nextflow.log*
+results/
+results_*/
+.nf-test/
+/nextflow
+ci.config
+
+# OMC / local agent operational state — may contain local paths or notes; never commit
+.omc/
