@@ -59,6 +59,9 @@ jobs:
           report.enabled = false
           docker.userEmulation = false
           docker.runOptions = '-u 0:0'
+          // Cap resources to the GitHub-hosted runner (4 CPUs): some process
+          // labels request more than fits; resourceLimits is the NF-native cap.
+          process.resourceLimits = [ cpus: 2, memory: '6.GB', time: '1.h' ]
           CICONF
           nextflow run main.nf -profile test,docker -stub -c ci.config
 
