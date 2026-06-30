@@ -82,6 +82,6 @@ docker run --rm --user root \
 - **VEP cache version:** PCGR 2.2.5 requires VEP release-113 cache, while step 13 uses release-116. Both coexist in `vep_cache/homo_sapiens/` (subdirectories `116_GRCh38/` and `113_GRCh38/`). You need both if running both steps.
 - Use `--panel_id 0` for the comprehensive cancer superpanel (500+ genes) — cancer-focused.
 - `--classify_all` ensures all variants in target genes get ACMG classification, not just known pathogenic.
-- `--secondary_findings` reports pathogenic / likely-pathogenic variants in the **ACMG SF v3.2** incidental-findings gene list (81 genes — including cardiac and metabolic genes beyond CPSR's cancer panels) in a dedicated section of the report. The fuller v3.3 (84-gene) list follows once PCGR's 2.3.0 container image is published (the 2.3.0 source is out, but `sigven/pcgr:2.3.0` is not yet on Docker Hub).
+- `--secondary_findings` reports pathogenic / likely-pathogenic variants in the **ACMG SF v3.2** incidental-findings gene list (81 genes — including cardiac and metabolic genes beyond CPSR's cancer panels) in a dedicated section of the report. The fuller v3.3 (84-gene) list follows once PCGR's 2.3.0 container image is published (the 2.3.0 source release is out, but its Docker image is not yet available, so the pin stays at PCGR 2.2.5).
 - CPSR is complementary to ClinVar screening — ClinVar finds known variants, CPSR classifies novel ones.
 - The same ref data bundle is used by PCGR for somatic analysis (not relevant for germline WGS).
