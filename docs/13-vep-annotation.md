@@ -7,11 +7,11 @@ Annotates every variant in the VCF with gene name, consequence type, predicted i
 Raw VCF variants are just genomic coordinates and genotypes. VEP transforms them into biologically interpretable annotations — which gene is affected, what the functional consequence is, how rare the variant is in the population, and whether it is predicted damaging.
 
 ## Tool
-- **Ensembl VEP** release 112 (European Bioinformatics Institute)
+- **Ensembl VEP** release 116 (European Bioinformatics Institute)
 
 ## Docker Image
 ```
-ensemblorg/ensembl-vep:release_112.0
+ensemblorg/ensembl-vep:release_116.0
 ```
 
 ## Prerequisites
@@ -28,7 +28,7 @@ docker run --rm \
   --user root \
   -v ${GENOME_DIR}:/genome \
   -v ${GENOME_DIR}/vep_cache:/opt/vep/.vep \
-  ensemblorg/ensembl-vep:release_112.0 \
+  ensemblorg/ensembl-vep:release_116.0 \
   vep \
     --input_file /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     --output_file /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf \
@@ -63,3 +63,4 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 - `--dir_cache /opt/vep/.vep` is required when running as `--user root` (VEP looks in `/root/.vep` by default)
 - Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta /genome/reference/Homo_sapiens_assembly38.fasta` if HGVS is needed
 - VEP does NOT assess variant pathogenicity in ClinVar context — combine with step 6 (ClinVar screen) for full picture
+- **Upgrading from release 112:** an existing `homo_sapiens/112_GRCh38/` cache is incompatible with the release_116.0 binary and must be re-downloaded; a stale cache silently produces wrong annotations.

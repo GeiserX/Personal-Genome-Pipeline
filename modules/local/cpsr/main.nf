@@ -41,6 +41,7 @@ process CPSR {
         --sample_id ${meta.id} \\
         --panel_id 0 \\
         --classify_all \\
+        --secondary_findings \\
         --force_overwrite
 
     cat <<-END_VERSIONS > versions.yml

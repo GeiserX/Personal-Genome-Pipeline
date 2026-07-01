@@ -71,15 +71,15 @@ cd ${GENOME_DIR}/vep_cache/tmp
 
 # Download (manual wget is more reliable than VEP INSTALL.pl)
 # The -c flag enables resume if the download is interrupted
-wget -c https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz
+wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
 
 # Extract to parent directory (~30 GB extracted)
 cd ${GENOME_DIR}/vep_cache
-tar xzf tmp/homo_sapiens_vep_112_GRCh38.tar.gz
-# Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38/
+tar xzf tmp/homo_sapiens_vep_116_GRCh38.tar.gz
+# Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/
 
 # Optional: delete the tarball to save 26 GB
-# rm tmp/homo_sapiens_vep_112_GRCh38.tar.gz
+# rm tmp/homo_sapiens_vep_116_GRCh38.tar.gz
 ```
 
 > **Warning:** The VEP `INSTALL.pl` script downloads to a temporary directory that may lack write permissions inside Docker. Always download manually with `wget -c`. See [lessons-learned.md](lessons-learned.md) for details.
@@ -88,7 +88,7 @@ tar xzf tmp/homo_sapiens_vep_112_GRCh38.tar.gz
 
 Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases. PCGR 2.x uses a separate, smaller ref data bundle — VEP cache is mounted independently.
 
-> **Important:** PCGR 2.2.5 bundles VEP 113, which requires a **release-113** cache — different from the release-112 cache used by step 13 above. See the next section for the VEP 113 download.
+> **Important:** PCGR 2.2.5 bundles VEP 113, which requires a **release-113** cache — different from the release-116 cache used by step 13 above. See the next section for the VEP 113 download.
 
 ```bash
 mkdir -p ${GENOME_DIR}/pcgr_data
@@ -108,7 +108,7 @@ mkdir -p 20250314 && mv data/ 20250314/
 
 ## VEP 113 Cache for CPSR (~26 GB)
 
-PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-112 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`112_GRCh38/` and `113_GRCh38/`).
+PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `113_GRCh38/`).
 
 ```bash
 mkdir -p ${GENOME_DIR}/vep_cache/tmp
@@ -117,13 +117,13 @@ cd ${GENOME_DIR}/vep_cache/tmp
 # Download VEP 113 cache (~26 GB)
 wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
 
-# Extract alongside the existing release-112 cache
+# Extract alongside the existing release-116 cache
 cd ${GENOME_DIR}/vep_cache
 tar xzf tmp/homo_sapiens_vep_113_GRCh38.tar.gz
 # Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38/
 ```
 
-> If you only run step 13 (VEP annotation) and skip step 17 (CPSR), you only need the release-112 cache. If you only run step 17, you only need release-113.
+> If you only run step 13 (VEP annotation) and skip step 17 (CPSR), you only need the release-116 cache. If you only run step 17, you only need release-113.
 
 ## T1K HLA Reference (Optional)
 
@@ -293,17 +293,17 @@ Pull all images in advance to avoid download delays during analysis:
 docker pull quay.io/biocontainers/minimap2:2.31--h118bc1c_0
 docker pull staphb/samtools:1.20
 docker pull staphb/bcftools:1.21
-docker pull google/deepvariant:1.6.0
+docker pull google/deepvariant:1.10.0
 
 # SV callers
 docker pull quay.io/biocontainers/manta:1.6.0--h9ee0642_2
-docker pull quay.io/biocontainers/delly:1.7.3--hd6466ae_0
+docker pull quay.io/biocontainers/delly:2.1.0--h3752d28_0
 docker pull quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
 docker pull brentp/duphold:v0.2.3
 
 # Annotation
 docker pull quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
-docker pull ensemblorg/ensembl-vep:release_112.0
+docker pull ensemblorg/ensembl-vep:release_116.0
 docker pull sigven/pcgr:2.2.5
 
 # Pharmacogenomics
@@ -430,7 +430,7 @@ echo "Checking reference setup..."
 [ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta" ] && echo "  GRCh38 FASTA: OK" || echo "  GRCh38 FASTA: MISSING"
 [ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"
 [ -f "${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz" ] && echo "  ClinVar (chr): OK" || echo "  ClinVar: MISSING"
-[ -d "${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
+[ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
 [ -d "${GENOME_DIR}/pcgr_data/20250314/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && echo "  VEP 113 cache (CPSR): OK" || echo "  VEP 113 cache (CPSR): MISSING"
 

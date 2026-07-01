@@ -54,6 +54,7 @@ docker run --rm --user root \
     --sample_id ${SAMPLE} \
     --panel_id 0 \
     --classify_all \
+    --secondary_findings \
     --force_overwrite
 ```
 
@@ -78,8 +79,9 @@ docker run --rm --user root \
 - The ref data bundle (~5 GB) and VEP cache only need to be downloaded once — shared across all samples.
 - **PCGR 2.x breaking changes:** The CLI changed completely from 1.x. The old `--pcgr_dir` flag (which internally appended `/data`) is replaced by `--refdata_dir` and `--vep_dir` as separate mount points. The single monolithic data bundle is split into a smaller ref data bundle + the standard Ensembl VEP cache. Docker volume mounts changed from a single `:/genome` to four separate mounts for VEP, bundle, inputs, and outputs.
 - **Data bundle freshness:** The `20250314` bundle dates from March 2025. Check the [PCGR releases page](https://github.com/sigven/pcgr/releases) periodically for updated bundles — newer bundles include more recent ClinVar classifications and gene-disease annotations.
-- **VEP cache version:** PCGR 2.2.5 requires VEP release-113 cache, while step 13 uses release-112. Both coexist in `vep_cache/homo_sapiens/` (subdirectories `112_GRCh38/` and `113_GRCh38/`). You need both if running both steps.
-- Use `--panel_id 0` for the comprehensive cancer superpanel (500+ genes). Note: this is broader than ACMG SF but cancer-focused — it does not replace a full ACMG incidental-findings screen.
+- **VEP cache version:** PCGR 2.2.5 requires VEP release-113 cache, while step 13 uses release-116. Both coexist in `vep_cache/homo_sapiens/` (subdirectories `116_GRCh38/` and `113_GRCh38/`). You need both if running both steps.
+- Use `--panel_id 0` for the comprehensive cancer superpanel (500+ genes) — cancer-focused.
 - `--classify_all` ensures all variants in target genes get ACMG classification, not just known pathogenic.
+- `--secondary_findings` reports pathogenic / likely-pathogenic variants in the **ACMG SF v3.2** incidental-findings gene list (81 genes — including cardiac and metabolic genes beyond CPSR's cancer panels) in a dedicated section of the report. The fuller v3.3 (84-gene) list follows once PCGR's 2.3.0 container image is published (the 2.3.0 source release is out, but its Docker image is not yet available, so the pin stays at PCGR 2.2.5).
 - CPSR is complementary to ClinVar screening — ClinVar finds known variants, CPSR classifies novel ones.
 - The same ref data bundle is used by PCGR for somatic analysis (not relevant for germline WGS).

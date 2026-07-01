@@ -26,7 +26,7 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-DELLY_IMAGE="quay.io/biocontainers/delly:1.7.3--hd6466ae_0"
+DELLY_IMAGE="quay.io/biocontainers/delly:2.1.0--h3752d28_0"
 BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 echo "[1/3] Calling structural variants..."

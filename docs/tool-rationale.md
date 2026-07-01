@@ -50,7 +50,7 @@ The alignment step is the single longest step in the pipeline when starting from
 |---|---|---|---|
 | **Script** | `scripts/03-deepvariant.sh` | `scripts/03a-gatk-haplotypecaller.sh` | `scripts/03b-freebayes.sh` |
 | **Output directory** | `vcf/` | `vcf_gatk/` | `vcf_freebayes/` |
-| **Docker image** | `google/deepvariant:1.6.0` | `broadinstitute/gatk:4.6.2.0` | `quay.io/biocontainers/freebayes:1.3.6` |
+| **Docker image** | `google/deepvariant:1.10.0` | `broadinstitute/gatk:4.6.2.0` | `quay.io/biocontainers/freebayes:1.3.6` |
 | **Algorithm** | Deep learning (CNN) | Local haplotype assembly + PairHMM | Bayesian haplotype-based |
 | **SNP F1 (30X)** | ~0.999 | ~0.998 | ~0.994 |
 | **Indel F1 (30X)** | ~0.994 | ~0.983 | ~0.960 |
@@ -124,7 +124,7 @@ The pipeline runs up to three SV callers and merges their output (step 22). Each
 |---|---|---|---|
 | **Script** | `scripts/04-manta.sh` | `scripts/19-delly.sh` | `scripts/18-cnvnator.sh` |
 | **Output directory** | `manta/` | `delly/` | `cnvnator/` |
-| **Docker image** | `quay.io/biocontainers/manta:1.6.0` | `quay.io/biocontainers/delly:1.7.3` | `quay.io/biocontainers/cnvnator` |
+| **Docker image** | `quay.io/biocontainers/manta:1.6.0` | `quay.io/biocontainers/delly:2.1.0` | `quay.io/biocontainers/cnvnator` |
 | **Signal types** | Paired-end + split-read | Paired-end + split-read + read-depth | Read-depth only |
 | **Best for** | DEL, DUP, INV, small indels | INV, BND (translocations) | Large CNVs (>1 kb) |
 | **Runtime (30X)** | ~20-60 min | ~2-4 hours | ~2-4 hours |

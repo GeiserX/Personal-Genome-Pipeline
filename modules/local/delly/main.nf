@@ -13,7 +13,7 @@ process DELLY {
     tag "$meta.id"
     label 'process_high'
 
-    container 'quay.io/biocontainers/delly:1.7.3--hd6466ae_0'
+    container 'quay.io/biocontainers/delly:2.1.0--h3752d28_0'
 
     publishDir { "${params.outdir}/${meta.id}/delly" }, mode: params.publish_dir_mode
 
@@ -48,7 +48,7 @@ process DELLY {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: \$(delly --version 2>&1 | grep -oP 'Delly version: \\K[\\d.]+' || echo '1.7.3')
+        delly: \$(delly --version 2>&1 | grep -oP 'Delly version: \\K[\\d.]+' || echo '2.1.0')
     END_VERSIONS
     """
 
@@ -59,7 +59,7 @@ process DELLY {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: 1.7.3
+        delly: 2.1.0
     END_VERSIONS
     """
 }

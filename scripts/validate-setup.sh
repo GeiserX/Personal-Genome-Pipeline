@@ -236,14 +236,14 @@ else
     fi
   fi
 
-  # --- VEP cache — release-112 for step 13 (optional) ---
+  # --- VEP cache — release-116 for step 13 (optional) ---
   VEP_DIR="${GENOME_DIR}/vep_cache/homo_sapiens"
-  if [ -d "${VEP_DIR}/112_GRCh38" ]; then
-    pass "VEP 112 cache (step 13): present"
+  if [ -d "${VEP_DIR}/116_GRCh38" ]; then
+    pass "VEP 116 cache (step 13): present"
   else
-    warn "VEP 112 cache not found at: ${VEP_DIR}/112_GRCh38"
+    warn "VEP 116 cache not found at: ${VEP_DIR}/116_GRCh38"
     echo "       Required for step 13 (VEP annotation). Download ~26 GB:"
-    echo "       wget -c https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz"
+    echo "       wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz"
     echo "       See docs/00-reference-setup.md for full instructions."
   fi
 

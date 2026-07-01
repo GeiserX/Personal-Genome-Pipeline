@@ -39,7 +39,7 @@ mkdir -p "$OUTPUT_DIR"
 docker run --rm \
   --cpus 8 --memory 32g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.6.0 \
+  google/deepvariant:1.10.0 \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type="${MODEL_TYPE}" \
     --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \

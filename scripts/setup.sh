@@ -247,8 +247,8 @@ else
   echo "[SKIP] VEP cache (~26 GB) — needed for step 13 (VEP annotation)"
   echo "  Download:"
   echo "    mkdir -p ${VEPDIR}"
-  echo "    wget -c -P ${VEPDIR} https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz"
-  echo "    tar xzf ${VEPDIR}/homo_sapiens_vep_112_GRCh38.tar.gz -C ${VEPDIR}"
+  echo "    wget -c -P ${VEPDIR} https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz"
+  echo "    tar xzf ${VEPDIR}/homo_sapiens_vep_116_GRCh38.tar.gz -C ${VEPDIR}"
 fi
 echo ""
 
@@ -265,13 +265,13 @@ else
 fi
 echo ""
 
-# VEP 113 cache for CPSR (separate from step 13's release-112 cache)
+# VEP 113 cache for CPSR (separate from step 13's release-116 cache)
 VEP113="${VEPDIR}/homo_sapiens/113_GRCh38"
 if [ -d "$VEP113" ]; then
   echo "[OK] VEP 113 cache (for CPSR) already present."
 else
   echo "[SKIP] VEP 113 cache (~26 GB) — needed for step 17 (CPSR uses PCGR 2.2.5 which bundles VEP 113)"
-  echo "  This is separate from the release-112 cache used by step 13. Both coexist in vep_cache/."
+  echo "  This is separate from the release-116 cache used by step 13. Both coexist in vep_cache/."
   echo "  Download:"
   echo "    mkdir -p ${VEPDIR}"
   echo "    wget -c -P ${VEPDIR} https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
