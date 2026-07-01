@@ -39,7 +39,7 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 | 16 | Coverage QC (indexcov) | [16-indexcov.md](16-indexcov.md) |
 | 16b | Coverage Statistics (mosdepth) | [16b-mosdepth.md](16b-mosdepth.md) |
 | 17 | Cancer Predisposition (CPSR) | [17-cpsr.md](17-cpsr.md) |
-| 18 | CNV Calling (CNVnator) | [18-cnvnator.md](18-cnvnator.md) |
+| 18 | CNV Calling (CNVpytor) | [18-cnvpytor.md](18-cnvpytor.md) |
 | 19 | SV Calling (Delly) | [19-delly.md](19-delly.md) |
 | 20 | Mitochondrial (GATK Mutect2) | [20-mtoolbox.md](20-mtoolbox.md) |
 

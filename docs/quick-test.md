@@ -96,7 +96,7 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 ## Option B: Full Pipeline Test with Minimal BAM
 
-If you want to test the BAM-dependent steps (Manta, CNVnator, Delly, TelomereHunter, indexcov), you need a BAM file. A chr22-only BAM is small enough (~3-4 GB) for a quick test:
+If you want to test the BAM-dependent steps (Manta, CNVpytor, Delly, TelomereHunter, indexcov), you need a BAM file. A chr22-only BAM is small enough (~3-4 GB) for a quick test:
 
 ```bash
 # Download chr22 reads for NA12878 from 1000 Genomes

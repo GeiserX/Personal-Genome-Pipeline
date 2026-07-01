@@ -87,7 +87,7 @@ These tools are specifically designed for short-read data and will produce incor
 | 4b | GRIDSS | Assembly-based, short-read specific | Sniffles2 |
 | 9 | ExpansionHunter | Illumina short-read graph model; expects paired-end data | TRGT (PacBio), STRique (ONT), or direct long-read spanning |
 | 15 | duphold | Re-genotypes SVs using short-read depth models | Not needed — Sniffles2 QUAL scores are reliable |
-| 18 | CNVnator | Read-depth model calibrated for short reads | Sniffles2 detects CNVs natively |
+| 18 | CNVpytor | Read-depth model calibrated for short reads | Sniffles2 detects CNVs natively |
 | 19 | Delly | Paired-end and split-read model | Sniffles2 |
 | 21 | Cyrius (CYP2D6) | Short-read depth-based star allele caller | Paraphase (long-read CYP2D6 resolver) |
 

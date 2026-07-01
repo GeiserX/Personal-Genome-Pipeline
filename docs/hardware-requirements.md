@@ -28,7 +28,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | TelomereHunter output | 50-200 MB | Step 10 | Keep |
 | VEP annotated VCF | 2-5 GB | Step 13 | Keep (comprehensive annotation) |
 | CPSR report + data | 50-200 MB | Step 17 | Keep |
-| CNVnator ROOT file + calls | 5-15 GB | Step 18 | ROOT file can be deleted |
+| CNVpytor .pytor file + calls | 5-15 GB | Step 18 | .pytor file can be deleted |
 | Delly BCF + VCF | 5-20 MB | Step 19 | Keep VCF, delete BCF |
 | Mito analysis output | 50-200 MB | Step 20 | Keep |
 | **Subtotal per sample** | **150-250 GB** | | |
@@ -94,7 +94,7 @@ Each pipeline step runs in a Docker container with a `--memory` limit. Here's wh
 | 10 (TelomereHunter) | 8 GB | 4-6 GB | Moderate |
 | 13 (VEP) | 16 GB | 4-8 GB | Cache loaded into memory |
 | 17 (CPSR) | 8 GB | 4-6 GB | Moderate |
-| 18 (CNVnator) | 8 GB | 4-6 GB | ROOT file can be large |
+| 18 (CNVpytor) | 8 GB | 4-6 GB | .pytor (HDF5) file can be large |
 | 19 (Delly) | 8 GB | 4-6 GB | Moderate |
 
 **Minimum system RAM:** 16 GB (run one step at a time with reduced `--memory` flags)
@@ -115,7 +115,7 @@ All scripts use `--cpus` to limit Docker container CPU usage. More cores = faste
 | 3 (DeepVariant) | 8 | Yes, up to ~32 | Most CPU-intensive step |
 | 4 (Manta) | 8 | Yes | Already very fast |
 | 13 (VEP) | 8 | Yes (--fork) | Can use all available cores |
-| 18 (CNVnator) | 4 | Limited | Mostly single-threaded |
+| 18 (CNVpytor) | 4 | Yes (-j flag) | Multi-threaded via -j |
 | 19 (Delly) | 4 | Limited | Per-chromosome parallelism |
 
 **Minimum:** 4 cores (very slow but works)
@@ -135,7 +135,7 @@ On a 16-core / 32 GB desktop (e.g., AMD Ryzen 9 5950X):
 | Annotation Enrichment | 30 | ~5-15 min | After step 13 |
 | Variant Prioritization | 31 | ~5-10 min | After step 30 |
 | pypgx Pharmacogenomics | 32 | ~20-40 min | Yes (uses BAM, parallel with phase 3) |
-| Optional SV Callers | 18, 19 | 2-4 hours each | Yes (both use BAM) |
+| Optional SV Callers | 18, 19 | 1-3 hr (CNVpytor), 2-4 hr (Delly) | Yes (both use BAM) |
 | Optional Mito/Telomere | 10, 20 | 1-2 hours total | Yes (both use BAM) |
 | **Total (sequential)** | All 34 | **12-22 hours** | |
 | **Total (parallelized)** | All 34 | **6-12 hours** | |
@@ -148,7 +148,7 @@ After step 3 (variant calling) completes, many steps can run simultaneously:
 Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
               ├──> Step 13 (VEP, ~2-4 hr) ──> Step 30 (vcfanno, ~15 min) ──> Step 31 (slivar)
               ├──> Step 17 (CPSR, ~30-60 min)
-              ├──> Step 18 (CNVnator, ~2-4 hr)    ← These 3 use BAM, need RAM
+              ├──> Step 18 (CNVpytor, ~1-3 hr)    ← These 3 use BAM, need RAM
               ├──> Step 19 (Delly, ~2-4 hr)        ← Run 1-2 at a time
               ├──> Step 32 (pypgx, ~20-40 min)     ← Uses BAM, parallel with above
               ├──> Step 10 (TelomereHunter, ~1 hr)
@@ -192,7 +192,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
    Saves 40-60% (30-50 GB per sample).
 
 2. **Delete intermediate files:**
-   - CNVnator `.root` files (5-15 GB each)
+   - CNVpytor `.pytor` files (5-15 GB each)
    - Delly `.bcf` files (after converting to VCF)
 
 3. **Compress VEP output:**

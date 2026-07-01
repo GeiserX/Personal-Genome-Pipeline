@@ -26,7 +26,7 @@ Terms used throughout this pipeline's documentation, explained for people who ar
 
 **ClinVar** — NCBI's public database of clinically significant genetic variants. Each entry includes a significance classification (pathogenic, benign, VUS, etc.) and supporting evidence.
 
-**CNV** — Copy Number Variant. A region of the genome that is deleted or duplicated relative to the reference. Detected by CNVnator (depth-based) and Manta/Delly (read-pair based).
+**CNV** — Copy Number Variant. A region of the genome that is deleted or duplicated relative to the reference. Detected by CNVpytor (depth-based) and Manta/Delly (read-pair based).
 
 **Compound Heterozygous** — Having two different pathogenic variants in the same gene, one from each parent. Can cause autosomal recessive disease even though neither variant is homozygous.
 

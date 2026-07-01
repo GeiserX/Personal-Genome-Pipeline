@@ -2,21 +2,21 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     SV — Structural Variant Calling, Filtering & Annotation Workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Runs three SV callers in parallel (Manta, Delly, CNVnator), annotates
+    Runs three SV callers in parallel (Manta, Delly, CNVpytor), annotates
     Manta output with duphold depth metrics, classifies SVs via AnnotSV,
     and merges consensus calls from all callers.
 
     DAG:
       BAM ──┬── MANTA ──── DUPHOLD ──── ANNOTSV
             ├── DELLY
-            └── CNVNATOR
+            └── CNVPYTOR
                          └── SURVIVOR_MERGE (collects all SV VCFs)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
 include { MANTA          } from '../modules/local/manta/main'
 include { DELLY          } from '../modules/local/delly/main'
-include { CNVNATOR       } from '../modules/local/cnvnator/main'
+include { CNVPYTOR; CNVPYTOR_VCF } from '../modules/local/cnvpytor/main'
 include { DUPHOLD        } from '../modules/local/duphold/main'
 include { ANNOTSV        } from '../modules/local/annotsv/main'
 include { SURVIVOR_MERGE } from '../modules/local/survivor_merge/main'
@@ -54,15 +54,18 @@ workflow SV {
     }
 
     //
-    // CNVNATOR: depth-based CNV caller (orthogonal to paired-end methods)
+    // CNVPYTOR: depth-based CNV caller (orthogonal to paired-end methods)
     //
-    ch_cnvnator_calls = Channel.empty()
-    ch_cnvnator_vcf   = Channel.empty()
-    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cnvnator')) {
-        CNVNATOR(ch_bam, ch_reference, ch_reference_fai)
-        ch_cnvnator_calls = CNVNATOR.out.cnv_calls
-        ch_cnvnator_vcf   = CNVNATOR.out.cnv_vcf
-        ch_versions       = ch_versions.mix(CNVNATOR.out.versions)
+    ch_cnvpytor_calls = Channel.empty()
+    ch_cnvpytor_vcf   = Channel.empty()
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cnvpytor')) {
+        // value channel so the pinned resources broadcast to every sample (not just the first)
+        ch_cnvpytor_res   = Channel.value(file(params.cnvpytor_resources, checkIfExists: true))
+        CNVPYTOR(ch_bam, ch_cnvpytor_res)
+        ch_cnvpytor_calls = CNVPYTOR.out.cnv_calls
+        CNVPYTOR_VCF(CNVPYTOR.out.raw_vcf, ch_reference_fai)
+        ch_cnvpytor_vcf   = CNVPYTOR_VCF.out.cnv_vcf
+        ch_versions       = ch_versions.mix(CNVPYTOR.out.versions, CNVPYTOR_VCF.out.versions)
     }
 
     // ── Duphold annotation (Manta -> DUPHOLD) ───────────────────────────
@@ -114,7 +117,7 @@ workflow SV {
             .mix(
                 ch_manta_vcf,
                 ch_delly_vcf,
-                ch_cnvnator_vcf
+                ch_cnvpytor_vcf
             )
             .groupTuple()
             .map { meta, vcfs ->
@@ -129,7 +132,7 @@ workflow SV {
     emit:
     manta_vcf      = ch_manta_vcf
     delly_vcf      = ch_delly_vcf
-    cnvnator_calls = ch_cnvnator_calls
+    cnvpytor_calls = ch_cnvpytor_calls
     duphold_vcf    = ch_duphold_vcf
     annotsv_tsv    = ch_annotsv_tsv
     merged_sv      = ch_merged_sv

@@ -11,7 +11,7 @@
 # consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
 #
 # Requires: Output from steps 4 (Manta), 19 (Delly), 4b (GRIDSS), 4c (Sniffles2),
-#           4d (TIDDIT), and/or 18 (CNVnator) — any 2+ callers suffice
+#           4d (TIDDIT), and/or 18 (CNVpytor) — any 2+ callers suffice
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -81,16 +81,16 @@ else
   echo "  [--] TIDDIT SVs not found (run step 4d first)"
 fi
 
-# CNVnator (convert to VCF format if only TXT exists)
-CNVNATOR_TXT="${GENOME_DIR}/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.txt"
-CNVNATOR_VCF="${GENOME_DIR}/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf.gz"
-if [ -f "$CNVNATOR_VCF" ]; then
-  SV_FILES+=("/genome/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf.gz")
-  CALLERS="${CALLERS}CNVnator "
-  echo "  [OK] CNVnator CNVs found (VCF)"
-elif [ -f "$CNVNATOR_TXT" ]; then
-  echo "  [OK] CNVnator CNVs found (TXT — converting to VCF)..."
-  # Convert CNVnator TXT to simple VCF (with contig headers for bcftools)
+# CNVpytor (convert to VCF format if only TXT exists)
+CNVPYTOR_TXT="${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.txt"
+CNVPYTOR_VCF="${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz"
+if [ -f "$CNVPYTOR_VCF" ]; then
+  SV_FILES+=("/genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz")
+  CALLERS="${CALLERS}CNVpytor "
+  echo "  [OK] CNVpytor CNVs found (VCF)"
+elif [ -f "$CNVPYTOR_TXT" ]; then
+  echo "  [OK] CNVpytor CNVs found (TXT — converting to VCF)..."
+  # Convert CNVpytor TXT to simple VCF (with contig headers for bcftools)
   {
     echo "##fileformat=VCFv4.2"
     echo "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">"
@@ -111,20 +111,20 @@ elif [ -f "$CNVNATOR_TXT" ]; then
       if($1=="duplication") { svtype="DUP"; alt="<DUP>"; svlen=b[2]-b[1]; }
       printf "%s\t%s\t.\tN\t%s\t.\tPASS\tSVTYPE=%s;END=%s;SVLEN=%d\n",
         a[1], b[1], alt, svtype, b[2], svlen;
-    }' "$CNVNATOR_TXT"
-  } > "${GENOME_DIR}/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf"
+    }' "$CNVPYTOR_TXT"
+  } > "${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf"
 
   docker run --rm --user root \
     -v "${GENOME_DIR}:/genome" \
     staphb/bcftools:1.21 \
-    bash -c "bcftools sort /genome/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf -Oz \
-      -o /genome/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf.gz"
+    bash -c "bcftools sort /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf -Oz \
+      -o /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz && \
+      bcftools index -t /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz"
 
-  SV_FILES+=("/genome/${SAMPLE}/cnvnator/${SAMPLE}_cnvs.vcf.gz")
-  CALLERS="${CALLERS}CNVnator "
+  SV_FILES+=("/genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz")
+  CALLERS="${CALLERS}CNVpytor "
 else
-  echo "  [--] CNVnator CNVs not found (run step 18 first)"
+  echo "  [--] CNVpytor CNVs not found (run step 18 first)"
 fi
 
 echo ""
@@ -132,7 +132,7 @@ echo ""
 if [ ${#SV_FILES[@]} -lt 2 ]; then
   echo "ERROR: Need at least 2 SV callers for consensus merge."
   echo "  Found: ${CALLERS:-none}"
-  echo "  Run at least 2 of: steps 4 (Manta), 19 (Delly), 4b (GRIDSS), 4c (Sniffles2), 4d (TIDDIT), 18 (CNVnator)."
+  echo "  Run at least 2 of: steps 4 (Manta), 19 (Delly), 4b (GRIDSS), 4c (Sniffles2), 4d (TIDDIT), 18 (CNVpytor)."
   exit 1
 fi
 

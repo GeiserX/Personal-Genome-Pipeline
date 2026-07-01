@@ -34,7 +34,7 @@ Typically 10-30 KB. Contains:
 - **Variant Calling** — total variants, PASS count, SNPs, indels
 - **ClinVar Screening** — hit count with top 20 detailed in a table
 - **Pharmacogenomics** — PharmCAT report status
-- **Structural Variants** — Manta, Delly, CNVnator counts
+- **Structural Variants** — Manta, Delly, CNVpytor counts
 - **Cancer Predisposition** — CPSR report status
 - **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, etc.)
 - **Ancestry & Identity** — haplogroup, ROH, telomere content

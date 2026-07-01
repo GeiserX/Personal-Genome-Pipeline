@@ -354,3 +354,18 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### CYP2D6 structural alleles: pypgx resolves *5 deletions where Cyrius and PharmCAT return "No Result"
 - **Observed:** For a homozygous CYP2D6 whole-gene deletion (*5/*5), **Cyrius can return `None/None`** (Total_CN null — its copy-number consensus cannot resolve the locus) and **PharmCAT reports `Unknown/Unknown — No Result`** (it does not call the structural *5 from a plain VCF), while **pypgx (BAM-based, SV-aware) resolves `*5/*5 — Poor Metabolizer` with `SV_detected: Yes`.**
 - **Impact:** Updates the older "rely on lab calls" note above — for CYP2D6 deletion/duplication alleles, pypgx on the BAM is the authoritative caller. Do **not** read a Cyrius `None/None` as "no deletion." Keep all three callers (PharmCAT star alleles, Cyrius, pypgx) and reconcile; pypgx wins for CNV/SV-driven star alleles (a Poor Metabolizer has no functional CYP2D6 → major impact on CYP2D6-cleared drugs such as codeine/tramadol/tamoxifen).
+
+## CNVpytor migration (2026-07)
+
+### CNVpytor 1.3.2 biocontainer ships without GC/mask data and its downloader is broken
+- **Failed:** `cnvpytor -his` aborts with `Some reference genome resource files are missing. Run 'cnvpytor -download'` — the `quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0` image's `cnvpytor/data/` dir contains only an empty `readme.txt`.
+- **Failed:** `cnvpytor -download` itself crashes in 1.3.2 (`AttributeError: 'PosixPath' object has no attribute 'split'` in `genome.py`), so it cannot self-heal.
+- **Fix:** Pre-download the pinned **v1.3.2** GC/mask files and bind-mount them onto the container's package data dir (`/usr/local/lib/python3.12/site-packages/cnvpytor/data`). Runs then work fully offline (verified with `--network none`). See `docs/00-reference-setup.md`.
+
+### CNVpytor's resource check requires every genome's files to exist, not just hg38
+- **Observed:** `genome.py:check_resources()` iterates every bundled reference genome (hg19, hg38, chm13v2.0, chm13v1.1, kn99) and `os.path.exists()`-checks each `gc_file`/`mask_file`. Mounting only `gc_hg38.pytor`+`mask_hg38.pytor` still fails the check.
+- **Fix:** Provide all seven files. Only `gc_hg38.pytor`/`mask_hg38.pytor` are actually read for an hg38 BAM; the others just need to exist (the check is existence-only). All seven total ~90 MB.
+
+### CNVpytor container has no bcftools/bgzip
+- **Observed:** Unlike the old CNVnator biocontainer, `cnvpytor:1.3.2` bundles no bcftools/bgzip/tabix/samtools.
+- **Fix:** The bash step runs a separate `staphb/bcftools` container for VCF normalization; the Nextflow module splits into two processes (`CNVPYTOR` calls → `CNVPYTOR_VCF` reheader/sort/index). `cnvpytor -view` emits a proper VCFv4.2 (SVTYPE/END/SVLEN, ALT DEL/DUP/LOH, GT/CN) but only carries `##contig` lines for processed chromosomes — reheader from the reference `.fai` before merging with Manta/Delly in step 22.

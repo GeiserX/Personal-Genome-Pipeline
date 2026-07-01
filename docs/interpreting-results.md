@@ -145,7 +145,7 @@ A typical human genome has:
 ### Which Callers to Trust?
 
 If you ran multiple SV callers:
-- **Called by 2+ callers (Manta + Delly, or Manta + CNVnator):** Lower false-positive rate
+- **Called by 2+ callers (Manta + Delly, or Manta + CNVpytor):** Lower false-positive rate
 - **Called by 1 caller only:** Lower confidence, may be false positive
 - **duphold DHFFC < 0.7 for deletions:** High confidence (depth drops as expected)
 - **duphold DHBFC > 1.3 for duplications:** High confidence (depth rises as expected)
@@ -437,11 +437,11 @@ grep -v "^#" "$VEP_VCF" | grep -E "CYP2D6|CYP2C19|CYP2C9|DPYD|UGT1A1|SLCO1B1|TPM
 
 ---
 
-## CNVnator Results (Step 18)
+## CNVpytor Results (Step 18)
 
-CNVnator detects **copy number variants** using read depth analysis — complementary to Manta's paired-end/split-read approach.
+CNVpytor detects **copy number variants** using read depth analysis — complementary to Manta's paired-end/split-read approach.
 
-**Where to look:** `${SAMPLE}/cnvnator/${SAMPLE}_cnvs.txt`
+**Where to look:** `${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.txt`
 
 **Format:** Each line has: type, region, size, normalized_RD, e-value1, e-value2, e-value3, e-value4, q0
 
@@ -462,7 +462,7 @@ awk '$1 == "deletion" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
 awk '$1 == "duplication" && $3 > 100000 && $5 < 0.01' ${SAMPLE}_cnvs.txt
 ```
 
-**Multi-caller overlap:** CNVs found by both Manta AND CNVnator have lower false-positive rates. Cross-reference by checking if the same genomic region appears in both output files.
+**Multi-caller overlap:** CNVs found by both Manta AND CNVpytor have lower false-positive rates. Cross-reference by checking if the same genomic region appears in both output files.
 
 ---
 
@@ -486,7 +486,7 @@ bcftools view -f PASS ${SAMPLE}_sv.vcf.gz | grep -cv '^#'
 - Most are small deletions (<1kb)
 - PASS filter reduces count significantly
 
-**Multi-caller overlap:** SVs detected by Manta + Delly + CNVnator (or any 2 of 3) have substantially lower false-positive rates. Single-caller calls, especially large ones, should be viewed with caution.
+**Multi-caller overlap:** SVs detected by Manta + Delly + CNVpytor (or any 2 of 3) have substantially lower false-positive rates. Single-caller calls, especially large ones, should be viewed with caution.
 
 ---
 

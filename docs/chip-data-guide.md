@@ -205,7 +205,7 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 |---|---|---|
 | **2** | Alignment | No reads to align |
 | **3** | DeepVariant | No BAM file |
-| **4, 18, 19** | SV callers (Manta, CNVnator, Delly) | Need read-level evidence |
+| **4, 18, 19** | SV callers (Manta, CNVpytor, Delly) | Need read-level evidence |
 | **5, 15** | SV annotation (AnnotSV, duphold) | No SV calls to annotate |
 | **8** | HLA typing (T1K) | Needs reads spanning HLA region |
 | **9** | ExpansionHunter | Needs reads spanning repeat regions |

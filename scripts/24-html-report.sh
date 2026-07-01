@@ -163,10 +163,10 @@ if [ -f "$MITO_FILE" ]; then
     awk '{if($1+0 < 0.95) c++} END {print c+0}' || echo "N/A")
 fi
 
-# --- CNVnator ---
+# --- CNVpytor ---
 CNV_COUNT="N/A"
-if [ -f "${SAMPLE_DIR}/cnvnator/${SAMPLE}_cnvs.txt" ]; then
-  CNV_COUNT=$(wc -l < "${SAMPLE_DIR}/cnvnator/${SAMPLE}_cnvs.txt" 2>/dev/null || echo "N/A")
+if [ -f "${SAMPLE_DIR}/cnvpytor/${SAMPLE}_cnvs.txt" ]; then
+  CNV_COUNT=$(wc -l < "${SAMPLE_DIR}/cnvpytor/${SAMPLE}_cnvs.txt" 2>/dev/null || echo "N/A")
 fi
 
 # --- Delly ---
@@ -284,7 +284,7 @@ cat >> "$OUTPUT" << EOF
     <div class="stat"><span class="label">Manta SVs (total)</span><span class="value">${MANTA_TOTAL}</span></div>
     <div class="stat"><span class="label">Manta SVs (PASS)</span><span class="value">${MANTA_PASS}</span></div>
     <div class="stat"><span class="label">Delly SVs (PASS)</span><span class="value">${DELLY_PASS}</span></div>
-    <div class="stat"><span class="label">CNVnator CNVs</span><span class="value">${CNV_COUNT}</span></div>
+    <div class="stat"><span class="label">CNVpytor CNVs</span><span class="value">${CNV_COUNT}</span></div>
   </div>
 EOF
 

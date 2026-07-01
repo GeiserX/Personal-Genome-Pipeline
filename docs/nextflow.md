@@ -132,7 +132,7 @@ results/
 │   ├── cyrius/             # CYP2D6 star allele (Cyrius)
 │   ├── manta/              # SV calling (optional)
 │   ├── delly/              # SV calling (optional)
-│   ├── cnvnator/           # CNV calling (optional)
+│   ├── cnvpytor/           # CNV calling (optional)
 │   └── *_report.html       # Consolidated HTML report (published to sample root)
 └── pipeline_info/
     ├── timeline_*.html
@@ -189,7 +189,7 @@ The `--ancestry_ref` parameter expects a **single VCF file** (not a directory). 
 
 ### SV consensus merge (experimental)
 
-The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb position binning) rather than the full SURVIVOR or Jasmine algorithm. CNVnator calls (depth-based, no PASS/FAIL marking) are treated equally with paired-end callers in the "2+ callers" consensus. For production SV analysis, consider running SURVIVOR or Jasmine externally.
+The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb position binning) rather than the full SURVIVOR or Jasmine algorithm. CNVpytor calls (depth-based, no PASS/FAIL marking) are treated equally with paired-end callers in the "2+ callers" consensus. For production SV analysis, consider running SURVIVOR or Jasmine externally.
 
 ### Security model
 

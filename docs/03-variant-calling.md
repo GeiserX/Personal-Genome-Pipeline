@@ -57,5 +57,5 @@ docker run --rm \
 - DeepVariant is the gold standard for SNPs/indels but does NOT detect:
   - Structural variants >50bp (use Manta, step 4)
   - Repeat expansions (use ExpansionHunter, step 9)
-  - Copy number variants (use CNVnator or GATK gCNV)
+  - Copy number variants (use CNVpytor or GATK gCNV)
 - bcftools can also call variants but is significantly less accurate than DeepVariant
