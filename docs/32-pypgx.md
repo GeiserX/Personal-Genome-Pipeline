@@ -21,7 +21,7 @@ pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1,
 ## Docker Image
 
 ```
-quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
+quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
 ```
 
 ## Prerequisites

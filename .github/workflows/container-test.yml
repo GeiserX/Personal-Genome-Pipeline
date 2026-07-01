@@ -44,7 +44,7 @@ jobs:
           - image: quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
             cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
           # slivar uses staphb/bcftools + pre-built binary (no dedicated container)
-          - image: quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
+          - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
             cmd: "pypgx --version"
           # Digest-pinned images (publishers ship no versioned tags) — the monthly
           # run catches digest rot / an unpullable digest.

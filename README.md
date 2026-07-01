@@ -170,7 +170,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~2-6 hr | Experimental |
 | 30 | [Annotation Enrichment](docs/30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.9` | ~5-15 min | If step 13 run |
 | 31 | [Variant Prioritization](docs/31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.4` | ~5-10 min | If step 13 run |
-| 32 | [pypgx Pharmacogenomics](docs/32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.27.0` | ~20-40 min | Recommended |
+| 32 | [pypgx Pharmacogenomics](docs/32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.26.0` | ~20-40 min | Recommended |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
 **Full analysis:** All 34 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
