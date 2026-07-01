@@ -60,6 +60,11 @@ done
 mkdir -p "$OUTPUT_DIR"
 PYTOR="/genome/${SAMPLE}/cnvpytor/${SAMPLE}.pytor"
 
+# Process only the canonical GRCh38 chromosomes. A full-reference BAM also carries
+# hundreds of ALT/HLA/decoy contigs the GC-correction data does not cover; without
+# this restriction, read-depth import chokes on them and produces no calls.
+CANONICAL_CHROMS=(chr{1..22} chrX chrY)
+
 # cnvpytor invocation with the genome data + pinned resource mounts
 cnvpytor_run() {
   docker run --rm --user root \
@@ -70,7 +75,7 @@ cnvpytor_run() {
 }
 
 echo "[1/6] Importing read depth from BAM..."
-cnvpytor_run cnvpytor -root "$PYTOR" -rd "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" -j 4
+cnvpytor_run cnvpytor -root "$PYTOR" -rd "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" -chrom "${CANONICAL_CHROMS[@]}" -j 4
 
 echo "[2/6] Read-depth histogram + GC correction..."
 cnvpytor_run cnvpytor -root "$PYTOR" -his "$BIN_SIZE"
