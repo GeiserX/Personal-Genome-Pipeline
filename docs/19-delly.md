@@ -6,7 +6,7 @@ Third structural variant caller — combines paired-end, split-read, and read-de
 ## Why
 Using multiple SV callers and intersecting their results dramatically reduces false positives:
 - **Manta** (step 4): Fast, sensitive for smaller SVs and indels
-- **CNVnator** (step 18): Best for large CNVs via read-depth only
+- **CNVpytor** (step 18): Best for large CNVs via read-depth only
 - **Delly**: Most balanced — uses all three signal types, especially strong for inversions and translocations
 
 SVs called by 2+ callers have lower false-positive rates than single-caller calls. Multi-caller intersection is a common strategy in WGS pipelines, though dedicated tools like SURVIVOR or Jasmine provide more precise breakpoint-aware merging than simple position overlap.
@@ -48,7 +48,7 @@ docker run --rm \
 ```
 
 ## Optional: Dedicated CNV Calling
-Delly also has a dedicated CNV mode using read-depth only (similar to CNVnator):
+Delly also has a dedicated CNV mode using read-depth only (similar to CNVpytor):
 ```bash
 docker run --rm \
   --cpus 4 --memory 8g \
@@ -79,7 +79,7 @@ bcftools view -i 'INFO/SVTYPE="INV"' ${SAMPLE}_sv.vcf.gz
 
 ## Notes
 - Delly outputs BCF by default (not VCF). Convert with `bcftools view` for compatibility.
-- For consensus SV calling, use SURVIVOR or bcftools to merge calls from Manta + Delly + CNVnator.
+- For consensus SV calling, use SURVIVOR or bcftools to merge calls from Manta + Delly + CNVpytor.
 - Delly is the most accurate caller for inversions and balanced translocations.
-- The `delly cnv` mode is optional if you already run CNVnator — it provides similar depth-based CNV calls.
-- Can be run in parallel with Manta and CNVnator (all independent after alignment).
+- The `delly cnv` mode is optional if you already run CNVpytor — it provides similar depth-based CNV calls.
+- Can be run in parallel with Manta and CNVpytor (all independent after alignment).

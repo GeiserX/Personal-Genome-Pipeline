@@ -221,9 +221,9 @@ echo "  [C1] VEP functional annotation..."
 _throttle; bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE" &
 PID_VEP=$!
 
-echo "  [C2] CNVnator depth-based CNV calling..."
-_throttle; bash "${SCRIPT_DIR}/18-cnvnator.sh" "$SAMPLE" &
-PID_CNVNATOR=$!
+echo "  [C2] CNVpytor depth-based CNV calling..."
+_throttle; bash "${SCRIPT_DIR}/18-cnvpytor.sh" "$SAMPLE" &
+PID_CNVPYTOR=$!
 
 echo "  [C3] Delly structural variant calling..."
 _throttle; bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
@@ -265,7 +265,7 @@ else
 fi
 
 # Wait for remaining Phase 3 jobs
-for PID in $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV $PID_STRANGER; do
+for PID in $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVPYTOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV $PID_STRANGER; do
   [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done

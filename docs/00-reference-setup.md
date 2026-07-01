@@ -150,6 +150,24 @@ docker run --rm --cpus 4 --memory 8g \
 
 > **Note:** HLA typing from WGS is challenging. T1K coordinates may have ~50% unmapped alleles. For clinical HLA typing, dedicated lab assays are more reliable. See [lessons-learned.md](lessons-learned.md#t1k-coordinate-file-with-wrong-values).
 
+## CNVpytor GC/Mask Resources (Optional, for Step 18)
+
+Only needed for step 18 (CNVpytor CNV calling). The 1.3.2 biocontainer ships **without** the reference GC/mask files and its built-in `-download` is broken, so download the pinned v1.3.2 resources once and mount them at run time.
+
+```bash
+mkdir -p ${GENOME_DIR}/reference/cnvpytor
+BASE=https://github.com/abyzovlab/CNVpytor/raw/v1.3.2/cnvpytor/data
+
+# gc_hg38/mask_hg38 are the files actually used; the other genomes' files only
+# need to exist to satisfy CNVpytor's (over-eager) global resource check.
+for f in gc_hg38.pytor mask_hg38.pytor gc_hg19.pytor mask_hg19.pytor \
+         gc_chm13v2.0.pytor gc_chm13v1.1.pytor gc_kn99.pytor; do
+  curl -fsSL -o ${GENOME_DIR}/reference/cnvpytor/$f "$BASE/$f"
+done
+```
+
+Pinning to the `v1.3.2` git tag (not `master`) keeps runs reproducible; the files total ~90 MB. `scripts/18-cnvpytor.sh` bind-mounts this directory onto the container's package data path, so no network access is needed at run time.
+
 ## Somatic Calling Resources (Optional, for Step 29)
 
 Only needed if you plan to run step 29 (somatic variant calling with Mutect2 tumor-only mode). These resources significantly reduce false positives. See [29-mutect2-somatic.md](29-mutect2-somatic.md) for details.
@@ -298,7 +316,7 @@ docker pull google/deepvariant:1.10.0
 # SV callers
 docker pull quay.io/biocontainers/manta:1.6.0--h9ee0642_2
 docker pull quay.io/biocontainers/delly:2.1.0--h3752d28_0
-docker pull quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
+docker pull quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0
 docker pull brentp/duphold:v0.2.3
 
 # Annotation

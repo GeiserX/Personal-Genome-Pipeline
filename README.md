@@ -87,12 +87,12 @@ graph LR
     %% BAM-based analyses
     BAM --> manta["Manta<br/><small>SVs</small>"]
     BAM --> delly["Delly<br/><small>SVs</small>"]
-    BAM --> cnvnator["CNVnator<br/><small>CNVs</small>"]
+    BAM --> cnvpytor["CNVpytor<br/><small>CNVs</small>"]
     manta --> duphold["duphold"]
     duphold --> annotsv["AnnotSV"]
     manta --> consensus["SV Consensus"]
     delly --> consensus
-    cnvnator --> consensus
+    cnvpytor --> consensus
 
     BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
@@ -120,7 +120,7 @@ graph LR
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
     class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
-    class manta,delly,cnvnator,consensus,duphold,annotsv sv
+    class manta,delly,cnvpytor,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
 ```
@@ -149,7 +149,7 @@ graph LR
 | 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.6` | ~5 sec | Recommended |
 | 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` | ~10 min | Recommended |
 | 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
-| 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator:0.4.1` | ~2-4 hr | Optional |
+| 18 | [CNV Calling](docs/18-cnvpytor.md) | CNVpytor | `quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0` | ~1-3 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:2.1.0` | ~2-4 hr | Optional |
 | 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~15-30 min | Optional |
 
@@ -467,7 +467,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](docs/chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. All 33 default steps take ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`, bringing the total to 34). Many steps can run in parallel (Manta + CNVnator + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
+On a 16-core/32GB desktop: ~6-12 hours per sample for the core steps. All 33 default steps take ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`, bringing the total to 34). Many steps can run in parallel (Manta + CNVpytor + Delly, or TelomereHunter + Mutect2-mito + haplogrep3).
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.

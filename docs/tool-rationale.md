@@ -116,25 +116,25 @@ DeepVariant is the default because:
 
 ---
 
-## 3. Structural Variant Calling: Manta vs Delly vs CNVnator
+## 3. Structural Variant Calling: Manta vs Delly vs CNVpytor
 
 The pipeline runs up to three SV callers and merges their output (step 22). Each uses a different detection strategy.
 
-| Property | Manta | Delly | CNVnator |
+| Property | Manta | Delly | CNVpytor |
 |---|---|---|---|
-| **Script** | `scripts/04-manta.sh` | `scripts/19-delly.sh` | `scripts/18-cnvnator.sh` |
-| **Output directory** | `manta/` | `delly/` | `cnvnator/` |
-| **Docker image** | `quay.io/biocontainers/manta:1.6.0` | `quay.io/biocontainers/delly:2.1.0` | `quay.io/biocontainers/cnvnator` |
+| **Script** | `scripts/04-manta.sh` | `scripts/19-delly.sh` | `scripts/18-cnvpytor.sh` |
+| **Output directory** | `manta/` | `delly/` | `cnvpytor/` |
+| **Docker image** | `quay.io/biocontainers/manta:1.6.0` | `quay.io/biocontainers/delly:2.1.0` | `quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0` |
 | **Signal types** | Paired-end + split-read | Paired-end + split-read + read-depth | Read-depth only |
 | **Best for** | DEL, DUP, INV, small indels | INV, BND (translocations) | Large CNVs (>1 kb) |
-| **Runtime (30X)** | ~20-60 min | ~2-4 hours | ~2-4 hours |
+| **Runtime (30X)** | ~20-60 min | ~2-4 hours | ~1-3 hours |
 | **Typical call count** | 3,000-5,000 SVs | 5,000-15,000 SVs | 500-2,000 CNVs |
 
-### Default: Manta (with optional Delly + CNVnator for consensus)
+### Default: Manta (with optional Delly + CNVpytor for consensus)
 
 Manta is the primary SV caller because:
 
-1. **Speed.** 20-60 minutes vs 2-4 hours for Delly or CNVnator.
+1. **Speed.** 20-60 minutes vs 2-4 hours for Delly or 1-3 hours for CNVpytor.
 2. **Balanced accuracy.** Good detection of deletions, duplications, inversions, and insertions with reasonable false positive rates.
 3. **Indel bonus.** Manta's `candidateSmallIndels.vcf.gz` captures indels in the 20-50 bp range that DeepVariant sometimes misses and that are below the size threshold of other SV callers.
 4. **Well-maintained.** Illumina's Manta is widely used in clinical SV pipelines.
@@ -145,10 +145,10 @@ Manta is the primary SV caller because:
 - **Higher sensitivity overall.** Delly calls more SVs than Manta (5,000-15,000 vs 3,000-5,000), catching events that Manta's more conservative filters miss.
 - **Higher false positive rate.** The extra sensitivity comes with more false calls. This is why the pipeline uses multi-caller consensus (step 22) rather than trusting any single caller.
 
-### CNVnator: strengths and role
+### CNVpytor: strengths and role
 
-- **Large CNV specialist.** CNVnator uses read-depth signal only, making it the best tool for large copy number variants (>1 kb) including deletions, duplications, and aneuploidies.
-- **Complementary signal.** Because it uses a completely different detection method (depth binning) than Manta or Delly (paired-end and split-read), CNVnator's calls provide independent confirmation.
+- **Large CNV specialist.** CNVpytor is the maintained Python successor to CNVnator, using the same read-depth signal approach and making it the best tool for large copy number variants (>1 kb) including deletions, duplications, and aneuploidies.
+- **Complementary signal.** Because it uses a completely different detection method (depth binning) than Manta or Delly (paired-end and split-read), CNVpytor's calls provide independent confirmation.
 - **Limited SV types.** Only detects deletions and duplications. Does not call inversions, translocations, or insertions.
 
 ### Additional SV caller: TIDDIT
@@ -166,7 +166,7 @@ Manta is the primary SV caller because:
 | Quick SV scan | Manta only (~20-60 min) |
 | Balanced analysis | Manta + Delly with consensus merge (~3-5 hours) |
 | Maximum sensitivity | All three callers + consensus merge (~4-8 hours) |
-| Large CNV focus | CNVnator alone or CNVnator + Manta |
+| Large CNV focus | CNVpytor alone or CNVpytor + Manta |
 | Inversions / translocations | Delly (strongest for these SV types) |
 
 The consensus merge (step 22) keeps only SVs called by two or more callers, reducing false positives at the cost of losing some real single-caller-only events. For more thorough SV analysis, consider also running AnnotSV (step 5) on the consensus set.
@@ -182,7 +182,7 @@ Run all available callers and compare. This gives you the broadest view of your 
 **Recommended configuration:**
 - Alignment: minimap2 (speed)
 - SNP/indel: DeepVariant + GATK HaplotypeCaller + FreeBayes
-- SV: Manta + Delly + CNVnator with consensus merge (step 22)
+- SV: Manta + Delly + CNVpytor with consensus merge (step 22)
 
 **Time estimate:** ~12-24 hours total (callers can run in parallel after alignment).
 
@@ -218,5 +218,5 @@ Stick with the defaults. The default tools were chosen for the best single-tool 
 | Do I plan to use Strelka2? | Yes | Align with BWA-MEM2 (XS tag required) |
 | Do I have a GPU? | Yes | Run DeepVariant with GPU for ~3x speedup |
 | Am I analyzing a family/cohort? | Yes | Use GATK HC in GVCF mode for joint genotyping |
-| Am I only looking at structural variants? | Yes | Manta + Delly + CNVnator with consensus merge |
+| Am I only looking at structural variants? | Yes | Manta + Delly + CNVpytor with consensus merge |
 | Do I want results as fast as possible? | Yes | minimap2 + DeepVariant + Manta (defaults) |

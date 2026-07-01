@@ -162,10 +162,10 @@ if [ -d "$CPSR_DIR" ]; then
   fi
 fi
 
-# ---------- CNVnator (Step 18) ----------
-CNV_FILE="${SAMPLE_DIR}/cnvnator/${SAMPLE}_cnvs.txt"
+# ---------- CNVpytor (Step 18) ----------
+CNV_FILE="${SAMPLE_DIR}/cnvpytor/${SAMPLE}_cnvs.txt"
 if [ -f "$CNV_FILE" ]; then
-  echo "## Copy Number Variants (CNVnator)"
+  echo "## Copy Number Variants (CNVpytor)"
   echo "---"
   TOTAL_CNV=$(wc -l < "$CNV_FILE")
   SIG_CNV=$(awk '$5 < 0.01' "$CNV_FILE" | wc -l)
