@@ -91,16 +91,16 @@ docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "${PYTHON_IMAGE}" \
   python3 -c "
-import json, sys
+import json, sys, glob
 
-json_path = '/genome/${SAMPLE}/pharmcat/${SAMPLE}.report.json'
-alt_paths = [
+candidate_paths = [
+  '/genome/${SAMPLE}/pharmcat/${SAMPLE}.report.json',
   '/genome/${SAMPLE}/vcf/${SAMPLE}.report.json',
   '/genome/${SAMPLE}/pharmcat/report.json',
 ]
 
 data = None
-for path in [json_path] + alt_paths:
+for path in candidate_paths:
     try:
         with open(path) as f:
             data = json.load(f)
@@ -109,67 +109,88 @@ for path in [json_path] + alt_paths:
         continue
 
 if data is None:
-    # Try to find any JSON file
-    import glob
     for pattern in ['/genome/${SAMPLE}/pharmcat/*.json', '/genome/${SAMPLE}/vcf/*.json']:
-        files = glob.glob(pattern)
-        for f in files:
+        for fp in glob.glob(pattern):
             try:
-                with open(f) as fh:
+                with open(fp) as fh:
                     data = json.load(fh)
                 break
-            except:
+            except Exception:
                 continue
-        if data:
+        if data is not None:
             break
 
 if data is None:
     print('NO_JSON_FOUND')
     sys.exit(0)
 
-# Extract gene results — handle multiple PharmCAT JSON versions
-# NOTE: PharmCAT 3.x renamed 'wildtypeAllele' to 'referenceAllele' in JSON output.
-# This parser does not use that property, but downstream consumers should be aware.
-if 'genes' in data and isinstance(data['genes'], dict):
-    # PharmCAT 2.15+ format: genes -> {source -> {gene_name -> data}}
-    for source, gene_dict in data['genes'].items():
-        if not isinstance(gene_dict, dict):
+# NOTE: PharmCAT 3.x renamed some JSON fields (e.g. wildtypeAllele -> referenceAllele)
+# and may emit either a flat {gene -> data} or a nested {source -> {gene -> data}} 'genes'
+# map. Auto-detect both so this parser works across versions, and accept either
+# sourceDiplotypes or recommendationDiplotypes.
+def parse_gene(name, g):
+    if not isinstance(g, dict):
+        return None
+    dips = g.get('sourceDiplotypes') or g.get('recommendationDiplotypes') or []
+    if not dips:
+        return None
+    dip = dips[0]
+    a1 = (dip.get('allele1') or {}).get('name', '?')
+    a2 = (dip.get('allele2') or {}).get('name', '?')
+    diplotype = dip.get('label') or (a1 + '/' + a2)
+    phenos = dip.get('phenotypes') or []
+    phenotype = phenos[0] if phenos else dip.get('phenotype', 'N/A')
+    return (name, diplotype, phenotype)
+
+results = []
+genes = data.get('genes')
+if isinstance(genes, dict):
+    for key, val in genes.items():
+        if not isinstance(val, dict):
             continue
-        for gene_name, g in gene_dict.items():
-            dips = g.get('sourceDiplotypes', [])
-            if not dips:
-                continue
-            dip = dips[0]
-            a1_obj = dip.get('allele1')
-            a2_obj = dip.get('allele2')
-            a1 = a1_obj.get('name', '?') if a1_obj else '?'
-            a2 = a2_obj.get('name', '?') if a2_obj else '?'
-            diplotype = f'{a1}/{a2}'
-            phenotypes = dip.get('phenotypes', [])
-            phenotype = phenotypes[0] if phenotypes else 'N/A'
-            print(f'{gene_name}\t{diplotype}\t{phenotype}')
-        break  # Only use first source (CPIC)
-elif 'genes' in data and isinstance(data['genes'], list):
-    # PharmCAT older list format
-    for gene_entry in data['genes']:
-        gene = gene_entry.get('geneSymbol', gene_entry.get('gene', 'Unknown'))
-        diplotype = 'N/A'
-        phenotype = 'N/A'
-        src_dips = gene_entry.get('sourceDiplotypes', [])
-        if src_dips:
-            diplotype = src_dips[0].get('label', 'N/A')
-            phenotype = src_dips[0].get('phenotype', 'N/A')
-        if diplotype != 'N/A' or phenotype != 'N/A':
-            print(f'{gene}\t{diplotype}\t{phenotype}')
-elif 'geneResults' in data:
-    for gene_result in data['geneResults']:
-        gene = gene_result.get('gene', 'Unknown')
-        diplotype = gene_result.get('diplotype', 'N/A')
-        phenotype = gene_result.get('phenotype', 'N/A')
-        if diplotype or phenotype:
-            print(f'{gene}\t{diplotype}\t{phenotype}')
+        if 'sourceDiplotypes' in val or 'recommendationDiplotypes' in val:
+            r = parse_gene(key, val)            # flat: key is the gene
+            if r:
+                results.append(r)
+        else:
+            for gene_name, g in val.items():    # nested: key is the source
+                r = parse_gene(gene_name, g)
+                if r:
+                    results.append(r)
+elif isinstance(genes, list):
+    for entry in genes:
+        name = entry.get('geneSymbol', entry.get('gene', 'Unknown'))
+        r = parse_gene(name, entry)
+        if r:
+            results.append(r)
+        else:
+            dl = entry.get('diplotype', 'N/A')
+            ph = entry.get('phenotype', 'N/A')
+            if dl != 'N/A' or ph != 'N/A':
+                results.append((name, dl, ph))
+elif isinstance(data.get('geneResults'), list):
+    for gr in data['geneResults']:
+        results.append((gr.get('gene', 'Unknown'), gr.get('diplotype', 'N/A'), gr.get('phenotype', 'N/A')))
 else:
     print('UNKNOWN_FORMAT')
+    sys.exit(0)
+
+seen = set()
+deduped = []
+for g, d, p in results:
+    if g in seen:
+        continue
+    seen.add(g)
+    deduped.append((g, d, p))
+
+# FAIL LOUD: a recognized PharmCAT report that yields zero genes is a format break,
+# never a clean result — emit a sentinel so the report cannot say 'all clear'.
+if not deduped:
+    print('PARSE_EMPTY')
+    sys.exit(0)
+
+for g, d, p in deduped:
+    print(g + '\t' + d + '\t' + p)
 " 2>/dev/null > "${OUTDIR}/${SAMPLE}_phenotypes.tsv" || true
 
 # Generate recommendations
@@ -181,7 +202,7 @@ printf "%-12s %-25s %-35s\n" "────" "─────────" "─�
 
 if [ -f "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ] && [ -s "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ]; then
   while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
-    if [ "$GENE" = "NO_JSON_FOUND" ] || [ "$GENE" = "UNKNOWN_FORMAT" ]; then
+    if [ "$GENE" = "NO_JSON_FOUND" ] || [ "$GENE" = "UNKNOWN_FORMAT" ] || [ "$GENE" = "PARSE_EMPTY" ]; then
       echo "  WARNING: Could not parse PharmCAT JSON output." >> "$OUTPUT"
       break
     fi
@@ -196,7 +217,7 @@ echo "─────────────────────" >> "$OUTP
 echo "" >> "$OUTPUT"
 
 while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do
-  if [ -z "$GENE" ] || [ "$GENE" = "NO_JSON_FOUND" ] || [ "$GENE" = "UNKNOWN_FORMAT" ]; then
+  if [ -z "$GENE" ] || [ "$GENE" = "NO_JSON_FOUND" ] || [ "$GENE" = "UNKNOWN_FORMAT" ] || [ "$GENE" = "PARSE_EMPTY" ]; then
     continue
   fi
 
@@ -226,10 +247,13 @@ echo "─────────────────" >> "$OUTPUT"
 echo "" >> "$OUTPUT"
 # Check if PharmCAT parsing failed entirely
 PARSE_FAILED=false
-if [ -f "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ] && [ -s "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ]; then
+if [ ! -f "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ] || [ ! -s "${OUTDIR}/${SAMPLE}_phenotypes.tsv" ]; then
+  # No TSV, or an empty one, means nothing was parsed — never report that as "all clear".
+  PARSE_FAILED=true
+else
   FIRST_LINE=$(head -1 "${OUTDIR}/${SAMPLE}_phenotypes.tsv")
   case "$FIRST_LINE" in
-    NO_JSON_FOUND*|UNKNOWN_FORMAT*)
+    NO_JSON_FOUND*|UNKNOWN_FORMAT*|PARSE_EMPTY*)
       PARSE_FAILED=true
       ;;
   esac
@@ -237,8 +261,9 @@ fi
 
 UNCALLED=0
 if [ "$PARSE_FAILED" = true ]; then
-  echo "  WARNING: PharmCAT output could not be parsed. ALL genes are uncallable." >> "$OUTPUT"
-  echo "  No gene results can be trusted from this run." >> "$OUTPUT"
+  echo "  WARNING: PharmCAT output could not be parsed (no gene phenotypes extracted)." >> "$OUTPUT"
+  echo "  This is NOT a clean result — likely a PharmCAT output-format change." >> "$OUTPUT"
+  echo "  Consult the authoritative PharmCAT HTML report; no gene results can be trusted." >> "$OUTPUT"
   UNCALLED=1
 else
   while IFS=$'\t' read -r GENE DIPLOTYPE PHENOTYPE; do

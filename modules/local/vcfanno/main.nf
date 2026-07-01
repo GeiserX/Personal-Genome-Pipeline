@@ -17,7 +17,7 @@ process VCFANNO {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/vcfanno:0.3.7--he881be0_0'
+    container 'quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0'
 
     publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 

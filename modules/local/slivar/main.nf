@@ -190,7 +190,7 @@ except FileNotFoundError:
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: \$(slivar expr 2>&1 | head -1 | grep -oP '[\\d.]+' || echo '0.3.3')
+        slivar: \$(slivar expr 2>&1 | head -1 | grep -oP '[\\d.]+' || echo '0.3.4')
         bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
     END_VERSIONS
     """
@@ -204,7 +204,7 @@ except FileNotFoundError:
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: 0.3.3
+        slivar: 0.3.4
         bcftools: 1.21
     END_VERSIONS
     """

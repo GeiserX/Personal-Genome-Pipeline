@@ -21,7 +21,7 @@ Reads the BAM file and computes:
 
 ## Tool
 
-**mosdepth** v0.3.13 — fast BAM/CRAM depth calculation.
+**mosdepth** v0.3.14 — fast BAM/CRAM depth calculation.
 
 - Paper: Pedersen & Quinlan, Bioinformatics 2018 (doi:10.1093/bioinformatics/btx699)
 - Source: [github.com/brentp/mosdepth](https://github.com/brentp/mosdepth)
@@ -29,7 +29,7 @@ Reads the BAM file and computes:
 ## Docker Image
 
 ```
-quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0
+quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0
 ```
 
 ## Command

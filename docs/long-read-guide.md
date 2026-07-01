@@ -248,19 +248,19 @@ SV_VCF="${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" ./scripts/05-an
 
 | Tool | Image | Size |
 |---|---|---|
-| minimap2 | `quay.io/biocontainers/minimap2:2.28--he4a0461_0` | ~30 MB |
+| minimap2 | `quay.io/biocontainers/minimap2:2.31--h118bc1c_0` | ~30 MB |
 | samtools | `staphb/samtools:1.20` | ~200 MB |
-| Clair3 | `hkubal/clair3:v2.0.0` | ~3 GB (includes all models) |
-| Sniffles2 | `quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0` | ~200 MB |
+| Clair3 | `hkubal/clair3:v2.0.2` | ~3 GB (includes all models) |
+| Sniffles2 | `quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0` | ~200 MB |
 | DeepVariant | `google/deepvariant:1.6.0` | ~5 GB |
 
 Pre-pull images before your first run:
 
 ```bash
-docker pull quay.io/biocontainers/minimap2:2.28--he4a0461_0
+docker pull quay.io/biocontainers/minimap2:2.31--h118bc1c_0
 docker pull staphb/samtools:1.20
-docker pull hkubal/clair3:v2.0.0
-docker pull quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0
+docker pull hkubal/clair3:v2.0.2
+docker pull quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0
 ```
 
 ---
@@ -334,10 +334,10 @@ Long-read alignment uses more memory than short-read because the index is loaded
 
 ### "Clair3 model not found"
 
-The Docker image `hkubal/clair3:v2.0.0` bundles models at `/opt/models/`. If you get a model-not-found error:
+The Docker image `hkubal/clair3:v2.0.2` bundles models at `/opt/models/`. If you get a model-not-found error:
 
 1. Verify the image is pulled: `docker images | grep clair3`
-2. Check available models: `docker run --rm hkubal/clair3:v2.0.0 ls /opt/models/`
+2. Check available models: `docker run --rm hkubal/clair3:v2.0.2 ls /opt/models/`
 3. If your ONT chemistry is different (e.g., R9.4.1), look for a matching model in the container
 
 ### "Sniffles2 produces 0 SVs"

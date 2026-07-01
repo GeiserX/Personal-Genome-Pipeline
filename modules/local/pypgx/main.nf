@@ -15,7 +15,7 @@ process PYPGX {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0'
+    container 'quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0'
 
     publishDir { "${params.outdir}/${meta.id}/pypgx" }, mode: params.publish_dir_mode
 

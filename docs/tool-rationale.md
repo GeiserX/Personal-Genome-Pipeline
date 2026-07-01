@@ -12,7 +12,7 @@ For hands-on benchmarking instructions, see [benchmarking.md](benchmarking.md).
 |---|---|---|
 | **Script** | `scripts/02-alignment.sh` | `scripts/02a-alignment-bwamem2.sh` |
 | **Output directory** | `aligned/` | `aligned_bwamem2/` |
-| **Docker image** | `quay.io/biocontainers/minimap2:2.28` | `quay.io/biocontainers/bwa-mem2:2.2.1` |
+| **Docker image** | `quay.io/biocontainers/minimap2:2.31` | `quay.io/biocontainers/bwa-mem2:2.2.1` |
 | **Speed (30X WGS)** | ~1-2 hours | ~4-8 hours |
 | **Index build time** | ~30 minutes | ~1 hour |
 | **Index size** | ~7 GB (.mmi) | ~24 GB (multiple files) |
@@ -50,7 +50,7 @@ The alignment step is the single longest step in the pipeline when starting from
 |---|---|---|---|
 | **Script** | `scripts/03-deepvariant.sh` | `scripts/03a-gatk-haplotypecaller.sh` | `scripts/03b-freebayes.sh` |
 | **Output directory** | `vcf/` | `vcf_gatk/` | `vcf_freebayes/` |
-| **Docker image** | `google/deepvariant:1.6.0` | `broadinstitute/gatk:4.6.1.0` | `quay.io/biocontainers/freebayes:1.3.6` |
+| **Docker image** | `google/deepvariant:1.6.0` | `broadinstitute/gatk:4.6.2.0` | `quay.io/biocontainers/freebayes:1.3.6` |
 | **Algorithm** | Deep learning (CNN) | Local haplotype assembly + PairHMM | Bayesian haplotype-based |
 | **SNP F1 (30X)** | ~0.999 | ~0.998 | ~0.994 |
 | **Indel F1 (30X)** | ~0.994 | ~0.983 | ~0.960 |

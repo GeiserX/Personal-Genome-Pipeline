@@ -19,7 +19,7 @@ process MITO_VARIANTS {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'broadinstitute/gatk:4.6.1.0'
+    container 'broadinstitute/gatk:4.6.2.0'
 
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 

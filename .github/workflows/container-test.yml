@@ -29,11 +29,11 @@ jobs:
           # Representative subset — one per registry/publisher to catch auth/rename issues
           - image: staphb/bcftools:1.21
             cmd: "bcftools --version"
-          - image: quay.io/biocontainers/minimap2:2.28--he4a0461_0
+          - image: quay.io/biocontainers/minimap2:2.31--h118bc1c_0
             cmd: "minimap2 --version"
           - image: brentp/duphold:v0.2.3
             cmd: "duphold --version"
-          - image: getwilds/annotsv:3.4.4
+          - image: quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
             cmd: "AnnotSV --version"
           - image: broadinstitute/picard:3.4.0
             cmd: "java -version"
@@ -41,10 +41,10 @@ jobs:
             cmd: "pharmcat_pipeline --version"
           - image: python:3.11
             cmd: "python3 --version"
-          - image: quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
+          - image: quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
             cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
           # slivar uses staphb/bcftools + pre-built binary (no dedicated container)
-          - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
+          - image: quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
             cmd: "pypgx --version"
     steps:
       - name: Pull ${{ matrix.image }}

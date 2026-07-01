@@ -36,7 +36,7 @@ The gnomAD resource and Panel of Normals help reduce false positives significant
 ## Docker Image
 
 ```
-broadinstitute/gatk:4.6.1.0
+broadinstitute/gatk:4.6.2.0
 ```
 
 Already used in step 20 (mitochondrial analysis). No additional download needed.

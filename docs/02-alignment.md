@@ -11,7 +11,7 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 - **samtools** — sort + index the alignment
 
 ## Docker Images
-- `quay.io/biocontainers/minimap2:2.28--he4a0461_0` (minimap2 aligner)
+- `quay.io/biocontainers/minimap2:2.31--h118bc1c_0` (minimap2 aligner)
 - `staphb/samtools:1.20` (samtools sort + index)
 
 ## Prerequisites

@@ -17,7 +17,7 @@ BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
 OUTPUT_DIR="${SAMPLE_DIR}/sv_sniffles"
 
-SNIFFLES_IMAGE="quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
+SNIFFLES_IMAGE="quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0"
 BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 echo "=== Sniffles2 SV Calling: ${SAMPLE} ==="

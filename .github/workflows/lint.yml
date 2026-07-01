@@ -67,21 +67,18 @@ jobs:
         run: |
           echo "Scanning for personal data in scripts and docs..."
           FAIL=0
-          # Check for common personal path patterns
-          if grep -rn '/mnt/user\|/home/[a-z]' scripts/ docs/ 2>/dev/null; then
-            echo "FAIL: Found personal paths in scripts/docs"
+          # Check for personal/absolute home paths
+          if grep -rn '/mnt/user\|/home/[a-z]\|/Users/[a-z]' scripts/ docs/ 2>/dev/null; then
+            echo "FAIL: Found personal/absolute home paths in scripts/docs"
             FAIL=1
           fi
-          # Check for hardcoded hostnames
-          if grep -rn 'internal-host\|internal-host\|ts\.net' scripts/ docs/ 2>/dev/null; then
-            echo "FAIL: Found hardcoded hostnames"
+          # Check for private IPs or internal/Tailscale hostnames
+          if grep -rnE '192\.168\.[0-9]|\.ts\.net' scripts/ docs/ 2>/dev/null; then
+            echo "FAIL: Found private IPs or internal hostnames"
             FAIL=1
           fi
-          # Check for hardcoded sample names (but allow 'your_name' placeholders)
-          if grep -rn 'SAMPLE=sample1\|SAMPLE=sample2' scripts/ docs/ 2>/dev/null; then
-            echo "FAIL: Found hardcoded sample names"
-            FAIL=1
-          fi
+          # Sample names in examples must use generic placeholders (your_name, sampleN, $SAMPLE),
+          # never real names. (Maintainers can add their own identifiers to a local pre-commit hook.)
           if [ "$FAIL" -eq 1 ]; then
             exit 1
           fi

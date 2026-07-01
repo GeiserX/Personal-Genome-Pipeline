@@ -835,8 +835,8 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 ```bash
 # Inside WSL2
 mkdir -p ~/genome_data
-# Move or copy data from /mnt/c/ to ~/genome_data/
-cp -r /mnt/c/Users/you/genome_data/* ~/genome_data/
+# Move or copy data from /mnt/c/ to ~/genome_data/ (replace <windows-username>)
+cp -r "/mnt/c/Users/<windows-username>/genome_data/"* ~/genome_data/
 export GENOME_DIR=~/genome_data
 ```
 

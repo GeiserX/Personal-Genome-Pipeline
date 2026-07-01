@@ -75,45 +75,92 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
 
 gene_results = []  # list of (gene, diplotype, phenotype)
 
-if "genes" in data and isinstance(data["genes"], dict):
-    # PharmCAT 3.x format: genes -> {gene_name -> gene_data}
-    for gene_name, g in data["genes"].items():
-        if not isinstance(g, dict):
+def _parse_gene(name, g):
+    # A PharmCAT gene-data object carries a diplotype array. 3.x renamed some
+    # fields, so accept either sourceDiplotypes or recommendationDiplotypes,
+    # and a combined 'label' or per-allele names for the diplotype string.
+    if not isinstance(g, dict):
+        return None
+    dips = g.get("sourceDiplotypes") or g.get("recommendationDiplotypes") or []
+    if not dips:
+        return None
+    dip = dips[0]
+    a1 = (dip.get("allele1") or {}).get("name", "?")
+    a2 = (dip.get("allele2") or {}).get("name", "?")
+    diplotype = dip.get("label") or f"{a1}/{a2}"
+    phenos = dip.get("phenotypes") or []
+    phenotype = phenos[0] if phenos else dip.get("phenotype", "N/A")
+    return (name, diplotype, phenotype)
+
+genes = data.get("genes")
+if isinstance(genes, dict):
+    # Auto-detect the dict shape so this works regardless of PharmCAT version:
+    #   flat   (3.x):     genes -> {gene_name -> gene_data}
+    #   nested (2.15.x):  genes -> {source -> {gene_name -> gene_data}}
+    # A value that itself carries a diplotype array is a gene; otherwise its
+    # values are the genes (a source container).
+    for key, val in genes.items():
+        if not isinstance(val, dict):
             continue
-        dips = g.get("sourceDiplotypes", [])
-        if not dips:
-            continue
-        dip = dips[0]
-        a1_obj = dip.get("allele1")
-        a2_obj = dip.get("allele2")
-        a1 = a1_obj.get("name", "?") if a1_obj else "?"
-        a2 = a2_obj.get("name", "?") if a2_obj else "?"
-        diplotype = f"{a1}/{a2}"
-        phenotypes = dip.get("phenotypes", [])
-        phenotype = phenotypes[0] if phenotypes else "N/A"
-        gene_results.append((gene_name, diplotype, phenotype))
-elif "genes" in data and isinstance(data["genes"], list):
+        if "sourceDiplotypes" in val or "recommendationDiplotypes" in val:
+            r = _parse_gene(key, val)              # flat: key is the gene
+            if r:
+                gene_results.append(r)
+        else:
+            for gene_name, g in val.items():       # nested: key is the source
+                r = _parse_gene(gene_name, g)
+                if r:
+                    gene_results.append(r)
+elif isinstance(genes, list):
     # PharmCAT older list format
-    for gene_entry in data["genes"]:
+    for gene_entry in genes:
         gene = gene_entry.get("geneSymbol", gene_entry.get("gene", "Unknown"))
-        diplotype = "N/A"
-        phenotype = "N/A"
-        src_dips = gene_entry.get("sourceDiplotypes", [])
-        if src_dips:
-            diplotype = src_dips[0].get("label", "N/A")
-            phenotype = src_dips[0].get("phenotype", "N/A")
-        if diplotype != "N/A" or phenotype != "N/A":
-            gene_results.append((gene, diplotype, phenotype))
-elif "geneResults" in data:
+        r = _parse_gene(gene, gene_entry)
+        if r:
+            gene_results.append(r)
+        else:
+            diplotype = gene_entry.get("diplotype", "N/A")
+            phenotype = gene_entry.get("phenotype", "N/A")
+            if diplotype != "N/A" or phenotype != "N/A":
+                gene_results.append((gene, diplotype, phenotype))
+elif isinstance(data.get("geneResults"), list):
     for gene_result in data["geneResults"]:
-        gene = gene_result.get("gene", "Unknown")
-        diplotype = gene_result.get("diplotype", "N/A")
-        phenotype = gene_result.get("phenotype", "N/A")
-        if diplotype or phenotype:
-            gene_results.append((gene, diplotype, phenotype))
+        gene_results.append((gene_result.get("gene", "Unknown"),
+                             gene_result.get("diplotype", "N/A"),
+                             gene_result.get("phenotype", "N/A")))
 else:
     print("ERROR: Unknown PharmCAT JSON format — no gene results extracted", file=sys.stderr)
     print("  Available top-level keys: " + ", ".join(data.keys() if data else []), file=sys.stderr)
+    sys.exit(1)
+
+# Dedupe by gene (the nested shape can repeat a gene across sources); keep first.
+_seen = set()
+_deduped = []
+for _g, _d, _p in gene_results:
+    if _g in _seen:
+        continue
+    _seen.add(_g)
+    _deduped.append((_g, _d, _p))
+gene_results = _deduped
+
+# FAIL LOUD: a recognized PharmCAT report that yields zero genes means the JSON
+# structure matched no known shape — it is NOT a clean "all clear". PharmCAT always
+# reports its core pharmacogenes, so an empty extraction is a parser/format break.
+if not gene_results:
+    print("ERROR: PharmCAT JSON recognized but no gene phenotypes were extracted.", file=sys.stderr)
+    print("  Refusing to emit a false 'all clear' report — likely a PharmCAT format change.", file=sys.stderr)
+    with open(recommendations_path, "w") as out:
+        out.write("Pharmacogenomic Drug Recommendations\\n")
+        out.write("=====================================\\n")
+        out.write(f"Sample: {sample}\\n")
+        out.write(f"Date: {date.today().isoformat()}\\n\\n")
+        out.write("!! PARSING FAILED -- RESULTS CANNOT BE TRUSTED !!\\n")
+        out.write("PharmCAT produced output, but its JSON structure did not match any\\n")
+        out.write("known format, so NO gene phenotypes could be extracted. This is NOT a\\n")
+        out.write("clean result. Consult the authoritative PharmCAT HTML report directly,\\n")
+        out.write("and report this as a pipeline bug (PharmCAT output-format change).\\n")
+    with open(phenotypes_path, "w") as f:
+        f.write("Gene\\tDiplotype\\tPhenotype\\n")
     sys.exit(1)
 
 # --- Write phenotypes TSV ---

@@ -325,7 +325,7 @@ else
   else
     warn "GATK sequence dictionary not found at: ${DICT}"
     echo "       Some tools (GATK Mutect2/step 20) require it. Generate with:"
-    echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" broadinstitute/gatk:4.6.1.0 \\"
+    echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" broadinstitute/gatk:4.6.2.0 \\"
     echo "         gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38.fasta"
   fi
 fi

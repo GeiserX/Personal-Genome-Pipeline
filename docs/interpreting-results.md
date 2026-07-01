@@ -185,6 +185,25 @@ The output VCF lists each tested locus with the number of repeats found. Key loc
 
 **"ALL CLEAR"** means no locus exceeded its clearly pathogenic threshold. Intermediate-range results should be discussed with a genetic counselor.
 
+### Stranger Annotation (Step 9b)
+
+Step 9b adds a `STR_STATUS` field to each locus in the VCF so you do not need to look up thresholds manually:
+
+| STR_STATUS | Meaning |
+|---|---|
+| `normal` | Repeat count is within the established normal range |
+| `pre_mutation` | Elevated repeat count; not currently disease-causing but carries risk of expansion in offspring or late-onset carrier effects (e.g. FXTAS, FXPOI for FMR1) |
+| `full_mutation` | Repeat count exceeds the pathogenic threshold for this locus |
+
+The `Disease`, `OMIM`, `Inheritance`, `NormalMax`, and `PathologicMin` INFO fields give the clinical context for each locus. Use a VCF viewer or `bcftools query` to extract them:
+
+```bash
+bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/NormalMax\t%INFO/PathologicMin\n' \
+    expansion_hunter/<sample>_eh_stranger.vcf
+```
+
+`full_mutation` at any locus warrants follow-up with a clinical geneticist. Short-read WGS has limited sizing accuracy for very large expansions (>150 repeats), so confirmatory testing may be recommended.
+
 ---
 
 ## Telomere Length (Step 10)

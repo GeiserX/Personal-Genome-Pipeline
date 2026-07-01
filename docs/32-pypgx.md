@@ -14,14 +14,14 @@ pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1,
 
 ## Tool
 
-- **pypgx** v0.26.0 (Sboner Lab, Weill Cornell Medicine)
+- **pypgx** v0.27.0 (Sboner Lab, Weill Cornell Medicine)
 - License: Apache-2.0 (GPL-3.0 compatible)
 - Publication: [Lee et al., 2019](https://doi.org/10.1002/cpt.1552)
 
 ## Docker Image
 
 ```
-quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
+quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
 ```
 
 ## Prerequisites

@@ -27,6 +27,8 @@ jobs:
           java-version: '17'
 
       - uses: nf-core/setup-nextflow@b4ec1bc7c16a94435159de94a05253542fddf6ef # v3.0.0
+        with:
+          version: "25.10.4"  # pin the validated version (24.x/26.x fail the strict parser — see docs/lessons-learned.md)
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -57,6 +59,9 @@ jobs:
           report.enabled = false
           docker.userEmulation = false
           docker.runOptions = '-u 0:0'
+          // Cap resources to the GitHub-hosted runner (4 CPUs): some process
+          // labels request more than fits; resourceLimits is the NF-native cap.
+          process.resourceLimits = [ cpus: 2, memory: '6.GB', time: '1.h' ]
           CICONF
           nextflow run main.nf -profile test,docker -stub -c ci.config
 

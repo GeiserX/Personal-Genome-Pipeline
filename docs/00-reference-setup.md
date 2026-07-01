@@ -290,7 +290,7 @@ Pull all images in advance to avoid download delays during analysis:
 
 ```bash
 # Core pipeline
-docker pull quay.io/biocontainers/minimap2:2.28--he4a0461_0
+docker pull quay.io/biocontainers/minimap2:2.31--h118bc1c_0
 docker pull staphb/samtools:1.20
 docker pull staphb/bcftools:1.21
 docker pull google/deepvariant:1.6.0
@@ -302,7 +302,7 @@ docker pull quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
 docker pull brentp/duphold:v0.2.3
 
 # Annotation
-docker pull getwilds/annotsv:3.4.4
+docker pull quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
 docker pull ensemblorg/ensembl-vep:release_112.0
 docker pull sigven/pcgr:2.2.5
 
@@ -314,24 +314,24 @@ docker pull quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
 docker pull lgalarno/telomerehunter:latest
 docker pull jtb114/haplogrep3:latest
 docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
-docker pull quay.io/biocontainers/goleft:0.2.4--h9ee0642_1
-docker pull broadinstitute/gatk:4.6.1.0
+docker pull quay.io/biocontainers/goleft:0.2.6--he881be0_1
+docker pull broadinstitute/gatk:4.6.2.0
 
 # QC & reporting
-docker pull quay.io/biocontainers/fastp:1.3.1--h43da1c4_0
-docker pull quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0
-docker pull quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0
+docker pull quay.io/biocontainers/fastp:1.3.6--h43da1c4_0
+docker pull quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0
+docker pull quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
 
 # Annotation enrichment (v0.4.0)
-docker pull quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
-docker pull quay.io/biocontainers/slivar:0.3.3--h5f107b1_0
-docker pull quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
+docker pull quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
+docker pull quay.io/biocontainers/slivar:0.3.4--hb56abc1_0
+docker pull quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
 
 # Alternative / new callers
 docker pull dancooke/octopus:0.7.4
 docker pull quay.io/biocontainers/gridss:2.13.2--h96c455f_6
-docker pull hkubal/clair3:v2.0.0
-docker pull quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0
+docker pull hkubal/clair3:v2.0.2
+docker pull quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0
 ```
 
 ## Alternative Callers (Optional, for Benchmarking)
@@ -362,7 +362,7 @@ GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If y
 ```bash
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  broadinstitute/gatk:4.6.1.0 \
+  broadinstitute/gatk:4.6.2.0 \
   gatk CreateSequenceDictionary \
     -R /genome/reference/Homo_sapiens_assembly38.fasta
 ```

@@ -61,7 +61,7 @@ echo "Running fastp (adapter trimming + quality filtering)..."
 docker run --rm --user root \
   --cpus "${THREADS}" --memory 4g \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/fastp:1.3.1--h43da1c4_0 \
+  quay.io/biocontainers/fastp:1.3.6--h43da1c4_0 \
   fastp \
     -i "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
     -I "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \

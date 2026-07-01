@@ -40,7 +40,7 @@ If only chr-prefixed databases are present (no CADD), a single pass is used.
 ## Docker Image
 
 ```
-quay.io/biocontainers/vcfanno:0.3.7--he881be0_0
+quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
 ```
 
 Also uses the bcftools image for bgzip/tabix/chr renaming operations.

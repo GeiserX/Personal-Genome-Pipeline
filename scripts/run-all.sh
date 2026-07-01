@@ -251,8 +251,21 @@ else
   echo "  WARNING: Manta failed — skipping duphold and AnnotSV."
 fi
 
+# Wait for ExpansionHunter before running Stranger annotation
+PID_STRANGER=""
+if wait "$PID_EH" 2>/dev/null; then
+  echo "  ExpansionHunter complete. Running STR clinical annotation..."
+
+  echo "  [B2b] Stranger STR clinical annotation..."
+  _throttle; bash "${SCRIPT_DIR}/09b-stranger.sh" "$SAMPLE" &
+  PID_STRANGER=$!
+else
+  PHASE3_FAIL=$((PHASE3_FAIL + 1))
+  echo "  WARNING: ExpansionHunter failed — skipping Stranger annotation."
+fi
+
 # Wait for remaining Phase 3 jobs
-for PID in $PID_EH $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV; do
+for PID in $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVNATOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV $PID_STRANGER; do
   [ -z "$PID" ] && continue
   wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
 done

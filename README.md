@@ -20,12 +20,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
-  <img src="https://img.shields.io/badge/analysis%20steps-34-f97316?style=flat-square" alt="34 steps">
+  <img src="https://img.shields.io/badge/analysis%20steps-35-f97316?style=flat-square" alt="35 steps">
   <img src="https://img.shields.io/badge/data%20privacy-local%20processing-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="Local Processing">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 34 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 35 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
 **Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
 
@@ -130,27 +130,28 @@ graph LR
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](docs/01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
-| 1b | [QC & Trimming](docs/01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.1` | ~15-30 min | Recommended |
-| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `quay.io/biocontainers/minimap2:2.28` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
+| 1b | [QC & Trimming](docs/01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.6` | ~15-30 min | Recommended |
+| 2 | [Alignment](docs/02-alignment.md) | minimap2 + samtools | `quay.io/biocontainers/minimap2:2.31` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
 | 3 | [Variant Calling](docs/03-variant-calling.md) | DeepVariant | `google/deepvariant:1.6.0` | ~2-4 hr | Yes |
 | 4 | [Structural Variants](docs/04-structural-variants.md) | Manta | `quay.io/biocontainers/manta:1.6.0` | ~20 min | Recommended |
-| 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `getwilds/annotsv:3.4.4` | ~10 min | If step 4 run |
+| 5 | [SV Annotation](docs/05-annotsv.md) | AnnotSV | `quay.io/biocontainers/annotsv:3.5.10` | ~10 min | If step 4 run |
 | 6 | [ClinVar Screen](docs/06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
 | 7 | [Pharmacogenomics](docs/07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:3.2.0` | ~10 min | Yes |
 | 8 | [HLA Typing](docs/08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
 | 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
+| 9b | [STR Annotation](docs/09b-stranger.md) | Stranger | `quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0` | ~1 min | If step 9 run |
 | 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
 | 11 | [ROH Analysis](docs/11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
 | 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3:latest`\* | ~1 min | Optional |
 | 13 | [VEP Annotation](docs/13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_112.0` | ~2-4 hr | Recommended |
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
 | 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |
-| 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.4` | ~5 sec | Recommended |
-| 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.13--hba6dcaf_0` | ~10 min | Recommended |
+| 16 | [Coverage QC](docs/16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.6` | ~5 sec | Recommended |
+| 16b | [Coverage Stats](docs/16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` | ~10 min | Recommended |
 | 17 | [Cancer Predisposition](docs/17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
 | 18 | [CNV Calling](docs/18-cnvnator.md) | CNVnator | `quay.io/biocontainers/cnvnator:0.4.1` | ~2-4 hr | Optional |
 | 19 | [SV Calling (Delly)](docs/19-delly.md) | Delly | `quay.io/biocontainers/delly:1.7.3` | ~2-4 hr | Optional |
-| 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~15-30 min | Optional |
+| 20 | [Mitochondrial](docs/20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~15-30 min | Optional |
 
 #### Post-Processing Steps
 
@@ -165,14 +166,14 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 25 | [Polygenic Risk Scores](docs/25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
 | 26 | [Ancestry SNPs](docs/26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
 | 27 | [CPIC Recommendations](docs/27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
-| 28 | [MultiQC Report](docs/28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.33` | ~1 min | Recommended |
-| 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.1.0` | ~2-6 hr | Experimental |
-| 30 | [Annotation Enrichment](docs/30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.7` | ~5-15 min | If step 13 run |
-| 31 | [Variant Prioritization](docs/31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.3` | ~5-10 min | If step 13 run |
-| 32 | [pypgx Pharmacogenomics](docs/32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.26.0` | ~20-40 min | Recommended |
+| 28 | [MultiQC Report](docs/28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.35` | ~1 min | Recommended |
+| 29 | [Somatic Variants](docs/29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~2-6 hr | Experimental |
+| 30 | [Annotation Enrichment](docs/30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.9` | ~5-15 min | If step 13 run |
+| 31 | [Variant Prioritization](docs/31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.4` | ~5-10 min | If step 13 run |
+| 32 | [pypgx Pharmacogenomics](docs/32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.27.0` | ~20-40 min | Recommended |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
-**Full analysis:** All 33 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
+**Full analysis:** All 34 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
 
 #### Alternative Tools (Benchmarking)
 
@@ -295,7 +296,7 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -
 
 # Enable database-requiring tools (VEP, CPSR, ClinVar, ExpansionHunter)
 nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
-    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,pypgx,ancestry' \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,stranger,pypgx,ancestry' \
     --vep_cache /path/to/vep_cache \
     --pcgr_data /path/to/pcgr_data \
     --vep_cache_cpsr /path/to/vep_cache_113 \

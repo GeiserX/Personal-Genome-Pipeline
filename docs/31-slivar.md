@@ -16,7 +16,7 @@ slivar (by Brent Pedersen, author of vcfanno, mosdepth, duphold) is a streaming 
 ## Docker Images
 
 ```text
-quay.io/biocontainers/slivar:0.3.3--h5f107b1_0    # compound het detection
+quay.io/biocontainers/slivar:0.3.4--hb56abc1_0    # compound het detection
 staphb/bcftools:1.21                                # variant filtering via split-vep
 ```
 

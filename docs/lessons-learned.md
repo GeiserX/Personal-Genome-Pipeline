@@ -33,7 +33,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 ## Tool-Specific Issues
 
 ### TelomereHunter: Permission denied
-- **Failed:** `OSError: [Errno 13] Permission denied: '/output/sample1'` when writing output (sample name in error will vary)
+- **Failed:** `OSError: [Errno 13] Permission denied: '/output/<sample>'` when writing output (the sample name in the error path will vary)
 - **Fix:** Add `--user root` flag to `docker run`
 
 ### TelomereHunter: pip install on host fails
@@ -341,3 +341,16 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **NAT2 calling:** PharmCAT 3.x includes improved NAT2 acetylator status calling
 - **BCF support:** Preprocessor now accepts BCF input files directly (no conversion needed)
 - **Single-gene calling:** New `-g` flag allows running PharmCAT on a single gene (useful for targeted re-analysis)
+
+## Nextflow version compatibility (2026-06)
+
+### The pipeline runs cleanly on Nextflow 25.10.4; 24.x and 26.x currently fail at parse time
+- **Observed:** A full run requires **Nextflow 25.10.4** (the validated version). Other versions fail before any process executes:
+  - **26.04.4** — the strict config parser rejects top-level `def`/variable declarations in `nextflow.config` ("Variable declarations cannot be mixed with config statements"), and then the `def check_max(...)` function in `conf/base.config` ("Unexpected input: '('").
+  - **24.04.4** — the DSL2 module parser flags the optional annotation inputs in `modules/local/vcfanno/main.nf` as "Variable already defined in the process scope" (`cadd_snv`/`cadd_indel`/`spliceai_*`/`revel`/`alphamissense`, referenced inside the `def has_nochr`/`def has_chr` expressions). 25.10.4 tolerates this; 24.04.4 does not.
+- **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. Full NF-26 support is still pending: migrating `conf/base.config`'s `check_max()` → `process.resourceLimits` and refactoring the vcfanno input scope (tracked in `docs/sota-update-2026-06.md`). Pin `NXF_VER=25.10.4` to run.
+- **Tip:** `NXF_VER=25.10.4 nextflow run main.nf ...`. The `manifest.nextflowVersion` floor is raised to `25.10.0` so the known-broken 24.x is rejected up front; 26.x is gated by comment until the migration lands.
+
+### CYP2D6 structural alleles: pypgx resolves *5 deletions where Cyrius and PharmCAT return "No Result"
+- **Observed:** For a homozygous CYP2D6 whole-gene deletion (*5/*5), **Cyrius can return `None/None`** (Total_CN null — its copy-number consensus cannot resolve the locus) and **PharmCAT reports `Unknown/Unknown — No Result`** (it does not call the structural *5 from a plain VCF), while **pypgx (BAM-based, SV-aware) resolves `*5/*5 — Poor Metabolizer` with `SV_detected: Yes`.**
+- **Impact:** Updates the older "rely on lab calls" note above — for CYP2D6 deletion/duplication alleles, pypgx on the BAM is the authoritative caller. Do **not** read a Cyrius `None/None` as "no deletion." Keep all three callers (PharmCAT star alleles, Cyrius, pypgx) and reconcile; pypgx wins for CNV/SV-driven star alleles (a Poor Metabolizer has no functional CYP2D6 → major impact on CYP2D6-cleared drugs such as codeine/tramadol/tamoxifen).

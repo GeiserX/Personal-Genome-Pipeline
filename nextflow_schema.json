@@ -74,7 +74,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (ancestry, pypgx, SV callers) are opt-in.",
+                    "description": "Comma-separated list of tools to run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (stranger, ancestry, pypgx, SV callers) are opt-in.",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
