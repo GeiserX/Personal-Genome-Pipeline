@@ -23,6 +23,9 @@ process CNVPYTOR {
 
     container 'quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0'
 
+    // Publish the human-readable CNV table (the normalized VCF is published by CNVPYTOR_VCF)
+    publishDir { "${params.outdir}/${meta.id}/cnvpytor" }, mode: params.publish_dir_mode, pattern: "*_cnvs.txt"
+
     input:
     tuple val(meta), path(bam), path(bai)
     path(cnvpytor_resources)
@@ -39,7 +42,10 @@ process CNVPYTOR {
     def bin_size = task.ext.bin_size ?: 1000
     """
     # Stage the pinned GC/mask resources into cnvpytor's data dir (the container
-    # ships without them and its -download is broken in 1.3.2).
+    # ships without them and its -download is broken in 1.3.2). This writes into
+    # the image's site-packages, so this step needs a writable container FS —
+    # run with the docker profile (the shell script bind-mounts instead, and
+    # Singularity's read-only image is not supported for this step).
     DATADIR=\$(python -c 'import cnvpytor, os; print(os.path.dirname(cnvpytor.__file__) + "/data")')
     cp -f ${cnvpytor_resources}/*.pytor "\$DATADIR"/
 

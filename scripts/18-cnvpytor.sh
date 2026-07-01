@@ -39,10 +39,19 @@ for f in "$BAM" "${BAM}.bai"; do
     exit 1
   fi
 done
-# hg38 GC/mask resources must be present and non-empty (see docs/00-reference-setup.md)
+# hg38 GC/mask are the files actually used and must be present + non-empty.
 for f in gc_hg38.pytor mask_hg38.pytor; do
   if [ ! -s "${CNVPYTOR_DATA}/${f}" ]; then
     echo "ERROR: CNVpytor resource '${f}' missing or empty in ${CNVPYTOR_DATA}." >&2
+    echo "       Download the pinned resource files first — see docs/00-reference-setup.md." >&2
+    exit 1
+  fi
+done
+# CNVpytor's global resource check aborts -his unless EVERY genome's files exist,
+# so the other five must be present too (even though only hg38 is read).
+for f in gc_hg19.pytor mask_hg19.pytor gc_chm13v2.0.pytor gc_chm13v1.1.pytor gc_kn99.pytor; do
+  if [ ! -e "${CNVPYTOR_DATA}/${f}" ]; then
+    echo "ERROR: CNVpytor resource '${f}' missing in ${CNVPYTOR_DATA} (all 7 resource files must exist)." >&2
     echo "       Download the pinned resource files first — see docs/00-reference-setup.md." >&2
     exit 1
   fi

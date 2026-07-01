@@ -215,7 +215,7 @@ docker container prune
 docker image prune
 
 # Delete intermediate files from completed steps
-rm -f ${GENOME_DIR}/${SAMPLE}/cnvnator/*.root       # 5-15 GB each
+rm -f ${GENOME_DIR}/${SAMPLE}/cnvpytor/*.pytor      # a few GB each
 rm -f ${GENOME_DIR}/${SAMPLE}/delly/*.bcf            # After VCF conversion
 ```
 
@@ -227,7 +227,7 @@ rm -f ${GENOME_DIR}/${SAMPLE}/delly/*.bcf            # After VCF conversion
 | BAM (step 2) | 80-120 GB | 210 GB |
 | VCF + analyses | 10-30 GB | 240 GB |
 | VEP output | 2-5 GB | 245 GB |
-| CNVnator ROOT file | 5-15 GB | 260 GB |
+| CNVpytor .pytor file | 2-5 GB | 250 GB |
 | **Recommended free** | | **500 GB** |
 
 ---
@@ -707,26 +707,28 @@ docker run ... sigven/cpsr:2.0.0 ...
 
 ---
 
-### Step 18: CNVnator empty ROOT file
+### Step 18: CNVpytor missing resources or empty output
 
-**Symptom:** CNVnator steps 2-5 fail because the ROOT file from step 1 is empty or corrupt. Or the final output has 0 CNV calls.
+**Symptom:** `cnvpytor -his` aborts with "Some reference genome resource files are missing", or the final output has 0 CNV calls.
 
 **Common causes:**
-1. **BAM path wrong inside container.** The path must be the containerized path (`/genome/...`), not the host path.
-2. **ROOT file not writable.** Add `--user root`.
-3. **BAM chromosome naming mismatch.** CNVnator needs chromosomes matching the reference FASTA.
+1. **GC/mask resources not staged.** The 1.3.2 biocontainer ships without them and its `-download` is broken, so the pinned files must be present at `${GENOME_DIR}/reference/cnvpytor/` and bind-mounted (see [00-reference-setup.md](00-reference-setup.md)). **All seven** files must exist or the resource check aborts.
+2. **`.pytor` not writable / data dir read-only.** Add `--user root`; the step needs a writable container FS (docker).
+3. **BAM chromosome naming mismatch.** CNVpytor inherits chromosome names from the BAM header — an hg38 BAM must use `chr1`-style names.
 
 **Diagnosis:**
 ```bash
-# Check ROOT file size (should be several GB for 30X WGS)
-ls -lh ${GENOME_DIR}/${SAMPLE}/cnvnator/${SAMPLE}.root
-# If < 1 MB, step 1 (-tree) failed silently.
+# Confirm all 7 pinned resource files are present
+ls -lh ${GENOME_DIR}/reference/cnvpytor/
+# Check the .pytor size (should be several GB for 30X WGS)
+ls -lh ${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}.pytor
 
-# Verify the image tag exists before running
-docker pull quay.io/biocontainers/cnvnator:0.4.1--py312h99c8fb2_11
+# Re-verify the container data path for the pinned image (mount target)
+docker run --rm quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0 \
+  python -c 'import cnvpytor, os; print(os.path.dirname(cnvpytor.__file__) + "/data")'
 ```
 
-**Fix:** Re-run step 1 with verbose output and confirm the BAM path resolves correctly inside the container.
+**Fix:** Download the pinned resource files (docs/00-reference-setup.md), then re-run. Confirm the BAM path resolves to the containerized `/genome/...` path.
 
 ---
 
@@ -814,7 +816,7 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 | minimap2 alignment | 1-2 hr | 3-6 hr | 3x |
 | VEP annotation | 2-4 hr | 4-8 hr | 2x |
 | Manta | 20 min | 1-2 hr | 3-4x |
-| CNVnator | 2-4 hr | 6-12 hr | 3x |
+| CNVpytor | 1-3 hr | 3-8 hr | 3x |
 | bcftools steps | 1-5 min | 2-10 min | 2x |
 
 **Mitigation strategies:**
@@ -891,7 +893,7 @@ docker stats --no-stream
 | 9 (ExpansionHunter) | 2 | 2g | |
 | 13 (VEP) | 2 | 4g | Set `--fork 2` to match |
 | 17 (CPSR) | 2 | 4g | |
-| 18 (CNVnator) | 2 | 4g | |
+| 18 (CNVpytor) | 4 | 8g | |
 | 19 (Delly) | 2 | 4g | |
 
 ---
@@ -916,7 +918,7 @@ PARALLEL after Step 3 completes (all independent):
   ├─ Step 14 (imputation)   ← needs VCF
   ├─ Step 16 (indexcov)      ← needs BAM index only
   ├─ Step 17 (CPSR)         ← needs VCF
-  ├─ Step 18 (CNVnator)     ← needs BAM
+  ├─ Step 18 (CNVpytor)     ← needs BAM
   ├─ Step 19 (Delly)        ← needs BAM
   └─ Step 20 (Mutect2 mito) ← needs BAM
 

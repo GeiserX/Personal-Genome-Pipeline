@@ -59,7 +59,8 @@ workflow SV {
     ch_cnvpytor_calls = Channel.empty()
     ch_cnvpytor_vcf   = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cnvpytor')) {
-        ch_cnvpytor_res   = Channel.fromPath(params.cnvpytor_resources, checkIfExists: true)
+        // value channel so the pinned resources broadcast to every sample (not just the first)
+        ch_cnvpytor_res   = Channel.value(file(params.cnvpytor_resources, checkIfExists: true))
         CNVPYTOR(ch_bam, ch_cnvpytor_res)
         ch_cnvpytor_calls = CNVPYTOR.out.cnv_calls
         CNVPYTOR_VCF(CNVPYTOR.out.raw_vcf, ch_reference_fai)
