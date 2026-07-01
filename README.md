@@ -140,9 +140,9 @@ graph LR
 | 8 | [HLA Typing](docs/08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
 | 9 | [STR Expansions](docs/09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
 | 9b | [STR Annotation](docs/09b-stranger.md) | Stranger | `quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0` | ~1 min | If step 9 run |
-| 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter:latest` | ~1 hr | Optional |
+| 10 | [Telomere Length](docs/10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter` (digest-pinned) | ~1 hr | Optional |
 | 11 | [ROH Analysis](docs/11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
-| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3:latest`\* | ~1 min | Optional |
+| 12 | [Mito Haplogroup](docs/12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3` (digest-pinned) | ~1 min | Optional |
 | 13 | [VEP Annotation](docs/13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_116.0` | ~2-4 hr | Recommended |
 | 14 | [Imputation Prep](docs/14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
 | 15 | [SV Quality](docs/15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |

@@ -311,8 +311,8 @@ docker pull pgkb/pharmcat:3.2.0
 
 # Specialized
 docker pull quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
-docker pull lgalarno/telomerehunter:latest
-docker pull jtb114/haplogrep3:latest
+docker pull lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
+docker pull jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de
 docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
 docker pull quay.io/biocontainers/goleft:0.2.6--he881be0_1
 docker pull broadinstitute/gatk:4.6.2.0

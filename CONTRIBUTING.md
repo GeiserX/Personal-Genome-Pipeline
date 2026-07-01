@@ -72,7 +72,7 @@ The CI pipeline enforces this with automated scanning.
 ### Docker Images
 
 - Always specify exact tags (e.g., `staphb/bcftools:1.21`, not `:latest`)
-- Exception: images with no versioned tags (e.g., `lgalarno/telomerehunter:latest`)
+- When a publisher offers no versioned tags, pin by immutable digest (`name@sha256:<digest>`) — never a floating `:latest`. Resolve with `docker manifest inspect -v <name>:latest`.
 - Verify the image exists and is publicly pullable before committing
 - Document the image in `docs/lessons-learned.md` if there are any gotchas
 

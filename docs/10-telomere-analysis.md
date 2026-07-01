@@ -11,8 +11,9 @@ Telomere length correlates with cellular aging at a population level. Comparing 
 
 ## Docker Image
 ```
-lgalarno/telomerehunter:latest
+lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
 ```
+> Pinned by immutable digest — the publisher offers no versioned tags. Canonical value lives in `versions.env`.
 
 ## Command
 ```bash
@@ -22,7 +23,7 @@ GENOME_DIR=/path/to/your/data
 docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v ${GENOME_DIR}:/genome \
-  lgalarno/telomerehunter:latest \
+  lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714 \
   telomerehunter \
     -ibt /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     -o /genome/${SAMPLE}/telomere/${SAMPLE} \
