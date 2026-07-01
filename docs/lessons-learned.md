@@ -38,7 +38,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 
 ### TelomereHunter: pip install on host fails
 - **Failed:** `pip install telomerehunter` on the host gives `UnicodeDecodeError` — Python environment issues
-- **Fix:** Use Docker image `lgalarno/telomerehunter:latest` instead of native install
+- **Fix:** Use the Docker image (`lgalarno/telomerehunter`, digest-pinned in `versions.env`) instead of native install
 
 ### HLA-LA: Graph not serialized (3 failures)
 - **Failed attempt 1:** `zlskidmore/hla-la:latest` — graph at `src/additionalReferences/PRG_MHC_GRCh38_withIMGT/` exists but is NOT serialized. HLA-LA exits silently.

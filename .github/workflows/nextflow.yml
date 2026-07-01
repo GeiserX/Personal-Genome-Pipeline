@@ -83,7 +83,10 @@ jobs:
 
               match=$(grep -F "$base" versions.env | head -1 || true)
               if [ -n "$match" ]; then
-                env_tag=$(echo "$match" | grep -oP ':\K[^"]+' | tr -d '"')
+                # Parse the quoted image value, then take the part after its final
+                # colon — robust to any ':' inside a trailing inline comment.
+                val=$(printf '%s\n' "$match" | sed -E 's/^[^=]*="([^"]+)".*/\1/')
+                env_tag="${val##*:}"
                 if [ "$tag" != "$env_tag" ]; then
                   echo "FAIL: $nf_file uses ${base}:${tag} but versions.env has ${base}:${env_tag}"
                   FAIL=1
