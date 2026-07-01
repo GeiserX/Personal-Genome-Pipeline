@@ -343,7 +343,7 @@ docker pull quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
 # Annotation enrichment (v0.4.0)
 docker pull quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
 docker pull quay.io/biocontainers/slivar:0.3.4--hb56abc1_0
-docker pull quay.io/biocontainers/pypgx:0.27.0--pyh106432d_0
+docker pull quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
 
 # Alternative / new callers
 docker pull dancooke/octopus:0.7.4
