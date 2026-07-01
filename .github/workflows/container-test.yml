@@ -51,7 +51,7 @@ jobs:
           - image: lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
             cmd: "telomerehunter --help"
           - image: jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de
-            cmd: "haplogrep3 --version"
+            cmd: "haplogrep3 trees"
     steps:
       - name: Pull ${{ matrix.image }}
         run: docker pull "${{ matrix.image }}"
