@@ -92,3 +92,4 @@ The first call is often a low-`level` artifact spanning the chromosome-start N g
 - Reproducibility: the GC/mask resources are pinned to the CNVpytor v1.3.2 tag and mounted offline; no network access is needed at run time (see [00-reference-setup.md](00-reference-setup.md)).
 - For maximum sensitivity, intersect CNVpytor calls with Manta and Delly (step 19) for a consensus call set (step 22).
 - CNVpytor can also model B-allele frequency (`-snp`/`-baf`) for allele-specific CNV/LOH; this pipeline uses the read-depth path.
+- Read-depth import is restricted to the canonical chromosomes (`chr1`–`chr22`, `chrX`, `chrY`). A full-reference GRCh38 BAM also carries hundreds of ALT/HLA/decoy contigs that the GC-correction data does not cover; without this restriction `-rd` chokes on them and produces no calls.

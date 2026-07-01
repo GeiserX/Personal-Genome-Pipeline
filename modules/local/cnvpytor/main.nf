@@ -40,6 +40,9 @@ process CNVPYTOR {
 
     script:
     def bin_size = task.ext.bin_size ?: 1000
+    // Canonical GRCh38 chromosomes only — a full-reference BAM's ALT/HLA/decoy
+    // contigs are not covered by the GC data and make read-depth import choke.
+    def canonical_chroms = ((1..22).collect { "chr${it}" } + ['chrX', 'chrY']).join(' ')
     """
     # Stage the pinned GC/mask resources into cnvpytor's data dir (the container
     # ships without them and its -download is broken in 1.3.2). This writes into
@@ -49,7 +52,7 @@ process CNVPYTOR {
     DATADIR=\$(python -c 'import cnvpytor, os; print(os.path.dirname(cnvpytor.__file__) + "/data")')
     cp -f ${cnvpytor_resources}/*.pytor "\$DATADIR"/
 
-    cnvpytor -root ${meta.id}.pytor -rd ${bam} -j ${task.cpus}
+    cnvpytor -root ${meta.id}.pytor -rd ${bam} -chrom ${canonical_chroms} -j ${task.cpus}
     cnvpytor -root ${meta.id}.pytor -his ${bin_size}
     cnvpytor -root ${meta.id}.pytor -partition ${bin_size}
     cnvpytor -root ${meta.id}.pytor -call ${bin_size} > ${meta.id}_cnvs.txt

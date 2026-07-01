@@ -369,3 +369,17 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### CNVpytor container has no bcftools/bgzip
 - **Observed:** Unlike the old CNVnator biocontainer, `cnvpytor:1.3.2` bundles no bcftools/bgzip/tabix/samtools.
 - **Fix:** The bash step runs a separate `staphb/bcftools` container for VCF normalization; the Nextflow module splits into two processes (`CNVPYTOR` calls → `CNVPYTOR_VCF` reheader/sort/index). `cnvpytor -view` emits a proper VCFv4.2 (SVTYPE/END/SVLEN, ALT DEL/DUP/LOH, GT/CN) but only carries `##contig` lines for processed chromosomes — reheader from the reference `.fai` before merging with Manta/Delly in step 22.
+
+## Real-data lessons from full-WGS runs (2026-07)
+
+### CNVpytor chokes on GRCh38 ALT/HLA/decoy contigs — restrict `-rd` to canonical chromosomes
+- **Failed:** On a real full-reference GRCh38 BAM (hundreds of ALT/HLA/decoy contigs), `cnvpytor -rd` (no `-chrom`) crashes/stalls during read-depth import and produces **no calls** (only a tiny stub `.pytor`). The bundled GC-correction data covers only the main chromosomes. A chr20-only validation did **not** surface this.
+- **Fix:** Pass `-chrom chr1 … chr22 chrX chrY` to the `-rd` step (`scripts/18-cnvpytor.sh` + `modules/local/cnvpytor`). Validated on two real 30× genomes (≈2200 and ≈2400 canonical CNV calls, ~99% concordant with the prior CNVnator counts). Lesson: validate depth-based callers on a **full** BAM, not a single chromosome.
+
+### pypgx 0.27.0 biocontainer ships pandas 3.0.3 → every gene fails
+- **Failed:** `pypgx:0.27.0--pyh106432d_0` fails all genes at runtime with `pandas.errors.LossySetitemError` / `TypeError: Invalid value` — its code assigns floats into int columns, which pandas ≥2.1 (the image bundles **3.0.3**) rejects. The container smoke test only runs `pypgx --version`, so CI cannot see it.
+- **Status:** Needs a pypgx build with a compatible pandas (<2.1) or an upstream fix; tracked follow-up. Until then step 32 is non-functional and CYP2D6/others must come from PharmCAT/Cyrius.
+
+### Stranger over-flags RFC1 (CANVAS) from short reads — do not read it as a diagnosis
+- **Observed:** Stranger can report RFC1 `STR_STATUS=full_mutation` for a modest expansion (e.g. 51/73 of the degenerate `AARRG` motif). CANVAS requires the **AAGGG** motif specifically, **biallelic**, at **~400–2000+** repeats — short-read ExpansionHunter cannot resolve AAGGG vs the benign AAAAG, and the catalog's `STR_PATHOLOGIC_MIN=12` is not the clinical threshold.
+- **Interpretation:** Treat an RFC1 flag as **uninterpretable from short-read WGS** — confirm with motif-aware/flanking-PCR testing only if clinically indicated. (Documented in `docs/09b-stranger.md`.)
