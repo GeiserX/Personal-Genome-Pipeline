@@ -36,7 +36,7 @@ docker run --rm \
 
 # Step 2: Run haplogrep3
 echo "Classifying haplogroup..."
-source "$(dirname "$0")/../versions.env" 2>/dev/null || HAPLOGREP3_IMAGE="jtb114/haplogrep3:latest"
+source "$(dirname "$0")/../versions.env" 2>/dev/null || HAPLOGREP3_IMAGE="jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de"
 docker run --rm \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE}" \
