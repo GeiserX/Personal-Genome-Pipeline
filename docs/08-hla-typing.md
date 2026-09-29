@@ -42,13 +42,16 @@ docker run --rm \
 - Two alleles per locus (one per chromosome)
 
 ## Alternative: HLA-LA
+
+> **Known issue:** in this pipeline's tests the image below crashes during graph alignment, and HLA-LA is still unsolved (see [Troubleshooting](troubleshooting.md#hla-typing-step-8-known-difficulties)). The command is kept for reference; use T1K for results.
+
 For a second opinion or when T1K results are ambiguous:
 
 ```bash
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
-  jiachenzdocker/hla-la:latest \
+  jiachenzdocker/hla-la@sha256:ecca23de6635aa85e60b4ee39dd4e15341b5febb514e5478f2b2a086f05a447c \
   HLA-LA.pl \
     --BAM /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     --graph PRG_MHC_GRCh38_withIMGT \

@@ -2,7 +2,7 @@
 
 A point-in-time review of every tool/container/database against its latest upstream release, with the recommended action. Versions confirmed from each project's GitHub `releases/latest` or vendor page.
 
-> Status: **planning roadmap.** The strict-parser config fix already landed on `main` (#30/#31). The bumps below — especially the variant-caller and VEP-cache changes — require a full re-run on a known sample to validate before merging (see [`lessons-learned.md`](lessons-learned.md) and the revalidation checklist in `CLAUDE.md`). None of them are applied here; this doc is the backlog.
+> Status: **planning roadmap.** The strict-parser config fix already landed on `main` (#30/#31). The bumps below — especially the variant-caller and VEP-cache changes — require a full re-run on a known sample to validate before merging (see [`lessons-learned.md`](../lessons-learned.md) and the revalidation checklist in `CLAUDE.md`). None of them are applied here; this doc is the backlog.
 
 ## Priority actions
 1. **Nextflow strict-syntax** — already addressed on `main` (#30/#31; `nextflow.config` no longer uses a top-level `def`). For NF 26.x also migrate `conf/base.config` `check_max()` → `process.resourceLimits`, and the `vcfanno` optional-input scope. The pipeline currently runs on **NF 25.10.4**.

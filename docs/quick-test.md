@@ -167,6 +167,6 @@ You're ready to run on your real data:
 
 1. Set `GENOME_DIR` to your actual data directory
 2. Set `SAMPLE` to your actual sample name
-3. Place your files according to the [directory structure](../README.md#directory-structure)
+3. Place your files according to the [directory structure](getting-started.md#directory-structure)
 4. Run `./scripts/validate-setup.sh $SAMPLE` for a comprehensive pre-flight check
-5. Start with the [Quick Start](../README.md#quick-start) path that matches your input data
+5. Start with the [Quick Start](getting-started.md#quick-start) path that matches your input data

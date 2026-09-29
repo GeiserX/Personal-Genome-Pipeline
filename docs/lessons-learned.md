@@ -127,7 +127,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** `robertopreste/mtoolbox:latest` — "repository does not exist or may require docker login"
 - **Also checked:** No image on quay.io/biocontainers, ghcr.io, or Docker Hub
 - **Root cause:** MToolBox was never officially containerized. GitHub issue #107 (Mar 2022) confirms: "Not at the moment."
-- **Fix:** Use GATK Mutect2 in mitochondrial mode instead (`broadinstitute/gatk:latest`). Mutect2 handles mitochondrial heteroplasmy detection natively and is well-maintained.
+- **Fix:** Use GATK Mutect2 in mitochondrial mode instead (`broadinstitute/gatk:4.6.2.0`, the version the scripts pin). Mutect2 handles mitochondrial heteroplasmy detection natively and is well-maintained.
 
 ## CNVnator Issues
 
@@ -348,7 +348,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Observed:** A full run requires **Nextflow 25.10.4** (the validated version). Other versions fail before any process executes:
   - **26.04.4** — the strict config parser rejects top-level `def`/variable declarations in `nextflow.config` ("Variable declarations cannot be mixed with config statements"), and then the `def check_max(...)` function in `conf/base.config` ("Unexpected input: '('").
   - **24.04.4** — the DSL2 module parser flags the optional annotation inputs in `modules/local/vcfanno/main.nf` as "Variable already defined in the process scope" (`cadd_snv`/`cadd_indel`/`spliceai_*`/`revel`/`alphamissense`, referenced inside the `def has_nochr`/`def has_chr` expressions). 25.10.4 tolerates this; 24.04.4 does not.
-- **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. Full NF-26 support is still pending: migrating `conf/base.config`'s `check_max()` → `process.resourceLimits` and refactoring the vcfanno input scope (tracked in `docs/sota-update-2026-06.md`). Pin `NXF_VER=25.10.4` to run.
+- **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. Full NF-26 support is still pending: migrating `conf/base.config`'s `check_max()` → `process.resourceLimits` and refactoring the vcfanno input scope (tracked in [the SOTA update note](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/research/sota-update-2026-06.md)). Pin `NXF_VER=25.10.4` to run.
 - **Tip:** `NXF_VER=25.10.4 nextflow run main.nf ...`. The `manifest.nextflowVersion` floor is raised to `25.10.0` so the known-broken 24.x is rejected up front; 26.x is gated by comment until the migration lands.
 
 ### CYP2D6 structural alleles: pypgx resolves *5 deletions where Cyrius and PharmCAT return "No Result"
