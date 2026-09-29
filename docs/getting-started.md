@@ -1,0 +1,182 @@
+# Getting started
+
+## Who Is This For?
+
+- You got WGS from **Nebula/DNA Complete, Dante Labs, Sequencing.com, Novogene**, or any other vendor and want to analyze it yourself
+- You have clinical WGS data (Illumina DRAGEN, BAM+VCF from a hospital) and want deeper analysis than the lab report
+- You're a biohacker, researcher, or patient advocate who wants full control over your genomic data
+- You can't afford a $500/hour genetics consultant but you have a computer and curiosity
+
+> **Only have 23andMe / MyHeritage / AncestryDNA?** You can still run pharmacogenomics, polygenic risk scores, ClinVar screening, and ROH analysis. See the **[chip data guide](chip-data-guide.md)** for step-by-step conversion instructions and which pipeline steps work with ~600K SNP array data.
+
+## Quick Start
+
+### Step 0: Quick Test (Optional)
+
+Verify everything works on a small public dataset before committing to a full run:
+
+```bash
+# See docs/quick-test.md for full instructions
+# VCF-only steps finish in under 5 minutes — see docs/quick-test.md for full guide (~30 min including downloads)
+```
+
+### Step 0.5: Validate Your Setup
+
+Before running on your own data, verify that all prerequisites are in place:
+
+```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/validate-setup.sh your_name
+```
+
+This checks Docker, disk space, reference data, Docker images, and sample files. Fix any `[FAIL]` items before proceeding.
+
+### Path A: I Have FASTQ Files (Raw Reads)
+
+Most common if you downloaded data from Nebula, Dante Labs, Novogene, BGI, or any sequencing provider.
+
+```bash
+# 1. Set your data directory (where your FASTQ files are)
+export GENOME_DIR=/path/to/your/data
+export SAMPLE=your_name
+
+# 2. Download the GRCh38 reference genome (~3.1 GB)
+mkdir -p ${GENOME_DIR}/reference
+# Download Homo_sapiens_assembly38.fasta + .fai from GATK resource bundle
+# See docs/00-reference-setup.md for details
+
+# 3. Run the pipeline
+./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~15-30 min)
+./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (~1-2 hr)
+./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF (~2-4 hr)
+./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (~5 min)
+./scripts/07-pharmacogenomics.sh $SAMPLE # Drug-gene interactions (~10 min)
+
+# 4. Optional: structural variants, annotation, etc.
+./scripts/04-manta.sh $SAMPLE
+./scripts/13-vep-annotation.sh $SAMPLE
+./scripts/17-cpsr.sh $SAMPLE
+# ... see the full step table in docs/pipeline-overview.md
+```
+
+### Path B: I Have a BAM File (Aligned Reads)
+
+Common if your lab or vendor already aligned the reads (Illumina DRAGEN output, clinical labs).
+
+```bash
+export GENOME_DIR=/path/to/your/data
+export SAMPLE=your_name
+
+# Your BAM should be at: ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
+# Skip step 2 (alignment) and start directly with variant calling:
+./scripts/03-deepvariant.sh $SAMPLE
+./scripts/06-clinvar-screen.sh $SAMPLE
+./scripts/07-pharmacogenomics.sh $SAMPLE
+```
+
+### Path C: I Have a VCF File (Variant Calls)
+
+If you already have variants called (from DRAGEN, GATK, or another pipeline).
+
+```bash
+export GENOME_DIR=/path/to/your/data
+export SAMPLE=your_name
+
+# Your VCF should be at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+# Skip steps 2-3 and go straight to analysis:
+./scripts/06-clinvar-screen.sh $SAMPLE
+./scripts/07-pharmacogenomics.sh $SAMPLE
+./scripts/13-vep-annotation.sh $SAMPLE
+./scripts/17-cpsr.sh $SAMPLE
+```
+
+### Path D: I Have Illumina ORA Files
+
+ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then follow Path A.
+
+```bash
+./scripts/01-ora-to-fastq.sh $SAMPLE   # ORA -> FASTQ
+./scripts/01b-fastp-qc.sh $SAMPLE      # QC + adapter trimming
+./scripts/02-alignment.sh $SAMPLE       # FASTQ -> BAM
+# ... continue as Path A
+```
+
+### Nextflow
+
+A Nextflow DSL2 execution path (v0.5.0) covers post-calling interpretation and clinical analysis — it accepts VCF + BAM from any upstream caller and runs the same pharmacogenomics, annotation, and clinical steps as the bash scripts. Both paths are maintained and produce biologically equivalent results (output file names and report scope may differ).
+
+```bash
+# Minimal run — default tools need no external databases
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta -profile docker
+
+# Enable database-requiring tools (VEP, CPSR, ClinVar, ExpansionHunter)
+nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,stranger,pypgx,ancestry' \
+    --vep_cache /path/to/vep_cache \
+    --pcgr_data /path/to/pcgr_data \
+    --vep_cache_cpsr /path/to/vep_cache_113 \
+    --clinvar /path/to/clinvar.vcf.gz \
+    --clinvar_index /path/to/clinvar.vcf.gz.tbi \
+    --expansion_catalog /path/to/variant_catalog.json \
+    --hla_dat /path/to/hla.dat \
+    --slivar_bin /path/to/slivar \
+    --pypgx_bundle /path/to/pypgx-bundle \
+    --ancestry_ref /path/to/1kg_common_snps.vcf.gz \
+    -profile docker
+```
+
+See [docs/nextflow.md](nextflow.md) for samplesheet format, tool selection, sarek integration, and bash vs Nextflow comparison.
+
+## Data from Your Vendor
+
+Different vendors deliver data in different formats. Here's what you need to know:
+
+| Vendor | Format You Get | Pipeline Entry Point | Notes |
+|---|---|---|---|
+| **Nebula / DNA Complete** | FASTQ + VCF | Path A (FASTQ) or Path C (VCF) | Uses BGI/MGI sequencing |
+| **Dante Labs** | FASTQ + BAM + VCF | Any path | Standard Illumina |
+| **Sequencing.com** | FASTQ + BAM + VCF | Any path | Standard Illumina |
+| **Novogene / BGI** | FASTQ | Path A | BGI read names differ from Illumina but work fine |
+| **Illumina DRAGEN (clinical)** | ORA or BAM + VCF | Path D (ORA) or Path B/C | ORA needs decompression first |
+| **Oxford Nanopore** | POD5/FAST5 + BAM | [Long-read guide](long-read-guide.md) | minimap2 + Clair3 + Sniffles2 |
+| **PacBio HiFi** | HiFi BAM | [Long-read guide](long-read-guide.md) | minimap2 + Clair3 + Sniffles2 |
+| **23andMe / Ancestry / MyHeritage** | Genotyping array TSV | Partial (VCF steps only) | Not WGS -- convert to VCF first |
+
+See [docs/vendor-guide.md](vendor-guide.md) for detailed conversion instructions for each vendor.
+
+## Directory Structure
+
+The pipeline expects this layout (created automatically by the scripts):
+
+```
+${GENOME_DIR}/
+  reference/
+    Homo_sapiens_assembly38.fasta      # GRCh38 reference genome
+    Homo_sapiens_assembly38.fasta.fai  # FASTA index
+  clinvar/
+    clinvar.vcf.gz                     # ClinVar database
+    clinvar.vcf.gz.tbi                 # ClinVar index
+  vep_cache/                           # VEP annotation cache (~30 GB)
+  pcgr_data/                           # CPSR/PCGR data bundle (~5 GB)
+  ${SAMPLE}/
+    fastq/                             # Raw FASTQ files (R1 + R2)
+    fastq_trimmed/                     # QC-trimmed FASTQs + fastp reports (step 1b)
+    aligned/
+      ${SAMPLE}_sorted.bam             # Aligned reads
+      ${SAMPLE}_sorted.bam.bai         # BAM index
+    vcf/
+      ${SAMPLE}.vcf.gz                 # Variant calls
+      ${SAMPLE}.vcf.gz.tbi             # VCF index
+      ${SAMPLE}.report.html            # PharmCAT report (step 7)
+    manta/                             # Structural variants (step 4)
+    annotsv/                           # Annotated SVs (step 5)
+    clinvar/                           # ClinVar hits (step 6)
+    clinical/                          # Clinically filtered variants (step 23)
+    vep/                               # Functional annotation (steps 13, 30)
+    slivar/                            # Prioritized variants (step 31)
+    pypgx/                             # pypgx PGx star alleles (step 32)
+    cpsr/                              # Cancer predisposition (step 17)
+    mito/                              # Haplogroup + mitochondrial variants (steps 12, 20)
+    ...                                # Other analysis directories
+```
+

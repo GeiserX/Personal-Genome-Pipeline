@@ -4,10 +4,22 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 
 [Back to GitHub repository](https://github.com/GeiserX/Personal-Genome-Pipeline)
 
+<p>
+  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/runs%20with-Docker-0db7ed?style=flat-square&logo=docker&logoColor=white" alt="Docker"></a>
+  <a href="https://www.nextflow.io/"><img src="https://img.shields.io/badge/runs%20with-Nextflow-3ac486?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDIgMTlIMjJMMTIgMloiLz48L3N2Zz4=&logoColor=white" alt="Nextflow"></a>
+  <img src="https://img.shields.io/badge/genome-GRCh38%2Fhg38-22c55e?style=flat-square" alt="GRCh38">
+  <img src="https://img.shields.io/badge/analysis%20steps-35-f97316?style=flat-square" alt="35 steps">
+  <img src="https://img.shields.io/badge/data%20privacy-local%20processing-06b6d4?style=flat-square&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAxYTUgNSAwIDAgMC01IDV2Mkg1djE0aDE0VjhIMTdWNmE1IDUgMCAwIDAtNS01em0tMyA1YTMgMyAwIDEgMSA2IDB2MkgzVjZ6Ii8+PC9zdmc+" alt="Local Processing">
+  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20WSL2-lightgrey?style=flat-square" alt="Platform">
+</p>
+
 ---
 
 ## Getting Started
 
+- [Getting Started](getting-started.md) -- who it is for, the four entry paths (FASTQ, BAM, VCF, ORA), Nextflow, vendor formats, directory layout
+- [Prerequisites and Platform Notes](prerequisites.md) -- hardware, software, reference data, Linux/macOS/WSL2/Unraid
+- [Pipeline Overview](pipeline-overview.md) -- what you get, the pipeline graph, every step with its image and runtime, alternative tools
 - [Reference Setup](00-reference-setup.md) -- download reference genome and databases
 - [Hardware Requirements](hardware-requirements.md) -- what you need
 - [Vendor Guide](vendor-guide.md) -- how to get your data from each provider
@@ -66,6 +78,8 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 
 ## Guides
 
+- [Common Issues and FAQ](faq.md) -- quick fixes and frequent questions
+- [Why Run Locally?](why-local.md) -- cost comparison, privacy and security
 - [Interpreting Results](interpreting-results.md) -- what your results mean
 - [Multi-Sample Analysis](multi-sample.md) -- comparing two or more genomes
 - [Troubleshooting](troubleshooting.md) -- common issues and fixes
