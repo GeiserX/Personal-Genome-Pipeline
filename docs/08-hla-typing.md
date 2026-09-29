@@ -48,7 +48,7 @@ For a second opinion or when T1K results are ambiguous:
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
-  jiachenzdocker/hla-la:latest \
+  jiachenzdocker/hla-la@sha256:ecca23de6635aa85e60b4ee39dd4e15341b5febb514e5478f2b2a086f05a447c \
   HLA-LA.pl \
     --BAM /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     --graph PRG_MHC_GRCh38_withIMGT \

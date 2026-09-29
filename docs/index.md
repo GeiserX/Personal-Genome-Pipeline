@@ -1,6 +1,6 @@
-# Personal Genome Pipeline Documentation
+# Personal Genome Pipeline
 
-Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 default analysis steps (+ 1 opt-in somatic), all running locally in Docker.
+Analyze your own whole genome sequencing (WGS) data on consumer hardware. 34 default analysis steps (+ 1 opt-in somatic), all running locally in Docker.
 
 [Back to GitHub repository](https://github.com/GeiserX/Personal-Genome-Pipeline)
 
@@ -17,14 +17,13 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 
 ## Getting Started
 
-- [Getting Started](getting-started.md) -- who it is for, the four entry paths (FASTQ, BAM, VCF, ORA), Nextflow, vendor formats, directory layout
-- [Prerequisites and Platform Notes](prerequisites.md) -- hardware, software, reference data, Linux/macOS/WSL2/Unraid
+- [Getting Started](getting-started.md) -- who it is for, prerequisites (hardware, software, reference data) and platform notes (Linux/macOS/WSL2/Unraid), the four entry paths (FASTQ, BAM, VCF, ORA), Nextflow, vendor formats, directory layout
 - [Pipeline Overview](pipeline-overview.md) -- what you get, the pipeline graph, every step with its image and runtime, alternative tools
 - [Reference Setup](00-reference-setup.md) -- download reference genome and databases
 - [Hardware Requirements](hardware-requirements.md) -- what you need
 - [Vendor Guide](vendor-guide.md) -- how to get your data from each provider
 - [Quick Test](quick-test.md) -- verify your setup with public data
-- [Validate Setup](../scripts/validate-setup.sh) -- pre-flight check script
+- [Validate Setup](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/validate-setup.sh) -- pre-flight check script
 
 ## Pipeline Steps
 
@@ -36,12 +35,15 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 | 1b | fastp QC + Trimming | [01b-fastp-qc.md](01b-fastp-qc.md) |
 | 2 | Alignment (minimap2 + samtools) | [02-alignment.md](02-alignment.md) |
 | 3 | Variant Calling (DeepVariant) | [03-variant-calling.md](03-variant-calling.md) |
+| 3d | Octopus Variant Caller (alternative) | [03d-octopus.md](03d-octopus.md) |
 | 4 | Structural Variants (Manta) | [04-structural-variants.md](04-structural-variants.md) |
+| 4b | GRIDSS Structural Variants (alternative) | [04b-gridss.md](04b-gridss.md) |
 | 5 | SV Annotation (AnnotSV) | [05-annotsv.md](05-annotsv.md) |
 | 6 | ClinVar Screen | [06-clinvar-screen.md](06-clinvar-screen.md) |
 | 7 | Pharmacogenomics (PharmCAT) | [07-pharmacogenomics.md](07-pharmacogenomics.md) |
 | 8 | HLA Typing (T1K) | [08-hla-typing.md](08-hla-typing.md) |
 | 9 | STR Expansions (ExpansionHunter) | [09-str-expansions.md](09-str-expansions.md) |
+| 9b | STR Clinical Annotation (Stranger) | [09b-stranger.md](09b-stranger.md) |
 | 10 | Telomere Length (TelomereHunter) | [10-telomere-analysis.md](10-telomere-analysis.md) |
 | 11 | ROH Analysis (bcftools roh) | [11-roh-analysis.md](11-roh-analysis.md) |
 | 12 | Mito Haplogroup (haplogrep3) | [12-mito-haplogroup.md](12-mito-haplogroup.md) |
@@ -88,3 +90,6 @@ Analyze your own whole genome sequencing (WGS) data on consumer hardware. 33 def
 - [Resources](resources.md) -- free courses, databases, and tools
 - [Long-Read Guide](long-read-guide.md) -- ONT and PacBio support
 - [WES Guide](wes-guide.md) -- whole exome sequencing entry path
+- [Chip Data Guide](chip-data-guide.md) -- running the pipeline on 23andMe, MyHeritage or AncestryDNA array data
+- [Variant Caller Benchmarking](benchmarking.md) -- comparing the alternative callers
+- [Tool Selection Rationale](tool-rationale.md) -- why each tool was chosen

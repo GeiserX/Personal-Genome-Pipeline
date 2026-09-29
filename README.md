@@ -16,7 +16,7 @@
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 35 analysis steps to produce a comprehensive genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 35 analysis steps to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
 **Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
 
@@ -46,8 +46,7 @@ Download the GRCh38 reference and databases first with [reference setup](docs/00
 ## Documentation
 
 - [Documentation index](docs/index.md): every page, including one page per pipeline step
-- [Getting started](docs/getting-started.md): who it is for, the FASTQ, BAM, VCF and ORA paths, Nextflow, vendor formats, directory layout
-- [Prerequisites and platform notes](docs/prerequisites.md): hardware, software, reference data, macOS, WSL2, Unraid
+- [Getting started](docs/getting-started.md): who it is for, prerequisites and platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA paths, Nextflow, vendor formats, directory layout
 - [Pipeline overview](docs/pipeline-overview.md): what you get, the pipeline graph, every step with its image and runtime
 - [Interpreting results](docs/interpreting-results.md) and [multi-sample analysis](docs/multi-sample.md)
 - [Common issues and FAQ](docs/faq.md), [troubleshooting](docs/troubleshooting.md), [lessons learned](docs/lessons-learned.md), [glossary](docs/glossary.md)
@@ -63,4 +62,4 @@ Your genome data is sensitive personal information. This pipeline runs entirely 
 
 ## License
 
-GPL-3.0, see [LICENSE](LICENSE).
+[GPL-3.0-or-later](LICENSE)
