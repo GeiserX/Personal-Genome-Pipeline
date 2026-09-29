@@ -58,7 +58,7 @@ Best performance. Docker runs natively. All pipeline images are linux/amd64. No 
 Works fine. Docker Desktop runs a Linux VM, so there's a ~10-20% I/O overhead on file operations. Set Docker Desktop memory to at least 16 GB (Preferences > Resources).
 
 ### macOS (Apple Silicon / M1-M4)
-Works but **slower**. All bioinformatics Docker images are amd64 and run under Rosetta 2 emulation (2-5x performance penalty). DeepVariant and BWA-MEM2 are the most affected. Set Docker Desktop to use Rosetta 2 for amd64 emulation (enabled by default on newer versions).
+Works but **slower**. All bioinformatics Docker images are amd64 and run under Rosetta 2 emulation (2-5x performance penalty). DeepVariant and BWA-MEM2 are the most affected. In Docker Desktop, turn on "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" if your version offers it; it needs the Apple Virtualization framework as the virtual machine manager, not Docker VMM. Without it, Docker falls back to QEMU emulation, which is slower still.
 
 ### Windows (WSL2)
 Works. Install Docker Desktop with WSL2 backend. **Critical:** Keep all genomics data on the Linux filesystem (`~/data/`, not `/mnt/c/`). Accessing Windows drives from WSL2 is 10-50x slower due to the 9P protocol. Set WSL2 memory in `%UserProfile%\.wslconfig`:
