@@ -26,9 +26,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# One run at a time per ref, in push order, never cancelled. Locking only the
-# deploy job is not enough: an older push whose build finishes later would
-# deploy last and publish a stale site. Pull requests get their own group.
+# One run at a time per ref, and a running deploy is never cancelled. Locking
+# only the deploy job is not enough: an older push whose build finishes later
+# would deploy last and publish a stale site. GitHub does not promise push order
+# for runs waiting on the lock, so in a rare race an older commit can still be
+# published; the next push to the docs corrects it. Pull requests get their own
+# group.
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: false
