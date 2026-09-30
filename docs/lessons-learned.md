@@ -270,6 +270,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Correct:** CYP2B6, CYP4F2, DPYD and NUDT15 matched the WGS diplotypes
 - **Missed:** CYP2C19 (25 missing), VKORC1 (1 missing)
 - **Wrong:** CYP3A5 came out as the reference diplotype because 4 of its defining positions are not on the chip; WGS called a different diplotype
+- **Fix:** treat a chip-only call as unresolved when any of its defining positions are missing from the chip, and confirm it from WGS before relying on it
 - Total: 888 missing PGx positions from the GSA chip
 
 ### ROH and PRS need special flags for chip data
@@ -352,7 +353,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Tip:** `NXF_VER=25.10.4 nextflow run main.nf ...`. The `manifest.nextflowVersion` floor is raised to `25.10.0` so the known-broken 24.x is rejected up front; 26.x is gated by comment until the migration lands.
 
 ### CYP2D6 structural alleles: pypgx resolves *5 deletions where Cyrius and PharmCAT return "No Result"
-- **Observed:** When CYP2D6 is deleted on both copies (the \*5 deletion allele), **Cyrius can return `None/None`** (Total_CN null — its copy-number consensus cannot resolve the locus) and **PharmCAT reports `Unknown/Unknown — No Result`** (it does not call the structural \*5 from a plain VCF), while **pypgx (BAM-based, SV-aware) resolves the deletion as a Poor Metabolizer with `SV_detected: Yes`.**
+- **How the tools differ on a whole-gene deletion:** when CYP2D6 is deleted on both copies (the \*5 deletion allele), **Cyrius can return `None/None`** (Total_CN null — its copy-number consensus cannot resolve the locus) and **PharmCAT reports `Unknown/Unknown — No Result`** (it does not call the structural \*5 from a plain VCF), while **pypgx (BAM-based, SV-aware) resolves the deletion as a Poor Metabolizer with `SV_detected: Yes`.**
 - **Impact:** Updates the older "rely on lab calls" note above — for CYP2D6 deletion/duplication alleles, pypgx on the BAM is the authoritative caller. Do **not** read a Cyrius `None/None` as "no deletion." Keep all three callers (PharmCAT star alleles, Cyrius, pypgx) and reconcile; pypgx wins for CNV/SV-driven star alleles (a Poor Metabolizer has no functional CYP2D6 → major impact on CYP2D6-cleared drugs such as codeine/tramadol/tamoxifen).
 
 ## CNVpytor migration (2026-07)

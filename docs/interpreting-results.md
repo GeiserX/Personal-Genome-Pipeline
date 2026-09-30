@@ -94,7 +94,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 | DPYD | 5-fluorouracil (cancer drug) | Poor metabolizers can die from standard doses |
 | SLCO1B1 | Statins (simvastatin, atorvastatin) | Increased myopathy risk |
 | NAT2 | Isoniazid (TB), caffeine | Slow acetylators have more side effects |
-| UGT1A1 | Irinotecan, atazanavir | Two *28 alleles = Gilbert syndrome (elevated bilirubin) |
+| UGT1A1 | Irinotecan, atazanavir | Two \*28 alleles are associated with Gilbert syndrome (elevated bilirubin) |
 
 **What to do:** Share the PharmCAT report with your prescribing physician or pharmacist. PharmCAT is a research tool — its authors explicitly note that missing positions, unphased input, and undetected structural variation (especially CYP2D6) can affect genotype and phenotype calls. The report is a valuable starting point for pharmacogenomic-guided prescribing, but clinical confirmation may be warranted before making medication changes, especially for high-risk drugs (DPYD, CYP2D6-dependent opioids).
 
