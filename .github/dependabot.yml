@@ -21,3 +21,12 @@ updates:
         applies-to: security-updates
         patterns:
           - '*'
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    labels:
+      - ci
+      - automated
