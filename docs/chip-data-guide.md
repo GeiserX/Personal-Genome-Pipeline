@@ -284,7 +284,7 @@ Impute via TOPMed server
 
 2. **PRS from chip data is reasonable but less precise** than PRS from WGS. The scoring files may reference variants that aren't on your chip and can't be imputed.
 
-3. **PharmCAT coverage depends on chip version.** In our smoke test with MyHeritage GSA chip data, PharmCAT correctly called CYP2B6, CYP4F2, DPYD, NUDT15, TPMT, and UGT1A1 — but **failed to call CYP2C19** (25 missing positions) and **VKORC1** (1 missing position), and **miscalled CYP3A5** as \*1/\*1 instead of \*3/\*3 (4 missing positions). 23andMe v5 may cover more PGx positions. PharmCAT will report "Not called" for genes without sufficient data — this is preferable to a wrong call.
+3. **PharmCAT coverage depends on chip version.** In our smoke test with MyHeritage GSA chip data, PharmCAT correctly called CYP2B6, CYP4F2, DPYD, NUDT15, TPMT, and UGT1A1 — but **failed to call CYP2C19** (25 missing positions) and **VKORC1** (1 missing position), and **miscalled CYP3A5** as the reference diplotype (4 of its defining positions are missing from the chip). 23andMe v5 may cover more PGx positions. PharmCAT will report "Not called" for genes without sufficient data — this is preferable to a wrong call.
 
 4. **Imputed genotypes are predictions, not observations.** Imputation accuracy varies by ancestry and local linkage disequilibrium. Common variants (MAF > 5%) impute well. Rare variants (MAF < 1%) impute poorly and should not be used for clinical decisions.
 

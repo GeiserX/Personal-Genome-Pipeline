@@ -41,7 +41,7 @@ dmesg | grep -i "oom\|killed" | tail -10
 **Fix:**
 1. Increase the `--memory` flag in the script that failed
 2. Reduce parallelism (run fewer steps simultaneously)
-3. Increase Docker Desktop memory allocation (see [Docker Desktop not enough memory](#docker-desktop-not-enough-memory))
+3. Increase Docker Desktop memory allocation (see [Docker Desktop not enough memory](#docker-desktop-not-enough-memory-macwindows))
 4. For DeepVariant, reduce `--num_shards` (each shard needs ~2-4 GB)
 
 ---
@@ -370,7 +370,7 @@ docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
 wget -c https://url/to/your/data.fastq.gz
 ```
 
-For reference data downloads that fail repeatedly, see the per-step sections for [VEP cache](#vep-cache-download-failures) and PCGR data bundle.
+For reference data downloads that fail repeatedly, see the per-step sections for [VEP cache](#step-13-vep-cache-download-failures) and PCGR data bundle.
 
 ---
 
@@ -947,7 +947,7 @@ RESOURCE CAUTION:
    bash -x scripts/06-clinvar-screen.sh your_name
    ```
 3. **Inspect Docker mount mapping.** The script mounts `${GENOME_DIR}:/genome`. Inside the container, `${GENOME_DIR}/sample/vcf/sample.vcf.gz` becomes `/genome/sample/vcf/sample.vcf.gz`.
-4. **Check for bgzip/tabix path issues.** The `staphb/bcftools:1.21` image does not include `bgzip` or `tabix` in `$PATH`. Use `bcftools view -Oz -o` instead of piping to `bgzip`. See [lessons-learned.md](lessons-learned.md#bgzip-tabix-not-in-bcftools-image-path).
+4. **Check for bgzip/tabix path issues.** The `staphb/bcftools:1.21` image does not include `bgzip` or `tabix` in `$PATH`. Use `bcftools view -Oz -o` instead of piping to `bgzip`. See [lessons-learned.md](lessons-learned.md#bgziptabix-not-in-bcftools-image-path).
 
 **Other causes:**
 - Tool crashed silently before writing output (check exit code and stderr)

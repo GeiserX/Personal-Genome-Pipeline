@@ -59,7 +59,7 @@ The output TSV contains the CYP2D6 diplotype in star-allele notation, for exampl
 
 | Sample | Genotype |
 |---|---|
-| sample1 | *1/*2 |
+| `<sample>` | `*x/*y` |
 
 Common results and what they mean:
 

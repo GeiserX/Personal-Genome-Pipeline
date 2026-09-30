@@ -116,7 +116,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | Column | Description |
 |---|---|
 | Gene | Gene symbol |
-| Diplotype | Star allele call (e.g., *1/*4) |
+| Diplotype | Star allele call (e.g., \*1/\*4) |
 | Phenotype | Metabolizer status (e.g., Intermediate Metabolizer) |
 | SV_detected | Whether structural variation was detected |
 | Source | BAM (SV genes) or VCF (variant-based genes) |

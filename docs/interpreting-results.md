@@ -85,6 +85,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 **Where to look:** `${SAMPLE}/pharmcat/` (Nextflow) or `${SAMPLE}/vcf/` (bash scripts) — PharmCAT writes its reports there. Open the HTML report in a browser.
 
 **Key genes to check:**
+
 | Gene | Affects | Common Impact |
 |---|---|---|
 | CYP2C19 | PPIs, clopidogrel, SSRIs, voriconazole | Rapid metabolizers burn through drugs too fast |
@@ -93,7 +94,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 | DPYD | 5-fluorouracil (cancer drug) | Poor metabolizers can die from standard doses |
 | SLCO1B1 | Statins (simvastatin, atorvastatin) | Increased myopathy risk |
 | NAT2 | Isoniazid (TB), caffeine | Slow acetylators have more side effects |
-| UGT1A1 | Irinotecan, atazanavir | *28/*28 = Gilbert syndrome (elevated bilirubin) |
+| UGT1A1 | Irinotecan, atazanavir | Two \*28 alleles are associated with Gilbert syndrome (elevated bilirubin) |
 
 **What to do:** Share the PharmCAT report with your prescribing physician or pharmacist. PharmCAT is a research tool — its authors explicitly note that missing positions, unphased input, and undetected structural variation (especially CYP2D6) can affect genotype and phenotype calls. The report is a valuable starting point for pharmacogenomic-guided prescribing, but clinical confirmation may be warranted before making medication changes, especially for high-risk drugs (DPYD, CYP2D6-dependent opioids).
 
@@ -320,6 +321,7 @@ grep "missense_variant" ${SAMPLE}_vep.vcf | grep -v "gnomAD_AF"
 ### What "HIGH Impact" Means
 
 VEP classifies variant impact as:
+
 | Impact | Types | Interpretation |
 |---|---|---|
 | HIGH | Stop gained, frameshift, splice donor/acceptor | Likely breaks the protein |
@@ -594,17 +596,17 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 
 ## Example Outputs: What Correct Results Look Like
 
-Sanitized examples from a real 30X WGS run, so you know what to expect.
+Invented examples in the real output formats, so you know what to expect. Every number and every call below is made up; none comes from a real genome.
 
 ### Variant Calling (Step 3)
 
 ```
 bcftools stats output:
 SN  0  number of samples:     1
-SN  0  number of records:     5560412
-SN  0  number of SNPs:        4198753
-SN  0  number of indels:      1361659
-SN  0  number of multiallelic sites:  45231
+SN  0  number of records:     5500000
+SN  0  number of SNPs:        4200000
+SN  0  number of indels:      1300000
+SN  0  number of multiallelic sites:  45000
 
 # PASS variants only: 4,650,000-4,700,000
 # Ti/Tv ratio: 2.05-2.10 (if < 1.8, something is wrong)
@@ -613,14 +615,14 @@ SN  0  number of multiallelic sites:  45231
 ### ClinVar Screen (Step 6)
 
 ```
-Pathogenic/Likely Pathogenic hits: 4
+Pathogenic/Likely Pathogenic hits: 3
 
-  chr2:47637270 T>C (rs80338939)      — GJB2 carrier (hearing loss, recessive)
-  chr1:45331175 G>A (rs36053993)      — MUTYH carrier (CRC risk, recessive)
-  chr10:124774641 C>T (rs28936670)    — ACADSB carrier (metabolic, recessive)
+  chr<N>:<pos> <REF>><ALT> (rs<id>)   — <GENE> carrier (<condition>, recessive)
+  chr<N>:<pos> <REF>><ALT> (rs<id>)   — <GENE> carrier (<condition>, recessive)
+  chr<N>:<pos> <REF>><ALT> (rs<id>)   — <GENE> carrier (<condition>, recessive)
 ```
 
-All heterozygous (0/1) = carrier status only. This is a completely normal result.
+A handful of heterozygous (0/1) hits in recessive genes is the usual result and means carrier status only.
 
 ### PharmCAT (Step 7)
 
@@ -628,12 +630,14 @@ The HTML report will show a table like:
 
 ```
 Gene        Diplotype           Phenotype              Affected Drugs
-CYP2C19    *1/*17              Rapid Metabolizer       PPIs, SSRIs, clopidogrel
-CYP2C9     *1/*1               Normal Metabolizer      Warfarin, NSAIDs
-NAT2       *5/*6               Slow Acetylator         Isoniazid, caffeine
-DPYD       *1/*1               Normal Metabolizer      5-FU (safe at standard dose)
-SLCO1B1    *1a/*1a             Normal Function         Statins (standard dosing)
+CYP2C19    *x/*y               <phenotype>             PPIs, SSRIs, clopidogrel
+CYP2C9     *x/*y               <phenotype>             Warfarin, NSAIDs
+NAT2       *x/*y               <phenotype>             Isoniazid, caffeine
+DPYD       *x/*y               <phenotype>             5-FU
+SLCO1B1    *x/*y               <phenotype>             Statins
 ```
+
+The phenotype column reads Poor, Intermediate, Normal, Rapid or Ultrarapid Metabolizer (Normal or Decreased Function for transporters such as SLCO1B1).
 
 Typically 18-21 of 23 genes will have confident calls. CYP2D6 may be "Inconclusive" from short-read WGS (known limitation).
 
@@ -642,16 +646,16 @@ Typically 18-21 of 23 genes will have confident calls. CYP2D6 may be "Inconclusi
 ```json
 {
   "LocusResults": {
-    "HTT": { "Genotype": "17/19" },
-    "FMR1": { "Genotype": "29" },
-    "C9orf72": { "Genotype": "2/3" },
-    "ATXN1": { "Genotype": "29/29" },
-    "DMPK": { "Genotype": "12/13" }
+    "HTT": { "Genotype": "<repeats>/<repeats>" },
+    "FMR1": { "Genotype": "<repeats>" },
+    "C9orf72": { "Genotype": "<repeats>/<repeats>" },
+    "ATXN1": { "Genotype": "<repeats>/<repeats>" },
+    "DMPK": { "Genotype": "<repeats>/<repeats>" }
   }
 }
 ```
 
-All values well below disease thresholds = ALL CLEAR.
+Each number is the repeat count on one allele. Counts below every locus threshold = ALL CLEAR; step 9b (Stranger) marks the ones that are not.
 
 ### CPSR (Step 17)
 
@@ -659,9 +663,9 @@ The HTML report tier summary:
 
 ```
 Tier 1 (Pathogenic/Likely pathogenic):    0 variants
-Tier 2 (VUS with evidence):              3 variants
-Tier 3 (VUS limited evidence):           21 variants
-Tier 4 (Likely benign/Benign):           ~53,000 variants
+Tier 2 (VUS with evidence):              2 variants
+Tier 3 (VUS limited evidence):           20 variants
+Tier 4 (Likely benign/Benign):           ~50,000 variants
 ```
 
 Zero Tier 1 = ALL CLEAR for cancer predisposition. The VUS count varies widely (20-200+) and is not cause for concern.
@@ -670,7 +674,7 @@ Zero Tier 1 = ALL CLEAR for cancer predisposition. The VUS count varies widely (
 
 ```
 # Autosomal ROH > 5 MB: 0
-# Total autosomal ROH: 47.3 MB (all segments < 3 MB)
+# Total autosomal ROH: 40 MB (all segments < 3 MB)
 # Conclusion: No evidence of parental relatedness
 ```
 
@@ -679,7 +683,7 @@ Normal outbred individual. If total ROH > 100 MB or any segment > 10 MB, investi
 ### Telomere Length (Step 10)
 
 ```
-tel_content: 553.52
+tel_content: <value>
 ```
 
 No universal "normal" range — compare between samples of the same age, sequenced on the same platform.

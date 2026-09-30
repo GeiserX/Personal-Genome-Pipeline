@@ -1,0 +1,203 @@
+site_name: Personal Genome Pipeline
+site_url: https://geiserx.github.io/Personal-Genome-Pipeline/
+site_description: Whole genome sequencing analysis pipeline for consumer hardware. 100% local, Docker-powered, free and open source.
+repo_url: https://github.com/GeiserX/Personal-Genome-Pipeline
+repo_name: GeiserX/Personal-Genome-Pipeline
+edit_uri: edit/main/docs/
+
+# A warning is a broken link, a missing page or a page nobody can reach. All of
+# them fail the build, locally and in CI, so nobody has to remember --strict.
+strict: true
+
+theme:
+  name: material
+  language: en
+  logo: images/logo.svg
+  favicon: images/icon.svg
+  # Dark first: the first palette entry is the default.
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+# MkDocs reports most link problems as `info`, which --strict ignores. Every
+# line here promotes one of them to a warning so the build fails on it:
+#   nav.omitted_files   a Markdown file under docs/ that is in no nav entry and
+#                       not in exclude_docs (a page nobody can reach, published
+#                       at a public URL anyway);
+#   nav.not_found       a nav entry whose file does not exist;
+#   links.not_found     a relative link to a page or file that does not exist;
+#   links.anchors       a link to a heading that does not exist;
+#   links.absolute_links  a link written as /path/ (breaks under the
+#                       /Personal-Genome-Pipeline/ prefix of the site);
+#   links.unrecognized_links  a relative link that leaves docs/ (../README.md).
+#                       Repo files are linked by absolute GitHub URL instead.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+plugins:
+  - search
+  # No page has been renamed, so there is nothing to redirect. When one is,
+  # add `mkdocs-redirects==1.2.2` to docs/requirements-docs.txt and uncomment.
+  # - redirects:
+  #     redirect_maps:
+  #       old-name.md: new-name.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  # base_path includes the repository root, so a page can include a file that
+  # ships (versions.env, nextflow.config) word for word with
+  # `--8<-- "versions.env"`. A copied example drifts from the real file;
+  # an included one cannot. check_paths makes a missing include fail the build
+  # instead of rendering an empty block. No page uses it yet.
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - docs
+      check_paths: true
+  - pymdownx.mark
+  - attr_list
+  - md_in_html
+  # Renders :material-xxx: shortcodes as icons. The grid cards on index.md use
+  # them; without this they print as literal text.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/GeiserX/Personal-Genome-Pipeline
+
+extra_css:
+  - stylesheets/theme.css
+
+# Files under docs/ that are not pages. MkDocs publishes every Markdown file in
+# docs/ whether or not it is in the nav, so anything that is not a page must be
+# listed here. A page is a lowercase kebab-case .md file; anything with a
+# capital letter is a repo-facing note, and research/ holds the triage and
+# state-of-the-art notes read on GitHub. Nothing under research/ is published.
+exclude_docs: |
+  [A-Z]*.md
+  design/
+  research/
+  notes/
+  requirements-docs.txt
+
+# Every page, grouped by what a reader is doing. The nav title equals the
+# page's H1. Step pages are grouped by pipeline stage; the numbers stay in the
+# titles because the scripts, the output directories and every other page
+# refer to steps by number.
+nav:
+  - Home: index.md
+  - Get started:
+      - Getting started: getting-started.md
+      - Hardware and Storage Requirements: hardware-requirements.md
+      - Why run locally?: why-local.md
+      - Vendor Compatibility Guide: vendor-guide.md
+      - "Step 0: Reference Data Setup": 00-reference-setup.md
+      - "Quick Test: Verify Your Setup Before Running on Real Data": quick-test.md
+      - Nextflow Execution (v0.5.0): nextflow.md
+  - Pipeline steps:
+      - Pipeline overview: pipeline-overview.md
+      - Reads and small variants:
+          - "Step 1: ORA to FASTQ Conversion": 01-ora-to-fastq.md
+          - "Step 1b: fastp QC + Adapter Trimming": 01b-fastp-qc.md
+          - "Step 2: Alignment (FASTQ to BAM)": 02-alignment.md
+          - "Step 3: Variant Calling (BAM to VCF)": 03-variant-calling.md
+          - "Step 3d: Octopus Variant Caller (Alternative)": 03d-octopus.md
+      - Structural and copy number variants:
+          - "Step 4: Structural Variant Calling (Manta)": 04-structural-variants.md
+          - "Step 4b: GRIDSS Structural Variant Calling": 04b-gridss.md
+          - "Step 5: Structural Variant Annotation (AnnotSV)": 05-annotsv.md
+          - "Step 15: SV Quality Annotation with duphold": 15-duphold.md
+          - "Step 18: Depth-Based CNV Calling with CNVpytor": 18-cnvpytor.md
+          - "Step 19: Structural Variant Calling with Delly": 19-delly.md
+          - "Step 22: Structural Variant Consensus Merge": 22-survivor-merge.md
+      - Clinical screening and annotation:
+          - "Step 6: ClinVar Pathogenic Variant Screening": 06-clinvar-screen.md
+          - "Step 13: Variant Effect Predictor (VEP) Annotation": 13-vep-annotation.md
+          - "Step 17: Cancer Predisposition Screening with CPSR": 17-cpsr.md
+          - "Step 23: Clinical Variant Filter": 23-clinical-filter.md
+          - "Step 29: Somatic Variant Calling (Mutect2 Tumor-Only) [EXPERIMENTAL]": 29-mutect2-somatic.md
+          - "Step 30: Annotation Enrichment (vcfanno)": 30-vcfanno.md
+          - "Step 31: Variant Prioritization (slivar)": 31-slivar.md
+      - Pharmacogenomics:
+          - "Step 7: Pharmacogenomics (PharmCAT)": 07-pharmacogenomics.md
+          - "Step 21: CYP2D6 Star Allele Calling with Cyrius": 21-cyrius.md
+          - "Step 27: CPIC Drug-Gene Recommendation Lookup": 27-cpic-lookup.md
+          - "Step 32: Comprehensive Pharmacogenomics (pypgx)": 32-pypgx.md
+      - HLA, repeats and telomeres:
+          - "Step 8: HLA Typing (T1K)": 08-hla-typing.md
+          - "Step 9: Short Tandem Repeat (STR) Expansion Screening": 09-str-expansions.md
+          - "Step 9b: STR Clinical Annotation (Stranger)": 09b-stranger.md
+          - "Step 10: Telomere Length Estimation": 10-telomere-analysis.md
+      - Ancestry, risk and mitochondria:
+          - "Step 11: Runs of Homozygosity (ROH) Analysis": 11-roh-analysis.md
+          - "Step 12: Mitochondrial Haplogroup": 12-mito-haplogroup.md
+          - "Step 14: Imputation Preparation": 14-imputation-prep.md
+          - "Step 20: Mitochondrial Variant Calling and Heteroplasmy Detection": 20-mtoolbox.md
+          - "Step 25: Polygenic Risk Scores (PRS)": 25-prs.md
+          - "Step 26: Ancestry SNP Intersection [EXPERIMENTAL]": 26-ancestry.md
+      - Quality control and reports:
+          - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
+          - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md
+          - "Step 24: HTML Report": 24-html-report.md
+          - "Step 28: MultiQC Aggregated QC Report": 28-multiqc.md
+  - Guides:
+      - Interpreting Your Results: interpreting-results.md
+      - Multi-Sample Comparison Guide: multi-sample.md
+      - Long-Read Sequencing Guide: long-read-guide.md
+      - Whole Exome Sequencing (WES) Guide: wes-guide.md
+      - "Using This Pipeline with Genotyping Array Data (23andMe, MyHeritage, AncestryDNA)": chip-data-guide.md
+      - Variant Caller Benchmarking: benchmarking.md
+  - Reference:
+      - Common issues and FAQ: faq.md
+      - Troubleshooting Guide: troubleshooting.md
+      - Lessons Learned: lessons-learned.md
+      - Tool Selection Rationale: tool-rationale.md
+      - Glossary: glossary.md
+      - Recommended Resources: resources.md

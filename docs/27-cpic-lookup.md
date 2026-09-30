@@ -85,13 +85,13 @@ The report has two sections:
 
 ### Gene Results Table
 
-Lists every pharmacogene with its called diplotype and phenotype. For example:
+Lists every pharmacogene with its called diplotype and phenotype. The columns look like this (placeholders, not a result):
 
 ```
 Gene         Diplotype                 Phenotype
-CYP2C19      *1/*17                    Rapid Metabolizer
-CYP2D6       *1/*2                     Normal Metabolizer
-UGT1A1       *28/*28                   Poor Metabolizer
+CYP2C19      *x/*y                     <phenotype>
+CYP2D6       *x/*y                     <phenotype>
+UGT1A1       *x/*y                     <phenotype>
 ```
 
 ### Affected Medications

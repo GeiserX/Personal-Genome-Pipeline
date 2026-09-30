@@ -33,7 +33,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 
 ## Quick start
 
-Start from FASTQ (other entry points in [Getting started](docs/getting-started.md)):
+Start from FASTQ (other entry points in [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/)):
 
 ```bash
 export GENOME_DIR=/path/to/your/data SAMPLE=your_name
@@ -41,18 +41,29 @@ export GENOME_DIR=/path/to/your/data SAMPLE=your_name
 ./scripts/02-alignment.sh $SAMPLE && ./scripts/03-deepvariant.sh $SAMPLE && ./scripts/06-clinvar-screen.sh $SAMPLE && ./scripts/07-pharmacogenomics.sh $SAMPLE
 ```
 
-Download the GRCh38 reference and databases first with [reference setup](docs/00-reference-setup.md). Try a small public dataset with the [quick test](docs/quick-test.md).
+Download the GRCh38 reference and databases first with [reference setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/). Try a small public dataset with the [quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/).
 
 ## Documentation
 
-- [Documentation index](docs/index.md): every page, including one page per pipeline step
-- [Getting started](docs/getting-started.md): who it is for, prerequisites and platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA paths, Nextflow, vendor formats, directory layout
-- [Pipeline overview](docs/pipeline-overview.md): what you get, the pipeline graph, every step with its image and runtime
-- [Interpreting results](docs/interpreting-results.md) and [multi-sample analysis](docs/multi-sample.md)
-- [Common issues and FAQ](docs/faq.md), [troubleshooting](docs/troubleshooting.md), [lessons learned](docs/lessons-learned.md), [glossary](docs/glossary.md)
-- [Why run locally?](docs/why-local.md): cost comparison, privacy and security
-- [Nextflow](docs/nextflow.md), [long-read guide](docs/long-read-guide.md), [chip data guide](docs/chip-data-guide.md), [resources](docs/resources.md)
-- [Contributing](CONTRIBUTING.md): each step is a standalone script with its own documentation
+The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipeline/**, one page per pipeline step included.
+
+- [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/): prerequisites, platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA entry paths, directory layout
+- [Quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/): verify the setup on public data before your own
+- [Hardware and storage requirements](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/): per-step memory and disk figures
+- [Reference data setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/): the GRCh38 reference and every database
+- [Vendor compatibility guide](https://geiserx.github.io/Personal-Genome-Pipeline/vendor-guide/): what each provider delivers and how to get it
+- [Pipeline overview](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/): every step with its tool, image and runtime, and the page for each step
+- [Nextflow](https://geiserx.github.io/Personal-Genome-Pipeline/nextflow/): the workflow runner, parallel steps and resume
+- [Interpreting your results](https://geiserx.github.io/Personal-Genome-Pipeline/interpreting-results/): what each report means and what to do with it
+- [Multi-sample comparison](https://geiserx.github.io/Personal-Genome-Pipeline/multi-sample/): partners, siblings, parents
+- [Long-read guide](https://geiserx.github.io/Personal-Genome-Pipeline/long-read-guide/): Nanopore and PacBio HiFi
+- [WES guide](https://geiserx.github.io/Personal-Genome-Pipeline/wes-guide/): whole exome input
+- [Chip data guide](https://geiserx.github.io/Personal-Genome-Pipeline/chip-data-guide/): 23andMe, MyHeritage and AncestryDNA files
+- [Variant caller benchmarking](https://geiserx.github.io/Personal-Genome-Pipeline/benchmarking/): the alternative callers compared
+- [Common issues and FAQ](https://geiserx.github.io/Personal-Genome-Pipeline/faq/) and [Troubleshooting](https://geiserx.github.io/Personal-Genome-Pipeline/troubleshooting/)
+- [Lessons learned](https://geiserx.github.io/Personal-Genome-Pipeline/lessons-learned/), [Tool selection rationale](https://geiserx.github.io/Personal-Genome-Pipeline/tool-rationale/), [Glossary](https://geiserx.github.io/Personal-Genome-Pipeline/glossary/), [Resources](https://geiserx.github.io/Personal-Genome-Pipeline/resources/)
+- [Why run locally?](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/): cost comparison, privacy and security
+- [Contributing](CONTRIBUTING.md): each step is a standalone script with its own page
 
 ## Disclaimer
 
