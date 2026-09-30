@@ -55,9 +55,9 @@ docker run --rm \
 ## Key Genes
 | Gene | Drugs Affected | Example |
 |---|---|---|
-| CYP2C19 | SSRIs, PPIs, clopidogrel | *1/*17 = rapid → SSRIs fail faster |
+| CYP2C19 | SSRIs, PPIs, clopidogrel | A *17 allele = rapid metabolizer → SSRIs clear faster |
 | CYP2D6 | 25% of all drugs, opioids, tamoxifen | Complex — may need BAM-based calling |
-| UGT1A1 | Irinotecan, bilirubin clearance | *28/*28 = Gilbert's syndrome |
+| UGT1A1 | Irinotecan, bilirubin clearance | Two *28 alleles = Gilbert's syndrome |
 | DPYD | 5-FU, capecitabine (chemo) | Poor = lethal toxicity |
 | NAT2 | Isoniazid, hydralazine | Slow acetylator = increased toxicity |
 
