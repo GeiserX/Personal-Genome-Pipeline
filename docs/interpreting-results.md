@@ -85,6 +85,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 **Where to look:** `${SAMPLE}/pharmcat/` (Nextflow) or `${SAMPLE}/vcf/` (bash scripts) — PharmCAT writes its reports there. Open the HTML report in a browser.
 
 **Key genes to check:**
+
 | Gene | Affects | Common Impact |
 |---|---|---|
 | CYP2C19 | PPIs, clopidogrel, SSRIs, voriconazole | Rapid metabolizers burn through drugs too fast |
@@ -320,6 +321,7 @@ grep "missense_variant" ${SAMPLE}_vep.vcf | grep -v "gnomAD_AF"
 ### What "HIGH Impact" Means
 
 VEP classifies variant impact as:
+
 | Impact | Types | Interpretation |
 |---|---|---|
 | HIGH | Stop gained, frameshift, splice donor/acceptor | Likely breaks the protein |
