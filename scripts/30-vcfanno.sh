@@ -181,6 +181,10 @@ echo ""
 # --- Helper: Generate TOML config ---
 # vcfanno uses TOML config to define annotation sources.
 # We generate it dynamically based on which files are present.
+# Numeric scores from tab-separated files use op "max": vcfanno declares a
+# column taken with "self" as Type=String, and bcftools then refuses
+# `INFO/CADD_PHRED>=20` in steps 23 and 31 ("cannot use arithmetic operators
+# to compare strings and numbers"). With "max" the field is Type=Float.
 
 generate_nochr_toml() {
   local toml=""
@@ -191,7 +195,7 @@ generate_nochr_toml() {
 file="/genome/annotations/whole_genome_SNVs.tsv.gz"
 columns=[6]
 names=["CADD_PHRED"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -200,7 +204,7 @@ ops=["self"]
 file="/genome/annotations/gnomad.genomes.r4.0.indel.tsv.gz"
 columns=[6]
 names=["CADD_PHRED_indel"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -236,7 +240,7 @@ ops=["self"]
 file="/genome/annotations/revel_grch38.tsv.gz"
 columns=[5]
 names=["REVEL"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -245,7 +249,7 @@ ops=["self"]
 file="/genome/annotations/AlphaMissense_hg38.tsv.gz"
 columns=[9,10]
 names=["AM_pathogenicity","AM_class"]
-ops=["self","self"]
+ops=["max","self"]
 
 '
         ;;
