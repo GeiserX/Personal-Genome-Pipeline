@@ -4,6 +4,11 @@
 set -euo pipefail
 
 D=${1:?}; MAIN=${2:?}
+echo "== helper binaries the modules call, per image"
+for img in quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0 quay.io/biocontainers/delly:2.1.0--h3752d28_0 staphb/bcftools:1.21; do
+  docker run --rm "$img" sh -c "for b in bcftools bgzip tabix python3; do if command -v \$b >/dev/null 2>&1; then echo \"$img: \$b present\"; else echo \"$img: \$b MISSING\"; fi; done"
+done
+
 cd "$MAIN"
 # main requires the .dict on every run
 samtools dict "$D/ref.fa" -o "$D/ref.dict"

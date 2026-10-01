@@ -18,10 +18,15 @@ curl -fsSL https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr20.fa.
 samtools faidx ref.fa
 cut -f1,2 ref.fa.fai
 
-echo "== BAM slice ${REGION}, header cut to chr20, mates elsewhere dropped"
+echo "== BAM slice ${REGION}, header cut to chr20, mates elsewhere dropped, read group added"
+# The GIAB BAM has no @RG; Manta then names the sample SAMPLE1 and duphold
+# cannot match it to the BAM. A real aligner run writes SM, so add one.
 samtools view -h "$BAM_URL" "$REGION" \
   | awk -F'\t' '/^@SQ/ { if ($2 == "SN:chr20") print; next } /^@/ { print; next } $7 == "=" || $7 == "*" || $7 == "chr20" { print }' \
-  | samtools view -b -o HG002.bam -
+  | samtools view -b -o slice_norg.bam -
+samtools addreplacerg -r '@RG\tID:HG002\tSM:HG002\tPL:ILLUMINA' -o HG002.bam slice_norg.bam
+rm -f slice_norg.bam
+samtools view -H HG002.bam | grep '^@RG'
 samtools index HG002.bam
 samtools idxstats HG002.bam | awk '$3 > 0'
 
