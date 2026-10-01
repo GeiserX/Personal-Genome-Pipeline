@@ -24,13 +24,88 @@
 #      SAMTOOLS_IMAGE: use `bcftools view -Oz -o` and `bcftools index -t`.
 #   2. (docker) each image is pulled and `command -v` checks each binary.
 #
+# Scope: only these four helpers are checked. Probing every in-image command
+# (python3, awk, Rscript...) would mean pulling every image the pipeline
+# uses, tens of GB, on each pull request.
+#
 # Usage:
 #   scripts/ci/check-container-helpers.sh            both rules (needs docker)
 #   scripts/ci/check-container-helpers.sh --static   rule 1 only
 #   scripts/ci/check-container-helpers.sh --list     print the derived table
+#   scripts/ci/check-container-helpers.sh --root DIR check another tree
+#   scripts/ci/check-container-helpers.sh --self-test  prove rule 1 can fail
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+
+if [ "${1:-}" = "--self-test" ]; then
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  for t in bad good; do
+    mkdir -p "${tmp}/${t}/scripts" "${tmp}/${t}/modules/local/x"
+    printf '%s\n' 'BCFTOOLS_IMAGE="example/bcftools:1.0"' 'SAMTOOLS_IMAGE="example/samtools:1.0"' \
+      'TOOL_IMAGE="example/tool:1.0"' > "${tmp}/${t}/versions.env"
+  done
+  # Planted calls, each behind a different prefix the parser must look past.
+  # shellcheck disable=SC2016  # the dollar signs are the test input
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if ! docker run --rm -v "$G:/genome" "${BCFTOOLS_IMAGE}" bash -c "bcftools view x | bgzip -c > y.gz && tabix y.gz"; then' \
+    '  exit 1' \
+    'fi' \
+    'OUT=$(time docker run --rm "${BCFTOOLS_IMAGE}" tabix z.gz)' \
+    'VAR=x docker run --rm "${SAMTOOLS_IMAGE}" bgzip w' \
+    'docker run --rm "${TOOL_IMAGE}" bgzip allowed.vcf' \
+    > "${tmp}/bad/scripts/a.sh"
+  printf '%s\n' \
+    'process X {' \
+    "    container 'example/bcftools:1.0'" \
+    '    script:' \
+    '    """' \
+    '    bcftools view in.vcf | bgzip -c > out.vcf.gz' \
+    '    """' \
+    '    stub:' \
+    '    """' \
+    '    tabix stub_only.vcf.gz' \
+    '    """' \
+    '}' > "${tmp}/bad/modules/local/x/main.nf"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if ! docker run --rm "${BCFTOOLS_IMAGE}" bash -c "bcftools view x -Oz -o y.gz && bcftools index -t y.gz"; then' \
+    '  exit 1' \
+    'fi' \
+    'docker run --rm "${TOOL_IMAGE}" bgzip allowed.vcf' \
+    > "${tmp}/good/scripts/a.sh"
+  sed 's/| bgzip -c > out.vcf.gz/-Oz -o out.vcf.gz/' "${tmp}/bad/modules/local/x/main.nf" \
+    > "${tmp}/good/modules/local/x/main.nf"
+
+  fail=0
+  rc=0; out=$("$0" --static --root "${tmp}/bad" 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || { echo "self-test: planted tree exited ${rc}, expected 1"; fail=1; }
+  for want in 'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' 'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' \
+              'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:5$' 'bgzip +in SAMTOOLS_IMAGE +scripts/a\.sh:6$' \
+              'bgzip +in BCFTOOLS_IMAGE +modules/local/x/main\.nf:5 \(X\)$'; do
+    grep -qE -- "$want" <<<"$out" || { echo "self-test: planted call not reported: ${want}"; fail=1; }
+  done
+  for nope in 'TOOL_IMAGE' 'stub_only' ':9 \(X\)'; do
+    if grep -qE -- "$nope" <<<"$out"; then echo "self-test: reported although allowed: ${nope}"; fail=1; fi
+  done
+  [ "$fail" -eq 0 ] || printf '%s\n' "$out"
+  rc=0; out=$("$0" --static --root "${tmp}/good" 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "self-test: clean tree exited ${rc}, expected 0"
+    printf '%s\n' "$out"
+    fail=1
+  fi
+  if [ "$fail" -eq 0 ]; then
+    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...) and in a module are reported; a clean tree passes: PASS"
+    exit 0
+  fi
+  echo "self-test: FAIL"
+  exit 1
+fi
+
 exec python3 - "$ROOT" "$@" <<'PY'
 import glob
 import os
@@ -40,6 +115,8 @@ import sys
 
 ROOT = sys.argv[1]
 ARGS = sys.argv[2:]
+if "--root" in ARGS:
+    ROOT = os.path.abspath(ARGS[ARGS.index("--root") + 1])
 HELPERS = ("bcftools", "bgzip", "tabix", "samtools")
 NO_BGZIP_TABIX = ("BCFTOOLS_IMAGE", "SAMTOOLS_IMAGE")
 KEYWORDS = {"if", "then", "elif", "else", "fi", "do", "done", "while", "until",

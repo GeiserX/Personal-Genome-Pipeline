@@ -105,7 +105,14 @@ self_test() {
     'echo "${MISSING_IMAGES[@]}"' \
     '# docker run --rm "$COMMENTED_IMAGE" true' \
     > "${tmp}/bad/scripts/a.sh"
+  # A script far bigger than a pipe buffer that assigns its own image on line
+  # 2: the assignment lookup must not lose to SIGPIPE under pipefail.
+  # shellcheck disable=SC2016
+  printf '%s\n' '#!/usr/bin/env bash' 'BIG_IMAGE="example/big:1.0"' \
+    'docker run --rm "${BIG_IMAGE}" true' > "${tmp}/bad/scripts/big.sh"
+  awk 'BEGIN { for (i = 0; i < 200000; i++) print ": filler line " i }' >> "${tmp}/bad/scripts/big.sh"
   cp "${tmp}/bad/versions.env" "${tmp}/good/versions.env"
+  cp "${tmp}/bad/scripts/big.sh" "${tmp}/good/scripts/big.sh"
   grep -v NOPE_IMAGE "${tmp}/bad/scripts/a.sh" > "${tmp}/good/scripts/a.sh"
 
   rc=0; out=$(check "${tmp}/bad" 2>&1) || rc=$?
@@ -115,7 +122,7 @@ self_test() {
     echo "self-test: planted \${NOPE_IMAGE} was NOT reported (exit ${rc}): FAIL"
     fail=1
   fi
-  for n in FOO_IMAGE LOCAL_IMAGE DEFAULTED_IMAGE MISSING_IMAGES COMMENTED_IMAGE; do
+  for n in FOO_IMAGE LOCAL_IMAGE DEFAULTED_IMAGE MISSING_IMAGES COMMENTED_IMAGE BIG_IMAGE; do
     if grep -q "^  ${n}\$" <<<"$out"; then
       echo "self-test: ${n} reported although it is defined or not a use: FAIL"
       fail=1

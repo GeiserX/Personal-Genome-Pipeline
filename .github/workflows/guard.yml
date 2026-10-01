@@ -47,6 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Self-test (planted bgzip/tabix calls behind if !, time and VAR= must be caught)
+        run: scripts/ci/check-container-helpers.sh --self-test
+
       - name: Table of helper calls derived from scripts and modules
         run: scripts/ci/check-container-helpers.sh --list
 
