@@ -6,7 +6,9 @@ Don't commit 12+ hours and 500 GB to a full pipeline run before verifying everyt
 
 ## Option A: Chromosome 22 Only (Recommended)
 
-Chromosome 22 is the smallest autosome (~51 MB). Running the pipeline on chr22 data tests all tools with ~2% of the data, completing in minutes instead of hours.
+Chromosome 22 is the smallest autosome (~51 MB), so a chr22 extract runs in minutes instead of hours.
+
+Option A runs three VCF-only steps: the ClinVar screen (6), PharmCAT (7) and ROH analysis (11). It shows that Docker, the reference data and the scripts work together. It does not exercise alignment, variant calling or any BAM-dependent step; Option B adds two of those.
 
 ### Step 1: Download Test Data
 
@@ -22,10 +24,10 @@ mkdir -p ${GENOME_DIR}/${SAMPLE}/vcf ${GENOME_DIR}/reference
 
 # Download a pre-called chr22 VCF from Genome in a Bottle
 wget -O ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 
 wget -O ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
 ```
 
 **Note:** This is the full-genome GIAB VCF (~250 MB). For a chr22-only test, extract just chr22:
@@ -96,30 +98,51 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 ## Option B: Full Pipeline Test with Minimal BAM
 
-If you want to test the BAM-dependent steps (Manta, CNVpytor, Delly, TelomereHunter, indexcov), you need a BAM file. A chr22-only BAM is small enough (~3-4 GB) for a quick test:
+If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 1.5 GB.
+
+The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part over HTTPS (a few hundred MB) instead of the 16 GB file. The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
 
 ```bash
-# Download chr22 reads for NA12878 from 1000 Genomes
-# (This is a ~3 GB download)
+# Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA and .fai
 mkdir -p ${GENOME_DIR}/${SAMPLE}/aligned
 
-wget -O ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-  "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/1000G_2504_highcov_chr22.bam"
-
-# This URL may change. If it doesn't work, see:
-# https://www.internationalgenome.org/data-portal/sample/NA12878
-# Download any chr22 BAM for GRCh38
+docker run --rm --user root \
+  --cpus 4 --memory 4g \
+  -v "${GENOME_DIR}:/genome" \
+  -w /tmp \
+  staphb/samtools:1.20 \
+  bash -c "set -euo pipefail
+    samtools view -b -@ 4 \
+      -T /genome/reference/Homo_sapiens_assembly38.fasta \
+      -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
+      https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
+    samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
 ```
 
-**Alternative: Extract chr22 from a full BAM** (if you already have one):
+**Alternative: extract chr22 from a full BAM you already have.** Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
+cd ${GENOME_DIR}/${SAMPLE}/aligned
+if [ ! -L ${SAMPLE}_sorted.bam ] && [ ! -f ${SAMPLE}_full.bam ]; then
+  mv ${SAMPLE}_sorted.bam     ${SAMPLE}_full.bam
+  mv ${SAMPLE}_sorted.bam.bai ${SAMPLE}_full.bam.bai
+fi
+
 docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   staphb/samtools:1.20 \
-  bash -c "samtools view -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam chr22 \
-    > /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam && \
+  bash -c "set -euo pipefail
+    samtools view -b -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
+      /genome/${SAMPLE}/aligned/${SAMPLE}_full.bam chr22
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
+```
+
+Either way, point the pipeline at the chr22 BAM, as Option A does for the VCF:
+```bash
+cd ${GENOME_DIR}/${SAMPLE}/aligned
+ln -sfn ${SAMPLE}_chr22.bam     ${SAMPLE}_sorted.bam
+ln -sfn ${SAMPLE}_chr22.bam.bai ${SAMPLE}_sorted.bam.bai
+ls -lL ${SAMPLE}_sorted.bam ${SAMPLE}_sorted.bam.bai
 ```
 
 Then test BAM-dependent steps:
