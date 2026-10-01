@@ -24,7 +24,7 @@ bd show <issue-id>
 
 # Update issue status
 bd update <issue-id> --claim
-bd update <issue-id> --status done
+bd close <issue-id>
 
 # Sync with Dolt remote
 bd dolt push
