@@ -37,3 +37,15 @@ jobs:
 
       - name: setup.sh, validate-setup.sh and run-all.sh against a fake docker
         run: scripts/ci/run-fake-docker-suite.sh
+
+  helper-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Table of helper calls derived from scripts and modules
+        run: scripts/ci/check-container-helpers.sh --list
+
+      - name: Each helper binary exists in the image that calls it
+        run: scripts/ci/check-container-helpers.sh

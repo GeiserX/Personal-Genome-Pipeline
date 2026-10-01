@@ -1,0 +1,477 @@
+#!/usr/bin/env bash
+# check-container-helpers.sh: every helper binary (bcftools, bgzip, tabix,
+# samtools) that a script or Nextflow module calls must exist in the image the
+# call runs in.
+#
+# The container smoke test only runs each tool's --version, so it cannot see
+# a module that calls bcftools inside the delly image, or a script that runs
+# bgzip inside staphb/bcftools, which ships only bcftools.
+#
+# How the table is built (no hand-kept list):
+#   scripts/*.sh   every `docker run ... IMAGE cmd` command; the in-image
+#                  commands are `cmd`, or, for `bash -c '...'`, the first word
+#                  of every command in the quoted body. A pipe after the
+#                  closing quote runs on the host and is not counted.
+#   modules/local/*/main.nf
+#                  every process: its `container` (or its withName selector
+#                  in conf/containers.config) and the first word of every
+#                  command in its script: block.
+# Only calls to the helper binaries above are kept. Images are named by their
+# versions.env variable when one matches.
+#
+# Two rules:
+#   1. (static) bgzip and tabix are never called in BCFTOOLS_IMAGE or
+#      SAMTOOLS_IMAGE: use `bcftools view -Oz -o` and `bcftools index -t`.
+#   2. (docker) each image is pulled and `command -v` checks each binary.
+#
+# Usage:
+#   scripts/ci/check-container-helpers.sh            both rules (needs docker)
+#   scripts/ci/check-container-helpers.sh --static   rule 1 only
+#   scripts/ci/check-container-helpers.sh --list     print the derived table
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+exec python3 - "$ROOT" "$@" <<'PY'
+import glob
+import os
+import re
+import subprocess
+import sys
+
+ROOT = sys.argv[1]
+ARGS = sys.argv[2:]
+HELPERS = ("bcftools", "bgzip", "tabix", "samtools")
+NO_BGZIP_TABIX = ("BCFTOOLS_IMAGE", "SAMTOOLS_IMAGE")
+KEYWORDS = {"if", "then", "elif", "else", "fi", "do", "done", "while", "until",
+            "{", "}", "!", "time", "function", "exec", "[[", "]]"}
+STOP = {"for", "select", "case", "in", "esac"}
+
+# ---------------------------------------------------------------- versions
+def versions():
+    script = ('set -euo pipefail; . "$1"; for v in $(compgen -v); do '
+              'case $v in *_IMAGE) printf "%s=%s\\n" "$v" "${!v}";; esac; done')
+    out = subprocess.run(["env", "-i", "bash", "--noprofile", "--norc", "-c", script,
+                          "_", os.path.join(ROOT, "versions.env")],
+                         capture_output=True, text=True, check=True).stdout
+    return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+
+VERSIONS = versions()
+BY_VALUE = {v: k for k, v in VERSIONS.items()}
+
+# ---------------------------------------------------------------- shell lexer
+def skip_dq(t, j):
+    """t[j] is a double quote; return the index after its closing quote."""
+    j += 1
+    while j < len(t) and t[j] != '"':
+        if t[j] == "\\":
+            j += 2
+            continue
+        if t.startswith("$(", j):
+            j = match_paren(t, j + 1) + 1
+            continue
+        j += 1
+    return j + 1
+
+def match_paren(t, i):
+    """t[i] is '('; return the index of its matching ')'."""
+    depth, j = 0, i
+    while j < len(t):
+        c = t[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            k = t.find("'", j + 1)
+            j = len(t) if k < 0 else k + 1
+            continue
+        if c == '"':
+            j = skip_dq(t, j)
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return len(t) - 1
+
+def match_brace(t, i):
+    """t[i] is '{'; return the index of its matching '}'."""
+    depth, j = 0, i
+    while j < len(t):
+        if t[j] == "{":
+            depth += 1
+        elif t[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return len(t) - 1
+
+def lex(text, base=0):
+    """Split shell text into simple commands: (words, offset of first word).
+    Command and process substitutions are lexed too and their commands added;
+    here-document bodies, comments and redirection targets are dropped."""
+    cmds, cur, heredocs = [], [], []
+    word, wstart, redirect = None, 0, False
+    i, n = 0, len(text)
+
+    def add(s, at):
+        nonlocal word, wstart
+        if word is None:
+            word, wstart = "", at
+        word += s
+
+    def end_word():
+        nonlocal word, redirect
+        if word is not None:
+            if redirect:
+                redirect = False
+            else:
+                cur.append((word, wstart))
+        word = None
+
+    def end_cmd():
+        nonlocal cur
+        end_word()
+        if cur:
+            cmds.append(([w for w, _ in cur], base + cur[0][1]))
+        cur = []
+
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            if i + 1 < n and text[i + 1] == "\n":
+                i += 2
+                continue
+            add(text[i + 1:i + 2], i)
+            i += 2
+        elif c == "'":
+            k = text.find("'", i + 1)
+            k = n if k < 0 else k
+            add(text[i + 1:k], i)
+            i = k + 1
+        elif c == '"':
+            j, buf = i + 1, ""
+            while j < n and text[j] != '"':
+                if text[j] == "\\" and j + 1 < n and text[j + 1] in '"$\\`\n':
+                    if text[j + 1] != "\n":
+                        buf += text[j + 1]
+                    j += 2
+                    continue
+                if text.startswith("$(", j) and not text.startswith("$((", j):
+                    k = match_paren(text, j + 1)
+                    cmds.extend(lex(text[j + 2:k], base + j + 2))
+                    buf += "$(...)"
+                    j = k + 1
+                    continue
+                buf += text[j]
+                j += 1
+            add(buf, i)
+            i = j + 1
+        elif (c == "$" and text.startswith("$(", i) and not text.startswith("$((", i)) or \
+                (c in "<>" and text.startswith("(", i + 1)):
+            k = match_paren(text, i + 1)
+            cmds.extend(lex(text[i + 2:k], base + i + 2))
+            add("$(...)", i)
+            i = k + 1
+        elif c == "$" and text.startswith("${", i):
+            k = match_brace(text, i + 1)
+            add(text[i:k + 1], i)
+            i = k + 1
+        elif c == "#" and word is None:
+            k = text.find("\n", i)
+            i = n if k < 0 else k
+        elif c in " \t":
+            end_word()
+            i += 1
+        elif c == "\n":
+            end_cmd()
+            i += 1
+            for delim, strip in heredocs:
+                while i < n:
+                    k = text.find("\n", i)
+                    k = n if k < 0 else k
+                    line = text[i:k]
+                    i = k + 1
+                    if (line.lstrip("\t") if strip else line).strip() == delim:
+                        break
+            heredocs = []
+        elif c in ";|&()":
+            if text.startswith("&>", i):
+                end_word()
+                redirect = True
+                i += 2
+            elif text[i:i + 2] in ("||", "&&", ";;", "|&"):
+                end_cmd()
+                i += 2
+            else:
+                end_cmd()
+                i += 1
+        elif c in "<>":
+            if text.startswith("<<<", i):
+                end_word()
+                i += 3
+            elif text.startswith("<<", i):
+                end_word()
+                j, strip = i + 2, False
+                if j < n and text[j] == "-":
+                    strip, j = True, j + 1
+                while j < n and text[j] in " \t":
+                    j += 1
+                m = re.match(r"""(['"]?)([A-Za-z0-9_]+)\1""", text[j:])
+                if m:
+                    heredocs.append((m.group(2), strip))
+                    j += m.end()
+                i = j
+            else:
+                if word is not None and word.isdigit():
+                    word = None
+                end_word()
+                j = i
+                while j < n and text[j] in "<>&|":
+                    j += 1
+                redirect = True
+                i = j
+        else:
+            add(c, i)
+            i += 1
+    end_cmd()
+    return cmds
+
+ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=")
+
+def heads(cmds):
+    """(binary, words, offset) for the command word of every simple command."""
+    out = []
+    for words, off in cmds:
+        k = 0
+        while k < len(words):
+            w = words[k]
+            if w in STOP:
+                break
+            if w in KEYWORDS or ASSIGN.match(w):
+                k += 1
+                continue
+            out.append((os.path.basename(w), words[k:], off))
+            break
+    return out
+
+# ---------------------------------------------------------------- docker run
+VALUED = set("""-a --attach --add-host -c --cpu-shares --cap-add --cap-drop --cidfile --cpus
+ --cpuset-cpus --device --dns -e --env --env-file --entrypoint --expose --gpus --group-add
+ -h --hostname --ipc -l --label --label-file --link --log-driver --log-opt -m --memory
+ --memory-reservation --memory-swap --mount --name --net --network -p --publish --pid
+ --platform --pull --restart --runtime --security-opt --shm-size --stop-signal --tmpfs
+ -u --user --ulimit --userns --uts -v --volume --volumes-from -w --workdir""".split())
+
+def docker_run(words):
+    """(image word, in-image argv) for `docker run ...`, or None."""
+    if len(words) < 2 or words[0] != "docker" or words[1] != "run":
+        return None
+    k, entry = 2, []
+    while k < len(words) and words[k].startswith("-"):
+        w = words[k]
+        if w == "--entrypoint" and k + 1 < len(words):
+            entry = [words[k + 1]]
+        k += 2 if (w in VALUED and "=" not in w) else 1
+    if k >= len(words):
+        return None
+    return words[k], entry + words[k + 1:]
+
+def in_image_heads(argv):
+    """Binaries a container command runs: argv[0], or every command of a
+    `bash -c` / `sh -c` body."""
+    if not argv:
+        return []
+    if os.path.basename(argv[0]) in ("bash", "sh"):
+        k = 1
+        while k < len(argv):
+            w = argv[k]
+            if w in ("-o", "+o"):
+                k += 2
+                continue
+            if w.startswith("-") and not w.startswith("--") and "c" in w[1:]:
+                return [h for h, _, _ in heads(lex(argv[k + 1]))] if k + 1 < len(argv) else []
+            if w.startswith("-"):
+                k += 1
+                continue
+            return []
+    return [os.path.basename(argv[0])]
+
+def resolve(image_word, path):
+    """(variable name, image value) for an image word from a script."""
+    m = re.search(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", image_word)
+    if m:
+        name = m.group(1)
+        if name in VERSIONS:
+            return name, VERSIONS[name]
+        with open(path) as fh:
+            for line in fh:
+                a = re.match(r'\s*(?:export\s+|local\s+)?%s="?([^"\s]+)"?' % re.escape(name), line)
+                if a:
+                    return name, a.group(1)
+        return name, None
+    return BY_VALUE.get(image_word, image_word), image_word
+
+def line_of(text, offset):
+    return text.count("\n", 0, offset) + 1
+
+# ---------------------------------------------------------------- collect
+calls = []        # (image name, image value, binary, location)
+unresolved = []   # locations whose image could not be determined
+
+for path in sorted(glob.glob(os.path.join(ROOT, "scripts", "*.sh"))):
+    rel = os.path.relpath(path, ROOT)
+    with open(path) as fh:
+        text = fh.read()
+    for words, off in lex(text):
+        dr = docker_run(words)
+        if not dr:
+            continue
+        image_word, argv = dr
+        name, value = resolve(image_word, path)
+        for b in in_image_heads(argv):
+            if b in HELPERS:
+                hit = re.compile(r"(?<![\w/-])%s(?![\w-])" % re.escape(b)).search(text, off)
+                loc = "%s:%d" % (rel, line_of(text, hit.start() if hit else off))
+                if value is None:
+                    unresolved.append("%s (%s)" % (loc, image_word))
+                else:
+                    calls.append((name, value, b, loc))
+
+def groovy_to_shell(s, interpolate):
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            nxt = s[i + 1]
+            out.append(nxt if nxt in "$\\\"'" else c + nxt)
+            i += 2
+            continue
+        if c == "$" and interpolate:
+            if s.startswith("${", i):
+                i = match_brace(s, i + 1) + 1
+                out.append("GROOVY")
+                continue
+            m = re.match(r"\$[A-Za-z_][A-Za-z0-9_.]*", s[i:])
+            if m:
+                i += m.end()
+                out.append("GROOVY")
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+selectors = {}
+cfg = os.path.join(ROOT, "conf", "containers.config")
+if os.path.exists(cfg):
+    with open(cfg) as fh:
+        for m in re.finditer(r"withName:\s*['\"]?(\w+)['\"]?\s*\{[^}]*?container\s*=\s*['\"]([^'\"]+)['\"]",
+                             fh.read()):
+            selectors[m.group(1)] = m.group(2)
+
+PROC = re.compile(r"^process\s+(\w+)\s*\{", re.M)
+for path in sorted(glob.glob(os.path.join(ROOT, "modules", "local", "*", "main.nf"))):
+    rel = os.path.relpath(path, ROOT)
+    with open(path) as fh:
+        text = fh.read()
+    procs = list(PROC.finditer(text))
+    for idx, m in enumerate(procs):
+        pname, start = m.group(1), m.end()
+        end = procs[idx + 1].start() if idx + 1 < len(procs) else len(text)
+        body = text[start:end]
+        cm = re.search(r"^\s*container\s+['\"]([^'\"]+)['\"]", body, re.M)
+        image = cm.group(1) if cm else selectors.get(pname)
+        sm = re.search(r"^\s*script:\s*$", body, re.M)
+        if not sm:
+            continue
+        sec_start = start + sm.end()
+        stub = re.search(r"^\s*stub:\s*$", text[sec_start:end], re.M)
+        sec_end = sec_start + stub.start() if stub else end
+        for q in re.finditer(r'("""|\'\'\')(.*?)\1', text[sec_start:sec_end], re.S):
+            shell = groovy_to_shell(q.group(2), q.group(1) == '"""')
+            qstart = sec_start + q.start(2)
+            for b, _, _ in heads(lex(shell)):
+                if b not in HELPERS:
+                    continue
+                hit = re.search(r"(?<![\w/-])%s(?![\w-])" % re.escape(b), text[qstart:sec_end])
+                loc = "%s:%d (%s)" % (rel, line_of(text, qstart + (hit.start() if hit else 0)), pname)
+                if image is None:
+                    unresolved.append(loc)
+                else:
+                    calls.append((BY_VALUE.get(image, image), image, b, loc))
+
+# de-duplicate, keep order
+seen, table = set(), []
+for c in calls:
+    if c not in seen:
+        seen.add(c)
+        table.append(c)
+
+if "--list" in ARGS:
+    for name, value, b, loc in table:
+        print("%-16s %-9s %s" % (name, b, loc))
+    sys.exit(0)
+
+failed = False
+if not table:
+    print("ERROR: derived no helper calls at all; the parser is broken.")
+    sys.exit(2)
+if unresolved:
+    failed = True
+    print("FAIL: helper calls whose image could not be determined:")
+    for loc in unresolved:
+        print("  " + loc)
+
+bad = [(n, b, loc) for n, _, b, loc in table if n in NO_BGZIP_TABIX and b in ("bgzip", "tabix")]
+if bad:
+    failed = True
+    print("FAIL: bgzip/tabix called in an image that is not meant to provide them")
+    print("      (use `bcftools view -Oz -o X.vcf.gz` and `bcftools index -t X.vcf.gz`):")
+    for n, b, loc in bad:
+        print("  %-9s in %-15s %s" % (b, n, loc))
+else:
+    print("OK: no bgzip/tabix call in %s." % " or ".join(NO_BGZIP_TABIX))
+
+if "--static" in ARGS:
+    sys.exit(1 if failed else 0)
+
+images = {}
+for name, value, b, loc in table:
+    images.setdefault((name, value), {}).setdefault(b, []).append(loc)
+
+missing_total = 0
+for (name, value), bins in sorted(images.items()):
+    print("::group::%s (%s): %s" % (name, value, " ".join(sorted(bins))), flush=True)
+    pull = subprocess.run(["docker", "pull", "-q", value], capture_output=True, text=True)
+    if pull.returncode != 0:
+        print("::endgroup::")
+        print("FAIL: cannot pull %s: %s" % (value, pull.stderr.strip()))
+        failed = True
+        continue
+    probe = ('for b in "$@"; do command -v "$b" >/dev/null 2>&1 && echo "found $b" '
+             '|| echo "missing $b"; done')
+    res = subprocess.run(["docker", "run", "--rm", "--entrypoint", "sh", value, "-c", probe, "sh"]
+                         + sorted(bins), capture_output=True, text=True)
+    print(res.stdout + res.stderr, end="")
+    print("::endgroup::")
+    found = set(re.findall(r"^found (\S+)$", res.stdout, re.M))
+    if res.returncode != 0 or not (found or "missing" in res.stdout):
+        print("FAIL: could not probe %s (exit %d)" % (value, res.returncode))
+        failed = True
+        continue
+    for b in sorted(bins):
+        if b not in found:
+            missing_total += 1
+            failed = True
+            print("FAIL: %s is not in %s (%s), called at:" % (b, name, value))
+            for loc in bins[b]:
+                print("    " + loc)
+    subprocess.run(["docker", "rmi", "-f", value], capture_output=True)
+
+if missing_total == 0 and not failed:
+    print("OK: every helper binary is present in the image that calls it (%d images)." % len(images))
+sys.exit(1 if failed else 0)
+PY
