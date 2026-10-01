@@ -276,6 +276,15 @@ else
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
+  # --- AnnotSV annotation data (step 5) ---
+  ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
+  if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+    pass "AnnotSV annotation data (step 5): present"
+  else
+    warn "AnnotSV annotation data not found at: ${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38"
+    echo "       Step 5 (AnnotSV) will be skipped. Download it (~5.3 GB) with: ./scripts/setup.sh ${GENOME_DIR}"
+  fi
+
   # --- Annotation databases (optional, for steps 30-31) ---
   ANNOT_DIR="${GENOME_DIR}/annotations"
   ANNOT_COUNT=0

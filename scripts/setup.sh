@@ -6,7 +6,7 @@
 #   1. GRCh38 reference genome + index (~3.5 GB)
 #   2. ClinVar database (~200 MB)
 #   3. All Docker images (~10-15 GB)
-#   4. Validates the setup
+#   4. AnnotSV annotation data for step 5 (~5.3 GB download)
 #
 # VEP cache (~26 GB) and PCGR ref data (~5 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
@@ -252,10 +252,46 @@ if [ "$FAILED" -gt 0 ]; then
 fi
 
 ###############################################################################
-# Phase 4: Optional Downloads (instructions only)
+# Phase 4: AnnotSV annotation data (step 5, a default step)
+###############################################################################
+# The AnnotSV image holds code only; without this data AnnotSV exits with an
+# error. Downloaded under a .part name, extracted into a temporary directory
+# and moved into place only when complete.
+echo ""
+echo "=== Phase 4: AnnotSV annotation data (~5.3 GB) ==="
+
+ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
+ANNOTSV_TARBALL="${GENOME_DIR}/Annotations_Human_3.5.tar.gz"
+if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+  echo "[OK] AnnotSV annotation data already present."
+else
+  echo "Downloading AnnotSV 3.5 annotation data (~5.3 GB download)..."
+  if _download "https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz" "$ANNOTSV_TARBALL"; then
+    echo "  Extracting..."
+    rm -rf "${ANNOTSV_DIR}.part"
+    mkdir -p "${ANNOTSV_DIR}.part"
+    if tar -xzf "$ANNOTSV_TARBALL" -C "${ANNOTSV_DIR}.part"; then
+      rm -rf "$ANNOTSV_DIR"
+      mv "${ANNOTSV_DIR}.part" "$ANNOTSV_DIR"
+      rm -f "$ANNOTSV_TARBALL"
+      echo "[OK] AnnotSV annotation data: ${ANNOTSV_DIR}/ ($(du -sh "$ANNOTSV_DIR" | cut -f1))"
+    else
+      rm -rf "${ANNOTSV_DIR}.part"
+      echo "[WARN] Could not extract ${ANNOTSV_TARBALL}. Step 5 (AnnotSV) will be skipped until it is in place."
+    fi
+  else
+    echo "[WARN] AnnotSV annotation download failed. Step 5 (AnnotSV) will be skipped until it is in place."
+    echo "  Re-run setup.sh, or download it by hand:"
+    echo "    curl -fL -C - -o ${ANNOTSV_TARBALL} https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz"
+    echo "    mkdir -p ${ANNOTSV_DIR} && tar -xzf ${ANNOTSV_TARBALL} -C ${ANNOTSV_DIR}"
+  fi
+fi
+
+###############################################################################
+# Phase 5: Optional Downloads (instructions only)
 ###############################################################################
 echo ""
-echo "=== Phase 4: Optional Downloads (manual) ==="
+echo "=== Phase 5: Optional Downloads (manual) ==="
 echo ""
 echo "The following are only needed for specific steps and are large downloads:"
 echo ""

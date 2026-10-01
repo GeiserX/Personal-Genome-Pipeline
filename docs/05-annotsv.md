@@ -14,24 +14,42 @@ Raw Manta output contains thousands of SVs with no clinical interpretation. Anno
 quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
 ```
 
+## Annotation Data
+The image holds AnnotSV's code only. Its annotation data (genes, known pathogenic SVs, population frequencies) is a separate 5.3 GB download, and AnnotSV exits with an error without it. `./scripts/setup.sh` downloads and unpacks it into `${GENOME_DIR}/annotsv_annotations/`. To do it by hand:
+
+```bash
+curl -fL -C - -o ${GENOME_DIR}/Annotations_Human_3.5.tar.gz \
+  https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz
+mkdir -p ${GENOME_DIR}/annotsv_annotations
+tar -xzf ${GENOME_DIR}/Annotations_Human_3.5.tar.gz -C ${GENOME_DIR}/annotsv_annotations
+```
+
+The script checks for `${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes/GRCh38` and stops with a pointer to `setup.sh` when it is missing. `run-all.sh` reports step 5 as skipped in that case.
+
 ## Command
 ```bash
-SAMPLE=your_sample
-GENOME_DIR=/path/to/your/data
+./scripts/05-annotsv.sh your_sample
+```
 
-docker run --rm \
+What the script runs:
+
+```bash
+docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
   AnnotSV \
     -SVinputFile /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
+    -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv \
     -genomeBuild GRCh38 \
-    -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_annotsv \
-    -outputDir /genome/${SAMPLE}/annotsv
+    -annotationMode both \
+    -annotationsDir /genome/annotsv_annotations
 ```
 
+To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its host path; the file must be inside `${GENOME_DIR}`.
+
 ## Output
-- `${SAMPLE}_annotsv.tsv` — main annotated output (one row per SV, with ACMG class)
+- `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv` — main annotated output (one row per SV, with ACMG class)
 - Columns include: SV type, coordinates, overlapping genes, DGV frequency, ACMG classification, ClinVar hits
 
 ## ACMG Classification
@@ -48,4 +66,4 @@ docker run --rm \
 - SVs >5MB in short-read WGS are usually artifacts from segmental duplications — do not trust large calls blindly
 - Most SVs will be class 2-3 (benign/VUS) — this is normal for a healthy genome
 - Input must be from Manta step 4 (`diploidSV.vcf.gz`), not the unfiltered candidates
-- AnnotSV bundles its own annotation databases inside the Docker image — no separate download needed
+- The annotation databases are not in the Docker image: they live in `${GENOME_DIR}/annotsv_annotations/` (see Annotation Data above)
