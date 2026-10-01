@@ -256,27 +256,33 @@ wget -c https://zenodo.org/record/7072866/files/revel-v1.3_all_chromosomes.zip
 unzip revel-v1.3_all_chromosomes.zip
 
 # Convert to tabix-indexed TSV for GRCh38
-# Extract GRCh38 columns, add chr prefix, sort, bgzip, index
+# Extract GRCh38 columns, add chr prefix, sort, bgzip, index.
+# The GATK image is used because it ships bgzip and tabix; the bcftools image does not.
+# The source file has nine comma-separated columns:
+#   chr,hg19_pos,grch38_pos,ref,alt,aaref,aaalt,REVEL,Ensembl_transcriptid
+# The table keeps five of them, so it gets its own five-name header.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  broadinstitute/gatk:4.6.2.0 \
   bash -c '
+    set -euo pipefail
     cd /genome/annotations
-    cat revel_with_transcript_ids | tr "," "\t" > revel_tabbed.tsv
-    # Header line
-    head -1 revel_tabbed.tsv | sed "s/^/#/" > revel_grch38.tsv
-    # Extract GRCh38 rows (col3=grch38_pos), skip header, add chr prefix, sort
-    tail -n+2 revel_tabbed.tsv | \
-      awk -F"\t" "\$3 != \".\" {print \"chr\"\$1\"\t\"\$3\"\t\"\$4\"\t\"\$5\"\t\"\$8}" | \
-      sort -k1,1V -k2,2n >> revel_grch38.tsv
-    bgzip revel_grch38.tsv
-    tabix -s 1 -b 2 -e 2 revel_grch38.tsv.gz
-    # Clean up intermediates
-    rm -f revel_tabbed.tsv revel_with_transcript_ids revel-v1.3_all_chromosomes.zip
+    printf "#chr\tpos\tref\talt\tREVEL\n" > revel_grch38.tsv
+    # Skip the header, keep rows with a GRCh38 position (col 3), add the chr prefix, sort
+    tail -n+2 revel_with_transcript_ids | \
+      awk -F"," -v OFS="\t" "\$3 != \".\" {print \"chr\"\$1, \$3, \$4, \$5, \$8}" | \
+      sort -T /genome/annotations -k1,1V -k2,2n >> revel_grch38.tsv
+    bgzip -f revel_grch38.tsv
+    tabix -f -s 1 -b 2 -e 2 revel_grch38.tsv.gz
+    # Clean up intermediates (only reached if every command above succeeded)
+    rm -f revel_with_transcript_ids revel-v1.3_all_chromosomes.zip
   '
+
+# Check: five columns under a five-name header
+gzip -dc revel_grch38.tsv.gz | head -2
 ```
 
-> **Thresholds:** ClinGen recommends REVEL >= 0.644 as supporting evidence of pathogenicity (PP3_Moderate) and >= 0.932 for strong evidence (PP3_Strong) for missense variants.
+> **Thresholds:** ClinGen's calibration (Pejaver et al. 2022) gives REVEL >= 0.644 as PP3_Supporting, >= 0.773 as PP3_Moderate and >= 0.932 as PP3_Strong for missense variants. There is no PP3 Very Strong level. See [interpreting-results.md](interpreting-results.md#revel-rare-exome-variant-ensemble-learner) for the BP4 (benign) levels.
 
 ### AlphaMissense — ~613 MB
 
@@ -290,14 +296,15 @@ cd ${GENOME_DIR}/annotations
 # Download pre-scored GRCh38 predictions
 wget -c https://storage.googleapis.com/dm_alphamissense/AlphaMissense_hg38.tsv.gz
 
-# Index for vcfanno (skip header lines starting with #)
+# Index for vcfanno (skip header lines starting with #). The GATK image has
+# tabix; the bcftools image does not.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  broadinstitute/gatk:4.6.2.0 \
   tabix -s 1 -b 2 -e 2 -S 1 /genome/annotations/AlphaMissense_hg38.tsv.gz
 ```
 
-> **Thresholds:** am_pathogenicity < 0.34 = likely benign, > 0.564 = likely pathogenic.
+> **Thresholds:** am_pathogenicity < 0.34 = likely benign, > 0.564 = likely pathogenic. These are AlphaMissense's own class boundaries, not ACMG evidence levels.
 
 ### gnomAD v4.1 Constraint Metrics — ~91 MB
 

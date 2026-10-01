@@ -355,13 +355,20 @@ Scores **all** variant types (coding, non-coding, splice, regulatory). Uses a PH
 
 Scores **missense variants only**. Combines 13 individual tools into a single 0-1 score. Recommended by ClinGen for ACMG PP3/BP4 evidence.
 
+The levels below are the REVEL row of Table 2 in [Pejaver et al. 2022](https://doi.org/10.1016/j.ajhg.2022.10.013), the ClinGen calibration of PP3/BP4:
+
 | REVEL Score | ClinGen Evidence Level | Interpretation |
 |---|---|---|
-| < 0.290 | BP4_Supporting | Supporting evidence of benign |
-| 0.290-0.644 | No evidence | Uncertain significance |
-| 0.644-0.773 | PP3_Moderate | Moderate evidence of pathogenicity |
-| 0.773-0.932 | PP3_Strong | Strong evidence of pathogenicity |
-| > 0.932 | PP3_Very Strong | Very strong evidence of pathogenicity |
+| <= 0.003 | BP4_Very Strong | Very strong evidence of benign |
+| > 0.003 to <= 0.016 | BP4_Strong | Strong evidence of benign |
+| > 0.016 to <= 0.183 | BP4_Moderate | Moderate evidence of benign |
+| > 0.183 to <= 0.290 | BP4_Supporting | Supporting evidence of benign |
+| > 0.290 to < 0.644 | No evidence | Uncertain significance |
+| >= 0.644 to < 0.773 | PP3_Supporting | Supporting evidence of pathogenicity |
+| >= 0.773 to < 0.932 | PP3_Moderate | Moderate evidence of pathogenicity |
+| >= 0.932 | PP3_Strong | Strong evidence of pathogenicity |
+
+There is no PP3 Very Strong level for REVEL: no score reached it in the calibration.
 
 **When to use REVEL:** First-line score for evaluating missense variants. If REVEL >= 0.644, investigate the variant seriously.
 
@@ -375,7 +382,9 @@ DeepMind's protein-structure-informed **missense** classifier. Uses AlphaFold2 p
 | 0.34-0.564 | ambiguous | Uncertain — use other evidence |
 | > 0.564 | likely_pathogenic | Predicted damaging based on protein structure |
 
-**When to use AlphaMissense:** Complements REVEL. If both REVEL and AlphaMissense agree a variant is damaging, this strengthens the computational evidence (ClinGen PP3). If they disagree, investigate further.
+These cut-offs are AlphaMissense's own class boundaries, set by its authors. They are not ACMG/ClinGen evidence levels.
+
+**When to use AlphaMissense:** Complements REVEL as a second opinion. If they disagree, investigate further. Agreement does not add up to stronger PP3 evidence: ClinGen's calibration recommends one tool, used genome-wide, for PP3/BP4, so picking whichever tool scores a variant highest would bias the result.
 
 ### SpliceAI
 
@@ -426,7 +435,7 @@ grep -v "^#" "$VEP_VCF" | grep "0/1" | grep -oP 'SYMBOL=[^;|]+' | \
 # 4. Known ACMG actionable genes (81 genes in ACMG SF v3.2)
 #    Quick check if any HIGH/MODERATE variants land in these genes
 #    Note: this is a partial list of cancer-related genes for illustration.
-#    See https://www.nature.com/articles/s41436-023-02171-w for the full 81-gene list.
+#    See https://doi.org/10.1016/j.gim.2023.100866 for the full 81-gene list.
 ACMG_GENES="BRCA1|BRCA2|MLH1|MSH2|MSH6|PMS2|APC|MUTYH|TP53|RB1|MEN1|RET|VHL|SDHB|SDHD|TSC1|TSC2|WT1|NF2|PTEN|STK11|BMPR1A|SMAD4|CDH1|PALB2|CHEK2|ATM|NBN|BARD1|RAD51C|RAD51D|BRIP1"
 grep -v "^#" "$VEP_VCF" | grep -E "HIGH|MODERATE" | grep -E "$ACMG_GENES" | head -20
 

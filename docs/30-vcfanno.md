@@ -90,7 +90,7 @@ bcftools view -i 'INFO/CADD_PHRED>=20' ${SAMPLE}_annotated.vcf.gz | head
 bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AM_class\n' \
   -i 'INFO/AM_class="likely_pathogenic"' ${SAMPLE}_annotated.vcf.gz
 
-# High REVEL score missense variants (ClinGen moderate evidence)
+# REVEL at or above ClinGen's PP3_Supporting threshold (0.773 is Moderate, 0.932 Strong)
 bcftools view -i 'INFO/REVEL>=0.644' ${SAMPLE}_annotated.vcf.gz
 ```
 
