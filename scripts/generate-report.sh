@@ -43,17 +43,34 @@ fi
 
 # ---------- ClinVar Screen (Step 6) ----------
 CLINVAR_DIR="${SAMPLE_DIR}/clinvar"
-if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
+CLINVAR_HITS="${CLINVAR_DIR}/${SAMPLE}_clinvar_hits.vcf"
+if [ -f "$CLINVAR_HITS" ]; then
   echo "## ClinVar Pathogenic Screen"
   echo "---"
-  HITS=$(grep -cv '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null || true)
+  HITS=$(grep -cv '^#' "$CLINVAR_HITS" || true)
   echo "  Pathogenic/Likely Pathogenic hits: ${HITS}"
   if [ "$HITS" -gt 0 ]; then
     echo ""
-    echo "  Genes affected:"
-    grep -v '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null | head -20 | while IFS=$'\t' read -r chr pos id ref alt rest; do
-      echo "    ${chr}:${pos} ${ref}>${alt} (${id})"
-    done
+    echo "  Hits (first 20): gene, position, genotype, significance [review status]"
+    grep -v '^#' "$CLINVAR_HITS" | head -20 | awk -F'\t' '{
+      geneinfo=""; clnsig=""; rev="";
+      n=split($8,kv,";");
+      for(i=1;i<=n;i++) {
+        p=index(kv[i],"="); if(p==0) continue;
+        k=substr(kv[i],1,p-1); v=substr(kv[i],p+1);
+        if(k=="GENEINFO") geneinfo=v; else if(k=="CLNSIG") clnsig=v; else if(k=="CLNREVSTAT") rev=v;
+      }
+      gene=""; m=split(geneinfo,g,"|");
+      for(i=1;i<=m;i++) { split(g[i],sym,":"); gene=gene (i>1 ? "," : "") sym[1] }
+      if(gene=="") gene=".";
+      if(clnsig=="") clnsig="."; gsub(/_/," ",clnsig);
+      if(rev=="") rev="."; gsub(/_/," ",rev);
+      split($10,f,":"); gt=f[1];
+      if(gt=="0/1" || gt=="1/0" || gt=="0|1" || gt=="1|0") zyg="het";
+      else if(gt=="1/1" || gt=="1|1") zyg="hom";
+      else zyg=gt;
+      printf "    %-10s %s:%s %s>%s  %s  %s [%s]\n", gene, $1, $2, $4, $5, zyg, clnsig, rev
+    }' || true
   fi
   echo ""
 fi
