@@ -213,7 +213,7 @@ for gene in all_genes:
     rows.append([gene, diplotype, phenotype, cnv, source])
 
 with open(summary_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t')
+    w = csv.writer(f, delimiter='\t', lineterminator='\n')
     w.writerow(['Gene', 'Diplotype', 'Phenotype', 'CNV_call', 'Source'])
     w.writerows(rows)
 
@@ -307,7 +307,7 @@ print(f'PharmCAT genes parsed: {len(pharmcat_data)}')
 all_genes = sorted(set(list(pypgx_data.keys()) + list(pharmcat_data.keys())))
 
 with open(comparison_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t')
+    w = csv.writer(f, delimiter='\t', lineterminator='\n')
     w.writerow(['Gene', 'PharmCAT_diplotype', 'pypgx_diplotype', 'Match', 'Called_by'])
     matches = 0
     mismatches = 0
