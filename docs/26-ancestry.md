@@ -36,23 +36,29 @@ staphb/bcftools:1.21
 ./scripts/26-ancestry.sh your_name
 ```
 
+`run-all.sh` does not run this step unless you ask for it, because on one sample it downloads about 900 MB to produce a count:
+
+```bash
+ANCESTRY=true ./scripts/run-all.sh your_name <male|female>
+```
+
 ## What the Script Does Internally
 
-1. **Downloads 1000 Genomes reference SNPs** (one-time, ~100 MB): fetches the GRCh38 biallelic SNV sites file and filters to common autosomal SNPs (MAF 5-95%)
+1. **Downloads 1000 Genomes reference SNPs** (one-time, ~900 MB): fetches the GRCh38 biallelic SNV sites file and filters to common autosomal SNPs (MAF 5-95%)
 2. **Downloads population labels**: maps each 1000G sample to its super-population (AFR, AMR, EAS, EUR, SAS)
-3. **Intersects your VCF with the reference**: finds SNPs present in both your sample and the 1000G panel using `bcftools isec`
-4. **LD prunes**: removes correlated SNPs (window 50, step 5, r-squared threshold 0.2) to avoid redundant signal. PCA requires independent markers.
-5. **Runs PCA**: computes the first 10 principal components from the LD-pruned SNP set
+3. **Intersects your VCF with the reference**: finds SNPs present in both your sample and the 1000G panel using `bcftools isec`, and prints how many there are
+4. **Tries LD pruning** (window 50, step 5, r-squared threshold 0.2). plink2 needs at least 50 samples for this, so on one sample it fails and the script carries on with all shared SNPs.
+5. **Tries PCA**. plink2 needs at least 2 samples, so on one sample it fails too and the script says so.
+
+On a single sample the only result is the shared SNP set and its count.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_pca.eigenvec` | Principal component values (10 PCs per sample) |
-| `${SAMPLE}_pca.eigenval` | Eigenvalues showing variance explained by each PC |
-| `${SAMPLE}_shared.vcf.gz` | SNPs shared between your sample and 1000G |
-| `${SAMPLE}_ld.prune.in` | SNPs retained after LD pruning |
-| `${SAMPLE}_ld.prune.out` | SNPs removed by LD pruning |
+| `${SAMPLE}_shared.vcf.gz` (+ `.tbi`) | SNPs shared between your sample and 1000G |
+
+The `${SAMPLE}_ld.prune.in`/`.prune.out` and `${SAMPLE}_pca.eigenvec`/`.eigenval` files are only written when plink2 gets enough samples, which never happens with one sample.
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. Reference data is cached in `${GENOME_DIR}/ancestry_ref/`.
 
@@ -62,13 +68,13 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. Reference data is 
 
 ## Interpreting Results
 
-The `eigenvec` file contains your sample's coordinates on 10 principal components. The `eigenval` file shows how much variance each PC explains.
+The step reports how many of your SNPs are also common SNPs in the 1000G panel. A count below 1,000 usually means a different genome build or a VCF with few variants. It does not tell you anything about your ancestry by itself.
 
 ### Single-sample limitation
 
-This script runs PCA on **your sample alone**, not jointly with the 1000G reference panel. This is a fundamental limitation: in population-structure PCA (Price et al. 2006), the PC axes are defined by the variance across many individuals. With a single sample, the axes instead capture internal genotype variance (e.g., heterozygosity patterns), which does not map onto population-level structure.
+This script can only attempt PCA on **your sample alone**, not jointly with the 1000G reference panel, and plink2 refuses it. Even if it ran, this is a fundamental limitation: in population-structure PCA (Price et al. 2006), the PC axes are defined by the variance across many individuals. With a single sample, the axes instead capture internal genotype variance (e.g., heterozygosity patterns), which does not map onto population-level structure.
 
-The PC values from this step are **not comparable** to published 1000G PCA plots, where PC1 separates African from non-African ancestry and PC2 separates European from East Asian. Those axis interpretations require joint PCA across a multi-population cohort.
+Single-sample PC values would **not be comparable** to published 1000G PCA plots, where PC1 separates African from non-African ancestry and PC2 separates European from East Asian. Those axis interpretations require joint PCA across a multi-population cohort.
 
 To properly place yourself on a population map, you would need to:
 
@@ -90,7 +96,7 @@ This pipeline does not perform joint PCA. The single-sample output is included a
 
 - Reference data (1000G SNPs and population labels) is downloaded once and cached in `${GENOME_DIR}/ancestry_ref/`. Delete this directory to force re-download.
 - LD pruning parameters (window=50, step=5, r2=0.2) are standard for ancestry PCA.
-- 10 PCs are computed by default. For single-sample PCA this is more than sufficient; additional PCs would not add interpretable signal without a reference cohort.
+- The script asks plink2 for 10 PCs. With one sample plink2 computes none; with a reference cohort merged in, 10 is the usual number.
 - For a more complete ancestry analysis, consider uploading your VCF to tools like [Gnomix](https://github.com/AI-sandbox/gnomix) or using the PLINK `--admixture` approach.
 
 ## Links
