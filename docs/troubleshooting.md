@@ -61,7 +61,7 @@ bash -x scripts/03-deepvariant.sh your_name 2>&1 | tee debug.log
 docker run --rm -it \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.6.0 \
+  google/deepvariant:1.10.0 \
   /bin/bash
 # Then run the command inside the container to see the error
 ```
@@ -88,12 +88,12 @@ docker run --rm -it \
    | Tool | Wrong Tag | Correct Tag |
    |---|---|---|
    | CNVnator | `cnvnator:0.4.1--py312hc02a2a2_7` | `cnvnator:0.4.1--py312h99c8fb2_11` |
-   | Delly | `delly:1.2.9--ha41ced6_0` | `delly:1.7.3--hd6466ae_0` |
+   | Delly | `delly:1.2.9--ha41ced6_0` | `quay.io/biocontainers/delly:2.1.0--h3752d28_0` |
    | ExpansionHunter | `weisburd/expansionhunter:latest` (v2.5.5) | `quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5` |
-   | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `getwilds/annotsv:3.4.4` |
+   | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0` |
    | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:2.2.5` (bundles both) |
    | SnpSift | `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` | `quay.io/biocontainers/snpeff:5.2--hdfd78af_1` (bundled) |
-   | MToolBox | `robertopreste/mtoolbox:latest` | Does not exist. Use `broadinstitute/gatk:4.6.1.0` instead |
+   | MToolBox | `robertopreste/mtoolbox:latest` | Does not exist. Use `broadinstitute/gatk:4.6.2.0` instead |
 
 3. If an image disappears entirely, check if the tool has an official Docker image on GitHub Container Registry (`ghcr.io`), Docker Hub, or the tool's documentation.
 
@@ -433,16 +433,15 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 **Symptom:** You want to use GPU acceleration for DeepVariant to speed it up.
 
-**Reality:** DeepVariant's GPU Docker image requires **CUDA 11.3** with specific NVIDIA driver versions. This is an older CUDA version that conflicts with newer driver stacks on most systems (2024+).
+**Reality:** DeepVariant's GPU Docker image is built against one specific CUDA version, so it needs an NVIDIA driver that supports that version. Check the release notes of the DeepVariant version you run before trying it.
 
 **Why it's not worth the hassle:**
-1. The GPU image (`google/deepvariant:1.6.0-gpu`) requires `nvidia-docker2` runtime and a compatible NVIDIA driver
-2. CUDA 11.3 needs driver version 465.19.01+ but < 520 on some configurations
-3. The `make_examples` step (which takes most of the time) is **I/O-bound, not compute-bound** — GPU barely helps
-4. Only `call_variants` benefits from GPU, and it's already the fastest step
-5. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
+1. The GPU image (`google/deepvariant:1.10.0-gpu`) requires the NVIDIA container runtime and a driver that matches its CUDA version
+2. The `make_examples` step (which takes most of the time) is **I/O-bound, not compute-bound** — GPU barely helps
+3. Only `call_variants` benefits from GPU, and it's already the fastest step
+4. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
 
-**Recommendation:** Use the CPU image (`google/deepvariant:1.6.0`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
+**Recommendation:** Use the CPU image (`google/deepvariant:1.10.0`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
 
 ---
 
@@ -454,11 +453,12 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 **Fix:**
 ```bash
-# Edit scripts/03-deepvariant.sh or run manually with reduced resources:
+# scripts/03-deepvariant.sh has fixed limits (--cpus 8 --memory 32g), so run step 3
+# manually with reduced resources:
 docker run --rm \
   --cpus 2 --memory 12g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.6.0 \
+  google/deepvariant:1.10.0 \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=WGS \
     --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
@@ -518,7 +518,7 @@ If the Manta VCF is valid but AnnotSV still produces nothing, try running with v
 ```bash
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  getwilds/annotsv:3.4.4 \
+  quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
   AnnotSV \
     -SVinputFile "/genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_test.tsv" \
@@ -619,14 +619,15 @@ ExpansionHunter \
    # The "Format:" part shows the pipe-delimited column order
    ```
 
-3. **Forgetting to specify -f (format) in +split-vep:** Without `-f`, it outputs all fields. Specify the ones you want:
+3. **Forgetting to specify -f (format) in +split-vep:** Without `-f`, it outputs all fields. Specify the ones you want, and choose how multiple transcripts are reported:
    ```bash
    docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
      bcftools +split-vep \
        /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz \
        -f '%CHROM %POS %Consequence %SYMBOL %SIFT %PolyPhen %gnomADe_AF\n' \
-       -d
-   # -d picks only the most severe consequence per variant
+       -s worst
+   # -s worst keeps only the most severe consequence per variant.
+   # -d does the opposite: it prints every transcript's consequence on its own line.
    ```
 
 4. **gnomAD field naming confusion:** Depending on VEP version and cache, the gnomAD frequency field may be named `gnomADe_AF`, `gnomAD_AF`, `AF`, or `MAX_AF`. Always check the CSQ header first.
@@ -637,7 +638,7 @@ ExpansionHunter \
 
 **Symptom:** VEP cache download times out, produces a partial file, or extraction fails.
 
-**Cause:** The VEP cache is ~22-26 GB, hosted on Ensembl FTP servers that can be slow. The built-in `INSTALL.pl` downloader does not support resume and may fail silently.
+**Cause:** The VEP cache is ~26 GB, hosted on Ensembl FTP servers that can be slow. The built-in `INSTALL.pl` downloader does not support resume and may fail silently.
 
 **Fix — manual download with resume:**
 ```bash
@@ -645,17 +646,18 @@ mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
 # wget -c resumes interrupted downloads
-wget -c https://ftp.ensembl.org/pub/release-112/variation/indexed_vep_cache/homo_sapiens_vep_112_GRCh38.tar.gz
+# Release 116 matches the pinned VEP image (ensemblorg/ensembl-vep:release_116.0)
+wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
 
-# Verify download size (~22 GB)
-ls -lh homo_sapiens_vep_112_GRCh38.tar.gz
+# Verify download size (~26 GB)
+ls -lh homo_sapiens_vep_116_GRCh38.tar.gz
 
 # Extract (takes 10-20 minutes, expands to ~30 GB)
 cd ${GENOME_DIR}/vep_cache
-tar xzf tmp/homo_sapiens_vep_112_GRCh38.tar.gz
+tar xzf tmp/homo_sapiens_vep_116_GRCh38.tar.gz
 
 # Verify extraction
-ls ${GENOME_DIR}/vep_cache/homo_sapiens/112_GRCh38/
+ls ${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/
 # Should contain info.txt, variation_set_*.gz, and many other files
 ```
 
@@ -755,7 +757,7 @@ docker run --rm quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0 \
    docker run --rm --user root \
      --cpus 4 --memory 8g \
      -v "${GENOME_DIR}:/genome" \
-     quay.io/biocontainers/delly:1.7.3--hd6466ae_0 \
+     quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
      delly call \
        -g /genome/reference/Homo_sapiens_assembly38.fasta \
        -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
@@ -774,7 +776,7 @@ The script tries to create `Homo_sapiens_assembly38.dict` if it does not exist. 
 ```bash
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/gatk:4.6.1.0 \
+  broadinstitute/gatk:4.6.2.0 \
   gatk CreateSequenceDictionary \
     -R /genome/reference/Homo_sapiens_assembly38.fasta \
     -O /genome/reference/Homo_sapiens_assembly38.dict
@@ -791,7 +793,7 @@ Possible causes:
 
 HLA typing from WGS data is unreliable in Docker. The two main tools have unresolved issues:
 
-**HLA-LA:** Requires a pre-serialized 40 GB graph. Most Docker images do not include it. The one image that does (`jiachenzdocker/hla-la:latest`) crashes during graph alignment. **Status: UNSOLVED.**
+**HLA-LA:** Requires a pre-serialized 40 GB graph. Most Docker images do not include it. The one image that does (`jiachenzdocker/hla-la`, pinned by digest in [step 8](08-hla-typing.md#alternative-hla-la)) crashes during graph alignment. **Status: UNSOLVED.**
 
 **T1K:** Works partially, but the coordinate file build step requires the full reference FASTA (not the `.fai` index). With correctly built coordinates, T1K can call some HLA alleles but may have ~50% unmapped alleles.
 
