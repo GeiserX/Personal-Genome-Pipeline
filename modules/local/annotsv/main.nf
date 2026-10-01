@@ -36,6 +36,7 @@ process ANNOTSV {
     AnnotSV \\
         -SVinputFile ${sv_vcf} \\
         -outputFile ${meta.id}_sv_annotated.tsv \\
+        -outputDir . \\
         -genomeBuild GRCh38 \\
         -annotationsDir ${annotations_dir} \\
         -annotationMode both
