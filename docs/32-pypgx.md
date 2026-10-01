@@ -118,7 +118,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | Gene | Gene symbol |
 | Diplotype | Star allele call (e.g., \*1/\*4) |
 | Phenotype | Metabolizer status (e.g., Intermediate Metabolizer) |
-| CNV_call | The copy-number call pypgx itself made from read depth (its `CNV` field, for example `Normal`, `WholeDel1`, `WholeDel2`, `WholeDup1`). BAM-based genes only; `N/A` for VCF-based genes. Earlier versions guessed a Yes/No flag from the allele names, which flagged any name containing `*5` and missed the GSTM1/GSTT1/CYP2A6 whole-gene deletions |
+| CNV_call | The copy-number call pypgx itself made from read depth (its `CNV` field, for example `Normal` or `WholeDel1`). BAM-based genes only; `N/A` for VCF-based genes. Earlier versions guessed a Yes/No flag from the allele names, which flagged any name containing `*5` and missed the GSTM1/GSTT1/CYP2A6 whole-gene deletions |
 | Source | BAM (SV genes) or VCF (variant-based genes) |
 
 ### PharmCAT comparison TSV columns

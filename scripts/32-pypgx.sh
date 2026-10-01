@@ -188,7 +188,7 @@ for gene in all_genes:
     source = 'BAM' if gene in bam_genes else 'VCF'
     # pypgx print-data results.zip outputs a TSV whose first column is the sample
     # and whose named columns include Genotype, Phenotype and CNV (the copy-number
-    # call pypgx made from read depth, e.g. Normal, WholeDel1, WholeDel2, WholeDup1).
+    # call pypgx made from read depth, e.g. Normal or WholeDel1).
     out = subprocess.run(['pypgx', 'print-data', results_zip], capture_output=True, text=True)
     if out.returncode != 0:
         print(f'WARNING: pypgx print-data failed for {gene}: {out.stderr.strip()}', file=sys.stderr)
