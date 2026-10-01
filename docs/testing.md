@@ -13,6 +13,9 @@ The test data is a slice of **HG002**, the Genome in a Bottle (GIAB) son of the 
 | Region (GRCh38) | Why it is there |
 |---|---|
 | chr1:109,600,000-109,800,000 | GSTM1 (pypgx reads depth over it) |
+| chr2:233,600,000-233,800,000 | UGT1A1 and UGT1A4 |
+| chr4:68,500,000-68,700,000 | UGT2B15 and UGT2B17 |
+| chr16:28,580,000-28,630,000 | SULT1A1 |
 | chr19:40,800,000-41,050,000 | CYP2A6, CYP2A7 and CYP2B6 |
 | chr20:10,000,000-10,500,000 | small variants; the planted ClinVar record (in SNAP25); the GIAB truth slice |
 | chr22:42,000,000-42,300,000 | CYP2D6 and CYP2D7 with flanks |
@@ -33,7 +36,7 @@ What the release holds:
 |---|---|
 | `HG002_R1.fastq.gz`, `HG002_R2.fastq.gz` | the sliced reads as name-sorted pairs, input for step 02 |
 | `HG002_slice.bam` (+ `.bai`) | the same reads as GIAB aligned them |
-| `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr1, chr5, chr6, chr10, chr12, chr19, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-alt analysis set, so every coordinate is real, plus `chr22_KI270879v1_alt` (see below) |
+| `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr1, chr2, chr4, chr5, chr6, chr10, chr12, chr16, chr19, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-alt analysis set, so every coordinate is real, plus `chr22_KI270879v1_alt` (see below) |
 | `clinvar.vcf.gz`, `clinvar_chr.vcf.gz`, `clinvar_pathogenic_chr.vcf.gz` (+ `.tbi`) | ClinVar records inside the regions, built the way `setup.sh` builds the full files |
 | `planted.tsv` | one synthetic ClinVar record (CLNSIG Pathogenic, gene SNAP25, ID 900000001) at a SNV HG002 is homozygous for, so step 06 always has a hit with a known gene |
 | `HG002_vep.vcf` | up to 200 GIAB truth variants (HLA-A, -B, -C, CYP2C19, CYP2C9, SNAP25) annotated by VEP `--database --everything`; it stands in for step 13, whose offline cache does not fit a runner |
@@ -42,19 +45,19 @@ What the release holds:
 | `HG002_truth_chr20.vcf.gz` (+ `.tbi`), `HG002_truth_chr20.bed` | GIAB v4.2.1 truth for the chr20 slice |
 | `regions.bed`, `MANIFEST.txt`, `SHA256SUMS` | the slices, how this build was made (sources, depth, ClinVar date, build-script checksum), checksums |
 
-The one ALT contig is there because pypgx (step 32) reads depth over every BAM-based gene before it calls any of them, and its GRCh38 region for GSTT1 is `chr22_KI270879v1_alt:267307-281486`. With that contig missing from the BAM header, step 32 calls no BAM-based gene at all, CYP2D6 included. Today's default reference (the Broad hg38 file) has the contig; the no-alt analysis set does not, so a switch to it has to deal with this first.
+Why chr2, chr4, chr16 and one ALT contig: pypgx (step 32) reads depth over the region of every gene it can call copy number for before it calls any of them, and samtools refuses a region on a contig the BAM does not have. One missing contig and step 32 calls no BAM-based gene at all, CYP2D6 included. Its GRCh38 region for GSTT1 is `chr22_KI270879v1_alt:267307-281486`. Today's default reference (the Broad hg38 file) has that contig; the no-alt analysis set does not, so a switch to it has to deal with this first.
 
 The whole release stays under 1.5 GB. The build checks that the BAM passes `samtools quickcheck`, that every `.gz` file passes `gzip -t`, and that `samtools idxstats` shows reads on every primary contig of the reference. The e2e job repeats those checks after download.
 
 ### Where it lives and how to change it
 
-The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v2`). The e2e job reads the same file, so the workflow never changes when the data does.
+The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v3`). The e2e job reads the same file, so the workflow never changes when the data does.
 
 To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
-2. Bump `tests/fixtures/VERSION` (for example from `fixture-v2` to `fixture-v3`).
-3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (about 30 minutes, most of it VEP querying Ensembl's database) and publishes the new release. The e2e job of your pull request waits up to 45 minutes for it.
+2. Bump `tests/fixtures/VERSION` (for example from `fixture-v3` to `fixture-v4`).
+3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (about 30 minutes, most of it VEP querying Ensembl's database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it.
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
 
@@ -64,7 +67,7 @@ You can build it yourself on Linux with Docker, `bgzip` and `tabix` and about 10
 
 [`scripts/ci/e2e-run.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/e2e-run.sh) downloads the fixture, checks `SHA256SUMS`, lays out a `GENOME_DIR` the way `setup.sh` and step 13 would leave it, and runs every case file in [`tests/e2e/`](https://github.com/GeiserX/Personal-Genome-Pipeline/tree/main/tests/e2e). It runs all of them even when one fails, so one run lists every broken step. The job summary shows a table of case, result, time and log, plus the failed checks of each failed case; the full logs are in the `e2e-logs` artifact.
 
-It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
+It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. The target is under 60 minutes. DeepVariant needs the e2e case's `INTERVALS` (the fixture slices) to get there: without it, it walks all 1.8 Gb of the reference, which takes about 45 minutes on its own. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
 
 What it covers:
 

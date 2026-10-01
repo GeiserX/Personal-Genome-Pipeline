@@ -9,10 +9,11 @@
 #
 #   HG002_R1.fastq.gz, HG002_R2.fastq.gz   name-sorted read pairs, for step 02
 #   HG002_slice.bam (+.bai)                the downsampled GIAB alignments
-#   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr5 chr6 chr10 chr12 chr19
-#                                          chr20 chr22 chrX chrY chrM of the NCBI
-#                                          GRCh38 no-alt analysis set, plus the
-#                                          one ALT contig pypgx needs for GSTT1
+#   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr2 chr4 chr5 chr6 chr10
+#                                          chr12 chr16 chr19 chr20 chr22 chrX chrY
+#                                          chrM of the NCBI GRCh38 no-alt analysis
+#                                          set, plus the one ALT contig pypgx
+#                                          needs for GSTT1
 #   clinvar.vcf.gz, clinvar_chr.vcf.gz,    ClinVar records inside the regions,
 #   clinvar_pathogenic_chr.vcf.gz (+.tbi)  plus one planted record (planted.tsv)
 #   HG002_vep.vcf                          up to 200 GIAB truth variants annotated
@@ -59,6 +60,9 @@ CLINVAR_URL=https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
 # need no rebuild. Coordinates are GRCh38, 1-based, inclusive.
 REGIONS=(
   "chr1:109600000-109800000"  # GSTM1 (pypgx reads depth here)
+  "chr2:233600000-233800000"  # UGT1A1 and UGT1A4
+  "chr4:68500000-68700000"    # UGT2B15 and UGT2B17
+  "chr16:28580000-28630000"   # SULT1A1
   "chr19:40800000-41050000"   # CYP2A6, CYP2A7, CYP2B6
   "chr20:10000000-10500000"   # small variants; the planted ClinVar record (SNAP25)
   "chr22:42000000-42300000"   # CYP2D6 and CYP2D7 with flanks
@@ -71,11 +75,14 @@ REGIONS=(
   "chrY:2700000-3000000"      # non-PAR chrY (SRY, RPS4Y1, ZFY)
   "chrM"                      # whole mitochondrial genome
 )
-CONTIGS=(chr1 chr5 chr6 chr10 chr12 chr19 chr20 chr22 chrX chrY chrM)
-# pypgx reads depth over every BAM-based gene before calling any of them, and
-# its GRCh38 GSTT1 region is on this ALT contig; without it in the BAM header
-# step 32 calls no BAM gene at all, CYP2D6 included. Today's default reference
-# (Broad hg38) has it; the no-alt analysis set does not.
+CONTIGS=(chr1 chr2 chr4 chr5 chr6 chr10 chr12 chr16 chr19 chr20 chr22 chrX chrY chrM)
+# pypgx (step 32) reads depth over the region of every gene it can call
+# copy number for (on chr1, chr2, chr4, chr6, chr10, chr16, chr19, chr22, chrX
+# and one ALT contig) before it calls any of them. samtools refuses a region on
+# a contig the BAM does not have, and then step 32 calls no BAM gene at all,
+# CYP2D6 included; so all of those contigs are here. The GRCh38 GSTT1 region is
+# on this ALT contig: today's default reference (Broad hg38) has it, the no-alt
+# analysis set does not.
 GSTT1_ALT=chr22_KI270879v1_alt
 GSTT1_ALT_ACC=KI270879.1
 # chrM is kept at about this depth: the GIAB BAM has thousands of x on chrM,
