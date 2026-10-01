@@ -88,13 +88,13 @@
                 "vep_cache": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP offline cache directory (release 112).",
+                    "description": "VEP offline cache directory (release 116).",
                     "fa_icon": "fas fa-database"
                 },
                 "vep_cache_cpsr": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP cache for CPSR (release 113, separate from VEP's 112 cache).",
+                    "description": "VEP cache for CPSR (release 113, separate from the VEP step's release 116 cache).",
                     "fa_icon": "fas fa-database"
                 },
                 "pcgr_data": {
