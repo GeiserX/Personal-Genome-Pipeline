@@ -95,6 +95,7 @@ if [ "${1:-}" = "--self-test" ]; then
   fail=0
   rc=0; out=$("$0" --static --root "${tmp}/bad" 2>&1) || rc=$?
   [ "$rc" -eq 1 ] || { echo "self-test: planted tree exited ${rc}, expected 1"; fail=1; }
+  # shellcheck disable=SC2016  # regexes, not expansions
   for want in 'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' 'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' \
               'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:5$' 'bgzip +in SAMTOOLS_IMAGE +scripts/a\.sh:6$' \
               'bgzip +in BCFTOOLS_IMAGE +modules/local/x/main\.nf:5 \(X\)$' \
