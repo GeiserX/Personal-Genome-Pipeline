@@ -404,7 +404,12 @@ for path in sorted(glob.glob(os.path.join(ROOT, "scripts", "*.sh"))):
     with open(path) as fh:
         text = fh.read()
     for words, off in lex(text):
-        dr = docker_run(words)
+        # `if ! docker run`, `time docker run`, `VAR=x docker run`: skip the
+        # keywords and assignments in front, as heads() does.
+        k = 0
+        while k < len(words) and (words[k] in KEYWORDS or ASSIGN.match(words[k])):
+            k += 1
+        dr = docker_run(words[k:])
         if not dr:
             continue
         image_word, argv = dr

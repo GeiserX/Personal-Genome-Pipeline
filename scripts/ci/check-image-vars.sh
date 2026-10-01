@@ -71,7 +71,10 @@ check() {
       refs=$((refs + 1))
       if grep -qxF "$name" <<<"$defined"; then continue; fi
       # Assigned in this script (NAME=..., export NAME=..., || NAME=...)?
-      if grep -v '^[[:space:]]*#' "$f" | grep -qE "(^|[^A-Za-z0-9_\$])${name}="; then continue; fi
+      # One awk process: a `grep | grep -q` pipe under pipefail turns the
+      # first grep's SIGPIPE on a big script into "not assigned".
+      if awk -v n="$name" '!/^[[:space:]]*#/ && $0 ~ ("(^|[^A-Za-z0-9_$])" n "=") { found = 1; exit }
+                           END { exit !found }' "$f"; then continue; fi
       report+="${name}"$'\t'"${rel}:${lineno}"$'\n'
       bad=$((bad + 1))
     done < <(references "$f")
