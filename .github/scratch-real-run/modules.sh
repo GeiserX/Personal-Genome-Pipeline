@@ -74,8 +74,11 @@ if nextflow run test.nf -c ci.config --slivar_bin "${T}/slivar" > run.log 2>&1; 
   ok=1
 else
   echo "run: FAILED"; ok=0
-  tail -40 run.log
-  for f in work/*/*/.command.err; do echo "--- $f"; cat "$f"; done
+  grep -v -E 'Pulling|Waiting|Verifying|Download complete|Pull complete|Digest:|Status:|Unable to find image' run.log | tail -40
+  for d in work/*/*/; do
+    echo "--- $d exit=$(cat "$d/.exitcode" 2>/dev/null || echo none) $(grep -m1 -oE 'CLINICAL_FILTER|SLIVAR' "$d/.command.run" || true)"
+    grep -v -E 'Pulling|Waiting|Verifying|Download complete|Pull complete|Digest:|Status:|Unable to find image' "$d/.command.err" | tail -15
+  done
 fi
 
 if [ "$EXPECT" = "new" ]; then

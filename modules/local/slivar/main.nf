@@ -126,13 +126,12 @@ process SLIVAR {
 
     # --- Compound heterozygote detection ---
     # slivar writes to a file first so its own exit status fails the task: a
-    # crash must not read as "no compound hets".
+    # crash must not read as "no compound hets". Its stderr stays in the task log.
     ./${slivar_bin} compound-hets \\
         --allow-non-trios \\
         --vcf ${meta.id}_prioritized.vcf.gz \\
         --ped ${meta.id}.ped \\
-        > ${meta.id}_compound_hets.vcf \\
-        2> ${meta.id}_compound_hets.log
+        > ${meta.id}_compound_hets.vcf
     bcftools view ${meta.id}_compound_hets.vcf -Oz -o ${meta.id}_compound_hets.vcf.gz
     rm -f ${meta.id}_compound_hets.vcf
 

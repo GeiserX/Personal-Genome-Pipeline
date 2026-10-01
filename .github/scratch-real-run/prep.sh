@@ -69,7 +69,7 @@ echo "SpliceAI rows: $(zcat spliceai_scores.masked.snv.hg38.vcf.gz | grep -vc '^
 
 echo "== ExpansionHunter catalog: NOP56 (chr20) only"
 curl -fsSL "$CATALOG_URL" \
-  | jq '[ .[] | select(.LocusId == "NOP56") | .ReferenceRegion |= ("chr" + .) ]' > eh_catalog_chr20.json
+  | jq '[ .[] | select(.LocusId == "NOP56") | .ReferenceRegion |= (if type == "array" then map("chr" + .) else "chr" + . end) ]' > eh_catalog_chr20.json
 cat eh_catalog_chr20.json
 
 echo "== Delly exclude map (chr20 p-arm telomere)"
