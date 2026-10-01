@@ -41,7 +41,7 @@ A point-in-time review of every tool/container/database against its latest upstr
 | MultiQC | 1.33 | 1.35 | bump | min Python 3.9 |
 | vcfanno | 0.3.7 | 0.3.9 | bump | |
 | slivar | 0.3.3 | 0.3.4 | bump | |
-| pypgx | 0.26.0 | 0.27.0 | bump | PharmCAT stays primary |
+| pypgx | 0.26.0 | 0.27.0 | hold | 0.27.0 has no matching bundle and failed every gene (see lessons-learned); bump image and bundle together |
 | Clair3 | 2.0.0 | 2.0.2 | bump | long-read path only |
 | Sniffles | 2.4 | 2.8.0 | bump | long-read path only |
 
@@ -57,7 +57,7 @@ A point-in-time review of every tool/container/database against its latest upstr
 - **PGS Catalog** — via `pgsc_calc` (don't hand-roll scoring files).
 
 ## Steps to add (ranked)
-1. **Cyrius** CYP2D6 star-allele caller (CNV/hybrid alleles PharmCAT misses) — already wired into the default tool set; feed its diplotype into PharmCAT as an outside-call. *(pypgx resolves `*5/*5` deletions where Cyrius can return None and PharmCAT reports No Result — keep all three and reconcile; see lessons-learned.)*
+1. **Cyrius** CYP2D6 star-allele caller (CNV/hybrid alleles PharmCAT misses) — already wired into the default tool set; feed its diplotype into PharmCAT as an outside-call. *(No single caller settles CYP2D6 copy number. On a reference with ALT contigs, depth at CYP2D6 drops and a depth-based caller (pypgx or Cyrius) can report a deletion that is not there: compare CYP2D6 depth with its flanks first, and report CYP2D6 only when two callers agree. See lessons-learned.)*
 2. **AlphaMissense** via VEP plugin — easy, high value.
 3. **pgsc_calc** (Nextflow, NF-26 compatible) — SOTA polygenic scoring.
 4. **ACMG SF v3.3** (2025, 84 genes) via CPSR secondary-findings mode (PCGR 2.3.0).
