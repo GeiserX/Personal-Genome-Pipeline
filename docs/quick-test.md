@@ -100,7 +100,7 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 1.5 GB.
 
-The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part over HTTPS (a few hundred MB) instead of the 16 GB file. The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
+The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The URL is plain `http://` on purpose: the pinned samtools image has no CA certificates, so an `https://` URL fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
 
 ```bash
 # Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA and .fai
@@ -115,7 +115,7 @@ docker run --rm --user root \
     samtools view -b -@ 4 \
       -T /genome/reference/Homo_sapiens_assembly38.fasta \
       -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
-      https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
+      http://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
 ```
 

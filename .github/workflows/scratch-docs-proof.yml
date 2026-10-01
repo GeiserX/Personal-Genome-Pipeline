@@ -109,17 +109,6 @@ jobs:
           for i, b in enumerate(blocks):
               print(f'--- block {i}\n{b}')
           EOF
-      - name: Diagnose remote access from the samtools image
-        continue-on-error: true
-        run: |
-          docker run --rm staphb/samtools:1.20 bash -c 'cat /etc/os-release | head -2; ls -la /etc/ssl/certs 2>&1 | head -5; ls /etc/ssl 2>&1; samtools --version | head -6'
-          for url in https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram http://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram; do
-            for env in "" "-e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"; do
-              echo "=== $url env=[$env]"
-              docker run --rm $env -w /tmp -v /mnt/genome:/genome staphb/samtools:1.20 \
-                samtools view -c -T /genome/reference/Homo_sapiens_assembly38.fasta "$url" chr22:20000000-20010000 || true
-            done
-          done
       - name: Run the remote chr22 extract and the link step
         run: |
           export GENOME_DIR=/mnt/genome SAMPLE=test_na12878
