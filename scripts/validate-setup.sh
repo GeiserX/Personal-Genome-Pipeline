@@ -6,6 +6,12 @@
 # sample data readiness. Exits 0 if all critical checks pass, 1 otherwise.
 set -euo pipefail
 
+# Image versions are needed by the Docker image list and by the sample checks,
+# which also run when the Docker daemon is not up.
+SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR_V}/../versions.env"
+
 ###############################################################################
 # Color helpers (gracefully degrade if terminal does not support colors)
 ###############################################################################
@@ -338,11 +344,6 @@ header "Docker Images"
 if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
   info "Skipping Docker image checks (Docker not available)"
 else
-  # Source image versions from the canonical manifest
-  SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
-  # shellcheck source=../versions.env
-  . "${SCRIPT_DIR_V}/../versions.env"
-
   IMAGES=(
     "$MINIMAP2_IMAGE"
     "$SAMTOOLS_IMAGE"
@@ -513,6 +514,26 @@ if [ -n "$SAMPLE" ]; then
       else
         warn "BAM chr1 length (${BAM_CHR1_LEN}) does not match known builds"
         echo "       Expected: 248956422 (GRCh38) or 249250621 (GRCh37)"
+      fi
+
+      # Read group: GATK steps (20, 03a, 29) reject reads without one, and
+      # DeepVariant takes the sample name from it.
+      if BAM_HEADER=$(docker run --rm -v "${GENOME_DIR}:/genome" "${SAMTOOLS_IMAGE}" \
+          samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
+        if grep -q '^@RG' <<< "$BAM_HEADER"; then
+          pass "BAM has a read group (@RG)"
+        else
+          warn "BAM header has no @RG read group line. GATK steps (20, 03a, 29) will reject its reads."
+          echo "       Add one, then replace the BAM and re-index it:"
+          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "         samtools addreplacerg -r ID:${SAMPLE} -r SM:${SAMPLE} -r PL:ILLUMINA -r LB:${SAMPLE} \\"
+          echo "         -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.rg.bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+          echo "       mv \"${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.rg.bam\" \"${BAM}\""
+          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+        fi
+      else
+        warn "Could not read the BAM header to check for a read group (@RG)"
       fi
     fi
 

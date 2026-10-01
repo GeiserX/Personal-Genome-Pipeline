@@ -28,9 +28,11 @@ OUTPUT_DIR="${SAMPLE_DIR}/aligned_longread"
 case "$PLATFORM" in
   ont)
     MM2_PRESET="map-ont"
+    RG_PLATFORM="ONT"
     ;;
   hifi)
     MM2_PRESET="map-hifi"
+    RG_PLATFORM="PACBIO"
     ;;
   *)
     echo "ERROR: PLATFORM must be 'ont' or 'hifi', got '${PLATFORM}'" >&2
@@ -125,6 +127,7 @@ docker run --rm \
   "$MINIMAP2_IMAGE" \
   minimap2 -t "${THREADS}" -a -x "${MM2_PRESET}" \
     --MD -Y \
+    -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:${RG_PLATFORM}\tLB:${SAMPLE}" \
     /genome/reference/Homo_sapiens_assembly38.fasta \
     "/genome/${INPUT_RELPATH}" \
 | docker run --rm -i \
