@@ -242,7 +242,7 @@ if [ -n "$PHARMCAT_JSON" ]; then
     -v "${GENOME_DIR}:/genome" \
     "${PYTHON_IMAGE}" \
     python3 -c "
-import json, csv, os, sys
+import json, csv, os, re, sys
 
 sample = '${SAMPLE}'
 outbase = f'/genome/{sample}/pypgx'
@@ -303,6 +303,12 @@ if not pharmcat_data:
     sys.exit(1)
 print(f'PharmCAT genes parsed: {len(pharmcat_data)}')
 
+# PharmCAT names VKORC1 alleles 'rs9923231 variant (T)' where pypgx writes
+# 'rs9923231', and either tool may put the two alleles in either order. Compare
+# the sorted allele names without that suffix; the TSV keeps the raw strings.
+def norm(diplotype):
+    return sorted(re.sub(r' (variant|reference) \([ACGT]+\)', '', a).strip() for a in diplotype.split('/'))
+
 # Build comparison for overlapping genes
 all_genes = sorted(set(list(pypgx_data.keys()) + list(pharmcat_data.keys())))
 
@@ -326,7 +332,7 @@ with open(comparison_path, 'w', newline='') as f:
         elif not pg_called:
             match = called_by = 'PharmCAT only'
             mismatches += 1
-        elif pc == pg:
+        elif norm(pc) == norm(pg):
             match, called_by = 'Yes', 'both'
             matches += 1
         else:
