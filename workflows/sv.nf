@@ -7,7 +7,7 @@
     and merges consensus calls from all callers.
 
     DAG:
-      BAM ──┬── MANTA ──── DUPHOLD ──── ANNOTSV
+      BAM ──┬── MANTA ──── DUPHOLD ──── DUPHOLD_FILTER ──── ANNOTSV
             ├── DELLY
             └── CNVPYTOR
                          └── SURVIVOR_MERGE (collects all SV VCFs)
@@ -15,9 +15,9 @@
 */
 
 include { MANTA          } from '../modules/local/manta/main'
-include { DELLY          } from '../modules/local/delly/main'
+include { DELLY; DELLY_BCF2VCF } from '../modules/local/delly/main'
 include { CNVPYTOR; CNVPYTOR_VCF } from '../modules/local/cnvpytor/main'
-include { DUPHOLD        } from '../modules/local/duphold/main'
+include { DUPHOLD; DUPHOLD_FILTER } from '../modules/local/duphold/main'
 include { ANNOTSV        } from '../modules/local/annotsv/main'
 include { SURVIVOR_MERGE } from '../modules/local/survivor_merge/main'
 
@@ -27,6 +27,8 @@ workflow SV {
     ch_bam            // channel: [meta, bam, bai]
     ch_reference      // channel: val(path) -- reference FASTA
     ch_reference_fai  // channel: val(path) -- reference FASTA index
+    ch_delly_exclude  // channel: val(path) -- Delly exclude map (-x) or []
+    ch_annotsv_annotations // channel: val(path) -- AnnotSV annotations directory or []
 
     main:
     ch_versions = Channel.empty()
@@ -48,9 +50,10 @@ workflow SV {
     //
     ch_delly_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('delly')) {
-        DELLY(ch_bam, ch_reference, ch_reference_fai)
-        ch_delly_vcf = DELLY.out.sv_vcf
-        ch_versions  = ch_versions.mix(DELLY.out.versions)
+        DELLY(ch_bam, ch_reference, ch_reference_fai, ch_delly_exclude)
+        DELLY_BCF2VCF(DELLY.out.bcf)
+        ch_delly_vcf = DELLY_BCF2VCF.out.sv_vcf
+        ch_versions  = ch_versions.mix(DELLY.out.versions, DELLY_BCF2VCF.out.versions)
     }
 
     //
@@ -86,8 +89,9 @@ workflow SV {
             }
 
         DUPHOLD(ch_duphold_input, ch_reference, ch_reference_fai)
-        ch_duphold_vcf = DUPHOLD.out.annotated_vcf
-        ch_versions    = ch_versions.mix(DUPHOLD.out.versions)
+        DUPHOLD_FILTER(DUPHOLD.out.annotated_vcf)
+        ch_duphold_vcf = DUPHOLD_FILTER.out.filtered_vcf
+        ch_versions    = ch_versions.mix(DUPHOLD.out.versions, DUPHOLD_FILTER.out.versions)
     }
 
     // ── AnnotSV classification (DUPHOLD -> ANNOTSV) ─────────────────────
@@ -100,7 +104,7 @@ workflow SV {
         error "Tool 'annotsv' requires 'duphold' (and 'manta') output — add both to --tools or remove 'annotsv'."
     }
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv')) {
-        ANNOTSV(ch_duphold_vcf)
+        ANNOTSV(ch_duphold_vcf, ch_annotsv_annotations)
         ch_annotsv_tsv = ANNOTSV.out.annotated_tsv
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
     }

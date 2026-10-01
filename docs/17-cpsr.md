@@ -18,7 +18,7 @@ CPSR binary is at `/usr/local/bin/cpsr` inside this image. Requires a separate r
 ## Prerequisites
 
 ### 1. VEP Cache
-PCGR 2.2.5 bundles VEP 113, which requires the **release-113** cache. This is different from the release-112 cache used by step 13 — both coexist in the same `vep_cache/` directory under different subdirectories (`112_GRCh38/` and `113_GRCh38/`).
+PCGR 2.2.5 bundles VEP 113, which requires the **release-113** cache. This is different from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `113_GRCh38/`).
 ```bash
 mkdir -p ${GENOME_DIR}/vep_cache
 wget -c -P ${GENOME_DIR}/vep_cache https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
@@ -59,17 +59,59 @@ docker run --rm --user root \
 ```
 
 ## Panel Options
+`--panel_id` takes one or more of these ids, comma-separated. The list is the one CPSR 2.2.5 ships (`pcgr/pcgr_vars.py`); GEP means Genomics England PanelApp.
+
 | Panel ID | Description |
 |---|---|
-| 0 | Comprehensive cancer superpanel (500+ genes) — recommended |
-| 1 | Adult-onset hereditary cancer |
-| 2 | Childhood-onset hereditary cancer |
-| 3 | Lynch syndrome |
-| 4 | BRCA1/BRCA2 |
+| 0 | CPSR exploratory cancer predisposition panel (PanelApp genes, TCGA's germline study, Cancer Gene Census, other sources), the widest panel and the one this step uses |
+| 1 | Adult solid tumours cancer susceptibility (GEP) |
+| 2 | Adult solid tumours for rare disease (GEP) |
+| 3 | Bladder cancer pertinent cancer susceptibility (GEP) |
+| 4 | Brain cancer pertinent cancer susceptibility (GEP) |
+| 5 | Breast cancer pertinent cancer susceptibility (GEP) |
+| 6 | Childhood solid tumours cancer susceptibility (GEP) |
+| 7 | Colorectal cancer pertinent cancer susceptibility (GEP) |
+| 8 | Endometrial cancer pertinent cancer susceptibility (GEP) |
+| 9 | Familial Tumours Syndromes of the central & peripheral Nervous system (GEP) |
+| 10 | Familial breast cancer (GEP) |
+| 11 | Familial melanoma (GEP) |
+| 12 | Familial prostate cancer (GEP) |
+| 13 | Familial rhabdomyosarcoma (GEP) |
+| 14 | GI tract tumours (GEP) |
+| 15 | Genodermatoses with malignancies (GEP) |
+| 16 | Haematological malignancies cancer susceptibility (GEP) |
+| 17 | Haematological malignancies for rare disease (GEP) |
+| 18 | Head and neck cancer pertinent cancer susceptibility (GEP) |
+| 19 | Inherited MMR deficiency (Lynch syndrome) (GEP) |
+| 20 | Inherited non-medullary thyroid cancer (GEP) |
+| 21 | Inherited ovarian cancer (without breast cancer) (GEP) |
+| 22 | Inherited pancreatic cancer (GEP) |
+| 23 | Inherited polyposis and early onset colorectal cancer (GEP) |
+| 24 | Inherited predisposition to acute myeloid leukaemia (AML) (GEP) |
+| 25 | Inherited susceptibility to acute lymphoblastoid leukaemia (ALL) (GEP) |
+| 26 | Inherited predisposition to GIST (GEP) |
+| 27 | Inherited renal cancer (GEP) |
+| 28 | Inherited phaeochromocytoma and paraganglioma (GEP) |
+| 29 | Melanoma pertinent cancer susceptibility (GEP) |
+| 30 | Multiple endocrine tumours (GEP) |
+| 31 | Multiple monogenic benign skin tumours (GEP) |
+| 32 | Neuroendocrine cancer pertinent cancer susceptibility (GEP) |
+| 33 | Neurofibromatosis Type 1 (GEP) |
+| 34 | Ovarian cancer pertinent cancer susceptibility (GEP) |
+| 35 | Parathyroid Cancer (GEP) |
+| 36 | Prostate cancer pertinent cancer susceptibility (GEP) |
+| 37 | Renal cancer pertinent cancer susceptibility (GEP) |
+| 38 | Rhabdoid tumour predisposition (GEP) |
+| 39 | Sarcoma cancer susceptibility (GEP) |
+| 40 | Sarcoma susceptibility (GEP) |
+| 41 | Thyroid cancer pertinent cancer susceptibility (GEP) |
+| 42 | Tumour predisposition - childhood onset (GEP) |
+| 43 | Upper gastrointestinal cancer pertinent cancer susceptibility (GEP) |
+| 44 | DNA repair genes pertinent cancer susceptibility (GEP) |
 
 ## Output
 - `${SAMPLE}.cpsr.grch38.html` — Interactive HTML report with classified variants
-- `${SAMPLE}.cpsr.grch38.snvs_indels.tiers.tsv` — Tab-separated variant classifications
+- `${SAMPLE}.cpsr.grch38.classification.tsv.gz` — Tab-separated variant classifications (gzipped; read it with `zcat`)
 - Variants classified into 5 tiers (Pathogenic → Benign) using ACMG/AMP criteria
 
 ## Runtime

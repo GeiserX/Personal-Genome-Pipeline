@@ -57,10 +57,16 @@ workflow CLINICAL {
     //
     // MODULE 3: PRS — Polygenic risk scores
     //
+    // Runs only with --pgs_scoring: without scoring files it converts the
+    // whole VCF and then scores nothing.
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('prs')) {
-        PRS(ch_vcf, ch_pgs_scoring)
-        ch_prs_scores = PRS.out.scores
-        ch_versions   = ch_versions.mix(PRS.out.versions)
+        if (!params.pgs_scoring) {
+            log.warn "prs skipped: --pgs_scoring is not set."
+        } else {
+            PRS(ch_vcf, ch_pgs_scoring)
+            ch_prs_scores = PRS.out.scores
+            ch_versions   = ch_versions.mix(PRS.out.versions)
+        }
     }
 
     //

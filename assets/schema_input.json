@@ -31,6 +31,11 @@
                 "type": "string",
                 "description": "Path to BAM index (.bai)",
                 "pattern": "^\\S+\\.bam\\.bai$"
+            },
+            "sex": {
+                "type": "string",
+                "description": "Sample sex (male or female). Required when expansion_hunter is in --tools: it sets the chrX ploidy.",
+                "enum": ["male", "female"]
             }
         },
         "required": ["sample", "vcf", "vcf_index"]
