@@ -39,9 +39,10 @@ mkdir -p "${GD}/S1/aligned"
 : > "${GD}/S1/aligned/S1_sorted.bam"
 : > "${GD}/S1/aligned/S1_sorted.bam.bai"
 
-HEADER='#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\tbins.out\tbins.lo\tbins.hi\tbins.in\tslope\tp.out\tPC1\tPC2\tPC3\tPC4\tPC5\n'
-MALE_ROW='S1\tS1\t-9\t-9\t1\t-9\t1.01\t0.97\t40\t12\t9\t0.99\t0.98\t0.02\t0\t0\t0\t0\t0\n'
-FEMALE_ROW='S1\tS1\t-9\t-9\t2\t-9\t1.98\t0.00\t40\t12\t9\t0.99\t0.98\t0.02\t0\t0\t0\t0\t0\n'
+# Header and row shape as goleft 0.2.6 writes them for a single BAM (checked on HG002).
+HEADER='#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\tbins.out\tbins.lo\tbins.hi\tbins.in\tslope\tp.out\tmapped\tunmapped\n'
+MALE_ROW='unknown\tS1_sorted\t-9\t-9\t1\t-9\t0.98\t0.90\t18602\t9291\t3053\t156808\t116.794\t0.12\t1233859871\t16089193\n'
+FEMALE_ROW='unknown\tS1_sorted\t-9\t-9\t2\t-9\t1.97\t0.01\t18602\t9291\t3053\t156808\t116.794\t0.12\t1233859871\t16089193\n'
 
 # run_case <ped content> [declared sex]; sets OUT and RC
 run_case() {
