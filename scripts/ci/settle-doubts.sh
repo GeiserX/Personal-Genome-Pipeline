@@ -77,8 +77,8 @@ in_g "$SAMTOOLS_IMAGE" bash -c "samtools view -h ${BAM} | grep -v '^@RG' \
   && samtools index ${NORG}/aligned/${NORG}_sorted.bam"
 "${REPO}/scripts/20-mtoolbox.sh" "$NORG" > "${LOGS}/q1_step20.log" 2>&1; RC20=$?
 INTERVALS="$SLICE" "${REPO}/scripts/03a-gatk-haplotypecaller.sh" "$NORG" > "${LOGS}/q1_step03a.log" 2>&1; RC03A=$?
-ERR20=$(grep -m1 -iE 'read group|A USER ERROR' -A2 "${LOGS}/q1_step20.log" | tr '\n' ' ')
-ERR03A=$(grep -m1 -iE 'read group|A USER ERROR' -A2 "${LOGS}/q1_step03a.log" | tr '\n' ' ')
+ERR20=$(grep -m1 -iE 'read group|USER ERROR|sample list|samples cannot|Exception' "${LOGS}/q1_step20.log")
+ERR03A=$(grep -m1 -iE 'read group|USER ERROR|sample list|samples cannot|Exception' "${LOGS}/q1_step03a.log")
 
 run_dv() {   # run_dv <sample> <out name>: step 03's command on the chr20 slice only
   docker run --rm --cpus 4 --memory 14g -v "${G}:/genome" "$DEEPVARIANT_IMAGE" \
