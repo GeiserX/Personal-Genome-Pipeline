@@ -291,16 +291,15 @@ else
   else
     ANNOT_MISSING+=("CADD indels (gnomad.genomes.r4.0.indel.tsv.gz + .tbi)")
   fi
-  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz.tbi" ]; then
-    ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  else
-    ANNOT_MISSING+=("SpliceAI SNVs (spliceai_scores.raw.snv.hg38.vcf.gz + .tbi)")
-  fi
-  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz.tbi" ]; then
-    ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  else
-    ANNOT_MISSING+=("SpliceAI indels (spliceai_scores.raw.indel.hg38.vcf.gz + .tbi)")
-  fi
+  # SpliceAI: step 30 accepts the raw or the masked score files
+  for kind in snv indel; do
+    if { [ -f "${ANNOT_DIR}/spliceai_scores.raw.${kind}.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.${kind}.hg38.vcf.gz.tbi" ]; } || \
+       { [ -f "${ANNOT_DIR}/spliceai_scores.masked.${kind}.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.masked.${kind}.hg38.vcf.gz.tbi" ]; }; then
+      ANNOT_COUNT=$((ANNOT_COUNT + 1))
+    else
+      ANNOT_MISSING+=("SpliceAI ${kind}s (spliceai_scores.raw.${kind}.hg38.vcf.gz or spliceai_scores.masked.${kind}.hg38.vcf.gz, + .tbi)")
+    fi
+  done
   if [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz" ] && [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz.tbi" ]; then
     ANNOT_COUNT=$((ANNOT_COUNT + 1))
   else
