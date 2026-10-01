@@ -223,6 +223,12 @@
                     "format": "file-path",
                     "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
                     "fa_icon": "fas fa-file"
+                },
+                "delly_exclude": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional Delly exclude map, passed as `delly call -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
+                    "fa_icon": "fas fa-file"
                 }
             }
         },

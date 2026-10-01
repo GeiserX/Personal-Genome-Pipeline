@@ -183,6 +183,9 @@ workflow {
     // Slivar static binary
     ch_slivar_bin = Channel.value(params.slivar_bin ? file(params.slivar_bin, checkIfExists: true) : [])
 
+    // Delly exclude map (regions skipped by delly call -x)
+    ch_delly_exclude = Channel.value(params.delly_exclude ? file(params.delly_exclude, checkIfExists: true) : [])
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
     // ═══════════════════════════════════════════════════════════════════
@@ -248,7 +251,8 @@ workflow {
     SV(
         ch_bam,
         ch_reference,
-        ch_reference_fai
+        ch_reference_fai,
+        ch_delly_exclude
     )
 
     // ═══════════════════════════════════════════════════════════════════

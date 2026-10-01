@@ -15,7 +15,7 @@
 */
 
 include { MANTA          } from '../modules/local/manta/main'
-include { DELLY          } from '../modules/local/delly/main'
+include { DELLY; DELLY_BCF2VCF } from '../modules/local/delly/main'
 include { CNVPYTOR; CNVPYTOR_VCF } from '../modules/local/cnvpytor/main'
 include { DUPHOLD        } from '../modules/local/duphold/main'
 include { ANNOTSV        } from '../modules/local/annotsv/main'
@@ -27,6 +27,7 @@ workflow SV {
     ch_bam            // channel: [meta, bam, bai]
     ch_reference      // channel: val(path) -- reference FASTA
     ch_reference_fai  // channel: val(path) -- reference FASTA index
+    ch_delly_exclude  // channel: val(path) -- Delly exclude map (-x) or []
 
     main:
     ch_versions = Channel.empty()
@@ -48,9 +49,10 @@ workflow SV {
     //
     ch_delly_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('delly')) {
-        DELLY(ch_bam, ch_reference, ch_reference_fai)
-        ch_delly_vcf = DELLY.out.sv_vcf
-        ch_versions  = ch_versions.mix(DELLY.out.versions)
+        DELLY(ch_bam, ch_reference, ch_reference_fai, ch_delly_exclude)
+        DELLY_BCF2VCF(DELLY.out.bcf)
+        ch_delly_vcf = DELLY_BCF2VCF.out.sv_vcf
+        ch_versions  = ch_versions.mix(DELLY.out.versions, DELLY_BCF2VCF.out.versions)
     }
 
     //
