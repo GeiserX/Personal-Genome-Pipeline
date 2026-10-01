@@ -27,7 +27,7 @@ done
 # A finished run is not repeated: configManta.py refuses a runDir that
 # already holds a workflow, which made every second run-all report Manta
 # as failed.
-if [ -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
+if [ -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz" ] && [ -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
   echo "Manta already done for ${SAMPLE}: ${MANTA_DIR}/results/variants/diploidSV.vcf.gz"
   echo "To run it again, delete ${MANTA_DIR}/ first."
   exit 0
@@ -64,7 +64,7 @@ docker run --rm \
   quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
   "/genome/${SAMPLE}/manta/runWorkflow.py" -j 8
 
-if [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
+if [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz" ] || [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
   echo "ERROR: Manta finished without ${MANTA_DIR}/results/variants/diploidSV.vcf.gz(.tbi)." >&2
   echo "  Delete ${MANTA_DIR}/ and run this step again." >&2
   exit 1

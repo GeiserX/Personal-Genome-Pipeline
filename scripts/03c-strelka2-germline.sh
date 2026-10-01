@@ -45,7 +45,7 @@ BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # A finished run is not repeated: the configure script refuses a runDir
 # that already holds a workflow, so a second run used to fail.
-if [ -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
+if [ -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz" ] && [ -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
   echo "Strelka2 already done for ${SAMPLE}: ${OUTPUT_DIR}/results/variants/variants.vcf.gz"
   echo "To run it again, delete ${OUTPUT_DIR}/ first."
   exit 0
@@ -86,7 +86,7 @@ docker run --rm --user root \
     -m local \
     -j "$THREADS"
 
-if [ ! -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
+if [ ! -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz" ] || [ ! -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
   echo "ERROR: Strelka2 finished without ${OUTPUT_DIR}/results/variants/variants.vcf.gz(.tbi)." >&2
   echo "  Delete ${OUTPUT_DIR}/ and run this step again." >&2
   exit 1

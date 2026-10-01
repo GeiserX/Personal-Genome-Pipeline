@@ -62,6 +62,8 @@ echo "============================================"
 echo ""
 
 mkdir -p "$OUTDIR"
+# The report reads the summary; a failed run must not leave an older one behind.
+rm -f "${OUTDIR}/${SAMPLE}_slivar_summary.tsv"
 
 # ── Step 1: Ensure VCF is bgzipped and indexed ────────────────────────
 echo "[1/5] Preparing input VCF..."

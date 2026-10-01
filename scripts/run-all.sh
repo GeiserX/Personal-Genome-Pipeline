@@ -348,7 +348,13 @@ _run "Summary report" generate_report "${SCRIPT_DIR}/generate-report.sh" "$SAMPL
 # Aggregate the post-processing logs into one file for easy review
 POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
 : > "$POST_LOG"
-for logf in "${LOG_DIR}"/2[0-9]_*.log "${LOG_DIR}"/3[0-9]_*.log "${LOG_DIR}"/benchmark.log "${LOG_DIR}"/generate_report.log; do
+# Only logs of steps this run started: a log left by an earlier run with
+# other options must not end up in it.
+for logf in "${STEP_LOGS[@]}"; do
+  case "${logf##*/}" in
+    2[0-9]_*.log|3[0-9]_*.log|benchmark.log|generate_report.log) ;;
+    *) continue ;;
+  esac
   [ -f "$logf" ] || continue
   echo "=== $(basename "$logf") ===" >> "$POST_LOG"
   cat "$logf" >> "$POST_LOG"

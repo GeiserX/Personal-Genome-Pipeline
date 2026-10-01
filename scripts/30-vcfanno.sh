@@ -87,11 +87,12 @@ echo "Input VCF (indexed): ${VEP_VCF}"
 CADD_SNV="${ANNOT_DIR}/whole_genome_SNVs.tsv.gz"
 CADD_INDEL="${ANNOT_DIR}/gnomad.genomes.r4.0.indel.tsv.gz"
 # SpliceAI (chr prefix). Illumina publishes raw and masked score files; either
-# set works. Raw is used when present, masked otherwise.
+# set works. Raw is used when present and indexed, masked otherwise.
 _spliceai_file() {
   local kind="$1" set
   for set in raw masked; do
-    if [ -f "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz" ]; then
+    if [ -f "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz" ] && \
+       [ -f "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz.tbi" ]; then
       echo "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz"
       return
     fi
