@@ -27,7 +27,9 @@ CSQ_FMT='Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|EXON
 {
   echo '## CADD GRCh38-v1.7 (synthetic)'
   printf '#Chrom\tPos\tRef\tAlt\tRawScore\tPHRED\n'
+  printf '20\t1000\tA\tC\t9.9\t50.0\n'
   printf '20\t1000\tA\tG\t5.1\t35.0\n'
+  printf '20\t1000\tA\tT\t1.0\t10.0\n'
   printf '20\t3000\tG\tA\t3.2\t24.5\n'
 } | bgzip -c > "$G/annotations/whole_genome_SNVs.tsv.gz"
 tabix -s1 -b2 -e2 -c'#' "$G/annotations/whole_genome_SNVs.tsv.gz"
@@ -66,6 +68,11 @@ check "30 new: annotated VCF index" "$(ls "$OUTF.tbi" 2>&1)" "present" "$([ -f "
 H=$(bcftools view -h "$OUTF" | grep -oE 'ID=(CADD_PHRED|SpliceAI),' | tr '\n' ' ')
 check "30 new: CADD_PHRED and SpliceAI in header" "$H" "both" "$(grep -q CADD_PHRED <<< "$H" && grep -q SpliceAI <<< "$H" && echo 1 || echo 0)"
 grep -E 'masked' "$LOGS/30_new:_vcfanno_with_CADD_+_masked_SpliceAI.log" || true
+bcftools view -h "$OUTF" | grep -E 'ID=(CADD_PHRED|SpliceAI),'
+T=$(bcftools view -h "$OUTF" | grep -oE 'ID=CADD_PHRED,Number=[^,]*,Type=[A-Za-z]+' | sed 's/.*Type=//')
+check "30 new: CADD_PHRED declared numeric" "Type=${T:-<none>}" "Type=Float" "$([ "$T" = Float ] && echo 1 || echo 0)"
+V=$(bcftools query -i 'POS=1000' -f '%INFO/CADD_PHRED' "$OUTF")
+check "30 new: CADD_PHRED at chr20:1000 A>G (rows A>C 50, A>G 35, A>T 10)" "$V" "35 (allele-matched)" "$(awk -v v="$V" 'BEGIN{exit !(v+0==35)}' && echo 1 || echo 0)"
 expect_ok "30 new: second run skips the complete output" env GENOME_DIR="$G" bash "$NEW/scripts/30-vcfanno.sh" s1
 check "30 new: second run says skipping" "$(grep -c 'Skipping' "$LOGS/30_new:_second_run_skips_the_complete_output.log")" "1" "$(grep -q 'Skipping' "$LOGS/30_new:_second_run_skips_the_complete_output.log" && echo 1 || echo 0)"
 expect_fail "30 old (origin-main, red-first): vcfanno" env GENOME_DIR="$GO" bash "$OLD/scripts/30-vcfanno.sh" s1

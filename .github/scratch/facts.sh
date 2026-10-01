@@ -21,9 +21,10 @@ check "haplogrep3 on PATH" "$(grep '^haplogrep3:' <<< "$OUT")" "on PATH" "$(grep
 check "classify is not a command" "$(grep '^classify:' <<< "$OUT")" "absent" "$(grep -q '^classify: absent' <<< "$OUT" && echo 1 || echo 0)"
 
 echo "== slivar image =="
-OUT=$(docker run --rm "$SLIVAR_IMAGE" slivar 2>&1 | head -3 || true)
+docker pull -q "$SLIVAR_IMAGE" >/dev/null
+OUT=$(docker run --rm "$SLIVAR_IMAGE" slivar compound-hets --help 2>&1 | head -5 || true)
 echo "$OUT"
-check "slivar image runs" "$(head -1 <<< "$OUT")" "slivar usage text" "$(grep -qi 'slivar' <<< "$OUT" && echo 1 || echo 0)"
+check "slivar compound-hets help" "$(grep -m1 -i 'allow-non-trios' <<< "$OUT" || echo '<none>')" "mentions --allow-non-trios" "$(grep -q 'allow-non-trios' <<< "$OUT" && echo 1 || echo 0)"
 
 echo "== Cyrius 1.1.1 in ${PYTHON_IMAGE}: resolved versions and console scripts =="
 echo "python image digest: $(docker image inspect "$PYTHON_IMAGE" --format '{{index .RepoDigests 0}}' 2>/dev/null || docker pull -q "$PYTHON_IMAGE")"

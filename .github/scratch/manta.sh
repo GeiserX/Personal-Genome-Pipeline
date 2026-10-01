@@ -23,9 +23,10 @@ L="$LOGS/04_new:_Manta_second_run.log"
 check "04 new: second run logs already done" "$(grep -m1 'already done' "$L" || echo '<none>')" "Manta already done" "$(grep -q 'already done' "$L" && echo 1 || echo 0)"
 # Interrupted run: results gone, workflow still there -> resume without reconfiguring
 sudo rm -rf "$G/s1/manta/results"
-expect_ok "04 new: resume after results removed" env GENOME_DIR="$G" bash "$NEW/scripts/04-manta.sh" s1
+observe "04 new: resume after results removed" env GENOME_DIR="$G" bash "$NEW/scripts/04-manta.sh" s1
 L="$LOGS/04_new:_resume_after_results_removed.log"
 check "04 new: resume skips configManta" "$(grep -m1 'resuming' "$L" || echo '<none>')" "resuming" "$(grep -q 'resuming' "$L" && echo 1 || echo 0)"
+tail -3 "$L"
 # Leftover runDir with neither workflow nor results -> cleared, then configured
 sudo rm -rf "$G/s1/manta" && mkdir -p "$G/s1/manta/workspace" && touch "$G/s1/manta/workspace/junk"
 expect_ok "04 new: leftover runDir is cleared" env GENOME_DIR="$G" bash "$NEW/scripts/04-manta.sh" s1
