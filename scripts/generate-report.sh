@@ -234,7 +234,8 @@ if [ -f "$PRS_SUMMARY" ] && [ "$(wc -l < "$PRS_SUMMARY")" -gt 1 ]; then
   echo "## Polygenic Risk Scores"
   echo "---"
   tail -n +2 "$PRS_SUMMARY" | while IFS=$'\t' read -r CONDITION _PGS_ID SCORE USED TOTAL; do
-    printf "  %-35s %s (%s/%s variants)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
+    printf "  %-35s %s (%s/%s variants matched)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
+    echo "    hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions"
   done
   echo ""
   echo "  NOTE: Raw PRS scores are NOT directly interpretable without a"

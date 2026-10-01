@@ -52,6 +52,16 @@ PGS_SCORES=(
   "PGS000055|Colorectal cancer"
 )
 
+# Only GRCh38-harmonised scoring files are used. The author-reported files are
+# often GRCh37 or rsID-only, and scoring them against a GRCh38 VCF gives a
+# number that looks valid but is not, so there is no fallback to them.
+PGS_BASE_URL=${PGS_BASE_URL:-https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores}
+
+# Prints the genome build recorded in a scoring file's #HmPOS_build header (empty if none).
+hm_build() {
+  { gzip -cd "$1" 2>/dev/null || true; } | awk -F= '/^#HmPOS_build=/ {b=$2} !/^#/ {exit} END {print b}'
+}
+
 # Download scoring files from PGS Catalog
 echo "[1/3] Downloading PGS Catalog scoring files..."
 for ENTRY in "${PGS_SCORES[@]}"; do
@@ -59,18 +69,33 @@ for ENTRY in "${PGS_SCORES[@]}"; do
   CONDITION="${ENTRY#*|}"
   SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
 
+  # A cached file from an older version of this script may be the author-reported
+  # build; drop it and fetch the harmonised one.
+  if [ -f "$SCORE_FILE" ] && [ "$(hm_build "$SCORE_FILE")" != "GRCh38" ]; then
+    echo "  Cached ${PGS_ID} is not a GRCh38-harmonised file; downloading it again."
+    rm -f "$SCORE_FILE"
+  fi
+
   if [ -f "$SCORE_FILE" ]; then
     echo "  [OK] ${CONDITION} (${PGS_ID}) — already downloaded"
-  else
-    echo "  Downloading ${CONDITION} (${PGS_ID})..."
-    wget -q -O "$SCORE_FILE" \
-      "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/${PGS_ID}/ScoringFiles/Harmonized/${PGS_ID}_hmPOS_GRCh38.txt.gz" 2>/dev/null || \
-    wget -q -O "$SCORE_FILE" \
-      "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/${PGS_ID}/ScoringFiles/${PGS_ID}.txt.gz" 2>/dev/null || {
-      echo "    WARNING: Could not download ${PGS_ID}. Skipping."
-      rm -f "$SCORE_FILE"
-    }
+    continue
   fi
+
+  echo "  Downloading ${CONDITION} (${PGS_ID})..."
+  URL="${PGS_BASE_URL}/${PGS_ID}/ScoringFiles/Harmonized/${PGS_ID}_hmPOS_GRCh38.txt.gz"
+  if ! wget -q -O "${SCORE_FILE}.part" "$URL"; then
+    rm -f "${SCORE_FILE}.part"
+    echo "ERROR: Could not download the GRCh38-harmonised scoring file for ${PGS_ID}:" >&2
+    echo "  ${URL}" >&2
+    exit 1
+  fi
+  BUILD=$(hm_build "${SCORE_FILE}.part")
+  if [ "$BUILD" != "GRCh38" ]; then
+    rm -f "${SCORE_FILE}.part"
+    echo "ERROR: ${PGS_ID} scoring file has #HmPOS_build='${BUILD}', expected GRCh38. Refusing to score it." >&2
+    exit 1
+  fi
+  mv "${SCORE_FILE}.part" "$SCORE_FILE"
 done
 
 echo ""
@@ -96,35 +121,33 @@ docker run --rm --user root \
 echo ""
 echo "[3/3] Calculating polygenic risk scores..."
 
+HOMREF_NOTE="hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions"
+
 # Process each scoring file
 RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
-echo -e "Condition\tPGS_ID\tScore\tVariants_Used\tVariants_Total" > "$RESULTS_FILE"
+echo -e "Condition\tPGS_ID\tScore_SUM\tVariants_Matched\tVariants_Total" > "$RESULTS_FILE"
 
 for ENTRY in "${PGS_SCORES[@]}"; do
   PGS_ID="${ENTRY%%|*}"
   CONDITION="${ENTRY#*|}"
   SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
 
-  if [ ! -f "$SCORE_FILE" ]; then
-    continue
-  fi
-
   echo "  Scoring: ${CONDITION} (${PGS_ID})..."
 
-  # Extract scoring columns from PGS Catalog format
-  # PGS files have: rsID/chr_name, chr_position, effect_allele, effect_weight
-  # Convert to plink2 --score format: variant_id, allele, weight
+  # Convert the harmonised PGS Catalog file to plink2 --score input:
+  # chr:pos variant ID (GRCh38 hm_chr/hm_pos), effect allele, weight.
+  # Rows the catalog could not map to GRCh38 have an empty hm_pos and are skipped.
   FORMATTED="${OUTDIR}/${PGS_ID}_formatted.tsv"
-  zcat "$SCORE_FILE" 2>/dev/null | grep -v "^#" | \
-    awk -F'\t' 'NR==1 {
+  gzip -cd "$SCORE_FILE" | \
+    awk -F'\t' '/^#/ {next}
+    !hdr {
       for(i=1;i<=NF;i++) {
-        if($i=="chr_name") chr_col=i;
-        if($i=="chr_position") pos_col=i;
-        if($i=="effect_allele") ea_col=i;
-        if($i=="effect_weight") ew_col=i;
         if($i=="hm_chr") chr_col=i;
         if($i=="hm_pos") pos_col=i;
+        if($i=="effect_allele") ea_col=i;
+        if($i=="effect_weight") ew_col=i;
       }
+      hdr=1
       next
     }
     chr_col && pos_col && ea_col && ew_col {
@@ -138,17 +161,23 @@ for ENTRY in "${PGS_SCORES[@]}"; do
           printf "%s:%s\t%s\t%s\n", chr, pos, ea, ew;
         }
       }
-    }' > "$FORMATTED" 2>/dev/null || true
+    }' > "$FORMATTED"
 
-  TOTAL_VARS=$(wc -l < "$FORMATTED" 2>/dev/null || echo 0)
+  TOTAL_VARS=$(wc -l < "$FORMATTED" | tr -d ' ')
 
   if [ "$TOTAL_VARS" -eq 0 ]; then
-    echo "    WARNING: Could not parse scoring file for ${PGS_ID}. Skipping."
-    continue
+    echo "ERROR: No GRCh38 hm_chr/hm_pos/effect_allele/effect_weight rows in ${SCORE_FILE}" >&2
+    exit 1
   fi
 
-  # Run plink2 --score
-  docker run --rm --user root \
+  # Remove any score left by an earlier run, so a failed plink2 run cannot be
+  # reported with an old number.
+  SSCORE="${OUTDIR}/${PGS_ID}.sscore"
+  rm -f "$SSCORE" "${OUTDIR}/${PGS_ID}.log"
+
+  # cols=+scoresums adds SCORE1_SUM: the plain weighted sum. The default
+  # SCORE1_AVG divides by the alleles present in this VCF, which differs per sample.
+  if ! docker run --rm --user root \
     --cpus 4 --memory 4g \
     -v "${GENOME_DIR}:/genome" \
     pgscatalog/plink2:2.00a5.10 \
@@ -157,21 +186,41 @@ for ENTRY in "${PGS_SCORES[@]}"; do
       --score "/genome/${SAMPLE}/prs/${PGS_ID}_formatted.tsv" 1 2 3 \
         ignore-dup-ids \
         no-mean-imputation \
+        cols=+scoresums \
       --out "/genome/${SAMPLE}/prs/${PGS_ID}" \
       --threads 4 \
       --memory 3000 \
-      --allow-extra-chr 2>/dev/null || true
-
-  # Extract score from .sscore file
-  SSCORE="${OUTDIR}/${PGS_ID}.sscore"
-  if [ -f "$SSCORE" ]; then
-    SCORE=$(awk 'NR==2 {print $NF}' "$SSCORE" 2>/dev/null || echo "N/A")
-    USED_VARS=$(awk 'NR==2 {print $(NF-1)}' "$SSCORE" 2>/dev/null || echo "N/A")
-    echo -e "${CONDITION}\t${PGS_ID}\t${SCORE}\t${USED_VARS}\t${TOTAL_VARS}" >> "$RESULTS_FILE"
-    echo "    Score: ${SCORE} (${USED_VARS}/${TOTAL_VARS} variants matched)"
-  else
-    echo "    WARNING: No score produced for ${PGS_ID}"
+      --allow-extra-chr; then
+    # None of the score's variants is in this VCF: report that, not a failure.
+    if grep -q 'No valid variants' "${OUTDIR}/${PGS_ID}.log" 2>/dev/null; then
+      echo -e "${CONDITION}\t${PGS_ID}\tNA\t0\t${TOTAL_VARS}" >> "$RESULTS_FILE"
+      echo "    No variant of ${PGS_ID} is present in this VCF; no score."
+      continue
+    fi
+    echo "ERROR: plink2 --score failed for ${PGS_ID}; see ${OUTDIR}/${PGS_ID}.log" >&2
+    exit 1
   fi
+
+  if [ ! -s "$SSCORE" ]; then
+    echo "ERROR: plink2 exited 0 but wrote no ${SSCORE}" >&2
+    exit 1
+  fi
+
+  # Read columns by name. ALLELE_CT counts the alleles scored (two per matched
+  # variant on the autosomes), so ALLELE_CT/2 is the number of matched variants.
+  read -r SCORE USED_VARS < <(awk -F'\t' '
+    NR==1 { for(i=1;i<=NF;i++) col[$i]=i; next }
+    NR==2 {
+      if(!("SCORE1_SUM" in col) || !("ALLELE_CT" in col)) { print "MISSING MISSING"; exit }
+      print $col["SCORE1_SUM"], $col["ALLELE_CT"]/2
+    }' "$SSCORE")
+  if [ "$SCORE" = "MISSING" ] || [ -z "$SCORE" ]; then
+    echo "ERROR: ${SSCORE} has no SCORE1_SUM or ALLELE_CT column" >&2
+    exit 1
+  fi
+  echo -e "${CONDITION}\t${PGS_ID}\t${SCORE}\t${USED_VARS}\t${TOTAL_VARS}" >> "$RESULTS_FILE"
+  echo "    Score (sum): ${SCORE} (${USED_VARS}/${TOTAL_VARS} variants matched)"
+  echo "    ${HOMREF_NOTE}"
 done
 
 echo ""
