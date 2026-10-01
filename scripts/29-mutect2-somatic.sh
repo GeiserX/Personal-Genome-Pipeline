@@ -132,13 +132,13 @@ PASS_COUNT=$(docker run --rm \
   -v "${GENOME_DIR}:/genome" \
   "$BCFTOOLS_IMAGE" \
   bcftools view -f PASS "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz" \
-  2>/dev/null | grep -c "^[^#]" || echo "0")
+  2>/dev/null | grep -c "^[^#]" || true)
 
 TOTAL_COUNT=$(docker run --rm \
   -v "${GENOME_DIR}:/genome" \
   "$BCFTOOLS_IMAGE" \
   bcftools view "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz" \
-  2>/dev/null | grep -c "^[^#]" || echo "0")
+  2>/dev/null | grep -c "^[^#]" || true)
 
 echo "  Total calls: ${TOTAL_COUNT}"
 echo "  PASS calls:  ${PASS_COUNT}"

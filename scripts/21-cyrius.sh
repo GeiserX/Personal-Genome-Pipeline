@@ -6,7 +6,8 @@
 # and complex structural variants (gene deletions, duplications, hybrids).
 # Cyrius uses depth-based analysis specifically designed for CYP2D6.
 #
-# EXPERIMENTAL: Cyrius is installed at runtime via pip (unpinned version) and
+# EXPERIMENTAL: Cyrius 1.1.1 is installed at runtime with pip (its dependencies
+# pinned by scripts/cyrius-constraints.txt, so it needs network access) and
 # may return "None" for complex CYP2D6 arrangements. Verify results against
 # PharmCAT or clinical lab calls before acting on them.
 #
@@ -19,13 +20,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../versions.env
 . "${SCRIPT_DIR}/../versions.env"
 
+CONSTRAINTS="${SCRIPT_DIR}/cyrius-constraints.txt"
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 BAI="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/cyrius"
 mkdir -p "$OUTDIR"
 
 # Validate inputs
-for FILE in "$BAM" "$BAI"; do
+for FILE in "$BAM" "$BAI" "$CONSTRAINTS"; do
   if [ ! -f "$FILE" ]; then
     echo "ERROR: Required file not found: ${FILE}"
     exit 1
@@ -41,19 +43,22 @@ echo "  Output: ${OUTDIR}/"
 echo "============================================"
 echo ""
 
-# Cyrius is a Python tool. We use a Python container and install it on the fly.
-# This avoids dependency on a specific Cyrius Docker image that may not exist.
+# Cyrius is a Python tool with no maintained image. We install the pinned
+# release in the Python container, its dependencies held to the versions in
+# cyrius-constraints.txt, and keep pip's own errors in the log. The package's
+# console script is `cyrius` (there is no `star_caller` command).
 # The manifest file (list of BAM paths) is created inside the container.
 echo "[1/2] Running Cyrius CYP2D6 caller..."
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
+  -v "${CONSTRAINTS}:/constraints.txt:ro" \
   -w /tmp \
   "${PYTHON_IMAGE}" \
   bash -c "
-    pip install -q cyrius 2>/dev/null &&
+    pip install --no-cache-dir --disable-pip-version-check -q -c /constraints.txt 'cyrius==1.1.1' &&
     echo '/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam' > /tmp/manifest.txt &&
-    star_caller \
+    cyrius \
       --manifest /tmp/manifest.txt \
       --genome 38 \
       --prefix ${SAMPLE}_cyp2d6 \
@@ -79,8 +84,8 @@ if [ -f "$RESULT_FILE" ]; then
   echo ""
   echo "  Interpret this with PharmGKB: https://www.pharmgkb.org/gene/PA128"
 else
-  echo "  WARNING: No output file found. Cyrius may have failed."
-  echo "  Check the error messages above."
+  echo "ERROR: Cyrius finished but wrote no ${RESULT_FILE}. Check the messages above." >&2
+  exit 1
 fi
 
 echo ""

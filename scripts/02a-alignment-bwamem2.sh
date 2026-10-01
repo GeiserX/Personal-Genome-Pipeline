@@ -67,6 +67,7 @@ docker run --rm \
   -v "${GENOME_DIR}:/genome" \
   quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
   bwa-mem2 mem -t "${THREADS}" \
+    -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA\tLB:${SAMPLE}" \
     /genome/reference/Homo_sapiens_assembly38.fasta \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz" \

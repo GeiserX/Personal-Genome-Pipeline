@@ -1,0 +1,20 @@
+# pip constraints for step 21 (Cyrius 1.1.1), used as `pip install -c`.
+# Cyrius declares pysam, numpy, scipy and statsmodels without versions; these
+# are the versions pip resolved for `pip install cyrius==1.1.1` in python:3.11
+# (Python 3.11.16) on 2026-10-01, including their own dependencies.
+# To refresh: run that install in the PYTHON_IMAGE from versions.env, copy
+# `pip freeze` here, and rerun step 21 on a test BAM.
+formulaic==1.2.2
+interface_meta==2.0.1
+narwhals==2.26.0
+numpy==2.4.6
+packaging==26.3
+pandas==3.0.6
+patsy==1.0.3
+pysam==0.24.1
+python-dateutil==2.9.0.post0
+scipy==1.17.1
+six==1.17.0
+statsmodels==0.15.0
+typing_extensions==4.16.0
+wrapt==2.5.0

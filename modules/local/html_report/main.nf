@@ -21,7 +21,7 @@ process HTML_REPORT {
     publishDir { "${params.outdir}/${meta.id}" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(clinvar_dir), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf)
+    tuple val(meta), path(clinvar_hits), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf)
 
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
@@ -31,7 +31,7 @@ process HTML_REPORT {
     task.ext.when == null || task.ext.when
 
     script:
-    def has_clinvar  = clinvar_dir   && !clinvar_dir.name.startsWith('EMPTY')   ? true : false
+    def has_clinvar  = clinvar_hits  && !clinvar_hits.name.startsWith('EMPTY')  ? true : false
     def has_pharmcat = pharmcat_html && !pharmcat_html.name.startsWith('EMPTY') ? true : false
     def has_clinical = clinical_vcf  && !clinical_vcf.name.startsWith('EMPTY')  ? true : false
     def has_cpsr     = cpsr_html     && !cpsr_html.name.startsWith('EMPTY')     ? true : false
@@ -41,26 +41,35 @@ process HTML_REPORT {
     set -euo pipefail
 
     # --- Collect ClinVar hits ---
+    # clinvar_hits is CLINVAR_SCREEN's <id>_clinvar_hits.vcf: the sample's matching
+    # records with ClinVar's GENEINFO, CLNSIG and CLNREVSTAT copied on.
     CLINVAR_HITS="N/A"
     CLINVAR_ROWS=""
-    if [ "${has_clinvar}" = "true" ] && [ -d "${clinvar_dir}" ]; then
-        ISEC_FILE="${clinvar_dir}/0002.vcf"
-        if [ -f "\$ISEC_FILE" ]; then
-            CLINVAR_HITS=\$(grep -c -v '^#' "\$ISEC_FILE" 2>/dev/null || echo "0")
-            CLINVAR_ROWS=\$(grep -v '^#' "\$ISEC_FILE" 2>/dev/null | head -20 | \\
-                awk -F'\\t' '{
-                    gene="."; clnsig=".";
-                    if(match(\$8,/GENEINFO=[^;]+/)) gene=substr(\$8,RSTART+9,RLENGTH-9);
-                    if(match(\$8,/CLNSIG=[^;]+/)) clnsig=substr(\$8,RSTART+7,RLENGTH-7);
-                    # Escape all fields rendered into HTML
-                    gsub(/&/,"\\&amp;",\$1); gsub(/</,"\\&lt;",\$1); gsub(/>/,"\\&gt;",\$1);
-                    gsub(/&/,"\\&amp;",\$4); gsub(/</,"\\&lt;",\$4); gsub(/>/,"\\&gt;",\$4);
-                    gsub(/&/,"\\&amp;",\$5); gsub(/</,"\\&lt;",\$5); gsub(/>/,"\\&gt;",\$5);
-                    gsub(/&/,"\\&amp;",gene); gsub(/</,"\\&lt;",gene); gsub(/>/,"\\&gt;",gene); gsub(/"/,"\\&quot;",gene);
-                    gsub(/&/,"\\&amp;",clnsig); gsub(/</,"\\&lt;",clnsig); gsub(/>/,"\\&gt;",clnsig); gsub(/"/,"\\&quot;",clnsig);
-                    printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$4,\$5,gene"|"clnsig;
+    if [ "${has_clinvar}" = "true" ] && [ -f "${clinvar_hits}" ]; then
+        CLINVAR_HITS=\$(grep -c -v '^#' "${clinvar_hits}" || true)
+        CLINVAR_ROWS=\$(grep -v '^#' "${clinvar_hits}" 2>/dev/null | head -20 | \\
+            awk -F'\\t' '
+                function esc(x) { gsub(/&/,"\\\\&amp;",x); gsub(/</,"\\\\&lt;",x); gsub(/>/,"\\\\&gt;",x); gsub(/"/,"\\\\&quot;",x); return x }
+                {
+                    geneinfo=""; clnsig=""; rev="";
+                    n=split(\$8,kv,";");
+                    for(i=1;i<=n;i++) {
+                        p=index(kv[i],"="); if(p==0) continue;
+                        k=substr(kv[i],1,p-1); v=substr(kv[i],p+1);
+                        if(k=="GENEINFO") geneinfo=v; else if(k=="CLNSIG") clnsig=v; else if(k=="CLNREVSTAT") rev=v;
+                    }
+                    gene=""; m=split(geneinfo,g,"|");
+                    for(i=1;i<=m;i++) { split(g[i],sym,":"); gene=gene (i>1 ? ", " : "") sym[1] }
+                    if(gene=="") gene=".";
+                    if(clnsig=="") clnsig="."; gsub(/_/," ",clnsig);
+                    if(rev=="") rev="."; gsub(/_/," ",rev);
+                    split(\$10,f,":"); gt=f[1];
+                    if(gt=="0/1" || gt=="1/0" || gt=="0|1" || gt=="1|0") zyg="het";
+                    else if(gt=="1/1" || gt=="1|1") zyg="hom";
+                    else zyg=gt;
+                    printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",
+                        esc(\$1),esc(\$2),esc(\$4),esc(\$5),esc(zyg),esc(gene),esc(clnsig),esc(rev);
                 }' || true)
-        fi
     fi
 
     # --- PharmCAT status ---
@@ -211,7 +220,7 @@ EOF
   <div class="card full-width">
     <h2>ClinVar Hits (Top 20)</h2>
     <table>
-      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Gene | Significance</th></tr>
+      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th><th>Significance</th><th>Review status</th></tr>
       \${CLINVAR_ROWS}
     </table>
   </div>

@@ -15,7 +15,7 @@
                     "type": "string",
                     "format": "file-path",
                     "mimetype": "text/csv",
-                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index).",
+                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index, plus sex when expansion_hunter is enabled).",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
@@ -24,6 +24,12 @@
                     "description": "The output directory where results will be saved.",
                     "default": "./results",
                     "fa_icon": "fas fa-folder-open"
+                },
+                "allow_unfiltered": {
+                    "type": "boolean",
+                    "description": "Accept a VCF that has no FILTER=PASS record by treating FILTER '.' as PASS. Without it such a VCF stops the run, because every PASS-only step would report zero hits.",
+                    "default": false,
+                    "fa_icon": "fas fa-filter"
                 },
                 "publish_dir_mode": {
                     "type": "string",
@@ -46,13 +52,6 @@
                     "description": "Path to GRCh38 reference FASTA file.",
                     "fa_icon": "fas fa-dna"
                 },
-                "genome": {
-                    "type": "string",
-                    "description": "Genome build identifier.",
-                    "default": "GRCh38",
-                    "enum": ["GRCh38"],
-                    "fa_icon": "fas fa-book"
-                },
                 "clinvar": {
                     "type": "string",
                     "format": "file-path",
@@ -74,7 +73,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (stranger, ancestry, pypgx, SV callers) are opt-in.",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (stranger, ancestry, pypgx, SV callers) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set.",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
@@ -88,13 +87,13 @@
                 "vep_cache": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP offline cache directory (release 112).",
+                    "description": "VEP offline cache directory (release 116).",
                     "fa_icon": "fas fa-database"
                 },
                 "vep_cache_cpsr": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP cache for CPSR (release 113, separate from VEP's 112 cache).",
+                    "description": "VEP cache for CPSR (release 113, separate from the VEP step's release 116 cache).",
                     "fa_icon": "fas fa-database"
                 },
                 "pcgr_data": {
@@ -222,6 +221,24 @@
                     "type": "string",
                     "format": "file-path",
                     "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
+                    "fa_icon": "fas fa-file"
+                },
+                "cnvpytor_resources": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory with the pinned CNVpytor GC and mask .pytor files (see docs/00-reference-setup.md). Required by cnvpytor: the 1.3.2 image ships without them.",
+                    "fa_icon": "fas fa-database"
+                },
+                "annotsv_annotations": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "AnnotSV annotation directory (contains Annotations_Human/), built once with AnnotSV's INSTALL_annotations.sh. Required by annotsv: the AnnotSV image ships no annotation data.",
+                    "fa_icon": "fas fa-database"
+                },
+                "delly_exclude": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional Delly exclude map, passed as `delly call -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
                     "fa_icon": "fas fa-file"
                 }
             }
