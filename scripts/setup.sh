@@ -32,12 +32,25 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../versions.env
 . "${SCRIPT_DIR}/../versions.env"
 
-# Download helper with retry and resume
+# Download helper with retry and resume. Uses wget when present, curl
+# otherwise (stock macOS has curl only). Downloads go to <dest>.part and are
+# renamed on success, so an interrupted download is never taken as complete.
 _download() {
-  local url="$1" dest="$2" attempts="${3:-3}"
+  local url="$1" dest="$2" attempts="${3:-3}" i
   for i in $(seq 1 "$attempts"); do
-    if wget -c -O "$dest" "$url"; then
-      return 0
+    if command -v wget &>/dev/null; then
+      if wget -c -O "${dest}.part" "$url"; then
+        mv "${dest}.part" "$dest"
+        return 0
+      fi
+    elif command -v curl &>/dev/null; then
+      if curl -fL -C - -o "${dest}.part" "$url"; then
+        mv "${dest}.part" "$dest"
+        return 0
+      fi
+    else
+      echo "ERROR: Neither wget nor curl is installed."
+      return 1
     fi
     echo "  Attempt ${i}/${attempts} failed for $(basename "$dest")..."
     sleep $((i * 5))
@@ -65,13 +78,14 @@ if ! docker info &>/dev/null; then
 fi
 echo "[OK] Docker is running."
 
-# Check disk space
-AVAIL_GB=$(df -BG "$GENOME_DIR" 2>/dev/null | awk 'NR==2 {gsub("G",""); print $4}' || echo "0")
-if [ -z "$AVAIL_GB" ]; then
-  # macOS df format
-  AVAIL_KB=$(df -k "$GENOME_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
-  AVAIL_GB=$(( AVAIL_KB / 1048576 ))
-fi
+# Check disk space (df -Pk works on Linux and macOS; GENOME_DIR may not
+# exist yet, so measure its nearest existing parent)
+DF_DIR="$GENOME_DIR"
+while [ ! -d "$DF_DIR" ]; do
+  DF_DIR=$(dirname "$DF_DIR")
+done
+AVAIL_KB=$(df -Pk "$DF_DIR" | awk 'NR==2 {print $4}')
+AVAIL_GB=$(( ${AVAIL_KB:-0} / 1048576 ))
 if [ "$AVAIL_GB" -lt 50 ]; then
   echo "WARNING: Only ${AVAIL_GB} GB free in ${GENOME_DIR}. Need at least 50 GB for references."
 fi
@@ -137,32 +151,38 @@ else
   if [ ! -f "$CLINVAR_TBI" ]; then
     _download "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" "$CLINVAR_TBI" || exit 1
   fi
-
-  # Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
-  CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
-  if [ ! -f "$CLINVAR_CHR" ]; then
-    echo "Creating chr-prefixed ClinVar..."
-    docker run --rm --user root \
-      -v "${GENOME_DIR}:/genome" \
-      "$BCFTOOLS_IMAGE" \
-      bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
-        bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz &&
-        bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz'
-  fi
-
-  # Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
-  CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
-  if [ ! -f "$CLINVAR_PATH" ]; then
-    echo "Creating pathogenic/likely pathogenic subset..."
-    docker run --rm --user root \
-      -v "${GENOME_DIR}:/genome" \
-      "$BCFTOOLS_IMAGE" \
-      bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
-        -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
-        bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
-  fi
-  echo "[OK] ClinVar database downloaded and indexed."
 fi
+
+# The two derived files are built whenever one is missing, also on a rerun
+# with the raw download already present. Each is keyed on its own index,
+# which is written last, so a half-built file is rebuilt.
+
+# Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
+CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
+if [ ! -f "${CLINVAR_CHR}.tbi" ]; then
+  echo "Creating chr-prefixed ClinVar..."
+  docker run --rm --user root \
+    -v "${GENOME_DIR}:/genome" \
+    "$BCFTOOLS_IMAGE" \
+    bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
+      bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz.tmp &&
+      mv /genome/clinvar/clinvar_chr.vcf.gz.tmp /genome/clinvar/clinvar_chr.vcf.gz &&
+      bcftools index -f -t /genome/clinvar/clinvar_chr.vcf.gz'
+fi
+
+# Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
+CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
+if [ ! -f "${CLINVAR_PATH}.tbi" ]; then
+  echo "Creating pathogenic/likely pathogenic subset..."
+  docker run --rm --user root \
+    -v "${GENOME_DIR}:/genome" \
+    "$BCFTOOLS_IMAGE" \
+    bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
+      -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp &&
+      mv /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
+      bcftools index -f -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
+fi
+echo "[OK] ClinVar database and its chr-prefixed and pathogenic subsets are ready."
 
 ###############################################################################
 # Phase 3: Docker Images
@@ -256,7 +276,7 @@ PCGRDIR="${GENOME_DIR}/pcgr_data"
 if [ -d "$PCGRDIR" ] && [ -d "${PCGRDIR}/20250314/data" ]; then
   echo "[OK] PCGR/CPSR ref data bundle already present."
 else
-  echo "[SKIP] PCGR/CPSR ref data (~5 GB) — needed for step 17 (cancer predisposition)"
+  echo "[SKIP] PCGR/CPSR ref data (~5 GB download) — needed for step 17 (cancer predisposition)"
   echo "  Download:"
   echo "    mkdir -p ${PCGRDIR} && cd ${PCGRDIR}"
   echo "    wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"

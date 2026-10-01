@@ -258,7 +258,7 @@ else
     pass "VEP 113 cache (step 17 CPSR): present"
   else
     warn "VEP 113 cache not found at: ${VEP_DIR}/113_GRCh38"
-    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 112."
+    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 116."
     echo "       wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
     echo "       See docs/17-cpsr.md for full instructions."
   fi
