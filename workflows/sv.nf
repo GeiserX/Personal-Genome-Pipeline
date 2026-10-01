@@ -28,6 +28,7 @@ workflow SV {
     ch_reference      // channel: val(path) -- reference FASTA
     ch_reference_fai  // channel: val(path) -- reference FASTA index
     ch_delly_exclude  // channel: val(path) -- Delly exclude map (-x) or []
+    ch_annotsv_annotations // channel: val(path) -- AnnotSV annotations directory or []
 
     main:
     ch_versions = Channel.empty()
@@ -102,7 +103,7 @@ workflow SV {
         error "Tool 'annotsv' requires 'duphold' (and 'manta') output — add both to --tools or remove 'annotsv'."
     }
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv')) {
-        ANNOTSV(ch_duphold_vcf)
+        ANNOTSV(ch_duphold_vcf, ch_annotsv_annotations)
         ch_annotsv_tsv = ANNOTSV.out.annotated_tsv
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
     }

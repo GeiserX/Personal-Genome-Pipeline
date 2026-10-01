@@ -56,6 +56,7 @@ workflow {
         ['clinvar',          'clinvar',           '--clinvar'],
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
+        ['annotsv',          'annotsv_annotations', '--annotsv_annotations'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -183,6 +184,9 @@ workflow {
     // Slivar static binary
     ch_slivar_bin = Channel.value(params.slivar_bin ? file(params.slivar_bin, checkIfExists: true) : [])
 
+    // AnnotSV annotation directory (the biocontainer ships no annotation data)
+    ch_annotsv_annotations = Channel.value(params.annotsv_annotations ? file(params.annotsv_annotations, checkIfExists: true) : [])
+
     // Delly exclude map (regions skipped by delly call -x)
     ch_delly_exclude = Channel.value(params.delly_exclude ? file(params.delly_exclude, checkIfExists: true) : [])
 
@@ -252,7 +256,8 @@ workflow {
         ch_bam,
         ch_reference,
         ch_reference_fai,
-        ch_delly_exclude
+        ch_delly_exclude,
+        ch_annotsv_annotations
     )
 
     // ═══════════════════════════════════════════════════════════════════

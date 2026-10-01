@@ -224,6 +224,12 @@
                     "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
                     "fa_icon": "fas fa-file"
                 },
+                "annotsv_annotations": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "AnnotSV annotation directory (contains Annotations_Human/), built once with AnnotSV's INSTALL_annotations.sh. Required by annotsv: the AnnotSV image ships no annotation data.",
+                    "fa_icon": "fas fa-database"
+                },
                 "delly_exclude": {
                     "type": "string",
                     "format": "file-path",
