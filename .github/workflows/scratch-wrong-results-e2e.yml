@@ -1,0 +1,79 @@
+# SCRATCH: evidence runs for the wrong-results PR. Deleted before the PR is merged.
+name: scratch-wrong-results-e2e
+
+on:
+  push:
+    branches: [pgp/wrong-results-cheap]
+
+permissions:
+  contents: read
+
+env:
+  REF_URL: https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+  HG002_VCF_URL: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+  HG002_BAM_URL: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.60x.1.bam
+  CLINVAR_URL: https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
+  BCF: staphb/bcftools:1.21
+  SAM: staphb/samtools:1.20
+
+jobs:
+  e2e-pypgx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch reference, HG002 VCF, BAM slices and pypgx-bundle
+        run: |
+          G="${RUNNER_TEMP}/g"; echo "G=$G" >> "$GITHUB_ENV"
+          mkdir -p "$G/reference" "$G/HG002/vcf" "$G/HG002/aligned"
+          curl -sSfL "$REF_URL" | gunzip > "$G/reference/Homo_sapiens_assembly38.fasta"
+          docker run --rm -v "$G:/g" "$SAM" samtools faidx /g/reference/Homo_sapiens_assembly38.fasta
+          curl -sSfL -o "$G/HG002/vcf/HG002.vcf.gz" "$HG002_VCF_URL"
+          curl -sSfL -o "$G/HG002/vcf/HG002.vcf.gz.tbi" "$HG002_VCF_URL.tbi"
+          git clone --branch 0.26.0 --depth 1 https://github.com/sbslee/pypgx-bundle.git "$G/reference/pypgx-bundle"
+          docker run --rm -v "$G:/g" -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -w /tmp "$SAM" sh -c "
+            set -e
+            samtools view -H '$HG002_BAM_URL' | grep -c '^@SQ' || true
+            REG='chr22:42080000-42180000 chr19:40800000-40920000 chr1:109640000-109730000 chr12:47820000-47960000'
+            if samtools view -H '$HG002_BAM_URL' | grep -q 'SN:chr22_KI270879v1_alt'; then REG=\"\$REG chr22_KI270879v1_alt\"; echo 'GSTT1 alt contig present'; fi
+            samtools view -b -o /tmp/slice.bam '$HG002_BAM_URL' \$REG
+            samtools view -H /tmp/slice.bam | grep '^@RG' | head -2 || true
+            # one read group whose SM matches the VCF sample, as step 02 writes it
+            samtools addreplacerg -m overwrite_all -r '@RG\tID:HG002\tSM:HG002' -o /tmp/rg.bam /tmp/slice.bam
+            samtools sort -o /g/HG002/aligned/HG002_sorted.bam /tmp/rg.bam
+            samtools index /g/HG002/aligned/HG002_sorted.bam
+            samtools idxstats /g/HG002/aligned/HG002_sorted.bam | awk '\$3>0'"
+      - name: Step 07 (PharmCAT 3.2.0)
+        run: |
+          sudo chmod -R a+rwX "$G"
+          GENOME_DIR="$G" bash scripts/07-pharmacogenomics.sh HG002
+          ls -la "$G/HG002/vcf"
+      - name: Step 32 (pypgx)
+        run: |
+          docker run --rm quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0 pypgx prepare-depth-of-coverage -h | head -20
+          GENOME_DIR="$G" bash scripts/32-pypgx.sh HG002
+          echo "----- comparison -----"; cat "$G/HG002/pypgx/HG002_pharmcat_comparison.tsv"
+          N=$(awk -F'\t' 'NR>1 && $5=="both"' "$G/HG002/pypgx/HG002_pharmcat_comparison.tsv" | wc -l)
+          echo "genes called by both: $N"; [ "$N" -gt 0 ]
+          VK=$(awk -F'\t' '$1=="VKORC1"' "$G/HG002/pypgx/HG002_pharmcat_comparison.tsv")
+          echo "VKORC1 row: $VK"
+          [ "$(echo "$VK" | cut -f4)" = "Yes" ]
+      - name: CNV_call equals pypgx's own CNV field
+        run: |
+          for GENE in CYP2D6 CYP2A6 GSTM1 GSTT1; do
+            Z="/genome/HG002/pypgx/${GENE}/results.zip"
+            [ -f "$G/HG002/pypgx/${GENE}/results.zip" ] || { echo "$GENE: no results.zip"; continue; }
+            RAW=$(docker run --rm -v "$G:/genome" quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0 pypgx print-data "$Z")
+            echo "$GENE print-data:"; echo "$RAW" | cut -c1-300
+            CNV=$(echo "$RAW" | awk -F'\t' 'NR==1{for(i=1;i<=NF;i++) if($i=="CNV") c=i} NR==2{print $c}')
+            SUM=$(awk -F'\t' -v g="$GENE" '$1==g {print $4}' "$G/HG002/pypgx/HG002_pypgx_summary.tsv")
+            echo "$GENE: print-data CNV=$CNV  summary CNV_call=$SUM"
+            [ "$CNV" = "$SUM" ]
+          done
+      - name: Truncated PharmCAT JSON (must fail)
+        run: |
+          mkdir -p "$G/HG002/pharmcat"
+          J=$(find "$G/HG002/vcf" -maxdepth 1 -name "*.report.json" | head -1)
+          head -c 2000 "$J" > "$G/HG002/pharmcat/HG002.report.json"
+          set +e; GENOME_DIR="$G" bash scripts/32-pypgx.sh HG002 > "${RUNNER_TEMP}/trunc.log" 2>&1; rc=$?; set -e
+          tail -6 "${RUNNER_TEMP}/trunc.log"; echo "exit code: $rc"
+          [ "$rc" -ne 0 ]
