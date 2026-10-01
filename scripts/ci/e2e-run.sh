@@ -121,6 +121,8 @@ if [ "${#names[@]}" -eq 0 ]; then
   echo "ERROR: no case matches '${PATTERN}'" >&2
   exit 1
 fi
+# Tells the workflow every case ran, so the pulled images are complete enough to cache.
+[ "$PATTERN" = "*" ] && touch "${E2E_WORK}/all-cases-ran"
 
 # --- 4. Report ----------------------------------------------------------------
 {

@@ -188,10 +188,13 @@ jobs:
           key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
 
       - name: Load cached images
-        if: steps.images.outputs.cache-hit == 'true'
         run: |
-          zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
-          rm -f "${RUNNER_TEMP}/images.tar.zst"
+          # What the runner ships is not ours to cache: remember it first.
+          docker image ls --format '{{.Repository}}:{{.Tag}}' | sort -u > "${RUNNER_TEMP}/images-before.txt"
+          if [ -f "${RUNNER_TEMP}/images.tar.zst" ]; then
+            zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
+            rm -f "${RUNNER_TEMP}/images.tar.zst"
+          fi
 
       - name: Run the e2e cases
         env:
@@ -206,17 +209,27 @@ jobs:
           path: ${{ env.E2E_WORK }}/logs/
           if-no-files-found: ignore
 
+      # Only a run that got through every case has pulled every image; a
+      # cache saved from a run that stopped early would stay incomplete until
+      # versions.env changes.
       - name: Save images for the next run
+        id: save
         if: always() && steps.images.outputs.cache-hit != 'true'
         run: |
+          if [ ! -f "${E2E_WORK}/all-cases-ran" ]; then
+            echo "The cases did not all run; not caching images."
+            exit 0
+          fi
           sudo rm -rf "${E2E_WORK}"
-          mapfile -t refs < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>')
+          mapfile -t refs < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>' | sort -u \
+            | comm -13 "${RUNNER_TEMP}/images-before.txt" -)
           [ "${#refs[@]}" -gt 0 ] || exit 0
           docker save "${refs[@]}" | zstd -T0 -3 -q -o "${RUNNER_TEMP}/images.tar.zst"
           ls -lh "${RUNNER_TEMP}/images.tar.zst"
+          echo "saved=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always() && steps.images.outputs.cache-hit != 'true'
+        if: always() && steps.save.outputs.saved == 'true'
         with:
           path: ${{ runner.temp }}/images.tar.zst
           key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
