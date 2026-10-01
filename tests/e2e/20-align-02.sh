@@ -13,7 +13,7 @@ check "header has an @RG line" has '^@RG' "$HDR"
 TAB=$'	'
 check "@RG SM equals the sample name (${SAMPLE})" has "^@RG.*${TAB}SM:${SAMPLE}(${TAB}|\$)" "$HDR"
 IDX=$(sam idxstats "$BAM")
-for c in chr1 chr5 chr6 chr10 chr12 chr19 chr20 chr22 chrX chrY chrM; do
+for c in chr1 chr2 chr4 chr5 chr6 chr10 chr12 chr16 chr19 chr20 chr22 chrX chrY chrM; do
   check_ge "mapped reads on ${c}" "$(awk -v c="$c" '$1 == c {print $3}' <<< "$IDX")" 100
 done
 

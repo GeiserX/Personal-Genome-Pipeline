@@ -11,7 +11,7 @@
 #
 # What it does:
 #   1. downloads the release named in tests/fixtures/VERSION and checks
-#      SHA256SUMS; when a pull request bumps VERSION, waits up to 45 minutes
+#      SHA256SUMS; when a pull request bumps VERSION, waits up to 75 minutes
 #      for the build-fixture job to publish it;
 #   2. lays out GENOME_DIR the way setup.sh and step 13 would leave it;
 #   3. runs tests/e2e/*.sh in name order (C locale: numbered cases first, then
@@ -32,7 +32,7 @@ export FIXTURE_DIR="${E2E_WORK}/fixture"
 export GENOME_DIR="${E2E_WORK}/genome"
 export E2E_NOTES="${E2E_WORK}/notes.md"
 LOG_DIR="${E2E_WORK}/logs"
-CASE_TIMEOUT=${CASE_TIMEOUT:-2400}
+CASE_TIMEOUT=${CASE_TIMEOUT:-3600}
 GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
 TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
@@ -49,7 +49,7 @@ fixture_complete() {
 
 # --- 1. Fixture ---------------------------------------------------------------
 echo "=== Fixture ${TAG} ==="
-deadline=$(( $(date +%s) + 45 * 60 ))
+deadline=$(( $(date +%s) + 75 * 60 ))
 until fixture_complete; do
   if gh release view "$TAG" -R "$GH_REPO" >/dev/null 2>&1; then
     gh release download "$TAG" -R "$GH_REPO" -D "$FIXTURE_DIR" --clobber
@@ -59,7 +59,7 @@ until fixture_complete; do
     echo "Release ${TAG} does not exist yet; the build-fixture job publishes it."
   fi
   if [ "$(date +%s)" -ge "$deadline" ]; then
-    echo "ERROR: fixture ${TAG} not usable after 45 minutes. Run the E2E workflow with job=build-fixture." >&2
+    echo "ERROR: fixture ${TAG} not usable after 75 minutes. Run the E2E workflow with job=build-fixture." >&2
     exit 1
   fi
   sleep 60

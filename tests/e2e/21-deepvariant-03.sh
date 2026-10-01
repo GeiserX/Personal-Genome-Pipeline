@@ -2,6 +2,12 @@
 # Step 03 calls small variants; the VCF names the sample and holds the planted SNV.
 . "$(dirname "$0")/lib.sh"
 
+# INTERVALS limits DeepVariant to the fixture's slices (the rest of the
+# reference has no reads). It takes effect once step 03 honours INTERVALS the
+# way step 03a does; until then DeepVariant walks all 1.8 Gb of reference,
+# about 45 minutes on a 4-CPU runner.
+INTERVALS=$(awk '{printf "%s%s:%d-%d", (NR > 1 ? " " : ""), $1, $2 + 1, $3}' "${FIXTURE_DIR}/regions.bed")
+export INTERVALS
 run_step 03-deepvariant.sh "$SAMPLE"
 check_step_exit 03-deepvariant.sh
 

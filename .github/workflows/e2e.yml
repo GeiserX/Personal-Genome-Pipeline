@@ -149,7 +149,9 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # The target is under 60 minutes; the margin covers a run that waits for
+    # build-fixture and a DeepVariant step that walks the whole reference.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
