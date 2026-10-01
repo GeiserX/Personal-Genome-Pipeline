@@ -15,7 +15,7 @@
                     "type": "string",
                     "format": "file-path",
                     "mimetype": "text/csv",
-                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index).",
+                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index, plus sex when expansion_hunter is enabled).",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {

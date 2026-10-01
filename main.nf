@@ -113,7 +113,7 @@ workflow {
     }
 
     // ─── Parse samplesheet ──────────────────────────────────────────────
-    // Expected columns: sample,vcf,vcf_index,bam,bam_index
+    // Expected columns: sample,vcf,vcf_index,bam,bam_index[,sex]
     // Rows are read and checked here, before any task starts, so a bad row
     // stops the run at once.
     def samplesheet_rows = file(params.input, checkIfExists: true).splitCsv(header: true, strip: true)
@@ -137,12 +137,20 @@ workflow {
         if (!row.bam && row.bam_index) {
             error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
         }
+        // Sex sets the chrX ploidy for ExpansionHunter (its default is female)
+        if (row.sex && !(row.sex.toLowerCase() in ['male', 'female'])) {
+            error "Sample '${row.sample}': sex '${row.sex}' is not recognised. Use 'male' or 'female'."
+        }
+        if (tools_list.contains('expansion_hunter') && !row.sex) {
+            error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
+                  "Add a 'sex' column (male or female) to the samplesheet, or remove 'expansion_hunter' from --tools."
+        }
     }
 
     Channel
         .fromList(samplesheet_rows)
         .map { row ->
-            def meta = [id: row.sample]
+            def meta = [id: row.sample, sex: row.sex ? row.sex.toLowerCase() : null]
             def vcf = file(row.vcf, checkIfExists: true)
             def vcf_index = file(row.vcf_index, checkIfExists: true)
             def bam = row.bam ? file(row.bam, checkIfExists: true) : []
