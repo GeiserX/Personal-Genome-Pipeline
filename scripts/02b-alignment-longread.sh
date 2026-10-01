@@ -119,23 +119,45 @@ INPUT_RELPATH="${REAL_INPUT#"${REAL_GENOME}/"}"
 # Align + sort
 # Long-read minimap2 does NOT use a pre-built .mmi index — the preset-specific index
 # differs from the short-read one. minimap2 builds it on the fly from the FASTA.
+# $1 = reads path inside the container, or - to read FASTQ from stdin.
+# Any further arguments are extra minimap2 options.
+_align_and_sort() {
+  local reads="$1"
+  shift
+  docker run --rm -i \
+    --cpus "${THREADS}" --memory 16g \
+    -v "${GENOME_DIR}:/genome" \
+    "$MINIMAP2_IMAGE" \
+    minimap2 -t "${THREADS}" -a -x "${MM2_PRESET}" \
+      --MD -Y \
+      -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:${RG_PLATFORM}\tLB:${SAMPLE}" \
+      "$@" \
+      /genome/reference/Homo_sapiens_assembly38.fasta \
+      "$reads" \
+  | docker run --rm -i \
+    --cpus "${THREADS}" --memory 8g \
+    -v "${GENOME_DIR}:/genome" \
+    "$SAMTOOLS_IMAGE" \
+    samtools sort -@ 4 -m 1G \
+      -o "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
+}
+
 echo "[1/2] Aligning long reads with minimap2 (preset: ${MM2_PRESET})..."
 echo "       This takes 1-3 hours for 30X long-read WGS."
-docker run --rm \
-  --cpus "${THREADS}" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  "$MINIMAP2_IMAGE" \
-  minimap2 -t "${THREADS}" -a -x "${MM2_PRESET}" \
-    --MD -Y \
-    -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:${RG_PLATFORM}\tLB:${SAMPLE}" \
-    /genome/reference/Homo_sapiens_assembly38.fasta \
-    "/genome/${INPUT_RELPATH}" \
-| docker run --rm -i \
-  --cpus "${THREADS}" --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  "$SAMTOOLS_IMAGE" \
-  samtools sort -@ 4 -m 1G \
-    -o "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
+if [[ "$INPUT_RELPATH" == *.bam ]]; then
+  # minimap2 reads FASTA/FASTQ only. An unaligned BAM (the usual PacBio HiFi
+  # delivery) is streamed through samtools fastq; -T MM,ML puts the base
+  # modification tags in the read comment and minimap2 -y copies them back.
+  echo "       Unaligned BAM input: converting to FASTQ on the fly (MM/ML tags kept)."
+  docker run --rm \
+    --cpus 2 --memory 4g \
+    -v "${GENOME_DIR}:/genome" \
+    "$SAMTOOLS_IMAGE" \
+    samtools fastq -T MM,ML "/genome/${INPUT_RELPATH}" \
+  | _align_and_sort - -y
+else
+  _align_and_sort "/genome/${INPUT_RELPATH}"
+fi
 
 # Index BAM
 echo "[2/2] Indexing BAM..."
