@@ -291,8 +291,9 @@ if [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; then
         }
         if(dominated) print
       }' | \
-      bgzip -c > /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
-    tabix -p vcf /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
+      bcftools view -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz.tmp - && \
+    mv /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz.tmp /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
+    bcftools index -f -t /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
 
   SPLICEAI_COUNT=$(docker run --rm \
     -v "${GENOME_DIR}:/genome" \

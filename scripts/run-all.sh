@@ -2,6 +2,19 @@
 # run-all.sh — Run the complete genomics analysis pipeline for one sample
 # Usage: ./run-all.sh <sample_name> <sex: male|female>
 #
+# Opt-in steps (off by default):
+#   GRIDSS=true      step 4b, needs a classic BWA index and ~32 GB RAM
+#   ANCESTRY=true    step 26, downloads ~1 GB and only counts shared SNPs on one sample
+#   IMPUTATION=true  step 14, per-chromosome VCFs for an imputation server upload
+#   SOMATIC=true     step 29, tumor-only Mutect2 (high false-positive rate)
+#   EXTRA_CALLERS=gatk,freebayes,strelka2,octopus   alternative callers
+#   BENCHMARK=true   compare caller VCFs
+#
+# Every step writes its log to $GENOME_DIR/<sample>/logs/. The run ends with a
+# table of each step as ok, skipped or failed, and exits 1 only when a step
+# failed. Steps whose data is not installed are reported as skipped: VEP
+# (step 13, and with it steps 30, 23 and 31), CNVpytor, CPSR, pypgx, AnnotSV.
+#
 # Assumes:
 # - FASTQ files at $GENOME_DIR/<sample>/fastq/ OR
 # - BAM already exists at $GENOME_DIR/<sample>/aligned/<sample>_sorted.bam
@@ -13,6 +26,14 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <sex: male|female>}
 SEX=${2:?Usage: $0 <sample_name> <sex: male|female>}
+case "$SEX" in
+  male|female) ;;
+  *)
+    echo "Usage: $0 <sample_name> <sex: male|female>" >&2
+    echo "ERROR: sex must be 'male' or 'female', got '${SEX}'." >&2
+    exit 2
+    ;;
+esac
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
@@ -33,6 +54,77 @@ _throttle() {
   while [ "$(jobs -rp | wc -l)" -ge "$MAX_JOBS" ]; do
     wait -n 2>/dev/null || sleep 2
   done
+}
+
+# Step bookkeeping: one entry per step, reported in the final table.
+LOG_DIR="${GENOME_DIR}/${SAMPLE}/logs"
+mkdir -p "$LOG_DIR"
+STEP_NAMES=()
+STEP_LOGS=()
+STEP_PIDS=()
+STEP_RESULTS=()
+LAST_STEP=0
+
+_record() {  # <name> <log> <pid> <result>
+  STEP_NAMES+=("$1")
+  STEP_LOGS+=("$2")
+  STEP_PIDS+=("$3")
+  STEP_RESULTS+=("$4")
+  LAST_STEP=$(( ${#STEP_NAMES[@]} - 1 ))
+}
+
+# Start a step in the background, its output in logs/<log>.log
+_launch() {  # <name> <log> <script> [args...]
+  local name="$1" log="${LOG_DIR}/$2.log"
+  shift 2
+  echo "  [${name}] started (log: ${log})"
+  _throttle
+  bash "$@" > "$log" 2>&1 &
+  _record "$name" "$log" "$!" "running"
+}
+
+# Run a step in the foreground, its output in logs/<log>.log
+_run() {  # <name> <log> <script> [args...]
+  local name="$1" log="${LOG_DIR}/$2.log"
+  shift 2
+  echo "  [${name}] running (log: ${log})"
+  if bash "$@" > "$log" 2>&1; then
+    _record "$name" "$log" "" "ok"
+  else
+    _record "$name" "$log" "" "failed"
+    echo "  [${name}] FAILED. See ${log}"
+  fi
+}
+
+_skip() {  # <name> <reason>
+  echo "  [${1}] skipped (${2})"
+  _record "$1" "-" "" "skipped (${2})"
+}
+
+# Wait for one launched step; returns 0 if it succeeded
+_wait_step() {  # <index>
+  local i="$1"
+  if [ "${STEP_RESULTS[$i]}" = "running" ]; then
+    if wait "${STEP_PIDS[$i]}"; then
+      STEP_RESULTS[i]="ok"
+    else
+      STEP_RESULTS[i]="failed"
+      echo "  [${STEP_NAMES[$i]}] FAILED. See ${STEP_LOGS[$i]}"
+    fi
+  fi
+  [ "${STEP_RESULTS[$i]}" = "ok" ]
+}
+
+_wait_all() {
+  local i
+  [ "${#STEP_NAMES[@]}" -gt 0 ] || return 0
+  for i in "${!STEP_NAMES[@]}"; do
+    _wait_step "$i" || true
+  done
+}
+
+_enabled() {  # <VAR value>: true for "true" or "1"
+  [ "$1" = "true" ] || [ "$1" = "1" ]
 }
 
 PIPELINE_START=$(date +%s)
@@ -91,47 +183,31 @@ fi
 EXTRA_CALLERS=${EXTRA_CALLERS:-""}
 if [ -n "$EXTRA_CALLERS" ]; then
   echo "[Phase 2b] Running extra variant callers: ${EXTRA_CALLERS}"
-  PHASE2B_PIDS=()
   IFS=',' read -ra CALLERS <<< "$EXTRA_CALLERS"
   for CALLER in "${CALLERS[@]}"; do
     CALLER=$(echo "$CALLER" | tr -d ' ')
     case "$CALLER" in
       gatk)
-        echo "  Starting GATK HaplotypeCaller..."
-        _throttle; bash "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE" &
-        PHASE2B_PIDS+=($!)
+        _launch "03a GATK HaplotypeCaller" 03a_gatk "${SCRIPT_DIR}/03a-gatk-haplotypecaller.sh" "$SAMPLE"
         ;;
       freebayes)
-        echo "  Starting FreeBayes..."
-        _throttle; bash "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE" &
-        PHASE2B_PIDS+=($!)
+        _launch "03b FreeBayes" 03b_freebayes "${SCRIPT_DIR}/03b-freebayes.sh" "$SAMPLE"
         ;;
       strelka2)
-        echo "  Starting Strelka2..."
         echo "  NOTE: Strelka2 is using the default minimap2 BAM. For best SNP precision,"
         echo "        align with BWA-MEM2 first, then run: ALIGN_DIR=aligned_bwamem2 ./scripts/03c-strelka2-germline.sh $SAMPLE"
-        _throttle; bash "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE" &
-        PHASE2B_PIDS+=($!)
+        _launch "03c Strelka2" 03c_strelka2 "${SCRIPT_DIR}/03c-strelka2-germline.sh" "$SAMPLE"
         ;;
       octopus)
-        echo "  Starting Octopus..."
-        _throttle; bash "${SCRIPT_DIR}/03d-octopus.sh" "$SAMPLE" &
-        PHASE2B_PIDS+=($!)
+        _launch "03d Octopus" 03d_octopus "${SCRIPT_DIR}/03d-octopus.sh" "$SAMPLE"
         ;;
       *)
         echo "  WARNING: Unknown caller '${CALLER}'. Skipping."
         ;;
     esac
   done
-  PHASE2B_FAIL=0
-  for PID in "${PHASE2B_PIDS[@]}"; do
-    wait "$PID" 2>/dev/null || PHASE2B_FAIL=$((PHASE2B_FAIL + 1))
-  done
-  if [ "$PHASE2B_FAIL" -gt 0 ]; then
-    echo "  WARNING: ${PHASE2B_FAIL} extra caller(s) failed."
-  else
-    echo "  Extra callers complete."
-  fi
+  _wait_all
+  echo "  Extra callers finished."
 fi
 echo ""
 
@@ -141,209 +217,142 @@ echo ""
 
 # --- Group A: Quick jobs (minutes each) ---
 echo "  Starting quick analyses..."
-
-echo "  [A1] ClinVar screen..."
-_throttle; bash "${SCRIPT_DIR}/06-clinvar-screen.sh" "$SAMPLE" &
-PID_CLINVAR=$!
-
-echo "  [A2] PharmCAT pharmacogenomics..."
-_throttle; bash "${SCRIPT_DIR}/07-pharmacogenomics.sh" "$SAMPLE" &
-PID_PHARMCAT=$!
-
-echo "  [A3] ROH analysis..."
-_throttle; bash "${SCRIPT_DIR}/11-roh-analysis.sh" "$SAMPLE" &
-PID_ROH=$!
-
-echo "  [A4] Mito haplogroup..."
-_throttle; bash "${SCRIPT_DIR}/12-mito-haplogroup.sh" "$SAMPLE" &
-PID_HAPLO=$!
-
-echo "  [A5] indexcov coverage QC..."
-_throttle; bash "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX" &
-PID_INDEXCOV=$!
-
-echo "  [A8] mosdepth coverage stats..."
-_throttle; bash "${SCRIPT_DIR}/16b-mosdepth.sh" "$SAMPLE" &
-PID_MOSDEPTH=$!
-
-echo "  [A6] Imputation prep..."
-_throttle; bash "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE" &
-PID_IMPUTATION=$!
-
-echo "  [A7] HLA typing (T1K)..."
-_throttle; bash "${SCRIPT_DIR}/08-hla-typing.sh" "$SAMPLE" &
-PID_HLA=$!
+QUICK_FIRST=${#STEP_NAMES[@]}
+_launch "06 ClinVar screen" 06_clinvar "${SCRIPT_DIR}/06-clinvar-screen.sh" "$SAMPLE"
+_launch "07 PharmCAT" 07_pharmcat "${SCRIPT_DIR}/07-pharmacogenomics.sh" "$SAMPLE"
+_launch "11 ROH" 11_roh "${SCRIPT_DIR}/11-roh-analysis.sh" "$SAMPLE"
+_launch "12 Mito haplogroup" 12_haplogroup "${SCRIPT_DIR}/12-mito-haplogroup.sh" "$SAMPLE"
+_launch "16 indexcov" 16_indexcov "${SCRIPT_DIR}/16-indexcov.sh" "$SAMPLE" "$SEX"
+_launch "16b mosdepth" 16b_mosdepth "${SCRIPT_DIR}/16b-mosdepth.sh" "$SAMPLE"
+if _enabled "${IMPUTATION:-false}"; then
+  _launch "14 Imputation prep" 14_imputation "${SCRIPT_DIR}/14-imputation-prep.sh" "$SAMPLE"
+else
+  echo "  [14 Imputation prep] off (opt-in: IMPUTATION=true)"
+fi
+_launch "08 HLA typing (T1K)" 08_hla "${SCRIPT_DIR}/08-hla-typing.sh" "$SAMPLE"
+QUICK_LAST=$LAST_STEP
 
 # --- Group B: Medium jobs (10-60 minutes each) ---
 echo "  Starting medium analyses..."
+_launch "04 Manta" 04_manta "${SCRIPT_DIR}/04-manta.sh" "$SAMPLE"
+IDX_MANTA=$LAST_STEP
+_launch "09 ExpansionHunter" 09_expansionhunter "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX"
+IDX_EH=$LAST_STEP
+_launch "10 TelomereHunter" 10_telomerehunter "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE"
+_launch "20 Mito variants (Mutect2)" 20_mito "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE"
 
-echo "  [B1] Manta structural variants..."
-_throttle; bash "${SCRIPT_DIR}/04-manta.sh" "$SAMPLE" &
-PID_MANTA=$!
-
-echo "  [B2] ExpansionHunter STR screening..."
-_throttle; bash "${SCRIPT_DIR}/09-expansion-hunter.sh" "$SAMPLE" "$SEX" &
-PID_EH=$!
-
-echo "  [B3] TelomereHunter telomere length..."
-_throttle; bash "${SCRIPT_DIR}/10-telomere-hunter.sh" "$SAMPLE" &
-PID_TH=$!
-
-echo "  [B4] GATK Mutect2 mitochondrial analysis..."
-_throttle; bash "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE" &
-PID_MTOOLBOX=$!
-
-echo "  [B5] CPSR cancer predisposition..."
-_throttle; bash "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE" &
-PID_CPSR=$!
-
-echo "  [B6] pypgx pharmacogenomics (23 genes + CYP2D6 SV)..."
-_throttle; bash "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE" &
-PID_PYPGX=$!
-
-# Wait for quick jobs, counting failures
-PHASE3_FAIL=0
-for PID in $PID_CLINVAR $PID_PHARMCAT $PID_ROH $PID_HAPLO $PID_INDEXCOV $PID_MOSDEPTH $PID_IMPUTATION $PID_HLA; do
-  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
-done
-echo ""
-if [ "$PHASE3_FAIL" -gt 0 ]; then
-  echo "  WARNING: ${PHASE3_FAIL} quick analysis step(s) failed."
+# CPSR and pypgx need optional data; without it they are skipped, not failed
+if [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && [ -d "${GENOME_DIR}/pcgr_data/20250314/data" ]; then
+  _launch "17 CPSR" 17_cpsr "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE"
 else
-  echo "  Quick analyses complete."
+  _skip "17 CPSR" "data not installed: VEP 113 cache and PCGR bundle, see docs/17-cpsr.md"
 fi
+if [ -d "${GENOME_DIR}/reference/pypgx-bundle" ]; then
+  _launch "32 pypgx" 32_pypgx "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE"
+else
+  _skip "32 pypgx" "data not installed: reference/pypgx-bundle, see docs/32-pypgx.md"
+fi
+
+# Wait for the quick jobs before starting the heavy ones
+for i in $(seq "$QUICK_FIRST" "$QUICK_LAST"); do
+  _wait_step "$i" || true
+done
+echo "  Quick analyses finished."
 
 # --- Group C: Heavy jobs (2-4 hours each) ---
-# These are CPU+RAM intensive — run sequentially or limit parallelism
 echo "  Starting heavy analyses..."
-
-echo "  [C1] VEP functional annotation..."
-_throttle; bash "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE" &
-PID_VEP=$!
-
-echo "  [C2] CNVpytor depth-based CNV calling..."
-_throttle; bash "${SCRIPT_DIR}/18-cnvpytor.sh" "$SAMPLE" &
-PID_CNVPYTOR=$!
-
-echo "  [C3] Delly structural variant calling..."
-_throttle; bash "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE" &
-PID_DELLY=$!
-
-echo "  [C4] GRIDSS assembly-based SV calling..."
-_throttle; bash "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE" &
-PID_GRIDSS=$!
-
-# Wait for Manta before running duphold and AnnotSV
-PID_DUPHOLD=""
-PID_ANNOTSV=""
-if wait "$PID_MANTA" 2>/dev/null; then
-  echo "  Manta complete. Running SV post-processing..."
-
-  echo "  [B7] duphold SV quality annotation..."
-  _throttle; bash "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE" &
-  PID_DUPHOLD=$!
-
-  echo "  [B8] AnnotSV structural variant annotation..."
-  _throttle; bash "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE" &
-  PID_ANNOTSV=$!
+# VEP and CNVpytor need data setup.sh does not download; without it they are
+# skipped, not failed (and step 13 does not start a 26 GB download mid-run)
+if [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ]; then
+  _launch "13 VEP" 13_vep "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE"
 else
-  PHASE3_FAIL=$((PHASE3_FAIL + 1))
-  echo "  WARNING: Manta failed — skipping duphold and AnnotSV."
+  _skip "13 VEP" "data not installed: vep_cache/homo_sapiens/116_GRCh38, see docs/13-vep-annotation.md"
 fi
-
-# Wait for ExpansionHunter before running Stranger annotation
-PID_STRANGER=""
-if wait "$PID_EH" 2>/dev/null; then
-  echo "  ExpansionHunter complete. Running STR clinical annotation..."
-
-  echo "  [B2b] Stranger STR clinical annotation..."
-  _throttle; bash "${SCRIPT_DIR}/09b-stranger.sh" "$SAMPLE" &
-  PID_STRANGER=$!
+IDX_VEP=$LAST_STEP
+if [ -s "${GENOME_DIR}/reference/cnvpytor/gc_hg38.pytor" ]; then
+  _launch "18 CNVpytor" 18_cnvpytor "${SCRIPT_DIR}/18-cnvpytor.sh" "$SAMPLE"
 else
-  PHASE3_FAIL=$((PHASE3_FAIL + 1))
-  echo "  WARNING: ExpansionHunter failed — skipping Stranger annotation."
+  _skip "18 CNVpytor" "data not installed: reference/cnvpytor, see docs/18-cnvpytor.md"
+fi
+_launch "19 Delly" 19_delly "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE"
+if _enabled "${GRIDSS:-false}"; then
+  _launch "04b GRIDSS" 04b_gridss "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE"
+else
+  echo "  [04b GRIDSS] off (opt-in: GRIDSS=true; needs a classic BWA index, see docs/04b-gridss.md)"
 fi
 
-# Wait for remaining Phase 3 jobs
-for PID in $PID_TH $PID_MTOOLBOX $PID_CPSR $PID_PYPGX $PID_VEP $PID_CNVPYTOR $PID_DELLY $PID_GRIDSS $PID_DUPHOLD $PID_ANNOTSV $PID_STRANGER; do
-  [ -z "$PID" ] && continue
-  wait "$PID" 2>/dev/null || PHASE3_FAIL=$((PHASE3_FAIL + 1))
-done
-
-if [ "$PHASE3_FAIL" -gt 0 ]; then
-  echo ""
-  echo "  WARNING: ${PHASE3_FAIL} Phase 3 step(s) had errors. Check individual step output above."
+# duphold and AnnotSV need Manta's VCF
+if _wait_step "$IDX_MANTA"; then
+  _launch "15 duphold" 15_duphold "${SCRIPT_DIR}/15-duphold.sh" "$SAMPLE"
+  if [ -d "${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes/GRCh38" ]; then
+    _launch "05 AnnotSV" 05_annotsv "${SCRIPT_DIR}/05-annotsv.sh" "$SAMPLE"
+  else
+    _skip "05 AnnotSV" "data not installed: annotsv_annotations, run setup.sh"
+  fi
+else
+  _skip "15 duphold" "Manta failed"
+  _skip "05 AnnotSV" "Manta failed"
 fi
+
+# Stranger needs ExpansionHunter's output
+if _wait_step "$IDX_EH"; then
+  _launch "09b Stranger" 09b_stranger "${SCRIPT_DIR}/09b-stranger.sh" "$SAMPLE"
+else
+  _skip "09b Stranger" "ExpansionHunter failed"
+fi
+
+_wait_all
+echo "  Phase 3 finished."
 
 # Phase 4: Post-processing (uses outputs from Phase 3)
 echo ""
 echo "[Phase 4] Running post-processing steps..."
 
-# Post-processing steps: per-step log files to avoid interleaved output
-POST_LOG_DIR="${GENOME_DIR}/${SAMPLE}"
-POST_LOG="${POST_LOG_DIR}/post_processing.log"
+# Steps 30, 23 and 31 read step 13's VEP output: run them only when step 13
+# succeeded in this run, so they never work on an old or missing file
+VEP_RESULT="${STEP_RESULTS[$IDX_VEP]}"
+VEP_RESULT="${VEP_RESULT%% *}"
 
 # vcfanno annotation enrichment (must complete before clinical filter)
 # Adds CADD, SpliceAI, REVEL, AlphaMissense scores to VEP VCF
-echo "  [D0] vcfanno annotation enrichment..."
-bash "${SCRIPT_DIR}/30-vcfanno.sh" "$SAMPLE" > "${POST_LOG_DIR}/30_vcfanno.log" 2>&1 || \
-  echo "  WARNING: vcfanno failed (annotation databases may not be downloaded). See ${POST_LOG_DIR}/30_vcfanno.log"
-echo ""
+if [ "$VEP_RESULT" = "ok" ]; then
+  _run "30 vcfanno" 30_vcfanno "${SCRIPT_DIR}/30-vcfanno.sh" "$SAMPLE"
+else
+  _skip "30 vcfanno" "needs VEP, step 13 ${VEP_RESULT}"
+fi
 
-echo "  [D1] CYP2D6 star alleles (Cyrius) [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE" > "${POST_LOG_DIR}/21_cyrius.log" 2>&1 &
-PID_CYRIUS=$!
-
-echo "  [D2] SV consensus merge [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE" > "${POST_LOG_DIR}/22_survivor.log" 2>&1 &
-PID_SURVIVOR=$!
-
-echo "  [D3] Clinical variant filter..."
-_throttle; bash "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE" > "${POST_LOG_DIR}/23_clinical.log" 2>&1 &
-PID_CLINICAL=$!
-
-echo "  [D4] Polygenic Risk Scores [exploratory]..."
-_throttle; bash "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE" > "${POST_LOG_DIR}/25_prs.log" 2>&1 &
-PID_PRS=$!
-
-echo "  [D5] Ancestry PCA [experimental]..."
-_throttle; bash "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE" > "${POST_LOG_DIR}/26_ancestry.log" 2>&1 &
-PID_ANCESTRY=$!
-
-echo "  [D6] CPIC drug-gene recommendations..."
-_throttle; bash "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE" > "${POST_LOG_DIR}/27_cpic.log" 2>&1 &
-PID_CPIC=$!
-
-echo "  [D7] slivar variant prioritization + compound hets..."
-_throttle; bash "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE" > "${POST_LOG_DIR}/31_slivar.log" 2>&1 &
-PID_SLIVAR=$!
+_launch "21 Cyrius CYP2D6 [experimental]" 21_cyrius "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE"
+_launch "22 SV consensus merge [experimental]" 22_survivor "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE"
+if [ "$VEP_RESULT" = "ok" ]; then
+  _launch "23 Clinical filter" 23_clinical "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE"
+else
+  _skip "23 Clinical filter" "needs VEP, step 13 ${VEP_RESULT}"
+fi
+_launch "25 PRS [exploratory]" 25_prs "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE"
+if _enabled "${ANCESTRY:-false}"; then
+  _launch "26 Ancestry SNP intersection [experimental]" 26_ancestry "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE"
+else
+  echo "  [26 Ancestry] off (opt-in: ANCESTRY=true; on one sample it only counts shared SNPs)"
+fi
+_launch "27 CPIC lookup" 27_cpic "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE"
+if [ "$VEP_RESULT" = "ok" ]; then
+  _launch "31 slivar" 31_slivar "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE"
+else
+  _skip "31 slivar" "needs VEP, step 13 ${VEP_RESULT}"
+fi
 
 # Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
-# Enable with: SOMATIC=true ./scripts/run-all.sh sample sex
-PID_SOMATIC=""
-if [ "${SOMATIC:-false}" = "true" ] || [ "${SOMATIC:-0}" = "1" ]; then
-  echo "  [D8] Somatic variant calling (Mutect2 tumor-only) [experimental]..."
-  _throttle; bash "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE" > "${POST_LOG_DIR}/29_somatic.log" 2>&1 &
-  PID_SOMATIC=$!
+if _enabled "${SOMATIC:-false}"; then
+  _launch "29 Somatic (Mutect2 tumor-only) [experimental]" 29_somatic "${SCRIPT_DIR}/29-mutect2-somatic.sh" "$SAMPLE"
 else
-  echo "  [D8] Somatic calling skipped (set SOMATIC=true to enable — high false-positive rate)"
+  echo "  [29 Somatic] off (opt-in: SOMATIC=true; high false-positive rate)"
 fi
 
-PHASE4_FAIL=0
-for PID in $PID_CYRIUS $PID_SURVIVOR $PID_CLINICAL $PID_PRS $PID_ANCESTRY $PID_CPIC $PID_SLIVAR $PID_SOMATIC; do
-  [ -z "$PID" ] && continue
-  wait "$PID" 2>/dev/null || PHASE4_FAIL=$((PHASE4_FAIL + 1))
-done
-if [ "$PHASE4_FAIL" -gt 0 ]; then
-  echo "  WARNING: ${PHASE4_FAIL} post-processing step(s) had errors."
-  echo "  See per-step logs: ${POST_LOG_DIR}/*_*.log"
-else
-  echo "  Post-processing complete."
-fi
+_wait_all
+echo "  Post-processing finished."
 
 # Phase 4b: Benchmarking (optional)
-BENCHMARK=${BENCHMARK:-false}
-if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
+if _enabled "${BENCHMARK:-false}"; then
   # Count available caller VCFs (need at least 2 for pairwise comparison)
   CALLER_COUNT=0
   for d in vcf vcf_gatk vcf_freebayes vcf_octopus; do
@@ -353,31 +362,27 @@ if [ "$BENCHMARK" = "true" ] || [ "$BENCHMARK" = "1" ]; then
   [ -f "${GENOME_DIR}/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" ] && CALLER_COUNT=$((CALLER_COUNT + 1))
   if [ "$CALLER_COUNT" -ge 2 ]; then
     echo ""
-    echo "  [D9] Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
-    bash "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE" > "${POST_LOG_DIR}/benchmark.log" 2>&1 || { echo "  WARNING: Benchmarking failed. See ${POST_LOG_DIR}/benchmark.log"; PHASE4_FAIL=$((PHASE4_FAIL + 1)); }
+    echo "  Variant caller benchmarking (${CALLER_COUNT} caller VCFs found)..."
+    _run "Benchmark callers" benchmark "${SCRIPT_DIR}/benchmark-variants.sh" "$SAMPLE"
   else
-    echo ""
-    echo "  [D9] Skipping benchmarking: only ${CALLER_COUNT} caller VCF(s) found (need 2+)."
-    echo "  Set EXTRA_CALLERS=gatk,freebayes,strelka2 to run alternative callers in Phase 2b."
+    _skip "Benchmark callers" "only ${CALLER_COUNT} caller VCF found, need 2+; set EXTRA_CALLERS=gatk,freebayes,strelka2"
   fi
 fi
 
-REPORT_FAIL=0
+_run "24 HTML report" 24_html_report "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE"
+_run "28 MultiQC" 28_multiqc "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE"
+_run "Summary report" generate_report "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE"
 
-echo "  [D10] HTML summary report..."
-bash "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/24_html_report.log" 2>&1 || { echo "  WARNING: HTML report generation failed. See ${POST_LOG_DIR}/24_html_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
-
-echo "  [D11] MultiQC aggregated QC report..."
-bash "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE" > "${POST_LOG_DIR}/28_multiqc.log" 2>&1 || { echo "  WARNING: MultiQC report generation failed. See ${POST_LOG_DIR}/28_multiqc.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
-
-# Generate summary report
-echo ""
-echo "[Report] Generating summary report..."
-bash "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE" > "${POST_LOG_DIR}/generate_report.log" 2>&1 || { echo "  WARNING: Report generation failed. See ${POST_LOG_DIR}/generate_report.log"; REPORT_FAIL=$((REPORT_FAIL + 1)); }
-
-# Aggregate all per-step logs into one combined log for easy review
+# Aggregate the post-processing logs into one file for easy review
+POST_LOG="${GENOME_DIR}/${SAMPLE}/post_processing.log"
 : > "$POST_LOG"
-for logf in "${POST_LOG_DIR}"/2[0-9]_*.log "${POST_LOG_DIR}"/3[0-9]_*.log "${POST_LOG_DIR}"/benchmark.log "${POST_LOG_DIR}"/generate_report.log; do
+# Only logs of steps this run started: a log left by an earlier run with
+# other options must not end up in it.
+for logf in "${STEP_LOGS[@]}"; do
+  case "${logf##*/}" in
+    2[0-9]_*.log|3[0-9]_*.log|benchmark.log|generate_report.log) ;;
+    *) continue ;;
+  esac
   [ -f "$logf" ] || continue
   echo "=== $(basename "$logf") ===" >> "$POST_LOG"
   cat "$logf" >> "$POST_LOG"
@@ -389,17 +394,42 @@ ELAPSED=$(( PIPELINE_END - PIPELINE_START ))
 HOURS=$(( ELAPSED / 3600 ))
 MINUTES=$(( (ELAPSED % 3600) / 60 ))
 
-TOTAL_FAIL=$((${PHASE2B_FAIL:-0} + PHASE3_FAIL + PHASE4_FAIL + REPORT_FAIL))
-
+# Final table: every step, its result and its log
+OK_COUNT=0
+SKIP_COUNT=0
+FAIL_COUNT=0
 echo ""
 echo "============================================"
-if [ "$TOTAL_FAIL" -gt 0 ]; then
+printf '  %-45s %-10s %s\n' "Step" "Result" "Log"
+for i in "${!STEP_NAMES[@]}"; do
+  RESULT="${STEP_RESULTS[$i]}"
+  case "$RESULT" in
+    ok) OK_COUNT=$((OK_COUNT + 1)) ;;
+    failed) FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
+    skipped*) SKIP_COUNT=$((SKIP_COUNT + 1)) ;;
+  esac
+  if [ "${RESULT%% *}" = "skipped" ]; then
+    printf '  %-45s %-10s %s\n' "${STEP_NAMES[$i]}" "skipped" "${RESULT#skipped }"
+  else
+    printf '  %-45s %-10s %s\n' "${STEP_NAMES[$i]}" "$RESULT" "${STEP_LOGS[$i]}"
+  fi
+done
+echo "============================================"
+if [ "$FAIL_COUNT" -gt 0 ]; then
   echo "  Pipeline finished with errors for: ${SAMPLE}"
-  echo "  ${TOTAL_FAIL} step(s) failed (Phase 2b: ${PHASE2B_FAIL:-0}, Phase 3: ${PHASE3_FAIL}, Phase 4: ${PHASE4_FAIL}, Reports: ${REPORT_FAIL})"
+  echo "  ${OK_COUNT} ok, ${SKIP_COUNT} skipped, ${FAIL_COUNT} failed"
+  echo "  Failed:"
+  for i in "${!STEP_NAMES[@]}"; do
+    if [ "${STEP_RESULTS[$i]}" = "failed" ]; then
+      echo "    ${STEP_NAMES[$i]}: ${STEP_LOGS[$i]}"
+    fi
+  done
 else
   echo "  Pipeline complete for: ${SAMPLE}"
+  echo "  ${OK_COUNT} ok, ${SKIP_COUNT} skipped, 0 failed"
 fi
 echo "  All results in: ${GENOME_DIR}/${SAMPLE}/"
+echo "  Step logs in:   ${LOG_DIR}/"
 echo "  Total runtime: ${HOURS}h ${MINUTES}m"
 echo "  Finished: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "============================================"
@@ -415,10 +445,8 @@ echo "  CPIC drugs:     ${GENOME_DIR}/${SAMPLE}/cpic/"
 echo "  Clinical VCF:   ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"
 echo "  SV consensus:   ${GENOME_DIR}/${SAMPLE}/sv_merged/"
 echo "  PRS scores:     ${GENOME_DIR}/${SAMPLE}/prs/"
-echo "  Ancestry PCA:   ${GENOME_DIR}/${SAMPLE}/ancestry/"
 echo "  pypgx PGx:      ${GENOME_DIR}/${SAMPLE}/pypgx/"
 echo "  Slivar:         ${GENOME_DIR}/${SAMPLE}/slivar/"
-echo "  Somatic calls:  ${GENOME_DIR}/${SAMPLE}/somatic/"
 echo "  CPSR report:    ${GENOME_DIR}/${SAMPLE}/cpsr/"
 echo ""
 echo "Next steps:"
@@ -426,4 +454,4 @@ echo "  1. Open the PharmCAT HTML report in a browser — it's the most actionab
 echo "  2. Review ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt for a quick summary"
 echo "  3. See docs/interpreting-results.md for help understanding your results"
 
-exit "$(( TOTAL_FAIL > 0 ? 1 : 0 ))"
+exit "$(( FAIL_COUNT > 0 ? 1 : 0 ))"

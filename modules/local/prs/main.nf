@@ -48,25 +48,33 @@ process PRS {
         --allow-extra-chr \\
         --output-chr chrM
 
-    # Step 2: Score each PGS file in scoring directory
-    echo -e "Condition\\tPGS_ID\\tScore\\tVariants_Used\\tVariants_Total" > ${meta.id}_prs_summary.tsv
+    # Step 2: Score each PGS file in scoring directory.
+    # Only GRCh38-harmonised PGS Catalog files are accepted (#HmPOS_build=GRCh38);
+    # an author-reported file is often GRCh37 and would score the wrong positions.
+    echo -e "Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total" > ${meta.id}_prs_summary.tsv
 
     for SCORE_FILE in ${scoring_dir}/*.txt.gz ${scoring_dir}/*.txt; do
         [ -f "\${SCORE_FILE}" ] || continue
         PGS_ID=\$(basename "\${SCORE_FILE}" | sed 's/\\(_hmPOS_GRCh38\\)\\?.txt\\(.gz\\)\\?\$//')
 
-        # Format scoring file: extract chr:pos, effect_allele, effect_weight
+        BUILD=\$( { gzip -cdf "\${SCORE_FILE}" 2>/dev/null || true; } | awk -F= '/^#HmPOS_build=/ {b=\$2} !/^#/ {exit} END {print b}')
+        if [ "\${BUILD}" != "GRCh38" ]; then
+            echo "ERROR: \${SCORE_FILE} has #HmPOS_build='\${BUILD}', expected GRCh38 (use the PGS Catalog Harmonized/<id>_hmPOS_GRCh38 file)" >&2
+            exit 1
+        fi
+
+        # Format scoring file: GRCh38 hm_chr:hm_pos, effect_allele, effect_weight
         FORMATTED="\${PGS_ID}_formatted.tsv"
-        (zcat "\${SCORE_FILE}" 2>/dev/null || cat "\${SCORE_FILE}") | grep -v "^#" | \\
-            awk -F'\\t' 'NR==1 {
+        gzip -cdf "\${SCORE_FILE}" | \\
+            awk -F'\\t' '/^#/ {next}
+            !hdr {
                 for(i=1;i<=NF;i++) {
-                    if(\$i=="chr_name") chr_col=i;
-                    if(\$i=="chr_position") pos_col=i;
-                    if(\$i=="effect_allele") ea_col=i;
-                    if(\$i=="effect_weight") ew_col=i;
                     if(\$i=="hm_chr") chr_col=i;
                     if(\$i=="hm_pos") pos_col=i;
+                    if(\$i=="effect_allele") ea_col=i;
+                    if(\$i=="effect_weight") ew_col=i;
                 }
+                hdr=1
                 next
             }
             chr_col && pos_col && ea_col && ew_col {
@@ -76,27 +84,42 @@ process PRS {
                     key=chr":"pos"\\t"ea;
                     if(!(key in seen)) { seen[key]=1; printf "%s:%s\\t%s\\t%s\\n", chr, pos, ea, ew; }
                 }
-            }' > "\${FORMATTED}" 2>/dev/null || true
+            }' > "\${FORMATTED}"
 
-        TOTAL_VARS=\$(wc -l < "\${FORMATTED}" 2>/dev/null || echo 0)
-        [ "\${TOTAL_VARS}" -eq 0 ] && continue
+        TOTAL_VARS=\$(wc -l < "\${FORMATTED}" | tr -d ' ')
+        if [ "\${TOTAL_VARS}" -eq 0 ]; then
+            echo "ERROR: no GRCh38 hm_chr/hm_pos/effect_allele/effect_weight rows in \${SCORE_FILE}" >&2
+            exit 1
+        fi
 
-        # Run plink2 --score
-        plink2 \\
+        # Run plink2 --score. cols=+scoresums adds SCORE1_SUM (the plain weighted sum).
+        rm -f "\${PGS_ID}.sscore" "\${PGS_ID}.log"
+        if ! plink2 \\
             --pfile ${meta.id} \\
             --score "\${FORMATTED}" 1 2 3 \\
                 ignore-dup-ids \\
                 no-mean-imputation \\
+                cols=+scoresums \\
             --out "\${PGS_ID}" \\
             --threads ${task.cpus} \\
             --memory \$(( ${task.memory.toMega()} - 500 )) \\
-            --allow-extra-chr 2>/dev/null || true
-
-        if [ -f "\${PGS_ID}.sscore" ]; then
-            SCORE=\$(awk 'NR==2 {print \$NF}' "\${PGS_ID}.sscore" 2>/dev/null || echo "N/A")
-            USED_VARS=\$(awk 'NR==2 {print \$(NF-1)}' "\${PGS_ID}.sscore" 2>/dev/null || echo "N/A")
-            echo -e "\${PGS_ID}\\t\${PGS_ID}\\t\${SCORE}\\t\${USED_VARS}\\t\${TOTAL_VARS}" >> ${meta.id}_prs_summary.tsv
+            --allow-extra-chr; then
+            if grep -q 'No valid variants' "\${PGS_ID}.log" 2>/dev/null; then
+                echo -e "\${PGS_ID}\\t\${PGS_ID}\\tNA\\t0\\t\${TOTAL_VARS}" >> ${meta.id}_prs_summary.tsv
+                continue
+            fi
+            echo "ERROR: plink2 --score failed for \${PGS_ID}" >&2
+            exit 1
         fi
+
+        # Columns by name; ALLELE_CT/2 = variants matched (two alleles per autosomal site)
+        ROW=\$(awk -F'\\t' 'NR==1 { for(i=1;i<=NF;i++) col[\$i]=i; next }
+            NR==2 && ("SCORE1_SUM" in col) && ("ALLELE_CT" in col) { print \$col["SCORE1_SUM"] "\\t" \$col["ALLELE_CT"]/2 }' "\${PGS_ID}.sscore")
+        if [ -z "\${ROW}" ]; then
+            echo "ERROR: \${PGS_ID}.sscore has no SCORE1_SUM or ALLELE_CT column" >&2
+            exit 1
+        fi
+        echo -e "\${PGS_ID}\\t\${PGS_ID}\\t\${ROW}\\t\${TOTAL_VARS}" >> ${meta.id}_prs_summary.tsv
     done
 
     cat <<-END_VERSIONS > versions.yml

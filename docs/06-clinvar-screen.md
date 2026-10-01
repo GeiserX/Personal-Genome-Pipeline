@@ -7,7 +7,7 @@ Intersects your sample VCF against the ClinVar database of known pathogenic vari
 ClinVar is the most widely used public database of clinically reported variants. This screen catches pathogenic SNPs and indels that have been submitted by clinical labs — carrier status, dominant disease risk, and pharmacogenomic flags. Note that ClinVar entries vary in evidence quality (see star ratings in [interpreting-results.md](interpreting-results.md)).
 
 ## Tool
-- **bcftools isec** — VCF intersection to find overlapping variants
+- **bcftools norm**, **isec** and **annotate** — split and left-align both files, keep the sample's records whose allele is in ClinVar, and copy ClinVar's gene, significance and review status onto them
 
 ## Docker Image
 ```
@@ -16,6 +16,7 @@ staphb/bcftools:1.21
 
 ## Prerequisites
 - Sample VCF from DeepVariant (step 3)
+- Reference FASTA and its `.fai`: `reference/Homo_sapiens_assembly38.fasta` (used to left-align indels)
 - `clinvar_pathogenic_chr.vcf.gz` from reference setup (step 00) — chr-prefixed, filtered to Pathogenic/Likely_pathogenic only
 
 ## Command
@@ -29,23 +30,33 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 
 ### What the Script Does
 
-1. Filters the sample VCF to PASS variants only (`bcftools view -f PASS`)
-2. Intersects the PASS VCF against the ClinVar pathogenic subset using `bcftools isec -p`
-3. Reports the count of shared variants (positions in both the sample and ClinVar pathogenic)
+1. Checks that the sample VCF and the ClinVar file share contig names (`bcftools index -s`). A ClinVar file named `1, 2, ...` against a `chr1, chr2, ...` VCF stops the step with an error instead of reporting zero hits.
+2. Builds `clinvar/clinvar_pathogenic_chr.norm.vcf.gz` beside the ClinVar file the first time, and again whenever the source file is newer: multiallelic records split (`bcftools norm -m -any`) and indels left-aligned against the reference. Every sample then reuses it. The Nextflow module reuses this file when it sits beside the `--clinvar` file and is newer; otherwise it normalises ClinVar inside the task.
+3. Filters the sample VCF to PASS records. If the VCF has no PASS record at all (callers that leave FILTER as `.`), it uses `-f .,PASS` instead and prints a notice saying so. If no record is left, the step stops with an error.
+4. Splits and left-aligns the sample the same way. `bcftools isec` matches only identical REF/ALT, so a pathogenic allele inside a multiallelic record (genotype `1/2`) is found only after this split.
+5. Keeps the sample's records whose allele is in ClinVar (`bcftools isec -n=2 -w1`) and copies ClinVar's `ID`, `GENEINFO`, `CLNSIG` and `CLNREVSTAT` onto them (`bcftools annotate --pair-logic exact`).
 
 ## Output
 
 | File | Description |
 |---|---|
-| `clinvar/${SAMPLE}_pass.vcf.gz` | PASS-only subset of the sample VCF (intermediate) |
-| `clinvar/isec/0000.vcf` | Variants unique to the sample |
-| `clinvar/isec/0001.vcf` | Variants unique to ClinVar pathogenic |
-| `clinvar/isec/0002.vcf` | **Shared variants — positions overlapping ClinVar pathogenic entries** |
-| `clinvar/isec/0003.vcf` | Shared variants (ClinVar's perspective) |
+| `clinvar/${SAMPLE}_clinvar_hits.vcf` | **The hits: your records that match a ClinVar Pathogenic/Likely_pathogenic allele, with ClinVar's ID, gene (`GENEINFO`), significance (`CLNSIG`) and review status (`CLNREVSTAT`). Your genotype is in the sample column.** |
+| `clinvar/${SAMPLE}_pass.vcf.gz` | Filtered, split and left-aligned sample VCF (intermediate) |
+| `clinvar/clinvar_pathogenic_chr.norm.vcf.gz` (in `${GENOME_DIR}`) | Normalised ClinVar, shared by every sample |
+
+Both reports (step 24 and `generate-report.sh`) read the hits file and show gene, genotype (het/hom), significance and review status for each hit. Older versions of this step wrote `clinvar/isec/0002.vcf`; that file holds only the sample's side of the intersection, with no gene or significance, and nothing reads it any more. Rerun step 6 to get the hits file.
+
+To list the hits yourself:
+
+```bash
+docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  bcftools query -f '%CHROM:%POS %REF>%ALT [%GT] %INFO/GENEINFO %INFO/CLNSIG %INFO/CLNREVSTAT\n' \
+  /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf
+```
 
 ## Interpreting Results
 
-This step screens against **Pathogenic and Likely_pathogenic variants only** — benign and VUS entries are excluded at the database level (see step 00 reference setup). Every hit in the output is at a position ClinVar classifies as disease-associated.
+This step screens against **Pathogenic and Likely_pathogenic variants only** — benign and VUS entries are excluded at the database level (see step 00 reference setup). Every hit is an allele that ClinVar classifies as Pathogenic or Likely_pathogenic, and the hit shows your genotype for it.
 
 | Scenario | Meaning | Action |
 |---|---|---|
@@ -56,8 +67,9 @@ This step screens against **Pathogenic and Likely_pathogenic variants only** —
 
 ## Limitations
 
-- This screen does **not** surface ClinVar review status (star ratings / CLNREVSTAT) or conflict flags. A variant classified as "Pathogenic" by one submitter may have conflicting interpretations from others. Always check the full ClinVar entry before acting on any result.
-- Overlaps are position-based (`bcftools isec`) — representation differences between callers can cause both false positives and missed overlaps. The Nextflow module normalizes VCFs before intersection; the bash script relies on upstream normalization.
+- The reports show ClinVar's review status (`CLNREVSTAT`), but a status such as "criteria provided, single submitter" still rests on one lab. Always check the full ClinVar entry before acting on any result.
+- Matching is by allele after both files are split and left-aligned, in the bash script and in the Nextflow module alike. A complex variant that the caller writes differently from ClinVar (for example an MNP against two SNVs) can still be missed.
+- The screen sees only small variants in the VCF. Copy-number losses and gene deletions (for example SMN1 in spinal muscular atrophy) are invisible to it.
 - Results are **research-grade**, not clinical diagnoses. Do not make medical decisions based solely on this output.
 
 ## Important Notes

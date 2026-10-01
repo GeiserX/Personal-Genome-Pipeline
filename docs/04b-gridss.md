@@ -41,6 +41,14 @@ export GENOME_DIR=/path/to/data
 ./scripts/04b-gridss.sh <sample_name>
 ```
 
+`run-all.sh` runs GRIDSS only when asked, because it needs a classic BWA index that `setup.sh` does not build and about 32 GB of RAM:
+
+```bash
+GRIDSS=true ./scripts/run-all.sh <sample_name> <male|female>
+```
+
+With `GRIDSS=true` and no classic BWA index, the step fails and the run's final table lists it as failed.
+
 ## Prerequisites
 
 GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
@@ -82,7 +90,7 @@ Note: GRIDSS QUAL scores are uncorrected for multiple testing and tend to be ove
 | Disk | ~50 GB intermediate files (cleaned up automatically) |
 | Runtime | 4-8 hours for 30X WGS |
 
-GRIDSS is the heaviest tool in the pipeline. It runs in parallel with other analysis steps.
+GRIDSS is the heaviest tool in the pipeline. With `GRIDSS=true` it runs in parallel with the other heavy steps (VEP, CNVpytor, Delly).
 
 ## Runtime
 

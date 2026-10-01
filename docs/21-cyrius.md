@@ -1,6 +1,6 @@
 # Step 21: CYP2D6 Star Allele Calling with Cyrius
 
-> **EXPERIMENTAL:** Cyrius is installed via pip at runtime inside a generic Python container, which is fragile (network dependency, version drift). Results should be cross-referenced with PharmCAT's CYP2D6 call.
+> **EXPERIMENTAL:** Cyrius is installed with pip at runtime inside a generic Python container, so the step needs network access. The version (1.1.1) and its dependencies are pinned. Results should be cross-referenced with PharmCAT's CYP2D6 call.
 
 ## What This Does
 
@@ -17,10 +17,10 @@ PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calli
 ## Docker Image
 
 ```
-python:3.11-slim
+python:3.11
 ```
 
-Cyrius is installed via `pip install cyrius` inside the container at runtime. No dedicated Cyrius Docker image is required.
+Cyrius is installed inside the container at runtime with `pip install -c /constraints.txt 'cyrius==1.1.1'`. The constraints file is `scripts/cyrius-constraints.txt`, mounted read-only; it pins Cyrius's dependencies (pysam, numpy, scipy, statsmodels and theirs) to versions resolved once on this image. No dedicated Cyrius Docker image is required. If pip fails (for example without network), its own error is in the step log.
 
 ## Input
 
@@ -38,7 +38,7 @@ Cyrius is installed via `pip install cyrius` inside the container at runtime. No
 
 1. Validates that the sorted BAM and its index exist
 2. Creates a manifest file listing the BAM path (Cyrius requires this)
-3. Installs Cyrius in a Python 3.11 container and runs `star_caller` with `--genome 38` (GRCh38)
+3. Installs Cyrius 1.1.1 in a Python 3.11 container and runs its `cyrius` command with `--genome 38` (GRCh38)
 4. Parses the output TSV to display the called diplotype
 
 ## Output
@@ -96,7 +96,7 @@ Aldy also calls 37 additional pharmacogenes (CYP2C19, CYP2B6, UGT1A1, NAT2, DPYD
 # Install in a Python container (one-time, or build a custom image)
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  python:3.11-slim \
+  python:3.11 \
   bash -c "
     pip install -q aldy==4.8.3 &&
     aldy genotype \
@@ -111,7 +111,7 @@ docker run --rm --user root \
 
 ## Notes
 
-- The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation.
+- The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation. It exits with an error when Cyrius writes no result file.
 - Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call and pypgx (step 32). Cyrius can fail on some WGS samples due to CYP2D7 pseudogene homology; pypgx handles this more robustly. If all three disagree, Aldy (see above) has the broadest star allele coverage among available callers.
 - Step 27 (CPIC lookup) currently reads PharmCAT JSON only. To translate a Cyrius diplotype into drug recommendations, consult [CPIC guidelines](https://cpicpgx.org/guidelines/) manually.
 
