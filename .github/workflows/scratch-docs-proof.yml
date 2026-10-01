@@ -1,0 +1,118 @@
+name: scratch docs proof
+
+# Scratch workflow for the docs-dead-links-and-commands branch only. It runs
+# the documented commands exactly as the docs print them and is deleted before
+# the PR is merged.
+on:
+  push:
+    branches:
+      - pgp/docs-dead-links-and-commands
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every download URL in the lane's files answers 200
+        run: |
+          set -u
+          FILES="docs/00-reference-setup.md docs/benchmarking.md docs/quick-test.md docs/getting-started.md docs/vendor-guide.md docs/08-hla-typing.md docs/18-cnvpytor.md docs/troubleshooting.md docs/interpreting-results.md docs/30-vcfanno.md docs/31-slivar.md docs/01-ora-to-fastq.md docs/15-duphold.md ROADMAP.md"
+          grep -ohE 'https?://[^][ "'"'"'<>()`|\\]+' $FILES | sed -E 's/[.,;:*]+$//' | grep -v '\$' | sort -u > urls.txt
+          echo "checking $(wc -l < urls.txt) urls"
+          bad=0
+          while read -r u; do
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u")
+            if [ "$code" != 200 ]; then
+              code2=$(curl -sL -o /dev/null -r 0-0 -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u")
+              case "$code2" in 200|206) continue;; esac
+              echo "NOT OK $code/$code2 $u"; bad=$((bad+1))
+            fi
+          done < urls.txt
+          echo "not ok: $bad"
+
+  revel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Extract the documented REVEL block
+        run: |
+          python3 - <<'EOF'
+          import re
+          s = open('docs/00-reference-setup.md').read()
+          sec = s.split('### REVEL v1.3', 1)[1].split('\n### ', 1)[0]
+          block = re.search(r'```bash\n(.*?)```', sec, re.S).group(1)
+          open('/tmp/revel.sh', 'w').write(block)
+          print(block)
+          EOF
+      - name: Run it
+        run: |
+          sudo mkdir -p /mnt/genome/annotations && sudo chown -R "$USER" /mnt/genome
+          export GENOME_DIR=/mnt/genome
+          df -h /mnt
+          docker run --rm broadinstitute/gatk:4.6.2.0 bash -c 'command -v bgzip tabix'
+          bash -eo pipefail /tmp/revel.sh 2>&1 | grep -v '^  inflating' | tail -20
+      - name: Check the table
+        run: |
+          cd /mnt/genome/annotations
+          ls -la
+          echo "--- head -2"
+          gzip -dc revel_grch38.tsv.gz | head -2
+          echo "--- field count of the header and first data row"
+          gzip -dc revel_grch38.tsv.gz | head -2 | awk -F'\t' '{print NF}'
+          gzip -dc revel_grch38.tsv.gz | head -2 | awk -F'\t' 'NF!=5{bad=1} END{exit bad}'
+          echo "--- a tabix query"
+          docker run --rm -v "$PWD:/a" broadinstitute/gatk:4.6.2.0 tabix /a/revel_grch38.tsv.gz chr17:43045700-43045710
+          echo "--- rows: $(gzip -dc revel_grch38.tsv.gz | grep -vc '^#')"
+
+  quick-test-b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reference FASTA and index as docs/00-reference-setup.md downloads them
+        run: |
+          sudo mkdir -p /mnt/genome/reference && sudo chown -R "$USER" /mnt/genome
+          cd /mnt/genome/reference
+          python3 - <<'EOF'
+          import re
+          s = open('/home/runner/work/Personal-Genome-Pipeline/Personal-Genome-Pipeline/docs/00-reference-setup.md').read()
+          block = re.search(r'```bash\n(.*?)```', s.split('## GRCh38 Reference Genome', 1)[1], re.S).group(1)
+          block = block.replace('export GENOME_DIR=/path/to/your/data\n', '')
+          open('/tmp/ref.sh', 'w').write(block)
+          print(block)
+          EOF
+          GENOME_DIR=/mnt/genome bash -eo pipefail /tmp/ref.sh 2>&1 | grep -v '\.\.\.\.\.\.' | tail -8
+          md5sum Homo_sapiens_assembly38.fasta | grep -q '^7ff134953dcca8c8997453bbb80b6b5e ' && echo 'MD5 matches the documented value'
+      - name: Extract the documented Option B blocks
+        run: |
+          python3 - <<'EOF'
+          import re
+          s = open('docs/quick-test.md').read()
+          sec = s.split('## Option B', 1)[1].split('\n---', 1)[0]
+          blocks = re.findall(r'```bash\n(.*?)```', sec, re.S)
+          # blocks[0] = remote extract, blocks[1] = extract from own BAM, blocks[2] = links, blocks[3] = steps
+          open('/tmp/b_extract.sh', 'w').write(blocks[0])
+          open('/tmp/b_links.sh', 'w').write(blocks[2])
+          for i, b in enumerate(blocks):
+              print(f'--- block {i}\n{b}')
+          EOF
+      - name: Run the remote chr22 extract and the link step
+        run: |
+          export GENOME_DIR=/mnt/genome SAMPLE=test_na12878
+          time bash -eo pipefail /tmp/b_extract.sh
+          bash -eo pipefail /tmp/b_links.sh
+          ls -la "$GENOME_DIR/$SAMPLE/aligned"
+          docker run --rm -v "$GENOME_DIR:/genome" staphb/samtools:1.20 bash -c "samtools quickcheck -v /genome/$SAMPLE/aligned/${SAMPLE}_sorted.bam && samtools idxstats /genome/$SAMPLE/aligned/${SAMPLE}_sorted.bam | awk '\$3>0'"
+      - name: Step 16 reads the BAM where the scripts expect it
+        run: |
+          export GENOME_DIR=/mnt/genome
+          ./scripts/16-indexcov.sh test_na12878
+          ls -la /mnt/genome/test_na12878/indexcov
