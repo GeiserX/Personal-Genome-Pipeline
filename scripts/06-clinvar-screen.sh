@@ -90,12 +90,17 @@ fi
 
 # Step 3: keep the sample's records whose allele is in ClinVar, then copy ClinVar's
 # ID, gene and significance onto them. isec -w1 writes the sample's side, which has
-# no GENEINFO/CLNSIG of its own.
+# no GENEINFO/CLNSIG of its own. (annotate -a needs an indexed target, so the
+# shared records go to a file first.)
+SHARED="${OUTPUT_DIR}/${SAMPLE}_shared.vcf.gz"
 docker run --rm --cpus 2 --memory 2g -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
-  sh -c "set -e; bcftools isec -n=2 -w1 -Ou '$(cpath "$PASS_VCF")' '$(cpath "$CLINVAR_NORM")' \
-    | bcftools annotate -a '$(cpath "$CLINVAR_NORM")' --pair-logic exact \
-        -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ov -o '$(cpath "${HITS}.part")' -"
+  sh -c "set -e
+    bcftools isec -n=2 -w1 -Oz -o '$(cpath "$SHARED")' '$(cpath "$PASS_VCF")' '$(cpath "$CLINVAR_NORM")'
+    bcftools index -f -t '$(cpath "$SHARED")'
+    bcftools annotate -a '$(cpath "$CLINVAR_NORM")' --pair-logic exact \
+      -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ov -o '$(cpath "${HITS}.part")' '$(cpath "$SHARED")'"
 mv "${HITS}.part" "$HITS"
+rm -f "$SHARED" "${SHARED}.tbi"
 
 HIT_COUNT=$(grep -c -v '^#' "$HITS" || true)
 echo "=== ClinVar screen complete ==="

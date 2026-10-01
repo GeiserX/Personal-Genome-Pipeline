@@ -77,9 +77,11 @@ process CLINVAR_SCREEN {
 
     # Step 3: sample records matching a ClinVar allele, with ClinVar's ID, gene,
     # significance and review status copied on
-    bcftools isec -n=2 -w1 -Ou ${meta.id}_pass.vcf.gz "\${CLINVAR_NORM}" | \\
-        bcftools annotate -a "\${CLINVAR_NORM}" --pair-logic exact \\
-            -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ov -o ${meta.id}_clinvar_hits.vcf -
+    # (annotate -a needs an indexed target, so the shared records go to a file first)
+    bcftools isec -n=2 -w1 -Oz -o shared.vcf.gz ${meta.id}_pass.vcf.gz "\${CLINVAR_NORM}"
+    bcftools index -t shared.vcf.gz
+    bcftools annotate -a "\${CLINVAR_NORM}" --pair-logic exact \\
+        -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ov -o ${meta.id}_clinvar_hits.vcf shared.vcf.gz
 
     HITS=\$(grep -c -v '^#' ${meta.id}_clinvar_hits.vcf || true)
     echo "ClinVar pathogenic hits: \${HITS}"
