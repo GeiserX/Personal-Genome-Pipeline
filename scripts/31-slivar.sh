@@ -326,7 +326,13 @@ COMPHET_PED="${OUTDIR}/${SAMPLE}.ped"
 # Format: family_id sample_id father mother sex phenotype
 echo -e "${SAMPLE}\t${SAMPLE}\t0\t0\t0\t-9" > "$COMPHET_PED"
 
-if docker run --rm --user root \
+COMPHET_LOG="${OUTDIR}/${SAMPLE}_compound_hets.log"
+# Remove stale outputs from a previous run so a failure cannot leave old results behind
+rm -f "$COMPHET_VCF" "$COMPHET_TSV"
+
+# A failure here (wrong image, slivar crash, broken input) stops the step with
+# slivar's own error. It must never be reported as "no candidates found".
+if ! docker run --rm --user root \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   "${SLIVAR_IMAGE}" \
@@ -334,62 +340,63 @@ if docker run --rm --user root \
     --allow-non-trios \
     --vcf "/genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz" \
     --ped "/genome/${SAMPLE}/slivar/${SAMPLE}.ped" \
-  2>"${OUTDIR}/${SAMPLE}_compound_hets.log" | \
+  2>"$COMPHET_LOG" | \
   docker run --rm -i --user root \
     --cpus 2 --memory 2g \
     -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -Oz -o "/genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz"; then
+  echo "ERROR: slivar compound-hets failed (image: ${SLIVAR_IMAGE})." >&2
+  echo "  Output of the failed command (also in ${COMPHET_LOG}):" >&2
+  sed 's/^/    /' "$COMPHET_LOG" >&2 || true
+  rm -f "$COMPHET_VCF"
+  exit 1
+fi
 
-  # Remove any stale TSV from a previous run before processing
-  rm -f "$COMPHET_TSV"
+# Count pairs from slivar_comphet INFO field (not VCF record count).
+# slivar compound-hets outputs one record per unique VARIANT, with the
+# slivar_comphet INFO field listing all partner variants. Format:
+#   sample/GENE/PAIR_ID/chrom/pos/ref/alt  (comma-separated when multiple)
+# A gene with N variants produces C(N,2) pairs but only N VCF records.
+COMPHET_PAIRS=0
+COMPHET_GENES=0
+COMPHET_RECORDS=$(docker run --rm \
+  --cpus 2 --memory 2g \
+  -v "${GENOME_DIR}:/genome" \
+  "${BCFTOOLS_IMAGE}" \
+  bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz" | wc -l | tr -d ' ')
+if [ "$COMPHET_RECORDS" -gt 0 ]; then
+  COMPHET_STATS=$(docker run --rm \
+    --cpus 2 --memory 2g \
+    -v "${GENOME_DIR}:/genome" \
+    "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools query -f '%INFO/slivar_comphet\n' \
+      /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
+    | tr ',' '\n' \
+    | awk -F'/' '{pairs[\$3]=1; genes[\$2]=1} END{print length(pairs), length(genes)}'")
+  COMPHET_PAIRS=$(echo "$COMPHET_STATS" | awk '{print $1}')
+  COMPHET_GENES=$(echo "$COMPHET_STATS" | awk '{print $2}')
 
-  # Count pairs from slivar_comphet INFO field (not VCF record count).
-  # slivar compound-hets outputs one record per unique VARIANT, with the
-  # slivar_comphet INFO field listing all partner variants. Format:
-  #   sample/GENE/PAIR_ID/chrom/pos/ref/alt  (comma-separated when multiple)
-  # A gene with N variants produces C(N,2) pairs but only N VCF records.
-  COMPHET_PAIRS=0
-  COMPHET_GENES=0
-  if [ -s "$COMPHET_VCF" ]; then
-    COMPHET_STATS=$(docker run --rm \
-      --cpus 2 --memory 2g \
-      -v "${GENOME_DIR}:/genome" \
-      "${BCFTOOLS_IMAGE}" \
-      bash -c "bcftools query -f '%INFO/slivar_comphet\n' \
-        /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz 2>/dev/null \
-      | tr ',' '\n' \
-      | awk -F'/' '{pairs[\$3]=1; genes[\$2]=1} END{print length(pairs), length(genes)}'" \
-      2>/dev/null || echo "0 0")
-    COMPHET_PAIRS=$(echo "$COMPHET_STATS" | awk '{print $1}')
-    COMPHET_GENES=$(echo "$COMPHET_STATS" | awk '{print $2}')
-
-    # Export to TSV sorted by gene for human review
-    if docker run --rm --user root \
-      --cpus 2 --memory 2g \
-      -v "${GENOME_DIR}:/genome" \
-      "${BCFTOOLS_IMAGE}" \
-      bash -o pipefail -c "bcftools +split-vep \
-          /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
-          -f '%SYMBOL\t%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%Consequence[\t%GT]\n' \
-          -s worst -d \
-        | sort -t\$'\t' -k1,1 -k2,2V -k3,3n \
-        > /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets_raw.tsv"; then
-      {
-        printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\n'
-        cat "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
-      } > "$COMPHET_TSV"
-      rm -f "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
-    else
-      rm -f "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
-      echo "  WARNING: TSV conversion failed; VCF is available for manual inspection."
-    fi
-  fi
+  # Export to TSV sorted by gene for human review
+  docker run --rm --user root \
+    --cpus 2 --memory 2g \
+    -v "${GENOME_DIR}:/genome" \
+    "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools +split-vep \
+        /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
+        -f '%SYMBOL\t%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%Consequence[\t%GT]\n' \
+        -s worst -d \
+      | sort -t\$'\t' -k1,1 -k2,2V -k3,3n \
+      > /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets_raw.tsv"
+  {
+    printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\n'
+    cat "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
+  } > "${COMPHET_TSV}.tmp"
+  mv "${COMPHET_TSV}.tmp" "$COMPHET_TSV"
+  rm -f "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
   echo "  Found: ${COMPHET_PAIRS} compound het candidate pairs across ${COMPHET_GENES} genes"
 else
-  echo "  WARNING: slivar compound-hets failed. See ${OUTDIR}/${SAMPLE}_compound_hets.log"
-  echo "  No compound heterozygote candidates found."
-  COMPHET_PAIRS=0
+  echo "  slivar ran and returned no records: no compound heterozygote candidates found."
 fi
 
 if [ ! -s "$COMPHET_TSV" ]; then
@@ -412,7 +419,9 @@ if ! docker run --rm --user root \
     -f '%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%SYMBOL\t%Consequence\t%Existing_variation[\t%GT]\n' \
     -s worst -d \
   > /genome/${SAMPLE}/slivar/${SAMPLE}_variants_raw.tsv"; then
-  echo "  WARNING: Summary extraction failed. Prioritized VCF is still available."
+  echo "ERROR: Summary extraction from ${OUTDIR}/${SAMPLE}_prioritized.vcf.gz failed." >&2
+  rm -f "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
+  exit 1
 fi
 
 # Add header and optional gene constraint columns
@@ -445,37 +454,36 @@ except Exception as e:
 header = 'CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\tLOEUF\tpLI\tmis_z\tCONSTRAINED'
 print(header)
 
-try:
-    with open('/genome/${SAMPLE}/slivar/${SAMPLE}_variants_raw.tsv') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            fields = line.split('\t')
-            if len(fields) < 6:
-                continue
-            gene = fields[5]
-            loeuf, pli, mis_z = constraint.get(gene, ('.', '.', '.'))
-            # Mark as constrained if LOEUF < 0.35 or pLI > 0.9
-            constrained = 'NO'
-            try:
-                if loeuf != '.' and float(loeuf) < 0.35:
-                    constrained = 'YES'
-                elif pli != '.' and float(pli) > 0.9:
-                    constrained = 'YES'
-            except ValueError:
-                pass
-            print(f'{line}\t{loeuf}\t{pli}\t{mis_z}\t{constrained}')
-except FileNotFoundError:
-    pass
-" > "$SUMMARY_TSV" 2>/dev/null || true
+with open('/genome/${SAMPLE}/slivar/${SAMPLE}_variants_raw.tsv') as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        fields = line.split('\t')
+        if len(fields) < 6:
+            continue
+        gene = fields[5]
+        loeuf, pli, mis_z = constraint.get(gene, ('.', '.', '.'))
+        # Mark as constrained if LOEUF < 0.35 or pLI > 0.9
+        constrained = 'NO'
+        try:
+            if loeuf != '.' and float(loeuf) < 0.35:
+                constrained = 'YES'
+            elif pli != '.' and float(pli) > 0.9:
+                constrained = 'YES'
+        except ValueError:
+            pass
+        print(f'{line}\t{loeuf}\t{pli}\t{mis_z}\t{constrained}')
+" > "${SUMMARY_TSV}.tmp"
+  mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
 else
   echo "  Gene constraint file not found (optional): ${CONSTRAINT_TSV}"
   echo "  Generating summary without constraint annotations."
   {
     echo -e "CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT"
-    cat "${OUTDIR}/${SAMPLE}_variants_raw.tsv" 2>/dev/null || true
-  } > "$SUMMARY_TSV"
+    cat "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
+  } > "${SUMMARY_TSV}.tmp"
+  mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
 fi
 
 # Clean up intermediate file
