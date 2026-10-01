@@ -25,6 +25,7 @@ include { CLINICAL     } from './workflows/clinical'
 include { BAM_ANALYSIS } from './workflows/bam_analysis'
 include { SV           } from './workflows/sv'
 include { REPORTING    } from './workflows/reporting'
+include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -160,9 +161,43 @@ workflow {
         .set { ch_input }
 
     // ─── Branch input channels ──────────────────────────────────────────
-    ch_vcf = ch_input.map { meta, vcf, vcf_index, bam, bam_index ->
+    ch_vcf_input = ch_input.map { meta, vcf, vcf_index, bam, bam_index ->
         [meta, vcf, vcf_index]
     }
+
+    // ─── FILTER check ───────────────────────────────────────────────────
+    // Downstream filters keep FILTER=PASS only. A VCF with no PASS record
+    // (FILTER '.' everywhere) would give zero hits in every step, so stop,
+    // or with --allow_unfiltered use a copy where '.' reads as PASS.
+    VCF_PRECHECK(ch_vcf_input)
+
+    ch_vcf_checked = ch_vcf_input
+        .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+        .join(VCF_PRECHECK.out.status.map { meta, status, counts -> [meta.id, status, counts] })
+        .branch { id, meta, vcf, idx, status, counts ->
+            pass:       status == 'pass'
+            unfiltered: status == 'unfiltered'
+            no_pass:    true
+        }
+
+    ch_vcf = ch_vcf_checked.pass
+        .map { id, meta, vcf, idx, status, counts -> [meta, vcf, idx] }
+        .mix(
+            ch_vcf_checked.unfiltered
+                .map { id, meta, vcf, idx, status, counts -> [id, meta, vcf.name, counts] }
+                .join(VCF_PRECHECK.out.relaxed.map { meta, vcf, idx -> [meta.id, vcf, idx] })
+                .map { id, meta, name, counts, vcf, idx ->
+                    log.warn "Sample '${id}': no PASS record in ${name} (${counts}); --allow_unfiltered is set, " +
+                             "so records with FILTER '.' are used as PASS."
+                    [meta, vcf, idx]
+                },
+            ch_vcf_checked.no_pass
+                .map { id, meta, vcf, idx, status, counts ->
+                    error "Sample '${id}': no record in ${vcf.name} has FILTER=PASS (${counts}). " +
+                          "Every PASS-only step would report zero hits. Filter the VCF with your caller's " +
+                          "recommended filters, or rerun with --allow_unfiltered to treat FILTER '.' as PASS."
+                }
+        )
 
     ch_bam = ch_input
         .filter { meta, vcf, vcf_index, bam, bam_index -> bam }

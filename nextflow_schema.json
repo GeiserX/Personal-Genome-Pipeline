@@ -25,6 +25,12 @@
                     "default": "./results",
                     "fa_icon": "fas fa-folder-open"
                 },
+                "allow_unfiltered": {
+                    "type": "boolean",
+                    "description": "Accept a VCF that has no FILTER=PASS record by treating FILTER '.' as PASS. Without it such a VCF stops the run, because every PASS-only step would report zero hits.",
+                    "default": false,
+                    "fa_icon": "fas fa-filter"
+                },
                 "publish_dir_mode": {
                     "type": "string",
                     "description": "Method used to save pipeline results to output directory.",
