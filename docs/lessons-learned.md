@@ -6,7 +6,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 
 ### AnnotSV: Official image doesn't exist
 - **Failed:** `bioinfochrustrasbourg/annotsv:3.4.4` — no such image on Docker Hub
-- **Fix:** Use `getwilds/annotsv:3.4.4` instead (Fred Hutch maintained)
+- **Fix (then):** Used `getwilds/annotsv:3.4.4` (Fred Hutch maintained). That image is retired here; the pipeline now pins the Bioconda build `quay.io/biocontainers/annotsv` (see `ANNOTSV_IMAGE` in `versions.env`).
 
 ### SnpEff/SnpSift: Combined package
 - **Failed:** `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` — no such manifest
@@ -50,7 +50,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 ### HLA-LA: Binary crash with pre-built graph image
 - **Failed:** `jiachenzdocker/hla-la:latest` — read extraction succeeds but `HLA-LA` C++ binary crashes during graph alignment even with 32GB RAM and 8 threads. Error: "HLA-LA execution not successful."
 - **Root cause:** Likely an incompatibility between the pre-built binary and the BAM data format, or an unmet memory requirement (the graph deserialization may need >32GB)
-- **Status:** UNSOLVED. HLA-LA from WGS BAMs is unreliable in Docker. Alternative: use Sanitas clinical HLA typing results, or use arcas-hla or T1K with partial coordinates
+- **Status:** UNSOLVED. HLA-LA from WGS BAMs is unreliable in Docker. Alternative: a clinical lab result, if you have one, or arcas-hla or T1K with partial coordinates
 
 ### T1K: Coordinate file with wrong values
 - **Failed:** `t1k-build.pl -d hla.dat -g reference.fasta.fai` produced coordinate file with `chr19 -1 -1 +` for all HLA genes
@@ -65,7 +65,7 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 ### Cyrius CYP2D6: Inconclusive on short-read WGS
 - **Result:** Cyrius returned `None` for CYP2D6 star alleles
 - **Root cause:** CYP2D6 has extensive pseudogene homology (CYP2D7, CYP2D8) making short-read WGS unreliable
-- **Mitigation:** Rely on Sanitas lab calls for CYP2D6; consider long-read sequencing in future
+- **Mitigation:** Use a clinical lab result, if you have one, for CYP2D6; consider long-read sequencing in future
 
 ## bcftools/htslib Issues
 
@@ -226,7 +226,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### TIDDIT >=3.9: Requires BWA index for local assembly
 - **Failed:** `tiddit --sv` exits with "The reference must be indexed using bwa index; run bwa index, or skip local assembly (--skip_assembly)"
 - **Root cause:** TIDDIT 3.9+ uses local assembly for breakpoint refinement, which requires BWA index files alongside the reference
-- **Fix:** Use `--skip_assembly` when using minimap2 alignments (no BWA index available). If using BWA-MEM2 alignment, the index files are compatible.
+- **Fix:** Use `--skip_assembly` when no classic BWA index is available. TIDDIT's assembly step calls classic `bwa`, which needs the classic index files (`.amb .ann .bwt .pac .sa`). BWA-MEM2's index (`.bwt.2bit.64`, `.0123`) is a different format and does not work, even after aligning with BWA-MEM2.
 
 ### TIDDIT: Image tag 3.7.0 doesn't exist on quay.io
 - **Failed:** `quay.io/biocontainers/tiddit:3.7.0--py312h24f4cff_1` — manifest unknown
@@ -289,7 +289,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 
 ### GRIDSS: Requires BWA index (not minimap2)
 - **Failed:** GRIDSS exits with "BWA index not found" when using default minimap2 alignment
-- **Fix:** Either (a) align with BWA-MEM2 first (`02a-alignment-bwamem2.sh`), or (b) generate BWA index files separately. The `04b-gridss.sh` script validates this and prints instructions.
+- **Fix:** Build the classic BWA index (`bwa index` on the reference, about an hour). GRIDSS runs classic `bwa` internally, so BWA-MEM2's index files (`.bwt.2bit.64`) do not help, and aligning with BWA-MEM2 first does not provide the index it needs. The `04b-gridss.sh` script checks for the classic files and prints the command.
 - **Note:** GRIDSS outputs ALL SVs as BND (breakend) notation. Standard DEL/DUP/INV types require post-processing conversion for SURVIVOR merge compatibility.
 
 ### GRIDSS: 32 GB memory requirement
@@ -352,9 +352,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. Full NF-26 support is still pending: migrating `conf/base.config`'s `check_max()` → `process.resourceLimits` and refactoring the vcfanno input scope (tracked in [the SOTA update note](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/research/sota-update-2026-06.md)). Pin `NXF_VER=25.10.4` to run.
 - **Tip:** `NXF_VER=25.10.4 nextflow run main.nf ...`. The `manifest.nextflowVersion` floor is raised to `25.10.0` so the known-broken 24.x is rejected up front; 26.x is gated by comment until the migration lands.
 
-### CYP2D6 structural alleles: pypgx resolves *5 deletions where Cyrius and PharmCAT return "No Result"
-- **How the tools differ on a whole-gene deletion:** when CYP2D6 is deleted on both copies (the \*5 deletion allele), **Cyrius can return `None/None`** (Total_CN null — its copy-number consensus cannot resolve the locus) and **PharmCAT reports `Unknown/Unknown — No Result`** (it does not call the structural \*5 from a plain VCF), while **pypgx (BAM-based, SV-aware) resolves the deletion as a Poor Metabolizer with `SV_detected: Yes`.**
-- **Impact:** Updates the older "rely on lab calls" note above — for CYP2D6 deletion/duplication alleles, pypgx on the BAM is the authoritative caller. Do **not** read a Cyrius `None/None` as "no deletion." Keep all three callers (PharmCAT star alleles, Cyrius, pypgx) and reconcile; pypgx wins for CNV/SV-driven star alleles (a Poor Metabolizer has no functional CYP2D6 → major impact on CYP2D6-cleared drugs such as codeine/tramadol/tamoxifen).
+### CYP2D6 copy number: no single caller settles it (withdrawn lesson)
+- **Withdrawn:** an earlier version of this entry told readers to trust pypgx on the BAM over Cyrius and PharmCAT for CYP2D6 deletion and duplication alleles, because pypgx made a deletion call where Cyrius returned `None/None` and PharmCAT `No Result`. That conclusion does not hold.
+- **Why:** pypgx calls copy number from read depth. On a reference with ALT contigs and an aligner that is not run ALT-aware, reads from the CYP2D locus can split between the primary copy and an ALT copy, depth on the primary drops, and a depth-based caller can report a whole-gene deletion that is not there.
+- **Rule:** on a reference with ALT contigs, compare CYP2D6 depth with its flanks before trusting any copy-number call from pypgx or Cyrius, and report CYP2D6 only when two callers agree. A Cyrius `None/None` means "no call", not "no deletion" and not "deletion". If you have a clinical lab result for CYP2D6, it outranks all of these.
 
 ## CNVpytor migration (2026-07)
 

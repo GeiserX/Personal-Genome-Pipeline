@@ -25,6 +25,7 @@ include { CLINICAL     } from './workflows/clinical'
 include { BAM_ANALYSIS } from './workflows/bam_analysis'
 include { SV           } from './workflows/sv'
 include { REPORTING    } from './workflows/reporting'
+include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -42,9 +43,30 @@ workflow {
     if (!params.reference) {
         error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
     }
+    if (params.reference.endsWith('.gz')) {
+        error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +
+              "decompress it (gunzip, or bgzip -d) and run 'samtools faidx' on the result."
+    }
 
-    // Fail-fast: warn when enabled tools lack required databases
-    def tools_list = params.tools ? params.tools.split(',').collect { it.trim() } : []
+    def tools_list = params.tools ? params.tools.split(',').collect { it.trim() }.findAll { it } : []
+
+    // Every name the workflows gate on. A name outside this list would be
+    // ignored silently (e.g. 'clinvar_screen' instead of 'clinvar').
+    def known_tools = [
+        'pharmcat', 'cpic', 'clinvar', 'pypgx',
+        'vep', 'vcfanno', 'slivar', 'clinical_filter',
+        'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
+        'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
+        'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
+        'html_report', 'multiqc',
+    ]
+    def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
+    if (unknown_tools) {
+        error "unknown tool${unknown_tools.size() > 1 ? 's' : ''} ${unknown_tools.join(', ')} in --tools. " +
+              "Known tools: ${known_tools.join(', ')}."
+    }
+
+    // Fail-fast: stop when enabled tools lack required databases
 
     def db_requirements = [
         ['vep',              'vep_cache',         '--vep_cache'],
@@ -56,6 +78,8 @@ workflow {
         ['clinvar',          'clinvar',           '--clinvar'],
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
+        ['annotsv',          'annotsv_annotations', '--annotsv_annotations'],
+        ['cnvpytor',         'cnvpytor_resources', '--cnvpytor_resources'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -77,6 +101,14 @@ workflow {
               "Stranger annotates ExpansionHunter VCF output — add 'expansion_hunter' to --tools or remove 'stranger'."
     }
 
+    // survivor_merge keeps calls seen by two or more callers; with one caller
+    // it would write a header-only consensus and report success.
+    def sv_callers = ['manta', 'delly', 'cnvpytor'].findAll { tools_list.contains(it) }
+    if (tools_list.contains('survivor_merge') && sv_callers.size() < 2) {
+        error "Tool 'survivor_merge' needs at least two SV callers in --tools (manta, delly, cnvpytor); " +
+              "got ${sv_callers ? sv_callers.join(', ') : 'none'}. Add another caller or remove 'survivor_merge'."
+    }
+
     // ClinVar: paired inputs required together
     if (params.clinvar && !params.clinvar_index) {
         error "When --clinvar is provided, --clinvar_index must also be provided."
@@ -86,26 +118,44 @@ workflow {
     }
 
     // ─── Parse samplesheet ──────────────────────────────────────────────
-    // Expected columns: sample,vcf,vcf_index,bam,bam_index
+    // Expected columns: sample,vcf,vcf_index,bam,bam_index[,sex]
+    // Rows are read and checked here, before any task starts, so a bad row
+    // stops the run at once.
+    def samplesheet_rows = file(params.input, checkIfExists: true).splitCsv(header: true, strip: true)
+    def seen_samples = [] as Set
+    samplesheet_rows.each { row ->
+        if (!row.sample || !row.vcf || !row.vcf_index) {
+            error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
+        }
+        // Sanitize sample ID — used in shell commands, file paths, and HTML output
+        if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
+            error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
+        }
+        // Sample ids name the output directory and key every per-sample join
+        if (!seen_samples.add(row.sample)) {
+            error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
+        }
+        // Validate BAM/BAI are provided together
+        if (row.bam && !row.bam_index) {
+            error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
+        }
+        if (!row.bam && row.bam_index) {
+            error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
+        }
+        // Sex sets the chrX ploidy for ExpansionHunter (its default is female)
+        if (row.sex && !(row.sex.toLowerCase() in ['male', 'female'])) {
+            error "Sample '${row.sample}': sex '${row.sex}' is not recognised. Use 'male' or 'female'."
+        }
+        if (tools_list.contains('expansion_hunter') && row.bam && !row.sex) {
+            error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
+                  "Add a 'sex' column (male or female) to the samplesheet, or remove 'expansion_hunter' from --tools."
+        }
+    }
+
     Channel
-        .fromPath(params.input, checkIfExists: true)
-        .splitCsv(header: true, strip: true)
+        .fromList(samplesheet_rows)
         .map { row ->
-            if (!row.sample || !row.vcf || !row.vcf_index) {
-                error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
-            }
-            // Sanitize sample ID — used in shell commands, file paths, and HTML output
-            if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
-                error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
-            }
-            // Validate BAM/BAI are provided together
-            if (row.bam && !row.bam_index) {
-                error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
-            }
-            if (!row.bam && row.bam_index) {
-                error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
-            }
-            def meta = [id: row.sample]
+            def meta = [id: row.sample, sex: row.sex ? row.sex.toLowerCase() : null]
             def vcf = file(row.vcf, checkIfExists: true)
             def vcf_index = file(row.vcf_index, checkIfExists: true)
             def bam = row.bam ? file(row.bam, checkIfExists: true) : []
@@ -115,9 +165,47 @@ workflow {
         .set { ch_input }
 
     // ─── Branch input channels ──────────────────────────────────────────
-    ch_vcf = ch_input.map { meta, vcf, vcf_index, bam, bam_index ->
+    ch_vcf_input = ch_input.map { meta, vcf, vcf_index, bam, bam_index ->
         [meta, vcf, vcf_index]
     }
+
+    // ─── FILTER check ───────────────────────────────────────────────────
+    // Downstream filters keep FILTER=PASS only. A VCF with no PASS record
+    // (FILTER '.' everywhere) would give zero hits in every step, so stop,
+    // or with --allow_unfiltered use a copy where '.' reads as PASS.
+    VCF_PRECHECK(ch_vcf_input)
+
+    ch_vcf_checked = ch_vcf_input
+        .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+        .join(VCF_PRECHECK.out.status.map { meta, status, counts -> [meta.id, status, counts] })
+        .branch { id, meta, vcf, idx, status, counts ->
+            pass:       status == 'pass'
+            unfiltered: status == 'unfiltered'
+            no_pass:    true
+        }
+
+    ch_vcf = ch_vcf_checked.pass
+        .map { id, meta, vcf, idx, status, counts -> [meta, vcf, idx] }
+        .mix(
+            ch_vcf_checked.unfiltered
+                .map { id, meta, vcf, idx, status, counts -> [id, meta, vcf.name, counts] }
+                .join(VCF_PRECHECK.out.relaxed.map { meta, vcf, idx -> [meta.id, vcf, idx] })
+                .map { id, meta, name, counts, vcf, idx ->
+                    log.warn "Sample '${id}': no PASS record in ${name} (${counts}); --allow_unfiltered is set, " +
+                             "so records with FILTER '.' are used as PASS."
+                    [meta, vcf, idx]
+                },
+            ch_vcf_checked.no_pass
+                .map { id, meta, vcf, idx, status, counts ->
+                    def remedy = params.allow_unfiltered
+                        ? "Filter the VCF with your caller's recommended filters; --allow_unfiltered cannot " +
+                          "help here, because no record has FILTER '.'."
+                        : "Filter the VCF with your caller's recommended filters, or rerun with " +
+                          "--allow_unfiltered to treat FILTER '.' as PASS."
+                    error "Sample '${id}': no record in ${vcf.name} has FILTER=PASS (${counts}). " +
+                          "Every PASS-only step would report zero hits. ${remedy}"
+                }
+        )
 
     ch_bam = ch_input
         .filter { meta, vcf, vcf_index, bam, bam_index -> bam }
@@ -126,9 +214,17 @@ workflow {
     // ─── Reference genome ───────────────────────────────────────────────
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
     ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
-    ch_reference_dict = Channel.value(
-        file(params.reference.replaceAll(/\.(fasta|fa|fna)$/, '.dict'), checkIfExists: true)
-    )
+    // Only MITO_VARIANTS (GATK) reads the sequence dictionary
+    ch_reference_dict = Channel.value([])
+    if (tools_list.contains('mito_variants')) {
+        if (!(params.reference ==~ /.*\.(fasta|fa|fna)$/)) {
+            error "mito_variants needs the reference's .dict next to it, found by replacing the FASTA extension; " +
+                  "--reference ${params.reference} does not end in .fasta, .fa or .fna."
+        }
+        ch_reference_dict = Channel.value(
+            file(params.reference.replaceAll(/\.(fasta|fa|fna)$/, '.dict'), checkIfExists: true)
+        )
+    }
 
     // ─── Optional reference databases ───────────────────────────────────
     // Empty list [] = "no file" — standard Nextflow pattern for optional path inputs.
@@ -182,6 +278,12 @@ workflow {
 
     // Slivar static binary
     ch_slivar_bin = Channel.value(params.slivar_bin ? file(params.slivar_bin, checkIfExists: true) : [])
+
+    // AnnotSV annotation directory (the biocontainer ships no annotation data)
+    ch_annotsv_annotations = Channel.value(params.annotsv_annotations ? file(params.annotsv_annotations, checkIfExists: true) : [])
+
+    // Delly exclude map (regions skipped by delly call -x)
+    ch_delly_exclude = Channel.value(params.delly_exclude ? file(params.delly_exclude, checkIfExists: true) : [])
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
@@ -248,7 +350,9 @@ workflow {
     SV(
         ch_bam,
         ch_reference,
-        ch_reference_fai
+        ch_reference_fai,
+        ch_delly_exclude,
+        ch_annotsv_annotations
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -278,6 +382,7 @@ workflow {
     ch_multiqc_files = Channel.empty()
         .mix(
             BAM_ANALYSIS.out.coverage.map { meta, f -> f },
+            VCF_PRECHECK.out.versions,
             PGX.out.versions,
             ANNOTATION.out.versions,
             CLINICAL.out.versions,

@@ -4,6 +4,10 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Classifies each SV into ACMG class 1-5 and adds gene/disease annotations.
 
+    The biocontainer holds AnnotSV's code but none of its annotation data, so
+    the annotation directory (built once with AnnotSV's INSTALL_annotations.sh,
+    it contains Annotations_Human/) comes in through --annotsv_annotations.
+
     Equivalent to: scripts/05-annotsv.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -18,6 +22,7 @@ process ANNOTSV {
 
     input:
     tuple val(meta), path(sv_vcf)
+    path(annotations_dir)
 
     output:
     tuple val(meta), path("${meta.id}_sv_annotated.tsv"), emit: annotated_tsv
@@ -31,12 +36,15 @@ process ANNOTSV {
     AnnotSV \\
         -SVinputFile ${sv_vcf} \\
         -outputFile ${meta.id}_sv_annotated.tsv \\
+        -outputDir . \\
         -genomeBuild GRCh38 \\
+        -annotationsDir ${annotations_dir} \\
         -annotationMode both
 
+    ANNOTSV_VERSION=\$(AnnotSV -help 2>&1 | sed -n 's/.*AnnotSV v\\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | head -1)
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        annotsv: \$(AnnotSV -help 2>&1 | grep -oP 'AnnotSV \\K[\\d.]+' || echo '3.4.4')
+        annotsv: \${ANNOTSV_VERSION:-unknown}
     END_VERSIONS
     """
 
@@ -46,7 +54,7 @@ process ANNOTSV {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        annotsv: 3.4.4
+        annotsv: 3.5.10
     END_VERSIONS
     """
 }
