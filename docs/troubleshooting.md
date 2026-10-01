@@ -1065,7 +1065,7 @@ head -50 ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf | grep "CSQ="
 | 3 | `*.vcf.gz` + `.tbi` | 80-200 MB + 1-2 MB |
 | 4 | `diploidSV.vcf.gz` | 1-5 MB |
 | 5 | `*_sv_annotated.tsv` | 25-35 MB |
-| 6 | `isec/0002.vcf` (shared hits) | < 1 MB |
+| 6 | `*_clinvar_hits.vcf` | < 1 MB |
 | 7 | `*.report.html` | 50-200 KB |
 | 9 | `*_eh.json` + `*_eh.vcf` | < 1 MB each |
 | 10 | `*_summary.tsv` + plots | 50-200 MB total |
