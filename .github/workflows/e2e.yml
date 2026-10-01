@@ -6,8 +6,10 @@ name: E2E
 #
 #   build-fixture  builds the data set and publishes it as release assets
 #                  under the tag in tests/fixtures/VERSION. Runs on a push that
-#                  changes the build script or VERSION (a dispatch-only job
-#                  could not run before this file is on main) and on dispatch.
+#                  changes the build script, VERSION or this file (a
+#                  dispatch-only job could not run before this file is on
+#                  main) and on dispatch; it does nothing when the release
+#                  already exists and was built by the same script.
 #   e2e            runs every case in tests/e2e/ on that data set. Runs on
 #                  pull requests that touch the pipeline, monthly, on dispatch.
 #   settle-doubts  answers questions a code review could not answer without
@@ -21,6 +23,7 @@ on:
       - 'scripts/ci/build-fixture.sh'
       - 'scripts/ci/settle-doubts.sh'
       - 'tests/fixtures/VERSION'
+      - '.github/workflows/e2e.yml'
   pull_request:
     branches: [main]
     paths:
@@ -125,10 +128,13 @@ jobs:
           else
             # A prerelease that is never "latest": the project's real releases
             # stay the ones people see. The tag does not match release.yml's v*.
+            # No --target: the job token may not create a tag on a commit that
+            # changes a workflow file, so the tag goes on the default branch;
+            # the notes name the commit that built the data.
             gh release create "$TAG" "${files[@]}" -R "$GITHUB_REPOSITORY" \
               --title "Test fixture ${TAG}" \
-              --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome; built by scripts/ci/build-fixture.sh, see MANIFEST.txt and docs/testing.md." \
-              --target "$GITHUB_SHA" --prerelease --latest=false
+              --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome, built by scripts/ci/build-fixture.sh at ${GITHUB_SHA}; see MANIFEST.txt and docs/testing.md." \
+              --prerelease --latest=false
           fi
           {
             echo "### Fixture ${TAG}"
