@@ -64,6 +64,12 @@ docker run --rm \
   quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
   "/genome/${SAMPLE}/manta/runWorkflow.py" -j 8
 
+if [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
+  echo "ERROR: Manta finished without ${MANTA_DIR}/results/variants/diploidSV.vcf.gz(.tbi)." >&2
+  echo "  Delete ${MANTA_DIR}/ and run this step again." >&2
+  exit 1
+fi
+
 echo "=== Manta complete ==="
 echo "Diploid SVs: ${MANTA_DIR}/results/variants/diploidSV.vcf.gz"
 echo "Candidates: ${MANTA_DIR}/results/variants/candidateSV.vcf.gz"

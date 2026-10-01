@@ -86,6 +86,12 @@ docker run --rm --user root \
     -m local \
     -j "$THREADS"
 
+if [ ! -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
+  echo "ERROR: Strelka2 finished without ${OUTPUT_DIR}/results/variants/variants.vcf.gz(.tbi)." >&2
+  echo "  Delete ${OUTPUT_DIR}/ and run this step again." >&2
+  exit 1
+fi
+
 VARIANT_COUNT=$(docker run --rm \
   -v "${GENOME_DIR}:/genome" \
   "$BCFTOOLS_IMAGE" \
