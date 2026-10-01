@@ -124,7 +124,11 @@ INPUT_RELPATH="${REAL_INPUT#"${REAL_GENOME}/"}"
 _align_and_sort() {
   local reads="$1"
   shift
-  docker run --rm -i \
+  # Only the uBAM path pipes reads in; -i on file input would make docker
+  # read this script's stdin.
+  local stdin_flag=()
+  [ "$reads" = "-" ] && stdin_flag=(-i)
+  docker run --rm ${stdin_flag[@]+"${stdin_flag[@]}"} \
     --cpus "${THREADS}" --memory 16g \
     -v "${GENOME_DIR}:/genome" \
     "$MINIMAP2_IMAGE" \

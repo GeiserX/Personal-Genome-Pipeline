@@ -169,8 +169,9 @@ if [ ${#NOCHR_TRACKS[@]} -eq 0 ] && [ ${#CHR_TRACKS[@]} -eq 0 ]; then
   echo "No annotation databases found in ${ANNOT_DIR}/."
   echo "Download them as described in docs/00-reference-setup.md and docs/30-vcfanno.md."
   echo "Copying VEP output as-is."
-  cp "${VEP_VCF}.tbi" "${OUTPUT_FILE}.tbi.tmp"
+  # Data first, index second, so the index is never older than the VCF.
   cp "${VEP_VCF}" "${OUTPUT_FILE}.tmp"
+  cp "${VEP_VCF}.tbi" "${OUTPUT_FILE}.tbi.tmp"
   mv "${OUTPUT_FILE}.tmp" "${OUTPUT_FILE}"
   mv "${OUTPUT_FILE}.tbi.tmp" "${OUTPUT_FILE}.tbi"
   exit 0
