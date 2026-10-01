@@ -42,6 +42,7 @@ nextflow run main.nf \
 #    --tools '...,expansion_hunter'            + --expansion_catalog (and a sex column)
 #    --tools '...,annotsv'                     + --annotsv_annotations
 #    --tools '...,cnvpytor'                    + --cnvpytor_resources
+#    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly call -x)
 #    An unknown name in --tools stops the run.
 ```
 
@@ -70,7 +71,7 @@ Only the failed and downstream steps re-run.
 
 \* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) require BAM input. **Provide BAM for full analysis.**
 
-\*\* `sex` is required when `expansion_hunter` is in `--tools`: it sets the chrX ploidy, and ExpansionHunter's default is female. A row without it stops the run at parse time.
+\*\* `sex` is required on every row that has a BAM when `expansion_hunter` is in `--tools`: it sets the chrX ploidy, and ExpansionHunter's default is female. A BAM row without it stops the run at parse time. VCF-only rows never reach ExpansionHunter, so they need no `sex`.
 
 Each `sample` value must appear once; a repeated id stops the run, because the id names the output directory and keys every per-sample join.
 
