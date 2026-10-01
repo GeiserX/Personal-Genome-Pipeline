@@ -159,8 +159,9 @@ jobs:
           [ "$A" = "$B" ]
       - name: Step 06 (bash) with a ClinVar file without chr prefixes (must fail)
         run: |
-          G2="${RUNNER_TEMP}/g2"; mkdir -p "$G2/clinvar"
-          ln -s "$G/reference" "$G2/reference"; ln -s "$G/HG002" "$G2/HG002"
+          G2="${RUNNER_TEMP}/g2"; mkdir -p "$G2/clinvar" "$G2/HG002/vcf"
+          ln -s "$G/reference" "$G2/reference"
+          cp "$G/HG002/vcf/HG002.vcf.gz" "$G/HG002/vcf/HG002.vcf.gz.tbi" "$G2/HG002/vcf/"
           cp "$G/clinvar/clinvar_pathogenic_nochr.vcf.gz" "$G2/clinvar/clinvar_pathogenic_chr.vcf.gz"
           cp "$G/clinvar/clinvar_pathogenic_nochr.vcf.gz.tbi" "$G2/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi"
           set +e; GENOME_DIR="$G2" bash scripts/06-clinvar-screen.sh HG002 > "${RUNNER_TEMP}/nochr.log" 2>&1; rc=$?; set -e
@@ -309,6 +310,7 @@ jobs:
           ls -la "$G/HG002/vcf"
       - name: Step 32 (pypgx)
         run: |
+          docker run --rm quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0 pypgx prepare-depth-of-coverage -h | head -20
           GENOME_DIR="$G" bash scripts/32-pypgx.sh HG002
           echo "----- comparison -----"; cat "$G/HG002/pypgx/HG002_pharmcat_comparison.tsv"
           N=$(awk -F'\t' 'NR>1 && $5=="both"' "$G/HG002/pypgx/HG002_pharmcat_comparison.tsv" | wc -l)
