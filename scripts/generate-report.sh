@@ -35,7 +35,7 @@ if [ -f "$VCF" ]; then
     grep '^SN.*number of records' | awk '{print $NF}' || echo "N/A")
   PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
     bcftools view -f PASS "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
-    grep -cv '^#' || echo "N/A")
+    grep -cv '^#' || true)
   echo "  Total variants: ${TOTAL}"
   echo "  PASS variants:  ${PASS}"
   echo ""
@@ -46,7 +46,7 @@ CLINVAR_DIR="${SAMPLE_DIR}/clinvar"
 if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
   echo "## ClinVar Pathogenic Screen"
   echo "---"
-  HITS=$(grep -cv '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null || echo "0")
+  HITS=$(grep -cv '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null || true)
   echo "  Pathogenic/Likely Pathogenic hits: ${HITS}"
   if [ "$HITS" -gt 0 ]; then
     echo ""
@@ -86,7 +86,7 @@ if [ -d "$MANTA_DIR" ]; then
     echo "## Structural Variants (Manta)"
     echo "---"
     SV_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-      bcftools view "${SV_VCF/#$GENOME_DIR//genome}" 2>/dev/null | grep -cv '^#' || echo "N/A")
+      bcftools view "${SV_VCF/#$GENOME_DIR//genome}" 2>/dev/null | grep -cv '^#' || true)
     echo "  Total SVs: ${SV_COUNT}"
     echo ""
   fi
@@ -100,7 +100,7 @@ if [ -d "$EH_DIR" ]; then
     echo "## Repeat Expansions (ExpansionHunter)"
     echo "---"
     # EH JSON uses locus names as top-level keys; count objects with a Genotype field
-    LOCI=$(jq '[to_entries[] | select(.value | type=="object" and has("Genotype"))] | length' "$EH_JSON" 2>/dev/null || grep -c '"Genotype"' "$EH_JSON" 2>/dev/null || echo "0")
+    LOCI=$(jq '[to_entries[] | select(.value | type=="object" and has("Genotype"))] | length' "$EH_JSON" 2>/dev/null || grep -c '"Genotype"' "$EH_JSON" 2>/dev/null || true)
     echo "  Loci tested: ${LOCI}"
     echo "  (See interpreting-results.md for disease thresholds)"
     echo ""
@@ -169,8 +169,8 @@ if [ -f "$CNV_FILE" ]; then
   echo "---"
   TOTAL_CNV=$(wc -l < "$CNV_FILE")
   SIG_CNV=$(awk '$5 < 0.01' "$CNV_FILE" | wc -l)
-  DEL_CNV=$(grep -c '^deletion' "$CNV_FILE" || echo "0")
-  DUP_CNV=$(grep -c '^duplication' "$CNV_FILE" || echo "0")
+  DEL_CNV=$(grep -c '^deletion' "$CNV_FILE" || true)
+  DUP_CNV=$(grep -c '^duplication' "$CNV_FILE" || true)
   echo "  Total CNVs: ${TOTAL_CNV} (${DEL_CNV} deletions, ${DUP_CNV} duplications)"
   echo "  Significant (e-val < 0.01): ${SIG_CNV}"
   echo ""
@@ -182,9 +182,9 @@ if [ -f "$DELLY_VCF" ]; then
   echo "## Structural Variants (Delly)"
   echo "---"
   TOTAL_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   PASS_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view -f PASS "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   echo "  Total SVs: ${TOTAL_DELLY}"
   echo "  PASS SVs: ${PASS_DELLY}"
   echo ""
@@ -196,7 +196,7 @@ if [ -f "$MITO_VCF" ]; then
   echo "## Mitochondrial Variants (Mutect2)"
   echo "---"
   TOTAL_MITO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   HETERO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
     bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
     docker run --rm -i staphb/bcftools:1.21 bcftools query -f '[%AF]\n' 2>/dev/null | \
@@ -249,7 +249,7 @@ if [ -f "$CPIC_REPORT" ]; then
   echo "## CPIC Drug-Gene Recommendations"
   echo "---"
   echo "  Report: ${CPIC_REPORT}"
-  AFFECTED=$(grep -c 'Affected drugs:' "$CPIC_REPORT" 2>/dev/null || echo "0")
+  AFFECTED=$(grep -c 'Affected drugs:' "$CPIC_REPORT" 2>/dev/null || true)
   echo "  Genes with non-standard phenotypes requiring drug adjustments: ${AFFECTED}"
   echo ""
 fi
