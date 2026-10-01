@@ -336,8 +336,9 @@ fi
   echo "vep: ${VEP_IMAGE} --database --everything; ${VEP_INPUT_RECORDS} records in, ${VEP_RECORDS} out"
   echo "revel_synthetic: made-up scores, not REVEL"
   echo "images: ${SAMTOOLS_IMAGE} ${BCFTOOLS_IMAGE} ${VEP_IMAGE}"
-  echo "idxstats:"
-  sed 's/^/  /' <<< "$IDXSTATS"
+  echo "vep_csq_has_gnomADe_AF: $(grep -m1 '^##INFO=<ID=CSQ' "${OUT}/${SAMPLE}_vep.vcf" | grep -q 'gnomADe_AF' && echo yes || echo no)"
+  echo "reads per contig (samtools idxstats, contigs with reads):"
+  awk '$3 + $4 > 0 {printf "  %s\t%s mapped\t%s unmapped\n", $1, $3, $4}' <<< "$IDXSTATS"
 } > "${OUT}/MANIFEST.txt"
 
 (cd "$OUT" && find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%f\n' | LC_ALL=C sort | xargs sha256sum) > "${OUT}/SHA256SUMS.tmp"
