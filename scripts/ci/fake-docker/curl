@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Fake `curl` for scripts/ci/run-fake-docker-suite.sh: never touches the
+# network. Writes a small placeholder to -o FILE (or the URL's base name with
+# -O, or stdout) and logs the call to $FAKE_DOCKER_LOG. A URL that matches the
+# regex in FAKE_DOWNLOAD_FAIL exits 22 (curl -f's HTTP error code).
+set -uo pipefail
+
+LOG=${FAKE_DOCKER_LOG:-/dev/null}
+out="" remote_name=false url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o|--output) out=${2:-}; shift 2 ;;
+    --output=*) out=${1#*=}; shift ;;
+    -O|--remote-name) remote_name=true; shift ;;
+    -C|--continue-at|--retry|--retry-delay|--max-time|-m|--connect-timeout|-H|--header|\
+    -A|--user-agent|-w|--write-out|-u|--user|-X|--request|-d|--data|-r|--range)
+      shift 2 ;;
+    -*) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+$remote_name && [ -z "$out" ] && out=$(basename "$url")
+printf 'curl %s -> %s\n' "$url" "${out:-stdout}" >> "$LOG"
+
+if [ -z "$url" ]; then
+  echo "curl: no URL specified" >&2
+  exit 2
+fi
+if [ -n "${FAKE_DOWNLOAD_FAIL:-}" ] && [[ "$url" =~ $FAKE_DOWNLOAD_FAIL ]]; then
+  echo "fake curl: refusing ${url} (FAKE_DOWNLOAD_FAIL)" >&2
+  exit 22
+fi
+if [ -z "$out" ] || [ "$out" = "-" ]; then
+  printf 'placeholder for %s\n' "$url"
+else
+  printf 'placeholder for %s\n' "$url" > "$out"
+fi
