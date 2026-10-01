@@ -24,16 +24,21 @@ jobs:
           FILES="docs/00-reference-setup.md docs/benchmarking.md docs/quick-test.md docs/getting-started.md docs/vendor-guide.md docs/08-hla-typing.md docs/18-cnvpytor.md docs/troubleshooting.md docs/interpreting-results.md docs/30-vcfanno.md docs/31-slivar.md docs/01-ora-to-fastq.md docs/15-duphold.md ROADMAP.md"
           grep -ohE 'https?://[^][ "'"'"'<>()`|\\]+' $FILES | sed -E 's/[.,;:*]+$//' | grep -v '\$' | sort -u > urls.txt
           echo "checking $(wc -l < urls.txt) urls"
+          # Not download links, and these hosts refuse scripted requests (403/404 to curl
+          # from any machine); url/to is a placeholder in a code example.
+          SKIP='^https://(twitter\.com/|www\.mitomap\.org/|www\.omim\.org/|url/to/)'
           bad=0
           while read -r u; do
-            code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u")
+            if echo "$u" | grep -Eq "$SKIP"; then echo "skipped (not a download, bot-blocked or placeholder): $u"; continue; fi
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u" || true)
             if [ "$code" != 200 ]; then
-              code2=$(curl -sL -o /dev/null -r 0-0 -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u")
+              code2=$(curl -sL -o /dev/null -r 0-0 -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u" || true)
               case "$code2" in 200|206) continue;; esac
               echo "NOT OK $code/$code2 $u"; bad=$((bad+1))
             fi
           done < urls.txt
           echo "not ok: $bad"
+          [ "$bad" -eq 0 ]
 
   revel:
     runs-on: ubuntu-latest
@@ -104,6 +109,17 @@ jobs:
           for i, b in enumerate(blocks):
               print(f'--- block {i}\n{b}')
           EOF
+      - name: Diagnose remote access from the samtools image
+        continue-on-error: true
+        run: |
+          docker run --rm staphb/samtools:1.20 bash -c 'cat /etc/os-release | head -2; ls -la /etc/ssl/certs 2>&1 | head -5; ls /etc/ssl 2>&1; samtools --version | head -6'
+          for url in https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram http://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram; do
+            for env in "" "-e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"; do
+              echo "=== $url env=[$env]"
+              docker run --rm $env -w /tmp -v /mnt/genome:/genome staphb/samtools:1.20 \
+                samtools view -c -T /genome/reference/Homo_sapiens_assembly38.fasta "$url" chr22:20000000-20010000 || true
+            done
+          done
       - name: Run the remote chr22 extract and the link step
         run: |
           export GENOME_DIR=/mnt/genome SAMPLE=test_na12878
