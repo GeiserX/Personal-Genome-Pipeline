@@ -122,8 +122,8 @@ docker run --rm --user root \
 **Alternative: extract chr22 from a full BAM you already have.** Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
 cd ${GENOME_DIR}/${SAMPLE}/aligned
-# Skipped on a rerun, when _sorted.bam already points at the chr22 BAM
-if [ ! -e ${SAMPLE}_full.bam ] && [ "$(readlink ${SAMPLE}_sorted.bam)" != "${SAMPLE}_chr22.bam" ]; then
+# Skipped on a rerun, when _sorted.bam already is the chr22 BAM (-ef follows links)
+if [ ! -e ${SAMPLE}_full.bam ] && [ ! ${SAMPLE}_sorted.bam -ef ${SAMPLE}_chr22.bam ]; then
   mv ${SAMPLE}_sorted.bam     ${SAMPLE}_full.bam
   mv ${SAMPLE}_sorted.bam.bai ${SAMPLE}_full.bam.bai
 fi
