@@ -1,0 +1,100 @@
+# Scratch workflow for the nextflow-real-run-fixes branch: real tool runs the
+# repo's CI does not have yet. Deleted before the PR merges.
+name: Scratch real run
+
+on:
+  push:
+    branches: [pgp/nextflow-real-run-fixes]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "25.10.4"
+      - name: Install samtools, bcftools, tabix, jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq samtools bcftools tabix jq
+      - name: Build the HG002 chr20 inputs
+        run: .github/scratch-real-run/prep.sh "$RUNNER_TEMP/data"
+      - name: Real run, controls and stub checks
+        run: .github/scratch-real-run/e2e.sh "$RUNNER_TEMP/data"
+
+  red-first-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: main-src
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "25.10.4"
+      - name: Install samtools, bcftools, tabix, jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq samtools bcftools tabix jq
+      - name: Build the HG002 chr20 inputs
+        run: .github/scratch-real-run/prep.sh "$RUNNER_TEMP/data"
+      - name: Same real run on main (expected to fail)
+        run: .github/scratch-real-run/red_main.sh "$RUNNER_TEMP/data" "$GITHUB_WORKSPACE/main-src"
+      - name: CLINICAL_FILTER and SLIVAR modules from main
+        run: .github/scratch-real-run/modules.sh "$GITHUB_WORKSPACE/main-src" "$RUNNER_TEMP/modules-main" main
+
+  modules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "25.10.4"
+      - name: Install bcftools, tabix
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bcftools tabix
+      - name: CLINICAL_FILTER and SLIVAR modules from this branch
+        run: .github/scratch-real-run/modules.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/modules-new" new
+
+  annotsv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "25.10.4"
+      - name: Install samtools, bcftools, tabix, jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq samtools bcftools tabix jq
+      - name: Build the HG002 chr20 inputs
+        run: .github/scratch-real-run/prep.sh "$RUNNER_TEMP/data"
+      - name: Disk space for the annotations
+        run: |
+          sudo mkdir -p /mnt/annotsv
+          sudo chown "$USER" /mnt/annotsv
+          df -h / /mnt
+      - name: Real AnnotSV run
+        run: .github/scratch-real-run/annotsv.sh "$RUNNER_TEMP/data" /mnt/annotsv
