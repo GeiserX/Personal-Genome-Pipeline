@@ -12,8 +12,8 @@
 #
 # Every step writes its log to $GENOME_DIR/<sample>/logs/. The run ends with a
 # table of each step as ok, skipped or failed, and exits 1 only when a step
-# failed. Steps whose optional data is not installed (CPSR, pypgx, AnnotSV)
-# are reported as skipped.
+# failed. Steps whose data is not installed are reported as skipped: VEP
+# (step 13, and with it steps 30, 23 and 31), CNVpytor, CPSR, pypgx, AnnotSV.
 #
 # Assumes:
 # - FASTQ files at $GENOME_DIR/<sample>/fastq/ OR
@@ -261,8 +261,19 @@ echo "  Quick analyses finished."
 
 # --- Group C: Heavy jobs (2-4 hours each) ---
 echo "  Starting heavy analyses..."
-_launch "13 VEP" 13_vep "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE"
-_launch "18 CNVpytor" 18_cnvpytor "${SCRIPT_DIR}/18-cnvpytor.sh" "$SAMPLE"
+# VEP and CNVpytor need data setup.sh does not download; without it they are
+# skipped, not failed (and step 13 does not start a 26 GB download mid-run)
+if [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ]; then
+  _launch "13 VEP" 13_vep "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE"
+else
+  _skip "13 VEP" "data not installed: vep_cache/homo_sapiens/116_GRCh38, see docs/13-vep-annotation.md"
+fi
+IDX_VEP=$LAST_STEP
+if [ -s "${GENOME_DIR}/reference/cnvpytor/gc_hg38.pytor" ]; then
+  _launch "18 CNVpytor" 18_cnvpytor "${SCRIPT_DIR}/18-cnvpytor.sh" "$SAMPLE"
+else
+  _skip "18 CNVpytor" "data not installed: reference/cnvpytor, see docs/18-cnvpytor.md"
+fi
 _launch "19 Delly" 19_delly "${SCRIPT_DIR}/19-delly.sh" "$SAMPLE"
 if _enabled "${GRIDSS:-false}"; then
   _launch "04b GRIDSS" 04b_gridss "${SCRIPT_DIR}/04b-gridss.sh" "$SAMPLE"
@@ -297,13 +308,26 @@ echo "  Phase 3 finished."
 echo ""
 echo "[Phase 4] Running post-processing steps..."
 
+# Steps 30, 23 and 31 read step 13's VEP output: run them only when step 13
+# succeeded in this run, so they never work on an old or missing file
+VEP_RESULT="${STEP_RESULTS[$IDX_VEP]}"
+VEP_RESULT="${VEP_RESULT%% *}"
+
 # vcfanno annotation enrichment (must complete before clinical filter)
 # Adds CADD, SpliceAI, REVEL, AlphaMissense scores to VEP VCF
-_run "30 vcfanno" 30_vcfanno "${SCRIPT_DIR}/30-vcfanno.sh" "$SAMPLE"
+if [ "$VEP_RESULT" = "ok" ]; then
+  _run "30 vcfanno" 30_vcfanno "${SCRIPT_DIR}/30-vcfanno.sh" "$SAMPLE"
+else
+  _skip "30 vcfanno" "needs VEP, step 13 ${VEP_RESULT}"
+fi
 
 _launch "21 Cyrius CYP2D6 [experimental]" 21_cyrius "${SCRIPT_DIR}/21-cyrius.sh" "$SAMPLE"
 _launch "22 SV consensus merge [experimental]" 22_survivor "${SCRIPT_DIR}/22-survivor-merge.sh" "$SAMPLE"
-_launch "23 Clinical filter" 23_clinical "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE"
+if [ "$VEP_RESULT" = "ok" ]; then
+  _launch "23 Clinical filter" 23_clinical "${SCRIPT_DIR}/23-clinical-filter.sh" "$SAMPLE"
+else
+  _skip "23 Clinical filter" "needs VEP, step 13 ${VEP_RESULT}"
+fi
 _launch "25 PRS [exploratory]" 25_prs "${SCRIPT_DIR}/25-prs.sh" "$SAMPLE"
 if _enabled "${ANCESTRY:-false}"; then
   _launch "26 Ancestry SNP intersection [experimental]" 26_ancestry "${SCRIPT_DIR}/26-ancestry.sh" "$SAMPLE"
@@ -311,7 +335,11 @@ else
   echo "  [26 Ancestry] off (opt-in: ANCESTRY=true; on one sample it only counts shared SNPs)"
 fi
 _launch "27 CPIC lookup" 27_cpic "${SCRIPT_DIR}/27-cpic-lookup.sh" "$SAMPLE"
-_launch "31 slivar" 31_slivar "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE"
+if [ "$VEP_RESULT" = "ok" ]; then
+  _launch "31 slivar" 31_slivar "${SCRIPT_DIR}/31-slivar.sh" "$SAMPLE"
+else
+  _skip "31 slivar" "needs VEP, step 13 ${VEP_RESULT}"
+fi
 
 # Mutect2 somatic (tumor-only) is opt-in due to high false-positive rate.
 if _enabled "${SOMATIC:-false}"; then
