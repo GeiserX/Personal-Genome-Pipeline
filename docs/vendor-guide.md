@@ -12,8 +12,8 @@ Your genomics data can come from many different providers. This guide explains w
 | Novogene / BGI | 30X WGS | FASTQ | GRCh38 | Path A | $200-400 |
 | Illumina DRAGEN (clinical) | 30X WGS | ORA / BAM + VCF | GRCh38 | Path D / B / C | $300-1000 |
 | Full Genomes Corporation | 30X WGS | BAM + VCF | GRCh38 | Path B or C | ~$1000 |
-| Oxford Nanopore | Long-read WGS | POD5 + BAM | GRCh38 | Not supported | $1000-3000 |
-| PacBio HiFi | Long-read WGS | HiFi BAM | GRCh38 | Not supported | $1000-2000 |
+| Oxford Nanopore | Long-read WGS | POD5 + BAM | GRCh38 | [Long-read guide](long-read-guide.md) | $1000-3000 |
+| PacBio HiFi | Long-read WGS | HiFi BAM | GRCh38 | [Long-read guide](long-read-guide.md) | $1000-2000 |
 | 23andMe | Genotyping array | TSV (~640K SNPs) | GRCh37 | Partial | $79-229 |
 | AncestryDNA | Genotyping array | TSV (~700K SNPs) | GRCh37 | Partial | $99-199 |
 | MyHeritage | Genotyping array | CSV (~643K SNPs) | GRCh37 | Partial | $79-199 |
@@ -46,7 +46,7 @@ Nebula was acquired by ProPhase Labs and rebranded as DNA Complete. They use **M
 
 - **Read names** follow BGI format instead of Illumina format. This is purely cosmetic -- all alignment tools handle it correctly.
 - **Quality scores** are the same encoding (Phred+33). No conversion needed.
-- **Adapter sequences** differ from Illumina. If you're trimming adapters (not required for this pipeline), use the MGI adapter sequences.
+- **Adapter sequences** differ from Illumina, and adapter contamination is more common in BGI/MGI libraries. Run [step 1b (fastp)](01b-fastp-qc.md) before alignment: it detects and trims MGI adapters automatically, and step 2 then uses the trimmed reads.
 
 ### Data Access
 
@@ -131,14 +131,20 @@ If your WGS was done through a clinical lab or hospital, they likely used Illumi
 
 ### ORA Format
 
-Some labs deliver FASTQ files compressed in Illumina's proprietary **ORA format** (~5x smaller than gzipped FASTQ). You need the `orad` decompressor:
+Some labs deliver FASTQ files compressed in Illumina's proprietary **ORA format** (~5x smaller than gzipped FASTQ). You need the `orad` decompressor and the ORA reference directory your lab provides. Step 1 decompresses one ORA file per call, so run it once for R1 and once for R2, then give the outputs the names step 1b and step 2 read:
 
 ```bash
-# Step 1 in this pipeline handles ORA decompression
-./scripts/01-ora-to-fastq.sh $SAMPLE
+# Arguments: <sample> <ora_reference_dir> <ora_file>
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R1_001.fastq.ora
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R2_001.fastq.ora
+
+# orad keeps the original file name; steps 1b and 2 read ${SAMPLE}_R1/_R2.fastq.gz
+cd ${GENOME_DIR}/${SAMPLE}/fastq
+mv ${SAMPLE}_S1_L001_R1_001.fastq.gz ${SAMPLE}_R1.fastq.gz
+mv ${SAMPLE}_S1_L001_R2_001.fastq.gz ${SAMPLE}_R2.fastq.gz
 ```
 
-See [docs/01-ora-to-fastq.md](01-ora-to-fastq.md) for details on obtaining the `orad` binary.
+See [docs/01-ora-to-fastq.md](01-ora-to-fastq.md) for details on obtaining the `orad` binary and for samples split across several lanes.
 
 ### DRAGEN VCF Notes
 
@@ -178,26 +184,16 @@ docker run --rm \
 
 ---
 
-## Long-Read Sequencing (Not Supported)
+## Long-Read Sequencing
 
-### Oxford Nanopore (MinION / PromethION)
+Oxford Nanopore and PacBio HiFi data run on a separate long-read path. The short-read steps (step 2 alignment, step 3 DeepVariant with the WGS model, step 4 Manta) are tuned for 150 bp Illumina reads and give wrong results on long reads, so do not feed long reads into them.
 
-Nanopore produces long reads (10-50 kb average) with different error profiles than Illumina. This pipeline's tools are optimized for short reads and will produce incorrect results with nanopore data.
+The long-read path has three scripts:
+- `scripts/02b-alignment-longread.sh`: minimap2 with the `map-ont` or `map-hifi` preset
+- `scripts/03e-clair3.sh`: Clair3 small-variant calling
+- `scripts/04c-sniffles2.sh`: Sniffles2 structural-variant calling
 
-**What you'd need instead:**
-- Alignment: `minimap2 -ax map-ont` (not the default short-read preset)
-- Variant calling: **Clair3** (not DeepVariant, though DeepVariant has an ONT model)
-- SV calling: **Sniffles2** or **cuteSV** (not Manta)
-- Basecalling: **Dorado** from raw POD5/FAST5 signal
-
-### PacBio HiFi
-
-PacBio HiFi reads are highly accurate (>Q20) and 10-20 kb long. Different tools required:
-- Alignment: `pbmm2` or `minimap2 -ax map-hifi`
-- Variant calling: **DeepVariant** (PacBio model) or **PEPPER-Margin-DeepVariant**
-- SV calling: `pbsv` or Sniffles2
-
-> A long-read pipeline branch may be added in the future. For now, these are the recommended tools.
+Basecalling from raw POD5/FAST5 signal (Dorado) happens before the pipeline. See the **[long-read guide](long-read-guide.md)** for the commands, the input formats each script accepts, and which downstream steps work on the resulting VCF.
 
 ---
 
@@ -306,7 +302,7 @@ Know what to expect before downloading:
 | File Type | Typical Size (30X WGS) | Notes |
 |---|---|---|
 | FASTQ (gzipped, paired) | 60-90 GB | Two files: R1 + R2 |
-| ORA (Illumina compressed) | 15-20 GB | Same data as FASTQ, ~5x smaller |
+| ORA (Illumina compressed) | 15-20 GB | Same data as gzipped FASTQ, ~5x smaller |
 | BAM (aligned) | 80-120 GB | Largest single file |
 | CRAM (compressed aligned) | 40-60 GB | 40-60% smaller than BAM |
 | VCF (variants) | 80-200 MB | Relatively small |

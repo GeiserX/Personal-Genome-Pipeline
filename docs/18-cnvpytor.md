@@ -10,7 +10,8 @@ Manta (step 4) detects SVs from discordant read pairs and split reads, which wor
 - Large duplications/deletions (>10 kb)
 - Tandem duplications where breakpoints are ambiguous
 - Validating Manta/Delly calls with orthogonal evidence
-- Copy-number-neutral loss of heterozygosity (LOH), which paired-end callers cannot see
+
+Read depth alone cannot see copy-neutral loss of heterozygosity (LOH): the depth does not change. That needs allele frequencies (CNVpytor's `-snp`/`-baf` path), which this pipeline does not run. Step 11 (ROH) covers long homozygous stretches from the VCF.
 
 ## Tool
 - **CNVpytor** (Abyzov lab) — Python reimplementation of CNVnator (Abyzov et al., Genome Research 2011)
@@ -33,9 +34,10 @@ MOUNTS="-v ${GENOME_DIR}:/genome -v ${GENOME_DIR}/reference/cnvpytor:${DATA}"
 PYTOR=/genome/${SAMPLE}/cnvpytor/${SAMPLE}.pytor
 mkdir -p ${GENOME_DIR}/${SAMPLE}/cnvpytor
 
-# 1. Import read depth from the BAM (no reference FASTA needed)
+# 1. Import read depth from the BAM (no reference FASTA needed), canonical chromosomes only
 docker run --rm --user root ${MOUNTS} ${IMG} \
-  cnvpytor -root ${PYTOR} -rd /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam -j 4
+  cnvpytor -root ${PYTOR} -rd /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
+  -chrom chr{1..22} chrX chrY -j 4
 
 # 2. Read-depth histogram + automatic GC correction
 docker run --rm --user root ${MOUNTS} ${IMG} cnvpytor -root ${PYTOR} -his 1000
@@ -47,8 +49,9 @@ docker run --rm --user root ${MOUNTS} ${IMG} cnvpytor -root ${PYTOR} -partition 
 docker run --rm --user root ${MOUNTS} ${IMG} cnvpytor -root ${PYTOR} -call 1000 \
   > ${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.txt
 
-# 5. Export a VCF (deletions / duplications / LOH). `-view` reads commands from stdin, so pass -i.
-docker run --rm --user root -i ${MOUNTS} ${IMG} cnvpytor -root ${PYTOR} -view 1000 <<'VIEW'
+# 5. Export a VCF (deletions / duplications). `-view` reads commands from stdin, so pass -i.
+# The heredoc marker is unquoted so the shell expands ${SAMPLE} in the file name.
+docker run --rm --user root -i ${MOUNTS} ${IMG} cnvpytor -root ${PYTOR} -view 1000 <<VIEW
 set print_filename /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.raw.vcf
 print calls
 VIEW
@@ -73,7 +76,7 @@ The `1000` parameter is the bin size in base pairs (must be divisible by 100). U
   9. q0 (fraction of reads with mapping quality 0)
   10. pN (fraction of reference N bases)
   11. dG (distance to nearest gap >100 bp)
-- `${SAMPLE}_cnvs.vcf.gz` (+ `.tbi`) — normalized VCF with `SVTYPE=DEL/DUP/LOH`, `END`, `SVLEN`, `GT`, and `CN`
+- `${SAMPLE}_cnvs.vcf.gz` (+ `.tbi`) — normalized VCF with `SVTYPE=DEL/DUP`, `END`, `SVLEN`, `GT`, and `CN`
 
 ## Filtering
 ```bash
