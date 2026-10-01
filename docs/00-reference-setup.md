@@ -453,7 +453,7 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | ClinVar DB (all versions) | 200 MB | 400 MB | Including chr-prefixed and pathogenic-only |
 | VEP cache | 26 GB | 30 GB | Largest single database |
 | PCGR/CPSR data bundle | 5 GB | 5 GB | Smaller in PCGR 2.x |
-| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 112 cache |
+| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 116 cache |
 | T1K HLA index | 50 MB | 450 MB | Optional |
 | Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
 | Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~175 GB | ~175 GB | Optional (step 30-31) |
