@@ -80,7 +80,7 @@ process CLINICAL_FILTER {
     else
         # Without gnomAD AF, skip rarity filter — emit header-only VCF to avoid thousands of unfiltered MODERATE variants
         echo "WARN: gnomADe_AF not found — skipping rare MODERATE tier" >&2
-        bcftools view -h ${vcf} | bgzip -c > ${meta.id}_rare_moderate.vcf.gz
+        bcftools view -h ${vcf} -Oz -o ${meta.id}_rare_moderate.vcf.gz
     fi
     bcftools index -t ${meta.id}_rare_moderate.vcf.gz
 
@@ -136,8 +136,8 @@ process CLINICAL_FILTER {
                     }
                 }
                 if(dominated) print
-            }' | bgzip -c > ${meta.id}_spliceai_high.vcf.gz
-        tabix -p vcf ${meta.id}_spliceai_high.vcf.gz
+            }' | bcftools view -Oz -o ${meta.id}_spliceai_high.vcf.gz
+        bcftools index -t ${meta.id}_spliceai_high.vcf.gz
         SPLICEAI_FILE="${meta.id}_spliceai_high.vcf.gz"
     fi
 

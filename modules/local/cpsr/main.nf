@@ -3,7 +3,7 @@
     CPSR — Cancer Predisposition Sequencing Reporter (ACMG SF v3.2)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Screens germline VCF for cancer predisposition variants using PCGR 2.x.
-    Requires VEP 113 cache (separate from the VEP step's release_112).
+    Requires the VEP 113 cache (separate from the VEP step's release 116 cache).
 
     Equivalent to: scripts/17-cpsr.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -11,7 +11,7 @@
 
 process CPSR {
     tag "$meta.id"
-    label 'process_high'
+    label 'process_medium'
 
     container 'sigven/pcgr:2.2.5'
 
@@ -23,9 +23,9 @@ process CPSR {
     path(vep_cache_cpsr)
 
     output:
-    tuple val(meta), path("*.cpsr.grch38.html"),                   emit: html_report
-    tuple val(meta), path("*.cpsr.grch38.snvs_indels.tiers.tsv"), emit: tsv_report
-    path "versions.yml",                                           emit: versions
+    tuple val(meta), path("*.cpsr.grch38.html"),                  emit: html_report
+    tuple val(meta), path("*.cpsr.grch38.classification.tsv.gz"), emit: tsv_report
+    path "versions.yml",                                          emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -53,7 +53,7 @@ process CPSR {
     stub:
     """
     touch ${meta.id}.cpsr.grch38.html
-    touch ${meta.id}.cpsr.grch38.snvs_indels.tiers.tsv
+    touch ${meta.id}.cpsr.grch38.classification.tsv.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

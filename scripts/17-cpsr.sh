@@ -69,4 +69,4 @@ docker run --rm --user root \
 
 echo "=== CPSR complete ==="
 echo "HTML report: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.html"
-echo "Variant table: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.snvs_indels.tiers.tsv"
+echo "Variant table: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.classification.tsv.gz"

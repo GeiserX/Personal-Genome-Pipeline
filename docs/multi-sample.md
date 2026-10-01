@@ -14,21 +14,30 @@ The most immediately useful multi-sample analysis: checking whether both partner
 PARTNER_A="sample_a"
 PARTNER_B="sample_b"
 
-# Extract pathogenic ClinVar hits for each partner
+# Gene symbols of each partner's ClinVar hits (step 6 writes them with ClinVar's GENEINFO)
 for SAMPLE in $PARTNER_A $PARTNER_B; do
   docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/GENEINFO\n' \
-      /genome/${SAMPLE}/clinvar/isec/0002.vcf \
+    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/GENEINFO\t%INFO/CLNSIG\t[%GT]\n' \
+      /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf \
     > /tmp/${SAMPLE}_clinvar_genes.txt
 done
 
+# GENEINFO is SYMBOL:GeneID, several joined by |
+for SAMPLE in $PARTNER_A $PARTNER_B; do
+  cut -f5 /tmp/${SAMPLE}_clinvar_genes.txt | tr '|' '\n' | cut -d: -f1 | grep -v '^\.$' | sort -u \
+    > /tmp/${SAMPLE}_genes.txt
+done
+
+# Confirm each per-sample gene file is non-empty before reading the intersection
+wc -l /tmp/${PARTNER_A}_genes.txt /tmp/${PARTNER_B}_genes.txt
+
 # Find genes where BOTH partners have pathogenic hits
-cut -f5 /tmp/${PARTNER_A}_clinvar_genes.txt | cut -d: -f1 | sort -u > /tmp/genes_a.txt
-cut -f5 /tmp/${PARTNER_B}_clinvar_genes.txt | cut -d: -f1 | sort -u > /tmp/genes_b.txt
-comm -12 /tmp/genes_a.txt /tmp/genes_b.txt
+comm -12 /tmp/${PARTNER_A}_genes.txt /tmp/${PARTNER_B}_genes.txt
 ```
 
-**If the output is empty:** No shared recessive carrier risk detected. This is the most common result.
+**Before reading the result, check the `wc -l` line.** A gene file with 0 lines means that partner has no hit with a gene name, or the hits file is missing or from an older run. An empty intersection then says nothing about carrier risk. Each file should list the genes of that partner's hits; rerun step 6 if it does not.
+
+**If both gene files have lines and the intersection is empty:** No shared recessive carrier risk was found among the small variants in ClinVar. This is the most common result. It does not cover copy-number carriers such as SMA (see below).
 
 **If genes appear in both lists:** Check whether:
 1. Both variants are in the **same gene** (not just nearby genes)
@@ -46,8 +55,9 @@ These genes frequently show up in ClinVar carrier screens. Being a carrier is ve
 | GJB2 | Hearing loss (DFNB1) | 1 in 30 |
 | HFE | Hemochromatosis | 1 in 10 (H63D), 1 in 150 (C282Y) |
 | MUTYH | Colorectal cancer risk | 1 in 50 |
-| SMN1 | Spinal muscular atrophy | 1 in 40-60 |
 | HEXA | Tay-Sachs disease | 1 in 30 (Ashkenazi), 1 in 300 (general) |
+
+Spinal muscular atrophy is not in this table on purpose. Most SMA carriers have one copy of SMN1 instead of two: a copy-number loss, not a small variant. ClinVar screening of a VCF cannot see it, so this check says nothing about SMA carrier status. That needs a copy-number test of SMN1 (a clinical carrier test, or a dedicated SMN1/SMN2 caller).
 
 ---
 
@@ -157,7 +167,7 @@ Telomere length (step 10) is most informative when compared between samples of *
 
 - **True trio analysis** (proband + both parents) with de novo calling: Requires tools like GATK's `--pedigree` mode or DeNovoGear
 - **Phasing** (determining which variants are on which chromosome copy): Requires statistical phasing tools like Eagle2/SHAPEIT or long-read data
-- **Polygenic risk scores**: Requires population-specific reference data and validated PGS models
-- **Ancestry PCA**: Requires merging with reference population data (1000 Genomes) and running PCA tools
+- **Comparable polygenic risk scores**: step 25 computes raw scores per person, but turning them into percentiles that can be compared between people needs a matched reference population (see [step 25](25-prs.md))
+- **Ancestry estimates**: step 26 prepares a SNP set shared with 1000 Genomes, but a usable estimate needs joint PCA or admixture analysis against a reference panel, which is not implemented (see [step 26](26-ancestry.md))
 
 These are planned for future pipeline versions.

@@ -3,8 +3,8 @@
     ANNOTATION — Variant annotation, enrichment, prioritization, and clinical filtering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Sequential pipeline:
-      VEP → VCFANNO → SLIVAR    (sequential dependency)
-                    → CLINICAL_FILTER  (branches from VCFANNO output)
+      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR    (sequential dependency)
+                                    → CLINICAL_FILTER  (branches from VCFANNO output)
 
     Each module is gated on params.tools containing the tool name.
     Modules that are skipped pass their input through to dependents.
@@ -13,6 +13,7 @@
 
 include { VEP             } from '../modules/local/vep/main'
 include { VCFANNO         } from '../modules/local/vcfanno/main'
+include { VCFANNO_INDEX   } from '../modules/local/vcfanno/main'
 include { SLIVAR          } from '../modules/local/slivar/main'
 include { CLINICAL_FILTER } from '../modules/local/clinical_filter/main'
 
@@ -65,31 +66,40 @@ workflow ANNOTATION {
 
     //
     // STEP 2: VCFANNO — Enrich with CADD, SpliceAI, REVEL, AlphaMissense
-    // Requires VEP output (or raw VCF if VEP is skipped)
+    // Requires VEP output (or raw VCF if VEP is skipped). Runs only when at
+    // least one score file is given: without one it would publish an
+    // unannotated copy of the input under vep/.
     //
     ch_enriched_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vcfanno')) {
-        VCFANNO(
-            ch_current_vcf,
-            ch_cadd_snv,
-            ch_cadd_snv_index,
-            ch_cadd_indel,
-            ch_cadd_indel_index,
-            ch_spliceai_snv,
-            ch_spliceai_snv_index,
-            ch_spliceai_indel,
-            ch_spliceai_indel_index,
-            ch_revel,
-            ch_revel_index,
-            ch_alphamissense,
-            ch_alphamissense_index        )
-        ch_versions     = ch_versions.mix(VCFANNO.out.versions)
-        ch_enriched_vcf = VCFANNO.out.vcf
+        def score_params = ['cadd_snv', 'cadd_indel', 'spliceai_snv', 'spliceai_indel', 'revel', 'alphamissense']
+        if (!score_params.any { params[it] }) {
+            log.warn "vcfanno skipped: no score file is set (--${score_params.join(', --')})."
+        } else {
+            VCFANNO(
+                ch_current_vcf,
+                ch_cadd_snv,
+                ch_cadd_snv_index,
+                ch_cadd_indel,
+                ch_cadd_indel_index,
+                ch_spliceai_snv,
+                ch_spliceai_snv_index,
+                ch_spliceai_indel,
+                ch_spliceai_indel_index,
+                ch_revel,
+                ch_revel_index,
+                ch_alphamissense,
+                ch_alphamissense_index
+            )
+            VCFANNO_INDEX(VCFANNO.out.vcf)
+            ch_versions     = ch_versions.mix(VCFANNO.out.versions, VCFANNO_INDEX.out.versions)
+            ch_enriched_vcf = VCFANNO_INDEX.out.vcf
 
-        // Update current VCF for downstream
-        ch_current_vcf = VCFANNO.out.vcf
-            .join(VCFANNO.out.vcf_index)
-            .map { meta, vcf, idx -> [meta, vcf, idx] }
+            // Update current VCF for downstream
+            ch_current_vcf = VCFANNO_INDEX.out.vcf
+                .join(VCFANNO_INDEX.out.vcf_index)
+                .map { meta, vcf, idx -> [meta, vcf, idx] }
+        }
     }
 
     //
