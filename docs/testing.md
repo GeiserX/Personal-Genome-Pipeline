@@ -39,11 +39,13 @@ What the release holds:
 | `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr1, chr2, chr4, chr5, chr6, chr10, chr12, chr16, chr19, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-alt analysis set, so every coordinate is real, plus `chr22_KI270879v1_alt` (see below) |
 | `clinvar.vcf.gz`, `clinvar_chr.vcf.gz`, `clinvar_pathogenic_chr.vcf.gz` (+ `.tbi`) | ClinVar records inside the regions, built the way `setup.sh` builds the full files |
 | `planted.tsv` | one synthetic ClinVar record (CLNSIG Pathogenic, gene SNAP25, ID 900000001) at a SNV HG002 is homozygous for, so step 06 always has a hit with a known gene |
-| `HG002_vep.vcf` | up to 200 GIAB truth variants (HLA-A, -B, -C, CYP2C19, CYP2C9, SNAP25) annotated by VEP `--database --everything`; it stands in for step 13, whose offline cache does not fit a runner |
+| `HG002_vep.vcf` | up to 200 GIAB truth variants (HLA-A, -B, -C, CYP2C19, CYP2C9, SNAP25) annotated by VEP `--database --everything`; it stands in for step 13, whose offline cache does not fit a runner. `--database` gives no gnomAD frequencies, so steps 23 and 31 only run their no-gnomAD branch |
 | `revel_synthetic.tsv.gz` (+ `.tbi`) | a score file in REVEL's layout for the SNVs of the VEP subset. The scores are made up; they only show that a score track is applied |
 | `HG002_sv_manta_style.vcf.gz` (+ `.tbi`) | ten Manta-style SV records, input for AnnotSV and the SV readers |
 | `HG002_truth_chr20.vcf.gz` (+ `.tbi`), `HG002_truth_chr20.bed` | GIAB v4.2.1 truth for the chr20 slice |
 | `regions.bed`, `MANIFEST.txt`, `SHA256SUMS` | the slices, how this build was made (sources, depth, ClinVar date, build-script checksum), checksums |
+
+`fixture-v3` also holds `HG002.GRCh38.60x.1.bam.bai`, the index of the source BAM, which samtools saved while streaming the slices. Nothing reads it.
 
 Why chr2, chr4, chr16 and one ALT contig: pypgx (step 32) reads depth over the region of every gene it can call copy number for before it calls any of them, and samtools refuses a region on a contig the BAM does not have. One missing contig and step 32 calls no BAM-based gene at all, CYP2D6 included. Its GRCh38 region for GSTT1 is `chr22_KI270879v1_alt:267307-281486`. Today's default reference (the Broad hg38 file) has that contig; the no-alt analysis set does not, so a switch to it has to deal with this first.
 
@@ -67,7 +69,7 @@ You can build it yourself on Linux with Docker, `bgzip` and `tabix` and about 10
 
 [`scripts/ci/e2e-run.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/e2e-run.sh) downloads the fixture, checks `SHA256SUMS`, lays out a `GENOME_DIR` the way `setup.sh` and step 13 would leave it, and runs every case file in [`tests/e2e/`](https://github.com/GeiserX/Personal-Genome-Pipeline/tree/main/tests/e2e). It runs all of them even when one fails, so one run lists every broken step. The job summary shows a table of case, result, time and log, plus the failed checks of each failed case; the full logs are in the `e2e-logs` artifact.
 
-It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. The target is under 60 minutes, and today it misses it: the DeepVariant case passes the fixture slices as `INTERVALS`, but step 03 does not read `INTERVALS` yet, so DeepVariant walks all 1.8 Gb of the reference. That took 24 and 50 minutes on two runs, and the cases took 61 minutes in total on the slower one. Once step 03 honours `INTERVALS` the way step 03a does, the case needs no change. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
+It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. The target is under 60 minutes, and today it misses it: the DeepVariant case passes the fixture slices as `INTERVALS`, but step 03 does not read `INTERVALS` yet, so DeepVariant walks all 1.8 Gb of the reference. So the job runs over an hour: 62 minutes on a recent run, 48 of them in DeepVariant. Once step 03 honours `INTERVALS` the way step 03a does, the case needs no change. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
 
 What it covers:
 
@@ -75,7 +77,7 @@ What it covers:
 - **Nextflow:** `nextflow run main.nf -profile docker` with real containers on the VCF and BAM the bash steps produced, through today's VCF+BAM samplesheet, with `--tools clinvar,mosdepth,delly,vcfanno,roh,pharmcat,cpic`, `--max_cpus 4 --max_memory 14.GB`.
 - **Report assets:** a last case lists every external `http(s)` address in a `src=` or `href=` attribute of the generated HTML reports, so the remote files a report loads when opened are known. The list goes to the job summary.
 
-Each check is a count or a column: a VCF with records, the sample name in the VCF header, a gene in the ClinVar hit, at least one called gene in PharmCAT's `report.json`, a CYP2D6 row from pypgx, no `.|.` cell in the HTML report. An exit code alone never passes a case.
+Each check is a count or a column: a VCF with records, the sample name in the VCF header, a gene in the ClinVar hit, at least one called gene in PharmCAT's `report.json`, a CYP2D6 row from pypgx, the planted ClinVar row in the HTML report with its gene, its significance and no empty cell. An exit code alone never passes a case.
 
 Many steps ask Docker for `--cpus 8`, which Docker refuses on a 4-CPU machine. The job puts a small shim first on `PATH` ([`tests/e2e/bin/docker`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/e2e/bin/docker)) that lowers `--cpus` to the CPUs the machine has and passes everything else through.
 
