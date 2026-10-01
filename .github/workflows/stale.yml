@@ -27,6 +27,9 @@ jobs:
           exempt-issue-labels: 'pinned,dependencies,freshness,keep-open'
           days-before-pr-stale: -1
           days-before-pr-close: -1
+          # PRs are off, and the token has no pull-requests: write; without
+          # this a stale label on an updated PR is still removed and fails.
+          remove-pr-stale-when-updated: false
           debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_only }}
 
   # actions/stale logs a permission error ("Resource not accessible by
