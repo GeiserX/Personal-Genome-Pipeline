@@ -142,7 +142,7 @@ ROH_FILE="${SAMPLE_DIR}/vcf/${SAMPLE}_roh.txt"
 if [ -f "$ROH_FILE" ]; then
   echo "## Runs of Homozygosity"
   echo "---"
-  LARGE_ROH=$(grep '^RG' "$ROH_FILE" 2>/dev/null | awk '$3 !~ /chrX|chrY/ && $6 > 5000000' | wc -l || echo "0")
+  LARGE_ROH=$(awk '/^RG/ && $3 !~ /chrX|chrY/ && $6 > 5000000 {c++} END {print c+0}' "$ROH_FILE")
   echo "  Autosomal ROH > 5MB: ${LARGE_ROH}"
   if [ "$LARGE_ROH" -gt 0 ]; then
     grep '^RG' "$ROH_FILE" | awk '$3 !~ /chrX|chrY/ && $6 > 5000000 {printf "    %s:%s-%s  %.1fMB\n", $3,$4,$5,$6/1e6}'
