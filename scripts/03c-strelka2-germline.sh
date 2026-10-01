@@ -40,21 +40,41 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-mkdir -p "$OUTPUT_DIR"
-
 STRELKA_IMAGE="quay.io/biocontainers/strelka:2.9.10--h9ee0642_1"
 BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
-# Step 1: Configure Strelka2 germline workflow
-echo "[1/2] Configuring Strelka2 germline workflow..."
-docker run --rm --user root \
-  --cpus "$THREADS" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  "$STRELKA_IMAGE" \
-  configureStrelkaGermlineWorkflow.py \
-    --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
-    --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
-    --runDir "/genome/${SAMPLE}/vcf_strelka2"
+# A finished run is not repeated: the configure script refuses a runDir
+# that already holds a workflow, so a second run used to fail.
+if [ -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz.tbi" ]; then
+  echo "Strelka2 already done for ${SAMPLE}: ${OUTPUT_DIR}/results/variants/variants.vcf.gz"
+  echo "To run it again, delete ${OUTPUT_DIR}/ first."
+  exit 0
+fi
+
+# Step 1: Configure Strelka2 germline workflow (skipped when an interrupted
+# run can be resumed)
+if [ -f "${OUTPUT_DIR}/runWorkflow.py" ]; then
+  echo "[1/2] Found an unfinished Strelka2 run in ${OUTPUT_DIR}/; resuming it."
+else
+  if [ -d "$OUTPUT_DIR" ]; then
+    # Files written by the container belong to root, so remove them from a container
+    echo "Removing leftover ${OUTPUT_DIR}/ (no workflow and no results)..."
+    docker run --rm --user root \
+      -v "${GENOME_DIR}:/genome" \
+      "$STRELKA_IMAGE" \
+      rm -rf "/genome/${SAMPLE}/vcf_strelka2"
+  fi
+  mkdir -p "$OUTPUT_DIR"
+  echo "[1/2] Configuring Strelka2 germline workflow..."
+  docker run --rm --user root \
+    --cpus "$THREADS" --memory 16g \
+    -v "${GENOME_DIR}:/genome" \
+    "$STRELKA_IMAGE" \
+    configureStrelkaGermlineWorkflow.py \
+      --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
+      --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+      --runDir "/genome/${SAMPLE}/vcf_strelka2"
+fi
 
 # Step 2: Run the workflow
 echo "[2/2] Running Strelka2 (this takes 1-2 hours for 30X WGS)..."

@@ -24,16 +24,37 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-# Step 1: Configure Manta
-echo "Configuring Manta..."
-docker run --rm \
-  --cpus 8 --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
-  configManta.py \
-    --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
-    --runDir "/genome/${SAMPLE}/manta"
+# A finished run is not repeated: configManta.py refuses a runDir that
+# already holds a workflow, which made every second run-all report Manta
+# as failed.
+if [ -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then
+  echo "Manta already done for ${SAMPLE}: ${MANTA_DIR}/results/variants/diploidSV.vcf.gz"
+  echo "To run it again, delete ${MANTA_DIR}/ first."
+  exit 0
+fi
+
+# Step 1: Configure Manta (skipped when an interrupted run can be resumed)
+if [ -f "${MANTA_DIR}/runWorkflow.py" ]; then
+  echo "Found an unfinished Manta run in ${MANTA_DIR}/; resuming it."
+else
+  if [ -d "$MANTA_DIR" ]; then
+    # Files written by the container belong to root, so remove them from a container
+    echo "Removing leftover ${MANTA_DIR}/ (no workflow and no results)..."
+    docker run --rm \
+      -v "${GENOME_DIR}:/genome" \
+      quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+      rm -rf "/genome/${SAMPLE}/manta"
+  fi
+  echo "Configuring Manta..."
+  docker run --rm \
+    --cpus 8 --memory 16g \
+    -v "${GENOME_DIR}:/genome" \
+    quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+    configManta.py \
+      --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+      --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+      --runDir "/genome/${SAMPLE}/manta"
+fi
 
 # Step 2: Run Manta workflow
 echo "Running Manta (this takes 1-3 hours for 30X WGS)..."
