@@ -93,7 +93,8 @@ fi
 # --- ExpansionHunter ---
 EH_STATUS="Not run"
 EH_DETAILS=""
-EH_FILE=$(find "${SAMPLE_DIR}/expansion_hunter" -maxdepth 1 -name "*_eh.vcf" 2>/dev/null | head -1)
+# find exits 1 when step 9 never ran; under pipefail that would end the whole report
+EH_FILE=$(find "${SAMPLE_DIR}/expansion_hunter" -maxdepth 1 -name "*_eh.vcf" 2>/dev/null | head -1 || true)
 if [ -n "$EH_FILE" ] && [ -f "$EH_FILE" ]; then
   EH_STATUS="Complete"
   # Check key loci — REPCN (repeat copy number) is FORMAT field 3 (GT:SO:REPCN:...)

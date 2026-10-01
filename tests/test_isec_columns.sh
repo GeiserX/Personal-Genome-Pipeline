@@ -35,7 +35,9 @@ SEQ=$(printf 'ACGTTGCA%.0s' $(seq 1 25))
 # make_genome <dir> <sample FILTER value> <clinvar contig> <clinvar mode: hit|nohit>
 make_genome() {
   local gd=$1 filter=$2 cv_contig=$3 mode=$4
-  mkdir -p "${gd}/reference" "${gd}/clinvar" "${gd}/S1/vcf"
+  # expansion_hunter/ exists so that the pre-fix step 24, which stopped when step 9
+  # had never run, reaches the ClinVar table and the check sees its real output.
+  mkdir -p "${gd}/reference" "${gd}/clinvar" "${gd}/S1/vcf" "${gd}/S1/expansion_hunter"
   printf '>chr1\n%s\n' "$SEQ" > "${gd}/reference/Homo_sapiens_assembly38.fasta"
   printf 'chr1\t200\t6\t200\t201\n' > "${gd}/reference/Homo_sapiens_assembly38.fasta.fai"
 
