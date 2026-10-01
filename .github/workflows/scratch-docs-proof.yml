@@ -40,6 +40,36 @@ jobs:
           echo "not ok: $bad"
           [ "$bad" -eq 0 ]
 
+  links-on-main:
+    # Positive control: the same check on main before this branch. Expected to fail.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: 65e9c340de8e73a0bc56f08f46628bf598094cff
+      - name: Every download URL in the lane's files answers 200
+        run: |
+          set -u
+          FILES="docs/00-reference-setup.md docs/benchmarking.md docs/quick-test.md docs/getting-started.md docs/vendor-guide.md docs/08-hla-typing.md docs/18-cnvpytor.md docs/troubleshooting.md docs/interpreting-results.md docs/30-vcfanno.md docs/31-slivar.md docs/01-ora-to-fastq.md docs/15-duphold.md ROADMAP.md"
+          grep -ohE 'https?://[^][ "'"'"'<>()`|\\]+' $FILES | sed -E 's/[.,;:*]+$//' | grep -v '\$' | sort -u > urls.txt
+          echo "checking $(wc -l < urls.txt) urls"
+          # Not download links, and these hosts refuse scripted requests (403/404 to curl
+          # from any machine); url/to is a placeholder in a code example.
+          SKIP='^https://(twitter\.com/|www\.mitomap\.org/|www\.omim\.org/|url/to/)'
+          bad=0
+          while read -r u; do
+            if echo "$u" | grep -Eq "$SKIP"; then echo "skipped (not a download, bot-blocked or placeholder): $u"; continue; fi
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u" || true)
+            if [ "$code" != 200 ]; then
+              code2=$(curl -sL -o /dev/null -r 0-0 -w '%{http_code}' --max-time 25 -A 'Mozilla/5.0 linkcheck' "$u" || true)
+              case "$code2" in 200|206) continue;; esac
+              echo "NOT OK $code/$code2 $u"; bad=$((bad+1))
+            fi
+          done < urls.txt
+          echo "not ok: $bad"
+          [ "$bad" -eq 0 ]
+
   revel:
     runs-on: ubuntu-latest
     steps:
