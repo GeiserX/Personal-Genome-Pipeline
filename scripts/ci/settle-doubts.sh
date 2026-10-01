@@ -102,22 +102,29 @@ row 2 "telomerehunter --help in the pinned image: is the default banding hg19?" 
   "exit ${RC}; banding lines: ${BAND:-none mention banding}"
 
 # --- 3. Clair3 model directories -----------------------------------------------
+docker pull -q "$CLAIR3_IMAGE" >/dev/null 2>&1
 docker run --rm "$CLAIR3_IMAGE" bash -c 'for d in /opt/models/r1041_e82_400bps_sup_v500 /opt/models/hifi_revio; do
   [ -d "$d" ] && echo "$d: present" || echo "$d: MISSING"; done; echo "models in /opt/models: $(ls /opt/models 2>&1 | tr "\n" " ")"' \
   > "${LOGS}/q3.log" 2>&1
 row 3 "Do the two model directories hardcoded in scripts/03e-clair3.sh exist in the pinned image?" \
   "docker run ${CLAIR3_IMAGE} ls -d /opt/models/r1041_e82_400bps_sup_v500 /opt/models/hifi_revio" \
-  "$(cut -c1-700 < "${LOGS}/q3.log")"
+  "$(grep -E 'present|MISSING|models in' "${LOGS}/q3.log" | cut -c1-700)"
 
 # --- 4. TIDDIT with only a BWA-MEM2 index ---------------------------------------
 in_g "$BWAMEM2_IMAGE" bwa-mem2 index reference/Homo_sapiens_assembly38.fasta > "${LOGS}/q4_index.log" 2>&1
 IDX_FILES=$(cd "${G}/reference" && ls Homo_sapiens_assembly38.fasta.* | tr '\n' ' ')
 "${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4.log" 2>&1; RC=$?
-ASM=$(grep -m1 -iE 'assembly|BWA index' "${LOGS}/q4.log")
-SVN=$(in_g "$BCFTOOLS_IMAGE" bcftools view -H "${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz" 2>/dev/null | wc -l | tr -d ' ')
+ASM=$(grep -m1 -E 'BWA index detected|No BWA index' "${LOGS}/q4.log")
+ERR=$(grep -E '^[A-Za-z]+Error|Exception' "${LOGS}/q4.log" | tail -n 1)
+# Control: the same run with the BWA-MEM2 index moved away (--skip_assembly).
+mkdir -p "${G}/bwamem2-aside"
+mv "${G}/reference/Homo_sapiens_assembly38.fasta.bwt.2bit.64" "${G}/bwamem2-aside/"
+rm -rf "${G}/${SAMPLE}/sv_tiddit"
+"${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4_control.log" 2>&1; RCC=$?
+SVC=$(in_g "$BCFTOOLS_IMAGE" bcftools view -H "${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz" 2>/dev/null | wc -l | tr -d ' ')
 row 4 "What does TIDDIT do when only the BWA-MEM2 index exists: crash, or run without assembly?" \
-  "bwa-mem2 index ref.fasta; scripts/04a-tiddit.sh (chr20+chrM reference)" \
-  "index files: ${IDX_FILES}; script says: ${ASM:-nothing about assembly}; exit ${RC}; SV records ${SVN:-0}; last lines: $(last_lines "${LOGS}/q4.log" 4 | cut -c1-400)"
+  "bwa-mem2 index ref.fasta; scripts/04a-tiddit.sh (chr20+chrM reference); then again without the .bwt.2bit.64 file" \
+  "index files: ${IDX_FILES}; script says: ${ASM:-nothing}; exit ${RC}: ${ERR:-no Python error}. Control without the BWA-MEM2 index (--skip_assembly): exit ${RCC}, ${SVC:-0} SV records"
 
 # --- 5. bcftools convert --tsv2vcf on a five-column AncestryDNA-style file -------
 mkdir -p "${G}/chip"
@@ -154,8 +161,13 @@ row 7 "First lines VEP prints for --everything --offline without --fasta" \
 # --- 8. minimap2 killed mid-run --------------------------------------------------------
 KILL=HG002kill
 mkdir -p "${G}/${KILL}/fastq"
-cp "${FX}/HG002_R1.fastq.gz" "${G}/${KILL}/fastq/${KILL}_R1.fastq.gz"
-cp "${FX}/HG002_R2.fastq.gz" "${G}/${KILL}/fastq/${KILL}_R2.fastq.gz"
+# minimap2 writes nothing until its first batch (500 Mbp) is mapped, so the
+# input is the fixture reads four times over, and the kill comes right after
+# minimap2 logs its first mapped batch: samtools sort has data by then.
+for r in R1 R2; do
+  for _ in 1 2 3 4; do cat "${FX}/HG002_${r}.fastq.gz"; done > "${G}/${KILL}/fastq/${KILL}_${r}.fastq.gz"
+done
+INPUT_READS=$(( $(gzip -dc "${G}/${KILL}/fastq/${KILL}_R1.fastq.gz" | wc -l) / 2 ))
 "${REPO}/scripts/02-alignment.sh" "$KILL" > "${LOGS}/q8.log" 2>&1 &
 PID=$!
 CID=""
@@ -165,8 +177,13 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 KILLED=no
+WHEN="never started"
 if [ -n "$CID" ]; then
-  sleep 8
+  for t in $(seq 1 600); do
+    if docker logs "$CID" 2>&1 | grep -q 'mapped [0-9]* sequences'; then WHEN="after the first mapped batch (${t} s)"; break; fi
+    docker ps -q --no-trunc | grep -q "^${CID}" || { WHEN="it had already exited"; break; }
+    sleep 1
+  done
   docker kill "$CID" >/dev/null 2>&1 && KILLED=yes
 fi
 wait "$PID"; RC=$?
@@ -174,13 +191,13 @@ KBAM="${KILL}/aligned/${KILL}_sorted.bam"
 if [ -f "${G}/${KBAM}" ]; then
   QC=$(in_g "$SAMTOOLS_IMAGE" samtools quickcheck -v "$KBAM" 2>&1 && echo "passes quickcheck" || echo "fails quickcheck")
   NREADS=$(in_g "$SAMTOOLS_IMAGE" samtools view -c "$KBAM" 2>/dev/null || echo "unreadable")
-  LEFT="a BAM is left ($(stat -c %s "${G}/${KBAM}") bytes, ${QC}, ${NREADS} records; the full input has $(( $(gzip -dc "${FX}/HG002_R1.fastq.gz" | wc -l) / 2 )) reads)"
+  LEFT="a BAM is left ($(stat -c %s "${G}/${KBAM}") bytes, ${QC}, ${NREADS} records; the input has ${INPUT_READS} reads)"
 else
   LEFT="no BAM is left"
 fi
 row 8 "Kill the minimap2 container mid-run: is the BAM left behind valid or partial?" \
-  "scripts/02-alignment.sh & ; docker kill <minimap2 container> after 8 s" \
-  "killed: ${KILLED}; script exit ${RC}; ${LEFT}; index left: $([ -f "${G}/${KBAM}.bai" ] && echo yes || echo no)"
+  "scripts/02-alignment.sh & ; docker kill <minimap2 container> once it logs a mapped batch" \
+  "killed: ${KILLED}, ${WHEN}; script exit ${RC}; ${LEFT}; index left: $([ -f "${G}/${KBAM}.bai" ] && echo yes || echo no); $(grep -m1 -iE 'samtools sort|truncated|EOF' "${LOGS}/q8.log")"
 
 # --- 9. Images that run as non-root, and whether they can write to /genome ------------
 mkdir -p "${W}/mount-test"
@@ -220,12 +237,12 @@ COORD="${T1K}/hlaidx_grch38/_dna_coord.fa"
 if [ -f "$COORD" ]; then
   TOTAL=$(grep -c '^>' "$COORD" || true)
   NEG=$(grep -c ' -1 -1 ' "$COORD" || true)
-  ANS="exit ${RC}; ${NEG} of ${TOTAL} entries have ' -1 -1 ' coordinates; e.g. $(grep -m2 ' -1 -1 ' "$COORD" | tr '\n' ' ' | cut -c1-200)"
+  ANS="exit ${RC}; ${NEG} of ${TOTAL} entries have ' -1 -1 ' coordinates; e.g. $(grep -m2 ' -1 -1 ' "$COORD" | tr '\n' ' ' | cut -c1-200). Step 08 passes the FASTA to -g; T1K's README passes a GENCODE GTF there"
 else
   ANS="exit ${RC}; no coordinate file; $(last_lines "${LOGS}/q10_build.log" 3 | cut -c1-300)"
 fi
 row 10 "Does T1K's coordinate file built from the reference contain ' -1 -1 ' rows?" \
-  "t1k-build.pl -d hla.dat -g chr6.fasta (chr6 only: every HLA gene is on chr6)" "$ANS"
+  "t1k-build.pl -d hla.dat -g chr6.fasta (as step 08 does, with chr6 only: every HLA gene is on chr6)" "$ANS"
 
 # --- 11. fastp trimming A/B against the GIAB truth ----------------------------------------
 TRIM=HG002trim
@@ -241,14 +258,18 @@ happy() {   # happy <sample> <vcf name>: SNP and INDEL recall/precision/F1 on th
     /genome/reference/HG002_truth_chr20.vcf.gz "/genome/$1/$2.vcf.gz" \
     -r /genome/reference/Homo_sapiens_assembly38.fasta -f /genome/reference/HG002_truth_chr20.bed \
     -o "/genome/$1/happy_$2" --engine=vcfeval > "${LOGS}/q11_happy_$2.log" 2>&1 || true
-  awk -F',' '($1 == "SNP" || $1 == "INDEL") && $2 == "PASS" {printf "%s R=%.4f P=%.4f F1=%.4f; ", $1, $10, $11, $13}' \
+  awk -F',' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
+             ($1 == "SNP" || $1 == "INDEL") && $2 == "PASS" {
+               printf "%s recall %.4f precision %.4f F1 %.4f (TP %s FN %s FP %s); ", $1,
+                 $c["METRIC.Recall"], $c["METRIC.Precision"], $c["METRIC.F1_Score"], $c["TRUTH.TP"], $c["TRUTH.FN"], $c["QUERY.FP"]}' \
     "${G}/$1/happy_$2.summary.csv" 2>/dev/null || true
 }
 RAW=$(happy "$SAMPLE" dv_raw)
 TRM=$(happy "$TRIM" dv_trim)
+HAPPY_COLS=$(head -n 1 "${G}/${SAMPLE}/happy_dv_raw.summary.csv" 2>/dev/null | cut -d, -f1-14)
 row 11 "fastp A/B: DeepVariant on ${SLICE} with and without step 01b, against GIAB v4.2.1 (hap.py)" \
   "01b-fastp-qc.sh; 02-alignment.sh; run_deepvariant --regions ${SLICE}; hap.py --engine=vcfeval -f truth.bed" \
-  "without trimming: ${RAW:-hap.py produced no summary}; with trimming: ${TRM:-hap.py produced no summary}"
+  "without trimming: ${RAW:-hap.py produced no summary}; with trimming: ${TRM:-hap.py produced no summary}. summary.csv columns 1-14: ${HAPPY_COLS:-none}"
 
 # --- Table -------------------------------------------------------------------------------
 {
