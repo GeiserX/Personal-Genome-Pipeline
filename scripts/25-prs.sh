@@ -37,26 +37,26 @@ echo "  Output: ${OUTDIR}/"
 echo "============================================"
 echo ""
 
-# Key PGS Catalog scoring files for common conditions
-# These are well-validated, large-scale GWAS-derived scores
-declare -A PGS_IDS
-PGS_IDS=(
-  ["coronary_artery_disease"]="PGS000018"
-  ["type_2_diabetes"]="PGS000014"
-  ["breast_cancer"]="PGS000004"
-  ["prostate_cancer"]="PGS000662"
-  ["atrial_fibrillation"]="PGS000016"
-  ["alzheimers_disease"]="PGS000334"
-  ["body_mass_index"]="PGS000027"
-  ["schizophrenia"]="PGS000738"
-  ["inflammatory_bowel_disease"]="PGS000020"
-  ["colorectal_cancer"]="PGS000055"
+# PGS Catalog scores, one per line: "<PGS ID>|<trait_reported>".
+# The label is the trait exactly as https://www.pgscatalog.org/rest/score/<PGS ID>
+# reports it, so a wrong ID cannot be printed under the wrong disease.
+PGS_SCORES=(
+  "PGS000018|Coronary artery disease"
+  "PGS000014|Type 2 diabetes (T2D)"
+  "PGS000004|Breast cancer"
+  "PGS000662|Prostate cancer"
+  "PGS000016|Atrial fibrillation"
+  "PGS000334|Late-onset Alzheimer’s disease"
+  "PGS000027|Body mass index (BMI)"
+  "PGS000017|Inflammatory bowel disease"
+  "PGS000055|Colorectal cancer"
 )
 
 # Download scoring files from PGS Catalog
 echo "[1/3] Downloading PGS Catalog scoring files..."
-for CONDITION in "${!PGS_IDS[@]}"; do
-  PGS_ID="${PGS_IDS[$CONDITION]}"
+for ENTRY in "${PGS_SCORES[@]}"; do
+  PGS_ID="${ENTRY%%|*}"
+  CONDITION="${ENTRY#*|}"
   SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
 
   if [ -f "$SCORE_FILE" ]; then
@@ -100,8 +100,9 @@ echo "[3/3] Calculating polygenic risk scores..."
 RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
 echo -e "Condition\tPGS_ID\tScore\tVariants_Used\tVariants_Total" > "$RESULTS_FILE"
 
-for CONDITION in "${!PGS_IDS[@]}"; do
-  PGS_ID="${PGS_IDS[$CONDITION]}"
+for ENTRY in "${PGS_SCORES[@]}"; do
+  PGS_ID="${ENTRY%%|*}"
+  CONDITION="${ENTRY#*|}"
   SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
 
   if [ ! -f "$SCORE_FILE" ]; then
@@ -178,7 +179,7 @@ echo "============================================"
 echo "  Polygenic Risk Scores complete: ${SAMPLE}"
 echo ""
 echo "  Summary: ${RESULTS_FILE}"
-cat "$RESULTS_FILE" | column -t 2>/dev/null || cat "$RESULTS_FILE"
+column -t -s $'\t' "$RESULTS_FILE" 2>/dev/null || cat "$RESULTS_FILE"
 echo ""
 echo "============================================"
 echo ""

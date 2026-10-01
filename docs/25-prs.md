@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Calculates polygenic risk scores for 10 common conditions using validated scoring files from the PGS Catalog and plink2. Each PRS aggregates the tiny effects of hundreds to millions of genetic variants into a single number representing your relative genetic predisposition for a trait or disease.
+Calculates polygenic risk scores for 9 common conditions using validated scoring files from the PGS Catalog and plink2. Each PRS aggregates the tiny effects of hundreds to millions of genetic variants into a single number representing your relative genetic predisposition for a trait or disease.
 
 ## Why
 
@@ -31,18 +31,27 @@ pgscatalog/plink2:2.00a5.10
 
 ## Conditions Scored
 
-| Condition | PGS ID | Source |
-|---|---|---|
-| Coronary artery disease | PGS000018 | Khera et al. 2018 |
-| Type 2 diabetes | PGS000014 | Mahajan et al. 2018 |
-| Breast cancer | PGS000004 | Mavaddat et al. 2019 |
-| Prostate cancer | PGS000662 | Conti et al. 2021 |
-| Atrial fibrillation | PGS000016 | Khera et al. 2018 |
-| Alzheimer's disease | PGS000334 | De Rojas et al. 2021 |
-| Body mass index | PGS000027 | Khera et al. 2019 |
-| Schizophrenia | PGS000738 | PGC 2022 |
-| Inflammatory bowel disease | PGS000020 | Khera et al. 2018 |
-| Colorectal cancer | PGS000055 | Huyghe et al. 2019 |
+Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score, and the script prints the same label.
+
+| Condition (PGS Catalog trait) | PGS ID | Variants | Publication |
+|---|---|---|---|
+| Coronary artery disease | [PGS000018](https://www.pgscatalog.org/score/PGS000018/) | 1,745,179 | Inouye et al. 2018, J Am Coll Cardiol |
+| Type 2 diabetes (T2D) | [PGS000014](https://www.pgscatalog.org/score/PGS000014/) | 6,917,436 | Khera et al. 2018, Nat Genet |
+| Breast cancer | [PGS000004](https://www.pgscatalog.org/score/PGS000004/) | 313 | Mavaddat et al. 2018, Am J Hum Genet |
+| Prostate cancer | [PGS000662](https://www.pgscatalog.org/score/PGS000662/) | 269 | Conti et al. 2021, Nat Genet |
+| Atrial fibrillation | [PGS000016](https://www.pgscatalog.org/score/PGS000016/) | 6,730,541 | Khera et al. 2018, Nat Genet |
+| Late-onset Alzheimer’s disease | [PGS000334](https://www.pgscatalog.org/score/PGS000334/) | 22 | Zhang et al. 2020, Nat Commun |
+| Body mass index (BMI) | [PGS000027](https://www.pgscatalog.org/score/PGS000027/) | 2,100,302 | Khera et al. 2019, Cell |
+| Inflammatory bowel disease | [PGS000017](https://www.pgscatalog.org/score/PGS000017/) | 6,907,112 | Khera et al. 2018, Nat Genet |
+| Colorectal cancer | [PGS000055](https://www.pgscatalog.org/score/PGS000055/) | 76 | Schmit et al. 2019, J Natl Cancer Inst |
+
+There is no schizophrenia score yet. An earlier version listed PGS000738 as schizophrenia, but that score is for vitiligo; a schizophrenia row comes back only once a score is chosen from the catalog and checked against the API.
+
+To check a label before adding a score:
+
+```bash
+curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
+```
 
 ## What the Script Does Internally
 
@@ -65,7 +74,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 ## Runtime
 
-~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 10 conditions).
+~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 9 conditions).
 
 ## Interpreting Results
 
@@ -108,7 +117,7 @@ Check the `Variants_Used / Variants_Total` ratio. If fewer than 50% of scoring v
 
 - Scoring files are downloaded once and cached in `${GENOME_DIR}/prs_scores/`. Delete this directory to force re-download.
 - The script prefers GRCh38-harmonized scoring files. If unavailable, it falls back to the original (which may be on GRCh37 and produce poor variant matching).
-- You can add more PGS IDs by editing the `PGS_IDS` associative array in the script. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
+- You can add more scores by adding a `"<PGS ID>|<trait_reported>"` line to the `PGS_SCORES` list in the script, with the label copied from the API. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
 
 ## Maintenance
 
