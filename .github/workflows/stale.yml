@@ -52,7 +52,7 @@ jobs:
             echo "ERROR: could not find the stale job of this run"
             exit 1
           fi
-          gh api "repos/${REPO}/actions/jobs/${job_id}/logs" > stale.log
+          gh api --allow-escape-sequences "repos/${REPO}/actions/jobs/${job_id}/logs" > stale.log
           if [ ! -s stale.log ]; then
             echo "ERROR: the stale job's log is empty"
             exit 1
