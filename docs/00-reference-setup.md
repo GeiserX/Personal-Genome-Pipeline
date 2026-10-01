@@ -405,16 +405,20 @@ docker run --rm --user root \
 
 ### BWA-MEM2 Index
 
-BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Build once (~1 hour, ~6 GB):
+BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Building them needs a lot of memory: the bwa-mem2 README states 28 GB per Gbp of reference, which is **about 90 GB of RAM** for the 3.2 Gbp GRCh38 FASTA. The finished index is about 10 GB on disk, and aligning with it needs about 10 GB of RAM, so only the one-time build is the problem.
+
+The practical route is to build the index once on a machine (or a rented cloud instance) with at least 96 GB of RAM, then copy the five index files next to the FASTA on your own machine. With less memory the build is killed (exit code 137).
 
 ```bash
 docker run --rm --user root \
-  --cpus 8 --memory 24g \
+  --cpus 8 --memory 96g \
   -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
   bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
 # Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
 ```
+
+GRIDSS (step 4b) needs the classic BWA index instead (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`); the two are not interchangeable. See [04b-gridss.md](04b-gridss.md) for how to build it.
 
 ### GIAB Truth Set (for hap.py Benchmarking)
 
