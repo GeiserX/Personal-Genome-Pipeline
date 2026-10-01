@@ -13,7 +13,9 @@
 # Hook: if FAKE_DOCKER_RUN_HOOK names an executable, `docker run` calls it as
 #   "$FAKE_DOCKER_RUN_HOOK" <image> <command and args...>
 # and returns its exit code. A case uses it to create the files a tool would
-# have written, or to make one image fail.
+# have written, or to make one image fail. The hook gets the call's -v specs
+# (host:container[:mode]) in FAKE_DOCKER_VOLUMES, one per line, so it can map
+# a container path to the host path.
 set -uo pipefail
 
 LOG=${FAKE_DOCKER_LOG:-/dev/null}
@@ -56,8 +58,10 @@ case "${1:-}" in
     ;;
   run)
     shift
+    volumes=""
     while [ $# -gt 0 ]; do
       case "$1" in
+        --volume=*) volumes+="${1#*=}"$'\n'; shift ;;
         --*=*) shift ;;
         # options that take a value as the next argument
         -a|--attach|--add-host|-c|--cpu-shares|--cap-add|--cap-drop|--cidfile|--cpus|\
@@ -72,6 +76,7 @@ case "${1:-}" in
             echo "flag needs an argument: $1" >&2
             exit 125
           fi
+          case "$1" in -v|--volume) volumes+="$2"$'\n' ;; esac
           shift 2 ;;
         # options that take no value
         --rm|-i|-t|-it|-ti|-d|--detach|--init|--interactive|--tty|--privileged|\
@@ -108,7 +113,7 @@ case "${1:-}" in
     esac
     record "run image=$1"
     if [ -n "${FAKE_DOCKER_RUN_HOOK:-}" ]; then
-      exec "$FAKE_DOCKER_RUN_HOOK" "$@"
+      FAKE_DOCKER_VOLUMES=$volumes exec "$FAKE_DOCKER_RUN_HOOK" "$@"
     fi
     ;;
   *)

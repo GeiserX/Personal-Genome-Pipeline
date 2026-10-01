@@ -113,29 +113,53 @@ hide_commands() {
 }
 
 # use_output_hook: make every `docker run` create the files its command
-# writes under /genome (after -o, --output or >), plus the .tbi of every
-# `index` target, in GENOME_DIR. For scripts that check a step's output.
+# writes (after -o, -O, --output or >, quoted or not), plus the .tbi of every
+# `index` or `index -t` target, on the host side of the call's -v mounts.
+# Paths outside every mount (/tmp, /dev/null) and existing directories are
+# left alone; a path ending in / is created as a directory. For scripts that check a step's output.
+# It also writes ${CASE_WORK}/host-path.sh, which defines host_path
+# CONTAINER_PATH (prints the host path, fails when no mount covers it), for
+# case hooks that write a tool's outputs themselves.
 use_output_hook() {
+  cat > "${CASE_WORK}/host-path.sh" <<'HELPER'
+host_path() {
+  local p=$1 best="" host="" v h c
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    h=${v%%:*} c=${v#*:}
+    c=${c%%:*}
+    case "$p" in
+      "$c"|"$c"/*) if [ "${#c}" -gt "${#best}" ]; then best=$c host=$h; fi ;;
+    esac
+  done <<<"${FAKE_DOCKER_VOLUMES:-}"
+  [ -n "$best" ] || return 1
+  printf '%s%s' "$host" "${p#"$best"}"
+}
+HELPER
   cat > "${CASE_WORK}/hook-outputs" <<'HOOK'
 #!/usr/bin/env bash
 set -euo pipefail
+. "${CASE_WORK:?}/host-path.sh"
 shift   # the image
 args="$*"
 mk() {
-  local h="${GENOME_DIR:?}${1#/genome}"
-  mkdir -p "$(dirname "$h")"
+  local h
+  h=$(host_path "$1") || return 0
+  [ ! -d "$h" ] || return 0
   case "$h" in
-    *.gz) printf '##fileformat=VCFv4.2\n' | gzip -c > "$h" ;;
-    *) : > "$h" ;;
+    */) mkdir -p "$h" ;;
+    *.gz) mkdir -p "$(dirname "$h")"; printf '##fileformat=VCFv4.2\n' | gzip -c > "$h" ;;
+    *) mkdir -p "$(dirname "$h")"; : > "$h" ;;
   esac
 }
-path='/genome/[^[:space:];&|"'\'']+'
+q="['\"]?"
+path='/[^[:space:];&|"'\'']+'
 while read -r p; do
   [ -n "$p" ] && mk "$p"
-done < <(grep -oE -- "(-o|--output|>)[[:space:]]*${path}" <<<"$args" | grep -oE -- "${path}" || true)
+done < <(grep -oE -- "(-o|-O|--output|>)[[:space:]]*${q}${path}" <<<"$args" | grep -oE -- "${path}" || true)
 while read -r p; do
   [ -n "$p" ] && mk "${p}.tbi"
-done < <(grep -oE -- "index[[:space:]]+(-t[[:space:]]+)?${path}" <<<"$args" | grep -oE -- "${path}" || true)
+done < <(grep -oE -- "index[[:space:]]+(-f[[:space:]]+)?(-t[[:space:]]+)?${q}${path}" <<<"$args" | grep -oE -- "${path}" || true)
 exit 0
 HOOK
   chmod +x "${CASE_WORK}/hook-outputs"
