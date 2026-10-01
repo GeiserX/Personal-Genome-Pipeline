@@ -180,7 +180,9 @@ KILLED=no
 WHEN="never started"
 if [ -n "$CID" ]; then
   for t in $(seq 1 600); do
-    if docker logs "$CID" 2>&1 | grep -q 'mapped [0-9]* sequences'; then WHEN="after the first mapped batch (${t} s)"; break; fi
+    # grep -c reads to the end: grep -q would stop early, docker logs would get
+    # SIGPIPE, and pipefail would turn a match into a failure.
+    if docker logs "$CID" 2>&1 | grep -c 'mapped [0-9]* sequences' >/dev/null; then WHEN="after the first mapped batch (${t} s)"; break; fi
     [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null)" = true ] || { WHEN="it had already exited"; break; }
     sleep 1
   done
