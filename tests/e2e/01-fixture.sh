@@ -11,7 +11,7 @@ for f in "${FIXTURE_DIR}"/*.gz; do
 done
 
 IDX=$(fx idxstats HG002_slice.bam)
-for c in chr5 chr6 chr10 chr12 chr20 chr22 chrX chrY chrM; do
+for c in chr1 chr5 chr6 chr10 chr12 chr19 chr20 chr22 chrX chrY chrM; do
   check_ge "reads on ${c} in HG002_slice.bam" "$(awk -v c="$c" '$1 == c {print $3}' <<< "$IDX")" 1
 done
 

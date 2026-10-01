@@ -13,9 +13,16 @@ printf 'sample,vcf,vcf_index,bam,bam_index\n%s,%s,%s,%s,%s\n' "$SAMPLE" \
   "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" \
   > "$SHEET"
 
+# Keep going after a failed task, so one run shows every broken module; the
+# failed tasks are counted from the trace below instead.
+cat > "${CASE_TMP}/e2e.config" <<'NFCONF'
+process.errorStrategy = 'ignore'
+NFCONF
+
 echo "+ nextflow run main.nf -profile docker"
 (
   cd "$E2E_WORK" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
+    -c "${CASE_TMP}/e2e.config" \
     -work-dir "${E2E_WORK}/nf-work" \
     --input "$SHEET" \
     --reference "${G}/reference/Homo_sapiens_assembly38.fasta" \
@@ -29,9 +36,17 @@ echo "+ nextflow run main.nf -profile docker"
 ) 2>&1 | tee "$STEP_LOG"
 NF_RC=${PIPESTATUS[0]}
 check_eq "nextflow run exits 0" "$NF_RC" 0
-if [ "$NF_RC" -ne 0 ] && [ -f "${E2E_WORK}/.nextflow.log" ]; then
-  echo "--- failed tasks (from .nextflow.log) ---"
-  grep -E 'Error executing process|Command exit status|Command error' -A 6 "${E2E_WORK}/.nextflow.log" | head -80
+cp "${E2E_WORK}/.nextflow.log" "${E2E_WORK}/logs/60-nextflow.nextflow.log" 2>/dev/null
+TRACE=$(find "${NF_OUT}/pipeline_info" -name 'trace_*.txt' 2>/dev/null | LC_ALL=C sort | awk 'END {print}')
+FAILED=$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
+                      $c["status"] != "COMPLETED" && $c["status"] != "CACHED" {print $c["name"] " (" $c["status"] ", exit " $c["exit"] ")"}' \
+  "${TRACE:-/dev/null}" 2>/dev/null)
+echo "tasks that did not complete: ${FAILED:-none}"
+check "the trace lists the tasks" test -s "${TRACE:-/dev/null}"
+check_eq "tasks that did not complete" "$(grep -c . <<< "$FAILED" || true)" 0
+if [ -n "$FAILED" ]; then
+  grep -E 'Error executing process|Command exit status|Command error' -A 6 "${E2E_WORK}/.nextflow.log" \
+    | grep -vE 'Pulling|Waiting|Verifying|Download complete|Pull complete|Already exists' | head -80
 fi
 
 R="nf-results/${SAMPLE}"
