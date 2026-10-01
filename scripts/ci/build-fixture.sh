@@ -95,6 +95,13 @@ in_image() {
   docker run --rm -i -u "$(id -u):$(id -g)" -e HOME=/tmp -v "${OUT}:/w" -w /w "$image" "$@"
 }
 sam() { in_image "$SAMTOOLS_IMAGE" samtools "$@"; }
+# samtools reading over HTTPS: the image's libcurl has no CA bundle, so lend it
+# the host's (htslib reads CURL_CA_BUNDLE).
+sam_https() {
+  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    -v "${OUT}:/w" -w /w "$SAMTOOLS_IMAGE" samtools "$@"
+}
 bcf() { in_image "$BCFTOOLS_IMAGE" bcftools "$@"; }
 fetch() { curl -fsSL --retry 5 --retry-delay 10 -o "$2" "$1"; }
 
@@ -122,7 +129,7 @@ sam dict -o /w/fixture_ref.dict /w/fixture_ref.fa.gz
 
 # --- Reads: stream the slices, sample down to TARGET_DEPTH -------------------
 echo "[2/8] Streaming ${#REGIONS[@]} regions from the GIAB HG002 60x BAM"
-sam view -@ "$THREADS" -b -o /w/.work/slice_full.bam "$BAM_URL" "${REGIONS[@]}"
+sam_https view -@ "$THREADS" -b -o /w/.work/slice_full.bam "$BAM_URL" "${REGIONS[@]}"
 sam index /w/.work/slice_full.bam
 FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
