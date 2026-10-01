@@ -1,0 +1,30 @@
+name: Guard
+
+# Checks that run the pipeline's own code, on every pull request with no
+# path filter, so a change anywhere cannot skip them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image-vars:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a planted undefined variable must be caught)
+        run: scripts/ci/check-image-vars.sh --self-test
+
+      - name: Every *_IMAGE a script uses is defined
+        run: scripts/ci/check-image-vars.sh
