@@ -70,5 +70,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Cache the HG002 slice
+        uses: actions/cache@v4
+        with:
+          path: /mnt/scratch/cyslice
+          key: scratch-hg002-cyrius-regions-v1
       - name: Step 21 on a public HG002 slice
         run: bash .github/scratch/cyrius.sh

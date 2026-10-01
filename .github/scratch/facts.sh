@@ -22,7 +22,7 @@ check "classify is not a command" "$(grep '^classify:' <<< "$OUT")" "absent" "$(
 
 echo "== slivar image =="
 docker pull -q "$SLIVAR_IMAGE" >/dev/null
-OUT=$(docker run --rm "$SLIVAR_IMAGE" slivar compound-hets --help 2>&1 | head -5 || true)
+OUT=$(docker run --rm "$SLIVAR_IMAGE" slivar compound-hets --help 2>&1 || true)
 echo "$OUT"
 check "slivar compound-hets help" "$(grep -m1 -i 'allow-non-trios' <<< "$OUT" || echo '<none>')" "mentions --allow-non-trios" "$(grep -q 'allow-non-trios' <<< "$OUT" && echo 1 || echo 0)"
 
