@@ -49,3 +49,46 @@ jobs:
 
       - name: Each helper binary exists in the image that calls it
         run: scripts/ci/check-container-helpers.sh
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Every tests/test_*.py runs with python3 and every tests/test_*.sh with
+      # bash, found by glob, so a new test file needs no workflow edit. The
+      # two planted failures prove the loop reports a failing test.
+      - name: Run every tests/test_*.py and tests/test_*.sh
+        run: |
+          run_tests() {
+            local dir=$1 t rc n=0 fail=0
+            shopt -s nullglob
+            for t in "$dir"/test_*.py "$dir"/test_*.sh; do
+              n=$((n + 1))
+              rc=0
+              echo "::group::${t}"
+              case "$t" in
+                *.py) python3 "$t" || rc=$? ;;
+                *.sh) bash "$t" || rc=$? ;;
+              esac
+              echo "::endgroup::"
+              if [ "$rc" -eq 0 ]; then echo "PASS ${t}"; else echo "FAIL ${t} (exit ${rc})"; fail=1; fi
+            done
+            if [ "$n" -eq 0 ]; then echo "ERROR: no test files in ${dir}"; return 1; fi
+            return "$fail"
+          }
+
+          ctl=$(mktemp -d)
+          mkdir "${ctl}/py" "${ctl}/sh"
+          echo 'assert False, "planted failure"' > "${ctl}/py/test_planted.py"
+          echo 'exit 1' > "${ctl}/sh/test_planted.sh"
+          for d in "${ctl}/py" "${ctl}/sh"; do
+            if run_tests "$d"; then
+              echo "ERROR: a planted failing test in ${d} was reported as passing"
+              exit 1
+            fi
+          done
+          echo "Control: both planted failures were reported."
+
+          run_tests tests
