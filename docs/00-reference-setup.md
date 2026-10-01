@@ -13,13 +13,13 @@ export GENOME_DIR=/path/to/your/data
 mkdir -p ${GENOME_DIR}/reference
 cd ${GENOME_DIR}/reference
 
-# Download GRCh38 reference (3.1 GB)
-wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta
-wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai
+# Download GRCh38 reference (3.2 GB), from the Broad's public references bucket
+wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
+wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai
 
-# Verify the download
+# Verify the download (the MD5 the bucket publishes for this object)
 md5sum Homo_sapiens_assembly38.fasta
-# Expected: 64b32de2fc934679c16e83a2bc072064
+# Expected: 7ff134953dcca8c8997453bbb80b6b5e
 ```
 
 ### Why GRCh38?
@@ -192,7 +192,7 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
 
-> **Total download:** ~104 GB (CADD is 83 GB alone). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
+> **Total download:** ~175 GB (SpliceAI is ~91 GB and CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
 
 ### CADD v1.7 Pre-scored (SNVs + Indels) — ~83 GB
 
@@ -215,20 +215,31 @@ wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/gnomad.genom
 
 > **Note:** CADD TSVs use chromosome names without `chr` prefix (1, 2, 3...). vcfanno handles this via column mapping in the TOML config — no manual renaming needed.
 
-### SpliceAI Pre-scored — ~20 GB
+### SpliceAI Pre-scored — ~91 GB
 
 Deep learning splice-site variant prediction. Catches pathogenic intronic variants that VEP's rule-based splice prediction misses.
+
+The pipeline uses the **masked** score files. SpliceAI's authors recommend the masked scores for variant interpretation and the raw scores for alternative-splicing research. In the masked files, a gain at an annotated splice site and a loss at a site that is not an annotated splice site are set to 0, because neither changes how a variant is interpreted.
+
+> **License:** The precomputed SpliceAI scores are free for academic and not-for-profit use only; any other use requires a commercial license from Illumina. They are not Apache 2.0. The pipeline does not redistribute them.
 
 ```bash
 cd ${GENOME_DIR}/annotations
 
-# SNV splice scores (~15.5 GB)
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz.tbi
+# SNV splice scores (~27 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.snv.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.snv.hg38.vcf.gz.tbi
 
-# Indel splice scores (~4.5 GB)
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz.tbi
+# Indel splice scores (~64 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz.tbi
+
+# Step 30 and validate-setup.sh look for the files under their older "raw" names.
+# These links point those names at the masked files you just downloaded.
+for t in snv indel; do
+  ln -sf spliceai_scores.masked.${t}.hg38.vcf.gz     spliceai_scores.raw.${t}.hg38.vcf.gz
+  ln -sf spliceai_scores.masked.${t}.hg38.vcf.gz.tbi spliceai_scores.raw.${t}.hg38.vcf.gz.tbi
+done
 ```
 
 > **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
@@ -409,14 +420,16 @@ mkdir -p ${GENOME_DIR}/giab
 cd ${GENOME_DIR}/giab
 
 # HG002 truth set (recommended, GRCh38 v4.2.1)
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
+# Pinned to the NISTv4.2.1 directory: GIAB's latest/ directory moves to each new
+# release (it now holds v5.0q), so latest/ URLs for v4.2.1 files return 404.
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
 
 # Alternative: HG001/NA12878 (used in quick-test.md)
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
 ```
 
 **Total Docker image size:** ~10-15 GB (compressed, after layer deduplication). Alternative tools add ~3-5 GB.
@@ -432,10 +445,10 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 112 cache |
 | T1K HLA index | 50 MB | 450 MB | Optional |
 | Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
-| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~104 GB | ~104 GB | Optional (step 30-31) |
+| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~175 GB | ~175 GB | Optional (step 30-31) |
 | Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
 | **Total (core)** | **~78 GB** | **~96 GB** | Without annotation databases |
-| **Total (with annotation enrichment)** | **~182 GB** | **~200 GB** | With all v0.4.0 databases |
+| **Total (with annotation enrichment)** | **~253 GB** | **~271 GB** | With all v0.4.0 databases |
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 
@@ -456,8 +469,8 @@ echo "Annotation databases (optional, for steps 30-31):"
 for DB_PAIR in \
   "whole_genome_SNVs.tsv.gz:CADD SNVs" \
   "gnomad.genomes.r4.0.indel.tsv.gz:CADD indels" \
-  "spliceai_scores.raw.snv.hg38.vcf.gz:SpliceAI SNVs" \
-  "spliceai_scores.raw.indel.hg38.vcf.gz:SpliceAI indels" \
+  "spliceai_scores.masked.snv.hg38.vcf.gz:SpliceAI SNVs" \
+  "spliceai_scores.masked.indel.hg38.vcf.gz:SpliceAI indels" \
   "revel_grch38.tsv.gz:REVEL" \
   "AlphaMissense_hg38.tsv.gz:AlphaMissense" \
   "gnomad_v4.1_constraint.tsv:gnomAD constraint"; do
