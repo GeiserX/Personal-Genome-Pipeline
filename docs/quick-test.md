@@ -100,7 +100,7 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 560 MB.
 
-The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The URL is plain `http://` on purpose: the pinned samtools image has no CA certificates, so an `https://` URL fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
+The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. This block uses the biocontainers samtools image because it ships CA certificates and can fetch over `https://`; the `staphb/samtools` image used elsewhere has none and fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
 
 ```bash
 # Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA and .fai
@@ -110,19 +110,20 @@ docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   -w /tmp \
-  staphb/samtools:1.20 \
+  quay.io/biocontainers/samtools:1.20--h50ea8bc_0 \
   bash -c "set -euo pipefail
     samtools view -b -@ 4 \
       -T /genome/reference/Homo_sapiens_assembly38.fasta \
       -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
-      http://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
+      https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
 ```
 
 **Alternative: extract chr22 from a full BAM you already have.** Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
 cd ${GENOME_DIR}/${SAMPLE}/aligned
-if [ ! -L ${SAMPLE}_sorted.bam ] && [ ! -f ${SAMPLE}_full.bam ]; then
+# Skipped on a rerun, when _sorted.bam already points at the chr22 BAM
+if [ ! -e ${SAMPLE}_full.bam ] && [ "$(readlink ${SAMPLE}_sorted.bam)" != "${SAMPLE}_chr22.bam" ]; then
   mv ${SAMPLE}_sorted.bam     ${SAMPLE}_full.bam
   mv ${SAMPLE}_sorted.bam.bai ${SAMPLE}_full.bam.bai
 fi

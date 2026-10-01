@@ -134,6 +134,9 @@ If your WGS was done through a clinical lab or hospital, they likely used Illumi
 Some labs deliver FASTQ files compressed in Illumina's proprietary **ORA format** (~5x smaller than gzipped FASTQ). You need the `orad` decompressor and the ORA reference directory your lab provides. Step 1 decompresses one ORA file per call, so run it once for R1 and once for R2, then give the outputs the names step 1b and step 2 read:
 
 ```bash
+export GENOME_DIR=/path/to/your/data
+export SAMPLE=your_name
+
 # Arguments: <sample> <ora_reference_dir> <ora_file>
 ./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R1_001.fastq.ora
 ./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R2_001.fastq.ora

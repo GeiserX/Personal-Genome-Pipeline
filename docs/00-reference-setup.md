@@ -480,8 +480,8 @@ echo "Annotation databases (optional, for steps 30-31):"
 for DB_PAIR in \
   "whole_genome_SNVs.tsv.gz:CADD SNVs" \
   "gnomad.genomes.r4.0.indel.tsv.gz:CADD indels" \
-  "spliceai_scores.masked.snv.hg38.vcf.gz:SpliceAI SNVs" \
-  "spliceai_scores.masked.indel.hg38.vcf.gz:SpliceAI indels" \
+  "spliceai_scores.raw.snv.hg38.vcf.gz:SpliceAI SNVs" \
+  "spliceai_scores.raw.indel.hg38.vcf.gz:SpliceAI indels" \
   "revel_grch38.tsv.gz:REVEL" \
   "AlphaMissense_hg38.tsv.gz:AlphaMissense" \
   "gnomad_v4.1_constraint.tsv:gnomAD constraint"; do

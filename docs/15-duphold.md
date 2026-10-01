@@ -20,8 +20,8 @@ duphold writes these as **FORMAT** fields (one value per sample), not INFO field
 | Tag | Meaning | Interpretation |
 |---|---|---|
 | DHFC | Fold-change of depth inside the SV vs the rest of the chromosome it is on | General quality indicator |
-| DHBFC | Fold-change of depth inside the SV vs genome bins with similar GC content | > 1.3 for duplications = true duplication (depth rises) |
-| DHFFC | Fold-change of depth inside the SV vs its flanking regions | < 0.7 for deletions = true deletion (depth drops as expected) |
+| DHBFC | Fold-change of depth inside the SV vs genome bins with similar GC content | > 1.3 for duplications supports a real duplication (depth rises) |
+| DHFFC | Fold-change of depth inside the SV vs its flanking regions | < 0.7 for deletions supports a real deletion (depth drops as expected) |
 
 ## Command
 ```bash

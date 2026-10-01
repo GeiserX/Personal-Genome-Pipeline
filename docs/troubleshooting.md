@@ -437,9 +437,8 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 **Why it's not worth the hassle:**
 1. The GPU image (`google/deepvariant:1.10.0-gpu`) requires the NVIDIA container runtime and a driver that matches its CUDA version
-2. The `make_examples` step (which takes most of the time) is **I/O-bound, not compute-bound** — GPU barely helps
-3. Only `call_variants` benefits from GPU, and it's already the fastest step
-4. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
+2. Only `call_variants` uses the GPU. In the [DeepVariant 1.10 runtime metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md) for a 30x WGS on 96 CPU cores, `make_examples` takes 46 min, `call_variants` 16 min and `postprocess_variants` 7 min, so a GPU speeds up about a quarter of the run
+3. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
 
 **Recommendation:** Use the CPU image (`google/deepvariant:1.10.0`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
 

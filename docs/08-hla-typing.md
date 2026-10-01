@@ -84,6 +84,6 @@ docker run --rm \
 ## Important Notes
 - HLA typing from WGS is **approximate** — clinical HLA typing for transplant or critical drug decisions uses dedicated high-resolution panels (sequence-based typing)
 - WGS-based HLA is sufficient for pharmacogenomic screening (presence/absence of risk alleles)
-- T1K requires the pre-built index from step 00 — do not skip the `t1k-build.pl` step
+- `scripts/08-hla-typing.sh` runs `t1k-build.pl` itself when the index or the coordinate file is missing (about 35 minutes on the first run). It needs the reference FASTA from step 00, not just its `.fai`
 - Running both T1K and HLA-LA and comparing results increases confidence in the calls
 - HLA region is the most polymorphic in the human genome — ambiguous calls are expected for rare alleles
