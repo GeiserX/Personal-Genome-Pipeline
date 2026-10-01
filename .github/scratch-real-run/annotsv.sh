@@ -6,8 +6,10 @@ set -euo pipefail
 D=${1:?}; A=${2:?}
 mkdir -p "$A"
 echo "== AnnotSV human annotations 3.5 (5.3 GB download, GRCh37 files skipped)"
-curl -fsSL https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz \
-  | tar -xz -C "$A" --exclude='*GRCh37*'
+# 16 connections: one connection to this server runs at about 1.5 MB/s
+aria2c -q -x 16 -s 16 -k 20M -d "$A" -o annotations.tar.gz https://cstb-icube.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz
+tar -xzf "$A/annotations.tar.gz" -C "$A" --exclude='*GRCh37*'
+rm -f "$A/annotations.tar.gz"
 du -sh "$A"
 find "$A" -maxdepth 3 -type d | sort | head -40
 df -h /mnt /
