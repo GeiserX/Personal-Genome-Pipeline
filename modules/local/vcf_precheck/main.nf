@@ -10,7 +10,10 @@
     Status emitted per sample:
       pass        — at least one PASS record; the VCF is used as given
       no_pass     — no PASS record; main.nf stops the run naming the sample
-      unfiltered  — no PASS record and --allow_unfiltered is set: a copy with
+                    (also with --allow_unfiltered when no record has FILTER '.',
+                    since the relaxed copy would still have no PASS record)
+      unfiltered  — no PASS record, at least one FILTER '.' record, and
+                    --allow_unfiltered is set: a copy with
                     FILTER '.' rewritten to PASS is emitted, which is what
                     `bcftools view -f .,PASS` would select (records with any
                     other FILTER value stay excluded)
@@ -50,7 +53,7 @@ process VCF_PRECHECK {
 
     if [ "\${N_PASS}" -gt 0 ]; then
         FILTER_STATUS=pass
-    elif [ "${allow_unfiltered}" = "true" ]; then
+    elif [ "${allow_unfiltered}" = "true" ] && [ "\${N_DOT}" -gt 0 ]; then
         FILTER_STATUS=unfiltered
         echo "WARNING: ${meta.id} has no PASS record; --allow_unfiltered set, treating FILTER '.' as PASS" >&2
         bcftools view ${vcf} \\

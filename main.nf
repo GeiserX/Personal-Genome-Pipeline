@@ -146,7 +146,7 @@ workflow {
         if (row.sex && !(row.sex.toLowerCase() in ['male', 'female'])) {
             error "Sample '${row.sample}': sex '${row.sex}' is not recognised. Use 'male' or 'female'."
         }
-        if (tools_list.contains('expansion_hunter') && !row.sex) {
+        if (tools_list.contains('expansion_hunter') && row.bam && !row.sex) {
             error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
                   "Add a 'sex' column (male or female) to the samplesheet, or remove 'expansion_hunter' from --tools."
         }
@@ -197,9 +197,13 @@ workflow {
                 },
             ch_vcf_checked.no_pass
                 .map { id, meta, vcf, idx, status, counts ->
+                    def remedy = params.allow_unfiltered
+                        ? "Filter the VCF with your caller's recommended filters; --allow_unfiltered cannot " +
+                          "help here, because no record has FILTER '.'."
+                        : "Filter the VCF with your caller's recommended filters, or rerun with " +
+                          "--allow_unfiltered to treat FILTER '.' as PASS."
                     error "Sample '${id}': no record in ${vcf.name} has FILTER=PASS (${counts}). " +
-                          "Every PASS-only step would report zero hits. Filter the VCF with your caller's " +
-                          "recommended filters, or rerun with --allow_unfiltered to treat FILTER '.' as PASS."
+                          "Every PASS-only step would report zero hits. ${remedy}"
                 }
         )
 
@@ -378,6 +382,7 @@ workflow {
     ch_multiqc_files = Channel.empty()
         .mix(
             BAM_ANALYSIS.out.coverage.map { meta, f -> f },
+            VCF_PRECHECK.out.versions,
             PGX.out.versions,
             ANNOTATION.out.versions,
             CLINICAL.out.versions,
