@@ -129,7 +129,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | PharmCAT_diplotype | Diplotype from step 7 |
 | pypgx_diplotype | Diplotype from this step |
 | Match | Yes, No, pypgx only, or PharmCAT only |
-| Called_by | `both` when both tools called the gene (Match is Yes or No), otherwise which tool did |
+| Called_by | `both` when both tools called the gene (Match is Yes or No), otherwise which tool did. PharmCAT's `Unknown/Unknown` and pypgx's `FAILED` count as no call; a gene neither tool called is left out |
 
 ## Runtime
 
@@ -170,6 +170,7 @@ The two tools are complementary. PharmCAT provides drug recommendations for the 
 - SV detection accuracy depends on sequencing depth. 30X WGS is adequate; lower depths produce less reliable copy number calls.
 - pypgx does not produce drug recommendations directly. Consult [CPIC guidelines](https://cpicpgx.org/guidelines/) to translate diplotypes into clinical actions. Note: step 27 (CPIC lookup) currently parses PharmCAT output only and cannot read pypgx results.
 - **The image and the bundle must be the same release.** The pinned pair is image `pypgx:0.26.0--pyh7e72e81_0` with the `0.26.0` branch of pypgx-bundle; with that pair all 23 genes, including the four BAM-based ones, were called on a real 30x genome (see [lessons learned](lessons-learned.md)). The 0.27.0 image against the 0.26.0 bundle failed every gene. Bump both together and rerun a known sample before trusting the new calls.
+- **GSTT1 needs an ALT contig.** In GRCh38, GSTT1 lies on `chr22_KI270879v1_alt`. A BAM aligned to a reference without ALT contigs has no such contig; the step then prints a notice, leaves GSTT1 out of depth preparation (otherwise it fails for all four SV genes) and reports GSTT1 as `FAILED`.
 - **A copy-number call is only as good as the depth it reads.** On a reference with ALT contigs and an aligner that is not run ALT-aware, reads at CYP2D6 split between the primary and ALT copies, depth on the primary drops, and pypgx can report a deletion that is not there. Compare CYP2D6 depth with its flanks before trusting a `WholeDel` call, and report CYP2D6 only when two callers agree.
 - Individual gene failures do not stop the pipeline. However, if **all** genes fail, the script exits with status 1 before generating the summary TSV — this signals a systemic problem (e.g., wrong BAM path, corrupted index, missing pypgx-bundle). Rerun with verbose output to identify the root cause. For partial failures, check the summary TSV for "FAILED" entries.
 

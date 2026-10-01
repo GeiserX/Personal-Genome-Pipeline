@@ -88,10 +88,19 @@ docker run --rm --user root \
     FAILED=""
     SUCCEEDED=0
 
-    # Phase 1: Prepare depth of coverage for all SV genes (one-time, from BAM)
-    echo "--- Preparing depth of coverage for SV genes ---"
+    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a reference
+    # without ALT contigs has no such contig, and depth preparation then fails for
+    # every SV gene. Leave GSTT1 out in that case and say so.
+    if ! python3 -c "import pysam, sys; sys.exit(0 if \"chr22_KI270879v1_alt\" in pysam.AlignmentFile(sys.argv[1]).references else 1)" "$BAM"; then
+      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
+      BAM_GENES=$(echo "$BAM_GENES" | tr " " "\n" | grep -vx GSTT1 | tr "\n" " ")
+      FAILED="${FAILED} GSTT1"
+    fi
+
+    # Phase 1: Prepare depth of coverage for the SV genes (one-time, from BAM)
+    echo "--- Preparing depth of coverage for SV genes: ${BAM_GENES} ---"
     if ! pypgx prepare-depth-of-coverage \
-      "$DOC" "$BAM" --assembly GRCh38 2>&1; then
+      "$DOC" "$BAM" --assembly GRCh38 --genes $BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed — cannot call SV genes"
       # Fall through to VCF-only genes; mark all BAM genes as failed
       for GENE in $BAM_GENES; do FAILED="${FAILED} ${GENE}"; done
@@ -305,12 +314,16 @@ with open(comparison_path, 'w', newline='') as f:
     for gene in all_genes:
         pc = pharmcat_data.get(gene, 'Not called')
         pg = pypgx_data.get(gene, 'Not called')
-        if pc == 'Not called' and pg == 'Not called':
+        # PharmCAT writes Unknown/Unknown when it could not call a gene; pypgx
+        # writes FAILED. Neither is a call, so neither can conflict.
+        pc_called = pc != 'Not called' and any(x != 'Unknown' for x in pc.split('/'))
+        pg_called = pg not in ('Not called', 'FAILED')
+        if not pc_called and not pg_called:
             continue
-        if pc == 'Not called':
+        if not pc_called:
             match = called_by = 'pypgx only'
             mismatches += 1
-        elif pg in ('Not called', 'FAILED'):
+        elif not pg_called:
             match = called_by = 'PharmCAT only'
             mismatches += 1
         elif pc == pg:
