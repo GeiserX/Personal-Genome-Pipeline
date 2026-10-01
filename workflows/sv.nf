@@ -7,7 +7,7 @@
     and merges consensus calls from all callers.
 
     DAG:
-      BAM ──┬── MANTA ──── DUPHOLD ──── ANNOTSV
+      BAM ──┬── MANTA ──── DUPHOLD ──── DUPHOLD_FILTER ──── ANNOTSV
             ├── DELLY
             └── CNVPYTOR
                          └── SURVIVOR_MERGE (collects all SV VCFs)
@@ -17,7 +17,7 @@
 include { MANTA          } from '../modules/local/manta/main'
 include { DELLY; DELLY_BCF2VCF } from '../modules/local/delly/main'
 include { CNVPYTOR; CNVPYTOR_VCF } from '../modules/local/cnvpytor/main'
-include { DUPHOLD        } from '../modules/local/duphold/main'
+include { DUPHOLD; DUPHOLD_FILTER } from '../modules/local/duphold/main'
 include { ANNOTSV        } from '../modules/local/annotsv/main'
 include { SURVIVOR_MERGE } from '../modules/local/survivor_merge/main'
 
@@ -89,8 +89,9 @@ workflow SV {
             }
 
         DUPHOLD(ch_duphold_input, ch_reference, ch_reference_fai)
-        ch_duphold_vcf = DUPHOLD.out.annotated_vcf
-        ch_versions    = ch_versions.mix(DUPHOLD.out.versions)
+        DUPHOLD_FILTER(DUPHOLD.out.annotated_vcf)
+        ch_duphold_vcf = DUPHOLD_FILTER.out.filtered_vcf
+        ch_versions    = ch_versions.mix(DUPHOLD.out.versions, DUPHOLD_FILTER.out.versions)
     }
 
     // ── AnnotSV classification (DUPHOLD -> ANNOTSV) ─────────────────────
