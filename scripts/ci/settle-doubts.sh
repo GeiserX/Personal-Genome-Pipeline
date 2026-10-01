@@ -127,19 +127,28 @@ row 4 "What does TIDDIT do when only the BWA-MEM2 index exists: crash, or run wi
   "index files: ${IDX_FILES}; script says: ${ASM:-nothing}; exit ${RC}: ${ERR:-no Python error}. Control without the BWA-MEM2 index (--skip_assembly): exit ${RCC}, ${SVC:-0} SV records"
 
 # --- 5. bcftools convert --tsv2vcf on a five-column AncestryDNA-style file -------
+# The input comes from 20 truth SNVs, so every output genotype has a known
+# right answer: the truth GT of the same position (phase and order dropped).
 mkdir -p "${G}/chip"
 in_g "$BCFTOOLS_IMAGE" bcftools query -f '%ID\t%CHROM\t%POS\t%REF\t%ALT{0}\t[%GT]\n' -i 'TYPE="snp"' \
-  reference/HG002_truth_chr20.vcf.gz 2>/dev/null | awk 'NR <= 20' \
-  | awk 'BEGIN {OFS = "\t"; print "#AncestryDNA raw data download (synthetic, from the GIAB truth)"; print "rsid\tchromosome\tposition\tallele1\tallele2"}
-         {a1 = ($6 ~ /^0/) ? $4 : $5; a2 = ($6 ~ /1$/) ? $5 : $4; print "rs" NR, $2, $3, a1, a2}' \
-  > "${G}/chip/ancestry_5col.txt"
+  reference/HG002_truth_chr20.vcf.gz 2>/dev/null | awk 'NR <= 20' > "${G}/chip/truth20.tsv" || true
+awk 'BEGIN {OFS = "\t"; print "#AncestryDNA raw data download (synthetic, from the GIAB truth)"; print "rsid\tchromosome\tposition\tallele1\tallele2"}
+     {a1 = ($6 ~ /^0/) ? $4 : $5; a2 = ($6 ~ /1$/) ? $5 : $4; print "rs" NR, $2, $3, a1, a2}' \
+  "${G}/chip/truth20.tsv" > "${G}/chip/ancestry_5col.txt"
 in_g "$BCFTOOLS_IMAGE" bcftools convert --tsv2vcf chip/ancestry_5col.txt -f reference/Homo_sapiens_assembly38.fasta \
   -s "$SAMPLE" -c ID,CHROM,POS,AA -Oz -o chip/out.vcf.gz > "${LOGS}/q5.log" 2>&1; RC=$?
-GTS=$(in_g "$BCFTOOLS_IMAGE" bcftools query -f '[%GT] ' chip/out.vcf.gz 2>/dev/null | cut -c1-120)
-NREC=$(in_g "$BCFTOOLS_IMAGE" bcftools view -H chip/out.vcf.gz 2>/dev/null | wc -l | tr -d ' ')
+in_g "$BCFTOOLS_IMAGE" bcftools query -f '%POS\t%REF>%ALT\t[%GT]\n' chip/out.vcf.gz \
+  > "${G}/chip/out_gt.tsv" 2>/dev/null || true
+NREC=$(wc -l < "${G}/chip/out_gt.tsv" | tr -d ' ')
+# One entry per output record: REF>ALT:GT, then the truth REF>ALT:GT in brackets.
+GTS=$(awk -F'\t' '
+  function norm(g,  a, n) { gsub(/\|/, "/", g); n = split(g, a, "/"); return (n == 2 && a[1] > a[2]) ? a[2] "/" a[1] : g }
+  FILENAME ~ /truth20/ { want[$3] = norm($6); truth[$3] = $4 ">" $5; next }
+  { n++; got = norm($3); ok += (got == want[$1]); s = s " " $2 ":" got " [" truth[$1] ":" want[$1] "]" }
+  END { printf "%d of %d match the truth;%s", ok, n, s }' "${G}/chip/truth20.tsv" "${G}/chip/out_gt.tsv")
 row 5 "What does bcftools convert --tsv2vcf -c ID,CHROM,POS,AA do with a five-column AncestryDNA-style file?" \
   "bcftools convert --tsv2vcf ancestry_5col.txt -f ref -s ${SAMPLE} -c ID,CHROM,POS,AA" \
-  "exit ${RC}; ${NREC:-0} of 20 rows became records; genotypes: ${GTS:-none}; messages: $(last_lines "${LOGS}/q5.log" 3 | cut -c1-300)"
+  "exit ${RC}; ${NREC:-0} of 20 rows became records; genotypes (output [truth]): ${GTS:-none}; messages: $(last_lines "${LOGS}/q5.log" 3 | cut -c1-300)"
 
 # --- 6. AnnotSV without its annotation data ----------------------------------------
 mkdir -p "${G}/${SAMPLE}/sv"
