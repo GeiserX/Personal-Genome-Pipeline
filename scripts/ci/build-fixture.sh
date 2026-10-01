@@ -129,7 +129,9 @@ sam dict -o /w/fixture_ref.dict /w/fixture_ref.fa.gz
 
 # --- Reads: stream the slices, sample down to TARGET_DEPTH -------------------
 echo "[2/8] Streaming ${#REGIONS[@]} regions from the GIAB HG002 60x BAM"
-sam_https view -@ "$THREADS" -b -o /w/.work/slice_full.bam "$BAM_URL" "${REGIONS[@]}"
+# -M: one pass over the regions in file order, so the output is sorted and a
+# read that overlaps two regions is written once.
+sam_https view -@ "$THREADS" -M -b -o /w/.work/slice_full.bam "$BAM_URL" "${REGIONS[@]}"
 sam index /w/.work/slice_full.bam
 FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
