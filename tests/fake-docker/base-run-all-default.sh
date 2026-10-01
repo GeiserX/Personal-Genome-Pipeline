@@ -83,4 +83,4 @@ export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/tools-hook"
 run_expect 0 run-all "${SCRIPTS}/run-all.sh" sample1 male
 output_lacks run-all 'Setup validation failed'
 output_lacks run-all 'unbound variable'
-output_lacks run-all ' skipped, 0 failed$'
+output_has run-all ' skipped, 0 failed$'
