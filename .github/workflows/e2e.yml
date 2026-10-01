@@ -1,0 +1,253 @@
+name: E2E
+
+# Runs the real tools on a small slice of the public GIAB HG002 genome, so a
+# step that is broken in real use cannot pass CI behind a stub or a --version
+# call. Three jobs, see docs/testing.md:
+#
+#   build-fixture  builds the data set and publishes it as release assets
+#                  under the tag in tests/fixtures/VERSION. Runs on a push that
+#                  changes the build script or VERSION (a dispatch-only job
+#                  could not run before this file is on main) and on dispatch.
+#   e2e            runs every case in tests/e2e/ on that data set. Runs on
+#                  pull requests that touch the pipeline, monthly, on dispatch.
+#   settle-doubts  answers questions a code review could not answer without
+#                  running the tools. Not a gate: it prints a table.
+#
+# Public repo: GitHub-hosted runners are free here, and the e2e job runs on
+# pull requests, so nothing in this file may use a self-hosted runner.
+on:
+  push:
+    paths:
+      - 'scripts/ci/build-fixture.sh'
+      - 'scripts/ci/settle-doubts.sh'
+      - 'tests/fixtures/VERSION'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'modules/**'
+      - 'workflows/**'
+      - 'bin/**'
+      - 'conf/**'
+      - 'tests/e2e/**'
+      - 'tests/fixtures/VERSION'
+      - 'main.nf'
+      - 'nextflow.config'
+      - 'versions.env'
+      - '.github/workflows/e2e.yml'
+  schedule:
+    # Monthly: catches upstream images, databases or URLs that changed under us.
+    - cron: '0 5 2 * *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which job to run'
+        type: choice
+        options: [e2e, build-fixture, settle-doubts]
+        default: e2e
+      rebuild:
+        description: 'build-fixture: replace the assets of an existing release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # Never cancel a fixture upload half way; pull request runs may be replaced.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-fixture:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'build-fixture')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A release that exists and was built by this exact script is left alone.
+      # One built by a different script means the fixture changed without a new
+      # version, which would change the data under every open pull request.
+      - name: Decide whether to build
+        id: need
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REBUILD: ${{ inputs.rebuild }}
+        run: |
+          tag=$(tr -d '[:space:]' < tests/fixtures/VERSION)
+          want=$(sha256sum scripts/ci/build-fixture.sh | awk '{print $1}')
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release ${tag} does not exist yet: building it."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          have=""
+          if gh release download "$tag" -p MANIFEST.txt -D "${RUNNER_TEMP}/manifest" 2>/dev/null; then
+            have=$(awk '/^build_script_sha256:/ {print $2}' "${RUNNER_TEMP}/manifest/MANIFEST.txt")
+          fi
+          if [ "$REBUILD" = "true" ] || [ -z "$have" ]; then
+            echo "Rebuilding ${tag} (requested, or its MANIFEST.txt is missing)."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          elif [ "$have" = "$want" ]; then
+            echo "Release ${tag} was built by this build script already: nothing to do."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::scripts/ci/build-fixture.sh changed but tests/fixtures/VERSION is still ${tag}. Bump VERSION so the new data gets a new release."
+            exit 1
+          fi
+
+      - name: Install bgzip and tabix
+        if: steps.need.outputs.build == 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q tabix
+
+      - name: Build the fixture
+        if: steps.need.outputs.build == 'true'
+        run: scripts/ci/build-fixture.sh "${RUNNER_TEMP}/fixture"
+
+      - name: Publish the release assets
+        if: steps.need.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.need.outputs.tag }}
+        run: |
+          cd "${RUNNER_TEMP}/fixture"
+          files=(*)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber "${files[@]}"
+          else
+            # A prerelease that is never "latest": the project's real releases
+            # stay the ones people see. The tag does not match release.yml's v*.
+            gh release create "$TAG" "${files[@]}" \
+              --title "Test fixture ${TAG}" \
+              --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome; built by scripts/ci/build-fixture.sh, see MANIFEST.txt and docs/testing.md." \
+              --target "$GITHUB_SHA" --prerelease --latest=false
+          fi
+          {
+            echo "### Fixture ${TAG}"
+            echo '```'
+            cat MANIFEST.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "25.10.4"
+
+      # Images are cached as one compressed tar, keyed on the pinned versions,
+      # so a run does not pull ~10 GB from Docker Hub and quay every time.
+      - name: Restore cached images
+        id: images
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images.tar.zst
+          key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
+
+      - name: Load cached images
+        if: steps.images.outputs.cache-hit == 'true'
+        run: |
+          zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
+          rm -f "${RUNNER_TEMP}/images.tar.zst"
+
+      - name: Run the e2e cases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/e2e-run.sh
+
+      - name: Upload case logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-work/logs/
+          if-no-files-found: ignore
+
+      - name: Save images for the next run
+        if: always() && steps.images.outputs.cache-hit != 'true'
+        run: |
+          mapfile -t refs < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>')
+          [ "${#refs[@]}" -gt 0 ] || exit 0
+          docker save "${refs[@]}" | zstd -T0 -3 -q -o "${RUNNER_TEMP}/images.tar.zst"
+          ls -lh "${RUNNER_TEMP}/images.tar.zst"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.images.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/images.tar.zst
+          key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
+
+  settle-doubts:
+    needs: build-fixture
+    if: >-
+      always() &&
+      (needs.build-fixture.result == 'success' || needs.build-fixture.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.job == 'settle-doubts'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # On push this job only runs when its own script changed in the push.
+      - name: Decide whether to run
+        id: need
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "push" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          base="$BEFORE"
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base=$(git merge-base origin/main HEAD)
+          fi
+          if git diff --name-only "$base" HEAD | grep -qx 'scripts/ci/settle-doubts.sh'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scripts/ci/settle-doubts.sh did not change in this push: nothing to do."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space
+        if: steps.need.outputs.run == 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
+
+      - name: Settle the doubts
+        if: steps.need.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/settle-doubts.sh "${RUNNER_TEMP}/settle"
