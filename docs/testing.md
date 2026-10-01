@@ -57,7 +57,7 @@ To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
 2. Bump `tests/fixtures/VERSION` (for example from `fixture-v3` to `fixture-v4`).
-3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (about 30 minutes, most of it VEP querying Ensembl's database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it.
+3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (30 to 70 minutes, most of it VEP querying Ensembl's public database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it.
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
 

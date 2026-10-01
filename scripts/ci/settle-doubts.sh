@@ -119,7 +119,7 @@ ERR=$(grep -E '^[A-Za-z]+Error|Exception' "${LOGS}/q4.log" | tail -n 1)
 # Control: the same run with the BWA-MEM2 index moved away (--skip_assembly).
 mkdir -p "${G}/bwamem2-aside"
 mv "${G}/reference/Homo_sapiens_assembly38.fasta.bwt.2bit.64" "${G}/bwamem2-aside/"
-rm -rf "${G}/${SAMPLE}/sv_tiddit"
+in_g "$BCFTOOLS_IMAGE" rm -rf "${SAMPLE}/sv_tiddit"   # written by root inside the container
 "${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4_control.log" 2>&1; RCC=$?
 SVC=$(in_g "$BCFTOOLS_IMAGE" bcftools view -H "${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz" 2>/dev/null | wc -l | tr -d ' ')
 row 4 "What does TIDDIT do when only the BWA-MEM2 index exists: crash, or run without assembly?" \
@@ -181,7 +181,7 @@ WHEN="never started"
 if [ -n "$CID" ]; then
   for t in $(seq 1 600); do
     if docker logs "$CID" 2>&1 | grep -q 'mapped [0-9]* sequences'; then WHEN="after the first mapped batch (${t} s)"; break; fi
-    docker ps -q --no-trunc | grep -q "^${CID}" || { WHEN="it had already exited"; break; }
+    [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null)" = true ] || { WHEN="it had already exited"; break; }
     sleep 1
   done
   docker kill "$CID" >/dev/null 2>&1 && KILLED=yes
