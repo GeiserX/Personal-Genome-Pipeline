@@ -267,7 +267,7 @@ jobs:
           G="${RUNNER_TEMP}/g"; echo "G=$G" >> "$GITHUB_ENV"
           mkdir -p "$G/HG002/aligned"
           curl -sSfL -o "$G/HG002/aligned/HG002_sorted.bam.bai" "$HG002_BAM_URL.bai"
-          docker run --rm -v "$G:/g" -w /tmp "$SAM" sh -c "samtools view -H -b -o /g/HG002/aligned/HG002_sorted.bam '$HG002_BAM_URL'"
+          docker run --rm -v "$G:/g" -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -w /tmp "$SAM" sh -c "samtools view -H -b -o /g/HG002/aligned/HG002_sorted.bam '$HG002_BAM_URL'"
           touch "$G/HG002/aligned/HG002_sorted.bam.bai"
           ls -la "$G/HG002/aligned"
       - name: Step 16, declared male (HG002 is male)
@@ -293,7 +293,7 @@ jobs:
           curl -sSfL -o "$G/HG002/vcf/HG002.vcf.gz" "$HG002_VCF_URL"
           curl -sSfL -o "$G/HG002/vcf/HG002.vcf.gz.tbi" "$HG002_VCF_URL.tbi"
           git clone --branch 0.26.0 --depth 1 https://github.com/sbslee/pypgx-bundle.git "$G/reference/pypgx-bundle"
-          docker run --rm -v "$G:/g" -w /tmp "$SAM" sh -c "
+          docker run --rm -v "$G:/g" -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -w /tmp "$SAM" sh -c "
             set -e
             samtools view -H '$HG002_BAM_URL' | grep -c '^@SQ' || true
             REG='chr22:42080000-42180000 chr19:40800000-40920000 chr1:109640000-109730000 chr12:47820000-47960000'
