@@ -194,7 +194,7 @@ else
     fail "GRCh38 FASTA not found at: ${FASTA}"
     echo "       Download it:"
     echo "       mkdir -p ${GENOME_DIR}/reference"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta"
+    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta"
   fi
 
   # --- FASTA index (.fai) ---
@@ -204,7 +204,7 @@ else
   else
     fail "FASTA index not found at: ${FAI}"
     echo "       Download it:"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai"
+    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai"
   fi
 
   # --- ClinVar chr-prefixed VCF ---

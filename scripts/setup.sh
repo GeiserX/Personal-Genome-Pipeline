@@ -97,14 +97,14 @@ else
   echo "  Size: ~3.1 GB (FASTA) + ~2 MB (index)"
 
   if [ ! -f "$FASTA" ]; then
-    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta" "$FASTA" || {
-      echo "  Try manually: wget -c -O ${FASTA} 'https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta'"
+    _download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta" "$FASTA" || {
+      echo "  Try manually: wget -c -O ${FASTA} 'https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta'"
       exit 1
     }
   fi
 
   if [ ! -f "$FAI" ]; then
-    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
+    _download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
       echo "  Generating index with samtools..."
       docker run --rm --user root \
         -v "${GENOME_DIR}:/genome" \
