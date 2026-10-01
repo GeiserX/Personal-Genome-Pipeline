@@ -19,6 +19,9 @@ name: E2E
 # pull requests, so nothing in this file may use a self-hosted runner.
 on:
   push:
+    # Without a branches filter a tag push would start this workflow too:
+    # GitHub skips path filters for tags.
+    branches: ['**']
     paths:
       - 'scripts/ci/build-fixture.sh'
       - 'scripts/ci/settle-doubts.sh'
