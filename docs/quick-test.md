@@ -98,7 +98,7 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 ## Option B: Full Pipeline Test with Minimal BAM
 
-If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 1.5 GB.
+If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 560 MB.
 
 The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The URL is plain `http://` on purpose: the pinned samtools image has no CA certificates, so an `https://` URL fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
 
