@@ -9,6 +9,10 @@
 #
 #   HG002_R1.fastq.gz, HG002_R2.fastq.gz   name-sorted read pairs, for step 02
 #   HG002_slice.bam (+.bai)                the downsampled GIAB alignments
+#   HG002_cyrius.bam (+.bai)               the downsampled GIAB alignments of the
+#                                          regions Cyrius (step 21) reads: CYP2D6,
+#                                          CYP2D7 and 3,000 depth-normalisation
+#                                          bins on chr1-chr22
 #   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr2 chr4 chr5 chr6 chr10
 #                                          chr12 chr16 chr19 chr20 chr22 chrX chrY
 #                                          chrM of the NCBI GRCh38 no-alt analysis
@@ -55,6 +59,9 @@ TRUTH_BASE="${GIAB}/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/H
 REF_BASE=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids
 REF_NAME=GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
 CLINVAR_URL=https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
+# The regions Cyrius 1.1.1 (the version step 21 installs) reads for GRCh38.
+CYRIUS_BED_URL=https://raw.githubusercontent.com/Illumina/Cyrius/v1.1.1/data/CYP2D6_region_38.bed
+CYRIUS_GROUPS=8   # parallel streams, one set of chromosomes each
 
 # Slices, chosen so later packages (paralogs, ploidy, sample QC, Y haplogroup)
 # need no rebuild. Coordinates are GRCh38, 1-based, inclusive.
@@ -158,9 +165,12 @@ sam dict -o /w/fixture_ref.dict /w/fixture_ref.fa.gz
 
 # --- Reads: stream the slices, sample down to TARGET_DEPTH -------------------
 echo "[2/8] Streaming ${#REGIONS[@]} regions from the GIAB HG002 60x BAM"
+# The source index is fetched once and passed with -X. Without it every
+# samtools call saves its own copy in the working directory, which is OUT.
+fetch "${BAM_URL}.bai" "${WORK}/source.bam.bai"
 # -M: one pass over the regions in file order, so the output is sorted and a
 # read that overlaps two regions is written once.
-sam_https view -@ "$THREADS" -M -b -o /w/.work/slice_full.bam "$BAM_URL" "${REGIONS[@]}"
+sam_https view -@ "$THREADS" -M -b -X -o /w/.work/slice_full.bam "$BAM_URL" /w/.work/source.bam.bai "${REGIONS[@]}"
 sam index /w/.work/slice_full.bam
 FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
@@ -176,8 +186,40 @@ echo "  chrM depth ${FULL_CHRM}x; keeping a fraction of ${CHRM_FRACTION}"
 sam view -@ "$THREADS" -b -s "${SEED}${CHRM_FRACTION#0}" -o /w/.work/chrM.bam /w/.work/slice_full.bam chrM
 sam merge -f -@ "$THREADS" -o "/w/${SAMPLE}_slice.bam" /w/.work/nuclear.bam /w/.work/chrM.bam
 sam index "/w/${SAMPLE}_slice.bam"
-rm -f "${WORK}/slice_full.bam" "${WORK}/slice_full.bam.bai" "${WORK}"/*.bai "${WORK}/nuclear.bam" "${WORK}/chrM.bam"
+rm -f "${WORK}/slice_full.bam" "${WORK}/slice_full.bam.bai" "${WORK}/nuclear.bam" "${WORK}/chrM.bam"
 SLICE_DEPTH=$(sam coverage -r chr20:10000000-10500000 "/w/${SAMPLE}_slice.bam" | awk 'NR == 2 {print $7}')
+
+# Cyrius normalises CYP2D6 depth over 3,000 bins spread over chr1-chr22 and
+# stops at the first bin on a contig the BAM lacks. Those bins go into their
+# own BAM, sampled with the same fraction, so the FASTQ and the reference stay
+# as small as the slices need. Bins are streamed in parallel, a set of whole
+# chromosomes per stream, so no read lands in two of them.
+echo "[2b/8] Cyrius regions"
+fetch "$CYRIUS_BED_URL" "${WORK}/cyrius_regions.bed"
+CYRIUS_BED_SHA=$(sha256sum "${WORK}/cyrius_regions.bed" | awk '{print $1}')
+CYRIUS_BINS=$(awk '$5 == "norm"' "${WORK}/cyrius_regions.bed" | wc -l | tr -d ' ')
+CYRIUS_CONTIGS=$(awk '{print $1}' "${WORK}/cyrius_regions.bed" | sort -u | wc -l | tr -d ' ')
+if [ "$CYRIUS_BINS" -lt 1000 ] || [ "$CYRIUS_CONTIGS" -ne 22 ]; then
+  echo "ERROR: ${CYRIUS_BED_URL} has ${CYRIUS_BINS} norm bins on ${CYRIUS_CONTIGS} contigs" >&2
+  exit 1
+fi
+echo "  ${CYRIUS_BINS} normalisation bins on ${CYRIUS_CONTIGS} contigs"
+pids=()
+for g in $(seq 0 $((CYRIUS_GROUPS - 1))); do
+  awk -v g="$g" -v n="$CYRIUS_GROUPS" 'BEGIN {OFS = "\t"}
+    {c = $1; sub(/^chr/, "", c)} c % n == g {print $1, $2, $3}' \
+    "${WORK}/cyrius_regions.bed" > "${WORK}/cyrius_${g}.bed"
+  sam_https view -M -b -X -L "/w/.work/cyrius_${g}.bed" -o "/w/.work/cyrius_${g}.bam" \
+    "$BAM_URL" /w/.work/source.bam.bai &
+  pids+=("$!")
+done
+for p in "${pids[@]}"; do wait "$p"; done
+CYRIUS_PARTS=()
+for g in $(seq 0 $((CYRIUS_GROUPS - 1))); do CYRIUS_PARTS+=("/w/.work/cyrius_${g}.bam"); done
+sam merge -f -@ "$THREADS" -o /w/.work/cyrius_full.bam "${CYRIUS_PARTS[@]}"
+sam view -@ "$THREADS" -b -s "${SEED}${FRACTION#0}" -o "/w/${SAMPLE}_cyrius.bam" /w/.work/cyrius_full.bam
+sam index "/w/${SAMPLE}_cyrius.bam"
+rm -f "${WORK}"/cyrius_*.bam "${WORK}/source.bam.bai"
 
 echo "[3/8] Paired FASTQ (name-collated, secondary and supplementary records dropped)"
 sam collate -u -O "/w/${SAMPLE}_slice.bam" /w/.work/collate \
@@ -338,7 +380,7 @@ printf '%s\n' "${REGIONS[@]}" | awk -F'[:-]' 'BEGIN {OFS = "\t"} NF == 3 {print 
 # --- Self-checks: the same ones the e2e job repeats after download -----------
 echo "[8/8] Checks"
 rm -rf "$WORK"
-sam quickcheck -v "/w/${SAMPLE}_slice.bam"
+sam quickcheck -v "/w/${SAMPLE}_slice.bam" "/w/${SAMPLE}_cyrius.bam"
 for f in "${OUT}"/*.gz; do gzip -t "$f"; done
 IDXSTATS=$(sam idxstats "/w/${SAMPLE}_slice.bam")
 for c in "${CONTIGS[@]}"; do
@@ -348,6 +390,15 @@ for c in "${CONTIGS[@]}"; do
     exit 1
   fi
 done
+CYRIUS_IDX=$(sam idxstats "/w/${SAMPLE}_cyrius.bam")
+for i in $(seq 1 22); do
+  n=$(awk -v c="chr${i}" '$1 == c {print $3}' <<< "$CYRIUS_IDX")
+  if [ "${n:-0}" -le 0 ]; then
+    echo "ERROR: no reads on chr${i} in ${SAMPLE}_cyrius.bam" >&2
+    exit 1
+  fi
+done
+CYRIUS_READS=$(awk '{s += $3} END {print s}' <<< "$CYRIUS_IDX")
 if [ "$VEP_RECORDS" -lt 20 ] || [ "$VEP_RECORDS" -gt 200 ] || ! grep -q '^##INFO=<ID=CSQ' "${OUT}/${SAMPLE}_vep.vcf"; then
   echo "ERROR: ${SAMPLE}_vep.vcf has ${VEP_RECORDS} records (want 20-200) or no CSQ header" >&2
   exit 1
@@ -368,6 +419,7 @@ fi
   echo "chrM_depth_before: ${FULL_CHRM}; kept fraction ${CHRM_FRACTION}"
   echo "gstt1_alt_contig: ${GSTT1_ALT} from NCBI ${GSTT1_ALT_ACC} (${ALT_LEN} bp)"
   echo "read_pairs: ${R1_READS}"
+  echo "cyrius_regions: ${CYRIUS_BED_URL} (sha256 ${CYRIUS_BED_SHA}); ${CYRIUS_BINS} norm bins; ${CYRIUS_READS} reads in ${SAMPLE}_cyrius.bam"
   echo "truth_source: ${TRUTH_BASE}.vcf.gz"
   echo "clinvar_source: ${CLINVAR_URL} (fileDate ${CLINVAR_DATE})"
   echo "planted_clinvar_record: ${PLANT_CHROM}:${PLANT_POS} ${PLANT_REF}>${PLANT_ALT} ID ${PLANT_ID} GENEINFO=${PLANT_GENE} CLNSIG=Pathogenic (synthetic)"
