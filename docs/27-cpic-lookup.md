@@ -75,6 +75,11 @@ The script includes CPIC-level gene-drug pairs for 16 pharmacogenes:
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/cpic/`.
 
+<figure markdown="span">
+  ![The step 27 text report: a gene results table, the affected medications for each gene that is not normal, and the genes that could not be called](images/demo-cpic-report.png){ loading=lazy }
+  <figcaption>The report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. CYP2D6 has no call here, so the report lists it under Uncallable Genes instead of leaving it out.</figcaption>
+</figure>
+
 ## Runtime
 
 ~1-2 minutes (mostly Docker startup overhead).

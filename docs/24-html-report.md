@@ -41,6 +41,11 @@ Typically 10-30 KB. Contains:
 - **Mitochondrial** — chrM variant and heteroplasmy counts
 - **Clinical Filter** — interesting variant counts from step 23
 
+<figure markdown="span">
+  ![The step 24 HTML report: a header with the sample name, then nine cards of counts and statuses](images/demo-html-report.png){ loading=lazy }
+  <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops at the last card, before the ClinVar hits table and the disclaimer.</figcaption>
+</figure>
+
 ## Runtime
 
 1-3 minutes (mostly Docker startup time for bcftools queries)
