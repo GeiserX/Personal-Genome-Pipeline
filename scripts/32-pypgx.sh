@@ -88,10 +88,19 @@ docker run --rm --user root \
     FAILED=""
     SUCCEEDED=0
 
-    # Phase 1: Prepare depth of coverage for all SV genes (one-time, from BAM)
-    echo "--- Preparing depth of coverage for SV genes ---"
+    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a reference
+    # without ALT contigs has no such contig, and depth preparation then fails for
+    # every SV gene. Leave GSTT1 out in that case and say so.
+    if ! python3 -c "import pysam, sys; sys.exit(0 if \"chr22_KI270879v1_alt\" in pysam.AlignmentFile(sys.argv[1]).references else 1)" "$BAM"; then
+      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
+      BAM_GENES=$(echo "$BAM_GENES" | tr " " "\n" | grep -vx GSTT1 | tr "\n" " ")
+      FAILED="${FAILED} GSTT1"
+    fi
+
+    # Phase 1: Prepare depth of coverage for the SV genes (one-time, from BAM)
+    echo "--- Preparing depth of coverage for SV genes: ${BAM_GENES} ---"
     if ! pypgx prepare-depth-of-coverage \
-      "$DOC" "$BAM" --assembly GRCh38 2>&1; then
+      "$DOC" "$BAM" --assembly GRCh38 --genes $BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed — cannot call SV genes"
       # Fall through to VCF-only genes; mark all BAM genes as failed
       for GENE in $BAM_GENES; do FAILED="${FAILED} ${GENE}"; done
@@ -156,7 +165,7 @@ docker run --rm --user root \
   -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
   "${PYPGX_IMAGE}" \
   python3 -c "
-import os, sys, zipfile, csv, io
+import os, sys, csv, subprocess
 
 sample = '${SAMPLE}'
 outbase = f'/genome/{sample}/pypgx'
@@ -175,42 +184,37 @@ for gene in all_genes:
 
     diplotype = 'N/A'
     phenotype = 'N/A'
-    try:
-        import subprocess
-        # pypgx print-data results.zip outputs a TSV with columns:
-        # [sample] Genotype Phenotype Haplotype1 Haplotype2 ...
-        out = subprocess.run(
-            ['pypgx', 'print-data', results_zip],
-            capture_output=True, text=True
-        )
-        if out.returncode == 0:
-            lines = out.stdout.rstrip().split('\n')
-            if len(lines) >= 2:
-                headers = lines[0].split('\t')
-                values = lines[1].split('\t')
-                if 'Genotype' in headers:
-                    idx = headers.index('Genotype')
-                    if idx < len(values):
-                        diplotype = values[idx]
-                if 'Phenotype' in headers:
-                    idx = headers.index('Phenotype')
-                    if idx < len(values):
-                        phenotype = values[idx]
-    except Exception as e:
-        print(f'WARNING: Error extracting {gene}: {e}', file=sys.stderr)
-
-    # SV detection only meaningful for BAM-based genes (read-depth analysis)
-    # '*5' = gene deletion in CYP2D6 context; 'x2'/'x3' = duplications
+    cnv = 'N/A'
     source = 'BAM' if gene in bam_genes else 'VCF'
-    if gene in bam_genes:
-        sv_detected = 'Yes' if any(x in (diplotype or '') for x in ['DEL', 'DUP', 'x2', 'x3', '*5']) else 'No'
+    # pypgx print-data results.zip outputs a TSV whose first column is the sample
+    # and whose named columns include Genotype, Phenotype and CNV (the copy-number
+    # call pypgx made from read depth, e.g. Normal or WholeDel1).
+    out = subprocess.run(['pypgx', 'print-data', results_zip], capture_output=True, text=True)
+    if out.returncode != 0:
+        print(f'WARNING: pypgx print-data failed for {gene}: {out.stderr.strip()}', file=sys.stderr)
     else:
-        sv_detected = 'N/A'
-    rows.append([gene, diplotype, phenotype, sv_detected, source])
+        lines = out.stdout.rstrip().split('\n')
+        if len(lines) >= 2:
+            headers = lines[0].split('\t')
+            values = lines[1].split('\t')
+            def col(name):
+                if name in headers and headers.index(name) < len(values):
+                    return values[headers.index(name)]
+                return None
+            diplotype = col('Genotype') or 'N/A'
+            phenotype = col('Phenotype') or 'N/A'
+            # Copy number is called from read depth, so it is meaningful only for the
+            # BAM-based genes. Report pypgx's own value, never a guess from allele names.
+            if source == 'BAM':
+                cnv = col('CNV')
+                if cnv is None:
+                    print(f'WARNING: {gene} results have no CNV column', file=sys.stderr)
+                    cnv = 'N/A'
+    rows.append([gene, diplotype, phenotype, cnv, source])
 
 with open(summary_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t')
-    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'SV_detected', 'Source'])
+    w = csv.writer(f, delimiter='\t', lineterminator='\n')
+    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'CNV_call', 'Source'])
     w.writerows(rows)
 
 print(f'Summary written: {summary_path}')
@@ -238,7 +242,7 @@ if [ -n "$PHARMCAT_JSON" ]; then
     -v "${GENOME_DIR}:/genome" \
     "${PYTHON_IMAGE}" \
     python3 -c "
-import json, csv, os, sys
+import json, csv, os, re, sys
 
 sample = '${SAMPLE}'
 outbase = f'/genome/{sample}/pypgx'
@@ -253,62 +257,88 @@ if os.path.isfile(summary_path):
         for row in reader:
             pypgx_data[row['Gene']] = row['Diplotype']
 
-# Load PharmCAT results
-pharmcat_data = {}
+# Load PharmCAT results. PharmCAT 3.x writes 'genes' either flat ({gene -> data})
+# or nested ({source -> {gene -> data}}); 2.x used a list. Same logic as
+# scripts/27-cpic-lookup.sh. A report that cannot be read, or that yields no gene,
+# is an error: an empty comparison would show 0 conflicts.
 pharmcat_path = '$(echo "$PHARMCAT_JSON" | sed "s|${GENOME_DIR}|/genome|")'
-try:
-    with open(pharmcat_path) as f:
-        data = json.load(f)
+with open(pharmcat_path) as f:
+    data = json.load(f)
 
-    if 'genes' in data and isinstance(data['genes'], dict):
-        for source, gene_dict in data['genes'].items():
-            if not isinstance(gene_dict, dict):
-                continue
-            for gene_name, g in gene_dict.items():
-                dips = g.get('sourceDiplotypes', [])
-                if not dips:
-                    continue
-                dip = dips[0]
-                a1_obj = dip.get('allele1')
-                a2_obj = dip.get('allele2')
-                a1 = a1_obj.get('name', '?') if a1_obj else '?'
-                a2 = a2_obj.get('name', '?') if a2_obj else '?'
-                pharmcat_data[gene_name] = f'{a1}/{a2}'
-    elif 'genes' in data and isinstance(data['genes'], list):
-        for entry in data['genes']:
-            gene = entry.get('geneSymbol', entry.get('gene', ''))
-            src_dips = entry.get('sourceDiplotypes', [])
-            if src_dips:
-                pharmcat_data[gene] = src_dips[0].get('label', 'N/A')
-except Exception as e:
-    print(f'WARNING: Could not parse PharmCAT JSON: {e}', file=sys.stderr)
+def parse_gene(g):
+    if not isinstance(g, dict):
+        return None
+    dips = g.get('sourceDiplotypes') or g.get('recommendationDiplotypes') or []
+    if not dips:
+        return None
+    dip = dips[0]
+    a1 = (dip.get('allele1') or {}).get('name', '?')
+    a2 = (dip.get('allele2') or {}).get('name', '?')
+    return dip.get('label') or f'{a1}/{a2}'
+
+pharmcat_data = {}
+genes = data.get('genes')
+if isinstance(genes, dict):
+    for key, val in genes.items():
+        if not isinstance(val, dict):
+            continue
+        if 'sourceDiplotypes' in val or 'recommendationDiplotypes' in val:
+            d = parse_gene(val)                       # flat: key is the gene
+            if d and key not in pharmcat_data:
+                pharmcat_data[key] = d
+        else:
+            for gene_name, g in val.items():          # nested: key is the source
+                d = parse_gene(g)
+                if d and gene_name not in pharmcat_data:
+                    pharmcat_data[gene_name] = d
+elif isinstance(genes, list):
+    for entry in genes:
+        gene = entry.get('geneSymbol', entry.get('gene', ''))
+        d = parse_gene(entry)
+        if gene and d and gene not in pharmcat_data:
+            pharmcat_data[gene] = d
+
+if not pharmcat_data:
+    print(f'ERROR: parsed 0 genes from PharmCAT report {pharmcat_path}; refusing to write an empty comparison', file=sys.stderr)
+    sys.exit(1)
+print(f'PharmCAT genes parsed: {len(pharmcat_data)}')
+
+# PharmCAT names VKORC1 alleles 'rs9923231 variant (T)' where pypgx writes
+# 'rs9923231', and either tool may put the two alleles in either order. Compare
+# the sorted allele names without that suffix; the TSV keeps the raw strings.
+def norm(diplotype):
+    return sorted(re.sub(r' (variant|reference) \([ACGT]+\)', '', a).strip() for a in diplotype.split('/'))
 
 # Build comparison for overlapping genes
 all_genes = sorted(set(list(pypgx_data.keys()) + list(pharmcat_data.keys())))
 
 with open(comparison_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t')
-    w.writerow(['Gene', 'PharmCAT_diplotype', 'pypgx_diplotype', 'Match'])
+    w = csv.writer(f, delimiter='\t', lineterminator='\n')
+    w.writerow(['Gene', 'PharmCAT_diplotype', 'pypgx_diplotype', 'Match', 'Called_by'])
     matches = 0
     mismatches = 0
     for gene in all_genes:
         pc = pharmcat_data.get(gene, 'Not called')
         pg = pypgx_data.get(gene, 'Not called')
-        if pc == 'Not called' and pg == 'Not called':
+        # PharmCAT writes Unknown/Unknown when it could not call a gene; pypgx
+        # writes FAILED. Neither is a call, so neither can conflict.
+        pc_called = pc != 'Not called' and any(x != 'Unknown' for x in pc.split('/'))
+        pg_called = pg not in ('Not called', 'FAILED')
+        if not pc_called and not pg_called:
             continue
-        if pc == pg:
-            match = 'Yes'
+        if not pc_called:
+            match = called_by = 'pypgx only'
+            mismatches += 1
+        elif not pg_called:
+            match = called_by = 'PharmCAT only'
+            mismatches += 1
+        elif norm(pc) == norm(pg):
+            match, called_by = 'Yes', 'both'
             matches += 1
-        elif pc == 'Not called':
-            match = 'pypgx only'
-            mismatches += 1
-        elif pg == 'Not called' or pg == 'FAILED':
-            match = 'PharmCAT only'
-            mismatches += 1
         else:
-            match = 'No'
+            match, called_by = 'No', 'both'
             mismatches += 1
-        w.writerow([gene, pc, pg, match])
+        w.writerow([gene, pc, pg, match, called_by])
 
 print(f'Comparison written: {comparison_path}')
 print(f'Concordant: {matches}, Discordant/partial: {mismatches}')
