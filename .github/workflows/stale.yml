@@ -46,8 +46,11 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           ATTEMPT: ${{ github.run_attempt }}
         run: |
-          job_id=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/attempts/${ATTEMPT}/jobs" \
-            --jq '.jobs[] | select(.name == "stale") | .id')
+          # All attempts: after "Re-run failed jobs" the stale job that ran
+          # belongs to an earlier attempt. Take the latest one up to this one.
+          job_id=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?filter=all&per_page=100" \
+            --jq "[.jobs[] | select(.name == \"stale\" and .run_attempt <= ${ATTEMPT})]
+                  | max_by(.run_attempt) | .id // empty")
           if [ -z "$job_id" ]; then
             echo "ERROR: could not find the stale job of this run"
             exit 1

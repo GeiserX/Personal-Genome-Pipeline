@@ -56,7 +56,18 @@ if [ "${1:-}" = "--self-test" ]; then
     'OUT=$(time docker run --rm "${BCFTOOLS_IMAGE}" tabix z.gz)' \
     'VAR=x docker run --rm "${SAMTOOLS_IMAGE}" bgzip w' \
     'docker run --rm "${TOOL_IMAGE}" bgzip allowed.vcf' \
+    'docker run --rm "${BCFTOOLS_IMAGE}" bash -euo pipefail -c "bgzip combined.vcf"' \
+    'IMG="${BCFTOOLS_IMAGE}"' \
+    'docker run --rm "$IMG" tabix indirect.vcf.gz' \
+    'ODD=$(pick_image)' \
+    'docker run --rm "$ODD" samtools view x.bam' \
     > "${tmp}/bad/scripts/a.sh"
+  # A withName selector overrides the process container directive.
+  mkdir -p "${tmp}/bad/conf" "${tmp}/bad/modules/local/y"
+  printf '%s\n' "process { withName: 'Y' { container = 'example/bcftools:1.0' } }" \
+    > "${tmp}/bad/conf/containers.config"
+  printf '%s\n' 'process Y {' "    container 'example/tool:1.0'" '    script:' '    """' \
+    '    tabix y.vcf.gz' '    """' '}' > "${tmp}/bad/modules/local/y/main.nf"
   printf '%s\n' \
     'process X {' \
     "    container 'example/bcftools:1.0'" \
@@ -76,6 +87,7 @@ if [ "${1:-}" = "--self-test" ]; then
     '  exit 1' \
     'fi' \
     'docker run --rm "${TOOL_IMAGE}" bgzip allowed.vcf' \
+    'docker run --rm "${BCFTOOLS_IMAGE}" bash -euo pipefail -c "bcftools index -t ok.vcf.gz"' \
     > "${tmp}/good/scripts/a.sh"
   sed 's/| bgzip -c > out.vcf.gz/-Oz -o out.vcf.gz/' "${tmp}/bad/modules/local/x/main.nf" \
     > "${tmp}/good/modules/local/x/main.nf"
@@ -85,7 +97,9 @@ if [ "${1:-}" = "--self-test" ]; then
   [ "$rc" -eq 1 ] || { echo "self-test: planted tree exited ${rc}, expected 1"; fail=1; }
   for want in 'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' 'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:2$' \
               'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:5$' 'bgzip +in SAMTOOLS_IMAGE +scripts/a\.sh:6$' \
-              'bgzip +in BCFTOOLS_IMAGE +modules/local/x/main\.nf:5 \(X\)$'; do
+              'bgzip +in BCFTOOLS_IMAGE +modules/local/x/main\.nf:5 \(X\)$' \
+              'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:8$' 'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:10$' \
+              'scripts/a\.sh:12 \(\$ODD\)' 'tabix +in BCFTOOLS_IMAGE +modules/local/y/main\.nf:5 \(Y\)$'; do
     grep -qE -- "$want" <<<"$out" || { echo "self-test: planted call not reported: ${want}"; fail=1; }
   done
   for nope in 'TOOL_IMAGE' 'stub_only' ':9 \(X\)'; do
@@ -99,7 +113,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fail=1
   fi
   if [ "$fail" -eq 0 ]; then
-    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...) and in a module are reported; a clean tree passes: PASS"
+    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...), bash -euo -c, an image alias and in modules are reported; a clean tree passes: PASS"
     exit 0
   fi
   echo "self-test: FAIL"
@@ -359,26 +373,39 @@ def docker_run(words):
 
 def in_image_heads(argv):
     """Binaries a container command runs: argv[0], or every command of a
-    `bash -c` / `sh -c` body."""
+    `bash -c` / `sh -c` body. Option groups such as `-euo pipefail` are
+    understood: each `o` or `O` takes the next word, and a `c` anywhere in a
+    group makes the first word after the options the command body."""
     if not argv:
         return []
-    if os.path.basename(argv[0]) in ("bash", "sh"):
-        k = 1
-        while k < len(argv):
-            w = argv[k]
-            if w in ("-o", "+o"):
-                k += 2
-                continue
-            if w.startswith("-") and not w.startswith("--") and "c" in w[1:]:
-                return [h for h, _, _ in heads(lex(argv[k + 1]))] if k + 1 < len(argv) else []
-            if w.startswith("-"):
-                k += 1
-                continue
-            return []
-    return [os.path.basename(argv[0])]
+    if os.path.basename(argv[0]) not in ("bash", "sh"):
+        return [os.path.basename(argv[0])]
+    k, want_c, takes = 1, False, 0
+    while k < len(argv):
+        w = argv[k]
+        if takes:
+            takes -= 1
+        elif w == "--":
+            k += 1
+            break
+        elif w.startswith("--"):
+            pass
+        elif len(w) > 1 and w[0] in "-+":
+            want_c = want_c or "c" in w[1:]
+            takes = w[1:].count("o") + w[1:].count("O")
+        else:
+            break
+        k += 1
+    if want_c and k < len(argv):
+        return [h for h, _, _ in heads(lex(argv[k]))]
+    return []
+
+PLAIN = re.compile(r"^[A-Za-z0-9._/:@+-]+$")
 
 def resolve(image_word, path):
-    """(variable name, image value) for an image word from a script."""
+    """(variable name, image value) for an image word from a script. A
+    script-local assignment counts only when its value is a plain literal or
+    one versions.env variable; anything else is unresolved (value None)."""
     m = re.search(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", image_word)
     if m:
         name = m.group(1)
@@ -386,9 +413,18 @@ def resolve(image_word, path):
             return name, VERSIONS[name]
         with open(path) as fh:
             for line in fh:
-                a = re.match(r'\s*(?:export\s+|local\s+)?%s="?([^"\s]+)"?' % re.escape(name), line)
-                if a:
-                    return name, a.group(1)
+                a = re.match(r"\s*(?:export\s+|local\s+|readonly\s+)?%s=(\S*)" % re.escape(name), line)
+                if not a:
+                    continue
+                v = a.group(1).rstrip(";")
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                    v = v[1:-1]
+                ref = re.match(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$", v)
+                if ref and ref.group(1) in VERSIONS:
+                    return ref.group(1), VERSIONS[ref.group(1)]
+                if PLAIN.match(v):
+                    return name, v
+                return name, None
         return name, None
     return BY_VALUE.get(image_word, image_word), image_word
 
@@ -465,7 +501,8 @@ for path in sorted(glob.glob(os.path.join(ROOT, "modules", "local", "*", "main.n
         end = procs[idx + 1].start() if idx + 1 < len(procs) else len(text)
         body = text[start:end]
         cm = re.search(r"^\s*container\s+['\"]([^'\"]+)['\"]", body, re.M)
-        image = cm.group(1) if cm else selectors.get(pname)
+        # A withName selector in the config overrides the process directive.
+        image = selectors.get(pname) or (cm.group(1) if cm else None)
         sm = re.search(r"^\s*script:\s*$", body, re.M)
         if not sm:
             continue

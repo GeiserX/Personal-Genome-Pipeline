@@ -13,6 +13,7 @@
 #
 # A reference counts as defined when versions.env sets it, when the same
 # script assigns it (NAME=...), or when it carries a default (${NAME:-x}).
+# Text in single quotes and in comments is neither a use nor an assignment.
 set -euo pipefail
 
 # Names versions.env defines. Sourced in a clean shell under `set -u`, so a
@@ -24,30 +25,107 @@ defined_names() {
     | grep -E '_IMAGE$' || true
 }
 
-# Print "NAME<TAB>LINE" for every *_IMAGE expansion in one script.
-references() {
-  awk '
-    /^[[:space:]]*#/ { next }
-    {
-      line = $0
-      while (match(line, /[$][{]?[A-Z][A-Z0-9_]*_IMAGE/)) {
-        tok  = substr(line, RSTART, RLENGTH)
-        pre  = (RSTART > 1) ? substr(line, RSTART - 1, 1) : ""
-        line = substr(line, RSTART + RLENGTH)
-        if (line ~ /^[A-Za-z0-9_]/) continue          # a longer name (FOO_IMAGES)
-        if (pre == "\\") continue                    # \$X_IMAGE: expanded later, elsewhere
-        braced = (substr(tok, 2, 1) == "{")
-        if (braced && line ~ /^:?[-=+]/) continue    # ${X_IMAGE:-default}
-        name = tok
-        sub(/^[$][{]?/, "", name)
-        print name "\t" NR
+# scan FILE: print "R<TAB>NAME<TAB>LINE" for every *_IMAGE expansion the shell
+# would perform, and "A<TAB>NAME<TAB>LINE" for every NAME= assignment. It
+# follows shell quoting: nothing inside single quotes counts (a container's
+# own `bash -c '...'` body, a python -c string), comments do not count, a
+# quoted here-document body is skipped and an unquoted one only expands, and
+# $( ... ) opens a fresh quoting context. A `\$X_IMAGE` is not an expansion.
+scan() {
+  awk -v q="'" '
+    function ref(s, i,    rest, tok, after, name) {
+      rest = substr(s, i)
+      if (!match(rest, /^[$][{]?[A-Z][A-Z0-9_]*_IMAGE/)) return 1
+      tok = substr(rest, 1, RLENGTH)
+      after = substr(rest, RLENGTH + 1)
+      if (after ~ /^[A-Za-z0-9_]/) return RLENGTH                          # a longer name (FOO_IMAGES)
+      if (substr(tok, 2, 1) == "{" && after ~ /^:?[-=+]/) return RLENGTH   # ${X_IMAGE:-default}
+      name = tok
+      sub(/^[$][{]?/, "", name)
+      print "R\t" name "\t" NR
+      return RLENGTH
+    }
+    function heredoc(s, j,    rest, strip, quoted, d) {
+      strip = 0
+      if (substr(s, j, 1) == "-") { strip = 1; j++ }
+      while (substr(s, j, 1) ~ /[ \t]/) j++
+      rest = substr(s, j)
+      if (match(rest, "^[" q "\"][A-Za-z_][A-Za-z0-9_]*[" q "\"]")) {
+        quoted = 1; d = substr(rest, 2, RLENGTH - 2)
+      } else if (match(rest, /^\\?[A-Za-z_][A-Za-z0-9_]*/)) {
+        d = substr(rest, 1, RLENGTH); quoted = (substr(d, 1, 1) == "\\"); sub(/^\\/, "", d)
+      } else {
+        return j
       }
+      nh++; hdelim[nh] = d; hquoted[nh] = quoted; hstrip[nh] = strip
+      return j + RLENGTH
+    }
+    BEGIN { sq = 0; ansi = 0; dq = 0; depth = 0; nh = 0; inhd = 0 }
+    inhd {
+      cmp = $0
+      if (hstrip[1]) sub(/^\t+/, "", cmp)
+      if (cmp == hdelim[1]) {
+        for (k = 1; k < nh; k++) { hdelim[k] = hdelim[k + 1]; hquoted[k] = hquoted[k + 1]; hstrip[k] = hstrip[k + 1] }
+        nh--
+        inhd = (nh > 0)
+        next
+      }
+      if (!hquoted[1]) {
+        i = 1; n = length($0)
+        while (i <= n) {
+          c = substr($0, i, 1)
+          if (c == "\\") { i += 2; continue }
+          if (c == "$") { i += ref($0, i); continue }
+          i++
+        }
+      }
+      next
+    }
+    {
+      line = $0; n = length(line); i = 1; prev = " "
+      while (i <= n) {
+        c = substr(line, i, 1)
+        if (sq) {
+          if (ansi && c == "\\") { i += 2; continue }
+          if (c == q) { sq = 0; ansi = 0; prev = c }
+          i++
+          continue
+        }
+        if (c == "\\") { i += 2; prev = "x"; continue }
+        if (c == q && !dq) { sq = 1; i++; continue }
+        if (c == "\"") { dq = !dq; i++; prev = c; continue }
+        if (c == "$") {
+          if (substr(line, i + 1, 1) == q && !dq) { sq = 1; ansi = 1; i += 2; continue }
+          if (substr(line, i, 3) == "$((") { if (depth) parens[depth] += 2; i += 3; prev = "("; continue }
+          if (substr(line, i, 2) == "$(") {
+            depth++; saved[depth] = dq; parens[depth] = 0; dq = 0; i += 2; prev = "("; continue
+          }
+          i += ref(line, i); prev = "x"; continue
+        }
+        if (!dq) {
+          if (c == "#" && prev ~ /[ \t;|&()]/) break
+          if (depth && c == "(") parens[depth]++
+          if (depth && c == ")") {
+            if (parens[depth] > 0) parens[depth]--
+            else { dq = saved[depth]; depth--; i++; prev = c; continue }
+          }
+          if (substr(line, i, 2) == "<<" && substr(line, i, 3) != "<<<") {
+            i = heredoc(line, i + 2); prev = "x"; continue
+          }
+          if (prev !~ /[A-Za-z0-9_$]/ && match(substr(line, i), /^[A-Za-z_][A-Za-z0-9_]*=/)) {
+            print "A\t" substr(line, i, RLENGTH - 1) "\t" NR
+            i += RLENGTH; prev = "="; continue
+          }
+        }
+        prev = c; i++
+      }
+      if (nh > 0) inhd = 1
     }
   ' "$1"
 }
 
 check() {
-  local root=$1 defined rel name lineno scripts=0 refs=0 bad=0
+  local root=$1 defined rel kind name lineno found assigned scripts=0 refs=0 bad=0
   local -a files
   if [ ! -f "${root}/versions.env" ]; then
     echo "ERROR: ${root}/versions.env not found" >&2
@@ -66,18 +144,18 @@ check() {
   for f in "${files[@]}"; do
     scripts=$((scripts + 1))
     rel=${f#"${root}"/}
-    while IFS=$'\t' read -r name lineno; do
-      [ -n "$name" ] || continue
+    found=$(scan "$f")
+    # Names this script assigns itself (NAME=..., export NAME=..., || NAME=...),
+    # read from a variable: no pipe, so SIGPIPE cannot drop a match.
+    assigned=$(awk -F'\t' '$1 == "A" { print $2 }' <<<"$found")
+    while IFS=$'\t' read -r kind name lineno; do
+      [ "$kind" = R ] || continue
       refs=$((refs + 1))
       if grep -qxF "$name" <<<"$defined"; then continue; fi
-      # Assigned in this script (NAME=..., export NAME=..., || NAME=...)?
-      # One awk process: a `grep | grep -q` pipe under pipefail turns the
-      # first grep's SIGPIPE on a big script into "not assigned".
-      if awk -v n="$name" '!/^[[:space:]]*#/ && $0 ~ ("(^|[^A-Za-z0-9_$])" n "=") { found = 1; exit }
-                           END { exit !found }' "$f"; then continue; fi
+      if grep -qxF "$name" <<<"$assigned"; then continue; fi
       report+="${name}"$'\t'"${rel}:${lineno}"$'\n'
       bad=$((bad + 1))
-    done < <(references "$f")
+    done <<<"$found"
   done
 
   if [ "$bad" -gt 0 ]; then
@@ -107,6 +185,13 @@ self_test() {
     'docker run --rm "${DEFAULTED_IMAGE:-example/d:1.0}" true' \
     'echo "${MISSING_IMAGES[@]}"' \
     '# docker run --rm "$COMMENTED_IMAGE" true' \
+    "printf '%s\\n' '\$QUOTED_IMAGE'" \
+    "docker run --rm \"\${FOO_IMAGE}\" bash -c 'echo \$INNER_IMAGE'" \
+    'docker run --rm "$TRAILING_IMAGE" true # TRAILING_IMAGE=example/t:1.0' \
+    "cat <<'EOF'" \
+    "it's \$QUOTED_HD_IMAGE" \
+    'EOF' \
+    'docker run --rm "${AFTER_HD_IMAGE}" true' \
     > "${tmp}/bad/scripts/a.sh"
   # A script far bigger than a pipe buffer that assigns its own image on line
   # 2: the assignment lookup must not lose to SIGPIPE under pipefail.
@@ -116,16 +201,25 @@ self_test() {
   awk 'BEGIN { for (i = 0; i < 200000; i++) print ": filler line " i }' >> "${tmp}/bad/scripts/big.sh"
   cp "${tmp}/bad/versions.env" "${tmp}/good/versions.env"
   cp "${tmp}/bad/scripts/big.sh" "${tmp}/good/scripts/big.sh"
-  grep -v NOPE_IMAGE "${tmp}/bad/scripts/a.sh" > "${tmp}/good/scripts/a.sh"
+  grep -vE 'NOPE_IMAGE|TRAILING_IMAGE|AFTER_HD_IMAGE' "${tmp}/bad/scripts/a.sh" > "${tmp}/good/scripts/a.sh"
 
+  # Must be reported: an undefined use, a use whose only "assignment" is in a
+  # comment, and a use after a quoted here-document holding an apostrophe.
   rc=0; out=$(check "${tmp}/bad" 2>&1) || rc=$?
-  if [ "$rc" -eq 1 ] && grep -q 'NOPE_IMAGE' <<<"$out" && grep -q 'scripts/a.sh:3' <<<"$out"; then
-    echo "self-test: planted \${NOPE_IMAGE} is reported (exit 1): PASS"
-  else
-    echo "self-test: planted \${NOPE_IMAGE} was NOT reported (exit ${rc}): FAIL"
-    fail=1
-  fi
-  for n in FOO_IMAGE LOCAL_IMAGE DEFAULTED_IMAGE MISSING_IMAGES COMMENTED_IMAGE BIG_IMAGE; do
+  [ "$rc" -eq 1 ] || { echo "self-test: planted tree exited ${rc}, expected 1: FAIL"; fail=1; }
+  for want in 'NOPE_IMAGE scripts/a.sh:3' 'TRAILING_IMAGE scripts/a.sh:10' 'AFTER_HD_IMAGE scripts/a.sh:14'; do
+    n=${want%% *}
+    if grep -qx "  ${n}" <<<"$out" && grep -qx "    ${want#* }" <<<"$out"; then
+      echo "self-test: planted ${n} is reported at ${want#* }: PASS"
+    else
+      echo "self-test: planted ${n} was NOT reported at ${want#* }: FAIL"
+      fail=1
+    fi
+  done
+  # Must not be reported: defined, defaulted, a longer name, a comment, text
+  # in single quotes or in a quoted here-document.
+  for n in FOO_IMAGE LOCAL_IMAGE DEFAULTED_IMAGE MISSING_IMAGES COMMENTED_IMAGE BIG_IMAGE \
+           QUOTED_IMAGE INNER_IMAGE QUOTED_HD_IMAGE; do
     if grep -q "^  ${n}\$" <<<"$out"; then
       echo "self-test: ${n} reported although it is defined or not a use: FAIL"
       fail=1
