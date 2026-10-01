@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   e2e:
@@ -57,6 +57,8 @@ jobs:
         run: .github/scratch-real-run/red_main.sh "$RUNNER_TEMP/data" "$GITHUB_WORKSPACE/main-src"
       - name: CLINICAL_FILTER and SLIVAR modules from main
         run: .github/scratch-real-run/modules.sh "$GITHUB_WORKSPACE/main-src" "$RUNNER_TEMP/modules-main" main
+      - name: Input-check controls on main
+        run: .github/scratch-real-run/red_controls.sh "$RUNNER_TEMP/data" "$GITHUB_WORKSPACE/main-src"
 
   modules:
     runs-on: ubuntu-latest
@@ -76,6 +78,8 @@ jobs:
         run: .github/scratch-real-run/modules.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/modules-new" new
 
   annotsv:
+    # already running on 1590fc1; the AnnotSV code has not changed since
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
