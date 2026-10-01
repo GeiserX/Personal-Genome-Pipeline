@@ -626,7 +626,8 @@ ExpansionHunter \
        -f '%CHROM %POS %Consequence %SYMBOL %SIFT %PolyPhen %gnomADe_AF\n' \
        -s worst
    # -s worst keeps only the most severe consequence per variant.
-   # -d does the opposite: it prints every transcript's consequence on its own line.
+   # -d selects nothing: it puts each kept consequence on its own line, so without -s
+   # it prints every transcript's consequence.
    ```
 
 4. **gnomAD field naming confusion:** Depending on VEP version and cache, the gnomAD frequency field may be named `gnomADe_AF`, `gnomAD_AF`, `AF`, or `MAX_AF`. Always check the CSQ header first.
