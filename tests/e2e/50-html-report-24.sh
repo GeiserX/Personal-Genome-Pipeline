@@ -13,6 +13,8 @@ REPORT=$(cat "$HTML" 2>/dev/null)
 # for a missing gene, significance or review status. Without a row the checks
 # below read '<td>.</td>' and fail.
 ROW=$(grep -o "<tr>.*<td>$(planted pos)</td>.*</tr>" <<< "$REPORT" | awk 'NR == 1')
+# SCRATCH, reverted in the next commit: blank the gene cell so the checks below must fail.
+ROW=$(sed "s#<td>$(planted gene)</td>#<td>.</td>#" <<< "$ROW")
 echo "planted row: ${ROW:-none}"
 check "the planted row has no empty '.' cell" lacks '<td>\.</td>' "${ROW:-<td>.</td>}"
 check "the planted row names its gene ($(planted gene))" \
