@@ -12,6 +12,8 @@ The test data is a slice of **HG002**, the Genome in a Bottle (GIAB) son of the 
 
 | Region (GRCh38) | Why it is there |
 |---|---|
+| chr1:109,600,000-109,800,000 | GSTM1 (pypgx reads depth over it) |
+| chr19:40,800,000-41,050,000 | CYP2A6, CYP2A7 and CYP2B6 |
 | chr20:10,000,000-10,500,000 | small variants; the planted ClinVar record (in SNAP25); the GIAB truth slice |
 | chr22:42,000,000-42,300,000 | CYP2D6 and CYP2D7 with flanks |
 | chr12:47,800,000-47,950,000 | VDR, the control gene pypgx normalises depth with |
@@ -21,7 +23,7 @@ The test data is a slice of **HG002**, the Genome in a Bottle (GIAB) son of the 
 | chrX:73,700,000-74,000,000 | non-PAR chrX |
 | chrX:1,000,000-1,200,000 | PAR1 |
 | chrY:2,700,000-3,000,000 | non-PAR chrY (HG002 is male) |
-| chrM | the whole mitochondrial genome |
+| chrM | the whole mitochondrial genome, sampled to about 500x (the source has thousands of x there) |
 
 The chr5, chrX and chrY slices are not used by every step yet. They are there so the paralog, ploidy, sample-QC and Y-haplogroup work needs no new fixture.
 
@@ -31,7 +33,7 @@ What the release holds:
 |---|---|
 | `HG002_R1.fastq.gz`, `HG002_R2.fastq.gz` | the sliced reads as name-sorted pairs, input for step 02 |
 | `HG002_slice.bam` (+ `.bai`) | the same reads as GIAB aligned them |
-| `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr5, chr6, chr10, chr12, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-alt analysis set, so every coordinate is real |
+| `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr1, chr5, chr6, chr10, chr12, chr19, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-alt analysis set, so every coordinate is real, plus `chr22_KI270879v1_alt` (see below) |
 | `clinvar.vcf.gz`, `clinvar_chr.vcf.gz`, `clinvar_pathogenic_chr.vcf.gz` (+ `.tbi`) | ClinVar records inside the regions, built the way `setup.sh` builds the full files |
 | `planted.tsv` | one synthetic ClinVar record (CLNSIG Pathogenic, gene SNAP25, ID 900000001) at a SNV HG002 is homozygous for, so step 06 always has a hit with a known gene |
 | `HG002_vep.vcf` | up to 200 GIAB truth variants (HLA-A, -B, -C, CYP2C19, CYP2C9, SNAP25) annotated by VEP `--database --everything`; it stands in for step 13, whose offline cache does not fit a runner |
@@ -40,16 +42,18 @@ What the release holds:
 | `HG002_truth_chr20.vcf.gz` (+ `.tbi`), `HG002_truth_chr20.bed` | GIAB v4.2.1 truth for the chr20 slice |
 | `regions.bed`, `MANIFEST.txt`, `SHA256SUMS` | the slices, how this build was made (sources, depth, ClinVar date, build-script checksum), checksums |
 
-The whole release stays under 1.5 GB. The build checks that the BAM passes `samtools quickcheck`, that every `.gz` file passes `gzip -t`, and that `samtools idxstats` shows reads on all nine contigs. The e2e job repeats those checks after download.
+The one ALT contig is there because pypgx (step 32) reads depth over every BAM-based gene before it calls any of them, and its GRCh38 region for GSTT1 is `chr22_KI270879v1_alt:267307-281486`. With that contig missing from the BAM header, step 32 calls no BAM-based gene at all, CYP2D6 included. Today's default reference (the Broad hg38 file) has the contig; the no-alt analysis set does not, so a switch to it has to deal with this first.
+
+The whole release stays under 1.5 GB. The build checks that the BAM passes `samtools quickcheck`, that every `.gz` file passes `gzip -t`, and that `samtools idxstats` shows reads on every primary contig of the reference. The e2e job repeats those checks after download.
 
 ### Where it lives and how to change it
 
-The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (`fixture-v1`). The e2e job reads the same file, so the workflow never changes when the data does.
+The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v2`). The e2e job reads the same file, so the workflow never changes when the data does.
 
 To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
-2. Bump `tests/fixtures/VERSION` (for example to `fixture-v2`).
+2. Bump `tests/fixtures/VERSION` (for example from `fixture-v2` to `fixture-v3`).
 3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (about 30 minutes, most of it VEP querying Ensembl's database) and publishes the new release. The e2e job of your pull request waits up to 45 minutes for it.
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.

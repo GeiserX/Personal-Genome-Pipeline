@@ -9,9 +9,10 @@
 #
 #   HG002_R1.fastq.gz, HG002_R2.fastq.gz   name-sorted read pairs, for step 02
 #   HG002_slice.bam (+.bai)                the downsampled GIAB alignments
-#   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr5 chr6 chr10 chr12 chr20
-#                                          chr22 chrX chrY chrM of the NCBI
-#                                          GRCh38 no-alt analysis set
+#   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr5 chr6 chr10 chr12 chr19
+#                                          chr20 chr22 chrX chrY chrM of the NCBI
+#                                          GRCh38 no-alt analysis set, plus the
+#                                          one ALT contig pypgx needs for GSTT1
 #   clinvar.vcf.gz, clinvar_chr.vcf.gz,    ClinVar records inside the regions,
 #   clinvar_pathogenic_chr.vcf.gz (+.tbi)  plus one planted record (planted.tsv)
 #   HG002_vep.vcf                          up to 200 GIAB truth variants annotated
@@ -57,6 +58,8 @@ CLINVAR_URL=https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
 # Slices, chosen so later packages (paralogs, ploidy, sample QC, Y haplogroup)
 # need no rebuild. Coordinates are GRCh38, 1-based, inclusive.
 REGIONS=(
+  "chr1:109600000-109800000"  # GSTM1 (pypgx reads depth here)
+  "chr19:40800000-41050000"   # CYP2A6, CYP2A7, CYP2B6
   "chr20:10000000-10500000"   # small variants; the planted ClinVar record (SNAP25)
   "chr22:42000000-42300000"   # CYP2D6 and CYP2D7 with flanks
   "chr12:47800000-47950000"   # VDR, pypgx's control gene
@@ -68,7 +71,16 @@ REGIONS=(
   "chrY:2700000-3000000"      # non-PAR chrY (SRY, RPS4Y1, ZFY)
   "chrM"                      # whole mitochondrial genome
 )
-CONTIGS=(chr5 chr6 chr10 chr12 chr20 chr22 chrX chrY chrM)
+CONTIGS=(chr1 chr5 chr6 chr10 chr12 chr19 chr20 chr22 chrX chrY chrM)
+# pypgx reads depth over every BAM-based gene before calling any of them, and
+# its GRCh38 GSTT1 region is on this ALT contig; without it in the BAM header
+# step 32 calls no BAM gene at all, CYP2D6 included. Today's default reference
+# (Broad hg38) has it; the no-alt analysis set does not.
+GSTT1_ALT=chr22_KI270879v1_alt
+GSTT1_ALT_ACC=KI270879.1
+# chrM is kept at about this depth: the GIAB BAM has thousands of x on chrM,
+# which only slows every step down.
+CHRM_DEPTH=${CHRM_DEPTH:-500}
 
 # Truth variants sent to VEP: gene windows and how many records to take from
 # each (200 at most in total). The HLA genes give missense variants, so steps
@@ -122,6 +134,16 @@ rm -f "${WORK}/${REF_NAME}"
 sam faidx /w/.work/full.fa
 sam faidx -o /w/.work/mini.fa /w/.work/full.fa "${CONTIGS[@]}"
 rm -f "${WORK}/full.fa" "${WORK}/full.fa.fai"
+curl -fsSL --retry 5 --retry-delay 10 \
+  "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${GSTT1_ALT_ACC}&rettype=fasta&retmode=text" \
+  | awk -v name="$GSTT1_ALT" '/^>/ {print ">" name; next} NF' > "${WORK}/alt.fa"
+ALT_LEN=$(grep -v '^>' "${WORK}/alt.fa" | tr -d '\n' | wc -c)
+if [ "$ALT_LEN" -lt 281486 ]; then
+  echo "ERROR: ${GSTT1_ALT_ACC} is ${ALT_LEN} bp, shorter than pypgx's GSTT1 region" >&2
+  exit 1
+fi
+cat "${WORK}/alt.fa" >> "${WORK}/mini.fa"
+rm -f "${WORK}/alt.fa"
 bgzip -@ "$THREADS" -c "${WORK}/mini.fa" > "${OUT}/fixture_ref.fa.gz"
 rm -f "${WORK}/mini.fa"
 sam faidx /w/fixture_ref.fa.gz
@@ -137,10 +159,17 @@ FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | a
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
 FRACTION=$(awk -v d="$FULL_DEPTH" -v t="$TARGET_DEPTH" 'BEGIN {f = t / d; if (f > 0.9999) f = 0.9999; printf "%.4f", f}')
 echo "  chr20 slice depth ${FULL_DEPTH}x; keeping a fraction of ${FRACTION} (seed ${SEED})"
-sam view -@ "$THREADS" -b -s "${SEED}${FRACTION#0}" \
-  -o "/w/${SAMPLE}_slice.bam" /w/.work/slice_full.bam
+NUCLEAR=()
+for r in "${REGIONS[@]}"; do [ "$r" = chrM ] || NUCLEAR+=("$r"); done
+sam view -@ "$THREADS" -M -b -s "${SEED}${FRACTION#0}" \
+  -o /w/.work/nuclear.bam /w/.work/slice_full.bam "${NUCLEAR[@]}"
+FULL_CHRM=$(sam coverage -r chrM /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
+CHRM_FRACTION=$(awk -v d="$FULL_CHRM" -v t="$CHRM_DEPTH" 'BEGIN {f = t / d; if (f > 0.9999) f = 0.9999; printf "%.4f", f}')
+echo "  chrM depth ${FULL_CHRM}x; keeping a fraction of ${CHRM_FRACTION}"
+sam view -@ "$THREADS" -b -s "${SEED}${CHRM_FRACTION#0}" -o /w/.work/chrM.bam /w/.work/slice_full.bam chrM
+sam merge -f -@ "$THREADS" -o "/w/${SAMPLE}_slice.bam" /w/.work/nuclear.bam /w/.work/chrM.bam
 sam index "/w/${SAMPLE}_slice.bam"
-rm -f "${WORK}/slice_full.bam" "${WORK}/slice_full.bam.bai" "${WORK}"/*.bai
+rm -f "${WORK}/slice_full.bam" "${WORK}/slice_full.bam.bai" "${WORK}"/*.bai "${WORK}/nuclear.bam" "${WORK}/chrM.bam"
 SLICE_DEPTH=$(sam coverage -r chr20:10000000-10500000 "/w/${SAMPLE}_slice.bam" | awk 'NR == 2 {print $7}')
 
 echo "[3/8] Paired FASTQ (name-collated, secondary and supplementary records dropped)"
@@ -329,6 +358,8 @@ fi
   echo "chr20_slice_depth_before: ${FULL_DEPTH}"
   echo "subsample_fraction: ${FRACTION} (seed ${SEED})"
   echo "chr20_slice_depth_after: ${SLICE_DEPTH}"
+  echo "chrM_depth_before: ${FULL_CHRM}; kept fraction ${CHRM_FRACTION}"
+  echo "gstt1_alt_contig: ${GSTT1_ALT} from NCBI ${GSTT1_ALT_ACC} (${ALT_LEN} bp)"
   echo "read_pairs: ${R1_READS}"
   echo "truth_source: ${TRUTH_BASE}.vcf.gz"
   echo "clinvar_source: ${CLINVAR_URL} (fileDate ${CLINVAR_DATE})"
