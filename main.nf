@@ -43,8 +43,25 @@ workflow {
         error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
     }
 
-    // Fail-fast: warn when enabled tools lack required databases
-    def tools_list = params.tools ? params.tools.split(',').collect { it.trim() } : []
+    def tools_list = params.tools ? params.tools.split(',').collect { it.trim() }.findAll { it } : []
+
+    // Every name the workflows gate on. A name outside this list would be
+    // ignored silently (e.g. 'clinvar_screen' instead of 'clinvar').
+    def known_tools = [
+        'pharmcat', 'cpic', 'clinvar', 'pypgx',
+        'vep', 'vcfanno', 'slivar', 'clinical_filter',
+        'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
+        'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
+        'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
+        'html_report', 'multiqc',
+    ]
+    def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
+    if (unknown_tools) {
+        error "unknown tool${unknown_tools.size() > 1 ? 's' : ''} ${unknown_tools.join(', ')} in --tools. " +
+              "Known tools: ${known_tools.join(', ')}."
+    }
+
+    // Fail-fast: stop when enabled tools lack required databases
 
     def db_requirements = [
         ['vep',              'vep_cache',         '--vep_cache'],
@@ -57,6 +74,7 @@ workflow {
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
         ['annotsv',          'annotsv_annotations', '--annotsv_annotations'],
+        ['cnvpytor',         'cnvpytor_resources', '--cnvpytor_resources'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -78,6 +96,14 @@ workflow {
               "Stranger annotates ExpansionHunter VCF output — add 'expansion_hunter' to --tools or remove 'stranger'."
     }
 
+    // survivor_merge keeps calls seen by two or more callers; with one caller
+    // it would write a header-only consensus and report success.
+    def sv_callers = ['manta', 'delly', 'cnvpytor'].findAll { tools_list.contains(it) }
+    if (tools_list.contains('survivor_merge') && sv_callers.size() < 2) {
+        error "Tool 'survivor_merge' needs at least two SV callers in --tools (manta, delly, cnvpytor); " +
+              "got ${sv_callers ? sv_callers.join(', ') : 'none'}. Add another caller or remove 'survivor_merge'."
+    }
+
     // ClinVar: paired inputs required together
     if (params.clinvar && !params.clinvar_index) {
         error "When --clinvar is provided, --clinvar_index must also be provided."
@@ -88,24 +114,34 @@ workflow {
 
     // ─── Parse samplesheet ──────────────────────────────────────────────
     // Expected columns: sample,vcf,vcf_index,bam,bam_index
+    // Rows are read and checked here, before any task starts, so a bad row
+    // stops the run at once.
+    def samplesheet_rows = file(params.input, checkIfExists: true).splitCsv(header: true, strip: true)
+    def seen_samples = [] as Set
+    samplesheet_rows.each { row ->
+        if (!row.sample || !row.vcf || !row.vcf_index) {
+            error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
+        }
+        // Sanitize sample ID — used in shell commands, file paths, and HTML output
+        if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
+            error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
+        }
+        // Sample ids name the output directory and key every per-sample join
+        if (!seen_samples.add(row.sample)) {
+            error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
+        }
+        // Validate BAM/BAI are provided together
+        if (row.bam && !row.bam_index) {
+            error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
+        }
+        if (!row.bam && row.bam_index) {
+            error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
+        }
+    }
+
     Channel
-        .fromPath(params.input, checkIfExists: true)
-        .splitCsv(header: true, strip: true)
+        .fromList(samplesheet_rows)
         .map { row ->
-            if (!row.sample || !row.vcf || !row.vcf_index) {
-                error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
-            }
-            // Sanitize sample ID — used in shell commands, file paths, and HTML output
-            if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
-                error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
-            }
-            // Validate BAM/BAI are provided together
-            if (row.bam && !row.bam_index) {
-                error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
-            }
-            if (!row.bam && row.bam_index) {
-                error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
-            }
             def meta = [id: row.sample]
             def vcf = file(row.vcf, checkIfExists: true)
             def vcf_index = file(row.vcf_index, checkIfExists: true)
