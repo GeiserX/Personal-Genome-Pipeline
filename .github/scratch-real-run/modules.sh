@@ -24,7 +24,9 @@ header() {
   echo '##contig=<ID=chr17,length=83257441>'
   echo '##FILTER=<ID=PASS,Description="All filters passed">'
   echo '##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. Format: Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|Existing_variation|gnomADe_AF|CLIN_SIG">'
-  echo '##INFO=<ID=SpliceAI,Number=.,Type=String,Description="SpliceAIv1.3 variant annotation. Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL">'
+  if [ "${1:-}" = spliceai ]; then
+    echo '##INFO=<ID=SpliceAI,Number=.,Type=String,Description="SpliceAIv1.3 variant annotation. Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL">'
+  fi
   echo '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
   printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n'
 }
@@ -34,7 +36,7 @@ records() {
   printf 'chr2\t178528000\t.\tT\tC\t50\tPASS\tCSQ=C|missense_variant|MODERATE|TTN|ENSG00000155657|Transcript|ENST00000589042|protein_coding|.|0.002|.\tGT\t0/1\n'
   printf 'chr17\t43045712\t.\tG\tA\t50\tPASS\tCSQ=A|stop_gained|HIGH|BRCA1|ENSG00000012048|Transcript|ENST00000357654|protein_coding|.|0.0001|pathogenic\tGT\t0/1\n'
 }
-{ header; records
+{ header spliceai; records
   printf 'chr17\t43045800\t.\tC\tT\t50\tPASS\tCSQ=T|intron_variant|MODIFIER|BRCA1|ENSG00000012048|Transcript|ENST00000357654|protein_coding|.|0.0002|.;SpliceAI=T|BRCA1|0.85|0.00|0.00|0.00|1|2|3|4\tGT\t0/1\n'
 } > test.vcf
 { header; records; } > slivar.vcf
