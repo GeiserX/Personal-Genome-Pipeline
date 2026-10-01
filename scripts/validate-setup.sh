@@ -282,7 +282,7 @@ else
     pass "AnnotSV annotation data (step 5): present"
   else
     warn "AnnotSV annotation data not found at: ${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38"
-    echo "       Step 5 (AnnotSV) will be skipped. Download it (~5.3 GB) with: ./scripts/setup.sh ${GENOME_DIR}"
+    echo "       Step 5 (AnnotSV) will be skipped. Download it (~5.3 GB, ~20 GB unpacked) with: ./scripts/setup.sh ${GENOME_DIR}"
   fi
 
   # --- Annotation databases (optional, for steps 30-31) ---

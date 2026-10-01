@@ -15,7 +15,7 @@ quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
 ```
 
 ## Annotation Data
-The image holds AnnotSV's code only. Its annotation data (genes, known pathogenic SVs, population frequencies) is a separate 5.3 GB download, and AnnotSV exits with an error without it. `./scripts/setup.sh` downloads and unpacks it into `${GENOME_DIR}/annotsv_annotations/`. To do it by hand:
+The image holds AnnotSV's code only. Its annotation data (genes, known pathogenic SVs, population frequencies) is a separate 5.3 GB download that unpacks to about 20 GB, and AnnotSV exits with an error without it. The server is slow (about 0.8 MB/s measured from a GitHub runner), so the download can take 1-2 hours; `curl -C -` resumes it. `./scripts/setup.sh` downloads and unpacks it into `${GENOME_DIR}/annotsv_annotations/`. To do it by hand:
 
 ```bash
 curl -fL -C - -o ${GENOME_DIR}/Annotations_Human_3.5.tar.gz \
