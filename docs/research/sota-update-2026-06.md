@@ -74,4 +74,4 @@ Long-read-only (skip for short-read Illumina WGS — no methylation signal in th
 - TelomereHunter `latest` → pin 1.1.0; haplogrep3 `latest` → pin v3.3.2.
 
 ## Validation before merging any of the above
-Per `CLAUDE.md`: run the affected steps on a **known sample** and diff against the previous run — pathogenic hit counts (ClinVar/VEP), diplotypes + phenotypes (PharmCAT/CPIC), `variants_used/variants_total` + raw deltas (PGS). Treat a scoring-file or cache version change as a new baseline, not a directly comparable result.
+Per `CLAUDE.md`: run the affected steps on a **known sample** and diff against the previous run — pathogenic hit counts (ClinVar/VEP), diplotypes + phenotypes (PharmCAT/CPIC), `Variants_Matched/Variants_Total` + raw deltas (PGS). Treat a scoring-file or cache version change as a new baseline, not a directly comparable result.

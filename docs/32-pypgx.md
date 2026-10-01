@@ -2,13 +2,13 @@
 
 ## What This Does
 
-Comprehensive pharmacogenomic star allele calling for 23 clinically actionable genes, including structural variation (SV) detection from BAM read depth. Complements PharmCAT (step 7) by covering genes that VCF-only callers miss entirely, most notably CYP2D6 gene deletions and duplications.
+Comprehensive pharmacogenomic star allele calling for 23 clinically actionable genes, including structural variation (SV) detection from BAM read depth. Complements PharmCAT (step 7) by covering genes that VCF-only callers miss entirely, including gene deletions and duplications. See Limitations before trusting a CYP2D6 copy-number call.
 
 ## Why
 
 PharmCAT (step 7) calls ~23 genes from VCF data alone. This works well for simple SNP-based star alleles but fails for genes with structural variation — CYP2D6, CYP2A6, GSTM1, and GSTT1 all have common whole-gene deletions and duplications that VCF callers cannot represent. CYP2D6 alone affects 25% of all prescribed drugs, and PharmCAT frequently returns "Not called" for it.
 
-Cyrius (step 21) was designed specifically for CYP2D6 but can fail on some WGS samples due to CYP2D7 pseudogene homology. pypgx uses a different read-depth algorithm that handles this homology more robustly.
+Cyrius (step 21) was designed specifically for CYP2D6 but can fail on some WGS samples due to CYP2D7 pseudogene homology. pypgx calls copy number from read depth, a different method; neither tool settles CYP2D6 alone (see Limitations).
 
 pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1, GSTT1, and IFNL3.
 
