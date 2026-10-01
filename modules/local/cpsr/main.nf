@@ -11,7 +11,7 @@
 
 process CPSR {
     tag "$meta.id"
-    label 'process_high'
+    label 'process_medium'
 
     container 'sigven/pcgr:2.2.5'
 

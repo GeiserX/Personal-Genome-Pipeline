@@ -14,7 +14,7 @@
 
 process DELLY {
     tag "$meta.id"
-    label 'process_high'
+    label 'process_medium'
 
     container 'quay.io/biocontainers/delly:2.1.0--h3752d28_0'
 

@@ -43,6 +43,10 @@ workflow {
     if (!params.reference) {
         error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
     }
+    if (params.reference.endsWith('.gz')) {
+        error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +
+              "decompress it (gunzip, or bgzip -d) and run 'samtools faidx' on the result."
+    }
 
     def tools_list = params.tools ? params.tools.split(',').collect { it.trim() }.findAll { it } : []
 
@@ -206,9 +210,17 @@ workflow {
     // ─── Reference genome ───────────────────────────────────────────────
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
     ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
-    ch_reference_dict = Channel.value(
-        file(params.reference.replaceAll(/\.(fasta|fa|fna)$/, '.dict'), checkIfExists: true)
-    )
+    // Only MITO_VARIANTS (GATK) reads the sequence dictionary
+    ch_reference_dict = Channel.value([])
+    if (tools_list.contains('mito_variants')) {
+        if (!(params.reference ==~ /.*\.(fasta|fa|fna)$/)) {
+            error "mito_variants needs the reference's .dict next to it, found by replacing the FASTA extension; " +
+                  "--reference ${params.reference} does not end in .fasta, .fa or .fna."
+        }
+        ch_reference_dict = Channel.value(
+            file(params.reference.replaceAll(/\.(fasta|fa|fna)$/, '.dict'), checkIfExists: true)
+        )
+    }
 
     // ─── Optional reference databases ───────────────────────────────────
     // Empty list [] = "no file" — standard Nextflow pattern for optional path inputs.
