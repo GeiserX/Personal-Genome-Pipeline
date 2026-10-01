@@ -60,7 +60,7 @@ You can build it yourself on Linux with Docker, `bgzip` and `tabix` and about 10
 
 [`scripts/ci/e2e-run.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/e2e-run.sh) downloads the fixture, checks `SHA256SUMS`, lays out a `GENOME_DIR` the way `setup.sh` and step 13 would leave it, and runs every case file in [`tests/e2e/`](https://github.com/GeiserX/Personal-Genome-Pipeline/tree/main/tests/e2e). It runs all of them even when one fails, so one run lists every broken step. The job summary shows a table of case, result, time and log, plus the failed checks of each failed case; the full logs are in the `e2e-logs` artifact.
 
-It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting the preinstalled Android, .NET and Haskell toolchains to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
+It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
 
 What it covers:
 
