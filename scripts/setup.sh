@@ -2,12 +2,18 @@
 # setup.sh — One-stop setup: download references, pull Docker images, validate
 # Usage: ./scripts/setup.sh <genome_dir>
 #        ./scripts/setup.sh --pull-only      pull the Docker images and exit
+#        ./scripts/setup.sh --refresh clinvar <genome_dir>
+#                                            replace ClinVar with NCBI's current
+#                                            release and rebuild the files made from it
 #
 # This script downloads everything needed to run the pipeline:
 #   1. GRCh38 reference genome + index (~3.5 GB)
-#   2. ClinVar database (~200 MB)
+#   2. ClinVar database (~200 MB), with its release date in clinvar/RELEASE
 #   3. All Docker images (~10-15 GB)
-#   4. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
+#   4. The reference's sequence dictionary and small pinned data files: Delly's
+#      exclude map, GRCh38 chromosome bands, an IPD-IMGT/HLA release and the
+#      GENCODE gene coordinates T1K needs (~350 MB)
+#   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
 #
 # VEP cache (~26 GB) and PCGR ref data (~5 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
@@ -21,19 +27,33 @@
 set -euo pipefail
 
 PULL_ONLY=false
-if [ "${1:-}" = "--pull-only" ]; then
-  PULL_ONLY=true
-  shift
-fi
+REFRESH=""
+case "${1:-}" in
+  --pull-only)
+    PULL_ONLY=true
+    shift ;;
+  --refresh)
+    REFRESH=${2:-}
+    if [ "$REFRESH" != clinvar ]; then
+      echo "Usage: $0 --refresh clinvar <genome_dir>" >&2
+      echo "  (clinvar is the one database this flag refreshes)" >&2
+      exit 1
+    fi
+    shift 2 ;;
+esac
 
 GENOME_DIR=${1:-${GENOME_DIR:-""}}
 if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "Usage: $0 <genome_dir>"
   echo "       $0 --pull-only"
+  echo "       $0 --refresh clinvar <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
   echo "  --pull-only   Pull the Docker images listed in versions.env and exit."
+  echo "  --refresh clinvar"
+  echo "                Download NCBI's current ClinVar, rebuild the files made from it"
+  echo "                and record its release date in <genome_dir>/clinvar/RELEASE."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -80,6 +100,89 @@ pull_images() {
   fi
 }
 
+# --- ClinVar ---------------------------------------------------------------------
+CLINVAR_URL="https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+CLINVARDIR="${GENOME_DIR:+${GENOME_DIR}/clinvar}"
+# The raw download and the two files built from it, each with its index.
+CLINVAR_SET="clinvar.vcf.gz clinvar.vcf.gz.tbi clinvar_chr.vcf.gz clinvar_chr.vcf.gz.tbi
+  clinvar_pathogenic_chr.vcf.gz clinvar_pathogenic_chr.vcf.gz.tbi"
+
+# clinvar_build_derived RAW_DIR OUT_DIR: from RAW_DIR/clinvar.vcf.gz build, in
+# OUT_DIR (both under GENOME_DIR), clinvar_chr.vcf.gz (NCBI's 1, 2 ... MT
+# renamed to chr1, chr2 ... chrM) and clinvar_pathogenic_chr.vcf.gz (the
+# Pathogenic and Likely_pathogenic records), each with its .tbi.
+clinvar_build_derived() {
+  local raw out
+  raw=$(cpath "$1") && out=$(cpath "$2") || return 2
+  awk 'BEGIN { for (i = 1; i <= 22; i++) print i, "chr" i; print "X chrX"; print "Y chrY"; print "MT chrM" }' \
+    > "${2}/chr_rename.txt"
+  echo "  Creating chr-prefixed ClinVar..."
+  run_in --rw "$2" "$BCFTOOLS_IMAGE" \
+    bcftools annotate --rename-chrs "${out}/chr_rename.txt" "${raw}/clinvar.vcf.gz" \
+      -Oz -o "${out}/clinvar_chr.vcf.gz" || return 1
+  run_in --rw "$2" "$BCFTOOLS_IMAGE" bcftools index -f -t "${out}/clinvar_chr.vcf.gz" || return 1
+  echo "  Creating pathogenic/likely pathogenic subset..."
+  run_in --rw "$2" "$BCFTOOLS_IMAGE" \
+    bcftools view -i 'CLNSIG~"Pathogenic" || CLNSIG~"Likely_pathogenic"' "${out}/clinvar_chr.vcf.gz" \
+      -Oz -o "${out}/clinvar_pathogenic_chr.vcf.gz" || return 1
+  run_in --rw "$2" "$BCFTOOLS_IMAGE" bcftools index -f -t "${out}/clinvar_pathogenic_chr.vcf.gz" || return 1
+  rm -f "${2}/chr_rename.txt"
+}
+
+# clinvar_install DIR: move every file of CLINVAR_SET that DIR holds into
+# clinvar/, then remove DIR. The data files go first and their indexes after.
+clinvar_install() {
+  local f
+  for f in $CLINVAR_SET; do
+    case "$f" in *.tbi) continue ;; esac
+    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}"; fi
+  done
+  for f in $CLINVAR_SET; do
+    case "$f" in *.tbi) ;; *) continue ;; esac
+    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}"; fi
+  done
+  rm -rf "$1"
+}
+
+# clinvar_record_release: write the ##fileDate of clinvar/clinvar.vcf.gz
+# (YYYY-MM-DD) to clinvar/RELEASE, which validate-setup.sh and step 06 print.
+clinvar_record_release() {
+  local d
+  d=$(gzip -cd "${CLINVARDIR}/clinvar.vcf.gz" 2>/dev/null | head -n 100 \
+      | awk -F= '/^##fileDate=/ { print $2; exit }') || true
+  case "$d" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) d="${d:0:4}-${d:4:2}-${d:6:2}" ;;
+  esac
+  case "$d" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+      printf '%s\n' "$d" > "${CLINVARDIR}/RELEASE.tmp"
+      mv -f "${CLINVARDIR}/RELEASE.tmp" "${CLINVARDIR}/RELEASE"
+      echo "[OK] ClinVar release ${d} (recorded in ${CLINVARDIR}/RELEASE)." ;;
+    *)
+      echo "[WARN] ${CLINVARDIR}/clinvar.vcf.gz has no ##fileDate line; its release date is unknown." ;;
+  esac
+}
+
+# refresh_clinvar: download NCBI's current ClinVar into clinvar/.refresh/,
+# check it against NCBI's md5, build both derived files from it there, and only
+# then replace all six files. The normalised copy step 06 keeps is removed, so
+# step 06 builds it again from the new release.
+refresh_clinvar() {
+  local new="${CLINVARDIR}/.refresh"
+  rm -rf "$new"
+  mkdir -p "$new"
+  echo "Downloading the current ClinVar release..."
+  fetch "$CLINVAR_URL" "${new}/clinvar.vcf.gz" md5 "${CLINVAR_URL}.md5" || return 1
+  fetch "${CLINVAR_URL}.tbi" "${new}/clinvar.vcf.gz.tbi" || return 1
+  clinvar_build_derived "$new" "$new" || {
+    echo "ERROR: could not build the ClinVar files from the new release; the old ones are kept." >&2
+    return 1
+  }
+  clinvar_install "$new"
+  rm -f "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz" "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz.tbi"
+  clinvar_record_release
+}
+
 echo "============================================"
 echo "  Personal Genome Pipeline — Setup"
 echo "  Data directory: ${GENOME_DIR:-(none: --pull-only)}"
@@ -103,6 +206,16 @@ if $PULL_ONLY; then
   echo ""
   echo "=== Docker Images (~10-15 GB total) ==="
   pull_images || exit 1
+  exit 0
+fi
+
+if [ "$REFRESH" = clinvar ]; then
+  mkdir -p "$CLINVARDIR"
+  echo ""
+  echo "=== Refreshing ClinVar ==="
+  if [ -f "${CLINVARDIR}/RELEASE" ]; then echo "  Current release: $(cat "${CLINVARDIR}/RELEASE")"; fi
+  refresh_clinvar || exit 1
+  echo "[OK] ClinVar refreshed: raw file, chr-prefixed file and pathogenic subset replaced."
   exit 0
 fi
 
@@ -166,17 +279,16 @@ fi
 echo ""
 echo "=== Phase 2: ClinVar Database (~200 MB) ==="
 
-CLINVARDIR="${GENOME_DIR}/clinvar"
 mkdir -p "$CLINVARDIR"
 
 CLINVAR="${CLINVARDIR}/clinvar.vcf.gz"
 CLINVAR_TBI="${CLINVARDIR}/clinvar.vcf.gz.tbi"
 
 if [ -f "$CLINVAR" ] && [ -f "$CLINVAR_TBI" ]; then
-  echo "[OK] ClinVar database already downloaded."
+  echo "[OK] ClinVar database already downloaded. To replace it with the current release:"
+  echo "  ./scripts/setup.sh --refresh clinvar ${GENOME_DIR}"
 else
   echo "Downloading ClinVar database..."
-  CLINVAR_URL="https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
   if [ ! -f "$CLINVAR" ]; then
     # NCBI publishes the md5 next to the file.
     fetch "$CLINVAR_URL" "$CLINVAR" md5 "${CLINVAR_URL}.md5" || exit 1
@@ -187,30 +299,15 @@ else
 fi
 
 # The two derived files are built whenever one is missing, also on a rerun
-# with the raw download already present. Each is keyed on its own index,
-# which is written last, so a half-built file is rebuilt.
-
-# Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
-CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
-if [ ! -f "${CLINVAR_CHR}.tbi" ]; then
-  echo "Creating chr-prefixed ClinVar..."
-  run_in --rw "$CLINVARDIR" "$BCFTOOLS_IMAGE" \
-    bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
-      bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz.tmp &&
-      mv /genome/clinvar/clinvar_chr.vcf.gz.tmp /genome/clinvar/clinvar_chr.vcf.gz &&
-      bcftools index -f -t /genome/clinvar/clinvar_chr.vcf.gz'
+# with the raw download already present. They are built in clinvar/.build/
+# and moved in when both are complete, so a half-built file is never in place.
+if [ ! -f "${CLINVARDIR}/clinvar_chr.vcf.gz.tbi" ] || [ ! -f "${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz.tbi" ]; then
+  rm -rf "${CLINVARDIR}/.build"
+  mkdir -p "${CLINVARDIR}/.build"
+  clinvar_build_derived "$CLINVARDIR" "${CLINVARDIR}/.build" || exit 1
+  clinvar_install "${CLINVARDIR}/.build"
 fi
-
-# Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
-CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
-if [ ! -f "${CLINVAR_PATH}.tbi" ]; then
-  echo "Creating pathogenic/likely pathogenic subset..."
-  run_in --rw "$CLINVARDIR" "$BCFTOOLS_IMAGE" \
-    bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
-      -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp &&
-      mv /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
-      bcftools index -f -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
-fi
+if [ ! -f "${CLINVARDIR}/RELEASE" ]; then clinvar_record_release; fi
 echo "[OK] ClinVar database and its chr-prefixed and pathogenic subsets are ready."
 
 ###############################################################################
@@ -223,13 +320,58 @@ echo "=== Phase 3: Docker Images (~10-15 GB total) ==="
 pull_images || exit 1
 
 ###############################################################################
-# Phase 4: AnnotSV annotation data (step 5, a default step)
+# Phase 4: Sequence dictionary and small pinned data files
+###############################################################################
+echo ""
+echo "=== Phase 4: Sequence dictionary and pinned data files (~350 MB) ==="
+
+# GATK and Picard (steps 03a, 20, 29, chip-to-vcf) need the reference's .dict.
+if [ -f "$REF_DICT" ]; then
+  echo "[OK] Sequence dictionary already present."
+else
+  echo "Creating the sequence dictionary ${REF_DICT}..."
+  DICT_PART="${REF_DICT%.dict}.part.dict"
+  rm -f "$DICT_PART"
+  # The dictionary goes next to the FASTA, so its directory is writable here.
+  if run_in --rw "$REFDIR" "$GATK_IMAGE" \
+       gatk CreateSequenceDictionary -R "$REF_FASTA_C" -O "$(cpath "$DICT_PART")" \
+     && [ -s "$DICT_PART" ]; then
+    mv -f "$DICT_PART" "$REF_DICT"
+    echo "[OK] Sequence dictionary created."
+  else
+    rm -f "$DICT_PART"
+    echo "[WARN] Could not create ${REF_DICT}. Steps 03a, 20, 29 and chip-to-vcf need it; re-run setup.sh."
+  fi
+fi
+
+# Each from a fixed commit or release and checked before it is stored
+# (scripts/lib/common.sh, install_data_file). A failed download does not stop
+# setup: the step that needs the file says so, and setup.sh fetches it on its
+# next run.
+for name in $DATA_FILES; do
+  case "$name" in
+    delly_exclude) what="Delly exclude map (step 19)" ;;
+    cytoband) what="GRCh38 chromosome bands (step 10)" ;;
+    hla_dat) what="IPD-IMGT/HLA ${HLA_DB_RELEASE} (step 08)" ;;
+    gencode_genes) what="GENCODE ${GENCODE_RELEASE} gene coordinates (step 08)" ;;
+  esac
+  if dest=$(data_file "$name"); then
+    echo "[OK] ${what} already present."
+  elif install_data_file "$name"; then
+    echo "[OK] ${what}: ${dest}"
+  else
+    echo "[WARN] Could not install the ${what}. Re-run setup.sh to try again."
+  fi
+done
+
+###############################################################################
+# Phase 5: AnnotSV annotation data (step 5, a default step)
 ###############################################################################
 # The AnnotSV image holds code only; without this data AnnotSV exits with an
 # error. Downloaded under a .part name, extracted into a temporary directory
 # and moved into place only when complete.
 echo ""
-echo "=== Phase 4: AnnotSV annotation data (~5.3 GB download, ~20 GB unpacked) ==="
+echo "=== Phase 5: AnnotSV annotation data (~5.3 GB download, ~20 GB unpacked) ==="
 
 ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
 ANNOTSV_NAME="Annotations_Human_${ANNOTSV_ANNOTATIONS_VERSION}.tar.gz"
@@ -263,10 +405,10 @@ else
 fi
 
 ###############################################################################
-# Phase 5: Optional Downloads (instructions only)
+# Phase 6: Optional Downloads (instructions only)
 ###############################################################################
 echo ""
-echo "=== Phase 5: Optional Downloads (manual) ==="
+echo "=== Phase 6: Optional Downloads (manual) ==="
 echo ""
 echo "The following are only needed for specific steps and are large downloads:"
 echo ""
