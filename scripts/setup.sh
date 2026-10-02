@@ -169,8 +169,9 @@ clinvar_record_release() {
 # step 06 builds it again from the new release.
 refresh_clinvar() {
   local new="${CLINVARDIR}/.refresh"
-  rm -rf "$new"
+  # A download cut short last time (*.part) is resumed; anything else is redone.
   mkdir -p "$new"
+  find "$new" -mindepth 1 ! -name '*.part' -exec rm -rf {} +
   echo "Downloading the current ClinVar release..."
   fetch "$CLINVAR_URL" "${new}/clinvar.vcf.gz" md5 "${CLINVAR_URL}.md5" || return 1
   fetch "${CLINVAR_URL}.tbi" "${new}/clinvar.vcf.gz.tbi" || return 1

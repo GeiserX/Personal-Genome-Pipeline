@@ -325,7 +325,8 @@ else
   done
 
   for i in $(seq 0 $((NUM_CALLERS - 1))); do
-    for j in $(seq $((i + 1)) $((NUM_CALLERS - 1))); do
+    # Not `seq i+1 N-1`: BSD seq (macOS) counts down when i+1 > N-1.
+    for ((j = i + 1; j < NUM_CALLERS; j++)); do
       CALLER_A="${CALLER_NAMES[$i]}"
       CALLER_B="${CALLER_NAMES[$j]}"
       ISEC_DIR="/genome/${SAMPLE}/benchmark/isec_${CALLER_A}_vs_${CALLER_B}"
