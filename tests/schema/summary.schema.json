@@ -300,6 +300,7 @@
               "enum": [
                "normal",
                "non-normal",
+               "ambiguous",
                "not called",
                ""
               ]
@@ -323,6 +324,10 @@
            "items": {
             "type": "string"
            }
+          },
+          "ambiguous": {
+           "type": "integer",
+           "minimum": 0
           }
          }
         }

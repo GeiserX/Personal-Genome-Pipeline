@@ -107,9 +107,10 @@ def text_report(s):
         d = S["cpic"]["data"]
         if d["parse_failed"]:
             w("  The PharmCAT report could not be parsed: see the CPIC report.")
-        w(f"  Genes with a non-normal phenotype: {d['non_normal']}  Not called: {d['not_called']}")
+        w(f"  Genes with a non-normal phenotype: {d['non_normal']}  More than one possible result: "
+          f"{d.get('ambiguous', 0)}  Not called: {d['not_called']}")
         for g in d["genes"]:
-            if g["status"] == "non-normal":
+            if g["status"] in ("non-normal", "ambiguous"):
                 w(f"    {g['gene']:<10} {g['diplotype']:<28} {g['phenotype']}")
         for warn in d["warnings"]:
             w(f"  WARNING: {warn}")
@@ -356,7 +357,9 @@ def html_report(s):
     if pg.get("version"):
         pgx_body.append(stat("PharmCAT version", E(pg["version"])))
     if S["cpic"]["state"] in ("ok", "stale"):
-        pgx_body += [stat("Genes with a non-normal phenotype", cp["non_normal"]), stat("Genes not called", cp["not_called"])]
+        pgx_body += [stat("Genes with a non-normal phenotype", cp["non_normal"]),
+                     stat("Genes with more than one possible result", cp.get("ambiguous", 0)),
+                     stat("Genes not called", cp["not_called"])]
         if S["cpic"]["state"] == "stale":
             pgx_body.insert(0, f'    <div class="stale">{E(stale_note(S["cpic"]))}</div>')
     if S["pypgx"]["state"] in ("ok", "stale") and "comparison" in S["pypgx"]["data"]:
@@ -404,7 +407,7 @@ def html_report(s):
     anc = [stat("Mitochondrial haplogroup", E(hg.get("haplogroup", "N/A"))),
            stat("ROH total", f"{r.get('total_mb', 'N/A')} MB"),
            stat("ROH largest segment", f"{r.get('largest_mb', 'N/A')} MB"),
-           stat("Autosomal ROH &gt; 5 MB", len(r["autosomal_over_5mb"]) if "autosomal_over_5mb" in r else "N/A"),
+           stat("Autosomal ROH > 5 MB", len(r["autosomal_over_5mb"]) if "autosomal_over_5mb" in r else "N/A"),
            stat("Telomere content", E(str(tl.get("tel_content", "N/A"))))]
     notes = [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
              for k in ("haplogroup", "roh", "telomere") if stale_note(S[k])]
@@ -432,14 +435,14 @@ def html_report(s):
                ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th></tr>",
                 rows.rstrip("\n"), "    </table>"], full=True))
 
-    if S["cpic"]["state"] in ("ok", "stale") and cp["non_normal"]:
+    if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"
-                       for g in cp["genes"] if g["status"] == "non-normal")
+                       for g in cp["genes"] if g["status"] in ("non-normal", "ambiguous"))
         body = ["    <table>", "      <tr><th>Gene</th><th>Diplotype</th><th>Phenotype</th></tr>", rows.rstrip("\n"),
                 "    </table>"]
         body += [f'    <div class="stale">WARNING: {E(x)}</div>' for x in cp["warnings"]]
         body.append(f"    <p>Drugs for each gene: cpic/{E(s['sample'])}_cpic_recommendations.txt</p>")
-        a(card(S["cpic"], "Genes With a Non-Normal Phenotype (CPIC)", body, full=True))
+        a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"

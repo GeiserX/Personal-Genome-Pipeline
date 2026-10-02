@@ -65,19 +65,32 @@ NORMAL_WORDS = {"normal", "typical", "extensive"}
 
 
 class GeneCall:
-    """One gene of the report: what PharmCAT called and how to read it."""
+    """One gene of the report: what PharmCAT called and how to read it.
 
-    def __init__(self, gene, diplotype, phenotype, called):
+    labels are all the diplotypes PharmCAT lists for the gene. More than one
+    means the data cannot tell them apart (positions missing from the VCF, for
+    example); when their phenotypes differ the gene is 'ambiguous' and its
+    first diplotype must not be read as the result."""
+
+    def __init__(self, gene, diplotype, phenotype, called, labels=None, phenotypes=None):
         self.gene = gene
         self.diplotype = diplotype
         self.phenotype = phenotype
         self.called = called
+        self.labels = labels or [diplotype]
+        self.phenotypes = phenotypes or [phenotype]
+
+    @property
+    def ambiguous(self):
+        return self.called and len(set(self.phenotypes)) > 1
 
     @property
     def status(self):
-        """'not called', 'normal' or 'non-normal' (listed with its drugs)."""
+        """'not called', 'ambiguous', 'normal' or 'non-normal' (listed with its drugs)."""
         if not self.called:
             return "not called"
+        if self.ambiguous:
+            return "ambiguous"
         if is_normal(self.phenotype):
             return "normal"
         return "non-normal"
@@ -96,14 +109,8 @@ def is_normal(phenotype):
     return all(NORMAL_WORDS & set(p.replace("-", " ").split()) for p in parts)
 
 
-def _diplotype(name, g):
-    """GeneCall from a gene object with a diplotype array, else None."""
-    if not isinstance(g, dict):
-        return None
-    dips = g.get("sourceDiplotypes") or g.get("recommendationDiplotypes") or []
-    if not dips:
-        return None
-    dip = dips[0]
+def _one_diplotype(dip):
+    """(label, phenotype, called) of one diplotype object."""
     alleles = [dip.get(a) for a in ("allele1", "allele2")]
     names = [(a or {}).get("name", "") for a in alleles if a]
     label = dip.get("label") or "/".join(n or "?" for n in names) or "?"
@@ -120,7 +127,26 @@ def _diplotype(name, g):
         phenotype = "no phenotype assigned" if called else "No Result"
     if phenotype.strip().lower() in ("no result", "n/a") and not called:
         phenotype = "No Result"
-    return GeneCall(name, label, phenotype, called)
+    return label, phenotype, called
+
+
+def _diplotype(name, g):
+    """GeneCall from a gene object with a diplotype array, else None."""
+    if not isinstance(g, dict):
+        return None
+    dips = [d for d in (g.get("sourceDiplotypes") or g.get("recommendationDiplotypes") or []) if isinstance(d, dict)]
+    if not dips:
+        return None
+    parsed = [_one_diplotype(d) for d in dips]
+    label, phenotype, called = parsed[0]
+    labels = [p[0] for p in parsed]
+    phenotypes = list(dict.fromkeys(p[1] for p in parsed))
+    if len(parsed) > 1:
+        label = f"{label} (1 of {len(parsed)} possible)"
+        if len(phenotypes) > 1:
+            shown = ", ".join(phenotypes[:5]) + (", ..." if len(phenotypes) > 5 else "")
+            phenotype = f"ambiguous: one of {shown}"
+    return GeneCall(name, label, phenotype, called, labels, phenotypes)
 
 
 def parse_genes(data):
@@ -186,8 +212,10 @@ def _source_rank(short):
 
 
 def drug_guidance(data):
-    """{gene: [(drug, source, classification, recommendation)]} from the report's
-    own `drugs` section: only the annotations PharmCAT matched to this sample."""
+    """{gene: [(drug, source, classification, recommendation, labels, phenotype)]}
+    from the report's own `drugs` section. PharmCAT lists an annotation for
+    every diplotype the sample may have; labels and phenotype say which
+    diplotypes of the gene each one is for (see matching())."""
     out = {}
     drugs = data.get("drugs") if isinstance(data, dict) else None
     if not isinstance(drugs, dict):
@@ -203,15 +231,17 @@ def drug_guidance(data):
                 for ann in (gl or {}).get("annotations") or []:
                     if not isinstance(ann, dict):
                         continue
-                    genes = set((ann.get("phenotypes") or {}).keys())
+                    phen = ann.get("phenotypes") or {}
+                    labels = {}
                     for gt in ann.get("genotypes") or []:
                         for dp in (gt or {}).get("diplotypes") or []:
                             if isinstance(dp, dict) and dp.get("gene"):
-                                genes.add(dp["gene"])
+                                labels.setdefault(dp["gene"], set()).add(dp.get("label") or "")
                     rec = " ".join(str(ann.get("drugRecommendation") or "").split())
                     cls = ann.get("classification") or ""
-                    for g in genes:
-                        entry = (rep.get("name") or drug_name, src, cls, rec)
+                    for g in set(phen) | set(labels):
+                        entry = (rep.get("name") or drug_name, src, cls, rec,
+                                 frozenset(labels.get(g, ())), str(phen.get(g) or ""))
                         if entry not in out.setdefault(g, []):
                             out[g].append(entry)
     for g in out:
@@ -233,14 +263,24 @@ def related_drugs(data):
     return out
 
 
-def drug_lines(gene, guidance, related):
+def matching(call, entries):
+    """The guidance entries for the diplotype PharmCAT called: those naming the
+    called diplotype, else those for the called phenotype."""
+    by_label = [e for e in entries if call.labels[0] in e[4]]
+    if by_label:
+        return by_label
+    return [e for e in entries if not e[4] and e[5] and e[5] in call.phenotype]
+
+
+def drug_lines(call, guidance, related):
     """The lines that list a gene's medications, best source first: CPIC's
     matched recommendation per drug, then the drugs other sources name."""
-    entries = guidance.get(gene) or []
+    gene = call.gene
+    entries = matching(call, guidance.get(gene) or [])
     if entries:
         lines = ["    Drugs with guidance in this PharmCAT report:"]
         shown = set()
-        for drug, src, cls, rec in entries:
+        for drug, src, cls, rec, _, _ in entries:
             if src != "CPIC" or drug in shown:
                 continue
             shown.add(drug)
@@ -250,9 +290,9 @@ def drug_lines(gene, guidance, related):
             if rec:
                 head += ": " + (rec if len(rec) <= 200 else rec[:197] + "...")
             lines.append(head)
-        others = sorted({drug for drug, src, _, _ in entries if src != "CPIC" and drug not in shown})
+        others = sorted({e[0] for e in entries if e[1] != "CPIC" and e[0] not in shown})
         if others:
-            srcs = sorted({src for _, src, _, _ in entries if src != "CPIC"}, key=_source_rank)
+            srcs = sorted({e[1] for e in entries if e[1] != "CPIC"}, key=_source_rank)
             lines.append(f"      also named by {', '.join(srcs)}: " + ", ".join(others))
         return lines
     if related.get(gene):
@@ -295,7 +335,9 @@ def compare(calls, pypgx):
     for gene in sorted(set(pc) | set(pypgx)):
         c = pc.get(gene)
         pc_dip = c.diplotype if c else "Not called"
-        pc_ok = bool(c and c.called)
+        pc_ok = bool(c and c.called and not c.ambiguous)
+        if c and c.ambiguous:
+            pc_dip = f"ambiguous ({len(c.labels)} possible diplotypes)"
         pg_dip = pypgx.get(gene, ("Not called", ""))[0] or "Not called"
         pg_ok = pypgx_called(pg_dip)
         if not pc_ok and not pg_ok:
@@ -317,15 +359,23 @@ def pypgx_warnings(calls, pypgx, guidance, related):
     the medications section is silent on them, so say so."""
     lines = []
     for c in calls:
-        if c.called or c.gene not in pypgx:
+        if (c.called and not c.ambiguous) or c.gene not in pypgx:
             continue
         dip, phen = pypgx[c.gene]
         if not pypgx_called(dip):
             continue
-        lines.append(f"  WARNING: PharmCAT has no result for {c.gene}, but pypgx (step 32) called "
+        what = "no result" if not c.called else f"no single result ({len(c.labels)} possible diplotypes)"
+        if is_normal(phen):
+            # pypgx's call is normal: worth knowing, nothing to review.
+            lines.append(f"  NOTE: PharmCAT has {what} for {c.gene}; pypgx (step 32) called {dip} ({phen}).")
+            continue
+        lines.append(f"  WARNING: PharmCAT has {what} for {c.gene}, but pypgx (step 32) called "
                      f"{dip} ({phen or 'no phenotype'}). The medications above do not cover {c.gene}.")
-        names = [e[0] for e in guidance.get(c.gene, [])] or related.get(c.gene) \
-            or (STATIC_DRUGS.get(c.gene, "").split(",") if STATIC_DRUGS.get(c.gene) else [])
+        # Every drug PharmCAT links to the gene, not only the ones whose
+        # guidance happened to match another gene of this sample.
+        names = related.get(c.gene) \
+            or (STATIC_DRUGS.get(c.gene, "").split(",") if STATIC_DRUGS.get(c.gene) else []) \
+            or [e[0] for e in guidance.get(c.gene, [])]
         if names:
             lines.append(f"    Drugs affected by {c.gene}: " + ", ".join(dict.fromkeys(names)))
         lines.append("    Review them with the pypgx call and docs/32-pypgx.md.")
@@ -393,11 +443,20 @@ def cpic_report(args):
     for c in listed:
         lines.append(f"  {c.gene} -- {c.phenotype}:")
         lines.append(f"    Diplotype: {c.diplotype}")
-        lines += drug_lines(c.gene, guidance, related)
+        lines += drug_lines(c, guidance, related)
         lines.append("    Action: Consult CPIC guidelines at https://cpicpgx.org/guidelines/")
         lines.append("")
     if not listed:
         lines += ["  No gene with a non-normal phenotype.", ""]
+
+    ambiguous = [c for c in calls if c.status == "ambiguous"]
+    if ambiguous:
+        lines += ["Genes With More Than One Possible Result:", "-" * 72, ""]
+        for c in ambiguous:
+            lines.append(f"  {c.gene} -- {len(c.labels)} possible diplotypes with different phenotypes "
+                         f"({', '.join(c.phenotypes[:5])}{', ...' if len(c.phenotypes) > 5 else ''}).")
+        lines += ["  The data cannot tell them apart (often positions missing from the VCF), so no",
+                  "  drug guidance is given for them here. See the PharmCAT HTML report.", ""]
 
     lines += ["Uncallable Genes:", "-" * 72, ""]
     uncalled = [c for c in calls if c.status == "not called"]
@@ -436,7 +495,8 @@ def cpic_report(args):
         same = sum(1 for r in rows if r[3] == "Yes")
         print(f"Comparison written: {args.comparison} (concordant {same}, other {len(rows) - same})")
 
-    print(f"Genes parsed: {len(calls)}; non-normal: {len(listed)}; not called: {len(uncalled)}")
+    print(f"Genes parsed: {len(calls)}; non-normal: {len(listed)}; ambiguous: {len(ambiguous)}; "
+          f"not called: {len(uncalled)}")
     return 0
 
 

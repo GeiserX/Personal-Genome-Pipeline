@@ -201,6 +201,7 @@ def sec_cpic(d, s):
                     warnings.append(line.strip()[len("WARNING:"):].strip())
     return p, {"genes": genes,
                "non_normal": sum(1 for g in genes if g["status"] == "non-normal"),
+               "ambiguous": sum(1 for g in genes if g["status"] == "ambiguous"),
                "not_called": sum(1 for g in genes if g["status"] == "not called"),
                "parse_failed": failed or not genes,
                "warnings": warnings}
@@ -590,11 +591,12 @@ def collect(sample, sample_dir):
     # CYP2D6 from the three callers, side by side.
     pc = next((g for g in sections["cpic"]["data"].get("genes", []) if g["gene"] == "CYP2D6"), None)
     calls = {
-        "PharmCAT": pc["diplotype"] if pc and pc["status"] != "not called" else None,
+        "PharmCAT": (pc["diplotype"] if pc["status"] not in ("not called", "ambiguous") else pc["status"]) if pc else None,
         "pypgx": sections["pypgx"]["data"].get("cyp2d6") if sections["pypgx"]["state"] == "ok" else None,
         "Cyrius": sections["cyrius"]["data"].get("genotype") if sections["cyrius"]["state"] == "ok" else None,
     }
-    called = {k: v for k, v in calls.items() if v and v not in ("not called", "none", "None/None", "FAILED")}
+    called = {k: v for k, v in calls.items()
+              if v and v not in ("not called", "ambiguous", "none", "None/None", "FAILED", "N/A")}
     norm = {k: "/".join(sorted(v.split("/"))) for k, v in called.items()}
     cyp2d6 = {"calls": calls,
               "agree": (len(set(norm.values())) == 1) if len(norm) >= 2 else None}
