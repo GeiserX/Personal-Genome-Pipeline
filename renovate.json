@@ -53,7 +53,7 @@
         "/^docs/[^/]+\\.md$/"
       ],
       "matchStrings": [
-        "NEXTFLOW_VERSION=\"(?<currentValue>[^\"]+)\"",
+        "NEXTFLOW_VERSION=\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
         "uses: nf-core/setup-nextflow@\\S+(?: #[^\\n]*)?\\n\\s+with:\\n\\s+version: \"(?<currentValue>[^\"]+)\"",
         "NXF_VER=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
