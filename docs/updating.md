@@ -36,7 +36,7 @@ Renovate reads biocontainer tags (`1.0.9--h5ca1c30_0`) as version, then build nu
 Every PR that changes `versions.env` runs:
 
 - **Guard**: `conf/containers.config` matches `versions.env` and every Nextflow process has an image.
-- **Renovate dry run**: every image is still found in every file it is copied to.
+- **Renovate dry run**: every image is still found in every file it is copied to, and `docs/versions.md` is exactly what `scripts/ci/gen-versions-doc.sh` writes from `versions.env`. When it is not, the job prints the command to run.
 - **Container Smoke Test**: pulls each image in its matrix and runs a short command. The matrix is a subset of `versions.env`.
 - **E2E**: runs the real tools on a small slice of a public genome. [Testing](testing.md#the-e2e-job) lists the steps it covers and the ones no CI job can run (offline VEP, CPSR, AnnotSV, GRIDSS).
 
@@ -65,13 +65,15 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 
 ## Checking a change to the Renovate config
 
-The [Renovate dry run](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, one of the files copied from it or the workflow itself, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
+The [Renovate dry run](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, one of the files copied from it, `scripts/ci/gen-versions-doc.sh` or the workflow itself, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
 
 - an `*_IMAGE` line of `versions.env` is not a detected dependency;
 - a package name carries a `:` or `@`;
 - `docs/versions.md` does not hold exactly the images of `versions.env`, or `conf/containers.config` or the smoke test matrix holds one it does not;
 - a tool would get a different update in one file than in another;
 - a lookup failed, or a dependency was skipped for any reason other than a rule that disables it.
+
+A second job in the same workflow fails when `docs/versions.md` is not what `scripts/ci/gen-versions-doc.sh` writes from `versions.env`.
 
 Its job summary lists every dependency with the update Renovate would propose, or why it proposes none. The full debug log is the `renovate-dry-run-log` artifact.
 

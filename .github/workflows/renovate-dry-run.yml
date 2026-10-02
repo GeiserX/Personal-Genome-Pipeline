@@ -18,6 +18,9 @@ name: Renovate dry run
 #            dependencies are the ones a rule in renovate.json disables
 # The step summary lists every dependency with the update Renovate would
 # propose, or the reason it proposes none.
+#
+# The versions-doc job checks that docs/versions.md is what
+# scripts/ci/gen-versions-doc.sh writes from versions.env.
 on:
   pull_request:
     branches: [main]
@@ -28,6 +31,7 @@ on:
       - 'docs/versions.md'
       - '.github/workflows/container-test.yml'
       - '.github/workflows/renovate-dry-run.yml'
+      - 'scripts/ci/gen-versions-doc.sh'
   push:
     branches: [main]
     paths:
@@ -39,6 +43,39 @@ permissions:
   contents: read
 
 jobs:
+  # A Renovate PR edits versions.env and the same string in the generated
+  # files; the hosted app cannot run the generators. Guard checks
+  # conf/containers.config; this job checks docs/versions.md and, when it is
+  # stale, prints the command to run on the branch.
+  versions-doc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Self-test (a tag changed only in versions.env must be caught)
+        run: |
+          t="${RUNNER_TEMP}/stale"
+          mkdir -p "${t}/scripts/ci" "${t}/docs"
+          cp scripts/*.sh "${t}/scripts/"
+          cp scripts/ci/gen-versions-doc.sh "${t}/scripts/ci/"
+          cp versions.env "${t}/"
+          cp docs/versions.md "${t}/docs/"
+          sed -i.bak -E 's|^(BCFTOOLS_IMAGE="[^"]*:)[^"]*"|\19.99"|' "${t}/versions.env"
+          rc=0
+          out=$("${t}/scripts/ci/gen-versions-doc.sh" --check 2>&1) || rc=$?
+          if [ "$rc" -ne 1 ] || ! grep -q 'run scripts/ci/gen-versions-doc.sh' <<<"$out"; then
+            printf '%s\n' "$out"
+            echo "FAIL: --check exited ${rc} on a stale docs/versions.md without naming the command"
+            exit 1
+          fi
+          echo "self-test caught: $(tail -n1 <<<"$out")"
+
+      - name: docs/versions.md is what versions.env produces
+        run: scripts/ci/gen-versions-doc.sh --check
+
   lookup:
     # Public repo: GitHub-hosted runners only.
     runs-on: ubuntu-latest
