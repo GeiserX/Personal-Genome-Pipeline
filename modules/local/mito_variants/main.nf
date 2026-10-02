@@ -19,8 +19,6 @@ process MITO_VARIANTS {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'broadinstitute/gatk:4.6.2.0'
-
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
     input:
@@ -65,7 +63,7 @@ process MITO_VARIANTS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        gatk: \$(gatk --version 2>&1 | grep 'GATK' | sed 's/.*v//' | sed 's/).*//')
+        gatk: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -77,7 +75,7 @@ process MITO_VARIANTS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        gatk: 4.6.1.0
+        gatk: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

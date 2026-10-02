@@ -7,27 +7,29 @@
     compound heterozygote candidates. Optionally annotates results with gnomAD
     gene constraint metrics (LOEUF, pLI).
 
+    Two processes, each in its own pinned image:
+      SLIVAR_PRIORITIZE  bcftools image: tiers, prioritized VCF, PED, summary TSV
+      SLIVAR             slivar image:   compound-hets on the prioritized VCF
+
     Equivalent to: scripts/31-slivar.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process SLIVAR {
+process SLIVAR_PRIORITIZE {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'staphb/bcftools:1.21'
-
-    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_{prioritized.vcf.gz,prioritized.vcf.gz.tbi,slivar_summary.tsv}"
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(gnomad_constraint)
-    path(slivar_bin)
 
     output:
     tuple val(meta), path("*_prioritized.vcf.gz"),     emit: vcf
     tuple val(meta), path("*_prioritized.vcf.gz.tbi"), emit: vcf_index
-    tuple val(meta), path("*_compound_hets.vcf.gz"),   emit: compound_het_vcf
+    tuple val(meta), path("${meta.id}.ped"),           emit: ped
     tuple val(meta), path("*_slivar_summary.tsv"),     emit: summary_tsv
     path "versions.yml",                               emit: versions
 
@@ -37,10 +39,7 @@ process SLIVAR {
     script:
     def has_constraint = gnomad_constraint ? true : false
     """
-    # --- Make the staged slivar binary executable ---
-    chmod +x ${slivar_bin}
-
-    # --- Generate PED file for single sample ---
+    # --- Generate PED file for single sample (SLIVAR reads it) ---
     SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)
     echo -e "\${SAMPLE_NAME}\\t\${SAMPLE_NAME}\\t0\\t0\\t0\\t-9" > ${meta.id}.ped
 
@@ -124,17 +123,6 @@ process SLIVAR {
         bcftools sort -Oz -o ${meta.id}_prioritized.vcf.gz
     bcftools index -t ${meta.id}_prioritized.vcf.gz
 
-    # --- Compound heterozygote detection ---
-    # slivar writes to a file first so its own exit status fails the task: a
-    # crash must not read as "no compound hets". Its stderr stays in the task log.
-    ./${slivar_bin} compound-hets \\
-        --allow-non-trios \\
-        --vcf ${meta.id}_prioritized.vcf.gz \\
-        --ped ${meta.id}.ped \\
-        > ${meta.id}_compound_hets.vcf
-    bcftools view ${meta.id}_compound_hets.vcf -Oz -o ${meta.id}_compound_hets.vcf.gz
-    rm -f ${meta.id}_compound_hets.vcf
-
     # --- Generate summary TSV with optional gnomAD constraint enrichment ---
     bcftools +split-vep \\
         ${meta.id}_prioritized.vcf.gz \\
@@ -211,8 +199,7 @@ process SLIVAR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: \$(./${slivar_bin} 2>&1 | grep -oP '[0-9]+\\.[0-9.]+' | head -1)
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -220,13 +207,57 @@ process SLIVAR {
     """
     touch ${meta.id}_prioritized.vcf.gz
     touch ${meta.id}_prioritized.vcf.gz.tbi
-    touch ${meta.id}_compound_hets.vcf.gz
+    touch ${meta.id}.ped
     printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n' > ${meta.id}_slivar_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: 0.3.4
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process SLIVAR {
+    tag "$meta.id"
+    label 'process_low'
+
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_compound_hets.vcf.gz"
+
+    input:
+    tuple val(meta), path(vcf), path(ped)
+
+    output:
+    tuple val(meta), path("*_compound_hets.vcf.gz"), emit: compound_het_vcf
+    path "versions.yml",                             emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    # slivar writes the bgzipped VCF itself (the .gz name selects it), so its
+    # own exit status fails the task: a crash must not read as "no compound
+    # hets". Its stderr stays in the task log.
+    slivar compound-hets \\
+        --allow-non-trios \\
+        --vcf ${vcf} \\
+        --ped ${ped} \\
+        --out-vcf ${meta.id}_compound_hets.vcf.gz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        slivar: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_compound_hets.vcf.gz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        slivar: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

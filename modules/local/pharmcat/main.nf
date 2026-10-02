@@ -14,14 +14,13 @@ process PHARMCAT_PREPROCESS {
     tag "$meta.id"
     label 'process_low'
 
-    container 'pgkb/pharmcat:3.2.0'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(reference)
 
     output:
     tuple val(meta), path("*.preprocessed.vcf.bgz"), emit: preprocessed_vcf
+    path "versions.yml",                             emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -33,19 +32,27 @@ process PHARMCAT_PREPROCESS {
         -refFna ${reference} \\
         -o ./ \\
         -bf ${meta.id}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 
     stub:
     """
     touch ${meta.id}.preprocessed.vcf.bgz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 }
 
 process PHARMCAT {
     tag "$meta.id"
     label 'process_low'
-
-    container 'pgkb/pharmcat:3.2.0'
 
     publishDir { "${params.outdir}/${meta.id}/pharmcat" }, mode: params.publish_dir_mode
 
@@ -73,7 +80,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: \$(java -jar /pharmcat/pharmcat.jar -version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '3.2.0')
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -84,7 +91,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: 3.2.0
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

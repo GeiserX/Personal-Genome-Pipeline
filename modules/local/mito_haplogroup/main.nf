@@ -14,8 +14,6 @@ process MITO_EXTRACT_CHRM {
     tag "$meta.id"
     label 'process_single'
 
-    container 'staphb/bcftools:1.21'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
 
@@ -33,7 +31,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -44,7 +42,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -52,8 +50,6 @@ process MITO_EXTRACT_CHRM {
 process MITO_HAPLOGROUP {
     tag "$meta.id"
     label 'process_single'
-
-    container 'jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de'
 
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
@@ -77,7 +73,8 @@ process MITO_HAPLOGROUP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: \$(haplogrep3 --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo 'latest')
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+        haplogrep3_reported: \$(haplogrep3 --version 2>&1 | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)*' | head -1 | grep . || echo unknown)
     END_VERSIONS
     """
 
@@ -87,7 +84,7 @@ process MITO_HAPLOGROUP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: latest
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

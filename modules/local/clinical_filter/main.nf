@@ -20,8 +20,6 @@ process CLINICAL_FILTER {
     tag "$meta.id"
     label 'process_low'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}/clinical" }, mode: params.publish_dir_mode
 
     input:
@@ -203,7 +201,7 @@ process CLINICAL_FILTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -215,7 +213,7 @@ process CLINICAL_FILTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

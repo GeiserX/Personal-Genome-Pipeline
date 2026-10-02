@@ -14,8 +14,6 @@ process ROH {
     tag "$meta.id"
     label 'process_low'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}/roh" }, mode: params.publish_dir_mode
 
     input:
@@ -53,7 +51,7 @@ process ROH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -63,7 +61,7 @@ process ROH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

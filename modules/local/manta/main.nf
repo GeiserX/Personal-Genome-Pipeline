@@ -14,8 +14,6 @@ process MANTA {
     tag "$meta.id"
     label 'process_high'
 
-    container 'quay.io/biocontainers/manta:1.6.0--h9ee0642_2'
-
     publishDir { "${params.outdir}/${meta.id}/manta" }, mode: params.publish_dir_mode
 
     input:
@@ -47,7 +45,7 @@ process MANTA {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        manta: \$(configManta.py --version 2>&1 | sed 's/.*version //' || echo '1.6.0')
+        manta: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -59,7 +57,7 @@ process MANTA {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        manta: 1.6.0
+        manta: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
