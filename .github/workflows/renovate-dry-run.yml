@@ -192,11 +192,18 @@ jobs:
 
           def self_test(deps, env_text):
               ok = True
+              base = set(check(deps, env_text))
               def plant(label, fn, pattern):
                   nonlocal ok
                   d = copy.deepcopy(deps)
-                  fn(d)
-                  hits = [x for x in check(d, env_text) if x.startswith(pattern)]
+                  try:
+                      fn(d)
+                  except StopIteration:
+                      print("self-test %-8s NOT PLANTED: no dependency to plant it on" % label)
+                      ok = False
+                      return
+                  # Only a failure the plant added counts as caught.
+                  hits = [x for x in check(d, env_text) if x.startswith(pattern) and x not in base]
                   print("self-test %-8s %s" % (label, "caught: " + hits[0] if hits else "NOT CAUGHT"))
                   ok = ok and bool(hits)
               def first(d, f):
@@ -244,11 +251,12 @@ jobs:
           if os.environ.get("GITHUB_STEP_SUMMARY"):
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
                   out.write("## Renovate dry run\n\n" + table + "\n")
-          if not self_test(deps, env_text):
-              sys.exit("FAIL: the self-test did not catch a planted fault")
           fails = check(deps, env_text)
           for x in fails:
               print("FAIL " + x)
+          if not self_test(deps, env_text):
+              fails.append("the self-test did not catch a planted fault")
+              print("FAIL the self-test did not catch a planted fault")
           if fails:
               sys.exit(1)
           print("OK: %d dependencies; every check passed" % len(deps))
