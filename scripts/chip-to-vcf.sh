@@ -24,7 +24,8 @@ echo "=== Chip-to-VCF Converter: ${SAMPLE} ==="
 echo "Format: ${FORMAT}"
 
 # --- Validate prerequisites ---
-for f in "$REF_HG19" "${REF_HG19}.fai" "$REF_HG38" "$CHAIN"; do
+# Picard LiftoverVcf reads the GRCh38 sequence dictionary (setup.sh creates it).
+for f in "$REF_HG19" "${REF_HG19}.fai" "$REF_HG38" "$REF_DICT" "$CHAIN"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: Required file not found: ${f}" >&2
     echo "  Run the chip data prerequisite downloads first." >&2
@@ -36,16 +37,19 @@ done
 mkdir -p "$RAW_DIR" "$VCF_DIR"
 
 # --- Step 0: Detect and normalize input format ---
-# All formats need to become a TSV with columns: rsid chr pos genotype
+# All formats become one TSV with the columns bcftools reads (-c ID,CHROM,POS,AA):
+# rsid, chromosome, position, genotype as two letters.
 RAW_TSV="${RAW_DIR}/${SAMPLE}_raw.txt"
+CHIP_TSV="${RAW_DIR}/${SAMPLE}_tsv2vcf.tsv"
 
 if [ "$FORMAT" = "auto" ]; then
   # Auto-detect based on available files
   if [ -f "${RAW_DIR}/MyHeritage_raw_dna_data.csv" ]; then
     FORMAT="myheritage"
   elif [ -f "${RAW_TSV}" ]; then
-    # Check if it's 23andMe or AncestryDNA by peeking at the header
-    if head -1 "$RAW_TSV" | grep -qi "ancestrydna"; then
+    # AncestryDNA names itself in its comment header and has a column header
+    # with allele1 and allele2; 23andMe has neither.
+    if head -n 40 "$RAW_TSV" | grep -qiE 'ancestrydna|^rsid[[:space:]]+chromosome[[:space:]]+position[[:space:]]+allele1'; then
       FORMAT="ancestrydna"
     else
       FORMAT="23andme"
@@ -72,14 +76,41 @@ case "$FORMAT" in
       grep -v "^RSID" | \
       sed 's/"//g' | \
       awk -F',' '{print $1"\t"$2"\t"$3"\t"$4}' \
-      > "$RAW_TSV"
+      > "$CHIP_TSV"
     ;;
-  23andme|ancestrydna)
+  23andme)
     if [ ! -f "$RAW_TSV" ]; then
       echo "ERROR: Raw data file not found: ${RAW_TSV}" >&2
-      echo "  Place your 23andMe/AncestryDNA file at this path." >&2
+      echo "  Place your 23andMe file at this path." >&2
       exit 1
     fi
+    # rsid, chromosome, position, genotype already; drop the comment header.
+    grep -v '^#' "$RAW_TSV" | tr -d '\r' > "$CHIP_TSV"
+    ;;
+  ancestrydna)
+    if [ ! -f "$RAW_TSV" ]; then
+      echo "ERROR: Raw data file not found: ${RAW_TSV}" >&2
+      echo "  Place your AncestryDNA file at this path." >&2
+      exit 1
+    fi
+    # AncestryDNA: a comment header, a column header row, then five columns
+    # (rsid, chromosome, position, allele1, allele2). Chromosomes are numbers:
+    # 23 is X, 24 is Y, 25 the X pseudoautosomal regions (X positions) and 26
+    # the mitochondrion. A no-call is allele 0. The two alleles are joined into
+    # the two-letter genotype bcftools reads; a no-call becomes "--", which
+    # bcftools skips.
+    echo "Converting AncestryDNA (five columns, numeric chromosomes) to TSV..."
+    tr -d '\r' < "$RAW_TSV" | awk -F'\t' -v OFS='\t' '
+      /^#/ || tolower($1) == "rsid" || NF < 5 { next }
+      {
+        c = $2
+        if (c == "23" || c == "25") c = "X"
+        else if (c == "24") c = "Y"
+        else if (c == "26") c = "MT"
+        a = $4; b = $5
+        if (a == "0" || b == "0") { a = "-"; b = "-" }
+        print $1, c, $3, a b
+      }' > "$CHIP_TSV"
     ;;
   *)
     echo "ERROR: Unknown format '${FORMAT}'. Use: auto, 23andme, myheritage, ancestrydna" >&2
@@ -87,7 +118,13 @@ case "$FORMAT" in
     ;;
 esac
 
-VARIANT_COUNT=$(grep -c -v "^#" "$RAW_TSV" || true)
+# Sorted by chromosome, then position: bcftools writes rows in input order and
+# the index needs each chromosome in one block. AncestryDNA lists its X
+# pseudoautosomal rows (25) after Y (24).
+LC_ALL=C sort -t "$(printf '\t')" -k2,2 -k3,3n "$CHIP_TSV" > "${CHIP_TSV}.sorted"
+mv -f "${CHIP_TSV}.sorted" "$CHIP_TSV"
+
+VARIANT_COUNT=$(grep -c . "$CHIP_TSV" || true)
 echo "Input: ${VARIANT_COUNT} genotyped positions"
 
 # --- Step 1: Convert to hg19 VCF with proper REF/ALT ---
@@ -100,7 +137,7 @@ echo "  Homozygous ALT genotypes will be correctly encoded as GT 1/1."
 # directory is writable here.
 run_in --rw "$(dirname "$REF_HG19")" --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
-  bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
+  bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_tsv2vcf.tsv" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \
     -s "${SAMPLE}" \
     -c ID,CHROM,POS,AA \
@@ -127,7 +164,7 @@ run_in --cpus 2 --memory 2g \
     -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 run_in "${BCFTOOLS_IMAGE}" \
-  bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
+  bcftools index -f -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Step 3: Liftover to GRCh38 ---
 echo ""
