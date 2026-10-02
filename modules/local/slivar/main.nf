@@ -19,7 +19,8 @@ process SLIVAR_PRIORITIZE {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_{prioritized.vcf.gz,prioritized.vcf.gz.tbi,slivar_summary.tsv}"
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
@@ -220,7 +221,8 @@ process SLIVAR {
     tag "$meta.id"
     label 'process_low'
 
-    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_compound_hets.vcf.gz"
 
     input:
     tuple val(meta), path(vcf), path(ped)
