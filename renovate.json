@@ -105,6 +105,42 @@
       "dependencyDashboardApproval": true
     },
     {
+      "description": "Hold: pypgx stays at 0.26.0. 0.27.0 pulled pandas 3.0 and broke every gene while its smoke test still passed. Lift the hold when upstream releases the pandas fix (expected in 0.28.0) and a pypgx-bundle tag of the same version exists; PYPGX_BUNDLE_VERSION moves with it.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/biocontainers/pypgx"],
+      "allowedVersions": "/^0\\.26\\.0--/"
+    },
+    {
+      "description": "Hold: Delly. Delly 2.3.0 renamed the short-read subcommand `delly call` to `delly sr`, and 2.6.0 has the same build hash as the 2.1.0 pin, so an automatic bump would look safe and break step 19. The bump comes with the code change (scripts/19-delly.sh and the delly module) in one PR, which also removes this rule.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/biocontainers/delly"],
+      "enabled": false
+    },
+    {
+      "description": "Hold: plink2 stays at 2.00a5.10, the only versioned tag pgscatalog/plink2 ships and the build pgsc_calc uses.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["pgscatalog/plink2"],
+      "enabled": false
+    },
+    {
+      "description": "Legacy tools, no automated bumps: Manta, Strelka2, duphold, Octopus and GRIDSS are archived or quiet upstream. Bump one by hand after running it on the fixture.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "quay.io/biocontainers/manta",
+        "quay.io/biocontainers/strelka",
+        "brentp/duphold",
+        "dancooke/octopus",
+        "quay.io/biocontainers/gridss"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Digest pins: lgalarno/telomerehunter and jtb114/haplogrep3 are personal-account images with no versioned tags, pinned by digest. A new digest of their latest tag is an unversioned change nobody can review, so they get no updates until they move to biocontainers.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["lgalarno/telomerehunter", "jtb114/haplogrep3"],
+      "enabled": false
+    },
+    {
       "description": "Nextflow: every update waits for approval on the dependency dashboard. A new release can change what the strict config parser accepts, and the validated version is also written in nextflow.config and the Nextflow docs, which need reading by hand.",
       "matchDepNames": ["nextflow-io/nextflow"],
       "dependencyDashboardApproval": true
