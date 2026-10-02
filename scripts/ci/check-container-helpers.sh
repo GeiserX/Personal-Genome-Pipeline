@@ -390,6 +390,10 @@ def docker_run(words):
     `run_in [--net] [--root] [--rw DIR]... [docker run options] ...`, or None."""
     if len(words) >= 2 and words[0] == "docker" and words[1] == "run":
         k = 2
+    elif words and words[0] == "run_in":
+        k = 1
+        while k < len(words) and words[k] in ("--net", "--root", "--rw"):
+            k += 2 if words[k] == "--rw" else 1
     else:
         return None
     entry = []
