@@ -27,7 +27,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Screens ClinVar and runs CPSR cancer predisposition panels, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritization.
 - Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs), Cyrius and CPIC drug recommendations.
 - Repeat expansions, HLA typing, telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
-- Every tool runs in a pinned Docker container with CPU and memory limits. Nothing is uploaded, and after reference setup the core runs offline.
+- Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. Two exceptions: Cyrius is installed from PyPI at run time (version and dependencies pinned), and `python:3.11` is a tag that moves. No step uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
 - Two ways to run it: one bash script per step, or a Nextflow DSL2 pipeline.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 
@@ -69,7 +69,7 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 
 This pipeline is for **educational and research purposes only**. It is not a medical device and has not been clinically validated. Genomic findings should always be discussed with a qualified healthcare professional before making any medical decisions. The authors are not responsible for any actions taken based on pipeline output.
 
-Your genome data is sensitive personal information. This pipeline runs entirely locally -- no data is uploaded anywhere. Keep your data secure.
+Your genome data is sensitive personal information. This pipeline runs locally and no step uploads it. The only exception is your choice: step 14 prepares files for an imputation server, and sending them there is up to you. Keep your data secure.
 
 ## License
 

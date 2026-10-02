@@ -57,6 +57,12 @@ done
 | Michigan (MIS) | HRC r1.1 | 32,470 | GRCh37/38 | imputationserver.sph.umich.edu |
 | TOPMed | TOPMed r2 | 132,070 | GRCh38 native | imputation.biodatacatalyst.nhlbi.nih.gov |
 
+## Your data leaves the machine here
+
+This is the only step whose output is meant to be sent somewhere else. The other steps keep your genome on your disk; an imputation server receives your genotypes for every chromosome you upload. Uploading is a separate decision you make, not something the step does.
+
+Before you upload, read the server's data policy. The Michigan server's [security page](https://imputationserver.readthedocs.io/en/latest/data-sensitivity/) says it deletes the input once the job no longer needs it, keeps only the number of samples and markers, encrypts the results with a one-time password, and keeps them for 7 days for download. Check the TOPMed server's own terms; they are not the same service. Both need an account, so the upload is tied to your email address.
+
 ## Important Notes
 - MIS requires a **minimum of 20 samples per job** — a single WGS sample is useful mainly for phasing, not imputation
 - **TOPMed r2 panel is recommended for European ancestry** (132K samples, GRCh38 native — no liftover needed)

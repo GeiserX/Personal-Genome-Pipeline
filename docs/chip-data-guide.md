@@ -173,7 +173,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 Imputation can expand your 600K chip variants to ~40M by predicting untyped genotypes from population reference panels. This significantly improves PRS variant matching.
 
 1. Prepare per-chromosome VCFs from the hg19 data
-2. Upload to the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) — accepts single-sample submissions and outputs GRCh38 natively
+2. Upload to the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) — accepts single-sample submissions and outputs GRCh38 natively. This sends your genotypes off your machine: read the server's data policy first (see [step 14](14-imputation-prep.md#your-data-leaves-the-machine-here))
 3. Download the imputed VCF, filter to R2 > 0.3, and use as your pipeline input
 
 > **Note on Michigan Imputation Server:** MIS may require multiple samples per job (see [step 14 docs](14-imputation-prep.md)). TOPMed is generally more accessible for single-sample chip data. Check each server's current policies before uploading.
@@ -216,7 +216,7 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | **21** | CYP2D6 (Cyrius) | Needs BAM |
 | **22** | SV consensus merge | No SV calls |
 | **23** | Clinical filter | Requires VEP-annotated VCF with gnomAD. Limited value on chip data. |
-| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools or upload to a service like [DNA Painter](https://dnapainter.com/). |
+| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools. A third-party service such as [DNA Painter](https://dnapainter.com/) means sending your genotypes out of your machine; read its terms first. |
 
 ---
 

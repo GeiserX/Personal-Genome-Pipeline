@@ -18,7 +18,7 @@ hide:
 
 ---
 
-**Personal Genome Pipeline** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one pinned Docker container with CPU and memory limits, run from one bash script per step or from a Nextflow workflow, and nothing leaves the machine. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
+**Personal Genome Pipeline** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one Docker container with CPU and memory limits, run from one bash script per step or from a Nextflow workflow, and no step sends your data anywhere. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
 
 <div class="grid cards" markdown>
 
@@ -85,10 +85,10 @@ graph LR
     bamsteps --> report
 ```
 
-- Each step is one `docker run` with a pinned image tag or digest (the list is in `versions.env`), a CPU limit and a memory limit, so a step cannot take the machine down.
+- Each step is one `docker run` with an image tag or digest from `versions.env`, a CPU limit and a memory limit, so a step cannot take the machine down.
 - Two ways to run it: one bash script per step under `scripts/`, or the [Nextflow](nextflow.md) workflow, which runs independent steps in parallel and resumes after a failure.
 - The minimum useful run is alignment, DeepVariant, ClinVar and PharmCAT, about 4 to 6 hours on a 16-core desktop; the full set is 12 to 20 hours. [Hardware and storage requirements](hardware-requirements.md) gives the per-step memory and disk figures; a 30X sample needs about 500 GB.
-- After [reference data setup](00-reference-setup.md) the core steps run offline. A BAM or VCF from your vendor skips alignment or variant calling; [Getting started](getting-started.md) has the entry paths and [Vendor compatibility](vendor-guide.md) the per-vendor notes.
+- After [reference data setup](00-reference-setup.md) a run downloads only a few public files, listed in [Why run locally?](why-local.md#network-calls-during-a-run). A BAM or VCF from your vendor skips alignment or variant calling; [Getting started](getting-started.md) has the entry paths and [Vendor compatibility](vendor-guide.md) the per-vendor notes.
 
 ## What it does not do
 
@@ -99,7 +99,7 @@ graph LR
 
 ## Privacy
 
-- Your reads, alignments and variants stay in `GENOME_DIR` on your disk. No step uploads data; the only network traffic is pulling images and downloading reference databases.
+- Your reads, alignments and variants stay in `GENOME_DIR` on your disk. No step uploads data. A run still pulls images and fetches a few public files; [Why run locally?](why-local.md#network-calls-during-a-run) lists each one and what the HTML reports load when you open them.
 - The example outputs on these pages are invented or use placeholders. No page shows a real person's genotype, haplogroup, HLA type, score or sample name.
 - [Why run locally?](why-local.md) compares the cost and the exposure of the alternatives.
 

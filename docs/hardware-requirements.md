@@ -177,7 +177,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 - **ClinVar updates:** ~200 MB/month (optional but recommended for latest pathogenic variant classifications)
 - **Docker image updates:** Variable (only when you want newer tool versions)
 
-> **Offline operation:** After the initial setup, the core pipeline runs offline. A few steps fetch small public resources on first use if not already present: step 4b downloads the ENCODE blacklist (~50 KB), and steps 25/26 download scoring files and reference panels from public FTP servers. All downloads are cached after the first run. No sample data is ever uploaded.
+> **Network during a run:** after setup, a few steps still fetch public files (the HLA database, PGS scoring files, Cyrius from PyPI, MultiQC's update check). None sends sample data. [Why run locally?](why-local.md#network-calls-during-a-run) lists each one.
 
 ---
 
