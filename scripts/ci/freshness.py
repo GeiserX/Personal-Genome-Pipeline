@@ -25,6 +25,7 @@ is required by --update-issue).
 import argparse
 import datetime as dt
 import email.utils
+import http.client
 import http.server
 import json
 import os
@@ -91,7 +92,7 @@ def request(url, method="GET", headers=None, data=None, want="json", retries=Non
             if 400 <= e.code < 500 and e.code != 429:
                 break
             continue
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
             last = f"no answer ({getattr(e, 'reason', e)})"
             continue
         if want == "head":
@@ -673,6 +674,13 @@ class FakeGitHub(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if path.path == "/truncated":
+            # Promises 100 bytes and sends 10, so the read ends in IncompleteRead.
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b'{"a": 1, "')
+            return
         if path.path.startswith("/repos/o/r/labels/"):
             name = path.path.rsplit("/", 1)[1]
             return self.reply(200, {"name": name}) if name in self.labels else self.reply(404, {})
@@ -753,6 +761,13 @@ def self_test():
         check(False, "an empty 200 answer fails closed")
     except LookupFailed:
         check(True, "an empty 200 answer fails closed")
+    try:
+        request(base + "/truncated", retries=0)
+        check(False, "a truncated answer fails closed")
+    except LookupFailed:
+        check(True, "a truncated answer fails closed")
+    except Exception as e:  # noqa: BLE001 - a raw protocol error is the bug this control catches
+        check(False, f"a truncated answer fails closed (raised {type(e).__name__} instead)")
     try:
         request("https://192.0.2.1/", retries=0, timeout=5)
         check(False, "no answer (timeout) fails closed")
