@@ -19,8 +19,6 @@ process CYRIUS {
     tag "$meta.id"
     label 'process_low'
 
-    container 'python:3.11'
-
     publishDir { "${params.outdir}/${meta.id}/cyrius" }, mode: params.publish_dir_mode
 
     input:
@@ -50,6 +48,7 @@ process CYRIUS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
         cyrius: ${cyrius_version}
     END_VERSIONS
     """
@@ -61,6 +60,7 @@ process CYRIUS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
         cyrius: unknown
     END_VERSIONS
     """

@@ -15,8 +15,6 @@ process TELOMERE_HUNTER {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714'
-
     publishDir { "${params.outdir}/${meta.id}/telomere" }, mode: params.publish_dir_mode
 
     input:
@@ -38,7 +36,8 @@ process TELOMERE_HUNTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        telomerehunter: \$(telomerehunter --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo 'unknown')
+        telomerehunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+        telomerehunter_reported: \$(telomerehunter --version 2>&1 | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)*' | head -1 | grep . || echo unknown)
     END_VERSIONS
     """
 
@@ -49,7 +48,7 @@ process TELOMERE_HUNTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        telomerehunter: unknown
+        telomerehunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

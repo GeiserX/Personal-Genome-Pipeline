@@ -15,8 +15,6 @@ process PYPGX {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0'
-
     publishDir { "${params.outdir}/${meta.id}/pypgx" }, mode: params.publish_dir_mode
 
     input:
@@ -159,10 +157,10 @@ called = sum(1 for r in rows if r[1] != 'FAILED')
 print(f'Summary: {called}/{len(rows)} genes called')
 "
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        pypgx: \$(pypgx -v 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.26.0')
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    pypgx: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
@@ -172,7 +170,7 @@ print(f'Summary: {called}/{len(rows)} genes called')
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pypgx: 0.26.0
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

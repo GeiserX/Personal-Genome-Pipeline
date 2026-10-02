@@ -220,7 +220,7 @@
                 "slivar_bin": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
+                    "description": "Deprecated and ignored: slivar now runs from the pinned image (SLIVAR_IMAGE in versions.env). Accepted with a warning for this release only.",
                     "fa_icon": "fas fa-file"
                 },
                 "cnvpytor_resources": {

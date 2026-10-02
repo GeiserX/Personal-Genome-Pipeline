@@ -15,8 +15,6 @@ process CLINVAR_SCREEN {
     tag "$meta.id"
     label 'process_low'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode
 
     input:
@@ -88,7 +86,7 @@ process CLINVAR_SCREEN {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -100,7 +98,7 @@ process CLINVAR_SCREEN {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

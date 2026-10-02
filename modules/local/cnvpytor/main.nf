@@ -21,8 +21,6 @@ process CNVPYTOR {
     tag "$meta.id"
     label 'process_high'
 
-    container 'quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0'
-
     // Publish the human-readable CNV table (the normalized VCF is published by CNVPYTOR_VCF)
     publishDir { "${params.outdir}/${meta.id}/cnvpytor" }, mode: params.publish_dir_mode, pattern: "*_cnvs.txt"
 
@@ -62,7 +60,7 @@ process CNVPYTOR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cnvpytor: \$(python -c 'import cnvpytor; print(cnvpytor.__version__)' 2>/dev/null || echo '1.3.2')
+        cnvpytor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -72,7 +70,7 @@ process CNVPYTOR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cnvpytor: 1.3.2
+        cnvpytor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -80,8 +78,6 @@ process CNVPYTOR {
 process CNVPYTOR_VCF {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/cnvpytor" }, mode: params.publish_dir_mode
 
@@ -113,7 +109,7 @@ process CNVPYTOR_VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -123,7 +119,7 @@ process CNVPYTOR_VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -14,8 +14,6 @@ process STRANGER {
     tag "$meta.id"
     label 'process_single'
 
-    container 'quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0'
-
     publishDir { "${params.outdir}/${meta.id}/expansion_hunter" }, mode: params.publish_dir_mode
 
     input:
@@ -35,7 +33,7 @@ process STRANGER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: \$(stranger --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.10.2')
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -46,7 +44,7 @@ process STRANGER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: 0.10.2
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -38,7 +38,7 @@ workflow PGX {
         PHARMCAT(PHARMCAT_PREPROCESS.out.preprocessed_vcf)
         ch_pharmcat_html = PHARMCAT.out.html_report
         ch_pharmcat_json = PHARMCAT.out.json_report
-        ch_versions = ch_versions.mix(PHARMCAT.out.versions)
+        ch_versions = ch_versions.mix(PHARMCAT_PREPROCESS.out.versions, PHARMCAT.out.versions)
     }
 
     //
