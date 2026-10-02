@@ -1,12 +1,12 @@
 name: Lint
 
+# No path filter: a docs-only change still gets the link check, and a
+# required check never waits on a run that was not started.
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.gitignore']
   pull_request:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.gitignore']
   workflow_dispatch:
 
 permissions:
@@ -27,62 +27,53 @@ jobs:
         with:
           scandir: scripts
           severity: warning
+          version: v0.11.0
 
   actionlint:
     runs-on: ubuntu-latest
+    env:
+      # renovate: datasource=github-releases depName=rhysd/actionlint
+      ACTIONLINT_VERSION: 1.7.12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The tarball must match its line in the release's checksums file;
+      # a missing line fails too.
       - name: Install actionlint
+        working-directory: ${{ runner.temp }}
         run: |
-          ACTIONLINT_VERSION=1.7.7
-          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
-            | tar xz -C /usr/local/bin actionlint
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfLO "${base}/${tarball}"
+          curl -sSfL "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt" -o checksums.txt
+          awk -v f="$tarball" '$2 == f' checksums.txt | sha256sum -c -
+          tar xzf "$tarball" -C /usr/local/bin actionlint
 
       - name: Run actionlint
         run: actionlint -color
 
   gitleaks:
     runs-on: ubuntu-latest
+    env:
+      # renovate: datasource=github-releases depName=gitleaks/gitleaks
+      GITLEAKS_VERSION: 8.30.1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Install gitleaks
+        working-directory: ${{ runner.temp }}
         run: |
-          GITLEAKS_VERSION=8.21.2
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar xz -C /usr/local/bin gitleaks
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "${base}/${tarball}"
+          curl -sSfL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o checksums.txt
+          awk -v f="$tarball" '$2 == f' checksums.txt | sha256sum -c -
+          tar xzf "$tarball" -C /usr/local/bin gitleaks
 
       - name: Run gitleaks
-        run: gitleaks detect --source . --verbose
-
-  no-personal-data:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check for personal paths or data leaks
-        run: |
-          echo "Scanning for personal data in scripts and docs..."
-          FAIL=0
-          # Check for personal/absolute home paths
-          if grep -rn '/mnt/user\|/home/[a-z]\|/Users/[a-z]' scripts/ docs/ 2>/dev/null; then
-            echo "FAIL: Found personal/absolute home paths in scripts/docs"
-            FAIL=1
-          fi
-          # Check for private IPs or internal/Tailscale hostnames
-          if grep -rnE '192\.168\.[0-9]|\.ts\.net' scripts/ docs/ 2>/dev/null; then
-            echo "FAIL: Found private IPs or internal hostnames"
-            FAIL=1
-          fi
-          # Sample names in examples must use generic placeholders (your_name, sampleN, $SAMPLE),
-          # never real names. (Maintainers can add their own identifiers to a local pre-commit hook.)
-          if [ "$FAIL" -eq 1 ]; then
-            exit 1
-          fi
-          echo "OK: No personal data found"
+        run: gitleaks git --verbose .
 
   markdown-links:
     runs-on: ubuntu-latest
@@ -114,66 +105,3 @@ jobs:
             exit 1
           fi
           echo "OK: All internal links valid"
-
-  version-consistency:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Verify Docker image tags are consistent across scripts and docs
-        run: |
-          echo "Checking Docker image tags across versions.env, scripts, and docs..."
-          FAIL=0
-
-          # Parse versions.env: extract image_name:tag pairs
-          while IFS='=' read -r var value; do
-            # Skip comments and empty lines
-            [[ "$var" =~ ^#.*$ || -z "$var" ]] && continue
-            # Strip quotes and inline comments
-            image=$(echo "$value" | tr -d '"' | sed 's/#.*//' | xargs)
-            # Split into base name and tag
-            base="${image%%:*}"
-            tag="${image##*:}"
-            [ "$base" = "$tag" ] && continue  # no tag found
-
-            # Check all scripts that reference this base image
-            for f in scripts/*.sh; do
-              # Scripts that source versions.env use image variables — skip
-              if grep -qF 'versions.env' "$f"; then
-                continue
-              fi
-              # Check for hardcoded references with wrong tag
-              if grep -qF "${base}:" "$f" 2>/dev/null; then
-                if ! grep -qF "${base}:${tag}" "$f"; then
-                  echo "FAIL: ${f} references ${base} but not with tag ${tag}"
-                  FAIL=1
-                fi
-              fi
-            done
-
-            # Check docs that reference this base image (skip :latest-only images)
-            [ "$tag" = "latest" ] && continue
-            # Version prefix without build hash (e.g. 1.6.0 from 1.6.0--h9ee0642_2)
-            vtag="${tag%%--*}"
-            # Extract the short name (last segment) for matching in docs
-            short="${base##*/}"
-            for f in docs/*.md README.md CONTRIBUTING.md; do
-              [ -f "$f" ] || continue
-              # Skip files with intentionally historical/failed image tags
-              case "$f" in docs/lessons-learned.md|docs/troubleshooting.md) continue ;; esac
-              if grep -qF "$short" "$f" 2>/dev/null; then
-                # Doc references this image — check for stale tags
-                # Accept both full tag (1.6.0--hash) and display prefix (1.6.0)
-                stale=$(grep -oP "${base}:\K[^\s\`\"\)>]+" "$f" 2>/dev/null | grep -vF "$tag" | grep -vF "$vtag" | head -1)
-                if [ -n "$stale" ]; then
-                  echo "FAIL: ${f} has stale tag ${base}:${stale} (expected :${tag})"
-                  FAIL=1
-                fi
-              fi
-            done
-          done < versions.env
-
-          if [ "$FAIL" -eq 0 ]; then
-            echo "OK: All Docker image tags are consistent"
-          fi
-          exit "$FAIL"

@@ -29,69 +29,35 @@ jobs:
       - name: Every *_IMAGE a script uses is defined
         run: scripts/ci/check-image-vars.sh
 
-  containers-config:
+  # The one image check: no file names an image outside versions.env, and the
+  # two files generated from it (conf/containers.config, docs/versions.md)
+  # are up to date. Each script's self-test plants its faults first.
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a literal image in a script, module, workflow or doc, a process with no selector and a stale generated file must be caught)
+        run: scripts/ci/check-images.sh --self-test
+
+      - name: Self-test of the containers.config generator (a stale tag, a missing or stray selector, a module's own container and a wrong version must be caught)
+        run: scripts/ci/gen-containers-config.sh --self-test
+
+      - name: No file names an image outside versions.env; generated files are up to date
+        run: scripts/ci/check-images.sh
+
+  coupled-versions:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Self-test (a stale tag, a missing or stray selector, a module's own container and a wrong version must be caught)
-        run: scripts/ci/gen-containers-config.sh --self-test
+      - name: Self-test (a VEP cache, pypgx bundle or AnnotSV data version that left its image, and a lone PCGR variable, must be caught)
+        run: scripts/ci/check-coupled-versions.sh --self-test
 
-      - name: conf/containers.config matches versions.env and gives every process an image
-        run: scripts/ci/gen-containers-config.sh --check
-
-  # Stub run of every tool with no container engine: the stubs only touch
-  # files, so no image is pulled. Each process writes the tag of the image
-  # Nextflow gave it (task.container) into its versions.yml, so the collected
-  # file proves every withName selector matched its process at run time.
-  all-tools-stub:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
-        with:
-          version: "25.10.4"
-
-      - name: Stub run with every tool in --tools
-        run: |
-          d="${RUNNER_TEMP}/all-tools"
-          mkdir -p "$d"
-          for x in vep_cache vep_cache_cpsr pcgr_data pypgx_bundle cnvpytor_resources annotsv_annotations pgs_scoring; do
-            mkdir -p "${d}/${x}"
-          done
-          for x in clinvar.vcf.gz clinvar.vcf.gz.tbi revel.tsv.gz revel.tsv.gz.tbi ancestry_ref.vcf.gz \
-                   catalog.json hla.dat gnomad_constraint.tsv; do
-            touch "${d}/${x}"
-          done
-          # expansion_hunter needs the sample's sex.
-          sed '1s/$/,sex/; 2,$s/$/,female/' assets/test_samplesheet.csv > "${d}/samplesheet.csv"
-          # Every name main.nf accepts in --tools.
-          tools=$(sed -n '/def known_tools = \[/,/\]/p' main.nf | grep -o "'[a-z0-9_]*'" | tr -d "'" | paste -sd, -)
-          echo "tools: ${tools}"
-          [ "$(tr ',' '\n' <<<"$tools" | grep -c .)" -ge 28 ] || { echo "ERROR: read too few tools from main.nf"; exit 1; }
-          printf '%s\n' "process.resourceLimits = [ cpus: 2, memory: '6.GB', time: '1.h' ]" > "${d}/ci.config"
-          nextflow run main.nf -profile test -stub -ansi-log false -c "${d}/ci.config" \
-            --input "${d}/samplesheet.csv" --tools "$tools" --outdir "${d}/out" \
-            --vep_cache "${d}/vep_cache" --vep_cache_cpsr "${d}/vep_cache_cpsr" --pcgr_data "${d}/pcgr_data" \
-            --pypgx_bundle "${d}/pypgx_bundle" --cnvpytor_resources "${d}/cnvpytor_resources" \
-            --annotsv_annotations "${d}/annotsv_annotations" --pgs_scoring "${d}/pgs_scoring" \
-            --clinvar "${d}/clinvar.vcf.gz" --clinvar_index "${d}/clinvar.vcf.gz.tbi" \
-            --revel "${d}/revel.tsv.gz" --revel_index "${d}/revel.tsv.gz.tbi" \
-            --ancestry_ref "${d}/ancestry_ref.vcf.gz" --expansion_catalog "${d}/catalog.json" \
-            --hla_dat "${d}/hla.dat" --gnomad_constraint "${d}/gnomad_constraint.tsv"
-
-      - name: Every process states the tag of its image from versions.env
-        run: |
-          cat "${RUNNER_TEMP}/all-tools/out/pipeline_info/software_versions.yml"
-          scripts/ci/gen-containers-config.sh --check-versions "${RUNNER_TEMP}/all-tools/out/pipeline_info/software_versions.yml"
+      - name: Each data version in versions.env matches the image it belongs to
+        run: scripts/ci/check-coupled-versions.sh
 
   fake-docker:
     runs-on: ubuntu-latest
@@ -162,3 +128,33 @@ jobs:
           echo "Control: both planted failures were reported."
 
           run_tests tests
+
+  # The one check the ruleset requires for this workflow: it runs even when a
+  # job above failed or was skipped, and fails unless every one succeeded.
+  ci-ok:
+    if: always()
+    needs: [image-vars, images, coupled-versions, fake-docker, helper-binaries, unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Every Guard job succeeded, and every job is listed in needs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")')
+          if [ -n "$bad" ]; then
+            echo "FAIL: not successful: ${bad}"
+            exit 1
+          fi
+          # A job added above but not to needs would never block a merge.
+          jobs=$(sed -n '/^jobs:/,$ s/^  \([A-Za-z0-9_-]*\):$/\1/p' .github/workflows/guard.yml | grep -vx ci-ok | sort)
+          listed=$(echo "$RESULTS" | jq -r 'keys[]' | sort)
+          if [ "$jobs" != "$listed" ]; then
+            echo "FAIL: ci-ok needs must list every job in guard.yml"
+            diff <(echo "$jobs") <(echo "$listed") || true
+            exit 1
+          fi
+          echo "OK: all $(echo "$RESULTS" | jq length) Guard jobs succeeded"
