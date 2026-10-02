@@ -5,7 +5,8 @@
 . "$(dirname "$0")/lib.sh"
 
 # The fixture reference holds 14 chromosomes, and ExpansionHunter stops on a
-# catalog locus whose contig the reference lacks ("Invalid contig name 14"). The case keeps the bundled
+# catalog locus whose contig the reference lacks ("Invalid contig name 14"),
+# in its reference region or in its off-target regions. The case keeps the bundled
 # GRCh38 catalog's loci on the fixture's contigs and passes them as EH_CATALOG.
 CAT="${GENOME_DIR}/reference/eh_catalog_fixture.json"
 docker run --rm "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
@@ -15,8 +16,11 @@ import json, sys
 loci = json.load(open(sys.argv[1]))
 contigs = {line.split("\t")[0] for line in open(sys.argv[2])}
 def regions(locus):
-    r = locus["ReferenceRegion"]
-    return r if isinstance(r, list) else [r]
+    out = []
+    for key in ("ReferenceRegion", "OfftargetRegions"):
+        r = locus.get(key, [])
+        out += r if isinstance(r, list) else [r]
+    return out
 # The bundled catalog names contigs without "chr" (X, 14); ExpansionHunter
 # matches them to chrX, chr14. It stops on the first one the reference lacks.
 def known(c):
