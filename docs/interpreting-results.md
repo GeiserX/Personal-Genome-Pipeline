@@ -2,6 +2,18 @@
 
 You've run the pipeline. Now you have directories full of VCFs, TSVs, and HTML reports. This guide explains what to look at first and what it all means — no bioinformatics degree required.
 
+## Before You Look: What the Pipeline Can Tell You
+
+Decide what you want to know before you open the reports. A default run looks further than most people expect:
+
+- **Secondary findings are on by default.** Step 17 runs CPSR with `--secondary_findings`. Besides the cancer genes, CPSR then reports pathogenic and likely pathogenic variants in the 81 genes of the ACMG SF v3.2 list, the version CPSR 2.2.5 carries. That list includes genes for inherited heart conditions that can cause sudden death (cardiomyopathies, arrhythmias), familial hypercholesterolaemia and some metabolic diseases. A finding there can be serious and actionable even though you never asked about it.
+- **APOE and Alzheimer's disease.** Step 25 computes a score for late-onset Alzheimer's disease (PGS000334). Its two largest weights are the APOE variants rs429358 and rs7412, which define the ε2, ε3 and ε4 alleles, and the summary report lists that score with the others. The ε4 allele raises the risk; it does not say who will get the disease. Many people choose not to learn their APOE status. Decide before you open the step 25 output.
+- **Your relatives.** You share half your DNA with each parent, child and sibling. A pathogenic variant in a dominant gene means each of them has a 50% chance of carrying it too, so a result about you is also information about them. Comparing two genomes (see [multi-sample](multi-sample.md)) can also reveal unexpected family relationships.
+- **Insurance.** The rules depend on where you live. In the United States, GINA stops health insurers and employers from using genetic information, but it does not cover life, disability or long-term-care insurance. Elsewhere the rules differ. Some insurers ask whether you have had a genetic test, and a result entered in your medical record can count. Check what applies to you before you act on a finding.
+- **Switching secondary findings off.** Step 17 has no setting for it. Run the command on the [step 17 page](17-cpsr.md#command) without the `--secondary_findings` line, or delete that line from `scripts/17-cpsr.sh` (Nextflow: `modules/local/cpsr/main.nf`) before the run. CPSR then reports the cancer panel only.
+
+---
+
 ## Before You Panic: What Every Genome Looks Like
 
 If this is your first time looking at your own genomic data, the numbers can be alarming. Here is what a **completely normal, healthy person's genome** looks like:
@@ -110,7 +122,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ---
 
-## Structural Variants (Steps 4, 5, 15, 18, 19)
+## Structural Variants (Steps 4, 5, 15, 18, 19, 22)
 
 ### What Are Structural Variants?
 
@@ -146,6 +158,10 @@ If you ran multiple SV callers:
 - **Called by 1 caller only:** Lower confidence, may be false positive
 - **duphold DHFFC < 0.7 for deletions:** High confidence (depth drops as expected)
 - **duphold DHBFC > 1.3 for duplications:** High confidence (depth rises as expected)
+
+### SV Consensus (Step 22)
+
+`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, GRIDSS, Sniffles2 and TIDDIT), matched by type and by breakpoints within 1 kb. Expect a few hundred records. It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
 
 ### AnnotSV Output
 
@@ -569,6 +585,54 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 
 ---
 
+## Reads, Alignment, Variant Calling and Coverage (Steps 1b, 2, 3, 16, 16b)
+
+These steps check that the data is good enough for everything else. Look at them first if a later result looks strange.
+
+- **fastp (step 1b):** `${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.html`. A few percent of reads trimmed or dropped is normal; a large share points at a library or upload problem.
+- **Alignment and variant calling (steps 2 and 3):** the [example output](#variant-calling-step-3) below shows what a 30X genome looks like: about 4.5 to 5.5 million variants and a Ti/Tv ratio of 2.0 to 2.1.
+- **Coverage (step 16b, mosdepth):** `${SAMPLE}/mosdepth/${SAMPLE}.mosdepth.summary.txt`. The `total` row should show a mean near the depth you paid for (about 30). Below 15, small-variant calls lose accuracy. See [step 16b](16b-mosdepth.md#interpreting-results).
+- **Sex check (step 16, indexcov):** `${SAMPLE}/indexcov/` estimates the copy number of chrX and chrY from the BAM index. About 1 and 1 is XY, about 2 and 0 is XX. A result that does not match the sex you gave the pipeline means a sample swap, a mislabelled file or a real sex-chromosome difference; [step 16](16-indexcov.md#interpretation) lists the patterns. Re-check the input before reading anything else.
+
+## HLA Typing (Step 8)
+
+**Where to look:** `${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv`, two alleles per HLA gene.
+
+The main use is drug safety: a few HLA alleles predict severe reactions to specific drugs, for example HLA-B\*57:01 with abacavir and HLA-B\*58:01 with allopurinol ([step 8](08-hla-typing.md#key-hla-alleles-for-drug-safety) has the list). Typing from short-read WGS is approximate. If one of those alleles appears, or is missing and you are about to take the drug, ask for a clinical HLA test; do not rely on this output for transplant matching.
+
+## Clinical Filter (Step 23)
+
+**Where to look:** `${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv`, one row per variant with gene, impact, scores and gnomAD constraint.
+
+Step 23 keeps the HIGH-impact variants, the MODERATE ones below 1% in gnomAD exomes, the ClinVar pathogenic ones and, when step 30 ran, the variants that CADD, SpliceAI, REVEL or AlphaMissense flag. Expect a few hundred rows. Most are heterozygous variants in genes that tolerate one broken copy. Read the rows in constrained genes (low LOEUF, see [gene constraint](#gnomad-gene-constraint-step-23-summary)) first, then the homozygous ones. The HIGH-impact rows have no frequency filter, so check gnomAD for each before you worry. [Step 23](23-clinical-filter.md#what-gets-filtered) gives the exact rules.
+
+## Variant Prioritization (Step 31)
+
+**Where to look:** `${SAMPLE}/slivar/${SAMPLE}_slivar_summary.tsv` and `${SAMPLE}/slivar/${SAMPLE}_compound_hets.tsv`.
+
+slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODERATE with damaging scores, ClinVar pathogenic) and lists genes where you carry two such variants. Those compound-het candidates are not phased: from one genome the pipeline cannot tell whether the two variants sit on different copies of the gene (which can cause recessive disease) or on the same copy (which usually does not). Expect a thousand or more candidate pairs; nearly all are noise. A pair matters only in a gene that fits your health history, and confirming it needs a parent's DNA or long reads. See [step 31](31-slivar.md#interpretation).
+
+## More Pharmacogenomics: Cyrius, CPIC and pypgx (Steps 21, 27, 32)
+
+- **CPIC lookup (step 27):** `${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt` turns PharmCAT's calls into the drugs with CPIC guidance. Only genes where you are not a normal metabolizer get drug entries. Genes PharmCAT could not call are listed separately at the end; their absence from the drug list does not mean normal function.
+- **pypgx (step 32):** `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` calls 23 genes, four of them (CYP2D6, CYP2A6, GSTM1, GSTT1) from the BAM, so it sees gene deletions and duplications PharmCAT cannot. `${SAMPLE}_pharmcat_comparison.tsv` shows where the two tools agree.
+- **Cyrius (step 21, experimental):** `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` gives a second CYP2D6 call from the BAM.
+
+CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes confuse short reads. Act on a CYP2D6 result only when two callers agree, and take any result that would change a prescription to a pharmacist or a certified pharmacogenomics test first.
+
+## Polygenic Risk Scores (Step 25)
+
+**Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one raw score per condition.
+
+These raw sums are not percentiles, probabilities or comparable between conditions, and the pipeline ships no reference population to turn them into percentiles. They are also biased low or high because the VCF leaves out the sites where you match the reference ([step 25](25-prs.md#interpreting-results) explains why). Treat them as exploratory. The Alzheimer's score includes APOE: read [Before you look](#before-you-look-what-the-pipeline-can-tell-you) first.
+
+## Reports (Steps 24 and 28)
+
+- **HTML report (step 24):** `${SAMPLE}/${SAMPLE}_report.html` collects the headline results of the other steps on one page, including the ClinVar hits table. It contains health findings: share it only as you would share a medical record.
+- **MultiQC (step 28):** `${SAMPLE}/multiqc/multiqc_report.html` puts the QC of fastp, samtools, mosdepth and the other tools in one page. It is about data quality, not about your health.
+
+---
+
 ## What to Do Next
 
 1. **Share your PharmCAT report** with your prescribing physician or pharmacist
@@ -738,6 +802,16 @@ VEP (used in step 13), SnpEff, and ANNOVAR are the three most common variant ann
 The pipeline uses VEP because it is the most widely used and well-maintained tool, with direct gnomAD frequency integration. But no single tool is perfect.
 
 ---
+
+## What This Pipeline Does Not Assess
+
+A clean result from these steps says nothing about the following. Each needs a different test or a different kind of data.
+
+- **Copy-number changes in genes with a near-identical copy.** Spinal muscular atrophy carrier status (loss of one SMN1 copy), most alpha-thalassaemia (HBA1/HBA2 deletions), GBA1 and CYP21A2 changes sit in regions where short reads cannot tell the gene from its paralog. The VCF-based screens do not see them. SMA carrier status needs a clinical SMN1 copy-number test.
+- **Mobile-element insertions.** Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions, and no step looks for them.
+- **Methylation and phasing from long reads.** The long-read branch stops at alignment, small variants and structural variants; see the [long-read guide](long-read-guide.md).
+- **Mosaic copy-neutral loss of heterozygosity**, present in only some cells (common in blood with age). Step 11 sees runs of homozygosity that are in every cell; it cannot see a change carried by a fraction of them.
+- **Repeat expansions outside ExpansionHunter's 31 loci**, and accurate sizing of very large expansions.
 
 ## Important Caveats
 
