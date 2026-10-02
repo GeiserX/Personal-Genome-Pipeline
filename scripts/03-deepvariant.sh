@@ -45,6 +45,7 @@ docker run --rm \
     --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
     --reads="/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    --sample_name="${SAMPLE}" \
     --num_shards=8
 
 echo "=== DeepVariant complete ==="

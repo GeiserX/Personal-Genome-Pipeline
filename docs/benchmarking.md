@@ -112,16 +112,17 @@ The Genome in a Bottle (GIAB) consortium publishes validated truth sets for seve
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/giab"
 
-# HG002 truth VCF (GRCh38, v4.2.1)
+# HG002 truth VCF (GRCh38, v4.2.1). Pinned to the NISTv4.2.1 directory: GIAB's
+# latest/ directory moves to each new release, so latest/ URLs stop working.
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
 
 # HG002 high-confidence regions BED
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
 ```
 
 The BED file defines the regions where the truth set is confident. Variants outside these regions are excluded from benchmarking because the truth status is unknown.
@@ -132,7 +133,7 @@ The pipeline's [quick-test.md](quick-test.md) uses NA12878 (HG001), which is als
 
 ```bash
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 ```
 
 HG002 is preferred for benchmarking because its truth set covers more difficult genomic regions.

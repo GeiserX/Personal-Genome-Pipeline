@@ -13,13 +13,13 @@ export GENOME_DIR=/path/to/your/data
 mkdir -p ${GENOME_DIR}/reference
 cd ${GENOME_DIR}/reference
 
-# Download GRCh38 reference (3.1 GB)
-wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta
-wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai
+# Download GRCh38 reference (3.2 GB), from the Broad's public references bucket
+wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
+wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai
 
-# Verify the download
+# Verify the download (the MD5 the bucket publishes for this object)
 md5sum Homo_sapiens_assembly38.fasta
-# Expected: 64b32de2fc934679c16e83a2bc072064
+# Expected: 7ff134953dcca8c8997453bbb80b6b5e
 ```
 
 ### Why GRCh38?
@@ -192,7 +192,7 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
 
-> **Total download:** ~104 GB (CADD is 83 GB alone). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
+> **Total download:** ~175 GB (SpliceAI is ~91 GB and CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
 
 ### CADD v1.7 Pre-scored (SNVs + Indels) — ~83 GB
 
@@ -215,21 +215,27 @@ wget -c https://krishna.gs.washington.edu/download/CADD/v1.7/GRCh38/gnomad.genom
 
 > **Note:** CADD TSVs use chromosome names without `chr` prefix (1, 2, 3...). vcfanno handles this via column mapping in the TOML config — no manual renaming needed.
 
-### SpliceAI Pre-scored — ~20 GB
+### SpliceAI Pre-scored — ~91 GB
 
 Deep learning splice-site variant prediction. Catches pathogenic intronic variants that VEP's rule-based splice prediction misses.
+
+The pipeline uses the **masked** score files. SpliceAI's authors recommend the masked scores for variant interpretation and the raw scores for alternative-splicing research. In the masked files, a gain at an annotated splice site and a loss at a site that is not an annotated splice site are set to 0, because neither changes how a variant is interpreted.
+
+> **License:** The precomputed SpliceAI scores are free for academic and not-for-profit use only; any other use requires a commercial license from Illumina. They are not Apache 2.0. The pipeline does not redistribute them.
 
 ```bash
 cd ${GENOME_DIR}/annotations
 
-# SNV splice scores (~15.5 GB)
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz.tbi
+# SNV splice scores (~27 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.snv.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.snv.hg38.vcf.gz.tbi
 
-# Indel splice scores (~4.5 GB)
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz
-wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz.tbi
+# Indel splice scores (~64 GB)
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz
+wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz.tbi
 ```
+
+Step 30 and `validate-setup.sh` find the masked files under these names. They also accept the raw files (`spliceai_scores.raw.*`) if you already have them; when both sets are present, step 30 uses the raw ones.
 
 > **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
 
@@ -245,27 +251,33 @@ wget -c https://zenodo.org/record/7072866/files/revel-v1.3_all_chromosomes.zip
 unzip revel-v1.3_all_chromosomes.zip
 
 # Convert to tabix-indexed TSV for GRCh38
-# Extract GRCh38 columns, add chr prefix, sort, bgzip, index
+# Extract GRCh38 columns, add chr prefix, sort, bgzip, index.
+# The GATK image is used because it ships bgzip and tabix; the bcftools image does not.
+# The source file has nine comma-separated columns:
+#   chr,hg19_pos,grch38_pos,ref,alt,aaref,aaalt,REVEL,Ensembl_transcriptid
+# The table keeps five of them, so it gets its own five-name header.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  broadinstitute/gatk:4.6.2.0 \
   bash -c '
+    set -euo pipefail
     cd /genome/annotations
-    cat revel_with_transcript_ids | tr "," "\t" > revel_tabbed.tsv
-    # Header line
-    head -1 revel_tabbed.tsv | sed "s/^/#/" > revel_grch38.tsv
-    # Extract GRCh38 rows (col3=grch38_pos), skip header, add chr prefix, sort
-    tail -n+2 revel_tabbed.tsv | \
-      awk -F"\t" "\$3 != \".\" {print \"chr\"\$1\"\t\"\$3\"\t\"\$4\"\t\"\$5\"\t\"\$8}" | \
-      sort -k1,1V -k2,2n >> revel_grch38.tsv
-    bgzip revel_grch38.tsv
-    tabix -s 1 -b 2 -e 2 revel_grch38.tsv.gz
-    # Clean up intermediates
-    rm -f revel_tabbed.tsv revel_with_transcript_ids revel-v1.3_all_chromosomes.zip
+    printf "#chr\tpos\tref\talt\tREVEL\n" > revel_grch38.tsv
+    # Skip the header, keep rows with a GRCh38 position (col 3), add the chr prefix, sort
+    tail -n+2 revel_with_transcript_ids | \
+      awk -F"," -v OFS="\t" "\$3 != \".\" {print \"chr\"\$1, \$3, \$4, \$5, \$8}" | \
+      sort -T /genome/annotations -k1,1V -k2,2n >> revel_grch38.tsv
+    bgzip -f revel_grch38.tsv
+    tabix -f -s 1 -b 2 -e 2 revel_grch38.tsv.gz
+    # Clean up intermediates (only reached if every command above succeeded)
+    rm -f revel_with_transcript_ids revel-v1.3_all_chromosomes.zip
   '
+
+# Check: five columns under a five-name header
+gzip -dc revel_grch38.tsv.gz | head -2
 ```
 
-> **Thresholds:** ClinGen recommends REVEL >= 0.644 as supporting evidence of pathogenicity (PP3_Moderate) and >= 0.932 for strong evidence (PP3_Strong) for missense variants.
+> **Thresholds:** ClinGen's calibration (Pejaver et al. 2022) gives REVEL >= 0.644 as PP3_Supporting, >= 0.773 as PP3_Moderate and >= 0.932 as PP3_Strong for missense variants. There is no PP3 Very Strong level. See [interpreting-results.md](interpreting-results.md#revel-rare-exome-variant-ensemble-learner) for the BP4 (benign) levels.
 
 ### AlphaMissense — ~613 MB
 
@@ -279,14 +291,15 @@ cd ${GENOME_DIR}/annotations
 # Download pre-scored GRCh38 predictions
 wget -c https://storage.googleapis.com/dm_alphamissense/AlphaMissense_hg38.tsv.gz
 
-# Index for vcfanno (skip header lines starting with #)
+# Index for vcfanno (skip header lines starting with #). The GATK image has
+# tabix; the bcftools image does not.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  broadinstitute/gatk:4.6.2.0 \
   tabix -s 1 -b 2 -e 2 -S 1 /genome/annotations/AlphaMissense_hg38.tsv.gz
 ```
 
-> **Thresholds:** am_pathogenicity < 0.34 = likely benign, > 0.564 = likely pathogenic.
+> **Thresholds:** am_pathogenicity < 0.34 = likely benign, > 0.564 = likely pathogenic. These are AlphaMissense's own class boundaries, not ACMG evidence levels.
 
 ### gnomAD v4.1 Constraint Metrics — ~91 MB
 
@@ -387,16 +400,20 @@ docker run --rm --user root \
 
 ### BWA-MEM2 Index
 
-BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Build once (~1 hour, ~6 GB):
+BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Building them needs a lot of memory: the bwa-mem2 README states 28 GB per Gbp of reference, which is **about 90 GB of RAM** for the 3.2 Gbp GRCh38 FASTA. The finished index is about 10 GB on disk, and aligning with it needs about 10 GB of RAM, so only the one-time build is the problem.
+
+The practical route is to build the index once on a machine (or a rented cloud instance) with at least 96 GB of RAM, then copy the five index files next to the FASTA on your own machine. With less memory the build is killed (exit code 137).
 
 ```bash
 docker run --rm --user root \
-  --cpus 8 --memory 24g \
+  --cpus 8 --memory 96g \
   -v ${GENOME_DIR}:/genome \
   quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
   bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
 # Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
 ```
+
+GRIDSS (step 4b) needs the classic BWA index instead (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`); the two are not interchangeable. See [04b-gridss.md](04b-gridss.md) for how to build it.
 
 ### GIAB Truth Set (for hap.py Benchmarking)
 
@@ -409,14 +426,16 @@ mkdir -p ${GENOME_DIR}/giab
 cd ${GENOME_DIR}/giab
 
 # HG002 truth set (recommended, GRCh38 v4.2.1)
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
-wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
+# Pinned to the NISTv4.2.1 directory: GIAB's latest/ directory moves to each new
+# release (it now holds v5.0q), so latest/ URLs for v4.2.1 files return 404.
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed
 
 # Alternative: HG001/NA12878 (used in quick-test.md)
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
-# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi
+# wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.bed
 ```
 
 **Total Docker image size:** ~10-15 GB (compressed, after layer deduplication). Alternative tools add ~3-5 GB.
@@ -429,13 +448,13 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 | ClinVar DB (all versions) | 200 MB | 400 MB | Including chr-prefixed and pathogenic-only |
 | VEP cache | 26 GB | 30 GB | Largest single database |
 | PCGR/CPSR data bundle | 5 GB | 5 GB | Smaller in PCGR 2.x |
-| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 112 cache |
+| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 116 cache |
 | T1K HLA index | 50 MB | 450 MB | Optional |
 | Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
-| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~104 GB | ~104 GB | Optional (step 30-31) |
+| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~175 GB | ~175 GB | Optional (step 30-31) |
 | Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
 | **Total (core)** | **~78 GB** | **~96 GB** | Without annotation databases |
-| **Total (with annotation enrichment)** | **~182 GB** | **~200 GB** | With all v0.4.0 databases |
+| **Total (with annotation enrichment)** | **~253 GB** | **~271 GB** | With all v0.4.0 databases |
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 
@@ -456,8 +475,8 @@ echo "Annotation databases (optional, for steps 30-31):"
 for DB_PAIR in \
   "whole_genome_SNVs.tsv.gz:CADD SNVs" \
   "gnomad.genomes.r4.0.indel.tsv.gz:CADD indels" \
-  "spliceai_scores.raw.snv.hg38.vcf.gz:SpliceAI SNVs" \
-  "spliceai_scores.raw.indel.hg38.vcf.gz:SpliceAI indels" \
+  "spliceai_scores.masked.snv.hg38.vcf.gz:SpliceAI SNVs" \
+  "spliceai_scores.masked.indel.hg38.vcf.gz:SpliceAI indels" \
   "revel_grch38.tsv.gz:REVEL" \
   "AlphaMissense_hg38.tsv.gz:AlphaMissense" \
   "gnomad_v4.1_constraint.tsv:gnomAD constraint"; do

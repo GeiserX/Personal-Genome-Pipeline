@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Calculates polygenic risk scores for 10 common conditions using validated scoring files from the PGS Catalog and plink2. Each PRS aggregates the tiny effects of hundreds to millions of genetic variants into a single number representing your relative genetic predisposition for a trait or disease.
+Calculates polygenic risk scores for 9 common conditions using validated scoring files from the PGS Catalog and plink2. Each PRS aggregates the tiny effects of hundreds to millions of genetic variants into a single number representing your relative genetic predisposition for a trait or disease.
 
 ## Why
 
@@ -31,32 +31,41 @@ pgscatalog/plink2:2.00a5.10
 
 ## Conditions Scored
 
-| Condition | PGS ID | Source |
-|---|---|---|
-| Coronary artery disease | PGS000018 | Khera et al. 2018 |
-| Type 2 diabetes | PGS000014 | Mahajan et al. 2018 |
-| Breast cancer | PGS000004 | Mavaddat et al. 2019 |
-| Prostate cancer | PGS000662 | Conti et al. 2021 |
-| Atrial fibrillation | PGS000016 | Khera et al. 2018 |
-| Alzheimer's disease | PGS000334 | De Rojas et al. 2021 |
-| Body mass index | PGS000027 | Khera et al. 2019 |
-| Schizophrenia | PGS000738 | PGC 2022 |
-| Inflammatory bowel disease | PGS000020 | Khera et al. 2018 |
-| Colorectal cancer | PGS000055 | Huyghe et al. 2019 |
+Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score, and the script prints the same label.
+
+| Condition (PGS Catalog trait) | PGS ID | Variants | Publication |
+|---|---|---|---|
+| Coronary artery disease | [PGS000018](https://www.pgscatalog.org/score/PGS000018/) | 1,745,179 | Inouye et al. 2018, J Am Coll Cardiol |
+| Type 2 diabetes (T2D) | [PGS000014](https://www.pgscatalog.org/score/PGS000014/) | 6,917,436 | Khera et al. 2018, Nat Genet |
+| Breast cancer | [PGS000004](https://www.pgscatalog.org/score/PGS000004/) | 313 | Mavaddat et al. 2018, Am J Hum Genet |
+| Prostate cancer | [PGS000662](https://www.pgscatalog.org/score/PGS000662/) | 269 | Conti et al. 2021, Nat Genet |
+| Atrial fibrillation | [PGS000016](https://www.pgscatalog.org/score/PGS000016/) | 6,730,541 | Khera et al. 2018, Nat Genet |
+| Late-onset Alzheimer’s disease | [PGS000334](https://www.pgscatalog.org/score/PGS000334/) | 22 | Zhang et al. 2020, Nat Commun |
+| Body mass index (BMI) | [PGS000027](https://www.pgscatalog.org/score/PGS000027/) | 2,100,302 | Khera et al. 2019, Cell |
+| Inflammatory bowel disease | [PGS000017](https://www.pgscatalog.org/score/PGS000017/) | 6,907,112 | Khera et al. 2018, Nat Genet |
+| Colorectal cancer | [PGS000055](https://www.pgscatalog.org/score/PGS000055/) | 76 | Schmit et al. 2019, J Natl Cancer Inst |
+
+There is no schizophrenia score yet. An earlier version listed PGS000738 as schizophrenia, but that score is for vitiligo; a schizophrenia row comes back only once a score is chosen from the catalog and checked against the API.
+
+To check a label before adding a score:
+
+```bash
+curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
+```
 
 ## What the Script Does Internally
 
-1. Downloads GRCh38-harmonized scoring files from the PGS Catalog FTP (one-time, cached in `${GENOME_DIR}/prs_scores/`)
+1. Downloads the GRCh38-harmonized scoring file of each score from the PGS Catalog FTP (one-time, cached in `${GENOME_DIR}/prs_scores/`). The download goes to a `.part` file first, and the file is kept only if its `#HmPOS_build` header says `GRCh38`. If the download fails or the build is anything else, the step stops with an error. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
 2. Converts your VCF to plink2 binary format (pgen/pvar/psam), restricting to autosomes (chr1-22) and assigning variant IDs in `chr:pos` format (matching PGS Catalog convention)
-3. For each scoring file, reformats the PGS Catalog columns (chromosome, position, effect allele, weight) into plink2's `--score` input format, deduplicating entries with the same variant ID and allele
-4. Runs `plink2 --score` for each condition, producing a `.sscore` file with the aggregate score and the number of variants matched
+3. For each scoring file, reformats the harmonized PGS Catalog columns (`hm_chr`, `hm_pos`, effect allele, weight) into plink2's `--score` input format, deduplicating entries with the same variant ID and allele. Rows the catalog could not map to GRCh38 have no `hm_pos` and are dropped
+4. Deletes any `.sscore` left by an earlier run, then runs `plink2 --score ... cols=+scoresums` for each condition. A plink2 failure stops the step. The one exception is a score with no variant at all in your VCF, which is reported as `NA` with 0 matched
 5. Collects all results into a summary TSV
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | Tab-delimited summary: condition, PGS ID, score, variants used, variants total |
+| `${SAMPLE}_prs_summary.tsv` | Tab-delimited summary: `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total` |
 | `${PGS_ID}.sscore` | Raw plink2 score output per condition |
 | `${PGS_ID}_formatted.tsv` | Reformatted scoring file used for each calculation |
 | `${SAMPLE}.pgen/.pvar/.psam` | plink2 binary genotype files (intermediate) |
@@ -65,15 +74,25 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 ## Runtime
 
-~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 10 conditions).
+~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 9 conditions).
 
 ## Interpreting Results
 
 The summary TSV contains a raw score for each condition. Here is what the columns mean:
 
-- **Score**: Weighted sum of risk alleles you carry. Higher = more genetic predisposition.
-- **Variants_Used**: How many scoring variants matched your VCF.
-- **Variants_Total**: Total variants in the scoring file.
+- **Score_SUM**: Weighted sum of the effect alleles you carry (plink2's `SCORE1_SUM` column). Higher = more genetic predisposition.
+- **Variants_Matched**: How many scoring variants were found in your VCF (plink2's `ALLELE_CT` divided by 2).
+- **Variants_Total**: Variants in the scoring file with a GRCh38 position.
+
+### The score is biased until the pipeline keeps hom-ref sites
+
+The VCF from step 3 lists only sites where you differ from the reference. A scoring variant whose effect allele is the reference allele is therefore missing from the VCF when you carry two copies of it, and it adds nothing to your sum. So the sum misses the weight of every reference-allele effect allele you carry on two copies, and `Variants_Matched` counts only the sites present in the VCF. The step prints this line under every score:
+
+```
+hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions
+```
+
+Scoring from a gVCF, which records hom-ref sites, removes the bias.
 
 ### What these scores are NOT
 
@@ -92,7 +111,7 @@ Comparing two people is only defensible when both were scored with the same PGS 
 
 ### Variant matching
 
-Check the `Variants_Used / Variants_Total` ratio. If fewer than 50% of scoring variants matched, the score is less reliable. Low matching rates usually indicate:
+Check the `Variants_Matched / Variants_Total` ratio. If fewer than 50% of scoring variants matched, the score is less reliable. Low matching rates usually indicate:
 - The scoring file was built on array data with different variant coverage than WGS
 - Variant ID format mismatches between your VCF and the scoring file
 
@@ -101,14 +120,14 @@ Check the `Variants_Used / Variants_Total` ratio. If fewer than 50% of scoring v
 - PRS were predominantly developed in European-ancestry populations. They are less accurate for other ancestries.
 - A PRS captures only the genetic component. Lifestyle, environment, and family history are often more predictive.
 - Sex-specific conditions (breast cancer, prostate cancer) should be interpreted accordingly.
-- Scoring file availability and quality vary. Some PGS IDs may fail to download if the PGS Catalog FTP is unavailable.
+- Scoring file availability and quality vary. If the PGS Catalog FTP is unavailable the step stops; rerun it later (files already downloaded stay cached).
 - No mean imputation is used (`no-mean-imputation` flag), so missing variants reduce the score proportionally rather than being imputed to population averages.
 
 ## Notes
 
 - Scoring files are downloaded once and cached in `${GENOME_DIR}/prs_scores/`. Delete this directory to force re-download.
-- The script prefers GRCh38-harmonized scoring files. If unavailable, it falls back to the original (which may be on GRCh37 and produce poor variant matching).
-- You can add more PGS IDs by editing the `PGS_IDS` associative array in the script. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
+- The script uses only GRCh38-harmonized scoring files. A cached file without a `#HmPOS_build=GRCh38` header (for example one written by an older version of this script) is deleted and downloaded again.
+- You can add more scores by adding a `"<PGS ID>|<trait_reported>"` line to the `PGS_SCORES` list in the script, with the label copied from the API. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
 
 ## Maintenance
 

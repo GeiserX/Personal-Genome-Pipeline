@@ -35,7 +35,7 @@ if [ -f "$VCF" ]; then
     grep '^SN.*number of records' | awk '{print $NF}' || echo "N/A")
   PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
     bcftools view -f PASS "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
-    grep -cv '^#' || echo "N/A")
+    grep -cv '^#' || true)
   echo "  Total variants: ${TOTAL}"
   echo "  PASS variants:  ${PASS}"
   echo ""
@@ -43,17 +43,34 @@ fi
 
 # ---------- ClinVar Screen (Step 6) ----------
 CLINVAR_DIR="${SAMPLE_DIR}/clinvar"
-if [ -d "$CLINVAR_DIR" ] && [ -f "${CLINVAR_DIR}/isec/0002.vcf" ]; then
+CLINVAR_HITS="${CLINVAR_DIR}/${SAMPLE}_clinvar_hits.vcf"
+if [ -f "$CLINVAR_HITS" ]; then
   echo "## ClinVar Pathogenic Screen"
   echo "---"
-  HITS=$(grep -cv '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null || echo "0")
+  HITS=$(grep -cv '^#' "$CLINVAR_HITS" || true)
   echo "  Pathogenic/Likely Pathogenic hits: ${HITS}"
   if [ "$HITS" -gt 0 ]; then
     echo ""
-    echo "  Genes affected:"
-    grep -v '^#' "${CLINVAR_DIR}/isec/0002.vcf" 2>/dev/null | head -20 | while IFS=$'\t' read -r chr pos id ref alt rest; do
-      echo "    ${chr}:${pos} ${ref}>${alt} (${id})"
-    done
+    echo "  Hits (first 20): gene, position, genotype, significance [review status]"
+    grep -v '^#' "$CLINVAR_HITS" | head -20 | awk -F'\t' '{
+      geneinfo=""; clnsig=""; rev="";
+      n=split($8,kv,";");
+      for(i=1;i<=n;i++) {
+        p=index(kv[i],"="); if(p==0) continue;
+        k=substr(kv[i],1,p-1); v=substr(kv[i],p+1);
+        if(k=="GENEINFO") geneinfo=v; else if(k=="CLNSIG") clnsig=v; else if(k=="CLNREVSTAT") rev=v;
+      }
+      gene=""; m=split(geneinfo,g,"|");
+      for(i=1;i<=m;i++) { split(g[i],sym,":"); gene=gene (i>1 ? "," : "") sym[1] }
+      if(gene=="") gene=".";
+      if(clnsig=="") clnsig="."; gsub(/_/," ",clnsig);
+      if(rev=="") rev="."; gsub(/_/," ",rev);
+      split($10,f,":"); gt=f[1];
+      if(gt=="0/1" || gt=="1/0" || gt=="0|1" || gt=="1|0") zyg="het";
+      else if(gt=="1/1" || gt=="1|1") zyg="hom";
+      else zyg=gt;
+      printf "    %-10s %s:%s %s>%s  %s  %s [%s]\n", gene, $1, $2, $4, $5, zyg, clnsig, rev
+    }' || true
   fi
   echo ""
 fi
@@ -86,7 +103,7 @@ if [ -d "$MANTA_DIR" ]; then
     echo "## Structural Variants (Manta)"
     echo "---"
     SV_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-      bcftools view "${SV_VCF/#$GENOME_DIR//genome}" 2>/dev/null | grep -cv '^#' || echo "N/A")
+      bcftools view "${SV_VCF/#$GENOME_DIR//genome}" 2>/dev/null | grep -cv '^#' || true)
     echo "  Total SVs: ${SV_COUNT}"
     echo ""
   fi
@@ -100,7 +117,7 @@ if [ -d "$EH_DIR" ]; then
     echo "## Repeat Expansions (ExpansionHunter)"
     echo "---"
     # EH JSON uses locus names as top-level keys; count objects with a Genotype field
-    LOCI=$(jq '[to_entries[] | select(.value | type=="object" and has("Genotype"))] | length' "$EH_JSON" 2>/dev/null || grep -c '"Genotype"' "$EH_JSON" 2>/dev/null || echo "0")
+    LOCI=$(jq '[to_entries[] | select(.value | type=="object" and has("Genotype"))] | length' "$EH_JSON" 2>/dev/null || grep -c '"Genotype"' "$EH_JSON" 2>/dev/null || true)
     echo "  Loci tested: ${LOCI}"
     echo "  (See interpreting-results.md for disease thresholds)"
     echo ""
@@ -125,7 +142,7 @@ ROH_FILE="${SAMPLE_DIR}/vcf/${SAMPLE}_roh.txt"
 if [ -f "$ROH_FILE" ]; then
   echo "## Runs of Homozygosity"
   echo "---"
-  LARGE_ROH=$(grep '^RG' "$ROH_FILE" 2>/dev/null | awk '$3 !~ /chrX|chrY/ && $6 > 5000000' | wc -l || echo "0")
+  LARGE_ROH=$(awk '/^RG/ && $3 !~ /chrX|chrY/ && $6 > 5000000 {c++} END {print c+0}' "$ROH_FILE")
   echo "  Autosomal ROH > 5MB: ${LARGE_ROH}"
   if [ "$LARGE_ROH" -gt 0 ]; then
     grep '^RG' "$ROH_FILE" | awk '$3 !~ /chrX|chrY/ && $6 > 5000000 {printf "    %s:%s-%s  %.1fMB\n", $3,$4,$5,$6/1e6}'
@@ -169,8 +186,8 @@ if [ -f "$CNV_FILE" ]; then
   echo "---"
   TOTAL_CNV=$(wc -l < "$CNV_FILE")
   SIG_CNV=$(awk '$5 < 0.01' "$CNV_FILE" | wc -l)
-  DEL_CNV=$(grep -c '^deletion' "$CNV_FILE" || echo "0")
-  DUP_CNV=$(grep -c '^duplication' "$CNV_FILE" || echo "0")
+  DEL_CNV=$(grep -c '^deletion' "$CNV_FILE" || true)
+  DUP_CNV=$(grep -c '^duplication' "$CNV_FILE" || true)
   echo "  Total CNVs: ${TOTAL_CNV} (${DEL_CNV} deletions, ${DUP_CNV} duplications)"
   echo "  Significant (e-val < 0.01): ${SIG_CNV}"
   echo ""
@@ -182,9 +199,9 @@ if [ -f "$DELLY_VCF" ]; then
   echo "## Structural Variants (Delly)"
   echo "---"
   TOTAL_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   PASS_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view -f PASS "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   echo "  Total SVs: ${TOTAL_DELLY}"
   echo "  PASS SVs: ${PASS_DELLY}"
   echo ""
@@ -196,7 +213,7 @@ if [ -f "$MITO_VCF" ]; then
   echo "## Mitochondrial Variants (Mutect2)"
   echo "---"
   TOTAL_MITO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
-    bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | grep -cv '^#' || echo "N/A")
+    bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   HETERO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
     bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
     docker run --rm -i staphb/bcftools:1.21 bcftools query -f '[%AF]\n' 2>/dev/null | \
@@ -234,7 +251,8 @@ if [ -f "$PRS_SUMMARY" ] && [ "$(wc -l < "$PRS_SUMMARY")" -gt 1 ]; then
   echo "## Polygenic Risk Scores"
   echo "---"
   tail -n +2 "$PRS_SUMMARY" | while IFS=$'\t' read -r CONDITION _PGS_ID SCORE USED TOTAL; do
-    printf "  %-35s %s (%s/%s variants)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
+    printf "  %-35s %s (%s/%s variants matched)\n" "$CONDITION" "$SCORE" "$USED" "$TOTAL"
+    echo "    hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions"
   done
   echo ""
   echo "  NOTE: Raw PRS scores are NOT directly interpretable without a"
@@ -248,7 +266,7 @@ if [ -f "$CPIC_REPORT" ]; then
   echo "## CPIC Drug-Gene Recommendations"
   echo "---"
   echo "  Report: ${CPIC_REPORT}"
-  AFFECTED=$(grep -c 'Affected drugs:' "$CPIC_REPORT" 2>/dev/null || echo "0")
+  AFFECTED=$(grep -c 'Affected drugs:' "$CPIC_REPORT" 2>/dev/null || true)
   echo "  Genes with non-standard phenotypes requiring drug adjustments: ${AFFECTED}"
   echo ""
 fi

@@ -2,19 +2,19 @@
 
 ## What This Does
 
-Comprehensive pharmacogenomic star allele calling for 23 clinically actionable genes, including structural variation (SV) detection from BAM read depth. Complements PharmCAT (step 7) by covering genes that VCF-only callers miss entirely, most notably CYP2D6 gene deletions and duplications.
+Comprehensive pharmacogenomic star allele calling for 23 clinically actionable genes, including structural variation (SV) detection from BAM read depth. Complements PharmCAT (step 7) by covering genes that VCF-only callers miss entirely, including gene deletions and duplications. See Limitations before trusting a CYP2D6 copy-number call.
 
 ## Why
 
 PharmCAT (step 7) calls ~23 genes from VCF data alone. This works well for simple SNP-based star alleles but fails for genes with structural variation — CYP2D6, CYP2A6, GSTM1, and GSTT1 all have common whole-gene deletions and duplications that VCF callers cannot represent. CYP2D6 alone affects 25% of all prescribed drugs, and PharmCAT frequently returns "Not called" for it.
 
-Cyrius (step 21) was designed specifically for CYP2D6 but can fail on some WGS samples due to CYP2D7 pseudogene homology. pypgx uses a different read-depth algorithm that handles this homology more robustly.
+Cyrius (step 21) was designed specifically for CYP2D6 but can fail on some WGS samples due to CYP2D7 pseudogene homology. pypgx calls copy number from read depth, a different method; neither tool settles CYP2D6 alone (see Limitations).
 
 pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1, GSTT1, and IFNL3.
 
 ## Tool
 
-- **pypgx** v0.27.0 (Sboner Lab, Weill Cornell Medicine)
+- **pypgx** v0.26.0 (Sboner Lab, Weill Cornell Medicine)
 - License: Apache-2.0 (GPL-3.0 compatible)
 - Publication: [Lee et al., 2019](https://doi.org/10.1002/cpt.1552)
 
@@ -108,7 +108,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | File | Contents |
 |---|---|
 | `<gene>/results.zip` | Per-gene pypgx archive with genotype data |
-| `${SAMPLE}_pypgx_summary.tsv` | Consolidated: gene, diplotype, phenotype, SV flag, source |
+| `${SAMPLE}_pypgx_summary.tsv` | Consolidated: gene, diplotype, phenotype, pypgx's copy-number call, source |
 | `${SAMPLE}_pharmcat_comparison.tsv` | Side-by-side comparison with PharmCAT (if step 7 was run) |
 
 ### Summary TSV columns
@@ -118,7 +118,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | Gene | Gene symbol |
 | Diplotype | Star allele call (e.g., \*1/\*4) |
 | Phenotype | Metabolizer status (e.g., Intermediate Metabolizer) |
-| SV_detected | Whether structural variation was detected |
+| CNV_call | The copy-number call pypgx itself made from read depth (its `CNV` field, for example `Normal` or `WholeDel1`). BAM-based genes only; `N/A` for VCF-based genes. Earlier versions guessed a Yes/No flag from the allele names, which flagged any name containing `*5` and missed the GSTM1/GSTT1/CYP2A6 whole-gene deletions |
 | Source | BAM (SV genes) or VCF (variant-based genes) |
 
 ### PharmCAT comparison TSV columns
@@ -129,6 +129,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | PharmCAT_diplotype | Diplotype from step 7 |
 | pypgx_diplotype | Diplotype from this step |
 | Match | Yes, No, pypgx only, or PharmCAT only |
+| Called_by | `both` when both tools called the gene (Match is Yes or No), otherwise which tool did. PharmCAT's `Unknown/Unknown` and pypgx's `FAILED` count as no call; a gene neither tool called is left out |
 
 ## Runtime
 
@@ -154,6 +155,8 @@ The BAM-based SV detection (CYP2D6, CYP2A6, GSTM1, GSTT1) is the most memory-int
 | CPIC integration | Built-in | Manual lookup via [CPIC guidelines](https://cpicpgx.org/guidelines/) |
 | Validation | Widely used (research tool) | Less extensively validated |
 
+The comparison reads PharmCAT 3.x reports in both shapes (a flat `genes` map or one nested by source), like step 27. If a PharmCAT report is found but cannot be parsed, or yields no gene, the step exits non-zero instead of writing a comparison where every gene is "pypgx only" and the report shows 0 conflicts.
+
 The two tools are complementary. PharmCAT provides drug recommendations for the genes it covers; pypgx extends coverage to genes PharmCAT cannot call. When both tools call the same gene, concordance is expected for simple genotypes but discrepancies can occur for complex haplotypes. Neither tool is definitively "correct" in all cases — discrepancies should be investigated by examining the underlying variant calls. Neither tool constitutes a clinical test; results should be confirmed by a certified pharmacogenomics laboratory before making prescribing decisions.
 
 ## Note on Aldy
@@ -166,7 +169,9 @@ The two tools are complementary. PharmCAT provides drug recommendations for the 
 - Star allele definitions evolve. pypgx 0.26.0 uses a specific PharmVar database snapshot that may not include the latest allele definitions.
 - SV detection accuracy depends on sequencing depth. 30X WGS is adequate; lower depths produce less reliable copy number calls.
 - pypgx does not produce drug recommendations directly. Consult [CPIC guidelines](https://cpicpgx.org/guidelines/) to translate diplotypes into clinical actions. Note: step 27 (CPIC lookup) currently parses PharmCAT output only and cannot read pypgx results.
-- **BAM-based SV genes (CYP2D6, CYP2A6, GSTM1, GSTT1) may fail** with pypgx 0.26.0 due to a pandas 2.x compatibility bug in the genotyping module (`'Series' object has no attribute 'Haplotype1'`). In practice, GSTT1 often succeeds while CYP2D6, CYP2A6, and GSTM1 fail. All VCF-based genes are unaffected. For CYP2D6, Cyrius (step 21) or Aldy are alternatives. This is an upstream pypgx issue — monitor [pypgx releases](https://github.com/sbslee/pypgx/releases) for a fix.
+- **The image and the bundle must be the same release.** The pinned pair is image `pypgx:0.26.0--pyh7e72e81_0` with the `0.26.0` branch of pypgx-bundle; with that pair all 23 genes, including the four BAM-based ones, were called on a real 30x genome (see [lessons learned](lessons-learned.md)). The 0.27.0 image against the 0.26.0 bundle failed every gene. Bump both together and rerun a known sample before trusting the new calls.
+- **GSTT1 needs an ALT contig.** In GRCh38, GSTT1 lies on `chr22_KI270879v1_alt`. A BAM aligned to a reference without ALT contigs has no such contig; the step then prints a notice, leaves GSTT1 out of depth preparation (otherwise it fails for all four SV genes) and reports GSTT1 as `FAILED`.
+- **A copy-number call is only as good as the depth it reads.** On a reference with ALT contigs and an aligner that is not run ALT-aware, reads at CYP2D6 split between the primary and ALT copies, depth on the primary drops, and pypgx can report a deletion that is not there. Compare CYP2D6 depth with its flanks before trusting a `WholeDel` call, and report CYP2D6 only when two callers agree.
 - Individual gene failures do not stop the pipeline. However, if **all** genes fail, the script exits with status 1 before generating the summary TSV — this signals a systemic problem (e.g., wrong BAM path, corrupted index, missing pypgx-bundle). Rerun with verbose output to identify the root cause. For partial failures, check the summary TSV for "FAILED" entries.
 
 ## Maintenance

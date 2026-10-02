@@ -29,38 +29,46 @@ OUTPUT_FILE="${VEP_DIR}/${SAMPLE}_annotated.vcf.gz"
 
 echo "=== vcfanno Annotation: ${SAMPLE} ==="
 
-# Skip if output already exists
-if [ -f "$OUTPUT_FILE" ]; then
+# staphb/bcftools ships bcftools only (no bgzip, no tabix), so every
+# compression below is `bcftools view -Oz` and every index `bcftools index -t`.
+
+# Skip only if a previous run left a complete output: non-empty, indexed,
+# and with a header bcftools can read. Anything else is rebuilt.
+if [ -s "$OUTPUT_FILE" ] && [ -f "${OUTPUT_FILE}.tbi" ] && \
+   docker run --rm \
+     -v "${GENOME_DIR}:/genome" \
+     "${BCFTOOLS_IMAGE}" \
+     bcftools view -h "/genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz" > /dev/null 2>&1; then
   echo "Output already exists: ${OUTPUT_FILE}"
   echo "Skipping. Delete the file to re-run."
   exit 0
 fi
+rm -f "$OUTPUT_FILE" "${OUTPUT_FILE}.tbi"
 
 # --- Find VEP input (compressed or uncompressed) ---
-VEP_VCF=""
-if [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf.gz" ]; then
-  VEP_VCF="${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
+# An empty _vep.vcf.gz (left by an older version of this step) is ignored
+# and rebuilt from _vep.vcf.
+VEP_VCF_GZ="${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
+if [ -s "$VEP_VCF_GZ" ]; then
+  VEP_VCF="$VEP_VCF_GZ"
+  echo "Input VCF: ${VEP_VCF}"
 elif [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf" ]; then
-  VEP_VCF="${VEP_DIR}/${SAMPLE}_vep.vcf"
+  echo "Input VCF: ${VEP_DIR}/${SAMPLE}_vep.vcf"
+  echo "Compressing VEP output..."
+  rm -f "$VEP_VCF_GZ" "${VEP_VCF_GZ}.tbi"
+  docker run --rm --user root \
+    --cpus 2 --memory 2g \
+    -v "${GENOME_DIR}:/genome" \
+    "${BCFTOOLS_IMAGE}" \
+    bash -c "bcftools view -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp \
+        /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf && \
+      mv /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+  VEP_VCF="$VEP_VCF_GZ"
 else
   echo "ERROR: VEP-annotated VCF not found." >&2
   echo "  Expected: ${VEP_DIR}/${SAMPLE}_vep.vcf[.gz]" >&2
   echo "  Run step 13 (VEP annotation) first." >&2
   exit 1
-fi
-
-echo "Input VCF: ${VEP_VCF}"
-
-# --- bgzip and index if uncompressed ---
-if [[ "$VEP_VCF" == *.vcf ]] && [ ! -f "${VEP_VCF}.gz" ]; then
-  echo "Compressing VEP output with bgzip..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
-    "${BCFTOOLS_IMAGE}" \
-    bgzip -c "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
-    > "${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
-  VEP_VCF="${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
 fi
 
 if [ ! -f "${VEP_VCF}.tbi" ]; then
@@ -69,7 +77,7 @@ if [ ! -f "${VEP_VCF}.tbi" ]; then
     --cpus 2 --memory 2g \
     -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
-    tabix -p vcf "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+    bcftools index -t "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 fi
 
 echo "Input VCF (indexed): ${VEP_VCF}"
@@ -78,9 +86,21 @@ echo "Input VCF (indexed): ${VEP_VCF}"
 # CADD (no chr prefix)
 CADD_SNV="${ANNOT_DIR}/whole_genome_SNVs.tsv.gz"
 CADD_INDEL="${ANNOT_DIR}/gnomad.genomes.r4.0.indel.tsv.gz"
-# SpliceAI (chr prefix)
-SPLICEAI_SNV="${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz"
-SPLICEAI_INDEL="${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz"
+# SpliceAI (chr prefix). Illumina publishes raw and masked score files; either
+# set works. Raw is used when present and indexed, masked otherwise.
+_spliceai_file() {
+  local kind="$1" set
+  for set in raw masked; do
+    if [ -f "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz" ] && \
+       [ -f "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz.tbi" ]; then
+      echo "${ANNOT_DIR}/spliceai_scores.${set}.${kind}.hg38.vcf.gz"
+      return
+    fi
+  done
+  echo "${ANNOT_DIR}/spliceai_scores.raw.${kind}.hg38.vcf.gz"
+}
+SPLICEAI_SNV=$(_spliceai_file snv)
+SPLICEAI_INDEL=$(_spliceai_file indel)
 # REVEL (chr prefix)
 REVEL="${ANNOT_DIR}/revel_grch38.tsv.gz"
 # AlphaMissense (chr prefix)
@@ -111,8 +131,8 @@ fi
 # Check SpliceAI SNVs
 if [ -f "$SPLICEAI_SNV" ] && [ -f "${SPLICEAI_SNV}.tbi" ]; then
   CHR_TRACKS+=("spliceai_snv")
-  APPLIED_NAMES+=("SpliceAI SNVs")
-  echo "  Found: SpliceAI SNVs"
+  APPLIED_NAMES+=("SpliceAI SNVs ($(basename "$SPLICEAI_SNV"))")
+  echo "  Found: SpliceAI SNVs ($(basename "$SPLICEAI_SNV"))"
 else
   echo "  Skipping: SpliceAI SNVs (not found at ${SPLICEAI_SNV})"
 fi
@@ -120,8 +140,8 @@ fi
 # Check SpliceAI indels
 if [ -f "$SPLICEAI_INDEL" ] && [ -f "${SPLICEAI_INDEL}.tbi" ]; then
   CHR_TRACKS+=("spliceai_indel")
-  APPLIED_NAMES+=("SpliceAI indels")
-  echo "  Found: SpliceAI indels"
+  APPLIED_NAMES+=("SpliceAI indels ($(basename "$SPLICEAI_INDEL"))")
+  echo "  Found: SpliceAI indels ($(basename "$SPLICEAI_INDEL"))"
 else
   echo "  Skipping: SpliceAI indels (not found at ${SPLICEAI_INDEL})"
 fi
@@ -150,8 +170,11 @@ if [ ${#NOCHR_TRACKS[@]} -eq 0 ] && [ ${#CHR_TRACKS[@]} -eq 0 ]; then
   echo "No annotation databases found in ${ANNOT_DIR}/."
   echo "Download them as described in docs/00-reference-setup.md and docs/30-vcfanno.md."
   echo "Copying VEP output as-is."
-  cp "${VEP_VCF}" "${OUTPUT_FILE}"
-  cp "${VEP_VCF}.tbi" "${OUTPUT_FILE}.tbi"
+  # Data first, index second, so the index is never older than the VCF.
+  cp "${VEP_VCF}" "${OUTPUT_FILE}.tmp"
+  cp "${VEP_VCF}.tbi" "${OUTPUT_FILE}.tbi.tmp"
+  mv "${OUTPUT_FILE}.tmp" "${OUTPUT_FILE}"
+  mv "${OUTPUT_FILE}.tbi.tmp" "${OUTPUT_FILE}.tbi"
   exit 0
 fi
 
@@ -160,6 +183,10 @@ echo ""
 # --- Helper: Generate TOML config ---
 # vcfanno uses TOML config to define annotation sources.
 # We generate it dynamically based on which files are present.
+# Numeric scores from tab-separated files use op "max": vcfanno declares a
+# column taken with "self" as Type=String, and bcftools then refuses
+# `INFO/CADD_PHRED>=20` in steps 23 and 31 ("cannot use arithmetic operators
+# to compare strings and numbers"). With "max" the field is Type=Float.
 
 generate_nochr_toml() {
   local toml=""
@@ -170,7 +197,7 @@ generate_nochr_toml() {
 file="/genome/annotations/whole_genome_SNVs.tsv.gz"
 columns=[6]
 names=["CADD_PHRED"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -179,7 +206,7 @@ ops=["self"]
 file="/genome/annotations/gnomad.genomes.r4.0.indel.tsv.gz"
 columns=[6]
 names=["CADD_PHRED_indel"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -194,7 +221,7 @@ generate_chr_toml() {
     case "$track" in
       spliceai_snv)
         toml+='[[annotation]]
-file="/genome/annotations/spliceai_scores.raw.snv.hg38.vcf.gz"
+file="/genome/annotations/'"$(basename "$SPLICEAI_SNV")"'"
 fields=["SpliceAI"]
 names=["SpliceAI"]
 ops=["self"]
@@ -203,7 +230,7 @@ ops=["self"]
         ;;
       spliceai_indel)
         toml+='[[annotation]]
-file="/genome/annotations/spliceai_scores.raw.indel.hg38.vcf.gz"
+file="/genome/annotations/'"$(basename "$SPLICEAI_INDEL")"'"
 fields=["SpliceAI"]
 names=["SpliceAI_indel"]
 ops=["self"]
@@ -215,7 +242,7 @@ ops=["self"]
 file="/genome/annotations/revel_grch38.tsv.gz"
 columns=[5]
 names=["REVEL"]
-ops=["self"]
+ops=["max"]
 
 '
         ;;
@@ -224,7 +251,7 @@ ops=["self"]
 file="/genome/annotations/AlphaMissense_hg38.tsv.gz"
 columns=[9,10]
 names=["AM_pathogenicity","AM_class"]
-ops=["self","self"]
+ops=["max","self"]
 
 '
         ;;
@@ -269,7 +296,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/strip_chr.txt \
         ${CURRENT_VCF} \
         -Oz -o /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_input.vcf.gz && \
-      tabix -p vcf /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_input.vcf.gz
+      bcftools index -t /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_input.vcf.gz
     "
 
   # Step 1b: Run vcfanno with CADD
@@ -290,12 +317,10 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
     -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
     bash -c "
-      bgzip -c /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_annotated.vcf \
-        > /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_annotated.vcf.gz && \
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/add_chr.txt \
-        /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_annotated.vcf.gz \
+        /genome/${SAMPLE}/vep/vcfanno_tmp/nochr_annotated.vcf \
         -Oz -o /genome/${SAMPLE}/vep/vcfanno_tmp/pass1_output.vcf.gz && \
-      tabix -p vcf /genome/${SAMPLE}/vep/vcfanno_tmp/pass1_output.vcf.gz
+      bcftools index -t /genome/${SAMPLE}/vep/vcfanno_tmp/pass1_output.vcf.gz
     "
 
   CURRENT_VCF="/genome/${SAMPLE}/vep/vcfanno_tmp/pass1_output.vcf.gz"
@@ -330,7 +355,7 @@ if [ ${#CHR_TRACKS[@]} -gt 0 ]; then
   echo ""
 elif [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
   # Only CADD was annotated, pass1 output is the final
-  # Need to decompress for the final bgzip step below
+  # Need plain VCF for the final compression step below
   docker run --rm --user root \
     --cpus 2 --memory 2g \
     -v "${GENOME_DIR}:/genome" \
@@ -341,16 +366,21 @@ elif [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
 fi
 
 # --- Compress and index final output ---
+# Built inside vcfanno_tmp/ and moved into place only when complete, so an
+# interrupted run never leaves a partial _annotated.vcf.gz behind.
 echo "=== Compressing and indexing output ==="
 docker run --rm --user root \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
-    bgzip -c /genome/${SAMPLE}/vep/vcfanno_tmp/pass2_output.vcf \
-      > /genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz && \
-    tabix -p vcf /genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz
+    bcftools view -Oz -o /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz \
+      /genome/${SAMPLE}/vep/vcfanno_tmp/pass2_output.vcf && \
+    bcftools index -t /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz
   "
+mv "${WORK_DIR}/final.vcf.gz.tbi" "${OUTPUT_FILE}.tbi.tmp"
+mv "${WORK_DIR}/final.vcf.gz" "${OUTPUT_FILE}"
+mv "${OUTPUT_FILE}.tbi.tmp" "${OUTPUT_FILE}.tbi"
 
 # --- Summary ---
 echo ""

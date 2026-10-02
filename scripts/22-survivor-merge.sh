@@ -21,7 +21,7 @@ OUTDIR="${GENOME_DIR}/${SAMPLE}/sv_merged"
 mkdir -p "$OUTDIR"
 
 echo "============================================"
-echo "  Step 22: SV Consensus Merge (SURVIVOR)"
+echo "  Step 22: SV consensus (position binning, experimental)"
 echo "  Sample: ${SAMPLE}"
 echo "  Output: ${OUTDIR}/"
 echo "============================================"
