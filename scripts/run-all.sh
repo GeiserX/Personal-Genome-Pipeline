@@ -245,10 +245,10 @@ _launch "10 TelomereHunter" 10_telomerehunter "${SCRIPT_DIR}/10-telomere-hunter.
 _launch "20 Mito variants (Mutect2)" 20_mito "${SCRIPT_DIR}/20-mtoolbox.sh" "$SAMPLE"
 
 # CPSR and pypgx need optional data; without it they are skipped, not failed
-if [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && [ -d "${GENOME_DIR}/pcgr_data/20250314/data" ]; then
+if [ -f "${GENOME_DIR}/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEASE}_GRCh38/info.txt" ] && [ -d "${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}/data" ]; then
   _launch "17 CPSR" 17_cpsr "${SCRIPT_DIR}/17-cpsr.sh" "$SAMPLE"
 else
-  _skip "17 CPSR" "data not installed: VEP 113 cache and PCGR bundle, see docs/17-cpsr.md"
+  _skip "17 CPSR" "data not installed: VEP ${PCGR_VEP_CACHE_RELEASE} cache and PCGR bundle, see docs/17-cpsr.md"
 fi
 if [ -d "${GENOME_DIR}/reference/pypgx-bundle" ]; then
   _launch "32 pypgx" 32_pypgx "${SCRIPT_DIR}/32-pypgx.sh" "$SAMPLE"
@@ -266,10 +266,10 @@ echo "  Quick analyses finished."
 echo "  Starting heavy analyses..."
 # VEP and CNVpytor need data setup.sh does not download; without it they are
 # skipped, not failed (and step 13 does not start a 26 GB download mid-run)
-if [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ]; then
+if [ -f "${GENOME_DIR}/vep_cache/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
   _launch "13 VEP" 13_vep "${SCRIPT_DIR}/13-vep-annotation.sh" "$SAMPLE"
 else
-  _skip "13 VEP" "data not installed: vep_cache/homo_sapiens/116_GRCh38, see docs/13-vep-annotation.md"
+  _skip "13 VEP" "data not installed: vep_cache/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38, see docs/13-vep-annotation.md"
 fi
 IDX_VEP=$LAST_STEP
 if [ -s "${GENOME_DIR}/reference/cnvpytor/gc_hg38.pytor" ]; then

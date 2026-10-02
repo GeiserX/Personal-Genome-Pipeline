@@ -39,7 +39,16 @@ PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
 if [ ! -d "$PYPGX_BUNDLE" ]; then
   echo "ERROR: pypgx-bundle not found at ${PYPGX_BUNDLE}" >&2
   echo "  Download it (370 MB, one-time) with:" >&2
-  echo "  cd ${GENOME_DIR}/reference && git clone --branch 0.26.0 --depth 1 https://github.com/sbslee/pypgx-bundle.git" >&2
+  echo "  cd ${GENOME_DIR}/reference && git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git" >&2
+  exit 1
+fi
+# The bundle must be the tag that matches the pypgx image: with another tag
+# every gene fails. PYPGX_BUNDLE_VERSION in versions.env names it.
+BUNDLE_TAG=$(git -c safe.directory="$PYPGX_BUNDLE" -C "$PYPGX_BUNDLE" describe --tags 2>/dev/null || true)
+if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
+  echo "ERROR: pypgx-bundle at ${PYPGX_BUNDLE} is '${BUNDLE_TAG:-not a git checkout of a tag}', but ${PYPGX_IMAGE} needs ${PYPGX_BUNDLE_VERSION}." >&2
+  echo "  Replace it with:" >&2
+  echo "  git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git ${PYPGX_BUNDLE}" >&2
   exit 1
 fi
 
@@ -66,7 +75,7 @@ echo ""
 #   - VCF genes: --variants only
 # Individual gene failures are logged but do not stop the loop.
 run_in --cpus 4 --memory 8g \
-  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
+  -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   "${PYPGX_IMAGE}" \
   bash -c '
     SAMPLE="'"${SAMPLE}"'"
@@ -152,7 +161,7 @@ echo "Extracting results and building summary..."
 
 # Consolidate per-gene results into a summary TSV
 run_in --cpus 2 --memory 4g \
-  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
+  -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   "${PYPGX_IMAGE}" \
   python3 -c "
 import os, sys, csv, subprocess

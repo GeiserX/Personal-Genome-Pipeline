@@ -23,31 +23,26 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Check if cache exists
-if [ ! -d "${CACHE_DIR}/homo_sapiens" ]; then
-  echo "VEP cache not found. Installing..."
-  echo "Step 1: Download cache (26 GB, takes ~10-20 min)"
-
-  # Manual download is more reliable than INSTALL.pl
-  mkdir -p "${CACHE_DIR}/tmp"
-  wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz \
-    -O "${CACHE_DIR}/tmp/homo_sapiens_vep_116_GRCh38.tar.gz"
-
-  echo "Step 2: Extract cache..."
-  cd "$CACHE_DIR" && tar xzf tmp/homo_sapiens_vep_116_GRCh38.tar.gz
-  echo "Cache installed at ${CACHE_DIR}/homo_sapiens/"
+# The cache must be the release of VEP_IMAGE (VEP_CACHE_RELEASE in
+# versions.env). Another release in the same directory, such as the one CPSR
+# uses, does not count.
+if [ ! -f "${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
+  echo "VEP ${VEP_CACHE_RELEASE} cache not found in ${CACHE_DIR}. Installing (26 GB download)..."
+  install_vep_cache "$CACHE_DIR" "$VEP_CACHE_RELEASE"
+  echo "Cache installed at ${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/"
 fi
 
 # Run VEP
 run_in \
   --cpus 4 --memory 8g \
-  -v "${CACHE_DIR}:/opt/vep/.vep" \
+  -v "${CACHE_DIR}:/opt/vep/.vep:ro" \
   "${VEP_IMAGE}" \
   vep \
     --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
     --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
     --vcf \
     --cache \
+    --cache_version "${VEP_CACHE_RELEASE}" \
     --dir_cache /opt/vep/.vep \
     --offline \
     --assembly GRCh38 \

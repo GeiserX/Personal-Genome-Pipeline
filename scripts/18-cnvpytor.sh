@@ -12,23 +12,15 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF_FAI="reference/Homo_sapiens_assembly38.fasta.fai"   # relative to the /genome mount
+REF_FAI="${REF_FASTA_C}.fai"   # as the containers see it
 CNVPYTOR_DATA="${GENOME_DIR}/reference/cnvpytor"          # pinned GC/mask .pytor resource files
 OUTPUT_DIR="${SAMPLE_DIR}/cnvpytor"
 BIN_SIZE=1000
 
 # The pinned biocontainer ships WITHOUT the reference GC/mask resources and its
 # built-in `-download` is broken in 1.3.2, so we bind-mount pre-fetched pinned
-# files onto the container's package data dir. This path is stable for the
-# pinned CNVPYTOR_IMAGE; if the image is bumped, re-verify with:
-#   run_in <img> python -c 'import cnvpytor,os;print(os.path.dirname(cnvpytor.__file__)+"/data")'
-CNVPYTOR_IMG_DATA="/usr/local/lib/python3.12/site-packages/cnvpytor/data"
-
-# shellcheck source=/dev/null
-source "$(dirname "$0")/../versions.env" 2>/dev/null || {
-  CNVPYTOR_IMAGE="quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0"
-  BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
-}
+# files onto the container's package data dir. That directory depends on the
+# image's Python version, so it is asked from the image below, not written here.
 
 echo "=== CNVpytor: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -61,6 +53,15 @@ for f in gc_hg19.pytor mask_hg19.pytor gc_chm13v2.0.pytor gc_chm13v1.1.pytor gc_
 done
 
 mkdir -p "$OUTPUT_DIR"
+
+CNVPYTOR_IMG_DATA=$(run_in "${CNVPYTOR_IMAGE}" \
+  python -c 'import cnvpytor, os; print(os.path.dirname(cnvpytor.__file__) + "/data")' | tail -n 1)
+case "$CNVPYTOR_IMG_DATA" in
+  /*/cnvpytor/data) ;;
+  *)
+    echo "ERROR: could not find the cnvpytor data directory inside ${CNVPYTOR_IMAGE} (got '${CNVPYTOR_IMG_DATA}')." >&2
+    exit 1 ;;
+esac
 PYTOR="/genome/${SAMPLE}/cnvpytor/${SAMPLE}.pytor"
 
 # Process only the canonical GRCh38 chromosomes. A full-reference BAM also carries
@@ -109,7 +110,7 @@ run_in --cpus 2 --memory 4g \
     RAW=/genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.raw.vcf
     OUT=/genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz
     if [ -s \"\$RAW\" ] && grep -qv '^#' \"\$RAW\"; then
-      bcftools reheader --fai /genome/${REF_FAI} \"\$RAW\" | bcftools sort -Oz -o \"\$OUT\" -
+      bcftools reheader --fai ${REF_FAI} \"\$RAW\" | bcftools sort -Oz -o \"\$OUT\" -
     else
       { [ -s \"\$RAW\" ] && bcftools view -h \"\$RAW\" \
           || printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'; } \

@@ -50,12 +50,14 @@ echo ""
 # console script is `cyrius` (there is no `star_caller` command).
 # The manifest file (list of BAM paths) is created inside the container.
 echo "[1/2] Running Cyrius CYP2D6 caller..."
-run_in --cpus 4 --memory 8g \
+# --net: pip downloads Cyrius and its dependencies from PyPI.
+# --root: pip installs into the image's system site-packages.
+run_in --net --root --cpus 4 --memory 8g \
   -v "${CONSTRAINTS}:/constraints.txt:ro" \
   -w /tmp \
   "${PYTHON_IMAGE}" \
   bash -c "
-    pip install --no-cache-dir --disable-pip-version-check -q -c /constraints.txt 'cyrius==1.1.1' &&
+    pip install --no-cache-dir --disable-pip-version-check -q -c /constraints.txt 'cyrius==${CYRIUS_VERSION}' &&
     echo '/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam' > /tmp/manifest.txt &&
     cyrius \
       --manifest /tmp/manifest.txt \
