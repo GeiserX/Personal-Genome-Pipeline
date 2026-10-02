@@ -233,10 +233,10 @@ print(f"Phenotypes written: {phenotypes_path}")
 print(f"Gene results: {len(gene_results)}, affected medications: {affected_count}")
 PYEOF
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:

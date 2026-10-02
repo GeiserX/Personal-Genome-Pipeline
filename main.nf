@@ -401,11 +401,7 @@ workflow {
             SV.out.versions,
             REPORTING.out.versions
         )
-        // A module whose script has a column-0 here-document (VCFANNO's TOML,
-        // CPIC_LOOKUP's Python) keeps Nextflow from stripping the script's
-        // indent, so its block arrives indented; strip it, or the merged
-        // file is not valid YAML.
-        .map { f -> f.text.stripIndent() }
+        .map { f -> f.text }
         .unique()
         .collectFile(name: 'software_versions.yml', storeDir: "${params.outdir}/pipeline_info", sort: true)
 

@@ -246,10 +246,10 @@ EOF
 </html>
 HTMLFOOT
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    bcftools: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:

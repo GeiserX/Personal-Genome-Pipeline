@@ -114,10 +114,10 @@ TOML_END
 
     vcfanno -p ${task.cpus} vcfanno.toml ${vcf} > ${meta.id}_vcfanno.vcf
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        vcfanno: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    vcfanno: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
