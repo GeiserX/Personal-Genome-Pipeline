@@ -343,12 +343,12 @@ need_vcf50() {
 # Every site of the CYP2C19 and CYP2C9 slice called from the GIAB reads,
 # reference sites included: PharmCAT counts a position the VCF lacks as
 # missing, not as reference, and the fixture's VCF holds variants only.
-# No FORMAT/AD: PharmCAT's normalisation cannot merge it where an indel and
-# a reference site share a position.
+# Only FORMAT/GT is kept: PharmCAT's normalisation cannot merge FORMAT/AD
+# where an indel and a reference site share a position.
 need_pgxvcf() {
   need fullref && need slice || return 1
   hrun "$BCFTOOLS_IMAGE" sh -c 'bcftools mpileup -r chr10:94700001-95000000 -f /in/ref.fa -Ou /in/HG002_slice.bam \
-    | bcftools call -m -Oz -o /in/pgx.vcf.gz && bcftools index -f -t /in/pgx.vcf.gz' || return 1
+    | bcftools call -m -Ou | bcftools annotate -x "^FORMAT/GT" -Oz -o /in/pgx.vcf.gz && bcftools index -f -t /in/pgx.vcf.gz' || return 1
   echo "pgx.vcf.gz: $(hbcf view -H /in/pgx.vcf.gz | wc -l) sites, $(hbcf view -H -i 'GT="alt"' /in/pgx.vcf.gz | wc -l) with an ALT allele"
 }
 need_revel() { fx_link revel_synthetic.tsv.gz revel_synthetic.tsv.gz.tbi; }
