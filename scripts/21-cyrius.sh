@@ -50,7 +50,7 @@ echo ""
 # console script is `cyrius` (there is no `star_caller` command).
 # The manifest file (list of BAM paths) is created inside the container.
 echo "[1/2] Running Cyrius CYP2D6 caller..."
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   -v "${CONSTRAINTS}:/constraints.txt:ro" \
   -w /tmp \
   "${PYTHON_IMAGE}" \

@@ -7,8 +7,6 @@
 #       GATK Mutect2 in mitochondrial mode is the standard alternative.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
@@ -34,7 +32,7 @@ mkdir -p "$OUTPUT_DIR"
 
 
 echo "[1/4] Extracting chrM reads..."
-run_in  --cpus 2 --memory 4g \
+run_in --cpus 2 --memory 4g \
   "$SAMTOOLS_IMAGE" \
   bash -c "
     samtools view -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam chrM \
@@ -45,7 +43,7 @@ run_in  --cpus 2 --memory 4g \
 echo "[2/4] Checking sequence dictionary..."
 if [ ! -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict" ]; then
   echo "  Creating sequence dictionary..."
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "$GATK_IMAGE" \
     gatk CreateSequenceDictionary \
       -R "${REF_FASTA_C}" \
@@ -55,7 +53,7 @@ else
 fi
 
 echo "[3/4] Running Mutect2 in mitochondrial mode..."
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   "$GATK_IMAGE" \
   gatk Mutect2 \
     -R "${REF_FASTA_C}" \
@@ -66,7 +64,7 @@ run_in  --cpus 4 --memory 8g \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_mutect2.vcf.gz"
 
 echo "[4/4] Filtering variants..."
-run_in  --cpus 2 --memory 4g \
+run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   gatk FilterMutectCalls \
     -R "${REF_FASTA_C}" \

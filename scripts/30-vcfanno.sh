@@ -9,19 +9,12 @@
 # Solved via two-pass annotation with chromosome renaming between passes.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 
-# Validate sample name to prevent shell injection in bash -c strings
-if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
-  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
-  exit 1
-fi
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 VEP_DIR="${SAMPLE_DIR}/vep"
@@ -56,7 +49,7 @@ elif [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf" ]; then
   echo "Input VCF: ${VEP_DIR}/${SAMPLE}_vep.vcf"
   echo "Compressing VEP output..."
   rm -f "$VEP_VCF_GZ" "${VEP_VCF_GZ}.tbi"
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp \
         /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf && \
@@ -71,7 +64,7 @@ fi
 
 if [ ! -f "${VEP_VCF}.tbi" ]; then
   echo "Indexing VEP VCF..."
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools index -t "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 fi
@@ -284,7 +277,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
   # All within a single Docker invocation using bcftools + vcfanno
   # Step 1a: Strip chr prefix
   echo "  Stripping chr prefix from VCF..."
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/strip_chr.txt \
@@ -295,7 +288,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
 
   # Step 1b: Run vcfanno with CADD
   echo "  Running vcfanno with CADD tracks..."
-  run_in    --cpus 4 --memory 8g \
+  run_in --cpus 4 --memory 8g \
     "${VCFANNO_IMAGE}" \
     vcfanno -p 4 \
       "/genome/${SAMPLE}/vep/vcfanno_tmp/nochr.toml" \
@@ -304,7 +297,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
 
   # Step 1c: Re-add chr prefix and compress
   echo "  Re-adding chr prefix..."
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/add_chr.txt \
@@ -331,7 +324,7 @@ if [ ${#CHR_TRACKS[@]} -gt 0 ]; then
 
   # Run vcfanno
   echo "  Running vcfanno with chr-prefixed tracks..."
-  run_in    --cpus 4 --memory 8g \
+  run_in --cpus 4 --memory 8g \
     "${VCFANNO_IMAGE}" \
     vcfanno -p 4 \
       "/genome/${SAMPLE}/vep/vcfanno_tmp/chr.toml" \
@@ -344,7 +337,7 @@ if [ ${#CHR_TRACKS[@]} -gt 0 ]; then
 elif [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
   # Only CADD was annotated, pass1 output is the final
   # Need plain VCF for the final compression step below
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools view "${CURRENT_VCF}" \
     > "${WORK_DIR}/pass2_output.vcf"
@@ -355,7 +348,7 @@ fi
 # Built inside vcfanno_tmp/ and moved into place only when complete, so an
 # interrupted run never leaves a partial _annotated.vcf.gz behind.
 echo "=== Compressing and indexing output ==="
-run_in  --cpus 2 --memory 2g \
+run_in --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     bcftools view -Oz -o /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz \

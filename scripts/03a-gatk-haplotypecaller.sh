@@ -10,7 +10,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 INTERVALS=${INTERVALS:-""}
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
@@ -57,12 +56,12 @@ if [ -n "$INTERVALS" ]; then
 fi
 
 echo "=== [1/3] Running GATK HaplotypeCaller ==="
-run_in  --cpus "$THREADS" --memory 32g \
+run_in --cpus "$THREADS" --memory 32g \
   "$GATK_IMAGE" \
   "${GATK_CMD[@]}"
 
 echo "=== [2/3] Indexing VCF with bcftools ==="
-run_in  --cpus 2 --memory 2g \
+run_in --cpus 2 --memory 2g \
   "$BCFTOOLS_IMAGE" \
   bcftools index -ft "/genome/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz"
 

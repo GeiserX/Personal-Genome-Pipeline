@@ -13,7 +13,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
@@ -55,7 +54,7 @@ fi
 #   --threads    Worker threads
 #   --regions    Restrict to regions (optional, for testing)
 echo "Running Octopus (this takes 2-4 hours for 30X WGS)..."
-run_in  --cpus "${THREADS}" --memory 16g \
+run_in --cpus "${THREADS}" --memory 16g \
   "${OCTOPUS_IMAGE}" \
   octopus \
     -R "${REF_FASTA_C}" \

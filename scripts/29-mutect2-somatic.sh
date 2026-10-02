@@ -12,10 +12,10 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-4}
 INTERVALS=${INTERVALS:-""}
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
@@ -106,7 +106,7 @@ echo "=== [1/3] Running Mutect2 in tumor-only mode ==="
 echo "  This is the slowest step. Full genome takes ~2-6 hours."
 echo "  For quick testing, set INTERVALS=chr22"
 echo ""
-run_in  --cpus "$THREADS" --memory 8g \
+run_in --cpus "$THREADS" --memory 8g \
   "$GATK_IMAGE" \
   "${MUTECT2_CMD[@]}"
 
@@ -119,7 +119,7 @@ FILTER_CMD=(
   -O "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz"
 )
 
-run_in  --cpus 2 --memory 4g \
+run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   "${FILTER_CMD[@]}"
 

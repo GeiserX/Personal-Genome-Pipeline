@@ -118,7 +118,7 @@ else
   if [ ! -f "$FAI" ]; then
     _download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
       echo "  Generating index with samtools..."
-      run_in        "$SAMTOOLS_IMAGE" \
+      run_in "$SAMTOOLS_IMAGE" \
         samtools faidx /genome/reference/Homo_sapiens_assembly38.fasta
     }
   fi
@@ -157,7 +157,7 @@ fi
 CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
 if [ ! -f "${CLINVAR_CHR}.tbi" ]; then
   echo "Creating chr-prefixed ClinVar..."
-  run_in    "$BCFTOOLS_IMAGE" \
+  run_in "$BCFTOOLS_IMAGE" \
     bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
       bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz.tmp &&
       mv /genome/clinvar/clinvar_chr.vcf.gz.tmp /genome/clinvar/clinvar_chr.vcf.gz &&
@@ -168,7 +168,7 @@ fi
 CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
 if [ ! -f "${CLINVAR_PATH}.tbi" ]; then
   echo "Creating pathogenic/likely pathogenic subset..."
-  run_in    "$BCFTOOLS_IMAGE" \
+  run_in "$BCFTOOLS_IMAGE" \
     bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
       -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp &&
       mv /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&

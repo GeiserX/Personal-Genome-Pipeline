@@ -70,7 +70,7 @@ CANONICAL_CHROMS=(chr{1..22} chrX chrY)
 
 # cnvpytor invocation with the genome data + pinned resource mounts
 cnvpytor_run() {
-  run_in    --cpus 4 --memory 8g \
+  run_in --cpus 4 --memory 8g \
     -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}" \
     "${CNVPYTOR_IMAGE}" "$@"
 }
@@ -102,7 +102,7 @@ echo "[6/6] Normalizing VCF (full contig headers, sort, compress, index)..."
 # CNVpytor's VCF only carries ##contig lines for processed chromosomes; reheader
 # from the reference .fai so headers match the other SV callers for consensus
 # merging (step 22). Emit a valid header-only VCF when there are no calls.
-run_in  --cpus 2 --memory 4g \
+run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     set -euo pipefail

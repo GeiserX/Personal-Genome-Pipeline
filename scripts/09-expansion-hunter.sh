@@ -14,10 +14,10 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name> <male|female>}
 SEX=${2:?Usage: $0 <sample_name> <male|female>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-4}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"

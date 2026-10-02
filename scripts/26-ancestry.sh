@@ -74,13 +74,13 @@ if [ ! -f "$KG_SITES" ]; then
 
     # Index the raw file first (required by bcftools --regions)
     if [ ! -f "${RAW_VCF}.tbi" ]; then
-      run_in        "${BCFTOOLS_IMAGE}" \
+      run_in "${BCFTOOLS_IMAGE}" \
         bcftools index -t "/genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
     fi
 
     # Extract common biallelic SNPs (MAF > 5%, autosomal only)
     echo "  Filtering to common biallelic autosomal SNPs..."
-    run_in      --cpus 4 --memory 4g \
+    run_in --cpus 4 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
       bash -c "
         bcftools view -m2 -M2 -v snps \
@@ -116,7 +116,7 @@ fi
 
 # Step 3: Extract overlapping SNPs between your sample and reference
 echo "[3/5] Finding shared SNPs between your sample and reference panel..."
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     bcftools isec -n=2 -w1 \
@@ -138,7 +138,7 @@ fi
 # Step 4: LD pruning (requires >=50 samples — skip for single-sample input)
 echo "[4/5] LD pruning..."
 PRUNED_COUNT=0
-if run_in  --cpus 4 --memory 8g \
+if run_in --cpus 4 --memory 8g \
   "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
@@ -164,7 +164,7 @@ fi
 # joint PCA with a multi-sample reference panel (e.g., 1000G genotypes).
 # We still record the shared SNP and LD-pruned counts as useful QC metrics.
 echo "[5/5] Attempting PCA (requires >=2 samples)..."
-if run_in  --cpus 4 --memory 8g \
+if run_in --cpus 4 --memory 8g \
   "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \

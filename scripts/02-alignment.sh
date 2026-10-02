@@ -4,14 +4,11 @@
 # Output: sorted BAM + BAI index in $GENOME_DIR/<sample>/aligned/
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Allow explicit override (e.g., FASTQ_SUBDIR=fastq to use raw reads even when trimmed exist)
@@ -47,7 +44,8 @@ mkdir -p "$OUTPUT_DIR"
 # Step 1: Build minimap2 index (one-time, ~30 min)
 if [ ! -f "$MMI" ]; then
   echo "Building minimap2 index (one-time, ~30 min)..."
-  run_in \
+  # The index is shared by every sample, so reference/ is writable here.
+  run_in --rw "${GENOME_DIR}/reference" \
     --cpus 8 --memory 16g \
     "${MINIMAP2_IMAGE}" \
     minimap2 -d /genome/reference/GRCh38.mmi \

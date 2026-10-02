@@ -15,7 +15,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
@@ -90,7 +89,7 @@ GRIDSS_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
 # GRIDSS via Docker Hub image (1.4 GB, includes all dependencies: Java 11, R, bwa, samtools)
 echo "Running GRIDSS (this takes 4-8 hours for 30X WGS)..."
-run_in  --cpus "${THREADS}" --memory 32g \
+run_in --cpus "${THREADS}" --memory 32g \
   -e JAVA_TOOL_OPTIONS="-Xmx28g" \
   "${GRIDSS_IMAGE}" \
   "${GRIDSS_ARGS[@]}"

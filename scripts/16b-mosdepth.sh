@@ -7,14 +7,12 @@
 # estimate; mosdepth reads actual alignments for precise per-base depth.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-4}
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
@@ -66,7 +64,7 @@ else
 fi
 
 echo "Computing coverage statistics..."
-run_in  --cpus "${THREADS}" --memory 4g \
+run_in --cpus "${THREADS}" --memory 4g \
   "${MOSDEPTH_IMAGE}" \
   mosdepth \
     --by "${BY_FLAG}" \

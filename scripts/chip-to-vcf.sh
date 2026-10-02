@@ -124,7 +124,7 @@ run_in --cpus 2 --memory 2g \
     "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
     -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
-run_in  "${BCFTOOLS_IMAGE}" \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Step 3: Liftover to GRCh38 ---
@@ -142,7 +142,7 @@ run_in --cpus 2 --memory 8g \
     WARN_ON_MISSING_CONTIG=true
 
 # --- Step 4: Index the final VCF ---
-run_in  "${BCFTOOLS_IMAGE}" \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools index -t -f "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 # --- Summary ---
@@ -150,11 +150,11 @@ echo ""
 echo "=== Conversion complete ==="
 echo "  Output VCF: ${VCF_DIR}/${SAMPLE}.vcf.gz"
 
-run_in  "${BCFTOOLS_IMAGE}" \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
   grep "^SN" | sed 's/^SN\t0\t/  /'
 
-REJECTED_COUNT=$(run_in  "${BCFTOOLS_IMAGE}" \
+REJECTED_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" 2>/dev/null | wc -l || echo "0")
 echo "  Liftover rejected: ${REJECTED_COUNT} variants"
 echo ""

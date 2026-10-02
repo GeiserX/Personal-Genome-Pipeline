@@ -16,7 +16,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 R1="${SAMPLE_DIR}/fastq/${SAMPLE}_R1.fastq.gz"
 R2="${SAMPLE_DIR}/fastq/${SAMPLE}_R2.fastq.gz"
@@ -61,7 +60,7 @@ mkdir -p "$OUTPUT_DIR"
 #   -R                       Report title (used by MultiQC for sample naming)
 #   -w                       Worker threads (default 3, max 16 effective for I/O-bound work)
 echo "Running fastp (adapter trimming + quality filtering)..."
-run_in  --cpus "${THREADS}" --memory 4g \
+run_in --cpus "${THREADS}" --memory 4g \
   "${FASTP_IMAGE}" \
   fastp \
     -i "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \

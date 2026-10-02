@@ -33,7 +33,7 @@ DELLY_IMAGE="${DELLY_IMAGE}"
 BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "[1/3] Calling structural variants..."
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   "$DELLY_IMAGE" \
   delly call \
     -g "${REF_FASTA_C}" \
@@ -41,13 +41,13 @@ run_in  --cpus 4 --memory 8g \
     "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
 echo "[2/3] Converting BCF to VCF..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools view \
     "/genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf" \
     -Oz -o "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz"
 
 echo "[3/3] Indexing VCF..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools index -t \
     "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz"
 

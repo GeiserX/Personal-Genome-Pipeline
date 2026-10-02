@@ -51,7 +51,7 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   -v "${VEP_DIR}:/mnt/.vep" \
   -v "${REFDATA_DIR}:/mnt/bundle" \
   -v "${SAMPLE_DIR}/${VCF_DIR}:/mnt/inputs" \

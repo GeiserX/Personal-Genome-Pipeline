@@ -11,19 +11,12 @@
 # Requires: VEP-annotated VCF. Step 30 (vcfanno) recommended for full filtering.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 
-# Validate sample name to prevent shell injection in bash -c / python3 -c strings
-if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
-  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
-  exit 1
-fi
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTDIR="${SAMPLE_DIR}/slivar"
@@ -70,7 +63,7 @@ rm -f "${OUTDIR}/${SAMPLE}_slivar_summary.tsv"
 echo "[1/5] Preparing input VCF..."
 if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "  Compressing VEP VCF..."
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
       -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
@@ -79,7 +72,7 @@ if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "  Done."
 elif [[ "$INPUT" == *.vcf.gz ]] && [ ! -f "${INPUT}.tbi" ]; then
   echo "  Indexing VCF..."
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools index -t "$CONTAINER_INPUT"
   echo "  Done."
@@ -139,7 +132,7 @@ echo "[3/5] Prioritizing variants..."
 # PASS + HIGH VEP impact + gnomAD AF < 0.01 (or missing)
 echo "  [a] rare_high: PASS + HIGH impact + gnomAD AF < 1%..."
 if [ "$HAS_GNOMAD" -eq 1 ]; then
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT,gnomADe_AF -s worst \
@@ -147,7 +140,7 @@ if [ "$HAS_GNOMAD" -eq 1 ]; then
         -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz"
 else
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT -s worst \
@@ -204,7 +197,7 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
     PREDICTOR_EXPR=$(printf ' || %s' "${PREDICTOR_PARTS[@]}")
     PREDICTOR_EXPR="${PREDICTOR_EXPR:4}"  # strip leading ' || '
 
-    run_in      --cpus 2 --memory 4g \
+    run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
       bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
         bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
@@ -214,7 +207,7 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
         bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
   else
     # No predictors available despite vcfanno — fall back to all rare MODERATE
-    run_in      --cpus 2 --memory 4g \
+    run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
       bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
         bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
@@ -229,7 +222,7 @@ else
   echo "    WARNING: No vcfanno annotations — including all rare MODERATE variants."
   echo "    Run step 30 (vcfanno) for CADD/REVEL/AlphaMissense/SpliceAI filtering."
 
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
@@ -249,7 +242,7 @@ CLINVAR_COUNT=0
 CLINVAR_FILE=""
 if [ "$HAS_CLINVAR" -eq 1 ]; then
   echo "  [c] clinvar_pathogenic: ClinVar pathogenic/likely_pathogenic..."
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
@@ -273,7 +266,7 @@ echo "  Merging filter tiers into prioritized VCF..."
 MERGE_FILES="/genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
 [ -n "$CLINVAR_FILE" ] && MERGE_FILES="${MERGE_FILES} ${CLINVAR_FILE}"
 
-run_in  --cpus 2 --memory 4g \
+run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools concat -a -D \
     ${MERGE_FILES} | \
@@ -311,7 +304,7 @@ rm -f "$COMPHET_VCF" "$COMPHET_TSV"
 
 # A failure here (wrong image, slivar crash, broken input) stops the step with
 # slivar's own error. It must never be reported as "no candidates found".
-if ! run_in  --cpus 2 --memory 4g \
+if ! run_in --cpus 2 --memory 4g \
   "${SLIVAR_IMAGE}" \
   slivar compound-hets \
     --allow-non-trios \
@@ -351,7 +344,7 @@ if [ "$COMPHET_RECORDS" -gt 0 ]; then
   COMPHET_GENES=$(echo "$COMPHET_STATS" | awk '{print $2}')
 
   # Export to TSV sorted by gene for human review
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools +split-vep \
         /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
@@ -381,7 +374,7 @@ echo "[5/5] Generating summary with gene constraint annotations..."
 SUMMARY_TSV="${OUTDIR}/${SAMPLE}_slivar_summary.tsv"
 
 # Extract variant info from prioritized VCF into a TSV
-if ! run_in  --cpus 2 --memory 4g \
+if ! run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools +split-vep \
     /genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz \
@@ -396,7 +389,7 @@ fi
 # Add header and optional gene constraint columns
 if [ -f "$CONSTRAINT_TSV" ]; then
   echo "  Joining with gnomAD gene constraint metrics..."
-  run_in    --cpus 2 --memory 4g \
+  run_in --cpus 2 --memory 4g \
     "${PYTHON_IMAGE}" \
     python3 -c "
 import csv, sys

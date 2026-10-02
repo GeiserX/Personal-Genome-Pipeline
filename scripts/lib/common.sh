@@ -23,7 +23,7 @@
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
 PGP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-# shellcheck source=../../versions.env
+# shellcheck source=../versions.env
 . "${PGP_ROOT}/versions.env"
 
 umask 077

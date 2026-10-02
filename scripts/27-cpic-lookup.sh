@@ -15,8 +15,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 # Find PharmCAT JSON output
 PHARMCAT_JSON=""
 for DIR in "${GENOME_DIR}/${SAMPLE}/pharmcat" "${GENOME_DIR}/${SAMPLE}/vcf"; do
@@ -88,7 +86,7 @@ echo "" >> "$OUTPUT"
 echo "Parsing PharmCAT results..."
 
 # Use Python in Docker to parse JSON properly
-run_in  "${PYTHON_IMAGE}" \
+run_in "${PYTHON_IMAGE}" \
   python3 -c "
 import json, sys, glob
 

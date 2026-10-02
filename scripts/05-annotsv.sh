@@ -44,7 +44,7 @@ mkdir -p "$OUTPUT_DIR"
 # Determine relative path of Manta VCF within SAMPLE_DIR
 MANTA_REL=$(echo "$MANTA_VCF" | sed "s|${GENOME_DIR}/||")
 
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   "${ANNOTSV_IMAGE}" \
   AnnotSV \
     -SVinputFile "/genome/${MANTA_REL}" \

@@ -18,7 +18,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 PLATFORM=${PLATFORM:?Set PLATFORM to ont or hifi}
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned_longread}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"

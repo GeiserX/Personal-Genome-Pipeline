@@ -14,19 +14,12 @@
 # Requires: VEP-annotated VCF from step 13 (step 30 vcfanno enrichment recommended)
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 
-# Validate sample name to prevent shell injection in bash -c strings
-if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
-  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
-  exit 1
-fi
 
 # Prefer vcfanno-enriched VCF (step 30), fall back to VEP VCF (step 13)
 ANNOTATED_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz"
@@ -119,7 +112,7 @@ REVEL_OR_AM=0
 # Step 1: Compress and index if needed
 if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "[1/${TOTAL_STEPS}] Compressing VEP VCF (required for bcftools filtering)..."
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
       -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
@@ -128,7 +121,7 @@ if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "  Done."
 elif [[ "$INPUT" == *.vcf.gz ]] && [ ! -f "${INPUT}.tbi" ]; then
   echo "[1/${TOTAL_STEPS}] Indexing compressed VEP VCF..."
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools index -t "$CONTAINER_INPUT"
   echo "  Done."
@@ -140,7 +133,7 @@ fi
 # bcftools +split-vep parses the IMPACT subfield from VEP's pipe-delimited CSQ annotation,
 # selecting only the worst consequence per variant (-s worst)
 echo "[2/${TOTAL_STEPS}] Extracting HIGH impact variants (stop-gain, frameshift, splice)..."
-run_in  --cpus 4 --memory 4g \
+run_in --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
     bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"HIGH\"' \
@@ -156,7 +149,7 @@ echo "  Found: ${HIGH_COUNT} HIGH impact variants"
 # Uses gnomAD allele frequency from the CSQ field if available
 if [ "$HAS_GNOMAD" -eq 1 ]; then
   echo "[3/${TOTAL_STEPS}] Extracting rare MODERATE impact variants (gnomAD AF < 1%)..."
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT,gnomADe_AF -s worst \
@@ -167,7 +160,7 @@ else
   echo "[3/${TOTAL_STEPS}] Extracting MODERATE impact variants (no gnomAD AF available)..."
   echo "  WARNING: VEP output lacks gnomAD frequencies — including all MODERATE variants."
   echo "  Tip: Re-run VEP (step 13) with --af_gnomade for population frequency filtering."
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"MODERATE\"' \
@@ -187,7 +180,7 @@ CLINVAR_COUNT=0
 CLINVAR_FILE=""
 if [ "$HAS_CLINVAR" -eq 1 ]; then
   echo "[4/${TOTAL_STEPS}] Extracting ClinVar pathogenic/likely pathogenic variants..."
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
@@ -219,7 +212,7 @@ if [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; then
   fi
 
   echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting high-CADD variants (PHRED >= 20, non-HIGH/MODERATE)..."
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT -s worst \
@@ -250,7 +243,7 @@ if [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; then
   #   ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL
   # bcftools cannot numerically compare sub-fields within a string, so we use
   # awk to parse the SpliceAI value and check if any delta score >= 0.2.
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS -i '${SPLICEAI_PREFILTER}' ${CONTAINER_INPUT} | \
       awk -F'\t' 'BEGIN{OFS=\"\t\"} /^#/{print;next} {
@@ -298,7 +291,7 @@ if [ "$REVEL_OR_AM" -eq 1 ]; then
     fi
   fi
 
-  run_in    --cpus 4 --memory 4g \
+  run_in --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view -f PASS -i '${MISSENSE_FILTER}' \
       ${CONTAINER_INPUT} \
@@ -320,7 +313,7 @@ MERGE_FILES="/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz /genome/${S
 [ -n "$SPLICEAI_FILE" ] && MERGE_FILES="${MERGE_FILES} ${SPLICEAI_FILE}"
 [ -n "$MISSENSE_FILE" ] && MERGE_FILES="${MERGE_FILES} ${MISSENSE_FILE}"
 
-run_in  --cpus 2 --memory 2g \
+run_in --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools concat -a -D \
     ${MERGE_FILES} | \
@@ -334,7 +327,7 @@ TOTAL_COUNT=$(run_in \
 # Generate summary TSV with annotation scores
 echo ""
 echo "Generating human-readable summary..."
-run_in  --cpus 2 --memory 2g \
+run_in --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "echo -e 'CHROM\tPOS\tREF\tALT\tGT\tIMPACT\tGENE\tCADD_PHRED\tREVEL\tAM_CLASS\tCSQ_EXCERPT' > /genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv && \
     bcftools view -H /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz | \
@@ -366,7 +359,7 @@ run_in  --cpus 2 --memory 2g \
 # Add gnomAD gene constraint columns if available
 if [ "$HAS_CONSTRAINT" -eq 1 ]; then
   echo "Adding gnomAD gene constraint metrics..."
-  run_in    --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     "${PYTHON_IMAGE}" \
     python3 -c "
 import csv, sys

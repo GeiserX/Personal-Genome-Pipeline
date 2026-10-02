@@ -12,15 +12,12 @@
 # Runtime: ~1-3 hours for 30X long-read WGS depending on read length and throughput.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 PLATFORM=${PLATFORM:?Set PLATFORM to ont or hifi}
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned_longread"

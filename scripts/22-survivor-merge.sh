@@ -117,7 +117,7 @@ elif [ -f "$CNVPYTOR_TXT" ]; then
     }' "$CNVPYTOR_TXT"
   } > "${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf"
 
-  run_in    "${BCFTOOLS_IMAGE}" \
+  run_in "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools sort /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf -Oz \
       -o /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz"
@@ -144,7 +144,7 @@ echo ""
 # Create file list for SURVIVOR
 echo "[1/3] Preparing SV file list..."
 FILE_LIST="/genome/${SAMPLE}/sv_merged/sv_files.txt"
-run_in  "${BCFTOOLS_IMAGE}" \
+run_in "${BCFTOOLS_IMAGE}" \
   bash -c "
     > ${FILE_LIST}
     for f in ${SV_FILES[*]}; do
@@ -158,7 +158,7 @@ run_in  "${BCFTOOLS_IMAGE}" \
 echo "[2/3] Finding consensus SVs (breakpoints within 1kb, 2+ callers)..."
 
 # Step A: Extract SV positions per caller as "caller\tchr\tbin\tsvtype" for counting
-run_in  --cpus 4 --memory 4g \
+run_in --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     CALLER_IDX=0

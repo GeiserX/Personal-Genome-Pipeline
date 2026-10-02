@@ -10,10 +10,10 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-4}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned_longread}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
@@ -42,7 +42,7 @@ mkdir -p "$OUTPUT_DIR"
 # Run Sniffles2
 echo "[1/3] Running Sniffles2 SV caller..."
 echo "       This takes 30-90 minutes for 30X long-read WGS."
-run_in  --cpus "$THREADS" --memory 16g \
+run_in --cpus "$THREADS" --memory 16g \
   "$SNIFFLES_IMAGE" \
   sniffles \
     -i "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
@@ -53,13 +53,13 @@ run_in  --cpus "$THREADS" --memory 16g \
 
 # Compress and index with bcftools
 echo "[2/3] Compressing VCF..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools view \
     "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv_raw.vcf" \
     -Oz -o "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
 
 echo "[3/3] Indexing VCF..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools index -t \
     "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
 

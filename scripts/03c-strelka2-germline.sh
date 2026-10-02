@@ -27,7 +27,6 @@ ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_strelka2"
-THREADS=${THREADS:-8}
 
 echo "=== Strelka2 Germline Calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -62,12 +61,12 @@ else
   if [ -d "$OUTPUT_DIR" ]; then
     # Files written by the container belong to root, so remove them from a container
     echo "Removing leftover ${OUTPUT_DIR}/ (no workflow and no results)..."
-    run_in      "$STRELKA_IMAGE" \
+    run_in "$STRELKA_IMAGE" \
       rm -rf "/genome/${SAMPLE}/vcf_strelka2"
   fi
   mkdir -p "$OUTPUT_DIR"
   echo "[1/2] Configuring Strelka2 germline workflow..."
-  run_in    --cpus "$THREADS" --memory 16g \
+  run_in --cpus "$THREADS" --memory 16g \
     "$STRELKA_IMAGE" \
     configureStrelkaGermlineWorkflow.py \
       --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
@@ -77,7 +76,7 @@ fi
 
 # Step 2: Run the workflow
 echo "[2/2] Running Strelka2 (this takes 1-2 hours for 30X WGS)..."
-run_in  --cpus "$THREADS" --memory 16g \
+run_in --cpus "$THREADS" --memory 16g \
   "$STRELKA_IMAGE" \
   "/genome/${SAMPLE}/vcf_strelka2/runWorkflow.py" \
     -m local \

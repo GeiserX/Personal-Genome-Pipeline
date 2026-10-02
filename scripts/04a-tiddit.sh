@@ -11,10 +11,10 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-4}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
@@ -50,7 +50,7 @@ else
 fi
 
 echo "[1/3] Running TIDDIT SV caller..."
-run_in  --cpus "$THREADS" --memory 8g \
+run_in --cpus "$THREADS" --memory 8g \
   "$TIDDIT_IMAGE" \
   tiddit --sv \
     --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
@@ -60,13 +60,13 @@ run_in  --cpus "$THREADS" --memory 8g \
     -o "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}"
 
 echo "[2/3] Compressing VCF with bcftools..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools view \
     "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}.vcf" \
     -Oz -o "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz"
 
 echo "[3/3] Indexing VCF..."
-run_in  "$BCFTOOLS_IMAGE" \
+run_in "$BCFTOOLS_IMAGE" \
   bcftools index -t \
     "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz"
 

@@ -12,7 +12,6 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Detect trimmed FASTQs (same logic as 02-alignment.sh)
@@ -51,7 +50,8 @@ mkdir -p "$OUTPUT_DIR"
 # Step 1: Build BWA-MEM2 index if not present (one-time, ~1 hour)
 if [ ! -f "$BWA_INDEX" ]; then
   echo "=== Building BWA-MEM2 index (one-time, ~1 hour) ==="
-  run_in \
+  # The index files go next to the FASTA, so reference/ is writable here.
+  run_in --rw "${GENOME_DIR}/reference" \
     --cpus 8 --memory 24g \
     "${BWAMEM2_IMAGE}" \
     bwa-mem2 index "${REF_FASTA_C}"

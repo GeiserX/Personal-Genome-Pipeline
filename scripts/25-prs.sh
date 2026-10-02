@@ -105,7 +105,7 @@ echo ""
 echo "[2/3] Converting VCF to plink2 format..."
 
 # Convert VCF to plink2 binary format for scoring
-run_in  --cpus 4 --memory 8g \
+run_in --cpus 4 --memory 8g \
   "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
@@ -178,7 +178,7 @@ for ENTRY in "${PGS_SCORES[@]}"; do
 
   # cols=+scoresums adds SCORE1_SUM: the plain weighted sum. The default
   # SCORE1_AVG divides by the alleles present in this VCF, which differs per sample.
-  if ! run_in    --cpus 4 --memory 4g \
+  if ! run_in --cpus 4 --memory 4g \
     "${PLINK2_IMAGE}" \
     plink2 \
       --pfile "/genome/${SAMPLE}/prs/${SAMPLE}" \
