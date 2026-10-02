@@ -14,6 +14,8 @@ name: Renovate dry run
 #            conf/containers.config and container-test.yml hold only those,
 #            so one Renovate PR updates every copy
 #   one-pr   a tool gets the same proposal in every file it is in
+#   pins     Nextflow, actionlint and gitleaks are detected in every place
+#            they are pinned, as often as the text has them
 #   lookups  no lookup failed and no tag was unreadable; the only skipped
 #            dependencies are the ones a rule in renovate.json disables
 # The step summary lists every dependency with the update Renovate would
@@ -22,15 +24,17 @@ name: Renovate dry run
 # The versions-doc job checks that docs/versions.md is what
 # scripts/ci/gen-versions-doc.sh writes from versions.env.
 on:
+  # Every file a manager in renovate.json reads (the workflows hold the
+  # Nextflow, actionlint and gitleaks pins, the docs the NXF_VER lines), plus
+  # the doc generator. The lookups take about a minute.
   pull_request:
     branches: [main]
     paths:
       - 'renovate.json'
       - 'versions.env'
       - 'conf/containers.config'
-      - 'docs/versions.md'
-      - '.github/workflows/container-test.yml'
-      - '.github/workflows/renovate-dry-run.yml'
+      - 'docs/*.md'
+      - '.github/workflows/**'
       - 'scripts/ci/gen-versions-doc.sh'
   push:
     branches: [main]
@@ -121,11 +125,28 @@ jobs:
         if: ${{ !cancelled() && steps.lookup.outcome == 'success' }}
         run: |
           cat > "${RUNNER_TEMP}/check.py" <<'PY'
-          import collections, copy, json, os, re, sys
+          import collections, copy, glob, json, os, re, sys
 
           ENV = "versions.env"
           TWINS = ("docs/versions.md", "conf/containers.config", ".github/workflows/container-test.yml")
           RULE_SKIPS = {"disabled", "package-rules"}
+          # The non-image pins: (dependency, files, how a pin of it looks in that text).
+          PINS = (
+              ("nextflow-io/nextflow", [ENV], r'^NEXTFLOW_VERSION="'),
+              ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), r"uses: nf-core/setup-nextflow@[0-9a-f]"),
+              ("nextflow-io/nextflow", sorted(glob.glob("docs/*.md")), r"NXF_VER=\d"),
+              ("rhysd/actionlint", sorted(glob.glob(".github/workflows/*.yml")), r"ACTIONLINT_VERSION=\d"),
+              ("gitleaks/gitleaks", sorted(glob.glob(".github/workflows/*.yml")), r"GITLEAKS_VERSION=\d"),
+          )
+
+          def pin_counts():
+              want = collections.Counter()
+              for name, files, pattern in PINS:
+                  for f in files:
+                      n = len(re.findall(pattern, open(f).read(), re.M))
+                      if n:
+                          want[(name, f)] += n
+              return want
 
           def load(log):
               files = None
@@ -188,6 +209,11 @@ jobs:
                       fails.append("lookups: %s (%s): %s" % (d.get("depName"), f, "; ".join(w.get("message", str(w)) for w in d["warnings"])))
                   if d.get("skipReason") and d["skipReason"] not in RULE_SKIPS:
                       fails.append("lookups: %s (%s) skipped: %s" % (d.get("depName"), f, d["skipReason"]))
+              got = collections.Counter((d.get("depName"), f) for f, d in deps
+                                        if d.get("depName") in {name for name, _, _ in PINS})
+              for k in sorted(set(want_pins) | set(got)):
+                  if want_pins[k] != got[k]:
+                      fails.append("pins: %s in %s: the text pins it %d times, Renovate found %d" % (k[0], k[1], want_pins[k], got[k]))
               return fails
 
           def self_test(deps, env_text):
@@ -216,12 +242,15 @@ jobs:
                   first(d, "docs/versions.md")["currentValue"] = "0.0.0-planted"
               def split_pr(d):
                   first(d, "conf/containers.config")["updates"] = [{"newValue": "9.9.9-planted"}]
+              def drop_pin(d):
+                  d.remove(next((g, x) for g, x in d if g == ENV and x.get("depName") == "nextflow-io/nextflow"))
               def broken_lookup(d):
                   first(d, ENV)["skipReason"] = "invalid-value"
               plant("count", drop, "count:")
               plant("names", digest_name, "names:")
               plant("twins", stale_twin, "twins:")
               plant("one-pr", split_pr, "one-pr:")
+              plant("pins", drop_pin, "pins:")
               plant("lookups", broken_lookup, "lookups:")
               clean = check(deps, env_text)
               print("self-test clean    %s" % ("passes" if not clean else "fails: %s" % clean[0]))
@@ -246,6 +275,7 @@ jobs:
 
           deps = load(sys.argv[1])
           env_text = open(ENV).read()
+          want_pins = pin_counts()
           table = summary(deps)
           print(table)
           if os.environ.get("GITHUB_STEP_SUMMARY"):
