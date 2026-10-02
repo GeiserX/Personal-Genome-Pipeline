@@ -63,7 +63,7 @@ process MITO_VARIANTS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        gatk: \$(gatk --version 2>&1 | grep 'GATK' | sed 's/.*v//' | sed 's/).*//')
+        gatk: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -75,7 +75,7 @@ process MITO_VARIANTS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        gatk: 4.6.1.0
+        gatk: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

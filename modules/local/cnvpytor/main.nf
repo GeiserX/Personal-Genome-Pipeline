@@ -60,7 +60,7 @@ process CNVPYTOR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cnvpytor: \$(python -c 'import cnvpytor; print(cnvpytor.__version__)' 2>/dev/null || echo '1.3.2')
+        cnvpytor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -70,7 +70,7 @@ process CNVPYTOR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cnvpytor: 1.3.2
+        cnvpytor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -109,7 +109,7 @@ process CNVPYTOR_VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -119,7 +119,7 @@ process CNVPYTOR_VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -31,7 +31,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -42,7 +42,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -73,7 +73,8 @@ process MITO_HAPLOGROUP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: \$(haplogrep3 --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo 'latest')
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+        haplogrep3_reported: \$(haplogrep3 --version 2>&1 | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)*' | head -1 | grep . || echo unknown)
     END_VERSIONS
     """
 
@@ -83,7 +84,7 @@ process MITO_HAPLOGROUP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: latest
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

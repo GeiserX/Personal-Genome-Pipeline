@@ -33,7 +33,7 @@ process STRANGER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: \$(stranger --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.10.2')
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -44,7 +44,7 @@ process STRANGER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: 0.10.2
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

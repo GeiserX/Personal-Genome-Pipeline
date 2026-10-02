@@ -53,7 +53,7 @@ process VEP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        ensemblvep: \$(vep --help 2>&1 | grep 'ensembl-vep' | sed 's/.*: //' || echo 'release_116.0')
+        ensemblvep: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -65,7 +65,7 @@ process VEP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        ensemblvep: release_116.0
+        ensemblvep: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

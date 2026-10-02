@@ -80,7 +80,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: \$(java -jar /pharmcat/pharmcat.jar -version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '3.2.0')
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -91,7 +91,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: 3.2.0
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

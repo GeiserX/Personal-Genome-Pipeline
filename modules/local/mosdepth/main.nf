@@ -42,7 +42,7 @@ process MOSDEPTH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: \$(mosdepth --version 2>&1 | sed 's/mosdepth //')
+        mosdepth: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -54,7 +54,7 @@ process MOSDEPTH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: 0.3.13
+        mosdepth: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

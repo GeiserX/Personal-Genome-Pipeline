@@ -39,10 +39,9 @@ process ANNOTSV {
         -annotationsDir ${annotations_dir} \\
         -annotationMode both
 
-    ANNOTSV_VERSION=\$(AnnotSV -help 2>&1 | sed -n 's/.*AnnotSV v\\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | head -1)
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        annotsv: \${ANNOTSV_VERSION:-unknown}
+        annotsv: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -52,7 +51,7 @@ process ANNOTSV {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        annotsv: 3.5.10
+        annotsv: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -45,7 +45,7 @@ process EXPANSION_HUNTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        expansionhunter: \$(ExpansionHunter --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '5.0.0')
+        expansionhunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -56,7 +56,7 @@ process EXPANSION_HUNTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        expansionhunter: 5.0.0
+        expansionhunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

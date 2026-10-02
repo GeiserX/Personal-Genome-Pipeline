@@ -114,10 +114,9 @@ TOML_END
 
     vcfanno -p ${task.cpus} vcfanno.toml ${vcf} > ${meta.id}_vcfanno.vcf
 
-    VCFANNO_VERSION=\$(vcfanno 2>&1 | sed -n 's/.*version \\([0-9][0-9.]*\\).*/\\1/p' | head -1)
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        vcfanno: \${VCFANNO_VERSION:-unknown}
+        vcfanno: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -127,7 +126,7 @@ TOML_END
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        vcfanno: 0.3.9
+        vcfanno: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -156,7 +155,7 @@ process VCFANNO_INDEX {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -167,7 +166,7 @@ process VCFANNO_INDEX {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

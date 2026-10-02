@@ -38,10 +38,9 @@ process DELLY {
         -o ${meta.id}_sv.bcf \\
         ${bam}
 
-    DELLY_VERSION=\$(delly --version 2>&1 | sed -n 's/.*Delly version: v\\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | head -1)
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: \${DELLY_VERSION:-unknown}
+        delly: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -51,7 +50,7 @@ process DELLY {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: 2.1.0
+        delly: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -80,7 +79,7 @@ process DELLY_BCF2VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -91,7 +90,7 @@ process DELLY_BCF2VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

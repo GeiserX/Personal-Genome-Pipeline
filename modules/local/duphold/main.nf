@@ -46,7 +46,7 @@ process DUPHOLD {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        duphold: \$(duphold --version 2>&1 | grep -oP '[\\d.]+' || echo '0.2.3')
+        duphold: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -56,7 +56,7 @@ process DUPHOLD {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        duphold: 0.2.3
+        duphold: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -103,7 +103,7 @@ process DUPHOLD_FILTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -113,7 +113,7 @@ process DUPHOLD_FILTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

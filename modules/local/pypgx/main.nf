@@ -159,7 +159,7 @@ print(f'Summary: {called}/{len(rows)} genes called')
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pypgx: \$(pypgx -v 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.26.0')
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -170,7 +170,7 @@ print(f'Summary: {called}/{len(rows)} genes called')
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pypgx: 0.26.0
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

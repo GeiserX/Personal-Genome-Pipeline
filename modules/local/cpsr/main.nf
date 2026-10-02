@@ -44,7 +44,7 @@ process CPSR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cpsr: \$(cpsr --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '2.2.5')
+        cpsr: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -55,7 +55,7 @@ process CPSR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cpsr: 2.2.5
+        cpsr: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -61,7 +61,7 @@ process HLA_TYPING {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        t1k: \$(run-t1k --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '1.0.9')
+        t1k: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -72,7 +72,7 @@ process HLA_TYPING {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        t1k: 1.0.9
+        t1k: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
