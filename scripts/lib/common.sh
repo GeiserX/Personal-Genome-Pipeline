@@ -86,7 +86,8 @@ fi
 #   --user UID:GID, HOME=/tmp outputs belong to the caller, not to root.
 # Opt-outs, each named at the call site with the reason:
 #   --net      the step downloads something (a database, a pip package).
-#   --root     the image cannot run as an unprivileged user.
+#   --root     the image cannot run as an unprivileged user: the container runs
+#              as root (--user 0:0), also when the image names another user.
 #   --rw DIR   DIR (inside GENOME_DIR) is writable too, e.g. a shared index.
 # Everything after the opt-outs goes to `docker run` unchanged.
 # When an unprivileged run fails and the sample directory holds a path the
@@ -110,7 +111,13 @@ run_in() {
   done
   local -a args=(run --rm)
   if $isolate; then args+=(--network none); fi
-  if ! $root; then args+=(--user "$(id -u):$(id -g)" -e HOME=/tmp); fi
+  # --root is explicit: an image whose default user is not root (the
+  # TelomereHunter image) could not write into the sample directory otherwise.
+  if $root; then
+    args+=(--user 0:0)
+  else
+    args+=(--user "$(id -u):$(id -g)" -e HOME=/tmp)
+  fi
   args+=(-v "${GENOME_DIR:?}:/genome:ro")
   if [ -n "${SAMPLE:-}" ]; then
     mkdir -p "${GENOME_DIR}/${SAMPLE}"
