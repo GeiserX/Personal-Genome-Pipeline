@@ -1,8 +1,8 @@
 # Step 0: Reference Data Setup
 
-One-time downloads required before running the pipeline. Core downloads: ~70-75 GB. Including all optional resources (somatic, T1K, GIAB): ~78 GB download, ~96 GB after extraction.
+One-time downloads required before running the pipeline. Each heading below gives the size of its download; [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) adds them up (about 75 GB for a default run, 250 GB with the optional annotation databases).
 
-> **Estimated time:** 1-3 hours depending on internet speed. VEP caches (26 GB each for steps 13 and 17) are the largest downloads.
+> **Estimated time:** 1-3 hours depending on internet speed. The two VEP caches (26 GB for step 13, 23 GB for step 17) are the largest downloads of a default run.
 
 ## GRCh38 Reference Genome
 
@@ -13,7 +13,7 @@ export GENOME_DIR=/path/to/your/data
 mkdir -p ${GENOME_DIR}/reference
 cd ${GENOME_DIR}/reference
 
-# Download GRCh38 reference (3.2 GB), from the Broad's public references bucket
+# Download GRCh38 reference (~3 GB), from the Broad's public references bucket
 wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
 wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai
 
@@ -72,6 +72,10 @@ docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" bash -c '
 
 > **Tip:** Re-download ClinVar monthly for the latest classifications. ClinVar adds ~1000 new pathogenic variants per month.
 
+## AnnotSV Annotations (~5 GB)
+
+Required for step 5. `setup.sh` downloads them (about 5 GB, about 20 GB unpacked) into `${GENOME_DIR}/annotsv_annotations/`; its source server is slow, so this can take an hour or two, and an interrupted download resumes when `setup.sh` runs again.
+
 ## VEP Cache (~26 GB)
 
 Ensembl Variant Effect Predictor annotation database. Required for step 13.
@@ -117,7 +121,7 @@ mkdir -p 20250314 && mv data/ 20250314/
 # rm pcgr_ref_data.20250314.grch38.tgz
 ```
 
-## VEP 113 Cache for CPSR (~26 GB)
+## VEP 113 Cache for CPSR (~23 GB)
 
 PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `113_GRCh38/`).
 
@@ -125,7 +129,7 @@ PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113**
 mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
-# Download VEP 113 cache (~26 GB)
+# Download VEP 113 cache (~23 GB)
 wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
 
 # Extract alongside the existing release-116 cache
@@ -187,13 +191,13 @@ Only needed if you plan to run step 29 (somatic variant calling with Mutect2 tum
 ```bash
 mkdir -p ${GENOME_DIR}/somatic
 
-# gnomAD AF-only VCF (~6.5 GB) — germline allele frequencies for filtering
+# gnomAD AF-only VCF (~3 GB) — germline allele frequencies for filtering
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz \
   -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz.tbi \
   -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz.tbi
 
-# Panel of Normals (~1 GB) — recurrent technical artifacts from 1000 Genomes
+# Panel of Normals (~17 MB) — recurrent technical artifacts from 1000 Genomes
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz \
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz.tbi \
@@ -204,7 +208,7 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
 
-> **Total download:** ~175 GB (SpliceAI is ~91 GB and CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
+> **Total download:** ~175 GB, the sum of the sections below (SpliceAI ~91 GB, CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
 
 ### CADD v1.7 Pre-scored (SNVs + Indels) — ~83 GB
 
@@ -251,7 +255,7 @@ Step 30 and `validate-setup.sh` find the masked files under these names. They al
 
 > **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
 
-### REVEL v1.3 — ~526 MB
+### REVEL v1.3 — ~0.6 GB
 
 Ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification.
 
@@ -405,19 +409,7 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 
 ## Disk Space Summary
 
-| Resource | Download | Extracted | Notes |
-|---|---|---|---|
-| GRCh38 FASTA + FAI | 3.1 GB | 3.1 GB | Same size (not compressed) |
-| ClinVar DB (all versions) | 200 MB | 400 MB | Including chr-prefixed and pathogenic-only |
-| VEP cache | 26 GB | 30 GB | Largest single database |
-| PCGR/CPSR data bundle | 5 GB | 5 GB | Smaller in PCGR 2.x |
-| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 116 cache |
-| T1K HLA index | 50 MB | 450 MB | Optional |
-| Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
-| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~175 GB | ~175 GB | Optional (step 30-31) |
-| Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
-| **Total (core)** | **~78 GB** | **~96 GB** | Without annotation databases |
-| **Total (with annotation enrichment)** | **~253 GB** | **~271 GB** | With all v0.4.0 databases |
+[Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) has the one table of every download above, with the totals.
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 

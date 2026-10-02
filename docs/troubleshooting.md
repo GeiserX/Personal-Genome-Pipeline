@@ -519,7 +519,7 @@ source versions.env   # from the repository root
 # Verify the Manta VCF has PASS variants
 docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -f PASS /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz | grep -c -v "^#"
-# Should be > 0. Typical: 5,000-9,000 for 30X WGS.
+# Should be > 0. Typical: 7,000-9,000 for 30X WGS.
 ```
 
 If the Manta VCF is valid but AnnotSV still produces nothing, try running with verbose output:
@@ -833,7 +833,7 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 
 | Step | Native Linux | Mac (Rosetta 2) | Slowdown |
 |---|---|---|---|
-| DeepVariant | 2-4 hr | 8-16 hr | 3-5x |
+| DeepVariant | 3-5 hr | 9-25 hr | 3-5x |
 | minimap2 alignment | 1-2 hr | 3-6 hr | 3x |
 | VEP annotation | 2-4 hr | 4-8 hr | 2x |
 | Manta | 20 min | 1-2 hr | 3-4x |
@@ -1063,7 +1063,7 @@ docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
 docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools flagstat /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
-# Manta SV count (expect 5,000-9,000 total)
+# Manta SV count (expect 7,000-9,000 total)
 docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz | grep -c -v "^#"
 

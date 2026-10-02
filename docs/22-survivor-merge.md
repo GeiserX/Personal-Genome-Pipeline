@@ -4,7 +4,7 @@
 
 ## What This Does
 
-Performs a rough intersection of structural variant (SV) calls from multiple independent callers — Manta (step 4), Delly (step 19), and CNVpytor (step 18). SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
+Performs a rough intersection of structural variant (SV) calls from multiple independent callers: Manta (step 4), Delly (step 19) and CNVpytor (step 18) in a default run, plus GRIDSS (step 4b), TIDDIT (script 4a) and Sniffles2 (script 4c) when their output exists. SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
 
 ## Why
 
@@ -75,9 +75,9 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/sv_merged/`.
 
 A typical 30X WGS genome produces:
 
-- **Manta**: 3,000-5,000 SVs
+- **Manta**: 7,000-9,000 SVs (see [step 4](04-structural-variants.md))
 - **Delly**: 5,000-15,000 SVs
-- **CNVpytor**: 500-2,000 CNVs
+- **CNVpytor**: 3,000-4,000 CNVs, 1,500-2,000 of them with e-value < 0.01 (see [interpreting results](interpreting-results.md#cnvpytor-results-step-18))
 
 After consensus filtering, expect **200-1,000 multi-caller SVs**. These have lower false-positive rates than single-caller calls, though the 1 kb binning heuristic is less precise than dedicated tools like SURVIVOR or Jasmine.
 

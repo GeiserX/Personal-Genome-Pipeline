@@ -51,6 +51,8 @@ SKIP_TRIM=true ./scripts/run-all.sh <sample_name> <sex>
 
 When skipped, the alignment step reads raw FASTQs directly (existing behavior).
 
+Trimming writes a second, trimmed FASTQ pair to `fastq_trimmed/`, nearly as large as the original (about 60-90 GB for 30X WGS), and step 2 then aligns the trimmed pair. Make room for both, or delete the trimmed pair once the BAM exists. Whether trimming changes DeepVariant's calls on this data has not been measured; `SKIP_TRIM=true` keeps the raw reads.
+
 ## What Happens Inside
 
 ```

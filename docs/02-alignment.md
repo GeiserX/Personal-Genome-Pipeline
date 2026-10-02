@@ -40,14 +40,13 @@ minimap2 -a -x sr -t 16 \
 # Step 3: Index BAM
 samtools index ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
-# Output: ~30-40GB BAM + ~9MB BAI index
+# Output: ~80-120 GB BAM + ~9 MB BAI index
 ```
 
 ## Resource Requirements
 - CPU: 16+ cores recommended
 - RAM: 16GB+ (minimap2 loads full index into memory)
-- Disk: ~30-40GB per sample (BAM file)
-- Time: 1-2 hours for 30X WGS
+- Disk and time: see [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) (the BAM is about 80-120 GB)
 
 ## Notes
 - Use `-x sr` for Illumina short reads (short-read preset)

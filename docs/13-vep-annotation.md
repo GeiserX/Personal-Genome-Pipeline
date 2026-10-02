@@ -16,7 +16,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Offline VEP cache must be downloaded first (see step 00-reference-setup)
-- Cache size: ~17 GB for GRCh38 homo_sapiens
+- Cache size: see [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) (about 26 GB to download, 30 GB unpacked)
 
 ## Command
 ```bash

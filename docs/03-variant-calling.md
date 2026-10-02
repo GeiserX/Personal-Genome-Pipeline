@@ -25,7 +25,7 @@ SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 docker run --rm \
-  --cpus 16 --memory 32g \
+  --cpus 8 --memory 32g \
   -v ${GENOME_DIR}:/genome \
   "${DEEPVARIANT_IMAGE}" \
   /opt/deepvariant/bin/run_deepvariant \
@@ -33,7 +33,8 @@ docker run --rm \
     --ref="/genome/${REF_FASTA}" \
     --reads=/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     --output_vcf=/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    --num_shards=16
+    --sample_name="${SAMPLE}" \
+    --num_shards=8
 
 # For WES data, use MODEL_TYPE=WES:
 # MODEL_TYPE=WES ./scripts/03-deepvariant.sh your_sample
@@ -45,10 +46,10 @@ docker run --rm \
 ```
 
 ## Resource Requirements
-- CPU: 16+ cores (scales well with --num_shards)
+- CPU: the script uses 8 (`--cpus 8`, `--num_shards=8`); more shards scale well if you run the command by hand on more cores
 - RAM: 32GB recommended
-- GPU: Optional (significantly faster with NVIDIA GPU)
-- Time: 4-8 hours on CPU, 1-2 hours with GPU
+- GPU: optional, and only `call_variants` uses it (see [troubleshooting](troubleshooting.md#step-3-deepvariant-gpu-acceleration-not-worth-it))
+- Time: see [Hardware and storage requirements](hardware-requirements.md#runtime-per-step)
 
 ## Output Interpretation
 - **PASS** variants: high-confidence calls (~4.6M per 30X WGS sample)

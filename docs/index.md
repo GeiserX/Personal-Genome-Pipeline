@@ -38,7 +38,7 @@ hide:
 
     ---
 
-    Every step with its tool, its pinned image, its runtime and whether it is required, plus the pipeline graph.
+    Every step with its tool, its image and whether it is required, which steps a default run includes, plus the pipeline graph.
 
 -   :material-file-document-check-outline: **[Interpreting your results](interpreting-results.md)**
 
@@ -87,7 +87,7 @@ graph LR
 
 - Each step is one `docker run` with an image tag or digest from `versions.env` (listed on [Image versions](versions.md)), a CPU limit and a memory limit, so a step cannot take the machine down.
 - Two ways to run it: one bash script per step under `scripts/`, or the [Nextflow](nextflow.md) workflow, which runs independent steps in parallel and resumes after a failure.
-- The minimum useful run is alignment, DeepVariant, ClinVar and PharmCAT, about 4 to 6 hours on a 16-core desktop; the full set is 12 to 20 hours. [Hardware and storage requirements](hardware-requirements.md) gives the per-step memory and disk figures; a 30X sample needs about 500 GB.
+- The minimum useful run is alignment, DeepVariant, ClinVar and PharmCAT, about 4 to 7 hours on a 16-core desktop; a default run is 6 to 12 hours. [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) gives the per-step time, memory and disk figures; a 30X sample needs about 500 GB.
 - After [reference data setup](00-reference-setup.md) a run downloads only a few public files, listed in [Why run locally?](why-local.md#network-calls-during-a-run). A BAM or VCF from your vendor skips alignment or variant calling; [Getting started](getting-started.md) has the entry paths and [Vendor compatibility](vendor-guide.md) the per-vendor notes.
 
 ## What it does not do

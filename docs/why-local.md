@@ -4,7 +4,7 @@
 
 | Approach | Cost | What You Get | Data Privacy |
 |---|---|---|---|
-| **This pipeline** | $0 (free, open source) | 33 default + 1 opt-in analysis steps | Your data never leaves your machine |
+| **This pipeline** | $0 (free, open source) | Every step in the [pipeline overview](pipeline-overview.md#what-a-default-run-covers) | No step uploads your data (see below) |
 | Clinical WGS interpretation | $500-5,000 | 1-page report, selected genes only | Lab retains your data |
 | Nebula/Dante report | $0-200 (included/add-on) | Web dashboard, limited depth | Data on company servers |
 | 23andMe Health | $229 | ~10 health reports from array data | Data shared with research partners |
