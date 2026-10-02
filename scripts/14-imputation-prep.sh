@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Imputation Prep — Split VCF by chromosome for Michigan Imputation Server upload
-# Creates PASS/unfiltered, bgzipped, tabix-indexed VCFs per chromosome
+# Creates one PASS (and unfiltered) bgzipped, tabix-indexed VCF per chromosome,
+# chr1-22 and chrX, in one container and one pass per chromosome.
 # NOTE: MIS requires 20+ samples per job. Single WGS = mainly useful for phasing.
+# NOTE: the input is the variant-only VCF, so a site where the sample matches
+# the reference is absent, not a confirmed 0/0, until a gVCF-based input exists.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -24,37 +27,29 @@ done
 
 mkdir -p "$MIS_DIR"
 
-# Step 1: Split by chromosome
-for chr in $(seq 1 22); do
-  echo "Splitting chr${chr}..."
-  run_in --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -r "chr${chr}" "/data/vcf/${SAMPLE}.vcf.gz" \
-      -Oz -o "/data/imputation/${SAMPLE}_chr${chr}.vcf.gz"
-  run_in --cpus 1 --memory 1g \
-    -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools index "/data/imputation/${SAMPLE}_chr${chr}.vcf.gz"
-done
-
-# Step 2: Create MIS-ready copies (PASS-only + tabix)
-# IMPORTANT: Use bcftools -Oz (not bgzip pipe) — the bcftools image ships no bgzip
-for chr in $(seq 1 22); do
-  echo "MIS-ready chr${chr}..."
-  run_in --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    "${BCFTOOLS_IMAGE}" bash -c "
-      bcftools view -f PASS,. -Oz -o /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz /data/imputation/${SAMPLE}_chr${chr}.vcf.gz
-      bcftools index -t /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz
-    "
-done
+# One container for all chromosomes; each file is written under a .part name
+# with its index (--write-index) and renamed when both are complete. A
+# chromosome with no records still gets a (header-only) file.
+CHROMS=()
+for i in $(seq 1 22) X; do CHROMS+=("chr${i}"); done
+run_in --cpus 2 --memory 2g \
+  "${BCFTOOLS_IMAGE}" \
+  bash -euo pipefail -c '
+    in=$1 out=$2 sample=$3; shift 3
+    for chr in "$@"; do
+      echo "MIS-ready ${chr}..."
+      part="${out}/${sample}_${chr}.part.vcf.gz"
+      bcftools view -f PASS,. -r "$chr" -Oz --write-index=tbi -o "$part" "$in"
+      mv -f "${part}.tbi" "${out}/${sample}_${chr}.vcf.gz.tbi"
+      mv -f "$part" "${out}/${sample}_${chr}.vcf.gz"
+    done' \
+  _ "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" "/genome/${SAMPLE}/imputation/mis_ready" "$SAMPLE" "${CHROMS[@]}"
 
 echo "=== Imputation prep complete ==="
-echo "MIS-ready VCFs: ${MIS_DIR}/${SAMPLE}_chr{1-22}.vcf.gz"
+echo "MIS-ready VCFs: ${MIS_DIR}/${SAMPLE}_chr{1-22,X}.vcf.gz"
 echo ""
 echo "Next steps:"
 echo "  1. Register at https://imputationserver.sph.umich.edu"
-echo "  2. Upload all 22 chr VCFs"
+echo "  2. Upload the 23 chromosome VCFs (chr1-22 and chrX)"
 echo "  3. Select: refpanel=TOPMed r2, population=eur, build=hg38"
 echo "  4. Results expire after 7 days — download immediately"

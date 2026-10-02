@@ -309,12 +309,25 @@ else
     echo "Restricted to region: ${INTERVALS}"
   fi
 
+  # Normalise each caller's VCF once (split multiallelics, left-align indels)
+  # for a fair comparison; every pair below reads the normalised copies.
+  declare -a NORM_VCFS=()
+  for i in $(seq 0 $((NUM_CALLERS - 1))); do
+    NORM="/genome/${SAMPLE}/benchmark/.norm_${CALLER_NAMES[$i]}.vcf.gz"
+    echo "Normalising ${CALLER_NAMES[$i]}..."
+    run_in \
+      --cpus 2 --memory 4g \
+      "${BCFTOOLS_IMAGE}" \
+      bash -euo pipefail -c \
+        'bcftools norm -m-both -f "$3" "$1" -Oz -o "$2" && bcftools index -f -t "$2"' \
+        _ "${CALLER_VCFS[$i]/#$GENOME_DIR//genome}" "$NORM" "${REF_FASTA_C}"
+    NORM_VCFS+=("$NORM")
+  done
+
   for i in $(seq 0 $((NUM_CALLERS - 1))); do
     for j in $(seq $((i + 1)) $((NUM_CALLERS - 1))); do
       CALLER_A="${CALLER_NAMES[$i]}"
       CALLER_B="${CALLER_NAMES[$j]}"
-      VCF_A="${CALLER_VCFS[$i]/#$GENOME_DIR//genome}"
-      VCF_B="${CALLER_VCFS[$j]/#$GENOME_DIR//genome}"
       ISEC_DIR="/genome/${SAMPLE}/benchmark/isec_${CALLER_A}_vs_${CALLER_B}"
       ISEC_HOST="${BENCHMARK_DIR}/isec_${CALLER_A}_vs_${CALLER_B}"
 
@@ -324,16 +337,8 @@ else
       # Clean previous run if present
       rm -rf "$ISEC_HOST"
 
-      # Normalize both VCFs (decompose MNPs, left-align indels) for fair comparison
-      NORM_A="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_a.vcf.gz"
-      NORM_B="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_b.vcf.gz"
-      run_in \
-        --cpus 2 --memory 4g \
-        "${BCFTOOLS_IMAGE}" \
-        bash -euo pipefail -c \
-          'bcftools norm -m-both -f "$5" "$1" -Oz -o "$2" && bcftools index -t "$2" &&
-           bcftools norm -m-both -f "$5" "$3" -Oz -o "$4" && bcftools index -t "$4"' \
-          _ "${VCF_A}" "${NORM_A}" "${VCF_B}" "${NORM_B}" "${REF_FASTA_C}"
+      NORM_A="${NORM_VCFS[$i]}"
+      NORM_B="${NORM_VCFS[$j]}"
 
       # shellcheck disable=SC2086
       run_in \
@@ -343,9 +348,6 @@ else
           -f .,PASS \
           ${ISEC_REGIONS_FLAG} \
           "${NORM_A}" "${NORM_B}"
-
-      # Clean up normalized temp files
-      rm -f "${BENCHMARK_DIR}/.norm_${CALLER_A}_${CALLER_B}_a.vcf.gz"* "${BENCHMARK_DIR}/.norm_${CALLER_A}_${CALLER_B}_b.vcf.gz"*
 
       # Count variants in each output file
       # 0000.vcf = unique to A
@@ -373,6 +375,9 @@ else
         "$CALLER_A" "$CALLER_B" "$SHARED" "$A_UNIQUE" "$B_UNIQUE" "$JACCARD" >> "$TSV"
     done
   done
+
+  # Clean up the normalised copies
+  rm -f "${BENCHMARK_DIR}"/.norm_*.vcf.gz "${BENCHMARK_DIR}"/.norm_*.vcf.gz.tbi
 
   # Print results table
   {
