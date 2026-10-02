@@ -58,6 +58,12 @@ AncestryDNA*.txt
 
 # Stub test data (override genomics ignores above)
 !assets/stub/**
+# BED is also the interval format the pipeline ships and tests with: only a
+# plink .bed outside assets/ and tests/ stays ignored
+!assets/**/*.bed
+!tests/**/*.bed
+# Test fixtures are public, invented or trimmed data, kept in git on purpose
+!tests/fixtures/**
 
 # Archives
 *.tar.gz
