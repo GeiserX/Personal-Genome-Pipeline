@@ -157,7 +157,7 @@ ${GENOME_DIR}/giab/
 
 ```bash
 REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-HAPPY_IMAGE=$(grep -om1 'jmcdani20/hap.py:[^ ]*' scripts/benchmark-variants.sh)   # the hap.py image the script pins; run from the repository root
+source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # IMPORTANT: SAMPLE must be the GIAB sample that matches the truth set.
 # If using HG002 truth, you must have sequenced and called variants on HG002.
 SAMPLE=HG002
@@ -327,7 +327,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
 
 ```bash
 REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-HAPPY_IMAGE=$(grep -om1 'jmcdani20/hap.py:[^ ]*' scripts/benchmark-variants.sh)   # the hap.py image the script pins; run from the repository root
+source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # Benchmark each caller's chr22 output against GIAB truth set
 for CALLER_DIR in vcf vcf_gatk vcf_freebayes; do
   LABEL=$(basename "$CALLER_DIR")

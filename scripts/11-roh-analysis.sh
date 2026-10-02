@@ -6,6 +6,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTPUT="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt"
 
@@ -19,9 +22,9 @@ for f in "$VCF" "${VCF}.tbi"; do
 done
 
 # Auto-detect chip data: if FORMAT/PL is absent, use -G30 (genotype-only mode)
-HAS_PL=$(docker run --rm \
+HAS_PL=$(run_in \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools view -h "/data/${SAMPLE}.vcf.gz" | grep -c '##FORMAT=<ID=PL' || true)
 
 ROH_FLAGS=(--AF-dflt 0.4)
@@ -30,10 +33,10 @@ if [ "${HAS_PL}" -eq 0 ]; then
   ROH_FLAGS+=(-G30)
 fi
 
-docker run --rm \
+run_in \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools roh "${ROH_FLAGS[@]}" -o "/data/${SAMPLE}_roh.txt" "/data/${SAMPLE}.vcf.gz"
 
 echo "=== ROH complete ==="

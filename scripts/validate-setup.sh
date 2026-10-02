@@ -6,11 +6,13 @@
 # sample data readiness. Exits 0 if all critical checks pass, 1 otherwise.
 set -euo pipefail
 
-# Image versions are needed by the Docker image list and by the sample checks,
-# which also run when the Docker daemon is not up.
-SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR_V}/../versions.env"
+# Image versions, data versions and the docker wrapper. They are needed by the
+# image list and by the sample checks, which also run when the Docker daemon
+# is not up.
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+SAMPLE="${1:-}"
+if [ -n "$SAMPLE" ]; then validate_sample "$SAMPLE"; fi
 
 ###############################################################################
 # Color helpers (gracefully degrade if terminal does not support colors)
@@ -50,15 +52,15 @@ else
 fi
 
 # --- Docker installed ---
-if command -v docker &>/dev/null; then
-  DOCKER_VERSION=$(docker --version 2>/dev/null | head -1)
+if command -v "$CONTAINER_ENGINE" &>/dev/null; then
+  DOCKER_VERSION=$("$CONTAINER_ENGINE" --version 2>/dev/null | head -1)
   pass "Docker installed: ${DOCKER_VERSION}"
 else
   fail "Docker is not installed. Install from https://docs.docker.com/get-docker/"
 fi
 
 # --- Docker daemon running ---
-if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+if command -v "$CONTAINER_ENGINE" &>/dev/null && "$CONTAINER_ENGINE" info &>/dev/null 2>&1; then
   pass "Docker daemon is running"
 
   # --- Docker memory ---
@@ -76,7 +78,7 @@ if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     warn "Could not detect Docker memory allocation"
   fi
 else
-  if command -v docker &>/dev/null; then
+  if command -v "$CONTAINER_ENGINE" &>/dev/null; then
     fail "Docker daemon is not running. Start Docker Desktop or run: sudo systemctl start docker"
   fi
 fi
@@ -154,7 +156,7 @@ fi
 ARCH=$(uname -m 2>/dev/null || echo unknown)
 OS=$(uname -s 2>/dev/null || echo unknown)
 if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
-  warn "Architecture: ${ARCH} (${OS}) — all pipeline Docker images are amd64. Expect 2-5x slower due to emulation."
+  warn "Architecture: ${ARCH} (${OS}) — most pipeline Docker images are amd64 only. Expect those to run 2-5x slower under emulation."
 else
   info "Architecture: ${ARCH} (${OS})"
 fi
@@ -186,7 +188,7 @@ if [ -z "${GENOME_DIR:-}" ]; then
   info "Skipping reference data checks (GENOME_DIR not set)"
 else
   # --- GRCh38 FASTA ---
-  FASTA="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+  FASTA="$REF_FASTA"
   if [ -f "$FASTA" ]; then
     FASTA_SIZE=$(wc -c < "$FASTA" 2>/dev/null || echo 0)
     # 3 GB = 3221225472 bytes
@@ -198,19 +200,16 @@ else
     fi
   else
     fail "GRCh38 FASTA not found at: ${FASTA}"
-    echo "       Download it:"
-    echo "       mkdir -p ${GENOME_DIR}/reference"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta"
+    echo "       Download it: ./scripts/setup.sh ${GENOME_DIR}"
   fi
 
   # --- FASTA index (.fai) ---
-  FAI="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai"
+  FAI="${REF_FASTA}.fai"
   if [ -f "$FAI" ]; then
     pass "FASTA index (.fai) present"
   else
     fail "FASTA index not found at: ${FAI}"
-    echo "       Download it:"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai"
+    echo "       Download it: ./scripts/setup.sh ${GENOME_DIR}"
   fi
 
   # --- ClinVar chr-prefixed VCF ---
@@ -242,37 +241,36 @@ else
     fi
   fi
 
-  # --- VEP cache — release-116 for step 13 (optional) ---
+  # --- VEP cache of the VEP image's release, for step 13 (optional) ---
   VEP_DIR="${GENOME_DIR}/vep_cache/homo_sapiens"
-  if [ -d "${VEP_DIR}/116_GRCh38" ]; then
-    pass "VEP 116 cache (step 13): present"
+  if [ -f "${VEP_DIR}/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
+    pass "VEP ${VEP_CACHE_RELEASE} cache (step 13): present"
   else
-    warn "VEP 116 cache not found at: ${VEP_DIR}/116_GRCh38"
-    echo "       Required for step 13 (VEP annotation). Download ~26 GB:"
-    echo "       wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz"
+    warn "VEP ${VEP_CACHE_RELEASE} cache not found at: ${VEP_DIR}/${VEP_CACHE_RELEASE}_GRCh38"
+    echo "       Required for step 13 (VEP annotation), which downloads it (~26 GB) the first time it runs."
     echo "       See docs/00-reference-setup.md for full instructions."
   fi
 
-  # --- VEP cache — release-113 for step 17/CPSR (optional) ---
-  if [ -d "${VEP_DIR}/113_GRCh38" ]; then
-    pass "VEP 113 cache (step 17 CPSR): present"
+  # --- VEP cache of the release inside the PCGR image, for step 17/CPSR (optional) ---
+  if [ -f "${VEP_DIR}/${PCGR_VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
+    pass "VEP ${PCGR_VEP_CACHE_RELEASE} cache (step 17 CPSR): present"
   else
-    warn "VEP 113 cache not found at: ${VEP_DIR}/113_GRCh38"
-    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 116."
-    echo "       wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
+    warn "VEP ${PCGR_VEP_CACHE_RELEASE} cache not found at: ${VEP_DIR}/${PCGR_VEP_CACHE_RELEASE}_GRCh38"
+    echo "       Required for step 17 (CPSR). ${PCGR_IMAGE} needs VEP ${PCGR_VEP_CACHE_RELEASE}, separate from step 13's VEP ${VEP_CACHE_RELEASE}."
+    echo "       curl -fL -C - -O $(vep_cache_url "$PCGR_VEP_CACHE_RELEASE")"
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
   # --- PCGR data bundle (optional) ---
-  PCGR_DIR="${GENOME_DIR}/pcgr_data/20250314/data"
+  PCGR_DIR="${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}/data"
   if [ -d "$PCGR_DIR" ]; then
     pass "PCGR/CPSR ref data bundle: present"
   else
     warn "PCGR ref data bundle not found at: ${PCGR_DIR}"
     echo "       Required for step 17 (CPSR cancer predisposition). Download ~5 GB:"
     echo "       cd ${GENOME_DIR}/pcgr_data"
-    echo "       wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"
-    echo "       tar xzf pcgr_ref_data.20250314.grch38.tgz && mkdir -p 20250314 && mv data/ 20250314/"
+    echo "       curl -fL -C - -O https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.${PCGR_DATA_BUNDLE}.grch38.tgz"
+    echo "       tar xzf pcgr_ref_data.${PCGR_DATA_BUNDLE}.grch38.tgz && mkdir -p ${PCGR_DATA_BUNDLE} && mv data/ ${PCGR_DATA_BUNDLE}/"
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
@@ -333,14 +331,14 @@ else
   fi
 
   # --- GATK sequence dictionary (optional) ---
-  DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
+  DICT="$REF_DICT"
   if [ -f "$DICT" ]; then
     pass "GATK sequence dictionary (.dict): present"
   else
     warn "GATK sequence dictionary not found at: ${DICT}"
     echo "       Some tools (GATK Mutect2/step 20) require it. Generate with:"
-    echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" broadinstitute/gatk:4.6.2.0 \\"
-    echo "         gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38.fasta"
+    echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${GATK_IMAGE} \\"
+    echo "         gatk CreateSequenceDictionary -R ${REF_FASTA_C}"
   fi
 fi
 
@@ -349,46 +347,19 @@ fi
 ###############################################################################
 header "Docker Images"
 
-if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
+if ! command -v "$CONTAINER_ENGINE" &>/dev/null || ! "$CONTAINER_ENGINE" info &>/dev/null 2>&1; then
   info "Skipping Docker image checks (Docker not available)"
 else
-  IMAGES=(
-    "$MINIMAP2_IMAGE"
-    "$SAMTOOLS_IMAGE"
-    "$BCFTOOLS_IMAGE"
-    "$DEEPVARIANT_IMAGE"
-    "$MANTA_IMAGE"
-    "$DELLY_IMAGE"
-    "$CNVPYTOR_IMAGE"
-    "$DUPHOLD_IMAGE"
-    "$ANNOTSV_IMAGE"
-    "$VEP_IMAGE"
-    "$PCGR_IMAGE"
-    "$PHARMCAT_IMAGE"
-    "$TELOMEREHUNTER_IMAGE"
-    "$HAPLOGREP3_IMAGE"
-    "$T1K_IMAGE"
-    "$GOLEFT_IMAGE"
-    "$GATK_IMAGE"
-    "$PYTHON_IMAGE"
-    "$PLINK2_IMAGE"
-    "$FASTP_IMAGE"
-    "$MOSDEPTH_IMAGE"
-    "$MULTIQC_IMAGE"
-    "$EXPANSIONHUNTER_IMAGE"
-    "$GRIDSS_IMAGE"
-    "$OCTOPUS_IMAGE"
-    "$CLAIR3_IMAGE"
-    "$SNIFFLES_IMAGE"
-    "$PICARD_IMAGE"
-    "$VCFANNO_IMAGE"
-    "$SLIVAR_IMAGE"
-    "$PYPGX_IMAGE"
-  )
+  # Every *_IMAGE line of versions.env not marked `# optional`: the same list
+  # setup.sh pulls.
+  IMAGES=()
+  while IFS= read -r img; do
+    IMAGES+=("$img")
+  done < <(pipeline_images)
 
   PULLED=0
   for img in "${IMAGES[@]}"; do
-    if docker image inspect "$img" &>/dev/null; then
+    if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       PULLED=$((PULLED + 1))
     else
       MISSING_IMAGES+=("$img")
@@ -412,8 +383,6 @@ fi
 ###############################################################################
 # 5. Sample Data (optional — only if $1 is provided)
 ###############################################################################
-SAMPLE="${1:-}"
-
 if [ -n "$SAMPLE" ]; then
   header "Sample Data: ${SAMPLE}"
 
@@ -474,7 +443,7 @@ if [ -n "$SAMPLE" ]; then
         pass "BAM index (.bai) present"
       else
         warn "BAM index not found. Create it before running BAM-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+        echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
         echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
       fi
     fi
@@ -491,21 +460,21 @@ if [ -n "$SAMPLE" ]; then
         pass "VCF index (.tbi) present"
       else
         warn "VCF index not found. Create it before running VCF-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
+        echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
         echo "         bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
       fi
     fi
 
     # Validate genome build (GRCh38) if BAM or VCF exists
-    if $HAS_BAM && command -v docker >/dev/null 2>&1; then
+    if $HAS_BAM && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
       echo ""
       info "Checking genome build of BAM..."
-      BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
+      BAM_CHR1_LEN=$(run_in "${SAMTOOLS_IMAGE}" \
         samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
         grep "^@SQ" | grep "SN:chr1" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
       if [ -z "$BAM_CHR1_LEN" ] || [ "$BAM_CHR1_LEN" = "0" ]; then
         # Try without chr prefix (hg19 style)
-        BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
+        BAM_CHR1_LEN=$(run_in "${SAMTOOLS_IMAGE}" \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
           grep "^@SQ" | grep "SN:1[[:space:]]" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
         if [ -n "$BAM_CHR1_LEN" ] && [ "$BAM_CHR1_LEN" != "0" ]; then
@@ -526,18 +495,18 @@ if [ -n "$SAMPLE" ]; then
 
       # Read group: GATK steps (20, 03a, 29) reject reads without one, and
       # DeepVariant takes the sample name from it.
-      if BAM_HEADER=$(docker run --rm -v "${GENOME_DIR}:/genome" "${SAMTOOLS_IMAGE}" \
+      if BAM_HEADER=$(run_in "${SAMTOOLS_IMAGE}" \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
         if grep -q '^@RG' <<< "$BAM_HEADER"; then
           pass "BAM has a read group (@RG)"
         else
           warn "BAM header has no @RG read group line. GATK steps (20, 03a, 29) will reject its reads."
           echo "       Add one, then replace the BAM and re-index it:"
-          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
           echo "         samtools addreplacerg -r ID:${SAMPLE} -r SM:${SAMPLE} -r PL:ILLUMINA -r LB:${SAMPLE} \\"
           echo "         -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.rg.bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
           echo "       mv \"${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.rg.bam\" \"${BAM}\""
-          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
           echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
         fi
       else
@@ -545,8 +514,8 @@ if [ -n "$SAMPLE" ]; then
       fi
     fi
 
-    if $HAS_VCF && command -v docker >/dev/null 2>&1; then
-      VCF_CONTIG=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
+    if $HAS_VCF && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
+      VCF_CONTIG=$(run_in "${BCFTOOLS_IMAGE}" \
         bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
         grep "^##contig=<ID=chr1," | head -1 || echo "")
       if [ -n "$VCF_CONTIG" ]; then
@@ -558,7 +527,7 @@ if [ -n "$SAMPLE" ]; then
         fi
       else
         # Check for non-chr prefix
-        VCF_NO_CHR=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
+        VCF_NO_CHR=$(run_in "${BCFTOOLS_IMAGE}" \
           bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
           grep "^##contig=<ID=1," | head -1 || echo "")
         if [ -n "$VCF_NO_CHR" ]; then

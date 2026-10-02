@@ -4,18 +4,12 @@
 # Output: Per-gene star allele calls, consolidated summary TSV, PharmCAT comparison TSV
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
-# Validate sample name to prevent shell injection in bash -c / python3 -c strings
-if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
-  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
-  exit 1
-fi
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/pypgx"
@@ -45,7 +39,20 @@ PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
 if [ ! -d "$PYPGX_BUNDLE" ]; then
   echo "ERROR: pypgx-bundle not found at ${PYPGX_BUNDLE}" >&2
   echo "  Download it (370 MB, one-time) with:" >&2
-  echo "  cd ${GENOME_DIR}/reference && git clone --branch 0.26.0 --depth 1 https://github.com/sbslee/pypgx-bundle.git" >&2
+  echo "  cd ${GENOME_DIR}/reference && git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git" >&2
+  exit 1
+fi
+# The bundle must be the tag that matches the pypgx image: with another tag
+# every gene fails. PYPGX_BUNDLE_VERSION in versions.env names it.
+if ! command -v git >/dev/null 2>&1; then
+  echo "ERROR: git is needed to check the pypgx-bundle tag at ${PYPGX_BUNDLE}; install git and run again." >&2
+  exit 1
+fi
+BUNDLE_TAG=$(git -c safe.directory="$PYPGX_BUNDLE" -C "$PYPGX_BUNDLE" describe --tags 2>/dev/null || true)
+if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
+  echo "ERROR: pypgx-bundle at ${PYPGX_BUNDLE} is '${BUNDLE_TAG:-not a git checkout of a tag}', but ${PYPGX_IMAGE} needs ${PYPGX_BUNDLE_VERSION}." >&2
+  echo "  Replace it with:" >&2
+  echo "  git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git ${PYPGX_BUNDLE}" >&2
   exit 1
 fi
 
@@ -71,10 +78,8 @@ echo ""
 #     pseudogene-confounded VCF calls in CYP2D6/CYP2D7 region)
 #   - VCF genes: --variants only
 # Individual gene failures are logged but do not stop the loop.
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
+run_in --cpus 4 --memory 8g \
+  -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   "${PYPGX_IMAGE}" \
   bash -c '
     SAMPLE="'"${SAMPLE}"'"
@@ -159,10 +164,8 @@ echo ""
 echo "Extracting results and building summary..."
 
 # Consolidate per-gene results into a summary TSV
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
+run_in --cpus 2 --memory 4g \
+  -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   "${PYPGX_IMAGE}" \
   python3 -c "
 import os, sys, csv, subprocess
@@ -237,9 +240,7 @@ if [ -n "$PHARMCAT_JSON" ]; then
   echo ""
   echo "PharmCAT output found, generating comparison..."
 
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus 2 --memory 4g \
     "${PYTHON_IMAGE}" \
     python3 -c "
 import json, csv, os, re, sys

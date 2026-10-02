@@ -46,6 +46,20 @@ jobs:
           # slivar uses staphb/bcftools + pre-built binary (no dedicated container)
           - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
             cmd: "pypgx --version"
+          # Images only the bash steps use; they came into versions.env with
+          # scripts/lib/common.sh.
+          - image: quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
+            cmd: "bwa-mem2 version"
+          - image: quay.io/biocontainers/bwa:0.7.18--he4a0461_1
+            cmd: "bash -c 'bwa 2>&1 | grep -q \"Version: 0.7.18\"'"
+          - image: quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
+            cmd: "freebayes --version"
+          - image: quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
+            cmd: "configureStrelkaGermlineWorkflow.py --version"
+          - image: quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
+            cmd: "bash -c 'tiddit 2>&1 | grep -qi usage'"
+          - image: jmcdani20/hap.py:v0.3.12
+            cmd: "/opt/hap.py/bin/hap.py --version"
           # Digest-pinned images (publishers ship no versioned tags) — the monthly
           # run catches digest rot / an unpullable digest.
           - image: lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714

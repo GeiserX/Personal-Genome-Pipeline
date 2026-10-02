@@ -9,7 +9,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Detect trimmed FASTQs (same logic as 02-alignment.sh)
@@ -24,7 +26,7 @@ fi
 
 R1="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz"
 R2="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 BWA_INDEX="${REF}.bwt.2bit.64"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned_bwamem2"
 SAM_TEMP="${OUTPUT_DIR}/${SAMPLE}.sam"
@@ -48,12 +50,11 @@ mkdir -p "$OUTPUT_DIR"
 # Step 1: Build BWA-MEM2 index if not present (one-time, ~1 hour)
 if [ ! -f "$BWA_INDEX" ]; then
   echo "=== Building BWA-MEM2 index (one-time, ~1 hour) ==="
-  docker run --rm \
-    --user root \
+  # The index files go next to the FASTA, so reference/ is writable here.
+  run_in --rw "$(dirname "$REF_FASTA")" \
     --cpus 8 --memory 24g \
-    -v "${GENOME_DIR}:/genome" \
-    quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
-    bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
+    "${BWAMEM2_IMAGE}" \
+    bwa-mem2 index "${REF_FASTA_C}"
   echo "BWA-MEM2 index built."
 else
   echo "BWA-MEM2 index found, skipping build."
@@ -61,25 +62,21 @@ fi
 
 # Step 2: Align with BWA-MEM2 (4-8 hours for 30X WGS, writes SAM to temp file)
 echo "=== Aligning reads with BWA-MEM2 (this takes 4-8 hours for 30X WGS) ==="
-docker run --rm \
-  --user root \
+run_in \
   --cpus 8 --memory 24g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
+  "${BWAMEM2_IMAGE}" \
   bwa-mem2 mem -t "${THREADS}" \
     -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA\tLB:${SAMPLE}" \
-    /genome/reference/Homo_sapiens_assembly38.fasta \
+    "${REF_FASTA_C}" \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz" \
     -o "/genome/${SAMPLE}/aligned_bwamem2/${SAMPLE}.sam"
 
 # Step 3: Sort + compress with samtools
 echo "=== Sorting and compressing BAM ==="
-docker run --rm \
-  --user root \
+run_in \
   --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools sort -@ 2 \
     -o "/genome/${SAMPLE}/aligned_bwamem2/${SAMPLE}_sorted.bam" \
     "/genome/${SAMPLE}/aligned_bwamem2/${SAMPLE}.sam"
@@ -90,10 +87,9 @@ rm -f "$SAM_TEMP"
 
 # Step 4: Index BAM
 echo "=== Indexing BAM ==="
-docker run --rm \
+run_in \
   --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index "/genome/${SAMPLE}/aligned_bwamem2/${SAMPLE}_sorted.bam"
 
 echo "=== BWA-MEM2 Alignment complete ==="

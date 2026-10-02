@@ -14,16 +14,16 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 PLATFORM=${PLATFORM:?Set PLATFORM to ont or hifi}
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned_longread}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_clair3"
 
-CLAIR3_IMAGE="hkubal/clair3:v2.0.2"
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # Select model path based on platform
 case "$PLATFORM" in
@@ -58,13 +58,12 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 echo "[1/1] Running Clair3 (this takes 2-4 hours for 30X long-read WGS)..."
-docker run --rm \
+run_in \
   --cpus "${THREADS}" --memory 32g \
-  -v "${GENOME_DIR}:/genome" \
   "$CLAIR3_IMAGE" \
   /opt/bin/run_clair3.sh \
     --bam_fn="/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
-    --ref_fn="/genome/reference/Homo_sapiens_assembly38.fasta" \
+    --ref_fn="${REF_FASTA_C}" \
     --platform="${PLATFORM}" \
     --model_path="${MODEL_PATH}" \
     --output="/genome/${SAMPLE}/vcf_clair3" \
@@ -86,15 +85,13 @@ echo "=== Clair3 complete ==="
 echo "VCF: ${FINAL_VCF}"
 echo ""
 echo "Quick stats:"
-VARIANT_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+VARIANT_COUNT=$(run_in \
   "$BCFTOOLS_IMAGE" \
   bcftools stats "/genome/${SAMPLE}/vcf_clair3/${SAMPLE}.vcf.gz" \
   | grep '^SN' | grep 'number of records' | awk '{print $NF}')
 VARIANT_COUNT=${VARIANT_COUNT:-unknown}
 echo "  Total variants: ${VARIANT_COUNT}"
-PASS_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+PASS_COUNT=$(run_in \
   "$BCFTOOLS_IMAGE" \
   bcftools view -f PASS "/genome/${SAMPLE}/vcf_clair3/${SAMPLE}.vcf.gz" \
   | grep -vc '^#' || echo "unknown")

@@ -336,7 +336,7 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 ## Docker Images — Pre-Pull All
 
-`setup.sh` pulls every image in `versions.env` except `STRANGER_IMAGE`, which step 9b pulls the first time it runs. To pull every image in advance without the rest of setup, `STRANGER_IMAGE` included, from the repository root in bash:
+`setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. To pull every image in advance, the optional ones included, from the repository root in bash:
 
 ```bash
 source versions.env
@@ -349,7 +349,7 @@ done
 
 Only needed if you plan to run alternative variant callers. See [benchmarking.md](benchmarking.md).
 
-The BWA-MEM2, FreeBayes, Strelka2 and TIDDIT scripts and `benchmark-variants.sh` (hap.py) set their image inside the script, not in `versions.env`, and `docker run` pulls each one the first time the script runs. [Image versions](versions.md#images-not-in-versionsenv-yet) lists them.
+The alternative aligners and callers and hap.py (`benchmark-variants.sh`) are the lines marked `# optional` in `versions.env`. `setup.sh` skips them, and each one is pulled the first time its script runs. [Image versions](versions.md) lists them under "Alternative aligners and callers (optional)".
 
 ### GATK Sequence Dictionary
 
@@ -373,12 +373,11 @@ The practical route is to build the index once on a machine (or a rented cloud i
 
 ```bash
 REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
-# From the repository root: the image scripts/02a-alignment-bwamem2.sh pins
-BWA_MEM2_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa-mem2:[^ ]*' scripts/02a-alignment-bwamem2.sh)
+source versions.env   # from the repository root: BWAMEM2_IMAGE, the image step 02a uses
 docker run --rm --user root \
   --cpus 8 --memory 96g \
   -v ${GENOME_DIR}:/genome \
-  "${BWA_MEM2_IMAGE}" \
+  "${BWAMEM2_IMAGE}" \
   bwa-mem2 index "/genome/${REF_FASTA}"
 # Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
 ```

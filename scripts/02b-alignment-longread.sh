@@ -12,16 +12,14 @@
 # Runtime: ~1-3 hours for 30X long-read WGS depending on read length and throughput.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 PLATFORM=${PLATFORM:?Set PLATFORM to ont or hifi}
-THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned_longread"
 
 # Select minimap2 preset based on platform
@@ -128,19 +126,17 @@ _align_and_sort() {
   # read this script's stdin.
   local stdin_flag=()
   [ "$reads" = "-" ] && stdin_flag=(-i)
-  docker run --rm ${stdin_flag[@]+"${stdin_flag[@]}"} \
+  run_in ${stdin_flag[@]+"${stdin_flag[@]}"} \
     --cpus "${THREADS}" --memory 16g \
-    -v "${GENOME_DIR}:/genome" \
     "$MINIMAP2_IMAGE" \
     minimap2 -t "${THREADS}" -a -x "${MM2_PRESET}" \
       --MD -Y \
       -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:${RG_PLATFORM}\tLB:${SAMPLE}" \
       "$@" \
-      /genome/reference/Homo_sapiens_assembly38.fasta \
+      "${REF_FASTA_C}" \
       "$reads" \
-  | docker run --rm -i \
+  | run_in -i \
     --cpus "${THREADS}" --memory 8g \
-    -v "${GENOME_DIR}:/genome" \
     "$SAMTOOLS_IMAGE" \
     samtools sort -@ 4 -m 1G \
       -o "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
@@ -153,9 +149,8 @@ if [[ "$INPUT_RELPATH" == *.bam ]]; then
   # delivery) is streamed through samtools fastq; -T MM,ML puts the base
   # modification tags in the read comment and minimap2 -y copies them back.
   echo "       Unaligned BAM input: converting to FASTQ on the fly (MM/ML tags kept)."
-  docker run --rm \
+  run_in \
     --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
     "$SAMTOOLS_IMAGE" \
     samtools fastq -T MM,ML "/genome/${INPUT_RELPATH}" \
   | _align_and_sort - -y
@@ -165,9 +160,8 @@ fi
 
 # Index BAM
 echo "[2/2] Indexing BAM..."
-docker run --rm \
+run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "$SAMTOOLS_IMAGE" \
   samtools index "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
 

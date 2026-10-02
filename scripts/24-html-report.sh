@@ -8,6 +8,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTPUT="${SAMPLE_DIR}/${SAMPLE}_report.html"
 
@@ -37,12 +40,12 @@ VCF_PASS="N/A"
 VCF_SNPS="N/A"
 VCF_INDELS="N/A"
 if [ -f "${SAMPLE_DIR}/vcf/${SAMPLE}.vcf.gz" ]; then
-  STATS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  STATS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | grep "^SN" || true)
   VCF_TOTAL=$(echo "$STATS" | grep "number of records:" | awk '{print $NF}' || echo "N/A")
   VCF_SNPS=$(echo "$STATS" | grep "number of SNPs:" | awk '{print $NF}' || echo "N/A")
   VCF_INDELS=$(echo "$STATS" | grep "number of indels:" | awk '{print $NF}' || echo "N/A")
-  VCF_PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  VCF_PASS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS -H "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
 fi
 
@@ -110,9 +113,9 @@ fi
 MANTA_TOTAL="N/A"
 MANTA_PASS="N/A"
 if [ -f "${SAMPLE_DIR}/manta/results/variants/diploidSV.vcf.gz" ]; then
-  MANTA_TOTAL=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  MANTA_TOTAL=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
-  MANTA_PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  MANTA_PASS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS -H "/genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
 fi
 
@@ -154,11 +157,11 @@ fi
 CLINICAL_TOTAL="N/A"
 CLINICAL_HIGH="N/A"
 if [ -f "${SAMPLE_DIR}/clinical/${SAMPLE}_clinical.vcf.gz" ]; then
-  CLINICAL_TOTAL=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  CLINICAL_TOTAL=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
 fi
 if [ -f "${SAMPLE_DIR}/clinical/${SAMPLE}_high_impact.vcf.gz" ]; then
-  CLINICAL_HIGH=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  CLINICAL_HIGH=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
 fi
 
@@ -168,10 +171,10 @@ MITO_PASS="N/A"
 MITO_HETERO="N/A"
 MITO_FILE="${SAMPLE_DIR}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
 if [ -f "$MITO_FILE" ]; then
-  MITO_PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  MITO_PASS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS -H "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
   # Heteroplasmic = AF < 0.95 (not homoplasmic)
-  MITO_HETERO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  MITO_HETERO=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools query -f '[%AF]\n' -i 'FILTER="PASS"' "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
     awk '{if($1+0 < 0.95) c++} END {print c+0}' || echo "N/A")
 fi
@@ -186,7 +189,7 @@ fi
 DELLY_PASS="N/A"
 DELLY_FILE="${SAMPLE_DIR}/delly/${SAMPLE}_sv.vcf.gz"
 if [ -f "$DELLY_FILE" ]; then
-  DELLY_PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  DELLY_PASS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS -H "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
 fi
 

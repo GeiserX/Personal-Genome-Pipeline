@@ -9,8 +9,11 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 IDX_DIR="${GENOME_DIR}/t1k_idx"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/hla_t1k"
 
@@ -29,31 +32,30 @@ mkdir -p "$OUTPUT_DIR"
 if [ ! -f "${IDX_DIR}/hlaidx/_dna_seq.fa" ]; then
   echo "Building HLA reference index..."
   mkdir -p "${IDX_DIR}"
-  docker run --rm --cpus 2 --memory 2g \
-    -v "${IDX_DIR}:/idx" \
-    quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
-    t1k-build.pl -o /idx/hlaidx --download IPD-IMGT/HLA
+  # --net: t1k-build.pl downloads the IPD-IMGT/HLA database (hla.dat).
+  # The index is shared by every sample, so t1k_idx/ is writable here.
+  run_in --net --rw "$IDX_DIR" --cpus 2 --memory 2g \
+    "${T1K_IMAGE}" \
+    t1k-build.pl -o /genome/t1k_idx/hlaidx --download IPD-IMGT/HLA
 fi
 
 # Step 2: Build coordinate file (one-time, ~30 min — reads entire 3.1GB reference)
 # CRITICAL: Use the actual FASTA file, NOT the .fai index!
 if [ ! -f "${IDX_DIR}/hlaidx_grch38/_dna_coord.fa" ]; then
   echo "Building coordinate file from reference genome (this takes ~30 min)..."
-  docker run --rm --cpus 4 --memory 8g \
-    -v "${GENOME_DIR}:/genome" \
-    quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
+  run_in --rw "$IDX_DIR" --cpus 4 --memory 8g \
+    "${T1K_IMAGE}" \
     t1k-build.pl \
       -d "/genome/t1k_idx/hlaidx/hla.dat" \
-      -g "/genome/reference/Homo_sapiens_assembly38.fasta" \
+      -g "${REF_FASTA_C}" \
       -o /genome/t1k_idx/hlaidx_grch38
 fi
 
 # Step 3: Run HLA typing
 echo "Running T1K genotyping..."
-docker run --rm \
+run_in \
   --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
+  "${T1K_IMAGE}" \
   run-t1k \
     -b "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     -f "/genome/t1k_idx/hlaidx_grch38/_dna_seq.fa" \

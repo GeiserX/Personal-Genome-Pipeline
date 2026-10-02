@@ -15,6 +15,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/ancestry"
@@ -46,54 +49,52 @@ if [ ! -f "$KG_SITES" ]; then
   echo "  This is a one-time download (~1 GB)."
 
   RAW_VCF="${REFDIR}/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
-  # Use a lock file to prevent parallel runs from downloading simultaneously
-  LOCKFILE="${REFDIR}/.download_lock"
-  if [ -f "$LOCKFILE" ]; then
-    echo "  Another download in progress (lock file exists). Waiting..."
-    while [ -f "$LOCKFILE" ]; do sleep 5; done
-  fi
+  # One run at a time prepares the shared panel. The lock records its owner,
+  # so a lock left by a killed run is taken over instead of waited on forever.
+  LOCK="${REFDIR}/.download.lock"
+  lock_acquire "$LOCK"
+  trap 'lock_release "$LOCK"' EXIT
 
   if [ ! -f "$KG_SITES" ]; then
-    touch "$LOCKFILE"
-    trap 'rm -f "$LOCKFILE"' EXIT
-
     if [ ! -f "$RAW_VCF" ]; then
-      wget -q -O "$RAW_VCF" \
-        "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20181203_biallelic_SNV/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz" 2>/dev/null || {
+      fetch "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20181203_biallelic_SNV/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz" "$RAW_VCF" || {
         echo "WARNING: Could not download 1000G reference sites."
         echo "  The 1000 Genomes FTP may be temporarily unavailable."
         echo "  Try again later, or download manually from:"
         echo "  https://www.internationalgenome.org/data-portal/data-collection/30x-grch38"
-        rm -f "$LOCKFILE"
         exit 1
       }
     fi
 
+    # The panel is shared by every sample, so ancestry_ref/ is writable in
+    # these containers.
     # Index the raw file first (required by bcftools --regions)
     if [ ! -f "${RAW_VCF}.tbi" ]; then
-      docker run --rm --user root \
-        -v "${GENOME_DIR}:/genome" \
-        staphb/bcftools:1.21 \
+      run_in --rw "$REFDIR" "${BCFTOOLS_IMAGE}" \
         bcftools index -t "/genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
     fi
 
-    # Extract common biallelic SNPs (MAF > 5%, autosomal only)
+    # Extract common biallelic SNPs (MAF > 5%, autosomal only). Written under a
+    # .part name and renamed when indexed, so a killed run leaves no file that
+    # looks finished.
     echo "  Filtering to common biallelic autosomal SNPs..."
-    docker run --rm --user root \
-      --cpus 4 --memory 4g \
-      -v "${GENOME_DIR}:/genome" \
-      staphb/bcftools:1.21 \
+    rm -f "${REFDIR}/1kg_common_snps.part.vcf.gz" "${REFDIR}/1kg_common_snps.part.vcf.gz.tbi"
+    run_in --rw "$REFDIR" --cpus 4 --memory 4g \
+      "${BCFTOOLS_IMAGE}" \
       bash -c "
         bcftools view -m2 -M2 -v snps \
           -i 'AF>=0.05 && AF<=0.95' \
           --regions chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22 \
           /genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz \
-          -Oz -o /genome/ancestry_ref/1kg_common_snps.vcf.gz &&
-        bcftools index -t /genome/ancestry_ref/1kg_common_snps.vcf.gz
+          -Oz -o /genome/ancestry_ref/1kg_common_snps.part.vcf.gz &&
+        bcftools index -t /genome/ancestry_ref/1kg_common_snps.part.vcf.gz
       "
-    rm -f "$LOCKFILE"
+    mv "${REFDIR}/1kg_common_snps.part.vcf.gz.tbi" "${KG_SITES}.tbi"
+    mv "${REFDIR}/1kg_common_snps.part.vcf.gz" "$KG_SITES"
     echo "  [OK] Reference SNPs prepared."
   fi
+  lock_release "$LOCK"
+  trap - EXIT
 else
   echo "[1/5] 1000G reference SNPs already downloaded."
 fi
@@ -101,8 +102,8 @@ fi
 # Step 2: Download population labels
 if [ ! -f "$KG_POPS" ]; then
   echo "[2/5] Downloading population labels..."
-  wget -q -O "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" \
-    "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20130502.ALL.panel" 2>/dev/null || true
+  fetch "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20130502.ALL.panel" \
+    "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" || true
 
   # Create simple population mapping
   if [ -f "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" ]; then
@@ -117,10 +118,8 @@ fi
 
 # Step 3: Extract overlapping SNPs between your sample and reference
 echo "[3/5] Finding shared SNPs between your sample and reference panel..."
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in --cpus 4 --memory 8g \
+  "${BCFTOOLS_IMAGE}" \
   bash -c "
     bcftools isec -n=2 -w1 \
       /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
@@ -129,7 +128,7 @@ docker run --rm --user root \
     bcftools index -t /genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz
   "
 
-SHARED_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+SHARED_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Shared SNPs: ${SHARED_COUNT}"
 
@@ -141,10 +140,8 @@ fi
 # Step 4: LD pruning (requires >=50 samples — skip for single-sample input)
 echo "[4/5] LD pruning..."
 PRUNED_COUNT=0
-if docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+if run_in --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
     --indep-pairwise 50 5 0.2 \
@@ -169,10 +166,8 @@ fi
 # joint PCA with a multi-sample reference panel (e.g., 1000G genotypes).
 # We still record the shared SNP and LD-pruned counts as useful QC metrics.
 echo "[5/5] Attempting PCA (requires >=2 samples)..."
-if docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+if run_in --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
     "${EXTRACT_ARGS[@]}" \

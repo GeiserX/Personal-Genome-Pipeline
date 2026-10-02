@@ -66,9 +66,17 @@ personal-genome-pipeline/
     run-all.sh                 # Orchestrator
     validate-setup.sh          # Pre-flight check
     generate-report.sh         # Summary report
+  scripts/lib/common.sh        # Sourced by every script: versions.env, run_in, fetch, validate_sample
+  versions.env                 # Every image tag and coupled data version, one line each
   .github/workflows/
-    lint.yml                   # ShellCheck + markdownlint
-    smoke-test.yml             # Dry-run validation
+    lint.yml                   # ShellCheck, actionlint, gitleaks, personal-data scan, doc links, image tags in docs
+    guard.yml                  # image variables, fake-docker suite, helper binaries, unit tests
+    smoke-test.yml             # Contract checks between scripts
+    container-test.yml         # Pulls each image and runs its version command
+    e2e.yml                    # Real tools on a small fixture
+    nextflow.yml               # Nextflow config, schema and stub run
+    docs.yml                   # mkdocs build
+    release.yml, stale.yml     # Releases, stale issues
 ```
 
 ### Data Flow
@@ -96,15 +104,19 @@ User's FASTQ/BAM/VCF
 - Error handling: `set -euo pipefail`
 - Parameters: `SAMPLE=${1:?Usage: $0 <sample_name>}`
 - Environment: `GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}`
-- Docker: always use `--cpus N --memory Xg` limits, `-v "${GENOME_DIR}:/genome"` mount, `--rm` flag
-- Add `--user root` when the container needs write access to bind mounts
+- Source the library right after reading `SAMPLE` and `GENOME_DIR`: `. "$(dirname "$0")/lib/common.sh"`, then `validate_sample "$SAMPLE"`
+- Containers: `run_in --cpus N --memory Xg "${TOOL_IMAGE}" tool ...`. It mounts `GENOME_DIR` read-only at `/genome` and the sample directory writable, with no network, as the calling user
+- Opt out at the call, with the reason in a comment: `--rw DIR` (shared index or database), `--net` (the step downloads), `--root` (the image cannot run unprivileged)
+- Images come from `versions.env` as quoted variables; a script never spells an image name or tag
+- Reference: `${REF_FASTA}` on the host, `${REF_FASTA_C}` inside a container
+- Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`
 - Validate all input files exist before running Docker commands
 - Print clear status messages: step name, input files, output location
 
 ### Documentation Conventions
 - Each pipeline step has a matching doc in `docs/XX-name.md` and script in `scripts/XX-name.sh`
 - Docs must include: What it does, Why, Tool name, Docker image, Command, Output, Runtime estimate, Notes
-- README step table must stay in sync with actual docs and scripts
+- The category table in `docs/pipeline-overview.md` and the `nav:` of `mkdocs.yml` must stay in sync with actual docs and scripts
 - All Docker images must include the exact tag (not floating)
 
 ### Lessons Learned
@@ -113,14 +125,20 @@ User's FASTQ/BAM/VCF
 
 ### Adding a New Step
 
-1. Create `docs/NN-tool-name.md` following existing template
+1. Add the image as one line in `versions.env` (`setup.sh` and `validate-setup.sh` read their list from it)
 2. Create `scripts/NN-tool-name.sh` following script conventions
-3. Update `README.md` step table
-4. Update `scripts/run-all.sh` with the new step
-5. Update `docs/00-reference-setup.md` if new reference data needed
-6. Update `docs/interpreting-results.md` if output needs explanation
-7. Add Docker image to pre-pull list in `docs/00-reference-setup.md`
-8. Test on at least one sample before committing
+3. Create `modules/local/<tool>/main.nf` with no `container` line, add its process to the table in `scripts/ci/gen-containers-config.sh` and run it; or note in `docs/nextflow.md` why the step stays bash-only
+4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav:` in `mkdocs.yml`
+5. Add the step to the category table in `docs/pipeline-overview.md`
+6. Update `scripts/run-all.sh` with the new step
+7. Add the image and a smoke command to the matrix in `.github/workflows/container-test.yml`
+8. Update `docs/00-reference-setup.md` if new reference data needed
+9. Update `docs/interpreting-results.md` if output needs explanation
+10. Test on at least one sample before committing
+
+### Bumping a Tool
+
+Change its line in `versions.env`, plus the coupled data variable its comment names. Run `scripts/ci/gen-containers-config.sh` to rewrite `conf/containers.config` (CI fails until it matches), then update the `container-test.yml` matrix entry and any doc that prints the tag. No script or module names the tag. Lines marked `hold:` or `legacy:` say why a tool is pinned.
 
 - All processing is local; genomic data never leaves the machine
 - Pin tool versions; never use floating tags
@@ -133,7 +151,7 @@ User's FASTQ/BAM/VCF
 - **Two-step workflow**: Preprocessor (`pharmcat_vcf_preprocessor` with `-refFna`) then main jar (`pharmcat.jar`). NOTE: since 3.0 the preprocessor script lost its `.py` extension and the Python package was renamed `preprocessor` → `pcat`. The old `-refFasta` flag is long gone.
 - Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
 - **3.x JSON changes vs 2.15.x**: `wildtypeAllele` → `referenceAllele`; the HTML report is **no longer emitted unless `-reporterHtml` is passed explicitly**. The `genes` map may be flat (`{gene -> data}`) or nested (`{source -> {gene -> data}}`). `sourceDiplotypes` (or `recommendationDiplotypes`) carry `allele1`/`allele2` objects with a `.name`. The CPIC consumers (`scripts/27-cpic-lookup.sh` + `modules/local/cpic_lookup`) now **auto-detect both shapes** and **fail loud** — a recognized report yielding zero genes is reported as a parse failure, never "all genes were successfully called". Guarded by `tests/test_cpic_parser.py`.
-- Pipeline pinned to **3.2.0** (latest). Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions. Capturing a real `report.json` as a parser fixture is tracked follow-up.
+- Pipeline pinned to **3.2.0**. Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions. Capturing a real `report.json` as a parser fixture is tracked follow-up.
 
 ### plink2 (PRS / Ancestry)
 - **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).
@@ -179,7 +197,7 @@ User's FASTQ/BAM/VCF
 | Resource / Tool | Update Frequency | Re-run Steps | Time |
 |---|---|---|---|
 | ClinVar | Monthly (first Thursday) | 6 (ClinVar screen) | ~5 min |
-| Ensembl / VEP cache | ~6 months | 13, 23 | ~3 hr |
+| Ensembl / VEP cache | ~6 months | 13, 30, 23, 31 | ~3 hr |
 | PCGR/CPSR data | Annually | 17 | ~45 min |
 | PharmCAT | Quarterly check | 7, 27 | ~15-30 min |
 | CPIC / ClinPGx | Quarterly check | 27 | ~15 min |
@@ -195,10 +213,10 @@ User's FASTQ/BAM/VCF
 ## Common Issues
 
 - **Docker image not found**: Biocontainer tags change frequently. Check quay.io/biocontainers directly.
-- **Permission denied in container**: Add `--user root`. Most bioinformatics images run as non-root.
+- **Permission denied in container**: the step writes outside the sample directory. Add `--rw DIR` to its `run_in` call; use `--root` only for an image that cannot run as an unprivileged user. A sample directory written by an older version, which ran every container as root, holds root-owned files: `run_in` then prints the `sudo chown -R` that gives it back.
 - **0-byte output**: Usually wrong input path inside container. Double-check `:/genome` mount mapping.
 - **PCGR/CPSR path confusion**: `--pcgr_dir` should point to PARENT of `data/`, not `data/` itself.
-- **VEP cache download**: Use `wget -c` (resume-capable), not VEP's `INSTALL.pl` (can't resume 26 GB).
+- **VEP cache**: step 13 installs it (resumable, checked against Ensembl's CHECKSUMS); never use VEP's `INSTALL.pl`.
 
 *Generated by [LynxPrompt](https://lynxprompt.com) CLI*
 

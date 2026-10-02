@@ -16,6 +16,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/prs"
@@ -83,29 +86,26 @@ for ENTRY in "${PGS_SCORES[@]}"; do
 
   echo "  Downloading ${CONDITION} (${PGS_ID})..."
   URL="${PGS_BASE_URL}/${PGS_ID}/ScoringFiles/Harmonized/${PGS_ID}_hmPOS_GRCh38.txt.gz"
-  if ! wget -q -O "${SCORE_FILE}.part" "$URL"; then
-    rm -f "${SCORE_FILE}.part"
+  # The PGS Catalog publishes an md5 next to every scoring file.
+  if ! fetch "$URL" "$SCORE_FILE" md5 "${URL}.md5"; then
     echo "ERROR: Could not download the GRCh38-harmonised scoring file for ${PGS_ID}:" >&2
     echo "  ${URL}" >&2
     exit 1
   fi
-  BUILD=$(hm_build "${SCORE_FILE}.part")
+  BUILD=$(hm_build "$SCORE_FILE")
   if [ "$BUILD" != "GRCh38" ]; then
-    rm -f "${SCORE_FILE}.part"
+    rm -f "$SCORE_FILE"
     echo "ERROR: ${PGS_ID} scoring file has #HmPOS_build='${BUILD}', expected GRCh38. Refusing to score it." >&2
     exit 1
   fi
-  mv "${SCORE_FILE}.part" "$SCORE_FILE"
 done
 
 echo ""
 echo "[2/3] Converting VCF to plink2 format..."
 
 # Convert VCF to plink2 binary format for scoring
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+run_in --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     --make-pgen \
@@ -177,10 +177,8 @@ for ENTRY in "${PGS_SCORES[@]}"; do
 
   # cols=+scoresums adds SCORE1_SUM: the plain weighted sum. The default
   # SCORE1_AVG divides by the alleles present in this VCF, which differs per sample.
-  if ! docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    pgscatalog/plink2:2.00a5.10 \
+  if ! run_in --cpus 4 --memory 4g \
+    "${PLINK2_IMAGE}" \
     plink2 \
       --pfile "/genome/${SAMPLE}/prs/${SAMPLE}" \
       --score "/genome/${SAMPLE}/prs/${PGS_ID}_formatted.tsv" 1 2 3 \

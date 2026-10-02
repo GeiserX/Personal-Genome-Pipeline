@@ -8,6 +8,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 REPORT="${SAMPLE_DIR}/${SAMPLE}_report.txt"
 
@@ -30,10 +33,10 @@ VCF="${SAMPLE_DIR}/vcf/${SAMPLE}.vcf.gz"
 if [ -f "$VCF" ]; then
   echo "## Variant Calling (DeepVariant)"
   echo "---"
-  TOTAL=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  TOTAL=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
     grep '^SN.*number of records' | awk '{print $NF}' || echo "N/A")
-  PASS=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  PASS=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
     grep -cv '^#' || true)
   echo "  Total variants: ${TOTAL}"
@@ -102,7 +105,7 @@ if [ -d "$MANTA_DIR" ]; then
   if [ -n "$SV_VCF" ]; then
     echo "## Structural Variants (Manta)"
     echo "---"
-    SV_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+    SV_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
       bcftools view "${SV_VCF/#$GENOME_DIR//genome}" 2>/dev/null | grep -cv '^#' || true)
     echo "  Total SVs: ${SV_COUNT}"
     echo ""
@@ -198,9 +201,9 @@ DELLY_VCF="${SAMPLE_DIR}/delly/${SAMPLE}_sv.vcf.gz"
 if [ -f "$DELLY_VCF" ]; then
   echo "## Structural Variants (Delly)"
   echo "---"
-  TOTAL_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  TOTAL_DELLY=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
-  PASS_DELLY=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  PASS_DELLY=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS "/genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
   echo "  Total SVs: ${TOTAL_DELLY}"
   echo "  PASS SVs: ${PASS_DELLY}"
@@ -212,11 +215,11 @@ MITO_VCF="${SAMPLE_DIR}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
 if [ -f "$MITO_VCF" ]; then
   echo "## Mitochondrial Variants (Mutect2)"
   echo "---"
-  TOTAL_MITO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  TOTAL_MITO=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | grep -cv '^#' || true)
-  HETERO=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  HETERO=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -f PASS "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" 2>/dev/null | \
-    docker run --rm -i staphb/bcftools:1.21 bcftools query -f '[%AF]\n' 2>/dev/null | \
+    run_in -i "${BCFTOOLS_IMAGE}" bcftools query -f '[%AF]\n' 2>/dev/null | \
     awk '$1 < 0.95' | wc -l || echo "N/A")
   echo "  PASS variants: ${TOTAL_MITO}"
   echo "  Heteroplasmic (AF < 0.95): ${HETERO}"
@@ -228,7 +231,7 @@ SV_MERGE_VCF="${SAMPLE_DIR}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz"
 if [ -f "$SV_MERGE_VCF" ]; then
   echo "## SV Consensus Merge"
   echo "---"
-  CONSENSUS_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  CONSENSUS_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
   echo "  Consensus SVs (2+ callers): ${CONSENSUS_COUNT}"
   echo ""
@@ -239,7 +242,7 @@ CLINICAL_VCF="${SAMPLE_DIR}/clinical/${SAMPLE}_clinical.vcf.gz"
 if [ -f "$CLINICAL_VCF" ]; then
   echo "## Clinical Variant Filter"
   echo "---"
-  CLINICAL_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  CLINICAL_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz" 2>/dev/null | wc -l || echo "N/A")
   echo "  Clinical variants: ${CLINICAL_COUNT}"
   echo ""

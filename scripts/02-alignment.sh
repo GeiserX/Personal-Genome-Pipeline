@@ -4,13 +4,11 @@
 # Output: sorted BAM + BAI index in $GENOME_DIR/<sample>/aligned/
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Allow explicit override (e.g., FASTQ_SUBDIR=fastq to use raw reads even when trimmed exist)
@@ -24,7 +22,7 @@ else
 fi
 R1="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz"
 R2="${SAMPLE_DIR}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 MMI="${GENOME_DIR}/reference/GRCh38.mmi"
 OUTPUT_DIR="${SAMPLE_DIR}/aligned"
 
@@ -46,12 +44,12 @@ mkdir -p "$OUTPUT_DIR"
 # Step 1: Build minimap2 index (one-time, ~30 min)
 if [ ! -f "$MMI" ]; then
   echo "Building minimap2 index (one-time, ~30 min)..."
-  docker run --rm \
+  # The index is shared by every sample, so reference/ is writable here.
+  run_in --rw "${GENOME_DIR}/reference" \
     --cpus 8 --memory 16g \
-    -v "${GENOME_DIR}:/genome" \
     "${MINIMAP2_IMAGE}" \
     minimap2 -d /genome/reference/GRCh38.mmi \
-      /genome/reference/Homo_sapiens_assembly38.fasta
+      "${REF_FASTA_C}"
 fi
 
 # Step 2: Align + sort (1-2 hours for 30X WGS)
@@ -60,27 +58,24 @@ fi
 # -R writes a read group: GATK steps (20, 03a, 29) reject reads without one,
 # and callers take the sample name from its SM field.
 echo "Aligning reads (this takes 1-2 hours for 30X WGS)..."
-docker run --rm \
+run_in \
   --cpus "${THREADS}" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
   "${MINIMAP2_IMAGE}" \
   minimap2 -t "${THREADS}" -a -x sr \
     -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA\tLB:${SAMPLE}" \
     /genome/reference/GRCh38.mmi \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz" \
     "/genome/${SAMPLE}/${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz" \
-| docker run --rm -i \
+| run_in -i \
   --cpus "${THREADS}" --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
   "${SAMTOOLS_IMAGE}" \
   samtools sort -@ 4 -m 1G \
     -o "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
 # Step 3: Index BAM
 echo "Indexing BAM..."
-docker run --rm \
+run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${SAMTOOLS_IMAGE}" \
   samtools index "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 

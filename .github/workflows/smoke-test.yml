@@ -86,38 +86,6 @@ jobs:
           [ "$FAIL" -eq 0 ] && echo "OK: HTML report paths are consistent"
           exit "$FAIL"
 
-      - name: Verify Docker image tags are consistent
-        run: |
-          echo "Checking Docker image consistency between versions.env and scripts..."
-          FAIL=0
-
-          # Source versions.env as the single source of truth
-          . ./versions.env
-
-          # Check key images used in scripts match versions.env
-          for pair in \
-            "scripts/05-annotsv.sh:$ANNOTSV_IMAGE" \
-            "scripts/15-duphold.sh:$DUPHOLD_IMAGE" \
-            "scripts/chip-to-vcf.sh:$PICARD_IMAGE"; do
-            SCRIPT="${pair%%:*}"
-            IMG="${pair#*:}"
-            if [ -f "$SCRIPT" ] && ! grep -qF "$IMG" "$SCRIPT"; then
-              echo "FAIL: $SCRIPT does not use $IMG from versions.env"
-              FAIL=1
-            fi
-          done
-
-          # Check t1k tag matches
-          . ./versions.env
-          SCRIPT_T1K=$(grep -roh 't1k:[^ "]*' scripts/08-hla-typing.sh 2>/dev/null | head -1 || true)
-          if [ -n "$SCRIPT_T1K" ] && ! echo "$T1K_IMAGE" | grep -qF "$SCRIPT_T1K"; then
-            echo "FAIL: t1k tag mismatch: versions.env=$T1K_IMAGE script=$SCRIPT_T1K"
-            FAIL=1
-          fi
-
-          [ "$FAIL" -eq 0 ] && echo "OK: Docker images are consistent"
-          exit "$FAIL"
-
       - name: Verify experimental steps are marked
         run: |
           echo "Checking experimental step markers..."
@@ -131,6 +99,29 @@ jobs:
           done
 
           [ "$FAIL" -eq 0 ] && echo "OK: Experimental steps are properly marked"
+          exit "$FAIL"
+
+      - name: Verify no step script names an image
+        run: |
+          echo "Checking that no step script names an image..."
+          FAIL=0
+          # Every image comes from versions.env through a *_IMAGE variable, so a
+          # bump is one line. A literal image in a script would not follow a bump.
+          # 1. Anything shaped like registry/name:tag or name@sha256 (URLs excluded).
+          # 2. The Docker Hub official images in versions.env, which have no slash.
+          SHAPE='[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9][A-Za-z0-9._-]*[0-9][A-Za-z0-9._-]*|@sha256:[0-9a-f]{64})'
+          BARE=$(grep -oE '^[A-Z0-9_]+_IMAGE="[^"/:@]+[:@]' versions.env | sed -E 's/^[^"]*"//; s/[:@]$//; s/\./\\./g' | sort -u | paste -sd'|' -)
+          [ -n "$BARE" ] || { echo "FAIL: read no slash-less image from versions.env"; exit 1; }
+          for f in scripts/*.sh scripts/lib/*.sh; do
+            hits=$( { grep -nE "$SHAPE" "$f" | grep -vE '(https?|ftp|s3|gs)://' ;
+                      grep -nE "(^|[^A-Za-z0-9_./-])(${BARE})(:[A-Za-z0-9._-]*[0-9]|@sha256:)" "$f"; } || true)
+            if [ -n "$hits" ]; then
+              echo "FAIL: $f names an image instead of a *_IMAGE variable from versions.env:"
+              echo "    ${hits//$'\n'/$'\n'    }"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] && echo "OK: no step script names an image"
           exit "$FAIL"
 
   shellcheck-new-steps:

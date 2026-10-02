@@ -19,12 +19,14 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_strelka2"
-THREADS=${THREADS:-8}
 
 echo "=== Strelka2 Germline Calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -40,8 +42,6 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-STRELKA_IMAGE="quay.io/biocontainers/strelka:2.9.10--h9ee0642_1"
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # A finished run is not repeated: the configure script refuses a runDir
 # that already holds a workflow, so a second run used to fail.
@@ -57,30 +57,24 @@ if [ -f "${OUTPUT_DIR}/runWorkflow.py" ]; then
   echo "[1/2] Found an unfinished Strelka2 run in ${OUTPUT_DIR}/; resuming it."
 else
   if [ -d "$OUTPUT_DIR" ]; then
-    # Files written by the container belong to root, so remove them from a container
+    # --root: a directory left by an earlier version of this script belongs to root.
     echo "Removing leftover ${OUTPUT_DIR}/ (no workflow and no results)..."
-    docker run --rm --user root \
-      -v "${GENOME_DIR}:/genome" \
-      "$STRELKA_IMAGE" \
+    run_in --root "$STRELKA_IMAGE" \
       rm -rf "/genome/${SAMPLE}/vcf_strelka2"
   fi
   mkdir -p "$OUTPUT_DIR"
   echo "[1/2] Configuring Strelka2 germline workflow..."
-  docker run --rm --user root \
-    --cpus "$THREADS" --memory 16g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus "$THREADS" --memory 16g \
     "$STRELKA_IMAGE" \
     configureStrelkaGermlineWorkflow.py \
       --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
-      --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+      --referenceFasta "${REF_FASTA_C}" \
       --runDir "/genome/${SAMPLE}/vcf_strelka2"
 fi
 
 # Step 2: Run the workflow
 echo "[2/2] Running Strelka2 (this takes 1-2 hours for 30X WGS)..."
-docker run --rm --user root \
-  --cpus "$THREADS" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
+run_in --cpus "$THREADS" --memory 16g \
   "$STRELKA_IMAGE" \
   "/genome/${SAMPLE}/vcf_strelka2/runWorkflow.py" \
     -m local \
@@ -92,8 +86,7 @@ if [ ! -f "${OUTPUT_DIR}/results/variants/variants.vcf.gz" ] || [ ! -f "${OUTPUT
   exit 1
 fi
 
-VARIANT_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+VARIANT_COUNT=$(run_in \
   "$BCFTOOLS_IMAGE" \
   bcftools stats "/genome/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" \
   | grep '^SN' | grep 'number of records' | awk '{print $NF}')

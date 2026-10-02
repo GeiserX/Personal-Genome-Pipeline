@@ -10,11 +10,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_octopus"
 
 echo "=== Octopus: ${SAMPLE} ==="
@@ -52,12 +54,12 @@ fi
 #   --threads    Worker threads
 #   --regions    Restrict to regions (optional, for testing)
 echo "Running Octopus (this takes 2-4 hours for 30X WGS)..."
-docker run --rm --user root \
-  --cpus "${THREADS}" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  dancooke/octopus:0.7.4 \
+# -w: Octopus makes its octopus-temp directory in the working directory, and
+# the image sets none, so it would try / as an unprivileged user.
+run_in -w "/genome/${SAMPLE}/vcf_octopus" --cpus "${THREADS}" --memory 16g \
+  "${OCTOPUS_IMAGE}" \
   octopus \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
+    -R "${REF_FASTA_C}" \
     -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/vcf_octopus/${SAMPLE}.vcf.gz" \
     --threads "${THREADS}" \

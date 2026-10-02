@@ -13,6 +13,7 @@
 ## Checklist
 
 - [ ] Relevant scripts/docs stay in sync
+- [ ] Image tags and data versions changed only in `versions.env`; a new doc page is in the `mkdocs.yml` nav
 - [ ] `shellcheck` passes for changed shell scripts
 - [ ] Smoke-test assumptions were checked for changed pipeline contracts
 - [ ] No personal paths, hostnames, or sample-specific defaults were introduced

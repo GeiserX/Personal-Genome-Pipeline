@@ -8,10 +8,14 @@
 # bgzip inside staphb/bcftools, which ships only bcftools.
 #
 # How the table is built (no hand-kept list):
-#   scripts/*.sh   every `docker run ... IMAGE cmd` command; the in-image
-#                  commands are `cmd`, or, for `bash -c '...'`, the first word
-#                  of every command in the quoted body. A pipe after the
-#                  closing quote runs on the host and is not counted.
+#   scripts/*.sh   every `docker run ... IMAGE cmd` command, and every call of
+#                  the wrapper from scripts/lib/common.sh,
+#                  `run_in [--net] [--root] [--rw DIR] ... IMAGE cmd`; the
+#                  in-image commands are `cmd`, or, for `bash -c '...'`, the
+#                  first word of every command in the quoted body. A pipe
+#                  after the closing quote runs on the host and is not counted.
+#                  A tree whose scripts yield no helper call at all fails: the
+#                  parser no longer sees how the scripts start containers.
 #   modules/local/*/main.nf
 #                  every process: its `container` (or its withName selector
 #                  in conf/containers.config) and the first word of every
@@ -33,7 +37,10 @@
 #   scripts/ci/check-container-helpers.sh --static   rule 1 only
 #   scripts/ci/check-container-helpers.sh --list     print the derived table
 #   scripts/ci/check-container-helpers.sh --root DIR check another tree
-#   scripts/ci/check-container-helpers.sh --self-test  prove rule 1 can fail
+#   scripts/ci/check-container-helpers.sh --self-test  prove rule 1 can fail,
+#                                                      and that a tree whose
+#                                                      script calls are not
+#                                                      recognised fails too
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -61,6 +68,8 @@ if [ "${1:-}" = "--self-test" ]; then
     'docker run --rm "$IMG" tabix indirect.vcf.gz' \
     'ODD=$(pick_image)' \
     'docker run --rm "$ODD" samtools view x.bam' \
+    'run_in --net --root --rw "$G/reference" --cpus 2 "${SAMTOOLS_IMAGE}" tabix wrapped.vcf.gz' \
+    'COUNT=$(run_in "${BCFTOOLS_IMAGE}" bash -c "bcftools view x | bgzip -c | wc -l")' \
     > "${tmp}/bad/scripts/a.sh"
   # A withName selector overrides the process container directive.
   mkdir -p "${tmp}/bad/conf" "${tmp}/bad/modules/local/y"
@@ -88,7 +97,16 @@ if [ "${1:-}" = "--self-test" ]; then
     'fi' \
     'docker run --rm "${TOOL_IMAGE}" bgzip allowed.vcf' \
     'docker run --rm "${BCFTOOLS_IMAGE}" bash -euo pipefail -c "bcftools index -t ok.vcf.gz"' \
+    'run_in --rw "$G/reference" --cpus 2 "${TOOL_IMAGE}" tabix wrapped.vcf.gz' \
+    'run_in "${BCFTOOLS_IMAGE}" bcftools index -t wrapped.vcf.gz' \
     > "${tmp}/good/scripts/a.sh"
+  # A tree whose scripts start containers in a way the parser does not know:
+  # the module alone must not make the check pass.
+  mkdir -p "${tmp}/blind/scripts" "${tmp}/blind/modules/local/x"
+  cp "${tmp}/good/versions.env" "${tmp}/blind/versions.env"
+  # shellcheck disable=SC2016
+  printf '%s\n' '#!/usr/bin/env bash' 'start_container "${BCFTOOLS_IMAGE}" bcftools view x' \
+    > "${tmp}/blind/scripts/a.sh"
   sed 's/| bgzip -c > out.vcf.gz/-Oz -o out.vcf.gz/' "${tmp}/bad/modules/local/x/main.nf" \
     > "${tmp}/good/modules/local/x/main.nf"
 
@@ -100,7 +118,8 @@ if [ "${1:-}" = "--self-test" ]; then
               'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:5$' 'bgzip +in SAMTOOLS_IMAGE +scripts/a\.sh:6$' \
               'bgzip +in BCFTOOLS_IMAGE +modules/local/x/main\.nf:5 \(X\)$' \
               'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:8$' 'tabix +in BCFTOOLS_IMAGE +scripts/a\.sh:10$' \
-              'scripts/a\.sh:12 \(\$ODD\)' 'tabix +in BCFTOOLS_IMAGE +modules/local/y/main\.nf:5 \(Y\)$'; do
+              'scripts/a\.sh:12 \(\$ODD\)' 'tabix +in BCFTOOLS_IMAGE +modules/local/y/main\.nf:5 \(Y\)$' \
+              'tabix +in SAMTOOLS_IMAGE +scripts/a\.sh:13$' 'bgzip +in BCFTOOLS_IMAGE +scripts/a\.sh:14$'; do
     grep -qE -- "$want" <<<"$out" || { echo "self-test: planted call not reported: ${want}"; fail=1; }
   done
   for nope in 'TOOL_IMAGE' 'stub_only' ':9 \(X\)'; do
@@ -113,8 +132,16 @@ if [ "${1:-}" = "--self-test" ]; then
     printf '%s\n' "$out"
     fail=1
   fi
+  sed 's/| bgzip -c > out.vcf.gz/-Oz -o out.vcf.gz/' "${tmp}/bad/modules/local/x/main.nf" \
+    > "${tmp}/blind/modules/local/x/main.nf"
+  rc=0; out=$("$0" --static --root "${tmp}/blind" 2>&1) || rc=$?
+  if [ "$rc" -ne 2 ] || ! grep -q 'no helper call in scripts/' <<<"$out"; then
+    echo "self-test: a tree whose script calls are not recognised exited ${rc}, expected 2 with 'no helper call in scripts/'"
+    printf '%s\n' "$out"
+    fail=1
+  fi
   if [ "$fail" -eq 0 ]; then
-    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...), bash -euo -c, an image alias and in modules are reported; a clean tree passes: PASS"
+    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...), bash -euo -c, an image alias, the run_in wrapper and in modules are reported; a clean tree passes; a tree whose script calls are not recognised fails: PASS"
     exit 0
   fi
   echo "self-test: FAIL"
@@ -359,10 +386,17 @@ VALUED = set("""-a --attach --add-host -c --cpu-shares --cap-add --cap-drop --ci
  -u --user --ulimit --userns --uts -v --volume --volumes-from -w --workdir""".split())
 
 def docker_run(words):
-    """(image word, in-image argv) for `docker run ...`, or None."""
-    if len(words) < 2 or words[0] != "docker" or words[1] != "run":
+    """(image word, in-image argv) for `docker run ...` or for the wrapper
+    `run_in [--net] [--root] [--rw DIR]... [docker run options] ...`, or None."""
+    if len(words) >= 2 and words[0] == "docker" and words[1] == "run":
+        k = 2
+    elif words and words[0] == "run_in":
+        k = 1
+        while k < len(words) and words[k] in ("--net", "--root", "--rw"):
+            k += 2 if words[k] == "--rw" else 1
+    else:
         return None
-    k, entry = 2, []
+    entry = []
     while k < len(words) and words[k].startswith("-"):
         w = words[k]
         if w == "--entrypoint" and k + 1 < len(words):
@@ -530,10 +564,24 @@ for c in calls:
         seen.add(c)
         table.append(c)
 
+# The scripts call bcftools and samtools in containers all over. If none of
+# those calls was derived, the parser no longer recognises how the scripts
+# start a container, and a green result would mean nothing.
+has_scripts = bool(glob.glob(os.path.join(ROOT, "scripts", "*.sh")))
+blind = has_scripts and not any(loc.startswith("scripts/") for _, _, _, loc in table) \
+    and not any(loc.startswith("scripts/") for loc in unresolved)
+
 if "--list" in ARGS:
     for name, value, b, loc in table:
         print("%-16s %-9s %s" % (name, b, loc))
+    if blind:
+        print("ERROR: derived no helper call in scripts/*.sh; the parser does not see how the scripts start containers.")
+        sys.exit(2)
     sys.exit(0)
+
+if blind:
+    print("ERROR: derived no helper call in scripts/*.sh; the parser does not see how the scripts start containers.")
+    sys.exit(2)
 
 failed = False
 if not table:

@@ -14,10 +14,13 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name> <male|female>}
 SEX=${2:?Usage: $0 <sample_name> <male|female>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-4}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 
 echo "=== ExpansionHunter v5: ${SAMPLE} (${SEX}) ==="
@@ -34,13 +37,12 @@ mkdir -p "$OUTPUT_DIR"
 # ExpansionHunter v5.0.0 via biocontainer
 # The variant catalog (31 pathogenic GRCh38 loci) is bundled inside the container
 # at /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json
-docker run --rm \
+run_in \
   --cpus "${THREADS}" --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5 \
+  "${EXPANSIONHUNTER_IMAGE}" \
   ExpansionHunter \
     --reads "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    --reference /genome/reference/Homo_sapiens_assembly38.fasta \
+    --reference "${REF_FASTA_C}" \
     --variant-catalog /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
     --output-prefix "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh" \
     --threads "${THREADS}" \

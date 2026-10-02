@@ -10,11 +10,14 @@ set -euo pipefail
 SAMPLE=${1:?Usage: $0 <sample_name> [format]}
 FORMAT=${2:-auto}  # auto, 23andme, myheritage, ancestrydna
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 RAW_DIR="${GENOME_DIR}/${SAMPLE}/raw"
 VCF_DIR="${GENOME_DIR}/${SAMPLE}/vcf"
 REF_HG19="${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta"
-REF_HG38="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF_HG38="$REF_FASTA"
 CHAIN="${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz"
 
 echo "=== Chip-to-VCF Converter: ${SAMPLE} ==="
@@ -93,9 +96,10 @@ echo "--- Stage 1: Converting to hg19 VCF (bcftools convert --tsv2vcf) ---"
 echo "  This looks up the reference allele at each position from the FASTA."
 echo "  Homozygous ALT genotypes will be correctly encoded as GT 1/1."
 
-docker run --rm --user root --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+# bcftools writes the hg19 FASTA's .fai next to it when it is missing, so that
+# directory is writable here.
+run_in --rw "$(dirname "$REF_HG19")" --cpus 2 --memory 4g \
+  "${BCFTOOLS_IMAGE}" \
   bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \
     -s "${SAMPLE}" \
@@ -115,38 +119,32 @@ CHR_RENAME="${GENOME_DIR}/reference_hg19/chr_rename.txt"
   echo "MT chrM"
 } > "$CHR_RENAME"
 
-docker run --rm --user root --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in --cpus 2 --memory 2g \
+  "${BCFTOOLS_IMAGE}" \
   bcftools annotate \
     --rename-chrs /genome/reference_hg19/chr_rename.txt \
     "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
     -Oz -o "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Step 3: Liftover to GRCh38 ---
 echo ""
 echo "--- Stage 2: Liftover to GRCh38 (Picard LiftoverVcf) ---"
 
-docker run --rm --user root --cpus 2 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  broadinstitute/picard:3.4.0 \
+run_in --cpus 2 --memory 8g \
+  "${PICARD_IMAGE}" \
   java -jar /usr/picard/picard.jar LiftoverVcf \
     I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
     O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
-    R=/genome/reference/Homo_sapiens_assembly38.fasta \
+    R="${REF_FASTA_C}" \
     REJECT="/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" \
     WARN_ON_MISSING_CONTIG=true
 
 # --- Step 4: Index the final VCF ---
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools index -t -f "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 # --- Summary ---
@@ -154,15 +152,11 @@ echo ""
 echo "=== Conversion complete ==="
 echo "  Output VCF: ${VCF_DIR}/${SAMPLE}.vcf.gz"
 
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in "${BCFTOOLS_IMAGE}" \
   bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
   grep "^SN" | sed 's/^SN\t0\t/  /'
 
-REJECTED_COUNT=$(docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+REJECTED_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" 2>/dev/null | wc -l || echo "0")
 echo "  Liftover rejected: ${REJECTED_COUNT} variants"
 echo ""

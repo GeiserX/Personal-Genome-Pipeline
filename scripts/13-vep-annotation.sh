@@ -4,12 +4,11 @@
 # Requires: VEP cache (~26 GB download, one-time)
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF_DIR=${VCF_DIR:-vcf}
 VCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
 CACHE_DIR="${GENOME_DIR}/vep_cache"
@@ -24,26 +23,19 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Check if cache exists
-if [ ! -d "${CACHE_DIR}/homo_sapiens" ]; then
-  echo "VEP cache not found. Installing..."
-  echo "Step 1: Download cache (26 GB, takes ~10-20 min)"
-
-  # Manual download is more reliable than INSTALL.pl
-  mkdir -p "${CACHE_DIR}/tmp"
-  wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz \
-    -O "${CACHE_DIR}/tmp/homo_sapiens_vep_116_GRCh38.tar.gz"
-
-  echo "Step 2: Extract cache..."
-  cd "$CACHE_DIR" && tar xzf tmp/homo_sapiens_vep_116_GRCh38.tar.gz
-  echo "Cache installed at ${CACHE_DIR}/homo_sapiens/"
+# The cache must be the release of VEP_IMAGE (VEP_CACHE_RELEASE in
+# versions.env). Another release in the same directory, such as the one CPSR
+# uses, does not count.
+if [ ! -f "${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
+  echo "VEP ${VEP_CACHE_RELEASE} cache not found in ${CACHE_DIR}. Installing (26 GB download)..."
+  install_vep_cache "$CACHE_DIR" "$VEP_CACHE_RELEASE"
+  echo "Cache installed at ${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/"
 fi
 
-# Run VEP
-docker run --rm \
+# Run VEP. The cache stays writable as before: VEP builds an index for a
+# FASTA it finds there without one, and no CI run shows it never writes.
+run_in \
   --cpus 4 --memory 8g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
   "${VEP_IMAGE}" \
   vep \
@@ -51,6 +43,7 @@ docker run --rm \
     --output_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf" \
     --vcf \
     --cache \
+    --cache_version "${VEP_CACHE_RELEASE}" \
     --dir_cache /opt/vep/.vep \
     --offline \
     --assembly GRCh38 \
