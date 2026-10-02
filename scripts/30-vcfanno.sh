@@ -26,27 +26,41 @@ echo "=== vcfanno Annotation: ${SAMPLE} ==="
 # The bcftools image ships bcftools only (no bgzip, no tabix), so every
 # compression below is `bcftools view -Oz` and every index `bcftools index -t`.
 
-# Skip only if a previous run left a complete output: non-empty, indexed,
-# and with a header bcftools can read. Anything else is rebuilt.
-if [ -s "$OUTPUT_FILE" ] && [ -f "${OUTPUT_FILE}.tbi" ] && \
+# --- Find VEP input (compressed or uncompressed) ---
+# _vep.vcf.gz is used only when it is not older than _vep.vcf, so a re-run of
+# step 13 is never hidden behind an older compressed copy. An empty
+# _vep.vcf.gz (left by an older version of this step) is rebuilt too.
+VEP_VCF_PLAIN="${VEP_DIR}/${SAMPLE}_vep.vcf"
+VEP_VCF_GZ="${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
+if [ -s "$VEP_VCF_GZ" ] && { [ ! -f "$VEP_VCF_PLAIN" ] || [ ! "$VEP_VCF_PLAIN" -nt "$VEP_VCF_GZ" ]; }; then
+  VEP_SRC="$VEP_VCF_GZ"
+elif [ -f "$VEP_VCF_PLAIN" ]; then
+  VEP_SRC="$VEP_VCF_PLAIN"
+else
+  echo "ERROR: VEP-annotated VCF not found." >&2
+  echo "  Expected: ${VEP_DIR}/${SAMPLE}_vep.vcf[.gz]" >&2
+  echo "  Run step 13 (VEP annotation) first." >&2
+  exit 1
+fi
+
+# Skip only if a previous run left a complete output that is newer than its
+# input: non-empty, indexed, with a header bcftools can read. Anything else
+# (an older output after step 13 ran again included) is rebuilt.
+if [ -s "$OUTPUT_FILE" ] && [ -f "${OUTPUT_FILE}.tbi" ] && [ "$OUTPUT_FILE" -nt "$VEP_SRC" ] && \
    run_in \
      "${BCFTOOLS_IMAGE}" \
      bcftools view -h "/genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz" > /dev/null 2>&1; then
-  echo "Output already exists: ${OUTPUT_FILE}"
+  echo "Output already exists and is newer than ${VEP_SRC}: ${OUTPUT_FILE}"
   echo "Skipping. Delete the file to re-run."
   exit 0
 fi
 rm -f "$OUTPUT_FILE" "${OUTPUT_FILE}.tbi"
 
-# --- Find VEP input (compressed or uncompressed) ---
-# An empty _vep.vcf.gz (left by an older version of this step) is ignored
-# and rebuilt from _vep.vcf.
-VEP_VCF_GZ="${VEP_DIR}/${SAMPLE}_vep.vcf.gz"
-if [ -s "$VEP_VCF_GZ" ]; then
+if [ "$VEP_SRC" = "$VEP_VCF_GZ" ]; then
   VEP_VCF="$VEP_VCF_GZ"
   echo "Input VCF: ${VEP_VCF}"
-elif [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf" ]; then
-  echo "Input VCF: ${VEP_DIR}/${SAMPLE}_vep.vcf"
+else
+  echo "Input VCF: ${VEP_VCF_PLAIN}"
   echo "Compressing VEP output..."
   rm -f "$VEP_VCF_GZ" "${VEP_VCF_GZ}.tbi"
   run_in --cpus 2 --memory 2g \
@@ -55,18 +69,13 @@ elif [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf" ]; then
         /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf && \
       mv /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
   VEP_VCF="$VEP_VCF_GZ"
-else
-  echo "ERROR: VEP-annotated VCF not found." >&2
-  echo "  Expected: ${VEP_DIR}/${SAMPLE}_vep.vcf[.gz]" >&2
-  echo "  Run step 13 (VEP annotation) first." >&2
-  exit 1
 fi
 
-if [ ! -f "${VEP_VCF}.tbi" ]; then
+if [ ! -f "${VEP_VCF}.tbi" ] || [ "$VEP_VCF" -nt "${VEP_VCF}.tbi" ]; then
   echo "Indexing VEP VCF..."
   run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
-    bcftools index -t "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+    bcftools index -f -t "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 fi
 
 echo "Input VCF (indexed): ${VEP_VCF}"
@@ -135,8 +144,25 @@ else
   echo "  Skipping: SpliceAI indels (not found at ${SPLICEAI_INDEL})"
 fi
 
-# Check REVEL
+# Check REVEL. vcfanno reads the last '#' line of a table as its header and
+# matches alleles at the columns named ref and alt there. The data columns are
+# chr, pos, ref, alt, REVEL, so a header copied from the original
+# 9-column REVEL file (ref and alt as columns 4 and 5) makes every allele
+# comparison miss and the REVEL tier vanish without an error. Stop instead.
 if [ -f "$REVEL" ] && [ -f "${REVEL}.tbi" ]; then
+  REVEL_HEADER=$({ gzip -dc "$REVEL" 2>/dev/null || true; } | awk '/^#/ {h = $0; next} {exit} END {print h}')
+  if [ -n "$REVEL_HEADER" ]; then
+    if ! printf '%s\n' "$REVEL_HEADER" | awk -F'\t' '{exit !(tolower($3) == "ref" && tolower($4) == "alt" && tolower($5) ~ /revel/)}'; then
+      echo "ERROR: ${REVEL} has the header line" >&2
+      echo "  ${REVEL_HEADER}" >&2
+      echo "  but its data columns must be chr, pos, ref, alt, REVEL and the header must name them so" >&2
+      echo "  (vcfanno matches alleles at the columns the header calls ref and alt)." >&2
+      echo "  Rebuild the table as docs/00-reference-setup.md (REVEL v1.3) shows: header '#chr<TAB>pos<TAB>ref<TAB>alt<TAB>REVEL'." >&2
+      exit 1
+    fi
+  else
+    echo "  NOTICE: ${REVEL} has no '#' header line; vcfanno will match REVEL rows by position only, not by allele."
+  fi
   CHR_TRACKS+=("revel")
   APPLIED_NAMES+=("REVEL")
   echo "  Found: REVEL"
@@ -355,6 +381,34 @@ run_in --cpus 2 --memory 2g \
       /genome/${SAMPLE}/vep/vcfanno_tmp/pass2_output.vcf && \
     bcftools index -t /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz
   "
+
+# --- REVEL check: a site the REVEL table lists must come back with INFO/REVEL ---
+# bcftools reads the same table independently (by CHROM, POS, REF, ALT) on the
+# biallelic SNVs of the output, restricted to missense consequences when the
+# VCF carries VEP's CSQ. Any site the table holds that vcfanno left without a
+# REVEL value means the table and the vcfanno configuration disagree.
+if [[ " ${CHR_TRACKS[*]} " == *" revel "* ]]; then
+  echo "=== Checking the REVEL annotation ==="
+  MISSENSE_ONLY=""
+  FINAL_HEADER=$(run_in "${BCFTOOLS_IMAGE}" bcftools view -h "/genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz")
+  if grep -q '^##INFO=<ID=CSQ,' <<< "$FINAL_HEADER"; then
+    MISSENSE_ONLY="-i 'INFO/CSQ~\"missense_variant\"'"
+  fi
+  REVEL_CHECK=$(run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "printf '##INFO=<ID=REVEL_TABLE,Number=1,Type=String,Description=\"REVEL table value (step 30 check)\">\n' > /tmp/revel_check.hdr
+      bcftools view -m2 -M2 -v snps ${MISSENSE_ONLY} /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz -Ou \
+      | bcftools annotate -a /genome/annotations/revel_grch38.tsv.gz -c CHROM,POS,REF,ALT,REVEL_TABLE -h /tmp/revel_check.hdr -Ou \
+      | bcftools query -i 'INFO/REVEL_TABLE!=\".\"' -f '%CHROM:%POS:%REF:%ALT\t%INFO/REVEL\n'" \
+    | awk -F'\t' '{n++} $2 == "." {m++; if (!ex) ex = $1} END {printf "%d %d %s\n", n, m, ex}')
+  read -r REVEL_KNOWN REVEL_MISSING REVEL_EXAMPLE <<< "$REVEL_CHECK"
+  echo "  Sites the REVEL table lists: ${REVEL_KNOWN}; without INFO/REVEL after vcfanno: ${REVEL_MISSING}"
+  if [ "${REVEL_MISSING:-0}" -gt 0 ]; then
+    echo "ERROR: ${REVEL_MISSING} of ${REVEL_KNOWN} sites listed in ${REVEL} came back without INFO/REVEL (first: ${REVEL_EXAMPLE})." >&2
+    echo "  The table's header or columns do not match what vcfanno expects; rebuild it as docs/00-reference-setup.md (REVEL v1.3) shows." >&2
+    exit 1
+  fi
+fi
+
 mv "${WORK_DIR}/final.vcf.gz.tbi" "${OUTPUT_FILE}.tbi.tmp"
 mv "${WORK_DIR}/final.vcf.gz" "${OUTPUT_FILE}"
 mv "${OUTPUT_FILE}.tbi.tmp" "${OUTPUT_FILE}.tbi"
