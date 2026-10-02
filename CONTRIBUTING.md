@@ -34,7 +34,7 @@ Before implementing a new step, open an issue to discuss it. Include:
 
 ### Scripts
 
-Every script must:
+Every script starts like this:
 
 ```bash
 #!/usr/bin/env bash
@@ -42,12 +42,20 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ```
 
+[`scripts/lib/common.sh`](scripts/lib/common.sh) reads [`versions.env`](versions.env) and gives the script its image variables, `REF_FASTA`, `THREADS` and the helpers below.
+
+- Start containers with `run_in --cpus N --memory Xg "${TOOL_IMAGE}" tool ...`. It runs `docker run --rm` with no network, `GENOME_DIR` mounted read-only at `/genome`, the sample directory writable, and the calling user.
+- Say so at the call when a step needs more, with the reason in a comment: `--rw DIR` to write a shared index or database, `--net` to download, `--root` for an image that cannot run as an unprivileged user.
+- Name images by their `versions.env` variable, quoted. A script never spells an image name or tag.
+- Use `${REF_FASTA}` on the host and `${REF_FASTA_C}` inside a container for the reference.
+- Download with `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`. It writes `DEST.part`, checks it, then renames it.
 - Use `${GENOME_DIR}` for data paths, never hardcoded paths
-- Mount as `-v "${GENOME_DIR}:/genome"` in Docker commands
-- Always include `--rm --cpus N --memory Xg --user root` in Docker runs
-- Validate input files exist before running Docker commands
+- Validate input files exist before starting a container
 - Print status messages showing what step is running and where output goes
 
 ### Documentation
@@ -55,9 +63,9 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 Every pipeline step needs:
 - `docs/NN-tool-name.md` — What it does, why, Docker image, command, output, runtime, notes
 - `scripts/NN-tool-name.sh` — The executable script
-- Entry in the README step table
+- An entry in the `nav:` of [`mkdocs.yml`](mkdocs.yml), or the docs build fails on the orphan page
+- A mention in the category table of [`docs/pipeline-overview.md`](docs/pipeline-overview.md)
 - Section in `docs/interpreting-results.md` if the output needs explanation
-- Entry in `scripts/validate-setup.sh` for pre-flight checks
 
 ### No Personal Data
 
@@ -71,7 +79,8 @@ The CI pipeline enforces this with automated scanning.
 
 ### Docker Images
 
-- Always specify exact tags (e.g., `staphb/bcftools:1.21`, not `:latest`)
+- Every image is one line in [`versions.env`](versions.env), with an exact tag (e.g., `staphb/bcftools:1.21`, not `:latest`). Scripts, `setup.sh` and `validate-setup.sh` read it from there.
+- Mark an image no default step runs with `# optional` on its line. `setup.sh` then leaves it for the step that uses it.
 - When a publisher offers no versioned tags, pin by immutable digest (`name@sha256:<digest>`) — never a floating `:latest`. Resolve with `docker manifest inspect -v <name>:latest`.
 - Verify the image exists and is publicly pullable before committing
 - Document the image in `docs/lessons-learned.md` if there are any gotchas
@@ -80,18 +89,30 @@ The CI pipeline enforces this with automated scanning.
 
 1. **Choose a step number.** Steps 1-32 are taken. New steps should use 33+.
 2. **Verify the Docker image works.** Pull it, run it manually on test data, confirm the output.
-3. **Create the script** following the template of existing scripts.
-4. **Create the documentation** following the template of existing docs.
-5. **Update these files:**
-   - `README.md` — step table
-   - `scripts/run-all.sh` — add to appropriate phase
-   - `scripts/validate-setup.sh` — add image check and reference data check
-   - `docs/interpreting-results.md` — add output interpretation
-   - `docs/00-reference-setup.md` — if new reference data is needed
+3. **Add the image to [`versions.env`](versions.env)** as `TOOL_IMAGE="name:tag"`. That one line makes `setup.sh` pull it and `validate-setup.sh` check it.
+4. **Create the script** `scripts/NN-tool-name.sh` following the conventions above.
+5. **Create the Nextflow module** `modules/local/<tool>/main.nf` and wire it into the workflow, or say in [`docs/nextflow.md`](docs/nextflow.md) why the step stays bash-only.
+6. **Create the documentation** `docs/NN-tool-name.md` following the existing step docs.
+7. **Update these files:**
+   - [`mkdocs.yml`](mkdocs.yml): the page in `nav:`
+   - [`docs/pipeline-overview.md`](docs/pipeline-overview.md): the category table
+   - `scripts/run-all.sh`: add to the appropriate phase
+   - [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml): the image and a smoke command (`tool --version`) in the matrix
+   - `scripts/validate-setup.sh`: only if the step needs reference data to check
+   - `docs/interpreting-results.md`: add output interpretation
+   - `docs/00-reference-setup.md`: if new reference data is needed
    - `CLAUDE.md` — if the architecture tree changes
-6. **Document failures** in `docs/lessons-learned.md` if you hit any issues during development.
-7. **Test** on at least one 30X WGS sample.
-8. **Open a PR** with all changes in a single commit.
+8. **Document failures** in `docs/lessons-learned.md` if you hit any issues during development.
+9. **Test** on at least one 30X WGS sample. CI runs the default steps on a small fixture, see [`docs/testing.md`](docs/testing.md).
+10. **Open a PR** with all changes.
+
+## Bumping a Tool
+
+1. Change the tool's line in [`versions.env`](versions.env). Nothing else names the tag.
+2. If a comment next to the line couples it to a data version (the VEP cache release, the PCGR bundle, the pypgx bundle tag), change that variable in the same commit.
+3. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml) and any doc that prints the tag. The `version-consistency` check in CI names every stale one.
+4. Run `./scripts/setup.sh --pull-only` to pull the new image.
+5. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
 
 ## Code of Conduct
 
