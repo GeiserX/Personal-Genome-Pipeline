@@ -64,5 +64,5 @@ start ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html
 - Works offline in any modern browser
 - Responsive layout (works on mobile/tablet)
 - Steps that were not run show "N/A" or "Not run" — this is expected
-- The report does NOT contain any variant-level data beyond the ClinVar hits table — it is safe to share without exposing raw genomic data
+- The report contains health findings: the ClinVar table lists your pathogenic and likely pathogenic variants, and other sections summarise pharmacogenomics, CPSR and the other steps. It holds no raw reads or full VCF, but share it only as you would share a medical record
 - Re-run this script anytime to update the report after running additional steps

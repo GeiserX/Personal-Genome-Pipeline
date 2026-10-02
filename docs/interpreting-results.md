@@ -252,11 +252,11 @@ Runs of Homozygosity (ROH) are long stretches where both copies of your DNA are 
 
 ### How to Read
 
-- **Total ROH > 300 Mb:** Suggests parental relatedness (first-cousin equivalent)
-- **Total ROH > 100 Mb but < 300 Mb:** May indicate distant relatedness
-- **Total ROH < 100 Mb with all segments < 10 Mb:** Normal for outbred populations
-- **Individual ROH segments > 10 Mb:** Recent inbreeding event
-- **Many small ROH segments (1-5 Mb):** Population-level background (Ashkenazi, Finnish, etc.)
+Add up the autosomal segments of 5 Mb or more and compare the total with the table in [step 11](11-roh-analysis.md#total-roh-and-parental-relationship), which gives the expected total for each parental relationship (about 45 Mb for second cousins, 180 Mb for first cousins). In short:
+
+- **No segments of 5 Mb or more, or only a few:** no sign that your parents are related
+- **Many small segments (1-5 Mb):** population-level background, typical of population isolates (Ashkenazi, Finnish, etc.)
+- **A single segment over 10 Mb on one chromosome, with little elsewhere:** possible uniparental disomy rather than related parents
 
 ### Centromeric Artifacts
 
@@ -548,8 +548,8 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 **Important caveats about heteroplasmy thresholds:**
 - There is **no single absolute heteroplasmy threshold** that determines clinical significance. Thresholds vary by variant and by tissue (ClinGen/MSeqDR mtDNA interpretation specifications)
-- **Blood underrepresents heteroplasmy** for many mitochondrial diseases. WGS from blood-derived DNA may show lower heteroplasmy levels than affected tissues (muscle, nerve). m.3243A>G in particular shows different clinical phenotypes at very different heteroplasmy levels across tissues
-- The AF values from this pipeline reflect blood-derived DNA only. A low or absent heteroplasmy level in blood does **not** rule out clinically significant heteroplasmy in other tissues
+- **Blood and saliva underrepresent heteroplasmy** for many mitochondrial diseases. WGS from saliva, a cheek swab or blood may show lower heteroplasmy levels than affected tissues (muscle, nerve). m.3243A>G in particular shows different clinical phenotypes at very different heteroplasmy levels across tissues
+- The AF values from this pipeline reflect the tissue your sample came from. A low or absent heteroplasmy level there does **not** rule out clinically significant heteroplasmy in other tissues
 - For any detected pathogenic mtDNA variant, discuss with a specialist who can order tissue-specific testing if warranted
 
 **Cross-reference:** Compare with step 12 (haplogrep3) — your homoplasmic variants should match your assigned haplogroup.
@@ -558,7 +558,7 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 ## Somatic Variants (Step 29) [EXPERIMENTAL]
 
-Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired during your lifetime rather than inherited. From blood-derived WGS, the main category of interest is **clonal hematopoiesis (CHIP)**.
+Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired during your lifetime rather than inherited. Consumer WGS is usually made from saliva or a cheek swab, a mix of cheek cells and white blood cells; the main category of interest is **clonal hematopoiesis (CHIP)**, which lives in the blood cells.
 
 **Where to look:** `${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz`
 
@@ -568,12 +568,12 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 |---|---|
 | 0.45-0.55 | Heterozygous germline (false positive) |
 | ~1.0 | Homozygous germline (false positive) |
-| 0.01-0.10 | Potential low-frequency somatic (CHIP candidate) |
-| 0.10-0.40 | Ambiguous -- could be somatic, mosaic, or noisy germline |
+| 0.10-0.40 | Could be a large somatic clone, mosaic, or noisy germline |
+| below 0.10 | At 30X this is one to three reads: mostly noise, see below |
 
 **What to expect:**
 - Thousands of PASS calls in a healthy individual -- the vast majority are germline false positives
-- True somatic variants are rare: a healthy 40-year-old might have 0-20 genuine CHIP mutations detectable at 30X
+- At 30X a variant in 2% of the reads has less than one supporting read on average, and one in 10% about three. Only clones of roughly 10% or more can be seen, so most CHIP (defined from 2%) is invisible here, and a clean result does not rule it out
 - Without a matched normal sample, germline variants that are rare in gnomAD will often pass all filters
 
 **CHIP genes to check:** DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, PPM1D, CBL. CHIP prevalence increases with age and is associated with elevated cardiovascular risk and risk of hematologic malignancies.
@@ -751,12 +751,12 @@ No Pathogenic or Likely pathogenic variant, in the cancer panel or in the second
 ### ROH (Step 11)
 
 ```
-# Autosomal ROH > 5 MB: 0
-# Total autosomal ROH: 40 MB (all segments < 3 MB)
-# Conclusion: No evidence of parental relatedness
+Autosomal ROH >5MB (potential consanguinity signal):
+
+NOTE: Centromeric ROH (chr1:125-143MB, chr9:42-60MB, chr18:15-20MB) are technical artifacts, not real.
 ```
 
-Normal outbred individual. If total ROH > 100 MB or any segment > 10 MB, investigate further.
+No line under the heading means no segment of 5 Mb or more: no evidence of related parents. If there are some, add them up and compare the total with the table in [step 11](11-roh-analysis.md#total-roh-and-parental-relationship).
 
 ### Telomere Length (Step 10)
 
