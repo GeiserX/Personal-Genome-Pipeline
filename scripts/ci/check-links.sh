@@ -231,7 +231,7 @@ EOF
 Prose link, not checked: ${bad}/in-prose
 
 \`\`\`bash
-curl -O https://10.255.255.1/unreachable.tgz
+curl -O https://192.0.2.1/unreachable.tgz
 wget ${good}/blob/main/LICENSE
 \`\`\`
 EOF
@@ -239,7 +239,7 @@ EOF
   echo "$out"
   [ "$rc" -ne 0 ] || { echo "SELF-TEST FAIL: a tree with a dead URL passed"; fail=1; }
   grep -qF "| 404 | ${bad} | scripts/a.sh:4 |" <<<"$out" || { echo "SELF-TEST FAIL: the 404 URL was not reported"; fail=1; }
-  grep -qF "| no answer | https://10.255.255.1/unreachable.tgz |" <<<"$out" || { echo "SELF-TEST FAIL: a URL with no answer was not a failure"; fail=1; }
+  grep -qF "| no answer | https://192.0.2.1/unreachable.tgz |" <<<"$out" || { echo "SELF-TEST FAIL: a URL with no answer was not a failure"; fail=1; }
   grep -qF 'Checked 5 download URLs' <<<"$out" || { echo "SELF-TEST FAIL: expected 5 URLs (expanded \${TESTREPO}, default value, 404, no answer, docs)"; fail=1; }
   grep -qF '2 of 5 did not answer 200' <<<"$out" || { echo "SELF-TEST FAIL: a URL that answers was reported as failed"; fail=1; }
   if grep -qF 'TESTREPO' <<<"$out"; then

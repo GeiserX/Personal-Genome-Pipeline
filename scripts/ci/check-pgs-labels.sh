@@ -130,7 +130,7 @@ self_test() {
   fi
 
   # Control 4: an API that does not answer is an error, not a pass.
-  rc=0; out=$(PGS_API=https://10.255.255.1/rest/score PGS_RETRY=0 check_file "${d}/new.sh" 2>&1) || rc=$?
+  rc=0; out=$(PGS_API=https://192.0.2.1/rest/score PGS_RETRY=0 check_file "${d}/new.sh" 2>&1) || rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "SELF-TEST FAIL: an unreachable API passed:"; echo "$out"; fail=1
   fi
