@@ -27,4 +27,5 @@ jobs:
         run: scripts/ci/check-personal-data.sh --self-test
 
       - name: No tracked file holds a home path, a private address or a genotype
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
         run: scripts/ci/check-personal-data.sh

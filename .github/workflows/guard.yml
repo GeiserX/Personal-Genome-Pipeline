@@ -42,9 +42,11 @@ jobs:
         run: scripts/ci/check-images.sh --self-test
 
       - name: Self-test of the containers.config generator (a stale tag, a missing or stray selector, a module's own container and a wrong version must be caught)
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
         run: scripts/ci/gen-containers-config.sh --self-test
 
       - name: No file names an image outside versions.env; generated files are up to date
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
         run: scripts/ci/check-images.sh
 
   coupled-versions:
@@ -57,6 +59,7 @@ jobs:
         run: scripts/ci/check-coupled-versions.sh --self-test
 
       - name: Each data version in versions.env matches the image it belongs to
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
         run: scripts/ci/check-coupled-versions.sh
 
   fake-docker:
