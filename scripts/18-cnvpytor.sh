@@ -7,6 +7,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 REF_FAI="reference/Homo_sapiens_assembly38.fasta.fai"   # relative to the /genome mount
@@ -18,13 +21,13 @@ BIN_SIZE=1000
 # built-in `-download` is broken in 1.3.2, so we bind-mount pre-fetched pinned
 # files onto the container's package data dir. This path is stable for the
 # pinned CNVPYTOR_IMAGE; if the image is bumped, re-verify with:
-#   docker run --rm <img> python -c 'import cnvpytor,os;print(os.path.dirname(cnvpytor.__file__)+"/data")'
+#   run_in <img> python -c 'import cnvpytor,os;print(os.path.dirname(cnvpytor.__file__)+"/data")'
 CNVPYTOR_IMG_DATA="/usr/local/lib/python3.12/site-packages/cnvpytor/data"
 
 # shellcheck source=/dev/null
 source "$(dirname "$0")/../versions.env" 2>/dev/null || {
   CNVPYTOR_IMAGE="quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0"
-  BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+  BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 }
 
 echo "=== CNVpytor: ${SAMPLE} ==="
@@ -67,9 +70,7 @@ CANONICAL_CHROMS=(chr{1..22} chrX chrY)
 
 # cnvpytor invocation with the genome data + pinned resource mounts
 cnvpytor_run() {
-  docker run --rm --user root \
-    --cpus 4 --memory 8g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 8g \
     -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}" \
     "${CNVPYTOR_IMAGE}" "$@"
 }
@@ -88,9 +89,8 @@ cnvpytor_run cnvpytor -root "$PYTOR" -call "$BIN_SIZE" > "${OUTPUT_DIR}/${SAMPLE
 
 echo "[5/6] Exporting VCF..."
 # `-view` reads its commands from stdin when stdin is not a TTY, so docker needs -i.
-docker run --rm --user root -i \
+run_in -i \
   --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
   -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}" \
   "${CNVPYTOR_IMAGE}" \
   cnvpytor -root "$PYTOR" -view "$BIN_SIZE" > /dev/null <<VIEW
@@ -102,9 +102,7 @@ echo "[6/6] Normalizing VCF (full contig headers, sort, compress, index)..."
 # CNVpytor's VCF only carries ##contig lines for processed chromosomes; reheader
 # from the reference .fai so headers match the other SV callers for consensus
 # merging (step 22). Emit a valid header-only VCF when there are no calls.
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     set -euo pipefail

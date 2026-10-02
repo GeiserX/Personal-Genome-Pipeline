@@ -15,11 +15,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 # Validate sample name to prevent shell injection in bash -c strings
 if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
@@ -62,8 +63,7 @@ echo ""
 
 # Detect available CSQ subfields (reads VCF header only, no index needed)
 echo "Detecting VEP annotation fields..."
-VEP_FIELDS=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+VEP_FIELDS=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools +split-vep -l "$CONTAINER_INPUT" 2>/dev/null || echo "")
 
@@ -79,8 +79,7 @@ echo "$VEP_FIELDS" | grep -q 'gnomADe_AF' && HAS_GNOMAD=1
 echo "$VEP_FIELDS" | grep -q 'CLIN_SIG' && HAS_CLINVAR=1
 
 # Detect vcfanno INFO fields (from step 30)
-VCF_HEADER=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+VCF_HEADER=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -h "$CONTAINER_INPUT" 2>/dev/null || echo "")
 
@@ -120,9 +119,7 @@ REVEL_OR_AM=0
 # Step 1: Compress and index if needed
 if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "[1/${TOTAL_STEPS}] Compressing VEP VCF (required for bcftools filtering)..."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
       -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
@@ -131,9 +128,7 @@ if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
   echo "  Done."
 elif [[ "$INPUT" == *.vcf.gz ]] && [ ! -f "${INPUT}.tbi" ]; then
   echo "[1/${TOTAL_STEPS}] Indexing compressed VEP VCF..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools index -t "$CONTAINER_INPUT"
   echo "  Done."
@@ -145,17 +140,14 @@ fi
 # bcftools +split-vep parses the IMPACT subfield from VEP's pipe-delimited CSQ annotation,
 # selecting only the worst consequence per variant (-s worst)
 echo "[2/${TOTAL_STEPS}] Extracting HIGH impact variants (stop-gain, frameshift, splice)..."
-docker run --rm --user root \
-  --cpus 4 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
     bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"HIGH\"' \
       -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz"
 
-HIGH_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+HIGH_COUNT=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Found: ${HIGH_COUNT} HIGH impact variants"
@@ -164,9 +156,7 @@ echo "  Found: ${HIGH_COUNT} HIGH impact variants"
 # Uses gnomAD allele frequency from the CSQ field if available
 if [ "$HAS_GNOMAD" -eq 1 ]; then
   echo "[3/${TOTAL_STEPS}] Extracting rare MODERATE impact variants (gnomAD AF < 1%)..."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT,gnomADe_AF -s worst \
@@ -177,9 +167,7 @@ else
   echo "[3/${TOTAL_STEPS}] Extracting MODERATE impact variants (no gnomAD AF available)..."
   echo "  WARNING: VEP output lacks gnomAD frequencies — including all MODERATE variants."
   echo "  Tip: Re-run VEP (step 13) with --af_gnomade for population frequency filtering."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"MODERATE\"' \
@@ -187,8 +175,7 @@ else
       bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz"
 fi
 
-MODERATE_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+MODERATE_COUNT=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Found: ${MODERATE_COUNT} MODERATE impact variants"
@@ -200,9 +187,7 @@ CLINVAR_COUNT=0
 CLINVAR_FILE=""
 if [ "$HAS_CLINVAR" -eq 1 ]; then
   echo "[4/${TOTAL_STEPS}] Extracting ClinVar pathogenic/likely pathogenic variants..."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
@@ -210,8 +195,7 @@ if [ "$HAS_CLINVAR" -eq 1 ]; then
         -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz"
 
-  CLINVAR_COUNT=$(docker run --rm \
-    -v "${GENOME_DIR}:/genome" \
+  CLINVAR_COUNT=$(run_in \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz" 2>/dev/null | wc -l || echo 0)
   echo "  Found: ${CLINVAR_COUNT} ClinVar pathogenic/likely pathogenic variants"
@@ -235,9 +219,7 @@ if [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; then
   fi
 
   echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting high-CADD variants (PHRED >= 20, non-HIGH/MODERATE)..."
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c IMPACT -s worst \
@@ -245,8 +227,7 @@ if [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; then
         -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz"
 
-  CADD_COUNT=$(docker run --rm \
-    -v "${GENOME_DIR}:/genome" \
+  CADD_COUNT=$(run_in \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz" 2>/dev/null | wc -l || echo 0)
   echo "  Found: ${CADD_COUNT} high-CADD non-coding variants (PHRED >= 20)"
@@ -269,9 +250,7 @@ if [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; then
   #   ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL
   # bcftools cannot numerically compare sub-fields within a string, so we use
   # awk to parse the SpliceAI value and check if any delta score >= 0.2.
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS -i '${SPLICEAI_PREFILTER}' ${CONTAINER_INPUT} | \
       awk -F'\t' 'BEGIN{OFS=\"\t\"} /^#/{print;next} {
@@ -295,8 +274,7 @@ if [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; then
     mv /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz.tmp /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
     bcftools index -f -t /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
 
-  SPLICEAI_COUNT=$(docker run --rm \
-    -v "${GENOME_DIR}:/genome" \
+  SPLICEAI_COUNT=$(run_in \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz" 2>/dev/null | wc -l || echo 0)
   echo "  Found: ${SPLICEAI_COUNT} cryptic splice variants (SpliceAI >= 0.2)"
@@ -320,17 +298,14 @@ if [ "$REVEL_OR_AM" -eq 1 ]; then
     fi
   fi
 
-  docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view -f PASS -i '${MISSENSE_FILTER}' \
       ${CONTAINER_INPUT} \
       -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz"
 
-  MISSENSE_COUNT=$(docker run --rm \
-    -v "${GENOME_DIR}:/genome" \
+  MISSENSE_COUNT=$(run_in \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz" 2>/dev/null | wc -l || echo 0)
   echo "  Found: ${MISSENSE_COUNT} high-confidence deleterious missense variants"
@@ -345,26 +320,21 @@ MERGE_FILES="/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz /genome/${S
 [ -n "$SPLICEAI_FILE" ] && MERGE_FILES="${MERGE_FILES} ${SPLICEAI_FILE}"
 [ -n "$MISSENSE_FILE" ] && MERGE_FILES="${MERGE_FILES} ${MISSENSE_FILE}"
 
-docker run --rm --user root \
-  --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools concat -a -D \
     ${MERGE_FILES} | \
     bcftools sort -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"
 
-TOTAL_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+TOTAL_COUNT=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz" 2>/dev/null | wc -l || echo 0)
 
 # Generate summary TSV with annotation scores
 echo ""
 echo "Generating human-readable summary..."
-docker run --rm --user root \
-  --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "echo -e 'CHROM\tPOS\tREF\tALT\tGT\tIMPACT\tGENE\tCADD_PHRED\tREVEL\tAM_CLASS\tCSQ_EXCERPT' > /genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv && \
     bcftools view -H /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz | \
@@ -396,9 +366,7 @@ docker run --rm --user root \
 # Add gnomAD gene constraint columns if available
 if [ "$HAS_CONSTRAINT" -eq 1 ]; then
   echo "Adding gnomAD gene constraint metrics..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${PYTHON_IMAGE}" \
     python3 -c "
 import csv, sys

@@ -5,11 +5,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF_DIR=${VCF_DIR:-vcf}
 VCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
 CACHE_DIR="${GENOME_DIR}/vep_cache"
@@ -40,10 +41,8 @@ if [ ! -d "${CACHE_DIR}/homo_sapiens" ]; then
 fi
 
 # Run VEP
-docker run --rm \
+run_in \
   --cpus 4 --memory 8g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
   "${VEP_IMAGE}" \
   vep \

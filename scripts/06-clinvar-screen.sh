@@ -10,15 +10,18 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF_DIR=${VCF_DIR:-vcf}
 VCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 # Source file built by setup.sh; the normalised copy beside it is built from it.
 CLINVAR="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 CLINVAR_NORM="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.norm.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 HITS="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.vcf"
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 
@@ -35,7 +38,7 @@ mkdir -p "$OUTPUT_DIR"
 cpath() { printf '/genome%s' "${1#"$GENOME_DIR"}"; }
 
 bcftools_run() {
-  docker run --rm --cpus 2 --memory 2g -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" "$@"
+  run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" "$@"
 }
 
 # Step 0: the two files must share contig names. A ClinVar file with 1,2,...
@@ -66,7 +69,7 @@ fi
 
 # Step 2: filter the sample. Callers that never write PASS (FILTER '.') would lose
 # every record under -f PASS, so fall back to '.,PASS' only when no record is PASS.
-HAS_PASS=$(docker run --rm --cpus 2 --memory 2g -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
+HAS_PASS=$(run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "bcftools view -H -f PASS '$(cpath "$VCF")' | head -n 1 | wc -l")
 if [ "$HAS_PASS" -gt 0 ]; then
   FILTER="PASS"
@@ -77,7 +80,7 @@ else
 fi
 
 PASS_VCF="${OUTPUT_DIR}/${SAMPLE}_pass.vcf.gz"
-docker run --rm --cpus 2 --memory 2g -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
+run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "set -e; bcftools view -f '${FILTER}' -Ou '$(cpath "$VCF")' \
     | bcftools norm -m -any -c w -f '$(cpath "$REF")' -Oz -o '$(cpath "$PASS_VCF")' -
     bcftools index -f -t '$(cpath "$PASS_VCF")'"
@@ -93,7 +96,7 @@ fi
 # no GENEINFO/CLNSIG of its own. (annotate -a needs an indexed target, so the
 # shared records go to a file first.)
 SHARED="${OUTPUT_DIR}/${SAMPLE}_shared.vcf.gz"
-docker run --rm --cpus 2 --memory 2g -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
+run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "set -e
     bcftools isec -n=2 -w1 -Oz -o '$(cpath "$SHARED")' '$(cpath "$PASS_VCF")' '$(cpath "$CLINVAR_NORM")'
     bcftools index -f -t '$(cpath "$SHARED")'

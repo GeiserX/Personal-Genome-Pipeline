@@ -8,11 +8,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 THREADS=${THREADS:-4}
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
@@ -65,9 +66,7 @@ else
 fi
 
 echo "Computing coverage statistics..."
-docker run --rm --user root \
-  --cpus "${THREADS}" --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus "${THREADS}" --memory 4g \
   "${MOSDEPTH_IMAGE}" \
   mosdepth \
     --by "${BY_FLAG}" \

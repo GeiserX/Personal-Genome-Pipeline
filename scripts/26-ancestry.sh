@@ -15,6 +15,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/ancestry"
@@ -71,18 +74,14 @@ if [ ! -f "$KG_SITES" ]; then
 
     # Index the raw file first (required by bcftools --regions)
     if [ ! -f "${RAW_VCF}.tbi" ]; then
-      docker run --rm --user root \
-        -v "${GENOME_DIR}:/genome" \
-        staphb/bcftools:1.21 \
+      run_in        "${BCFTOOLS_IMAGE}" \
         bcftools index -t "/genome/ancestry_ref/ALL.wgs.shapeit2_integrated_v1a.GRCh38.20181129.sites.vcf.gz"
     fi
 
     # Extract common biallelic SNPs (MAF > 5%, autosomal only)
     echo "  Filtering to common biallelic autosomal SNPs..."
-    docker run --rm --user root \
-      --cpus 4 --memory 4g \
-      -v "${GENOME_DIR}:/genome" \
-      staphb/bcftools:1.21 \
+    run_in      --cpus 4 --memory 4g \
+      "${BCFTOOLS_IMAGE}" \
       bash -c "
         bcftools view -m2 -M2 -v snps \
           -i 'AF>=0.05 && AF<=0.95' \
@@ -117,10 +116,8 @@ fi
 
 # Step 3: Extract overlapping SNPs between your sample and reference
 echo "[3/5] Finding shared SNPs between your sample and reference panel..."
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in  --cpus 4 --memory 8g \
+  "${BCFTOOLS_IMAGE}" \
   bash -c "
     bcftools isec -n=2 -w1 \
       /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
@@ -129,7 +126,7 @@ docker run --rm --user root \
     bcftools index -t /genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz
   "
 
-SHARED_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+SHARED_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Shared SNPs: ${SHARED_COUNT}"
 
@@ -141,10 +138,8 @@ fi
 # Step 4: LD pruning (requires >=50 samples — skip for single-sample input)
 echo "[4/5] LD pruning..."
 PRUNED_COUNT=0
-if docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+if run_in  --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
     --indep-pairwise 50 5 0.2 \
@@ -169,10 +164,8 @@ fi
 # joint PCA with a multi-sample reference panel (e.g., 1000G genotypes).
 # We still record the shared SNP and LD-pruned counts as useful QC metrics.
 echo "[5/5] Attempting PCA (requires >=2 samples)..."
-if docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+if run_in  --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/ancestry/${SAMPLE}_shared.vcf.gz" \
     "${EXTRACT_ARGS[@]}" \

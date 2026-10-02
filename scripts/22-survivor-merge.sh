@@ -16,6 +16,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 OUTDIR="${GENOME_DIR}/${SAMPLE}/sv_merged"
 mkdir -p "$OUTDIR"
@@ -114,9 +117,7 @@ elif [ -f "$CNVPYTOR_TXT" ]; then
     }' "$CNVPYTOR_TXT"
   } > "${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf"
 
-  docker run --rm --user root \
-    -v "${GENOME_DIR}:/genome" \
-    staphb/bcftools:1.21 \
+  run_in    "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools sort /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf -Oz \
       -o /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz"
@@ -143,9 +144,7 @@ echo ""
 # Create file list for SURVIVOR
 echo "[1/3] Preparing SV file list..."
 FILE_LIST="/genome/${SAMPLE}/sv_merged/sv_files.txt"
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in  "${BCFTOOLS_IMAGE}" \
   bash -c "
     > ${FILE_LIST}
     for f in ${SV_FILES[*]}; do
@@ -159,10 +158,8 @@ docker run --rm --user root \
 echo "[2/3] Finding consensus SVs (breakpoints within 1kb, 2+ callers)..."
 
 # Step A: Extract SV positions per caller as "caller\tchr\tbin\tsvtype" for counting
-docker run --rm --user root \
-  --cpus 4 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+run_in  --cpus 4 --memory 4g \
+  "${BCFTOOLS_IMAGE}" \
   bash -c "
     CALLER_IDX=0
     for VCF_FILE in ${SV_FILES[*]}; do
@@ -223,7 +220,7 @@ echo "[3/3] Counting results..."
 
 CONSENSUS_COUNT=0
 if [ -f "${OUTDIR}/${SAMPLE}_sv_consensus.vcf.gz" ]; then
-  CONSENSUS_COUNT=$(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  CONSENSUS_COUNT=$(run_in "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz" 2>/dev/null | wc -l || echo 0)
 fi
 

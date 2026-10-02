@@ -6,6 +6,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/telomere/${SAMPLE}"
@@ -25,10 +28,8 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 source "$(dirname "$0")/../versions.env" 2>/dev/null || TELOMEREHUNTER_IMAGE="lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714"
-docker run --rm \
+run_in \
   --cpus 4 --memory 4g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
   ${TELOMEREHUNTER_IMAGE} \
   telomerehunter \
     -ibt "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \

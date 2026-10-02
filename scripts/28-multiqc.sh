@@ -8,11 +8,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTPUT_DIR="${SAMPLE_DIR}/multiqc"
 
@@ -38,9 +39,7 @@ BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 FLAGSTAT="${SAMPLE_DIR}/aligned/${SAMPLE}_flagstat.txt"
 if [ -f "$BAM" ] && [ ! -f "$FLAGSTAT" ]; then
   echo "Generating samtools flagstat for MultiQC..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${SAMTOOLS_IMAGE}" \
     samtools flagstat "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     > "$FLAGSTAT" 2>/dev/null || true
@@ -54,9 +53,7 @@ fi
 #   --title       Report title shown in HTML
 #   --no-data-dir Skip creating multiqc_data/ directory (just the HTML)
 echo "Running MultiQC..."
-docker run --rm --user root \
-  --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 2g \
   "${MULTIQC_IMAGE}" \
   multiqc \
     "/genome/${SAMPLE}" \

@@ -5,13 +5,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/vcf"
 
 echo "=== PharmCAT: ${SAMPLE} ==="
@@ -24,14 +25,14 @@ for f in "$VCF" "${VCF}.tbi" "$REF"; do
     echo "ERROR: File not found: ${f}" >&2
     if [ "$f" = "${VCF}.tbi" ]; then
       echo "  PharmCAT requires a tabix index. Generate it with:" >&2
-      echo "  docker run --rm -v \"\${GENOME_DIR}:/genome\" staphb/bcftools:1.21 bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" >&2
+      echo "  run_in -v \"\${GENOME_DIR}:/genome\" "${BCFTOOLS_IMAGE}" bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" >&2
     fi
     exit 1
   fi
 done
 
 # Step 1: Preprocess VCF (normalize, filter to PGx positions)
-docker run --rm \
+run_in \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   -v "${GENOME_DIR}/reference:/ref" \
@@ -43,7 +44,7 @@ docker run --rm \
     -bf "$SAMPLE"
 
 # Step 2: Run PharmCAT on preprocessed VCF
-docker run --rm \
+run_in \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   "${PHARMCAT_IMAGE}" \

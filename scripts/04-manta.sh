@@ -6,9 +6,12 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 MANTA_DIR="${SAMPLE_DIR}/manta"
 
 echo "=== Manta SV Calling: ${SAMPLE} ==="
@@ -40,28 +43,25 @@ else
   if [ -d "$MANTA_DIR" ]; then
     # Files written by the container belong to root, so remove them from a container
     echo "Removing leftover ${MANTA_DIR}/ (no workflow and no results)..."
-    docker run --rm \
-      -v "${GENOME_DIR}:/genome" \
-      quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+    run_in \
+      "${MANTA_IMAGE}" \
       rm -rf "/genome/${SAMPLE}/manta"
   fi
   echo "Configuring Manta..."
-  docker run --rm \
+  run_in \
     --cpus 8 --memory 16g \
-    -v "${GENOME_DIR}:/genome" \
-    quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+    "${MANTA_IMAGE}" \
     configManta.py \
       --bam "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-      --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+      --referenceFasta "${REF_FASTA_C}" \
       --runDir "/genome/${SAMPLE}/manta"
 fi
 
 # Step 2: Run Manta workflow
 echo "Running Manta (this takes 1-3 hours for 30X WGS)..."
-docker run --rm \
+run_in \
   --cpus 8 --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+  "${MANTA_IMAGE}" \
   "/genome/${SAMPLE}/manta/runWorkflow.py" -j 8
 
 if [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz" ] || [ ! -f "${MANTA_DIR}/results/variants/diploidSV.vcf.gz.tbi" ]; then

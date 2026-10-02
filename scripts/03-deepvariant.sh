@@ -9,11 +9,14 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 INTERVALS=${INTERVALS:-}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf"
 
 # Select DeepVariant model type: WGS (default), WES, or PACBIO/ONT_R104
@@ -45,7 +48,7 @@ mkdir -p "$OUTPUT_DIR"
 
 DV_ARGS=(
   --model_type="${MODEL_TYPE}"
-  --ref="/genome/reference/Homo_sapiens_assembly38.fasta"
+  --ref="${REF_FASTA_C}"
   --reads="/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
   --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
   --sample_name="${SAMPLE}"
@@ -55,14 +58,13 @@ if [ -n "$INTERVALS" ]; then
   DV_ARGS+=(--regions "$INTERVALS")
 fi
 
-docker run --rm \
+run_in \
   --cpus 8 --memory 32g \
-  -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.10.0 \
+  "${DEEPVARIANT_IMAGE}" \
   /opt/deepvariant/bin/run_deepvariant "${DV_ARGS[@]}"
 
 echo "=== DeepVariant complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 echo ""
 echo "Quick stats:"
-echo "  Total variants: $(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"
+echo "  Total variants: $(run_in "${BCFTOOLS_IMAGE}" bcftools stats "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"

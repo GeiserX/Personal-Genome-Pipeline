@@ -9,10 +9,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_freebayes"
 INTERVALS=${INTERVALS:-""}
 
@@ -42,30 +45,24 @@ if [ -n "$INTERVALS" ]; then
 fi
 FREEBAYES_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
-docker run --rm \
+run_in \
   --cpus 4 --memory 32g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2 \
+  "${FREEBAYES_IMAGE}" \
   freebayes "${FREEBAYES_ARGS[@]}" \
   > "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
 
 # Step 2: Sort, compress, and index with bcftools
 echo "Sorting and compressing VCF..."
-docker run --rm \
+run_in \
   --cpus 4 --memory 4g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bash -c "bcftools sort /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf \
     | bcftools view -Oz -o /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
 
 echo "Indexing VCF..."
-docker run --rm \
+run_in \
   --cpus 1 --memory 1g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
 
 # Clean up raw unsorted VCF
@@ -75,7 +72,7 @@ echo "=== FreeBayes complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 echo ""
 echo "Quick stats:"
-echo "  Total variants: $(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 bcftools stats "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"
+echo "  Total variants: $(run_in "${BCFTOOLS_IMAGE}" bcftools stats "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"
 echo ""
 echo "NOTE: FreeBayes tends to call more variants than DeepVariant (higher sensitivity, more false positives)."
 echo "Consider running bcftools filter or vcffilter for quality filtering."

@@ -9,8 +9,6 @@ set -euo pipefail
 # Image versions are needed by the Docker image list and by the sample checks,
 # which also run when the Docker daemon is not up.
 SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR_V}/../versions.env"
 
 ###############################################################################
 # Color helpers (gracefully degrade if terminal does not support colors)
@@ -339,7 +337,7 @@ else
   else
     warn "GATK sequence dictionary not found at: ${DICT}"
     echo "       Some tools (GATK Mutect2/step 20) require it. Generate with:"
-    echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" broadinstitute/gatk:4.6.2.0 \\"
+    echo "       run_in -v \"\${GENOME_DIR}:/genome\" "${GATK_IMAGE}" \\"
     echo "         gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38.fasta"
   fi
 fi
@@ -474,7 +472,7 @@ if [ -n "$SAMPLE" ]; then
         pass "BAM index (.bai) present"
       else
         warn "BAM index not found. Create it before running BAM-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+        echo "       run_in -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
         echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
       fi
     fi
@@ -491,7 +489,7 @@ if [ -n "$SAMPLE" ]; then
         pass "VCF index (.tbi) present"
       else
         warn "VCF index not found. Create it before running VCF-dependent steps:"
-        echo "       docker run --rm -v \"\${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
+        echo "       run_in -v \"\${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
         echo "         bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
       fi
     fi
@@ -500,12 +498,12 @@ if [ -n "$SAMPLE" ]; then
     if $HAS_BAM && command -v docker >/dev/null 2>&1; then
       echo ""
       info "Checking genome build of BAM..."
-      BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
+      BAM_CHR1_LEN=$(run_in ${SAMTOOLS_IMAGE} \
         samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
         grep "^@SQ" | grep "SN:chr1" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
       if [ -z "$BAM_CHR1_LEN" ] || [ "$BAM_CHR1_LEN" = "0" ]; then
         # Try without chr prefix (hg19 style)
-        BAM_CHR1_LEN=$(docker run --rm -v "${GENOME_DIR}:/genome" ${SAMTOOLS_IMAGE} \
+        BAM_CHR1_LEN=$(run_in ${SAMTOOLS_IMAGE} \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | \
           grep "^@SQ" | grep "SN:1[[:space:]]" | head -1 | sed 's/.*LN://' | cut -f1 || echo "0")
         if [ -n "$BAM_CHR1_LEN" ] && [ "$BAM_CHR1_LEN" != "0" ]; then
@@ -526,18 +524,18 @@ if [ -n "$SAMPLE" ]; then
 
       # Read group: GATK steps (20, 03a, 29) reject reads without one, and
       # DeepVariant takes the sample name from it.
-      if BAM_HEADER=$(docker run --rm -v "${GENOME_DIR}:/genome" "${SAMTOOLS_IMAGE}" \
+      if BAM_HEADER=$(run_in "${SAMTOOLS_IMAGE}" \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
         if grep -q '^@RG' <<< "$BAM_HEADER"; then
           pass "BAM has a read group (@RG)"
         else
           warn "BAM header has no @RG read group line. GATK steps (20, 03a, 29) will reject its reads."
           echo "       Add one, then replace the BAM and re-index it:"
-          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "       run_in -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
           echo "         samtools addreplacerg -r ID:${SAMPLE} -r SM:${SAMPLE} -r PL:ILLUMINA -r LB:${SAMPLE} \\"
           echo "         -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.rg.bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
           echo "       mv \"${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.rg.bam\" \"${BAM}\""
-          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "       run_in -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
           echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
         fi
       else
@@ -546,7 +544,7 @@ if [ -n "$SAMPLE" ]; then
     fi
 
     if $HAS_VCF && command -v docker >/dev/null 2>&1; then
-      VCF_CONTIG=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
+      VCF_CONTIG=$(run_in ${BCFTOOLS_IMAGE} \
         bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
         grep "^##contig=<ID=chr1," | head -1 || echo "")
       if [ -n "$VCF_CONTIG" ]; then
@@ -558,7 +556,7 @@ if [ -n "$SAMPLE" ]; then
         fi
       else
         # Check for non-chr prefix
-        VCF_NO_CHR=$(docker run --rm -v "${GENOME_DIR}:/genome" ${BCFTOOLS_IMAGE} \
+        VCF_NO_CHR=$(run_in ${BCFTOOLS_IMAGE} \
           bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
           grep "^##contig=<ID=1," | head -1 || echo "")
         if [ -n "$VCF_NO_CHR" ]; then

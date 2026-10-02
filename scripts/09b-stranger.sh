@@ -10,11 +10,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 EH_VCF="${OUTPUT_DIR}/${SAMPLE}_eh.vcf"
@@ -50,9 +51,8 @@ if [ -n "${STRANGER_REPEATS:-}" ]; then
   # Compute container-relative path for the catalog file
   STRANGER_REPEATS_REL="${STRANGER_REPEATS#"${GENOME_DIR}/"}"
   echo "Repeat catalog: ${STRANGER_REPEATS} (custom)"
-  docker run --rm \
+  run_in \
     --cpus 1 --memory 1g \
-    -v "${GENOME_DIR}:/genome" \
     "${STRANGER_IMAGE}" \
     stranger \
       --repeats-file "/genome/${STRANGER_REPEATS_REL}" \
@@ -60,9 +60,8 @@ if [ -n "${STRANGER_REPEATS:-}" ]; then
     > "${OUT_VCF}"
 else
   echo "Repeat catalog: bundled clinical database (default)"
-  docker run --rm \
+  run_in \
     --cpus 1 --memory 1g \
-    -v "${GENOME_DIR}:/genome" \
     "${STRANGER_IMAGE}" \
     stranger \
       "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh.vcf" \

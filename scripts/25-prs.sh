@@ -16,6 +16,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/prs"
@@ -102,10 +105,8 @@ echo ""
 echo "[2/3] Converting VCF to plink2 format..."
 
 # Convert VCF to plink2 binary format for scoring
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  pgscatalog/plink2:2.00a5.10 \
+run_in  --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
   plink2 \
     --vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     --make-pgen \
@@ -177,10 +178,8 @@ for ENTRY in "${PGS_SCORES[@]}"; do
 
   # cols=+scoresums adds SCORE1_SUM: the plain weighted sum. The default
   # SCORE1_AVG divides by the alleles present in this VCF, which differs per sample.
-  if ! docker run --rm --user root \
-    --cpus 4 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    pgscatalog/plink2:2.00a5.10 \
+  if ! run_in    --cpus 4 --memory 4g \
+    "${PLINK2_IMAGE}" \
     plink2 \
       --pfile "/genome/${SAMPLE}/prs/${SAMPLE}" \
       --score "/genome/${SAMPLE}/prs/${PGS_ID}_formatted.tsv" 1 2 3 \

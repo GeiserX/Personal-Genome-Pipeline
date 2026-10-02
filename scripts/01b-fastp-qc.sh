@@ -13,6 +13,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 THREADS=${THREADS:-8}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 R1="${SAMPLE_DIR}/fastq/${SAMPLE}_R1.fastq.gz"
@@ -58,10 +61,8 @@ mkdir -p "$OUTPUT_DIR"
 #   -R                       Report title (used by MultiQC for sample naming)
 #   -w                       Worker threads (default 3, max 16 effective for I/O-bound work)
 echo "Running fastp (adapter trimming + quality filtering)..."
-docker run --rm --user root \
-  --cpus "${THREADS}" --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/fastp:1.3.6--h43da1c4_0 \
+run_in  --cpus "${THREADS}" --memory 4g \
+  "${FASTP_IMAGE}" \
   fastp \
     -i "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
     -I "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \

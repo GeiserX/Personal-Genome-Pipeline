@@ -10,15 +10,18 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 THREADS=${THREADS:-4}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned_longread}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/sv_sniffles"
 
-SNIFFLES_IMAGE="quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0"
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+SNIFFLES_IMAGE="${SNIFFLES_IMAGE}"
+BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "=== Sniffles2 SV Calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -39,38 +42,31 @@ mkdir -p "$OUTPUT_DIR"
 # Run Sniffles2
 echo "[1/3] Running Sniffles2 SV caller..."
 echo "       This takes 30-90 minutes for 30X long-read WGS."
-docker run --rm --user root \
-  --cpus "$THREADS" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus "$THREADS" --memory 16g \
   "$SNIFFLES_IMAGE" \
   sniffles \
     -i "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -v "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv_raw.vcf" \
-    --reference /genome/reference/Homo_sapiens_assembly38.fasta \
+    --reference "${REF_FASTA_C}" \
     --threads "$THREADS" \
     --sample-id "${SAMPLE}"
 
 # Compress and index with bcftools
 echo "[2/3] Compressing VCF..."
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  "$BCFTOOLS_IMAGE" \
+run_in  "$BCFTOOLS_IMAGE" \
   bcftools view \
     "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv_raw.vcf" \
     -Oz -o "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
 
 echo "[3/3] Indexing VCF..."
-docker run --rm --user root \
-  -v "${GENOME_DIR}:/genome" \
-  "$BCFTOOLS_IMAGE" \
+run_in  "$BCFTOOLS_IMAGE" \
   bcftools index -t \
     "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
 
 # Clean up raw VCF
 rm -f "${OUTPUT_DIR}/${SAMPLE}_sv_raw.vcf"
 
-SV_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+SV_COUNT=$(run_in \
   "$BCFTOOLS_IMAGE" \
   bcftools stats "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" \
   | grep '^SN' | grep 'number of records' | awk '{print $NF}')
@@ -81,8 +77,7 @@ echo "Total SVs called: ${SV_COUNT}"
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz"
 echo ""
 echo "Count by SV type:"
-docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+run_in \
   "$BCFTOOLS_IMAGE" \
   bcftools query -f '%INFO/SVTYPE\n' \
     "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" \

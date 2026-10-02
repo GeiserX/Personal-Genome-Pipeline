@@ -16,9 +16,10 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 CONSTRAINTS="${SCRIPT_DIR}/cyrius-constraints.txt"
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
@@ -49,9 +50,7 @@ echo ""
 # console script is `cyrius` (there is no `star_caller` command).
 # The manifest file (list of BAM paths) is created inside the container.
 echo "[1/2] Running Cyrius CYP2D6 caller..."
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 4 --memory 8g \
   -v "${CONSTRAINTS}:/constraints.txt:ro" \
   -w /tmp \
   "${PYTHON_IMAGE}" \

@@ -5,11 +5,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 # Validate sample name to prevent shell injection in bash -c / python3 -c strings
 if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
@@ -71,9 +72,7 @@ echo ""
 #     pseudogene-confounded VCF calls in CYP2D6/CYP2D7 region)
 #   - VCF genes: --variants only
 # Individual gene failures are logged but do not stop the loop.
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 4 --memory 8g \
   -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
   "${PYPGX_IMAGE}" \
   bash -c '
@@ -159,9 +158,7 @@ echo ""
 echo "Extracting results and building summary..."
 
 # Consolidate per-gene results into a summary TSV
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 4g \
   -v "${PYPGX_BUNDLE}:/root/pypgx-bundle:ro" \
   "${PYPGX_IMAGE}" \
   python3 -c "
@@ -237,9 +234,7 @@ if [ -n "$PHARMCAT_JSON" ]; then
   echo ""
   echo "PharmCAT output found, generating comparison..."
 
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 4g \
     "${PYTHON_IMAGE}" \
     python3 -c "
 import json, csv, os, re, sys

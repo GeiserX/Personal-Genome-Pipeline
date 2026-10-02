@@ -10,11 +10,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 # Validate sample name to prevent shell injection in bash -c strings
 if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
@@ -35,8 +36,7 @@ echo "=== vcfanno Annotation: ${SAMPLE} ==="
 # Skip only if a previous run left a complete output: non-empty, indexed,
 # and with a header bcftools can read. Anything else is rebuilt.
 if [ -s "$OUTPUT_FILE" ] && [ -f "${OUTPUT_FILE}.tbi" ] && \
-   docker run --rm \
-     -v "${GENOME_DIR}:/genome" \
+   run_in \
      "${BCFTOOLS_IMAGE}" \
      bcftools view -h "/genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz" > /dev/null 2>&1; then
   echo "Output already exists: ${OUTPUT_FILE}"
@@ -56,9 +56,7 @@ elif [ -f "${VEP_DIR}/${SAMPLE}_vep.vcf" ]; then
   echo "Input VCF: ${VEP_DIR}/${SAMPLE}_vep.vcf"
   echo "Compressing VEP output..."
   rm -f "$VEP_VCF_GZ" "${VEP_VCF_GZ}.tbi"
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp \
         /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf && \
@@ -73,9 +71,7 @@ fi
 
 if [ ! -f "${VEP_VCF}.tbi" ]; then
   echo "Indexing VEP VCF..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools index -t "/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 fi
@@ -288,9 +284,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
   # All within a single Docker invocation using bcftools + vcfanno
   # Step 1a: Strip chr prefix
   echo "  Stripping chr prefix from VCF..."
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/strip_chr.txt \
@@ -301,9 +295,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
 
   # Step 1b: Run vcfanno with CADD
   echo "  Running vcfanno with CADD tracks..."
-  docker run --rm --user root \
-    --cpus 4 --memory 8g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 8g \
     "${VCFANNO_IMAGE}" \
     vcfanno -p 4 \
       "/genome/${SAMPLE}/vep/vcfanno_tmp/nochr.toml" \
@@ -312,9 +304,7 @@ if [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
 
   # Step 1c: Re-add chr prefix and compress
   echo "  Re-adding chr prefix..."
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "
       bcftools annotate --rename-chrs /genome/${SAMPLE}/vep/vcfanno_tmp/add_chr.txt \
@@ -341,9 +331,7 @@ if [ ${#CHR_TRACKS[@]} -gt 0 ]; then
 
   # Run vcfanno
   echo "  Running vcfanno with chr-prefixed tracks..."
-  docker run --rm --user root \
-    --cpus 4 --memory 8g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 4 --memory 8g \
     "${VCFANNO_IMAGE}" \
     vcfanno -p 4 \
       "/genome/${SAMPLE}/vep/vcfanno_tmp/chr.toml" \
@@ -356,9 +344,7 @@ if [ ${#CHR_TRACKS[@]} -gt 0 ]; then
 elif [ ${#NOCHR_TRACKS[@]} -gt 0 ]; then
   # Only CADD was annotated, pass1 output is the final
   # Need plain VCF for the final compression step below
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools view "${CURRENT_VCF}" \
     > "${WORK_DIR}/pass2_output.vcf"
@@ -369,9 +355,7 @@ fi
 # Built inside vcfanno_tmp/ and moved into place only when complete, so an
 # interrupted run never leaves a partial _annotated.vcf.gz behind.
 echo "=== Compressing and indexing output ==="
-docker run --rm --user root \
-  --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -c "
     bcftools view -Oz -o /genome/${SAMPLE}/vep/vcfanno_tmp/final.vcf.gz \
@@ -393,8 +377,7 @@ for name in "${APPLIED_NAMES[@]}"; do
 done
 
 # Count variants in output
-VARIANT_COUNT=$(docker run --rm \
-  -v "${GENOME_DIR}:/genome" \
+VARIANT_COUNT=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz" \
   2>/dev/null | wc -l || echo "0")

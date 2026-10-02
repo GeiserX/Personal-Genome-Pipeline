@@ -6,6 +6,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/imputation"
 MIS_DIR="${OUTPUT_DIR}/mis_ready"
@@ -24,14 +27,14 @@ mkdir -p "$MIS_DIR"
 # Step 1: Split by chromosome
 for chr in $(seq 1 22); do
   echo "Splitting chr${chr}..."
-  docker run --rm --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    staphb/bcftools:1.21 \
+    "${BCFTOOLS_IMAGE}" \
     bcftools view -r "chr${chr}" "/data/vcf/${SAMPLE}.vcf.gz" \
       -Oz -o "/data/imputation/${SAMPLE}_chr${chr}.vcf.gz"
-  docker run --rm --cpus 1 --memory 1g \
+  run_in --cpus 1 --memory 1g \
     -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    staphb/bcftools:1.21 \
+    "${BCFTOOLS_IMAGE}" \
     bcftools index "/data/imputation/${SAMPLE}_chr${chr}.vcf.gz"
 done
 
@@ -39,9 +42,9 @@ done
 # IMPORTANT: Use bcftools -Oz (not bgzip pipe) — bgzip is NOT in staphb/bcftools PATH
 for chr in $(seq 1 22); do
   echo "MIS-ready chr${chr}..."
-  docker run --rm --cpus 2 --memory 2g \
+  run_in --cpus 2 --memory 2g \
     -v "${GENOME_DIR}/${SAMPLE}:/data" \
-    staphb/bcftools:1.21 bash -c "
+    "${BCFTOOLS_IMAGE}" bash -c "
       bcftools view -f PASS,. -Oz -o /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz /data/imputation/${SAMPLE}_chr${chr}.vcf.gz
       bcftools index -t /data/imputation/mis_ready/${SAMPLE}_chr${chr}.vcf.gz
     "

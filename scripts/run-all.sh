@@ -37,6 +37,9 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
 # Concurrency control — limit parallel Docker containers to prevent host oversubscription
 # Default: half the CPU count, clamped to [4, 12]

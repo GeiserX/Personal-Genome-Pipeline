@@ -6,11 +6,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name> [--truth <vcf> --regions <bed>]}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 shift
 
 # --- Parse optional flags ---
@@ -37,7 +38,7 @@ done
 BENCHMARK_DIR="${GENOME_DIR}/${SAMPLE}/benchmark"
 SUMMARY="${BENCHMARK_DIR}/summary.txt"
 TSV="${BENCHMARK_DIR}/comparison.tsv"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 
 # --- Path validation helper ---
 # Canonicalize GENOME_DIR and verify paths are within it (prevents sibling prefix matches)
@@ -215,15 +216,13 @@ if [ -n "$TRUTH_VCF" ]; then
     echo "=== Running hap.py: ${CALLER} vs truth ==="
 
     # shellcheck disable=SC2086
-    docker run --rm \
+    run_in \
       --cpus 4 --memory 8g \
-      --user root \
-      -v "${GENOME_DIR}:/genome" \
-      jmcdani20/hap.py:v0.3.12 \
+      "${HAPPY_IMAGE}" \
       /opt/hap.py/bin/hap.py \
         "${TRUTH_CONTAINER_PATH}" \
         "${VCF_CONTAINER}" \
-        -r /genome/reference/Homo_sapiens_assembly38.fasta \
+        -r "${REF_FASTA_C}" \
         ${REGIONS_FLAG} \
         -o "${PREFIX}" \
         --engine=vcfeval
@@ -329,21 +328,17 @@ else
       # Normalize both VCFs (decompose MNPs, left-align indels) for fair comparison
       NORM_A="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_a.vcf.gz"
       NORM_B="/genome/${SAMPLE}/benchmark/.norm_${CALLER_A}_${CALLER_B}_b.vcf.gz"
-      docker run --rm \
+      run_in \
         --cpus 2 --memory 4g \
-        --user root \
-        -v "${GENOME_DIR}:/genome" \
         "${BCFTOOLS_IMAGE}" \
         bash -euo pipefail -c \
-          'bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$1" -Oz -o "$2" && bcftools index -t "$2" &&
-           bcftools norm -m-both -f /genome/reference/Homo_sapiens_assembly38.fasta "$3" -Oz -o "$4" && bcftools index -t "$4"' \
+          'bcftools norm -m-both -f "${REF_FASTA_C}" "$1" -Oz -o "$2" && bcftools index -t "$2" &&
+           bcftools norm -m-both -f "${REF_FASTA_C}" "$3" -Oz -o "$4" && bcftools index -t "$4"' \
           _ "${VCF_A}" "${NORM_A}" "${VCF_B}" "${NORM_B}"
 
       # shellcheck disable=SC2086
-      docker run --rm \
+      run_in \
         --cpus 2 --memory 4g \
-        --user root \
-        -v "${GENOME_DIR}:/genome" \
         "${BCFTOOLS_IMAGE}" \
         bcftools isec -p "${ISEC_DIR}" \
           -f .,PASS \

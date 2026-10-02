@@ -7,6 +7,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 VCF_DIR=${VCF_DIR:-vcf}
 VCF="${SAMPLE_DIR}/${VCF_DIR}/${SAMPLE}.vcf.gz"
@@ -48,13 +51,12 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
+run_in  --cpus 4 --memory 8g \
   -v "${VEP_DIR}:/mnt/.vep" \
   -v "${REFDATA_DIR}:/mnt/bundle" \
   -v "${SAMPLE_DIR}/${VCF_DIR}:/mnt/inputs" \
   -v "${SAMPLE_DIR}/cpsr:/mnt/outputs" \
-  sigven/pcgr:2.2.5 \
+  "${PCGR_IMAGE}" \
   cpsr \
     --input_vcf "/mnt/inputs/${SAMPLE}.vcf.gz" \
     --vep_dir /mnt/.vep \

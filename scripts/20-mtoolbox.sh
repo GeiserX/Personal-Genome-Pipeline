@@ -8,14 +8,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/mito"
 
 echo "=== Mitochondrial Analysis (GATK Mutect2): ${SAMPLE} ==="
@@ -33,9 +34,7 @@ mkdir -p "$OUTPUT_DIR"
 
 
 echo "[1/4] Extracting chrM reads..."
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 4g \
   "$SAMTOOLS_IMAGE" \
   bash -c "
     samtools view -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam chrM \
@@ -46,24 +45,20 @@ docker run --rm --user root \
 echo "[2/4] Checking sequence dictionary..."
 if [ ! -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict" ]; then
   echo "  Creating sequence dictionary..."
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in    --cpus 2 --memory 4g \
     "$GATK_IMAGE" \
     gatk CreateSequenceDictionary \
-      -R /genome/reference/Homo_sapiens_assembly38.fasta \
+      -R "${REF_FASTA_C}" \
       -O /genome/reference/Homo_sapiens_assembly38.dict
 else
   echo "  Sequence dictionary already exists, skipping."
 fi
 
 echo "[3/4] Running Mutect2 in mitochondrial mode..."
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 4 --memory 8g \
   "$GATK_IMAGE" \
   gatk Mutect2 \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
+    -R "${REF_FASTA_C}" \
     -I "/genome/${SAMPLE}/mito/${SAMPLE}_chrM.bam" \
     -L chrM \
     --mitochondria-mode \
@@ -71,12 +66,10 @@ docker run --rm --user root \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_mutect2.vcf.gz"
 
 echo "[4/4] Filtering variants..."
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in  --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   gatk FilterMutectCalls \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
+    -R "${REF_FASTA_C}" \
     -V "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_mutect2.vcf.gz" \
     --mitochondria-mode \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
