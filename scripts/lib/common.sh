@@ -19,8 +19,8 @@
 #                  default sets THREADS=${THREADS:-N} before sourcing this file.
 #   CONTAINER_ENGINE  docker by default.
 # and the helpers validate_sample, require_image, cpath, run_in, fetch,
-# lock_acquire / lock_release and pipeline_images, described where they are
-# defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
+# install_vep_cache, lock_acquire / lock_release and pipeline_images, described
+# where they are defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
 PGP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=../versions.env
@@ -86,7 +86,7 @@ fi
 #   --rw DIR   DIR (inside GENOME_DIR) is writable too, e.g. a shared index.
 # Everything after the opt-outs goes to `docker run` unchanged.
 run_in() {
-  local isolate=true root=false d
+  local isolate=true root=false d c
   local -a extra=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -94,8 +94,9 @@ run_in() {
       --root) root=true; shift ;;
       --rw)
         d=${2:?run_in --rw needs a directory}
+        c=$(cpath "$d") || exit 2
         mkdir -p "$d"
-        extra+=(-v "${d}:$(cpath "$d")")
+        extra+=(-v "${d}:${c}")
         shift 2 ;;
       *) break ;;
     esac
@@ -125,10 +126,22 @@ _digest() {
 }
 
 # _get URL OUT: download URL to OUT (resuming a partial OUT), curl first and
-# wget when curl is missing. OUT "-" writes to stdout.
+# wget when curl is missing. OUT "-" writes to stdout. A server that cannot
+# resume (curl exit 33) gets the partial OUT dropped and one fresh download.
 _get() {
+  local rc=0
   if command -v curl >/dev/null 2>&1; then
-    if [ "$2" = "-" ]; then curl -fsSL "$1"; else curl -fL -C - -o "$2" "$1"; fi
+    if [ "$2" = "-" ]; then
+      curl -fsSL "$1"
+    else
+      curl -fL -C - -o "$2" "$1" || rc=$?
+      if [ "$rc" -eq 33 ]; then
+        rm -f "$2"
+        curl -fL -o "$2" "$1"
+      else
+        return "$rc"
+      fi
+    fi
   elif command -v wget >/dev/null 2>&1; then
     if [ "$2" = "-" ]; then wget -q -O - "$1"; else wget -c -O "$2" "$1"; fi
   else
@@ -150,7 +163,7 @@ fetch() {
   name=$(basename "$url")
   if [ -n "$kind" ]; then
     case "$want" in
-      http://*|https://*|ftp://*)
+      http://*|https://*|ftp://*|file://*)
         if ! line=$(_get "$want" - | awk -v n="$name" '
               NF { lines++; first = $1; f = $NF; sub(/.*\//, "", f); if (f == n) hit = $1 }
               END { if (lines == 1) print first; else if (hit != "") print hit }'); then
@@ -175,7 +188,12 @@ fetch() {
   fi
   if [ -n "$kind" ]; then
     got=$(_digest "$kind" "$part") || return 1
-    if [ "$kind" = sum ]; then want=$((10#${want})); fi
+    if [ "$kind" = sum ]; then
+      case "$want" in
+        ''|*[!0-9]*) echo "ERROR: '${want}' is not a sum checksum for ${name}" >&2; return 1 ;;
+      esac
+      want=$((10#${want}))
+    fi
     if [ "$got" != "$want" ]; then
       rm -f "$part"
       echo "ERROR: ${kind} checksum of ${name} is ${got}, expected ${want}. Removed the download; run again to fetch it anew." >&2
@@ -193,6 +211,37 @@ fetch() {
     return 1
   fi
   mv -f "$part" "$dest"
+}
+
+# vep_cache_url RELEASE: where Ensembl publishes the indexed GRCh38 VEP cache.
+vep_cache_url() {
+  printf 'https://ftp.ensembl.org/pub/release-%s/variation/indexed_vep_cache/homo_sapiens_vep_%s_GRCh38.tar.gz' "$1" "$1"
+}
+
+# install_vep_cache DIR RELEASE: download the cache (checked against Ensembl's
+# CHECKSUMS file), unpack it in a temporary directory and move it to
+# DIR/homo_sapiens/RELEASE_GRCh38 only when complete. The tarball is deleted.
+install_vep_cache() {
+  local dir=$1 rel=$2 url tarball tmp final
+  url=$(vep_cache_url "$rel")
+  tarball="${dir}/$(basename "$url")"
+  final="${dir}/homo_sapiens/${rel}_GRCh38"
+  if [ -e "$final" ]; then
+    echo "ERROR: ${final} exists but has no info.txt (an interrupted extraction?)." >&2
+    echo "  Remove it and run again." >&2
+    return 1
+  fi
+  mkdir -p "${dir}/homo_sapiens"
+  fetch "$url" "$tarball" sum "$(dirname "$url")/CHECKSUMS" || return 1
+  echo "  Extracting $(basename "$tarball")..."
+  tmp=$(mktemp -d "${dir}/.extract.XXXXXX")
+  if ! tar xzf "$tarball" -C "$tmp" || [ ! -f "${tmp}/homo_sapiens/${rel}_GRCh38/info.txt" ]; then
+    rm -rf "$tmp"
+    echo "ERROR: could not unpack ${tarball} into a ${rel}_GRCh38 cache." >&2
+    return 1
+  fi
+  mv "${tmp}/homo_sapiens/${rel}_GRCh38" "$final"
+  rm -rf "$tmp" "$tarball"
 }
 
 # lock_acquire DIR / lock_release DIR: a lock shared by concurrent runs. The
