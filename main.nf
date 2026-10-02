@@ -380,22 +380,30 @@ workflow {
             [meta, clinvar, pharmcat, clinical, cpsr, slivar]
         }
 
-    // Collect QC files for MultiQC (versions + mosdepth summaries)
-    ch_multiqc_files = Channel.empty()
-        .mix(
-            BAM_ANALYSIS.out.coverage.map { meta, f -> f },
-            VCF_PRECHECK.out.versions,
-            PGX.out.versions,
-            ANNOTATION.out.versions,
-            CLINICAL.out.versions,
-            BAM_ANALYSIS.out.versions,
-            SV.out.versions
-        )
+    // QC files for MultiQC (mosdepth summaries)
+    ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
 
     REPORTING(
         ch_report_inputs,
         ch_multiqc_files
     )
+
+    // ─── Software versions ──────────────────────────────────────────────
+    // Every task writes a versions.yml whose first line is the tag of the
+    // image it ran in; one file collects them, one block per process.
+    Channel.empty()
+        .mix(
+            VCF_PRECHECK.out.versions,
+            PGX.out.versions,
+            ANNOTATION.out.versions,
+            CLINICAL.out.versions,
+            BAM_ANALYSIS.out.versions,
+            SV.out.versions,
+            REPORTING.out.versions
+        )
+        .map { f -> f.text }
+        .unique()
+        .collectFile(name: 'software_versions.yml', storeDir: "${params.outdir}/pipeline_info", sort: true)
 
     // ─── Completion handler ─────────────────────────────────────────────
     workflow.onComplete {

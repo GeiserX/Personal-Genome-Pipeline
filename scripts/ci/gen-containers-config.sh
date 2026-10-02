@@ -17,7 +17,12 @@
 #                                                    a process has no selector, a selector
 #                                                    names no process, or a module sets its
 #                                                    own container
-#   scripts/ci/gen-containers-config.sh --self-test  prove --check can fail
+#   scripts/ci/gen-containers-config.sh --check-versions FILE [PROCESS...]
+#                                                    fail unless FILE, a run's
+#                                                    pipeline_info/software_versions.yml,
+#                                                    states for each PROCESS (default: every
+#                                                    process) the tag of its image
+#   scripts/ci/gen-containers-config.sh --self-test  prove --check and --check-versions can fail
 #   --root DIR                                       work on another tree
 set -euo pipefail
 export LC_ALL=C   # one sort order for the table, the file and comm
@@ -65,12 +70,15 @@ VEP                  VEP_IMAGE
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MODE="write"
+ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) MODE=check ;;
+    --check-versions) MODE=check-versions ;;
     --self-test) MODE=self-test ;;
     --root) ROOT=$2; shift ;;
-    *) echo "usage: $0 [--check | --self-test] [--root DIR]" >&2; exit 2 ;;
+    -*) echo "usage: $0 [--check | --check-versions FILE [PROCESS...] | --self-test] [--root DIR]" >&2; exit 2 ;;
+    *) ARGS+=("$1") ;;
   esac
   shift
 done
@@ -109,7 +117,7 @@ check() {
   if ! render > "$want"; then
     fail=1
   elif ! diff -u "$CONFIG" "$want"; then
-    echo "FAIL: conf/containers.config does not match versions.env; run scripts/ci/gen-containers-config.sh and commit the result."
+    echo "FAIL: conf/containers.config does not match versions.env and the table in this script; run scripts/ci/gen-containers-config.sh and commit the result."
     fail=1
   fi
   rm -f "$want"
@@ -133,6 +141,46 @@ check() {
   return "$fail"
 }
 
+# check_versions FILE [PROCESS...]: each module writes, as the first line of
+# its versions.yml block, the tag of the image it ran in (task.container).
+# Compare that line with the image conf/containers.config gives the process.
+check_versions() {
+  python3 - "$CONFIG" "$@" <<'PY'
+import re, sys
+config, yml, expect = sys.argv[1], sys.argv[2], sys.argv[3:]
+images = dict(re.findall(r"withName: '(\w+)' \{ container = '([^']+)' \}", open(config).read()))
+def tag(image):
+    return re.sub(r"^[^:@]+[:@]", "", image, count=1)
+first, proc = {}, None
+for line in open(yml):
+    m = re.match(r'^"([^"]+)":\s*$', line)
+    if m:
+        proc = m.group(1).split(":")[-1]
+        continue
+    m = re.match(r"^\s+([\w.-]+):\s*(.*?)\s*$", line)
+    if m and proc and proc not in first:
+        first[proc] = (m.group(1), m.group(2))
+fail = 0
+if not first:
+    print("FAIL: %s has no process block" % yml)
+    fail = 1
+for p in sorted(set(expect or images) | set(first)):
+    if p not in images:
+        print("FAIL %-20s has no selector in conf/containers.config" % p)
+        fail = 1
+    elif p not in first:
+        if p in (expect or images):
+            print("FAIL %-20s missing from %s" % (p, yml))
+            fail = 1
+    elif first[p][1] != tag(images[p]):
+        print("FAIL %-20s %s: %s, want %s (%s)" % (p, first[p][0], first[p][1], tag(images[p]), images[p]))
+        fail = 1
+    else:
+        print("OK   %-20s %s: %s" % (p, first[p][0], first[p][1]))
+sys.exit(fail)
+PY
+}
+
 # self_test: plant each kind of fault in a copy of this tree and require
 # --check to name it; the unchanged copy must pass.
 self_test() {
@@ -143,8 +191,9 @@ self_test() {
   copy() {
     mkdir -p "${tmp}/$1/conf"
     cp "${ROOT}/versions.env" "${tmp}/$1/"
-    cp "${ROOT}/conf/containers.config" "${tmp}/$1/conf/"
     cp -R "${ROOT}/modules" "${tmp}/$1/"
+    # Start from a fresh file, so the self-test checks the checker, not this tree.
+    "$0" --root "${tmp}/$1" >/dev/null
   }
   # expect NAME PATTERN: --check on the planted tree NAME exits 1 and prints PATTERN.
   expect() {
@@ -187,6 +236,21 @@ self_test() {
     "${ROOT}/modules/local/roh/main.nf" > "${tmp}/literal/modules/local/roh/main.nf"
   expect literal 'main\.nf:[0-9]+: +container .example/bcftools:1\.0.'
 
+  # --check-versions: a wrong tag, a missing process and an unknown process.
+  printf '%s\n' '"PGX:ROH":' '    bcftools: 1.21' '"VEP":' '    ensemblvep: release_116.0' \
+    > "${tmp}/versions-good.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-good.yml" ROH VEP 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || { echo "self-test: --check-versions failed a correct file:"; printf '%s\n' "$out"; fail=1; }
+  printf '%s\n' '"PGX:ROH":' '    bcftools: 1.20' '"NEW_TOOL":' '    tool: 1.0' > "${tmp}/versions-bad.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-bad.yml" ROH VEP 2>&1) || rc=$?
+  for want in '^FAIL ROH +bcftools: 1\.20, want 1\.21' '^FAIL NEW_TOOL +has no selector' '^FAIL VEP +missing from'; do
+    if [ "$rc" -ne 1 ] || ! grep -qE -- "$want" <<<"$out"; then
+      echo "self-test: --check-versions exited ${rc} and did not report /${want}/:"; printf '%s\n' "$out"; fail=1
+    else
+      echo "self-test: --check-versions caught: $(grep -E -- "$want" <<<"$out")"
+    fi
+  done
+
   [ "$fail" -eq 0 ] && echo "self-test: OK"
   return "$fail"
 }
@@ -200,5 +264,9 @@ case "$MODE" in
     echo "wrote ${CONFIG#"${ROOT}/"}"
     ;;
   check) check ;;
+  check-versions)
+    [ "${#ARGS[@]}" -ge 1 ] || { echo "usage: $0 --check-versions FILE [PROCESS...]" >&2; exit 2; }
+    check_versions "${ARGS[@]}"
+    ;;
   self-test) self_test ;;
 esac

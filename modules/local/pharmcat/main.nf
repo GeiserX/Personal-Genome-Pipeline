@@ -20,6 +20,7 @@ process PHARMCAT_PREPROCESS {
 
     output:
     tuple val(meta), path("*.preprocessed.vcf.bgz"), emit: preprocessed_vcf
+    path "versions.yml",                             emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -31,11 +32,21 @@ process PHARMCAT_PREPROCESS {
         -refFna ${reference} \\
         -o ./ \\
         -bf ${meta.id}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 
     stub:
     """
     touch ${meta.id}.preprocessed.vcf.bgz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 }
 
