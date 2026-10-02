@@ -98,7 +98,7 @@ case "$FORMAT" in
     # 23 is X, 24 is Y, 25 the X pseudoautosomal regions (X positions) and 26
     # the mitochondrion. A no-call is allele 0. The two alleles are joined into
     # the two-letter genotype bcftools reads; a no-call becomes "--", which
-    # bcftools skips.
+    # bcftools writes as a missing genotype (./.), as it does for 23andMe.
     echo "Converting AncestryDNA (five columns, numeric chromosomes) to TSV..."
     tr -d '\r' < "$RAW_TSV" | awk -F'\t' -v OFS='\t' '
       /^#/ || tolower($1) == "rsid" || NF < 5 { next }
