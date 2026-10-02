@@ -67,7 +67,10 @@ cpath() {
 if [ -n "${GENOME_DIR:-}" ]; then
   GENOME_DIR=${GENOME_DIR%/}
   REF_FASTA=${REF_FASTA:-${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta}
-  REF_DICT="${REF_FASTA%.*}.dict"
+  # GATK names the dictionary after the FASTA without its extensions:
+  # ref.fasta and ref.fa.gz both give ref.dict.
+  REF_DICT="${REF_FASTA%.gz}"
+  REF_DICT="${REF_DICT%.*}.dict"
   REF_FASTA_C=$(cpath "$REF_FASTA") || exit 2
 fi
 
@@ -247,15 +250,29 @@ install_vep_cache() {
 }
 
 # lock_acquire DIR / lock_release DIR: a lock shared by concurrent runs. The
-# lock is a directory holding the owner's PID; a lock whose PID is gone (a
-# killed run) is stale and taken over.
+# lock is a directory holding the owner's PID. It is stale when that PID is
+# gone (a killed run), or when it has no PID a minute after it was made (a run
+# killed between mkdir and writing the PID). A stale lock is renamed before it
+# is removed, so of two waiters that judged it stale only one takes it over.
 lock_acquire() {
-  local lock=$1 pid
+  local lock=$1 pid stale
   until mkdir "$lock" 2>/dev/null; do
     pid=$(cat "${lock}/pid" 2>/dev/null || true)
-    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-      echo "  Removing stale lock ${lock} (process ${pid} is gone)."
-      rm -rf "$lock"
+    stale=false
+    if [ -n "$pid" ]; then
+      kill -0 "$pid" 2>/dev/null || stale=true
+    elif [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+      stale=true
+    fi
+    if $stale; then
+      if mv "$lock" "${lock}.stale.$$" 2>/dev/null; then
+        if [ -n "$pid" ]; then
+          echo "  Removing stale lock ${lock} (process ${pid} is gone)."
+        else
+          echo "  Removing stale lock ${lock} (no owner after a minute)."
+        fi
+        rm -rf "${lock}.stale.$$"
+      fi
       continue
     fi
     echo "  Waiting for ${lock} (held by process ${pid:-starting})..."
