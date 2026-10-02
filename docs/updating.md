@@ -12,6 +12,7 @@ This page is for maintainers. It says how a pinned version gets bumped, what che
 | GitHub Actions (`uses:` lines) | the workflows | Dependabot, monthly |
 | MkDocs and its plugins | `docs/requirements-docs.txt` | Dependabot, monthly |
 | Data releases: VEP cache, PCGR bundle, pypgx bundle, AnnotSV annotations, gnomAD constraint, Cyrius, the GRIDSS blacklist commit | the variables at the end of `versions.env` | nobody: bump them by hand, together with the image they belong to |
+| Renovate CLI used by the dry run | `RENOVATE_VERSION` in `renovate-dry-run.yml` and the command at the end of this page | nobody: bump both by hand |
 
 Renovate runs only its regex managers ([`renovate.json`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/renovate.json)), so it never touches what Dependabot owns ([`.github/dependabot.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/dependabot.yml)).
 
@@ -27,9 +28,13 @@ Until that switch, the Renovate dry run workflow below is the only evidence that
 - One tool per PR. No group rules.
 - The title starts with `deps:` (`ci:` for actionlint and gitleaks).
 - It changes the tool's line in `versions.env` and the same string in `conf/containers.config`, `docs/versions.md` and the `container-test.yml` matrix. Those two generated files are written by `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh`, which copy the string from `versions.env` as it is, so the PR leaves them exactly as the scripts would. If a check still says one of them is stale, run both scripts on the branch and commit the result.
-- A major update (VEP 116 to 117, for example), every PCGR update and every Nextflow update waits on the dependency dashboard. Nothing is opened until you tick its box there.
+- Renovate does not edit version strings outside those four files. A few of them are checked by CI, so these PRs go red until you change them on the branch by hand:
+    - bcftools and VEP: the two tags written in the `--check-versions` self-test of `scripts/ci/gen-containers-config.sh`, which Guard runs against the real `versions.env`.
+    - BWA: the version string the `container-test.yml` matrix greps for in `bwa`'s output.
+    - Python: the Python tag in `README.md`, which the `version-consistency` check reads.
+- A major update (VEP 116 to 117, for example), every PCGR update, every Python update and every Nextflow update waits on the dependency dashboard. Nothing is opened until you tick its box there.
 
-Renovate reads biocontainer tags (`1.0.9--h5ca1c30_0`) as version, then build number, and ignores the conda build hash in between, which changes from one version to the next. A new build of the same version (mosdepth `0.3.14--h05c3d44_0` to `0.3.14--h87be163_2`) is proposed as a patch: same tool version, rebuilt by Bioconda. A biocontainer tag in any other shape is never proposed. VEP tags (`release_116.0`) are read as major and minor.
+Renovate reads biocontainer tags (`1.0.9--h5ca1c30_0`) as version, then build number, and ignores the conda build hash in between, which changes from one version to the next. It keeps the Python build (`py312` in `3.9.5--py312h6e8b409_0`): only tags for the same Python are proposed. A new build of the same version (mosdepth `0.3.14--h05c3d44_0` to `0.3.14--h87be163_2`) is proposed as a patch: same tool version, rebuilt by Bioconda. A biocontainer tag in any other shape is never proposed. VEP tags (`release_116.0`) are read as major and minor.
 
 ## What checks a bump
 
@@ -60,6 +65,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 - **PharmCAT**: diff the diplotype table on the HG002 fixture between the old and the new image, and run the CPIC parser tests on a `report.json` from the new version.
 - **VEP major**: move `VEP_CACHE_RELEASE` to the new major in the same PR, download the new cache (about 26 GB) and rerun step 13. CI cannot run the offline cache.
 - **PCGR/CPSR**: move `PCGR_DATA_BUNDLE` and `PCGR_VEP_CACHE_RELEASE` with the image, and rerun step 17 on a sample with an earlier result. CI does not run CPSR.
+- **Python**: resolve `scripts/cyrius-constraints.txt` again in the new image, as its header says, and rerun step 21 on a test BAM.
 - **Nextflow**: run the stub and E2E jobs on the new version, then update the validated version in `nextflow.config` and the prose in [Nextflow Execution](nextflow.md) and [Lessons Learned](lessons-learned.md).
 - **pypgx, when the hold ends**: check out the matching pypgx-bundle tag and compare the gene calls on the fixture.
 

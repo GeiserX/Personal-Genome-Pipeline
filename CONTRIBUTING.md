@@ -79,7 +79,7 @@ The CI pipeline enforces this with automated scanning.
 
 ### Docker Images
 
-- Every image is one line in [`versions.env`](versions.env), with an exact tag (e.g., `staphb/bcftools:1.21`, not `:latest`). Scripts, `setup.sh` and `validate-setup.sh` read it from there.
+- Every image is one line in [`versions.env`](versions.env), with an exact tag, never `:latest`. Scripts, `setup.sh` and `validate-setup.sh` read it from there.
 - Mark an image no default step runs with `# optional` on its line. `setup.sh` then leaves it for the step that uses it.
 - When a publisher offers no versioned tags, pin by immutable digest (`name@sha256:<digest>`) — never a floating `:latest`. Resolve with `docker manifest inspect -v <name>:latest`.
 - Verify the image exists and is publicly pullable before committing

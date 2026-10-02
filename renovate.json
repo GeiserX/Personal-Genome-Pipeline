@@ -86,11 +86,12 @@
     {
       "description": [
         "Biocontainer tags are <version>--<conda build hash>_<build number>. Docker versioning reads the part after '--' as a suffix that must stay the same, and the hash changes between versions, so most of these pins would never see a newer tag.",
-        "This versioning ignores the hash and orders by version, then build number. A tag in any other shape (an unsuffixed tag, a four-part version) is not a version here and is never proposed."
+        "This versioning ignores the hash and orders by version, then build number. A tag in any other shape (an unsuffixed tag, a four-part version) is not a version here and is never proposed.",
+        "A Python build prefix (py312 in 3.9.5--py312h6e8b409_0) is kept: only tags for the same Python are proposed. A noarch tag (pyhdfd78af) has no such prefix."
       ],
       "matchDatasources": ["docker"],
       "matchPackageNames": ["/^quay\\.io/biocontainers//"],
-      "versioning": "regex:^(?<major>\\d+)(?:\\.(?<minor>\\d+))?(?:\\.(?<patch>\\d+))?--[a-z0-9]+_(?<build>\\d+)$"
+      "versioning": "regex:^(?<major>\\d+)(?:\\.(?<minor>\\d+))?(?:\\.(?<patch>\\d+))?--(?<compatibility>py\\d+)?[a-z0-9]+_(?<build>\\d+)$"
     },
     {
       "description": "Ensembl VEP tags are release_<major>.<minor>, which docker versioning cannot read. A major (a new Ensembl release) waits for approval on the dependency dashboard: it needs the matching cache (VEP_CACHE_RELEASE in versions.env, about 26 GB) moved in the same PR.",
@@ -102,6 +103,12 @@
       "description": "PCGR/CPSR: every update waits for approval on the dependency dashboard, because each release reads its own reference bundle and VEP cache (PCGR_DATA_BUNDLE and PCGR_VEP_CACHE_RELEASE in versions.env). Docker Hub's sigven/pcgr stops at 2.2.5; 2.3.x is published at ghcr.io/sigven/pcgr, which the image matcher reads like any other registry once versions.env names it.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["sigven/pcgr", "ghcr.io/sigven/pcgr"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with the versions pip resolved on Python 3.11 (scripts/cyrius-constraints.txt), and README.md names the tag. A new Python needs the constraints resolved again and that line changed by hand in the same PR.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["python"],
       "dependencyDashboardApproval": true
     },
     {
