@@ -18,7 +18,7 @@
 | **CPU** | 4 cores | 16+ cores | DeepVariant scales linearly with cores |
 | **RAM** | 16 GB | 32 GB | Some steps need 8-16 GB; pipeline limits each container |
 | **Disk** | 500 GB free | 1 TB+ | See [detailed breakdown](hardware-requirements.md) |
-| **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~104 GB optional annotation databases |
+| **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~175 GB optional annotation databases |
 | **OS** | Linux (amd64) | Ubuntu 22.04+ | macOS/ARM works but slower (see below) |
 
 > **Disk space is the #1 surprise.** A single 30X WGS sample produces 60-90 GB of FASTQ, 30-80 GB of BAM, plus reference genomes and databases. See [docs/hardware-requirements.md](hardware-requirements.md) for the full breakdown.
@@ -43,9 +43,9 @@ That's it. Every analysis tool runs inside Docker -- no conda environments, no P
 | VEP cache | ~26 GB | Step 13 (VEP annotation) |
 | PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | Step 17 (cancer predisposition) |
 | Docker images (all steps) | ~10-15 GB | All steps |
-| Annotation databases (CADD, SpliceAI, REVEL, AlphaMissense) | ~104 GB | Steps 30-31 (optional) |
+| Annotation databases (CADD, SpliceAI, REVEL, AlphaMissense) | ~175 GB | Steps 30-31 (optional) |
 | **Total one-time setup (core)** | **~70-75 GB** | |
-| **Total with annotation enrichment** | **~175 GB** | |
+| **Total with annotation enrichment** | **~250 GB** | |
 
 See [docs/00-reference-setup.md](00-reference-setup.md) for download instructions.
 
@@ -157,7 +157,12 @@ export SAMPLE=your_name
 ORA is Illumina's proprietary compressed FASTQ format. Decompress first, then follow Path A.
 
 ```bash
-./scripts/01-ora-to-fastq.sh $SAMPLE   # ORA -> FASTQ
+# ORA -> FASTQ, one call per ORA file: <sample> <ora_reference_dir> <ora_file>
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R1_001.fastq.ora
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R2_001.fastq.ora
+# orad keeps the ORA file name; the next steps read ${SAMPLE}_R1/_R2.fastq.gz
+mv ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_S1_L001_R1_001.fastq.gz ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz
+mv ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_S1_L001_R2_001.fastq.gz ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz
 ./scripts/01b-fastp-qc.sh $SAMPLE      # QC + adapter trimming
 ./scripts/02-alignment.sh $SAMPLE       # FASTQ -> BAM
 # ... continue as Path A
@@ -216,8 +221,10 @@ ${GENOME_DIR}/
     Homo_sapiens_assembly38.fasta      # GRCh38 reference genome
     Homo_sapiens_assembly38.fasta.fai  # FASTA index
   clinvar/
-    clinvar.vcf.gz                     # ClinVar database
+    clinvar.vcf.gz                     # ClinVar database, as downloaded
     clinvar.vcf.gz.tbi                 # ClinVar index
+    clinvar_pathogenic_chr.vcf.gz      # chr-prefixed pathogenic subset that step 6 reads
+    clinvar_pathogenic_chr.vcf.gz.tbi  # its index
   vep_cache/                           # VEP annotation cache (~30 GB)
   pcgr_data/                           # CPSR/PCGR data bundle (~5 GB)
   ${SAMPLE}/

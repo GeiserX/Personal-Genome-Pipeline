@@ -36,9 +36,9 @@ Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Per
 Deep pathogenicity scoring, structured variant querying, and broader pharmacogenomics. All new annotation tracks are optional — scripts detect which databases are present and degrade gracefully.
 
 - [x] **CADD scores** — Combined Annotation Dependent Depletion scores for all variants via vcfanno. Pre-scored whole-genome SNVs (~81.5 GB) + gnomAD indels (~1.2 GB). PHRED >= 20 flagged as clinically interesting
-- [x] **SpliceAI** — deep learning splice-site variant predictions via vcfanno. Pre-scored files (~20 GB). Delta score >= 0.2 flagged for cryptic splice variants
-- [x] **REVEL scores** — ensemble missense pathogenicity scoring via vcfanno (~526 MB). ClinGen-recommended thresholds: >= 0.644 (PP3_Moderate), >= 0.932 (PP3_Very Strong)
-- [x] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier via vcfanno (~613 MB). Thresholds: < 0.34 benign, > 0.564 pathogenic
+- [x] **SpliceAI** — deep learning splice-site variant predictions via vcfanno. Pre-scored masked files (~91 GB). Delta score >= 0.2 flagged for cryptic splice variants
+- [x] **REVEL scores** — ensemble missense pathogenicity scoring via vcfanno (~526 MB). ClinGen-calibrated thresholds: >= 0.644 (PP3_Supporting), >= 0.773 (PP3_Moderate), >= 0.932 (PP3_Strong)
+- [x] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier via vcfanno (~613 MB). Class boundaries (AlphaMissense's own, not ACMG levels): < 0.34 likely benign, > 0.564 likely pathogenic
 - [x] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores (~91 MB). Integrated into clinical filter summary TSV and slivar output
 - [x] **vcfanno annotation engine** (`scripts/30-vcfanno.sh`) — adds CADD, SpliceAI, REVEL, AlphaMissense to VEP VCFs via TOML config in a single pass. Handles CADD chr prefix mismatch with two-pass approach
 - [x] **Variant prioritization with inheritance queries** (`scripts/31-slivar.sh`) — slivar (GEMINI successor) for streaming VCF filtering with JS expressions. Rare HIGH/MODERATE variants, ClinVar pathogenic, compound het detection, gene constraint enrichment

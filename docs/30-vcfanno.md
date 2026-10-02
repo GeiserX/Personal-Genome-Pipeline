@@ -21,19 +21,21 @@ See [docs/00-reference-setup.md](00-reference-setup.md) for download instruction
 |---|---|---|---|
 | CADD v1.7 SNVs | `whole_genome_SNVs.tsv.gz` + `.tbi` | ~81.5 GB | Non-commercial |
 | CADD v1.7 indels | `gnomad.genomes.r4.0.indel.tsv.gz` + `.tbi` | ~1.2 GB | Non-commercial |
-| SpliceAI SNVs | `spliceai_scores.raw.snv.hg38.vcf.gz` + `.tbi` | ~16 GB | Apache 2.0 |
-| SpliceAI indels | `spliceai_scores.raw.indel.hg38.vcf.gz` + `.tbi` | ~4 GB | Apache 2.0 |
+| SpliceAI SNVs (masked) | `spliceai_scores.masked.snv.hg38.vcf.gz` + `.tbi` | ~27 GB | Academic and not-for-profit use only |
+| SpliceAI indels (masked) | `spliceai_scores.masked.indel.hg38.vcf.gz` + `.tbi` | ~64 GB | Academic and not-for-profit use only |
 | REVEL v1.3 | `revel_grch38.tsv.gz` + `.tbi` | ~526 MB | Free for research |
 | AlphaMissense | `AlphaMissense_hg38.tsv.gz` + `.tbi` | ~613 MB | CC BY-NC-SA 4.0 |
 
-All databases are optional. The script detects which files are present and annotates accordingly. Missing databases are silently skipped.
+All databases are optional. The script detects which files are present and annotates accordingly. A missing database is skipped with a `Skipping:` line in the log.
+
+The pipeline uses SpliceAI's **masked** scores, which SpliceAI's authors recommend for variant interpretation. [Reference setup](00-reference-setup.md#spliceai-pre-scored-91-gb) downloads the masked files. The script also accepts the raw files (`spliceai_scores.raw.*`): when both sets are present and indexed it uses the raw ones, and the log names the file in use. The precomputed SpliceAI scores are not open source: they are free for academic and not-for-profit use, and other use needs a commercial license from Illumina.
 
 ## Chromosome Naming Mismatch
 
-CADD files use bare chromosome names (`1`, `2`, `3`) while the pipeline VCFs and other databases use chr-prefixed names (`chr1`, `chr2`, `chr3`). The script handles this with a two-pass approach:
+CADD files use bare chromosome names (`1`, `2`, `3`) while the pipeline VCFs use chr-prefixed names (`chr1`, `chr2`, `chr3`). The script handles this with a two-pass approach:
 
 1. **Pass 1 (CADD):** Strip `chr` prefix from VCF, annotate with CADD, re-add `chr` prefix
-2. **Pass 2 (others):** Annotate with SpliceAI, REVEL, AlphaMissense (all chr-prefixed)
+2. **Pass 2 (others):** Annotate with SpliceAI, REVEL, AlphaMissense. REVEL (as built in reference setup) and AlphaMissense are chr-prefixed. The SpliceAI files use bare names; for them this pass relies on vcfanno's tabix reader, which retries a region with the other naming when a chromosome is not in the index.
 
 If only chr-prefixed databases are present (no CADD), a single pass is used.
 
@@ -43,7 +45,7 @@ If only chr-prefixed databases are present (no CADD), a single pass is used.
 quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
 ```
 
-Also uses the bcftools image for bgzip/tabix/chr renaming operations.
+Also uses the bcftools image to rename chromosomes, compress (`bcftools view -Oz`) and index (`bcftools index -t`).
 
 ## Usage
 
@@ -88,7 +90,7 @@ bcftools view -i 'INFO/CADD_PHRED>=20' ${SAMPLE}_annotated.vcf.gz | head
 bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AM_class\n' \
   -i 'INFO/AM_class="likely_pathogenic"' ${SAMPLE}_annotated.vcf.gz
 
-# High REVEL score missense variants (ClinGen moderate evidence)
+# REVEL at or above ClinGen's PP3_Supporting threshold (0.773 is Moderate, 0.932 Strong)
 bcftools view -i 'INFO/REVEL>=0.644' ${SAMPLE}_annotated.vcf.gz
 ```
 

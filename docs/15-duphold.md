@@ -15,11 +15,13 @@ brentp/duphold:v0.2.3
 ```
 
 ## Annotations Added
+duphold writes these as **FORMAT** fields (one value per sample), not INFO fields.
+
 | Tag | Meaning | Interpretation |
 |---|---|---|
-| DHFFC | Fold-change of depth inside SV vs flanking regions | < 0.7 for deletions = true deletion (depth drops as expected) |
-| DHBFC | Fold-change of depth inside SV vs background chromosome depth | > 1.3 for duplications = true duplication (depth rises) |
-| DHFC | Fold-change combining both flanking and background | General quality indicator |
+| DHFC | Fold-change of depth inside the SV vs the rest of the chromosome it is on | General quality indicator |
+| DHBFC | Fold-change of depth inside the SV vs genome bins with similar GC content | > 1.3 for duplications supports a real duplication (depth rises) |
+| DHFFC | Fold-change of depth inside the SV vs its flanking regions | < 0.7 for deletions supports a real deletion (depth drops as expected) |
 
 ## Command
 ```bash
@@ -35,12 +37,14 @@ docker run --rm \
 ```
 
 ## Filtering Examples
+The tags are FORMAT fields, so the expressions use `FMT/<tag>[0]` (the first sample).
+
 ```bash
 # Keep only high-confidence deletions (DHFFC < 0.7)
-bcftools view -i 'SVTYPE="DEL" && DHFFC < 0.7' diploidSV.duphold.vcf.gz
+bcftools view -i 'SVTYPE="DEL" && FMT/DHFFC[0] < 0.7' ${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
 
 # Keep only high-confidence duplications (DHBFC > 1.3)
-bcftools view -i 'SVTYPE="DUP" && DHBFC > 1.3' diploidSV.duphold.vcf.gz
+bcftools view -i 'SVTYPE="DUP" && FMT/DHBFC[0] > 1.3' ${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
 ```
 
 ## Runtime
@@ -49,5 +53,5 @@ bcftools view -i 'SVTYPE="DUP" && DHBFC > 1.3' diploidSV.duphold.vcf.gz
 ## Notes
 - Run this AFTER Manta (step 4). Zero-cost quality improvement before AnnotSV (step 5).
 - Requires the original BAM and reference FASTA — it re-calculates depth around each SV.
-- Output is the same VCF with three new INFO fields added. All downstream tools (AnnotSV, bcftools) work unchanged.
+- Output (`duphold/${SAMPLE}_sv_duphold.vcf`, uncompressed) is the same VCF with three new FORMAT fields added. All downstream tools (AnnotSV, bcftools) work unchanged.
 - Consider piping the duphold output into AnnotSV instead of the raw Manta VCF for cleaner results.
