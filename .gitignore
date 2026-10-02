@@ -21,6 +21,32 @@ __pycache__/
 *.fq
 *.fq.gz
 *.ora
+*.gvcf
+*.gvcf.gz
+*.tbi
+*.csi
+
+# Genotype files: plink sets, scores and chip exports
+*.pgen
+*.pvar
+*.psam
+*.bed
+*.bim
+*.fam
+*.sscore
+*_raw.txt
+*_raw_dna_data.csv
+genome_*_Full_*.txt
+AncestryDNA*.txt
+
+# Reports and summaries the steps write about a sample
+*_report.html
+*.report.json
+*.cpsr.*
+*_prs_summary.tsv
+
+# A data directory at the top of the checkout
+/data/
 
 # Reference files
 *.fasta
