@@ -152,7 +152,7 @@ fi
 if [ -f "$REVEL" ] && [ -f "${REVEL}.tbi" ]; then
   REVEL_HEADER=$({ gzip -dc "$REVEL" 2>/dev/null || true; } | awk '/^#/ {h = $0; next} {exit} END {print h}')
   if [ -n "$REVEL_HEADER" ]; then
-    if ! printf '%s\n' "$REVEL_HEADER" | awk -F'\t' '{exit !(tolower($3) == "ref" && tolower($4) == "alt" && tolower($5) ~ /revel/)}'; then
+    if ! printf '%s\n' "$REVEL_HEADER" | awk -F'\t' '{r = tolower($3); a = tolower($4); exit !((r == "ref" || r == "reference") && (a == "alt" || a == "alternate") && tolower($5) ~ /revel/)}'; then
       echo "ERROR: ${REVEL} has the header line" >&2
       echo "  ${REVEL_HEADER}" >&2
       echo "  but its data columns must be chr, pos, ref, alt, REVEL and the header must name them so" >&2
