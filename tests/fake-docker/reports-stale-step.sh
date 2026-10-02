@@ -87,7 +87,7 @@ chmod +x "${CASE_WORK}/tools-hook"
 export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/tools-hook"
 
 run_expect 0 run-all "${SCRIPTS}/run-all.sh" sample1 male
-output_has run-all '^  31 slivar +skipped +needs VEP'
+output_has run-all '^  31 slivar +skipped +\(needs VEP'
 
 S="${GENOME_DIR}/sample1"
 STATUS="${S}/logs/run_status.tsv"

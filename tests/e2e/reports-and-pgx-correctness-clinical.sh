@@ -54,15 +54,16 @@ check_ge "step 31 rows with a numeric mis_z" \
 rm -f "$CONSTRAINT"
 
 # --- 3. synthetic frequencies --------------------------------------------------
-# write_sample NAME WITH_MAX_AF: a VEP-style VCF at NAME/vep/NAME_vep.vcf. With
-# WITH_MAX_AF=no the CSQ has gnomADe_AF and gnomADg_AF only.
+# write_sample NAME WITH_MAX_AF: a VEP-style VCF at NAME/vep/NAME_vep.vcf, with
+# the CSQ fields steps 23 and 31 read (step 31's summary prints
+# Existing_variation). With WITH_MAX_AF=no the CSQ has gnomADe_AF and gnomADg_AF only.
 #   1000 missense, absent from exomes, 20% in genomes      -> not rare
 #   2000 missense, rare everywhere                         -> rare MODERATE
 #   3000 stop-gain, 30% everywhere                         -> not rare
 #   4000 stop-gain, no frequency at all                    -> rare HIGH
 #   5000 intron, SpliceAI 0.50 for its second gene, rare   -> splice tier
 write_sample() {
-  local name=$1 with_max=$2 fields='Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|CANONICAL|gnomADe_AF|gnomADg_AF'
+  local name=$1 with_max=$2 fields='Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|CANONICAL|Existing_variation|gnomADe_AF|gnomADg_AF'
   [ "$with_max" = yes ] && fields+='|MAX_AF'
   fields+='|CLIN_SIG'
   mkdir -p "${GENOME_DIR}/${name}/vep"
@@ -76,7 +77,7 @@ write_sample() {
     # pos ref alt consequence impact symbol gnomADe gnomADg MAX_AF extra-INFO
     while read -r pos ref alt cons impact sym e g max extra; do
       [ "$e" = - ] && e=""; [ "$g" = - ] && g=""; [ "$max" = - ] && max=""; [ "$extra" = - ] && extra=""
-      csq="${alt}|${cons}|${impact}|${sym}|ENSG${pos}|Transcript|ENST${pos}|protein_coding|YES|${e}|${g}"
+      csq="${alt}|${cons}|${impact}|${sym}|ENSG${pos}|Transcript|ENST${pos}|protein_coding|YES|rs${pos}|${e}|${g}"
       [ "$with_max" = yes ] && csq+="|${max}"
       csq+="|"
       printf 'chr20\t%s\t.\t%s\t%s\t50\tPASS\tCSQ=%s%s\tGT\t0/1\n' "$pos" "$ref" "$alt" "$csq" "$extra"

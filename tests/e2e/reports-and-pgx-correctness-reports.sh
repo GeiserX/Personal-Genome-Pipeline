@@ -92,11 +92,13 @@ check "the Nextflow summary validates" \
 SLIVAR="${D}/slivar/${SAMPLE}_slivar_summary.tsv"
 check "case 42 left a slivar summary" test -s "$SLIVAR"
 touch -d '2 days ago' "$SLIVAR"
+mkdir -p "${D}/logs"
 {
   printf 'meta\tstarted_epoch\t%s\nmeta\tdeclared_sex\tmale\n' "$(date -d '1 day ago' +%s)"
   for s in 06 07 11 12 16 16b 20 21 27 32; do printf 'step\t%s\tok\n' "$s"; done
   printf 'step\t31\tskipped (needs VEP, step 13 failed)\n'
 } > "$STATUS"
+check "the run status file is in place" grep -q $'^step\t31\tskipped' "$STATUS"
 touch -d '3 days ago' "${D}/clinvar/${SAMPLE}_clinvar_hits.vcf"
 run_step generate-report.sh "$SAMPLE"
 check_step_exit generate-report.sh
