@@ -6,6 +6,12 @@
 # Input: sorted BAM from long-read alignment + GRCh38 reference
 # Output: SV VCF in $GENOME_DIR/<sample>/sv_sniffles/
 # Runtime: ~30-90 minutes per 30X long-read genome
+#
+# Sniffles2 writes the bgzipped VCF and its .tbi itself (an -v name ending in
+# .vcf.gz), and --allow-overwrite lets a rerun replace the output of a run
+# that failed half way.
+# Known gap: Sniffles2 calls SVs in tandem repeats more accurately with a
+# tandem-repeat BED (--tandem-repeats); none is passed here yet.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -38,30 +44,28 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 # Run Sniffles2
-echo "[1/3] Running Sniffles2 SV caller..."
+echo "[1/1] Running Sniffles2 SV caller..."
 echo "       This takes 30-90 minutes for 30X long-read WGS."
 run_in --cpus "$THREADS" --memory 16g \
   "$SNIFFLES_IMAGE" \
   sniffles \
     -i "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
-    -v "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv_raw.vcf" \
+    -v "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" \
     --reference "${REF_FASTA_C}" \
     --threads "$THREADS" \
-    --sample-id "${SAMPLE}"
+    --sample-id "${SAMPLE}" \
+    --allow-overwrite
 
-# Compress and index with bcftools
-echo "[2/3] Compressing VCF..."
-run_in "$BCFTOOLS_IMAGE" \
-  bcftools view \
-    "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv_raw.vcf" \
-    -Oz -o "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
+if ! have_output "${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz"; then
+  echo "ERROR: Sniffles2 exited without a complete ${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz" >&2
+  exit 1
+fi
+if [ ! -f "${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz.tbi" ]; then
+  run_in "$BCFTOOLS_IMAGE" bcftools index -f -t "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
+fi
 
-echo "[3/3] Indexing VCF..."
-run_in "$BCFTOOLS_IMAGE" \
-  bcftools index -t \
-    "/genome/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz"
-
-# Clean up raw VCF
+# The .vcf a version before this one wrote first; Sniffles2 refused to
+# overwrite it, so a failed run blocked every rerun.
 rm -f "${OUTPUT_DIR}/${SAMPLE}_sv_raw.vcf"
 
 SV_COUNT=$(run_in \

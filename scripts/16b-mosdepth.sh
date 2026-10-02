@@ -32,8 +32,9 @@ if [ ! -f "${BAM}.bai" ]; then
   exit 1
 fi
 
-# Skip if output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt" ]; then
+# Skip if output already exists. mosdepth writes the summary last, so a
+# non-empty summary means the run finished.
+if have_output "${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt"; then
   echo "mosdepth output already exists in ${OUTPUT_DIR}/, skipping."
   echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0

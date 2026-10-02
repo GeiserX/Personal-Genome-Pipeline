@@ -70,15 +70,23 @@ run_in \
     --threads="${THREADS}" \
     --sample_name="${SAMPLE}"
 
-# Clair3 outputs merge_output.vcf.gz as the final merged VCF
-# Rename to match pipeline conventions
+# Clair3 writes merge_output.vcf.gz (and its .tbi) as the final merged VCF;
+# it is moved to the pipeline's name. Without it the run failed, whatever
+# Clair3's exit code said, and an older <sample>.vcf.gz is not a result.
 CLAIR3_VCF="${OUTPUT_DIR}/merge_output.vcf.gz"
 FINAL_VCF="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 
-if [ -f "$CLAIR3_VCF" ] && [ "$CLAIR3_VCF" != "$FINAL_VCF" ]; then
-  echo "Renaming output to match pipeline conventions..."
-  cp "$CLAIR3_VCF" "$FINAL_VCF"
-  cp "${CLAIR3_VCF}.tbi" "${FINAL_VCF}.tbi" 2>/dev/null || true
+if ! have_output "$CLAIR3_VCF"; then
+  echo "ERROR: Clair3 left no complete ${CLAIR3_VCF}; see its log in ${OUTPUT_DIR}/." >&2
+  exit 1
+fi
+echo "Renaming output to match pipeline conventions..."
+rm -f "${FINAL_VCF}.tbi"
+mv -f "$CLAIR3_VCF" "$FINAL_VCF"
+if [ -f "${CLAIR3_VCF}.tbi" ]; then
+  mv -f "${CLAIR3_VCF}.tbi" "${FINAL_VCF}.tbi"
+else
+  run_in "$BCFTOOLS_IMAGE" bcftools index -f -t "/genome/${SAMPLE}/vcf_clair3/${SAMPLE}.vcf.gz"
 fi
 
 echo "=== Clair3 complete ==="

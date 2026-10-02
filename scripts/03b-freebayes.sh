@@ -45,25 +45,28 @@ if [ -n "$INTERVALS" ]; then
 fi
 FREEBAYES_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
-run_in \
+# Through a temporary name: a FreeBayes that fails leaves no raw VCF behind.
+atomic_out "${OUTPUT_DIR}/${SAMPLE}_raw.vcf" run_in \
   --cpus 4 --memory 32g \
   "${FREEBAYES_IMAGE}" \
-  freebayes "${FREEBAYES_ARGS[@]}" \
-  > "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
+  freebayes "${FREEBAYES_ARGS[@]}"
 
-# Step 2: Sort, compress, and index with bcftools
+# Step 2: Sort and compress in one bcftools call (no pipe whose first half can
+# fail unseen), with its temporary files in the output directory, then index.
+# The raw VCF is removed only after both succeeded.
 echo "Sorting and compressing VCF..."
 run_in \
   --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
-  bash -c "bcftools sort /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf \
-    | bcftools view -Oz -o /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
+  bcftools sort -Oz -o "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" \
+    -T "/genome/${SAMPLE}/vcf_freebayes/sort-tmp" \
+    "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf"
 
 echo "Indexing VCF..."
 run_in \
   --cpus 1 --memory 1g \
   "${BCFTOOLS_IMAGE}" \
-  bcftools index -t "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
+  bcftools index -f -t "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
 
 # Clean up raw unsorted VCF
 rm -f "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
