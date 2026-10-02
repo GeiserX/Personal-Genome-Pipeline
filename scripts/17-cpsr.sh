@@ -55,9 +55,11 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # --root: the PCGR image has not been shown to run as an unprivileged user.
+# The VEP cache and the PCGR bundle stay writable as before: no CI run shows
+# that PCGR and its VEP never write into them.
 run_in --root --cpus 4 --memory 8g \
-  -v "${VEP_DIR}:/mnt/.vep:ro" \
-  -v "${REFDATA_DIR}:/mnt/bundle:ro" \
+  -v "${VEP_DIR}:/mnt/.vep" \
+  -v "${REFDATA_DIR}:/mnt/bundle" \
   -v "${SAMPLE_DIR}/${VCF_DIR}:/mnt/inputs" \
   -v "${SAMPLE_DIR}/cpsr:/mnt/outputs" \
   "${PCGR_IMAGE}" \

@@ -72,7 +72,7 @@ CANONICAL_CHROMS=(chr{1..22} chrX chrY)
 # cnvpytor invocation with the genome data + pinned resource mounts
 cnvpytor_run() {
   run_in --cpus 4 --memory 8g \
-    -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}" \
+    -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}:ro" \
     "${CNVPYTOR_IMAGE}" "$@"
 }
 
@@ -92,7 +92,7 @@ echo "[5/6] Exporting VCF..."
 # `-view` reads its commands from stdin when stdin is not a TTY, so docker needs -i.
 run_in -i \
   --cpus 4 --memory 8g \
-  -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}" \
+  -v "${CNVPYTOR_DATA}:${CNVPYTOR_IMG_DATA}:ro" \
   "${CNVPYTOR_IMAGE}" \
   cnvpytor -root "$PYTOR" -view "$BIN_SIZE" > /dev/null <<VIEW
 set print_filename /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.raw.vcf

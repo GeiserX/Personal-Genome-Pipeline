@@ -213,8 +213,9 @@ if [ -n "$TRUTH_VCF" ]; then
     echo ""
     echo "=== Running hap.py: ${CALLER} vs truth ==="
 
+    # --root: the hap.py image has not been shown to run as an unprivileged user.
     # shellcheck disable=SC2086
-    run_in \
+    run_in --root \
       --cpus 4 --memory 8g \
       "${HAPPY_IMAGE}" \
       /opt/hap.py/bin/hap.py \

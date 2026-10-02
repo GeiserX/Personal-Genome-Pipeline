@@ -32,10 +32,11 @@ if [ ! -f "${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; th
   echo "Cache installed at ${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/"
 fi
 
-# Run VEP
+# Run VEP. The cache stays writable as before: VEP builds an index for a
+# FASTA it finds there without one, and no CI run shows it never writes.
 run_in \
   --cpus 4 --memory 8g \
-  -v "${CACHE_DIR}:/opt/vep/.vep:ro" \
+  -v "${CACHE_DIR}:/opt/vep/.vep" \
   "${VEP_IMAGE}" \
   vep \
     --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
