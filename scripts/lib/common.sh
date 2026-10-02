@@ -88,8 +88,11 @@ fi
 #   --root     the image cannot run as an unprivileged user.
 #   --rw DIR   DIR (inside GENOME_DIR) is writable too, e.g. a shared index.
 # Everything after the opt-outs goes to `docker run` unchanged.
+# When an unprivileged run fails and the sample directory holds a path the
+# caller does not own (versions before this library ran every container as
+# root), run_in says how to take the directory back.
 run_in() {
-  local isolate=true root=false d c
+  local isolate=true root=false d c rc=0 other
   local -a extra=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -112,7 +115,17 @@ run_in() {
     mkdir -p "${GENOME_DIR}/${SAMPLE}"
     args+=(-v "${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE}")
   fi
-  "$CONTAINER_ENGINE" "${args[@]}" ${extra[@]+"${extra[@]}"} "$@"
+  "$CONTAINER_ENGINE" "${args[@]}" ${extra[@]+"${extra[@]}"} "$@" || rc=$?
+  if [ "$rc" -ne 0 ] && ! $root && [ -n "${SAMPLE:-}" ]; then
+    other=$(find "${GENOME_DIR}/${SAMPLE}" ! -user "$(id -u)" -print 2>/dev/null | head -n 1)
+    if [ -n "$other" ]; then
+      echo "NOTE: ${other} is not yours. Older versions of this pipeline ran every container as root;" >&2
+      echo "  steps now run as you and cannot write over such files. If the error above is" >&2
+      echo "  'Permission denied', take the sample directory back and run the step again:" >&2
+      echo "    sudo chown -R \"$(id -u):$(id -g)\" \"${GENOME_DIR}/${SAMPLE}\"" >&2
+    fi
+  fi
+  return "$rc"
 }
 
 # _digest md5|sha256|sum FILE: the checksum of FILE (sum = BSD sum, the

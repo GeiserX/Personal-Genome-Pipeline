@@ -213,7 +213,7 @@ Change its line in `versions.env`, plus the coupled data variable its comment na
 ## Common Issues
 
 - **Docker image not found**: Biocontainer tags change frequently. Check quay.io/biocontainers directly.
-- **Permission denied in container**: the step writes outside the sample directory. Add `--rw DIR` to its `run_in` call; use `--root` only for an image that cannot run as an unprivileged user.
+- **Permission denied in container**: the step writes outside the sample directory. Add `--rw DIR` to its `run_in` call; use `--root` only for an image that cannot run as an unprivileged user. A sample directory written by an older version, which ran every container as root, holds root-owned files: `run_in` then prints the `sudo chown -R` that gives it back.
 - **0-byte output**: Usually wrong input path inside container. Double-check `:/genome` mount mapping.
 - **PCGR/CPSR path confusion**: `--pcgr_dir` should point to PARENT of `data/`, not `data/` itself.
 - **VEP cache**: step 13 installs it (resumable, checked against Ensembl's CHECKSUMS); never use VEP's `INSTALL.pl`.

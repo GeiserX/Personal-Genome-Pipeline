@@ -3,7 +3,7 @@
 #   - no script starts a container any other way;
 #   - an analysis step runs with no network, the data directory read-only,
 #     only the sample directory writable, as the calling user;
-#   - a step that says --net and --root gets the network and the image's user;
+#   - a step that says --net gets the network and still runs as the caller;
 #   - a write outside the sample directory fails unless the call says --rw;
 #   - the image is the one versions.env names: changing that one line changes
 #     what the script runs, and without versions.env the script does not start.
@@ -32,8 +32,8 @@ docker_log_has "^run image=[^ ]*bcftools[^ ]* :: .*--network none .*--user [0-9]
 : > "$FAKE_DOCKER_LOG"
 run_rc cyrius "${SCRIPTS}/21-cyrius.sh" sample1
 docker_log_has '^run image=[^ ]*python' "step 21 never ran the python image"
-if awk '/^run image=[^ ]*python/ && (/--network none/ || /--user /) { bad = 1 } END { exit !bad }' "$FAKE_DOCKER_LOG"; then
-  fail "step 21 (pip install) ran without network or as the calling user; it needs --net and --root"
+if awk '/^run image=[^ ]*python/ && (/--network none/ || !/--user [0-9]+:[0-9]+ /) { bad = 1 } END { exit !bad }' "$FAKE_DOCKER_LOG"; then
+  fail "step 21 (pip install) ran without network or not as the calling user; it needs --net and no --root"
 fi
 
 # --- read-only data directory ---------------------------------------------------
