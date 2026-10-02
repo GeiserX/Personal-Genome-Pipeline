@@ -44,7 +44,7 @@ ROW_TIMEOUT=${ROW_TIMEOUT:-3600}
 GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
 TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
-NEEDS_KNOWN="ref reads bam longreads longbam truth fullref slice vcf vcf50 revel sv dels bundle cyrius mito hlareads qc ehcatalog chain annotsv"
+NEEDS_KNOWN="ref reads bam longreads longbam truth fullref slice vcf vcf50 pgxvcf revel sv dels bundle cyrius mito hlareads qc ehcatalog chain annotsv"
 OPTS_KNOWN="root net full also= rw="
 
 # The mini reference: chr20:10,000,001-10,500,000 of the fixture reference as
@@ -324,7 +324,13 @@ need_fullref() {
   gzip -dc "${FX}/fixture_ref.fa.gz" > "${IN}/ref.fa.tmp" && mv "${IN}/ref.fa.tmp" "${IN}/ref.fa" || return 1
   cp "${FX}/fixture_ref.fa.gz.fai" "${IN}/ref.fa.fai" && cp "${FX}/fixture_ref.dict" "${IN}/ref.dict"
 }
-need_slice() { fx_link HG002_slice.bam HG002_slice.bam.bai; }
+# The fixture's GIAB BAM has no read group; tools that name the sample after
+# it (pypgx, bcftools mpileup) would take the file path instead. Add one.
+need_slice() {
+  fx_get HG002_slice.bam HG002_slice.bam.bai || return 1
+  hsam addreplacerg -r '@RG\tID:HG002\tSM:HG002\tPL:ILLUMINA' -o /in/HG002_slice.bam /fx/HG002_slice.bam &&
+    hsam index /in/HG002_slice.bam
+}
 need_vcf() {
   fx_get HG002_vep.vcf || return 1
   hbcf view -Oz -o /in/sample.vcf.gz /fx/HG002_vep.vcf && hbcf index -f -t /in/sample.vcf.gz
@@ -333,6 +339,15 @@ need_vcf50() {
   need vcf || return 1
   hbcf annotate -x INFO/CSQ /in/sample.vcf.gz | awk '/^#/ || n++ < 50' > "${IN}/sample50.vcf" &&
     [ "$(grep -vc '^#' "${IN}/sample50.vcf")" -eq 50 ]
+}
+# Every site of the CYP2C19 and CYP2C9 slice called from the GIAB reads,
+# reference sites included: PharmCAT counts a position the VCF lacks as
+# missing, not as reference, and the fixture's VCF holds variants only.
+need_pgxvcf() {
+  need fullref && need slice || return 1
+  hrun "$BCFTOOLS_IMAGE" sh -c 'bcftools mpileup -r chr10:94700001-95000000 -f /in/ref.fa -a AD,DP -Ou /in/HG002_slice.bam \
+    | bcftools call -m -Oz -o /in/pgx.vcf.gz && bcftools index -f -t /in/pgx.vcf.gz' || return 1
+  echo "pgx.vcf.gz: $(hbcf view -H /in/pgx.vcf.gz | wc -l) sites, $(hbcf view -H -i 'GT="alt"' /in/pgx.vcf.gz | wc -l) with an ALT allele"
 }
 need_revel() { fx_link revel_synthetic.tsv.gz revel_synthetic.tsv.gz.tbi; }
 need_sv() { fx_link HG002_sv_manta_style.vcf.gz HG002_sv_manta_style.vcf.gz.tbi; }
@@ -538,7 +553,8 @@ run_row() {  # run_row INDEX K
   start=$(date +%s)
   local -a args=(run --rm --env-file "$ENV_FILE" -e HOME=/tmp -v "${IN}:/in:ro" -v "${SMOKE_DIR}:/smoke:ro"
                  -v "${ROW_DIR}:/out" -w /out --entrypoint sh)
-  has_opt "$opts" root || args+=(--user "$ME")
+  # An image may set a non-root USER, so root is asked for, not assumed.
+  if has_opt "$opts" root; then args+=(--user 0:0); else args+=(--user "$ME"); fi
   has_opt "$opts" net || args+=(--network none)
   IFS=, read -r -a list <<< "$opts"
   for o in "${list[@]}"; do
@@ -636,7 +652,7 @@ smoke() {
       echo "| ${RES_VAR[$i]} | ${RES_ROW[$i]} | ${RES_RESULT[$i]} | ${RES_TIME[$i]} |"
     done
     echo
-    echo "Logs are in the image-smoke-logs artifact of this run."
+    echo "Row logs are in the image-smoke-logs-* artifacts of this run."
     for f in "${LOGS}"/*.log; do
       [ -f "$f" ] || continue
       grep -q '^\[FAIL\]' "$f" || continue

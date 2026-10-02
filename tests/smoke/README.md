@@ -53,8 +53,9 @@ at the planted deletion), `vcf_field`, `tsv_cell`, `tsv_count`, `csv_cell`,
 | truth | The GIAB v4.2.1 calls of the slice up to position 449,000 (`truth.vcf.gz`, `truth.bed`), and `query90.vcf.gz`, the truth without every tenth SNV. |
 | longreads, longbam | Synthetic HiFi reads from both truth haplotypes, and their alignment. |
 | fullref | The whole fixture reference, `ref.fa`. |
-| slice | The fixture's GIAB BAM, `HG002_slice.bam`. |
+| slice | The fixture's GIAB BAM, `HG002_slice.bam`, with a read group for sample HG002 added. |
 | vcf, vcf50 | The fixture's VEP-annotated VCF, and its first 50 records without CSQ. |
+| pgxvcf | Every site of chr10:94.7-95.0 Mb (CYP2C19, CYP2C9) called from `slice` with bcftools, reference sites included: PharmCAT counts a missing position as missing, not as reference. |
 | revel, sv, cyrius | Fixture files: synthetic REVEL scores, the ten-record SV VCF, the Cyrius BAM. |
 | dels | Two deletions for duphold: the planted one and a control. |
 | bundle | The pypgx-bundle tag `PYPGX_BUNDLE_VERSION` names. |

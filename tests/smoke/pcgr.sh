@@ -6,11 +6,13 @@
 set -e
 cpsr --version > cpsr_version.txt 2>&1 || true
 cat cpsr_version.txt
+# vep is in the pcgr conda environment, on PATH; Rscript is in the pcgrr one.
 find_bin() {
   command -v "$1" 2>/dev/null && return 0
-  for b in /opt/conda/envs/*/bin/"$1" /usr/local/bin/"$1"; do
+  for b in /opt/*/envs/*/bin/"$1"; do
     [ -x "$b" ] && { echo "$b"; return 0; }
   done
+  echo "ERROR: $1 is not on PATH nor in /opt/*/envs/*/bin" >&2
   return 1
 }
 VEP=$(find_bin vep)
