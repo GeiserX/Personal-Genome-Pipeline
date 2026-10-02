@@ -1,0 +1,222 @@
+name: Renovate dry run
+
+# Runs Renovate's lookups on this repository with no app, no write access and
+# no branch or PR created (local platform, dry-run=lookup), then checks what
+# it found. The hosted Renovate app reads the same renovate.json, so a
+# matcher that misses an image, or a versioning that cannot read a tag, shows
+# up here first. The full debug log is kept as an artifact for 14 days.
+#
+# The checks (each one has a planted fault in the self-test step):
+#   count    every *_IMAGE line of versions.env is a detected docker dependency
+#   names    no package name carries a ':' or '@' (a digest line once became
+#            a package named '...@sha256')
+#   twins    docs/versions.md holds exactly the images of versions.env, and
+#            conf/containers.config and container-test.yml hold only those,
+#            so one Renovate PR updates every copy
+#   one-pr   a tool gets the same proposal in every file it is in
+#   lookups  no lookup failed and no tag was unreadable; the only skipped
+#            dependencies are the ones a rule in renovate.json disables
+# The step summary lists every dependency with the update Renovate would
+# propose, or the reason it proposes none.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'renovate.json'
+      - 'versions.env'
+      - 'conf/containers.config'
+      - 'docs/versions.md'
+      - '.github/workflows/container-test.yml'
+      - '.github/workflows/renovate-dry-run.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'renovate.json'
+      - '.github/workflows/renovate-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lookup:
+    # Public repo: GitHub-hosted runners only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RENOVATE_VERSION: 44.132.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Install Renovate
+        run: npm install --global --no-audit --no-fund "renovate@${RENOVATE_VERSION}"
+
+      - name: Validate renovate.json (strict, so a config that needs migration fails)
+        id: validate
+        run: renovate-config-validator --strict renovate.json
+
+      # The lookups and the checks run even when validation failed, so one red
+      # run names every problem.
+      - name: Renovate lookups (local platform, dry run)
+        id: lookup
+        if: ${{ !cancelled() }}
+        env:
+          LOG_LEVEL: debug
+          LOG_FORMAT: json
+          # Read-only token, so the github-releases lookups are not rate limited.
+          RENOVATE_GITHUB_COM_TOKEN: ${{ github.token }}
+        run: renovate --platform=local --dry-run=lookup > "${RUNNER_TEMP}/renovate.log"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: renovate-dry-run-log
+          path: ${{ runner.temp }}/renovate.log
+          retention-days: 14
+
+      - name: Write the checker
+        if: ${{ !cancelled() && steps.lookup.outcome == 'success' }}
+        run: |
+          cat > "${RUNNER_TEMP}/check.py" <<'PY'
+          import collections, copy, json, os, re, sys
+
+          ENV = "versions.env"
+          TWINS = ("docs/versions.md", "conf/containers.config", ".github/workflows/container-test.yml")
+          RULE_SKIPS = {"disabled", "package-rules"}
+
+          def load(log):
+              files = None
+              for line in open(log):
+                  try:
+                      rec = json.loads(line)
+                  except ValueError:
+                      continue
+                  if rec.get("msg") == "packageFiles with updates":
+                      files = rec["config"]
+              if files is None:
+                  sys.exit("FAIL: no 'packageFiles with updates' record in %s" % log)
+              return [(pf["packageFile"], dep) for entries in files.values() for pf in entries for dep in pf.get("deps", [])]
+
+          def env_images(text):
+              out = []
+              for m in re.finditer(r'^[A-Z0-9_]+_IMAGE="([^"]*)"', text, re.M):
+                  out.append(re.split(r"@|:(?=[^:/]*$)", m.group(1), maxsplit=1)[0])
+              return out
+
+          def key(dep):
+              return (dep.get("depName"), dep.get("currentValue"), dep.get("currentDigest"))
+
+          def proposals(dep):
+              return sorted((u.get("newValue") or "", u.get("newDigest") or "") for u in dep.get("updates", []))
+
+          def check(deps, env_text):
+              fails = []
+              docker = [(f, d) for f, d in deps if d.get("datasource") == "docker"]
+              by_file = collections.defaultdict(list)
+              for f, d in docker:
+                  by_file[f].append(d)
+              want = env_images(env_text)
+              got = [d.get("depName") for d in by_file[ENV]]
+              if len(got) != len(want):
+                  fails.append("count: versions.env has %d *_IMAGE lines, Renovate found %d docker dependencies there" % (len(want), len(got)))
+              for name in sorted(set(want) - set(got)):
+                  fails.append("count: %s (versions.env) is not a detected dependency" % name)
+              for f, d in docker:
+                  if re.search(r"[:@]", d.get("depName") or ":"):
+                      fails.append("names: %s: package name %r" % (f, d.get("depName")))
+              env_keys = collections.Counter(key(d) for d in by_file[ENV])
+              for f in TWINS:
+                  keys = collections.Counter(key(d) for d in by_file[f])
+                  if f == "docs/versions.md" and keys != env_keys:
+                      for k in sorted((keys - env_keys) | (env_keys - keys), key=str):
+                          fails.append("twins: docs/versions.md and versions.env differ on %s" % (k,))
+                  else:
+                      for k in sorted(set(keys) - set(env_keys), key=str):
+                          fails.append("twins: %s has %s, which versions.env does not" % (f, k))
+              seen = {}
+              for f, d in deps:
+                  name = (d.get("datasource"), d.get("depName"), d.get("currentValue"), d.get("currentDigest"))
+                  p = proposals(d)
+                  if name in seen and seen[name][1] != p:
+                      fails.append("one-pr: %s gets %s in %s but %s in %s" % (d.get("depName"), seen[name][1], seen[name][0], p, f))
+                  seen.setdefault(name, (f, p))
+              for f, d in deps:
+                  if d.get("warnings"):
+                      fails.append("lookups: %s (%s): %s" % (d.get("depName"), f, "; ".join(w.get("message", str(w)) for w in d["warnings"])))
+                  if d.get("skipReason") and d["skipReason"] not in RULE_SKIPS:
+                      fails.append("lookups: %s (%s) skipped: %s" % (d.get("depName"), f, d["skipReason"]))
+              return fails
+
+          def self_test(deps, env_text):
+              ok = True
+              def plant(label, fn, pattern):
+                  nonlocal ok
+                  d = copy.deepcopy(deps)
+                  fn(d)
+                  hits = [x for x in check(d, env_text) if x.startswith(pattern)]
+                  print("self-test %-8s %s" % (label, "caught: " + hits[0] if hits else "NOT CAUGHT"))
+                  ok = ok and bool(hits)
+              def first(d, f):
+                  return next(x for g, x in d if g == f and x.get("datasource") == "docker")
+              def drop(d):
+                  d.remove(next((g, x) for g, x in d if g == ENV and x.get("datasource") == "docker"))
+              def digest_name(d):
+                  first(d, ENV)["depName"] += "@sha256"
+              def stale_twin(d):
+                  first(d, "docs/versions.md")["currentValue"] = "0.0.0-planted"
+              def split_pr(d):
+                  first(d, "conf/containers.config")["updates"] = [{"newValue": "9.9.9-planted"}]
+              def broken_lookup(d):
+                  first(d, ENV)["skipReason"] = "invalid-value"
+              plant("count", drop, "count:")
+              plant("names", digest_name, "names:")
+              plant("twins", stale_twin, "twins:")
+              plant("one-pr", split_pr, "one-pr:")
+              plant("lookups", broken_lookup, "lookups:")
+              clean = check(deps, env_text)
+              print("self-test clean    %s" % ("passes" if not clean else "fails: %s" % clean[0]))
+              return ok
+
+          def summary(deps):
+              rows, seen = [], set()
+              files = collections.defaultdict(set)
+              for f, d in deps:
+                  files[(d.get("datasource"), d.get("depName"))].add(f)
+              for f, d in deps:
+                  k = (d.get("datasource"), d.get("depName"))
+                  if k in seen:
+                      continue
+                  seen.add(k)
+                  cur = d.get("currentValue") or d.get("currentDigest") or ""
+                  ups = ", ".join("%s (%s)" % (u.get("newValue") or u.get("newDigest"), u.get("updateType"))
+                                  for u in d.get("updates", [])) or "none"
+                  note = d.get("skipReason") or ""
+                  rows.append("| `%s` | `%s` | %s | %s | %d |" % (d.get("depName"), cur, ups, note, len(files[k])))
+              return "\n".join(["| Dependency | Current | Proposed update | Skipped | Files |", "|---|---|---|---|---|"] + rows)
+
+          deps = load(sys.argv[1])
+          env_text = open(ENV).read()
+          table = summary(deps)
+          print(table)
+          if os.environ.get("GITHUB_STEP_SUMMARY"):
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+                  out.write("## Renovate dry run\n\n" + table + "\n")
+          if not self_test(deps, env_text):
+              sys.exit("FAIL: the self-test did not catch a planted fault")
+          fails = check(deps, env_text)
+          for x in fails:
+              print("FAIL " + x)
+          if fails:
+              sys.exit(1)
+          print("OK: %d dependencies; every check passed" % len(deps))
+          PY
+
+      - name: Check what Renovate found
+        if: ${{ !cancelled() && steps.lookup.outcome == 'success' }}
+        run: python3 "${RUNNER_TEMP}/check.py" "${RUNNER_TEMP}/renovate.log"
