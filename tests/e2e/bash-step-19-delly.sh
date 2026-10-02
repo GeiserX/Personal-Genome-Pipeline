@@ -5,7 +5,8 @@
 check "Delly's exclude map installs" bash -c '. "$1/scripts/lib/common.sh" && install_data_file delly_exclude' _ "$REPO"
 MAP="${GENOME_DIR}/reference/delly_human.hg38.excl.tsv"
 check_ge "exclude map lines" "$(grep -c . "$MAP" 2>/dev/null || true)" 1000
-check "the map excludes chr22_KI270879v1_alt" grep -q '^chr22_KI270879v1_alt[[:space:]]' "$MAP"
+# A whole contig is a line with its name alone.
+check "the map excludes chr22_KI270879v1_alt" grep -qx 'chr22_KI270879v1_alt' "$MAP"
 
 run_step 19-delly.sh "$SAMPLE"
 check_step_exit 19-delly.sh
