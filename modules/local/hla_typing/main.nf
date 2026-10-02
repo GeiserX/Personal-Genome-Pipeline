@@ -17,8 +17,6 @@ process HLA_TYPING {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0'
-
     publishDir { "${params.outdir}/${meta.id}/hla" }, mode: params.publish_dir_mode
 
     input:

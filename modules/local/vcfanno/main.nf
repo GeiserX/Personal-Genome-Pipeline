@@ -26,8 +26,6 @@ process VCFANNO {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(cadd_snv)
@@ -137,8 +135,6 @@ TOML_END
 process VCFANNO_INDEX {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 

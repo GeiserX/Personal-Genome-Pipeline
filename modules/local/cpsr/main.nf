@@ -13,8 +13,6 @@ process CPSR {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'sigven/pcgr:2.2.5'
-
     publishDir { "${params.outdir}/${meta.id}/cpsr" }, mode: params.publish_dir_mode
 
     input:

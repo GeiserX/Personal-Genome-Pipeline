@@ -14,8 +14,6 @@ process STRANGER {
     tag "$meta.id"
     label 'process_single'
 
-    container 'quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0'
-
     publishDir { "${params.outdir}/${meta.id}/expansion_hunter" }, mode: params.publish_dir_mode
 
     input:

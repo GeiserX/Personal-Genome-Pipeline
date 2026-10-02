@@ -14,8 +14,6 @@ process EXPANSION_HUNTER {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5'
-
     publishDir { "${params.outdir}/${meta.id}/expansion_hunter" }, mode: params.publish_dir_mode
 
     input:

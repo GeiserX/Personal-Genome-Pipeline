@@ -14,8 +14,6 @@ process ANCESTRY {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'pgscatalog/plink2:2.00a5.10'
-
     publishDir { "${params.outdir}/${meta.id}/ancestry" }, mode: params.publish_dir_mode
 
     input:

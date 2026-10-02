@@ -16,8 +16,6 @@ process DELLY {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/delly:2.1.0--h3752d28_0'
-
     input:
     tuple val(meta), path(bam), path(bai)
     path(reference)
@@ -61,8 +59,6 @@ process DELLY {
 process DELLY_BCF2VCF {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/delly" }, mode: params.publish_dir_mode
 

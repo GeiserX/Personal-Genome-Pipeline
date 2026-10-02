@@ -13,8 +13,6 @@
 process MULTIQC {
     label 'process_low'
 
-    container 'quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1'
-
     publishDir "${params.outdir}/multiqc", mode: params.publish_dir_mode
 
     input:

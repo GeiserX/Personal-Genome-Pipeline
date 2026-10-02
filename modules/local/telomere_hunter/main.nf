@@ -15,8 +15,6 @@ process TELOMERE_HUNTER {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714'
-
     publishDir { "${params.outdir}/${meta.id}/telomere" }, mode: params.publish_dir_mode
 
     input:

@@ -14,8 +14,6 @@ process PHARMCAT_PREPROCESS {
     tag "$meta.id"
     label 'process_low'
 
-    container 'pgkb/pharmcat:3.2.0'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(reference)
@@ -44,8 +42,6 @@ process PHARMCAT_PREPROCESS {
 process PHARMCAT {
     tag "$meta.id"
     label 'process_low'
-
-    container 'pgkb/pharmcat:3.2.0'
 
     publishDir { "${params.outdir}/${meta.id}/pharmcat" }, mode: params.publish_dir_mode
 

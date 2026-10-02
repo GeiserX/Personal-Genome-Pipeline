@@ -29,6 +29,18 @@ jobs:
       - name: Every *_IMAGE a script uses is defined
         run: scripts/ci/check-image-vars.sh
 
+  containers-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a stale tag, a missing or stray selector and a module's own container must be caught)
+        run: scripts/ci/gen-containers-config.sh --self-test
+
+      - name: conf/containers.config matches versions.env and gives every process an image
+        run: scripts/ci/gen-containers-config.sh --check
+
   fake-docker:
     runs-on: ubuntu-latest
     timeout-minutes: 15

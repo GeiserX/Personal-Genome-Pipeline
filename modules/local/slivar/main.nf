@@ -15,8 +15,6 @@ process SLIVAR {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode
 
     input:

@@ -13,8 +13,6 @@ process MOSDEPTH {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0'
-
     publishDir { "${params.outdir}/${meta.id}/coverage" }, mode: params.publish_dir_mode
 
     input:

@@ -21,8 +21,6 @@ process CNVPYTOR {
     tag "$meta.id"
     label 'process_high'
 
-    container 'quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0'
-
     // Publish the human-readable CNV table (the normalized VCF is published by CNVPYTOR_VCF)
     publishDir { "${params.outdir}/${meta.id}/cnvpytor" }, mode: params.publish_dir_mode, pattern: "*_cnvs.txt"
 
@@ -80,8 +78,6 @@ process CNVPYTOR {
 process CNVPYTOR_VCF {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/cnvpytor" }, mode: params.publish_dir_mode
 

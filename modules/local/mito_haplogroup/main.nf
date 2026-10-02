@@ -14,8 +14,6 @@ process MITO_EXTRACT_CHRM {
     tag "$meta.id"
     label 'process_single'
 
-    container 'staphb/bcftools:1.21'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
 
@@ -52,8 +50,6 @@ process MITO_EXTRACT_CHRM {
 process MITO_HAPLOGROUP {
     tag "$meta.id"
     label 'process_single'
-
-    container 'jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de'
 
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 

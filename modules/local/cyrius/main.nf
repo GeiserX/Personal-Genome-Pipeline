@@ -19,8 +19,6 @@ process CYRIUS {
     tag "$meta.id"
     label 'process_low'
 
-    container 'python:3.11'
-
     publishDir { "${params.outdir}/${meta.id}/cyrius" }, mode: params.publish_dir_mode
 
     input:

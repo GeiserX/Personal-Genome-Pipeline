@@ -22,8 +22,6 @@ process DUPHOLD {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'brentp/duphold:v0.2.3'
-
     publishDir { "${params.outdir}/${meta.id}/sv_duphold" }, mode: params.publish_dir_mode
 
     input:
@@ -66,8 +64,6 @@ process DUPHOLD {
 process DUPHOLD_FILTER {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/sv_filtered" }, mode: params.publish_dir_mode
 

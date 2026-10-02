@@ -15,8 +15,6 @@ process CPIC_LOOKUP {
     tag "$meta.id"
     label 'process_single'
 
-    container 'python:3.11'
-
     publishDir { "${params.outdir}/${meta.id}/cpic" }, mode: params.publish_dir_mode
 
     input:

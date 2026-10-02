@@ -14,8 +14,6 @@ process MANTA {
     tag "$meta.id"
     label 'process_high'
 
-    container 'quay.io/biocontainers/manta:1.6.0--h9ee0642_2'
-
     publishDir { "${params.outdir}/${meta.id}/manta" }, mode: params.publish_dir_mode
 
     input:

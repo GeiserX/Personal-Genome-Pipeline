@@ -27,8 +27,6 @@ process VCF_PRECHECK {
     tag "$meta.id"
     label 'process_single'
 
-    container 'staphb/bcftools:1.21'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
 

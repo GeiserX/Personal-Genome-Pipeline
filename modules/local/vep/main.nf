@@ -13,8 +13,6 @@ process VEP {
     tag "$meta.id"
     label 'process_high'
 
-    container 'ensemblorg/ensembl-vep:release_116.0'
-
     publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 
     input:
