@@ -24,9 +24,9 @@ Without MultiQC, you need to open separate reports from each tool (fastp HTML, m
 
 ## Docker Image
 
-```
-quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
-```
+- `MULTIQC_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 

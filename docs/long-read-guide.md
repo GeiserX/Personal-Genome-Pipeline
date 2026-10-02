@@ -170,15 +170,16 @@ Clair3 uses deep-learning models trained specifically on long-read error profile
 DeepVariant 1.10.0+ also supports long reads with dedicated models:
 
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 
 docker run --rm \
   --cpus 8 --memory 32g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.10.0 \
+  "${DEEPVARIANT_IMAGE}" \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=ONT_R104 \
-    --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
+    --ref="/genome/${REF_FASTA}" \
     --reads="/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam" \
     --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     --num_shards=8
@@ -248,19 +249,22 @@ SV_VCF="${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz" ./scripts/05-an
 
 | Tool | Image | Size |
 |---|---|---|
-| minimap2 | `quay.io/biocontainers/minimap2:2.31--h118bc1c_0` | ~30 MB |
-| samtools | `staphb/samtools:1.20` | ~200 MB |
-| Clair3 | `hkubal/clair3:v2.0.2` | ~3 GB (includes all models) |
-| Sniffles2 | `quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0` | ~200 MB |
-| DeepVariant | `google/deepvariant:1.10.0` | ~5 GB |
+| minimap2 | `MINIMAP2_IMAGE` | ~30 MB |
+| samtools | `SAMTOOLS_IMAGE` | ~200 MB |
+| Clair3 | `CLAIR3_IMAGE` | ~3 GB (includes all models) |
+| Sniffles2 | `SNIFFLES_IMAGE` | ~200 MB |
+| DeepVariant | `DEEPVARIANT_IMAGE` | ~5 GB |
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Pre-pull images before your first run:
 
 ```bash
-docker pull quay.io/biocontainers/minimap2:2.31--h118bc1c_0
-docker pull staphb/samtools:1.20
-docker pull hkubal/clair3:v2.0.2
-docker pull quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0
+source versions.env   # from the repository root
+docker pull "${MINIMAP2_IMAGE}"
+docker pull "${SAMTOOLS_IMAGE}"
+docker pull "${CLAIR3_IMAGE}"
+docker pull "${SNIFFLES_IMAGE}"
 ```
 
 ---
@@ -334,10 +338,10 @@ Long-read alignment uses more memory than short-read because the index is loaded
 
 ### "Clair3 model not found"
 
-The Docker image `hkubal/clair3:v2.0.2` bundles models at `/opt/models/`. If you get a model-not-found error:
+The Docker image `CLAIR3_IMAGE` bundles models at `/opt/models/`. If you get a model-not-found error:
 
 1. Verify the image is pulled: `docker images | grep clair3`
-2. Check available models: `docker run --rm hkubal/clair3:v2.0.2 ls /opt/models/`
+2. Check available models: `docker run --rm "${CLAIR3_IMAGE}" ls /opt/models/` (after `source versions.env` in the repository root)
 3. If your ONT chemistry is different (e.g., R9.4.1), look for a matching model in the container
 
 ### "Sniffles2 produces 0 SVs"

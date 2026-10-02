@@ -24,9 +24,9 @@ The script uses a breakpoint-binning approach with bcftools rather than SURVIVOR
 
 ## Docker Image
 
-```
-staphb/bcftools:1.21
-```
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
@@ -91,8 +91,9 @@ SV types in the output:
 ### Quick inspection
 
 ```bash
+source versions.env   # from the repository root
 # Count consensus SVs by type
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools query -f '%INFO/SVTYPE\n' \
     /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz | sort | uniq -c | sort -rn
 ```

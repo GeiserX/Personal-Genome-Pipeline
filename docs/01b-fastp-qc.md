@@ -32,9 +32,9 @@ DeepVariant uses base quality as one of its 6 input channels. Adapter bases carr
 
 ## Docker Image
 
-```
-quay.io/biocontainers/fastp:1.3.6--h43da1c4_0
-```
+- `FASTP_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 

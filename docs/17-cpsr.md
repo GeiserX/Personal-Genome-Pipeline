@@ -10,9 +10,10 @@ ClinVar screening (step 6) finds known pathogenic variants, but CPSR applies ACM
 - **CPSR** (Cancer Predisposition Sequencing Reporter), bundled inside the PCGR image
 
 ## Docker Image
-```
-sigven/pcgr:2.2.5
-```
+- `PCGR_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
+
 CPSR binary is at `/usr/local/bin/cpsr` inside this image. Requires a separate ref data bundle (~5 GB) and a VEP cache.
 
 ## Prerequisites
@@ -38,13 +39,14 @@ This creates a `20250314/data/` directory with ClinVar, CancerMine, UniProt, and
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}/vep_cache:/mnt/.vep \
   -v ${GENOME_DIR}/pcgr_data/20250314:/mnt/bundle \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/mnt/inputs \
   -v ${GENOME_DIR}/${SAMPLE}/cpsr:/mnt/outputs \
-  sigven/pcgr:2.2.5 \
+  "${PCGR_IMAGE}" \
   cpsr \
     --input_vcf /mnt/inputs/${SAMPLE}.vcf.gz \
     --vep_dir /mnt/.vep \

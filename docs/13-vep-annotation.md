@@ -10,9 +10,9 @@ Raw VCF variants are just genomic coordinates and genotypes. VEP transforms them
 - **Ensembl VEP** release 116 (European Bioinformatics Institute)
 
 ## Docker Image
-```
-ensemblorg/ensembl-vep:release_116.0
-```
+- `VEP_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Offline VEP cache must be downloaded first (see step 00-reference-setup)
@@ -20,6 +20,7 @@ ensemblorg/ensembl-vep:release_116.0
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
@@ -28,7 +29,7 @@ docker run --rm \
   --user root \
   -v ${GENOME_DIR}:/genome \
   -v ${GENOME_DIR}/vep_cache:/opt/vep/.vep \
-  ensemblorg/ensembl-vep:release_116.0 \
+  "${VEP_IMAGE}" \
   vep \
     --input_file /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     --output_file /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf \
@@ -61,6 +62,6 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 - `--fork 4` enables parallelism — increase if more cores are available
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
 - `--dir_cache /opt/vep/.vep` is required when running as `--user root` (VEP looks in `/root/.vep` by default)
-- Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta /genome/reference/Homo_sapiens_assembly38.fasta` if HGVS is needed
+- Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta "/genome/${REF_FASTA}"` if HGVS is needed
 - VEP does NOT assess variant pathogenicity in ClinVar context — combine with step 6 (ClinVar screen) for full picture
-- **Upgrading from release 112:** an existing `homo_sapiens/112_GRCh38/` cache is incompatible with the release_116.0 binary and must be re-downloaded; a stale cache silently produces wrong annotations.
+- **Upgrading from an older release:** VEP reads the cache directory named after its own release (`homo_sapiens/116_GRCh38/` for the pinned release 116). An older cache such as `112_GRCh38/` is not used; download the matching cache.

@@ -14,7 +14,9 @@ bcftools + `bcftools +split-vep` plugin (parses VEP CSQ fields structurally — 
 
 ## Docker Image
 
-`staphb/bcftools:1.21`
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
@@ -77,8 +79,9 @@ column -t ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv | head
 ### Cross-reference with ClinVar
 
 ```bash
+source versions.env   # from the repository root
 # Find which clinical variants are also in ClinVar
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools isec -n=2 -w1 \
     /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz \
     /genome/clinvar/clinvar.vcf.gz \

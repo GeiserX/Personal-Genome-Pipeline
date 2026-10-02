@@ -14,7 +14,9 @@ bash + bcftools (for extracting counts from VCF files)
 
 ## Docker Image
 
-`staphb/bcftools:1.21` (already used by other steps)
+- `BCFTOOLS_IMAGE` (already used by other steps)
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 

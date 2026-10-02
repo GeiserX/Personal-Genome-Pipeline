@@ -11,12 +11,13 @@ The most immediately useful multi-sample analysis: checking whether both partner
 ### Quick Cross-Check
 
 ```bash
+source versions.env   # from the repository root
 PARTNER_A="sample_a"
 PARTNER_B="sample_b"
 
 # Gene symbols of each partner's ClinVar hits (step 6 writes them with ClinVar's GENEINFO)
 for SAMPLE in $PARTNER_A $PARTNER_B; do
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/GENEINFO\t%INFO/CLNSIG\t[%GT]\n' \
       /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf \
     > /tmp/${SAMPLE}_clinvar_genes.txt
@@ -83,11 +84,12 @@ If you have WGS data for a parent and child, you can investigate:
 A de novo variant is one that appeared for the first time in the child (not present in either parent). These are rare (~50-100 per genome) and occasionally clinically significant.
 
 ```bash
+source versions.env   # from the repository root
 PARENT="parent_name"
 CHILD="child_name"
 
 # Find variants in the child that are NOT in the parent
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools isec -C \
     /genome/${CHILD}/vcf/${CHILD}.vcf.gz \
     /genome/${PARENT}/vcf/${PARENT}.vcf.gz \
@@ -101,11 +103,12 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 If the child is a carrier for a recessive condition, you can check which parent contributed the variant:
 
 ```bash
+source versions.env   # from the repository root
 GENE_REGION="chr13:20189473-20189473"  # Example: GJB2 position
 
 for SAMPLE in $PARENT $CHILD; do
   echo "--- ${SAMPLE} ---"
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools view -r "$GENE_REGION" /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
 done
 ```
@@ -117,10 +120,11 @@ done
 SVs called by multiple callers in one person have lower false-positive rates. SVs shared between family members add further confidence:
 
 ```bash
+source versions.env   # from the repository root
 # Compare Manta SVs between two samples
 # (Simple overlap check using bedtools-style comparison)
 for SAMPLE in $PARTNER_A $PARTNER_B; do
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools query -f '%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n' \
       /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
     > /tmp/${SAMPLE}_svs.bed

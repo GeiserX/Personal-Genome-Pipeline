@@ -10,9 +10,10 @@ STR expansions cause ~40 known neurological/neuromuscular diseases including Hun
 - **ExpansionHunter** v5.0.0 (Illumina) — upgraded from v2.5.5. Adds multithreading, improved long-repeat estimation, and a bundled GRCh38 variant catalog (31 pathogenic loci)
 
 ## Docker Image
-```
-quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
-```
+- `EXPANSIONHUNTER_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
+
 - Binary: `ExpansionHunter` (on PATH)
 - GRCh38 catalog: `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json` (31 pathogenic loci)
 
@@ -48,7 +49,7 @@ FMR1 (Fragile X) has four distinct clinical zones — the intermediate zone (45-
 The second argument (`male`/`female`) is **required** — it affects X-linked loci (FMR1, AR): males have one allele, females have two.
 
 ## Notes
-- Uses ExpansionHunter **v5.0.0** (`quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5`)
+- Uses ExpansionHunter **v5.0.0** (`EXPANSIONHUNTER_IMAGE`)
 - v5 CLI: `--reads`, `--reference`, `--variant-catalog` (JSON file), `--output-prefix` (auto-generates .vcf, .json)
 - The 31-locus GRCh38 variant catalog is bundled inside the container at `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json`
 - Short-read WGS can reliably detect expansions up to ~150 repeats; very large expansions (>1000) are less accurate

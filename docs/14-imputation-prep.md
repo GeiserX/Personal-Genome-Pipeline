@@ -10,19 +10,20 @@ Imputation servers statistically infer missing genotypes using large reference p
 - **bcftools** (samtools/bcftools) — for VCF filtering, splitting, and indexing
 
 ## Docker Image
-```
-staphb/bcftools:1.21
-```
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 # Step 1: Filter to PASS variants only
 docker run --rm \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools view -f PASS \
     /data/${SAMPLE}.vcf.gz \
     -Oz -o /data/${SAMPLE}_pass.vcf.gz
@@ -30,21 +31,21 @@ docker run --rm \
 # Step 2: Index the filtered VCF
 docker run --rm \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t /data/${SAMPLE}_pass.vcf.gz
 
 # Step 3: Split by chromosome (chr1-22, autosomes only)
 for CHR in $(seq 1 22); do
   docker run --rm \
     -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-    staphb/bcftools:1.21 \
+    "${BCFTOOLS_IMAGE}" \
     bcftools view -r chr${CHR} \
       /data/${SAMPLE}_pass.vcf.gz \
       -Oz -o /data/imputation/chr${CHR}.vcf.gz
 
   docker run --rm \
     -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-    staphb/bcftools:1.21 \
+    "${BCFTOOLS_IMAGE}" \
     bcftools index -t /data/imputation/chr${CHR}.vcf.gz
 done
 

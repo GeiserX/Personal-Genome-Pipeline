@@ -39,7 +39,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 |---|---|---|---|
 | GRCh38 FASTA + index | ~3.1 GB | ~3.5 GB | Core reference genome (not compressed) |
 | ClinVar VCF + index | ~200 MB | ~200 MB | Updated monthly |
-| VEP cache (Ensembl 112) | ~26 GB | ~30 GB | Largest single download |
+| VEP cache (Ensembl 116, step 13) | ~26 GB | ~30 GB | Largest single download |
 | PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | ~35 GB | ClinVar + gnomAD + panels |
 | Docker images (all steps) | ~10-15 GB | ~10-15 GB | Cached by Docker |
 | **Subtotal (core)** | **~73 GB** | **~85 GB** | |

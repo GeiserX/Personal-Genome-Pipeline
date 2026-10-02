@@ -33,16 +33,17 @@ wget -O ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi \
 **Note:** This is the full-genome GIAB VCF (~250 MB). For a chr22-only test, extract just chr22:
 
 ```bash
+source versions.env   # from the repository root
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools view -r chr22 \
     /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz
 ```
 
@@ -113,7 +114,7 @@ docker run --rm --user root \
   quay.io/biocontainers/samtools:1.20--h50ea8bc_0 \
   bash -c "set -euo pipefail
     samtools view -b -@ 4 \
-      -T /genome/reference/Homo_sapiens_assembly38.fasta \
+      -T /genome/${REF_FASTA} \
       -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
       https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
@@ -121,6 +122,7 @@ docker run --rm --user root \
 
 **Alternative: extract chr22 from a full BAM you already have.** Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
+source versions.env   # from the repository root
 cd ${GENOME_DIR}/${SAMPLE}/aligned
 # Skipped on a rerun, when _sorted.bam already is the chr22 BAM (-ef follows links)
 if [ ! -e ${SAMPLE}_full.bam ] && [ ! ${SAMPLE}_sorted.bam -ef ${SAMPLE}_chr22.bam ]; then
@@ -131,7 +133,7 @@ fi
 docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   bash -c "set -euo pipefail
     samtools view -b -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
       /genome/${SAMPLE}/aligned/${SAMPLE}_full.bam chr22

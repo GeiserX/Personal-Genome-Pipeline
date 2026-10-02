@@ -21,10 +21,10 @@ The intermediate outputs (shared SNPs, LD-pruned variant set) are useful for two
 
 ## Docker Images
 
-```
-pgscatalog/plink2:2.00a5.10
-staphb/bcftools:1.21
-```
+- `PLINK2_IMAGE`
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 

@@ -35,9 +35,9 @@ The gnomAD resource and Panel of Normals help reduce false positives significant
 
 ## Docker Image
 
-```
-broadinstitute/gatk:4.6.2.0
-```
+- `GATK_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Already used in step 20 (mitochondrial analysis). No additional download needed.
 

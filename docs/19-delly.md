@@ -15,26 +15,27 @@ SVs called by 2+ callers have lower false-positive rates than single-caller call
 - **Delly** (Rausch et al., Bioinformatics 2012)
 
 ## Docker Image
-```
-quay.io/biocontainers/delly:2.1.0--h3752d28_0
-```
+- `DELLY_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 # SV calling (all SV types)
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
+  "${DELLY_IMAGE}" \
   delly call \
-    -g /genome/reference/Homo_sapiens_assembly38.fasta \
+    -g "/genome/${REF_FASTA}" \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
     /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
 # Convert BCF to VCF for downstream tools
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools view \
     /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
     -Oz -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz
@@ -42,7 +43,7 @@ docker run --rm \
 # Index
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t \
     /genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz
 ```
@@ -50,12 +51,13 @@ docker run --rm \
 ## Optional: Dedicated CNV Calling
 Delly also has a dedicated CNV mode using read-depth only (similar to CNVpytor):
 ```bash
+source versions.env   # from the repository root
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
+  "${DELLY_IMAGE}" \
   delly cnv \
-    -g /genome/reference/Homo_sapiens_assembly38.fasta \
+    -g "/genome/${REF_FASTA}" \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_cnv.bcf \
     /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```

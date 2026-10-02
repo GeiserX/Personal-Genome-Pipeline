@@ -56,6 +56,7 @@ The conversion requires two stages:
 One-time downloads (~3.5 GB total, plus the GRCh38 reference from [step 00](00-reference-setup.md)):
 
 ```bash
+source versions.env   # from the repository root
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 mkdir -p "${GENOME_DIR}/liftover" "${GENOME_DIR}/reference_hg19"
 
@@ -67,7 +68,7 @@ gunzip "${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta.gz"
 # Index the reference
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools faidx /genome/reference_hg19/human_g1k_v37.fasta
 
 # GRCh37-to-GRCh38 liftover chain file (~500 KB)
@@ -84,6 +85,7 @@ All three vendor formats need to be converted to a tab-separated file with colum
 A ready-to-use script is provided at `scripts/chip-to-vcf.sh`. You can also run the steps manually:
 
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
@@ -111,7 +113,7 @@ grep -v "^#" "${GENOME_DIR}/${SAMPLE}/raw/MyHeritage_raw_dna_data.csv" | \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \
     -s "${SAMPLE}" \
@@ -129,7 +131,7 @@ docker run --rm --user root \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools annotate \
     --rename-chrs /genome/reference_hg19/chr_rename.txt \
     "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
@@ -137,26 +139,26 @@ docker run --rm --user root \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Stage 2: Liftover to GRCh38 ---
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/picard:3.4.0 \
+  "${PICARD_IMAGE}" \
   java -jar /usr/picard/picard.jar LiftoverVcf \
     I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
     O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
-    R=/genome/reference/Homo_sapiens_assembly38.fasta \
+    R="/genome/${REF_FASTA}" \
     REJECT="/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" \
     WARN_ON_MISSING_CONTIG=true
 
 # Index the final VCF
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t -f "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"

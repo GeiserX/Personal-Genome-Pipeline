@@ -10,9 +10,9 @@ The VCF file is the foundation for ALL downstream analyses: ClinVar screening, p
 - **DeepVariant** v1.10.0 — Google's deep learning variant caller (state-of-the-art accuracy)
 
 ## Docker Image
-```
-google/deepvariant:1.10.0
-```
+- `DEEPVARIANT_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Sorted, indexed BAM file
@@ -20,16 +20,17 @@ google/deepvariant:1.10.0
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 docker run --rm \
   --cpus 16 --memory 32g \
   -v ${GENOME_DIR}:/genome \
-  google/deepvariant:1.10.0 \
+  "${DEEPVARIANT_IMAGE}" \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=WGS \
-    --ref=/genome/reference/Homo_sapiens_assembly38.fasta \
+    --ref="/genome/${REF_FASTA}" \
     --reads=/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     --output_vcf=/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     --num_shards=16

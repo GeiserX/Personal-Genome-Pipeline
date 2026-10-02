@@ -86,28 +86,28 @@ graph LR
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
 | 1 | [ORA to FASTQ](01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
-| 1b | [QC & Trimming](01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.6` | ~15-30 min | Recommended |
-| 2 | [Alignment](02-alignment.md) | minimap2 + samtools | `quay.io/biocontainers/minimap2:2.31` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
-| 3 | [Variant Calling](03-variant-calling.md) | DeepVariant | `google/deepvariant:1.10.0` | ~2-4 hr | Yes |
-| 4 | [Structural Variants](04-structural-variants.md) | Manta | `quay.io/biocontainers/manta:1.6.0` | ~20 min | Recommended |
-| 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `quay.io/biocontainers/annotsv:3.5.10` | ~10 min | If step 4 run |
-| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
-| 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:3.2.0` | ~10 min | Yes |
-| 8 | [HLA Typing](08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
-| 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
-| 9b | [STR Annotation](09b-stranger.md) | Stranger | `quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0` | ~1 min | If step 9 run |
+| 1b | [QC & Trimming](01b-fastp-qc.md) | fastp | `FASTP_IMAGE` | ~15-30 min | Recommended |
+| 2 | [Alignment](02-alignment.md) | minimap2 + samtools | `MINIMAP2_IMAGE` + `SAMTOOLS_IMAGE` | ~1-2 hr | Yes (if starting from FASTQ) |
+| 3 | [Variant Calling](03-variant-calling.md) | DeepVariant | `DEEPVARIANT_IMAGE` | ~2-4 hr | Yes |
+| 4 | [Structural Variants](04-structural-variants.md) | Manta | `MANTA_IMAGE` | ~20 min | Recommended |
+| 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `ANNOTSV_IMAGE` | ~10 min | If step 4 run |
+| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec | `BCFTOOLS_IMAGE` | ~5 min | Yes |
+| 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `PHARMCAT_IMAGE` | ~10 min | Yes |
+| 8 | [HLA Typing](08-hla-typing.md) | T1K | `T1K_IMAGE` | ~30 min | Optional |
+| 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | ~15 min | Recommended |
+| 9b | [STR Annotation](09b-stranger.md) | Stranger | `STRANGER_IMAGE` | ~1 min | If step 9 run |
 | 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter` (digest-pinned) | ~1 hr | Optional |
-| 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
+| 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `BCFTOOLS_IMAGE` | ~5 min | Recommended |
 | 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3` (digest-pinned) | ~1 min | Optional |
-| 13 | [VEP Annotation](13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_116.0` | ~2-4 hr | Recommended |
-| 14 | [Imputation Prep](14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
-| 15 | [SV Quality](15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |
-| 16 | [Coverage QC](16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.6` | ~5 sec | Recommended |
-| 16b | [Coverage Stats](16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` | ~10 min | Recommended |
-| 17 | [Cancer Predisposition](17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
-| 18 | [CNV Calling](18-cnvpytor.md) | CNVpytor | `quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0` | ~1-3 hr | Optional |
-| 19 | [SV Calling (Delly)](19-delly.md) | Delly | `quay.io/biocontainers/delly:2.1.0` | ~2-4 hr | Optional |
-| 20 | [Mitochondrial](20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~15-30 min | Optional |
+| 13 | [VEP Annotation](13-vep-annotation.md) | VEP | `VEP_IMAGE` | ~2-4 hr | Recommended |
+| 14 | [Imputation Prep](14-imputation-prep.md) | bcftools | `BCFTOOLS_IMAGE` | ~10 min | Optional |
+| 15 | [SV Quality](15-duphold.md) | duphold | `DUPHOLD_IMAGE` | ~20 min | If step 4 run |
+| 16 | [Coverage QC](16-indexcov.md) | indexcov | `GOLEFT_IMAGE` | ~5 sec | Recommended |
+| 16b | [Coverage Stats](16b-mosdepth.md) | mosdepth | `MOSDEPTH_IMAGE` | ~10 min | Recommended |
+| 17 | [Cancer Predisposition](17-cpsr.md) | CPSR | `PCGR_IMAGE` | ~30-60 min | Recommended |
+| 18 | [CNV Calling](18-cnvpytor.md) | CNVpytor | `CNVPYTOR_IMAGE` | ~1-3 hr | Optional |
+| 19 | [SV Calling (Delly)](19-delly.md) | Delly | `DELLY_IMAGE` | ~2-4 hr | Optional |
+| 20 | [Mitochondrial](20-mtoolbox.md) | GATK Mutect2 | `GATK_IMAGE` | ~15-30 min | Optional |
 
 #### Post-Processing Steps
 
@@ -115,18 +115,18 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 | # | Step | Tool | Docker Image | Runtime | Required? |
 |---|---|---|---|---|---|
-| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `python:3.11-slim` | ~10 min | Experimental |
-| 22 | [SV Consensus Merge](22-survivor-merge.md) | bcftools | `staphb/bcftools:1.21` | ~5 min | Experimental |
-| 23 | [Clinical Filter](23-clinical-filter.md) | bcftools +split-vep | `staphb/bcftools:1.21` | ~5-10 min | If step 13 run |
-| 24 | [HTML Report](24-html-report.md) | bash + bcftools | `staphb/bcftools:1.21` | ~1-3 min | Recommended |
-| 25 | [Polygenic Risk Scores](25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
-| 26 | [Ancestry SNPs](26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
-| 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
-| 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.35` | ~1 min | Recommended |
-| 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~2-6 hr | Experimental |
-| 30 | [Annotation Enrichment](30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.9` | ~5-15 min | If step 13 run |
-| 31 | [Variant Prioritization](31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.4` | ~5-10 min | If step 13 run |
-| 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.26.0` | ~20-40 min | Recommended |
+| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `PYTHON_IMAGE` | ~10 min | Experimental |
+| 22 | [SV Consensus Merge](22-survivor-merge.md) | bcftools | `BCFTOOLS_IMAGE` | ~5 min | Experimental |
+| 23 | [Clinical Filter](23-clinical-filter.md) | bcftools +split-vep | `BCFTOOLS_IMAGE` | ~5-10 min | If step 13 run |
+| 24 | [HTML Report](24-html-report.md) | bash + bcftools | `BCFTOOLS_IMAGE` | ~1-3 min | Recommended |
+| 25 | [Polygenic Risk Scores](25-prs.md) | plink2 | `PLINK2_IMAGE` | ~30 min | Exploratory |
+| 26 | [Ancestry SNPs](26-ancestry.md) | plink2 | `PLINK2_IMAGE` | ~30-60 min | Experimental |
+| 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `PYTHON_IMAGE` | ~5 min | If step 7 run |
+| 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `MULTIQC_IMAGE` | ~1 min | Recommended |
+| 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `GATK_IMAGE` | ~2-6 hr | Experimental |
+| 30 | [Annotation Enrichment](30-vcfanno.md) | vcfanno | `VCFANNO_IMAGE` | ~5-15 min | If step 13 run |
+| 31 | [Variant Prioritization](31-slivar.md) | slivar | `SLIVAR_IMAGE` | ~5-10 min | If step 13 run |
+| 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `PYPGX_IMAGE` | ~20-40 min | Recommended |
 
 **Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
 **Full analysis:** All 34 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.

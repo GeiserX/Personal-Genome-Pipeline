@@ -10,9 +10,9 @@ Raw Manta output contains thousands of SVs with no clinical interpretation. Anno
 - **AnnotSV** — ACMG-compliant structural variant annotation and classification
 
 ## Docker Image
-```
-quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
-```
+- `ANNOTSV_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Annotation Data
 The image holds AnnotSV's code only. Its annotation data (genes, known pathogenic SVs, population frequencies) is a separate 5.3 GB download that unpacks to about 20 GB, and AnnotSV exits with an error without it. The server is slow (about 0.8 MB/s measured from a GitHub runner), so the download can take 1-2 hours; `curl -C -` resumes it. `./scripts/setup.sh` downloads and unpacks it into `${GENOME_DIR}/annotsv_annotations/`. To do it by hand:
@@ -34,10 +34,11 @@ The script checks for `${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes
 What the script runs:
 
 ```bash
+source versions.env   # from the repository root
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
+  "${ANNOTSV_IMAGE}" \
   AnnotSV \
     -SVinputFile /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
     -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv \

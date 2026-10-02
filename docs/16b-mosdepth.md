@@ -28,9 +28,9 @@ Reads the BAM file and computes:
 
 ## Docker Image
 
-```
-quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0
-```
+- `MOSDEPTH_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 

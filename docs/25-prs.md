@@ -15,9 +15,9 @@ Most common diseases (heart disease, diabetes, cancer) are not caused by a singl
 
 ## Docker Image
 
-```
-pgscatalog/plink2:2.00a5.10
-```
+- `PLINK2_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 

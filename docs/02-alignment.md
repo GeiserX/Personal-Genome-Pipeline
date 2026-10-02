@@ -11,11 +11,13 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 - **samtools** — sort + index the alignment
 
 ## Docker Images
-- `quay.io/biocontainers/minimap2:2.31--h118bc1c_0` (minimap2 aligner)
-- `staphb/samtools:1.20` (samtools sort + index)
+- `MINIMAP2_IMAGE` (minimap2 aligner)
+- `SAMTOOLS_IMAGE` (samtools sort + index)
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
-- GRCh38 reference genome (`Homo_sapiens_assembly38.fasta`)
+- GRCh38 reference genome (`${REF_FASTA}`, see [reference setup](00-reference-setup.md#the-reference-path-on-every-page))
 - minimap2 index (`.mmi` file, ~7GB, generated once)
 - Paired-end FASTQ files
 
@@ -23,7 +25,7 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 ```bash
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-REF=${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta
+REF="${GENOME_DIR}/${REF_FASTA}"
 
 # Step 1: Create minimap2 index (one-time, ~30 min)
 minimap2 -d ${GENOME_DIR}/reference/GRCh38.mmi $REF

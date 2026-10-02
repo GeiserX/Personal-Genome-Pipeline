@@ -10,18 +10,19 @@ ROH analysis screens for consanguinity and uniparental disomy (UPD). Long ROH se
 - **bcftools roh** (samtools/bcftools)
 
 ## Docker Image
-```
-staphb/bcftools:1.21
-```
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 docker run --rm \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools roh \
     --AF-dflt 0.4 \
     -o /data/${SAMPLE}_roh.txt \

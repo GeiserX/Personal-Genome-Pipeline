@@ -10,9 +10,9 @@ Coverage QC catches alignment problems, sample swaps, and sequencing artifacts e
 - **goleft indexcov** (Brent Pedersen)
 
 ## Docker Image
-```
-quay.io/biocontainers/goleft:0.2.6--he881be0_1
-```
+- `GOLEFT_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
@@ -22,10 +22,11 @@ quay.io/biocontainers/goleft:0.2.6--he881be0_1
 
 The script runs:
 ```bash
+source versions.env   # from the repository root
 docker run --rm \
   --cpus 1 --memory 1g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/goleft:0.2.6--he881be0_1 \
+  "${GOLEFT_IMAGE}" \
   goleft indexcov \
   --directory /genome/${SAMPLE}/indexcov \
   /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
