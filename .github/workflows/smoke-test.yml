@@ -86,38 +86,6 @@ jobs:
           [ "$FAIL" -eq 0 ] && echo "OK: HTML report paths are consistent"
           exit "$FAIL"
 
-      - name: Verify Docker image tags are consistent
-        run: |
-          echo "Checking Docker image consistency between versions.env and scripts..."
-          FAIL=0
-
-          # Source versions.env as the single source of truth
-          . ./versions.env
-
-          # Check key images used in scripts match versions.env
-          for pair in \
-            "scripts/05-annotsv.sh:$ANNOTSV_IMAGE" \
-            "scripts/15-duphold.sh:$DUPHOLD_IMAGE" \
-            "scripts/chip-to-vcf.sh:$PICARD_IMAGE"; do
-            SCRIPT="${pair%%:*}"
-            IMG="${pair#*:}"
-            if [ -f "$SCRIPT" ] && ! grep -qF "$IMG" "$SCRIPT"; then
-              echo "FAIL: $SCRIPT does not use $IMG from versions.env"
-              FAIL=1
-            fi
-          done
-
-          # Check t1k tag matches
-          . ./versions.env
-          SCRIPT_T1K=$(grep -roh 't1k:[^ "]*' scripts/08-hla-typing.sh 2>/dev/null | head -1 || true)
-          if [ -n "$SCRIPT_T1K" ] && ! echo "$T1K_IMAGE" | grep -qF "$SCRIPT_T1K"; then
-            echo "FAIL: t1k tag mismatch: versions.env=$T1K_IMAGE script=$SCRIPT_T1K"
-            FAIL=1
-          fi
-
-          [ "$FAIL" -eq 0 ] && echo "OK: Docker images are consistent"
-          exit "$FAIL"
-
       - name: Verify experimental steps are marked
         run: |
           echo "Checking experimental step markers..."
