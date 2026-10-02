@@ -70,6 +70,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "${PGP_ROOT}/versions.env"
 
 # header_lines FILE [MAX]: the leading '#' lines of a (gzipped) text file.
+# Its consumer must read to the end (no early exit), or the pipe fails under pipefail.
 header_lines() {
   { gzip -dcf "$1" 2>/dev/null || true; } | awk -v max="${2:-200}" '/^#/ {print; if (++n >= max) exit; next} {exit}'
 }
@@ -77,7 +78,9 @@ header_lines() {
 clinvar_date="not found"
 for f in clinvar/clinvar_pathogenic_chr.vcf.gz clinvar/clinvar_chr.vcf.gz clinvar/clinvar.vcf.gz; do
   [ -f "${GENOME_DIR}/${f}" ] || continue
-  d=$(header_lines "${GENOME_DIR}/${f}" | awk -F= '/^##fileDate=/ {print $2; exit}')
+  # The reader goes to the end of the header: an awk that exits at the first
+  # match would end the pipe early and stop this script with SIGPIPE (141).
+  d=$(header_lines "${GENOME_DIR}/${f}" | awk -F= '/^##fileDate=/ && d == "" {d = $2} END {print d}')
   if [ -n "$d" ]; then clinvar_date="${d} (${f})"; break; fi
 done
 row data clinvar_file_date "$clinvar_date"
