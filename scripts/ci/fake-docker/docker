@@ -10,6 +10,9 @@
 # prefix and the suite fails on them even when the calling script swallowed
 # the error.
 #
+# FAKE_DOCKER_MISSING_IMAGES: a regex; `docker image inspect` of a matching
+# image fails, as it does for an image that is not pulled yet.
+#
 # Hook: if FAKE_DOCKER_RUN_HOOK names an executable, `docker run` calls it as
 #   "$FAKE_DOCKER_RUN_HOOK" <image> <command and args...>
 # and returns its exit code. A case uses it to create the files a tool would
@@ -60,6 +63,15 @@ case "${1:-}" in
       fi
     done
     record "image ${sub}"
+    # FAKE_DOCKER_MISSING_IMAGES: a regex of images that are not pulled yet.
+    if [ "$sub" = inspect ] && [ -n "${FAKE_DOCKER_MISSING_IMAGES:-}" ]; then
+      for img in "$@"; do
+        if [[ "$img" =~ $FAKE_DOCKER_MISSING_IMAGES ]]; then
+          echo "Error response from daemon: No such image: ${img}" >&2
+          exit 1
+        fi
+      done
+    fi
     ;;
   pull)
     if [ -z "${2:-}" ]; then

@@ -18,6 +18,16 @@ set -euo pipefail
 # shellcheck disable=SC2034  # read by the case files
 SCRIPTS="${REPO_ROOT}/scripts"
 
+# setup.sh checks the reference against the md5 recorded for the real file.
+# The fake download is a placeholder, so the cases download from a made-up
+# URL and expect the md5 of its placeholder (see download-body.sh).
+# shellcheck source=download-body.sh
+. "${REPO_ROOT}/scripts/ci/fake-docker/download-body.sh"
+export REF_FASTA_URL="https://fake.invalid/reference/Homo_sapiens_assembly38.fasta"
+REF_FASTA_MD5=$(fake_body "$REF_FASTA_URL" | fake_md5)
+REF_FAI_MD5=$(fake_body "${REF_FASTA_URL}.fai" | fake_md5)
+export REF_FASTA_MD5 REF_FAI_MD5
+
 fail() {
   echo "ASSERT FAIL: $*" >&2
   exit 1
@@ -115,6 +125,8 @@ hide_commands() {
 # use_output_hook: make every `docker run` create the files its command
 # writes (after -o, -O, --output or >, quoted or not), plus the .tbi of every
 # `index` or `index -t` target, on the host side of the call's -v mounts.
+# A write under a read-only mount fails the call with exit 30, as it would in
+# a real container.
 # Paths outside every mount (/tmp, /dev/null) and existing directories are
 # left alone; a path ending in / is created as a directory. For scripts that check a step's output.
 # It also writes ${CASE_WORK}/host-path.sh, which defines host_path
@@ -135,6 +147,23 @@ host_path() {
   [ -n "$best" ] || return 1
   printf '%s%s' "$host" "${p#"$best"}"
 }
+# mount_is_ro CONTAINER_PATH: true when the innermost mount that covers the
+# path is read-only (host:container:ro).
+mount_is_ro() {
+  local p=$1 best="" mode="" v c rest
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    rest=${v#*:} c=${rest%%:*}
+    case "$p" in
+      "$c"|"$c"/*)
+        if [ "${#c}" -gt "${#best}" ]; then
+          best=$c mode=""
+          case "$rest" in *:ro|*:ro,*) mode=ro ;; esac
+        fi ;;
+    esac
+  done <<<"${FAKE_DOCKER_VOLUMES:-}"
+  [ "$mode" = ro ]
+}
 HELPER
   cat > "${CASE_WORK}/hook-outputs" <<'HOOK'
 #!/usr/bin/env bash
@@ -146,6 +175,11 @@ mk() {
   local h
   h=$(host_path "$1") || return 0
   [ ! -d "$h" ] || return 0
+  # Like the real container: a write to a read-only mount fails the command.
+  if mount_is_ro "$1"; then
+    echo "fake docker: cannot write $1: Read-only file system (the mount is :ro; the script needs run_in --rw for that directory)" >&2
+    exit 30
+  fi
   case "$h" in
     */) mkdir -p "$h" ;;
     *.gz) mkdir -p "$(dirname "$h")"; printf '##fileformat=VCFv4.2\n' | gzip -c > "$h" ;;

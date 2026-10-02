@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake `sleep` for scripts/ci/run-fake-docker-suite.sh: the retry and lock
+# waits of the scripts (5 to 10 seconds each) would only slow the suite down.
+# It still yields for a moment so a polling loop does not spin.
+exec /bin/sleep 0.05

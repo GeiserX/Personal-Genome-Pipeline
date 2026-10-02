@@ -117,7 +117,9 @@ run_in() {
 _digest() {
   case "$1" in
     md5)
-      if command -v md5sum >/dev/null 2>&1; then md5sum "$2" | awk '{print $1}'; else md5 -q "$2"; fi ;;
+      if command -v md5sum >/dev/null 2>&1; then md5sum "$2" | awk '{print $1}'
+      elif command -v md5 >/dev/null 2>&1; then md5 -q "$2"
+      else openssl md5 -r "$2" | awk '{print $1}'; fi ;;
     sha256)
       if command -v sha256sum >/dev/null 2>&1; then sha256sum "$2" | awk '{print $1}'; else shasum -a 256 "$2" | awk '{print $1}'; fi ;;
     sum) sum "$2" | awk '{print $1 + 0}' ;;
