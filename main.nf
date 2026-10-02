@@ -74,7 +74,6 @@ workflow {
         ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
         ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
         ['hla_typing',       'hla_dat',           '--hla_dat'],
-        ['slivar',           'slivar_bin',        '--slivar_bin'],
         ['clinvar',          'clinvar',           '--clinvar'],
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
@@ -87,6 +86,13 @@ workflow {
             error "Tool '${tool}' is enabled in --tools but ${flag} is not set. " +
                   "Either provide ${flag} or remove '${tool}' from --tools."
         }
+    }
+
+    // --slivar_bin is accepted for one release so an old command line still
+    // starts; slivar now runs from the pinned image (SLIVAR_IMAGE).
+    if (params.slivar_bin) {
+        log.warn "--slivar_bin is deprecated and ignored: slivar now runs from the pinned image " +
+                 "(SLIVAR_IMAGE in versions.env). Remove the option; the next release drops it."
     }
 
     // cpic requires pharmcat (it parses PharmCAT JSON output)
@@ -276,9 +282,6 @@ workflow {
     // HLA reference database (IPD-IMGT/HLA hla.dat)
     ch_hla_dat = Channel.value(params.hla_dat ? file(params.hla_dat, checkIfExists: true) : [])
 
-    // Slivar static binary
-    ch_slivar_bin = Channel.value(params.slivar_bin ? file(params.slivar_bin, checkIfExists: true) : [])
-
     // AnnotSV annotation directory (the biocontainer ships no annotation data)
     ch_annotsv_annotations = Channel.value(params.annotsv_annotations ? file(params.annotsv_annotations, checkIfExists: true) : [])
 
@@ -317,8 +320,7 @@ workflow {
         ch_revel_index,
         ch_alphamissense,
         ch_alphamissense_index,
-        ch_gnomad_constraint,
-        ch_slivar_bin
+        ch_gnomad_constraint
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -378,22 +380,30 @@ workflow {
             [meta, clinvar, pharmcat, clinical, cpsr, slivar]
         }
 
-    // Collect QC files for MultiQC (versions + mosdepth summaries)
-    ch_multiqc_files = Channel.empty()
-        .mix(
-            BAM_ANALYSIS.out.coverage.map { meta, f -> f },
-            VCF_PRECHECK.out.versions,
-            PGX.out.versions,
-            ANNOTATION.out.versions,
-            CLINICAL.out.versions,
-            BAM_ANALYSIS.out.versions,
-            SV.out.versions
-        )
+    // QC files for MultiQC (mosdepth summaries)
+    ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
 
     REPORTING(
         ch_report_inputs,
         ch_multiqc_files
     )
+
+    // ─── Software versions ──────────────────────────────────────────────
+    // Every task writes a versions.yml whose first line is the tag of the
+    // image it ran in; one file collects them, one block per process.
+    Channel.empty()
+        .mix(
+            VCF_PRECHECK.out.versions,
+            PGX.out.versions,
+            ANNOTATION.out.versions,
+            CLINICAL.out.versions,
+            BAM_ANALYSIS.out.versions,
+            SV.out.versions,
+            REPORTING.out.versions
+        )
+        .map { f -> f.text }
+        .unique()
+        .collectFile(name: 'software_versions.yml', storeDir: "${params.outdir}/pipeline_info", sort: true)
 
     // ─── Completion handler ─────────────────────────────────────────────
     workflow.onComplete {

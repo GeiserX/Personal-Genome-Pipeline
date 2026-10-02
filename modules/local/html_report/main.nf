@@ -16,8 +16,6 @@ process HTML_REPORT {
     tag "$meta.id"
     label 'process_low'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}" }, mode: params.publish_dir_mode
 
     input:
@@ -248,10 +246,10 @@ EOF
 </html>
 HTMLFOOT
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    bcftools: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
@@ -260,7 +258,7 @@ HTMLFOOT
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -17,8 +17,6 @@ process PRS {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'pgscatalog/plink2:2.00a5.10'
-
     publishDir { "${params.outdir}/${meta.id}/prs" }, mode: params.publish_dir_mode
 
     input:
@@ -124,7 +122,7 @@ process PRS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        plink2: \$(plink2 --version 2>&1 | head -1 | awk '{print \$2}' || echo '2.00a5.10')
+        plink2: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -134,7 +132,7 @@ process PRS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        plink2: \$(plink2 --version 2>&1 | head -1 | awk '{print \$2}' || echo '2.00a5.10')
+        plink2: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

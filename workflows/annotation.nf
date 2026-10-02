@@ -3,7 +3,7 @@
     ANNOTATION — Variant annotation, enrichment, prioritization, and clinical filtering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Sequential pipeline:
-      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR    (sequential dependency)
+      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR_PRIORITIZE → SLIVAR  (sequential dependency)
                                     → CLINICAL_FILTER  (branches from VCFANNO output)
 
     Each module is gated on params.tools containing the tool name.
@@ -14,6 +14,7 @@
 include { VEP             } from '../modules/local/vep/main'
 include { VCFANNO         } from '../modules/local/vcfanno/main'
 include { VCFANNO_INDEX   } from '../modules/local/vcfanno/main'
+include { SLIVAR_PRIORITIZE } from '../modules/local/slivar/main'
 include { SLIVAR          } from '../modules/local/slivar/main'
 include { CLINICAL_FILTER } from '../modules/local/clinical_filter/main'
 
@@ -36,7 +37,6 @@ workflow ANNOTATION {
     ch_alphamissense      // channel: path — AlphaMissense file or []
     ch_alphamissense_index // channel: path — AlphaMissense index or []
     ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or []
-    ch_slivar_bin         // channel: path — pre-built slivar static binary
 
     main:
     ch_versions = Channel.empty()
@@ -103,20 +103,21 @@ workflow ANNOTATION {
     }
 
     //
-    // STEP 3a: SLIVAR — Variant prioritization + compound het detection
-    // Sequential from VCFANNO (or VEP, or raw VCF)
+    // STEP 3a: SLIVAR_PRIORITIZE (bcftools image) then SLIVAR compound-hets
+    // (slivar image). Sequential from VCFANNO (or VEP, or raw VCF)
     //
     ch_slivar_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('slivar')) {
         if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
             error "slivar requires VEP-annotated input (IMPACT/CSQ fields). Add 'vep' to --tools or remove 'slivar'."
         }
-        SLIVAR(
+        SLIVAR_PRIORITIZE(
             ch_current_vcf,
-            ch_gnomad_constraint,
-            ch_slivar_bin        )
-        ch_versions  = ch_versions.mix(SLIVAR.out.versions)
-        ch_slivar_vcf = SLIVAR.out.vcf
+            ch_gnomad_constraint
+        )
+        SLIVAR(SLIVAR_PRIORITIZE.out.vcf.join(SLIVAR_PRIORITIZE.out.ped))
+        ch_versions  = ch_versions.mix(SLIVAR_PRIORITIZE.out.versions, SLIVAR.out.versions)
+        ch_slivar_vcf = SLIVAR_PRIORITIZE.out.vcf
     }
 
     //
