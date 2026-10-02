@@ -38,7 +38,7 @@ export GENOME_DIR=/path/to/your/data
 - gnomAD allele frequency < 1% (or missing)
 - At least one deleterious predictor hit (if vcfanno annotations available):
   - CADD PHRED >= 20 (SNV and/or indel tags, whichever are present)
-  - REVEL >= 0.5
+  - REVEL >= 0.5 (deliberately below ClinGen's PP3_Supporting threshold of 0.644, so this tier casts a wider net; a hit here is not PP3 evidence)
   - AlphaMissense "likely_pathogenic"
   - SpliceAI annotation present (presence check only — bcftools cannot parse the pipe-delimited delta scores; threshold filtering at >= 0.2 is done in step 23)
 - Without vcfanno: all rare MODERATE variants included (same as step 23)

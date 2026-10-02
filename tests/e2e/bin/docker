@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# docker shim for the e2e job: clamps --cpus to the CPUs this machine has.
+#
+# Many steps ask for `--cpus 8`; docker refuses any value above the host's CPU
+# count ("Range of CPUs is from 0.01 to 4.00"), so on a 4-CPU runner those
+# steps would fail before the tool starts. Everything else passes through.
+set -euo pipefail
+
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+real=""
+IFS=: read -r -a path_dirs <<< "$PATH"
+for d in "${path_dirs[@]}"; do
+  [ "$d" = "$self_dir" ] && continue
+  if [ -x "${d}/docker" ]; then real="${d}/docker"; break; fi
+done
+[ -n "$real" ] || { echo "docker shim: no real docker on PATH" >&2; exit 127; }
+
+max=$(nproc)
+clamp() { awk -v v="$1" -v m="$max" 'BEGIN {print (v + 0 > m) ? m : v}'; }
+
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --cpus)   args+=(--cpus "$(clamp "$2")"); shift 2 ;;
+    --cpus=*) args+=("--cpus=$(clamp "${1#--cpus=}")"); shift ;;
+    *)        args+=("$1"); shift ;;
+  esac
+done
+exec "$real" "${args[@]}"

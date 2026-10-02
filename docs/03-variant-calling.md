@@ -37,6 +37,9 @@ docker run --rm \
 # For WES data, use MODEL_TYPE=WES:
 # MODEL_TYPE=WES ./scripts/03-deepvariant.sh your_sample
 
+# To call only some regions, set INTERVALS (space-separated, passed to --regions):
+# INTERVALS="chr20:10000001-10500000" ./scripts/03-deepvariant.sh your_sample
+
 # Output: ~93MB VCF with ~5.5M total variants (~4.6M PASS)
 ```
 

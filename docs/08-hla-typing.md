@@ -16,14 +16,21 @@ quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
 
 ## Prerequisites
 - Aligned BAM from step 2
-- Pre-built HLA reference index from step 00 (`t1k_idx/hlaidx_grch38`)
+- HLA reference index with coordinates (`t1k_idx/hlaidx_grch38/_dna_seq.fa` and `_dna_coord.fa`), built as in [reference setup](00-reference-setup.md#t1k-hla-reference-optional). `scripts/08-hla-typing.sh` builds it on first run if it is missing.
 
 ## Command
+```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/08-hla-typing.sh your_sample
+```
+
+The T1K call the script makes. It uses the DNA index with its coordinate file and the `hla-wgs` preset, which are the right inputs for whole-genome DNA reads:
+
 ```bash
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
-mkdir -p ${GENOME_DIR}/${SAMPLE}/hla
+mkdir -p ${GENOME_DIR}/${SAMPLE}/hla_t1k
 
 docker run --rm \
   --cpus 4 --memory 8g \
@@ -31,14 +38,16 @@ docker run --rm \
   quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
   run-t1k \
     -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-    -f /genome/t1k_idx/hlaidx_grch38_rna_seq.fa \
-    --preset hla \
-    -o /genome/${SAMPLE}/hla/${SAMPLE}_t1k \
-    -t 4
+    -f /genome/t1k_idx/hlaidx_grch38/_dna_seq.fa \
+    -c /genome/t1k_idx/hlaidx_grch38/_dna_coord.fa \
+    --preset hla-wgs \
+    -t 4 \
+    --od /genome/${SAMPLE}/hla_t1k/ \
+    -o ${SAMPLE}_hla
 ```
 
 ## Output
-- `${SAMPLE}_t1k_genotype.tsv` — HLA allele calls per locus (A, B, C, DRB1, DQB1, etc.)
+- `${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv` — HLA allele calls per locus (A, B, C, DRB1, DQB1, etc.)
 - Two alleles per locus (one per chromosome)
 
 ## Alternative: HLA-LA
@@ -75,6 +84,6 @@ docker run --rm \
 ## Important Notes
 - HLA typing from WGS is **approximate** — clinical HLA typing for transplant or critical drug decisions uses dedicated high-resolution panels (sequence-based typing)
 - WGS-based HLA is sufficient for pharmacogenomic screening (presence/absence of risk alleles)
-- T1K requires the pre-built index from step 00 — do not skip the `t1k-build.pl` step
+- `scripts/08-hla-typing.sh` runs `t1k-build.pl` itself when the index or the coordinate file is missing (about 35 minutes on the first run). It needs the reference FASTA from step 00, not just its `.fai`
 - Running both T1K and HLA-LA and comparing results increases confidence in the calls
 - HLA region is the most polymorphic in the human genome — ambiguous calls are expected for rare alleles
