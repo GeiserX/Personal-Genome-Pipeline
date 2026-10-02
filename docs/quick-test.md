@@ -2,6 +2,8 @@
 
 Don't commit 12+ hours and 500 GB to a full pipeline run before verifying everything works. This guide shows how to test with a small public dataset in under 30 minutes.
 
+The project's own scripted check is wider: CI runs most of the steps on a small slice of a public genome and checks what they write. [Testing](testing.md) explains that end-to-end run, and you can run the same scripts yourself.
+
 ---
 
 ## Option A: Chromosome 22 Only (Recommended)

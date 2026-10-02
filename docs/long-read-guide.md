@@ -39,6 +39,8 @@ Long reads solve problems that short reads cannot:
 
 ## Pipeline Compatibility
 
+**What the long-read branch covers:** alignment (script 2b), small variants with Clair3 (3e) and structural variants with Sniffles2 (4c). After that, the VCF-based steps below work on the result. Nothing else in this pipeline is long-read specific: no repeat genotyping, no paralog or CYP2D6 resolution, no methylation and no phasing. For those, use the vendor workflows, which run the long-read tools named on this page: PacBio's [HiFi-human-WGS-WDL](https://github.com/PacificBiosciences/HiFi-human-WGS-WDL) and Oxford Nanopore's [wf-human-variation](https://github.com/epi2me-labs/wf-human-variation).
+
 Not every step in this pipeline works with long-read data. Here is the full breakdown.
 
 ### Works As-Is (No Changes Needed)
@@ -85,11 +87,11 @@ These tools are specifically designed for short-read data and will produce incor
 | 4 | Manta | Illumina-specific insert size model | Sniffles2 |
 | 4a | TIDDIT | Short-read coverage/discordance model | Sniffles2 |
 | 4b | GRIDSS | Assembly-based, short-read specific | Sniffles2 |
-| 9 | ExpansionHunter | Illumina short-read graph model; expects paired-end data | TRGT (PacBio), STRique (ONT), or direct long-read spanning |
+| 9 | ExpansionHunter | Illumina short-read graph model; expects paired-end data | TRGT (PacBio) or STRique (ONT), outside this pipeline (vendor workflows) |
 | 15 | duphold | Re-genotypes SVs using short-read depth models | Not needed — Sniffles2 QUAL scores are reliable |
 | 18 | CNVpytor | Read-depth model calibrated for short reads | Sniffles2 detects CNVs natively |
 | 19 | Delly | Paired-end and split-read model | Sniffles2 |
-| 21 | Cyrius (CYP2D6) | Short-read depth-based star allele caller | Paraphase (long-read CYP2D6 resolver) |
+| 21 | Cyrius (CYP2D6) | Short-read depth-based star allele caller | Paraphase (long-read CYP2D6 resolver), outside this pipeline (vendor workflows) |
 
 ---
 
@@ -287,14 +289,11 @@ The Clair3 model (`r1041_e82_400bps_sup_v500`) assumes R10.4.1 chemistry with SU
 
 ONT generates a wide range of read lengths. Very short reads (<1kb) add noise. If your N50 is below 5kb, consider filtering:
 
-```bash
-# Filter reads shorter than 1kb (optional, before alignment)
-# Use chopper or NanoFilt
-```
+No step of this pipeline filters reads. If you want to drop reads under 1 kb, run a read filter such as chopper on the FASTQ yourself before script 2b.
 
 ### Methylation
 
-ONT natively detects methylation (5mC, 6mA) during basecalling with Dorado. Methylation tags are stored in the BAM as MM/ML tags. This pipeline does not currently process methylation data, but the aligned BAM preserves these tags for future use.
+ONT natively detects methylation (5mC, 6mA) during basecalling with Dorado. Methylation tags are stored in the BAM as MM/ML tags. This pipeline does not process methylation data. When the input is an unaligned BAM, script 2b carries the MM/ML tags into the aligned BAM, where the vendor workflows above can read them.
 
 ---
 
