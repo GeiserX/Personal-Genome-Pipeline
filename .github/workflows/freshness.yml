@@ -24,9 +24,10 @@ name: Freshness
 #
 # 60-day rule: GitHub disables scheduled workflows in a public repository after
 # 60 days without repository activity. Monthly Dependabot and Renovate merges
-# normally count as activity. As a fallback the report job re-enables this
+# normally count as activity. As a fallback the keepalive job re-enables this
 # workflow through the API when the newest commit on the default branch is
-# older than 25 days. The threshold is under one cron interval so that one
+# older than 25 days. It is its own job with no `needs`, so an upstream outage
+# that fails the self-tests or the report does not skip it. The threshold is under one cron interval so that one
 # monthly run always lands before day 60: with 45 a commit made just after a
 # run would next be seen at day 61, after the schedule is already off. The
 # enable call is GitHub's documented way to re-enable a workflow; that it also
@@ -127,7 +128,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -176,7 +176,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci/freshness.py --update-issue "${RUNNER_TEMP}/body.md" --repo "${{ github.repository }}"
 
-      # Fallback for the 60-day rule described at the top of this file.
+      - name: Fail when a check needs attention
+        if: steps.checks.outputs.rc != '0'
+        run: |
+          echo "A lookup failed, a link is dead or a PGS label is wrong: see the issue and the step summary."
+          exit 1
+
+  # Fallback for the 60-day rule described at the top of this file. No `needs`:
+  # it runs even when an upstream outage fails the checks.
+  keepalive:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
       - name: Keep the schedule alive
         env:
           GH_TOKEN: ${{ github.token }}
@@ -194,8 +209,3 @@ jobs:
             echo "Re-enabled the workflow so the 60-day rule does not switch the schedule off."
           fi
 
-      - name: Fail when a check needs attention
-        if: steps.checks.outputs.rc != '0'
-        run: |
-          echo "A lookup failed, a link is dead or a PGS label is wrong: see the issue and the step summary."
-          exit 1
