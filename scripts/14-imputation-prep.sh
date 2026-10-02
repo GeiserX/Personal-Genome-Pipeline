@@ -29,14 +29,20 @@ mkdir -p "$MIS_DIR"
 
 # One container for all chromosomes; each file is written under a .part name
 # with its index (--write-index) and renamed when both are complete. A
-# chromosome with no records still gets a (header-only) file.
+# chromosome the VCF's index lists no record on gets no file, and the log
+# names it (bcftools would stop on a region it cannot place).
 CHROMS=()
 for i in $(seq 1 22) X; do CHROMS+=("chr${i}"); done
 run_in --cpus 2 --memory 2g \
   "${BCFTOOLS_IMAGE}" \
   bash -euo pipefail -c '
     in=$1 out=$2 sample=$3; shift 3
+    present=" $(bcftools index -s "$in" | cut -f1 | tr "\n" " ") "
     for chr in "$@"; do
+      case "$present" in
+        *" ${chr} "*) ;;
+        *) echo "No records on ${chr}: no file."; continue ;;
+      esac
       echo "MIS-ready ${chr}..."
       part="${out}/${sample}_${chr}.part.vcf.gz"
       bcftools view -f PASS,. -r "$chr" -Oz --write-index=tbi -o "$part" "$in"

@@ -6,8 +6,12 @@
 run_step 14-imputation-prep.sh "$SAMPLE"
 check_step_exit 14-imputation-prep.sh
 D="${SAMPLE}/imputation/mis_ready"
-check_eq "chromosome VCFs" "$(find "${GENOME_DIR}/${D}" -maxdepth 1 -name "${SAMPLE}_chr*.vcf.gz" ! -name '*.part.*' | wc -l | tr -d ' ')" 23
-check_eq "indexes" "$(find "${GENOME_DIR}/${D}" -maxdepth 1 -name "${SAMPLE}_chr*.vcf.gz.tbi" | wc -l | tr -d ' ')" 23
+# The fixture has slices of 11 of chr1-22 and of chrX; a real genome has all 23.
+WANT=$(bcf index -s "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | cut -f1 | grep -cE '^chr([0-9]+|X)$' || true)
+check_ge "chr1-22 and chrX with records in the input" "$WANT" 5
+check_eq "chromosome VCFs" "$(find "${GENOME_DIR}/${D}" -maxdepth 1 -name "${SAMPLE}_chr*.vcf.gz" ! -name '*.part.*' | wc -l | tr -d ' ')" "$WANT"
+check_eq "indexes" "$(find "${GENOME_DIR}/${D}" -maxdepth 1 -name "${SAMPLE}_chr*.vcf.gz.tbi" | wc -l | tr -d ' ')" "$WANT"
+check "the log names a chromosome without records" has 'No records on chr3: no file' "$(cat "$STEP_LOG")"
 check_eq "leftover .part files" "$(find "${GENOME_DIR}/${D}" -maxdepth 1 -name '*.part*' | wc -l | tr -d ' ')" 0
 check_ge "chr20 records" "$(vcf_count "${D}/${SAMPLE}_chr20.vcf.gz")" 100
 check_ge "chrX records" "$(vcf_count "${D}/${SAMPLE}_chrX.vcf.gz")" 1

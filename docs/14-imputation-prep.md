@@ -20,7 +20,7 @@ export GENOME_DIR=/path/to/your/data
 ./scripts/14-imputation-prep.sh your_sample
 ```
 
-The script starts one container and makes one `bcftools view` pass per chromosome, chr1-22 and chrX. Each file keeps the PASS records (and records with no filter), is written with its index under a temporary name, and is renamed when both are complete:
+The script starts one container and makes one `bcftools view` pass per chromosome, chr1-22 and chrX. Each file keeps the PASS records (and records with no filter), is written with its index under a temporary name, and is renamed when both are complete. A chromosome the VCF has no record on gets no file, and the log names it. The commands it runs:
 
 ```bash
 source versions.env   # from the repository root
