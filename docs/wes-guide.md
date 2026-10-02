@@ -144,7 +144,7 @@ export SAMPLE=your_name
 export CAPTURE_BED="${GENOME_DIR}/reference/capture_regions.bed"
 ```
 
-No script has a WES mode, and `run-all.sh` runs the whole-genome steps. Run the steps below one by one instead: `MODEL_TYPE=WES` for DeepVariant and `CAPTURE_BED` for mosdepth are the only settings the scripts read for exome data.
+`run-all.sh` has no WES mode and runs the whole-genome steps, so no single command sets up an exome run. Run the steps below one by one instead: `MODEL_TYPE=WES` for DeepVariant and `CAPTURE_BED` for mosdepth are the only settings the scripts read for exome data.
 
 ### 3. Align (if starting from FASTQ)
 

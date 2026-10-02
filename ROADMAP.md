@@ -90,7 +90,7 @@ Released on 2026-07-01. These releases went to hardening and upgrades instead of
 
 ## Planned — Multi-sample & joint analysis
 
-Every step currently runs on a single sample in isolation. v0.6.0 focuses on making the pipeline useful for families and cohorts.
+Every step currently runs on a single sample in isolation. This work would make the pipeline useful for families and cohorts; no release is assigned to it yet.
 
 - [ ] **Joint PCA with 1000 Genomes reference panel** — project sample PCs onto a reference PCA, replacing the current single-sample ancestry stub (step 26) with real population placement
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants

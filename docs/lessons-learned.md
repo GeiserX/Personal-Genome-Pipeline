@@ -345,7 +345,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 
 ## Nextflow version compatibility (2026-06)
 
-### The pipeline runs cleanly on Nextflow 25.10.4; 24.x and 26.x currently fail at parse time
+### The pipeline runs cleanly on Nextflow 25.10.4; 24.x fails at parse time and 26.x is untested
 - **Observed:** A full run requires **Nextflow 25.10.4** (the validated version). Other versions fail before any process executes:
   - **26.04.4** — the strict config parser rejects top-level `def`/variable declarations in `nextflow.config` ("Variable declarations cannot be mixed with config statements"), and then the `def check_max(...)` function in `conf/base.config` ("Unexpected input: '('").
   - **24.04.4** — the DSL2 module parser flags the optional annotation inputs in `modules/local/vcfanno/main.nf` as "Variable already defined in the process scope" (`cadd_snv`/`cadd_indel`/`spliceai_*`/`revel`/`alphamissense`, referenced inside the `def has_nochr`/`def has_chr` expressions). 25.10.4 tolerates this; 24.04.4 does not.

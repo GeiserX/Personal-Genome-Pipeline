@@ -37,6 +37,9 @@ At least two of the following (the script auto-detects which are available):
 | Manta (step 4) | `${GENOME_DIR}/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz` |
 | Delly (step 19) | `${GENOME_DIR}/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz` |
 | CNVpytor (step 18) | `${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz` or `_cnvs.txt` |
+| GRIDSS (step 4b, opt-in) | `${GENOME_DIR}/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz` |
+| Sniffles2 (script 4c, long reads) | `${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz` |
+| TIDDIT (script 4a) | `${GENOME_DIR}/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz` |
 
 If CNVpytor output is in TXT format (its native output), the script automatically converts it to VCF before merging.
 
@@ -48,7 +51,7 @@ If CNVpytor output is in TXT format (its native output), the script automaticall
 
 ## What the Script Does Internally
 
-1. Scans for available SV VCFs from Manta, Delly, and CNVpytor
+1. Scans for available SV VCFs from Manta, Delly, GRIDSS, Sniffles2, TIDDIT and CNVpytor
 2. If CNVpytor output is only in TXT format, converts it to VCF (adding proper headers, SV type, and END coordinates)
 3. Requires at least 2 callers to proceed (exits with an error otherwise)
 4. Extracts PASS variants from each caller and bins them by `chromosome + position/1000 + SVTYPE`

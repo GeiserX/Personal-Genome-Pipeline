@@ -53,12 +53,12 @@ A point-in-time review of every tool/container/database against its latest upstr
 - **dbNSFP 5.3.1** — single VEP `--plugin dbNSFP` source for REVEL + AlphaMissense + CADD + MetaRNN (lets you retire standalone annotators).
 - **gnomAD v4.1/v4.1.1** GRCh38 (constraint recalculated, AN bug fixed). No v5 yet.
 - **CADD v1.7** GRCh38 (ESM-1v + regulatory CNN + Zoonomia).
-- **AlphaMissense hg38** — `AlphaMissense_hg38.tsv.gz` → `tabix -s1 -b2 -e2 -S1`; VEP `--plugin AlphaMissense,file=…`.
+- **AlphaMissense hg38** — `AlphaMissense_hg38.tsv.gz` → `tabix -s1 -b2 -e2 -S1`. The pipeline reads it through vcfanno at step 30, not the VEP plugin.
 - **PGS Catalog** — via `pgsc_calc` (don't hand-roll scoring files).
 
 ## Steps to add (ranked)
 1. **Cyrius** CYP2D6 star-allele caller (CNV/hybrid alleles PharmCAT misses) — already wired into the default tool set; feed its diplotype into PharmCAT as an outside-call. *(No single caller settles CYP2D6 copy number. On a reference with ALT contigs, depth at CYP2D6 drops and a depth-based caller (pypgx or Cyrius) can report a deletion that is not there: compare CYP2D6 depth with its flanks first, and report CYP2D6 only when two callers agree. See lessons-learned.)*
-2. **AlphaMissense** via VEP plugin — easy, high value.
+2. *(Applied through vcfanno at step 30, not the VEP plugin.)* **AlphaMissense** via VEP plugin — easy, high value.
 3. **pgsc_calc** (Nextflow, NF-26 compatible) — SOTA polygenic scoring.
 4. **ACMG SF v3.3** (2025, 84 genes) via CPSR secondary-findings mode (PCGR 2.3.0).
 5. Consolidate missense annotation on **dbNSFP 5.3.1**.

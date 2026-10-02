@@ -62,7 +62,7 @@ done
 
 This is the only step whose output is meant to be sent somewhere else. The other steps keep your genome on your disk; an imputation server receives your genotypes for every chromosome you upload. Uploading is a separate decision you make, not something the step does.
 
-Before you upload, read the server's data policy. The Michigan server's [security page](https://imputationserver.readthedocs.io/en/latest/data-sensitivity/) says it deletes the input once the job no longer needs it, keeps only the number of samples and markers, encrypts the results with a one-time password, and keeps them for 7 days for download. Check the TOPMed server's own terms; they are not the same service. Both need an account, so the upload is tied to your email address.
+Before you upload, read the server's data policy. The Michigan server's [security page](https://genepi.github.io/michigan-imputationserver/data-sensitivity/) says it deletes the input once it is no longer needed, keeps only the number of samples and markers, and encrypts the results with a one-time password. Its [getting started guide](https://genepi.github.io/michigan-imputationserver/getting-started/) says the results are deleted 7 days after the job ends. Neither page gives an exact time for deleting inputs or backups, or says whether data is encrypted at rest. Check the TOPMed server's own terms; they are not the same service. Both need an account, so the upload is tied to your email address.
 
 ## Important Notes
 - MIS requires a **minimum of 20 samples per job** — a single WGS sample is useful mainly for phasing, not imputation

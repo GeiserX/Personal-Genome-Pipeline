@@ -87,7 +87,7 @@ These tools are specifically designed for short-read data and will produce incor
 | 4 | Manta | Illumina-specific insert size model | Sniffles2 |
 | 4a | TIDDIT | Short-read coverage/discordance model | Sniffles2 |
 | 4b | GRIDSS | Assembly-based, short-read specific | Sniffles2 |
-| 9 | ExpansionHunter | Illumina short-read graph model; expects paired-end data | TRGT (PacBio) or STRique (ONT), outside this pipeline (vendor workflows) |
+| 9 | ExpansionHunter | Illumina short-read graph model; expects paired-end data | TRGT (PacBio) or Straglr (ONT), outside this pipeline (vendor workflows) |
 | 15 | duphold | Re-genotypes SVs using short-read depth models | Not needed — Sniffles2 QUAL scores are reliable |
 | 18 | CNVpytor | Read-depth model calibrated for short reads | Sniffles2 detects CNVs natively |
 | 19 | Delly | Paired-end and split-read model | Sniffles2 |

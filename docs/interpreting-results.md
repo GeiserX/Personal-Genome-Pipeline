@@ -161,7 +161,7 @@ If you ran multiple SV callers:
 
 ### SV Consensus (Step 22)
 
-`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, GRIDSS, Sniffles2 and TIDDIT), matched by type and by breakpoints within 1 kb. Expect a few hundred records. It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
+`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, GRIDSS, Sniffles2 and TIDDIT), grouped by chromosome, SV type and the 1 kb window their start position falls in. The end breakpoint is not compared, and two calls a few bases apart on either side of a window edge are not grouped. Expect a few hundred records. It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
 
 ### AnnotSV Output
 
@@ -573,7 +573,7 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 
 **What to expect:**
 - Thousands of PASS calls in a healthy individual -- the vast majority are germline false positives
-- At 30X a variant in 2% of the reads has less than one supporting read on average, and one in 10% about three. Only clones of roughly 10% or more can be seen, so most CHIP (defined from 2%) is invisible here, and a clean result does not rule it out
+- At 30X a variant in 2% of the reads has less than one supporting read on average, and one in 10% about three. Only variants at roughly 10% allele fraction or more can be told apart from noise. That is an approximate rule about reads, not a clone size: a heterozygous variant at 10% allele fraction sits in about 20% of the sampled cells, and copy number and the mix of cell types in the sample shift it. Most CHIP (defined from 2% allele fraction) is invisible here, and a clean result does not rule it out
 - Without a matched normal sample, germline variants that are rare in gnomAD will often pass all filters
 
 **CHIP genes to check:** DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, PPM1D, CBL. CHIP prevalence increases with age and is associated with elevated cardiovascular risk and risk of hematologic malignancies.

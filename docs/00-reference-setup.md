@@ -336,7 +336,7 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 ## Docker Images — Pre-Pull All
 
-`setup.sh` pulls every image in `versions.env` except `STRANGER_IMAGE`, which step 9b pulls the first time it runs. To pull them all in advance without the rest of setup, from the repository root in bash:
+`setup.sh` pulls every image in `versions.env` except `STRANGER_IMAGE`, which step 9b pulls the first time it runs. To pull every image in advance without the rest of setup, `STRANGER_IMAGE` included, from the repository root in bash:
 
 ```bash
 source versions.env

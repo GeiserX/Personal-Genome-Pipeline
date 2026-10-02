@@ -36,7 +36,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 ### Shared Reference Data (One-Time)
 
-One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes); the download sizes were read from each server on 2026-10-02. Each total is the sum of the rows above it. [Reference setup](00-reference-setup.md) has the commands, under a heading per database with the same size.
+One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes); the download sizes were read from each server on 2026-10-02. Each total is the sum of the rows above it; the `setup.sh` line is the sum of the rows it names. [Reference setup](00-reference-setup.md) has the commands, under a heading per database with the same size.
 
 **Default run** (`setup.sh` downloads the first three rows and the Docker images; the VEP caches and the PCGR bundle are for steps 13 and 17, which a default run skips when they are missing):
 
@@ -50,6 +50,7 @@ One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes)
 | VEP cache, release 113 | ~23 GB | ~27 GB | step 17 (CPSR's own VEP) |
 | Docker images | ~10-15 GB | ~10-15 GB | every step |
 | **Total, default run** | **~72-77 GB** | **~95-100 GB** | |
+| Of which `setup.sh` downloads (first three rows + Docker images) | ~18-23 GB | ~33-38 GB | |
 
 **Optional** (only for the step named):
 
@@ -216,7 +217,7 @@ About 75 GB for a default run and 250 GB with the annotation databases; the [tab
 - **ClinVar updates:** ~200 MB/month (optional but recommended for latest pathogenic variant classifications)
 - **Docker image updates:** Variable (only when you want newer tool versions)
 
-> **Network during a run:** after setup, a few steps still fetch public files (the HLA database, PGS scoring files, Cyrius from PyPI, MultiQC's update check). None sends sample data. [Why run locally?](why-local.md#network-calls-during-a-run) lists each one.
+> **Network during a run:** after setup, a few steps still fetch public files (the HLA database, PGS scoring files, Cyrius from PyPI, MultiQC's update check). None of these calls sends sample data. [Why run locally?](why-local.md#network-calls-during-a-run) lists each one.
 
 ---
 

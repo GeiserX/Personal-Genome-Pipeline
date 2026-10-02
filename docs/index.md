@@ -18,7 +18,7 @@ hide:
 
 ---
 
-**Personal Genome Pipeline** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one Docker container with CPU and memory limits, run from one bash script per step or from a Nextflow workflow, and no step sends your data anywhere. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
+**Personal Genome Pipeline** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one Docker container with CPU and memory limits, run from one bash script per step or from a Nextflow workflow, and no script sends your data anywhere. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
 
 <div class="grid cards" markdown>
 
@@ -99,7 +99,7 @@ graph LR
 
 ## Privacy
 
-- Your reads, alignments and variants stay in `GENOME_DIR` on your disk. No step uploads data. A run still pulls images and fetches a few public files; [Why run locally?](why-local.md#network-calls-during-a-run) lists each one and what the HTML reports load when you open them.
+- Your reads, alignments and variants stay in `GENOME_DIR` on your disk. No script uploads data. A run still pulls images and fetches a few public files; [Why run locally?](why-local.md#network-calls-during-a-run) lists each one and what the HTML reports load when you open them.
 - The example outputs on these pages are invented or use placeholders. No page shows a real person's genotype, haplogroup, HLA type, score or sample name.
 - [Why run locally?](why-local.md) compares the cost and the exposure of the alternatives.
 

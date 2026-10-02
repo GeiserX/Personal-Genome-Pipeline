@@ -17,9 +17,9 @@
 Your genome is the most permanent piece of personal data you have. Unlike a password, you cannot change it if it leaks.
 
 **This pipeline keeps your data local:**
-- No step sends your reads, alignments or variants anywhere. The pipeline has no telemetry, analytics or tracking of its own.
-- The one place your data can leave the machine is your own choice: [step 14](14-imputation-prep.md) and the [chip data guide](chip-data-guide.md#optional-imputation) prepare files for an imputation server, and uploading them is a separate step you take or skip.
-- [Reference setup](00-reference-setup.md) downloads the databases and pulls the images once. After that, a run still makes the network calls below. None of them carries sample data.
+- No pipeline script sends your reads, alignments or variants anywhere, and the pipeline has no telemetry, analytics or tracking of its own. The tools inside the containers do run with network access, and two of them were not checked (see below).
+- The one place the scripts send your data off the machine is your own choice: [step 14](14-imputation-prep.md) and the [chip data guide](chip-data-guide.md#optional-imputation) prepare files for an imputation server, and uploading them is a separate step you take or skip.
+- [Reference setup](00-reference-setup.md) downloads the databases and pulls the images once. After that, a run still makes the network calls below. None of these calls carries sample data.
 
 ### Network calls during a run
 
