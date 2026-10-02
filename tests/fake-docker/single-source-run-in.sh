@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # The docker wrapper every script uses (run_in, scripts/lib/common.sh):
+#   - no script starts a container any other way;
 #   - an analysis step runs with no network, the data directory read-only,
 #     only the sample directory writable, as the calling user;
 #   - a step that says --net and --root gets the network and the image's user;
@@ -13,6 +14,13 @@ export GENOME_DIR="${CASE_WORK}/genome"
 seed_reference "$GENOME_DIR"
 seed_sample "$GENOME_DIR" sample1
 use_output_hook
+
+# --- every container goes through run_in ---------------------------------------
+# A `docker run` (or `"$CONTAINER_ENGINE" run`) outside a printed hint would
+# start a container without the defaults below.
+if bypass=$(grep -nE '^[^#]*(^|[^[:alnum:]_])(docker|\$\{?CONTAINER_ENGINE\}?"?) run([^[:alnum:]_-]|$)' "${SCRIPTS}"/*.sh | grep -v 'echo '); then
+  fail "these lines start a container without run_in: ${bypass}"
+fi
 
 # --- an analysis step ---------------------------------------------------------
 run_expect 0 roh "${SCRIPTS}/11-roh-analysis.sh" sample1
