@@ -21,7 +21,7 @@
 | **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~175 GB optional annotation databases |
 | **OS** | Linux (amd64) | Ubuntu 22.04+ | macOS/ARM works but slower (see below) |
 
-> **Disk space is the #1 surprise.** A single 30X WGS sample produces 60-90 GB of FASTQ, 30-80 GB of BAM, plus reference genomes and databases. See [docs/hardware-requirements.md](hardware-requirements.md) for the full breakdown.
+> **Disk space is the #1 surprise.** A single 30X WGS sample produces 60-90 GB of FASTQ, 80-120 GB of BAM, plus reference genomes and databases. See [docs/hardware-requirements.md](hardware-requirements.md) for the full breakdown.
 
 ### Software
 
@@ -108,9 +108,9 @@ mkdir -p ${GENOME_DIR}/reference
 # See docs/00-reference-setup.md for details
 
 # 3. Run the pipeline
-./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~15-30 min)
+./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~10-20 min)
 ./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (~1-2 hr)
-./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF (~2-4 hr)
+./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF (~3-5 hr)
 ./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (~5 min)
 ./scripts/07-pharmacogenomics.sh $SAMPLE # Drug-gene interactions (~10 min)
 

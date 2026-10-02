@@ -10,9 +10,9 @@ HLA alleles determine transplant compatibility, predisposition to autoimmune dis
 - **T1K** v1.0.9 — efficient HLA genotyping from sequencing reads
 
 ## Docker Image
-```
-quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
-```
+- `T1K_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Aligned BAM from step 2
@@ -27,6 +27,7 @@ export GENOME_DIR=/path/to/your/data
 The T1K call the script makes. It uses the DNA index with its coordinate file and the `hla-wgs` preset, which are the right inputs for whole-genome DNA reads:
 
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
@@ -35,7 +36,7 @@ mkdir -p ${GENOME_DIR}/${SAMPLE}/hla_t1k
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
+  "${T1K_IMAGE}" \
   run-t1k \
     -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     -f /genome/t1k_idx/hlaidx_grch38/_dna_seq.fa \

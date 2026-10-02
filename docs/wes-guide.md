@@ -141,9 +141,10 @@ cp /path/to/your/capture_regions.bed "${GENOME_DIR}/reference/capture_regions.be
 ```bash
 export GENOME_DIR=/path/to/your/data
 export SAMPLE=your_name
-export DATA_TYPE=WES
 export CAPTURE_BED="${GENOME_DIR}/reference/capture_regions.bed"
 ```
+
+`run-all.sh` has no WES mode and runs the whole-genome steps, so no single command sets up an exome run. Run the steps below one by one instead: `MODEL_TYPE=WES` for DeepVariant and `CAPTURE_BED` for mosdepth are the only settings the scripts read for exome data.
 
 ### 3. Align (if starting from FASTQ)
 
@@ -174,7 +175,7 @@ These steps work unchanged:
 ### 6. Run BAM-Based Steps (with Adjustments)
 
 ```bash
-# Manta: add --exome manually until scripts support DATA_TYPE
+# Manta: scripts/04-manta.sh has no exome option; run configManta.py by hand with --exome
 # mosdepth: pass capture BED for on-target coverage stats
 CAPTURE_BED=${GENOME_DIR}/reference/your_capture.bed ./scripts/16b-mosdepth.sh $SAMPLE
 ```

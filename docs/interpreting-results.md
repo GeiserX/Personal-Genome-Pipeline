@@ -2,6 +2,18 @@
 
 You've run the pipeline. Now you have directories full of VCFs, TSVs, and HTML reports. This guide explains what to look at first and what it all means — no bioinformatics degree required.
 
+## Before You Look: What the Pipeline Can Tell You
+
+Decide what you want to know before you open the reports. A default run looks further than most people expect:
+
+- **Secondary findings are on by default.** Step 17 runs CPSR with `--secondary_findings`. Besides the cancer genes, CPSR then reports pathogenic and likely pathogenic variants in the 81 genes of the ACMG SF v3.2 list, the version CPSR 2.2.5 carries. That list includes genes for inherited heart conditions that can cause sudden death (cardiomyopathies, arrhythmias), familial hypercholesterolaemia and some metabolic diseases. A finding there can be serious and actionable even though you never asked about it.
+- **APOE and Alzheimer's disease.** Step 25 computes a score for late-onset Alzheimer's disease (PGS000334). Its two largest weights are the APOE variants rs429358 and rs7412, which define the ε2, ε3 and ε4 alleles, and the summary report lists that score with the others. The ε4 allele raises the risk; it does not say who will get the disease. Many people choose not to learn their APOE status. Decide before you open the step 25 output.
+- **Your relatives.** You share half your DNA with each parent, child and sibling. A pathogenic variant in a dominant gene means each of them has a 50% chance of carrying it too, so a result about you is also information about them. Comparing two genomes (see [multi-sample](multi-sample.md)) can also reveal unexpected family relationships.
+- **Insurance.** The rules depend on where you live. In the United States, GINA stops health insurers and employers from using genetic information, but it does not cover life, disability or long-term-care insurance. Elsewhere the rules differ. Some insurers ask whether you have had a genetic test, and a result entered in your medical record can count. Check what applies to you before you act on a finding.
+- **Switching secondary findings off.** Step 17 has no setting for it. Run the command on the [step 17 page](17-cpsr.md#command) without the `--secondary_findings` line, or delete that line from `scripts/17-cpsr.sh` (Nextflow: `modules/local/cpsr/main.nf`) before the run. CPSR then reports the cancer panel only.
+
+---
+
 ## Before You Panic: What Every Genome Looks Like
 
 If this is your first time looking at your own genomic data, the numbers can be alarming. Here is what a **completely normal, healthy person's genome** looks like:
@@ -100,21 +112,17 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). This is broader than the 81-gene ACMG SF v3.2 list and focused specifically on cancer predisposition.
+**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). Step 17 also turns on CPSR's secondary findings: the ACMG SF v3.2 list of 81 genes, which includes cardiac and metabolic genes outside cancer (see [Before you look](#before-you-look-what-the-pipeline-can-tell-you)).
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 
 **How to read it:**
-- Variants are classified into tiers:
-  - **Tier 1:** Pathogenic / Likely pathogenic — needs clinical attention
-  - **Tier 2:** Variant of Uncertain Significance (VUS) with some evidence
-  - **Tier 3:** VUS with limited evidence
-  - **Tier 4:** Likely benign / Benign
-- Focus on **Tier 1** variants only for clinical action
+- CPSR puts every variant in its genes into one of the five ACMG/AMP classes: **Pathogenic**, **Likely pathogenic**, **VUS** (uncertain significance), **Likely benign** and **Benign**. A variant that already has a ClinVar entry can carry ClinVar's class instead of the one CPSR computed.
+- Only **Pathogenic** and **Likely pathogenic** call for clinical attention. The report lists them first, and the secondary findings in their own section.
 
 ---
 
-## Structural Variants (Steps 4, 5, 15, 18, 19)
+## Structural Variants (Steps 4, 5, 15, 18, 19, 22)
 
 ### What Are Structural Variants?
 
@@ -150,6 +158,10 @@ If you ran multiple SV callers:
 - **Called by 1 caller only:** Lower confidence, may be false positive
 - **duphold DHFFC < 0.7 for deletions:** High confidence (depth drops as expected)
 - **duphold DHBFC > 1.3 for duplications:** High confidence (depth rises as expected)
+
+### SV Consensus (Step 22)
+
+`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, GRIDSS, Sniffles2 and TIDDIT), grouped by chromosome, SV type and the 1 kb window their start position falls in. The end breakpoint is not compared, and two calls a few bases apart on either side of a window edge are not grouped. Expect a few hundred records. It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
 
 ### AnnotSV Output
 
@@ -240,11 +252,11 @@ Runs of Homozygosity (ROH) are long stretches where both copies of your DNA are 
 
 ### How to Read
 
-- **Total ROH > 300 Mb:** Suggests parental relatedness (first-cousin equivalent)
-- **Total ROH > 100 Mb but < 300 Mb:** May indicate distant relatedness
-- **Total ROH < 100 Mb with all segments < 10 Mb:** Normal for outbred populations
-- **Individual ROH segments > 10 Mb:** Recent inbreeding event
-- **Many small ROH segments (1-5 Mb):** Population-level background (Ashkenazi, Finnish, etc.)
+Add up the autosomal segments of 5 Mb or more and compare the total with the table in [step 11](11-roh-analysis.md#total-roh-and-parental-relationship), which gives the expected total for each parental relationship (about 45 Mb for second cousins, 180 Mb for first cousins). In short:
+
+- **No segments of 5 Mb or more, or only a few:** no sign that your parents are related
+- **Many small segments (1-5 Mb):** population-level background, typical of population isolates (Ashkenazi, Finnish, etc.)
+- **A single segment over 10 Mb on one chromosome, with little elsewhere:** possible uniparental disomy rather than related parents
 
 ### Centromeric Artifacts
 
@@ -284,11 +296,11 @@ VEP annotates every variant with:
 - **Consequence type:** missense, nonsense, synonymous, splice site, etc.
 - **SIFT score:** Predicts if amino acid change is tolerated (>0.05) or damaging (<0.05)
 - **PolyPhen score:** Predicts if change is benign (<0.15), possibly damaging (0.15-0.85), or probably damaging (>0.85)
-- **gnomAD exome frequency:** How common this variant is in gnomAD exome data
+- **gnomAD frequencies:** How common this variant is in gnomAD's exomes (`gnomADe_AF`) and genomes (`gnomADg_AF`)
 
 ### gnomAD Frequency: Your Best Sanity Check
 
-The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. This pipeline uses VEP's `--af_gnomade` flag, which annotates with **gnomAD exome** frequencies only (not the combined exome+genome dataset). This means non-coding variants outside exome capture regions will lack gnomAD frequency annotations even if they appear in the gnomAD genome dataset. For coding variants (the most clinically relevant), exome frequencies are well-powered.
+The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. Step 13 runs VEP with `--everything`, which turns on both `--af_gnomade` and `--af_gnomadg`, so each variant gets two frequencies: `gnomADe_AF` from gnomAD's exomes and `gnomADg_AF` from its genomes. A non-coding variant outside exome capture regions has no exome frequency but can still have a genome frequency, so check both before calling a variant absent from gnomAD. The recipes below do that.
 
 **Key principle:** A variant that is common in healthy people is almost certainly benign, regardless of what any prediction tool says.
 
@@ -305,18 +317,7 @@ The single most useful annotation VEP adds is the **gnomAD allele frequency** �
 
 ### Filtering Strategy
 
-For finding potentially significant variants in the annotated VCF:
-
-```bash
-# High-impact variants (loss of function: stop-gain, frameshift, splice donor/acceptor)
-grep "HIGH" ${SAMPLE}_vep.vcf | grep -v "^#"
-
-# Rare missense variants predicted damaging by both SIFT and PolyPhen
-grep "missense_variant" ${SAMPLE}_vep.vcf | grep "deleterious" | grep "probably_damaging"
-
-# Variants absent from gnomAD (novel/ultra-rare)
-grep "missense_variant" ${SAMPLE}_vep.vcf | grep -v "gnomAD_AF"
-```
+Step 23 (the [clinical filter](#clinical-filter-step-23)) already applies the filters most people want. For your own queries, use the [Quick Variant Filtering Recipes](#quick-variant-filtering-recipes) below. Do not `grep` the VEP VCF: VEP writes its values by position inside the pipe-separated `CSQ` field, never as `name=value`, so a grep for `gnomAD_AF` or `SYMBOL=` matches nothing, and a grep for `HIGH` or `1/1` can match text in other fields. `bcftools +split-vep` reads the fields by name.
 
 ### What "HIGH Impact" Means
 
@@ -415,34 +416,52 @@ These are per-gene metrics (not per-variant) added to the clinical filter summar
 
 ### Quick Variant Filtering Recipes
 
-Copy-paste these commands to extract the most clinically relevant variants. All assume your VEP-annotated VCF is at `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`.
+Copy-paste these commands to extract the most clinically relevant variants. They read step 13's output, `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`, with `bcftools +split-vep` from the pipeline's pinned bcftools image, which picks each value out of the `CSQ` field by name (the same way step 23 does). `-s worst` keeps the most severe consequence of each variant; `-d` keeps every transcript.
 
 ```bash
-VEP_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf"
+# Run from the repository root, with GENOME_DIR and SAMPLE set
+source versions.env
+bcf() { docker run --rm -i -v "${GENOME_DIR}:/genome" -w /genome "${BCFTOOLS_IMAGE}" bcftools "$@"; }
+VEP_VCF="${SAMPLE}/vep/${SAMPLE}_vep.vcf"   # relative to GENOME_DIR
 
-# 1. Homozygous loss-of-function variants (most likely to cause disease)
-grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep "1/1" | head -20
+# Rare: below 0.1% in gnomAD exomes and genomes, or absent from them
+RARE='(gnomADe_AF="." || gnomADe_AF<0.001) && (gnomADg_AF="." || gnomADg_AF<0.001)'
+FIELDS='%CHROM\t%POS\t%REF\t%ALT\t%SYMBOL\t%Consequence\t%gnomADe_AF\t%gnomADg_AF\t[%GT]\n'
 
-# 2. Rare HIGH-impact variants (gnomAD AF < 0.1%)
-#    These are the variants most likely to be clinically significant
-grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep -v "gnomADe_AF=0\.[0-9]" | head -20
+# 1. Homozygous high-impact variants (stop gained, frameshift, splice donor/acceptor)
+bcf view -i 'GT="AA"' "$VEP_VCF" |
+  bcf +split-vep - -s worst -i 'IMPACT="HIGH"' -f "$FIELDS"
 
-# 3. Compound heterozygous candidates: genes with 2+ heterozygous variants
-#    (potential autosomal recessive — needs manual curation)
-grep -v "^#" "$VEP_VCF" | grep "0/1" | grep -oP 'SYMBOL=[^;|]+' | \
-  sort | uniq -c | sort -rn | awk '$1 >= 2' | head -20
+# 2. Rare high-impact variants
+bcf +split-vep "$VEP_VCF" -s worst -i "IMPACT=\"HIGH\" && ${RARE}" -f "$FIELDS"
 
-# 4. Known ACMG actionable genes (81 genes in ACMG SF v3.2)
-#    Quick check if any HIGH/MODERATE variants land in these genes
-#    Note: this is a partial list of cancer-related genes for illustration.
-#    See https://doi.org/10.1016/j.gim.2023.100866 for the full 81-gene list.
-ACMG_GENES="BRCA1|BRCA2|MLH1|MSH2|MSH6|PMS2|APC|MUTYH|TP53|RB1|MEN1|RET|VHL|SDHB|SDHD|TSC1|TSC2|WT1|NF2|PTEN|STK11|BMPR1A|SMAD4|CDH1|PALB2|CHEK2|ATM|NBN|BARD1|RAD51C|RAD51D|BRIP1"
-grep -v "^#" "$VEP_VCF" | grep -E "HIGH|MODERATE" | grep -E "$ACMG_GENES" | head -20
+# 3. Compound heterozygous candidates: genes with two or more rare heterozygous
+#    HIGH or MODERATE variants. The phase is unknown: both can sit on the same
+#    copy of the gene, so this is a list to curate, not a finding.
+bcf view -i 'GT="het"' "$VEP_VCF" |
+  bcf +split-vep - -s worst -i "(IMPACT=\"HIGH\" || IMPACT=\"MODERATE\") && ${RARE}" -f '%SYMBOL\n' |
+  sort | uniq -c | awk '$1 >= 2' | sort -rn
 
-# 5. PharmCAT-relevant variants not caught by step 7
-#    (PharmCAT misses some alleles — check CYP2D6, DPYD, UGT1A1 manually)
-grep -v "^#" "$VEP_VCF" | grep -E "CYP2D6|CYP2C19|CYP2C9|DPYD|UGT1A1|SLCO1B1|TPMT|NUDT15" | head -20
+# 4. HIGH or MODERATE variants in genes you name, matched on the exact symbol.
+#    The list here is a few cancer genes for illustration; CPSR (step 17) already
+#    reports the full ACMG secondary-findings list. For pharmacogenes, use
+#    GENES="CYP2D6 CYP2C19 CYP2C9 DPYD UGT1A1 SLCO1B1 TPMT NUDT15".
+GENES="BRCA1 BRCA2 MLH1 MSH2 MSH6 PMS2 APC MUTYH TP53"
+bcf +split-vep "$VEP_VCF" -d -i 'IMPACT="HIGH" || IMPACT="MODERATE"' -f "$FIELDS" |
+  awk -F'\t' -v genes="$GENES" 'BEGIN { n = split(genes, g, " "); for (i = 1; i <= n; i++) want[g[i]] = 1 } $5 in want' |
+  sort -u
+
+# 5. Rare missense variants that SIFT and PolyPhen both call damaging
+bcf +split-vep "$VEP_VCF" -s worst \
+  -i "Consequence~\"missense_variant\" && SIFT~\"^deleterious[(]\" && PolyPhen~\"^probably_damaging\" && ${RARE}" \
+  -f "$FIELDS"
+
+# 6. Missense variants absent from both gnomAD sets (novel or ultra-rare)
+bcf +split-vep "$VEP_VCF" -s worst \
+  -i 'Consequence~"missense_variant" && gnomADe_AF="." && gnomADg_AF="."' -f "$FIELDS"
 ```
+
+If the VCF came from a VEP run without gnomAD frequencies, `+split-vep` stops with `the tag "gnomADe_AF" is not defined`: drop the `RARE` term and the two gnomAD columns from `FIELDS`. PharmCAT (step 7) misses some alleles, and CYP2D6 needs the BAM-based callers (steps 21 and 32), so recipe 4 with the pharmacogene list is a cross-check, not a replacement.
 
 **Important:** These are starting points, not definitive screens. Any interesting finding should be cross-referenced with ClinVar and ideally confirmed by a second method (Sanger sequencing or a clinical lab).
 
@@ -529,8 +548,8 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 **Important caveats about heteroplasmy thresholds:**
 - There is **no single absolute heteroplasmy threshold** that determines clinical significance. Thresholds vary by variant and by tissue (ClinGen/MSeqDR mtDNA interpretation specifications)
-- **Blood underrepresents heteroplasmy** for many mitochondrial diseases. WGS from blood-derived DNA may show lower heteroplasmy levels than affected tissues (muscle, nerve). m.3243A>G in particular shows different clinical phenotypes at very different heteroplasmy levels across tissues
-- The AF values from this pipeline reflect blood-derived DNA only. A low or absent heteroplasmy level in blood does **not** rule out clinically significant heteroplasmy in other tissues
+- **Blood and saliva underrepresent heteroplasmy** for many mitochondrial diseases. WGS from saliva, a cheek swab or blood may show lower heteroplasmy levels than affected tissues (muscle, nerve). m.3243A>G in particular shows different clinical phenotypes at very different heteroplasmy levels across tissues
+- The AF values from this pipeline reflect the tissue your sample came from. A low or absent heteroplasmy level there does **not** rule out clinically significant heteroplasmy in other tissues
 - For any detected pathogenic mtDNA variant, discuss with a specialist who can order tissue-specific testing if warranted
 
 **Cross-reference:** Compare with step 12 (haplogrep3) — your homoplasmic variants should match your assigned haplogroup.
@@ -539,7 +558,7 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 
 ## Somatic Variants (Step 29) [EXPERIMENTAL]
 
-Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired during your lifetime rather than inherited. From blood-derived WGS, the main category of interest is **clonal hematopoiesis (CHIP)**.
+Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired during your lifetime rather than inherited. Consumer WGS is usually made from saliva or a cheek swab, a mix of cheek cells and white blood cells; the main category of interest is **clonal hematopoiesis (CHIP)**, which lives in the blood cells.
 
 **Where to look:** `${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz`
 
@@ -549,12 +568,12 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 |---|---|
 | 0.45-0.55 | Heterozygous germline (false positive) |
 | ~1.0 | Homozygous germline (false positive) |
-| 0.01-0.10 | Potential low-frequency somatic (CHIP candidate) |
-| 0.10-0.40 | Ambiguous -- could be somatic, mosaic, or noisy germline |
+| 0.10-0.40 | Could be a large somatic clone, mosaic, or noisy germline |
+| below 0.10 | At 30X this is one to three reads: mostly noise, see below |
 
 **What to expect:**
 - Thousands of PASS calls in a healthy individual -- the vast majority are germline false positives
-- True somatic variants are rare: a healthy 40-year-old might have 0-20 genuine CHIP mutations detectable at 30X
+- At 30X a variant in 2% of the reads has less than one supporting read on average, and one in 10% about three. Only variants at roughly 10% allele fraction or more can be told apart from noise. That is an approximate rule about reads, not a clone size: a heterozygous variant at 10% allele fraction sits in about 20% of the sampled cells, and copy number and the mix of cell types in the sample shift it. Most CHIP (defined from 2% allele fraction) is invisible here, and a clean result does not rule it out
 - Without a matched normal sample, germline variants that are rare in gnomAD will often pass all filters
 
 **CHIP genes to check:** DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, PPM1D, CBL. CHIP prevalence increases with age and is associated with elevated cardiovascular risk and risk of hematologic malignancies.
@@ -563,6 +582,54 @@ Mutect2 in tumor-only mode looks for somatic mutations -- variants acquired duri
 - This step has a much higher false positive rate than any other step in the pipeline
 - Do not interpret PASS variants as confirmed somatic without cross-referencing with the germline VCF (step 3) and gnomAD frequencies (step 13)
 - If a variant is also called at ~50% AF by DeepVariant in step 3, it is almost certainly germline
+
+---
+
+## Reads, Alignment, Variant Calling and Coverage (Steps 1b, 2, 3, 16, 16b)
+
+These steps check that the data is good enough for everything else. Look at them first if a later result looks strange.
+
+- **fastp (step 1b):** `${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.html`. A few percent of reads trimmed or dropped is normal; a large share points at a library or upload problem.
+- **Alignment and variant calling (steps 2 and 3):** the [example output](#variant-calling-step-3) below shows what a 30X genome looks like: about 4.5 to 5.5 million variants and a Ti/Tv ratio of 2.0 to 2.1.
+- **Coverage (step 16b, mosdepth):** `${SAMPLE}/mosdepth/${SAMPLE}.mosdepth.summary.txt`. The `total` row should show a mean near the depth you paid for (about 30). Below 15, small-variant calls lose accuracy. See [step 16b](16b-mosdepth.md#interpreting-results).
+- **Sex check (step 16, indexcov):** `${SAMPLE}/indexcov/` estimates the copy number of chrX and chrY from the BAM index. About 1 and 1 is XY, about 2 and 0 is XX. A result that does not match the sex you gave the pipeline means a sample swap, a mislabelled file or a real sex-chromosome difference; [step 16](16-indexcov.md#interpretation) lists the patterns. Re-check the input before reading anything else.
+
+## HLA Typing (Step 8)
+
+**Where to look:** `${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv`, two alleles per HLA gene.
+
+The main use is drug safety: a few HLA alleles predict severe reactions to specific drugs, for example HLA-B\*57:01 with abacavir and HLA-B\*58:01 with allopurinol ([step 8](08-hla-typing.md#key-hla-alleles-for-drug-safety) has the list). Typing from short-read WGS is approximate. If one of those alleles appears, or is missing and you are about to take the drug, ask for a clinical HLA test; do not rely on this output for transplant matching.
+
+## Clinical Filter (Step 23)
+
+**Where to look:** `${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv`, one row per variant with gene, impact, scores and gnomAD constraint.
+
+Step 23 keeps the HIGH-impact variants, the MODERATE ones below 1% in gnomAD exomes, the ClinVar pathogenic ones and, when step 30 ran, the variants that CADD, SpliceAI, REVEL or AlphaMissense flag. Expect a few hundred rows. Most are heterozygous variants in genes that tolerate one broken copy. Read the rows in constrained genes (low LOEUF, see [gene constraint](#gnomad-gene-constraint-step-23-summary)) first, then the homozygous ones. The HIGH-impact rows have no frequency filter, so check gnomAD for each before you worry. [Step 23](23-clinical-filter.md#what-gets-filtered) gives the exact rules.
+
+## Variant Prioritization (Step 31)
+
+**Where to look:** `${SAMPLE}/slivar/${SAMPLE}_slivar_summary.tsv` and `${SAMPLE}/slivar/${SAMPLE}_compound_hets.tsv`.
+
+slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODERATE with damaging scores, ClinVar pathogenic) and lists genes where you carry two such variants. Those compound-het candidates are not phased: from one genome the pipeline cannot tell whether the two variants sit on different copies of the gene (which can cause recessive disease) or on the same copy (which usually does not). Expect a thousand or more candidate pairs; nearly all are noise. A pair matters only in a gene that fits your health history, and confirming it needs a parent's DNA or long reads. See [step 31](31-slivar.md#interpretation).
+
+## More Pharmacogenomics: Cyrius, CPIC and pypgx (Steps 21, 27, 32)
+
+- **CPIC lookup (step 27):** `${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt` turns PharmCAT's calls into the drugs with CPIC guidance. Only genes where you are not a normal metabolizer get drug entries. Genes PharmCAT could not call are listed separately at the end; their absence from the drug list does not mean normal function.
+- **pypgx (step 32):** `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` calls 23 genes, four of them (CYP2D6, CYP2A6, GSTM1, GSTT1) from the BAM, so it sees gene deletions and duplications PharmCAT cannot. `${SAMPLE}_pharmcat_comparison.tsv` shows where the two tools agree.
+- **Cyrius (step 21, experimental):** `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` gives a second CYP2D6 call from the BAM.
+
+CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes confuse short reads. Act on a CYP2D6 result only when two callers agree, and take any result that would change a prescription to a pharmacist or a certified pharmacogenomics test first.
+
+## Polygenic Risk Scores (Step 25)
+
+**Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one raw score per condition.
+
+These raw sums are not percentiles, probabilities or comparable between conditions, and the pipeline ships no reference population to turn them into percentiles. They are also biased low or high because the VCF leaves out the sites where you match the reference ([step 25](25-prs.md#interpreting-results) explains why). Treat them as exploratory. The Alzheimer's score includes APOE: read [Before you look](#before-you-look-what-the-pipeline-can-tell-you) first.
+
+## Reports (Steps 24 and 28)
+
+- **HTML report (step 24):** `${SAMPLE}/${SAMPLE}_report.html` collects the headline results of the other steps on one page, including the ClinVar hits table. It contains health findings: share it only as you would share a medical record.
+- **MultiQC (step 28):** `${SAMPLE}/multiqc/multiqc_report.html` puts the QC of fastp, samtools, mosdepth and the other tools in one page. It is about data quality, not about your health.
 
 ---
 
@@ -587,7 +654,7 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 | ClinVar | Weekly | Step 6 (ClinVar screen) | Re-download from NCBI FTP (see [00-reference-setup.md](00-reference-setup.md)) |
 | VEP cache | Every 6 months | Step 13 (VEP annotation) | Download new release from Ensembl FTP |
 | PCGR/CPSR data | Every 6-12 months | Step 17 (CPSR) | Download new bundle from PCGR GitHub releases |
-| PharmCAT | Every few months | Step 7 (pharmacogenomics) | Pull new Docker image (`docker pull pgkb/pharmcat:3.2.0`) |
+| PharmCAT | Every few months | Step 7 (pharmacogenomics) | Bump `PHARMCAT_IMAGE` in `versions.env`, then pull it |
 
 ### Recommended Re-analysis Schedule
 
@@ -668,26 +735,28 @@ Each number is the repeat count on one allele. Counts below every locus threshol
 
 ### CPSR (Step 17)
 
-The HTML report tier summary:
+The HTML report counts the variants in each class:
 
 ```
-Tier 1 (Pathogenic/Likely pathogenic):    0 variants
-Tier 2 (VUS with evidence):              2 variants
-Tier 3 (VUS limited evidence):           20 variants
-Tier 4 (Likely benign/Benign):           ~50,000 variants
+Pathogenic:                  0 variants
+Likely pathogenic:           0 variants
+VUS:                        22 variants
+Likely benign:             <n> variants
+Benign:                    <n> variants
+Secondary findings:          0 variants
 ```
 
-Zero Tier 1 = ALL CLEAR for cancer predisposition. The VUS count varies widely (20-200+) and is not cause for concern.
+No Pathogenic or Likely pathogenic variant, in the cancer panel or in the secondary findings, means nothing actionable was found in those genes. The VUS count varies widely (20-200+) and is not cause for concern.
 
 ### ROH (Step 11)
 
 ```
-# Autosomal ROH > 5 MB: 0
-# Total autosomal ROH: 40 MB (all segments < 3 MB)
-# Conclusion: No evidence of parental relatedness
+Autosomal ROH >5MB (potential consanguinity signal):
+
+NOTE: Centromeric ROH (chr1:125-143MB, chr9:42-60MB, chr18:15-20MB) are technical artifacts, not real.
 ```
 
-Normal outbred individual. If total ROH > 100 MB or any segment > 10 MB, investigate further.
+No line under the heading means no segment of 5 Mb or more: no evidence of related parents. If there are some, add them up and compare the total with the table in [step 11](11-roh-analysis.md#total-roh-and-parental-relationship).
 
 ### Telomere Length (Step 10)
 
@@ -733,6 +802,16 @@ VEP (used in step 13), SnpEff, and ANNOVAR are the three most common variant ann
 The pipeline uses VEP because it is the most widely used and well-maintained tool, with direct gnomAD frequency integration. But no single tool is perfect.
 
 ---
+
+## What This Pipeline Does Not Assess
+
+A clean result from these steps says nothing about the following. Each needs a different test or a different kind of data.
+
+- **Copy-number changes in genes with a near-identical copy.** Spinal muscular atrophy carrier status (loss of one SMN1 copy), most alpha-thalassaemia (HBA1/HBA2 deletions), GBA1 and CYP21A2 changes sit in regions where short reads cannot tell the gene from its paralog. The VCF-based screens do not see them. SMA carrier status needs a clinical SMN1 copy-number test.
+- **Mobile-element insertions.** Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions, and no step looks for them.
+- **Methylation and phasing from long reads.** The long-read branch stops at alignment, small variants and structural variants; see the [long-read guide](long-read-guide.md).
+- **Mosaic copy-neutral loss of heterozygosity**, present in only some cells (common in blood with age). Step 11 sees runs of homozygosity that are in every cell; it cannot see a change carried by a fraction of them.
+- **Repeat expansions outside ExpansionHunter's 31 loci**, and accurate sizing of very large expansions.
 
 ## Important Caveats
 

@@ -21,10 +21,10 @@ The intermediate outputs (shared SNPs, LD-pruned variant set) are useful for two
 
 ## Docker Images
 
-```
-pgscatalog/plink2:2.00a5.10
-staphb/bcftools:1.21
-```
+- `PLINK2_IMAGE`
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
@@ -97,7 +97,7 @@ This pipeline does not perform joint PCA. The single-sample output is included a
 - Reference data (1000G SNPs and population labels) is downloaded once and cached in `${GENOME_DIR}/ancestry_ref/`. Delete this directory to force re-download.
 - LD pruning parameters (window=50, step=5, r2=0.2) are standard for ancestry PCA.
 - The script asks plink2 for 10 PCs. With one sample plink2 computes none; with a reference cohort merged in, 10 is the usual number.
-- For a more complete ancestry analysis, consider uploading your VCF to tools like [Gnomix](https://github.com/AI-sandbox/gnomix) or using the PLINK `--admixture` approach.
+- For a more complete ancestry analysis, consider running a local-ancestry tool such as [Gnomix](https://github.com/AI-sandbox/gnomix) on your VCF (it runs on your own machine with a reference panel), or ADMIXTURE.
 
 ## Links
 

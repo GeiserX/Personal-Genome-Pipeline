@@ -28,9 +28,9 @@ GRIDSS complements Manta and Delly in the SV consensus pipeline (step 22):
 
 ## Docker Image
 
-```
-quay.io/biocontainers/gridss:2.13.2--h96c455f_6
-```
+- `GRIDSS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Image size: ~1.5 GB (includes Java 11, R, bwa, samtools, all dependencies).
 
@@ -54,9 +54,12 @@ With `GRIDSS=true` and no classic BWA index, the step fails and the run's final 
 GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+# From the repository root: the image scripts/04b-gridss.sh names for this
+BWA_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa:[^ ]*' scripts/04b-gridss.sh)
 docker run --rm -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/bwa:0.7.18--he4a0461_1 \
-  bwa index /genome/reference/Homo_sapiens_assembly38.fasta
+  "${BWA_IMAGE}" \
+  bwa index "/genome/${REF_FASTA}"
 ```
 
 This takes ~1 hour and produces 5 index files (~5 GB total). Only needed once.

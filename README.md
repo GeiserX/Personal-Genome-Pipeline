@@ -16,7 +16,7 @@
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs 35 analysis steps to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs the [analysis steps of a default run](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/#what-a-default-run-covers) to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
 
 **Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
 
@@ -27,7 +27,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Screens ClinVar and runs CPSR cancer predisposition panels, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritization.
 - Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs), Cyrius and CPIC drug recommendations.
 - Repeat expansions, HLA typing, telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
-- Every tool runs in a pinned Docker container with CPU and memory limits. Nothing is uploaded, and after reference setup the core runs offline.
+- Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. Two exceptions: Cyrius is installed from PyPI at run time (version and dependencies pinned), and the Python image is a tag (`python:3.11`) that Docker Hub re-pushes. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
 - Two ways to run it: one bash script per step, or a Nextflow DSL2 pipeline.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 
@@ -49,10 +49,10 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 
 - [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/): prerequisites, platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA entry paths, directory layout
 - [Quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/): verify the setup on public data before your own
-- [Hardware and storage requirements](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/): per-step memory and disk figures
+- [Hardware and storage requirements](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/): download sizes, per-step runtime, memory and disk figures
 - [Reference data setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/): the GRCh38 reference and every database
 - [Vendor compatibility guide](https://geiserx.github.io/Personal-Genome-Pipeline/vendor-guide/): what each provider delivers and how to get it
-- [Pipeline overview](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/): every step with its tool, image and runtime, and the page for each step
+- [Pipeline overview](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/): every step with its tool and image, which ones a default run includes, and the page for each step
 - [Nextflow](https://geiserx.github.io/Personal-Genome-Pipeline/nextflow/): the workflow runner, parallel steps and resume
 - [Interpreting your results](https://geiserx.github.io/Personal-Genome-Pipeline/interpreting-results/): what each report means and what to do with it
 - [Multi-sample comparison](https://geiserx.github.io/Personal-Genome-Pipeline/multi-sample/): partners, siblings, parents
@@ -69,7 +69,7 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 
 This pipeline is for **educational and research purposes only**. It is not a medical device and has not been clinically validated. Genomic findings should always be discussed with a qualified healthcare professional before making any medical decisions. The authors are not responsible for any actions taken based on pipeline output.
 
-Your genome data is sensitive personal information. This pipeline runs entirely locally -- no data is uploaded anywhere. Keep your data secure.
+Your genome data is sensitive personal information. This pipeline runs locally and no script uploads it. The only exception is your choice: step 14 prepares files for an imputation server, and sending them there is up to you. Keep your data secure.
 
 ## License
 

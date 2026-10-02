@@ -10,9 +10,9 @@ Coverage QC catches alignment problems, sample swaps, and sequencing artifacts e
 - **goleft indexcov** (Brent Pedersen)
 
 ## Docker Image
-```
-quay.io/biocontainers/goleft:0.2.6--he881be0_1
-```
+- `GOLEFT_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
@@ -22,10 +22,11 @@ quay.io/biocontainers/goleft:0.2.6--he881be0_1
 
 The script runs:
 ```bash
+source versions.env   # from the repository root
 docker run --rm \
   --cpus 1 --memory 1g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/goleft:0.2.6--he881be0_1 \
+  "${GOLEFT_IMAGE}" \
   goleft indexcov \
   --directory /genome/${SAMPLE}/indexcov \
   /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
@@ -69,5 +70,5 @@ goleft writes the inferred sex to `indexcov-indexcov.ped`, whose columns are `#f
 - Should be run as an early QC step after alignment (step 2). It only reads the `.bai` index, not the full BAM.
 - Requires the BAM index (`.bai`) to exist alongside the BAM file.
 - Works on any number of samples simultaneously — useful for batch QC.
-- The HTML report is self-contained and can be opened in any browser.
+- The HTML report opens in any browser, but it loads Chart.js and jQuery from public CDNs; offline, the page opens without its plots.
 - For single-sample runs, the sex chromosome plot is still useful but the population-level clustering view is less informative.

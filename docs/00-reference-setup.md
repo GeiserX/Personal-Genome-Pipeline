@@ -1,8 +1,8 @@
 # Step 0: Reference Data Setup
 
-One-time downloads required before running the pipeline. Core downloads: ~70-75 GB. Including all optional resources (somatic, T1K, GIAB): ~78 GB download, ~96 GB after extraction.
+One-time downloads required before running the pipeline. Each heading below gives the size of its download; [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) adds them up (about 75 GB for a default run, 250 GB with the optional annotation databases).
 
-> **Estimated time:** 1-3 hours depending on internet speed. VEP caches (26 GB each for steps 13 and 17) are the largest downloads.
+> **Estimated time:** 1-3 hours depending on internet speed. The two VEP caches (26 GB for step 13, 23 GB for step 17) are the largest downloads of a default run.
 
 ## GRCh38 Reference Genome
 
@@ -13,7 +13,7 @@ export GENOME_DIR=/path/to/your/data
 mkdir -p ${GENOME_DIR}/reference
 cd ${GENOME_DIR}/reference
 
-# Download GRCh38 reference (3.2 GB), from the Broad's public references bucket
+# Download GRCh38 reference (~3 GB), from the Broad's public references bucket
 wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
 wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai
 
@@ -21,6 +21,16 @@ wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0
 md5sum Homo_sapiens_assembly38.fasta
 # Expected: 7ff134953dcca8c8997453bbb80b6b5e
 ```
+
+### The reference path on every page
+
+The step scripts read the reference from `${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta`. The commands on the other pages of these docs write that path as `${REF_FASTA}`, relative to `GENOME_DIR`: on the host it is `${GENOME_DIR}/${REF_FASTA}`, and inside a container that mounts `GENOME_DIR` at `/genome` it is `/genome/${REF_FASTA}`. Set it once in the shell where you paste those commands:
+
+```bash
+export REF_FASTA=reference/Homo_sapiens_assembly38.fasta
+```
+
+The scripts do not read `REF_FASTA` yet; they use this path directly.
 
 ### Why GRCh38?
 
@@ -37,6 +47,7 @@ If your data is on **GRCh37/hg19**, extract FASTQ from BAM and re-align. See [ve
 Updated monthly by NCBI. Contains known pathogenic/benign variant classifications.
 
 ```bash
+source versions.env   # from the repository root
 mkdir -p ${GENOME_DIR}/clinvar
 cd ${GENOME_DIR}/clinvar
 
@@ -46,20 +57,24 @@ wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi
 
 # ClinVar uses "1,2,3..." chromosomes. Our BAMs use "chr1,chr2,chr3..."
 # Create chr-prefixed version:
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 bash -c '
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" bash -c '
   echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt
   bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz
   bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz
 '
 
 # Extract pathogenic/likely pathogenic only (faster for screening):
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 bash -c '
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" bash -c '
   bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz
   bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz
 '
 ```
 
 > **Tip:** Re-download ClinVar monthly for the latest classifications. ClinVar adds ~1000 new pathogenic variants per month.
+
+## AnnotSV Annotations (~5 GB)
+
+Required for step 5. `setup.sh` downloads them (about 5 GB, about 20 GB unpacked) into `${GENOME_DIR}/annotsv_annotations/`; its source server is slow, so this can take an hour or two, and an interrupted download resumes when `setup.sh` runs again.
 
 ## VEP Cache (~26 GB)
 
@@ -106,7 +121,7 @@ mkdir -p 20250314 && mv data/ 20250314/
 # rm pcgr_ref_data.20250314.grch38.tgz
 ```
 
-## VEP 113 Cache for CPSR (~26 GB)
+## VEP 113 Cache for CPSR (~23 GB)
 
 PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `113_GRCh38/`).
 
@@ -114,7 +129,7 @@ PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113**
 mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
-# Download VEP 113 cache (~26 GB)
+# Download VEP 113 cache (~23 GB)
 wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
 
 # Extract alongside the existing release-116 cache
@@ -130,21 +145,23 @@ tar xzf tmp/homo_sapiens_vep_113_GRCh38.tar.gz
 Only needed for step 8 (HLA typing). ~30 minutes to build.
 
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 mkdir -p ${GENOME_DIR}/t1k_idx
 
 # Step 1: Download IPD-IMGT/HLA database (~2 min)
 docker run --rm -v ${GENOME_DIR}/t1k_idx:/idx \
-  quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
+  "${T1K_IMAGE}" \
   t1k-build.pl -o /idx/hlaidx --download IPD-IMGT/HLA
 
 # Step 2: Build coordinate file from genome (~30 min, reads entire 3.1GB FASTA)
 # CRITICAL: Use the actual FASTA, NOT the .fai index!
 docker run --rm --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0 \
+  "${T1K_IMAGE}" \
   t1k-build.pl \
     -d /genome/t1k_idx/hlaidx/hla.dat \
-    -g /genome/reference/Homo_sapiens_assembly38.fasta \
+    -g /genome/${REF_FASTA} \
     -o /genome/t1k_idx/hlaidx_grch38
 ```
 
@@ -175,13 +192,13 @@ Only needed if you plan to run step 29 (somatic variant calling with Mutect2 tum
 ```bash
 mkdir -p ${GENOME_DIR}/somatic
 
-# gnomAD AF-only VCF (~6.5 GB) — germline allele frequencies for filtering
+# gnomAD AF-only VCF (~3 GB) — germline allele frequencies for filtering
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz \
   -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/af-only-gnomad.hg38.vcf.gz.tbi \
   -O ${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz.tbi
 
-# Panel of Normals (~1 GB) — recurrent technical artifacts from 1000 Genomes
+# Panel of Normals (~17 MB) — recurrent technical artifacts from 1000 Genomes
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz \
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz
 wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_pon.hg38.vcf.gz.tbi \
@@ -192,7 +209,7 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
 
-> **Total download:** ~175 GB (SpliceAI is ~91 GB and CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
+> **Total download:** ~175 GB, the sum of the sections below (SpliceAI ~91 GB, CADD ~83 GB). If disk space is tight, start with REVEL + AlphaMissense (~1.2 GB combined) — they provide the highest value per byte for missense variant interpretation.
 
 ### CADD v1.7 Pre-scored (SNVs + Indels) — ~83 GB
 
@@ -239,11 +256,12 @@ Step 30 and `validate-setup.sh` find the masked files under these names. They al
 
 > **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
 
-### REVEL v1.3 — ~526 MB
+### REVEL v1.3 — ~0.6 GB
 
 Ensemble pathogenicity scoring for missense variants, combining 13 individual tools. Recommended by ClinGen for missense variant classification.
 
 ```bash
+source versions.env   # from the repository root
 cd ${GENOME_DIR}/annotations
 
 # Download and prepare for vcfanno
@@ -258,7 +276,7 @@ unzip revel-v1.3_all_chromosomes.zip
 # The table keeps five of them, so it gets its own five-name header.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/gatk:4.6.2.0 \
+  "${GATK_IMAGE}" \
   bash -c '
     set -euo pipefail
     cd /genome/annotations
@@ -286,6 +304,7 @@ DeepMind's protein-structure-informed missense classifier. Complements REVEL wit
 > **License:** CC BY-NC-SA 4.0 (non-commercial, share-alike). The pipeline does not redistribute these scores.
 
 ```bash
+source versions.env   # from the repository root
 cd ${GENOME_DIR}/annotations
 
 # Download pre-scored GRCh38 predictions
@@ -295,7 +314,7 @@ wget -c https://storage.googleapis.com/dm_alphamissense/AlphaMissense_hg38.tsv.g
 # tabix; the bcftools image does not.
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/gatk:4.6.2.0 \
+  "${GATK_IMAGE}" \
   tabix -s 1 -b 2 -e 2 -S 1 /genome/annotations/AlphaMissense_hg38.tsv.gz
 ```
 
@@ -317,85 +336,33 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 ## Docker Images — Pre-Pull All
 
-Pull all images in advance to avoid download delays during analysis:
+`setup.sh` pulls every image in `versions.env` except `STRANGER_IMAGE`, which step 9b pulls the first time it runs. To pull every image in advance without the rest of setup, `STRANGER_IMAGE` included, from the repository root in bash:
 
 ```bash
-# Core pipeline
-docker pull quay.io/biocontainers/minimap2:2.31--h118bc1c_0
-docker pull staphb/samtools:1.20
-docker pull staphb/bcftools:1.21
-docker pull google/deepvariant:1.10.0
-
-# SV callers
-docker pull quay.io/biocontainers/manta:1.6.0--h9ee0642_2
-docker pull quay.io/biocontainers/delly:2.1.0--h3752d28_0
-docker pull quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0
-docker pull brentp/duphold:v0.2.3
-
-# Annotation
-docker pull quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
-docker pull ensemblorg/ensembl-vep:release_116.0
-docker pull sigven/pcgr:2.2.5
-
-# Pharmacogenomics
-docker pull pgkb/pharmcat:3.2.0
-
-# Specialized
-docker pull quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5
-docker pull lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
-docker pull jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de
-docker pull quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0
-docker pull quay.io/biocontainers/goleft:0.2.6--he881be0_1
-docker pull broadinstitute/gatk:4.6.2.0
-
-# QC & reporting
-docker pull quay.io/biocontainers/fastp:1.3.6--h43da1c4_0
-docker pull quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0
-docker pull quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
-
-# Annotation enrichment (v0.4.0)
-docker pull quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
-docker pull quay.io/biocontainers/slivar:0.3.4--hb56abc1_0
-docker pull quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
-
-# Alternative / new callers
-docker pull dancooke/octopus:0.7.4
-docker pull quay.io/biocontainers/gridss:2.13.2--h96c455f_6
-docker pull hkubal/clair3:v2.0.2
-docker pull quay.io/biocontainers/sniffles:2.8.0--pyhdfd78af_0
+source versions.env
+for var in $(grep -oE '^[A-Z0-9_]+_IMAGE=' versions.env | tr -d '='); do
+  docker pull "${!var}"
+done
 ```
 
 ## Alternative Callers (Optional, for Benchmarking)
 
 Only needed if you plan to run alternative variant callers. See [benchmarking.md](benchmarking.md).
 
-```bash
-# Alternative aligners
-docker pull quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
-
-# Alternative variant callers (GATK image already pulled above)
-docker pull quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
-
-# Alternative SV caller
-docker pull quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
-
-# Alternative small variant caller (SNVs + indels, complements Manta)
-docker pull quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
-
-# Benchmarking (truth set evaluation)
-docker pull jmcdani20/hap.py:v0.3.12
-```
+The BWA-MEM2, FreeBayes, Strelka2 and TIDDIT scripts and `benchmark-variants.sh` (hap.py) set their image inside the script, not in `versions.env`, and `docker run` pulls each one the first time the script runs. [Image versions](versions.md#images-not-in-versionsenv-yet) lists them.
 
 ### GATK Sequence Dictionary
 
 GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If you don't have one:
 
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  broadinstitute/gatk:4.6.2.0 \
+  "${GATK_IMAGE}" \
   gatk CreateSequenceDictionary \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta
+    -R /genome/${REF_FASTA}
 ```
 
 ### BWA-MEM2 Index
@@ -405,11 +372,14 @@ BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Buildi
 The practical route is to build the index once on a machine (or a rented cloud instance) with at least 96 GB of RAM, then copy the five index files next to the FASTA on your own machine. With less memory the build is killed (exit code 137).
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
+# From the repository root: the image scripts/02a-alignment-bwamem2.sh pins
+BWA_MEM2_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa-mem2:[^ ]*' scripts/02a-alignment-bwamem2.sh)
 docker run --rm --user root \
   --cpus 8 --memory 96g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5 \
-  bwa-mem2 index /genome/reference/Homo_sapiens_assembly38.fasta
+  "${BWA_MEM2_IMAGE}" \
+  bwa-mem2 index "/genome/${REF_FASTA}"
 # Creates: .0123, .amb, .ann, .bwt.2bit.64, .pac alongside the FASTA
 ```
 
@@ -442,19 +412,7 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 
 ## Disk Space Summary
 
-| Resource | Download | Extracted | Notes |
-|---|---|---|---|
-| GRCh38 FASTA + FAI | 3.1 GB | 3.1 GB | Same size (not compressed) |
-| ClinVar DB (all versions) | 200 MB | 400 MB | Including chr-prefixed and pathogenic-only |
-| VEP cache | 26 GB | 30 GB | Largest single database |
-| PCGR/CPSR data bundle | 5 GB | 5 GB | Smaller in PCGR 2.x |
-| VEP 113 cache (CPSR) | 26 GB | 30 GB | Separate from step 13's VEP 116 cache |
-| T1K HLA index | 50 MB | 450 MB | Optional |
-| Somatic resources (gnomAD + PoN) | 7.5 GB | 7.5 GB | Optional (step 29) |
-| Annotation databases (CADD+SpliceAI+REVEL+AM+gnomAD) | ~175 GB | ~175 GB | Optional (step 30-31) |
-| Docker images | 10-15 GB | 10-15 GB | Cached by Docker engine |
-| **Total (core)** | **~78 GB** | **~96 GB** | Without annotation databases |
-| **Total (with annotation enrichment)** | **~253 GB** | **~271 GB** | With all v0.4.0 databases |
+[Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) has the one table of every download above, with the totals.
 
 > **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
 
@@ -463,9 +421,10 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 After all downloads, verify everything is in place:
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 echo "Checking reference setup..."
-[ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta" ] && echo "  GRCh38 FASTA: OK" || echo "  GRCh38 FASTA: MISSING"
-[ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"
+[ -f "${GENOME_DIR}/${REF_FASTA}" ] && echo "  GRCh38 FASTA: OK" || echo "  GRCh38 FASTA: MISSING"
+[ -f "${GENOME_DIR}/${REF_FASTA}.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"
 [ -f "${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz" ] && echo "  ClinVar (chr): OK" || echo "  ClinVar: MISSING"
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
 [ -d "${GENOME_DIR}/pcgr_data/20250314/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"

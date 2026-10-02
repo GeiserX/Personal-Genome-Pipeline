@@ -11,12 +11,14 @@ Identifies which drugs work well, which need dose adjustments, and which to avoi
 - Upgraded from 2.15.5 to 3.2.0 in v0.3.0. See `docs/lessons-learned.md` for migration notes (preprocessor rename, reporter flags, JSON property changes).
 
 ## Docker Image
-```
-pgkb/pharmcat:3.2.0
-```
+- `PHARMCAT_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
@@ -24,11 +26,11 @@ GENOME_DIR=/path/to/your/data
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  -v ${GENOME_DIR}/reference:/ref \
-  pgkb/pharmcat:3.2.0 \
+  -v "${GENOME_DIR}:/genome" \
+  "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf /data/${SAMPLE}.vcf.gz \
-    -refFna /ref/Homo_sapiens_assembly38.fasta \
+    -refFna "/genome/${REF_FASTA}" \
     -o /data/ \
     -bf ${SAMPLE}
 
@@ -36,7 +38,7 @@ docker run --rm \
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  pgkb/pharmcat:3.2.0 \
+  "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
     -vcf /data/${SAMPLE}.preprocessed.vcf.bgz \
     -o /data/ \
@@ -67,6 +69,6 @@ docker run --rm \
 - PharmCAT output structure changes across releases. If you upgrade PharmCAT, re-test step 27 (`27-cpic-lookup.sh`) because it parses the JSON output directly.
 
 ## Maintenance
-- The pipeline is pinned to `pgkb/pharmcat:3.2.0` for reproducibility. Upgraded from 2.15.5 in v0.3.0 (Apr 2026). Breaking changes in the 3.x series are documented in `docs/lessons-learned.md`.
+- The pipeline is pinned to `PHARMCAT_IMAGE` for reproducibility. Upgraded from 2.15.5 in v0.3.0 (Apr 2026). Breaking changes in the 3.x series are documented in `docs/lessons-learned.md`.
 - Treat **step 7 and step 27 as one upgrade unit**. If you bump PharmCAT, rerun both on a known sample and diff diplotypes, phenotypes, JSON structure, and CPIC recommendation text before merging.
 - Recheck CPIC / ClinPGx guidance at least quarterly, or sooner if a drug-gene pair you expose in step 27 gets a meaningful update upstream.

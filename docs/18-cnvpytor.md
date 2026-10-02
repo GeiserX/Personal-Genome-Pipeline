@@ -17,17 +17,18 @@ Read depth alone cannot see copy-neutral loss of heterozygosity (LOH): the depth
 - **CNVpytor** (Abyzov lab) — Python reimplementation of CNVnator (Abyzov et al., Genome Research 2011)
 
 ## Docker Image
-```
-quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0
-```
+- `CNVPYTOR_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 > **Reference resources required.** The biocontainer ships **without** the GC/mask resource files and its built-in `-download` is broken in 1.3.2. Pinned resource files must be present at `${GENOME_DIR}/reference/cnvpytor/` and are bind-mounted into the container. See **[00-reference-setup.md](00-reference-setup.md)** for the one-time download.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-IMG=quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0
+IMG="${CNVPYTOR_IMAGE}"
 # The container has no GC/mask data; mount the pinned resource dir onto its data path.
 DATA=/usr/local/lib/python3.12/site-packages/cnvpytor/data
 MOUNTS="-v ${GENOME_DIR}:/genome -v ${GENOME_DIR}/reference/cnvpytor:${DATA}"

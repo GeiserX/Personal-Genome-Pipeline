@@ -54,6 +54,7 @@ dmesg | grep -i "oom\|killed" | tail -10
 
 **Fix:**
 ```bash
+source versions.env   # from the repository root
 # Re-run with full debug output
 bash -x scripts/03-deepvariant.sh your_name 2>&1 | tee debug.log
 
@@ -61,7 +62,7 @@ bash -x scripts/03-deepvariant.sh your_name 2>&1 | tee debug.log
 docker run --rm -it \
   --cpus 4 --memory 8g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.10.0 \
+  "${DEEPVARIANT_IMAGE}" \
   /bin/bash
 # Then run the command inside the container to see the error
 ```
@@ -83,17 +84,15 @@ docker run --rm -it \
    # For Docker Hub images
    docker search toolname
    ```
-2. Known problematic images and their correct tags (as of March 2026):
+2. Image names that have caught people out, and what the pipeline uses instead (the current tags are on [Image versions](versions.md)):
 
-   | Tool | Wrong Tag | Correct Tag |
+   | Tool | Wrong image | Use instead |
    |---|---|---|
-   | CNVnator | `cnvnator:0.4.1--py312hc02a2a2_7` | `cnvnator:0.4.1--py312h99c8fb2_11` |
-   | Delly | `delly:1.2.9--ha41ced6_0` | `quay.io/biocontainers/delly:2.1.0--h3752d28_0` |
-   | ExpansionHunter | `weisburd/expansionhunter:latest` (v2.5.5) | `quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5` |
-   | AnnotSV | `bioinfochrustrasbourg/annotsv:3.4.4` | `quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0` |
-   | CPSR | `sigven/cpsr:2.0.0` | `sigven/pcgr:2.2.5` (bundles both) |
-   | SnpSift | `quay.io/biocontainers/snpsift:5.2--hdfd78af_1` | `quay.io/biocontainers/snpeff:5.2--hdfd78af_1` (bundled) |
-   | MToolBox | `robertopreste/mtoolbox:latest` | Does not exist. Use `broadinstitute/gatk:4.6.2.0` instead |
+   | Delly | an old `delly` 1.2.9 build tag | `DELLY_IMAGE` |
+   | ExpansionHunter | `weisburd/expansionhunter` (v2.5.5, a different CLI) | `EXPANSIONHUNTER_IMAGE` |
+   | AnnotSV | `bioinfochrustrasbourg/annotsv` | `ANNOTSV_IMAGE` |
+   | CPSR | `sigven/cpsr` (does not exist) | `PCGR_IMAGE` (bundles both) |
+   | MToolBox | `robertopreste/mtoolbox` (does not exist) | `GATK_IMAGE` (step 20 uses Mutect2) |
 
 3. If an image disappears entirely, check if the tool has an official Docker image on GitHub Container Registry (`ghcr.io`), Docker Hub, or the tool's documentation.
 
@@ -240,15 +239,16 @@ rm -f ${GENOME_DIR}/${SAMPLE}/delly/*.bcf            # After VCF conversion
 
 **How to detect:**
 ```bash
+source versions.env   # from the repository root
 # Check BAM header for chromosome naming and lengths
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/samtools:1.20 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${SAMTOOLS_IMAGE}" \
   samtools view -H /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam | grep "^@SQ" | head -3
 
 # GRCh38 (hg38): SN:chr1  LN:248956422
 # GRCh37 (hg19): SN:1     LN:249250621   (or SN:chr1 LN:249250621)
 
 # For VCF files
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools view -h /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | grep "^##contig" | head -3
 ```
 
@@ -263,7 +263,8 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 
 **Fix:** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+source versions.env   # from the repository root
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   bash -c "samtools sort -n /genome/${SAMPLE}/aligned/old_hg19.bam | \
            samtools fastq -1 /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
                           -2 /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz -"
@@ -282,23 +283,26 @@ Do **not** use LiftOver on BAM files. Re-alignment from FASTQ is cleaner and avo
 
 **Fix:** Convert CRAM to BAM (requires the reference genome used for encoding, which is usually GRCh38):
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools view -b \
-    -T /genome/reference/Homo_sapiens_assembly38.fasta \
+    -T "/genome/${REF_FASTA}" \
     -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     /genome/${SAMPLE}/aligned/${SAMPLE}.cram
 
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
 **If you get an error about mismatched references:** The CRAM was encoded against a different reference build. You need the exact FASTA used during encoding, or extract FASTQ and re-align:
 ```bash
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+source versions.env   # from the repository root
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   bash -c "samtools sort -n /genome/${SAMPLE}/aligned/${SAMPLE}.cram | \
            samtools fastq -1 /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
                           -2 /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz -"
@@ -351,17 +355,18 @@ ln -s original_name_R2.fastq.gz ${SAMPLE}_R2.fastq.gz
 
 **How to detect:**
 ```bash
+source versions.env   # from the repository root
 # Test gzip integrity (for FASTQ.gz, VCF.gz)
 gzip -t ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz
 # If corrupt: "unexpected end of file" or "invalid compressed data"
 
 # Test BAM integrity
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools quickcheck /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 # No output = OK. Error message = corrupt.
 
 # Check VCF can be read
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -h /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz > /dev/null
 ```
 
@@ -380,8 +385,9 @@ For reference data downloads that fail repeatedly, see the per-step sections for
 
 **How to detect:**
 ```bash
+source versions.env   # from the repository root
 # Check if BAM is sorted
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools view -H /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam | grep "^@HD"
 # Should show: SO:coordinate
 
@@ -391,11 +397,12 @@ ls -la ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai
 
 **Fix:**
 ```bash
+source versions.env   # from the repository root
 # Sort the BAM (if not already sorted)
 docker run --rm --user root \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools sort -@ 4 \
     -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     /genome/${SAMPLE}/aligned/${SAMPLE}_unsorted.bam
@@ -403,7 +410,7 @@ docker run --rm --user root \
 # Create index (always needed)
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
@@ -436,11 +443,11 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 **Reality:** DeepVariant's GPU Docker image is built against one specific CUDA version, so it needs an NVIDIA driver that supports that version. Check the release notes of the DeepVariant version you run before trying it.
 
 **Why it's not worth the hassle:**
-1. The GPU image (`google/deepvariant:1.10.0-gpu`) requires the NVIDIA container runtime and a driver that matches its CUDA version
+1. The GPU image (the same tag as `DEEPVARIANT_IMAGE` with `-gpu` appended) requires the NVIDIA container runtime and a driver that matches its CUDA version
 2. Only `call_variants` uses the GPU. In the [DeepVariant 1.10 runtime metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md) for a 30x WGS on 96 CPU cores, `make_examples` takes 46 min, `call_variants` 16 min and `postprocess_variants` 7 min, so a GPU speeds up about a quarter of the run
 3. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
 
-**Recommendation:** Use the CPU image (`google/deepvariant:1.10.0`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
+**Recommendation:** Use the CPU image (`DEEPVARIANT_IMAGE`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
 
 ---
 
@@ -452,15 +459,17 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 **Fix:**
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # scripts/03-deepvariant.sh has fixed limits (--cpus 8 --memory 32g), so run step 3
 # manually with reduced resources:
 docker run --rm \
   --cpus 2 --memory 12g \
   -v "${GENOME_DIR}:/genome" \
-  google/deepvariant:1.10.0 \
+  "${DEEPVARIANT_IMAGE}" \
   /opt/deepvariant/bin/run_deepvariant \
     --model_type=WGS \
-    --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
+    --ref="/genome/${REF_FASTA}" \
     --reads="/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     --num_shards=2
@@ -483,13 +492,14 @@ docker run --rm \
 
 **Diagnosis:**
 ```bash
+source versions.env   # from the repository root
 # Check BAM read count
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools flagstat /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 # "mapped" count should be 500M+ for 30X WGS
 
 # Check chromosome naming consistency
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools view -H /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam | grep "^@SQ" | head -1
 # Must use "chr" prefix (SN:chr1) to match GRCh38 reference
 ```
@@ -507,17 +517,19 @@ docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
 
 **Fix:**
 ```bash
+source versions.env   # from the repository root
 # Verify the Manta VCF has PASS variants
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -f PASS /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz | grep -c -v "^#"
-# Should be > 0. Typical: 5,000-9,000 for 30X WGS.
+# Should be > 0. Typical: 7,000-9,000 for 30X WGS.
 ```
 
 If the Manta VCF is valid but AnnotSV still produces nothing, try running with verbose output:
 ```bash
+source versions.env   # from the repository root
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
+  "${ANNOTSV_IMAGE}" \
   AnnotSV \
     -SVinputFile "/genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_test.tsv" \
@@ -540,35 +552,39 @@ docker run --rm --user root \
 
 **Fix:**
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # Verify your VCF has the GT field
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools query -f '[%GT]\n' /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | head -1
 # Should show something like "0/1" or "1/1"
 
 # If your VCF is plain text, compress and index it:
-docker run --rm --user root -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm --user root -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bash -c "bcftools view /genome/${SAMPLE}/vcf/${SAMPLE}.vcf -Oz \
     -o /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 # If multi-allelic sites are an issue, normalize:
-docker run --rm --user root -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm --user root -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools norm -m -both \
-    -f /genome/reference/Homo_sapiens_assembly38.fasta \
+    -f "/genome/${REF_FASTA}" \
     /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
     -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_norm.vcf.gz
 ```
 
 **Note:** PharmCAT 3.2.0 includes a VCF preprocessor. If direct input fails, try the preprocessor first:
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  -v "${GENOME_DIR}/reference:/ref" \
-  pgkb/pharmcat:3.2.0 \
+  -v "${GENOME_DIR}:/genome" \
+  "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
-    -refFna /ref/Homo_sapiens_assembly38.fasta \
+    -refFna "/genome/${REF_FASTA}" \
     -o /data/ \
     -bf "$SAMPLE"
 ```
@@ -579,7 +595,7 @@ docker run --rm \
 
 **Symptom:** ExpansionHunter crashes with model or catalog errors.
 
-**Cause:** The pipeline uses ExpansionHunter v5.0.0 (`quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5`). The v5 CLI is different from the old v2.5.5 (`weisburd/expansionhunter:latest`).
+**Cause:** The pipeline uses ExpansionHunter v5.0.0 (`EXPANSIONHUNTER_IMAGE`). The v5 CLI is different from the old v2.5.5 in the `weisburd/expansionhunter` image.
 
 **Key v5 CLI changes from v2.5.5:**
 - `--bam` → `--reads`
@@ -590,9 +606,10 @@ docker run --rm \
 
 **Fix:** If running manually, use the v5 syntax:
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 ExpansionHunter \
   --reads /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-  --reference /genome/reference/Homo_sapiens_assembly38.fasta \
+  --reference "/genome/${REF_FASTA}" \
   --variant-catalog /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
   --output-prefix /genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh \
   --threads 4 \
@@ -613,14 +630,16 @@ ExpansionHunter \
 
 2. **Wrong column names in +split-vep:** The column names in CSQ depend on your VEP command-line options. Check the VCF header for the actual field order:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+   source versions.env   # from the repository root
+   docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools view -h /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz | grep "^##INFO=<ID=CSQ"
    # The "Format:" part shows the pipe-delimited column order
    ```
 
 3. **Forgetting to specify -f (format) in +split-vep:** Without `-f`, it outputs all fields. Specify the ones you want, and choose how multiple transcripts are reported:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+   source versions.env   # from the repository root
+   docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools +split-vep \
        /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz \
        -f '%CHROM %POS %Consequence %SYMBOL %SIFT %PolyPhen %gnomADe_AF\n' \
@@ -646,7 +665,7 @@ mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
 # wget -c resumes interrupted downloads
-# Release 116 matches the pinned VEP image (ensemblorg/ensembl-vep:release_116.0)
+# Release 116 matches the pinned VEP image (VEP_IMAGE in versions.env)
 wget -c https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz
 
 # Verify download size (~26 GB)
@@ -677,13 +696,14 @@ ls ${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/
 
 **Fix:** Ensure you have the correct data bundle and mount structure:
 ```bash
+source versions.env   # from the repository root
 # PCGR 2.x requires four separate volume mounts:
 docker run --rm --user root \
   -v ${GENOME_DIR}/vep_cache:/mnt/.vep \
   -v ${GENOME_DIR}/pcgr_data/20250314:/mnt/bundle \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/mnt/inputs \
   -v ${GENOME_DIR}/${SAMPLE}/cpsr:/mnt/outputs \
-  sigven/pcgr:2.2.5 cpsr \
+  "${PCGR_IMAGE}" cpsr \
     --refdata_dir /mnt/bundle \
     --vep_dir /mnt/.vep \
     ...
@@ -700,11 +720,12 @@ mkdir -p 20250314 && mv data/ 20250314/
 **Additional CPSR issue -- wrong Docker image:**
 CPSR does not have its own Docker image. It is bundled inside the PCGR image:
 ```bash
+source versions.env   # from the repository root
 # CORRECT:
-docker run ... sigven/pcgr:2.2.5 cpsr ...
+docker run ... "${PCGR_IMAGE}" cpsr ...
 
-# WRONG (image does not exist):
-docker run ... sigven/cpsr:2.0.0 ...
+# WRONG (there is no sigven/cpsr image):
+docker run ... sigven/cpsr ...
 ```
 
 ---
@@ -720,13 +741,14 @@ docker run ... sigven/cpsr:2.0.0 ...
 
 **Diagnosis:**
 ```bash
+source versions.env   # from the repository root
 # Confirm all 7 pinned resource files are present
 ls -lh ${GENOME_DIR}/reference/cnvpytor/
 # Check the .pytor size (should be several GB for 30X WGS)
 ls -lh ${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}.pytor
 
 # Re-verify the container data path for the pinned image (mount target)
-docker run --rm quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0 \
+docker run --rm "${CNVPYTOR_IMAGE}" \
   python -c 'import cnvpytor, os; print(os.path.dirname(cnvpytor.__file__) + "/data")'
 ```
 
@@ -753,13 +775,15 @@ docker run --rm quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0 \
 2. Confirm storage is not a bottleneck (NFS/SMB mounts are much slower)
 3. Consider running only on specific chromosomes to reduce scope:
    ```bash
+   source versions.env   # from the repository root
+   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
    # Run Delly on chr1-chr22 only (skip ALT contigs)
    docker run --rm --user root \
      --cpus 4 --memory 8g \
      -v "${GENOME_DIR}:/genome" \
-     quay.io/biocontainers/delly:2.1.0--h3752d28_0 \
+     "${DELLY_IMAGE}" \
      delly call \
-       -g /genome/reference/Homo_sapiens_assembly38.fasta \
+       -g "/genome/${REF_FASTA}" \
        -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
        /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
    # Delly processes all standard chromosomes by default; slowness usually
@@ -774,12 +798,14 @@ docker run --rm quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0 \
 **Problem: "Cannot create sequence dictionary"**
 The script tries to create `Homo_sapiens_assembly38.dict` if it does not exist. If you get permission errors, create it manually:
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/gatk:4.6.2.0 \
+  "${GATK_IMAGE}" \
   gatk CreateSequenceDictionary \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
-    -O /genome/reference/Homo_sapiens_assembly38.dict
+    -R "/genome/${REF_FASTA}" \
+    -O "/genome/${REF_FASTA%.fasta}.dict"
 ```
 
 **Problem: 0 mitochondrial variants called**
@@ -814,7 +840,7 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 
 | Step | Native Linux | Mac (Rosetta 2) | Slowdown |
 |---|---|---|---|
-| DeepVariant | 2-4 hr | 8-16 hr | 3-5x |
+| DeepVariant | 3-5 hr | 9-25 hr | 3-5x |
 | minimap2 alignment | 1-2 hr | 3-6 hr | 3x |
 | VEP annotation | 2-4 hr | 4-8 hr | 2x |
 | Manta | 20 min | 1-2 hr | 3-4x |
@@ -949,7 +975,7 @@ RESOURCE CAUTION:
    bash -x scripts/06-clinvar-screen.sh your_name
    ```
 3. **Inspect Docker mount mapping.** The script mounts `${GENOME_DIR}:/genome`. Inside the container, `${GENOME_DIR}/sample/vcf/sample.vcf.gz` becomes `/genome/sample/vcf/sample.vcf.gz`.
-4. **Check for bgzip/tabix path issues.** The `staphb/bcftools:1.21` image does not include `bgzip` or `tabix` in `$PATH`. Use `bcftools view -Oz -o` instead of piping to `bgzip`. See [lessons-learned.md](lessons-learned.md#bgziptabix-not-in-bcftools-image-path).
+4. **Check for bgzip/tabix path issues.** The bcftools image (`BCFTOOLS_IMAGE`) does not include `bgzip` or `tabix` in `$PATH`. Use `bcftools view -Oz -o` instead of piping to `bgzip`. See [lessons-learned.md](lessons-learned.md#bgziptabix-not-in-bcftools-image-path).
 
 **Other causes:**
 - Tool crashed silently before writing output (check exit code and stderr)
@@ -977,14 +1003,16 @@ RESOURCE CAUTION:
 1. **Genome build mismatch.** Your BAM may be hg19, but the reference is hg38. See [Wrong genome build](#wrong-genome-build-hg19-vs-hg38).
 2. **Low coverage.** Check average depth:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+   source versions.env   # from the repository root
+   docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
      samtools depth -a /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam | \
      awk '{sum+=$3; n++} END {print "Average depth:", sum/n}'
    ```
    30X WGS should show average depth of 25-35.
 3. **BAM is mostly unmapped.** Check alignment rate:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+   source versions.env   # from the repository root
+   docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
      samtools flagstat /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
    ```
    Mapped percentage should be > 98%.
@@ -992,15 +1020,18 @@ RESOURCE CAUTION:
 **If total variants > 7 million:**
 1. Likely includes many false positives. Filter to PASS only:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+   source versions.env   # from the repository root
+   docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools view -f PASS /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | \
      bcftools stats | grep "number of records"
    ```
 2. Multi-allelic sites may be inflating the count. Normalize:
    ```bash
-   docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+   source versions.env   # from the repository root
+   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+   docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools norm -m -both \
-       -f /genome/reference/Homo_sapiens_assembly38.fasta \
+       -f "/genome/${REF_FASTA}" \
        /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | bcftools stats | grep "number of records"
    ```
 
@@ -1029,18 +1060,19 @@ RESOURCE CAUTION:
 Quick sanity checks for each major output:
 
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_name
 
 # VCF: check variant count and type distribution
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools stats /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | grep "^SN"
 
 # BAM: check alignment rate and depth
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools flagstat /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
-# Manta SV count (expect 5,000-9,000 total)
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+# Manta SV count (expect 7,000-9,000 total)
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz | grep -c -v "^#"
 
 # PharmCAT: check the HTML report exists and has content

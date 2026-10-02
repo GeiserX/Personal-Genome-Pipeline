@@ -28,7 +28,7 @@ Only the latest version receives security updates. Please always use the most re
 
 1. **Never commit secrets** — use environment variables
 2. **Validate all input** — especially sample names, paths, and user-provided files
-3. **Keep dependencies updated** — Dependabot is enabled on this repo
+3. **Keep dependencies updated** — Dependabot updates the GitHub Actions and the docs' Python requirements only. The Docker images pinned in `versions.env` are not updated automatically: bump them by hand and rerun the tests
 4. **Prefer reproducible pins** for Docker images, databases, and tool versions
 
 ## Contact

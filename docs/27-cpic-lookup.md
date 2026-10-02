@@ -15,9 +15,9 @@ PharmCAT produces detailed JSON and HTML reports, but digging through them to fi
 
 ## Docker Image
 
-```
-python:3.11-slim
-```
+- `PYTHON_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
