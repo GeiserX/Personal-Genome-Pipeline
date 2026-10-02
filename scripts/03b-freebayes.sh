@@ -39,7 +39,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Run FreeBayes (single-threaded, outputs unsorted VCF)
 echo "Running FreeBayes (single-threaded, this may take several hours for 30X WGS)..."
-FREEBAYES_ARGS=(-f /genome/reference/Homo_sapiens_assembly38.fasta)
+FREEBAYES_ARGS=(-f "${REF_FASTA_C}")
 if [ -n "$INTERVALS" ]; then
   FREEBAYES_ARGS+=(--region "$INTERVALS")
 fi

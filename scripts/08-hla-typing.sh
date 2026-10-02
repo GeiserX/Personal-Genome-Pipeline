@@ -32,17 +32,18 @@ mkdir -p "$OUTPUT_DIR"
 if [ ! -f "${IDX_DIR}/hlaidx/_dna_seq.fa" ]; then
   echo "Building HLA reference index..."
   mkdir -p "${IDX_DIR}"
-  run_in --cpus 2 --memory 2g \
-    -v "${IDX_DIR}:/idx" \
+  # --net: t1k-build.pl downloads the IPD-IMGT/HLA database (hla.dat).
+  # The index is shared by every sample, so t1k_idx/ is writable here.
+  run_in --net --rw "$IDX_DIR" --cpus 2 --memory 2g \
     "${T1K_IMAGE}" \
-    t1k-build.pl -o /idx/hlaidx --download IPD-IMGT/HLA
+    t1k-build.pl -o /genome/t1k_idx/hlaidx --download IPD-IMGT/HLA
 fi
 
 # Step 2: Build coordinate file (one-time, ~30 min — reads entire 3.1GB reference)
 # CRITICAL: Use the actual FASTA file, NOT the .fai index!
 if [ ! -f "${IDX_DIR}/hlaidx_grch38/_dna_coord.fa" ]; then
   echo "Building coordinate file from reference genome (this takes ~30 min)..."
-  run_in --cpus 4 --memory 8g \
+  run_in --rw "$IDX_DIR" --cpus 4 --memory 8g \
     "${T1K_IMAGE}" \
     t1k-build.pl \
       -d "/genome/t1k_idx/hlaidx/hla.dat" \

@@ -17,7 +17,7 @@ validate_sample "$SAMPLE"
 RAW_DIR="${GENOME_DIR}/${SAMPLE}/raw"
 VCF_DIR="${GENOME_DIR}/${SAMPLE}/vcf"
 REF_HG19="${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta"
-REF_HG38="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF_HG38="$REF_FASTA"
 CHAIN="${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz"
 
 echo "=== Chip-to-VCF Converter: ${SAMPLE} ==="
@@ -96,7 +96,9 @@ echo "--- Stage 1: Converting to hg19 VCF (bcftools convert --tsv2vcf) ---"
 echo "  This looks up the reference allele at each position from the FASTA."
 echo "  Homozygous ALT genotypes will be correctly encoded as GT 1/1."
 
-run_in --cpus 2 --memory 4g \
+# bcftools writes the hg19 FASTA's .fai next to it when it is missing, so that
+# directory is writable here.
+run_in --rw "$(dirname "$REF_HG19")" --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \

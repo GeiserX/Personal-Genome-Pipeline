@@ -51,7 +51,7 @@ mkdir -p "$OUTPUT_DIR"
 if [ ! -f "$BWA_INDEX" ]; then
   echo "=== Building BWA-MEM2 index (one-time, ~1 hour) ==="
   # The index files go next to the FASTA, so reference/ is writable here.
-  run_in --rw "${GENOME_DIR}/reference" \
+  run_in --rw "$(dirname "$REF_FASTA")" \
     --cpus 8 --memory 24g \
     "${BWAMEM2_IMAGE}" \
     bwa-mem2 index "${REF_FASTA_C}"

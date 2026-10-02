@@ -23,7 +23,7 @@ for f in "$VCF" "${VCF}.tbi" "$REF"; do
     echo "ERROR: File not found: ${f}" >&2
     if [ "$f" = "${VCF}.tbi" ]; then
       echo "  PharmCAT requires a tabix index. Generate it with:" >&2
-      echo "  run_in -v \"\${GENOME_DIR}:/genome\" "${BCFTOOLS_IMAGE}" bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" >&2
+      echo "  docker run --rm -v \"${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" >&2
     fi
     exit 1
   fi
@@ -33,11 +33,11 @@ done
 run_in \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
-  -v "${GENOME_DIR}/reference:/ref" \
+  -v "$(dirname "$REF_FASTA"):/ref:ro" \
   "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
     -vcf "/data/${SAMPLE}.vcf.gz" \
-    -refFna /ref/Homo_sapiens_assembly38.fasta \
+    -refFna "/ref/$(basename "$REF_FASTA")" \
     -o /data/ \
     -bf "$SAMPLE"
 

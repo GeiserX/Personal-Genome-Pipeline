@@ -24,8 +24,6 @@ BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_clair3"
 
-CLAIR3_IMAGE="${CLAIR3_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 # Select model path based on platform
 case "$PLATFORM" in

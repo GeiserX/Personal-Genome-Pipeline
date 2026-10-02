@@ -330,9 +330,9 @@ else
         --cpus 2 --memory 4g \
         "${BCFTOOLS_IMAGE}" \
         bash -euo pipefail -c \
-          'bcftools norm -m-both -f "${REF_FASTA_C}" "$1" -Oz -o "$2" && bcftools index -t "$2" &&
-           bcftools norm -m-both -f "${REF_FASTA_C}" "$3" -Oz -o "$4" && bcftools index -t "$4"' \
-          _ "${VCF_A}" "${NORM_A}" "${VCF_B}" "${NORM_B}"
+          'bcftools norm -m-both -f "$5" "$1" -Oz -o "$2" && bcftools index -t "$2" &&
+           bcftools norm -m-both -f "$5" "$3" -Oz -o "$4" && bcftools index -t "$4"' \
+          _ "${VCF_A}" "${NORM_A}" "${VCF_B}" "${NORM_B}" "${REF_FASTA_C}"
 
       # shellcheck disable=SC2086
       run_in \

@@ -100,7 +100,7 @@ elif [ -f "$CNVPYTOR_TXT" ]; then
     echo "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">"
     echo "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length\">"
     # Add contig headers from reference .fai (required by bcftools sort)
-    REF_FAI="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai"
+    REF_FAI="${REF_FASTA}.fai"
     if [ -f "$REF_FAI" ]; then
       awk '{printf "##contig=<ID=%s,length=%s>\n", $1, $2}' "$REF_FAI"
     fi
@@ -203,8 +203,8 @@ run_in --cpus 4 --memory 4g \
       echo '##fileformat=VCFv4.2'
       echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"SV type\">'
       echo '##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position\">'
-      if [ -f /genome/reference/Homo_sapiens_assembly38.fasta.fai ]; then
-        awk '{printf \"##contig=<ID=%s,length=%s>\\n\", \$1, \$2}' /genome/reference/Homo_sapiens_assembly38.fasta.fai
+      if [ -f ${REF_FASTA_C}.fai ]; then
+        awk '{printf \"##contig=<ID=%s,length=%s>\\n\", \$1, \$2}' ${REF_FASTA_C}.fai
       fi
       printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
       cat /genome/${SAMPLE}/sv_merged/consensus_raw.txt

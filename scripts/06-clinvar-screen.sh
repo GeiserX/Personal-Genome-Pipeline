@@ -21,7 +21,6 @@ CLINVAR="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 CLINVAR_NORM="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.norm.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 HITS="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.vcf"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 
@@ -34,11 +33,11 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-# Container path of a host path under GENOME_DIR
-cpath() { printf '/genome%s' "${1#"$GENOME_DIR"}"; }
-
+# bcftools_run [--rw DIR] ARGS...: bcftools in its container.
 bcftools_run() {
-  run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" "$@"
+  local -a opt=()
+  if [ "$1" = "--rw" ]; then opt=(--rw "$2"); shift 2; fi
+  run_in ${opt[@]+"${opt[@]}"} --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" "$@"
 }
 
 # Step 0: the two files must share contig names. A ClinVar file with 1,2,...
@@ -60,9 +59,10 @@ fi
 if [ ! -f "$CLINVAR_NORM" ] || [ ! -f "${CLINVAR_NORM}.tbi" ] || [ "$CLINVAR" -nt "$CLINVAR_NORM" ]; then
   echo "Normalising ClinVar into ${CLINVAR_NORM} ..."
   rm -f "${CLINVAR_NORM}.part.vcf.gz" "${CLINVAR_NORM}.part.vcf.gz.tbi"
-  bcftools_run bcftools norm -m -any -c w -f "$(cpath "$REF")" "$(cpath "$CLINVAR")" \
+  # The normalised copy is shared by every sample, so clinvar/ is writable here.
+  bcftools_run --rw "$(dirname "$CLINVAR_NORM")" bcftools norm -m -any -c w -f "$(cpath "$REF")" "$(cpath "$CLINVAR")" \
     -Oz -o "$(cpath "${CLINVAR_NORM}.part.vcf.gz")"
-  bcftools_run bcftools index -t "$(cpath "${CLINVAR_NORM}.part.vcf.gz")"
+  bcftools_run --rw "$(dirname "$CLINVAR_NORM")" bcftools index -t "$(cpath "${CLINVAR_NORM}.part.vcf.gz")"
   mv "${CLINVAR_NORM}.part.vcf.gz" "$CLINVAR_NORM"
   mv "${CLINVAR_NORM}.part.vcf.gz.tbi" "${CLINVAR_NORM}.tbi"
 fi

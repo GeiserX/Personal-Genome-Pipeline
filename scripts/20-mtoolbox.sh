@@ -41,13 +41,14 @@ run_in --cpus 2 --memory 4g \
   "
 
 echo "[2/4] Checking sequence dictionary..."
-if [ ! -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict" ]; then
+if [ ! -f "$REF_DICT" ]; then
   echo "  Creating sequence dictionary..."
-  run_in --cpus 2 --memory 4g \
+  # The dictionary goes next to the FASTA, so its directory is writable here.
+  run_in --rw "$(dirname "$REF_FASTA")" --cpus 2 --memory 4g \
     "$GATK_IMAGE" \
     gatk CreateSequenceDictionary \
       -R "${REF_FASTA_C}" \
-      -O /genome/reference/Homo_sapiens_assembly38.dict
+      -O "$(cpath "$REF_DICT")"
 else
   echo "  Sequence dictionary already exists, skipping."
 fi

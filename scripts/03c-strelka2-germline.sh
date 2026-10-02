@@ -42,8 +42,6 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-STRELKA_IMAGE="${STRELKA_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 # A finished run is not repeated: the configure script refuses a runDir
 # that already holds a workflow, so a second run used to fail.
@@ -59,9 +57,9 @@ if [ -f "${OUTPUT_DIR}/runWorkflow.py" ]; then
   echo "[1/2] Found an unfinished Strelka2 run in ${OUTPUT_DIR}/; resuming it."
 else
   if [ -d "$OUTPUT_DIR" ]; then
-    # Files written by the container belong to root, so remove them from a container
+    # --root: a directory left by an earlier version of this script belongs to root.
     echo "Removing leftover ${OUTPUT_DIR}/ (no workflow and no results)..."
-    run_in "$STRELKA_IMAGE" \
+    run_in --root "$STRELKA_IMAGE" \
       rm -rf "/genome/${SAMPLE}/vcf_strelka2"
   fi
   mkdir -p "$OUTPUT_DIR"

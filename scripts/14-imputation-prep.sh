@@ -39,7 +39,7 @@ for chr in $(seq 1 22); do
 done
 
 # Step 2: Create MIS-ready copies (PASS-only + tabix)
-# IMPORTANT: Use bcftools -Oz (not bgzip pipe) — bgzip is NOT in staphb/bcftools PATH
+# IMPORTANT: Use bcftools -Oz (not bgzip pipe) — the bcftools image ships no bgzip
 for chr in $(seq 1 22); do
   echo "MIS-ready chr${chr}..."
   run_in --cpus 2 --memory 2g \

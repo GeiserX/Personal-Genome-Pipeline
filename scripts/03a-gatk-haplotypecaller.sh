@@ -16,11 +16,8 @@ SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
-REF_DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_gatk"
 
-GATK_IMAGE="${GATK_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "=== GATK HaplotypeCaller: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"

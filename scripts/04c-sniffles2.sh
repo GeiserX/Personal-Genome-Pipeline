@@ -20,8 +20,6 @@ BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/sv_sniffles"
 
-SNIFFLES_IMAGE="${SNIFFLES_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "=== Sniffles2 SV Calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"

@@ -23,7 +23,7 @@ OUTPUT_FILE="${VEP_DIR}/${SAMPLE}_annotated.vcf.gz"
 
 echo "=== vcfanno Annotation: ${SAMPLE} ==="
 
-# staphb/bcftools ships bcftools only (no bgzip, no tabix), so every
+# The bcftools image ships bcftools only (no bgzip, no tabix), so every
 # compression below is `bcftools view -Oz` and every index `bcftools index -t`.
 
 # Skip only if a previous run left a complete output: non-empty, indexed,

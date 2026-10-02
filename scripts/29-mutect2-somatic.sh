@@ -22,11 +22,8 @@ SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
-REF_DICT="${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
 OUTPUT_DIR="${SAMPLE_DIR}/somatic"
 
-GATK_IMAGE="${GATK_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 # Optional resources (improve filtering if present)
 GNOMAD_VCF="${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz"
@@ -61,7 +58,7 @@ done
 # GATK needs .dict file
 if [ ! -f "$REF_DICT" ]; then
   echo "ERROR: Sequence dictionary not found: ${REF_DICT}" >&2
-  echo "Generate it with: run_in -v \${GENOME_DIR}:/genome ${GATK_IMAGE} gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38.fasta" >&2
+  echo "Generate it with: docker run --rm -v \"${GENOME_DIR}:/genome\" ${GATK_IMAGE} gatk CreateSequenceDictionary -R ${REF_FASTA_C}" >&2
   exit 1
 fi
 

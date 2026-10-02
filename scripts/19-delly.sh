@@ -29,8 +29,6 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-DELLY_IMAGE="${DELLY_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 echo "[1/3] Calling structural variants..."
 run_in --cpus 4 --memory 8g \

@@ -27,10 +27,10 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-source "$(dirname "$0")/../versions.env" 2>/dev/null || TELOMEREHUNTER_IMAGE="lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714"
-run_in \
+# --root: this image has not been shown to run as an unprivileged user.
+run_in --root \
   --cpus 4 --memory 4g \
-  ${TELOMEREHUNTER_IMAGE} \
+  "${TELOMEREHUNTER_IMAGE}" \
   telomerehunter \
     -ibt "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/telomere/${SAMPLE}" \

@@ -36,11 +36,9 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-TIDDIT_IMAGE="${TIDDIT_IMAGE}"
-BCFTOOLS_IMAGE="${BCFTOOLS_IMAGE}"
 
 # Detect BWA index — if present, enable local assembly for better breakpoint resolution
-BWA_INDEX="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.bwt.2bit.64"
+BWA_INDEX="${REF}.bwt.2bit.64"
 TIDDIT_EXTRA_ARGS=()
 if [ -f "$BWA_INDEX" ]; then
   echo "BWA index detected — enabling local assembly for breakpoint refinement."

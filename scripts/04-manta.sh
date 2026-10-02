@@ -43,7 +43,8 @@ else
   if [ -d "$MANTA_DIR" ]; then
     # Files written by the container belong to root, so remove them from a container
     echo "Removing leftover ${MANTA_DIR}/ (no workflow and no results)..."
-    run_in \
+    # --root: a directory left by an earlier version of this script belongs to root.
+    run_in --root \
       "${MANTA_IMAGE}" \
       rm -rf "/genome/${SAMPLE}/manta"
   fi
