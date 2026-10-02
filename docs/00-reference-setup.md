@@ -146,6 +146,7 @@ Only needed for step 8 (HLA typing). ~30 minutes to build.
 
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 mkdir -p ${GENOME_DIR}/t1k_idx
 
 # Step 1: Download IPD-IMGT/HLA database (~2 min)
@@ -356,6 +357,7 @@ GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If y
 
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
   "${GATK_IMAGE}" \
@@ -370,6 +372,7 @@ BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Buildi
 The practical route is to build the index once on a machine (or a rented cloud instance) with at least 96 GB of RAM, then copy the five index files next to the FASTA on your own machine. With less memory the build is killed (exit code 137).
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 # From the repository root: the image scripts/02a-alignment-bwamem2.sh pins
 BWA_MEM2_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa-mem2:[^ ]*' scripts/02a-alignment-bwamem2.sh)
 docker run --rm --user root \
@@ -418,6 +421,7 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 After all downloads, verify everything is in place:
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
 echo "Checking reference setup..."
 [ -f "${GENOME_DIR}/${REF_FASTA}" ] && echo "  GRCh38 FASTA: OK" || echo "  GRCh38 FASTA: MISSING"
 [ -f "${GENOME_DIR}/${REF_FASTA}.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"

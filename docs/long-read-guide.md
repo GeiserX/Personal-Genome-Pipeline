@@ -173,6 +173,7 @@ DeepVariant 1.10.0+ also supports long reads with dedicated models:
 
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 
 docker run --rm \

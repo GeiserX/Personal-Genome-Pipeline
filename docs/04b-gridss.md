@@ -54,6 +54,7 @@ With `GRIDSS=true` and no classic BWA index, the step fails and the run's final 
 GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # From the repository root: the image scripts/04b-gridss.sh names for this
 BWA_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa:[^ ]*' scripts/04b-gridss.sh)
 docker run --rm -v "${GENOME_DIR}:/genome" \

@@ -113,7 +113,7 @@ Each pipeline step runs in a Docker container with a `--memory` limit. Here's wh
 | 18 (CNVpytor) | 8 GB | 4-6 GB | .pytor (HDF5) file can be large |
 | 19 (Delly) | 8 GB | 4-6 GB | Moderate |
 
-**Minimum system RAM:** 16 GB. The default steps each fit in it, but `run-all.sh` starts several containers at once (up to `MAX_JOBS`, half the CPU count with a minimum of 4) and counts CPUs, not memory. On a 16 GB machine run it with `MAX_JOBS=2`.
+**Minimum system RAM:** 16 GB. Every default step fits in it except possibly DeepVariant, whose peak at its 8 shards can pass 16 GB (its container may use up to 32 GB); on a 16 GB machine it can be killed for lack of memory, and lowering `--num_shards` in `scripts/03-deepvariant.sh` lowers the peak. Also, `run-all.sh` starts several containers at once (up to `MAX_JOBS`, half the CPU count with a minimum of 4) and counts CPUs, not memory. On a 16 GB machine run it with `MAX_JOBS=2`.
 **Recommended:** 32 GB (run multiple steps in parallel)
 **Ideal:** 64 GB (run everything in parallel)
 **GRIDSS (step 4b, opt-in):** its container takes 32 GB (a 28 GB Java heap plus overhead), so it needs a machine with 32 GB or more even when nothing else runs.

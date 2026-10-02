@@ -22,6 +22,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Command
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # SV calling (all SV types)
 docker run --rm \
   --cpus 4 --memory 8g \
@@ -52,6 +53,7 @@ docker run --rm \
 Delly also has a dedicated CNV mode using read-depth only (similar to CNVpytor):
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \

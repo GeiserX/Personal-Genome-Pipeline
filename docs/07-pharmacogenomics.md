@@ -18,6 +18,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Command
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 

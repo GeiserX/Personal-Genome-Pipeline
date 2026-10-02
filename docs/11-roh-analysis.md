@@ -63,6 +63,7 @@ Subtract any segment that lies in one of the centromeric regions below.
 |---|---|
 | <1 Mb | Common, population-level background |
 | 1-5 Mb | Distant shared ancestry; many of them is typical of population isolates |
+| 5-10 Mb | Counted in the total above; a few can occur even when the parents are not related |
 | >10 Mb | Recent shared ancestry; possible uniparental disomy if confined to one chromosome |
 
 ## Important Notes

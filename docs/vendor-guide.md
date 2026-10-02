@@ -169,6 +169,7 @@ Some providers deliver CRAM instead of BAM (40-60% smaller). Convert to BAM firs
 
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
   "${SAMTOOLS_IMAGE}" \

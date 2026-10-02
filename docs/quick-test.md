@@ -106,6 +106,7 @@ If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/a
 The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. This block uses the biocontainers samtools image because it ships CA certificates and can fetch over `https://`; the `staphb/samtools` image used elsewhere has none and fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
 
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA and .fai
 mkdir -p ${GENOME_DIR}/${SAMPLE}/aligned
 

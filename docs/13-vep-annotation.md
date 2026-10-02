@@ -62,6 +62,6 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 - `--fork 4` enables parallelism — increase if more cores are available
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
 - `--dir_cache /opt/vep/.vep` is required when running as `--user root` (VEP looks in `/root/.vep` by default)
-- Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta "/genome/${REF_FASTA}"` if HGVS is needed
+- Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta "/genome/${REF_FASTA}"` if HGVS is needed ([`REF_FASTA`](00-reference-setup.md#the-reference-path-on-every-page) is the reference path)
 - VEP does NOT assess variant pathogenicity in ClinVar context — combine with step 6 (ClinVar screen) for full picture
 - **Upgrading from an older release:** VEP reads the cache directory named after its own release (`homo_sapiens/116_GRCh38/` for the pinned release 116). An older cache such as `112_GRCh38/` is not used; download the matching cache.

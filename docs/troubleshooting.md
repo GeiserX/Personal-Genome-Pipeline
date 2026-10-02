@@ -284,6 +284,7 @@ Do **not** use LiftOver on BAM files. Re-alignment from FASTQ is cleaner and avo
 **Fix:** Convert CRAM to BAM (requires the reference genome used for encoding, which is usually GRCh38):
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
   "${SAMTOOLS_IMAGE}" \
@@ -459,6 +460,7 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 **Fix:**
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # scripts/03-deepvariant.sh has fixed limits (--cpus 8 --memory 32g), so run step 3
 # manually with reduced resources:
 docker run --rm \
@@ -551,6 +553,7 @@ docker run --rm --user root \
 **Fix:**
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # Verify your VCF has the GT field
 docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools query -f '[%GT]\n' /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | head -1
@@ -573,6 +576,7 @@ docker run --rm --user root -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
 **Note:** PharmCAT 3.2.0 includes a VCF preprocessor. If direct input fails, try the preprocessor first:
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
@@ -602,6 +606,7 @@ docker run --rm \
 
 **Fix:** If running manually, use the v5 syntax:
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 ExpansionHunter \
   --reads /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
   --reference "/genome/${REF_FASTA}" \
@@ -771,6 +776,7 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
 3. Consider running only on specific chromosomes to reduce scope:
    ```bash
    source versions.env   # from the repository root
+   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
    # Run Delly on chr1-chr22 only (skip ALT contigs)
    docker run --rm --user root \
      --cpus 4 --memory 8g \
@@ -793,6 +799,7 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
 The script tries to create `Homo_sapiens_assembly38.dict` if it does not exist. If you get permission errors, create it manually:
 ```bash
 source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "${GATK_IMAGE}" \
@@ -1021,6 +1028,7 @@ RESOURCE CAUTION:
 2. Multi-allelic sites may be inflating the count. Normalize:
    ```bash
    source versions.env   # from the repository root
+   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
    docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools norm -m -both \
        -f "/genome/${REF_FASTA}" \
