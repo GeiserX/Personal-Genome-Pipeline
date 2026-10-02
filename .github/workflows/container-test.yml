@@ -19,7 +19,8 @@ name: Container Test
 #
 # Rows marked `full` (AnnotSV with its 5.3 GB annotation data) run monthly and
 # on dispatch only. When the monthly run fails, the freshness job opens or
-# updates one issue labelled `freshness`.
+# comments on one issue labelled `freshness`, titled "Monthly image test
+# failed".
 #
 # Public repo: GitHub-hosted runners are free here, and this runs on pull
 # requests, so nothing in this file may use a self-hosted runner.
@@ -190,13 +191,17 @@ jobs:
           R="$GITHUB_REPOSITORY"
           failed=$(gh api "repos/${R}/actions/runs/${RUN_ID}/jobs" --paginate \
                      --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name')
-          body=$(printf 'The monthly image test failed on %s.\n\nFailed jobs:\n%s\n\nRun: %s\n\nEach job log names the row and the check that failed; the row logs are in the image-smoke-logs artifacts of the run.\n' \
+          body=$(printf 'The monthly image test failed on %s.\n\nFailed jobs:\n%s\n\nRun: %s\n\nEach job log names the row and the check that failed; the row logs are in the image-smoke-logs-* artifacts of the run.\n' \
                    "$(date -u +%Y-%m-%d)" "${failed:-(none reported)}" "$RUN_URL")
-          gh label create freshness -R "$R" --color FBCA04 \
-            --description "A pinned image or data source no longer works" 2>/dev/null || true
-          n=$(gh issue list -R "$R" --label freshness --state open --json number --jq '.[0].number // empty')
+          title="Monthly image test failed"
+          gh label create freshness -R "$R" --color c5def5 \
+            --description "A pinned image, database or link has gone stale" 2>/dev/null || true
+          # Found by its title: the freshness workflow keeps its own issue
+          # under the same label, and this job never touches that one.
+          n=$(TITLE="$title" gh issue list -R "$R" --label freshness --state open --json number,title \
+                --jq 'map(select(.title == env.TITLE))[0].number // empty')
           if [ -n "$n" ]; then
             gh issue comment "$n" -R "$R" --body "$body"
           else
-            gh issue create -R "$R" --label freshness --title "Monthly image test failed" --body "$body"
+            gh issue create -R "$R" --label freshness --title "$title" --body "$body"
           fi
