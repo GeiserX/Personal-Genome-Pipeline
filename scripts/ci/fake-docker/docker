@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Fake `docker` for scripts/ci/run-fake-docker-suite.sh.
+#
+# Answers the calls the pipeline scripts make (--version, info, image inspect,
+# pull, run) with success, runs nothing, and appends one line per call to
+# $FAKE_DOCKER_LOG. Like the real client it refuses an empty image name
+# (exit 125) and an option it does not know, and it refuses an image with no
+# tag or digest, the shape an empty unquoted image variable leaves behind.
+# Those calls are logged with an EMPTY_IMAGE, NO_IMAGE or UNKNOWN_OPTION
+# prefix and the suite fails on them even when the calling script swallowed
+# the error.
+#
+# Hook: if FAKE_DOCKER_RUN_HOOK names an executable, `docker run` calls it as
+#   "$FAKE_DOCKER_RUN_HOOK" <image> <command and args...>
+# and returns its exit code. A case uses it to create the files a tool would
+# have written, or to make one image fail. The hook gets the call's -v specs
+# (host:container[:mode]) in FAKE_DOCKER_VOLUMES, one per line, so it can map
+# a container path to the host path.
+set -uo pipefail
+
+LOG=${FAKE_DOCKER_LOG:-/dev/null}
+ARGV=$(printf '%q ' "$@")
+record() { printf '%s :: %s\n' "$1" "$ARGV" >> "$LOG"; }
+
+# takes_value OPTION: true for a `docker run` option that takes a value.
+takes_value() {
+  case "$1" in
+    -a|--attach|--add-host|-c|--cpu-shares|--cap-add|--cap-drop|--cidfile|--cpus|\
+    --cpuset-cpus|--device|--dns|-e|--env|--env-file|--entrypoint|--expose|--gpus|\
+    --group-add|-h|--hostname|--ipc|-l|--label|--label-file|--link|--log-driver|\
+    --log-opt|-m|--memory|--memory-reservation|--memory-swap|--mount|--name|--net|\
+    --network|-p|--publish|--pid|--platform|--pull|--restart|--runtime|\
+    --security-opt|--shm-size|--stop-signal|--tmpfs|-u|--user|--ulimit|--userns|\
+    --uts|-v|--volume|--volumes-from|-w|--workdir) return 0 ;;
+  esac
+  return 1
+}
+
+case "${1:-}" in
+  --version|version)
+    record version
+    echo "Docker version 0.0.0-fake, build fake"
+    ;;
+  info)
+    record info
+    case " $* " in
+      *" --format "*|*" -f "*|*" --format="*) echo 17179869184 ;;   # MemTotal: 16 GiB
+      *) echo "Server Version: 0.0.0-fake" ;;
+    esac
+    ;;
+  image)
+    sub=${2:-}
+    shift 2 2>/dev/null || shift $#
+    [ $# -gt 0 ] || { record "NO_IMAGE image ${sub}"; echo "docker image ${sub}: requires at least 1 argument" >&2; exit 125; }
+    for img in "$@"; do
+      if [ -z "$img" ]; then
+        record "EMPTY_IMAGE image ${sub}"
+        echo "Error response from daemon: invalid reference format" >&2
+        exit 1
+      fi
+    done
+    record "image ${sub}"
+    ;;
+  pull)
+    if [ -z "${2:-}" ]; then
+      record "EMPTY_IMAGE pull"
+      echo "invalid reference format" >&2
+      exit 1
+    fi
+    record pull
+    echo "fake: pulled ${2}"
+    ;;
+  run)
+    shift
+    volumes=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --*=*)
+          # --name=value: only for a known option that takes a value.
+          if ! takes_value "${1%%=*}"; then
+            record "UNKNOWN_OPTION run $1"
+            echo "unknown flag: ${1%%=*} (add it to scripts/ci/fake-docker/docker if it is real)" >&2
+            exit 125
+          fi
+          case "${1%%=*}" in --volume) volumes+="${1#*=}"$'\n' ;; esac
+          shift ;;
+        -*)
+          if takes_value "$1"; then
+            if [ $# -lt 2 ]; then
+              record "NO_IMAGE run"
+              echo "flag needs an argument: $1" >&2
+              exit 125
+            fi
+            case "$1" in -v|--volume) volumes+="$2"$'\n' ;; esac
+            shift 2
+            continue
+          fi
+          case "$1" in
+            # options that take no value
+            --rm|-i|-t|-it|-ti|-d|--detach|--init|--interactive|--tty|--privileged|\
+            --read-only|-P|--publish-all|--no-healthcheck)
+              shift ;;
+            *)
+              record "UNKNOWN_OPTION run $1"
+              echo "unknown flag: $1 (add it to scripts/ci/fake-docker/docker if it is real)" >&2
+              exit 125
+              ;;
+          esac
+          ;;
+        *) break ;;
+      esac
+    done
+    if [ $# -eq 0 ]; then
+      record "NO_IMAGE run"
+      echo "\"docker run\" requires at least 1 argument." >&2
+      exit 125
+    fi
+    if [ -z "$1" ]; then
+      record "EMPTY_IMAGE run"
+      echo "docker: invalid reference format." >&2
+      exit 125
+    fi
+    # Every pinned image has a tag or a digest. A word without either is what
+    # `docker run --rm $IMG tool` leaves when IMG is empty and unquoted: the
+    # tool name taken as the image.
+    case "$1" in
+      *:*|*@*) ;;
+      *)
+        record "NO_IMAGE run untagged=$1"
+        echo "fake docker: '$1' has no tag or digest; an empty unquoted image variable makes docker read the next word as the image" >&2
+        exit 125
+        ;;
+    esac
+    record "run image=$1"
+    if [ -n "${FAKE_DOCKER_RUN_HOOK:-}" ]; then
+      FAKE_DOCKER_VOLUMES=$volumes exec "$FAKE_DOCKER_RUN_HOOK" "$@"
+    fi
+    ;;
+  *)
+    record "other ${1:-}"
+    ;;
+esac
+exit 0

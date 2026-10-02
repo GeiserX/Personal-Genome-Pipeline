@@ -1,0 +1,8 @@
+# Follow `# shellcheck source=../versions.env` relative to each script, so the
+# image variables it defines are known to ShellCheck.
+source-path=SCRIPTDIR
+external-sources=true
+# Warn on uppercase variables that are used but never assigned (SC2154 skips
+# them by default). This is what catches an image variable dropped from
+# versions.env while a script still uses it.
+enable=check-unassigned-uppercase
