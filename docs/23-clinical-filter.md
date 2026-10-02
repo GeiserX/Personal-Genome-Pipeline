@@ -43,6 +43,7 @@ Missense variants and in-frame insertions/deletions.
 
 ### ClinVar pathogenic/likely pathogenic, at any frequency
 - Preferred source: the step 6 hits file, built from the ClinVar file in `clinvar/` that `setup.sh` refreshes. The tier holds the records at those positions.
+- Step 6 matches on a split, left-aligned copy of the sample, and this tier selects the VEP records at the same CHROM and POS. An SNV always matches. An indel matches only when the caller already wrote it left-aligned, as DeepVariant does; an indel whose position moves on left-alignment is missing from this tier, though it stays in the step 6 hits and in both reports' ClinVar section.
 - Fallback when step 6 has not run: VEP's `CLIN_SIG` (pathogenic or likely pathogenic, not conflicting). That value comes from the VEP cache release, so a ClinVar refresh never reaches it; the step says which source it used.
 - A common pathogenic allele (for example HFE p.C282Y) stays: this tier has no frequency filter.
 

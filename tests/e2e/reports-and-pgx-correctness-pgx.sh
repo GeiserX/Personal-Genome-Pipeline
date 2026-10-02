@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Step 27 with bin/pgx_parse.py, on the real PharmCAT report of case 31 and on
 # two synthetic reports:
-#   - HG002: every gene with a non-normal phenotype lists its drugs, and the
-#     PharmCAT/pypgx comparison (moved here from step 32) is written;
+#   - HG002: every gene with a non-normal phenotype lists its drugs (none is
+#     non-normal in this slice), and the PharmCAT/pypgx comparison (moved here
+#     from step 32) is written;
 #   - a report where PharmCAT has no CYP2D6 result while pypgx called it: the
 #     CPIC report prints the warning with the drugs CYP2D6 affects, and a gene
-#     the report names no drug for falls back to the static table;
+#     the report names no drug for (CYP2C19, non-normal) falls back to the
+#     static table, so the per-gene drug check runs at least once;
 #   - a report that parses to zero genes: the step exits non-zero and says so.
 # The HG002 report.json is copied to the job's logs (the e2e-logs artifact):
 # it is the committed parser fixture tests/fixtures/pharmcat/report-3.2.0.json.
@@ -21,14 +23,24 @@ REC="${GENOME_DIR}/${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt"
 check "the phenotypes table has the Status column" has '^Gene	Diplotype	Phenotype	Status$' "$(head -1 "$PHENO" 2>/dev/null)"
 cat "$REC" 2>/dev/null
 check "the recommendations do not say PARSING FAILED" lacks 'PARSING FAILED' "$(cat "$REC" 2>/dev/null)"
-mapfile -t NONNORMAL < <(awk -F'\t' 'NR > 1 && $4 == "non-normal" {print $1}' "$PHENO" 2>/dev/null)
-echo "genes with a non-normal phenotype: ${NONNORMAL[*]:-none}"
-for g in "${NONNORMAL[@]}"; do
-  # The gene's block runs from "  GENE -- " to its "Action:" line.
-  BLOCK=$(awk -v g="$g" 'index($0, "  " g " -- ") == 1 {on = 1} on {print} on && /Action:/ {exit}' "$REC")
-  check "${g}: its medications block lists drugs" has '^    (Drugs with guidance|Drugs PharmCAT links|Drugs \(pipeline fallback)' "$BLOCK"
-  check "${g}: not left without a drug list" lacks 'is not in the drug table' "$BLOCK"
-done
+# check_nonnormal_drugs PHENOTYPES RECOMMENDATIONS: every gene the phenotypes
+# table marks non-normal has a drug list in its recommendations block. Sets
+# NONNORMAL to those genes, so the caller can assert how many were checked.
+check_nonnormal_drugs() {
+  local pheno="$1" rec="$2" g block
+  mapfile -t NONNORMAL < <(awk -F'\t' 'NR > 1 && $4 == "non-normal" {print $1}' "$pheno" 2>/dev/null)
+  echo "genes with a non-normal phenotype in ${pheno##*/}: ${NONNORMAL[*]:-none}"
+  for g in "${NONNORMAL[@]}"; do
+    # The gene's block runs from "  GENE -- " to its "Action:" line.
+    block=$(awk -v g="$g" 'index($0, "  " g " -- ") == 1 {on = 1} on {print} on && /Action:/ {exit}' "$rec")
+    check "${g}: its medications block lists drugs" has '^    (Drugs with guidance|Drugs PharmCAT links|Drugs \(pipeline fallback)' "$block"
+    check "${g}: not left without a drug list" lacks 'is not in the drug table' "$block"
+  done
+}
+# The HG002 slice has no non-normal gene today (two ambiguous, the rest not
+# called), so this loop checks nothing here; the synthetic report below runs it
+# on CYP2C19 *2/*2.
+check_nonnormal_drugs "$PHENO" "$REC"
 COMP="${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
 check "step 27 wrote the PharmCAT/pypgx comparison" has '^Gene	PharmCAT_diplotype	pypgx_diplotype	Match	Called_by$' "$(head -1 "$COMP" 2>/dev/null)"
 check_ge "comparison rows" "$(awk 'NR > 1' "$COMP" 2>/dev/null | grep -c . || true)" 1
@@ -55,6 +67,8 @@ run_step 27-cpic-lookup.sh "$S2"
 check_step_exit 27-cpic-lookup.sh
 REC2="${GENOME_DIR}/${S2}/cpic/${S2}_cpic_recommendations.txt"
 OUT2=$(cat "$REC2" 2>/dev/null)
+check_nonnormal_drugs "${GENOME_DIR}/${S2}/cpic/${S2}_phenotypes.tsv" "$REC2"
+check_ge "non-normal genes checked in the synthetic report (CYP2C19 *2/*2)" "${#NONNORMAL[@]}" 1
 check "the pypgx warning names CYP2D6 and its call" \
   has 'WARNING: PharmCAT has no result for CYP2D6, but pypgx \(step 32\) called \*1/\*4' "$OUT2"
 check "the warning lists the drugs CYP2D6 affects" has 'Drugs affected by CYP2D6: .*codeine' "$OUT2"

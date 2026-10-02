@@ -228,8 +228,8 @@ print(f'Genes called: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)}')
 # The PharmCAT comparison is written by step 27 (CPIC lookup), which runs after
 # both PharmCAT (step 7) and this step; here it could read a missing or
 # previous-run PharmCAT report, because run-all.sh starts steps 7 and 32 together.
-# A comparison left by an older version of this step is removed.
-rm -f "${OUTPUT_DIR}/${SAMPLE}_pharmcat_comparison.tsv"
+# Step 27 removes and rewrites the file each time it runs, so this step leaves it
+# alone: re-running step 32 on its own keeps the comparison the reports read.
 
 # Print summary
 echo ""

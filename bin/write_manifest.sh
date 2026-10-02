@@ -14,8 +14,9 @@
 #            release named in t1k_idx/hlaidx/hla.dat), pgs:<ID> (the header
 #            lines of each PGS scoring file)
 #
-# run-all.sh calls it when a run starts; the two report scripts call it when
-# the sample has no manifest yet. The HTML report prints it in its footer.
+# run-all.sh calls it when a run starts and again just before the reports, so
+# an image a step pulled during the run gets its digest; the two report scripts
+# call it when the sample has no manifest yet. The HTML report prints it in its footer.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample> <written_by> [declared_sex]}

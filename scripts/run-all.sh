@@ -392,6 +392,11 @@ for i in "${!STEP_NAMES[@]}"; do
   printf 'step\t%s\t%s\n' "${STEP_NAMES[$i]%% *}" "${STEP_RESULTS[$i]}" >> "$RUN_STATUS"
 done
 
+# Rewrite the manifest now that every step has run: an image a step pulled
+# after the start (possible with SKIP_VALIDATION=true) gets its digest.
+GENOME_DIR="$GENOME_DIR" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" \
+  || echo "WARNING: could not refresh ${GENOME_DIR}/${SAMPLE}/run_manifest.tsv; it keeps the digests from the start of the run."
+
 _run "24 HTML report" 24_html_report "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE"
 _run "28 MultiQC" 28_multiqc "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE"
 _run "Summary report" generate_report "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE"
