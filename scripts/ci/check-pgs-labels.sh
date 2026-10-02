@@ -25,7 +25,6 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-API=${PGS_API:-https://www.pgscatalog.org/rest/score}
 
 # Prints "ID<TAB>label" for every entry of the map in $1.
 read_map() {
@@ -40,11 +39,12 @@ read_map() {
 
 # Prints the trait_reported of PGS ID $1, or nothing (with exit 1) when the
 # API fails, times out, or answers without that ID. The API answers {} with
-# HTTP 200 for an unknown ID, so the id field is checked too.
+# HTTP 200 for an unknown ID, so the id field is checked too. PGS_API is read
+# on every call, so a caller can point a single check at another host.
 trait_of() {
-  local id=$1 body
+  local id=$1 body api=${PGS_API:-https://www.pgscatalog.org/rest/score}
   body=$(curl -fsS --connect-timeout 10 --max-time 30 --retry "${PGS_RETRY:-3}" --retry-delay 5 --retry-all-errors \
-    -H 'Accept: application/json' "${API}/${id}") || return 1
+    -H 'Accept: application/json' "${api}/${id}") || return 1
   ID="$id" python3 -c '
 import json, os, sys
 try:
@@ -129,9 +129,12 @@ self_test() {
     echo "SELF-TEST FAIL: an empty API answer was not an error:"; echo "$out"; fail=1
   fi
 
-  # Control 4: an API that does not answer is an error, not a pass.
-  rc=0; out=$(PGS_API=https://192.0.2.1/rest/score PGS_RETRY=0 check_file "${d}/new.sh" 2>&1) || rc=$?
-  if [ "$rc" -eq 0 ]; then
+  # Control 4: an API that does not answer is an error, not a pass. The file
+  # holds only a right label, so the failure can only come from the host
+  # (192.0.2.1 is a documentation address that never answers).
+  printf '%s\n' '  "PGS000018|Coronary artery disease"' > "${d}/right.sh"
+  rc=0; out=$(PGS_API=https://192.0.2.1/rest/score PGS_RETRY=0 check_file "${d}/right.sh" 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q '| PGS000018 | Coronary artery disease | (no answer) | ERROR: lookup failed or empty |' <<<"$out"; then
     echo "SELF-TEST FAIL: an unreachable API passed:"; echo "$out"; fail=1
   fi
 
