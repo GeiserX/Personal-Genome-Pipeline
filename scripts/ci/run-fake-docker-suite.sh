@@ -11,9 +11,10 @@
 # exits non-zero, runs longer than CASE_TIMEOUT seconds (default 300), or when
 # the fake docker logged an empty image name, a missing image or an unknown
 # docker option. Adding a case is adding a file; this runner never changes.
-# --self-test runs four planted cases and checks the runner fails the three
-# that must fail (a non-zero exit, a quoted empty image and an unquoted empty
-# image variable, both with the error swallowed) and passes the clean one.
+# --self-test runs five planted cases and checks the runner fails the four
+# that must fail (a non-zero exit, a quoted empty image, an unquoted empty
+# image variable and an unknown --name=value option, each docker error
+# swallowed) and passes the clean one.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -29,17 +30,19 @@ if [ "${1:-}" = "--self-test" ]; then
   printf '%s\n' '#!/usr/bin/env bash' 'exit 3' > "${tmp}/planted-exit.sh"
   # shellcheck disable=SC2016  # the dollar signs are the test input
   printf '%s\n' '#!/usr/bin/env bash' 'IMG=""' 'docker run --rm $IMG tool --flag || true' > "${tmp}/planted-unquoted-empty.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'docker run --rm --imaginary=1 example/tool:1.0 true || true' > "${tmp}/planted-unknown-eq-option.sh"
   rc=0
   out=$(FAKE_DOCKER_CASE_DIR="$tmp" GITHUB_ACTIONS='' "$0" 2>&1) || rc=$?
   ok=true
   [ "$rc" -eq 1 ] || { echo "self-test: runner exited ${rc}, expected 1"; ok=false; }
   for want in 'PASS planted-clean' 'FAIL planted-empty-image' 'bad docker call: EMPTY_IMAGE run' \
               'FAIL planted-exit' 'FAIL planted-unquoted-empty' 'bad docker call: NO_IMAGE run untagged=tool' \
-              '1 passed, 3 failed'; do
+              'FAIL planted-unknown-eq-option' 'bad docker call: UNKNOWN_OPTION run --imaginary=1' \
+              '1 passed, 4 failed'; do
     grep -qF "$want" <<<"$out" || { echo "self-test: missing '${want}'"; ok=false; }
   done
   if $ok; then
-    echo "self-test: a swallowed empty image (quoted or not) and a failing case are reported, a clean case passes: PASS"
+    echo "self-test: a swallowed empty image (quoted or not), an unknown --name=value option and a failing case are reported, a clean case passes: PASS"
     exit 0
   fi
   printf '%s\n' "$out"

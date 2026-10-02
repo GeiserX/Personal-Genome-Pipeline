@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Self-test (a swallowed empty image and a failing case must be caught)
+      - name: Self-test (a swallowed empty image, an unknown option and a failing case must be caught)
         run: scripts/ci/run-fake-docker-suite.sh --self-test
 
       - name: setup.sh, validate-setup.sh and run-all.sh against a fake docker

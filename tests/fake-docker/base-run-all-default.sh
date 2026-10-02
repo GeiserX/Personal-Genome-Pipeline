@@ -83,4 +83,7 @@ export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/tools-hook"
 run_expect 0 run-all "${SCRIPTS}/run-all.sh" sample1 male
 output_lacks run-all 'Setup validation failed'
 output_lacks run-all 'unbound variable'
-output_has run-all ' skipped, 0 failed$'
+# Exact counts: a step that turns from ok into skipped must fail this case.
+# The 8 skipped are CPSR, pypgx, VEP and CNVpytor (data not installed),
+# AnnotSV (no annotations), and vcfanno, clinical filter and slivar (need VEP).
+output_has run-all '^  21 ok, 8 skipped, 0 failed$'

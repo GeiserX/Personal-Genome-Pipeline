@@ -22,6 +22,20 @@ LOG=${FAKE_DOCKER_LOG:-/dev/null}
 ARGV=$(printf '%q ' "$@")
 record() { printf '%s :: %s\n' "$1" "$ARGV" >> "$LOG"; }
 
+# takes_value OPTION: true for a `docker run` option that takes a value.
+takes_value() {
+  case "$1" in
+    -a|--attach|--add-host|-c|--cpu-shares|--cap-add|--cap-drop|--cidfile|--cpus|\
+    --cpuset-cpus|--device|--dns|-e|--env|--env-file|--entrypoint|--expose|--gpus|\
+    --group-add|-h|--hostname|--ipc|-l|--label|--label-file|--link|--log-driver|\
+    --log-opt|-m|--memory|--memory-reservation|--memory-swap|--mount|--name|--net|\
+    --network|-p|--publish|--pid|--platform|--pull|--restart|--runtime|\
+    --security-opt|--shm-size|--stop-signal|--tmpfs|-u|--user|--ulimit|--userns|\
+    --uts|-v|--volume|--volumes-from|-w|--workdir) return 0 ;;
+  esac
+  return 1
+}
+
 case "${1:-}" in
   --version|version)
     record version
@@ -61,31 +75,37 @@ case "${1:-}" in
     volumes=""
     while [ $# -gt 0 ]; do
       case "$1" in
-        --volume=*) volumes+="${1#*=}"$'\n'; shift ;;
-        --*=*) shift ;;
-        # options that take a value as the next argument
-        -a|--attach|--add-host|-c|--cpu-shares|--cap-add|--cap-drop|--cidfile|--cpus|\
-        --cpuset-cpus|--device|--dns|-e|--env|--env-file|--entrypoint|--expose|--gpus|\
-        --group-add|-h|--hostname|--ipc|-l|--label|--label-file|--link|--log-driver|\
-        --log-opt|-m|--memory|--memory-reservation|--memory-swap|--mount|--name|--net|\
-        --network|-p|--publish|--pid|--platform|--pull|--restart|--runtime|\
-        --security-opt|--shm-size|--stop-signal|--tmpfs|-u|--user|--ulimit|--userns|\
-        --uts|-v|--volume|--volumes-from|-w|--workdir)
-          if [ $# -lt 2 ]; then
-            record "NO_IMAGE run"
-            echo "flag needs an argument: $1" >&2
+        --*=*)
+          # --name=value: only for a known option that takes a value.
+          if ! takes_value "${1%%=*}"; then
+            record "UNKNOWN_OPTION run $1"
+            echo "unknown flag: ${1%%=*} (add it to scripts/ci/fake-docker/docker if it is real)" >&2
             exit 125
           fi
-          case "$1" in -v|--volume) volumes+="$2"$'\n' ;; esac
-          shift 2 ;;
-        # options that take no value
-        --rm|-i|-t|-it|-ti|-d|--detach|--init|--interactive|--tty|--privileged|\
-        --read-only|-P|--publish-all|--no-healthcheck)
+          case "${1%%=*}" in --volume) volumes+="${1#*=}"$'\n' ;; esac
           shift ;;
         -*)
-          record "UNKNOWN_OPTION run $1"
-          echo "unknown flag: $1 (add it to scripts/ci/fake-docker/docker if it is real)" >&2
-          exit 125
+          if takes_value "$1"; then
+            if [ $# -lt 2 ]; then
+              record "NO_IMAGE run"
+              echo "flag needs an argument: $1" >&2
+              exit 125
+            fi
+            case "$1" in -v|--volume) volumes+="$2"$'\n' ;; esac
+            shift 2
+            continue
+          fi
+          case "$1" in
+            # options that take no value
+            --rm|-i|-t|-it|-ti|-d|--detach|--init|--interactive|--tty|--privileged|\
+            --read-only|-P|--publish-all|--no-healthcheck)
+              shift ;;
+            *)
+              record "UNKNOWN_OPTION run $1"
+              echo "unknown flag: $1 (add it to scripts/ci/fake-docker/docker if it is real)" >&2
+              exit 125
+              ;;
+          esac
           ;;
         *) break ;;
       esac
