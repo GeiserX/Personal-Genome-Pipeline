@@ -52,9 +52,12 @@ echo "=== Fixture ${TAG} ==="
 deadline=$(( $(date +%s) + 75 * 60 ))
 until fixture_complete; do
   if gh release view "$TAG" -R "$GH_REPO" >/dev/null 2>&1; then
-    gh release download "$TAG" -R "$GH_REPO" -D "$FIXTURE_DIR" --clobber
-    fixture_complete && break
-    echo "Release ${TAG} is incomplete or its checksums do not match."
+    # Inside the condition, so a failed download (assets still uploading, a
+    # network error) waits for the next try instead of ending the run.
+    if gh release download "$TAG" -R "$GH_REPO" -D "$FIXTURE_DIR" --clobber && fixture_complete; then
+      break
+    fi
+    echo "Release ${TAG} could not be downloaded, is incomplete or its checksums do not match."
   else
     echo "Release ${TAG} does not exist yet; the build-fixture job publishes it."
   fi
