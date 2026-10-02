@@ -86,19 +86,18 @@ for ENTRY in "${PGS_SCORES[@]}"; do
 
   echo "  Downloading ${CONDITION} (${PGS_ID})..."
   URL="${PGS_BASE_URL}/${PGS_ID}/ScoringFiles/Harmonized/${PGS_ID}_hmPOS_GRCh38.txt.gz"
-  if ! wget -q -O "${SCORE_FILE}.part" "$URL"; then
-    rm -f "${SCORE_FILE}.part"
+  # The PGS Catalog publishes an md5 next to every scoring file.
+  if ! fetch "$URL" "$SCORE_FILE" md5 "${URL}.md5"; then
     echo "ERROR: Could not download the GRCh38-harmonised scoring file for ${PGS_ID}:" >&2
     echo "  ${URL}" >&2
     exit 1
   fi
-  BUILD=$(hm_build "${SCORE_FILE}.part")
+  BUILD=$(hm_build "$SCORE_FILE")
   if [ "$BUILD" != "GRCh38" ]; then
-    rm -f "${SCORE_FILE}.part"
+    rm -f "$SCORE_FILE"
     echo "ERROR: ${PGS_ID} scoring file has #HmPOS_build='${BUILD}', expected GRCh38. Refusing to score it." >&2
     exit 1
   fi
-  mv "${SCORE_FILE}.part" "$SCORE_FILE"
 done
 
 echo ""
