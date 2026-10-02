@@ -2,11 +2,15 @@
 # DeepVariant — Variant calling (BAM to VCF)
 # Input: sorted BAM + GRCh38 reference
 # Output: VCF.gz with SNPs and small indels (~5.5M variants per 30X WGS)
+# Optional: INTERVALS="chr20:10000001-10500000 chr22:1-50818468" calls only
+#   those regions (space-separated region literals, passed to --regions).
+#   Unset means the whole genome.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 ALIGN_DIR=${ALIGN_DIR:-aligned}
+INTERVALS=${INTERVALS:-}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
@@ -24,6 +28,9 @@ echo "=== DeepVariant: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
 echo "Model type: ${MODEL_TYPE}"
 echo "Reference: ${REF}"
+if [ -n "$INTERVALS" ]; then
+  echo "Regions: ${INTERVALS}"
+fi
 echo "Output: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 
 # Validate inputs
@@ -36,17 +43,23 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
+DV_ARGS=(
+  --model_type="${MODEL_TYPE}"
+  --ref="/genome/reference/Homo_sapiens_assembly38.fasta"
+  --reads="/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
+  --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+  --sample_name="${SAMPLE}"
+  --num_shards=8
+)
+if [ -n "$INTERVALS" ]; then
+  DV_ARGS+=(--regions "$INTERVALS")
+fi
+
 docker run --rm \
   --cpus 8 --memory 32g \
   -v "${GENOME_DIR}:/genome" \
   google/deepvariant:1.10.0 \
-  /opt/deepvariant/bin/run_deepvariant \
-    --model_type="${MODEL_TYPE}" \
-    --ref="/genome/reference/Homo_sapiens_assembly38.fasta" \
-    --reads="/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
-    --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
-    --sample_name="${SAMPLE}" \
-    --num_shards=8
+  /opt/deepvariant/bin/run_deepvariant "${DV_ARGS[@]}"
 
 echo "=== DeepVariant complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
