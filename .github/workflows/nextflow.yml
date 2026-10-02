@@ -46,7 +46,8 @@ jobs:
           run=true
           if [ "$EVENT" = pull_request ]; then
             git fetch --no-tags --depth=1 origin "$BASE"
-            changed=$(git diff --name-only "$BASE" HEAD)
+            # --no-renames: a file moved into docs/ also lists the path it left.
+            changed=$(git diff --no-renames --name-only "$BASE" HEAD)
             printf 'changed files:\n%s\n' "$changed"
             if [ -n "$changed" ]; then
               run=false

@@ -50,8 +50,9 @@ scripts/ci/changed-images.sh          reads image references; its self-test plan
 tests/fixtures/                       provenance notes name the image that wrote each fixture
 '
 
-# Single literals that stay on purpose: file, image, reason. A change to the
-# image or a second literal in the same file is reported again.
+# Single literals that stay on purpose: file, image, reason. Each line allows
+# one occurrence: a change to the image or one more copy of it in the same
+# file is reported again.
 EXEMPT_PAIRS='
 docs/quick-test.md                quay.io/biocontainers/samtools:1.20--h50ea8bc_0   needs CA certificates, which SAMTOOLS_IMAGE lacks
 docs/08-hla-typing.md             jiachenzdocker/hla-la@sha256:ecca23de6635aa85e60b4ee39dd4e15341b5febb514e5478f2b2a086f05a447c   HLA-LA is not a pipeline step
@@ -60,7 +61,9 @@ scripts/cyrius-constraints.txt    python:3.11   the image pip resolved these con
 scripts/ci/settle-doubts.sh       jmcdani20/hap.py:v0.3.12   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       hkubal/clair3:v2.0.2   repeats versions.env, to be removed
-tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed
+tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed (comment)
+tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed (value)
+docs/troubleshooting.md           quay.io/biocontainers/toolname:tag   a placeholder, not an image
 '
 
 # scan: print one line per literal image in the tree at $ROOT; exit 1 if any.
@@ -76,14 +79,15 @@ scan() {
   [ -n "$list" ] || { echo "FAIL: found no file to scan under ${ROOT}"; return 1; }
   # The file list goes in as an argument: stdin carries the program.
   python3 - "$ROOT" "$EXEMPT_FILES" "$EXEMPT_PAIRS" "$list" <<'PY'
-import os, re, sys
+import collections, os, re, sys
 root, exempt_files, exempt_pairs = sys.argv[1], sys.argv[2], sys.argv[3]
 files = [f for f in sys.argv[4].split("\n") if f]
 if not files:
     print("FAIL: no file to scan")
     sys.exit(1)
 skip = [l.split()[0] for l in exempt_files.splitlines() if l.strip()]
-pairs = {tuple(l.split()[:2]) for l in exempt_pairs.splitlines() if l.strip()}
+# Each line allows one occurrence; list a pair twice to allow two.
+pairs = collections.Counter(tuple(l.split()[:2]) for l in exempt_pairs.splitlines() if l.strip())
 
 # Docker Hub official images have no slash: those versions.env uses, plus
 # the usual base images.
@@ -92,7 +96,8 @@ bare = set(re.findall(r'^[A-Z0-9_]+_IMAGE="([^"/:@]+)[:@]', env, re.M))
 bare |= {"ubuntu", "debian", "alpine", "busybox", "centos", "rockylinux", "fedora",
          "python", "node", "perl", "r-base", "openjdk", "eclipse-temurin", "golang", "rust"}
 
-TAG = r'(?::(?:[A-Za-z0-9._-]*[0-9][A-Za-z0-9._-]*|latest)|@sha256:[0-9a-f]{64})'
+# Any tag: a version, or a word such as latest or stable.
+TAG = r'(?::[A-Za-z0-9_][A-Za-z0-9._-]*|@sha256:[0-9a-f]{64})'
 LEAD = r'(?<![A-Za-z0-9_./:@$-])'
 SHAPE = re.compile(LEAD + r'([a-z][a-z0-9._-]*/[a-z][a-z0-9._/-]*' + TAG + r')(?![A-Za-z0-9_/-])')
 BARE = re.compile(LEAD + r'((?:' + "|".join(map(re.escape, sorted(bare))) + r')' + TAG + r')(?![A-Za-z0-9_/-])')
@@ -108,14 +113,17 @@ for f in files:
         text = open(os.path.join(root, f), encoding="utf-8").read()
     except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
         continue
+    left = collections.Counter({k: v for k, v in pairs.items() if k[0] == f})
     for n, line in enumerate(text.split("\n"), 1):
-        line = URL.sub(" ", line)
+        # docker://image:tag (a step image in a workflow) is an image, not a URL.
+        line = URL.sub(" ", line.replace("docker://", " "))
         for rx in (SHAPE, BARE):
             for m in rx.finditer(line):
                 image = m.group(1).rstrip(".")  # a full stop ends the sentence, not the tag
                 if FILE.search(image) or image.startswith("example/"):
                     continue  # example/ is the placeholder namespace of the self-tests
-                if (f, image) in pairs:
+                if left[(f, image)] > 0:
+                    left[(f, image)] -= 1
                     continue
                 print("FAIL: %s:%d names the image %s; use its *_IMAGE variable from versions.env" % (f, n, image))
                 bad = 1
@@ -176,6 +184,11 @@ self_test() {
   copy floating
   echo '#   image: staphb/samtools:latest' >> "${tmp}/floating/.github/workflows/lint.yml"
   expect floating '^FAIL: \.github/workflows/lint\.yml:[0-9]+ names the image staphb/samtools:latest;'
+  # A word tag, and a step image written as docker://.
+  echo '#   image: staphb/samtools:stable' >> "${tmp}/floating/.github/workflows/lint.yml"
+  echo '#   - uses: docker://alpine:3.8' >> "${tmp}/floating/.github/workflows/lint.yml"
+  expect floating '^FAIL: \.github/workflows/lint\.yml:[0-9]+ names the image staphb/samtools:stable;'
+  expect floating '^FAIL: \.github/workflows/lint\.yml:[0-9]+ names the image alpine:3\.8;'
 
   # A doc that repeats a tag, and an exempt literal that changed.
   copy doc-literal
@@ -184,6 +197,9 @@ self_test() {
   copy exempt-changed
   sed -i.bak 's|samtools:1.20--h50ea8bc_0|samtools:1.21--h50ea8bc_0|' "${tmp}/exempt-changed/docs/quick-test.md"
   expect exempt-changed '^FAIL: docs/quick-test\.md:[0-9]+ names the image quay\.io/biocontainers/samtools:1\.21--h50ea8bc_0;'
+  copy exempt-twice
+  echo 'Then docker pull quay.io/biocontainers/samtools:1.20--h50ea8bc_0 again.' >> "${tmp}/exempt-twice/docs/quick-test.md"
+  expect exempt-twice '^FAIL: docs/quick-test\.md:[0-9]+ names the image quay\.io/biocontainers/samtools:1\.20--h50ea8bc_0;'
 
   # A module process with no selector in conf/containers.config.
   copy no-selector
