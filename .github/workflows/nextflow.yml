@@ -87,7 +87,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+      # Not a Nextflow pin: the version comes from versions.env or the newest
+      # 26.04.x. Quoted so the Renovate dry run does not count it as one.
+      - uses: "nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914" # v3.0.1
         if: steps.scope.outputs.run == 'true'
         with:
           version: ${{ steps.nf.outputs.version }}
