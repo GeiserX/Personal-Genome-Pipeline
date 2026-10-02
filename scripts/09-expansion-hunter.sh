@@ -18,8 +18,9 @@ THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 
@@ -41,7 +42,7 @@ run_in \
   --cpus "${THREADS}" --memory 4g \
   "${EXPANSIONHUNTER_IMAGE}" \
   ExpansionHunter \
-    --reads "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    --reads "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     --reference "${REF_FASTA_C}" \
     --variant-catalog /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
     --output-prefix "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh" \
