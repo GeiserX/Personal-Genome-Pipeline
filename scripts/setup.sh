@@ -60,11 +60,11 @@ pull_images() {
   SKIPPED=0
   FAILED=0
   while IFS= read -r img; do
-    if docker image inspect "$img" &>/dev/null; then
+    if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       SKIPPED=$((SKIPPED + 1))
     else
       echo "  Pulling: ${img}..."
-      if docker pull "$img" 2>/dev/null; then
+      if "$CONTAINER_ENGINE" pull "$img" 2>/dev/null; then
         PULLED=$((PULLED + 1))
       else
         echo "  WARNING: Failed to pull ${img}. Check the image name/tag."
@@ -87,12 +87,12 @@ echo "============================================"
 echo ""
 
 # Check Docker
-if ! command -v docker &>/dev/null; then
+if ! command -v "$CONTAINER_ENGINE" &>/dev/null; then
   echo "ERROR: Docker is not installed."
   echo "  Install Docker: https://docs.docker.com/get-docker/"
   exit 1
 fi
-if ! docker info &>/dev/null; then
+if ! "$CONTAINER_ENGINE" info &>/dev/null; then
   echo "ERROR: Docker daemon is not running."
   echo "  Start Docker Desktop or run: sudo systemctl start docker"
   exit 1

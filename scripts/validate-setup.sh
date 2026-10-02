@@ -52,15 +52,15 @@ else
 fi
 
 # --- Docker installed ---
-if command -v docker &>/dev/null; then
-  DOCKER_VERSION=$(docker --version 2>/dev/null | head -1)
+if command -v "$CONTAINER_ENGINE" &>/dev/null; then
+  DOCKER_VERSION=$("$CONTAINER_ENGINE" --version 2>/dev/null | head -1)
   pass "Docker installed: ${DOCKER_VERSION}"
 else
   fail "Docker is not installed. Install from https://docs.docker.com/get-docker/"
 fi
 
 # --- Docker daemon running ---
-if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+if command -v "$CONTAINER_ENGINE" &>/dev/null && "$CONTAINER_ENGINE" info &>/dev/null 2>&1; then
   pass "Docker daemon is running"
 
   # --- Docker memory ---
@@ -78,7 +78,7 @@ if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     warn "Could not detect Docker memory allocation"
   fi
 else
-  if command -v docker &>/dev/null; then
+  if command -v "$CONTAINER_ENGINE" &>/dev/null; then
     fail "Docker daemon is not running. Start Docker Desktop or run: sudo systemctl start docker"
   fi
 fi
@@ -347,7 +347,7 @@ fi
 ###############################################################################
 header "Docker Images"
 
-if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
+if ! command -v "$CONTAINER_ENGINE" &>/dev/null || ! "$CONTAINER_ENGINE" info &>/dev/null 2>&1; then
   info "Skipping Docker image checks (Docker not available)"
 else
   # Every *_IMAGE line of versions.env not marked `# optional`: the same list
@@ -359,7 +359,7 @@ else
 
   PULLED=0
   for img in "${IMAGES[@]}"; do
-    if docker image inspect "$img" &>/dev/null; then
+    if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       PULLED=$((PULLED + 1))
     else
       MISSING_IMAGES+=("$img")
@@ -466,7 +466,7 @@ if [ -n "$SAMPLE" ]; then
     fi
 
     # Validate genome build (GRCh38) if BAM or VCF exists
-    if $HAS_BAM && command -v docker >/dev/null 2>&1; then
+    if $HAS_BAM && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
       echo ""
       info "Checking genome build of BAM..."
       BAM_CHR1_LEN=$(run_in "${SAMTOOLS_IMAGE}" \
@@ -514,7 +514,7 @@ if [ -n "$SAMPLE" ]; then
       fi
     fi
 
-    if $HAS_VCF && command -v docker >/dev/null 2>&1; then
+    if $HAS_VCF && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
       VCF_CONTIG=$(run_in "${BCFTOOLS_IMAGE}" \
         bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
         grep "^##contig=<ID=chr1," | head -1 || echo "")

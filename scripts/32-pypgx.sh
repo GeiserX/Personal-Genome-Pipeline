@@ -44,6 +44,10 @@ if [ ! -d "$PYPGX_BUNDLE" ]; then
 fi
 # The bundle must be the tag that matches the pypgx image: with another tag
 # every gene fails. PYPGX_BUNDLE_VERSION in versions.env names it.
+if ! command -v git >/dev/null 2>&1; then
+  echo "ERROR: git is needed to check the pypgx-bundle tag at ${PYPGX_BUNDLE}; install git and run again." >&2
+  exit 1
+fi
 BUNDLE_TAG=$(git -c safe.directory="$PYPGX_BUNDLE" -C "$PYPGX_BUNDLE" describe --tags 2>/dev/null || true)
 if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
   echo "ERROR: pypgx-bundle at ${PYPGX_BUNDLE} is '${BUNDLE_TAG:-not a git checkout of a tag}', but ${PYPGX_IMAGE} needs ${PYPGX_BUNDLE_VERSION}." >&2
