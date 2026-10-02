@@ -233,14 +233,9 @@ wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/splice
 # Indel splice scores (~64 GB)
 wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz
 wget -c https://download.molgeniscloud.org/downloads/vip/resources/GRCh38/spliceai_scores.masked.indel.hg38.vcf.gz.tbi
-
-# Step 30 and validate-setup.sh look for the files under their older "raw" names.
-# These links point those names at the masked files you just downloaded.
-for t in snv indel; do
-  ln -sf spliceai_scores.masked.${t}.hg38.vcf.gz     spliceai_scores.raw.${t}.hg38.vcf.gz
-  ln -sf spliceai_scores.masked.${t}.hg38.vcf.gz.tbi spliceai_scores.raw.${t}.hg38.vcf.gz.tbi
-done
 ```
+
+Step 30 and `validate-setup.sh` find the masked files under these names. They also accept the raw files (`spliceai_scores.raw.*`) if you already have them; when both sets are present, step 30 uses the raw ones.
 
 > **Alternative source:** Illumina BaseSpace at `https://basespace.illumina.com/s/otSPW8hnhaZR` (requires free account).
 
@@ -480,8 +475,8 @@ echo "Annotation databases (optional, for steps 30-31):"
 for DB_PAIR in \
   "whole_genome_SNVs.tsv.gz:CADD SNVs" \
   "gnomad.genomes.r4.0.indel.tsv.gz:CADD indels" \
-  "spliceai_scores.raw.snv.hg38.vcf.gz:SpliceAI SNVs" \
-  "spliceai_scores.raw.indel.hg38.vcf.gz:SpliceAI indels" \
+  "spliceai_scores.masked.snv.hg38.vcf.gz:SpliceAI SNVs" \
+  "spliceai_scores.masked.indel.hg38.vcf.gz:SpliceAI indels" \
   "revel_grch38.tsv.gz:REVEL" \
   "AlphaMissense_hg38.tsv.gz:AlphaMissense" \
   "gnomad_v4.1_constraint.tsv:gnomAD constraint"; do

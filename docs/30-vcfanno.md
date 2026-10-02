@@ -21,14 +21,14 @@ See [docs/00-reference-setup.md](00-reference-setup.md) for download instruction
 |---|---|---|---|
 | CADD v1.7 SNVs | `whole_genome_SNVs.tsv.gz` + `.tbi` | ~81.5 GB | Non-commercial |
 | CADD v1.7 indels | `gnomad.genomes.r4.0.indel.tsv.gz` + `.tbi` | ~1.2 GB | Non-commercial |
-| SpliceAI SNVs (masked) | `spliceai_scores.raw.snv.hg38.vcf.gz` + `.tbi`, a link to `spliceai_scores.masked.snv.hg38.vcf.gz` | ~27 GB | Academic and not-for-profit use only |
-| SpliceAI indels (masked) | `spliceai_scores.raw.indel.hg38.vcf.gz` + `.tbi`, a link to `spliceai_scores.masked.indel.hg38.vcf.gz` | ~64 GB | Academic and not-for-profit use only |
+| SpliceAI SNVs (masked) | `spliceai_scores.masked.snv.hg38.vcf.gz` + `.tbi` | ~27 GB | Academic and not-for-profit use only |
+| SpliceAI indels (masked) | `spliceai_scores.masked.indel.hg38.vcf.gz` + `.tbi` | ~64 GB | Academic and not-for-profit use only |
 | REVEL v1.3 | `revel_grch38.tsv.gz` + `.tbi` | ~526 MB | Free for research |
 | AlphaMissense | `AlphaMissense_hg38.tsv.gz` + `.tbi` | ~613 MB | CC BY-NC-SA 4.0 |
 
 All databases are optional. The script detects which files are present and annotates accordingly. A missing database is skipped with a `Skipping:` line in the log.
 
-The pipeline uses SpliceAI's **masked** scores, which SpliceAI's authors recommend for variant interpretation. The script still looks for the older `raw` file names, so [reference setup](00-reference-setup.md#spliceai-pre-scored-91-gb) downloads the masked files and links the `raw` names to them. The precomputed SpliceAI scores are not open source: they are free for academic and not-for-profit use, and other use needs a commercial license from Illumina.
+The pipeline uses SpliceAI's **masked** scores, which SpliceAI's authors recommend for variant interpretation. [Reference setup](00-reference-setup.md#spliceai-pre-scored-91-gb) downloads the masked files. The script also accepts the raw files (`spliceai_scores.raw.*`): when both sets are present and indexed it uses the raw ones, and the log names the file in use. The precomputed SpliceAI scores are not open source: they are free for academic and not-for-profit use, and other use needs a commercial license from Illumina.
 
 ## Chromosome Naming Mismatch
 
@@ -45,7 +45,7 @@ If only chr-prefixed databases are present (no CADD), a single pass is used.
 quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
 ```
 
-Also uses the bcftools image for bgzip/tabix/chr renaming operations.
+Also uses the bcftools image to rename chromosomes, compress (`bcftools view -Oz`) and index (`bcftools index -t`).
 
 ## Usage
 
