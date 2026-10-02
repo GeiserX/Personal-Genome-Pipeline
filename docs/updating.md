@@ -29,7 +29,7 @@ Until that switch, the Renovate dry run workflow below is the only evidence that
 - It changes the tool's line in `versions.env` and the same string in `conf/containers.config`, `docs/versions.md` and the `container-test.yml` matrix. Those two generated files are written by `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh`, which copy the string from `versions.env` as it is, so the PR leaves them exactly as the scripts would. If a check still says one of them is stale, run both scripts on the branch and commit the result.
 - A major update (VEP 116 to 117, for example), every PCGR update and every Nextflow update waits on the dependency dashboard. Nothing is opened until you tick its box there.
 
-Renovate reads biocontainer tags (`1.0.9--h5ca1c30_0`) as version, then build number, and ignores the conda build hash in between, which changes from one version to the next. A biocontainer tag in any other shape is never proposed. VEP tags (`release_116.0`) are read as major and minor.
+Renovate reads biocontainer tags (`1.0.9--h5ca1c30_0`) as version, then build number, and ignores the conda build hash in between, which changes from one version to the next. A new build of the same version (mosdepth `0.3.14--h05c3d44_0` to `0.3.14--h87be163_2`) is proposed as a patch: same tool version, rebuilt by Bioconda. A biocontainer tag in any other shape is never proposed. VEP tags (`release_116.0`) are read as major and minor.
 
 ## What checks a bump
 
@@ -65,17 +65,16 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 
 ## Checking a change to the Renovate config
 
-The [Renovate dry run](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, one of the files copied from it, `scripts/ci/gen-versions-doc.sh` or the workflow itself, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
+The [Renovate dry run](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, `conf/containers.config`, a page in `docs/`, a workflow or `scripts/ci/gen-versions-doc.sh`, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
 
 - an `*_IMAGE` line of `versions.env` is not a detected dependency;
 - a package name carries a `:` or `@`;
 - `docs/versions.md` does not hold exactly the images of `versions.env`, or `conf/containers.config` or the smoke test matrix holds one it does not;
 - a tool would get a different update in one file than in another;
+- Nextflow, actionlint or gitleaks is not detected in every place the text pins it;
 - a lookup failed, or a dependency was skipped for any reason other than a rule that disables it.
 
-A second job in the same workflow fails when `docs/versions.md` is not what `scripts/ci/gen-versions-doc.sh` writes from `versions.env`.
-
-Its job summary lists every dependency with the update Renovate would propose, or why it proposes none. The full debug log is the `renovate-dry-run-log` artifact.
+The lookup job's summary lists every dependency with the update Renovate would propose, or why it proposes none. The full debug log is the `renovate-dry-run-log` artifact. A second job, `versions-doc`, fails when `docs/versions.md` is not what `scripts/ci/gen-versions-doc.sh` writes from `versions.env`.
 
 To run the same lookups on your machine, with Node 24:
 
