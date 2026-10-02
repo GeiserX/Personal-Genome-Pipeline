@@ -45,8 +45,10 @@ run_in \
 echo "=== duphold complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_sv_duphold.vcf"
 echo ""
-echo "Filter high-confidence DELs (DHFFC < 0.7):"
-echo "  grep -v '^#' ${OUTPUT_DIR}/${SAMPLE}_sv_duphold.vcf | awk '\$8 ~ /DHFFC=/ && \$5 ~ /DEL/'"
+# DHFFC and DHBFC are FORMAT fields (one value per sample), so the filters
+# test FMT/, and compare the value itself.
+echo "High-confidence deletions (depth drop: DHFFC < 0.7):"
+echo "  bcftools view -i 'INFO/SVTYPE=\"DEL\" && FMT/DHFFC<0.7' ${OUTPUT_DIR}/${SAMPLE}_sv_duphold.vcf"
 echo ""
-echo "Filter high-confidence DUPs (DHBFC > 1.3):"
-echo "  grep -v '^#' ${OUTPUT_DIR}/${SAMPLE}_sv_duphold.vcf | awk '\$8 ~ /DHBFC=/ && \$5 ~ /DUP/'"
+echo "High-confidence duplications (depth gain: DHBFC > 1.3):"
+echo "  bcftools view -i 'INFO/SVTYPE=\"DUP\" && FMT/DHBFC>1.3' ${OUTPUT_DIR}/${SAMPLE}_sv_duphold.vcf"
