@@ -15,7 +15,8 @@
 #   repeat      a repeat-count genotype (17/19 on a line with REPCN, or after
 #               an STR gene such as HTT or FMR1)
 # Documented public examples (fixture values, the patterns themselves in the
-# contributor guide) are listed in ALLOW below, by file and text. An entry
+# contributor guide) are listed in ALLOW below, by file and text; public or
+# invented test data files are listed whole in SKIP. An entry
 # covers only its own text: the rest of that line, and every other line of
 # the file, is still checked. This script holds the list, so every listed
 # text is allowed here as well.
@@ -60,12 +61,24 @@ CONTRIBUTING.md                               /mnt/user\|internal-host\|/home/
 CONTRIBUTING.md                               (`/mnt/user/`, `/home/username/`, etc.)
 modules/local/cyrius/main.nf                  ${prefix}\\t*1/*1\\tPASS
 tests/fake-docker/base-run-all-default.sh     sample1\t*1/*1\tPASS
+tests/fake-docker/reports-stale-step.sh       sample1\t*1/*1\tPASS
+tests/test_collect_summary.py                 S\t*1/*4\tPASS
+tests/smoke/commands.tsv                      HTT at 19/45 repeats
+tests/smoke/commands.tsv                      ATXN3 at 22/24 repeats
+'
+
+# Whole files that are not scanned (glob), with the reason. Keep this list
+# short: an entry hides every line of the file.
+SKIP='
+tests/fixtures/*                public or invented test data; each fixture directory says where it came from
+tests/smoke/*.vcf.in            invented tool inputs for the image smoke tests
 '
 
 scan() {
-  python3 - "$ROOT" "$ALLOW" "${PERSONAL_DATA_PATTERNS:-}" "${CACHED:-}" "$@" <<'PY'
+  python3 - "$ROOT" "$ALLOW" "$SKIP" "${PERSONAL_DATA_PATTERNS:-}" "${CACHED:-}" "$@" <<'PY'
 import fnmatch, os, re, subprocess, sys
-root, allow_text, own_file, cached, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
+root, allow_text, skip_text, own_file, cached, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6:]
+skip = [l.split()[0] for l in skip_text.splitlines() if l.strip()]
 allow = []
 for l in allow_text.splitlines():
     if l.strip():
@@ -109,6 +122,8 @@ bad = scanned = 0
 for path in files:
     full = os.path.abspath(path)
     rel = os.path.relpath(full, root) if full.startswith(root + os.sep) else path
+    if any(fnmatch.fnmatchcase(rel, g) for g in skip):
+        continue
     if cached:
         # The blob in the index: what the commit will hold.
         r = subprocess.run(["git", "-C", root, "show", ":" + rel], capture_output=True)

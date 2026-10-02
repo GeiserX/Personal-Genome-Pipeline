@@ -103,8 +103,9 @@ jobs:
             echo "FAIL: the manifest did not refuse this release; if 26.x is supported now, remove this step"
             exit 1
           fi
-          sed -i -E "s/^( *nextflowVersion *= *'!>=25\.10\.4), *<26'/\1'/" nextflow.config
-          grep -q "nextflowVersion = '!>=25.10.4'\$" nextflow.config || { echo "FAIL: could not lift the cap"; exit 1; }
+          # Only the cap goes; the floor is whatever the manifest says.
+          sed -i -E "s/^( *nextflowVersion *= *'![^',]*), *<26'/\1'/" nextflow.config
+          grep -qE "^ *nextflowVersion *= *'![^',]*'\$" nextflow.config || { echo "FAIL: could not lift the cap"; exit 1; }
           echo "Cap lifted for this run: $(grep nextflowVersion nextflow.config)"
 
       - name: Validate Nextflow config

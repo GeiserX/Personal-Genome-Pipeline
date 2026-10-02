@@ -75,10 +75,19 @@ self_test() {
   }
   rc=0; out=$(check "${ROOT}/versions.env" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || { echo "self-test: versions.env itself failed:"; printf '%s\n' "$out"; fail=1; }
-  expect vep-cache 's/^VEP_CACHE_RELEASE=.*/VEP_CACHE_RELEASE="115"/' '^FAIL VEP_CACHE_RELEASE .*: 115, want 116'
-  expect vep-image 's/^(VEP_IMAGE="[^"]*:release_)[0-9]+/\1117/' '^FAIL VEP_CACHE_RELEASE .*: 116, want 117'
-  expect pypgx 's/^PYPGX_BUNDLE_VERSION=.*/PYPGX_BUNDLE_VERSION="0.27.0"/' '^FAIL PYPGX_BUNDLE_VERSION .*: 0\.27\.0, want 0\.26\.0'
-  expect annotsv 's/^ANNOTSV_ANNOTATIONS_VERSION=.*/ANNOTSV_ANNOTATIONS_VERSION="3.4"/' '^FAIL ANNOTSV_ANNOTATIONS_VERSION .*: 3\.4, want 3\.5'
+  # The values the unchanged file holds, so a legitimate bump keeps this
+  # test green; each planted value differs from them.
+  local vep pypgx annotsv
+  vep=$(sed -nE 's/^VEP_IMAGE="[^"]*:release_([0-9]+).*/\1/p' "${ROOT}/versions.env")
+  pypgx=$(sed -nE 's/^PYPGX_IMAGE="[^"]*:([^"]*)--.*/\1/p' "${ROOT}/versions.env")
+  annotsv=$(sed -nE 's/^ANNOTSV_IMAGE="[^"]*:([0-9]+\.[0-9]+).*/\1/p' "${ROOT}/versions.env")
+  if [ -z "$vep" ] || [ -z "$pypgx" ] || [ -z "$annotsv" ]; then
+    echo "self-test: cannot read VEP_IMAGE, PYPGX_IMAGE or ANNOTSV_IMAGE from versions.env"; return 1
+  fi
+  expect vep-cache "s/^VEP_CACHE_RELEASE=.*/VEP_CACHE_RELEASE=\"$((vep - 1))\"/" "^FAIL VEP_CACHE_RELEASE .*: $((vep - 1)), want ${vep}\$"
+  expect vep-image "s/^(VEP_IMAGE=\"[^\"]*:release_)[0-9]+/\\1$((vep + 1))/" "^FAIL VEP_CACHE_RELEASE .*: ${vep}, want $((vep + 1))\$"
+  expect pypgx 's/^PYPGX_BUNDLE_VERSION=.*/PYPGX_BUNDLE_VERSION="9.9.9"/' "^FAIL PYPGX_BUNDLE_VERSION .*: 9\\.9\\.9, want ${pypgx//./\\.}\$"
+  expect annotsv 's/^ANNOTSV_ANNOTATIONS_VERSION=.*/ANNOTSV_ANNOTATIONS_VERSION="0.1"/' "^FAIL ANNOTSV_ANNOTATIONS_VERSION .*: 0\\.1, want ${annotsv//./\\.}\$"
   expect pcgr '/^PCGR_DATA_BUNDLE=/d' '^FAIL PCGR variables must be set together; unset: PCGR_DATA_BUNDLE'
   [ "$fail" -eq 0 ] && echo "self-test: OK"
   return "$fail"

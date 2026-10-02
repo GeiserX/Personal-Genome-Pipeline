@@ -8,7 +8,7 @@
 #
 #   1. No literal image (registry/name:tag, name@sha256:..., or a Docker Hub
 #      official image such as python:3.11) in scripts/, modules/, workflows/,
-#      conf/, docs/, .github/workflows/, main.nf or nextflow.config.
+#      conf/, docs/, tests/, .github/workflows/, main.nf or nextflow.config.
 #   2. conf/containers.config is what versions.env produces, and every
 #      process has a selector (scripts/ci/gen-containers-config.sh --check).
 #   3. docs/versions.md is what versions.env produces
@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
 done
 
 # Paths whose files are scanned.
-SCAN='scripts modules workflows conf docs .github/workflows main.nf nextflow.config'
+SCAN='scripts modules workflows conf docs tests .github/workflows main.nf nextflow.config'
 
 # Files that may name images, with the reason.
 EXEMPT_FILES='
@@ -45,6 +45,9 @@ docs/lessons-learned.md               history: names the tags that failed
 docs/research/                        dated research notes, kept as written
 .github/workflows/container-test.yml  its own matrix, held to versions.env by its sync step
 scripts/ci/check-images.sh            this file: the exemptions and the faults its self-test plants
+scripts/ci/freshness.py               reads image references; its self-test plants made-up ones
+scripts/ci/changed-images.sh          reads image references; its self-test plants made-up ones
+tests/fixtures/                       provenance notes name the image that wrote each fixture
 '
 
 # Single literals that stay on purpose: file, image, reason. A change to the
@@ -57,6 +60,7 @@ scripts/cyrius-constraints.txt    python:3.11   the image pip resolved these con
 scripts/ci/settle-doubts.sh       jmcdani20/hap.py:v0.3.12   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       hkubal/clair3:v2.0.2   repeats versions.env, to be removed
+tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed
 '
 
 # scan: print one line per literal image in the tree at $ROOT; exit 1 if any.
@@ -108,7 +112,7 @@ for f in files:
         line = URL.sub(" ", line)
         for rx in (SHAPE, BARE):
             for m in rx.finditer(line):
-                image = m.group(1)
+                image = m.group(1).rstrip(".")  # a full stop ends the sentence, not the tag
                 if FILE.search(image) or image.startswith("example/"):
                     continue  # example/ is the placeholder namespace of the self-tests
                 if (f, image) in pairs:
@@ -158,6 +162,12 @@ self_test() {
   copy script-literal
   echo 'docker run --rm staphb/bcftools:1.21 bcftools --version' >> "${tmp}/script-literal/scripts/06-clinvar-screen.sh"
   expect script-literal '^FAIL: scripts/06-clinvar-screen\.sh:[0-9]+ names the image staphb/bcftools:1\.21;'
+
+  # A test that names its image at the end of a sentence: the full stop is
+  # not part of the tag.
+  copy test-literal
+  echo '# Needs docker: runs staphb/samtools:1.19.' >> "${tmp}/test-literal/tests/test_indexcov_sex.sh"
+  expect test-literal '^FAIL: tests/test_indexcov_sex\.sh:[0-9]+ names the image staphb/samtools:1\.19;'
 
   # A Docker Hub official image in a module, and a floating tag in a workflow.
   copy official
