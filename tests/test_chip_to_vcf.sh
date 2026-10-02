@@ -5,7 +5,7 @@
 #
 # Checks, for each fixture:
 #   1. the script exits 0 and writes vcf/<sample>.vcf.gz;
-#   2. nine records: ten rows minus the one no-call;
+#   2. ten records, the no-call row as a missing genotype (./. or .);
 #   3. the records sit on chr1, chrX, chrY and chrM (AncestryDNA codes 23-26
 #      mapped to X, Y, X and MT, then renamed for GRCh38);
 #   4. AncestryDNA only: every genotype is diploid (its two allele columns are
@@ -87,7 +87,13 @@ run_fixture() {
   sed 's/^/    /' "${WORK}/${name}.tsv"
   local n chroms
   n=$(grep -c . "${WORK}/${name}.tsv" || true)
-  if [ "$n" -eq 9 ]; then pass "${name}: 9 records (10 rows, 1 no-call)"; else fail "${name}: ${n} records, want 9"; fi
+  if [ "$n" -eq 10 ]; then pass "${name}: 10 records"; else fail "${name}: ${n} records, want 10"; fi
+  local nocall
+  nocall=$(awk -F'\t' '$1 == "chr1" && $2 == 404 {print $3}' "${WORK}/${name}.tsv")
+  case "$nocall" in
+    ./.|.) pass "${name}: the no-call row is a missing genotype (${nocall})" ;;
+    *) fail "${name}: the no-call row at chr1:404 is '${nocall}', want a missing genotype" ;;
+  esac
   chroms=$(cut -f1 "${WORK}/${name}.tsv" | sort -u | paste -sd' ' -)
   if [ "$chroms" = "chr1 chrM chrX chrY" ]; then pass "${name}: chromosomes ${chroms}"
   else fail "${name}: chromosomes '${chroms}', want 'chr1 chrM chrX chrY'"; fi
