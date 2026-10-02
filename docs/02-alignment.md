@@ -11,19 +11,22 @@ Alignment maps each 150bp sequencing read to its position in the human genome. R
 - **samtools** — sort + index the alignment
 
 ## Docker Images
-- `quay.io/biocontainers/minimap2:2.31--h118bc1c_0` (minimap2 aligner)
-- `staphb/samtools:1.20` (samtools sort + index)
+- `MINIMAP2_IMAGE` (minimap2 aligner)
+- `SAMTOOLS_IMAGE` (samtools sort + index)
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
-- GRCh38 reference genome (`Homo_sapiens_assembly38.fasta`)
+- GRCh38 reference genome (`${REF_FASTA}`, see [reference setup](00-reference-setup.md#the-reference-path-on-every-page))
 - minimap2 index (`.mmi` file, ~7GB, generated once)
 - Paired-end FASTQ files
 
 ## Commands
 ```bash
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-REF=${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta
+REF="${GENOME_DIR}/${REF_FASTA}"
 
 # Step 1: Create minimap2 index (one-time, ~30 min)
 minimap2 -d ${GENOME_DIR}/reference/GRCh38.mmi $REF
@@ -38,14 +41,13 @@ minimap2 -a -x sr -t 16 \
 # Step 3: Index BAM
 samtools index ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 
-# Output: ~30-40GB BAM + ~9MB BAI index
+# Output: ~80-120 GB BAM + ~9 MB BAI index
 ```
 
 ## Resource Requirements
 - CPU: 16+ cores recommended
 - RAM: 16GB+ (minimap2 loads full index into memory)
-- Disk: ~30-40GB per sample (BAM file)
-- Time: 1-2 hours for 30X WGS
+- Disk and time: see [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) (the BAM is about 80-120 GB)
 
 ## Notes
 - Use `-x sr` for Illumina short reads (short-read preset)

@@ -10,9 +10,9 @@ ClinVar is the most widely used public database of clinically reported variants.
 - **bcftools norm**, **isec** and **annotate** — split and left-align both files, keep the sample's records whose allele is in ClinVar, and copy ClinVar's gene, significance and review status onto them
 
 ## Docker Image
-```
-staphb/bcftools:1.21
-```
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Sample VCF from DeepVariant (step 3)
@@ -49,7 +49,8 @@ Both reports (step 24 and `generate-report.sh`) read the hits file and show gene
 To list the hits yourself:
 
 ```bash
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+source versions.env   # from the repository root
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools query -f '%CHROM:%POS %REF>%ALT [%GT] %INFO/GENEINFO %INFO/CLNSIG %INFO/CLNREVSTAT\n' \
   /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf
 ```

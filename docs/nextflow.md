@@ -217,7 +217,7 @@ This pipeline is designed for **personal, single-user use** on trusted data. Sam
 
 ### Cyrius runtime installation
 
-The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself is pinned: its dependencies (pysam, numpy, scipy, statsmodels) and the `python:3.11` base tag are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) is looser still: it installs whatever Cyrius version is newest.
+The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself is pinned here: its dependencies (pysam, numpy, scipy, statsmodels) and the `PYTHON_IMAGE` base tag are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
 
 ### CI validation scope
 

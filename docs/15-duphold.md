@@ -10,9 +10,9 @@ Manta (step 4) calls structural variants from paired-end and split-read evidence
 - **duphold** (Brent Pedersen)
 
 ## Docker Image
-```
-brentp/duphold:v0.2.3
-```
+- `DUPHOLD_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Annotations Added
 duphold writes these as **FORMAT** fields (one value per sample), not INFO fields.
@@ -25,14 +25,16 @@ duphold writes these as **FORMAT** fields (one value per sample), not INFO field
 
 ## Command
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
-  brentp/duphold:v0.2.3 \
+  "${DUPHOLD_IMAGE}" \
   duphold \
   -v /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
   -b /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-  -f /genome/reference/Homo_sapiens_assembly38.fasta \
+  -f "/genome/${REF_FASTA}" \
   -o /genome/${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
 ```
 

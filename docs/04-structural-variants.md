@@ -10,12 +10,14 @@ Structural variants cause ~25% of all genetic disease but are invisible to stand
 - **Manta** (Illumina) — structural variant and indel caller
 
 ## Docker Image
-```
-quay.io/biocontainers/manta:1.6.0--h9ee0642_2
-```
+- `MANTA_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
@@ -23,17 +25,17 @@ GENOME_DIR=/path/to/your/data
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+  "${MANTA_IMAGE}" \
   configManta.py \
     --bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
-    --referenceFasta /genome/reference/Homo_sapiens_assembly38.fasta \
+    --referenceFasta "/genome/${REF_FASTA}" \
     --runDir /genome/${SAMPLE}/manta
 
 # Step 2: Run Manta
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
-  quay.io/biocontainers/manta:1.6.0--h9ee0642_2 \
+  "${MANTA_IMAGE}" \
   /genome/${SAMPLE}/manta/runWorkflow.py -j 8
 
 # Output: diploidSV.vcf.gz (~7-9K structural variants)

@@ -16,9 +16,9 @@ PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calli
 
 ## Docker Image
 
-```
-python:3.11
-```
+- `PYTHON_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Cyrius is installed inside the container at runtime with `pip install -c /constraints.txt 'cyrius==1.1.1'`. The constraints file is `scripts/cyrius-constraints.txt`, mounted read-only; it pins Cyrius's dependencies (pysam, numpy, scipy, statsmodels and theirs) to versions resolved once on this image. No dedicated Cyrius Docker image is required. If pip fails (for example without network), its own error is in the step log.
 
@@ -93,10 +93,11 @@ Aldy also calls 37 additional pharmacogenes (CYP2C19, CYP2B6, UGT1A1, NAT2, DPYD
 **To use Aldy instead of Cyrius:**
 
 ```bash
+source versions.env   # from the repository root
 # Install in a Python container (one-time, or build a custom image)
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
-  python:3.11 \
+  "${PYTHON_IMAGE}" \
   bash -c "
     pip install -q aldy==4.8.3 &&
     aldy genotype \

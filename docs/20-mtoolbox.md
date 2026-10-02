@@ -15,9 +15,9 @@ Step 12 (haplogrep3) assigns your mitochondrial haplogroup from chrM variants al
 > **Note:** This step was originally planned for MToolBox, but no working Docker image exists for MToolBox (see [lessons-learned.md](lessons-learned.md#mtoolbox-no-working-docker-image-exists)). GATK Mutect2 is the standard clinical alternative.
 
 ## Docker Image
-```
-broadinstitute/gatk:4.6.2.0
-```
+- `GATK_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash

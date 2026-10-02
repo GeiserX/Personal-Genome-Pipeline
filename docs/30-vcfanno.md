@@ -41,9 +41,9 @@ If only chr-prefixed databases are present (no CADD), a single pass is used.
 
 ## Docker Image
 
-```
-quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
-```
+- `VCFANNO_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Also uses the bcftools image to rename chromosomes, compress (`bcftools view -Oz`) and index (`bcftools index -t`).
 

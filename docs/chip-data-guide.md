@@ -56,6 +56,7 @@ The conversion requires two stages:
 One-time downloads (~3.5 GB total, plus the GRCh38 reference from [step 00](00-reference-setup.md)):
 
 ```bash
+source versions.env   # from the repository root
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 mkdir -p "${GENOME_DIR}/liftover" "${GENOME_DIR}/reference_hg19"
 
@@ -67,7 +68,7 @@ gunzip "${GENOME_DIR}/reference_hg19/human_g1k_v37.fasta.gz"
 # Index the reference
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools faidx /genome/reference_hg19/human_g1k_v37.fasta
 
 # GRCh37-to-GRCh38 liftover chain file (~500 KB)
@@ -84,6 +85,8 @@ All three vendor formats need to be converted to a tab-separated file with colum
 A ready-to-use script is provided at `scripts/chip-to-vcf.sh`. You can also run the steps manually:
 
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
@@ -111,7 +114,7 @@ grep -v "^#" "${GENOME_DIR}/${SAMPLE}/raw/MyHeritage_raw_dna_data.csv" | \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \
     -s "${SAMPLE}" \
@@ -129,7 +132,7 @@ docker run --rm --user root \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools annotate \
     --rename-chrs /genome/reference_hg19/chr_rename.txt \
     "/genome/${SAMPLE}/raw/${SAMPLE}_hg19.vcf.gz" \
@@ -137,26 +140,26 @@ docker run --rm --user root \
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
 # --- Stage 2: Liftover to GRCh38 ---
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  broadinstitute/picard:3.4.0 \
+  "${PICARD_IMAGE}" \
   java -jar /usr/picard/picard.jar LiftoverVcf \
     I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
     O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
-    R=/genome/reference/Homo_sapiens_assembly38.fasta \
+    R="/genome/${REF_FASTA}" \
     REJECT="/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" \
     WARN_ON_MISSING_CONTIG=true
 
 # Index the final VCF
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
+  "${BCFTOOLS_IMAGE}" \
   bcftools index -t -f "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
@@ -173,7 +176,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 Imputation can expand your 600K chip variants to ~40M by predicting untyped genotypes from population reference panels. This significantly improves PRS variant matching.
 
 1. Prepare per-chromosome VCFs from the hg19 data
-2. Upload to the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) — accepts single-sample submissions and outputs GRCh38 natively
+2. Upload to the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) — accepts single-sample submissions and outputs GRCh38 natively. This sends your genotypes off your machine: read the server's data policy first (see [step 14](14-imputation-prep.md#your-data-leaves-the-machine-here))
 3. Download the imputed VCF, filter to R2 > 0.3, and use as your pipeline input
 
 > **Note on Michigan Imputation Server:** MIS may require multiple samples per job (see [step 14 docs](14-imputation-prep.md)). TOPMed is generally more accessible for single-sample chip data. Check each server's current policies before uploading.
@@ -216,7 +219,7 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | **21** | CYP2D6 (Cyrius) | Needs BAM |
 | **22** | SV consensus merge | No SV calls |
 | **23** | Clinical filter | Requires VEP-annotated VCF with gnomAD. Limited value on chip data. |
-| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools or upload to a service like [DNA Painter](https://dnapainter.com/). |
+| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools. A third-party service such as [DNA Painter](https://dnapainter.com/) means sending your genotypes out of your machine; read its terms first. |
 
 ---
 

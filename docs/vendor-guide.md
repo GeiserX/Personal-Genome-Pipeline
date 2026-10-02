@@ -168,18 +168,20 @@ If your lab provided a DRAGEN-called VCF, you can skip steps 2-3 and go directly
 Some providers deliver CRAM instead of BAM (40-60% smaller). Convert to BAM first:
 
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools view -b \
-    -T /genome/reference/Homo_sapiens_assembly38.fasta \
+    -T "/genome/${REF_FASTA}" \
     -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     /genome/${SAMPLE}/aligned/${SAMPLE}.cram
 
 # Index the BAM
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
@@ -230,8 +232,9 @@ samtools view -H your_file.bam | grep "^@SQ" | head -3
 
 **Best approach (recommended):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
+source versions.env   # from the repository root
 # Extract paired-end FASTQ from BAM
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   bash -c "samtools sort -n /genome/${SAMPLE}/old_hg19.bam | \
            samtools fastq -1 /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
                           -2 /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz -"
@@ -265,17 +268,18 @@ Even if you only plan to use VCF, download FASTQ and BAM too. Storage is cheap; 
 Large files can be silently truncated during download:
 
 ```bash
+source versions.env   # from the repository root
 # Check FASTQ integrity
 gzip -t ${SAMPLE}_R1.fastq.gz && echo "R1 OK" || echo "R1 CORRUPT"
 gzip -t ${SAMPLE}_R2.fastq.gz && echo "R2 OK" || echo "R2 CORRUPT"
 
 # Check BAM integrity
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools quickcheck /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
   && echo "BAM OK" || echo "BAM CORRUPT"
 
 # Check VCF integrity
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -h /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz > /dev/null \
   && echo "VCF OK" || echo "VCF CORRUPT"
 ```

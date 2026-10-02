@@ -16,9 +16,9 @@ ExpansionHunter reports the number of repeats at each locus but applies no patho
 
 ## Docker Image
 
-```
-quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0
-```
+- `STRANGER_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 - Binary: `stranger` (on PATH)
 - Bundled repeat catalog: clinical ClinGen/OMIM database (installed inside the container)

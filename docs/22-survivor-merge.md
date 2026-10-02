@@ -4,7 +4,7 @@
 
 ## What This Does
 
-Performs a rough intersection of structural variant (SV) calls from multiple independent callers — Manta (step 4), Delly (step 19), and CNVpytor (step 18). SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
+Performs a rough intersection of structural variant (SV) calls from multiple independent callers: Manta (step 4), Delly (step 19) and CNVpytor (step 18) in a default run, plus GRIDSS (step 4b), TIDDIT (script 4a) and Sniffles2 (script 4c) when their output exists. SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
 
 ## Why
 
@@ -24,9 +24,9 @@ The script uses a breakpoint-binning approach with bcftools rather than SURVIVOR
 
 ## Docker Image
 
-```
-staphb/bcftools:1.21
-```
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
@@ -37,6 +37,9 @@ At least two of the following (the script auto-detects which are available):
 | Manta (step 4) | `${GENOME_DIR}/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz` |
 | Delly (step 19) | `${GENOME_DIR}/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz` |
 | CNVpytor (step 18) | `${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz` or `_cnvs.txt` |
+| GRIDSS (step 4b, opt-in) | `${GENOME_DIR}/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz` |
+| Sniffles2 (script 4c, long reads) | `${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz` |
+| TIDDIT (script 4a) | `${GENOME_DIR}/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz` |
 
 If CNVpytor output is in TXT format (its native output), the script automatically converts it to VCF before merging.
 
@@ -48,7 +51,7 @@ If CNVpytor output is in TXT format (its native output), the script automaticall
 
 ## What the Script Does Internally
 
-1. Scans for available SV VCFs from Manta, Delly, and CNVpytor
+1. Scans for available SV VCFs from Manta, Delly, GRIDSS, Sniffles2, TIDDIT and CNVpytor
 2. If CNVpytor output is only in TXT format, converts it to VCF (adding proper headers, SV type, and END coordinates)
 3. Requires at least 2 callers to proceed (exits with an error otherwise)
 4. Extracts PASS variants from each caller and bins them by `chromosome + position/1000 + SVTYPE`
@@ -75,9 +78,9 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/sv_merged/`.
 
 A typical 30X WGS genome produces:
 
-- **Manta**: 3,000-5,000 SVs
+- **Manta**: 7,000-9,000 SVs (see [step 4](04-structural-variants.md))
 - **Delly**: 5,000-15,000 SVs
-- **CNVpytor**: 500-2,000 CNVs
+- **CNVpytor**: 3,000-4,000 CNVs, 1,500-2,000 of them with e-value < 0.01 (see [interpreting results](interpreting-results.md#cnvpytor-results-step-18))
 
 After consensus filtering, expect **200-1,000 multi-caller SVs**. These have lower false-positive rates than single-caller calls, though the 1 kb binning heuristic is less precise than dedicated tools like SURVIVOR or Jasmine.
 
@@ -91,8 +94,9 @@ SV types in the output:
 ### Quick inspection
 
 ```bash
+source versions.env   # from the repository root
 # Count consensus SVs by type
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools query -f '%INFO/SVTYPE\n' \
     /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz | sort | uniq -c | sort -rn
 ```
