@@ -1,3 +1,6 @@
+# Dependabot keeps the GitHub Actions pins and the docs' pip file. Container
+# images, Nextflow, actionlint and gitleaks are Renovate's (renovate.json), so
+# there is no docker ecosystem here. See docs/updating.md.
 version: 2
 updates:
   - package-ecosystem: github-actions
