@@ -54,7 +54,9 @@ fi
 #   --threads    Worker threads
 #   --regions    Restrict to regions (optional, for testing)
 echo "Running Octopus (this takes 2-4 hours for 30X WGS)..."
-run_in --cpus "${THREADS}" --memory 16g \
+# -w: Octopus makes its octopus-temp directory in the working directory, and
+# the image sets none, so it would try / as an unprivileged user.
+run_in -w "/genome/${SAMPLE}/vcf_octopus" --cpus "${THREADS}" --memory 16g \
   "${OCTOPUS_IMAGE}" \
   octopus \
     -R "${REF_FASTA_C}" \

@@ -91,7 +91,11 @@ GRIDSS_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
 # GRIDSS via Docker Hub image (1.4 GB, includes all dependencies: Java 11, R, bwa, samtools)
 echo "Running GRIDSS (this takes 4-8 hours for 30X WGS)..."
-run_in --cpus "${THREADS}" --memory 32g \
+# --rw reference/: on its first run GRIDSS writes <reference>.gridsscache,
+# <reference>.img and <reference>.dict next to the FASTA (and a lock directory
+# while it does). -w: its intermediate files and log go to the working directory.
+run_in --rw "$(dirname "$REF_FASTA")" -w "/genome/${SAMPLE}/sv_gridss" \
+  --cpus "${THREADS}" --memory 32g \
   -e JAVA_TOOL_OPTIONS="-Xmx28g" \
   "${GRIDSS_IMAGE}" \
   "${GRIDSS_ARGS[@]}"
