@@ -18,6 +18,15 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/10-telomere-hunter.sh your_sample
+```
+
+`ALIGN_DIR` (default `aligned`) picks the BAM, for example `ALIGN_DIR=aligned_bwamem2`. `THREADS` (default 4) caps the container's CPUs; TelomereHunter has no thread option of its own.
+
+TelomereHunter sorts telomeric reads into intratelomeric, subtelomeric and junction classes by chromosome band. Without `-b` it uses its own hg19 bands (`telomerehunter --help`: "If no banding file is specified, the banding information of hg19 will be used"), which put the band ends at hg19 positions on a GRCh38 BAM. The script passes UCSC's GRCh38 bands, which `setup.sh` installs as `reference/cytoBand.hg38.txt` (chr1-22, X and Y; see [reference setup](00-reference-setup.md#small-pinned-data-files)). When they are not installed it runs without `-b` and says so. What the script runs:
+
+```bash
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
@@ -29,7 +38,8 @@ docker run --rm --user root \
   telomerehunter \
     -ibt /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     -o /genome/${SAMPLE}/telomere/${SAMPLE} \
-    -p ${SAMPLE}
+    -p ${SAMPLE} \
+    -b /genome/reference/cytoBand.hg38.txt
 
 # Output: telomere content report in ${GENOME_DIR}/${SAMPLE}/telomere/${SAMPLE}/
 ```

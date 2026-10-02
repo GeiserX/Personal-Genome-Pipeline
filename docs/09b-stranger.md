@@ -21,7 +21,7 @@ ExpansionHunter reports the number of repeats at each locus but applies no patho
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 - Binary: `stranger` (on PATH)
-- Bundled repeat catalog: clinical ClinGen/OMIM database (installed inside the container)
+- Bundled repeat catalog: Stranger's GRCh38 catalog (`variant_catalog_grch38.json`, installed inside the container). Stranger's own default is its GRCh37 catalog; the script and the Nextflow module pass the GRCh38 one explicitly, because ExpansionHunter (step 9) calls the GRCh38 loci
 
 ## Command
 
@@ -36,7 +36,7 @@ Step 09 must run first:
 ./scripts/09b-stranger.sh your_name
 ```
 
-A custom repeat catalog (TSV) can be supplied via the `STRANGER_REPEATS` environment variable; the bundled catalog is used when it is not set.
+A custom repeat catalog (TSV or JSON) can be supplied via the `STRANGER_REPEATS` environment variable; the bundled GRCh38 catalog is used when it is not set. The output is written to a temporary name and renamed when Stranger succeeds, so a failed run leaves no empty or partial VCF that a rerun would take as done.
 
 ## Output
 
@@ -49,11 +49,11 @@ Key INFO fields added by Stranger:
 | Field | Values | Meaning |
 |---|---|---|
 | `STR_STATUS` | `normal`, `pre_mutation`, `full_mutation` | Pathogenicity call for this allele |
-| `Disease` | e.g. `Huntingtons disease` | Disease associated with this locus |
-| `OMIM` | e.g. `143100` | OMIM disease identifier |
-| `Inheritance` | `AD`, `AR`, `XD`, `XR` | Inheritance mode |
-| `NormalMax` | integer | Upper bound of normal repeat range |
-| `PathologicMin` | integer | Lower bound of clearly pathogenic range |
+| `Disease` | e.g. `HD` | Disease associated with this locus |
+| `InheritanceMode` | `AD`, `AR`, `XD`, `XR` | Inheritance mode |
+| `STR_NORMAL_MAX` | integer | Upper bound of normal repeat range |
+| `STR_PATHOLOGIC_MIN` | integer | Lower bound of clearly pathogenic range |
+| `HGNCId`, `Source`, `SourceId` | | Gene and the source of the locus definition |
 
 ## Runtime
 

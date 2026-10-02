@@ -44,33 +44,39 @@ If your data is on **GRCh37/hg19**, extract FASTQ from BAM and re-align. See [ve
 
 ## ClinVar Database
 
-Updated monthly by NCBI. Contains known pathogenic/benign variant classifications.
+Updated monthly by NCBI. Contains known pathogenic/benign variant classifications. `setup.sh` downloads it, checks it against NCBI's published md5, builds the two files the steps read from it and records its release date:
+
+| File | What it is |
+|---|---|
+| `clinvar/clinvar.vcf.gz` (+ `.tbi`) | NCBI's file as published, chromosomes named `1, 2 ... MT` |
+| `clinvar/clinvar_chr.vcf.gz` (+ `.tbi`) | the same records with `chr1, chr2 ... chrM`, the names the BAMs and VCFs use |
+| `clinvar/clinvar_pathogenic_chr.vcf.gz` (+ `.tbi`) | the Pathogenic and Likely_pathogenic records, read by step 6 |
+| `clinvar/RELEASE` | the release date, from the file's `##fileDate` line |
+
+To move to the current release, run:
 
 ```bash
-source versions.env   # from the repository root
-mkdir -p ${GENOME_DIR}/clinvar
-cd ${GENOME_DIR}/clinvar
-
-# Download latest ClinVar (~200 MB)
-wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
-wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi
-
-# ClinVar uses "1,2,3..." chromosomes. Our BAMs use "chr1,chr2,chr3..."
-# Create chr-prefixed version:
-docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" bash -c '
-  echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt
-  bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz
-  bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz
-'
-
-# Extract pathogenic/likely pathogenic only (faster for screening):
-docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" bash -c '
-  bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz
-  bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz
-'
+./scripts/setup.sh --refresh clinvar ${GENOME_DIR}
 ```
 
-> **Tip:** Re-download ClinVar monthly for the latest classifications. ClinVar adds ~1000 new pathogenic variants per month.
+It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both derived files there, and only then replaces all six files and `RELEASE`. Step 6's normalised copy (`clinvar_pathogenic_chr.norm.vcf.gz`) is removed, so step 6 rebuilds it from the new release. A failed download or build leaves the installed release as it was. Do not re-download with a plain `wget`: it writes `clinvar.vcf.gz.1` beside the old file, and the derived files stay built from the old one.
+
+`validate-setup.sh` prints the release date and warns when it is more than 35 days old.
+
+> **Tip:** Refresh ClinVar monthly for the latest classifications. ClinVar adds ~1000 new pathogenic variants per month. Rerun step 6 afterwards.
+
+## Small pinned data files
+
+`setup.sh` also installs four small files, each from a fixed commit or release and checked before it is stored. A failed download does not stop setup; the next run tries again, and `validate-setup.sh` lists what is missing.
+
+| File | Source | Used by | Without it |
+|---|---|---|---|
+| `reference/delly_human.hg38.excl.tsv` | Delly's GRCh38 exclude map at a pinned commit (sha256 checked) | step 19 (`delly call -x`) | Delly runs without it: slower, and with calls in centromeres, telomeres and the extra contigs |
+| `reference/cytoBand.hg38.txt` | UCSC's GRCh38 chromosome bands, chr1-22, X and Y (sha256 checked) | step 10 (`telomerehunter -b`) | TelomereHunter falls back to its hg19 bands |
+| `hla/IPD-IMGT-HLA_<release>/hla.dat` | IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.65.0) from the IMGTHLA repository (md5 checked) | step 8 | step 8 is skipped |
+| `reference/gencode.v50.basic.genes.gtf` | the gene lines of GENCODE 50's basic annotation (md5 checked) | step 8 (gene positions for T1K) | step 8 is skipped |
+
+`setup.sh` also writes the reference's sequence dictionary (`Homo_sapiens_assembly38.dict`), which GATK, Picard and `chip-to-vcf.sh` need.
 
 ## AnnotSV Annotations (~5 GB)
 
@@ -142,30 +148,13 @@ tar xzf tmp/homo_sapiens_vep_113_GRCh38.tar.gz
 
 ## T1K HLA Reference (Optional)
 
-Only needed for step 8 (HLA typing). ~30 minutes to build.
+Only needed for step 8 (HLA typing). Step 8 builds its T1K index itself, the first time it runs (a few minutes), from the `hla.dat` and GENCODE gene lines `setup.sh` installs (see "Small pinned data files" above). The index goes to `t1k_idx/t1k-<T1K version>_imgt-<release>_gencode-<release>/`, so a new T1K image or a new database release builds a new index instead of reusing the old one. Step 8 writes the release it typed against to `hla_t1k/database_release.txt`.
 
-```bash
-source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
-mkdir -p ${GENOME_DIR}/t1k_idx
+To type against another IPD-IMGT/HLA release, set `HLA_DB_RELEASE` (for example `HLA_DB_RELEASE=3.64.0`) for both `setup.sh` and step 8.
 
-# Step 1: Download IPD-IMGT/HLA database (~2 min)
-docker run --rm -v ${GENOME_DIR}/t1k_idx:/idx \
-  "${T1K_IMAGE}" \
-  t1k-build.pl -o /idx/hlaidx --download IPD-IMGT/HLA
+The coordinate file takes each HLA gene's GRCh38 position from the GENCODE annotation (`t1k-build.pl -g`, as T1K's README describes). Built from the FASTA or its `.fai` instead, every gene gets `-1 -1` coordinates and T1K extracts no reads; step 8 stops when a typed gene has no coordinates.
 
-# Step 2: Build coordinate file from genome (~30 min, reads entire 3.1GB FASTA)
-# CRITICAL: Use the actual FASTA, NOT the .fai index!
-docker run --rm --cpus 4 --memory 8g \
-  -v ${GENOME_DIR}:/genome \
-  "${T1K_IMAGE}" \
-  t1k-build.pl \
-    -d /genome/t1k_idx/hlaidx/hla.dat \
-    -g /genome/${REF_FASTA} \
-    -o /genome/t1k_idx/hlaidx_grch38
-```
-
-> **Note:** HLA typing from WGS is challenging. T1K coordinates may have ~50% unmapped alleles. For clinical HLA typing, dedicated lab assays are more reliable. See [lessons-learned.md](lessons-learned.md#t1k-coordinate-file-with-wrong-values).
+> **Note:** HLA typing from WGS is challenging. For clinical HLA typing, dedicated lab assays are more reliable. See [lessons-learned.md](lessons-learned.md#t1k-coordinate-file-with-wrong-values).
 
 ## CNVpytor GC/Mask Resources (Optional, for Step 18)
 
@@ -353,7 +342,7 @@ The alternative aligners and callers and hap.py (`benchmark-variants.sh`) are th
 
 ### GATK Sequence Dictionary
 
-GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. If you don't have one:
+GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. `setup.sh` creates it; to create it by hand:
 
 ```bash
 source versions.env   # from the repository root
