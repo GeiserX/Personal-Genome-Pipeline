@@ -108,9 +108,9 @@ The CI pipeline enforces this with automated scanning.
 
 ## Bumping a Tool
 
-1. Change the tool's line in [`versions.env`](versions.env). Nothing else names the tag.
+1. Change the tool's line in [`versions.env`](versions.env). No script names the tag.
 2. If a comment next to the line couples it to a data version (the VEP cache release, the PCGR bundle, the pypgx bundle tag), change that variable in the same commit.
-3. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml) and any doc that prints the tag. The `version-consistency` check in CI names every stale one.
+3. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml), any doc that prints the tag, and the `container` line of the tool's module under `modules/local/`. The `version-consistency` check in CI names a stale tag in the docs; CI does not check the modules yet.
 4. Run `./scripts/setup.sh --pull-only` to pull the new image.
 5. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
 
