@@ -100,17 +100,13 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). This is broader than the 81-gene ACMG SF v3.2 list and focused specifically on cancer predisposition.
+**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). Step 17 also turns on CPSR's secondary findings: the ACMG SF v3.2 list of 81 genes, which includes cardiac and metabolic genes outside cancer (see [Before you look](#before-you-look-what-the-pipeline-can-tell-you)).
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 
 **How to read it:**
-- Variants are classified into tiers:
-  - **Tier 1:** Pathogenic / Likely pathogenic — needs clinical attention
-  - **Tier 2:** Variant of Uncertain Significance (VUS) with some evidence
-  - **Tier 3:** VUS with limited evidence
-  - **Tier 4:** Likely benign / Benign
-- Focus on **Tier 1** variants only for clinical action
+- CPSR puts every variant in its genes into one of the five ACMG/AMP classes: **Pathogenic**, **Likely pathogenic**, **VUS** (uncertain significance), **Likely benign** and **Benign**. A variant that already has a ClinVar entry can carry ClinVar's class instead of the one CPSR computed.
+- Only **Pathogenic** and **Likely pathogenic** call for clinical attention. The report lists them first, and the secondary findings in their own section.
 
 ---
 
@@ -284,11 +280,11 @@ VEP annotates every variant with:
 - **Consequence type:** missense, nonsense, synonymous, splice site, etc.
 - **SIFT score:** Predicts if amino acid change is tolerated (>0.05) or damaging (<0.05)
 - **PolyPhen score:** Predicts if change is benign (<0.15), possibly damaging (0.15-0.85), or probably damaging (>0.85)
-- **gnomAD exome frequency:** How common this variant is in gnomAD exome data
+- **gnomAD frequencies:** How common this variant is in gnomAD's exomes (`gnomADe_AF`) and genomes (`gnomADg_AF`)
 
 ### gnomAD Frequency: Your Best Sanity Check
 
-The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. This pipeline uses VEP's `--af_gnomade` flag, which annotates with **gnomAD exome** frequencies only (not the combined exome+genome dataset). This means non-coding variants outside exome capture regions will lack gnomAD frequency annotations even if they appear in the gnomAD genome dataset. For coding variants (the most clinically relevant), exome frequencies are well-powered.
+The single most useful annotation VEP adds is the **gnomAD allele frequency** — how common a variant is in the general population. Step 13 runs VEP with `--everything`, which turns on both `--af_gnomade` and `--af_gnomadg`, so each variant gets two frequencies: `gnomADe_AF` from gnomAD's exomes and `gnomADg_AF` from its genomes. A non-coding variant outside exome capture regions has no exome frequency but can still have a genome frequency, so check both before calling a variant absent from gnomAD. The recipes below do that.
 
 **Key principle:** A variant that is common in healthy people is almost certainly benign, regardless of what any prediction tool says.
 
@@ -305,18 +301,7 @@ The single most useful annotation VEP adds is the **gnomAD allele frequency** �
 
 ### Filtering Strategy
 
-For finding potentially significant variants in the annotated VCF:
-
-```bash
-# High-impact variants (loss of function: stop-gain, frameshift, splice donor/acceptor)
-grep "HIGH" ${SAMPLE}_vep.vcf | grep -v "^#"
-
-# Rare missense variants predicted damaging by both SIFT and PolyPhen
-grep "missense_variant" ${SAMPLE}_vep.vcf | grep "deleterious" | grep "probably_damaging"
-
-# Variants absent from gnomAD (novel/ultra-rare)
-grep "missense_variant" ${SAMPLE}_vep.vcf | grep -v "gnomAD_AF"
-```
+Step 23 (the [clinical filter](#clinical-filter-step-23)) already applies the filters most people want. For your own queries, use the [Quick Variant Filtering Recipes](#quick-variant-filtering-recipes) below. Do not `grep` the VEP VCF: VEP writes its values by position inside the pipe-separated `CSQ` field, never as `name=value`, so a grep for `gnomAD_AF` or `SYMBOL=` matches nothing, and a grep for `HIGH` or `1/1` can match text in other fields. `bcftools +split-vep` reads the fields by name.
 
 ### What "HIGH Impact" Means
 
@@ -415,34 +400,52 @@ These are per-gene metrics (not per-variant) added to the clinical filter summar
 
 ### Quick Variant Filtering Recipes
 
-Copy-paste these commands to extract the most clinically relevant variants. All assume your VEP-annotated VCF is at `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`.
+Copy-paste these commands to extract the most clinically relevant variants. They read step 13's output, `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`, with `bcftools +split-vep` from the pipeline's pinned bcftools image, which picks each value out of the `CSQ` field by name (the same way step 23 does). `-s worst` keeps the most severe consequence of each variant; `-d` keeps every transcript.
 
 ```bash
-VEP_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf"
+# Run from the repository root, with GENOME_DIR and SAMPLE set
+source versions.env
+bcf() { docker run --rm -i -v "${GENOME_DIR}:/genome" -w /genome "${BCFTOOLS_IMAGE}" bcftools "$@"; }
+VEP_VCF="${SAMPLE}/vep/${SAMPLE}_vep.vcf"   # relative to GENOME_DIR
 
-# 1. Homozygous loss-of-function variants (most likely to cause disease)
-grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep "1/1" | head -20
+# Rare: below 0.1% in gnomAD exomes and genomes, or absent from them
+RARE='(gnomADe_AF="." || gnomADe_AF<0.001) && (gnomADg_AF="." || gnomADg_AF<0.001)'
+FIELDS='%CHROM\t%POS\t%REF\t%ALT\t%SYMBOL\t%Consequence\t%gnomADe_AF\t%gnomADg_AF\t[%GT]\n'
 
-# 2. Rare HIGH-impact variants (gnomAD AF < 0.1%)
-#    These are the variants most likely to be clinically significant
-grep -v "^#" "$VEP_VCF" | grep "HIGH" | grep -v "gnomADe_AF=0\.[0-9]" | head -20
+# 1. Homozygous high-impact variants (stop gained, frameshift, splice donor/acceptor)
+bcf view -i 'GT="AA"' "$VEP_VCF" |
+  bcf +split-vep - -s worst -i 'IMPACT="HIGH"' -f "$FIELDS"
 
-# 3. Compound heterozygous candidates: genes with 2+ heterozygous variants
-#    (potential autosomal recessive — needs manual curation)
-grep -v "^#" "$VEP_VCF" | grep "0/1" | grep -oP 'SYMBOL=[^;|]+' | \
-  sort | uniq -c | sort -rn | awk '$1 >= 2' | head -20
+# 2. Rare high-impact variants
+bcf +split-vep "$VEP_VCF" -s worst -i "IMPACT=\"HIGH\" && ${RARE}" -f "$FIELDS"
 
-# 4. Known ACMG actionable genes (81 genes in ACMG SF v3.2)
-#    Quick check if any HIGH/MODERATE variants land in these genes
-#    Note: this is a partial list of cancer-related genes for illustration.
-#    See https://doi.org/10.1016/j.gim.2023.100866 for the full 81-gene list.
-ACMG_GENES="BRCA1|BRCA2|MLH1|MSH2|MSH6|PMS2|APC|MUTYH|TP53|RB1|MEN1|RET|VHL|SDHB|SDHD|TSC1|TSC2|WT1|NF2|PTEN|STK11|BMPR1A|SMAD4|CDH1|PALB2|CHEK2|ATM|NBN|BARD1|RAD51C|RAD51D|BRIP1"
-grep -v "^#" "$VEP_VCF" | grep -E "HIGH|MODERATE" | grep -E "$ACMG_GENES" | head -20
+# 3. Compound heterozygous candidates: genes with two or more rare heterozygous
+#    HIGH or MODERATE variants. The phase is unknown: both can sit on the same
+#    copy of the gene, so this is a list to curate, not a finding.
+bcf view -i 'GT="het"' "$VEP_VCF" |
+  bcf +split-vep - -s worst -i "(IMPACT=\"HIGH\" || IMPACT=\"MODERATE\") && ${RARE}" -f '%SYMBOL\n' |
+  sort | uniq -c | awk '$1 >= 2' | sort -rn
 
-# 5. PharmCAT-relevant variants not caught by step 7
-#    (PharmCAT misses some alleles — check CYP2D6, DPYD, UGT1A1 manually)
-grep -v "^#" "$VEP_VCF" | grep -E "CYP2D6|CYP2C19|CYP2C9|DPYD|UGT1A1|SLCO1B1|TPMT|NUDT15" | head -20
+# 4. HIGH or MODERATE variants in genes you name, matched on the exact symbol.
+#    The list here is a few cancer genes for illustration; CPSR (step 17) already
+#    reports the full ACMG secondary-findings list. For pharmacogenes, use
+#    GENES="CYP2D6 CYP2C19 CYP2C9 DPYD UGT1A1 SLCO1B1 TPMT NUDT15".
+GENES="BRCA1 BRCA2 MLH1 MSH2 MSH6 PMS2 APC MUTYH TP53"
+bcf +split-vep "$VEP_VCF" -d -i 'IMPACT="HIGH" || IMPACT="MODERATE"' -f "$FIELDS" |
+  awk -F'\t' -v genes="$GENES" 'BEGIN { n = split(genes, g, " "); for (i = 1; i <= n; i++) want[g[i]] = 1 } $5 in want' |
+  sort -u
+
+# 5. Rare missense variants that SIFT and PolyPhen both call damaging
+bcf +split-vep "$VEP_VCF" -s worst \
+  -i "Consequence~\"missense_variant\" && SIFT~\"^deleterious[(]\" && PolyPhen~\"^probably_damaging\" && ${RARE}" \
+  -f "$FIELDS"
+
+# 6. Missense variants absent from both gnomAD sets (novel or ultra-rare)
+bcf +split-vep "$VEP_VCF" -s worst \
+  -i 'Consequence~"missense_variant" && gnomADe_AF="." && gnomADg_AF="."' -f "$FIELDS"
 ```
+
+If the VCF came from a VEP run without gnomAD frequencies, `+split-vep` stops with `the tag "gnomADe_AF" is not defined`: drop the `RARE` term and the two gnomAD columns from `FIELDS`. PharmCAT (step 7) misses some alleles, and CYP2D6 needs the BAM-based callers (steps 21 and 32), so recipe 4 with the pharmacogene list is a cross-check, not a replacement.
 
 **Important:** These are starting points, not definitive screens. Any interesting finding should be cross-referenced with ClinVar and ideally confirmed by a second method (Sanger sequencing or a clinical lab).
 
@@ -668,16 +671,18 @@ Each number is the repeat count on one allele. Counts below every locus threshol
 
 ### CPSR (Step 17)
 
-The HTML report tier summary:
+The HTML report counts the variants in each class:
 
 ```
-Tier 1 (Pathogenic/Likely pathogenic):    0 variants
-Tier 2 (VUS with evidence):              2 variants
-Tier 3 (VUS limited evidence):           20 variants
-Tier 4 (Likely benign/Benign):           ~50,000 variants
+Pathogenic:                  0 variants
+Likely pathogenic:           0 variants
+VUS:                        22 variants
+Likely benign:             <n> variants
+Benign:                    <n> variants
+Secondary findings:          0 variants
 ```
 
-Zero Tier 1 = ALL CLEAR for cancer predisposition. The VUS count varies widely (20-200+) and is not cause for concern.
+No Pathogenic or Likely pathogenic variant, in the cancer panel or in the secondary findings, means nothing actionable was found in those genes. The VUS count varies widely (20-200+) and is not cause for concern.
 
 ### ROH (Step 11)
 

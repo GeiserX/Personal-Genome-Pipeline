@@ -112,7 +112,7 @@ docker run --rm --user root \
 ## Output
 - `${SAMPLE}.cpsr.grch38.html` — Interactive HTML report with classified variants
 - `${SAMPLE}.cpsr.grch38.classification.tsv.gz` — Tab-separated variant classifications (gzipped; read it with `zcat`)
-- Variants classified into 5 tiers (Pathogenic → Benign) using ACMG/AMP criteria
+- Every variant in the panel genes gets one of the five ACMG/AMP classes: Pathogenic, Likely pathogenic, VUS, Likely benign, Benign
 
 ## Runtime
 ~30-60 minutes per genome (depends on variant count).
