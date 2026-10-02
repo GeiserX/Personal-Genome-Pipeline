@@ -118,8 +118,8 @@ run_in --rw "$(dirname "$REF_FASTA")" -w "/genome/${SAMPLE}/sv_gridss" \
   "${GRIDSS_IMAGE}" \
   "${GRIDSS_ARGS[@]}"
 
-if ! have_output "${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz"; then
-  echo "ERROR: GRIDSS exited without a complete ${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz." >&2
+if ! wrote_vcf "${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz"; then
+  echo "ERROR: GRIDSS exited without a ${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz." >&2
   echo "  Its intermediate files are kept in ${OUTPUT_DIR}/work/ for a look." >&2
   exit 1
 fi

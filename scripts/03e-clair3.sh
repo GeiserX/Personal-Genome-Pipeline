@@ -76,8 +76,8 @@ run_in \
 CLAIR3_VCF="${OUTPUT_DIR}/merge_output.vcf.gz"
 FINAL_VCF="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 
-if ! have_output "$CLAIR3_VCF"; then
-  echo "ERROR: Clair3 left no complete ${CLAIR3_VCF}; see its log in ${OUTPUT_DIR}/." >&2
+if ! wrote_vcf "$CLAIR3_VCF"; then
+  echo "ERROR: Clair3 left no ${CLAIR3_VCF}; see its log in ${OUTPUT_DIR}/." >&2
   exit 1
 fi
 echo "Renaming output to match pipeline conventions..."

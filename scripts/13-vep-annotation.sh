@@ -59,7 +59,7 @@ run_in \
   "${VEP_IMAGE}" \
   vep \
     --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
-    --output_file "${OUT_C}.tmp.vcf.gz" \
+    -o "${OUT_C}.tmp.vcf.gz" \
     --vcf \
     --compress_output bgzip \
     --cache \
@@ -74,7 +74,7 @@ run_in \
     --warning_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep_warnings.txt" \
     --fork "${THREADS}"
 
-if ! have_output "${OUT}.tmp.vcf.gz"; then
+if ! wrote_vcf "${OUT}.tmp.vcf.gz"; then
   rm -f "${OUT}.tmp.vcf.gz"
   echo "ERROR: VEP exited without a complete output." >&2
   exit 1

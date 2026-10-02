@@ -19,7 +19,7 @@
 #                  default sets THREADS=${THREADS:-N} before sourcing this file.
 #   CONTAINER_ENGINE  docker by default.
 # and the helpers validate_sample, require_image, cpath, run_in, have_output,
-# atomic_out, fetch, data_file / install_data_file, install_vep_cache,
+# wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
 # lock_acquire / lock_release and pipeline_images, described where they are
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
@@ -156,6 +156,16 @@ have_output() {
         esac ;;
     esac
   done
+}
+
+# wrote_vcf FILE: true when FILE is non-empty and starts with a VCF header,
+# plain or gzip-compressed. The check after a tool that exited 0: it catches
+# a run that wrote nothing where the tool said it succeeded.
+wrote_vcf() {
+  local first
+  [ -s "$1" ] || return 1
+  first=$(gzip -cdf "$1" 2>/dev/null | head -c 16) || true
+  [[ "$first" == "##fileformat=VCF"* ]]
 }
 
 # _bgzf_complete FILE: true when FILE ends with the 28-byte BGZF EOF block.

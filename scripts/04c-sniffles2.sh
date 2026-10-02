@@ -56,8 +56,8 @@ run_in --cpus "$THREADS" --memory 16g \
     --sample-id "${SAMPLE}" \
     --allow-overwrite
 
-if ! have_output "${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz"; then
-  echo "ERROR: Sniffles2 exited without a complete ${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz" >&2
+if ! wrote_vcf "${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz"; then
+  echo "ERROR: Sniffles2 exited without a ${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz" >&2
   exit 1
 fi
 if [ ! -f "${OUTPUT_DIR}/${SAMPLE}_sv.vcf.gz.tbi" ]; then
