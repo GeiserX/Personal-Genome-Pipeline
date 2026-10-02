@@ -22,7 +22,9 @@ concurrency:
 jobs:
   # Two Nextflow lines. "pinned" is NEXTFLOW_VERSION from versions.env, the
   # release the pipeline is validated with, and blocks. "26.04" is the newest
-  # 26.04.x release; it reports its own result and does not block.
+  # 26.04.x release, which the manifest refuses until this leg is green: the
+  # leg lifts that cap in its own checkout, reports its own result and does
+  # not block.
   nextflow:
     name: nextflow (${{ matrix.line }})
     runs-on: ubuntu-latest
@@ -89,6 +91,21 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         with:
           version: ${{ steps.nf.outputs.version }}
+
+      - name: The manifest refuses this release; lift the cap in this checkout
+        if: steps.scope.outputs.run == 'true' && matrix.line != 'pinned'
+        run: |
+          rc=0
+          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/refused" \
+            > "${RUNNER_TEMP}/refused.log" 2>&1 || rc=$?
+          cat "${RUNNER_TEMP}/refused.log"
+          if [ "$rc" -eq 0 ] || ! grep -q 'does not match' "${RUNNER_TEMP}/refused.log"; then
+            echo "FAIL: the manifest did not refuse this release; if 26.x is supported now, remove this step"
+            exit 1
+          fi
+          sed -i -E "s/^( *nextflowVersion *= *'!>=25\.10\.4), *<26'/\1'/" nextflow.config
+          grep -q "nextflowVersion = '!>=25.10.4'\$" nextflow.config || { echo "FAIL: could not lift the cap"; exit 1; }
+          echo "Cap lifted for this run: $(grep nextflowVersion nextflow.config)"
 
       - name: Validate Nextflow config
         if: steps.scope.outputs.run == 'true'
