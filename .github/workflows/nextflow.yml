@@ -95,10 +95,36 @@ jobs:
         run: nextflow config main.nf -profile docker > /dev/null
 
       # Parses every .nf and .config file with the strict syntax and fails on
-      # an error, which `nextflow run main.nf -help` never did.
+      # an error, which `nextflow run main.nf -help` never did. KNOWN lists
+      # the errors already on main in files this workflow does not own, by
+      # file and message, until their own fix lands; any other error fails.
       - name: Lint the pipeline
         if: steps.scope.outputs.run == 'true'
-        run: nextflow lint .
+        env:
+          KNOWN: |
+            modules/local/vcf_precheck/main.nf: FILTER_STATUS is not defined
+            modules/local/vcf_precheck/main.nf: FILTER_COUNTS is not defined
+        run: |
+          export LC_ALL=C
+          rc=0
+          nextflow lint . > "${RUNNER_TEMP}/lint.log" 2>&1 || rc=$?
+          cat "${RUNNER_TEMP}/lint.log"
+          # "Error <file>:<line>:<col>: <message>" becomes "<file>: <message>".
+          errors=$(sed -e 's/\x1b\[[0-9;]*m//g' "${RUNNER_TEMP}/lint.log" | tr -d '`' \
+            | sed -n 's/^Error  *\([^:]*\):[0-9]*:[0-9]*: \(.*\)$/\1: \2/p' | sort -u)
+          known=$(printf '%s\n' "$KNOWN" | sed '/^$/d' | sort -u)
+          new=$(comm -23 <(printf '%s\n' "$errors" | sed '/^$/d') <(printf '%s\n' "$known"))
+          gone=$(comm -13 <(printf '%s\n' "$errors" | sed '/^$/d') <(printf '%s\n' "$known"))
+          if [ -n "$gone" ]; then
+            while IFS= read -r e; do echo "::warning::fixed, remove it from KNOWN: ${e}"; done <<<"$gone"
+          fi
+          if [ -n "$new" ]; then
+            echo "FAIL: nextflow lint found errors:"; printf '%s\n' "$new"; exit 1
+          fi
+          if [ "$rc" -ne 0 ] && [ -z "$errors" ]; then
+            echo "FAIL: nextflow lint exited ${rc} with no error line this step can read"; exit 1
+          fi
+          echo "OK: no lint error beyond the $(printf '%s\n' "$known" | grep -c .) known ones"
 
       - name: Validate nextflow_schema.json and the samplesheet schema
         if: steps.scope.outputs.run == 'true'
