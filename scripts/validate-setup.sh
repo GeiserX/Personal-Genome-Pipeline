@@ -6,6 +6,12 @@
 # sample data readiness. Exits 0 if all critical checks pass, 1 otherwise.
 set -euo pipefail
 
+# Image versions are needed by the Docker image list and by the sample checks,
+# which also run when the Docker daemon is not up.
+SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../versions.env
+. "${SCRIPT_DIR_V}/../versions.env"
+
 ###############################################################################
 # Color helpers (gracefully degrade if terminal does not support colors)
 ###############################################################################
@@ -194,7 +200,7 @@ else
     fail "GRCh38 FASTA not found at: ${FASTA}"
     echo "       Download it:"
     echo "       mkdir -p ${GENOME_DIR}/reference"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta"
+    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta"
   fi
 
   # --- FASTA index (.fai) ---
@@ -204,7 +210,7 @@ else
   else
     fail "FASTA index not found at: ${FAI}"
     echo "       Download it:"
-    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai"
+    echo "       wget -P ${GENOME_DIR}/reference https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai"
   fi
 
   # --- ClinVar chr-prefixed VCF ---
@@ -252,7 +258,7 @@ else
     pass "VEP 113 cache (step 17 CPSR): present"
   else
     warn "VEP 113 cache not found at: ${VEP_DIR}/113_GRCh38"
-    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 112."
+    echo "       Required for step 17 (CPSR). PCGR 2.2.5 needs VEP 113, separate from step 13's VEP 116."
     echo "       wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz"
     echo "       See docs/17-cpsr.md for full instructions."
   fi
@@ -270,6 +276,15 @@ else
     echo "       See docs/17-cpsr.md for full instructions."
   fi
 
+  # --- AnnotSV annotation data (step 5) ---
+  ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
+  if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+    pass "AnnotSV annotation data (step 5): present"
+  else
+    warn "AnnotSV annotation data not found at: ${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38"
+    echo "       Step 5 (AnnotSV) will be skipped. Download it (~5.3 GB, ~20 GB unpacked) with: ./scripts/setup.sh ${GENOME_DIR}"
+  fi
+
   # --- Annotation databases (optional, for steps 30-31) ---
   ANNOT_DIR="${GENOME_DIR}/annotations"
   ANNOT_COUNT=0
@@ -285,16 +300,15 @@ else
   else
     ANNOT_MISSING+=("CADD indels (gnomad.genomes.r4.0.indel.tsv.gz + .tbi)")
   fi
-  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.snv.hg38.vcf.gz.tbi" ]; then
-    ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  else
-    ANNOT_MISSING+=("SpliceAI SNVs (spliceai_scores.raw.snv.hg38.vcf.gz + .tbi)")
-  fi
-  if [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.indel.hg38.vcf.gz.tbi" ]; then
-    ANNOT_COUNT=$((ANNOT_COUNT + 1))
-  else
-    ANNOT_MISSING+=("SpliceAI indels (spliceai_scores.raw.indel.hg38.vcf.gz + .tbi)")
-  fi
+  # SpliceAI: step 30 accepts the raw or the masked score files
+  for kind in snv indel; do
+    if { [ -f "${ANNOT_DIR}/spliceai_scores.raw.${kind}.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.raw.${kind}.hg38.vcf.gz.tbi" ]; } || \
+       { [ -f "${ANNOT_DIR}/spliceai_scores.masked.${kind}.hg38.vcf.gz" ] && [ -f "${ANNOT_DIR}/spliceai_scores.masked.${kind}.hg38.vcf.gz.tbi" ]; }; then
+      ANNOT_COUNT=$((ANNOT_COUNT + 1))
+    else
+      ANNOT_MISSING+=("SpliceAI ${kind}s (spliceai_scores.raw.${kind}.hg38.vcf.gz or spliceai_scores.masked.${kind}.hg38.vcf.gz, + .tbi)")
+    fi
+  done
   if [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz" ] && [ -f "${ANNOT_DIR}/revel_grch38.tsv.gz.tbi" ]; then
     ANNOT_COUNT=$((ANNOT_COUNT + 1))
   else
@@ -338,11 +352,6 @@ header "Docker Images"
 if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
   info "Skipping Docker image checks (Docker not available)"
 else
-  # Source image versions from the canonical manifest
-  SCRIPT_DIR_V="$(cd "$(dirname "$0")" && pwd)"
-  # shellcheck source=../versions.env
-  . "${SCRIPT_DIR_V}/../versions.env"
-
   IMAGES=(
     "$MINIMAP2_IMAGE"
     "$SAMTOOLS_IMAGE"
@@ -513,6 +522,26 @@ if [ -n "$SAMPLE" ]; then
       else
         warn "BAM chr1 length (${BAM_CHR1_LEN}) does not match known builds"
         echo "       Expected: 248956422 (GRCh38) or 249250621 (GRCh37)"
+      fi
+
+      # Read group: GATK steps (20, 03a, 29) reject reads without one, and
+      # DeepVariant takes the sample name from it.
+      if BAM_HEADER=$(docker run --rm -v "${GENOME_DIR}:/genome" "${SAMTOOLS_IMAGE}" \
+          samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
+        if grep -q '^@RG' <<< "$BAM_HEADER"; then
+          pass "BAM has a read group (@RG)"
+        else
+          warn "BAM header has no @RG read group line. GATK steps (20, 03a, 29) will reject its reads."
+          echo "       Add one, then replace the BAM and re-index it:"
+          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "         samtools addreplacerg -r ID:${SAMPLE} -r SM:${SAMPLE} -r PL:ILLUMINA -r LB:${SAMPLE} \\"
+          echo "         -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.rg.bam /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+          echo "       mv \"${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.rg.bam\" \"${BAM}\""
+          echo "       docker run --rm --user root -v \"\${GENOME_DIR}:/genome\" ${SAMTOOLS_IMAGE} \\"
+          echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+        fi
+      else
+        warn "Could not read the BAM header to check for a read group (@RG)"
       fi
     fi
 

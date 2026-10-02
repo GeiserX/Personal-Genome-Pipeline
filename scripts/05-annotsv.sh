@@ -16,10 +16,20 @@ else
   [ ! -f "$MANTA_VCF" ] && MANTA_VCF="${SAMPLE_DIR}/manta2/results/variants/diploidSV.vcf.gz"
 fi
 OUTPUT_DIR="${SAMPLE_DIR}/annotsv"
+# The AnnotSV image holds code only; its annotation data is a separate
+# download that setup.sh puts here.
+ANNOTATIONS_DIR="${GENOME_DIR}/annotsv_annotations"
 
 echo "=== AnnotSV: ${SAMPLE} ==="
 echo "Input: ${MANTA_VCF}"
+echo "Annotations: ${ANNOTATIONS_DIR}/"
 echo "Output: ${OUTPUT_DIR}/"
+
+if [ ! -d "${ANNOTATIONS_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+  echo "ERROR: AnnotSV annotation data not found in ${ANNOTATIONS_DIR}/Annotations_Human/" >&2
+  echo "  Run ./scripts/setup.sh ${GENOME_DIR} to download it (~5.3 GB), or see docs/05-annotsv.md." >&2
+  exit 1
+fi
 
 if [ ! -f "$MANTA_VCF" ]; then
   echo "ERROR: Manta VCF not found: ${MANTA_VCF}" >&2
@@ -39,7 +49,8 @@ docker run --rm --user root \
     -SVinputFile "/genome/${MANTA_REL}" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \
     -genomeBuild GRCh38 \
-    -annotationMode both
+    -annotationMode both \
+    -annotationsDir /genome/annotsv_annotations
 
 echo "=== AnnotSV complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_sv_annotated.tsv"

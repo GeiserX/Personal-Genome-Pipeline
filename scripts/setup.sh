@@ -6,7 +6,7 @@
 #   1. GRCh38 reference genome + index (~3.5 GB)
 #   2. ClinVar database (~200 MB)
 #   3. All Docker images (~10-15 GB)
-#   4. Validates the setup
+#   4. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
 #
 # VEP cache (~26 GB) and PCGR ref data (~5 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
@@ -32,12 +32,25 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../versions.env
 . "${SCRIPT_DIR}/../versions.env"
 
-# Download helper with retry and resume
+# Download helper with retry and resume. Uses wget when present, curl
+# otherwise (stock macOS has curl only). Downloads go to <dest>.part and are
+# renamed on success, so an interrupted download is never taken as complete.
 _download() {
-  local url="$1" dest="$2" attempts="${3:-3}"
+  local url="$1" dest="$2" attempts="${3:-3}" i
   for i in $(seq 1 "$attempts"); do
-    if wget -c -O "$dest" "$url"; then
-      return 0
+    if command -v wget &>/dev/null; then
+      if wget -c -O "${dest}.part" "$url"; then
+        mv "${dest}.part" "$dest"
+        return 0
+      fi
+    elif command -v curl &>/dev/null; then
+      if curl -fL -C - -o "${dest}.part" "$url"; then
+        mv "${dest}.part" "$dest"
+        return 0
+      fi
+    else
+      echo "ERROR: Neither wget nor curl is installed."
+      return 1
     fi
     echo "  Attempt ${i}/${attempts} failed for $(basename "$dest")..."
     sleep $((i * 5))
@@ -65,13 +78,14 @@ if ! docker info &>/dev/null; then
 fi
 echo "[OK] Docker is running."
 
-# Check disk space
-AVAIL_GB=$(df -BG "$GENOME_DIR" 2>/dev/null | awk 'NR==2 {gsub("G",""); print $4}' || echo "0")
-if [ -z "$AVAIL_GB" ]; then
-  # macOS df format
-  AVAIL_KB=$(df -k "$GENOME_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "0")
-  AVAIL_GB=$(( AVAIL_KB / 1048576 ))
-fi
+# Check disk space (df -Pk works on Linux and macOS; GENOME_DIR may not
+# exist yet, so measure its nearest existing parent)
+DF_DIR="$GENOME_DIR"
+while [ ! -d "$DF_DIR" ]; do
+  DF_DIR=$(dirname "$DF_DIR")
+done
+AVAIL_KB=$(df -Pk "$DF_DIR" | awk 'NR==2 {print $4}')
+AVAIL_GB=$(( ${AVAIL_KB:-0} / 1048576 ))
 if [ "$AVAIL_GB" -lt 50 ]; then
   echo "WARNING: Only ${AVAIL_GB} GB free in ${GENOME_DIR}. Need at least 50 GB for references."
 fi
@@ -97,14 +111,14 @@ else
   echo "  Size: ~3.1 GB (FASTA) + ~2 MB (index)"
 
   if [ ! -f "$FASTA" ]; then
-    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta" "$FASTA" || {
-      echo "  Try manually: wget -c -O ${FASTA} 'https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta'"
+    _download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta" "$FASTA" || {
+      echo "  Try manually: wget -c -O ${FASTA} 'https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta'"
       exit 1
     }
   fi
 
   if [ ! -f "$FAI" ]; then
-    _download "https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
+    _download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai" "$FAI" || {
       echo "  Generating index with samtools..."
       docker run --rm --user root \
         -v "${GENOME_DIR}:/genome" \
@@ -137,32 +151,38 @@ else
   if [ ! -f "$CLINVAR_TBI" ]; then
     _download "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi" "$CLINVAR_TBI" || exit 1
   fi
-
-  # Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
-  CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
-  if [ ! -f "$CLINVAR_CHR" ]; then
-    echo "Creating chr-prefixed ClinVar..."
-    docker run --rm --user root \
-      -v "${GENOME_DIR}:/genome" \
-      "$BCFTOOLS_IMAGE" \
-      bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
-        bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz &&
-        bcftools index -t /genome/clinvar/clinvar_chr.vcf.gz'
-  fi
-
-  # Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
-  CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
-  if [ ! -f "$CLINVAR_PATH" ]; then
-    echo "Creating pathogenic/likely pathogenic subset..."
-    docker run --rm --user root \
-      -v "${GENOME_DIR}:/genome" \
-      "$BCFTOOLS_IMAGE" \
-      bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
-        -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
-        bcftools index -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
-  fi
-  echo "[OK] ClinVar database downloaded and indexed."
 fi
+
+# The two derived files are built whenever one is missing, also on a rerun
+# with the raw download already present. Each is keyed on its own index,
+# which is written last, so a half-built file is rebuilt.
+
+# Step A: Chr-rename ClinVar (NCBI uses "1,2,3", pipeline uses "chr1,chr2,chr3")
+CLINVAR_CHR="${CLINVARDIR}/clinvar_chr.vcf.gz"
+if [ ! -f "${CLINVAR_CHR}.tbi" ]; then
+  echo "Creating chr-prefixed ClinVar..."
+  docker run --rm --user root \
+    -v "${GENOME_DIR}:/genome" \
+    "$BCFTOOLS_IMAGE" \
+    bash -c 'echo -e "1 chr1\n2 chr2\n3 chr3\n4 chr4\n5 chr5\n6 chr6\n7 chr7\n8 chr8\n9 chr9\n10 chr10\n11 chr11\n12 chr12\n13 chr13\n14 chr14\n15 chr15\n16 chr16\n17 chr17\n18 chr18\n19 chr19\n20 chr20\n21 chr21\n22 chr22\nX chrX\nY chrY\nMT chrM" > /genome/clinvar/chr_rename.txt &&
+      bcftools annotate --rename-chrs /genome/clinvar/chr_rename.txt /genome/clinvar/clinvar.vcf.gz -Oz -o /genome/clinvar/clinvar_chr.vcf.gz.tmp &&
+      mv /genome/clinvar/clinvar_chr.vcf.gz.tmp /genome/clinvar/clinvar_chr.vcf.gz &&
+      bcftools index -f -t /genome/clinvar/clinvar_chr.vcf.gz'
+fi
+
+# Step B: Extract pathogenic + likely pathogenic subset from chr-renamed ClinVar
+CLINVAR_PATH="${CLINVARDIR}/clinvar_pathogenic_chr.vcf.gz"
+if [ ! -f "${CLINVAR_PATH}.tbi" ]; then
+  echo "Creating pathogenic/likely pathogenic subset..."
+  docker run --rm --user root \
+    -v "${GENOME_DIR}:/genome" \
+    "$BCFTOOLS_IMAGE" \
+    bash -c 'bcftools view -i "CLNSIG~\"Pathogenic\" || CLNSIG~\"Likely_pathogenic\"" /genome/clinvar/clinvar_chr.vcf.gz -Oz \
+      -o /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp &&
+      mv /genome/clinvar/clinvar_pathogenic_chr.vcf.gz.tmp /genome/clinvar/clinvar_pathogenic_chr.vcf.gz &&
+      bcftools index -f -t /genome/clinvar/clinvar_pathogenic_chr.vcf.gz'
+fi
+echo "[OK] ClinVar database and its chr-prefixed and pathogenic subsets are ready."
 
 ###############################################################################
 # Phase 3: Docker Images
@@ -232,10 +252,48 @@ if [ "$FAILED" -gt 0 ]; then
 fi
 
 ###############################################################################
-# Phase 4: Optional Downloads (instructions only)
+# Phase 4: AnnotSV annotation data (step 5, a default step)
+###############################################################################
+# The AnnotSV image holds code only; without this data AnnotSV exits with an
+# error. Downloaded under a .part name, extracted into a temporary directory
+# and moved into place only when complete.
+echo ""
+echo "=== Phase 4: AnnotSV annotation data (~5.3 GB download, ~20 GB unpacked) ==="
+
+ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
+ANNOTSV_TARBALL="${GENOME_DIR}/Annotations_Human_3.5.tar.gz"
+if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+  echo "[OK] AnnotSV annotation data already present."
+else
+  echo "Downloading AnnotSV 3.5 annotation data (~5.3 GB)..."
+  echo "  The AnnotSV server is slow (about 0.8 MB/s measured from a GitHub runner), so this can take"
+  echo "  1-2 hours. An interrupted download resumes when setup.sh runs again."
+  if _download "https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz" "$ANNOTSV_TARBALL"; then
+    echo "  Extracting..."
+    rm -rf "${ANNOTSV_DIR}.part"
+    mkdir -p "${ANNOTSV_DIR}.part"
+    if tar -xzf "$ANNOTSV_TARBALL" -C "${ANNOTSV_DIR}.part"; then
+      rm -rf "$ANNOTSV_DIR"
+      mv "${ANNOTSV_DIR}.part" "$ANNOTSV_DIR"
+      rm -f "$ANNOTSV_TARBALL"
+      echo "[OK] AnnotSV annotation data: ${ANNOTSV_DIR}/ ($(du -sh "$ANNOTSV_DIR" | cut -f1))"
+    else
+      rm -rf "${ANNOTSV_DIR}.part"
+      echo "[WARN] Could not extract ${ANNOTSV_TARBALL}. Step 5 (AnnotSV) will be skipped until it is in place."
+    fi
+  else
+    echo "[WARN] AnnotSV annotation download failed. Step 5 (AnnotSV) will be skipped until it is in place."
+    echo "  Re-run setup.sh, or download it by hand:"
+    echo "    curl -fL -C - -o ${ANNOTSV_TARBALL} https://www.lbgi.fr/~geoffroy/Annotations/Annotations_Human_3.5.tar.gz"
+    echo "    mkdir -p ${ANNOTSV_DIR} && tar -xzf ${ANNOTSV_TARBALL} -C ${ANNOTSV_DIR}"
+  fi
+fi
+
+###############################################################################
+# Phase 5: Optional Downloads (instructions only)
 ###############################################################################
 echo ""
-echo "=== Phase 4: Optional Downloads (manual) ==="
+echo "=== Phase 5: Optional Downloads (manual) ==="
 echo ""
 echo "The following are only needed for specific steps and are large downloads:"
 echo ""
@@ -256,7 +314,7 @@ PCGRDIR="${GENOME_DIR}/pcgr_data"
 if [ -d "$PCGRDIR" ] && [ -d "${PCGRDIR}/20250314/data" ]; then
   echo "[OK] PCGR/CPSR ref data bundle already present."
 else
-  echo "[SKIP] PCGR/CPSR ref data (~5 GB) — needed for step 17 (cancer predisposition)"
+  echo "[SKIP] PCGR/CPSR ref data (~5 GB download) — needed for step 17 (cancer predisposition)"
   echo "  Download:"
   echo "    mkdir -p ${PCGRDIR} && cd ${PCGRDIR}"
   echo "    wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz"
