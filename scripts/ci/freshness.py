@@ -57,6 +57,12 @@ class LookupFailed(Exception):
     """A lookup that gave no usable answer."""
 
 
+# An answer in an unexpected shape (a list where a dict was expected, a missing
+# key) is a failed lookup too: it becomes an error row for that lookup instead
+# of a traceback that loses the whole report.
+LOOKUP_ERRORS = (LookupFailed, KeyError, IndexError, TypeError, ValueError, AttributeError)
+
+
 # --------------------------------------------------------------------------
 # HTTP
 
@@ -292,7 +298,8 @@ class Report:
         self.errors = []         # (what, message)
 
     def error(self, what, exc):
-        self.errors.append((what, str(exc)))
+        msg = str(exc) if isinstance(exc, LookupFailed) else f"unexpected answer ({type(exc).__name__}: {exc})"
+        self.errors.append((what, msg))
 
     def db(self, item, pinned, upstream, state, todo=""):
         self.db_rows.append((item, pinned, upstream, state, todo))
@@ -301,7 +308,7 @@ class Report:
 def run_lookup(report, what, fn, *args):
     try:
         fn(report, *args)
-    except LookupFailed as e:
+    except LOOKUP_ERRORS as e:
         report.error(what, e)
         report.db(what, "", "", "ERROR", "lookup failed, see Errors")
 
@@ -482,7 +489,7 @@ def images(report, pins, notes):
             if tag not in tags:
                 raise LookupFailed(f"{image}: the pinned tag is not in the registry's tag list")
             newest, same_major = newer_tags(tag, tags)
-        except LookupFailed as e:
+        except LOOKUP_ERRORS as e:
             report.error(var, e)
             continue
         if newest is None:
@@ -509,7 +516,7 @@ def digests(report, pins):
         try:
             latest = manifest_digest(host, repo, "latest")
             versioned = [t for t in list_tags(host, repo) if re.search(r"\d", t)]
-        except LookupFailed as e:
+        except LOOKUP_ERRORS as e:
             report.error(var, e)
             continue
         state = "same as publisher's latest" if latest == digest else "publisher's latest moved"
@@ -732,6 +739,10 @@ def self_test():
     check(split_image("quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0")[:3]
           == ("quay.io", "biocontainers/t1k", "1.0.9--h5ca1c30_0"), "quay image")
     check(split_image("a/b@sha256:00")[3] == "sha256:00", "digest pin")
+    rs = Report()
+    run_lookup(rs, "odd shape", lambda report: [].get("x"))
+    check(rs.errors and rs.errors[0][0] == "odd shape" and "unexpected answer" in rs.errors[0][1]
+          and rs.db_rows[0][3] == "ERROR", "an answer in an unexpected shape is an error row, not a crash")
 
     # 2. Fake server: an empty 200 must fail, and the issue logic.
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeGitHub)
