@@ -3,7 +3,15 @@
 # Finds mutations acquired during life (not inherited), such as clonal hematopoiesis
 # Input: Sorted BAM + GRCh38 reference
 # Output: Filtered somatic VCF in $GENOME_DIR/<sample>/somatic/
-# Runtime: ~2-6 hours (full genome), ~15-30 min per chromosome with INTERVALS
+# Runtime: minutes on the default CHIP genes, ~2-6 hours with INTERVALS=genome
+#
+# By default Mutect2 calls only the clonal hematopoiesis (CHIP) driver genes in
+# assets/chip_genes_grch38.bed: gene bodies from GENCODE 50's basic annotation,
+# 100 bp either side. INTERVALS=genome calls the whole genome, and any other
+# INTERVALS value (a region such as chr22, or a BED under /genome) is passed
+# to Mutect2 as it is. The read orientation model (LearnReadOrientationModel)
+# always runs; the contamination estimate (GetPileupSummaries,
+# CalculateContamination) runs when the common-sites VCF is in somatic/.
 #
 # WARNING: Tumor-only mode (no matched normal) has a HIGH false positive rate.
 # Many germline variants will be called as somatic. Use gnomAD and PoN resources
@@ -16,7 +24,7 @@ THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
-INTERVALS=${INTERVALS:-""}
+INTERVALS=${INTERVALS:-chip}
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
@@ -28,20 +36,23 @@ OUTPUT_DIR="${SAMPLE_DIR}/somatic"
 # Optional resources (improve filtering if present)
 GNOMAD_VCF="${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz"
 PON_VCF="${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz"
+COMMON_VCF="${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz"
 
 echo "=== [EXPERIMENTAL] Somatic Variant Calling (Mutect2 Tumor-Only): ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
 echo "Reference: ${REF}"
 echo "Threads: ${THREADS}"
-if [ -n "$INTERVALS" ]; then
-  echo "Intervals: ${INTERVALS}"
-fi
+case "$INTERVALS" in
+  chip) echo "Intervals: CHIP driver genes (assets/chip_genes_grch38.bed; INTERVALS=genome for the whole genome)" ;;
+  genome) echo "Intervals: whole genome" ;;
+  *) echo "Intervals: ${INTERVALS}" ;;
+esac
 echo "Output: ${OUTPUT_DIR}/"
 echo ""
 
 # Check for idempotent skip
 FINAL_OUTPUT="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.vcf.gz"
-if [ -f "$FINAL_OUTPUT" ]; then
+if have_output "$FINAL_OUTPUT"; then
   echo "Output already exists: ${FINAL_OUTPUT}"
   echo "Skipping. Delete the file to re-run."
   exit 0
@@ -63,13 +74,26 @@ if [ ! -f "$REF_DICT" ]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+S="/genome/${SAMPLE}/somatic/${SAMPLE}"
 
-# Build Mutect2 command
+# The CHIP BED is copied into the sample's directory: containers see only GENOME_DIR.
+INTERVAL_ARGS=()
+case "$INTERVALS" in
+  chip)
+    cp "${PGP_ROOT}/assets/chip_genes_grch38.bed" "${OUTPUT_DIR}/chip_genes_grch38.bed"
+    INTERVAL_ARGS=(--intervals "/genome/${SAMPLE}/somatic/chip_genes_grch38.bed") ;;
+  genome) ;;
+  *) INTERVAL_ARGS=(--intervals "$INTERVALS") ;;
+esac
+
+# Build Mutect2 command. --f1r2-tar-gz collects the read orientation counts
+# that LearnReadOrientationModel turns into priors for FilterMutectCalls.
 MUTECT2_CMD=(
   gatk Mutect2
   -R "${REF_FASTA_C}"
   -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-  -O "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_unfiltered.vcf.gz"
+  -O "${S}_somatic_unfiltered.vcf.gz"
+  --f1r2-tar-gz "${S}_f1r2.tar.gz"
   --native-pair-hmm-threads "$THREADS"
   --max-mnp-distance 0
 )
@@ -94,34 +118,65 @@ else
   echo ""
 fi
 
-# Add interval restriction if specified
-if [ -n "$INTERVALS" ]; then
-  MUTECT2_CMD+=(--intervals "$INTERVALS")
-fi
+MUTECT2_CMD+=(${INTERVAL_ARGS[@]+"${INTERVAL_ARGS[@]}"})
 
-echo "=== [1/3] Running Mutect2 in tumor-only mode ==="
-echo "  This is the slowest step. Full genome takes ~2-6 hours."
-echo "  For quick testing, set INTERVALS=chr22"
+echo "=== [1/4] Running Mutect2 in tumor-only mode ==="
+echo "  The slowest step: minutes on the CHIP genes, ~2-6 hours with INTERVALS=genome."
 echo ""
 run_in --cpus "$THREADS" --memory 8g \
   "$GATK_IMAGE" \
   "${MUTECT2_CMD[@]}"
 
 echo ""
-echo "=== [2/3] Filtering somatic calls (FilterMutectCalls) ==="
+echo "=== [2/4] Read orientation model (LearnReadOrientationModel) ==="
+run_in --cpus 2 --memory 4g \
+  "$GATK_IMAGE" \
+  gatk LearnReadOrientationModel \
+    -I "${S}_f1r2.tar.gz" \
+    -O "${S}_read-orientation-model.tar.gz"
+
 FILTER_CMD=(
   gatk FilterMutectCalls
   -R "${REF_FASTA_C}"
-  -V "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_unfiltered.vcf.gz"
-  -O "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz"
+  -V "${S}_somatic_unfiltered.vcf.gz"
+  --ob-priors "${S}_read-orientation-model.tar.gz"
+  -O "${S}_somatic_filtered.vcf.gz"
 )
 
+echo ""
+echo "=== [3/4] Contamination (GetPileupSummaries, CalculateContamination) ==="
+if [ -f "$COMMON_VCF" ] && [ -f "${COMMON_VCF}.tbi" ]; then
+  # Pileups at common sites only, inside the same intervals as the calls.
+  PILEUP_L=(-L "$(cpath "$COMMON_VCF")")
+  if [ "${#INTERVAL_ARGS[@]}" -gt 0 ]; then
+    PILEUP_L+=(-L "${INTERVAL_ARGS[1]}" --interval-set-rule INTERSECTION)
+  fi
+  run_in --cpus 2 --memory 4g \
+    "$GATK_IMAGE" \
+    gatk GetPileupSummaries \
+      -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
+      -V "$(cpath "$COMMON_VCF")" \
+      "${PILEUP_L[@]}" \
+      -O "${S}_pileups.table"
+  run_in --cpus 2 --memory 4g \
+    "$GATK_IMAGE" \
+    gatk CalculateContamination \
+      -I "${S}_pileups.table" \
+      --tumor-segmentation "${S}_segments.table" \
+      -O "${S}_contamination.table"
+  FILTER_CMD+=(--contamination-table "${S}_contamination.table" --tumor-segmentation "${S}_segments.table")
+else
+  echo "  Skipped: no common-sites VCF at ${COMMON_VCF} (see docs/29-mutect2-somatic.md)."
+fi
+
+echo ""
+echo "=== [4/4] Filtering somatic calls (FilterMutectCalls) ==="
 run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   "${FILTER_CMD[@]}"
 
 echo ""
-echo "=== [3/3] Somatic variant statistics ==="
+echo "=== Somatic variant statistics ==="
 
 # Count PASS variants
 PASS_COUNT=$(run_in \
