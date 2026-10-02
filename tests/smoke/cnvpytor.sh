@@ -11,6 +11,9 @@ for f in gc_hg19 mask_hg19 gc_hg38 mask_hg38 gc_chm13v2.0 gc_chm13v1.1 gc_kn99; 
   [ -e "${D}/${f}.pytor" ] || touch "${D}/${f}.pytor"
 done
 cnvpytor -root mini.pytor -rd /in/mini.bam -chrom chr20
+# Histograms are made only for contigs with GC data. The mini reference
+# matches no bundled genome, so its GC content comes from the FASTA.
+cnvpytor -root mini.pytor -gc /in/mini.fa
 cnvpytor -root mini.pytor -his 1000
 cnvpytor -root mini.pytor -partition 1000
 cnvpytor -root mini.pytor -call 1000 > calls.tsv
