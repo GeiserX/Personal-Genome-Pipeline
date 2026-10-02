@@ -10,17 +10,21 @@ The pipeline produces output across many directories in different formats (VCF, 
 
 ## Tool
 
-bash + bcftools (for extracting counts from VCF files)
+`bin/collect_summary.py` reads every step's output once into `${SAMPLE}/summary.json`, and `bin/render_report.py` renders the report from it. `scripts/generate-report.sh` renders the text report from the same summary, so the two reports cannot disagree about a count. Both are Python standard library only.
 
 ## Docker Image
 
-- `BCFTOOLS_IMAGE` (already used by other steps)
+- `PYTHON_IMAGE`
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
-All output directories from previous pipeline steps. The script automatically detects which steps have been run.
+All output directories from previous pipeline steps. The script detects which steps have been run. It reads the bash layout (`${GENOME_DIR}/${SAMPLE}`) and the Nextflow one (`--outdir/${SAMPLE}`, for example `roh/`, `coverage/`, `hla/`, `pharmcat/`), so `GENOME_DIR=<outdir> ./scripts/24-html-report.sh <sample>` reports on a Nextflow run.
+
+Two more files, when present:
+- `${SAMPLE}/run_manifest.tsv` (`bin/write_manifest.sh`): the pipeline commit, `versions.env`, the digest of every image, the ClinVar file date, the VEP cache, the PCGR and pypgx bundles, the HLA database release and the header of each PGS scoring file. `run-all.sh` writes it when a run starts; this step writes one when the sample has none.
+- `${SAMPLE}/logs/run_status.tsv`: when the latest `run-all.sh` run started and how each step ended.
 
 ## Command
 
@@ -30,22 +34,32 @@ All output directories from previous pipeline steps. The script automatically de
 
 ## Output
 
-A single file: `${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html`
+`${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html` and `${GENOME_DIR}/${SAMPLE}/summary.json`.
 
-Typically 10-30 KB. Contains:
-- **Variant Calling** — total variants, PASS count, SNPs, indels
-- **ClinVar Screening** — hit count with top 20 detailed in a table
-- **Pharmacogenomics** — PharmCAT report status
-- **Structural Variants** — Manta, Delly, CNVpytor counts
-- **Cancer Predisposition** — CPSR report status
-- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, etc.)
+The report contains:
+- **Quality Control** — mean depth (mosdepth), sex inferred from X/Y coverage (indexcov) against the declared sex
+- **Variant Calling** — total variants, PASS count, SNPs, indels (one pass over the VCF)
+- **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column
+- **Pharmacogenomics** — PharmCAT version, CPIC genes with a non-normal phenotype, PharmCAT/pypgx conflicts, and a table of the non-normal genes
+- **CYP2D6 Across Callers** — PharmCAT, pypgx and Cyrius side by side, with whether they agree
+- **HLA Typing** — T1K alleles per locus and the IPD-IMGT/HLA release
+- **Polygenic Risk Scores** — the raw scores (not percentiles)
+- **Structural Variants** — Manta, Delly, CNVpytor and consensus counts
+- **Cancer Predisposition** — CPSR status and the classification breakdown (read by column name from `${SAMPLE}.cpsr.grch38.classification.tsv.gz`)
+- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK)
 - **Ancestry & Identity** — haplogroup, ROH, telomere content
-- **Mitochondrial** — chrM variant and heteroplasmy counts
-- **Clinical Filter** — interesting variant counts from step 23
+- **Mitochondrial** — chrM PASS variants and heteroplasmic calls (allele fraction 0.05 to 0.95; below 5% NUMT reads and noise dominate)
+- **Clinical Filter** and **slivar** — variant counts from steps 23 and 31
+- **Steps Not Run** and **Not Assessed by This Pipeline**
+- The run manifest in the footer
+
+## Results from an earlier run
+
+A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. A step you re-ran by hand after that run writes a newer file and is shown as current.
 
 ## Runtime
 
-1-3 minutes (mostly Docker startup time for bcftools queries)
+About a minute; reading a whole-genome VCF takes most of it.
 
 ## How to Open
 
@@ -65,6 +79,7 @@ start ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html
 - The report is completely self-contained — all CSS is inline, no external dependencies
 - Works offline in any modern browser
 - Responsive layout (works on mobile/tablet)
-- Steps that were not run show "N/A" or "Not run" — this is expected
+- Steps that were not run show "Not run" and are listed under Steps Not Run — this is expected
 - The report contains health findings: the ClinVar table lists your pathogenic and likely pathogenic variants, and other sections summarise pharmacogenomics, CPSR and the other steps. It holds no raw reads or full VCF, but share it only as you would share a medical record
 - Re-run this script anytime to update the report after running additional steps
+- The Nextflow `HTML_REPORT` module still renders its own, smaller report (ClinVar with stars, PharmCAT, CPSR, clinical filter, slivar): its image has no Python and its inputs are fixed by the reporting workflow. For the full report on a Nextflow run, run this script with `GENOME_DIR` set to the `--outdir`

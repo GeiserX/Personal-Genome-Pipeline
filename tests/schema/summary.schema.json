@@ -1,0 +1,503 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "title": "Personal Genome Pipeline sample summary (bin/collect_summary.py)",
+ "description": "Both reports are rendered from this file. tests/schema/validate.py checks a summary against it.",
+ "definitions": {
+  "section": {
+   "type": "object",
+   "required": [
+    "title",
+    "step",
+    "state",
+    "source",
+    "file_date",
+    "note",
+    "data"
+   ],
+   "properties": {
+    "title": {
+     "type": "string"
+    },
+    "step": {
+     "type": "string"
+    },
+    "state": {
+     "enum": [
+      "ok",
+      "missing",
+      "stale",
+      "unreadable"
+     ]
+    },
+    "source": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "file_date": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "data": {
+     "type": "object"
+    }
+   }
+  }
+ },
+ "type": "object",
+ "required": [
+  "schema_version",
+  "sample",
+  "generated_utc",
+  "run",
+  "databases",
+  "manifest",
+  "sections",
+  "cyp2d6",
+  "not_run",
+  "not_assessed"
+ ],
+ "properties": {
+  "schema_version": {
+   "enum": [
+    1
+   ]
+  },
+  "sample": {
+   "type": "string"
+  },
+  "generated_utc": {
+   "type": "string"
+  },
+  "run": {
+   "type": "object",
+   "required": [
+    "status_file",
+    "started_utc",
+    "declared_sex"
+   ],
+   "properties": {
+    "status_file": {
+     "type": "boolean"
+    },
+    "started_utc": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "declared_sex": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "databases": {
+   "type": "object",
+   "required": [
+    "clinvar_release",
+    "hla_database"
+   ],
+   "properties": {
+    "clinvar_release": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "hla_database": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "manifest": {
+   "type": "array",
+   "items": {
+    "type": "array",
+    "items": {
+     "type": "string"
+    },
+    "minItems": 3,
+    "maxItems": 3
+   }
+  },
+  "sections": {
+   "type": "object",
+   "required": [
+    "coverage",
+    "sex_check",
+    "variants",
+    "clinvar",
+    "pharmcat",
+    "cpic",
+    "pypgx",
+    "cyrius",
+    "hla",
+    "prs",
+    "manta",
+    "delly",
+    "cnvpytor",
+    "sv_consensus",
+    "expansions",
+    "telomere",
+    "roh",
+    "haplogroup",
+    "mito",
+    "cpsr",
+    "clinical",
+    "slivar"
+   ],
+   "additionalProperties": {
+    "$ref": "#/definitions/section"
+   },
+   "properties": {
+    "variants": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "total": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "pass": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "snps": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "indels": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "clinvar": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "count": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "by_stars": {
+           "type": "object",
+           "required": [
+            "4",
+            "3",
+            "2",
+            "1",
+            "0"
+           ],
+           "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+           }
+          },
+          "hits": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "stars",
+             "chrom",
+             "pos",
+             "ref",
+             "alt",
+             "genotype",
+             "gene",
+             "significance",
+             "review_status"
+            ],
+            "properties": {
+             "stars": {
+              "enum": [
+               0,
+               1,
+               2,
+               3,
+               4
+              ]
+             },
+             "pos": {
+              "type": "integer",
+              "minimum": 0
+             },
+             "chrom": {
+              "type": "string"
+             },
+             "gene": {
+              "type": "string"
+             },
+             "significance": {
+              "type": "string"
+             },
+             "review_status": {
+              "type": "string"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "cpic": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "genes": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "gene",
+             "diplotype",
+             "phenotype",
+             "status"
+            ],
+            "properties": {
+             "status": {
+              "enum": [
+               "normal",
+               "non-normal",
+               "not called",
+               ""
+              ]
+             }
+            }
+           }
+          },
+          "non_normal": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "not_called": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "parse_failed": {
+           "type": "boolean"
+          },
+          "warnings": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "prs": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "scores": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "condition",
+             "pgs_id",
+             "score",
+             "matched",
+             "total"
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "coverage": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "mean_depth": {
+           "type": [
+            "number",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "sex_check": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "inferred_sex": {
+           "enum": [
+            "male",
+            "female",
+            "unknown"
+           ]
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "roh": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "segments": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "total_mb": {
+           "type": "number"
+          },
+          "largest_mb": {
+           "type": "number"
+          },
+          "autosomal_over_5mb": {
+           "type": "array"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "mito": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "pass": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "heteroplasmic": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "heteroplasmy_floor": {
+           "type": "number"
+          }
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  "cyp2d6": {
+   "type": "object",
+   "required": [
+    "calls",
+    "agree"
+   ],
+   "properties": {
+    "calls": {
+     "type": "object",
+     "additionalProperties": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "agree": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    }
+   }
+  },
+  "not_run": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "not_assessed": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "minItems": 1
+  }
+ }
+}
