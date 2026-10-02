@@ -91,7 +91,7 @@ The CI pipeline enforces this with automated scanning.
 2. **Verify the Docker image works.** Pull it, run it manually on test data, confirm the output.
 3. **Add the image to [`versions.env`](versions.env)** as `TOOL_IMAGE="name:tag"`. That one line makes `setup.sh` pull it and `validate-setup.sh` check it.
 4. **Create the script** `scripts/NN-tool-name.sh` following the conventions above.
-5. **Create the Nextflow module** `modules/local/<tool>/main.nf` and wire it into the workflow, or say in [`docs/nextflow.md`](docs/nextflow.md) why the step stays bash-only.
+5. **Create the Nextflow module** `modules/local/<tool>/main.nf` and wire it into the workflow, or say in [`docs/nextflow.md`](docs/nextflow.md) why the step stays bash-only. A module has no `container` line: add its process to the table in `scripts/ci/gen-containers-config.sh` and run that script.
 6. **Create the documentation** `docs/NN-tool-name.md` following the existing step docs.
 7. **Update these files:**
    - [`mkdocs.yml`](mkdocs.yml): the page in `nav:`
@@ -108,11 +108,12 @@ The CI pipeline enforces this with automated scanning.
 
 ## Bumping a Tool
 
-1. Change the tool's line in [`versions.env`](versions.env). No script names the tag.
+1. Change the tool's line in [`versions.env`](versions.env). No script or module names the tag.
 2. If a comment next to the line couples it to a data version (the VEP cache release, the PCGR bundle, the pypgx bundle tag), change that variable in the same commit.
-3. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml), any doc that prints the tag, and the `container` line of the tool's module under `modules/local/`. The `version-consistency` check in CI names a stale tag in the docs; CI does not check the modules yet.
-4. Run `./scripts/setup.sh --pull-only` to pull the new image.
-5. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
+3. Run `scripts/ci/gen-containers-config.sh`. It rewrites [`conf/containers.config`](conf/containers.config), where the Nextflow modules take their image from, and CI fails until that file matches `versions.env`.
+4. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml) and any doc that prints the tag. The `version-consistency` check in CI names a stale tag in the docs.
+5. Run `./scripts/setup.sh --pull-only` to pull the new image.
+6. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
 
 ## Code of Conduct
 

@@ -127,7 +127,7 @@ User's FASTQ/BAM/VCF
 
 1. Add the image as one line in `versions.env` (`setup.sh` and `validate-setup.sh` read their list from it)
 2. Create `scripts/NN-tool-name.sh` following script conventions
-3. Create `modules/local/<tool>/main.nf`, or note in `docs/nextflow.md` why the step stays bash-only
+3. Create `modules/local/<tool>/main.nf` with no `container` line, add its process to the table in `scripts/ci/gen-containers-config.sh` and run it; or note in `docs/nextflow.md` why the step stays bash-only
 4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav:` in `mkdocs.yml`
 5. Add the step to the category table in `docs/pipeline-overview.md`
 6. Update `scripts/run-all.sh` with the new step
@@ -138,7 +138,7 @@ User's FASTQ/BAM/VCF
 
 ### Bumping a Tool
 
-Change its line in `versions.env`, plus the coupled data variable its comment names, the `container-test.yml` matrix entry, any doc that prints the tag and the `container` line of the tool's module under `modules/local/` (CI does not check these yet). No script names the tag. Lines marked `hold:` or `legacy:` say why a tool is pinned.
+Change its line in `versions.env`, plus the coupled data variable its comment names. Run `scripts/ci/gen-containers-config.sh` to rewrite `conf/containers.config` (CI fails until it matches), then update the `container-test.yml` matrix entry and any doc that prints the tag. No script or module names the tag. Lines marked `hold:` or `legacy:` say why a tool is pinned.
 
 - All processing is local; genomic data never leaves the machine
 - Pin tool versions; never use floating tags
