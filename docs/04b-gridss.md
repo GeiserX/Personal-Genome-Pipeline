@@ -55,8 +55,7 @@ GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) 
 
 ```bash
 REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-# From the repository root: the image scripts/04b-gridss.sh names for this
-BWA_IMAGE=$(grep -om1 'quay.io/biocontainers/bwa:[^ ]*' scripts/04b-gridss.sh)
+source versions.env   # from the repository root: BWA_IMAGE, the image step 04b uses for this
 docker run --rm -v "${GENOME_DIR}:/genome" \
   "${BWA_IMAGE}" \
   bwa index "/genome/${REF_FASTA}"
