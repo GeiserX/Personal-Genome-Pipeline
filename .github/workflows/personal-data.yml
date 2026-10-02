@@ -1,0 +1,30 @@
+name: Personal data
+
+# Every tracked text file, on every pull request and push, with no path
+# filter: a docs-only change is where a pasted result is most likely.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  personal-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a planted home path, address, diplotype, rsID genotype and repeat count must be caught)
+        run: scripts/ci/check-personal-data.sh --self-test
+
+      - name: No tracked file holds a home path, a private address or a genotype
+        run: scripts/ci/check-personal-data.sh
