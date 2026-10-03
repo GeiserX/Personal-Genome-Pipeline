@@ -4,18 +4,25 @@ name: Container Test
 # public GIAB HG002 genome, see docs/testing.md) and checks what the tool
 # wrote, so a bump that breaks a tool turns the pull request red. A row of
 # tests/smoke/commands.tsv says what each image runs and what it must write;
-# scripts/ci/image-smoke.sh runs the rows. Three jobs:
+# scripts/ci/image-smoke.sh runs the rows. The jobs:
 #
-#   plan       picks the images (scripts/ci/changed-images.sh): on a pull
-#              request the variables whose value changed, every image when the
-#              test itself changed; monthly and on dispatch every image. It
-#              also fails when an image has no row, so a new image cannot be
-#              added untested.
-#   manifest   `docker manifest inspect` on every pinned image: metadata only,
-#              seconds per image, and it catches a tag or digest the publisher
-#              removed. It prints the platforms each image ships.
-#   smoke      one job per picked image: free disk, prepare the inputs its rows
-#              need, pull it, run the rows, check the outputs.
+#   plan          picks the images (scripts/ci/changed-images.sh): on a pull
+#                 request the variables whose value changed, every image when
+#                 the test itself changed; monthly and on dispatch every image.
+#                 It also fails when an image has no row, so a new image cannot
+#                 be added untested.
+#   manifest      `docker manifest inspect` on every pinned image: metadata
+#                 only, seconds per image, and it catches a tag or digest the
+#                 publisher removed. It prints the platforms each image ships.
+#                 Skipped when plan picked no image.
+#   smoke         one job per picked image: free disk, prepare the inputs its
+#                 rows need, pull it, run the rows, check the outputs.
+#   container-ok  one result for the whole run, so a branch rule can require
+#                 it: green only when plan and manifest passed and every picked
+#                 image passed. It runs on every pull request (no paths filter;
+#                 plan takes seconds and the other jobs are skipped when
+#                 nothing changed), so requiring it never leaves a pull request
+#                 waiting on a check that does not start.
 #
 # Rows marked `full` (AnnotSV with its 5.3 GB annotation data) run monthly and
 # on dispatch only. When the monthly run fails, the freshness job opens or
@@ -27,12 +34,6 @@ name: Container Test
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'versions.env'
-      - 'tests/smoke/**'
-      - 'scripts/ci/image-smoke.sh'
-      - 'scripts/ci/changed-images.sh'
-      - '.github/workflows/container-test.yml'
   schedule:
     # Monthly: catches an image that was removed or no longer runs.
     - cron: '0 6 1 * *'
@@ -114,6 +115,8 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
   manifest:
+    needs: plan
+    if: needs.plan.outputs.images != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -172,6 +175,32 @@ jobs:
           name: image-smoke-logs-${{ matrix.var }}
           path: ${{ env.SMOKE_WORK }}/logs/
           if-no-files-found: ignore
+
+  container-ok:
+    needs: [plan, manifest, smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Plan and manifest passed, and every picked image passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          MANIFEST: ${{ needs.manifest.result }}
+          SMOKE: ${{ needs.smoke.result }}
+          IMAGES: ${{ needs.plan.outputs.images }}
+        run: |
+          echo "plan=${PLAN} manifest=${MANIFEST} smoke=${SMOKE} images=${IMAGES:-<none>}"
+          if [ "$PLAN" != success ]; then
+            echo "::error::plan did not succeed (${PLAN})"; exit 1
+          fi
+          if [ "$IMAGES" = "[]" ]; then
+            # Nothing picked: manifest and smoke are skipped by design.
+            echo "No image changed."; exit 0
+          fi
+          if [ "$MANIFEST" != success ] || [ "$SMOKE" != success ]; then
+            echo "::error::images were picked, but manifest=${MANIFEST} smoke=${SMOKE}"; exit 1
+          fi
+          echo "Every picked image passed."
 
   freshness:
     needs: [plan, manifest, smoke]
