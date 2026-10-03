@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Step 02 marks duplicates, builds its minimap2 index with the sr preset under
-# a name taken from the reference, and leaves no BAM behind when the aligner
-# is killed half way. Reads the BAM case 20 aligned.
+# a name taken from the reference, and leaves no BAM behind when the BAM
+# writer or the aligner is killed half way. Reads the BAM case 20 aligned.
 . "$(dirname "$0")/lib.sh"
 
 BAM="${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
@@ -16,42 +16,54 @@ check "the minimap2 index is named after the reference (.sr.mmi)" \
 check_eq "temporary index files left in reference/" \
   "$(find "${GENOME_DIR}/reference" -maxdepth 1 -name '*.mmi.tmp*' | wc -l | tr -d ' ')" 0
 
-# Kill the aligner container while it maps, after it has written part of
-# its output: no <sample>_sorted.bam may be left for run-all.sh to skip on.
-# minimap2 maps 500 Mb of reads per batch and writes a batch when it is
-# done, so the reads go in four times (760 Mb, two batches) and the kill
-# comes after the first batch is written ("mapped N sequences"), with the
-# second still mapping. Killed earlier, minimap2 would have written
-# nothing, not even its header, and the old script left no BAM either.
-K=HG002K
-mkdir -p "${GENOME_DIR}/${K}/fastq"
-for r in R1 R2; do
-  src="${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_${r}.fastq.gz"
-  cat "$src" "$src" "$src" "$src" > "${GENOME_DIR}/${K}/fastq/${K}_${r}.fastq.gz"
-done
-KLOG="${CASE_TMP}/kill.log"
-"${REPO}/scripts/02-alignment.sh" "$K" > "$KLOG" 2>&1 &
-PID=$!
-KILLED=""
-for _ in $(seq 1 900); do
-  if grep -q 'worker_pipeline.*mapped' "$KLOG" 2>/dev/null; then
-    sleep 3
-    CID=$(docker ps -q --filter "ancestor=${MINIMAP2_IMAGE}" | head -n 1)
-    [ -n "$CID" ] && KILLED=$(docker kill "$CID" 2>/dev/null)
-    break
-  fi
-  kill -0 "$PID" 2>/dev/null || break
-  sleep 1
-done
-KRC=0
-wait "$PID" || KRC=$?
-cat "$KLOG"
-check "the aligner container was killed while mapping its second batch" test -n "$KILLED"
-check_eq "batches minimap2 finished before the kill" "$(grep -c 'worker_pipeline.*mapped' "$KLOG")" 1
-check "step 02 exits non-zero after the kill (exit ${KRC})" test "$KRC" -ne 0
-check_eq "BAM left behind after the kill" "$(find "${GENOME_DIR}/${K}/aligned" -name "${K}_sorted.bam" 2>/dev/null | wc -l | tr -d ' ')" 0
-check_eq "BAM index left behind after the kill" "$(find "${GENOME_DIR}/${K}/aligned" -name "${K}_sorted.bam.bai" 2>/dev/null | wc -l | tr -d ' ')" 0
-check_eq "temporary files left behind after the kill" "$(find "${GENOME_DIR}/${K}/aligned" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')" 0
-rm -rf "${GENOME_DIR:?}/${K}"
+# kill_run NAME COPIES WHEN IMAGE: run step 02 on a copy of the reads (the
+# FASTQ COPIES times over) as sample NAME, and kill the container of IMAGE
+# once WHEN is true (polled every 0.2 s). Sets KILLED (the container id) and
+# KRC (the step's exit code), and checks that no BAM, index or temporary
+# file is left behind.
+kill_run() {
+  local k=$1 copies=$2 when=$3 image=$4 r src i cid log="${CASE_TMP}/kill-$1.log"
+  mkdir -p "${GENOME_DIR}/${k}/fastq"
+  for r in R1 R2; do
+    src="${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_${r}.fastq.gz"
+    for ((i = 0; i < copies; i++)); do cat "$src"; done > "${GENOME_DIR}/${k}/fastq/${k}_${r}.fastq.gz"
+  done
+  "${REPO}/scripts/02-alignment.sh" "$k" > "$log" 2>&1 &
+  local pid=$!
+  KILLED=""
+  for _ in $(seq 1 6000); do
+    if eval "$when"; then
+      cid=$(docker ps -q --filter "ancestor=${image}" | head -n 1)
+      [ -n "$cid" ] && KILLED=$(docker kill "$cid" 2>/dev/null)
+      break
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  KRC=0
+  wait "$pid" || KRC=$?
+  cat "$log"
+  check "${k}: the container was killed mid-run" test -n "$KILLED"
+  check "${k}: step 02 exits non-zero after the kill (exit ${KRC})" test "$KRC" -ne 0
+  check_eq "${k}: BAM left behind after the kill" "$(find "${GENOME_DIR}/${k}/aligned" -name "${k}_sorted.bam" 2>/dev/null | wc -l | tr -d ' ')" 0
+  check_eq "${k}: BAM index left behind after the kill" "$(find "${GENOME_DIR}/${k}/aligned" -name "${k}_sorted.bam.bai" 2>/dev/null | wc -l | tr -d ' ')" 0
+  check_eq "${k}: temporary files left behind after the kill" "$(find "${GENOME_DIR}/${k}/aligned" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')" 0
+  KLOG=$log
+  rm -rf "${GENOME_DIR:?}/${k}"
+}
+
+# 1. The BAM writer is killed while it writes the BAM: the old script wrote
+#    straight to <sample>_sorted.bam and left the half-written file there,
+#    under the name run-all.sh skips on.
+W_FILE='[ -n "$(find "${GENOME_DIR}/HG002W/aligned" -maxdepth 1 -name "HG002W_sorted*.bam" -size +0 2>/dev/null)" ]'
+kill_run HG002W 1 "$W_FILE" "$SAMTOOLS_IMAGE"
+
+# 2. The aligner is killed while it maps its second batch (the reads go in
+#    four times; minimap2 writes a batch when it is mapped). samtools sort
+#    stops on the cut stream, so no BAM is left before or after this change;
+#    the case keeps it so a change that loses that cannot pass.
+A_MAPPED='grep -q "worker_pipeline.*mapped" "${CASE_TMP}/kill-HG002A.log" 2>/dev/null && sleep 3'
+kill_run HG002A 4 "$A_MAPPED" "$MINIMAP2_IMAGE"
+check_eq "HG002A: batches minimap2 finished before the kill" "$(grep -c 'worker_pipeline.*mapped' "$KLOG")" 1
 
 finish
