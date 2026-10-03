@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# image-smoke.sh — run pinned images on the e2e fixture and check what they
+# image-smoke.sh: run pinned images on the e2e fixture and check what they
 # wrote, or check that every pinned image still exists.
 #
 # Usage:
@@ -22,8 +22,9 @@
 # The table format and the inputs a row can ask for: tests/smoke/README.md.
 # Each row runs `sh -c COMMAND` in its image with the prepared inputs at /in
 # (read-only), tests/smoke at /smoke (read-only) and an empty /out as the
-# working directory, as the calling user, without network, and with every
-# versions.env variable in its environment. Then EXPECT runs on the host in
+# working directory, as the calling user (root for a `root` row), without
+# network (unless `net`), and with every versions.env variable in its
+# environment. Then EXPECT runs on the host in
 # that /out directory. A row passes when COMMAND exits 0 and every check of
 # EXPECT passes; the run exits 1 when any row fails. The helper binaries the
 # scripts call in an image (scripts/ci/check-container-helpers.sh --list) are
