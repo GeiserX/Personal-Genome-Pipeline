@@ -179,22 +179,29 @@ elif [ "${SKIP_TRIM:-false}" = "true" ]; then
 fi
 echo ""
 
-# Phase 1: Alignment (if FASTQ exists but BAM doesn't)
-if [ ! -f "$BAM" ]; then
-  echo "[Phase 1] Alignment — FASTQ to sorted BAM..."
-  bash "${SCRIPT_DIR}/02-alignment.sh" "$SAMPLE"
+# Phase 1: Alignment, unless a BAM with its index that passes samtools
+# quickcheck is there (step 02 renames its BAM into place only after both).
+if [ -f "$BAM" ] && [ -f "${BAM}.bai" ] \
+   && run_in "$SAMTOOLS_IMAGE" samtools quickcheck "$(cpath "$BAM")"; then
+  echo "[Phase 1] BAM and its index already exist, skipping alignment."
 else
-  echo "[Phase 1] BAM already exists, skipping alignment."
+  echo "[Phase 1] Alignment — FASTQ to sorted, duplicate-marked BAM..."
+  bash "${SCRIPT_DIR}/02-alignment.sh" "$SAMPLE"
 fi
 echo ""
 
-# Phase 2: Variant Calling (if VCF doesn't exist)
+# Phase 2: Variant calling, unless the VCF and its index are there. The sex
+# makes DeepVariant call chrX and chrY haploid for a male sample.
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
-if [ ! -f "$VCF" ]; then
-  echo "[Phase 2] Variant calling — DeepVariant..."
-  bash "${SCRIPT_DIR}/03-deepvariant.sh" "$SAMPLE"
+if [ -f "$VCF" ] && [ -f "${VCF}.tbi" ]; then
+  echo "[Phase 2] VCF and its index already exist, skipping variant calling."
+  if [ ! -f "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz" ]; then
+    echo "  NOTE: no gVCF next to it (an older run). PharmCAT and PRS read only the variant sites;"
+    echo "  remove the VCF to call again and get ${SAMPLE}.g.vcf.gz as well."
+  fi
 else
-  echo "[Phase 2] VCF already exists, skipping variant calling."
+  echo "[Phase 2] Variant calling — DeepVariant..."
+  bash "${SCRIPT_DIR}/03-deepvariant.sh" "$SAMPLE" "$SEX"
 fi
 
 # Phase 2b: Extra callers (optional, for benchmarking)
