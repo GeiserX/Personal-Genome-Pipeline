@@ -13,14 +13,36 @@
 . "$(dirname "$0")/lib.sh"
 
 BASELINE=$(cat <<'BASE'
-not measured yet
+step06 pass.vcf.gz records 27744
+step06 clinvar_hits.vcf records 1
+step11 ST lines 27021
+step11 RG lines 38
+step14 chr1 records 242
+step14 chr2 records 239
+step14 chr4 records 508
+step14 chr5 records 284
+step14 chr6 records 22264
+step14 chr10 records 130
+step14 chr12 records 226
+step14 chr16 records 70
+step14 chr19 records 577
+step14 chr20 records 1061
+step14 chr22 records 577
+step14 chrX records 1161
+step20 chrM records 31
+step20 chrM PASS records 19
+step20 chrM call set md5 6015b376c274d306b5dd66d3571c62ee
+step08 HLA-A HLA-A*01:01 HLA-A*26:01
+step08 HLA-B HLA-B*35:08 HLA-B*38:01
+step08 HLA-C HLA-C*04:01 HLA-C*12:03
 BASE
 )
 
 S=$SAMPLE
 OUT="${CASE_TMP}/measured.txt"
 {
-  for f in pass.vcf.gz shared.vcf.gz clinvar_hits.vcf; do
+  # The isec intermediate (_shared.vcf.gz) is deleted by the step itself.
+  for f in pass.vcf.gz clinvar_hits.vcf; do
     echo "step06 ${f} records $(vcf_count "${S}/clinvar/${S}_${f}")"
   done
   for k in ST RG; do
