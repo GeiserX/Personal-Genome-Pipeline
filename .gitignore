@@ -98,3 +98,6 @@ site/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Beads: the tracker lives in a private Dolt remote, bead text never enters git
+.beads/*.jsonl
