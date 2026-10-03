@@ -11,30 +11,43 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      # The tag comes from the dispatch form or the pushed ref, so it is
+      # untrusted text: it reaches the shell through env only, and it must
+      # look like vMAJOR.MINOR.PATCH before anything else runs.
+      - name: Determine tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            tag=$INPUT_TAG
+          else
+            tag=${GITHUB_REF#refs/tags/}
+          fi
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: the tag is not of the form vMAJOR.MINOR.PATCH (not echoed: it is untrusted text)" >&2
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Determine tag
-        id: tag
-        run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
+          persist-credentials: false
 
       - name: Generate release notes
         id: notes
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-
           # Verify the tag exists in the repo
           if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
             echo "ERROR: Tag ${TAG} does not exist in this repository" >&2
@@ -72,4 +85,3 @@ jobs:
           name: ${{ steps.tag.outputs.tag }}
           body: ${{ steps.notes.outputs.notes }}
           draft: false
-          prerelease: ${{ contains(steps.tag.outputs.tag, '-rc') || contains(steps.tag.outputs.tag, '-beta') }}

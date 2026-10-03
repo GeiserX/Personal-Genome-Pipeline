@@ -201,5 +201,6 @@ nav:
       - Tool Selection Rationale: tool-rationale.md
       - Image versions: versions.md
       - Testing: testing.md
+      - Keeping versions up to date: updating.md
       - Glossary: glossary.md
       - Recommended Resources: resources.md
