@@ -269,7 +269,8 @@ def matching(call, entries):
     by_label = [e for e in entries if call.labels[0] in e[4]]
     if by_label:
         return by_label
-    return [e for e in entries if not e[4] and e[5] and e[5] in call.phenotype]
+    called = {p.strip() for p in call.phenotype.split(";") if p.strip()}
+    return [e for e in entries if not e[4] and e[5] and e[5].strip() in called]
 
 
 def drug_lines(call, guidance, related):
@@ -418,8 +419,16 @@ def cpic_report(args):
     guidance = drug_guidance(data)
     related = related_drugs(data)
     pypgx = {}
+    pypgx_error = None
     if args.pypgx:
-        pypgx = read_pypgx(args.pypgx)
+        try:
+            pypgx = read_pypgx(args.pypgx)
+        except (OSError, UnicodeDecodeError, csv.Error) as e:
+            # The CPIC report does not depend on pypgx: write it, say why the
+            # comparison is missing, and write no comparison file.
+            pypgx_error = f"{type(e).__name__}: {e}"
+            print(f"WARNING: could not read the pypgx summary {args.pypgx} ({pypgx_error}); "
+                  "no PharmCAT/pypgx comparison is made", file=sys.stderr)
 
     with open(os.path.join(args.outdir, f"{args.sample}_phenotypes.tsv"), "w", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
@@ -468,8 +477,12 @@ def cpic_report(args):
 
     if args.pypgx:
         lines += ["PharmCAT and pypgx:", "-" * 72, ""]
-        warn = pypgx_warnings(calls, pypgx, guidance, related)
-        lines += warn if warn else ["  No gene that PharmCAT could not call has a pypgx call."]
+        if pypgx_error:
+            lines += [f"  Could not read the pypgx summary ({pypgx_error}); no comparison was made.",
+                      "  Run step 32 again, then this step."]
+        else:
+            warn = pypgx_warnings(calls, pypgx, guidance, related)
+            lines += warn if warn else ["  No gene that PharmCAT could not call has a pypgx call."]
         lines.append("")
 
     lines += [
@@ -486,7 +499,7 @@ def cpic_report(args):
     with open(os.path.join(args.outdir, f"{args.sample}_cpic_recommendations.txt"), "w") as out:
         out.write("\n".join(lines) + "\n")
 
-    if args.pypgx and args.comparison:
+    if args.pypgx and args.comparison and not pypgx_error:
         rows = compare(calls, pypgx)
         with open(args.comparison, "w", newline="") as f:
             w = csv.writer(f, delimiter="\t", lineterminator="\n")

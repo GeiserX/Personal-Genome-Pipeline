@@ -17,7 +17,8 @@ Checks:
   3. the flat (3.x), nested (2.x) and list layouts all parse;
   4. a gene PharmCAT could not call (or could not resolve) while pypgx did
      prints a warning naming every drug PharmCAT links to the gene, or a note
-     when pypgx's call is normal, and the comparison marks it 'pypgx only'.
+     when pypgx's call is normal, and the comparison marks it 'pypgx only';
+     an unreadable pypgx summary is reported, not fatal, and makes no comparison.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -179,6 +180,20 @@ def main():
               "- clopidogrel [CPIC, Strong]: Use an alternative antiplatelet." in b
               and "Standard dose." not in b and "Avoid clopidogrel." not in b, b)
 
+        # The phenotype fallback (annotations naming no diplotype) matches the
+        # called phenotype exactly: "Intermediate Metabolizer" guidance is not
+        # the guidance for "Likely Intermediate Metabolizer".
+        pann = lambda phen, text: {"phenotypes": {"CYP2C19": phen}, "classification": "Strong",
+                                   "drugRecommendation": text}
+        data = {"genes": {"CYP2C19": dip("*1", "*9", "Likely Intermediate Metabolizer")},
+                "drugs": {"CPIC Guideline Annotation": {"clopidogrel": {"name": "clopidogrel", "guidelines": [{"annotations": [
+                    pann("Intermediate Metabolizer", "Guidance for IM."),
+                    pann("Likely Intermediate Metabolizer", "Guidance for likely IM.")]}]}}}}
+        rc, rec, _, _ = run_report(work, "PHENMATCH", data)
+        b = block(rec, "CYP2C19")
+        check("phenotype fallback: the exact phenotype's guidance only, not a substring match",
+              "Guidance for likely IM." in b and "Guidance for IM." not in b, b)
+
         # 3. layouts
         g2 = {"CYP2C19": dip("*1", "*2", "Intermediate Metabolizer"), "CYP2D6": dip("*1", "*1", "Normal Metabolizer")}
         for label, d, want in (
@@ -225,6 +240,27 @@ def main():
         check("ambiguous: compared as ambiguous, pypgx's call warned about",
               comp and comp[0][1] == "ambiguous (2 possible diplotypes)" and comp[0][3] == "pypgx only"
               and "WARNING: PharmCAT has no single result (2 possible diplotypes) for CYP2C19" in rec, (comp, rec))
+
+        # an unreadable pypgx summary: the CPIC report is still written, it says
+        # the comparison could not be made, and no comparison file is written
+        d = os.path.join(work, "BADPYPGX")
+        os.makedirs(d)
+        rep, bad, comp = (os.path.join(d, n) for n in ("report.json", "pypgx.tsv", "comparison.tsv"))
+        with open(rep, "w") as f:
+            json.dump({"genes": {"CYP2C19": dip("*2", "*2", "Poor Metabolizer")}}, f)
+        with open(bad, "wb") as f:
+            f.write(b"Gene\tDiplotype\n\xff\xfe\x00broken\n")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = pgx_parse.main(["cpic-report", "--sample", "BADPYPGX", "--report", rep, "--outdir", d,
+                                     "--pypgx", bad, "--comparison", comp])
+            except Exception as e:  # the pre-fix behaviour: the step dies
+                rc = f"raised {type(e).__name__}: {e}"
+        rp = os.path.join(d, "BADPYPGX_cpic_recommendations.txt")
+        rec = open(rp).read() if os.path.exists(rp) else ""
+        check("unreadable pypgx summary: exits 0 with the CPIC report written", rc == 0 and "CYP2C19 -- Poor" in rec, rc)
+        check("unreadable pypgx summary: the report says no comparison was made, and none is written",
+              "Could not read the pypgx summary" in rec and not os.path.exists(comp), rec[-600:])
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

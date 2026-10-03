@@ -122,6 +122,10 @@ def main():
                   (c.get("LOEUF"), c.get("pLI"), c.get("mis_z")) == (".", ".", "."), str(c))
             check(f"{name}: GENED (not in the table) gets '.'", d.get("LOEUF") == "." and d.get("mis_z") == ".", str(d))
             check(f"{name}: a row without a gene gets '.'", dot.get("LOEUF") == ".", str(dot))
+            check(f"{name}: CONSTRAINED is '.' (unknown, not NO) for a gene with no values, "
+                  "a gene missing from the table and a row without a gene",
+                  (c.get("CONSTRAINED"), d.get("CONSTRAINED"), dot.get("CONSTRAINED")) == (".", ".", "."),
+                  f"{c} {d} {dot}")
 
             rc2, out2, _ = run(path, constraint, table)
             head2 = out2.split("\n", 1)[0].split("\t")

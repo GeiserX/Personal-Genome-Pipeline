@@ -89,17 +89,17 @@ process SLIVAR_PRIORITIZE {
     PREDICTOR_PARTS=""
     INFO_HEADER=\$(bcftools view -h ${meta.id}_rare_moderate_all.vcf.gz | grep '^##INFO' || true)
 
-    echo "\$INFO_HEADER" | grep -q 'ID=CADD_PHRED,' && \\
+    grep -q 'ID=CADD_PHRED,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/CADD_PHRED>=20"
-    echo "\$INFO_HEADER" | grep -q 'ID=CADD_PHRED_indel,' && \\
+    grep -q 'ID=CADD_PHRED_indel,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/CADD_PHRED_indel>=20"
-    echo "\$INFO_HEADER" | grep -q 'ID=REVEL' && \\
+    grep -q 'ID=REVEL' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/REVEL>=0.5"
-    echo "\$INFO_HEADER" | grep -q 'ID=AM_class' && \\
+    grep -q 'ID=AM_class' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/AM_class=\\"likely_pathogenic\\""
-    echo "\$INFO_HEADER" | grep -q 'ID=SpliceAI,' && \\
+    grep -q 'ID=SpliceAI,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/SpliceAI!=\\".\\""
-    echo "\$INFO_HEADER" | grep -q 'ID=SpliceAI_indel,' && \\
+    grep -q 'ID=SpliceAI_indel,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/SpliceAI_indel!=\\".\\""
 
     if [ -n "\${PREDICTOR_PARTS}" ]; then

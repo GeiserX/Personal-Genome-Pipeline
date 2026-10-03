@@ -14,8 +14,9 @@
 #                 one wins wherever it sits in the file.
 # TABLE.tsv       has a header row; gene_col names its gene-symbol column.
 #
-# Output: TABLE with LOEUF, pLI and mis_z appended (and CONSTRAINED, YES when
-# LOEUF < 0.35 or pLI > 0.9, with constrained=1). A missing value is ".".
+# Output: TABLE with LOEUF, pLI and mis_z appended (and CONSTRAINED, with
+# constrained=1: YES when LOEUF < 0.35 or pLI > 0.9, NO when either value is
+# known and neither says so, "." when the gene has neither). A missing value is ".".
 # Exit 3: a needed column is missing. Exit 4: rows carry a gene symbol but not
 # one matched the table, which means a wrong or broken constraint file.
 # A summary line goes to stderr.
@@ -57,9 +58,10 @@ FNR == 1 {
     rows++
     g = $gc
     if (g != "." && g != "") with_gene++
-    c = "NO"
+    c = "."
     if (g in val) {
         matched[g] = 1
+        if (loeuf[g] != "." || pli[g] != ".") c = "NO"
         if ((loeuf[g] != "." && loeuf[g] + 0 < 0.35) || (pli[g] != "." && pli[g] + 0 > 0.9)) c = "YES"
         out = val[g]
     } else {

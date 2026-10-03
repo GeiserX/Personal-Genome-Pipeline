@@ -31,16 +31,16 @@ CONSTRAINT_TSV="${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv"
 
 # A derived file is used only when it is newer than what it was built from,
 # so a re-run of step 13 is never hidden behind an older _vep.vcf.gz or an
-# older step 30 output.
+# older step 30 output. An empty file (an interrupted write) never counts.
 VEP_SRC=""
-if [ -f "$VEP_VCF" ] && { [ ! -f "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
+if [ -s "$VEP_VCF" ] && { [ ! -s "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
   VEP_SRC="$VEP_VCF"
-elif [ -f "$VEP_VCF_GZ" ]; then
+elif [ -s "$VEP_VCF_GZ" ]; then
   VEP_SRC="$VEP_VCF_GZ"
 fi
 INPUT=""
 HAS_VCFANNO=0
-if [ -f "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
+if [ -s "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
   INPUT="$ANNOTATED_VCF"
   HAS_VCFANNO=1
 elif [ -n "$VEP_SRC" ]; then
@@ -142,12 +142,12 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
     --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -h "$CONTAINER_INPUT" 2>/dev/null | grep '^##INFO' || echo "")
-  echo "$INFO_HEADER" | grep -q 'ID=CADD_PHRED,' && HAS_CADD=1
-  echo "$INFO_HEADER" | grep -q 'ID=CADD_PHRED_indel,' && HAS_CADD_INDEL=1
-  echo "$INFO_HEADER" | grep -q 'ID=REVEL' && HAS_REVEL=1
-  echo "$INFO_HEADER" | grep -q 'ID=AM_class' && HAS_AM=1
-  echo "$INFO_HEADER" | grep -q 'ID=SpliceAI,' && HAS_SPLICEAI=1
-  echo "$INFO_HEADER" | grep -q 'ID=SpliceAI_indel,' && HAS_SPLICEAI_INDEL=1
+  grep -q 'ID=CADD_PHRED,' <<< "$INFO_HEADER" && HAS_CADD=1
+  grep -q 'ID=CADD_PHRED_indel,' <<< "$INFO_HEADER" && HAS_CADD_INDEL=1
+  grep -q 'ID=REVEL' <<< "$INFO_HEADER" && HAS_REVEL=1
+  grep -q 'ID=AM_class' <<< "$INFO_HEADER" && HAS_AM=1
+  grep -q 'ID=SpliceAI,' <<< "$INFO_HEADER" && HAS_SPLICEAI=1
+  grep -q 'ID=SpliceAI_indel,' <<< "$INFO_HEADER" && HAS_SPLICEAI_INDEL=1
 fi
 
 echo "  VEP CSQ fields: frequency=${FREQ_NAME:-none}, ClinVar=$([ "$HAS_CLINVAR" -eq 1 ] && echo 'yes' || echo 'no')"

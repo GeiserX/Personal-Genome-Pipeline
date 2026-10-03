@@ -14,7 +14,8 @@ Checks:
      that is newer than the run, is not;
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
      same number of stars;
-  7. a corrupt file makes its section 'unreadable' instead of stopping the report.
+  7. a corrupt file (not gzip, or gzip with damaged data) makes its section
+     'unreadable' instead of stopping the report.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -192,6 +193,22 @@ def main():
         check("corrupt VCF: section unreadable, the report still renders",
               summ_c["sections"]["variants"]["state"] == "unreadable" and "hits: 3" in txt_c,
               summ_c["sections"]["variants"])
+        # a gzip whose header is fine but whose compressed data is damaged
+        # (a truncated copy, a bad disk) raises zlib.error, not OSError
+        z = os.path.join(work, "corrupt-deflate", "S")
+        os.makedirs(f"{z}/vcf")
+        blob = bytearray(gzip.compress((VCF_HEAD + "chr1\t1\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n" * 2000).encode()))
+        blob[20:40] = b"\xff" * 20
+        with open(f"{z}/vcf/S.vcf.gz", "wb") as f:
+            f.write(bytes(blob))
+        put(f"{z}/clinvar/S_clinvar_hits.vcf", HITS)
+        try:
+            summ_z, txt_z, _ = render(z)
+            state_z = summ_z["sections"]["variants"]
+        except Exception as e:  # the pre-fix behaviour: the whole report dies
+            state_z, txt_z = f"raised {type(e).__name__}: {e}", ""
+        check("damaged gzip data: section unreadable, the report still renders",
+              isinstance(state_z, dict) and state_z["state"] == "unreadable" and "hits: 3" in txt_z, state_z)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

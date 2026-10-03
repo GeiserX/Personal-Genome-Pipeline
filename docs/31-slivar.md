@@ -70,7 +70,7 @@ If `gnomad_v4.1_constraint.tsv` is available, the summary TSV is enriched with p
 | LOEUF | Loss-of-function observed/expected upper bound | < 0.35 = constrained |
 | pLI | Probability of LoF intolerance | > 0.9 = constrained |
 | mis_z | Missense Z-score (gnomAD v4.1 `mis.z_score`) | > 3.09 = constrained |
-| CONSTRAINED | YES if LOEUF < 0.35 or pLI > 0.9 | Flag column |
+| CONSTRAINED | YES if LOEUF < 0.35 or pLI > 0.9; NO if LOEUF or pLI is known and neither says so; `.` if the gene has no constraint values | Flag column |
 
 The values come from `bin/constraint_join.awk`, the loader step 23 and the Nextflow module run too: only canonical transcripts count, and of a gene's two canonical rows (Ensembl and RefSeq) the Ensembl one wins, so steps 23 and 31 report the same value for a gene. When rows carry gene symbols and not one matches the table, the step fails rather than write `.` in every row.
 

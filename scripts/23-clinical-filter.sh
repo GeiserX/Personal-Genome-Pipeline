@@ -37,15 +37,15 @@ mkdir -p "$OUTDIR"
 
 # Input: a derived file is used only when it is newer than what it was built
 # from, so a re-run of step 13 is never hidden behind an older _vep.vcf.gz or
-# an older step 30 output.
+# an older step 30 output. An empty file (an interrupted write) never counts.
 VEP_SRC=""
-if [ -f "$VEP_VCF" ] && { [ ! -f "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
+if [ -s "$VEP_VCF" ] && { [ ! -s "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
   VEP_SRC="$VEP_VCF"
-elif [ -f "$VEP_VCF_GZ" ]; then
+elif [ -s "$VEP_VCF_GZ" ]; then
   VEP_SRC="$VEP_VCF_GZ"
 fi
 INPUT=""
-if [ -f "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
+if [ -s "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
   INPUT="$ANNOTATED_VCF"
 elif [ -n "$VEP_SRC" ]; then
   INPUT="$VEP_SRC"
@@ -92,12 +92,14 @@ if [ -z "$VEP_FIELDS" ]; then
   echo "  Was VEP step 13 run correctly? The VCF must contain a CSQ INFO field."
   exit 1
 fi
-has_field() { printf '%s\n' "$VEP_FIELDS" | grep -qx "$1"; }
+# Here-strings, not a pipe: grep -q exits at the first match, and under
+# pipefail the writer's SIGPIPE on a large header would read as "no match".
+has_field() { grep -qx -- "$1" <<< "$VEP_FIELDS"; }
 for f in IMPACT SYMBOL Consequence; do
   has_field "$f" || { echo "ERROR: the CSQ annotation has no ${f} field." >&2; exit 1; }
 done
 VCF_HEADER=$(run_in "${BCFTOOLS_IMAGE}" bcftools view -h "$CONTAINER_INPUT" 2>/dev/null || true)
-has_info() { printf '%s\n' "$VCF_HEADER" | grep -q "^##INFO=<ID=$1,"; }
+has_info() { grep -q "^##INFO=<ID=$1," <<< "$VCF_HEADER"; }
 
 # Frequency: MAX_AF, or the gnomAD exome and genome fields VEP was asked for.
 FREQ_COLS=""

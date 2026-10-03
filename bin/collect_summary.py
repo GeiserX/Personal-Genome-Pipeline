@@ -29,6 +29,7 @@ import gzip
 import json
 import os
 import sys
+import zlib
 from datetime import datetime, timezone
 
 SCHEMA_VERSION = 1
@@ -99,8 +100,8 @@ def vcf_records(path):
                 if line.startswith("#"):
                     continue
                 yield line.rstrip("\n").split("\t")
-    except (OSError, EOFError, gzip.BadGzipFile) as e:
-        raise Unreadable(f"{os.path.basename(path)}: {e}")
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(path)}: {e}") from e
 
 
 def info_map(field):
@@ -422,8 +423,8 @@ def sec_cpsr(d, s):
             with gzip.open(tsv, "rt", errors="replace") as f:
                 rows = list(csv.DictReader(f, delimiter="\t"))
                 cols = rows[0].keys() if rows else []
-        except (OSError, EOFError, gzip.BadGzipFile) as e:
-            raise Unreadable(f"{os.path.basename(tsv)}: {e}")
+        except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+            raise Unreadable(f"{os.path.basename(tsv)}: {e}") from e
         col = next((c for c in ("CLASSIFICATION", "FINAL_CLASSIFICATION", "CPSR_CLASSIFICATION") if c in cols), None)
         if col:
             counts = {}
@@ -573,7 +574,7 @@ def collect(sample, sample_dir):
             sec["state"], sec["note"] = "unreadable", str(e)
             sections[key] = sec
             continue
-        except (OSError, ValueError, KeyError, IndexError, EOFError, csv.Error) as e:
+        except (OSError, ValueError, KeyError, IndexError, EOFError, csv.Error, zlib.error) as e:
             sec["state"], sec["note"] = "unreadable", f"{type(e).__name__}: {e}"
             sections[key] = sec
             continue
