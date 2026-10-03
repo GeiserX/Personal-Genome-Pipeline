@@ -3,7 +3,6 @@
 # Skip branding and naming checks that only apply to nf-core organization pipelines.
 
 repository_type: pipeline
-nf_core_version: '3.2.0'
 
 lint:
   # Skip checks that require nf-core organization membership
