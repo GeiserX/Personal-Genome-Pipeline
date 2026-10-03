@@ -97,7 +97,7 @@ The CI pipeline enforces this with automated scanning.
    - [`mkdocs.yml`](mkdocs.yml): the page in `nav:`
    - [`docs/pipeline-overview.md`](docs/pipeline-overview.md): the category table
    - `scripts/run-all.sh`: add to the appropriate phase
-   - [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml): the image and a smoke command (`tool --version`) in the matrix
+   - [`tests/smoke/commands.tsv`](tests/smoke/commands.tsv): a row for the image, a real command on the fixture and a check on what the tool wrote. [`container-test.yml`](.github/workflows/container-test.yml) fails for an image with no row
    - `scripts/validate-setup.sh`: only if the step needs reference data to check
    - `docs/interpreting-results.md`: add output interpretation
    - `docs/00-reference-setup.md`: if new reference data is needed
@@ -113,7 +113,7 @@ Renovate proposes image, Nextflow and CI tool bumps as PRs, one tool per PR, and
 1. Change the tool's line in [`versions.env`](versions.env). No script or module names the tag.
 2. If a comment next to the line couples it to a data version (the VEP cache release, the PCGR bundle, the pypgx bundle tag), change that variable in the same commit.
 3. Run `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh`. They rewrite [`conf/containers.config`](conf/containers.config), where the Nextflow modules take their image from, and [`docs/versions.md`](docs/versions.md); CI fails until both match `versions.env`.
-4. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml) and any doc that prints the tag. The `version-consistency` check in CI names a stale tag in the docs.
+4. Push. [`container-test.yml`](.github/workflows/container-test.yml) runs the new image on the fixture with its row of [`tests/smoke/commands.tsv`](tests/smoke/commands.tsv), and Guard's images check (`scripts/ci/check-images.sh`) names any doc or script that still writes an image tag outside `versions.env`.
 5. Run `./scripts/setup.sh --pull-only` to pull the new image.
 6. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
 

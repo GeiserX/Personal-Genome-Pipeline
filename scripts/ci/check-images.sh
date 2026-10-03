@@ -43,7 +43,6 @@ conf/containers.config                generated from versions.env
 docs/versions.md                      generated from versions.env
 docs/lessons-learned.md               history: names the tags that failed
 docs/research/                        dated research notes, kept as written
-.github/workflows/container-test.yml  its own matrix, held to versions.env by its sync step
 scripts/ci/check-images.sh            this file: the exemptions and the faults its self-test plants
 scripts/ci/freshness.py               reads image references; its self-test plants made-up ones
 scripts/ci/changed-images.sh          reads image references; its self-test plants made-up ones

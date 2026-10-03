@@ -322,6 +322,13 @@ workflow {
     // Delly exclude map (regions skipped by delly call -x)
     ch_delly_exclude = Channel.value(params.delly_exclude ? file(params.delly_exclude, checkIfExists: true) : [])
 
+    // Manta call regions (configManta.py --callRegions): a bgzipped BED with its .tbi beside it
+    ch_manta_call_regions       = Channel.value(params.manta_call_regions ? file(params.manta_call_regions, checkIfExists: true) : [])
+    ch_manta_call_regions_index = Channel.value(params.manta_call_regions ? file("${params.manta_call_regions}.tbi", checkIfExists: true) : [])
+
+    // UCSC GRCh38 chromosome bands for TelomereHunter (-b)
+    ch_cytoband = Channel.value(params.cytoband ? file(params.cytoband, checkIfExists: true) : [])
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
     // ═══════════════════════════════════════════════════════════════════
@@ -341,6 +348,7 @@ workflow {
     ANNOTATION(
         ch_vcf,
         ch_reference,
+        ch_reference_fai,
         ch_vep_cache,
         ch_cadd_snv,
         ch_cadd_snv_index,
@@ -377,7 +385,8 @@ workflow {
         ch_reference_fai,
         ch_reference_dict,
         ch_expansion_catalog,
-        ch_hla_dat
+        ch_hla_dat,
+        ch_cytoband
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -388,7 +397,9 @@ workflow {
         ch_reference,
         ch_reference_fai,
         ch_delly_exclude,
-        ch_annotsv_annotations
+        ch_annotsv_annotations,
+        ch_manta_call_regions,
+        ch_manta_call_regions_index
     )
 
     // ═══════════════════════════════════════════════════════════════════

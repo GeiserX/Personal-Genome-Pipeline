@@ -123,7 +123,7 @@ process ANCESTRY {
     # Count variants actually loaded into plink2 (post-extraction)
     LOADED_COUNT=0
     if [ -f "${meta.id}.pvar" ]; then
-        LOADED_COUNT=\$(grep -c -v '^#' ${meta.id}.pvar 2>/dev/null || echo "0")
+        LOADED_COUNT=\$(grep -c -v '^#' ${meta.id}.pvar || true)
     fi
 
     # Step 5: Summary file with QC metrics

@@ -27,6 +27,7 @@ workflow BAM_ANALYSIS {
     ch_reference_dict    // channel: val(path) — reference .dict
     ch_expansion_catalog // channel: val(path) — ExpansionHunter variant catalog JSON
     ch_hla_dat           // channel: val(path) — Pre-downloaded IPD-IMGT/HLA hla.dat
+    ch_cytoband          // channel: val(path) — UCSC GRCh38 chromosome bands or []
 
     main:
     ch_versions = Channel.empty()
@@ -45,7 +46,7 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'hla_typing'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('hla_typing')) {
-        HLA_TYPING(ch_bam, ch_reference, ch_hla_dat)
+        HLA_TYPING(ch_bam, ch_reference, ch_reference_fai, ch_hla_dat)
         ch_hla_alleles = HLA_TYPING.out.hla_alleles
         ch_versions    = ch_versions.mix(HLA_TYPING.out.versions)
     }
@@ -80,7 +81,12 @@ workflow BAM_ANALYSIS {
     // Gates on: params.tools contains 'telomere_hunter'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('telomere_hunter')) {
-        TELOMERE_HUNTER(ch_bam)
+        if (!params.cytoband) {
+            log.warn "telomere_hunter: --cytoband is not set, so TelomereHunter classifies reads by its own hg19 " +
+                     "chromosome bands on GRCh38 positions. Pass UCSC's GRCh38 bands (scripts/setup.sh installs " +
+                     "reference/cytoBand.hg38.txt)."
+        }
+        TELOMERE_HUNTER(ch_bam, ch_cytoband)
         ch_telomere_results = TELOMERE_HUNTER.out.telomere_results
         ch_versions         = ch_versions.mix(TELOMERE_HUNTER.out.versions)
     }

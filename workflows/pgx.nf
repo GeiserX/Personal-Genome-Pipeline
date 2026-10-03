@@ -34,7 +34,7 @@ workflow PGX {
     ch_pharmcat_html = Channel.empty()
     ch_pharmcat_json = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('pharmcat')) {
-        PHARMCAT_PREPROCESS(ch_vcf, ch_reference)
+        PHARMCAT_PREPROCESS(ch_vcf, ch_reference, ch_reference_fai)
         PHARMCAT(PHARMCAT_PREPROCESS.out.preprocessed_vcf)
         ch_pharmcat_html = PHARMCAT.out.html_report
         ch_pharmcat_json = PHARMCAT.out.json_report

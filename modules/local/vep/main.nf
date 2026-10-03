@@ -18,6 +18,7 @@ process VEP {
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(reference)
+    path(reference_fai)  // staged beside the FASTA, so no task builds its own
     path(vep_cache)
 
     output:

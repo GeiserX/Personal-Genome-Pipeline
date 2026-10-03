@@ -3,9 +3,10 @@
 # samtools) that a script or Nextflow module calls must exist in the image the
 # call runs in.
 #
-# The container smoke test only runs each tool's --version, so it cannot see
-# a module that calls bcftools inside the delly image, or a script that runs
-# bgzip inside staphb/bcftools, which ships only bcftools.
+# The container smoke test (tests/smoke/commands.tsv) runs each image's own
+# tool, not the helpers a step calls beside it, so it cannot see a module that
+# calls bcftools inside the delly image, or a script that runs bgzip inside
+# staphb/bcftools, which ships only bcftools.
 #
 # How the table is built (no hand-kept list):
 #   scripts/*.sh   every `docker run ... IMAGE cmd` command, and every call of
@@ -20,7 +21,9 @@
 #                  every process: its `container` (or its withName selector
 #                  in conf/containers.config) and the first word of every
 #                  command in its script: block.
-# Only calls to the helper binaries above are kept. Images are named by their
+# Only calls to the helper binaries above are kept, by bare name: a call by
+# path ("$LIBEXEC/bgzip", Manta's own copy) is not a PATH lookup, so
+# `command -v` would test another binary. Images are named by their
 # versions.env variable when one matches.
 #
 # Three rules:
@@ -107,6 +110,7 @@ if [ "${1:-}" = "--self-test" ]; then
     'docker run --rm "${BCFTOOLS_IMAGE}" bash -euo pipefail -c "bcftools index -t ok.vcf.gz"' \
     'run_in --rw "$G/reference" --cpus 2 "${TOOL_IMAGE}" tabix wrapped.vcf.gz' \
     'run_in "${BCFTOOLS_IMAGE}" bcftools index -t wrapped.vcf.gz' \
+    'run_in "${BCFTOOLS_IMAGE}" bash -c "\"\$d/bgzip\" -c by_path.vcf"' \
     > "${tmp}/good/scripts/a.sh"
   # A tree whose scripts start containers in a way the parser does not know:
   # the module alone must not make the check pass.
@@ -420,7 +424,9 @@ def heads(cmds):
             if w in KEYWORDS or ASSIGN.match(w):
                 k += 1
                 continue
-            out.append((os.path.basename(w), words[k:], off))
+            # A call by path runs that file, not the helper on PATH.
+            if "/" not in w:
+                out.append((w, words[k:], off))
             break
     return out
 
@@ -461,7 +467,7 @@ def in_image_heads(argv):
     if not argv:
         return []
     if os.path.basename(argv[0]) not in ("bash", "sh"):
-        return [os.path.basename(argv[0])]
+        return [] if "/" in argv[0] else [argv[0]]
     k, want_c, takes = 1, False, 0
     while k < len(argv):
         w = argv[k]

@@ -40,7 +40,7 @@ process SLIVAR_PRIORITIZE {
     def has_constraint = gnomad_constraint ? true : false
     """
     # --- Generate PED file for single sample (SLIVAR reads it) ---
-    SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)
+    SAMPLE_NAME=\$(bcftools query -l ${vcf} | awk 'NR == 1')
     echo -e "\${SAMPLE_NAME}\\t\${SAMPLE_NAME}\\t0\\t0\\t0\\t-9" > ${meta.id}.ped
 
     # --- Which CSQ fields does the input carry? ---
