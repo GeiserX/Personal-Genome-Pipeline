@@ -37,6 +37,11 @@ OUTPUT_DIR="${SAMPLE_DIR}/somatic"
 GNOMAD_VCF="${GENOME_DIR}/somatic/af-only-gnomad.hg38.vcf.gz"
 PON_VCF="${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz"
 COMMON_VCF="${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz"
+# has_vcf FILE: "yes" when FILE and its .tbi are present, else "no".
+has_vcf() { if [ -f "$1" ] && [ -f "${1}.tbi" ]; then echo yes; else echo no; fi; }
+HAVE_GNOMAD=$(has_vcf "$GNOMAD_VCF")
+HAVE_PON=$(has_vcf "$PON_VCF")
+HAVE_COMMON=$(has_vcf "$COMMON_VCF")
 
 echo "=== [EXPERIMENTAL] Somatic Variant Calling (Mutect2 Tumor-Only): ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
@@ -50,22 +55,25 @@ esac
 echo "Output: ${OUTPUT_DIR}/"
 echo ""
 
-# Check for idempotent skip. A finished result is reused only for the
-# intervals it was called on: SCOPE_FILE holds the INTERVALS value of the run
-# that wrote it, and is written last. A CHIP result never stands in for a
-# whole-genome request, or the other way round; a result without the record
-# (from an older version of this step) is called again.
+# Check for idempotent skip. A finished result is reused only when it was
+# called the way this run would call it: RUN_FILE holds the INTERVALS value and
+# which optional resources (gnomAD, Panel of Normals, common sites) were there,
+# and is written last. A CHIP result never stands in for a whole-genome
+# request, a result filtered without the contamination estimate is redone once
+# the common-sites VCF is installed, and a result without the record (from an
+# older version of this step) is called again.
 FINAL_OUTPUT="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.vcf.gz"
-SCOPE_FILE="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.intervals"
-if have_output "$FINAL_OUTPUT" && [ -f "$SCOPE_FILE" ] && [ "$(cat "$SCOPE_FILE")" = "$INTERVALS" ]; then
-  echo "Output already exists: ${FINAL_OUTPUT} (INTERVALS=${INTERVALS})"
+RUN_FILE="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.run"
+RUN_KEY="INTERVALS=${INTERVALS} germline_resource=${HAVE_GNOMAD} panel_of_normals=${HAVE_PON} common_sites=${HAVE_COMMON}"
+if have_output "$FINAL_OUTPUT" && [ -f "$RUN_FILE" ] && [ "$(cat "$RUN_FILE")" = "$RUN_KEY" ]; then
+  echo "Output already exists: ${FINAL_OUTPUT} (${RUN_KEY})"
   echo "Skipping. Delete the file to re-run."
   exit 0
 fi
 if [ -e "$FINAL_OUTPUT" ]; then
-  echo "Calling again: ${FINAL_OUTPUT} is unfinished or was called on other intervals than INTERVALS=${INTERVALS}."
+  echo "Calling again: ${FINAL_OUTPUT} is unfinished or was not called with ${RUN_KEY}."
 fi
-rm -f "$SCOPE_FILE"
+rm -f "$RUN_FILE"
 
 # Validate required inputs
 for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
@@ -108,7 +116,7 @@ MUTECT2_CMD=(
 )
 
 # Add gnomAD germline resource if available (reduces germline false positives)
-if [ -f "$GNOMAD_VCF" ] && [ -f "${GNOMAD_VCF}.tbi" ]; then
+if [ "$HAVE_GNOMAD" = yes ]; then
   echo "Using gnomAD germline resource: ${GNOMAD_VCF}"
   MUTECT2_CMD+=(--germline-resource "/genome/somatic/af-only-gnomad.hg38.vcf.gz")
 else
@@ -119,7 +127,7 @@ else
 fi
 
 # Add Panel of Normals if available (reduces recurrent technical artifacts)
-if [ -f "$PON_VCF" ] && [ -f "${PON_VCF}.tbi" ]; then
+if [ "$HAVE_PON" = yes ]; then
   echo "Using Panel of Normals: ${PON_VCF}"
   MUTECT2_CMD+=(-pon "/genome/somatic/1000g_pon.hg38.vcf.gz")
 else
@@ -154,7 +162,7 @@ FILTER_CMD=(
 
 echo ""
 echo "=== [3/4] Contamination (GetPileupSummaries, CalculateContamination) ==="
-if [ -f "$COMMON_VCF" ] && [ -f "${COMMON_VCF}.tbi" ]; then
+if [ "$HAVE_COMMON" = yes ]; then
   # Pileups at common sites only, inside the same intervals as the calls.
   PILEUP_L=(-L "$(cpath "$COMMON_VCF")")
   if [ "${#INTERVAL_ARGS[@]}" -gt 0 ]; then
@@ -183,7 +191,7 @@ echo "=== [4/4] Filtering somatic calls (FilterMutectCalls) ==="
 run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   "${FILTER_CMD[@]}"
-printf '%s\n' "$INTERVALS" > "$SCOPE_FILE"
+printf '%s\n' "$RUN_KEY" > "$RUN_FILE"
 
 echo ""
 echo "=== Somatic variant statistics ==="

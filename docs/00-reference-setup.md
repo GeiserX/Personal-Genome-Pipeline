@@ -59,7 +59,7 @@ To move to the current release, run:
 ./scripts/setup.sh --refresh clinvar ${GENOME_DIR}
 ```
 
-It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both derived files there, and only then replaces all six files and `RELEASE`. Step 6's normalised copy (`clinvar_pathogenic_chr.norm.vcf.gz`) is removed, so step 6 rebuilds it from the new release. A failed download or build leaves the installed release as it was. Do not re-download with a plain `wget`: it writes `clinvar.vcf.gz.1` beside the old file, and the derived files stay built from the old one.
+It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both derived files there, and only then replaces all six files and `RELEASE`. Step 6's normalised copy (`clinvar_pathogenic_chr.norm.vcf.gz`) is removed, so step 6 rebuilds it from the new release. A failed download or build leaves the installed release as it was. If moving the new files in fails part way, the refresh exits with an error and leaves no `RELEASE`, so `validate-setup.sh` reports the date as unknown until a refresh completes. Do not re-download with a plain `wget`: it writes `clinvar.vcf.gz.1` beside the old file, and the derived files stay built from the old one.
 
 `validate-setup.sh` prints the release date and warns when it is more than 35 days old.
 

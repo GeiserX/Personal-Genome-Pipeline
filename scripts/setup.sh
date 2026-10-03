@@ -131,15 +131,17 @@ clinvar_build_derived() {
 
 # clinvar_install DIR: move every file of CLINVAR_SET that DIR holds into
 # clinvar/, then remove DIR. The data files go first and their indexes after.
+# Returns 1 at the first move that fails (set -e does not apply inside a
+# function called as `f || ...`), keeping DIR.
 clinvar_install() {
   local f
   for f in $CLINVAR_SET; do
     case "$f" in *.tbi) continue ;; esac
-    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}"; fi
+    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}" || return 1; fi
   done
   for f in $CLINVAR_SET; do
     case "$f" in *.tbi) ;; *) continue ;; esac
-    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}"; fi
+    if [ -f "${1}/${f}" ]; then mv -f "${1}/${f}" "${CLINVARDIR}/${f}" || return 1; fi
   done
   rm -rf "$1"
 }
@@ -166,7 +168,10 @@ clinvar_record_release() {
 # refresh_clinvar: download NCBI's current ClinVar into clinvar/.refresh/,
 # check it against NCBI's md5, build both derived files from it there, and only
 # then replace all six files. The normalised copy step 06 keeps is removed, so
-# step 06 builds it again from the new release.
+# step 06 builds it again from the new release. RELEASE and that copy go before
+# the files move: a refresh that stops between two moves leaves no release date
+# on a set that may mix two releases (validate-setup.sh then says the date is
+# unknown) and fails, so the next refresh starts again.
 refresh_clinvar() {
   local new="${CLINVARDIR}/.refresh"
   # A download cut short last time (*.part) is resumed; anything else is redone.
@@ -179,8 +184,12 @@ refresh_clinvar() {
     echo "ERROR: could not build the ClinVar files from the new release; the old ones are kept." >&2
     return 1
   }
-  clinvar_install "$new"
-  rm -f "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz" "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz.tbi"
+  rm -f "${CLINVARDIR}/RELEASE" \
+    "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz" "${CLINVARDIR}/clinvar_pathogenic_chr.norm.vcf.gz.tbi"
+  clinvar_install "$new" || {
+    echo "ERROR: could not move the new ClinVar files into ${CLINVARDIR}; they may mix two releases. Run setup.sh --refresh clinvar again." >&2
+    return 1
+  }
   clinvar_record_release
 }
 
