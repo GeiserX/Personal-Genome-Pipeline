@@ -29,10 +29,12 @@ process MANTA {
     path(call_regions_index)  // its .tbi or []
 
     output:
-    tuple val(meta), path("results/variants/diploidSV.vcf.gz"),     emit: diploid_sv
-    tuple val(meta), path("results/variants/diploidSV.raw.vcf.gz"), emit: diploid_sv_raw
-    tuple val(meta), path("results/variants/candidateSV.vcf.gz"),   emit: candidate_sv
-    path "versions.yml",                                            emit: versions
+    tuple val(meta), path("results/variants/diploidSV.vcf.gz"),         emit: diploid_sv
+    tuple val(meta), path("results/variants/diploidSV.vcf.gz.tbi"),     emit: diploid_sv_index
+    tuple val(meta), path("results/variants/diploidSV.raw.vcf.gz"),     emit: diploid_sv_raw
+    tuple val(meta), path("results/variants/diploidSV.raw.vcf.gz.tbi"), emit: diploid_sv_raw_index
+    tuple val(meta), path("results/variants/candidateSV.vcf.gz"),       emit: candidate_sv
+    path "versions.yml",                                                emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -75,8 +77,8 @@ process MANTA {
     stub:
     """
     mkdir -p results/variants
-    touch results/variants/diploidSV.vcf.gz
-    touch results/variants/diploidSV.raw.vcf.gz
+    touch results/variants/diploidSV.vcf.gz results/variants/diploidSV.vcf.gz.tbi
+    touch results/variants/diploidSV.raw.vcf.gz results/variants/diploidSV.raw.vcf.gz.tbi
     touch results/variants/candidateSV.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml

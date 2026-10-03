@@ -48,7 +48,7 @@ done
 # A finished run is not repeated: configManta.py refuses a runDir that
 # already holds a workflow, which made every second run-all report Manta
 # as failed.
-if [ -f "$DIPLOID" ] && [ -f "${DIPLOID}.tbi" ] && [ -f "$RAW" ]; then
+if [ -f "$DIPLOID" ] && [ -f "${DIPLOID}.tbi" ] && [ -f "$RAW" ] && [ -f "${RAW}.tbi" ]; then
   echo "Manta already done for ${SAMPLE}: ${DIPLOID}"
   echo "To run it again, delete ${MANTA_DIR}/ first."
   exit 0
@@ -102,9 +102,18 @@ fi
 # one SVTYPE=INV record. It needs a samtools and the reference: both come from
 # the Manta image. Manta's own file stays as diploidSV.raw.vcf.gz, and the
 # converted file takes the name the later steps read.
+# Each file moves on its own, so a run stopped between the two moves finishes
+# them on the next run.
 if [ ! -f "$RAW" ]; then
   mv -f "$DIPLOID" "$RAW"
+fi
+if [ ! -f "${RAW}.tbi" ] && [ ! -f "$DIPLOID" ] && [ -f "${DIPLOID}.tbi" ]; then
   mv -f "${DIPLOID}.tbi" "${RAW}.tbi"
+fi
+if [ ! -f "${RAW}.tbi" ]; then
+  echo "ERROR: ${RAW} has no .tbi beside it." >&2
+  echo "  Delete ${MANTA_DIR}/ and run this step again." >&2
+  exit 1
 fi
 # The breakends convertInversion.py converts: ALT [p[t or t]p] with the mate
 # on the same chromosome, two records per inversion.
