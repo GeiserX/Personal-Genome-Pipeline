@@ -155,6 +155,8 @@ ${GENOME_DIR}/giab/
 
 [hap.py](https://github.com/Illumina/hap.py) (Illumina) is the standard benchmarking tool for SNP and indel callers. It decomposes complex variants, performs genotype matching, and reports precision/recall/F1 stratified by variant type.
 
+`HAPPY_IMAGE` is a community build of hap.py 0.3.12 with RTG Tools, which `--engine=vcfeval` needs. The Bioconda image (hap.py 0.3.15) has no RTG Tools, so it stops on `--engine=vcfeval` with `rtg: command not found`. With hap.py's own engine (xcmp) the two images give the same counts on a GIAB chr20 truth slice, but the comparison engine is what decides how two spellings of one variant are matched, so the benchmark keeps vcfeval and this image.
+
 ```bash
 REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
