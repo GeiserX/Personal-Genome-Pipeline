@@ -41,7 +41,7 @@ That's it. Every analysis tool runs inside Docker -- no conda environments, no P
 | GRCh38 reference FASTA + index | ~3.5 GB | All steps |
 | ClinVar database | ~200 MB | Step 6 (ClinVar screen) |
 | VEP cache | ~26 GB | Step 13 (VEP annotation) |
-| PCGR/CPSR data bundle + VEP 113 cache | ~31 GB | Step 17 (cancer predisposition) |
+| PCGR/CPSR data bundle + VEP 115 cache | ~31 GB | Step 17 (cancer predisposition) |
 | Docker images (all steps) | ~10-15 GB | All steps |
 | Annotation databases (CADD, SpliceAI, REVEL, AlphaMissense) | ~175 GB | Steps 30-31 (optional) |
 | **Total one-time setup (core)** | **~70-75 GB** | |
@@ -226,7 +226,7 @@ ${GENOME_DIR}/
     clinvar_pathogenic_chr.vcf.gz      # chr-prefixed pathogenic subset that step 6 reads
     clinvar_pathogenic_chr.vcf.gz.tbi  # its index
   vep_cache/                           # VEP annotation cache (~30 GB)
-  pcgr_data/                           # CPSR/PCGR data bundle (~5 GB)
+  pcgr_data/                           # CPSR/PCGR data bundle (~7 GB)
   ${SAMPLE}/
     fastq/                             # Raw FASTQ files (R1 + R2)
     fastq_trimmed/                     # QC-trimmed FASTQs + fastp reports (step 1b)

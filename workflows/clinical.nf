@@ -22,7 +22,7 @@ workflow CLINICAL {
     take:
     ch_vcf              // channel: [meta, vcf, vcf_index]
     ch_pcgr_data        // channel: path — PCGR 2.x reference data bundle
-    ch_vep_cache_cpsr   // channel: path — VEP 113 cache for CPSR
+    ch_vep_cache_cpsr   // channel: path — VEP cache for CPSR (PCGR_VEP_CACHE_RELEASE, 115)
     ch_pgs_scoring      // channel: path — PGS Catalog scoring files directory
     ch_ancestry_ref     // channel: path — ancestry reference panel
 

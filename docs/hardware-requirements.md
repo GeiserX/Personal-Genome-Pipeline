@@ -80,8 +80,8 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 
 | Scenario | Download Size |
 |---|---|
-| Default run | ~72-77 GB |
-| Default run + annotation databases | ~250 GB |
+| Default run | ~75-80 GB |
+| Default run + annotation databases | ~250-255 GB |
 
 ### Total Disk Requirements
 

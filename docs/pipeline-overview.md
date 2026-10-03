@@ -96,9 +96,9 @@ graph LR
 | 8 | [HLA Typing](08-hla-typing.md) | T1K | `T1K_IMAGE` | Optional |
 | 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | Recommended |
 | 9b | [STR Annotation](09b-stranger.md) | Stranger | `STRANGER_IMAGE` | If step 9 run |
-| 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `TELOMEREHUNTER_IMAGE` (digest-pinned) | Optional |
+| 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `TELOMEREHUNTER_IMAGE` | Optional |
 | 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `BCFTOOLS_IMAGE` | Recommended |
-| 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 | `HAPLOGREP3_IMAGE` (digest-pinned) | Optional |
+| 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 | `HAPLOGREP3_IMAGE` | Optional |
 | 13 | [VEP Annotation](13-vep-annotation.md) | VEP | `VEP_IMAGE` | Recommended |
 | 14 | [Imputation Prep](14-imputation-prep.md) | bcftools | `BCFTOOLS_IMAGE` | Optional, opt-in (`IMPUTATION=true`) |
 | 15 | [SV Quality](15-duphold.md) | duphold | `DUPHOLD_IMAGE` | If step 4 run |

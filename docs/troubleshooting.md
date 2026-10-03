@@ -702,7 +702,7 @@ source versions.env   # from the repository root
 # PCGR 2.x requires four separate volume mounts:
 docker run --rm --user root \
   -v ${GENOME_DIR}/vep_cache:/mnt/.vep \
-  -v ${GENOME_DIR}/pcgr_data/20250314:/mnt/bundle \
+  -v ${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}:/mnt/bundle \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/mnt/inputs \
   -v ${GENOME_DIR}/${SAMPLE}/cpsr:/mnt/outputs \
   "${PCGR_IMAGE}" cpsr \
@@ -714,9 +714,9 @@ docker run --rm --user root \
 If you have the old 1.x data bundle (`pcgr.databundle.grch38.20220203.tgz`), it is **not compatible** with PCGR 2.x. Download the new bundle:
 ```bash
 cd ${GENOME_DIR}/pcgr_data
-wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz
-tar xzf pcgr_ref_data.20250314.grch38.tgz
-mkdir -p 20250314 && mv data/ 20250314/
+wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20260620.grch38.tgz
+tar xzf pcgr_ref_data.20260620.grch38.tgz
+mkdir -p 20260620 && mv data/ 20260620/
 ```
 
 **Additional CPSR issue -- wrong Docker image:**
@@ -784,7 +784,7 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
      --cpus 4 --memory 8g \
      -v "${GENOME_DIR}:/genome" \
      "${DELLY_IMAGE}" \
-     delly call \
+     delly sr \
        -g "/genome/${REF_FASTA}" \
        -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
        /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
