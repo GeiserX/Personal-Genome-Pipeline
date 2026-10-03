@@ -15,7 +15,7 @@
 #      GENCODE gene coordinates T1K needs (~350 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
 #
-# VEP cache (~26 GB) and PCGR ref data (~5 GB) are downloaded separately
+# VEP cache (~26 GB) and PCGR ref data (~7 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
 #
 # Every download goes through fetch (scripts/lib/common.sh): it is written to
@@ -437,7 +437,7 @@ PCGRDIR="${GENOME_DIR}/pcgr_data"
 if [ -d "${PCGRDIR}/${PCGR_DATA_BUNDLE}/data" ]; then
   echo "[OK] PCGR/CPSR ref data bundle already present."
 else
-  echo "[SKIP] PCGR/CPSR ref data (~5 GB download) — needed for step 17 (cancer predisposition)"
+  echo "[SKIP] PCGR/CPSR ref data (~7 GB download) — needed for step 17 (cancer predisposition)"
   echo "  Download:"
   echo "    mkdir -p ${PCGRDIR} && cd ${PCGRDIR}"
   echo "    curl -fL -C - -O https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.${PCGR_DATA_BUNDLE}.grch38.tgz"
@@ -450,7 +450,7 @@ echo ""
 if [ -f "${VEPDIR}/homo_sapiens/${PCGR_VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
   echo "[OK] VEP ${PCGR_VEP_CACHE_RELEASE} cache (for CPSR) already present."
 else
-  echo "[SKIP] VEP ${PCGR_VEP_CACHE_RELEASE} cache (~26 GB) — needed for step 17 (CPSR runs VEP ${PCGR_VEP_CACHE_RELEASE} inside the PCGR image)"
+  echo "[SKIP] VEP ${PCGR_VEP_CACHE_RELEASE} cache (~24 GB) — needed for step 17 (CPSR runs VEP ${PCGR_VEP_CACHE_RELEASE} inside the PCGR image)"
   echo "  This is separate from the release-${VEP_CACHE_RELEASE} cache used by step 13. Both coexist in vep_cache/."
   echo "  Download:"
   echo "    mkdir -p ${VEPDIR}"

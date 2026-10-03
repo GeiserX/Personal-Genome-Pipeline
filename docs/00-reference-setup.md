@@ -105,46 +105,46 @@ tar xzf tmp/homo_sapiens_vep_116_GRCh38.tar.gz
 
 > **Warning:** The VEP `INSTALL.pl` script downloads to a temporary directory that may lack write permissions inside Docker. Always download manually with `wget -c`. See [lessons-learned.md](lessons-learned.md) for details.
 
-## PCGR/CPSR Ref Data Bundle (~5 GB)
+## PCGR/CPSR Ref Data Bundle (~7 GB)
 
 Required for step 17 (CPSR cancer predisposition screening). Includes ClinVar, gnomAD, CancerMine, and other databases. PCGR 2.x uses a separate, smaller ref data bundle — VEP cache is mounted independently.
 
-> **Important:** PCGR 2.2.5 bundles VEP 113, which requires a **release-113** cache — different from the release-116 cache used by step 13 above. See the next section for the VEP 113 download.
+> **Important:** PCGR 2.3.2 bundles VEP 115, which requires a **release-115** cache — different from the release-116 cache used by step 13 above. See the next section for the VEP 115 download. The bundle date (`PCGR_DATA_BUNDLE`) and the cache release (`PCGR_VEP_CACHE_RELEASE`) are in `versions.env` and move with `PCGR_IMAGE`.
 
 ```bash
 mkdir -p ${GENOME_DIR}/pcgr_data
 cd ${GENOME_DIR}/pcgr_data
 
-# Download (~5 GB)
-wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20250314.grch38.tgz
+# Download (~7 GB)
+wget -c https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.20260620.grch38.tgz
 
 # Extract and organize into version-stamped directory
-tar xzf pcgr_ref_data.20250314.grch38.tgz
-mkdir -p 20250314 && mv data/ 20250314/
-# Creates: ${GENOME_DIR}/pcgr_data/20250314/data/
+tar xzf pcgr_ref_data.20260620.grch38.tgz
+mkdir -p 20260620 && mv data/ 20260620/
+# Creates: ${GENOME_DIR}/pcgr_data/20260620/data/
 
-# Optional: delete the tarball to save 5 GB
-# rm pcgr_ref_data.20250314.grch38.tgz
+# Optional: delete the tarball to save 7 GB
+# rm pcgr_ref_data.20260620.grch38.tgz
 ```
 
-## VEP 113 Cache for CPSR (~23 GB)
+## VEP 115 Cache for CPSR (~24 GB)
 
-PCGR 2.2.5 (step 17) bundles VEP 113 internally, which needs the **release-113** cache. This is separate from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `113_GRCh38/`).
+PCGR 2.3.2 (step 17) bundles VEP 115 internally, which needs the **release-115** cache. This is separate from the release-116 cache used by step 13. Both coexist in the same `vep_cache/` directory under different subdirectories (`116_GRCh38/` and `115_GRCh38/`). A `113_GRCh38/` cache left from PCGR 2.2.5 is no longer read and can be deleted.
 
 ```bash
 mkdir -p ${GENOME_DIR}/vep_cache/tmp
 cd ${GENOME_DIR}/vep_cache/tmp
 
-# Download VEP 113 cache (~23 GB)
-wget -c https://ftp.ensembl.org/pub/release-113/variation/indexed_vep_cache/homo_sapiens_vep_113_GRCh38.tar.gz
+# Download VEP 115 cache (~24 GB)
+wget -c https://ftp.ensembl.org/pub/release-115/variation/indexed_vep_cache/homo_sapiens_vep_115_GRCh38.tar.gz
 
 # Extract alongside the existing release-116 cache
 cd ${GENOME_DIR}/vep_cache
-tar xzf tmp/homo_sapiens_vep_113_GRCh38.tar.gz
-# Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38/
+tar xzf tmp/homo_sapiens_vep_115_GRCh38.tar.gz
+# Creates: ${GENOME_DIR}/vep_cache/homo_sapiens/115_GRCh38/
 ```
 
-> If you only run step 13 (VEP annotation) and skip step 17 (CPSR), you only need the release-116 cache. If you only run step 17, you only need release-113.
+> If you only run step 13 (VEP annotation) and skip step 17 (CPSR), you only need the release-116 cache. If you only run step 17, you only need release-115.
 
 ## T1K HLA Reference (Optional)
 
@@ -415,8 +415,8 @@ echo "Checking reference setup..."
 [ -f "${GENOME_DIR}/${REF_FASTA}.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"
 [ -f "${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz" ] && echo "  ClinVar (chr): OK" || echo "  ClinVar: MISSING"
 [ -d "${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38" ] && echo "  VEP cache: OK" || echo "  VEP cache: MISSING"
-[ -d "${GENOME_DIR}/pcgr_data/20250314/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
-[ -d "${GENOME_DIR}/vep_cache/homo_sapiens/113_GRCh38" ] && echo "  VEP 113 cache (CPSR): OK" || echo "  VEP 113 cache (CPSR): MISSING"
+[ -d "${GENOME_DIR}/pcgr_data/20260620/data" ] && echo "  PCGR data: OK" || echo "  PCGR data: MISSING"
+[ -d "${GENOME_DIR}/vep_cache/homo_sapiens/115_GRCh38" ] && echo "  VEP 115 cache (CPSR): OK" || echo "  VEP 115 cache (CPSR): MISSING"
 
 echo "Annotation databases (optional, for steps 30-31):"
 for DB_PAIR in \

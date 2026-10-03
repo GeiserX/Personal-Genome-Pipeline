@@ -97,9 +97,10 @@
       "versioning": "regex:^release_(?<major>\\d+)\\.(?<minor>\\d+)$"
     },
     {
-      "description": "PCGR/CPSR: every update waits for approval on the dependency dashboard, because each release reads its own reference bundle and VEP cache (PCGR_DATA_BUNDLE and PCGR_VEP_CACHE_RELEASE in versions.env). Docker Hub's sigven/pcgr stops at 2.2.5; 2.3.x is published at ghcr.io/sigven/pcgr, which the image matcher reads like any other registry once versions.env names it.",
+      "description": "PCGR/CPSR: every update waits for approval on the dependency dashboard, because each release reads its own reference bundle and VEP cache (PCGR_DATA_BUNDLE and PCGR_VEP_CACHE_RELEASE in versions.env). The image comes from ghcr.io/sigven/pcgr (Docker Hub's sigven/pcgr stops at 2.2.5); the image matcher reads ghcr.io like any other registry. allowedVersions keeps the release tags (x.y.z): ghcr also carries development builds (2.3.2.9006) and .singularity tags.",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["sigven/pcgr", "ghcr.io/sigven/pcgr"],
+      "matchPackageNames": ["ghcr.io/sigven/pcgr"],
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
       "dependencyDashboardApproval": true
     },
     {

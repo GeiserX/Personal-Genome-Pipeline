@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# CPSR — Cancer Predisposition Sequencing Reporter (ACMG SF v3.2)
+# CPSR — Cancer Predisposition Sequencing Reporter
 # Input: Germline VCF + PCGR 2.x data bundle + VEP cache
 # Output: HTML report + classified variant TSV
-# Requires: ~5GB ref data bundle + VEP cache (download once, reuse for all samples)
+# Requires: ~7 GB ref data bundle + VEP cache (download once, reuse for all samples)
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -54,6 +54,12 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+# CPSR 2.3 gives every variant in the panel genes its own class
+# (CPSR_CLASSIFICATION), so 2.2's --classify_all is gone (2.3 refuses it).
+# The final class (CLASSIFICATION, source in ASSERTION_AUTHORITY) is
+# ClinVar's unless ClinVar has no record or a conflicted one: the default
+# --clinvar_trust_level 0.
+
 # ACMG secondary findings (genes outside CPSR's cancer panels, such as cardiac
 # and metabolic ones) are reported unless CPSR_SECONDARY_FINDINGS=false: some
 # people do not want to learn about them.
@@ -81,7 +87,6 @@ run_in --root --cpus 4 --memory 8g \
     --genome_assembly grch38 \
     --sample_id "${SAMPLE}" \
     --panel_id 0 \
-    --classify_all \
     ${CPSR_EXTRA[@]+"${CPSR_EXTRA[@]}"} \
     --force_overwrite
 

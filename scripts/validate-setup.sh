@@ -307,7 +307,7 @@ else
     pass "PCGR/CPSR ref data bundle: present"
   else
     warn "PCGR ref data bundle not found at: ${PCGR_DIR}"
-    echo "       Required for step 17 (CPSR cancer predisposition). Download ~5 GB:"
+    echo "       Required for step 17 (CPSR cancer predisposition). Download ~7 GB:"
     echo "       cd ${GENOME_DIR}/pcgr_data"
     echo "       curl -fL -C - -O https://insilico.hpc.uio.no/pcgr/pcgr_ref_data.${PCGR_DATA_BUNDLE}.grch38.tgz"
     echo "       tar xzf pcgr_ref_data.${PCGR_DATA_BUNDLE}.grch38.tgz && mkdir -p ${PCGR_DATA_BUNDLE} && mv data/ ${PCGR_DATA_BUNDLE}/"
