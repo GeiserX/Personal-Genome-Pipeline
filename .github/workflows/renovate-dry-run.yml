@@ -135,8 +135,9 @@ jobs:
           # The non-image pins: (dependency, files, how a pin of it looks in that text).
           # A setup-nextflow step is a pin when a version: line with a literal
           # version follows its uses: line inside the same step (the lines in
-          # between start with anything but '-', which opens the next step).
-          SETUP_NEXTFLOW = r'uses: ["\x27]?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*[^\s-][^\n]*\n)*?[ \t]+version: ["\x27]?\d'
+          # between are blank or start with anything but '-', which opens the
+          # next step).
+          SETUP_NEXTFLOW = r'uses: ["\x27]?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*(?:[^\s-][^\n]*)?\n)*?[ \t]+version: ["\x27]?\d'
           PINS = (
               ("nextflow-io/nextflow", [ENV], r'^NEXTFLOW_VERSION="'),
               ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), SETUP_NEXTFLOW),
@@ -260,6 +261,7 @@ jobs:
               plant("lookups", broken_lookup, "lookups:")
               # The setup-nextflow pattern itself, on planted workflow text.
               step = ('      - uses: %snf-core/setup-nextflow@%s%s # v3.0.1\n'
+                      '%s'
                       '        if: steps.scope.outputs.run == \'true\'\n'
                       '        with:\n'
                       '          version: %s\n'
@@ -267,15 +269,17 @@ jobs:
                       '      - uses: actions/setup-java@%s # v6\n'
                       '        with:\n'
                       '          java-version: "17"\n')
-              for label, quote, version, want in (
-                      ("computed", "", "$" + "{{ steps.nf.outputs.version }}", 0),
-                      ("computed, uses quoted", '"', "$" + "{{ steps.nf.outputs.version }}", 0),
-                      ("literal", "", '"25.10.8"', 1),
-                      ("single-quoted literal", "'", "'25.10.8'", 1),
-                      ("bare literal, uses quoted", '"', "25.10.8", 1)):
-                  text = step % (quote, "a" * 40, quote, version, "b" * 40)
+              for label, quote, gap, version, want in (
+                      ("computed", "", "", "$" + "{{ steps.nf.outputs.version }}", 0),
+                      ("computed, uses quoted", '"', "", "$" + "{{ steps.nf.outputs.version }}", 0),
+                      ("computed after a blank line", "", "\n", "$" + "{{ steps.nf.outputs.version }}", 0),
+                      ("literal", "", "", '"25.10.8"', 1),
+                      ("literal after a blank line", "", "\n", '"25.10.8"', 1),
+                      ("single-quoted literal", "'", "", "'25.10.8'", 1),
+                      ("bare literal, uses quoted", '"', "", "25.10.8", 1)):
+                  text = step % (quote, "a" * 40, quote, gap, version, "b" * 40)
                   n = len(re.findall(SETUP_NEXTFLOW, text, re.M))
-                  print("self-test pin-text %-26s counted %d, want %d" % (label, n, want))
+                  print("self-test pin-text %-27s counted %d, want %d" % (label, n, want))
                   ok = ok and n == want
               clean = check(deps, env_text)
               print("self-test clean    %s" % ("passes" if not clean else "fails: %s" % clean[0]))
