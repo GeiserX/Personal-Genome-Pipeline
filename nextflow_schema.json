@@ -240,6 +240,18 @@
                     "format": "file-path",
                     "description": "Optional Delly exclude map, passed as `delly call -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
                     "fa_icon": "fas fa-file"
+                },
+                "manta_call_regions": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional bgzipped BED of the regions Manta calls on, passed as `configManta.py --callRegions`; its .tbi must sit beside it. For example chr1-22, X and Y, which keeps Manta off the ALT, decoy and unplaced contigs.",
+                    "fa_icon": "fas fa-file"
+                },
+                "cytoband": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional UCSC GRCh38 chromosome bands (cytoBand.hg38.txt, chr1-22, X and Y; scripts/setup.sh installs it), passed as `telomerehunter -b`. Without it TelomereHunter uses its own hg19 bands.",
+                    "fa_icon": "fas fa-file"
                 }
             }
         },

@@ -17,6 +17,7 @@ process PHARMCAT_PREPROCESS {
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(reference)
+    path(reference_fai)  // staged beside the FASTA, so no task builds its own
 
     output:
     tuple val(meta), path("*.preprocessed.vcf.bgz"), emit: preprocessed_vcf

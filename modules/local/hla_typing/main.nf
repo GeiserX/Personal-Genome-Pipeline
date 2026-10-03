@@ -22,6 +22,7 @@ process HLA_TYPING {
     input:
     tuple val(meta), path(bam), path(bai)
     path(reference)
+    path(reference_fai)  // staged beside the FASTA, so no task builds its own
     path(hla_dat)
 
     output:

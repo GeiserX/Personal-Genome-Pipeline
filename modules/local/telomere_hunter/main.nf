@@ -19,6 +19,7 @@ process TELOMERE_HUNTER {
 
     input:
     tuple val(meta), path(bam), path(bai)
+    path(cytoband)  // UCSC GRCh38 chromosome bands (--cytoband) or []
 
     output:
     tuple val(meta), path("${meta.id}"), emit: telomere_results
@@ -28,11 +29,15 @@ process TELOMERE_HUNTER {
     task.ext.when == null || task.ext.when
 
     script:
+    // Without -b TelomereHunter classifies reads by its own hg19 bands;
+    // workflows/bam_analysis.nf warns when --cytoband is not set.
+    def band_arg = cytoband ? "-b ${cytoband}" : ''
     """
     telomerehunter \\
         -ibt ${bam} \\
         -o ./ \\
-        -p ${meta.id}
+        -p ${meta.id} \\
+        ${band_arg}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -23,6 +23,7 @@ workflow ANNOTATION {
     take:
     ch_vcf                // channel: [meta, vcf, vcf_index]
     ch_reference          // channel: path — reference FASTA
+    ch_reference_fai      // channel: path — reference FASTA index
     ch_vep_cache          // channel: path — VEP cache directory or []
     ch_cadd_snv           // channel: path — CADD SNV file or []
     ch_cadd_snv_index     // channel: path — CADD SNV index or []
@@ -54,7 +55,9 @@ workflow ANNOTATION {
         VEP(
             ch_current_vcf,
             ch_reference,
-            ch_vep_cache        )
+            ch_reference_fai,
+            ch_vep_cache
+        )
         ch_versions = ch_versions.mix(VEP.out.versions)
         ch_vep_vcf  = VEP.out.vcf
 
