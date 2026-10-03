@@ -7,8 +7,8 @@ Pharmacogenomic analysis — determines how you metabolize drugs based on your D
 Identifies which drugs work well, which need dose adjustments, and which to avoid entirely. Covers 23 pharmacogenes affecting hundreds of medications.
 
 ## Tool
-- **PharmCAT** v3.2.0 (Pharmacogenomics Clinical Annotation Tool, CPIC/PharmGKB)
-- Upgraded from 2.15.5 to 3.2.0 in v0.3.0. See `docs/lessons-learned.md` for migration notes (preprocessor rename, reporter flags, JSON property changes).
+- **PharmCAT** v3.4.0 (Pharmacogenomics Clinical Annotation Tool, CPIC/PharmGKB)
+- Upgraded from 2.15.5 to 3.2.0 in v0.3.0, and to 3.4.0 for the PharmVar and CPIC updates of 3.3.0 and 3.4.0. See `docs/lessons-learned.md` for migration notes (preprocessor rename, reporter flags, JSON property changes).
 
 ## Docker Image
 - `PHARMCAT_IMAGE`
@@ -58,7 +58,7 @@ docker run --rm \
 ### Input the preprocessor or PharmCAT refuses
 
 - **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). The Nextflow pipeline stops before any analysis on such input when `pharmcat` is selected; the script does not check. Remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md). A variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered.
-- **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 fails the same way.
+- **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 still bundles vcf-parser 0.3.1 and fails the same way.
 
 ## Output
 - HTML report with drug recommendations per gene
