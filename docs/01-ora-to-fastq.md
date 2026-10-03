@@ -11,12 +11,12 @@ Raw sequencing data from Illumina DRAGEN comes in ORA format. All downstream too
 - Not available as Docker image — must be installed natively
 
 ## Prerequisites
-- `orad` binary (download from Illumina)
+- `orad` binary (download from Illumina). The script is checked against orad 2.7.0, from https://webdata.illumina.com/downloads/software/dragen-decompression/orad.2.7.0.linux.tar.gz
 - Sufficient disk space: ORA→FASTQ.gz expands ~5x (e.g., a 30X genome is 15-20 GB of ORA and 60-90 GB of FASTQ.gz)
 
 ## Command
 
-The script takes three arguments and decompresses one ORA file per call. Set `ORAD` if `orad` is not at `/opt/orad/bin/orad`.
+The script takes three arguments and decompresses one ORA file per call. Set `ORAD` if `orad` is not at `/opt/orad/bin/orad`. It runs `orad --ora-reference <ora_reference_dir> --path <output_dir> <ora_file>`; CI runs `orad --help` from the 2.7.0 release and fails if an option the script passes is not listed.
 
 ```bash
 export GENOME_DIR=/path/to/your/data
