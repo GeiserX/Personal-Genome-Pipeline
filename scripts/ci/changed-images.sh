@@ -34,7 +34,7 @@ values() {
 image_vars() { grep -oE '^[A-Z][A-Z0-9_]*_IMAGE=' "$1" | tr -d = | awk '!seen[$0]++'; }
 
 changed() {
-  local root=$1 base=$2 old new files var n
+  local root=$1 base=$2 old files var n
   git -C "$root" cat-file -e "${base}^{commit}" 2>/dev/null || { echo "ERROR: ${base} is not a commit" >&2; return 2; }
   files=$(git -C "$root" diff --name-only "$base" --)
   files+=$'\n'$(git -C "$root" ls-files --others --exclude-standard)
@@ -43,11 +43,11 @@ changed() {
     image_vars "${root}/versions.env"
     return 0
   fi
-  old=$(mktemp) new=$(mktemp)
+  old=$(mktemp)
   git -C "$root" show "${base}:versions.env" > "$old" 2>/dev/null || : > "$old"
   local -a diff=()
   mapfile -t diff < <(comm -13 <(values "$old" | sort) <(values "${root}/versions.env" | sort) | cut -d= -f1)
-  rm -f "$old" "$new"
+  rm -f "$old"
   [ "${#diff[@]}" -gt 0 ] && echo "changed in versions.env: ${diff[*]}" >&2
   declare -A pick=()
   for n in "${diff[@]}"; do
