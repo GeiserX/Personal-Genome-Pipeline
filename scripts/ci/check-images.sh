@@ -60,8 +60,6 @@ scripts/cyrius-constraints.txt    python:3.11   the image pip resolved these con
 scripts/ci/settle-doubts.sh       jmcdani20/hap.py:v0.3.12   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       hkubal/clair3:v2.0.2   repeats versions.env, to be removed
-tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed (comment)
-tests/test_isec_columns.sh        staphb/bcftools:1.21   repeats versions.env, to be removed (value)
 docs/troubleshooting.md           quay.io/biocontainers/toolname:tag   a placeholder, not an image
 '
 

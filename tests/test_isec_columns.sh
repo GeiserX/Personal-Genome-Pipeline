@@ -24,11 +24,12 @@
 #      contig lengths, and a ClinVar record on NT_113889.1 (which the full
 #      chr-renamed ClinVar file has) made bcftools norm exit 255; now both are
 #      left out, with a notice, and the hits are unchanged.
-# Needs docker: step 06 runs bcftools in staphb/bcftools:1.21.
+# Needs docker: step 06 runs bcftools in BCFTOOLS_IMAGE from versions.env.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+# shellcheck source=../versions.env
+. "${REPO}/versions.env"
 WORK=$(mktemp -d)
 # Files written by containers are root-owned; remove them from a container.
 cleanup() {

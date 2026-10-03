@@ -27,7 +27,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Screens ClinVar and runs CPSR cancer predisposition panels, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritization.
 - Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs), Cyrius and CPIC drug recommendations.
 - Repeat expansions, HLA typing, telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
-- Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. Two exceptions: Cyrius is installed from PyPI at run time (version and dependencies pinned), and the Python image is a tag (`python:3.11`) that Docker Hub re-pushes. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
+- Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. Two exceptions: Cyrius is installed from PyPI at run time (version and dependencies pinned), and Docker Hub rebuilds the Python image's patch tag when its Debian base changes. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
 - Two ways to run it: one bash script per step, or a Nextflow DSL2 pipeline.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 
