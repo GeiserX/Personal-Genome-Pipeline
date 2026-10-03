@@ -257,6 +257,7 @@ def registry_headers(host, repo):
 def list_tags(host, repo):
     headers = registry_headers(host, repo)
     url = f"https://{registry(host)}/v2/{repo}/tags/list?n=1000"
+    origin = urllib.parse.urlsplit(url)[:2]
     tags = []
     for _ in range(200):
         body, h = request(url, headers=headers)
@@ -265,6 +266,9 @@ def list_tags(host, repo):
         if not m:
             break
         url = urllib.parse.urljoin(url, m.group(1))
+        # The registry token goes only to the registry that issued it.
+        if urllib.parse.urlsplit(url)[:2] != origin:
+            raise LookupFailed(f"tag list of {host}/{repo} points its next page at another host: {url}")
     return need(tags, f"tag list of {host}/{repo}")
 
 
@@ -640,7 +644,9 @@ def update_issue(repo, body_path, api=None):
         target, action = None, "created"
     data = json.dumps(dict(payload, labels=[ISSUE_LABEL]) if target is None else payload).encode()
     if target is None:
-        res = gh_api(f"/repos/{repo}/issues", method="POST", data=data)
+        # No retry: a create whose answer was lost may have landed, and a
+        # second POST would open a second issue. A failed create fails the run.
+        res = gh_api(f"/repos/{repo}/issues", method="POST", data=data, retries=0)
     else:
         res = gh_api(f"/repos/{repo}/issues/{target['number']}", method="PATCH", data=data)
     print(f"Issue {action}: {need(res.get('html_url'), 'issue URL')}")
@@ -654,6 +660,7 @@ class FakeGitHub(http.server.BaseHTTPRequestHandler):
     """Just enough of the issues API for update_issue, kept in memory."""
     issues = []
     labels = set()
+    lose_create_answer = False
 
     def log_message(self, *a):
         pass
@@ -699,6 +706,9 @@ class FakeGitHub(http.server.BaseHTTPRequestHandler):
             n = max([i["number"] for i in self.issues] + [0]) + 1
             self.issues.append({"number": n, "state": "open", "title": b["title"], "body": b["body"],
                                 "labels": b.get("labels", []), "html_url": f"https://x/{n}"})
+            if self.lose_create_answer:
+                # The issue is created, but the answer says the server failed.
+                return self.reply(502, {})
             return self.reply(201, self.issues[-1])
         self.reply(404, {})
 
@@ -749,6 +759,22 @@ def self_test():
     check(split_image("quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0")[:3]
           == ("quay.io", "biocontainers/t1k", "1.0.9--h5ca1c30_0"), "quay image")
     check(split_image("a/b@sha256:00")[3] == "sha256:00", "digest pin")
+    sent = []
+
+    def fake_request(url, headers=None, **kw):
+        sent.append(url)
+        return {"tags": ["1.0"]}, {"Link": '<https://elsewhere.example/v2/x/tags/list?last=1.0>; rel="next"'}
+    _orig = globals()["request"]
+    globals()["request"] = fake_request
+    try:
+        list_tags("quay.io", "biocontainers/x")
+        crossed = "followed"
+    except LookupFailed:
+        crossed = "refused"
+    finally:
+        globals()["request"] = _orig
+    check(crossed == "refused" and not any("elsewhere.example" in u for u in sent),
+          "a tag-list next page on another host is refused, and nothing is sent there")
     rs = Report()
     run_lookup(rs, "odd shape", lambda report: [].get("x"))
     check(rs.errors and rs.errors[0][0] == "odd shape" and "unexpected answer" in rs.errors[0][1]
@@ -793,6 +819,16 @@ def self_test():
     a3 = update_issue("o/r", fh.name, api=base)
     check(a3 == ("reopened and edited", a1[1]) and mine[0]["state"] == "open",
           "a closed report is reopened, not duplicated")
+    FakeGitHub.issues, FakeGitHub.lose_create_answer = [], True
+    try:
+        update_issue("o/r", fh.name, api=base)
+        lost = "no error"
+    except LookupFailed as e:
+        lost = str(e)
+    FakeGitHub.lose_create_answer = False
+    created = [i for i in FakeGitHub.issues if ISSUE_MARKER in i["body"]]
+    check("HTTP 502" in lost and len(created) == 1,
+          f"a create whose answer is lost fails the run and is not sent twice ({len(created)} issue(s))")
     srv.shutdown()
     os.unlink(fh.name)
     for k, v in zip(("GITHUB_TOKEN", "FRESHNESS_GITHUB_API"), saved):
