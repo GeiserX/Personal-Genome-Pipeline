@@ -19,17 +19,16 @@
     {
       "customType": "regex",
       "description": [
-        "Container images. The four strings match the same image in four files:",
-        "versions.env (NAME_IMAGE=\"image:tag\"), conf/containers.config (container = 'image:tag'),",
-        "docs/versions.md (the Variable, Image and Pinned version cells) and the matrix of container-test.yml.",
+        "Container images. The strings match the same image in three files:",
+        "versions.env (NAME_IMAGE=\"image:tag\"), conf/containers.config (container = 'image:tag')",
+        "and docs/versions.md (the Variable, Image and Pinned version cells).",
         "Each file has a tag form (an optional @sha256 after the tag is kept) and a digest-only form (image@sha256:...).",
         "The image name stops at ':' and '@', so a digest line never becomes a package named '...@sha256'."
       ],
       "managerFilePatterns": [
         "/^versions\\.env$/",
         "/^conf/containers\\.config$/",
-        "/^docs/versions\\.md$/",
-        "/^\\.github/workflows/container-test\\.yml$/"
+        "/^docs/versions\\.md$/"
       ],
       "matchStrings": [
         "_IMAGE=\"(?<depName>[^:@\"\\s]+):(?<currentValue>[^:@\"\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"",
@@ -38,9 +37,7 @@
         "container = '(?<depName>[^:@'\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})'",
         "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+)` \\| `(?<currentValue>[^:@`\\s]+)` \\|",
         "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+)` \\| `(?<currentDigest>sha256:[a-f0-9]{64})` \\|",
-        "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+):(?<currentValue>[^:@`\\s]+)` \\| `(?<currentDigest>sha256:[a-f0-9]{64})` \\|",
-        "- image: (?<depName>[^:@\\s]+):(?<currentValue>[^:@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\\s",
-        "- image: (?<depName>[^:@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\\s"
+        "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+):(?<currentValue>[^:@`\\s]+)` \\| `(?<currentDigest>sha256:[a-f0-9]{64})` \\|"
       ],
       "datasourceTemplate": "docker"
     },

@@ -11,11 +11,13 @@ name: Renovate dry run
 #   names    no package name carries a ':' or '@' (a digest line once became
 #            a package named '...@sha256')
 #   twins    docs/versions.md holds exactly the images of versions.env, and
-#            conf/containers.config and container-test.yml hold only those,
-#            so one Renovate PR updates every copy
+#            conf/containers.config holds only those, so one Renovate PR
+#            updates every copy
 #   one-pr   a tool gets the same proposal in every file it is in
 #   pins     Nextflow, actionlint and gitleaks are detected in every place
-#            they are pinned, as often as the text has them
+#            they are pinned, as often as the text has them. A setup-nextflow
+#            step counts as a pin only when its version: line is a literal
+#            version, quoted or not; a computed one (an expression) is not a pin
 #   lookups  no lookup failed and no tag was unreadable; the only skipped
 #            dependencies are the ones a rule in renovate.json disables
 # The step summary lists every dependency with the update Renovate would
@@ -128,12 +130,16 @@ jobs:
           import collections, copy, glob, json, os, re, sys
 
           ENV = "versions.env"
-          TWINS = ("docs/versions.md", "conf/containers.config", ".github/workflows/container-test.yml")
+          TWINS = ("docs/versions.md", "conf/containers.config")
           RULE_SKIPS = {"disabled", "package-rules"}
           # The non-image pins: (dependency, files, how a pin of it looks in that text).
+          # A setup-nextflow step is a pin when a version: line with a literal
+          # version follows its uses: line inside the same step (the lines in
+          # between start with anything but '-', which opens the next step).
+          SETUP_NEXTFLOW = r'uses: "?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*[^\s-][^\n]*\n)*?[ \t]+version: "?\d'
           PINS = (
               ("nextflow-io/nextflow", [ENV], r'^NEXTFLOW_VERSION="'),
-              ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), r"uses: nf-core/setup-nextflow@[0-9a-f]"),
+              ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), SETUP_NEXTFLOW),
               ("nextflow-io/nextflow", sorted(glob.glob("docs/*.md")), r"NXF_VER=\d"),
               ("rhysd/actionlint", sorted(glob.glob(".github/workflows/*.yml")), r"ACTIONLINT_VERSION=\d"),
               ("gitleaks/gitleaks", sorted(glob.glob(".github/workflows/*.yml")), r"GITLEAKS_VERSION=\d"),
@@ -252,6 +258,24 @@ jobs:
               plant("one-pr", split_pr, "one-pr:")
               plant("pins", drop_pin, "pins:")
               plant("lookups", broken_lookup, "lookups:")
+              # The setup-nextflow pattern itself, on planted workflow text.
+              step = ('      - uses: %snf-core/setup-nextflow@%s%s # v3.0.1\n'
+                      '        if: steps.scope.outputs.run == \'true\'\n'
+                      '        with:\n'
+                      '          version: %s\n'
+                      '\n'
+                      '      - uses: actions/setup-java@%s # v6\n'
+                      '        with:\n'
+                      '          java-version: "17"\n')
+              for label, quote, version, want in (
+                      ("computed", "", "$" + "{{ steps.nf.outputs.version }}", 0),
+                      ("computed, uses quoted", '"', "$" + "{{ steps.nf.outputs.version }}", 0),
+                      ("literal", "", '"25.10.8"', 1),
+                      ("bare literal, uses quoted", '"', "25.10.8", 1)):
+                  text = step % (quote, "a" * 40, quote, version, "b" * 40)
+                  n = len(re.findall(SETUP_NEXTFLOW, text, re.M))
+                  print("self-test pin-text %-26s counted %d, want %d" % (label, n, want))
+                  ok = ok and n == want
               clean = check(deps, env_text)
               print("self-test clean    %s" % ("passes" if not clean else "fails: %s" % clean[0]))
               return ok
