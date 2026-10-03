@@ -23,10 +23,15 @@
 # Only calls to the helper binaries above are kept. Images are named by their
 # versions.env variable when one matches.
 #
-# Two rules:
+# Three rules:
 #   1. (static) bgzip and tabix are never called in BCFTOOLS_IMAGE or
 #      SAMTOOLS_IMAGE: use `bcftools view -Oz -o` and `bcftools index -t`.
 #   2. (docker) each image is pulled and `command -v` checks each binary.
+#   3. (--orad) orad, Illumina's ORA decompressor, runs on the host, not in an
+#      image. The pinned orad release is downloaded, checked against its
+#      sha256 and run with --help; every option a script passes to "$ORAD"
+#      must be in that list. Step 01 once passed --output-directory, which
+#      orad does not have.
 #
 # Scope: only these four helpers are checked. Probing every in-image command
 # (python3, awk, Rscript...) would mean pulling every image the pipeline
@@ -36,11 +41,14 @@
 #   scripts/ci/check-container-helpers.sh            both rules (needs docker)
 #   scripts/ci/check-container-helpers.sh --static   rule 1 only
 #   scripts/ci/check-container-helpers.sh --list     print the derived table
+#   scripts/ci/check-container-helpers.sh --orad     rule 3 only (needs curl;
+#                                                    --help-file FILE reads
+#                                                    the option list from FILE)
 #   scripts/ci/check-container-helpers.sh --root DIR check another tree
-#   scripts/ci/check-container-helpers.sh --self-test  prove rule 1 can fail,
-#                                                      and that a tree whose
-#                                                      script calls are not
-#                                                      recognised fails too
+#   scripts/ci/check-container-helpers.sh --self-test  prove rules 1 and 3
+#                                                      can fail, and that a
+#                                                      tree whose calls are
+#                                                      not recognised fails too
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -140,8 +148,47 @@ if [ "${1:-}" = "--self-test" ]; then
     printf '%s\n' "$out"
     fail=1
   fi
+  # Rule 3 against a planted orad option list: an option orad does not list
+  # fails, the options it lists pass, and a tree with no orad call or an
+  # empty help text fails too.
+  printf '%s\n' '-P  path, --path  path   : specify where to write the output file' \
+    '-h, --help               : print help and exit' \
+    '--ora-reference          : set directory path containing the ora reference file' > "${tmp}/orad-help"
+  : > "${tmp}/orad-help-empty"
+  # shellcheck disable=SC2016,SC1003  # literal $ and line-continuation backslashes are the test input
+  printf '%s\n' '#!/usr/bin/env bash' 'if ! command -v "$ORAD" >/dev/null; then exit 1; fi' \
+    '"$ORAD" \' '  --ora-reference "$R" \' '  --output-directory "$O" \' '  "$F"' > "${tmp}/bad/scripts/b.sh"
+  # shellcheck disable=SC2016
+  printf '%s\n' '#!/usr/bin/env bash' 'time "${ORAD}" --ora-reference="$R" -P "$O" --path "$O" "$F"' \
+    > "${tmp}/good/scripts/b.sh"
+  rc=0; out=$("$0" --orad --help-file "${tmp}/orad-help" --root "${tmp}/bad" 2>&1) || rc=$?
+  if [ "$rc" -ne 1 ] || ! grep -q 'scripts/b\.sh:3 passes --output-directory' <<<"$out" \
+      || ! grep -q 'OK: --ora-reference' <<<"$out"; then
+    echo "self-test: an orad option missing from --help exited ${rc}, expected 1 naming scripts/b.sh:3 --output-directory"
+    printf '%s\n' "$out"
+    fail=1
+  fi
+  rc=0; out=$("$0" --orad --help-file "${tmp}/orad-help" --root "${tmp}/good" 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ] || [ "$(grep -c '^OK: ' <<<"$out")" -ne 3 ]; then
+    echo "self-test: orad options that --help lists exited ${rc}, expected 0 with 3 OK lines"
+    printf '%s\n' "$out"
+    fail=1
+  fi
+  rc=0; out=$("$0" --orad --help-file "${tmp}/orad-help-empty" --root "${tmp}/good" 2>&1) || rc=$?
+  if [ "$rc" -ne 1 ]; then
+    echo "self-test: an empty orad --help exited ${rc}, expected 1"
+    printf '%s\n' "$out"
+    fail=1
+  fi
+  rc=0; out=$("$0" --orad --help-file "${tmp}/orad-help" --root "${tmp}/blind" 2>&1) || rc=$?
+  # shellcheck disable=SC2016  # a literal $ORAD in the expected message
+  if [ "$rc" -ne 2 ] || ! grep -q 'no "\$ORAD" call' <<<"$out"; then
+    echo "self-test: a tree with no orad call exited ${rc}, expected 2"
+    printf '%s\n' "$out"
+    fail=1
+  fi
   if [ "$fail" -eq 0 ]; then
-    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...), bash -euo -c, an image alias, the run_in wrapper and in modules are reported; a clean tree passes; a tree whose script calls are not recognised fails: PASS"
+    echo "self-test: bgzip/tabix behind if !, time, VAR=, \$(...), bash -euo -c, an image alias, the run_in wrapper and in modules are reported; a clean tree passes; a tree whose script calls are not recognised fails; an orad option missing from --help, an empty --help and a tree with no orad call fail: PASS"
     exit 0
   fi
   echo "self-test: FAIL"
@@ -465,6 +512,85 @@ def resolve(image_word, path):
 
 def line_of(text, offset):
     return text.count("\n", 0, offset) + 1
+
+# ---------------------------------------------------------------- orad
+# Rule 3. orad is Illumina's own binary, not an image: step 01 calls it on the
+# host. The pinned release is fetched (only its first 9 MB: the binary comes
+# before the 785 MB reference in the archive), its checksum is checked, and
+# the options of every `"$ORAD" ...` call in scripts/*.sh must appear in its
+# --help. --help-file FILE reads the option list from FILE instead.
+ORAD_VERSION = "2.7.0"
+ORAD_URL = ("https://webdata.illumina.com/downloads/software/dragen-decompression/"
+            "orad.%s.linux.tar.gz" % ORAD_VERSION)
+ORAD_MEMBER = "orad.%s.linux/orad" % ORAD_VERSION
+ORAD_SHA256 = "2cc4a6bb9d0721c6555e01bb23f3554753166bfdbdd89ee9f4a8639144a1f066"
+
+def orad_calls():
+    """(location, options) for every `"$ORAD" ...` command in scripts/*.sh."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "scripts", "*.sh"))):
+        with open(path) as fh:
+            text = fh.read()
+        for words, off in lex(text):
+            k = 0
+            while k < len(words) and (words[k] in KEYWORDS or ASSIGN.match(words[k])):
+                k += 1
+            if k < len(words) and re.match(r"^\$\{?ORAD\}?$", words[k]):
+                opts = [w.split("=", 1)[0] for w in words[k + 1:] if len(w) > 1 and w[0] == "-"]
+                found.append(("%s:%d" % (os.path.relpath(path, ROOT), line_of(text, off)), opts))
+    return found
+
+def orad_help():
+    """orad's --help text, or None with the reason printed."""
+    if "--help-file" in ARGS:
+        with open(ARGS[ARGS.index("--help-file") + 1]) as fh:
+            return fh.read()
+    import hashlib, shlex, tempfile
+    tmp = tempfile.mkdtemp()
+    gnu = "GNU" in subprocess.run(["tar", "--version"], capture_output=True, text=True).stdout
+    stop = "--occurrence=1" if gnu else "-q"   # stop reading once the binary is out
+    # The exit status is not used: tar stops early, so curl ends on a broken
+    # pipe. The checksum below is what proves the right binary arrived.
+    subprocess.run("curl -fsSL %s | tar -xzf - -C %s %s %s" % (
+        shlex.quote(ORAD_URL), shlex.quote(tmp), stop, shlex.quote(ORAD_MEMBER)), shell=True)
+    binary = os.path.join(tmp, ORAD_MEMBER)
+    if not os.path.isfile(binary):
+        print("FAIL: could not fetch %s from %s" % (ORAD_MEMBER, ORAD_URL))
+        return None
+    with open(binary, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    if sha != ORAD_SHA256:
+        print("FAIL: orad %s has sha256 %s, pinned %s" % (ORAD_VERSION, sha, ORAD_SHA256))
+        return None
+    os.chmod(binary, 0o755)
+    res = subprocess.run([binary, "--help"], capture_output=True, text=True)
+    return res.stdout + res.stderr
+
+if "--orad" in ARGS:
+    calls = orad_calls()
+    if not calls:
+        print("ERROR: found no \"$ORAD\" call in scripts/*.sh; the parser does not see how step 01 runs orad.")
+        sys.exit(2)
+    text = orad_help()
+    if text is None:
+        sys.exit(1)
+    # An empty or foreign help text must not pass as "every option listed".
+    if not re.search(r"^\s*-h, --help\b", text, re.M):
+        print("FAIL: orad --help printed no option list:")
+        print(text)
+        sys.exit(1)
+    failed = False
+    for loc, opts in calls:
+        for o in opts:
+            if re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(o), text):
+                print("OK: %-20s %s" % (o, loc))
+            else:
+                failed = True
+                print("FAIL: %s passes %s, which orad %s does not list in --help" % (loc, o, ORAD_VERSION))
+    if failed:
+        print("orad %s --help:" % ORAD_VERSION)
+        print(text)
+    sys.exit(1 if failed else 0)
 
 # ---------------------------------------------------------------- collect
 calls = []        # (image name, image value, binary, location)
