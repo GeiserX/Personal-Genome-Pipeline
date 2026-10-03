@@ -71,9 +71,9 @@ docker run --rm --user root \
   "${SAMTOOLS_IMAGE}" \
   samtools faidx /genome/reference_hg19/human_g1k_v37.fasta
 
-# GRCh37-to-GRCh38 liftover chain file (~500 KB)
+# GRCh37-to-GRCh38 liftover chain file (~220 KB)
 wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
-  "https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19ToHg38.over.chain.gz"
+  "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz"
 ```
 
 > **GRCh38 reference required:** The liftover step (stage 3) needs `Homo_sapiens_assembly38.fasta` in `${GENOME_DIR}/reference/` and its sequence dictionary `Homo_sapiens_assembly38.dict`, which Picard LiftoverVcf reads. `setup.sh` creates both; `chip-to-vcf.sh` checks for them before it converts anything. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.

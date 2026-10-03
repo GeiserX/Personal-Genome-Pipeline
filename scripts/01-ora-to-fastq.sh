@@ -41,7 +41,7 @@ mkdir -p "$OUTPUT_DIR"
 
 "$ORAD" \
   --ora-reference "$ORA_REF" \
-  --output-directory "$OUTPUT_DIR" \
+  --path "$OUTPUT_DIR" \
   "$ORA_FILE"
 
 echo "=== ORA to FASTQ complete ==="
