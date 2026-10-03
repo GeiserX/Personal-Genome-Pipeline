@@ -71,7 +71,7 @@ if [ ! -s "$MMI" ]; then
   echo "Building minimap2 index (one-time, ~30 min)..."
   # The index is shared by every sample, so its directory is writable here.
   run_in --rw "$(dirname "$MMI")" \
-    --cpus "${THREADS}" --memory 16g \
+    --cpus "${THREADS}" --memory 32g \
     "${MINIMAP2_IMAGE}" \
     minimap2 -x sr -t "${THREADS}" -d "$(cpath "$MMI_TMP")" \
       "${REF_FASTA_C}"
@@ -87,12 +87,15 @@ fi
 # and callers take the sample name from its SM field.
 # samtools sort spills to SORT_TMP in the sample directory, not to the
 # container's own disk; -m is per thread, so the container gets THREADS + 4 GB.
+# The sr index holds about three times the distinct minimizers of the default
+# one: on the test reference (1.8 Gb, 57% of GRCh38) minimap2 peaked at 10 GB
+# with it against 5.5 GB before, so the aligner's cap is 32 GB, not 16.
 SORT_MEM_GB=$((THREADS + 4))
 echo "Aligning reads and marking duplicates (this takes 1-2 hours for 30X WGS)..."
 mkdir -p "$SORT_TMP"
 # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
 run_in \
-  --cpus "${THREADS}" --memory 16g \
+  --cpus "${THREADS}" --memory 32g \
   "${MINIMAP2_IMAGE}" \
   minimap2 -t "${THREADS}" -a -x sr \
     -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA\tLB:${SAMPLE}" \

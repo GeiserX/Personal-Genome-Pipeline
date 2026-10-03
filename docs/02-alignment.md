@@ -20,7 +20,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - GRCh38 reference genome (`${REF_FASTA}`, see [reference setup](00-reference-setup.md#the-reference-path-on-every-page))
-- minimap2 index (`.sr.mmi` file next to the reference, ~7GB, generated once by the script)
+- minimap2 index (`.sr.mmi` file next to the reference, generated once by the script)
 - Paired-end FASTQ files
 
 ## Commands
@@ -67,7 +67,7 @@ The script writes the BAM and the index under temporary names and renames them o
 
 ## Resource Requirements
 - CPU: 16+ cores recommended (`THREADS`)
-- RAM: 16GB+ (minimap2 loads full index into memory); samtools sort takes 1 GB per thread
+- RAM: minimap2 loads the whole index into memory. With the sr index it peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38), against 5.5 GB with the old default index, so plan for about 20 GB on GRCh38; the container's cap is 32 GB. samtools sort takes 1 GB per thread on top.
 - Disk and time: see [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) (the BAM is about 80-120 GB). Sort spills go to `aligned/${SAMPLE}.sort_tmp/` in the sample directory and are removed at the end.
 
 ## Notes
