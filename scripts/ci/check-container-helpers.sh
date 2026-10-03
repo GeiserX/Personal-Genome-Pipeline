@@ -551,9 +551,11 @@ def orad_help():
     stop = "--occurrence=1" if gnu else "-q"   # stop reading once the binary is out
     # The exit status is not used: tar stops early, so curl ends on a broken
     # pipe. The checksum below is what proves the right binary arrived.
+    # --retry covers a transient network error; curl never retries its (23)
+    # write error, so the early stop still ends the fetch.
     print("Fetching %s from %s (tar stops after it, so a curl (23) write error"
           " below is expected)" % (ORAD_MEMBER, ORAD_URL), flush=True)
-    subprocess.run("curl -fsSL %s | tar -xzf - -C %s %s %s" % (
+    subprocess.run("curl -fsSL --retry 3 %s | tar -xzf - -C %s %s %s" % (
         shlex.quote(ORAD_URL), shlex.quote(tmp), stop, shlex.quote(ORAD_MEMBER)), shell=True)
     binary = os.path.join(tmp, ORAD_MEMBER)
     if not os.path.isfile(binary):
