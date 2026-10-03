@@ -39,7 +39,16 @@ docker run --rm \
 # Output: 23 per-chromosome VCFs, each with its .tbi, in ${SAMPLE}/imputation/mis_ready/
 ```
 
-**The input is variant-only.** The step reads the VCF from step 3, which lists only the sites where the sample differs from the reference. A site that is missing from it is not a confirmed homozygous-reference genotype, and an imputation server treats it as missing. This stays so until the pipeline can start from a gVCF (which records reference calls too).
+**By default the input is variant-only.** The step reads the VCF from step 3, which lists only the sites where the sample differs from the reference. A site that is missing from it is not a confirmed homozygous-reference genotype, and an imputation server treats it as missing.
+
+**With panel sites, hom-ref genotypes come from the gVCF.** Step 3 also writes a gVCF (`vcf/${SAMPLE}.g.vcf.gz`), which records where the sample matches the reference. Give the step the reference panel's sites and it genotypes each of them from the gVCF: a variant call, a 0/0 call where the sample matches the reference, and nothing where the site was not covered. The per-chromosome files then hold those sites only, which are the sites the server imputes from.
+
+```bash
+# CHROM<TAB>POS per line, or a VCF of the panel's sites, inside GENOME_DIR
+IMPUTATION_SITES=${GENOME_DIR}/reference/panel_sites.tsv ./scripts/14-imputation-prep.sh your_sample
+```
+
+A panel of tens of millions of sites needs a few GB of memory for this. Without `IMPUTATION_SITES` and with a gVCF present, the step prints how to use it.
 
 ## Server Options
 | Server | Panel | Samples | Build | URL |

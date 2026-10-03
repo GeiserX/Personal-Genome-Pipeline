@@ -79,7 +79,7 @@ IN="$LABEL.variants.vcf.gz"
 
 The first `view` drops every record with an `END`, which in a gVCF are the reference blocks. `--trim-unseen-allele` removes the `<*>` or `<NON_REF>` allele that gVCF callers add to every variant record. The new name has no `.g.vcf` in it, so PharmCAT accepts it.
 
-This is a workaround, and it costs PharmCAT calls. Without the blocks, PharmCAT cannot tell "you match the reference here" from "this position was not covered", so a variants-only VCF leaves about half of its genes Unknown. A gVCF is the better PharmCAT input; the pipeline does not expand its blocks yet.
+This is a workaround, and it costs PharmCAT calls. Without the blocks, PharmCAT cannot tell "you match the reference here" from "this position was not covered", so a variants-only VCF leaves about half of its genes Unknown. A gVCF is the better PharmCAT input. Step 7 run as a script expands the blocks of the gVCF that step 3 writes from FASTQ; the Nextflow pipeline does not expand a vendor gVCF yet.
 
 ## 4. Take your name out of the file
 

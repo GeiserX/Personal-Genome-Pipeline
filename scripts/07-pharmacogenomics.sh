@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PharmCAT — Clinical pharmacogenomics (star alleles + drug recommendations)
-# Input: VCF.gz + GRCh38 reference
+# Input: VCF.gz + GRCh38 reference; the gVCF from step 03 when there is one
 # Output: HTML + JSON reports with metabolizer status for 23 pharmacogenes
 set -euo pipefail
 
@@ -29,6 +29,34 @@ for f in "$VCF" "${VCF}.tbi" "$REF"; do
   fi
 done
 
+# Step 0: PharmCAT reads a PGx position missing from its input as "not
+# covered", and a variants-only VCF lists only where the sample differs from
+# the reference. Step 03's gVCF also records where it matches, so when there
+# is one its reference blocks are expanded over PharmCAT's gene regions into a
+# plain VCF: every covered position becomes a 0/0 call, and an uncovered one
+# (./.) stays missing. PharmCAT refuses a gVCF, by content and by a name with
+# .g.vcf in it, so the expanded file has neither.
+GVCF="${OUTPUT_DIR}/${SAMPLE}.g.vcf.gz"
+PGX_INPUT="${SAMPLE}.vcf.gz"
+rm -f "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz" "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz.tbi"
+if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
+  echo "Input: ${GVCF} (reference blocks expanded over PharmCAT's gene regions)"
+  PGX_INPUT="${SAMPLE}.pgx_regions.vcf.gz"
+  # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+  run_in \
+    --cpus 1 --memory 2g \
+    -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+    "${PHARMCAT_IMAGE}" \
+    bash -euo pipefail -c '
+      bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
+        | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Oz -o "$3.part" --write-index=tbi
+      mv -f "$3.part" "$3"
+      mv -f "$3.part.tbi" "$3.tbi"' \
+    _ "${REF_FASTA_C}" "/data/${SAMPLE}.g.vcf.gz" "/data/${PGX_INPUT}"
+else
+  echo "Input: ${VCF} (no gVCF: PGx positions where you match the reference read as missing)"
+fi
+
 # Step 1: Preprocess VCF (normalize, filter to PGx positions)
 run_in \
   --cpus 2 --memory 4g \
@@ -36,7 +64,7 @@ run_in \
   -v "$(dirname "$REF_FASTA"):/ref:ro" \
   "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
-    -vcf "/data/${SAMPLE}.vcf.gz" \
+    -vcf "/data/${PGX_INPUT}" \
     -refFna "/ref/$(basename "$REF_FASTA")" \
     -o /data/ \
     -bf "$SAMPLE"
@@ -69,7 +97,8 @@ run_in \
     -reporterJson \
     -reporterHtml
 
-rm -f "${OUTPUT_DIR}/${SAMPLE}.pharmcat_input.vcf"
+rm -f "${OUTPUT_DIR}/${SAMPLE}.pharmcat_input.vcf" "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz" \
+  "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz.tbi"
 
 echo "=== PharmCAT complete ==="
 echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
