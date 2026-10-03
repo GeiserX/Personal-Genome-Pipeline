@@ -554,16 +554,18 @@ def render(report, sections):
         majors = [r for r in report.image_rows if r[3] == "major"]
         rest = [r for r in report.image_rows if r[3] != "major"]
         out += ["### Images behind on a major version", "",
-                "Renovate never opens a major update on its own: it skips it or waits for approval "
-                "on its dependency dashboard. Each needs its revalidation run.", ""]
+                "Renovate never opens a major update on its own: it waits for approval on its "
+                "dependency dashboard, or renovate.json disables the image. Each needs its "
+                "revalidation run.", ""]
         if majors:
             out += ["| Variable | Pinned | Newest | Note |", "|---|---|---|---|"]
             out += [f"| {v} | `{p}` | `{n}` | {esc(note)} |" for v, p, n, _, note in majors]
         else:
             out.append("None.")
         out += ["", "### Images behind on a minor, patch or build", "",
-                "Renovate should open these as pull requests; they are listed so a stalled or silent "
-                "Renovate shows.", ""]
+                "Renovate opens most of these as pull requests. The images renovate.json disables, "
+                "holds or sends to the dependency dashboard (PCGR, Python) wait there. They are "
+                "listed so a stalled or silent Renovate shows.", ""]
         if rest:
             out += ["| Variable | Pinned | Newest | Change | Note |", "|---|---|---|---|---|"]
             out += [f"| {v} | `{p}` | `{n}` | {k} | {esc(note)} |" for v, p, n, k, note in rest]
