@@ -56,9 +56,11 @@ defaults:
   run:
     shell: bash
 
+# A pull request run may be replaced by a newer push. A scheduled or manual run
+# is never cancelled, so it cannot stop half way through writing the issue.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Each check proves it can fail before its answer is trusted.
@@ -120,8 +122,10 @@ jobs:
           cat "${RUNNER_TEMP}/fresh.md"
           exit "$rc"
 
+  # Only main writes the issue, so a manual run on another branch cannot
+  # replace the report with that branch's results.
   report:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: self-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
