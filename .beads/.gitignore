@@ -80,3 +80,6 @@ bd.db
 issues.jsonl
 interactions.jsonl
 events.jsonl
+
+# Visibility cache written by the bd shim (runtime, per-machine)
+.remote-visibility
