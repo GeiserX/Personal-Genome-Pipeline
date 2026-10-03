@@ -20,16 +20,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Two Nextflow lines. "pinned" is NEXTFLOW_VERSION from versions.env, the
-  # release the pipeline is validated with, and blocks. "26.04" is the newest
-  # 26.04.x release, which the manifest refuses until this leg is green: the
-  # leg lifts that cap in its own checkout, reports its own result and does
-  # not block.
+  # Two Nextflow lines, both accepted by the manifest's nextflowVersion:
+  # "pinned" is NEXTFLOW_VERSION from versions.env, the release the pipeline
+  # is validated with; "26.04" is the newest 26.04.x release, so a new patch
+  # release that breaks the pipeline turns the monthly run red.
   nextflow:
     name: nextflow (${{ matrix.line }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    continue-on-error: ${{ matrix.line != 'pinned' }}
     strategy:
       fail-fast: false
       matrix:
@@ -95,57 +93,23 @@ jobs:
         with:
           version: ${{ steps.nf.outputs.version }}
 
-      - name: The manifest refuses this release; lift the cap in this checkout
-        if: steps.scope.outputs.run == 'true' && matrix.line != 'pinned'
-        run: |
-          rc=0
-          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/refused" \
-            > "${RUNNER_TEMP}/refused.log" 2>&1 || rc=$?
-          cat "${RUNNER_TEMP}/refused.log"
-          if [ "$rc" -eq 0 ] || ! grep -q 'does not match' "${RUNNER_TEMP}/refused.log"; then
-            echo "FAIL: the manifest did not refuse this release; if 26.x is supported now, remove this step"
-            exit 1
-          fi
-          # Only the cap goes; the floor is whatever the manifest says.
-          sed -i -E "s/^( *nextflowVersion *= *'![^',]*), *<26'/\1'/" nextflow.config
-          grep -qE "^ *nextflowVersion *= *'![^',]*'\$" nextflow.config || { echo "FAIL: could not lift the cap"; exit 1; }
-          echo "Cap lifted for this run: $(grep nextflowVersion nextflow.config)"
-
       - name: Validate Nextflow config
         if: steps.scope.outputs.run == 'true'
         run: nextflow config main.nf -profile docker > /dev/null
 
       # Parses every .nf and .config file with the strict syntax and fails on
-      # an error, which `nextflow run main.nf -help` never did. KNOWN lists
-      # the errors already on main in files this workflow does not own, by
-      # file and message, until their own fix lands; any other error fails.
+      # an error, which `nextflow run main.nf -help` never did.
       - name: Lint the pipeline
         if: steps.scope.outputs.run == 'true'
-        env:
-          KNOWN: |
-            modules/local/vcf_precheck/main.nf: FILTER_STATUS is not defined
-            modules/local/vcf_precheck/main.nf: FILTER_COUNTS is not defined
         run: |
-          export LC_ALL=C
           rc=0
           nextflow lint . > "${RUNNER_TEMP}/lint.log" 2>&1 || rc=$?
           cat "${RUNNER_TEMP}/lint.log"
-          # "Error <file>:<line>:<col>: <message>" becomes "<file>: <message>".
-          errors=$(sed -e 's/\x1b\[[0-9;]*m//g' "${RUNNER_TEMP}/lint.log" | tr -d '`' \
-            | sed -n 's/^Error  *\([^:]*\):[0-9]*:[0-9]*: \(.*\)$/\1: \2/p' | sort -u)
-          known=$(printf '%s\n' "$KNOWN" | sed '/^$/d' | sort -u)
-          new=$(comm -23 <(printf '%s\n' "$errors" | sed '/^$/d') <(printf '%s\n' "$known"))
-          gone=$(comm -13 <(printf '%s\n' "$errors" | sed '/^$/d') <(printf '%s\n' "$known"))
-          if [ -n "$gone" ]; then
-            while IFS= read -r e; do echo "::warning::fixed, remove it from KNOWN: ${e}"; done <<<"$gone"
+          errors=$(sed -e 's/\x1b\[[0-9;]*m//g' "${RUNNER_TEMP}/lint.log" | grep -c '^Error ' || true)
+          if [ "$errors" -gt 0 ] || [ "$rc" -ne 0 ]; then
+            echo "FAIL: nextflow lint exited ${rc} with ${errors} error line(s)"; exit 1
           fi
-          if [ -n "$new" ]; then
-            echo "FAIL: nextflow lint found errors:"; printf '%s\n' "$new"; exit 1
-          fi
-          if [ "$rc" -ne 0 ] && [ -z "$errors" ]; then
-            echo "FAIL: nextflow lint exited ${rc} with no error line this step can read"; exit 1
-          fi
-          echo "OK: no lint error beyond the $(printf '%s\n' "$known" | grep -c .) known ones"
+          echo "OK: nextflow lint found no error"
 
       - name: Validate nextflow_schema.json and the samplesheet schema
         if: steps.scope.outputs.run == 'true'
