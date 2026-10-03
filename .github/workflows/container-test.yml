@@ -1,98 +1,236 @@
-name: Container Smoke Test
+name: Container Test
 
+# Runs each pinned image of versions.env on the e2e fixture (a slice of the
+# public GIAB HG002 genome, see docs/testing.md) and checks what the tool
+# wrote, so a bump that breaks a tool turns the pull request red. A row of
+# tests/smoke/commands.tsv says what each image runs and what it must write;
+# scripts/ci/image-smoke.sh runs the rows. The jobs:
+#
+#   plan          picks the images (scripts/ci/changed-images.sh): on a pull
+#                 request the variables whose value changed, every image when
+#                 the test itself changed; monthly and on dispatch every image.
+#                 It also fails when an image has no row, so a new image cannot
+#                 be added untested.
+#   manifest      `docker manifest inspect` on every pinned image: metadata
+#                 only, seconds per image, and it catches a tag or digest the
+#                 publisher removed. It prints the platforms each image ships.
+#                 Skipped when plan picked no image.
+#   smoke         one job per picked image: free disk, prepare the inputs its
+#                 rows need, pull it, run the rows, check the outputs.
+#   container-ok  one result for the whole run, so a branch rule can require
+#                 it: green only when plan and manifest passed and every picked
+#                 image passed. It runs on every pull request (no paths filter;
+#                 plan takes seconds and the other jobs are skipped when
+#                 nothing changed), so requiring it never leaves a pull request
+#                 waiting on a check that does not start.
+#
+# Rows marked `full` (AnnotSV with its 5.3 GB annotation data) run monthly and
+# on dispatch only. When the monthly run fails, the freshness job opens or
+# comments on one issue labelled `freshness`, titled "Monthly image test
+# failed".
+#
+# Public repo: GitHub-hosted runners are free here, and this runs on pull
+# requests, so nothing in this file may use a self-hosted runner.
 on:
-  push:
-    branches: [main]
-    paths: ['versions.env', 'scripts/setup.sh', '.github/workflows/container-test.yml']
   pull_request:
     branches: [main]
-    paths: ['versions.env', 'scripts/setup.sh', '.github/workflows/container-test.yml']
-  workflow_dispatch:
   schedule:
-    # Monthly check that upstream images are still pullable
+    # Monthly: catches an image that was removed or no longer runs.
     - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'all, changed (against main), or *_IMAGE names separated by spaces'
+        type: string
+        default: all
+      full:
+        description: 'Also run the rows marked full (AnnotSV on its 5.3 GB data)'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  pull-and-verify:
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      images: ${{ steps.pick.outputs.images }}
+      full: ${{ steps.pick.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Self-tests (planted changes and planted table faults must be caught)
+        run: |
+          scripts/ci/changed-images.sh --self-test
+          scripts/ci/image-smoke.sh --self-test
+
+      - name: Every image has a row, and every row parses
+        run: scripts/ci/image-smoke.sh --check
+
+      - name: Pick the images
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          IMAGES_IN: ${{ inputs.images }}
+          FULL_IN: ${{ inputs.full }}
+        run: |
+          full=false
+          case "$EVENT" in
+            pull_request)
+              # The checkout is the merge commit: its first parent is main.
+              list=$(scripts/ci/changed-images.sh HEAD^1) ;;
+            workflow_dispatch)
+              full=${FULL_IN:-true}
+              case "${IMAGES_IN:-all}" in
+                all) list=$(scripts/ci/changed-images.sh --all) ;;
+                changed) list=$(scripts/ci/changed-images.sh "$(git merge-base origin/main HEAD)") ;;
+                *)
+                  all=$(scripts/ci/changed-images.sh --all)
+                  list=""
+                  for v in $IMAGES_IN; do
+                    grep -qx -- "$v" <<< "$all" || { echo "::error::${v} is not an *_IMAGE variable of versions.env"; exit 1; }
+                    list+="${v}"$'\n'
+                  done ;;
+              esac ;;
+            *)
+              full=true
+              list=$(scripts/ci/changed-images.sh --all) ;;
+          esac
+          json=$(grep . <<< "$list" | jq -R . | jq -cs . || echo '[]')
+          echo "images=${json}" >> "$GITHUB_OUTPUT"
+          echo "full=${full}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Images to run (full rows: ${full})"
+            echo
+            if [ "$json" = "[]" ]; then echo "None: no image changed."; else grep . <<< "$list" | sed 's/^/- /'; fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  manifest:
+    needs: plan
+    if: needs.plan.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Every pinned image still exists
+        run: scripts/ci/image-smoke.sh --manifest
+
+  smoke:
+    needs: plan
+    if: needs.plan.outputs.images != '[]'
+    name: smoke (${{ matrix.var }})
+    runs-on: ubuntu-latest
+    # The longest rows (GRIDSS, AnnotSV with its data download) take about an
+    # hour; ROW_TIMEOUT stops a single row first.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Representative subset — one per registry/publisher to catch auth/rename issues
-          - image: staphb/bcftools:1.21
-            cmd: "bcftools --version"
-          - image: quay.io/biocontainers/minimap2:2.31--h118bc1c_0
-            cmd: "minimap2 --version"
-          - image: brentp/duphold:v0.2.3
-            cmd: "duphold --version"
-          - image: quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0
-            cmd: "AnnotSV --version"
-          - image: broadinstitute/picard:3.4.0
-            cmd: "java -version"
-          - image: pgkb/pharmcat:3.2.0
-            cmd: "pharmcat_pipeline --version"
-          - image: python:3.11
-            cmd: "python3 --version"
-          - image: quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0
-            cmd: "bash -c 'vcfanno 2>&1 | grep -q \"vcfanno version\"'"
-          # slivar uses staphb/bcftools + pre-built binary (no dedicated container)
-          - image: quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
-            cmd: "pypgx --version"
-          # Images only the bash steps use; they came into versions.env with
-          # scripts/lib/common.sh.
-          - image: quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5
-            cmd: "bwa-mem2 version"
-          - image: quay.io/biocontainers/bwa:0.7.18--he4a0461_1
-            cmd: "bash -c 'bwa 2>&1 | grep -q \"Version: 0.7.18\"'"
-          - image: quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2
-            cmd: "freebayes --version"
-          - image: quay.io/biocontainers/strelka:2.9.10--h9ee0642_1
-            cmd: "configureStrelkaGermlineWorkflow.py --version"
-          - image: quay.io/biocontainers/tiddit:3.9.5--py312h6e8b409_0
-            cmd: "bash -c 'tiddit 2>&1 | grep -qi usage'"
-          - image: jmcdani20/hap.py:v0.3.12
-            cmd: "/opt/hap.py/bin/hap.py --version"
-          # Digest-pinned images (publishers ship no versioned tags) — the monthly
-          # run catches digest rot / an unpullable digest.
-          - image: lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
-            cmd: "telomerehunter --help"
-          - image: jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de
-            cmd: "haplogrep3 trees"
-    steps:
-      - name: Pull ${{ matrix.image }}
-        run: docker pull "${{ matrix.image }}"
-
-      - name: Verify ${{ matrix.image }}
-        run: docker run --rm "${{ matrix.image }}" ${{ matrix.cmd }}
-
-  versions-env-sync:
-    runs-on: ubuntu-latest
+        var: ${{ fromJSON(needs.plan.outputs.images) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Verify smoke-test matrix matches versions.env
+      # Images go to /var/lib/docker on /; the work area goes to whichever of
+      # / and /mnt has more room, so the two do not compete for one disk.
+      - name: Free disk space and pick the work area
         run: |
-          echo "Checking that container-test matrix images exist in versions.env..."
-          rm -f /tmp/matrix_fail
-
-          # Extract only "- image: <value>" lines from the YAML matrix block
-          # These always start with leading whitespace, a dash, and "image:"
-          grep -E '^\s+- image:' .github/workflows/container-test.yml | awk '{print $3}' | while read -r img; do
-            if ! grep -qF "$img" versions.env; then
-              echo "FAIL: container-test.yml matrix has $img but it's not in versions.env"
-              echo "1" > /tmp/matrix_fail
-            fi
-          done
-
-          if [ -f /tmp/matrix_fail ]; then
-            exit 1
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / /mnt
+          work="${RUNNER_TEMP}/image-smoke"
+          if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            work=/mnt/image-smoke
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
           fi
-          echo "OK: All matrix images exist in versions.env"
+          echo "SMOKE_WORK=${work}" >> "$GITHUB_ENV"
+
+      - name: Run ${{ matrix.var }} on the fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VAR: ${{ matrix.var }}
+          FULL: ${{ needs.plan.outputs.full }}
+        run: |
+          flag=()
+          [ "$FULL" = "true" ] && flag=(--full)
+          scripts/ci/image-smoke.sh "${flag[@]}" "$VAR"
+
+      - name: Upload row logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-smoke-logs-${{ matrix.var }}
+          path: ${{ env.SMOKE_WORK }}/logs/
+          if-no-files-found: ignore
+
+  container-ok:
+    needs: [plan, manifest, smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Plan and manifest passed, and every picked image passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          MANIFEST: ${{ needs.manifest.result }}
+          SMOKE: ${{ needs.smoke.result }}
+          IMAGES: ${{ needs.plan.outputs.images }}
+        run: |
+          echo "plan=${PLAN} manifest=${MANIFEST} smoke=${SMOKE} images=${IMAGES:-<none>}"
+          if [ "$PLAN" != success ]; then
+            echo "::error::plan did not succeed (${PLAN})"; exit 1
+          fi
+          if [ "$IMAGES" = "[]" ]; then
+            # Nothing picked: manifest and smoke are skipped by design.
+            echo "No image changed."; exit 0
+          fi
+          if [ "$MANIFEST" != success ] || [ "$SMOKE" != success ]; then
+            echo "::error::images were picked, but manifest=${MANIFEST} smoke=${SMOKE}"; exit 1
+          fi
+          echo "Every picked image passed."
+
+  freshness:
+    needs: [plan, manifest, smoke]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Open or update the freshness issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          R="$GITHUB_REPOSITORY"
+          failed=$(gh api "repos/${R}/actions/runs/${RUN_ID}/jobs" --paginate \
+                     --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name')
+          body=$(printf 'The monthly image test failed on %s.\n\nFailed jobs:\n%s\n\nRun: %s\n\nEach job log names the row and the check that failed; the row logs are in the image-smoke-logs-* artifacts of the run.\n' \
+                   "$(date -u +%Y-%m-%d)" "${failed:-(none reported)}" "$RUN_URL")
+          title="Monthly image test failed"
+          gh label create freshness -R "$R" --color c5def5 \
+            --description "A pinned image, database or link has gone stale" 2>/dev/null || true
+          # Found by its title: the freshness workflow keeps its own issue
+          # under the same label, and this job never touches that one.
+          n=$(TITLE="$title" gh issue list -R "$R" --label freshness --state open --json number,title \
+                --jq 'map(select(.title == env.TITLE))[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" -R "$R" --body "$body"
+          else
+            gh issue create -R "$R" --label freshness --title "$title" --body "$body"
+          fi
