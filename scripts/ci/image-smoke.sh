@@ -10,7 +10,9 @@
 #   scripts/ci/image-smoke.sh --check          parse the whole table (fields, options, input
 #                                              names) and check that every *_IMAGE of
 #                                              versions.env has a row (no docker)
-#   scripts/ci/image-smoke.sh --self-test      prove --check fails on a bad table
+#   scripts/ci/image-smoke.sh --self-test      prove --check fails on a bad table, and that a
+#                                              host check never imports a module the image
+#                                              planted in its row directory
 #
 # --full also runs the rows marked `full`: they need data too big for every
 # pull request (the monthly run and a run started by hand pass it).
@@ -137,6 +139,17 @@ self_test() {
   t "an unknown input fails" "unknown input 'genome'" "$A" $'B_IMAGE\t-\tgenome\ttrue\ttrue'
   t "also= on an unset variable fails" "also=B_DATA is not set" "$A" $'B_IMAGE\talso=B_DATA\t-\ttrue\ttrue'
   t "a row with four columns fails" "3 tabs, want 4" "$A" $'B_IMAGE\t-\t-\ttrue'
+  # A row's checks run in its row directory, which the image wrote. A json.py
+  # or csv.py the image planted there must not be imported by a host-side
+  # check (python3 -I keeps the working directory off sys.path).
+  mkdir "${tmp}/row"
+  for m in json csv; do printf 'raise SystemExit("planted %s.py was imported")\n' "$m" > "${tmp}/row/${m}.py"; done
+  printf '{"genes": {"CYP2C19": {"sourceDiplotypes": [{"allele1": {"name": "*1"}, "allele2": {"name": "*2"}}]}}}\n' > "${tmp}/row/r.json"
+  printf 'a,b\n1,2\n' > "${tmp}/row/t.csv"
+  out=$(cd "${tmp}/row" && CHECK_FAILS=0 && py "json loads" "import json; print(json.dumps(1))" \
+          && pharmcat_called r.json 2>/dev/null && csv_cell t.csv a=1 b && echo "fails=${CHECK_FAILS}")
+  if [ "$out" = $'[PASS] json loads (1)\n1\n2\nfails=0' ]; then echo "[PASS] a module the image planted in the row directory is not imported"
+  else echo "[FAIL] a module the image planted in the row directory is not imported: ${out//$'\n'/ | }"; fails=$((fails + 1)); fi
   rm -rf "$tmp"
   if [ "$fails" -gt 0 ]; then echo "self-test: ${fails} case(s) failed" >&2; return 1; fi
   echo "self-test: all cases passed"
@@ -232,7 +245,7 @@ need() {
 need_ref() {
   fx_get fixture_ref.fa.gz fixture_ref.fa.gz.fai fixture_ref.fa.gz.gzi || return 1
   hsam faidx /fx/fixture_ref.fa.gz chr20:10000001-10500000 > "${IN}/slice.fa.tmp" || return 1
-  python3 - "${IN}/slice.fa.tmp" "${IN}/orig.fa" "${IN}/mini.fa" "$PLANT_POS" "$PLANT_LEN" <<'PY' || return 1
+  python3 -I - "${IN}/slice.fa.tmp" "${IN}/orig.fa" "${IN}/mini.fa" "$PLANT_POS" "$PLANT_LEN" <<'PY' || return 1
 import random, sys
 src, orig, mini, pos, n = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
 seq = "".join(l.strip() for l in open(src) if not l.startswith(">")).upper()
@@ -297,7 +310,7 @@ need_longreads() {
   need ref && need truth || return 1
   hbcf consensus -H 1 -f /in/orig.fa /in/truth.vcf.gz > "${IN}/hap1.fa" &&
     hbcf consensus -H 2 -f /in/orig.fa /in/truth.vcf.gz > "${IN}/hap2.fa" || return 1
-  python3 - "${IN}/hap1.fa" "${IN}/hap2.fa" "${IN}/long.fq.gz" <<'PY'
+  python3 -I - "${IN}/hap1.fa" "${IN}/hap2.fa" "${IN}/long.fq.gz" <<'PY'
 import gzip, sys
 comp = str.maketrans("ACGTN", "TGCAN")
 with gzip.open(sys.argv[3], "wt") as out:
@@ -392,7 +405,7 @@ need_qc() {
 # in the mini reference, away from the slice ends and the planted bases.
 need_ehcatalog() {
   need ref || return 1
-  python3 - "${IN}/mini.fa" "${IN}/eh_catalog.json" "$SMALL_END" <<'PY'
+  python3 -I - "${IN}/mini.fa" "${IN}/eh_catalog.json" "$SMALL_END" <<'PY'
 import json, re, sys
 seq = "".join(l.strip() for l in open(sys.argv[1]) if not l.startswith(">"))
 end = int(sys.argv[3])
@@ -442,7 +455,7 @@ contains() { if [ -f "$2" ] && grep -Eq -- "$3" "$2"; then pass "$1"; else fail 
 nonempty() { if [ -s "$2" ]; then pass "$1"; else fail "$1 (${2} is missing or empty)"; fi; }
 py() {
   local out
-  if out=$(python3 -c "$2" 2>&1); then pass "$1${out:+ (${out//$'\n'/ })}"; else fail "$1: $(tail -n 3 <<< "$out" | tr '\n' ' ')"; fi
+  if out=$(python3 -I -c "$2" 2>&1); then pass "$1${out:+ (${out//$'\n'/ })}"; else fail "$1: $(tail -n 3 <<< "$out" | tr '\n' ' ')"; fi
 }
 bcf() { hbcf "$@" 2>/dev/null; }
 # vcf_records FILE: data records (paths relative to the row directory or under /in).
@@ -488,7 +501,7 @@ tsv_count() {
 }
 # csv_cell FILE KEY=VALUE[,KEY=VALUE] COLUMN: COLUMN of the first row that matches.
 csv_cell() {
-  python3 - "$1" "$2" "$3" <<'PY'
+  python3 -I - "$1" "$2" "$3" <<'PY'
 import csv, sys
 want = dict(kv.split("=", 1) for kv in sys.argv[2].split(","))
 for row in csv.DictReader(open(sys.argv[1])):
@@ -499,7 +512,7 @@ PY
 }
 # pharmcat_called report.json: genes with a named diplotype.
 pharmcat_called() {
-  python3 - "$1" <<'PY'
+  python3 -I - "$1" <<'PY'
 import json, sys
 try:
     data = json.load(open(sys.argv[1]))
