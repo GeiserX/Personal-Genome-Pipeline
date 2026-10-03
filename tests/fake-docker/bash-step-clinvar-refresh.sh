@@ -4,7 +4,9 @@
 #   - clinvar_chr and clinvar_pathogenic_chr (and their indexes) are rebuilt
 #     from it, and step 06's normalised copy is removed so step 06 rebuilds it;
 #   - clinvar/RELEASE holds the new ##fileDate;
-#   - a failed download leaves every installed file as it was.
+#   - a failed download leaves every installed file as it was;
+#   - a move into clinvar/ that fails part way fails the refresh and leaves
+#     no RELEASE, so the set is never labelled with the new release.
 # validate-setup.sh prints the release and warns when it is over 35 days old.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
@@ -52,6 +54,27 @@ FAKE_DOWNLOAD_DIR="$SERVED" FAKE_DOWNLOAD_FAIL='clinvar\.vcf\.gz$' run_rc refres
 [ "$RC" -ne 0 ] || fail "a refresh whose download failed exited 0"
 [ "$(cd "$C" && cksum clinvar.vcf.gz clinvar_chr.vcf.gz clinvar_pathogenic_chr.vcf.gz RELEASE)" = "$BEFORE" ] \
   || fail "a failed refresh changed the installed ClinVar files"
+
+# A refresh whose move of the new pathogenic subset fails stops with an error
+# and records no release (the raw file has already moved, so the set may mix
+# two releases). A mv on PATH stands in for a failing disk.
+SHIM="${CASE_WORK}/mv-shim"
+mkdir -p "$SHIM"
+cat > "${SHIM}/mv" <<SHIMEOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    */.refresh/clinvar_pathogenic_chr.vcf.gz) echo "mv: cannot move '\$a': Input/output error" >&2; exit 1 ;;
+  esac
+done
+exec $(command -v mv) "\$@"
+SHIMEOF
+chmod +x "${SHIM}/mv"
+echo 2025-01-01 > "${C}/RELEASE"
+PATH="${SHIM}:${PATH}" FAKE_DOWNLOAD_DIR="$SERVED" run_rc refresh-move-fails "${SCRIPTS}/setup.sh" --refresh clinvar "$GENOME_DIR"
+[ "$RC" -ne 0 ] || fail "a refresh whose move into clinvar/ failed exited 0"
+output_has refresh-move-fails 'could not move the new ClinVar files'
+[ ! -e "${C}/RELEASE" ] || fail "a refresh that failed part way left RELEASE: $(cat "${C}/RELEASE")"
 
 # validate-setup.sh: the release and its age.
 echo 2025-01-01 > "${C}/RELEASE"

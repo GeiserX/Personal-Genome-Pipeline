@@ -2,7 +2,8 @@
 # Step 29 (Mutect2 tumor-only) calls the CHIP driver genes by default, with
 # the read orientation model and, when the common-sites VCF is installed, the
 # contamination estimate. INTERVALS=genome calls the whole genome. A finished
-# result is skipped only for the INTERVALS value it was called with.
+# result is skipped only for the INTERVALS value and the optional resources it
+# was called with.
 # Step 20 (chrM) marks possible NuMTs with NuMTFilterTool at the median
 # autosomal depth it reads from step 16b's mosdepth output.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -56,8 +57,8 @@ bgzf_vcf() {
     printf '\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00'; } > "$1"
 }
 SO="${GENOME_DIR}/sample1/somatic"
-[ "$(cat "${SO}/sample1_somatic_filtered.intervals" 2>/dev/null)" = chip ] \
-  || fail "step 29 did not record INTERVALS=chip beside its result"
+grep -q '^INTERVALS=chip .* common_sites=yes$' "${SO}/sample1_somatic_filtered.run" 2>/dev/null \
+  || fail "step 29 did not record INTERVALS=chip and the common sites beside its result"
 bgzf_vcf "${SO}/sample1_somatic_filtered.vcf.gz"   # the CHIP run, finished
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 somatic-chip-again "${SCRIPTS}/29-mutect2-somatic.sh" sample1
@@ -66,11 +67,20 @@ output_has somatic-chip-again 'Output already exists'
 INTERVALS=genome run_expect 0 somatic-genome-after-chip "${SCRIPTS}/29-mutect2-somatic.sh" sample1
 output_lacks somatic-genome-after-chip 'Output already exists'
 docker_log_has '^run image=[^ ]*gatk.* Mutect2 ' "INTERVALS=genome returned the CHIP result instead of calling the genome"
-[ "$(cat "${SO}/sample1_somatic_filtered.intervals" 2>/dev/null)" = genome ] \
+grep -q '^INTERVALS=genome ' "${SO}/sample1_somatic_filtered.run" 2>/dev/null \
   || fail "step 29 did not record INTERVALS=genome beside its result"
+# A result filtered without the contamination estimate is redone once the
+# common-sites VCF is there. Here the other way round: the VCF is removed.
+bgzf_vcf "${SO}/sample1_somatic_filtered.vcf.gz"
+mv "${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz.tbi" "${CASE_WORK}/common.tbi"
+: > "$FAKE_DOCKER_LOG"
+INTERVALS=genome run_expect 0 somatic-resources-changed "${SCRIPTS}/29-mutect2-somatic.sh" sample1
+output_lacks somatic-resources-changed 'Output already exists'
+docker_log_has '^run image=[^ ]*gatk.* Mutect2 ' "step 29 reused a result filtered with the common sites after they were removed"
+mv "${CASE_WORK}/common.tbi" "${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz.tbi"
 # A finished result with no record (an older version of this step) is called again.
 bgzf_vcf "${SO}/sample1_somatic_filtered.vcf.gz"
-rm -f "${SO}/sample1_somatic_filtered.intervals"
+rm -f "${SO}/sample1_somatic_filtered.run"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 somatic-no-record "${SCRIPTS}/29-mutect2-somatic.sh" sample1
 output_lacks somatic-no-record 'Output already exists'
