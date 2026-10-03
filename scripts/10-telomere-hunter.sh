@@ -45,15 +45,18 @@ else
   echo "  Install the bands with: ./scripts/setup.sh ${GENOME_DIR}"
 fi
 
-# --root: this image has not been shown to run as an unprivileged user.
 # TelomereHunter has no thread option; THREADS caps the container.
-run_in --root \
+# --plotNone: the Bioconda build's plots fail (its R has no dplyr, and its
+# PyPDF2 is written for Python 3, which stops the run after the summary is
+# written). The summary and the TVR tables do not need them.
+run_in \
   --cpus "$THREADS" --memory 4g \
   "${TELOMEREHUNTER_IMAGE}" \
   telomerehunter \
     -ibt "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/telomere/${SAMPLE}" \
     -p "$SAMPLE" \
+    --plotNone \
     ${BAND_ARGS[@]+"${BAND_ARGS[@]}"}
 
 echo "=== TelomereHunter complete ==="

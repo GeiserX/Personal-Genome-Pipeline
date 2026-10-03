@@ -134,12 +134,6 @@
       "enabled": false
     },
     {
-      "description": "Digest pin: lgalarno/telomerehunter is a personal-account image with no versioned tags, pinned by digest. A new digest of its latest tag is an unversioned change nobody can review, so it gets no updates until it moves to biocontainers.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["lgalarno/telomerehunter"],
-      "enabled": false
-    },
-    {
       "description": "Nextflow: every update waits for approval on the dependency dashboard. A new release can change what the strict config parser accepts, and the validated version is also written in nextflow.config and the Nextflow docs, which need reading by hand.",
       "matchDepNames": ["nextflow-io/nextflow"],
       "dependencyDashboardApproval": true
