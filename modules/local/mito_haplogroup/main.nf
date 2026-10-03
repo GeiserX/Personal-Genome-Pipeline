@@ -74,7 +74,7 @@ process MITO_HAPLOGROUP {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
-        haplogrep3_reported: \$(haplogrep3 --version 2>&1 | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)*' | head -1 | grep . || echo unknown)
+        haplogrep3_reported: \$( { haplogrep3 --version 2>&1 || true; } | awk '!v && match(\$0, /[0-9]+\\.[0-9]+(\\.[0-9]+)*/) { v = substr(\$0, RSTART, RLENGTH) } END { print (v != "" ? v : "unknown") }')
     END_VERSIONS
     """
 

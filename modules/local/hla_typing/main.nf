@@ -41,9 +41,13 @@ process HLA_TYPING {
         -o hlaidx_grch38
 
     # Step 3: Run HLA typing
-    # Locate build output (file naming varies across T1K versions)
-    SEQ_FA=\$(ls hlaidx_grch38/*dna_seq.fa 2>/dev/null | head -1)
-    COORD_FA=\$(ls hlaidx_grch38/*dna_coord.fa 2>/dev/null | head -1)
+    # Locate build output (file naming varies across T1K versions). A glob, not
+    # `ls | head`: under pipefail a failed ls would stop the task before the
+    # message below.
+    SEQ_FA=""
+    COORD_FA=""
+    for f in hlaidx_grch38/*dna_seq.fa; do if [ -f "\$f" ]; then SEQ_FA=\$f; break; fi; done
+    for f in hlaidx_grch38/*dna_coord.fa; do if [ -f "\$f" ]; then COORD_FA=\$f; break; fi; done
     if [ -z "\$SEQ_FA" ] || [ -z "\$COORD_FA" ]; then
         echo "ERROR: t1k-build did not produce expected output files in hlaidx_grch38/"
         ls -la hlaidx_grch38/ 2>/dev/null

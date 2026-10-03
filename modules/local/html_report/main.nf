@@ -81,7 +81,7 @@ process HTML_REPORT {
     # --- Clinical filter counts ---
     CLINICAL_TOTAL="N/A"
     if [ "${has_clinical}" = "true" ] && [ -f "${clinical_vcf}" ]; then
-        CLINICAL_TOTAL=\$(bcftools view -H "${clinical_vcf}" 2>/dev/null | wc -l || echo "N/A")
+        CLINICAL_TOTAL=\$(bcftools view -H "${clinical_vcf}" | wc -l | tr -d ' ')
     fi
 
     # --- CPSR status ---
@@ -95,7 +95,7 @@ process HTML_REPORT {
     SLIVAR_COUNT="N/A"
     if [ "${has_slivar}" = "true" ] && [ -f "${slivar_vcf}" ]; then
         SLIVAR_STATUS="Complete"
-        SLIVAR_COUNT=\$(bcftools view -H "${slivar_vcf}" 2>/dev/null | wc -l || echo "N/A")
+        SLIVAR_COUNT=\$(bcftools view -H "${slivar_vcf}" | wc -l | tr -d ' ')
     fi
 
     # --- Runs of homozygosity: every RG segment, as bin/collect_summary.py counts them ---
