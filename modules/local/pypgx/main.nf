@@ -38,9 +38,13 @@ process PYPGX {
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
 
-    # Link pypgx bundle to expected location (bash script mounts at /root/pypgx-bundle)
-    if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "EMPTY" ]; then
-        ln -sf "\$(pwd)/${pypgx_bundle}" /root/pypgx-bundle
+    # pypgx reads its bundle from ~/pypgx-bundle. HOME is the task directory,
+    # so nothing is written inside the image (a read-only Singularity image
+    # works) and the bundle is linked there unless it is already staged
+    # under that name.
+    export HOME="\$PWD"
+    if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "pypgx-bundle" ]; then
+        ln -sfn "\$PWD/${pypgx_bundle}" "\$HOME/pypgx-bundle"
     fi
 
     DOC="\$OUTBASE/depth_of_coverage.zip"
