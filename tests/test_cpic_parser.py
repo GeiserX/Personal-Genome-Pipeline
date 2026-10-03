@@ -250,6 +250,8 @@ def main():
             json.dump({"genes": {"CYP2C19": dip("*2", "*2", "Poor Metabolizer")}}, f)
         with open(bad, "wb") as f:
             f.write(b"Gene\tDiplotype\n\xff\xfe\x00broken\n")
+        with open(comp, "w") as f:  # a comparison left by an earlier run
+            f.write("Gene\tPharmCAT_diplotype\tpypgx_diplotype\tMatch\tCalled_by\nCYP2C19\t*1/*1\t*1/*1\tYes\tboth\n")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             try:
                 rc = pgx_parse.main(["cpic-report", "--sample", "BADPYPGX", "--report", rep, "--outdir", d,
@@ -259,7 +261,7 @@ def main():
         rp = os.path.join(d, "BADPYPGX_cpic_recommendations.txt")
         rec = open(rp).read() if os.path.exists(rp) else ""
         check("unreadable pypgx summary: exits 0 with the CPIC report written", rc == 0 and "CYP2C19 -- Poor" in rec, rc)
-        check("unreadable pypgx summary: the report says no comparison was made, and none is written",
+        check("unreadable pypgx summary: the report says no comparison was made, and an earlier one is removed",
               "Could not read the pypgx summary" in rec and not os.path.exists(comp), rec[-600:])
     finally:
         shutil.rmtree(work)

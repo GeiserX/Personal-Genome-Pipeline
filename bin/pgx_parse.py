@@ -499,6 +499,8 @@ def cpic_report(args):
     with open(os.path.join(args.outdir, f"{args.sample}_cpic_recommendations.txt"), "w") as out:
         out.write("\n".join(lines) + "\n")
 
+    if args.pypgx and args.comparison and pypgx_error and os.path.exists(args.comparison):
+        os.remove(args.comparison)  # an earlier run's comparison must not stand in for this one
     if args.pypgx and args.comparison and not pypgx_error:
         rows = compare(calls, pypgx)
         with open(args.comparison, "w", newline="") as f:
