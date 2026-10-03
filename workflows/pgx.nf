@@ -50,7 +50,8 @@ workflow PGX {
             ch_vcf,
             ch_clinvar,
             ch_clinvar_index,
-            ch_reference
+            ch_reference,
+            ch_reference_fai
         )
         ch_clinvar_dir = CLINVAR_SCREEN.out.isec_dir
         ch_versions    = ch_versions.mix(CLINVAR_SCREEN.out.versions)
