@@ -12,11 +12,12 @@
 #   4. a ClinVar file named 1,2,... against chr1,... stops with an error;
 #   5. zero hits print a single 0 in both reports, with no
 #      "integer expression expected" (the `grep -c ... || echo 0` bug).
-# Needs docker: step 06 runs bcftools in staphb/bcftools:1.21.
+# Needs docker: step 06 runs bcftools in BCFTOOLS_IMAGE from versions.env.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+# shellcheck source=../versions.env
+. "${REPO}/versions.env"
 WORK=$(mktemp -d)
 # Files written by containers are root-owned; remove them from a container.
 cleanup() {
