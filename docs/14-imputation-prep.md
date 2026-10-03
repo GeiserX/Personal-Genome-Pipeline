@@ -41,7 +41,9 @@ docker run --rm \
 
 **By default the input is variant-only.** The step reads the VCF from step 3, which lists only the sites where the sample differs from the reference. A site that is missing from it is not a confirmed homozygous-reference genotype, and an imputation server treats it as missing.
 
-**With panel sites, hom-ref genotypes come from the gVCF.** Step 3 also writes a gVCF (`vcf/${SAMPLE}.g.vcf.gz`), which records where the sample matches the reference. Give the step the reference panel's sites and it genotypes each of them from the gVCF: a variant call, a 0/0 call where the sample matches the reference, and nothing where the site was not covered. The per-chromosome files then hold those sites only, which are the sites the server imputes from.
+**With panel sites, hom-ref genotypes come from the gVCF.** Step 3 also writes a gVCF (`vcf/${SAMPLE}.g.vcf.gz`), which records where the sample matches the reference. Give the step the reference panel's sites and it genotypes each of them from the gVCF: a variant call, a 0/0 call where the sample matches the reference, and nothing where the site was not covered. The per-chromosome files then hold those sites only.
+
+The 0/0 calls matter when you merge this sample's files with other samples before the upload: there they tell a 0/0 genotype from a missing one. In a single-sample upload they add nothing, because the Michigan server's input QC [excludes monomorphic sites](https://genepi.github.io/michigan-imputationserver/pipeline/) (a 0/0 or 1/1 site in the only sample is one) and alleles other than A, C, G and T (a 0/0 call has the ALT `.`).
 
 ```bash
 # CHROM<TAB>POS per line, or a VCF of the panel's sites, inside GENOME_DIR

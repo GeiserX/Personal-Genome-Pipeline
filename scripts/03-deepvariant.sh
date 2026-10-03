@@ -121,12 +121,13 @@ for f in "${PART}.vcf.gz" "${PART}.g.vcf.gz"; do
   fi
 done
 # The old indexes go first, so an index never sits next to a file it was not
-# built from.
+# built from. The gVCF goes before the VCF: run-all.sh takes a VCF with its
+# index as a finished call, so the VCF pair is the last thing to appear.
 rm -f "${VCF}.tbi" "${GVCF}.tbi"
-mv -f "${PART}.vcf.gz" "$VCF"
-mv -f "${PART}.vcf.gz.tbi" "${VCF}.tbi"
 mv -f "${PART}.g.vcf.gz" "$GVCF"
 mv -f "${PART}.g.vcf.gz.tbi" "${GVCF}.tbi"
+mv -f "${PART}.vcf.gz" "$VCF"
+mv -f "${PART}.vcf.gz.tbi" "${VCF}.tbi"
 if [ -f "${PART}.visual_report.html" ]; then
   mv -f "${PART}.visual_report.html" "${OUTPUT_DIR}/${SAMPLE}.visual_report.html"
 fi
