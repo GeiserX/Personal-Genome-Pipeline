@@ -257,11 +257,13 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 | Feature | GRCh37 / hg19 | GRCh38 / hg38 |
 |---|---|---|
 | chr1 length | 249,250,621 | 248,956,422 |
-| Chromosome prefix | Often no `chr` | Always `chr` |
-| Mitochondria name | `MT` (or `chrM`) | `chrM` |
+| Chromosome prefix | Often no `chr` | `chr` in UCSC-style files (what the pipeline needs); none in Ensembl-style files |
+| Mitochondria name | `MT` (or `chrM`) | `chrM` (UCSC style) or `MT` (Ensembl style) |
 | ALT contigs | No | Yes |
 
-**Fix:** Extract FASTQ from BAM and re-align to GRCh38:
+The prefix alone does not tell the build: some providers deliver GRCh38 with Ensembl names (`1`, `MT`). Check chr1's length. A GRCh38 VCF with Ensembl names needs only a rename, which the Nextflow pipeline prints when it stops on it: see [Starting from a Vendor VCF](vcf-first.md).
+
+**Fix (GRCh37 data):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
 source versions.env   # from the repository root
 docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
