@@ -1,0 +1,26 @@
+##fileformat=VCFv4.1
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">
+##INFO=<ID=REF,Number=1,Type=Integer,Description="Reference copy number">
+##INFO=<ID=RL,Number=1,Type=Integer,Description="Reference length in bp">
+##INFO=<ID=RU,Number=1,Type=String,Description="Repeat unit in the reference orientation">
+##INFO=<ID=REPID,Number=1,Type=String,Description="Repeat identifier as specified in the variant catalog">
+##INFO=<ID=VARID,Number=1,Type=String,Description="Variant identifier as specified in the variant catalog">
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=SO,Number=1,Type=String,Description="Type of reads that support the allele">
+##FORMAT=<ID=REPCN,Number=1,Type=String,Description="Number of repeat units spanned by the allele">
+##FORMAT=<ID=REPCI,Number=1,Type=String,Description="Confidence interval for REPCN">
+##FORMAT=<ID=ADSP,Number=1,Type=String,Description="Number of spanning reads consistent with the allele">
+##FORMAT=<ID=ADFL,Number=1,Type=String,Description="Number of flanking reads consistent with the allele">
+##FORMAT=<ID=ADIR,Number=1,Type=String,Description="Number of in-repeat reads consistent with the allele">
+##FORMAT=<ID=LC,Number=1,Type=Float,Description="Locus coverage">
+##ALT=<ID=STR19,Description="Allele comprised of 19 repeat units">
+##ALT=<ID=STR22,Description="Allele comprised of 22 repeat units">
+##ALT=<ID=STR24,Description="Allele comprised of 24 repeat units">
+##ALT=<ID=STR45,Description="Allele comprised of 45 repeat units">
+##contig=<ID=chr4,length=190214555>
+##contig=<ID=chr14,length=107043718>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	HG002
+chr4	3074876	HTT	C	<STR19>,<STR45>	.	PASS	SVTYPE=STR;END=3074939;REF=21;RL=63;RU=CAG;VARID=HTT;REPID=HTT	GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC	1/2:SPANNING/INREPEAT:19/45:19-19/42-48:20/0:10/12:0/15:40.1
+chr14	92071010	ATXN3	T	<STR22>,<STR24>	.	PASS	SVTYPE=STR;END=92071052;REF=14;RL=42;RU=GCT;VARID=ATXN3;REPID=ATXN3	GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC	1/2:SPANNING/SPANNING:22/24:22-22/24-24:15/12:8/9:0/0:35.2

@@ -5,7 +5,7 @@
 # Output: clinvar/${SAMPLE}_clinvar_hits.vcf — the sample's records that match a
 # ClinVar Pathogenic/Likely_pathogenic allele, annotated with ClinVar's ID,
 # GENEINFO, CLNSIG and CLNREVSTAT. Both reports (steps 24 and generate-report.sh)
-# read this file.
+# read this file and group the hits by ClinVar review stars.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -109,3 +109,12 @@ HIT_COUNT=$(grep -c -v '^#' "$HITS" || true)
 echo "=== ClinVar screen complete ==="
 echo "Hits: ${HITS} (sample records matching a ClinVar Pathogenic/Likely_pathogenic allele)"
 echo "Count: ${HIT_COUNT} pathogenic hits"
+# A zero-star submission counts as a hit like an expert-panel one; the review
+# status (CLNREVSTAT, copied on above) says how much weight each deserves.
+# bin/clinvar_hits.awk maps it to ClinVar's stars, as both reports do.
+if [ "$HIT_COUNT" -gt 0 ]; then
+  echo "By review status (ClinVar stars):"
+  awk -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$HITS" | sort -t$'\t' -k1,1nr -k2,2V -k3,3n \
+    | awk -F'\t' '{n[$1]++; line[$1] = line[$1] sprintf("    %s %s:%s %s>%s %s %s [%s]\n", $7, $2, $3, $4, $5, $6, $8, $9)}
+        END {for (s = 4; s >= 0; s--) if (n[s]) printf "  %d star%s: %d\n%s", s, (s == 1 ? "" : "s"), n[s], line[s]}'
+fi

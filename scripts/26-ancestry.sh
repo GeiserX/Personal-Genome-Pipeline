@@ -99,15 +99,17 @@ else
   echo "[1/5] 1000G reference SNPs already downloaded."
 fi
 
-# Step 2: Download population labels
-if [ ! -f "$KG_POPS" ]; then
+# Step 2: Download population labels. An empty file (left when the download
+# failed) is tried again.
+if [ ! -s "$KG_POPS" ]; then
   echo "[2/5] Downloading population labels..."
   fetch "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20130502.ALL.panel" \
     "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" || true
 
   # Create simple population mapping
   if [ -f "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" ]; then
-    awk -F'\t' 'NR>1 {print $1"\t"$3}' "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" > "$KG_POPS"
+    awk -F'\t' 'NR>1 {print $1"\t"$3}' "${REFDIR}/integrated_call_samples_v3.20130502.ALL.panel" > "${KG_POPS}.tmp"
+    mv -f "${KG_POPS}.tmp" "$KG_POPS"
   else
     echo "WARNING: Could not download population labels. PCA will run without labels."
     touch "$KG_POPS"

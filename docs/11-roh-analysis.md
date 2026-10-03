@@ -16,6 +16,13 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/11-roh-analysis.sh your_sample
+```
+
+What the script runs. Only PASS records (and records with no filter, as chip VCFs have) go into `bcftools roh`: DeepVariant's `RefCall` and other filtered records are not genotypes to count on. The Nextflow ROH module reads the same records with the same flags.
+
+```bash
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
@@ -23,13 +30,15 @@ GENOME_DIR=/path/to/your/data
 docker run --rm \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   "${BCFTOOLS_IMAGE}" \
-  bcftools roh \
-    --AF-dflt 0.4 \
-    -o /data/${SAMPLE}_roh.txt \
-    /data/${SAMPLE}.vcf.gz
-
-# Output: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt (tab-delimited ROH segments)
+  bash -euo pipefail -c "bcftools view -f PASS,. -Ou /data/${SAMPLE}.vcf.gz \
+    | bcftools roh --AF-dflt 0.4 -o /data/${SAMPLE}_roh.txt -"
 ```
+
+For chip data (no `FORMAT/PL`), the script adds `-G30`.
+
+## Output
+- `${SAMPLE}/vcf/${SAMPLE}_roh.txt` — bcftools roh output: per-site states (`ST` lines) and segments (`RG` lines)
+- `${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt` — the autosomal segments of **5 Mb or more** (chrom, start, end, length in bp and Mb). The script and the Nextflow module write the same file with the same threshold.
 
 ## Interpretation
 
@@ -69,6 +78,7 @@ Subtract any segment that lies in one of the centromeric regions below.
 ## Important Notes
 - The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode
 - `--AF-dflt 0.4` sets a default allele frequency when population AF data is unavailable — suitable for single-sample WGS
+- Not done yet: a population allele-frequency file (`--AF-file`, for example from gnomAD) would replace that one default value with real frequencies per site and give better segment edges. Neither the script nor the module uses one today.
 - **Known false-positive regions** (centromeric/pericentromeric, always appear as ROH in WGS):
   - chr1: 125-143 MB
   - chr9: 42-60 MB

@@ -40,14 +40,19 @@ for f in "$R1" "$R2"; do
   fi
 done
 
-# Skip if trimmed output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz" ] && [ -f "${OUTPUT_DIR}/${SAMPLE}_R2.fastq.gz" ]; then
+# Skip if trimmed output already exists. fastp writes into fastq_trimmed.part/,
+# renamed to fastq_trimmed/ only when it finished, so a run that was killed
+# leaves no half-written FASTQ for step 02 to align.
+if [ -s "${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz" ] && [ -s "${OUTPUT_DIR}/${SAMPLE}_R2.fastq.gz" ] \
+   && [ -s "${OUTPUT_DIR}/${SAMPLE}_fastp.json" ]; then
   echo "Trimmed FASTQs already exist in ${OUTPUT_DIR}/, skipping."
   echo "Delete them to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0
 fi
 
-mkdir -p "$OUTPUT_DIR"
+PART_DIR="${OUTPUT_DIR}.part"
+rm -rf "$PART_DIR"
+mkdir -p "$PART_DIR"
 
 # fastp: adapter trimming + QC
 # Flags:
@@ -65,8 +70,8 @@ run_in --cpus "${THREADS}" --memory 4g \
   fastp \
     -i "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
     -I "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \
-    -o "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" \
-    -O "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" \
+    -o "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_R1.fastq.gz" \
+    -O "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_R2.fastq.gz" \
     --detect_adapter_for_pe \
     --qualified_quality_phred 20 \
     --cut_front \
@@ -75,9 +80,12 @@ run_in --cpus "${THREADS}" --memory 4g \
     --length_required 36 \
     -g \
     -R "${SAMPLE}" \
-    -j "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.json" \
-    -h "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.html" \
+    -j "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_fastp.json" \
+    -h "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_fastp.html" \
     -w "${THREADS}"
+
+rm -rf "$OUTPUT_DIR"
+mv "$PART_DIR" "$OUTPUT_DIR"
 
 echo "=== fastp QC complete ==="
 echo "Trimmed R1:   ${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz"

@@ -15,35 +15,52 @@ Raw VCF variants are just genomic coordinates and genotypes. VEP transforms them
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
-- Offline VEP cache must be downloaded first (see step 00-reference-setup)
+- The VCF from step 3 **and its `.tbi`**: the step refuses a VCF without its index, which may be half written
+- Offline VEP cache: step 13 downloads, checks and unpacks it the first time it runs (see step 00-reference-setup)
 - Cache size: see [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) (about 26 GB to download, 30 GB unpacked)
 
 ## Command
 ```bash
+export GENOME_DIR=/path/to/your/data
+THREADS=8 ./scripts/13-vep-annotation.sh your_sample
+```
+
+`THREADS` (default 8) sets the container's CPUs and VEP's `--fork`; memory is 2 GB per fork, 8 GB at least. What the script runs, with the same annotation fields as the Nextflow VEP module:
+
+```bash
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
+REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" in 00-reference-setup.md
 
 docker run --rm \
-  --cpus 4 --memory 8g \
-  --user root \
+  --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
   -v ${GENOME_DIR}/vep_cache:/opt/vep/.vep \
   "${VEP_IMAGE}" \
   vep \
     --input_file /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
-    --output_file /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf \
+    -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz \
     --vcf \
+    --compress_output bgzip \
     --cache \
+    --cache_version 116 \
     --dir_cache /opt/vep/.vep \
     --offline \
     --assembly GRCh38 \
+    --fasta /genome/${REF_FASTA} \
     --everything \
     --force_overwrite \
-    --fork 4
-
-# Output: VCF with CSQ INFO field containing all annotations
+    --fork 8
 ```
+
+The script writes VEP's output under a temporary name, renames it to `${SAMPLE}_vep.vcf.gz` only when VEP succeeded, and indexes it.
+
+## Output
+- `${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz` (+ `.tbi`) — the VCF with the `CSQ` INFO field, bgzip-compressed
+- `${SAMPLE}/vep/${SAMPLE}_vep_summary.html` and `${SAMPLE}_vep_warnings.txt` — VEP's run statistics and warnings
+
+A finished run removes the files built from an older annotation: vcfanno's `${SAMPLE}_annotated.vcf.gz` (+ `.tbi`, step 30) and the uncompressed `${SAMPLE}_vep.vcf` earlier versions wrote. Steps 30, 23 and 31 prefer those files when they exist, so after a VEP or cache update they would otherwise keep reading the old annotation; rerun step 30 after step 13.
 
 ## Output Format
 - Default: VCF with `CSQ` INFO field (pipe-delimited sub-fields)
@@ -59,9 +76,9 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 
 ## Important Notes
 - Full WGS annotation takes **2-4 hours** depending on CPU and variant count (~5M variants)
-- `--fork 4` enables parallelism — increase if more cores are available
+- `--fork` follows `THREADS`; each fork loads its own copy of the cache index
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
-- `--dir_cache /opt/vep/.vep` is required when running as `--user root` (VEP looks in `/root/.vep` by default)
-- Running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`). Add `--fasta "/genome/${REF_FASTA}"` if HGVS is needed ([`REF_FASTA`](00-reference-setup.md#the-reference-path-on-every-page) is the reference path)
+- `--dir_cache /opt/vep/.vep`: the cache is mounted there, not in the home directory VEP looks in by default
+- `--fasta`: running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`), so the script always passes the reference ([`REF_FASTA`](00-reference-setup.md#the-reference-path-on-every-page) is the reference path)
 - VEP does NOT assess variant pathogenicity in ClinVar context — combine with step 6 (ClinVar screen) for full picture
-- **Upgrading from an older release:** VEP reads the cache directory named after its own release (`homo_sapiens/116_GRCh38/` for the pinned release 116). An older cache such as `112_GRCh38/` is not used; download the matching cache.
+- **Upgrading from an older release:** VEP reads the cache directory named after the release passed in `--cache_version` (`homo_sapiens/116_GRCh38/` for the pinned release 116). When that directory is missing, VEP stops with an error instead of annotating from an older cache such as `112_GRCh38/`; step 13 downloads the matching cache on its first run.

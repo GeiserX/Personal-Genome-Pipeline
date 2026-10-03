@@ -16,41 +16,30 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 ```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/14-imputation-prep.sh your_sample
+```
+
+The script starts one container and makes one `bcftools view` pass per chromosome, chr1-22 and chrX. Each file keeps the PASS records (and records with no filter), is written with its index under a temporary name, and is renamed when both are complete: the old index is removed first and the new one is moved in last, so an index never sits beside a VCF it was not built from. A chromosome the VCF has no record on gets no file (a file an earlier run left for it is removed), and the log names it. The commands it runs:
+
+```bash
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
+mkdir -p ${GENOME_DIR}/${SAMPLE}/imputation/mis_ready
 
-# Step 1: Filter to PASS variants only
 docker run --rm \
-  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}:/data \
   "${BCFTOOLS_IMAGE}" \
-  bcftools view -f PASS \
-    /data/${SAMPLE}.vcf.gz \
-    -Oz -o /data/${SAMPLE}_pass.vcf.gz
+  bash -c 'for chr in $(seq -f "chr%g" 1 22) chrX; do
+    bcftools view -f PASS,. -r "$chr" -Oz --write-index=tbi \
+      -o /data/imputation/mis_ready/'"${SAMPLE}"'_${chr}.vcf.gz /data/vcf/'"${SAMPLE}"'.vcf.gz
+  done'
 
-# Step 2: Index the filtered VCF
-docker run --rm \
-  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools index -t /data/${SAMPLE}_pass.vcf.gz
-
-# Step 3: Split by chromosome (chr1-22, autosomes only)
-for CHR in $(seq 1 22); do
-  docker run --rm \
-    -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -r chr${CHR} \
-      /data/${SAMPLE}_pass.vcf.gz \
-      -Oz -o /data/imputation/chr${CHR}.vcf.gz
-
-  docker run --rm \
-    -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools index -t /data/imputation/chr${CHR}.vcf.gz
-done
-
-# Output: 22 per-chromosome VCF files in /data/imputation/
+# Output: 23 per-chromosome VCFs, each with its .tbi, in ${SAMPLE}/imputation/mis_ready/
 ```
+
+**The input is variant-only.** The step reads the VCF from step 3, which lists only the sites where the sample differs from the reference. A site that is missing from it is not a confirmed homozygous-reference genotype, and an imputation server treats it as missing. This stays so until the pipeline can start from a gVCF (which records reference calls too).
 
 ## Server Options
 | Server | Panel | Samples | Build | URL |
@@ -70,6 +59,5 @@ Before you upload, read the server's data policy. The Michigan server's [securit
 - Registration is required at the imputation server before submitting jobs
 - Upload per-chromosome VCF files (not the whole-genome file)
 - Servers accept `.vcf.gz` format — ensure files are bgzipped (bcftools output is bgzipped by default)
-- Sex chromosomes (chrX) can be submitted separately with ploidy-aware settings
+- chrX is prepared too; servers usually take it as a separate job with ploidy-aware settings
 - Results include phased haplotypes and imputation quality scores (R-squared) — filter imputed variants with R2 < 0.3
-- Create the output directory before running: `mkdir -p ${GENOME_DIR}/${SAMPLE}/vcf/imputation`

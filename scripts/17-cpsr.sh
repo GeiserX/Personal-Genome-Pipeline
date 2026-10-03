@@ -54,6 +54,16 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+# ACMG secondary findings (genes outside CPSR's cancer panels, such as cardiac
+# and metabolic ones) are reported unless CPSR_SECONDARY_FINDINGS=false: some
+# people do not want to learn about them.
+CPSR_EXTRA=()
+case "${CPSR_SECONDARY_FINDINGS:-true}" in
+  true) CPSR_EXTRA+=(--secondary_findings) ;;
+  false) echo "Secondary findings: off (CPSR_SECONDARY_FINDINGS=false)" ;;
+  *) echo "ERROR: CPSR_SECONDARY_FINDINGS must be true or false, got '${CPSR_SECONDARY_FINDINGS}'" >&2; exit 1 ;;
+esac
+
 # --root: the PCGR image has not been shown to run as an unprivileged user.
 # The VEP cache and the PCGR bundle stay writable as before: no CI run shows
 # that PCGR and its VEP never write into them.
@@ -72,7 +82,7 @@ run_in --root --cpus 4 --memory 8g \
     --sample_id "${SAMPLE}" \
     --panel_id 0 \
     --classify_all \
-    --secondary_findings \
+    ${CPSR_EXTRA[@]+"${CPSR_EXTRA[@]}"} \
     --force_overwrite
 
 echo "=== CPSR complete ==="

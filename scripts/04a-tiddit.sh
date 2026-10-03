@@ -4,9 +4,10 @@
 # Input: sorted BAM + GRCh38 reference
 # Output: SV VCF in $GENOME_DIR/<sample>/sv_tiddit/
 # Runtime: ~30-60 minutes per 30X genome (with --skip_assembly)
-# NOTE: TIDDIT >=3.9 requires BWA index for local assembly. Since the default
-# pipeline uses minimap2, we use --skip_assembly. If using BWA-MEM2 alignment
-# (02a-alignment-bwamem2.sh), you can remove --skip_assembly for better breakpoint resolution.
+# NOTE: TIDDIT's local assembly realigns contigs with classic `bwa mem`, so it
+# needs the classic BWA index next to the reference (.amb .ann .bwt .pac .sa,
+# the files GRIDSS needs too). BWA-MEM2's index (.bwt.2bit.64) does not count.
+# Without the classic index the step runs with --skip_assembly.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -37,16 +38,28 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 
-# Detect BWA index — if present, enable local assembly for better breakpoint resolution
-BWA_INDEX="${REF}.bwt.2bit.64"
+# Local assembly only with the classic BWA index: with BWA-MEM2's index alone
+# TIDDIT's bwa call fails and the run stops with "file does not contain
+# alignment data".
 TIDDIT_EXTRA_ARGS=()
-if [ -f "$BWA_INDEX" ]; then
-  echo "BWA index detected — enabling local assembly for breakpoint refinement."
+BWA_MISSING=""
+for ext in amb ann bwt pac sa; do
+  [ -f "${REF}.${ext}" ] || BWA_MISSING="${BWA_MISSING} .${ext}"
+done
+if [ -z "$BWA_MISSING" ]; then
+  echo "Classic BWA index found: local assembly enabled for breakpoint refinement."
 else
-  echo "No BWA index found — using --skip_assembly (minimap2 alignment)."
+  echo "No classic BWA index (missing:${BWA_MISSING}): assembly skipped (--skip_assembly)."
+  if [ -f "${REF}.bwt.2bit.64" ]; then
+    echo "  The BWA-MEM2 index next to the reference is not one TIDDIT can use."
+  fi
   TIDDIT_EXTRA_ARGS+=(--skip_assembly)
 fi
 
+# TIDDIT exits 0 when one of its own checks fails, so its output is checked
+# below and its log kept for the error message.
+TIDDIT_LOG="${OUTPUT_DIR}/${SAMPLE}_tiddit.log"
+rm -f "${OUTPUT_DIR}/${SAMPLE}.vcf"
 echo "[1/3] Running TIDDIT SV caller..."
 run_in --cpus "$THREADS" --memory 8g \
   "$TIDDIT_IMAGE" \
@@ -54,8 +67,14 @@ run_in --cpus "$THREADS" --memory 8g \
     --bam "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     --ref "${REF_FASTA_C}" \
     --threads "$THREADS" \
-    "${TIDDIT_EXTRA_ARGS[@]}" \
-    -o "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}"
+    ${TIDDIT_EXTRA_ARGS[@]+"${TIDDIT_EXTRA_ARGS[@]}"} \
+    -o "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}" 2>&1 | tee "$TIDDIT_LOG"
+
+if ! have_output "${OUTPUT_DIR}/${SAMPLE}.vcf"; then
+  echo "ERROR: TIDDIT wrote no VCF (${OUTPUT_DIR}/${SAMPLE}.vcf). The end of its log:" >&2
+  tail -n 20 "$TIDDIT_LOG" >&2
+  exit 1
+fi
 
 echo "[2/3] Compressing VCF with bcftools..."
 run_in "$BCFTOOLS_IMAGE" \
@@ -65,7 +84,7 @@ run_in "$BCFTOOLS_IMAGE" \
 
 echo "[3/3] Indexing VCF..."
 run_in "$BCFTOOLS_IMAGE" \
-  bcftools index -t \
+  bcftools index -f -t \
     "/genome/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz"
 
 SV_COUNT=$(run_in \

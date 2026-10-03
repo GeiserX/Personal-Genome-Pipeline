@@ -30,8 +30,9 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-# Skip if output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}.vcf.gz" ]; then
+# Skip only a finished VCF (complete BGZF file with a VCF header); a file cut
+# short by a killed run is called again.
+if have_output "${OUTPUT_DIR}/${SAMPLE}.vcf.gz"; then
   echo "Octopus output already exists, skipping."
   echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0
@@ -39,7 +40,9 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Restrict to specific regions if INTERVALS is set (e.g., INTERVALS=chr22 for testing)
+# Restrict to specific regions if INTERVALS is set (e.g., INTERVALS=chr22 for testing).
+# Expanded as ${REGION_ARGS[@]+...}: bash before 4.4 calls an empty array
+# unbound under set -u.
 REGION_ARGS=()
 if [ -n "${INTERVALS:-}" ]; then
   echo "Restricting to region: ${INTERVALS}"
@@ -63,7 +66,7 @@ run_in -w "/genome/${SAMPLE}/vcf_octopus" --cpus "${THREADS}" --memory 16g \
     -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/vcf_octopus/${SAMPLE}.vcf.gz" \
     --threads "${THREADS}" \
-    "${REGION_ARGS[@]}"
+    ${REGION_ARGS[@]+"${REGION_ARGS[@]}"}
 
 echo "=== Octopus complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"

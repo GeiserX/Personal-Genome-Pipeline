@@ -31,6 +31,8 @@ process MULTIQC {
     multiqc \\
         . \\
         -f \\
+        --no-version-check \\
+        --no-ai \\
         -o . \\
         -n "multiqc_report.html" \\
         --title "Personal Genome Pipeline QC"

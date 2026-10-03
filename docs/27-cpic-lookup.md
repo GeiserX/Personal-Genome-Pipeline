@@ -2,16 +2,15 @@
 
 ## What This Does
 
-Parses your PharmCAT results (step 7) to extract gene diplotypes and metabolizer phenotypes, then maps them against CPIC (Clinical Pharmacogenetics Implementation Consortium) guidelines to produce a plain-text report of medications that may require dosing adjustments based on your pharmacogenomic profile.
+Reads your PharmCAT report (step 7) and writes a plain-text list of the medications whose prescribing guidance depends on your result: for every gene where you are not a normal metabolizer, the drugs PharmCAT's own report matched to your phenotype, with the CPIC recommendation text. With pypgx output (step 32) it also compares the two callers and warns about a gene PharmCAT could not call while pypgx did.
 
 ## Why
 
-PharmCAT produces detailed JSON and HTML reports, but digging through them to find actionable drug recommendations takes time. This step distills the clinically relevant parts into a simple, readable report: for each gene where you are NOT a normal metabolizer, it lists the affected medications and points you to the corresponding CPIC guideline.
+PharmCAT produces detailed JSON and HTML reports, but finding the actionable parts takes time. This step distills them into one short file. The drug list comes from the PharmCAT report itself (its `drugs` section, maintained by PharmCAT with each data release), so a gene PharmCAT calls is never dropped because a table in this pipeline was missing it.
 
 ## Tool
 
-- **Python 3.11** for JSON parsing of PharmCAT output
-- **CPIC gene-drug pairs** hard-coded in the script (based on published CPIC guidelines)
+- `bin/pgx_parse.py`, the one PharmCAT reader of the pipeline (Python standard library only). The Nextflow `CPIC_LOOKUP` module and the unit test `tests/test_cpic_parser.py` run the same file.
 
 ## Docker Image
 
@@ -21,11 +20,8 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
-- PharmCAT JSON report from step 7. The script searches for it in:
-  - `${GENOME_DIR}/${SAMPLE}/pharmcat/${SAMPLE}.report.json`
-  - `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.report.json`
-  - `${GENOME_DIR}/${SAMPLE}/pharmcat/report.json`
-  - Any `.json` file in the `pharmcat/` or `vcf/` directories
+- PharmCAT JSON report from step 7: the first `*.report.json` (or `*_pharmcat.json`) in `${GENOME_DIR}/${SAMPLE}/pharmcat/`, else in `${GENOME_DIR}/${SAMPLE}/vcf/`.
+- Optional: `${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` from step 32.
 
 ## Command
 
@@ -35,95 +31,59 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## What the Script Does Internally
 
-1. Locates the PharmCAT JSON report by scanning expected paths
-2. Runs a Python script (inside Docker) to parse the JSON and extract each gene's diplotype and phenotype
-3. Writes a formatted gene results table to the output report
-4. For each gene where the phenotype is NOT normal/typical/extensive:
-   - Looks up the gene in a built-in CPIC drug table
-   - Lists all medications affected by that gene's altered function
-   - Adds a link to the CPIC guidelines page
-5. Appends a disclaimer
+1. Locates the PharmCAT JSON report.
+2. Runs `bin/pgx_parse.py cpic-report` in the Python image. It reads the gene calls (PharmCAT 3.x flat `genes` map, the 2.x map nested by source, and the older list are all read) and writes the phenotype table.
+3. For each gene with a non-normal phenotype it lists the drugs from the report's `drugs` section: CPIC's recommendation for the called diplotype per drug first, then the drugs DPWG or the FDA name. PharmCAT lists an annotation for every diplotype the sample may have, so only the ones for the called diplotype (or, without diplotype labels, its phenotype) are shown. When the report names no drug for the gene, it falls back to the gene's `relatedDrugs`, then to a small static table, and finally prints a line saying the gene is not in the drug table, so a gene is never skipped silently.
+4. When PharmCAT lists more than one possible diplotype for a gene and their phenotypes differ (positions missing from the VCF leave it unable to choose), the gene is `ambiguous`: it is listed in its own section with the possible phenotypes and no drug guidance, never as its first diplotype.
+5. With the pypgx summary it writes the comparison table and, for a gene PharmCAT reports as not called or ambiguous but pypgx called (CYP2D6 is the usual one), a warning in the recommendations naming every drug PharmCAT links to that gene. When pypgx's call is normal the line is a note instead.
+6. A report that cannot be read, or that yields no gene, writes a "PARSING FAILED" report and the step exits 1. It never writes an all-clear report from a format it could not read.
 
-## Genes and Drugs Covered
-
-The script includes CPIC-level gene-drug pairs for 16 pharmacogenes:
-
-| Gene | Example affected drugs |
-|---|---|
-| CYP2C19 | Clopidogrel, escitalopram, omeprazole, sertraline |
-| CYP2C9 | Warfarin, phenytoin, celecoxib, ibuprofen |
-| CYP2D6 | Codeine, tramadol, tamoxifen, paroxetine, ondansetron |
-| CYP3A5 | Tacrolimus |
-| CYP2B6 | Efavirenz |
-| DPYD | Fluorouracil, capecitabine |
-| TPMT / NUDT15 | Azathioprine, mercaptopurine, thioguanine |
-| UGT1A1 | Atazanavir, irinotecan |
-| SLCO1B1 | Simvastatin, atorvastatin, rosuvastatin |
-| VKORC1 | Warfarin |
-| HLA-A / HLA-B | Carbamazepine, abacavir, allopurinol, phenytoin |
-| IFNL3 | Peginterferon alfa |
-| RYR1 / CACNA1S | Volatile anesthetics, succinylcholine |
-| G6PD | Rasburicase |
-| MT-RNR1 | Aminoglycosides |
+The comparison used to be written by step 32. It moved here because `run-all.sh` starts steps 7 and 32 side by side, so step 32 could read a missing or previous-run PharmCAT report; step 27 runs after both.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_cpic_recommendations.txt` | Human-readable report with gene results and drug recommendations |
-| `${SAMPLE}_phenotypes.tsv` | Intermediate gene/diplotype/phenotype table parsed from PharmCAT |
-
-All output is written to `${GENOME_DIR}/${SAMPLE}/cpic/`.
+| `cpic/${SAMPLE}_cpic_recommendations.txt` | Gene results, the medications for each non-normal gene, uncallable genes, and the pypgx warnings |
+| `cpic/${SAMPLE}_phenotypes.tsv` | One row per gene: `Gene`, `Diplotype`, `Phenotype`, `Status` (`normal`, `non-normal`, `ambiguous` or `not called`) |
+| `pypgx/${SAMPLE}_pharmcat_comparison.tsv` | PharmCAT and pypgx diplotypes side by side (only when step 32 ran) |
 
 ## Runtime
 
-~1-2 minutes (mostly Docker startup overhead).
+About a minute, mostly container start-up.
 
 ## Interpreting Results
 
-The report has two sections:
-
 ### Gene Results Table
 
-Lists every pharmacogene with its called diplotype and phenotype. The columns look like this (placeholders, not a result):
+Lists every pharmacogene with its called diplotype and phenotype (placeholders, not a result):
 
 ```
-Gene         Diplotype                 Phenotype
-CYP2C19      *x/*y                     <phenotype>
-CYP2D6       *x/*y                     <phenotype>
-UGT1A1       *x/*y                     <phenotype>
+Gene         Diplotype                      Phenotype
+CYP2C19      *x/*y                          <phenotype>
+CYP2D6       *x/*y                          <phenotype>
 ```
 
 ### Affected Medications
 
-Only genes where you are NOT a normal metabolizer appear here. For each, the report lists:
-- Your phenotype and diplotype
-- All drugs with CPIC recommendations for that gene
-- A link to the CPIC guidelines
+Only genes where your phenotype is not normal appear here, each with the drugs and the CPIC recommendation PharmCAT matched to your result. A phenotype PharmCAT leaves unassigned (`n/a`, `no phenotype assigned`) is listed too: the drug guidance for such genes depends on the diplotype, and the report shows it. Genes that could not be called are listed separately at the end. Their absence from the medications section does NOT mean normal function.
 
-**Normal/typical/extensive metabolizers are intentionally skipped** -- no dosing adjustment signal was detected from the currently callable variants. Genes that could not be called (No Result / N/A / Indeterminate) are listed separately at the end of the report — their absence from the recommendations section does NOT mean normal function.
+### PharmCAT and pypgx
+
+When step 32 ran, this section names each gene PharmCAT could not call but pypgx did, with pypgx's call and the drugs it affects. Read those drugs with the pypgx call and [docs/32-pypgx.md](32-pypgx.md).
 
 ### What to do with the results
 
-1. Check if you currently take (or might be prescribed) any of the listed medications
-2. For any matches, read the full CPIC guideline at [cpicpgx.org/guidelines](https://cpicpgx.org/guidelines/)
-3. Share the report with your prescribing physician or pharmacist
+1. Check whether you take (or might be prescribed) any of the listed medications.
+2. For any match, read the full CPIC guideline at [cpicpgx.org/guidelines](https://cpicpgx.org/guidelines/).
+3. Share the report with your prescribing physician or pharmacist.
 
 ## Limitations
 
-- The CPIC drug list is hard-coded in the script. New CPIC guidelines published after the script was written will not be included until the script is updated.
-- The script does not query the live CPIC API -- it uses a static lookup table. This is intentional for reproducibility and offline use.
-- PharmCAT JSON format varies between versions. If parsing fails, the script outputs a warning and produces a partial report.
-- CYP2D6 results from PharmCAT may be less reliable than Cyrius (step 21). Cross-reference both before acting on CYP2D6 recommendations.
+- The drug guidance is the one bundled with the pinned PharmCAT release; newer CPIC guidelines arrive with a PharmCAT update.
+- The static fallback table is used only when the report names no drug for a gene.
+- CYP2D6 from a short-read VCF is less reliable than a depth-based caller. Compare with Cyrius (step 21) and pypgx (step 32) before acting on CYP2D6.
 - This is NOT medical advice. Always consult a healthcare professional before making medication changes.
-
-## Notes
-
-- Run this step after PharmCAT (step 7). For CYP2D6, also run Cyrius (step 21) and manually compare.
-- The output report is printed to stdout as well as written to file.
-- You can add or modify gene-drug pairs by editing the `CPIC_DRUGS` associative array in the script.
-- For maintenance, review the hard-coded CPIC table at least quarterly or whenever you bump PharmCAT, so the lookup stays aligned with current guideline pairs.
-- For the most up-to-date CPIC recommendations, always check [cpicpgx.org](https://cpicpgx.org/) directly.
 
 ## Links
 
