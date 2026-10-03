@@ -70,9 +70,20 @@ process PHARMCAT {
     task.ext.when == null || task.ext.when
 
     script:
+    // PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error
+    // parsing metadata: character to be escaped is missing" on a backslash in
+    // a ## header line. Such lines are valid VCF: bcftools writes one for a
+    // soft filter with a quoted string (-s LowDP -e 'GT!="0/0"'). The awk
+    // below rewrites PharmCAT's own copy only, on ## lines: \" becomes ' and
+    // any other \ becomes /. Remove it once a PharmCAT release bundles
+    // vcf-parser newer than 0.3.1 (scripts/07-pharmacogenomics.sh does the same).
     """
+    gzip -dc ${preprocessed_vcf} \\
+        | awk '/^##/ { gsub(/\\\\"/, "\\047"); gsub(/\\\\/, "/") } { print }' \\
+        > ${meta.id}.pharmcat_input.vcf
+
     java -jar /pharmcat/pharmcat.jar \\
-        -vcf ${preprocessed_vcf} \\
+        -vcf ${meta.id}.pharmcat_input.vcf \\
         -o ./ \\
         -bf ${meta.id} \\
         -reporterJson \\
