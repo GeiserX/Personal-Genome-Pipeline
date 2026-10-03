@@ -36,6 +36,8 @@ Most consumer WGS vendors use Illumina sequencing platforms (NovaSeq 6000, NovaS
 2. **If you have BAM:** Copy to `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`. Make sure the BAM index (`.bai`) is present. Start with step 3 (variant calling).
 3. **If you have VCF:** Copy to `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`. Make sure the index (`.tbi`) is present. Start with step 6 (ClinVar screen).
 
+A provider's VCF often needs fixing before the pipeline can read it: contigs named the Ensembl way (`1`, `MT` instead of `chr1`, `chrM`), gVCF reference blocks (PharmCAT refuses a gVCF, and any file named `.g.vcf`), and header lines that name you. The Nextflow pipeline checks the first two before any analysis and stops with the fix; the bash steps do not check. A gVCF is the better PharmCAT input, but the pipeline does not expand its blocks yet, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for all three.
+
 ---
 
 ## Nebula Genomics / DNA Complete

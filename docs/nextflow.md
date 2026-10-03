@@ -1,6 +1,6 @@
 # Nextflow Execution
 
-The pipeline has a [Nextflow](https://www.nextflow.io/) DSL2 execution path for **post-calling interpretation and clinical analysis**. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, variant annotation, clinical screening, structural variant analysis, and reporting across 6 workflows: 35 processes in 29 module files under `modules/local/`. The VCF needs FILTER=PASS records; see [FILTER=PASS required](#filterpass-required).
+The pipeline has a [Nextflow](https://www.nextflow.io/) DSL2 execution path for **post-calling interpretation and clinical analysis**. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, variant annotation, clinical screening, structural variant analysis, and reporting across 6 workflows: 35 processes in 29 module files under `modules/local/`. The VCF needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
 > **Both execution paths are maintained.** The bash scripts (`run-all.sh`) remain the simpler option for single-machine use. Nextflow adds automatic parallelism and content-hash resume. It has a Singularity profile, but that profile is untested (see [Profiles](#profiles)). Both paths produce biologically equivalent results, though output file names and report scope may differ.
 
@@ -71,6 +71,8 @@ Only the failed and downstream steps re-run.
 
 \* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) require BAM input. **Provide BAM for full analysis.**
 
+The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF is the better PharmCAT input, but the pipeline does not expand its reference blocks yet, so with `pharmcat` selected a gVCF stops the run; a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
+
 \*\* `sex` is required on every row that has a BAM when `expansion_hunter` is in `--tools`: it sets the chrX ploidy, and ExpansionHunter's default is female. A BAM row without it stops the run at parse time. VCF-only rows never reach ExpansionHunter, so they need no `sex`.
 
 Each `sample` value must appear once; a repeated id stops the run, because the id names the output directory and keys every per-sample join.
@@ -123,7 +125,7 @@ nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
 results/
 ├── sample1/
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
-│   ├── clinvar/            # ClinVar pathogenic variant screen
+│   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
 │   ├── pypgx/              # pypgx star allele calling (optional)
 │   ├── cpic/               # CPIC drug-gene recommendations (optional)
 │   ├── vep/                # VEP VCF, and the vcfanno-enriched VCF when a score file is set
@@ -146,14 +148,38 @@ results/
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers (optional)
-│   └── *_report.html       # Consolidated HTML report (published to sample root)
-├── multiqc/                # MultiQC report across samples
+│   └── *_report.html       # Summary HTML report (published to sample root): ClinVar, PharmCAT, CPIC,
+│                           #   CPSR, clinical filter, slivar, ROH, mito haplogroup; "Not run" for a tool not selected
+├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
     ├── timeline_*.html
     ├── report_*.html
     ├── trace_*.txt
     └── dag_*.svg
 ```
+
+---
+
+## Before you share outputs
+
+The pipeline does not anonymise anything: the outputs carry whatever identified you in the input. Before you share a file, know what it holds:
+
+- **The VCF's sample name** (the last column of its `#CHROM` line) is repeated in the ClinVar VCFs (`clinvar/<sample>_clinvar_hits.vcf`, `<sample>_pass.vcf.gz`), on every line of `roh/<sample>_roh.txt`, in `mito/<sample>_haplogroup.txt` and as `sampleId` in the PharmCAT JSON files.
+- **The input's header lines** pass through into the ClinVar VCFs, including the provider's and bcftools' command lines, which often name the sample or a file.
+- **The input file name** is in the `##bcftools_viewCommand` and `##bcftools_normCommand` lines of the ClinVar VCFs, and can be in the command lines other tools print into their outputs.
+- **`pipeline_info/`** (report, timeline, trace) holds absolute paths of your machine.
+- **The samplesheet's `sample` label** names every output folder and file.
+
+The fix is a neutral input. Use a label that does not name you, name the file after it, and keep only the header lines the tools read. The recipe below lists the lines to keep and renames the sample column. A list of keys to delete would miss lines, because callers name them differently.
+
+```bash
+bcftools view --no-version -h in.vcf.gz | grep -E '^(##(fileformat|FILTER|INFO|FORMAT|ALT|contig)=|#CHROM)' > h.txt
+echo SAMPLE > names.txt
+bcftools reheader -h h.txt -s names.txt -o SAMPLE.vcf.gz in.vcf.gz
+bcftools index -t SAMPLE.vcf.gz
+```
+
+`bcftools annotate -x` cannot remove these lines (it exits with "No matching tag"). The same recipe, with bcftools from the pinned image, is step 4 of [Starting from a Vendor VCF](vcf-first.md). Do not share `pipeline_info/`.
 
 ---
 
@@ -211,9 +237,18 @@ The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb posi
 
 ClinVar screen, clinical filter and slivar keep only records with FILTER=PASS. Before any analysis, `VCF_PRECHECK` counts the FILTER values of each sample. A VCF with no PASS record at all (for example unfiltered GATK HaplotypeCaller or FreeBayes output, where FILTER is `.`) stops the run with a message naming the sample, because every PASS-only step would report zero hits. Filter it with your caller's recommended filters, or add `--allow_unfiltered` to treat FILTER `.` as PASS for that file. A VCF with any PASS record is used as given.
 
+### Contig names and gVCF input
+
+`VCF_PRECHECK` also stops the run, before any analysis, in two cases, and the message names the sample and the fix:
+
+- No contig that holds records is named the chr way (`1`, `MT` instead of `chr1`, `chrM`). Without this stop the mito haplogroup file comes out empty and chrX segments leak into the autosomal ROH summary, with exit 0. The message prints the `bcftools annotate --rename-chrs` command with its 25-line map.
+- `pharmcat` is selected and the VCF is a gVCF (a `##GVCFBlock` header line, or reference-block records: ALT `<*>`, `<NON_REF>` or `.` with `INFO/END`), or only its name says so (`.g.vcf`, `.genomic.vcf`). PharmCAT refuses both. Without `pharmcat`, a gVCF runs: ROH, the mito haplogroup and the ClinVar screen give the same results as on the matching variants-only file.
+
+[Starting from a Vendor VCF](vcf-first.md) has the commands that fix both.
+
 ### Security model
 
-This pipeline is designed for **personal, single-user use** on trusted data. Sample names are sanitized (alphanumeric, `.`, `_`, `-` only), and HTML report fields from VCF INFO are escaped to prevent XSS. However, it is **not hardened for multi-tenant or untrusted-input scenarios**. Do not expose the pipeline or its outputs as a web service without additional security review.
+This pipeline is designed for **personal, single-user use** on trusted data. Sample labels are restricted to `[A-Za-z0-9._-]` (they name folders and go into shell commands); this is not anonymisation, see [Before you share outputs](#before-you-share-outputs). HTML report fields from VCF INFO are escaped to prevent XSS. However, it is **not hardened for multi-tenant or untrusted-input scenarios**. Do not expose the pipeline or its outputs as a web service without additional security review.
 
 ### Cyrius runtime installation
 

@@ -41,17 +41,35 @@ run_in \
     -o /data/ \
     -bf "$SAMPLE"
 
-# Step 2: Run PharmCAT on preprocessed VCF
+# Step 2: PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with
+# "Error parsing metadata: character to be escaped is missing" on a backslash
+# in a ## header line. Such lines are valid VCF: bcftools writes one for a soft
+# filter with a quoted string (-s LowDP -e 'GT!="0/0"'). Rewrite PharmCAT's own
+# copy only, on ## lines: \" becomes ' and any other \ becomes /. Remove this
+# once a PharmCAT release bundles vcf-parser newer than 0.3.1 (the PHARMCAT
+# module in modules/local/pharmcat/main.nf does the same).
+HEADER_FIX='/^##/ { gsub(/\\"/, "\047"); gsub(/\\/, "/") } { print }'
+# shellcheck disable=SC2016  # $1 to $3 belong to the inner sh
+run_in \
+  --cpus 1 --memory 1g \
+  -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  "${PHARMCAT_IMAGE}" \
+  sh -c 'gzip -dc "$1" | awk "$3" > "$2"' sh \
+    "/data/${SAMPLE}.preprocessed.vcf.bgz" "/data/${SAMPLE}.pharmcat_input.vcf" "$HEADER_FIX"
+
+# Step 3: Run PharmCAT on preprocessed VCF
 run_in \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
-    -vcf "/data/${SAMPLE}.preprocessed.vcf.bgz" \
+    -vcf "/data/${SAMPLE}.pharmcat_input.vcf" \
     -o /data/ \
     -bf "$SAMPLE" \
     -reporterJson \
     -reporterHtml
+
+rm -f "${OUTPUT_DIR}/${SAMPLE}.pharmcat_input.vcf"
 
 echo "=== PharmCAT complete ==="
 echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"

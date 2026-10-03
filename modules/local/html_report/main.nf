@@ -4,14 +4,19 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Generates a self-contained HTML file summarising ClinVar hits (grouped by
     ClinVar review stars, via bin/clinvar_hits.awk), pharmacogenomics, cancer
-    predisposition (CPSR), clinical filtering, and slivar variant prioritization.
-    Each input section is optional — when a path is empty the section is omitted.
+    predisposition (CPSR), clinical filtering, slivar variant prioritization,
+    runs of homozygosity, the mitochondrial haplogroup and the CPIC lookup.
+    Every card is always written; a card whose input is absent (its tool was
+    not in --tools) says "Not run" or N/A.
+
+    ROH total and largest segment are summed over the RG lines of
+    <id>_roh.txt the way bin/collect_summary.py sums them for the bash
+    report, so both reports print the same numbers from the same file.
 
     A subset of scripts/24-html-report.sh. The script renders its report from
     bin/collect_summary.py's summary (QC, PRS, HLA, CYP2D6, SVs, mito and the
     run manifest included); this process cannot run it yet, because its image
-    (bcftools) has no Python and its inputs are fixed by workflows/reporting.nf.
-    For the full report on a Nextflow run:
+    (bcftools) has no Python. For the full report on a Nextflow run:
       GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -23,7 +28,9 @@ process HTML_REPORT {
     publishDir { "${params.outdir}/${meta.id}" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(clinvar_hits), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf)
+    // roh_txt, haplogroup_txt and cpic_txt are [] when their tool did not run
+    tuple val(meta), path(clinvar_hits), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf),
+          path(roh_txt), path(haplogroup_txt), path(cpic_txt)
 
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
@@ -38,6 +45,10 @@ process HTML_REPORT {
     def has_clinical = clinical_vcf  && !clinical_vcf.name.startsWith('EMPTY')  ? true : false
     def has_cpsr     = cpsr_html     && !cpsr_html.name.startsWith('EMPTY')     ? true : false
     def has_slivar   = slivar_vcf    && !slivar_vcf.name.startsWith('EMPTY')    ? true : false
+    def has_roh        = roh_txt        ? true : false
+    def has_haplogroup = haplogroup_txt ? true : false
+    def has_cpic       = cpic_txt       ? true : false
+    def cpic_name      = has_cpic ? cpic_txt.name : ''
     """
     #!/usr/bin/env bash
     set -euo pipefail
@@ -85,6 +96,38 @@ process HTML_REPORT {
     if [ "${has_slivar}" = "true" ] && [ -f "${slivar_vcf}" ]; then
         SLIVAR_STATUS="Complete"
         SLIVAR_COUNT=\$(bcftools view -H "${slivar_vcf}" 2>/dev/null | wc -l || echo "N/A")
+    fi
+
+    # --- Runs of homozygosity: every RG segment, as bin/collect_summary.py counts them ---
+    ROH_STATUS="Not run"
+    ROH_SEGMENTS="N/A"
+    ROH_TOTAL="N/A"
+    ROH_LARGEST="N/A"
+    if [ "${has_roh}" = "true" ] && [ -f "${roh_txt}" ]; then
+        ROH_STATUS="Complete"
+        read -r ROH_SEGMENTS ROH_TOTAL ROH_LARGEST < <(awk '\$1 == "RG" && NF >= 6 && \$6 ~ /^[0-9.]+\$/ {
+                n++; t += \$6; if (\$6 + 0 > m) m = \$6 + 0 }
+            END { printf "%d %.1f %.1f\\n", n, t / 1e6, m / 1e6 }' "${roh_txt}")
+        ROH_TOTAL="\${ROH_TOTAL} MB"
+        ROH_LARGEST="\${ROH_LARGEST} MB"
+    fi
+
+    # --- Mitochondrial haplogroup: the Haplogroup column of haplogrep3's table ---
+    HAPLOGROUP_STATUS="Not run"
+    HAPLOGROUP="N/A"
+    if [ "${has_haplogroup}" = "true" ] && [ -f "${haplogroup_txt}" ]; then
+        HAPLOGROUP_STATUS="Complete"
+        HAPLOGROUP=\$(awk -F'\\t' '
+            function esc(x) { gsub(/&/,"\\\\&amp;",x); gsub(/</,"\\\\&lt;",x); gsub(/>/,"\\\\&gt;",x); gsub(/"/,"",x); return x }
+            NR == 1 { for (i = 1; i <= NF; i++) { h = \$i; gsub(/"/, "", h); if (h == "Haplogroup") c = i }; next }
+            NR == 2 { print esc(\$(c ? c : 2)); exit }' "${haplogroup_txt}")
+        HAPLOGROUP=\${HAPLOGROUP:-none called}
+    fi
+
+    # --- CPIC lookup status ---
+    CPIC_STATUS="Not run"
+    if [ "${has_cpic}" = "true" ] && [ -f "${cpic_txt}" ]; then
+        CPIC_STATUS="Complete"
     fi
 
     # --- ClinVar badge colour ---
@@ -200,6 +243,39 @@ EOF
     <div class="stat"><span class="label">Prioritized variants</span><span class="value">\${SLIVAR_COUNT}</span></div>
     <div class="stat"><span class="label">Tip</span>
       <span class="value" style="font-weight:normal;font-size:13px">Rare HIGH/MODERATE + deleterious + ClinVar pathogenic tiers</span></div>
+  </div>
+EOF
+
+    # Card: Runs of homozygosity
+    cat >> ${meta.id}_report.html << EOF
+  <div class="card">
+    <h2>Runs of Homozygosity</h2>
+    <div class="stat"><span class="label">Status</span>
+      <span class="value"><span class="badge \$([ "\$ROH_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${ROH_STATUS}</span></span></div>
+    <div class="stat"><span class="label">ROH total</span><span class="value">\${ROH_TOTAL}</span></div>
+    <div class="stat"><span class="label">ROH largest segment</span><span class="value">\${ROH_LARGEST}</span></div>
+    <div class="stat"><span class="label">Segments</span><span class="value">\${ROH_SEGMENTS}</span></div>
+  </div>
+EOF
+
+    # Card: Mitochondrial haplogroup
+    cat >> ${meta.id}_report.html << EOF
+  <div class="card">
+    <h2>Mitochondrial Haplogroup</h2>
+    <div class="stat"><span class="label">Status</span>
+      <span class="value"><span class="badge \$([ "\$HAPLOGROUP_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${HAPLOGROUP_STATUS}</span></span></div>
+    <div class="stat"><span class="label">Haplogroup</span><span class="value">\${HAPLOGROUP}</span></div>
+  </div>
+EOF
+
+    # Card: CPIC drug-gene lookup
+    cat >> ${meta.id}_report.html << EOF
+  <div class="card">
+    <h2>CPIC Drug Recommendations</h2>
+    <div class="stat"><span class="label">Status</span>
+      <span class="value"><span class="badge \$([ "\$CPIC_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${CPIC_STATUS}</span></span></div>
+    <div class="stat"><span class="label">Tip</span>
+      <span class="value" style="font-weight:normal;font-size:13px">\$([ "\$CPIC_STATUS" = "Complete" ] && echo "Recommendations per gene: cpic/${cpic_name}" || echo "Add cpic (and pharmcat) to --tools")</span></div>
   </div>
 EOF
 

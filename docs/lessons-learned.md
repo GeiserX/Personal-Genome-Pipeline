@@ -385,3 +385,21 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### Stranger over-flags RFC1 (CANVAS) from short reads — do not read it as a diagnosis
 - **Observed:** Stranger can report RFC1 `STR_STATUS=full_mutation` for a modest expansion (e.g. 51/73 of the degenerate `AARRG` motif). CANVAS requires the **AAGGG** motif specifically, **biallelic**, at **~400–2000+** repeats — short-read ExpansionHunter cannot resolve AAGGG vs the benign AAAAG, and the catalog's `STR_PATHOLOGIC_MIN=12` is not the clinical threshold.
 - **Interpretation:** Treat an RFC1 flag as **uninterpretable from short-read WGS** — confirm with motif-aware/flanking-PCR testing only if clinically indicated. (Documented in `docs/09b-stranger.md`.)
+
+## Vendor VCF intake (2026-10)
+
+### PharmCAT's Java step stops on a backslash in a valid header line
+- **Failed:** `pharmcat.jar` exits with `Error parsing metadata: character to be escaped is missing` when a `##FILTER` or `##INFO` line holds a backslash. bcftools writes such a line itself for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`), and the VCF 4.3 spec asks for the escape. The preprocessor copies the line through; the bundled vcf-parser 0.3.1 refuses it. PharmCAT 3.4.0 bundles the same parser.
+- **Fix:** step 07 and the PHARMCAT module rewrite the header of PharmCAT's own copy (`\"` to `'`, any other `\` to `/`, on `##` lines) before the Java step. The calls are the same as without the line. Remove the rewrite once a PharmCAT release bundles a newer vcf-parser; bumping PharmCAT is not the fix.
+
+### Ensembl contig names fail silently
+- **Failed:** with contigs named `1`, `MT`, `bcftools view -r chrM` returns no record with exit 0, so haplogrep3 writes a header-only file, and the ROH summary's `chrX|chrY` filter lets `X` through. Only the ClinVar screen failed loudly, and only when selected.
+- **Fix:** `VCF_PRECHECK` stops the run before any analysis when no contig holding records is chr-named, and prints the `bcftools annotate --rename-chrs` command. Lesson: a step that selects a region by name must not read zero records as a clean result.
+
+### `bcftools norm -f` stops at the first contig the reference lacks
+- **Failed:** exit 255 (`The sequence "NT_113889.1" was not found`) on the full chr-renamed ClinVar file, and on a sample record on a scaffold the reference lacks (a half-done rename, or the no-alt reference).
+- **Fix:** the ClinVar screen reads both files only on the contigs they share with each other and the reference, with a targets file whose end is a constant (`chrom 1 2147483647`): a header without contig lengths would otherwise give an empty region and zero records.
+
+### `workflow.onComplete` saw `workflow` as null
+- **Failed:** `Cannot get property 'success' on null object` on every run under Nextflow 25.10: the handler runs with the script binding's variable map as its delegate, and a map answers null for a name it lacks.
+- **Fix:** the handler reads local variables (`run_info`, `run_log`, `outdir`) set in the workflow body; closures resolve those where they are written.

@@ -3,7 +3,8 @@
     REPORTING — HTML Report Generation & MultiQC Aggregation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Produces two kinds of report:
-    1. Per-sample consolidated HTML report (variant summary, ClinVar, PGx, CPSR, slivar)
+    1. Per-sample consolidated HTML report (ClinVar, PGx, CPSR, clinical filter,
+       slivar, ROH, mito haplogroup, CPIC)
     2. Cross-sample MultiQC dashboard aggregating QC outputs (fastp, mosdepth, etc.)
 
     Both modules are gated on params.tools containing their tool name.
@@ -16,7 +17,7 @@ include { MULTIQC     } from '../modules/local/multiqc/main'
 workflow REPORTING {
 
     take:
-    ch_report_inputs  // channel: [meta, clinvar_dir, pharmcat_html, clinical_vcf, cpsr_html, slivar_vcf]
+    ch_report_inputs  // channel: [meta, clinvar_hits, pharmcat_html, clinical_vcf, cpsr_html, slivar_vcf, roh_txt, haplogroup_txt, cpic_txt]
     ch_multiqc_files  // channel: flat collection of QC files (fastp, mosdepth, samtools, etc.)
 
     main:
@@ -39,9 +40,18 @@ workflow REPORTING {
     if (params.tools && params.tools.split(',').collect{ it.trim() }.contains('multiqc')) {
         // Guard: only run MultiQC when QC inputs exist. VCF-only runs produce
         // no mosdepth summaries and MultiQC would fail with "No analysis
-        // results found" and create no output files.
+        // results found" and create no output files. The skip is logged, so
+        // a run with multiqc selected never ends without a word about it.
         ch_multiqc_files
             .collect()
+            .ifEmpty([])
+            .map { files ->
+                if (files.isEmpty()) {
+                    log.warn "multiqc skipped: it reads mosdepth's coverage summaries, and this run produced none " +
+                             "(mosdepth needs a BAM in the samplesheet and 'mosdepth' in --tools)."
+                }
+                files
+            }
             .filter { files -> !files.isEmpty() }
             .set { ch_multiqc_gated }
 
