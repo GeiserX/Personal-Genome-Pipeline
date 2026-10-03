@@ -5,7 +5,8 @@
     Finds known disease-causing variants the person carries by intersecting
     PASS variants against the ClinVar pathogenic subset. Writes
     <id>_clinvar_hits.vcf: the sample's matching records with ClinVar's ID,
-    GENEINFO, CLNSIG and CLNREVSTAT copied on.
+    GENEINFO, CLNSIG and CLNREVSTAT copied on, and prints the hits per ClinVar
+    review-status star tier.
 
     Equivalent to: scripts/06-clinvar-screen.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,6 +84,13 @@ process CLINVAR_SCREEN {
 
     HITS=\$(grep -c -v '^#' ${meta.id}_clinvar_hits.vcf || true)
     echo "ClinVar pathogenic hits: \${HITS}"
+    # Grouped by ClinVar review stars, as scripts/06 prints them
+    # (bin/clinvar_hits.awk is on the task PATH).
+    if [ "\${HITS}" -gt 0 ]; then
+        echo "By review status (ClinVar stars):"
+        awk -f "\$(command -v clinvar_hits.awk)" ${meta.id}_clinvar_hits.vcf | cut -f1 | sort -nr | uniq -c \\
+            | awk '{printf "  %d star%s: %d\\n", \$2, (\$2 == 1 ? "" : "s"), \$1}'
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

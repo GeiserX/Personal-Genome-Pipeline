@@ -1,0 +1,17 @@
+# PharmCAT report fixtures
+
+Real PharmCAT output for `tests/test_cpic_parser.py`, trimmed with
+`trim_report.py` to the fields `bin/pgx_parse.py` reads (every gene with all
+its listed diplotypes and `relatedDrugs`; up to 4 matched annotations per drug
+guideline).
+
+| File | Source |
+|---|---|
+| `report-3.2.0.json` | PharmCAT 3.2.0 (`pgkb/pharmcat:3.2.0`) on the public GIAB HG002 slice of the e2e fixture (`fixture-v4`), written by step 7 in E2E run 37054440069 of pull request 72 (the `e2e-logs` artifact, `HG002.pharmcat-report.json`, 40 MB, sha256 `562bab215132c9da8a700c810b1a11f56b73aad5815d3e8c6609057b359ebcd2`). The slice covers few pharmacogenes: most are `Unknown/Unknown`, and CYP2C19 (528 possible diplotypes) and CYP2B6 (4) are ambiguous. |
+| `pharmcat-docs-example.json` | `docs/examples/pharmcat.example.report.json` of the PharmCAT repository at tag `v3.2.0` (sha256 `23d58e7b2bf815159bb6136beec919d9c6eced0fe71cac7c38cebff6b4febf05`), PharmCAT's own example sample: 23 genes with one diplotype each, 10 of them with a non-normal phenotype. |
+
+To refresh one: take the new `report.json`, then
+
+```bash
+python3 tests/fixtures/pharmcat/trim_report.py report.json tests/fixtures/pharmcat/report-3.2.0.json
+```

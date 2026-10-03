@@ -2,15 +2,21 @@
 # 23-clinical-filter.sh — Extract clinically interesting variants from annotated VCF
 # Usage: ./scripts/23-clinical-filter.sh <sample_name>
 #
-# Produces a small VCF of variants that are:
-#   - Rare (gnomAD AF < 1%) AND functionally impactful (HIGH/MODERATE VEP impact)
-#   - OR ClinVar pathogenic/likely pathogenic (if VEP includes ClinVar annotations)
-#   - OR high CADD score (>= 20) for non-coding variants (if step 30 was run)
-#   - OR high SpliceAI delta score (>= 0.2) for cryptic splice variants
-#   - OR high REVEL/AlphaMissense for missense variants
+# Produces a small VCF of PASS variants that are:
+#   - rare (MAX_AF < 1%, or no frequency) AND HIGH or MODERATE VEP impact
+#   - OR in the ClinVar screen of step 6 (P/LP alleles; any frequency)
+#   - OR rare with a high CADD score (>= 20) outside HIGH/MODERATE
+#   - OR rare with a high SpliceAI delta score (>= 0.2), any gene of the value
+#   - OR rare with REVEL >= 0.644 or AlphaMissense >= 0.564
+# The rarity filter uses VEP's MAX_AF (highest frequency in any population of
+# 1000 Genomes, gnomAD exomes and gnomAD genomes), or gnomADe_AF and gnomADg_AF
+# when MAX_AF is absent. A variant common in genomes but absent from exomes is
+# not rare. With no frequency field at all every tier keeps all variants, and
+# the step says so.
 #
-# Uses bcftools +split-vep to parse VEP CSQ fields and bcftools view -i for
-# INFO-level annotations from vcfanno (step 30).
+# The summary TSV takes the gene, impact and consequence of the worst
+# consequence from `bcftools +split-vep`, and gnomAD constraint columns from
+# bin/constraint_join.awk (the loader step 31 and the Nextflow slivar module use).
 # Requires: VEP-annotated VCF from step 13 (step 30 vcfanno enrichment recommended)
 set -euo pipefail
 
@@ -20,31 +26,37 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 
-
-# Prefer vcfanno-enriched VCF (step 30), fall back to VEP VCF (step 13)
 ANNOTATED_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz"
 VEP_VCF="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf"
 VEP_VCF_GZ="${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/clinical"
 CONSTRAINT_TSV="${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv"
+CLINVAR_HITS="${GENOME_DIR}/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf"
+C="/genome/${SAMPLE}/clinical"
 mkdir -p "$OUTDIR"
 
-# Find best available input VCF
+# Input: a derived file is used only when it is newer than what it was built
+# from, so a re-run of step 13 is never hidden behind an older _vep.vcf.gz or
+# an older step 30 output. An empty file (an interrupted write) never counts.
+VEP_SRC=""
+if [ -s "$VEP_VCF" ] && { [ ! -s "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
+  VEP_SRC="$VEP_VCF"
+elif [ -s "$VEP_VCF_GZ" ]; then
+  VEP_SRC="$VEP_VCF_GZ"
+fi
 INPUT=""
-if [ -f "$ANNOTATED_VCF" ]; then
+if [ -s "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
   INPUT="$ANNOTATED_VCF"
-elif [ -f "$VEP_VCF_GZ" ]; then
-  INPUT="$VEP_VCF_GZ"
-elif [ -f "$VEP_VCF" ]; then
-  INPUT="$VEP_VCF"
+elif [ -n "$VEP_SRC" ]; then
+  INPUT="$VEP_SRC"
+  if [ -f "$ANNOTATED_VCF" ]; then
+    echo "NOTICE: ${ANNOTATED_VCF} is older than ${VEP_SRC}; ignoring it. Run step 30 again for the score tiers."
+  fi
 else
   echo "ERROR: No annotated VCF found. Run step 13 (VEP) first."
   echo "  Expected: ${ANNOTATED_VCF} or ${VEP_VCF_GZ} or ${VEP_VCF}"
   exit 1
 fi
-
-# Container path for docker volume mount
-CONTAINER_INPUT="/genome/${SAMPLE}/vep/$(basename "$INPUT")"
 
 echo "============================================"
 echo "  Step 23: Clinical Variant Filter"
@@ -54,351 +66,277 @@ echo "  Output: ${OUTDIR}/"
 echo "============================================"
 echo ""
 
-# Detect available CSQ subfields (reads VCF header only, no index needed)
-echo "Detecting VEP annotation fields..."
-VEP_FIELDS=$(run_in \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools +split-vep -l "$CONTAINER_INPUT" 2>/dev/null || echo "")
+# Step 1: compress and index if needed (bcftools filters need an indexed .vcf.gz)
+if [ "$INPUT" = "$VEP_VCF" ]; then
+  echo "[1] Compressing VEP VCF (required for bcftools filtering)..."
+  rm -f "${VEP_VCF_GZ:?}" "${VEP_VCF_GZ:?}.tbi"
+  run_in --cpus 4 --memory 4g \
+    "${BCFTOOLS_IMAGE}" \
+    bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
+      -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp && \
+      mv /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
+      bcftools index -f -t /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+  INPUT="$VEP_VCF_GZ"
+elif [ ! -f "${INPUT}.tbi" ] || [ "$INPUT" -nt "${INPUT}.tbi" ]; then
+  echo "[1] Indexing $(basename "$INPUT")..."
+  run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" bcftools index -f -t "$(cpath "$INPUT")"
+else
+  echo "[1] Input already compressed and indexed."
+fi
+CONTAINER_INPUT=$(cpath "$INPUT")
 
+# Detect available CSQ subfields and INFO tags (header only)
+VEP_FIELDS=$(run_in "${BCFTOOLS_IMAGE}" bcftools +split-vep -l "$CONTAINER_INPUT" 2>/dev/null | cut -f2 || true)
 if [ -z "$VEP_FIELDS" ]; then
   echo "ERROR: No CSQ/BCSQ annotation found in VEP VCF."
   echo "  Was VEP step 13 run correctly? The VCF must contain a CSQ INFO field."
   exit 1
 fi
+# Here-strings, not a pipe: grep -q exits at the first match, and under
+# pipefail the writer's SIGPIPE on a large header would read as "no match".
+has_field() { grep -qx -- "$1" <<< "$VEP_FIELDS"; }
+for f in IMPACT SYMBOL Consequence; do
+  has_field "$f" || { echo "ERROR: the CSQ annotation has no ${f} field." >&2; exit 1; }
+done
+VCF_HEADER=$(run_in "${BCFTOOLS_IMAGE}" bcftools view -h "$CONTAINER_INPUT" 2>/dev/null || true)
+has_info() { grep -q "^##INFO=<ID=$1," <<< "$VCF_HEADER"; }
 
-HAS_GNOMAD=0
-HAS_CLINVAR=0
-echo "$VEP_FIELDS" | grep -q 'gnomADe_AF' && HAS_GNOMAD=1
-echo "$VEP_FIELDS" | grep -q 'CLIN_SIG' && HAS_CLINVAR=1
+# Frequency: MAX_AF, or the gnomAD exome and genome fields VEP was asked for.
+FREQ_COLS=""
+FREQ_EXPR=""
+FREQ_NAME=""
+if has_field MAX_AF; then
+  FREQ_COLS="MAX_AF:Float"
+  FREQ_EXPR='(MAX_AF<0.01 || MAX_AF=".")'
+  FREQ_NAME="MAX_AF"
+else
+  for f in gnomADe_AF gnomADg_AF; do
+    has_field "$f" || continue
+    FREQ_COLS="${FREQ_COLS:+${FREQ_COLS},}${f}:Float"
+    FREQ_EXPR="${FREQ_EXPR:+${FREQ_EXPR} && }(${f}<0.01 || ${f}=\".\")"
+    FREQ_NAME="${FREQ_NAME:+${FREQ_NAME} and }${f}"
+  done
+fi
+HAS_CLINSIG=0; has_field CLIN_SIG && HAS_CLINSIG=1
+HAS_CADD=0; has_info CADD_PHRED && HAS_CADD=1
+HAS_CADD_INDEL=0; has_info CADD_PHRED_indel && HAS_CADD_INDEL=1
+HAS_SPLICEAI=0; has_info SpliceAI && HAS_SPLICEAI=1
+HAS_SPLICEAI_INDEL=0; has_info SpliceAI_indel && HAS_SPLICEAI_INDEL=1
+HAS_REVEL=0; has_info REVEL && HAS_REVEL=1
+HAS_ALPHAMISSENSE=0; has_info AM_pathogenicity && HAS_ALPHAMISSENSE=1
+HAS_CONSTRAINT=0; [ -f "$CONSTRAINT_TSV" ] && HAS_CONSTRAINT=1
+HAS_HITS=0; [ -f "$CLINVAR_HITS" ] && HAS_HITS=1
 
-# Detect vcfanno INFO fields (from step 30)
-VCF_HEADER=$(run_in \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools view -h "$CONTAINER_INPUT" 2>/dev/null || echo "")
-
-HAS_CADD=0
-HAS_CADD_INDEL=0
-HAS_SPLICEAI=0
-HAS_SPLICEAI_INDEL=0
-HAS_REVEL=0
-HAS_ALPHAMISSENSE=0
-echo "$VCF_HEADER" | grep -q 'ID=CADD_PHRED,' && HAS_CADD=1
-echo "$VCF_HEADER" | grep -q 'ID=CADD_PHRED_indel,' && HAS_CADD_INDEL=1
-echo "$VCF_HEADER" | grep -q 'ID=SpliceAI,' && HAS_SPLICEAI=1
-echo "$VCF_HEADER" | grep -q 'ID=SpliceAI_indel,' && HAS_SPLICEAI_INDEL=1
-echo "$VCF_HEADER" | grep -q 'ID=REVEL' && HAS_REVEL=1
-echo "$VCF_HEADER" | grep -q 'ID=AM_pathogenicity' && HAS_ALPHAMISSENSE=1
-
-HAS_CONSTRAINT=0
-[ -f "$CONSTRAINT_TSV" ] && HAS_CONSTRAINT=1
-
-echo "  gnomAD frequencies: $([ "$HAS_GNOMAD" -eq 1 ] && echo 'available' || echo 'not in VEP output')"
-echo "  ClinVar annotations: $([ "$HAS_CLINVAR" -eq 1 ] && echo 'available' || echo 'not in VEP output')"
+if [ "$HAS_HITS" -eq 1 ]; then
+  CLINVAR_PLAN="step 6 hits (${CLINVAR_HITS})"
+elif [ "$HAS_CLINSIG" -eq 1 ]; then
+  CLINVAR_PLAN="VEP's cached CLIN_SIG (run step 6 to use the current ClinVar file)"
+else
+  CLINVAR_PLAN="none (run step 6)"
+fi
+echo "  Population frequency: ${FREQ_NAME:-none in the VEP output (no tier is filtered by frequency)}"
+echo "  ClinVar tier: ${CLINVAR_PLAN}"
 echo "  CADD scores: $([ "$HAS_CADD" -eq 1 ] && echo 'available' || echo 'not annotated (run step 30)')$([ "$HAS_CADD_INDEL" -eq 1 ] && echo ' (+indels)')"
 echo "  SpliceAI scores: $([ "$HAS_SPLICEAI" -eq 1 ] && echo 'available' || echo 'not annotated (run step 30)')$([ "$HAS_SPLICEAI_INDEL" -eq 1 ] && echo ' (+indels)')"
 echo "  REVEL scores: $([ "$HAS_REVEL" -eq 1 ] && echo 'available' || echo 'not annotated (run step 30)')"
 echo "  AlphaMissense: $([ "$HAS_ALPHAMISSENSE" -eq 1 ] && echo 'available' || echo 'not annotated (run step 30)')"
 echo "  gnomAD constraint: $([ "$HAS_CONSTRAINT" -eq 1 ] && echo 'available' || echo 'not downloaded')"
 echo ""
-
-# Calculate total steps dynamically
-TOTAL_STEPS=4
-[ "$HAS_CLINVAR" -eq 1 ] && TOTAL_STEPS=$((TOTAL_STEPS + 1))
-{ [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; } && TOTAL_STEPS=$((TOTAL_STEPS + 1))
-{ [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; } && TOTAL_STEPS=$((TOTAL_STEPS + 1))
-REVEL_OR_AM=0
-{ [ "$HAS_REVEL" -eq 1 ] || [ "$HAS_ALPHAMISSENSE" -eq 1 ]; } && REVEL_OR_AM=1 && TOTAL_STEPS=$((TOTAL_STEPS + 1))
-
-# Step 1: Compress and index if needed
-if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
-  echo "[1/${TOTAL_STEPS}] Compressing VEP VCF (required for bcftools filtering)..."
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
-      -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
-  CONTAINER_INPUT="/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
-  echo "  Done."
-elif [[ "$INPUT" == *.vcf.gz ]] && [ ! -f "${INPUT}.tbi" ]; then
-  echo "[1/${TOTAL_STEPS}] Indexing compressed VEP VCF..."
-  run_in --cpus 2 --memory 2g \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools index -t "$CONTAINER_INPUT"
-  echo "  Done."
-else
-  echo "[1/${TOTAL_STEPS}] VEP VCF already compressed and indexed."
+if [ -z "$FREQ_EXPR" ]; then
+  echo "  NOTICE: the VEP output has no MAX_AF, gnomADe_AF or gnomADg_AF field, so no tier"
+  echo "  is filtered by frequency and every MODERATE variant is kept. Run step 13 with"
+  echo "  --everything (or --max_af) for population frequencies."
+  echo ""
 fi
 
-# Step 2: Extract HIGH impact variants (loss of function)
-# bcftools +split-vep parses the IMPACT subfield from VEP's pipe-delimited CSQ annotation,
-# selecting only the worst consequence per variant (-s worst)
-echo "[2/${TOTAL_STEPS}] Extracting HIGH impact variants (stop-gain, frameshift, splice)..."
-run_in --cpus 4 --memory 4g \
-  "${BCFTOOLS_IMAGE}" \
-  bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-    bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"HIGH\"' \
-      -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz && \
-    bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz"
+# count FILE: records in a tier file.
+count() {
+  run_in "${BCFTOOLS_IMAGE}" bcftools view -H "${C}/$1" 2>/dev/null | wc -l | tr -d ' ' || echo 0
+}
 
-HIGH_COUNT=$(run_in \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz" 2>/dev/null | wc -l || echo 0)
+# Step 2: the rare PASS records every non-ClinVar tier starts from.
+echo "[2] Selecting PASS records$([ -n "$FREQ_EXPR" ] && echo " with ${FREQ_NAME} < 1% or missing")..."
+if [ -n "$FREQ_EXPR" ]; then
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
+      bcftools +split-vep - -c '${FREQ_COLS}' -s worst -i '${FREQ_EXPR}' \
+        -Oz -o ${C}/${SAMPLE}_rare_pass.vcf.gz && \
+      bcftools index -f -t ${C}/${SAMPLE}_rare_pass.vcf.gz"
+else
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} -Oz -o ${C}/${SAMPLE}_rare_pass.vcf.gz && \
+      bcftools index -f -t ${C}/${SAMPLE}_rare_pass.vcf.gz"
+fi
+RARE="${C}/${SAMPLE}_rare_pass.vcf.gz"
+
+# Step 3: HIGH impact (stop-gain, frameshift, splice site), rare
+echo "[3] Extracting rare HIGH impact variants (stop-gain, frameshift, splice)..."
+run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+  bash -o pipefail -c "bcftools +split-vep ${RARE} -c IMPACT -s worst -i 'IMPACT=\"HIGH\"' \
+      -Oz -o ${C}/${SAMPLE}_high_impact.vcf.gz && \
+    bcftools index -f -t ${C}/${SAMPLE}_high_impact.vcf.gz"
+HIGH_COUNT=$(count "${SAMPLE}_high_impact.vcf.gz")
 echo "  Found: ${HIGH_COUNT} HIGH impact variants"
 
-# Step 3: Extract rare MODERATE impact variants (missense, in-frame indel)
-# Uses gnomAD allele frequency from the CSQ field if available
-if [ "$HAS_GNOMAD" -eq 1 ]; then
-  echo "[3/${TOTAL_STEPS}] Extracting rare MODERATE impact variants (gnomAD AF < 1%)..."
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c IMPACT,gnomADe_AF -s worst \
-        -i 'IMPACT=\"MODERATE\" && (gnomADe_AF<0.01 || gnomADe_AF=\".\")' \
-        -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz"
-else
-  echo "[3/${TOTAL_STEPS}] Extracting MODERATE impact variants (no gnomAD AF available)..."
-  echo "  WARNING: VEP output lacks gnomAD frequencies — including all MODERATE variants."
-  echo "  Tip: Re-run VEP (step 13) with --af_gnomade for population frequency filtering."
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c IMPACT -s worst -i 'IMPACT=\"MODERATE\"' \
-        -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz"
-fi
-
-MODERATE_COUNT=$(run_in \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz" 2>/dev/null | wc -l || echo 0)
+# Step 4: MODERATE impact (missense, in-frame indel), rare
+echo "[4] Extracting rare MODERATE impact variants (missense, in-frame indel)..."
+run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+  bash -o pipefail -c "bcftools +split-vep ${RARE} -c IMPACT -s worst -i 'IMPACT=\"MODERATE\"' \
+      -Oz -o ${C}/${SAMPLE}_rare_moderate.vcf.gz && \
+    bcftools index -f -t ${C}/${SAMPLE}_rare_moderate.vcf.gz"
+MODERATE_COUNT=$(count "${SAMPLE}_rare_moderate.vcf.gz")
 echo "  Found: ${MODERATE_COUNT} MODERATE impact variants"
+MERGE_FILES="${C}/${SAMPLE}_high_impact.vcf.gz ${C}/${SAMPLE}_rare_moderate.vcf.gz"
 
-# Step 4: Extract ClinVar pathogenic/likely pathogenic
-# Matches CLIN_SIG values containing "pathogenic" (covers both pathogenic and likely_pathogenic)
-# Does NOT use -s worst: a variant is included if ANY transcript has a pathogenic ClinVar entry
+# Step 5: ClinVar pathogenic/likely pathogenic, at any frequency (a common
+# pathogenic allele such as HFE p.C282Y must stay). Step 6 screens the sample
+# against the ClinVar file in clinvar/, which setup.sh refreshes; VEP's
+# CLIN_SIG comes from its cache and is only the fallback.
 CLINVAR_COUNT=0
-CLINVAR_FILE=""
-if [ "$HAS_CLINVAR" -eq 1 ]; then
-  echo "[4/${TOTAL_STEPS}] Extracting ClinVar pathogenic/likely pathogenic variants..."
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
+CLINVAR_SOURCE="none"
+CLINVAR_TIER="${OUTDIR}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
+rm -f "${CLINVAR_TIER:?}" "${CLINVAR_TIER:?}.tbi"
+if [ "$HAS_HITS" -eq 1 ]; then
+  echo "[5] Extracting the step 6 ClinVar hits..."
+  CLINVAR_SOURCE="step 6 ClinVar screen"
+  TARGETS="${OUTDIR}/${SAMPLE}_clinvar_targets.tsv"
+  awk -F'\t' 'BEGIN {OFS = "\t"} !/^#/ {print $1, $2}' "$CLINVAR_HITS" | sort -u > "$TARGETS"
+  if [ -s "$TARGETS" ]; then
+    run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+      bash -o pipefail -c "bcftools view -f PASS -T ${C}/${SAMPLE}_clinvar_targets.tsv ${CONTAINER_INPUT} \
+          -Oz -o ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
+        bcftools index -f -t ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
+  else
+    echo "  Step 6 found no ClinVar hit."
+  fi
+  rm -f "${TARGETS:?}"
+elif [ "$HAS_CLINSIG" -eq 1 ]; then
+  echo "[5] Extracting VEP CLIN_SIG pathogenic/likely pathogenic (VEP's cached ClinVar; run step 6 for the current file)..."
+  CLINVAR_SOURCE="VEP CLIN_SIG (cache release)"
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
         -i 'CLIN_SIG~\"pathogenic\" && CLIN_SIG!~\"conflicting\"' \
-        -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz"
-
-  CLINVAR_COUNT=$(run_in \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz" 2>/dev/null | wc -l || echo 0)
-  echo "  Found: ${CLINVAR_COUNT} ClinVar pathogenic/likely pathogenic variants"
-  CLINVAR_FILE="/genome/${SAMPLE}/clinical/${SAMPLE}_clinvar_pathogenic.vcf.gz"
+        -Oz -o ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
+      bcftools index -f -t ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
 else
-  echo "[4/${TOTAL_STEPS}] Skipping ClinVar filter (CLIN_SIG not in VEP annotations)."
-  echo "  Tip: Re-run VEP with --everything or --check_existing to include ClinVar."
+  echo "[5] Skipping the ClinVar tier (no step 6 hits and no CLIN_SIG in the VEP output)."
+fi
+if [ -f "$CLINVAR_TIER" ]; then
+  CLINVAR_COUNT=$(count "${SAMPLE}_clinvar_pathogenic.vcf.gz")
+  echo "  Found: ${CLINVAR_COUNT} ClinVar pathogenic/likely pathogenic variants (${CLINVAR_SOURCE})"
+  MERGE_FILES="${MERGE_FILES} ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
 fi
 
-# Step N: CADD high-score non-coding variants (if annotated by step 30)
-STEP_NUM=5
-[ "$HAS_CLINVAR" -eq 1 ] && STEP_NUM=$((STEP_NUM + 1))
+# Step 6: high CADD outside HIGH/MODERATE, rare (only tags present in the header)
 CADD_COUNT=0
-CADD_FILE=""
 if [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; then
-  # Build CADD filter — only reference tags that exist in the header
   CADD_EXPR=''
   [ "$HAS_CADD" -eq 1 ] && CADD_EXPR='INFO/CADD_PHRED>=20'
-  if [ "$HAS_CADD_INDEL" -eq 1 ]; then
-    [ -n "$CADD_EXPR" ] && CADD_EXPR="${CADD_EXPR} || INFO/CADD_PHRED_indel>=20" || CADD_EXPR='INFO/CADD_PHRED_indel>=20'
-  fi
-
-  echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting high-CADD variants (PHRED >= 20, non-HIGH/MODERATE)..."
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c IMPACT -s worst \
+  [ "$HAS_CADD_INDEL" -eq 1 ] && CADD_EXPR="${CADD_EXPR:+${CADD_EXPR} || }INFO/CADD_PHRED_indel>=20"
+  echo "[6] Extracting rare high-CADD variants (PHRED >= 20, non-HIGH/MODERATE)..."
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools +split-vep ${RARE} -c IMPACT -s worst \
         -i 'IMPACT!=\"HIGH\" && IMPACT!=\"MODERATE\" && (${CADD_EXPR})' \
-        -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz"
-
-  CADD_COUNT=$(run_in \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz" 2>/dev/null | wc -l || echo 0)
+        -Oz -o ${C}/${SAMPLE}_cadd_high.vcf.gz && \
+      bcftools index -f -t ${C}/${SAMPLE}_cadd_high.vcf.gz"
+  CADD_COUNT=$(count "${SAMPLE}_cadd_high.vcf.gz")
   echo "  Found: ${CADD_COUNT} high-CADD non-coding variants (PHRED >= 20)"
-  CADD_FILE="/genome/${SAMPLE}/clinical/${SAMPLE}_cadd_high.vcf.gz"
-  STEP_NUM=$((STEP_NUM + 1))
+  MERGE_FILES="${MERGE_FILES} ${C}/${SAMPLE}_cadd_high.vcf.gz"
 fi
 
-# Step N: SpliceAI cryptic splice variants (if annotated by step 30)
+# Step 7: SpliceAI cryptic splice variants, rare
 SPLICEAI_COUNT=0
-SPLICEAI_FILE=""
 if [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; then
-  # Build SpliceAI pre-filter — only reference tags that exist in the header
-  SPLICEAI_PREFILTER_PARTS=()
-  [ "$HAS_SPLICEAI" -eq 1 ] && SPLICEAI_PREFILTER_PARTS+=('INFO/SpliceAI!="."')
-  [ "$HAS_SPLICEAI_INDEL" -eq 1 ] && SPLICEAI_PREFILTER_PARTS+=('INFO/SpliceAI_indel!="."')
-  SPLICEAI_PREFILTER=$(IFS=' || '; echo "${SPLICEAI_PREFILTER_PARTS[*]}")
-
-  echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting cryptic splice variants (SpliceAI delta >= 0.2)..."
-  # SpliceAI INFO field from vcfanno is a pipe-delimited string:
-  #   ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL
-  # bcftools cannot numerically compare sub-fields within a string, so we use
-  # awk to parse the SpliceAI value and check if any delta score >= 0.2.
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS -i '${SPLICEAI_PREFILTER}' ${CONTAINER_INPUT} | \
+  SPLICEAI_PREFILTER=''
+  [ "$HAS_SPLICEAI" -eq 1 ] && SPLICEAI_PREFILTER='INFO/SpliceAI!="."'
+  [ "$HAS_SPLICEAI_INDEL" -eq 1 ] && SPLICEAI_PREFILTER="${SPLICEAI_PREFILTER:+${SPLICEAI_PREFILTER} || }INFO/SpliceAI_indel!=\".\""
+  echo "[7] Extracting rare cryptic splice variants (SpliceAI delta >= 0.2)..."
+  # A SpliceAI value is ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL,
+  # one per gene joined by ','. Every gene's four delta scores are tested.
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools view -i '${SPLICEAI_PREFILTER}' ${RARE} | \
       awk -F'\t' 'BEGIN{OFS=\"\t\"} /^#/{print;next} {
-        dominated=0
-        n=split(\$8, info_arr, \";\")
+        hit=0
+        n=split(\$8, kv, \";\")
         for(i=1;i<=n;i++){
-          if(info_arr[i] ~ /^SpliceAI=/){
-            sub(/^SpliceAI=/,\"\",info_arr[i])
-            split(info_arr[i],sp,\"|\")
-            for(j=3;j<=6;j++) if(sp[j]+0>=0.2) dominated=1
-          }
-          if(info_arr[i] ~ /^SpliceAI_indel=/){
-            sub(/^SpliceAI_indel=/,\"\",info_arr[i])
-            split(info_arr[i],sp,\"|\")
-            for(j=3;j<=6;j++) if(sp[j]+0>=0.2) dominated=1
+          if(kv[i] !~ /^SpliceAI(_indel)?=/) continue
+          v=kv[i]; sub(/^[^=]*=/,\"\",v)
+          na=split(v, genes, \",\")
+          for(a=1;a<=na;a++){
+            split(genes[a], sp, \"|\")
+            for(j=3;j<=6;j++) if(sp[j]!=\"\" && sp[j]!=\".\" && sp[j]+0>=0.2) hit=1
           }
         }
-        if(dominated) print
+        if(hit) print
       }' | \
-      bcftools view -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz.tmp - && \
-    mv /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz.tmp /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz && \
-    bcftools index -f -t /genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
-
-  SPLICEAI_COUNT=$(run_in \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz" 2>/dev/null | wc -l || echo 0)
+      bcftools view -Oz -o ${C}/${SAMPLE}_spliceai_high.vcf.gz.tmp - && \
+    mv ${C}/${SAMPLE}_spliceai_high.vcf.gz.tmp ${C}/${SAMPLE}_spliceai_high.vcf.gz && \
+    bcftools index -f -t ${C}/${SAMPLE}_spliceai_high.vcf.gz"
+  SPLICEAI_COUNT=$(count "${SAMPLE}_spliceai_high.vcf.gz")
   echo "  Found: ${SPLICEAI_COUNT} cryptic splice variants (SpliceAI >= 0.2)"
-  SPLICEAI_FILE="/genome/${SAMPLE}/clinical/${SAMPLE}_spliceai_high.vcf.gz"
-  STEP_NUM=$((STEP_NUM + 1))
+  MERGE_FILES="${MERGE_FILES} ${C}/${SAMPLE}_spliceai_high.vcf.gz"
 fi
 
-# Step N: High-confidence deleterious missense (REVEL/AlphaMissense)
+# Step 8: high-confidence deleterious missense (REVEL/AlphaMissense), rare
 MISSENSE_COUNT=0
-MISSENSE_FILE=""
-if [ "$REVEL_OR_AM" -eq 1 ]; then
-  echo "[${STEP_NUM}/${TOTAL_STEPS}] Extracting high-confidence deleterious missense variants..."
-  # Build filter expression dynamically based on available annotations
+if [ "$HAS_REVEL" -eq 1 ] || [ "$HAS_ALPHAMISSENSE" -eq 1 ]; then
   MISSENSE_FILTER=""
-  [ "$HAS_REVEL" -eq 1 ] && MISSENSE_FILTER="INFO/REVEL>=0.644"
-  if [ "$HAS_ALPHAMISSENSE" -eq 1 ]; then
-    if [ -n "$MISSENSE_FILTER" ]; then
-      MISSENSE_FILTER="${MISSENSE_FILTER} || INFO/AM_pathogenicity>=0.564"
-    else
-      MISSENSE_FILTER="INFO/AM_pathogenicity>=0.564"
-    fi
+  MISSENSE_LABEL=""
+  if [ "$HAS_REVEL" -eq 1 ]; then
+    MISSENSE_FILTER="INFO/REVEL>=0.644"
+    MISSENSE_LABEL="REVEL >= 0.644 (ClinGen PP3 Supporting)"
   fi
-
-  run_in --cpus 4 --memory 4g \
-    "${BCFTOOLS_IMAGE}" \
-    bash -c "bcftools view -f PASS -i '${MISSENSE_FILTER}' \
-      ${CONTAINER_INPUT} \
-      -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz && \
-    bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz"
-
-  MISSENSE_COUNT=$(run_in \
-    "${BCFTOOLS_IMAGE}" \
-    bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz" 2>/dev/null | wc -l || echo 0)
-  echo "  Found: ${MISSENSE_COUNT} high-confidence deleterious missense variants"
-  MISSENSE_FILE="/genome/${SAMPLE}/clinical/${SAMPLE}_missense_deleterious.vcf.gz"
+  if [ "$HAS_ALPHAMISSENSE" -eq 1 ]; then
+    MISSENSE_FILTER="${MISSENSE_FILTER:+${MISSENSE_FILTER} || }INFO/AM_pathogenicity>=0.564"
+    MISSENSE_LABEL="${MISSENSE_LABEL:+${MISSENSE_LABEL} or }AlphaMissense >= 0.564 (its likely_pathogenic class boundary, not an ACMG evidence level)"
+  fi
+  echo "[8] Extracting rare deleterious missense variants: ${MISSENSE_LABEL}..."
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -c "bcftools view -i '${MISSENSE_FILTER}' ${RARE} \
+      -Oz -o ${C}/${SAMPLE}_missense_deleterious.vcf.gz && \
+    bcftools index -f -t ${C}/${SAMPLE}_missense_deleterious.vcf.gz"
+  MISSENSE_COUNT=$(count "${SAMPLE}_missense_deleterious.vcf.gz")
+  echo "  Found: ${MISSENSE_COUNT} deleterious missense variants"
+  MERGE_FILES="${MERGE_FILES} ${C}/${SAMPLE}_missense_deleterious.vcf.gz"
 fi
 
-# Final step: Merge into combined clinical VCF
-echo "[${TOTAL_STEPS}/${TOTAL_STEPS}] Merging into combined clinical VCF..."
-MERGE_FILES="/genome/${SAMPLE}/clinical/${SAMPLE}_high_impact.vcf.gz /genome/${SAMPLE}/clinical/${SAMPLE}_rare_moderate.vcf.gz"
-[ -n "$CLINVAR_FILE" ] && MERGE_FILES="${MERGE_FILES} ${CLINVAR_FILE}"
-[ -n "$CADD_FILE" ] && MERGE_FILES="${MERGE_FILES} ${CADD_FILE}"
-[ -n "$SPLICEAI_FILE" ] && MERGE_FILES="${MERGE_FILES} ${SPLICEAI_FILE}"
-[ -n "$MISSENSE_FILE" ] && MERGE_FILES="${MERGE_FILES} ${MISSENSE_FILE}"
+# Step 9: merge into the combined clinical VCF
+echo "[9] Merging into combined clinical VCF..."
+run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" \
+  bash -o pipefail -c "bcftools concat -a -D ${MERGE_FILES} | \
+    bcftools sort -Oz -o ${C}/${SAMPLE}_clinical.vcf.gz && \
+    bcftools index -f -t ${C}/${SAMPLE}_clinical.vcf.gz"
+RARE_HOST="${OUTDIR}/${SAMPLE}_rare_pass.vcf.gz"
+rm -f "${RARE_HOST:?}" "${RARE_HOST:?}.tbi"
+TOTAL_COUNT=$(count "${SAMPLE}_clinical.vcf.gz")
 
-run_in --cpus 2 --memory 2g \
-  "${BCFTOOLS_IMAGE}" \
-  bash -o pipefail -c "bcftools concat -a -D \
-    ${MERGE_FILES} | \
-    bcftools sort -Oz -o /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz && \
-    bcftools index -t /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz"
-
-TOTAL_COUNT=$(run_in \
-  "${BCFTOOLS_IMAGE}" \
-  bcftools view -H "/genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz" 2>/dev/null | wc -l || echo 0)
-
-# Generate summary TSV with annotation scores
+# Summary TSV: one row per variant, from its worst consequence. A score or
+# frequency the input does not carry is written as '.'.
 echo ""
 echo "Generating human-readable summary..."
-run_in --cpus 2 --memory 2g \
-  "${BCFTOOLS_IMAGE}" \
-  bash -c "echo -e 'CHROM\tPOS\tREF\tALT\tGT\tIMPACT\tGENE\tCADD_PHRED\tREVEL\tAM_CLASS\tCSQ_EXCERPT' > /genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv && \
-    bcftools view -H /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz | \
-    awk -F'\t' '{
-      gt=\".\";
-      split(\$9, fmt, \":\");
-      split(\$10, vals, \":\");
-      for(i in fmt) if(fmt[i]==\"GT\") gt=vals[i];
-      impact=\".\";
-      if(\$8 ~ /HIGH/) impact=\"HIGH\";
-      else if(\$8 ~ /MODERATE/) impact=\"MODERATE\";
-      else if(\$8 ~ /pathogenic/) impact=\"CLINVAR\";
-      else if(\$8 ~ /CADD_PHRED/) impact=\"CADD\";
-      else if(\$8 ~ /SpliceAI/) impact=\"SPLICEAI\";
-      gene=\".\";
-      if(match(\$8, /SYMBOL=[^;|]+/)) gene=substr(\$8, RSTART+7, RLENGTH-7);
-      cadd=\".\";
-      if(match(\$8, /CADD_PHRED=[^;]+/)) cadd=substr(\$8, RSTART+11, RLENGTH-11);
-      revel=\".\";
-      if(match(\$8, /REVEL=[^;]+/)) revel=substr(\$8, RSTART+6, RLENGTH-6);
-      am=\".\";
-      if(match(\$8, /AM_class=[^;]+/)) am=substr(\$8, RSTART+9, RLENGTH-9);
-      csq=\".\";
-      match(\$8, /CSQ=[^;]+/);
-      if(RSTART>0) csq=substr(\$8, RSTART, RLENGTH>150?150:RLENGTH);
-      print \$1\"\t\"\$2\"\t\"\$4\"\t\"\$5\"\t\"gt\"\t\"impact\"\t\"gene\"\t\"cadd\"\t\"revel\"\t\"am\"\t\"csq;
-    }' >> /genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv"
+COL_CADD='.'; [ "$HAS_CADD" -eq 1 ] && COL_CADD='%INFO/CADD_PHRED'
+COL_REVEL='.'; [ "$HAS_REVEL" -eq 1 ] && COL_REVEL='%INFO/REVEL'
+COL_AM='.'; has_info AM_class && COL_AM='%INFO/AM_class'
+COL_FREQ='.'; has_field MAX_AF && COL_FREQ='%MAX_AF'
+SUMMARY="${OUTDIR}/${SAMPLE}_clinical_summary.tsv"
+printf 'CHROM\tPOS\tREF\tALT\tGT\tIMPACT\tGENE\tConsequence\tMAX_AF\tCADD_PHRED\tREVEL\tAM_CLASS\n' > "${SUMMARY}.tmp"
+run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" \
+  bcftools +split-vep "${C}/${SAMPLE}_clinical.vcf.gz" -s worst \
+    -f "%CHROM\t%POS\t%REF\t%ALT[\t%GT]\t%IMPACT\t%SYMBOL\t%Consequence\t${COL_FREQ}\t${COL_CADD}\t${COL_REVEL}\t${COL_AM}\n" \
+  >> "${SUMMARY}.tmp"
+# An empty SYMBOL (an intergenic worst consequence) is written as '.'.
+awk -F'\t' 'BEGIN {OFS = "\t"} NR > 1 && $7 == "" {$7 = "."} {print}' "${SUMMARY}.tmp" > "${SUMMARY}.tmp2"
+mv "${SUMMARY}.tmp2" "${SUMMARY}.tmp"
 
-# Add gnomAD gene constraint columns if available
+# gnomAD gene constraint columns (bin/constraint_join.awk exits non-zero when
+# rows carry genes and not one matches: a wrong file, never a silent '.').
 if [ "$HAS_CONSTRAINT" -eq 1 ]; then
   echo "Adding gnomAD gene constraint metrics..."
-  run_in --cpus 2 --memory 2g \
-    "${PYTHON_IMAGE}" \
-    python3 -c "
-import csv, sys
-
-# Load constraint metrics (gene -> {loeuf, pli, mis_z})
-constraint = {}
-with open('/genome/annotations/gnomad_v4.1_constraint.tsv') as f:
-    reader = csv.DictReader(f, delimiter='\t')
-    for row in reader:
-        gene = row.get('gene', '')
-        if not gene or row.get('canonical', '') != 'true':
-            continue
-        try:
-            loeuf = row.get('lof.oe_ci.upper', '.')
-            pli = row.get('lof.pLI', '.')
-            mis_z = row.get('mis.z_score', '.')
-        except (KeyError, ValueError):
-            loeuf, pli, mis_z = '.', '.', '.'
-        constraint[gene] = (loeuf, pli, mis_z)
-
-# Read TSV, add constraint columns
-infile = '/genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv'
-outfile = '/genome/${SAMPLE}/clinical/${SAMPLE}_clinical_summary_enriched.tsv'
-with open(infile) as fin, open(outfile, 'w') as fout:
-    header = fin.readline().rstrip('\n')
-    fout.write(header + '\tLOEUF\tpLI\tmis_Z\n')
-    for line in fin:
-        line = line.rstrip('\n')
-        cols = line.split('\t')
-        gene = cols[6] if len(cols) > 6 else '.'
-        loeuf, pli, mis_z = constraint.get(gene, ('.', '.', '.'))
-        fout.write(line + '\t' + str(loeuf) + '\t' + str(pli) + '\t' + str(mis_z) + '\n')
-
-# Replace original with enriched version
-import shutil
-shutil.move(outfile, infile)
-print(f'  Added constraint metrics for genes in summary TSV')
-"
+  awk -f "${PGP_ROOT}/bin/constraint_join.awk" gene_col=GENE "$CONSTRAINT_TSV" "${SUMMARY}.tmp" > "${SUMMARY}.tmp2"
+  mv "${SUMMARY}.tmp2" "${SUMMARY}.tmp"
 fi
+mv "${SUMMARY}.tmp" "$SUMMARY"
 
 echo ""
 echo "============================================"
@@ -406,27 +344,27 @@ echo "  Clinical filter complete: ${SAMPLE}"
 echo "  Total clinically interesting variants: ${TOTAL_COUNT}"
 echo "    HIGH impact (LoF):           ${HIGH_COUNT}"
 echo "    Rare MODERATE impact:        ${MODERATE_COUNT}"
-[ "$HAS_CLINVAR" -eq 1 ] && \
-echo "    ClinVar pathogenic/LP:       ${CLINVAR_COUNT}"
+echo "    ClinVar pathogenic/LP:       ${CLINVAR_COUNT} (${CLINVAR_SOURCE})"
 { [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; } && \
 echo "    High CADD non-coding:        ${CADD_COUNT}"
 { [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; } && \
 echo "    Cryptic splice (SpliceAI):   ${SPLICEAI_COUNT}"
-[ "$REVEL_OR_AM" -eq 1 ] && \
+{ [ "$HAS_REVEL" -eq 1 ] || [ "$HAS_ALPHAMISSENSE" -eq 1 ]; } && \
 echo "    Deleterious missense:        ${MISSENSE_COUNT}"
+echo "  Frequency filter: ${FREQ_NAME:-none (no frequency field in the VEP output)}"
 echo ""
 echo "  Output files:"
 echo "    ${OUTDIR}/${SAMPLE}_clinical.vcf.gz              (combined)"
 echo "    ${OUTDIR}/${SAMPLE}_clinical_summary.tsv         (human-readable table)"
 echo "    ${OUTDIR}/${SAMPLE}_high_impact.vcf.gz           (HIGH only)"
 echo "    ${OUTDIR}/${SAMPLE}_rare_moderate.vcf.gz         (rare MODERATE only)"
-[ "$HAS_CLINVAR" -eq 1 ] && \
-echo "    ${OUTDIR}/${SAMPLE}_clinvar_pathogenic.vcf.gz    (ClinVar P/LP only)"
+[ -f "$CLINVAR_TIER" ] && \
+echo "    ${CLINVAR_TIER}    (ClinVar P/LP only)"
 { [ "$HAS_CADD" -eq 1 ] || [ "$HAS_CADD_INDEL" -eq 1 ]; } && \
 echo "    ${OUTDIR}/${SAMPLE}_cadd_high.vcf.gz             (CADD >= 20 non-coding)"
 { [ "$HAS_SPLICEAI" -eq 1 ] || [ "$HAS_SPLICEAI_INDEL" -eq 1 ]; } && \
 echo "    ${OUTDIR}/${SAMPLE}_spliceai_high.vcf.gz         (SpliceAI >= 0.2)"
-[ "$REVEL_OR_AM" -eq 1 ] && \
+{ [ "$HAS_REVEL" -eq 1 ] || [ "$HAS_ALPHAMISSENSE" -eq 1 ]; } && \
 echo "    ${OUTDIR}/${SAMPLE}_missense_deleterious.vcf.gz  (REVEL/AlphaMissense)"
 echo "============================================"
 echo ""

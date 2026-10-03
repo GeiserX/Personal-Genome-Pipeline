@@ -82,13 +82,25 @@ workflow PGX {
 
     //
     // BRANCH 4: CPIC drug-gene recommendation lookup
-    // Parses PharmCAT JSON output for actionable prescribing guidance
+    // Reads PharmCAT JSON output for actionable prescribing guidance. With
+    // pypgx, its summary joins by sample, so the report can say when pypgx
+    // called a gene PharmCAT could not (CYP2D6 from read depth).
     //
     ch_cpic_recommendations = Channel.empty()
     ch_cpic_phenotypes      = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cpic') &&
         params.tools.split(',').collect{it.trim()}.contains('pharmcat')) {
-        CPIC_LOOKUP(ch_pharmcat_json)
+        if (params.tools.split(',').collect{it.trim()}.contains('pypgx')) {
+            // remainder: a sample whose PYPGX task failed still gets its CPIC report
+            ch_cpic_input = ch_pharmcat_json
+                .map { meta, json -> [meta.id, meta, json] }
+                .join(ch_pypgx_summary.map { meta, tsv -> [meta.id, tsv] }, remainder: true)
+                .filter { row -> row[1] != null && row[2] != null }
+                .map { row -> tuple(row[1], row[2], row[3] ?: []) }
+        } else {
+            ch_cpic_input = ch_pharmcat_json.map { meta, json -> tuple(meta, json, []) }
+        }
+        CPIC_LOOKUP(ch_cpic_input)
         ch_cpic_recommendations = CPIC_LOOKUP.out.recommendations
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
         ch_versions             = ch_versions.mix(CPIC_LOOKUP.out.versions)
