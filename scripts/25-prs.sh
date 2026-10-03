@@ -247,6 +247,9 @@ for ENTRY in "${PGS_SCORES[@]}"; do
     if grep -q 'No valid variants' "${OUTDIR}/${PGS_ID}.log" 2>/dev/null; then
       echo -e "${CONDITION}\t${PGS_ID}\tNA\t0\t${TOTAL_VARS}\t0.0\t${INPUT_KIND}" >> "$RESULTS_FILE"
       echo "    No variant of ${PGS_ID} is present in this input; no score."
+      if [ "$INPUT_KIND" = vcf ]; then
+        echo "    ${HOMREF_NOTE}"
+      fi
       continue
     fi
     echo "ERROR: plink2 --score failed for ${PGS_ID}; see ${OUTDIR}/${PGS_ID}.log" >&2
