@@ -152,6 +152,21 @@ elif ! "${SCRIPT_DIR}/validate-setup.sh" "${SAMPLE}"; then
   exit 1
 fi
 
+# What produces this run's outputs (images and their digests, database
+# releases, the pipeline commit), and when the run started. The reports read
+# logs/run_status.tsv to tell this run's results from an earlier run's: a
+# step that is skipped or fails here leaves its older output on disk.
+GENOME_DIR="$GENOME_DIR" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" \
+  || echo "WARNING: could not write ${GENOME_DIR}/${SAMPLE}/run_manifest.tsv; the reports write one later."
+RUN_STATUS="${LOG_DIR}/run_status.tsv"
+{
+  printf '# run-all.sh: when this run started and how each step ended (bin/collect_summary.py reads it)\n'
+  printf 'meta\tstarted_epoch\t%s\n' "$PIPELINE_START"
+  printf 'meta\tstarted_utc\t%s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  printf 'meta\tdeclared_sex\t%s\n' "$SEX"
+} > "$RUN_STATUS"
+echo ""
+
 # Phase 0.5: fastp QC + trimming (if FASTQ exists but BAM doesn't)
 BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 R1="${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz"
@@ -372,6 +387,16 @@ if _enabled "${BENCHMARK:-false}"; then
   fi
 fi
 
+# Every step's result in this run, for the reports (written before they run).
+for i in "${!STEP_NAMES[@]}"; do
+  printf 'step\t%s\t%s\n' "${STEP_NAMES[$i]%% *}" "${STEP_RESULTS[$i]}" >> "$RUN_STATUS"
+done
+
+# Rewrite the manifest now that every step has run: an image a step pulled
+# after the start (possible with SKIP_VALIDATION=true) gets its digest.
+GENOME_DIR="$GENOME_DIR" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" \
+  || echo "WARNING: could not refresh ${GENOME_DIR}/${SAMPLE}/run_manifest.tsv; it keeps the digests from the start of the run."
+
 _run "24 HTML report" 24_html_report "${SCRIPT_DIR}/24-html-report.sh" "$SAMPLE"
 _run "28 MultiQC" 28_multiqc "${SCRIPT_DIR}/28-multiqc.sh" "$SAMPLE"
 _run "Summary report" generate_report "${SCRIPT_DIR}/generate-report.sh" "$SAMPLE"
@@ -440,6 +465,8 @@ echo ""
 echo "Key outputs:"
 echo "  HTML Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html"
 echo "  Text Report:    ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt"
+echo "  Summary JSON:   ${GENOME_DIR}/${SAMPLE}/summary.json (both reports are rendered from it)"
+echo "  Run manifest:   ${GENOME_DIR}/${SAMPLE}/run_manifest.tsv"
 echo "  VCF:            ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 echo "  ClinVar hits:   ${GENOME_DIR}/${SAMPLE}/clinvar/"
 echo "  PharmCAT:       ${GENOME_DIR}/${SAMPLE}/vcf/ (PharmCAT reports alongside VCF)"

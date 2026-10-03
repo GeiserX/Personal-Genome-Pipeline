@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # pypgx — Comprehensive pharmacogenomic star allele calling with SV detection
 # Input: BAM + VCF from alignment/variant calling steps
-# Output: Per-gene star allele calls, consolidated summary TSV, PharmCAT comparison TSV
+# Output: Per-gene star allele calls and a consolidated summary TSV (step 27
+#         compares it with PharmCAT)
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -224,131 +225,11 @@ print(f'Summary written: {summary_path}')
 print(f'Genes called: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)}')
 " 2>&1
 
-# Cross-reference with PharmCAT if output exists (newest report wins)
-PHARMCAT_JSON=""
-for DIR in "${GENOME_DIR}/${SAMPLE}/pharmcat" "${GENOME_DIR}/${SAMPLE}/vcf"; do
-  [ -d "$DIR" ] || continue
-  CANDIDATE=$(find "$DIR" -maxdepth 1 \( -name "*.report.json" -o -name "*_pharmcat.json" \) -print0 2>/dev/null \
-    | xargs -0 ls -t 2>/dev/null | head -1)
-  if [ -n "$CANDIDATE" ]; then
-    PHARMCAT_JSON="$CANDIDATE"
-    break
-  fi
-done
-
-if [ -n "$PHARMCAT_JSON" ]; then
-  echo ""
-  echo "PharmCAT output found, generating comparison..."
-
-  run_in --cpus 2 --memory 4g \
-    "${PYTHON_IMAGE}" \
-    python3 -c "
-import json, csv, os, re, sys
-
-sample = '${SAMPLE}'
-outbase = f'/genome/{sample}/pypgx'
-comparison_path = f'{outbase}/{sample}_pharmcat_comparison.tsv'
-
-# Load pypgx summary
-pypgx_data = {}
-summary_path = f'{outbase}/{sample}_pypgx_summary.tsv'
-if os.path.isfile(summary_path):
-    with open(summary_path) as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            pypgx_data[row['Gene']] = row['Diplotype']
-
-# Load PharmCAT results. PharmCAT 3.x writes 'genes' either flat ({gene -> data})
-# or nested ({source -> {gene -> data}}); 2.x used a list. Same logic as
-# scripts/27-cpic-lookup.sh. A report that cannot be read, or that yields no gene,
-# is an error: an empty comparison would show 0 conflicts.
-pharmcat_path = '$(echo "$PHARMCAT_JSON" | sed "s|${GENOME_DIR}|/genome|")'
-with open(pharmcat_path) as f:
-    data = json.load(f)
-
-def parse_gene(g):
-    if not isinstance(g, dict):
-        return None
-    dips = g.get('sourceDiplotypes') or g.get('recommendationDiplotypes') or []
-    if not dips:
-        return None
-    dip = dips[0]
-    a1 = (dip.get('allele1') or {}).get('name', '?')
-    a2 = (dip.get('allele2') or {}).get('name', '?')
-    return dip.get('label') or f'{a1}/{a2}'
-
-pharmcat_data = {}
-genes = data.get('genes')
-if isinstance(genes, dict):
-    for key, val in genes.items():
-        if not isinstance(val, dict):
-            continue
-        if 'sourceDiplotypes' in val or 'recommendationDiplotypes' in val:
-            d = parse_gene(val)                       # flat: key is the gene
-            if d and key not in pharmcat_data:
-                pharmcat_data[key] = d
-        else:
-            for gene_name, g in val.items():          # nested: key is the source
-                d = parse_gene(g)
-                if d and gene_name not in pharmcat_data:
-                    pharmcat_data[gene_name] = d
-elif isinstance(genes, list):
-    for entry in genes:
-        gene = entry.get('geneSymbol', entry.get('gene', ''))
-        d = parse_gene(entry)
-        if gene and d and gene not in pharmcat_data:
-            pharmcat_data[gene] = d
-
-if not pharmcat_data:
-    print(f'ERROR: parsed 0 genes from PharmCAT report {pharmcat_path}; refusing to write an empty comparison', file=sys.stderr)
-    sys.exit(1)
-print(f'PharmCAT genes parsed: {len(pharmcat_data)}')
-
-# PharmCAT names VKORC1 alleles 'rs9923231 variant (T)' where pypgx writes
-# 'rs9923231', and either tool may put the two alleles in either order. Compare
-# the sorted allele names without that suffix; the TSV keeps the raw strings.
-def norm(diplotype):
-    return sorted(re.sub(r' (variant|reference) \([ACGT]+\)', '', a).strip() for a in diplotype.split('/'))
-
-# Build comparison for overlapping genes
-all_genes = sorted(set(list(pypgx_data.keys()) + list(pharmcat_data.keys())))
-
-with open(comparison_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t', lineterminator='\n')
-    w.writerow(['Gene', 'PharmCAT_diplotype', 'pypgx_diplotype', 'Match', 'Called_by'])
-    matches = 0
-    mismatches = 0
-    for gene in all_genes:
-        pc = pharmcat_data.get(gene, 'Not called')
-        pg = pypgx_data.get(gene, 'Not called')
-        # PharmCAT writes Unknown/Unknown when it could not call a gene; pypgx
-        # writes FAILED. Neither is a call, so neither can conflict.
-        pc_called = pc != 'Not called' and any(x != 'Unknown' for x in pc.split('/'))
-        pg_called = pg not in ('Not called', 'FAILED')
-        if not pc_called and not pg_called:
-            continue
-        if not pc_called:
-            match = called_by = 'pypgx only'
-            mismatches += 1
-        elif not pg_called:
-            match = called_by = 'PharmCAT only'
-            mismatches += 1
-        elif norm(pc) == norm(pg):
-            match, called_by = 'Yes', 'both'
-            matches += 1
-        else:
-            match, called_by = 'No', 'both'
-            mismatches += 1
-        w.writerow([gene, pc, pg, match, called_by])
-
-print(f'Comparison written: {comparison_path}')
-print(f'Concordant: {matches}, Discordant/partial: {mismatches}')
-" 2>&1
-else
-  echo ""
-  echo "NOTE: No PharmCAT output found. Run step 7 first if you want a comparison."
-  echo "  Expected in: ${GENOME_DIR}/${SAMPLE}/pharmcat/ or ${GENOME_DIR}/${SAMPLE}/vcf/"
-fi
+# The PharmCAT comparison is written by step 27 (CPIC lookup), which runs after
+# both PharmCAT (step 7) and this step; here it could read a missing or
+# previous-run PharmCAT report, because run-all.sh starts steps 7 and 32 together.
+# Step 27 removes and rewrites the file each time it runs, so this step leaves it
+# alone: re-running step 32 on its own keeps the comparison the reports read.
 
 # Print summary
 echo ""
@@ -356,9 +237,7 @@ echo "============================================"
 echo "  pypgx complete: ${SAMPLE}"
 echo "============================================"
 echo "Results:    ${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv"
-if [ -n "$PHARMCAT_JSON" ]; then
-  echo "Comparison: ${OUTPUT_DIR}/${SAMPLE}_pharmcat_comparison.tsv"
-fi
+echo "Comparison with PharmCAT: run step 27, which writes ${OUTPUT_DIR}/${SAMPLE}_pharmcat_comparison.tsv"
 echo ""
 if [ -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" ]; then
   echo "Summary:"

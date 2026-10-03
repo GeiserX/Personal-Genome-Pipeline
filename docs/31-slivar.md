@@ -10,7 +10,7 @@ slivar (by Brent Pedersen, author of vcfanno, mosdepth, duphold) is a streaming 
 
 ## Prerequisites
 
-- VEP-annotated VCF from step 13, or vcfanno-enriched VCF from step 30 (recommended)
+- VEP-annotated VCF from step 13, or vcfanno-enriched VCF from step 30 (recommended). The step 30 output is used only when it is newer than the VEP output; an older one is ignored with a notice.
 - Optional: gnomAD v4.1 gene constraint TSV at `${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv`
 
 ## Docker Images
@@ -29,13 +29,15 @@ export GENOME_DIR=/path/to/your/data
 
 ## Filter Tiers
 
+"Rare" is the rule step 23 uses: VEP's `MAX_AF` (highest frequency in any 1000 Genomes or gnomAD exome/genome population) below 1% or missing; without `MAX_AF`, `gnomADe_AF` and `gnomADg_AF` both below 1% or missing. Exome frequency alone would call a variant that is common in genomes but absent from exomes rare. With none of these fields the tiers are not filtered by frequency and the step prints a notice.
+
 ### Tier 1: rare_high
 - PASS variants with HIGH VEP impact (stop-gain, frameshift, splice donor/acceptor)
-- gnomAD allele frequency < 1% (or missing)
+- Rare
 
 ### Tier 2: rare_moderate_deleterious
 - PASS variants with MODERATE VEP impact (missense, in-frame indel)
-- gnomAD allele frequency < 1% (or missing)
+- Rare
 - At least one deleterious predictor hit (if vcfanno annotations available):
   - CADD PHRED >= 20 (SNV and/or indel tags, whichever are present)
   - REVEL >= 0.5 (deliberately below ClinGen's PP3_Supporting threshold of 0.644, so this tier casts a wider net; a hit here is not PP3 evidence)
@@ -67,8 +69,10 @@ If `gnomad_v4.1_constraint.tsv` is available, the summary TSV is enriched with p
 |---|---|---|
 | LOEUF | Loss-of-function observed/expected upper bound | < 0.35 = constrained |
 | pLI | Probability of LoF intolerance | > 0.9 = constrained |
-| mis_z | Missense Z-score | > 3.09 = constrained |
-| CONSTRAINED | YES if LOEUF < 0.35 or pLI > 0.9 | Flag column |
+| mis_z | Missense Z-score (gnomAD v4.1 `mis.z_score`) | > 3.09 = constrained |
+| CONSTRAINED | YES if LOEUF < 0.35 or pLI > 0.9; NO if LOEUF or pLI is known and neither says so; `.` if the gene has no constraint values | Flag column |
+
+The values come from `bin/constraint_join.awk`, the loader step 23 and the Nextflow module run too: only canonical transcripts count, and of a gene's two canonical rows (Ensembl and RefSeq) the Ensembl one wins, so steps 23 and 31 report the same value for a gene. When rows carry gene symbols and not one matches the table, the step fails rather than write `.` in every row.
 
 Variants in constrained genes are more likely to be pathogenic -- these genes are under strong purifying selection against damaging variants.
 

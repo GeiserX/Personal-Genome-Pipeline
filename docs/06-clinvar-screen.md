@@ -35,6 +35,7 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 3. Filters the sample VCF to PASS records. If the VCF has no PASS record at all (callers that leave FILTER as `.`), it uses `-f .,PASS` instead and prints a notice saying so. If no record is left, the step stops with an error.
 4. Splits and left-aligns the sample the same way. `bcftools isec` matches only identical REF/ALT, so a pathogenic allele inside a multiallelic record (genotype `1/2`) is found only after this split.
 5. Keeps the sample's records whose allele is in ClinVar (`bcftools isec -n=2 -w1`) and copies ClinVar's `ID`, `GENEINFO`, `CLNSIG` and `CLNREVSTAT` onto them (`bcftools annotate --pair-logic exact`).
+6. Prints the hits grouped by ClinVar's review stars (`bin/clinvar_hits.awk`): 4 practice guideline, 3 expert panel, 2 multiple submitters with no conflict, 1 a single submitter or conflicting classifications, 0 no assertion criteria. The screening file keeps every Pathogenic/Likely_pathogenic submission whatever its review status, so a zero-star hit counts as a hit; the stars say how much weight it deserves. The Nextflow module prints the same counts.
 
 ## Output
 
@@ -44,7 +45,7 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 | `clinvar/${SAMPLE}_pass.vcf.gz` | Filtered, split and left-aligned sample VCF (intermediate) |
 | `clinvar/clinvar_pathogenic_chr.norm.vcf.gz` (in `${GENOME_DIR}`) | Normalised ClinVar, shared by every sample |
 
-Both reports (step 24 and `generate-report.sh`) read the hits file and show gene, genotype (het/hom), significance and review status for each hit. Older versions of this step wrote `clinvar/isec/0002.vcf`; that file holds only the sample's side of the intersection, with no gene or significance, and nothing reads it any more. Rerun step 6 to get the hits file.
+Both reports (step 24 and `generate-report.sh`) read the hits file and show gene, genotype (het/hom), significance, review status and stars for each hit, the best-reviewed first, with the ClinVar file's release date. Older versions of this step wrote `clinvar/isec/0002.vcf`; that file holds only the sample's side of the intersection, with no gene or significance, and nothing reads it any more. Rerun step 6 to get the hits file.
 
 To list the hits yourself:
 

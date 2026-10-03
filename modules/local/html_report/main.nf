@@ -2,13 +2,17 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     HTML_REPORT — Summary HTML report of key pipeline results
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Generates a self-contained HTML file summarising ClinVar hits, pharmacogenomics,
-    cancer predisposition (CPSR), clinical filtering, and slivar variant prioritization.
+    Generates a self-contained HTML file summarising ClinVar hits (grouped by
+    ClinVar review stars, via bin/clinvar_hits.awk), pharmacogenomics, cancer
+    predisposition (CPSR), clinical filtering, and slivar variant prioritization.
     Each input section is optional — when a path is empty the section is omitted.
-    NOTE: BAM-analysis outputs (HLA, ExpansionHunter, telomere, Cyrius, coverage) and
-    SV outputs are not included — see their individual output directories for results.
 
-    Equivalent to: scripts/24-html-report.sh
+    A subset of scripts/24-html-report.sh. The script renders its report from
+    bin/collect_summary.py's summary (QC, PRS, HLA, CYP2D6, SVs, mito and the
+    run manifest included); this process cannot run it yet, because its image
+    (bcftools) has no Python and its inputs are fixed by workflows/reporting.nf.
+    For the full report on a Nextflow run:
+      GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -45,28 +49,15 @@ process HTML_REPORT {
     CLINVAR_ROWS=""
     if [ "${has_clinvar}" = "true" ] && [ -f "${clinvar_hits}" ]; then
         CLINVAR_HITS=\$(grep -c -v '^#' "${clinvar_hits}" || true)
-        CLINVAR_ROWS=\$(grep -v '^#' "${clinvar_hits}" 2>/dev/null | head -20 | \\
+        # bin/clinvar_hits.awk (on the task PATH) gives one row per hit with
+        # its ClinVar review stars; the best-reviewed hits come first.
+        CLINVAR_ROWS=\$(awk -f "\$(command -v clinvar_hits.awk)" "${clinvar_hits}" \\
+            | sort -t "\$(printf '\\t')" -k1,1nr -k2,2V -k3,3n | head -20 | \\
             awk -F'\\t' '
                 function esc(x) { gsub(/&/,"\\\\&amp;",x); gsub(/</,"\\\\&lt;",x); gsub(/>/,"\\\\&gt;",x); gsub(/"/,"\\\\&quot;",x); return x }
                 {
-                    geneinfo=""; clnsig=""; rev="";
-                    n=split(\$8,kv,";");
-                    for(i=1;i<=n;i++) {
-                        p=index(kv[i],"="); if(p==0) continue;
-                        k=substr(kv[i],1,p-1); v=substr(kv[i],p+1);
-                        if(k=="GENEINFO") geneinfo=v; else if(k=="CLNSIG") clnsig=v; else if(k=="CLNREVSTAT") rev=v;
-                    }
-                    gene=""; m=split(geneinfo,g,"|");
-                    for(i=1;i<=m;i++) { split(g[i],sym,":"); gene=gene (i>1 ? ", " : "") sym[1] }
-                    if(gene=="") gene=".";
-                    if(clnsig=="") clnsig="."; gsub(/_/," ",clnsig);
-                    if(rev=="") rev="."; gsub(/_/," ",rev);
-                    split(\$10,f,":"); gt=f[1];
-                    if(gt=="0/1" || gt=="1/0" || gt=="0|1" || gt=="1|0") zyg="het";
-                    else if(gt=="1/1" || gt=="1|1") zyg="hom";
-                    else zyg=gt;
-                    printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",
-                        esc(\$1),esc(\$2),esc(\$4),esc(\$5),esc(zyg),esc(gene),esc(clnsig),esc(rev);
+                    printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",
+                        esc(\$2),esc(\$3),esc(\$4),esc(\$5),esc(\$6),esc(\$7),esc(\$8),esc(\$9),esc(\$1);
                 }' || true)
     fi
 
@@ -216,9 +207,9 @@ EOF
     if [ -n "\$CLINVAR_ROWS" ]; then
         cat >> ${meta.id}_report.html << EOF
   <div class="card full-width">
-    <h2>ClinVar Hits (Top 20)</h2>
+    <h2>ClinVar Hits (Top 20, best-reviewed first)</h2>
     <table>
-      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th><th>Significance</th><th>Review status</th></tr>
+      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th><th>Significance</th><th>Review status</th><th>Stars</th></tr>
       \${CLINVAR_ROWS}
     </table>
   </div>
