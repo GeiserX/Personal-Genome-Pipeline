@@ -28,9 +28,12 @@ done
 mkdir -p "$MIS_DIR"
 
 # One container for all chromosomes; each file is written under a .part name
-# with its index (--write-index) and renamed when both are complete. A
-# chromosome the VCF's index lists no record on gets no file, and the log
-# names it (bcftools would stop on a region it cannot place).
+# with its index (--write-index) and renamed when both are complete: the old
+# index goes first, then the VCF, then its index, so an index never sits
+# beside a VCF it was not built from. A chromosome the VCF's index lists no
+# record on gets no file (a file left by an earlier run on another input is
+# removed), and the log names it (bcftools would stop on a region it cannot
+# place).
 CHROMS=()
 for i in $(seq 1 22) X; do CHROMS+=("chr${i}"); done
 run_in --cpus 2 --memory 2g \
@@ -41,13 +44,18 @@ run_in --cpus 2 --memory 2g \
     for chr in "$@"; do
       case "$present" in
         *" ${chr} "*) ;;
-        *) echo "No records on ${chr}: no file."; continue ;;
+        *)
+          echo "No records on ${chr}: no file."
+          rm -f "${out}/${sample}_${chr}.vcf.gz" "${out}/${sample}_${chr}.vcf.gz.tbi"
+          continue ;;
       esac
       echo "MIS-ready ${chr}..."
       part="${out}/${sample}_${chr}.part.vcf.gz"
+      final="${out}/${sample}_${chr}.vcf.gz"
       bcftools view -f PASS,. -r "$chr" -Oz --write-index=tbi -o "$part" "$in"
-      mv -f "${part}.tbi" "${out}/${sample}_${chr}.vcf.gz.tbi"
-      mv -f "$part" "${out}/${sample}_${chr}.vcf.gz"
+      rm -f "${final}.tbi"
+      mv -f "$part" "$final"
+      mv -f "${part}.tbi" "${final}.tbi"
     done' \
   _ "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" "/genome/${SAMPLE}/imputation/mis_ready" "$SAMPLE" "${CHROMS[@]}"
 

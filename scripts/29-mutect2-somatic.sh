@@ -50,13 +50,22 @@ esac
 echo "Output: ${OUTPUT_DIR}/"
 echo ""
 
-# Check for idempotent skip
+# Check for idempotent skip. A finished result is reused only for the
+# intervals it was called on: SCOPE_FILE holds the INTERVALS value of the run
+# that wrote it, and is written last. A CHIP result never stands in for a
+# whole-genome request, or the other way round; a result without the record
+# (from an older version of this step) is called again.
 FINAL_OUTPUT="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.vcf.gz"
-if have_output "$FINAL_OUTPUT"; then
-  echo "Output already exists: ${FINAL_OUTPUT}"
+SCOPE_FILE="${OUTPUT_DIR}/${SAMPLE}_somatic_filtered.intervals"
+if have_output "$FINAL_OUTPUT" && [ -f "$SCOPE_FILE" ] && [ "$(cat "$SCOPE_FILE")" = "$INTERVALS" ]; then
+  echo "Output already exists: ${FINAL_OUTPUT} (INTERVALS=${INTERVALS})"
   echo "Skipping. Delete the file to re-run."
   exit 0
 fi
+if [ -e "$FINAL_OUTPUT" ]; then
+  echo "Calling again: ${FINAL_OUTPUT} is unfinished or was called on other intervals than INTERVALS=${INTERVALS}."
+fi
+rm -f "$SCOPE_FILE"
 
 # Validate required inputs
 for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
@@ -174,6 +183,7 @@ echo "=== [4/4] Filtering somatic calls (FilterMutectCalls) ==="
 run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   "${FILTER_CMD[@]}"
+printf '%s\n' "$INTERVALS" > "$SCOPE_FILE"
 
 echo ""
 echo "=== Somatic variant statistics ==="

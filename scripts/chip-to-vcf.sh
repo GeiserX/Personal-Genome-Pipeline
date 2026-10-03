@@ -99,9 +99,16 @@ case "$FORMAT" in
     # the mitochondrion. A no-call is allele 0. The two alleles are joined into
     # the two-letter genotype bcftools reads; a no-call becomes "--", which
     # bcftools writes as a missing genotype (./.), as it does for 23andMe.
+    # A data row without exactly five columns or with an empty allele (a cut
+    # or damaged file) stops the conversion with its line number: skipping it
+    # would drop a genotype, and one allele would become a haploid call.
     echo "Converting AncestryDNA (five columns, numeric chromosomes) to TSV..."
-    tr -d '\r' < "$RAW_TSV" | awk -F'\t' -v OFS='\t' '
-      /^#/ || tolower($1) == "rsid" || NF < 5 { next }
+    tr -d '\r' < "$RAW_TSV" | awk -F'\t' -v OFS='\t' -v file="$RAW_TSV" '
+      /^#/ || NF == 0 || tolower($1) == "rsid" { next }
+      NF != 5 || $4 == "" || $5 == "" {
+        printf "ERROR: %s line %d: want five tab-separated columns (rsid, chromosome, position, allele1, allele2) with both alleles, found %d column(s): %s\n", file, NR, NF, $0 > "/dev/stderr"
+        exit 1
+      }
       {
         c = $2
         if (c == "23" || c == "25") c = "X"

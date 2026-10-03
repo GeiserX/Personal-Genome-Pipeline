@@ -53,14 +53,24 @@ atomic_out "${OUTPUT_DIR}/${SAMPLE}_raw.vcf" run_in \
 
 # Step 2: Sort and compress in one bcftools call (no pipe whose first half can
 # fail unseen), with its temporary files in the output directory, then index.
+# The sorted VCF is written under a .tmp name and renamed when the sort
+# succeeded, so a sort that dies half way leaves no truncated ${SAMPLE}.vcf.gz.
 # The raw VCF is removed only after both succeeded.
 echo "Sorting and compressing VCF..."
-run_in \
+SORTED="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
+if ! run_in \
   --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
-  bcftools sort -Oz -o "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" \
+  bcftools sort -Oz -o "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz.tmp" \
     -T "/genome/${SAMPLE}/vcf_freebayes/sort-tmp" \
-    "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf"
+    "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf"; then
+  rm -f "${SORTED}.tmp"
+  echo "ERROR: bcftools sort failed; the raw VCF is kept: ${OUTPUT_DIR}/${SAMPLE}_raw.vcf" >&2
+  exit 1
+fi
+# The index of an older VCF goes first: it must never sit beside the new one.
+rm -f "${SORTED}.tbi"
+mv -f "${SORTED}.tmp" "$SORTED"
 
 echo "Indexing VCF..."
 run_in \

@@ -115,10 +115,13 @@ grep -v "^#" "${RAW}/MyHeritage_raw_dna_data.csv" | \
 
 # AncestryDNA instead: skip the header row, join the two allele columns,
 # map 23 and 25 to X, 24 to Y, 26 to MT, and a no-call (0) to "--".
-awk -F'\t' -v OFS='\t' '/^#/ || tolower($1) == "rsid" || NF < 5 {next}
+# A row without five columns or with an empty allele stops here with its line
+# number (a cut file); fix or re-download the file before you go on.
+tr -d '\r' < "${RAW}/${SAMPLE}_raw.txt" | awk -F'\t' -v OFS='\t' '/^#/ || NF == 0 || tolower($1) == "rsid" {next}
+  NF != 5 || $4 == "" || $5 == "" {printf "ERROR: line %d: want five columns with both alleles: %s\n", NR, $0 > "/dev/stderr"; exit 1}
   {c = $2; if (c == "23" || c == "25") c = "X"; else if (c == "24") c = "Y"; else if (c == "26") c = "MT"
    a = $4; b = $5; if (a == "0" || b == "0") {a = "-"; b = "-"}; print $1, c, $3, a b}' \
-  "${RAW}/${SAMPLE}_raw.txt" > "$TSV"
+  > "$TSV" || { echo "Stopped: fix the AncestryDNA file first."; rm -f "$TSV"; }
 
 # All formats: sort by chromosome, then position. bcftools writes rows in
 # input order, and the index needs each chromosome in one block (AncestryDNA
