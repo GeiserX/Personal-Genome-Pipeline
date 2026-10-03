@@ -34,18 +34,31 @@ docker run --rm \
     -o /data/ \
     -bf ${SAMPLE}
 
-# Step 2: run PharmCAT on the preprocessed VCF
+# Step 2: rewrite backslashes in the header of PharmCAT's copy (see below)
+docker run --rm \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  "${PHARMCAT_IMAGE}" \
+  sh -c 'gzip -dc "$1" | awk "$3" > "$2"' sh \
+    /data/${SAMPLE}.preprocessed.vcf.bgz /data/${SAMPLE}.pharmcat_input.vcf \
+    '/^##/ { gsub(/\\"/, "\047"); gsub(/\\/, "/") } { print }'
+
+# Step 3: run PharmCAT on the rewritten copy
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
-    -vcf /data/${SAMPLE}.preprocessed.vcf.bgz \
+    -vcf /data/${SAMPLE}.pharmcat_input.vcf \
     -o /data/ \
     -bf ${SAMPLE} \
     -reporterJson \
     -reporterHtml
 ```
+
+### Input the preprocessor or PharmCAT refuses
+
+- **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). The Nextflow pipeline stops before any analysis on such input when `pharmcat` is selected; the script does not check. Remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md). A variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered.
+- **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 fails the same way.
 
 ## Output
 - HTML report with drug recommendations per gene

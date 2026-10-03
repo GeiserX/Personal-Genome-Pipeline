@@ -47,6 +47,8 @@ MultiQC scans the entire sample directory and auto-detects outputs from these pi
 
 The script generates `samtools flagstat` output automatically if a BAM exists but no flagstat file is present.
 
+In the Nextflow pipeline, `multiqc` reads the mosdepth summaries only. A run with no BAM, or without `mosdepth` in `--tools`, has none, so MultiQC is skipped and the log says so in one line (`multiqc skipped: ...`).
+
 ## Output
 
 | File | Location | Description |

@@ -175,7 +175,13 @@ workflow {
         [meta, vcf, vcf_index]
     }
 
-    // ─── FILTER check ───────────────────────────────────────────────────
+    // ─── Input check ────────────────────────────────────────────────────
+    // VCF_PRECHECK reads each VCF once before any analysis. Two problems stop
+    // the run here, with the fix in the message:
+    //   - no contig is chr-named (1, MT): the mito haplogroup comes out empty
+    //     and chrX leaks into the ROH summary, both with exit 0;
+    //   - a gVCF (or a file named like one) with pharmcat selected: PharmCAT
+    //     refuses it.
     // Downstream filters keep FILTER=PASS only. A VCF with no PASS record
     // (FILTER '.' everywhere) would give zero hits in every step, so stop,
     // or with --allow_unfiltered use a copy where '.' reads as PASS.
@@ -183,7 +189,35 @@ workflow {
 
     ch_vcf_checked = ch_vcf_input
         .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
-        .join(VCF_PRECHECK.out.status.map { meta, status, counts -> [meta.id, status, counts] })
+        .join(VCF_PRECHECK.out.status.map { meta, status, counts, contig_style, contigs_seen, gvcf ->
+            [meta.id, status, counts, contig_style, contigs_seen, gvcf]
+        })
+        .map { id, meta, vcf, idx, status, counts, contig_style, contigs_seen, gvcf ->
+            if (contig_style == 'other') {
+                error "Sample '${id}': no contig in ${vcf.name} is named the chr way (it has ${contigs_seen}...). " +
+                      "The pipeline needs GRCh38 contigs named chr1 to chr22, chrX, chrY and chrM; without them the " +
+                      "mito haplogroup comes out empty and the ROH summary is wrong. Rename them, then point the " +
+                      "samplesheet at the new file:\n" +
+                      '    for c in $(seq 1 22) X Y; do echo "$c chr$c"; done > chr_map.txt\n' +
+                      '    echo "MT chrM" >> chr_map.txt\n' +
+                      "    bcftools annotate --rename-chrs chr_map.txt -Oz -o ${id}.chr.vcf.gz ${vcf.name}\n" +
+                      "    bcftools index -t ${id}.chr.vcf.gz\n" +
+                      "Contigs outside the map (unplaced scaffolds) keep their names, and the ClinVar screen leaves " +
+                      "them out. A GRCh37 file needs more than a rename: see docs/vcf-first.md."
+            }
+            if (gvcf == 'blocks' && tools_list.contains('pharmcat')) {
+                error "Sample '${id}': ${vcf.name} is a gVCF (it has reference blocks: ALT <*>, <NON_REF> or '.' " +
+                      "with INFO/END, or a ##GVCFBlock header line), and PharmCAT refuses a gVCF. Remove the " +
+                      "reference blocks and give the file a name without .g.vcf or .genomic.vcf (docs/vcf-first.md " +
+                      "has the commands), or run without pharmcat and cpic."
+            }
+            if (gvcf == 'name' && tools_list.contains('pharmcat')) {
+                error "Sample '${id}': ${vcf.name} has no reference blocks, but its name contains .g.vcf or " +
+                      ".genomic.vcf, and PharmCAT refuses any file named so. Rename the file and its index, for " +
+                      "example to ${id}.vcf.gz and ${id}.vcf.gz.tbi, and point the samplesheet at them."
+            }
+            [id, meta, vcf, idx, status, counts]
+        }
         .branch { id, meta, vcf, idx, status, counts ->
             pass:       status == 'pass'
             unfiltered: status == 'unfiltered'
@@ -362,7 +396,10 @@ workflow {
     // ═══════════════════════════════════════════════════════════════════
 
     // Build per-sample report inputs by joining available outputs.
-    // Uses remainder:true so samples without a given output get null → EMPTY.
+    // Uses remainder:true so samples without a given output get null → EMPTY
+    // (the first five, which have sentinel files) or [] (ROH, haplogroup and
+    // CPIC, which the module tests for emptiness). The join also makes the
+    // report wait for every selected step it shows.
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -370,14 +407,20 @@ workflow {
         .join(ANNOTATION.out.clinical_vcf.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cpic_recommendations.map    { meta, f -> [meta.id, f] }, remainder: true)
         .map { items ->
-            def meta     = items[1]
-            def clinvar  = items[2] ?: empty_clinvar
-            def pharmcat = items[3] ?: empty_pharmcat
-            def clinical = items[4] ?: empty_clinical
-            def cpsr     = items[5] ?: empty_cpsr
-            def slivar   = items[6] ?: empty_slivar
-            [meta, clinvar, pharmcat, clinical, cpsr, slivar]
+            def meta       = items[1]
+            def clinvar    = items[2] ?: empty_clinvar
+            def pharmcat   = items[3] ?: empty_pharmcat
+            def clinical   = items[4] ?: empty_clinical
+            def cpsr       = items[5] ?: empty_cpsr
+            def slivar     = items[6] ?: empty_slivar
+            def roh        = items[7] ?: []
+            def haplogroup = items[8] ?: []
+            def cpic       = items[9] ?: []
+            [meta, clinvar, pharmcat, clinical, cpsr, slivar, roh, haplogroup, cpic]
         }
 
     // QC files for MultiQC (mosdepth summaries)
@@ -406,14 +449,23 @@ workflow {
         .collectFile(name: 'software_versions.yml', storeDir: "${params.outdir}/pipeline_info", sort: true)
 
     // ─── Completion handler ─────────────────────────────────────────────
-    workflow.onComplete {
-        if (workflow.success) {
-            log.info ""
-            log.info "Pipeline completed successfully!"
-            log.info "Results: ${params.outdir}"
-            log.info ""
+    // Nextflow runs the handler with the script binding's variable map as its
+    // delegate, and a map answers null for a name it lacks: `workflow` inside
+    // the handler was null ("Cannot get property 'success' on null object" on
+    // every run under 25.10), so the completion message never printed. Local
+    // variables are resolved where the closure is written, so the handler
+    // reads only these.
+    def run_info = workflow
+    def run_log  = log
+    def outdir   = params.outdir
+    run_info.onComplete {
+        if (run_info.success) {
+            run_log.info ""
+            run_log.info "Pipeline completed successfully!"
+            run_log.info "Results: ${outdir}"
+            run_log.info ""
         } else {
-            log.error "Pipeline failed. Check .nextflow.log for details."
+            run_log.error "Pipeline failed. Check .nextflow.log for details."
         }
     }
 }

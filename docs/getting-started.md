@@ -182,8 +182,8 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
     --vep_cache /path/to/vep_cache \
     --pcgr_data /path/to/pcgr_data \
     --vep_cache_cpsr /path/to/vep_cache_113 \
-    --clinvar /path/to/clinvar.vcf.gz \
-    --clinvar_index /path/to/clinvar.vcf.gz.tbi \
+    --clinvar /path/to/clinvar/clinvar_pathogenic_chr.vcf.gz \
+    --clinvar_index /path/to/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi \
     --expansion_catalog /path/to/variant_catalog.json \
     --hla_dat /path/to/hla.dat \
     --slivar_bin /path/to/slivar \
