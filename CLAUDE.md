@@ -69,12 +69,14 @@ personal-genome-pipeline/
   scripts/lib/common.sh        # Sourced by every script: versions.env, run_in, fetch, validate_sample
   versions.env                 # Every image tag and coupled data version, one line each
   .github/workflows/
-    lint.yml                   # ShellCheck, actionlint, gitleaks, personal-data scan, doc links, image tags in docs
-    guard.yml                  # image variables, fake-docker suite, helper binaries, unit tests
-    smoke-test.yml             # Contract checks between scripts
-    container-test.yml         # Pulls each image and runs its version command
+    lint.yml                   # ShellCheck, actionlint, gitleaks, doc links
+    personal-data.yml          # Personal-data scan of every tracked text file
+    guard.yml                  # image variables, image tags (check-images.sh), coupled versions, fake-docker suite, helper binaries, unit tests; ci-ok sums them up
+    container-test.yml         # Runs each changed image on the fixture (tests/smoke/commands.tsv); container-ok sums it up
     e2e.yml                    # Real tools on a small fixture
-    nextflow.yml               # Nextflow config, schema and stub run
+    nextflow.yml               # Nextflow config, lint, schema and stub runs on the pinned release and the newest 26.04.x
+    renovate-dry-run.yml       # Renovate lookups without an app, and their checks
+    freshness.yml              # Monthly issue of pins that fell behind upstream
     docs.yml                   # mkdocs build
     release.yml, stale.yml     # Releases, stale issues
 ```
@@ -131,14 +133,14 @@ User's FASTQ/BAM/VCF
 4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav:` in `mkdocs.yml`
 5. Add the step to the category table in `docs/pipeline-overview.md`
 6. Update `scripts/run-all.sh` with the new step
-7. Add the image and a smoke command to the matrix in `.github/workflows/container-test.yml`
+7. Add a row for the image to `tests/smoke/commands.tsv`: a real command on the fixture and a check on what it wrote (an image with no row fails `container-test.yml`)
 8. Update `docs/00-reference-setup.md` if new reference data needed
 9. Update `docs/interpreting-results.md` if output needs explanation
 10. Test on at least one sample before committing
 
 ### Bumping a Tool
 
-Change its line in `versions.env`, plus the coupled data variable its comment names. Run `scripts/ci/gen-containers-config.sh` to rewrite `conf/containers.config` (CI fails until it matches), then update the `container-test.yml` matrix entry and any doc that prints the tag. No script or module names the tag. Lines marked `hold:` or `legacy:` say why a tool is pinned.
+Change its line in `versions.env`, plus the coupled data variable its comment names. Run `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh` to rewrite `conf/containers.config` and `docs/versions.md` (CI fails until both match). `container-test.yml` then runs the new image on the fixture. No script or module names the tag. Lines marked `hold:` or `legacy:` say why a tool is pinned.
 
 - All processing is local; genomic data never leaves the machine
 - Pin tool versions; never use floating tags
@@ -150,8 +152,8 @@ Change its line in `versions.env`, plus the coupled data variable its comment na
 ### PharmCAT 3.2.0
 - **Two-step workflow**: Preprocessor (`pharmcat_vcf_preprocessor` with `-refFna`) then main jar (`pharmcat.jar`). NOTE: since 3.0 the preprocessor script lost its `.py` extension and the Python package was renamed `preprocessor` → `pcat`. The old `-refFasta` flag is long gone.
 - Preprocessor outputs `.preprocessed.vcf.bgz` (NOT `.vcf`).
-- **3.x JSON changes vs 2.15.x**: `wildtypeAllele` → `referenceAllele`; the HTML report is **no longer emitted unless `-reporterHtml` is passed explicitly**. The `genes` map may be flat (`{gene -> data}`) or nested (`{source -> {gene -> data}}`). `sourceDiplotypes` (or `recommendationDiplotypes`) carry `allele1`/`allele2` objects with a `.name`. The CPIC consumers (`scripts/27-cpic-lookup.sh` + `modules/local/cpic_lookup`) now **auto-detect both shapes** and **fail loud** — a recognized report yielding zero genes is reported as a parse failure, never "all genes were successfully called". Guarded by `tests/test_cpic_parser.py`.
-- Pipeline pinned to **3.2.0**. Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions. Capturing a real `report.json` as a parser fixture is tracked follow-up.
+- **3.x JSON changes vs 2.15.x**: `wildtypeAllele` → `referenceAllele`; the HTML report is **no longer emitted unless `-reporterHtml` is passed explicitly**. The `genes` map may be flat (`{gene -> data}`) or nested (`{source -> {gene -> data}}`). `sourceDiplotypes` (or `recommendationDiplotypes`) carry `allele1`/`allele2` objects with a `.name`. Both CPIC consumers (`scripts/27-cpic-lookup.sh` and `modules/local/cpic_lookup`) run one parser, `bin/pgx_parse.py`: it **auto-detects both shapes**, gives each gene a status (`normal`, `non-normal`, `ambiguous` when the possible diplotypes have different phenotypes, `not called`) and **fails loud**: a recognized report yielding zero genes is reported as a parse failure, never "all genes were successfully called". Guarded by `tests/test_cpic_parser.py` on a real 3.2.0 report, `tests/fixtures/pharmcat/report-3.2.0.json`.
+- Pipeline pinned to **3.2.0**. Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions — and capture the new version's `report.json` as a parser fixture beside the 3.2.0 one.
 
 ### plink2 (PRS / Ancestry)
 - **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).

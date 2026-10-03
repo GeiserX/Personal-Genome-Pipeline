@@ -2,7 +2,7 @@
 
 This page is for contributors. It says what CI runs, how the end-to-end test works, and how to change its data.
 
-The stub run in `nextflow.yml` checks that the Nextflow wiring holds together, and `container-test.yml` checks that each image starts. Neither runs a tool on real reads, so a step can be broken in real use while both stay green. The **E2E** workflow ([`.github/workflows/e2e.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/e2e.yml)) closes that gap: it runs the real tools, in the pinned containers, on a small slice of a public genome, and checks what they write.
+The stub runs in `nextflow.yml` check that the Nextflow wiring holds together, and `container-test.yml` runs each changed image's own tool on the fixture. Neither runs a pipeline step as the scripts and modules call it, so a step can be broken in real use while both stay green. The **E2E** workflow ([`.github/workflows/e2e.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/e2e.yml)) closes that gap: it runs the real tools, in the pinned containers, on a small slice of a public genome, and checks what they write.
 
 ## The fixture
 
@@ -74,6 +74,7 @@ What it covers:
 
 - **Bash steps, in order:** `validate-setup.sh`, 02 (alignment from FASTQ), 03 (DeepVariant), 03a (GATK HaplotypeCaller on the chr20 slice), 06, 07 (PharmCAT), 11, 12, 16, 16b, 20 (Mutect2 on chrM), 21 (Cyrius, on `HG002_cyrius.bam`), 32 (pypgx with its bundle), 27, then 30, 23 and 31 on the VEP subset with the synthetic score file, then 24 and `generate-report.sh`.
 - **Nextflow:** `nextflow run main.nf -profile docker` with real containers on the VCF and BAM the bash steps produced, through today's VCF+BAM samplesheet, with `--tools clinvar,mosdepth,delly,vcfanno,roh,pharmcat,cpic`, `--max_cpus 4 --max_memory 14.GB`.
+- **Manta and the Nextflow hardening** (`nextflow-hardening-*.sh`): step 04 on a planted Manta-style VCF with two inversion breakend pairs (they must come out as two `SVTYPE=INV` records) and on the fixture BAM inside the fixture's regions (`MANTA_CALL_REGIONS`); then a Nextflow run with manta, pypgx and telomere_hunter added, which checks that every container ran with `--network none` and that no task built a `.fai` of the reference.
 - **Report assets:** a last case lists every external `http(s)` address in a `src=` or `href=` attribute of the generated HTML reports, so the remote files a report loads when opened are known. The list goes to the job summary.
 
 Each check is a count or a column: a VCF with records, the sample name in the VCF header, a gene in the ClinVar hit, at least one called gene in PharmCAT's `report.json`, a CYP2D6 row from pypgx, the planted ClinVar row in the HTML report with its gene, its significance and no empty cell. An exit code alone never passes a case.

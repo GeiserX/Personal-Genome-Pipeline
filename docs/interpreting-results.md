@@ -615,7 +615,7 @@ slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODE
 ## More Pharmacogenomics: Cyrius, CPIC and pypgx (Steps 21, 27, 32)
 
 - **CPIC lookup (step 27):** `${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt` turns PharmCAT's calls into the drugs with CPIC guidance. Only genes where you are not a normal metabolizer get drug entries. Genes PharmCAT could not call are listed separately at the end; their absence from the drug list does not mean normal function.
-- **pypgx (step 32):** `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` calls 23 genes, four of them (CYP2D6, CYP2A6, GSTM1, GSTT1) from the BAM, so it sees gene deletions and duplications PharmCAT cannot. `${SAMPLE}_pharmcat_comparison.tsv` shows where the two tools agree.
+- **pypgx (step 32):** `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` calls 23 genes, four of them (CYP2D6, CYP2A6, GSTM1, GSTT1) from the BAM, so it sees gene deletions and duplications PharmCAT cannot. `${SAMPLE}_pharmcat_comparison.tsv`, written into the same folder by step 27 (CPIC lookup), shows where the two tools agree.
 - **Cyrius (step 21, experimental):** `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` gives a second CYP2D6 call from the BAM.
 
 CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes confuse short reads. Act on a CYP2D6 result only when two callers agree, and take any result that would change a prescription to a pharmacist or a certified pharmacogenomics test first.

@@ -109,7 +109,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 |---|---|
 | `<gene>/results.zip` | Per-gene pypgx archive with genotype data |
 | `${SAMPLE}_pypgx_summary.tsv` | Consolidated: gene, diplotype, phenotype, pypgx's copy-number call, source |
-| `${SAMPLE}_pharmcat_comparison.tsv` | Side-by-side comparison with PharmCAT (if step 7 was run) |
+| `${SAMPLE}_pharmcat_comparison.tsv` | Side-by-side comparison with PharmCAT. Step 27 (CPIC lookup) writes it here when steps 7 and 32 have both run; rerunning step 32 alone keeps it |
 
 ### Summary TSV columns
 

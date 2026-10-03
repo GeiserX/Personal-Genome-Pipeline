@@ -43,6 +43,9 @@ nextflow run main.nf \
 #    --tools '...,annotsv'                     + --annotsv_annotations
 #    --tools '...,cnvpytor'                    + --cnvpytor_resources
 #    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly call -x)
+#    --tools '...,manta'                       (optional --manta_call_regions <regions.bed.gz>, its .tbi beside it)
+#    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
+#    TelomereHunter uses its own hg19 bands and the run logs a warning
 #    An unknown name in --tools stops the run.
 ```
 
@@ -92,8 +95,8 @@ sample1,results/variant_calling/deepvariant/sample1/sample1.deepvariant.vcf.gz,r
 
 | Profile | Description |
 |---------|-------------|
-| `docker` | Run with Docker containers (default for local) |
-| `singularity` | Singularity/Apptainer. **Untested.** Three modules write inside their image and need a writable container: `cyrius` (pip-installs at run time), `pypgx` (links its bundle under `/root`) and `cnvpytor` (copies resources into its `site-packages`). |
+| `docker` | Run with Docker containers (default for local). Every container runs with `--network none` except `cyrius`, which pip-installs Cyrius at run time. |
+| `singularity` | Singularity/Apptainer. **Untested.** Two modules write inside their image and need a writable container: `cyrius` (pip-installs at run time) and `cnvpytor` (copies resources into its `site-packages`). This profile does not cut the network. |
 | `test` | Minimal test with reduced resources |
 | `test_full` | Full-size test with real WGS data |
 
@@ -141,7 +144,8 @@ results/
 │   ├── telomere/           # Telomere length estimation
 │   ├── coverage/           # Coverage statistics (mosdepth)
 │   ├── cyrius/             # CYP2D6 star allele (Cyrius)
-│   ├── manta/              # SV calling (optional)
+│   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV;
+│   │                       #   diploidSV.raw.vcf.gz as Manta wrote it (an inversion is two BND records)
 │   ├── sv_duphold/         # Manta SVs with duphold depth tags (optional)
 │   ├── sv_filtered/        # Manta SVs after the duphold depth filter (optional)
 │   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs (optional)
@@ -208,6 +212,32 @@ This Nextflow pipeline is a **post-calling interpretation pipeline**, not a FAST
 
 Both execution paths (bash `run-all.sh` and Nextflow `main.nf`) aim for **biologically equivalent results** — the same clinical conclusions, gene calls, and risk assessments. However, they are **not output-identical**: file names, directory structure, report formatting, and intermediate files may differ. When in doubt, the bash scripts are the reference implementation.
 
+Where a module and its script differ on purpose:
+
+| Step | Script | Module |
+|---|---|---|
+| ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
+| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` shows a subset: ClinVar, PharmCAT, CPSR, clinical filter, slivar, ROH, mito haplogroup, CPIC. For the full report, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
+| CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
+| Cyrius (21) | holds Cyrius' dependencies to `scripts/cyrius-constraints.txt` | pins Cyrius only (see [Cyrius runtime installation](#cyrius-runtime-installation)) |
+
+Scripts with no module, and why:
+
+| Script | Why it stays bash-only |
+|---|---|
+| `01-ora-to-fastq.sh` | `orad` is a native binary that runs on the host, on the raw reads |
+| `01b-fastp-qc.sh`, `02-alignment.sh`, `02a-alignment-bwamem2.sh`, `03-deepvariant.sh`, `16-indexcov.sh` | read QC, alignment, calling and the BAM-index sex check run before the VCF and BAM this pipeline starts from |
+| `03a-gatk-haplotypecaller.sh`, `03b-freebayes.sh`, `03c-strelka2-germline.sh`, `03d-octopus.sh`, `03e-clair3.sh` | alternative small-variant callers: the pipeline takes the VCF from whichever caller ran |
+| `02b-alignment-longread.sh`, `04c-sniffles2.sh` | the long-read path: the samplesheet holds one short-read BAM per sample |
+| `04a-tiddit.sh` | an alternative to Manta; its local assembly needs the classic BWA index |
+| `04b-gridss.sh` | needs a 31 GB Java heap and the BWA index, more than the SV modules are sized for |
+| `14-imputation-prep.sh` | writes per-chromosome files for an upload to an imputation server, a manual step |
+| `29-mutect2-somatic.sh` | experimental tumor-only somatic calling |
+| `chip-to-vcf.sh` | turns consumer array data into a VCF: an input for the pipeline, not a step on one |
+| `benchmark-variants.sh` | compares callers with each other or with a truth set: a check of the calling, not an analysis of the sample |
+| `generate-report.sh` | the text report. Run `GENOME_DIR=<outdir> scripts/generate-report.sh <sample>` on the Nextflow output |
+| `run-all.sh`, `setup.sh`, `validate-setup.sh` | running, installing and checking the bash path |
+
 ### Reference databases not auto-downloaded
 
 Several tools require large reference databases that are **not automatically downloaded** by the pipeline. You must obtain and provide paths for these yourself:
@@ -250,13 +280,21 @@ ClinVar screen, clinical filter and slivar keep only records with FILTER=PASS. B
 
 This pipeline is designed for **personal, single-user use** on trusted data. Sample labels are restricted to `[A-Za-z0-9._-]` (they name folders and go into shell commands); this is not anonymisation, see [Before you share outputs](#before-you-share-outputs). HTML report fields from VCF INFO are escaped to prevent XSS. However, it is **not hardened for multi-tenant or untrusted-input scenarios**. Do not expose the pipeline or its outputs as a web service without additional security review.
 
+### Failed commands fail the task
+
+Every task script runs under `bash -euo pipefail` (`process.shell` in `conf/base.config`). In a pipe such as `bcftools view -f PASS in.vcf.gz | bcftools +split-vep ...`, a failure of the first command, a truncated input for example, fails the task. Under Nextflow's default `bash -ue` only the last command counted, and the task wrote a short, valid file and passed.
+
+### No network inside the containers
+
+With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. `CYRIUS` is the one exception, below. The `singularity` profile does not cut the network.
+
 ### Cyrius runtime installation
 
-The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself is pinned here: its dependencies (pysam, numpy, scipy, statsmodels) and the `PYTHON_IMAGE` base tag are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
+The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** (the docker profile exempts `CYRIUS` from `--network none` for this) and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself is pinned here: its dependencies (pysam, numpy, scipy, statsmodels) and the `PYTHON_IMAGE` base tag are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
 
 ### CI validation scope
 
-The CI test suite validates the stub-testable subset of modules using `-stub` dry runs (tools that do not require external databases). It does **not** cover database-dependent tools (vep, cpsr, clinvar, expansion_hunter) or run real bioinformatics tools on real data. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts, PCA eigenvectors) against expected values.
+`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup and html_report (see [Testing](testing.md#the-e2e-job)). It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
 
 ---
 
