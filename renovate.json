@@ -103,9 +103,10 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with the versions pip resolved on Python 3.11 (scripts/cyrius-constraints.txt), and README.md names the tag. A new Python needs the constraints resolved again and that line changed by hand in the same PR.",
+      "description": "A new Python minor or major (3.12, 4.0) waits for approval on the dependency dashboard: step 21 installs Cyrius into the python image with the versions pip resolved on Python 3.11 (scripts/cyrius-constraints.txt), and a new line needs them resolved again in the same PR. A patch (3.11.x) opens a PR as usual, and the image test runs Cyrius on it.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["python"],
+      "matchUpdateTypes": ["minor", "major"],
       "dependencyDashboardApproval": true
     },
     {
