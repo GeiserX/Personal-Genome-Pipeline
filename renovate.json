@@ -134,9 +134,9 @@
       "enabled": false
     },
     {
-      "description": "Digest pins: lgalarno/telomerehunter and jtb114/haplogrep3 are personal-account images with no versioned tags, pinned by digest. A new digest of their latest tag is an unversioned change nobody can review, so they get no updates until they move to biocontainers.",
+      "description": "Digest pin: lgalarno/telomerehunter is a personal-account image with no versioned tags, pinned by digest. A new digest of its latest tag is an unversioned change nobody can review, so it gets no updates until it moves to biocontainers.",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["lgalarno/telomerehunter", "jtb114/haplogrep3"],
+      "matchPackageNames": ["lgalarno/telomerehunter"],
       "enabled": false
     },
     {
