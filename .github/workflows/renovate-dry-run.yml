@@ -136,7 +136,7 @@ jobs:
           # A setup-nextflow step is a pin when a version: line with a literal
           # version follows its uses: line inside the same step (the lines in
           # between start with anything but '-', which opens the next step).
-          SETUP_NEXTFLOW = r'uses: "?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*[^\s-][^\n]*\n)*?[ \t]+version: "?\d'
+          SETUP_NEXTFLOW = r'uses: ["\x27]?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*[^\s-][^\n]*\n)*?[ \t]+version: ["\x27]?\d'
           PINS = (
               ("nextflow-io/nextflow", [ENV], r'^NEXTFLOW_VERSION="'),
               ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), SETUP_NEXTFLOW),
@@ -271,6 +271,7 @@ jobs:
                       ("computed", "", "$" + "{{ steps.nf.outputs.version }}", 0),
                       ("computed, uses quoted", '"', "$" + "{{ steps.nf.outputs.version }}", 0),
                       ("literal", "", '"25.10.8"', 1),
+                      ("single-quoted literal", "'", "'25.10.8'", 1),
                       ("bare literal, uses quoted", '"', "25.10.8", 1)):
                   text = step % (quote, "a" * 40, quote, version, "b" * 40)
                   n = len(re.findall(SETUP_NEXTFLOW, text, re.M))
