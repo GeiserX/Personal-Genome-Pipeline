@@ -115,12 +115,6 @@
       "allowedVersions": "/^0\\.26\\.0--/"
     },
     {
-      "description": "Hold: Delly. Delly 2.3.0 renamed the short-read subcommand `delly call` to `delly sr`, and 2.6.0 has the same build hash as the 2.1.0 pin, so an automatic bump would look safe and break step 19. The bump comes with the code change (scripts/19-delly.sh and the delly module) in one PR, which also removes this rule.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["quay.io/biocontainers/delly"],
-      "enabled": false
-    },
-    {
       "description": "Hold: plink2 stays at 2.00a5.10, the only versioned tag pgscatalog/plink2 ships and the build pgsc_calc uses.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["pgscatalog/plink2"],

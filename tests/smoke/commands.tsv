@@ -17,7 +17,7 @@ TIDDIT_IMAGE	-	ref,bam	tiddit --sv --bam /in/mini.bam --ref /in/mini.fa --thread
 SNIFFLES_IMAGE	-	ref,longbam	sniffles -i /in/long.bam -v sniffles.vcf --reference /in/mini.fa --threads 4 --sample-id HG002 --all-contigs	at_least "records at the planted deletion" "$(sv_near sniffles.vcf)" 1
 HAPPY_IMAGE	root	ref,truth	/opt/hap.py/bin/hap.py /in/truth.vcf.gz /in/query90.vcf.gz -r /in/mini.fa -f /in/truth.bed -o happy --engine=vcfeval	between "SNP recall of a query missing every tenth truth SNV" "$(csv_cell happy.summary.csv Type=SNP,Filter=PASS METRIC.Recall)" 0.85 0.95; at_least "SNP precision of that query" "$(csv_cell happy.summary.csv Type=SNP,Filter=PASS METRIC.Precision)" 0.99
 MANTA_IMAGE	-	ref,bam	configManta.py --bam /in/mini.bam --referenceFasta /in/mini.fa --runDir manta && manta/runWorkflow.py -j 4	at_least "records at the planted deletion" "$(sv_near manta/results/variants/diploidSV.vcf.gz)" 1
-DELLY_IMAGE	-	ref,bam	delly call -g /in/mini.fa -o delly.bcf /in/mini.bam	at_least "records at the planted deletion" "$(sv_near delly.bcf)" 1
+DELLY_IMAGE	-	ref,bam	delly sr -g /in/mini.fa -o delly.bcf /in/mini.bam	at_least "records at the planted deletion" "$(sv_near delly.bcf)" 1
 CNVPYTOR_IMAGE	root	ref,bam	sh /smoke/cnvpytor.sh	at_least "CNVpytor calls overlapping the planted deletion" "$(awk '{split($2, a, /[:-]/); if (a[1] == "chr20" && a[2] <= 453000 && a[3] >= 450001) n++} END {print n + 0}' calls.tsv)" 1
 # GRIDSS (Java) looks up the container's hostname, which resolves only with a network.
 GRIDSS_IMAGE	net	ref,bam	sh /smoke/gridss.sh	at_least "records at the planted deletion" "$(sv_near gridss.vcf.gz)" 1

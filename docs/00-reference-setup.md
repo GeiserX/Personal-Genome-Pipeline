@@ -71,7 +71,7 @@ It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both
 
 | File | Source | Used by | Without it |
 |---|---|---|---|
-| `reference/delly_human.hg38.excl.tsv` | Delly's GRCh38 exclude map at a pinned commit (sha256 checked) | step 19 (`delly call -x`) | Delly runs without it: slower, and with calls in centromeres, telomeres and the extra contigs |
+| `reference/delly_human.hg38.excl.tsv` | Delly's GRCh38 exclude map at a pinned commit (sha256 checked) | step 19 (`delly sr -x`) | Delly runs without it: slower, and with calls in centromeres, telomeres and the extra contigs |
 | `reference/cytoBand.hg38.txt` | UCSC's GRCh38 chromosome bands, chr1-22, X and Y (sha256 checked) | step 10 (`telomerehunter -b`) | TelomereHunter falls back to its hg19 bands |
 | `hla/IPD-IMGT-HLA_<release>/hla.dat` | IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.65.0) from the IMGTHLA repository (md5 checked) | step 8 | step 8 is skipped |
 | `reference/gencode.v50.basic.genes.gtf` | the gene lines of GENCODE 50's basic annotation (md5 checked) | step 8 (gene positions for T1K) | step 8 is skipped |
