@@ -109,14 +109,16 @@ process CLINVAR_SCREEN {
     # significance and review status copied on, kept only where the genotype
     # carries an ALT allele. The match is by allele, so after the split above a
     # 0/0 or ./. record, the 0/0 half of a multiallelic record and a
-    # reference-only ALT '.' row would otherwise be listed as hits.
+    # reference-only ALT '.' row would otherwise be listed as hits. The test is a
+    # non-zero allele index anywhere in GT, not GT="alt", which drops a half
+    # call such as ./1 that does carry the ALT allele.
     # (annotate -a needs an indexed target, so the shared records go to a file first.)
     # --no-version: no command line, with ClinVar's absolute path, in the header.
     bcftools isec --no-version -n=2 -w1 -Oz -o shared.vcf.gz ${meta.id}_pass.vcf.gz "\${CLINVAR_NORM}"
     bcftools index -t shared.vcf.gz
     bcftools annotate --no-version -a "\${CLINVAR_NORM}" --pair-logic exact \\
         -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou shared.vcf.gz \\
-        | bcftools view --no-version -i 'GT="alt"' -Ov -o ${meta.id}_clinvar_hits.vcf
+        | bcftools view --no-version -i 'GT~"[1-9]"' -Ov -o ${meta.id}_clinvar_hits.vcf
 
     # The same hits as a table, one row per hit
     printf 'chrom\\tpos\\tref\\talt\\tgenotype\\tclinvar_id\\tgeneinfo\\tclnsig\\tclnrevstat\\n' > ${meta.id}_clinvar_hits.tsv

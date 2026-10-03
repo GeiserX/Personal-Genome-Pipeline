@@ -126,7 +126,9 @@ fi
 # shared records go to a file first.) Only records whose genotype carries an ALT
 # allele are hits: the match is by allele, so after the split above a 0/0 or ./.
 # record, the 0/0 half of a multiallelic record and a reference-only ALT '.' row
-# would otherwise be listed. --no-version keeps command lines out of the header.
+# would otherwise be listed. The test is a non-zero allele index anywhere in GT,
+# not GT="alt", which drops a half call such as ./1 that does carry the ALT allele.
+# --no-version keeps command lines out of the header.
 SHARED="${OUTPUT_DIR}/${SAMPLE}_shared.vcf.gz"
 run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "set -e
@@ -134,7 +136,7 @@ run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
     bcftools index -f -t '$(cpath "$SHARED")'
     bcftools annotate --no-version -a '$(cpath "$CLINVAR_NORM")' --pair-logic exact \
       -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou '$(cpath "$SHARED")' \
-      | bcftools view --no-version -i 'GT=\"alt\"' -Ov -o '$(cpath "${HITS}.part")'
+      | bcftools view --no-version -i 'GT~\"[1-9]\"' -Ov -o '$(cpath "${HITS}.part")'
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%GT]\\t%ID\\t%INFO/GENEINFO\\t%INFO/CLNSIG\\t%INFO/CLNREVSTAT\\n' \
       -o '$(cpath "${HITS_TSV}.body")' '$(cpath "${HITS}.part")'"
 # The same hits as a table, one row per hit.
