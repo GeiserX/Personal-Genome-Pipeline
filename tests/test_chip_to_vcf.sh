@@ -12,6 +12,8 @@
 #      joined). The script before this fix read the file as 23andMe, so it
 #      took the column header as a row, the first allele as the genotype and
 #      the numbers 23-26 as chromosome names.
+# Then a cut AncestryDNA file: the script stops with the line number of the
+# damaged row and writes no VCF.
 # Needs docker.
 set -euo pipefail
 
@@ -107,6 +109,27 @@ run_fixture() {
 
 run_fixture ancestrydna ancestrydna.txt auto
 run_fixture 23andme 23andme.txt auto
+
+# A cut AncestryDNA file (its last row lost the second allele) stops with the
+# line number and writes no VCF. The script before this check skipped the row
+# and converted the rest.
+cut_g="${WORK}/ancestrydna-cut"
+setup_genome "$cut_g"
+mkdir -p "${cut_g}/S1/raw"
+{ cat "${REPO}/tests/fixtures/chip/ancestrydna.txt"; printf 'rs999\t1\t500\tA\n'; } > "${cut_g}/S1/raw/S1_raw.txt"
+cut_line=$(wc -l < "${cut_g}/S1/raw/S1_raw.txt" | tr -d ' ')
+echo "--- ancestrydna-cut: chip-to-vcf.sh S1 ancestrydna (line ${cut_line} has four columns)"
+cut_rc=0
+GENOME_DIR="$cut_g" REF_FASTA="${cut_g}/reference/test38.fasta" \
+  "${REPO}/scripts/chip-to-vcf.sh" S1 ancestrydna > "${WORK}/ancestrydna-cut.log" 2>&1 || cut_rc=$?
+sed 's/^/    /' "${WORK}/ancestrydna-cut.log"
+if [ "$cut_rc" -ne 0 ]; then pass "ancestrydna-cut: chip-to-vcf.sh exited ${cut_rc}"
+else fail "ancestrydna-cut: chip-to-vcf.sh exited 0 on a row with four columns"; fi
+if grep -q "line ${cut_line}: want five tab-separated columns" "${WORK}/ancestrydna-cut.log"; then
+  pass "ancestrydna-cut: the error names line ${cut_line}"
+else fail "ancestrydna-cut: no error naming line ${cut_line}"; fi
+if [ ! -e "${cut_g}/S1/vcf/S1.vcf.gz" ]; then pass "ancestrydna-cut: no VCF"
+else fail "ancestrydna-cut: wrote a VCF from a cut file"; fi
 
 if [ "$FAILS" -gt 0 ]; then
   echo "test_chip_to_vcf: ${FAILS} check(s) failed"

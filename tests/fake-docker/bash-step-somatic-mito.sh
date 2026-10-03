@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Step 29 (Mutect2 tumor-only) calls the CHIP driver genes by default, with
 # the read orientation model and, when the common-sites VCF is installed, the
-# contamination estimate. INTERVALS=genome calls the whole genome.
+# contamination estimate. INTERVALS=genome calls the whole genome. A finished
+# result is skipped only for the INTERVALS value it was called with.
 # Step 20 (chrM) marks possible NuMTs with NuMTFilterTool at the median
 # autosomal depth it reads from step 16b's mosdepth output.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -47,6 +48,33 @@ rm -rf "${GENOME_DIR}/sample1/somatic"
 run_expect 0 somatic-chip-contamination "${SCRIPTS}/29-mutect2-somatic.sh" sample1
 docker_log_has '^run image=[^ ]*gatk.* GetPileupSummaries .*-L /genome/sample1/somatic/chip_genes_grch38\.bed --interval-set-rule INTERSECTION ' \
   "GetPileupSummaries was not limited to the CHIP genes"
+
+# A finished result is reused only for the intervals it was called on.
+# bgzf_vcf PATH: a finished VCF, ending with the BGZF end-of-file block.
+bgzf_vcf() {
+  { printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n' | gzip -c
+    printf '\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00'; } > "$1"
+}
+SO="${GENOME_DIR}/sample1/somatic"
+[ "$(cat "${SO}/sample1_somatic_filtered.intervals" 2>/dev/null)" = chip ] \
+  || fail "step 29 did not record INTERVALS=chip beside its result"
+bgzf_vcf "${SO}/sample1_somatic_filtered.vcf.gz"   # the CHIP run, finished
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 somatic-chip-again "${SCRIPTS}/29-mutect2-somatic.sh" sample1
+output_has somatic-chip-again 'Output already exists'
+: > "$FAKE_DOCKER_LOG"
+INTERVALS=genome run_expect 0 somatic-genome-after-chip "${SCRIPTS}/29-mutect2-somatic.sh" sample1
+output_lacks somatic-genome-after-chip 'Output already exists'
+docker_log_has '^run image=[^ ]*gatk.* Mutect2 ' "INTERVALS=genome returned the CHIP result instead of calling the genome"
+[ "$(cat "${SO}/sample1_somatic_filtered.intervals" 2>/dev/null)" = genome ] \
+  || fail "step 29 did not record INTERVALS=genome beside its result"
+# A finished result with no record (an older version of this step) is called again.
+bgzf_vcf "${SO}/sample1_somatic_filtered.vcf.gz"
+rm -f "${SO}/sample1_somatic_filtered.intervals"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 somatic-no-record "${SCRIPTS}/29-mutect2-somatic.sh" sample1
+output_lacks somatic-no-record 'Output already exists'
+docker_log_has '^run image=[^ ]*gatk.* Mutect2 ' "step 29 reused a result without knowing its intervals"
 
 # --- step 20 ---------------------------------------------------------------------------
 : > "$FAKE_DOCKER_LOG"

@@ -9,8 +9,10 @@
 #     --allow-overwrite).
 #   Clair3 (03e): the tool exits 0 without merge_output.vcf.gz while an older
 #     sample1.vcf.gz is present. The step fails instead of printing "complete".
-#   FreeBayes (03b): bcftools sort fails. The step fails, keeps the raw VCF
-#     and writes no sorted VCF (a pipe without pipefail hid this before).
+#   FreeBayes (03b): bcftools sort writes part of its VCF and fails. The step
+#     fails, keeps the raw VCF and leaves no sorted VCF, whole or truncated (a
+#     pipe without pipefail hid the failure before, and the sort then wrote
+#     straight to the final name).
 # Each scenario failed against the scripts before this change.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
@@ -72,8 +74,13 @@ case "$args" in
     # reports the exit code of bcftools view, which succeeds.
     exit 0 ;;
   *" bcftools sort "*)
-    if [ "${FAKE_MODE:-ok}" = fail ]; then echo "fake bcftools sort: failed" >&2; exit 1; fi
-    bgzf "$(host_path "$(word_after -o)")" ;;
+    out=$(host_path "$(word_after -o)")
+    if [ "${FAKE_MODE:-ok}" = fail ]; then
+      # As a killed or failing sort does: part of the output, then an error.
+      mkdir -p "$(dirname "$out")"; printf "${header}" | gzip -c | head -c 20 > "$out"
+      echo "fake bcftools sort: failed" >&2; exit 1
+    fi
+    bgzf "$out" ;;
   *" bcftools stats "*)
     printf 'SN\t0\tnumber of records:\t1\n' ;;
   *" bcftools index "*)
@@ -127,6 +134,7 @@ FAKE_MODE=fail run_rc freebayes-sort-fails "${SCRIPTS}/03b-freebayes.sh" sample1
 [ "$RC" -ne 0 ] || fail "step 03b exited 0 although bcftools sort failed"
 [ -s "${FB}/sample1_raw.vcf" ] || fail "step 03b deleted the raw VCF although sorting failed"
 [ ! -e "${FB}/sample1.vcf.gz" ] || fail "step 03b left a sorted VCF although sorting failed"
+[ ! -e "${FB}/sample1.vcf.gz.tmp" ] || fail "step 03b left the half-written sort output behind"
 run_expect 0 freebayes-ok "${SCRIPTS}/03b-freebayes.sh" sample1
 have_bgzf_eof "${FB}/sample1.vcf.gz" || fail "step 03b wrote no sorted VCF"
 [ ! -e "${FB}/sample1_raw.vcf" ] || fail "step 03b kept the raw VCF after a good run"
