@@ -79,7 +79,7 @@ The CI pipeline enforces this with automated scanning.
 
 ### Docker Images
 
-- Every image is one line in [`versions.env`](versions.env), with an exact tag (e.g., `staphb/bcftools:1.21`, not `:latest`). Scripts, `setup.sh` and `validate-setup.sh` read it from there.
+- Every image is one line in [`versions.env`](versions.env), with an exact tag, never `:latest`. Scripts, `setup.sh` and `validate-setup.sh` read it from there.
 - Mark an image no default step runs with `# optional` on its line. `setup.sh` then leaves it for the step that uses it.
 - When a publisher offers no versioned tags, pin by immutable digest (`name@sha256:<digest>`) — never a floating `:latest`. Resolve with `docker manifest inspect -v <name>:latest`.
 - Verify the image exists and is publicly pullable before committing
@@ -108,9 +108,11 @@ The CI pipeline enforces this with automated scanning.
 
 ## Bumping a Tool
 
+Renovate proposes image, Nextflow and CI tool bumps as PRs, one tool per PR, and some pins are held on purpose. [`docs/updating.md`](docs/updating.md) says what it covers, which pins are held and why, and what to check by hand before merging. To bump a tool yourself:
+
 1. Change the tool's line in [`versions.env`](versions.env). No script or module names the tag.
 2. If a comment next to the line couples it to a data version (the VEP cache release, the PCGR bundle, the pypgx bundle tag), change that variable in the same commit.
-3. Run `scripts/ci/gen-containers-config.sh`. It rewrites [`conf/containers.config`](conf/containers.config), where the Nextflow modules take their image from, and CI fails until that file matches `versions.env`.
+3. Run `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh`. They rewrite [`conf/containers.config`](conf/containers.config), where the Nextflow modules take their image from, and [`docs/versions.md`](docs/versions.md); CI fails until both match `versions.env`.
 4. Update the matrix entry in [`.github/workflows/container-test.yml`](.github/workflows/container-test.yml) and any doc that prints the tag. The `version-consistency` check in CI names a stale tag in the docs.
 5. Run `./scripts/setup.sh --pull-only` to pull the new image.
 6. A line marked `hold:` or `legacy:` says why the tool is pinned and when the hold ends. Read it before bumping.
