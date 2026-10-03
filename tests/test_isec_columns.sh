@@ -16,6 +16,8 @@
 #   6. a ClinVar allele the person does not carry is no hit: GT 0/0, GT ./.,
 #      the 0/0 half of a multiallelic record (ALT T,G with GT 0/1, ClinVar G)
 #      and a hom-ref ALT '.' row at a ClinVar ALT '.' position were all listed;
+#   6b. a half call (GT ./1) carries the ClinVar allele and is a hit; the
+#      GT="alt" filter dropped it as missing;
 #   7. clinvar/S1_clinvar_hits.tsv has one row per hit with genotype, gene,
 #      significance and review status;
 #   8. a sample record on a contig the reference lacks, in a header without
@@ -183,6 +185,28 @@ if [ "$(head -n 1 "$TSV" 2>/dev/null)" = "$(printf 'chrom\tpos\tref\talt\tgenoty
   pass "hits TSV: a header and one row per hit with genotype, gene, significance and review status"
 else
   fail "hits TSV is missing or wrong: $(tr '\t\n' ' |' < "$TSV" 2>/dev/null || echo 'no file')"
+fi
+
+# ---- Case 6b: a half call (./1) carries the ClinVar allele and is a hit
+GD="${WORK}/halfcall"
+make_genome "$GD" PASS chr1 hit
+# Position 74 is C. Appended after the last record, so both files stay sorted.
+printf 'chr1\t74\t.\tC\tT\t50\tPASS\t.\tGT\t./1\n' >> "${GD}/S1/vcf/S1.vcf"
+printf 'chr1\t74\t1009\tC\tT\t.\t.\tGENEINFO=GENEI:99;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter\n' \
+  >> "${GD}/clinvar/clinvar_pathogenic_chr.vcf"
+docker run --rm -v "${GD}:/g" "$BCFTOOLS_IMAGE" sh -c '
+  set -e
+  bcftools view -Oz -o /g/S1/vcf/S1.vcf.gz /g/S1/vcf/S1.vcf
+  bcftools index -f -t /g/S1/vcf/S1.vcf.gz
+  bcftools view -Oz -o /g/clinvar/clinvar_pathogenic_chr.vcf.gz /g/clinvar/clinvar_pathogenic_chr.vcf
+  bcftools index -f -t /g/clinvar/clinvar_pathogenic_chr.vcf.gz'
+run_step06 "$GD" > "${GD}/step06.log" 2>&1 || fail "step 06 exited non-zero with a ./1 record: $(tail -3 "${GD}/step06.log" | tr '\n' '|')"
+TSV="${GD}/S1/clinvar/S1_clinvar_hits.tsv"
+if grep -qxF "$(printf 'chr1\t74\tC\tT\t./1\t1009\tGENEI:99\tPathogenic\tcriteria_provided,_single_submitter')" "$TSV" 2>/dev/null \
+   && [ "$(awk 'END {print NR}' "$TSV")" = 4 ]; then
+  pass "a half call (GT ./1) at a ClinVar allele is a hit, next to the 2 others"
+else
+  fail "a half call (GT ./1) at a ClinVar allele is not a hit: $(tr '\t\n' ' |' < "$TSV" 2>/dev/null || echo 'no file')"
 fi
 
 # ---- Case 8: a contig the reference lacks, on either side, is left out with a notice
