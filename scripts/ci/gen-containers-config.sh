@@ -205,6 +205,11 @@ self_test() {
     fi
   }
 
+  # tag_of PROCESS CONFIG: the tag (or digest) of PROCESS's image in CONFIG.
+  tag_of() {
+    sed -nE "s/^[[:space:]]*withName: '$1' \\{ container = '[^:@']+[:@]([^']+)' \\}.*/\\1/p" "$2"
+  }
+
   copy clean
   rc=0; out=$("$0" --check --root "${tmp}/clean" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || { echo "self-test: the unchanged copy failed:"; printf '%s\n' "$out"; fail=1; }
@@ -237,13 +242,22 @@ self_test() {
   expect literal 'main\.nf:[0-9]+: +container .example/bcftools:1\.0.'
 
   # --check-versions: a wrong tag, a missing process and an unknown process.
-  printf '%s\n' '"PGX:ROH":' '    bcftools: 1.21' '"VEP":' '    ensemblvep: release_116.0' \
+  # The right tags are read from the clean copy, which was generated from this
+  # tree's versions.env, so a bump of either image does not break this test.
+  local roh vep roh_re
+  roh=$(tag_of ROH "${tmp}/clean/conf/containers.config")
+  vep=$(tag_of VEP "${tmp}/clean/conf/containers.config")
+  if [ -z "$roh" ] || [ -z "$vep" ]; then
+    echo "self-test: found no tag for ROH ('${roh}') or VEP ('${vep}') in the clean copy's conf/containers.config"; fail=1
+  fi
+  roh_re=$(sed 's/[][\.*^$+?(){}|/]/\\&/g' <<<"$roh")
+  printf '%s\n' '"PGX:ROH":' "    bcftools: ${roh}" '"VEP":' "    ensemblvep: ${vep}" \
     > "${tmp}/versions-good.yml"
   rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-good.yml" ROH VEP 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || { echo "self-test: --check-versions failed a correct file:"; printf '%s\n' "$out"; fail=1; }
-  printf '%s\n' '"PGX:ROH":' '    bcftools: 1.20' '"NEW_TOOL":' '    tool: 1.0' > "${tmp}/versions-bad.yml"
+  printf '%s\n' '"PGX:ROH":' '    bcftools: 0.0.0-planted' '"NEW_TOOL":' '    tool: 1.0' > "${tmp}/versions-bad.yml"
   rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-bad.yml" ROH VEP 2>&1) || rc=$?
-  for want in '^FAIL ROH +bcftools: 1\.20, want 1\.21' '^FAIL NEW_TOOL +has no selector' '^FAIL VEP +missing from'; do
+  for want in "^FAIL ROH +bcftools: 0\\.0\\.0-planted, want ${roh_re} " '^FAIL NEW_TOOL +has no selector' '^FAIL VEP +missing from'; do
     if [ "$rc" -ne 1 ] || ! grep -qE -- "$want" <<<"$out"; then
       echo "self-test: --check-versions exited ${rc} and did not report /${want}/:"; printf '%s\n' "$out"; fail=1
     else
