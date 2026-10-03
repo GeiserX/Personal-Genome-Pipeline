@@ -90,6 +90,17 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz.tbi
 ```
 
+#### Common-sites VCF (contamination estimate, ~1 MB)
+
+Common biallelic SNPs from ExAC. With it, the script runs GetPileupSummaries and CalculateContamination and passes the contamination and segmentation tables to FilterMutectCalls; without it, that part is skipped and the log says so.
+
+```bash
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/small_exac_common_3.hg38.vcf.gz \
+  -O ${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/small_exac_common_3.hg38.vcf.gz.tbi \
+  -O ${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz.tbi
+```
+
 > **Note:** `gsutil` is part of the Google Cloud SDK. If you do not have it installed, use the `wget` alternative URLs above (same files, just accessed over HTTPS instead of the gs:// protocol).
 
 ## Command
@@ -105,16 +116,23 @@ export GENOME_DIR=/path/to/your/data
 |---|---|---|
 | `GENOME_DIR` | (required) | Path to your data directory |
 | `THREADS` | 4 | CPU threads for Mutect2 |
-| `INTERVALS` | (empty = full genome) | Restrict to a region, e.g. `chr22` or `chr17:7500000-7700000` (TP53 locus) |
+| `INTERVALS` | `chip` | `chip`: the CHIP driver genes in `assets/chip_genes_grch38.bed` (minutes). `genome`: the whole genome (2-6 hours). Anything else is passed to Mutect2 as it is: a region such as `chr22` or `chr17:7500000-7700000`, or a BED under `/genome` |
 | `ALIGN_DIR` | `aligned` | Use `aligned_bwamem2` for BWA-MEM2 alignments |
 
-### Quick Test on a Single Chromosome
+### What the script runs
 
-Running on the full genome takes 2-6 hours. To test quickly:
+1. Mutect2 in tumor-only mode on the intervals, with `--f1r2-tar-gz` (read orientation counts), the gnomAD germline resource and the Panel of Normals when present.
+2. LearnReadOrientationModel, which turns the orientation counts into priors (`--ob-priors`) for FilterMutectCalls.
+3. GetPileupSummaries and CalculateContamination, when the common-sites VCF is present, limited to the same intervals.
+4. FilterMutectCalls with all of the above.
+
+### The whole genome
+
+The default covers the CHIP genes only. For everything:
 
 ```bash
-INTERVALS=chr22 ./scripts/29-mutect2-somatic.sh your_name
-# ~15-30 minutes
+INTERVALS=genome ./scripts/29-mutect2-somatic.sh your_name
+# 2-6 hours
 ```
 
 ## Output
@@ -127,6 +145,10 @@ All files are written to `${GENOME_DIR}/${SAMPLE}/somatic/`:
 | `${SAMPLE}_somatic_unfiltered.vcf.gz.stats` | Mutect2 internal statistics (used by FilterMutectCalls) |
 | `${SAMPLE}_somatic_filtered.vcf.gz` | Filtered calls with PASS/FAIL annotations |
 | `${SAMPLE}_somatic_filtered.vcf.gz.tbi` | Tabix index for the filtered VCF |
+| `${SAMPLE}_somatic_filtered.run` | How the filtered VCF was called: the `INTERVALS` value and which optional resources (gnomAD, Panel of Normals, common sites) were present. Written last |
+| `chip_genes_grch38.bed` | The CHIP gene intervals used (a copy of `assets/chip_genes_grch38.bed`), with the default `INTERVALS` |
+| `${SAMPLE}_f1r2.tar.gz`, `${SAMPLE}_read-orientation-model.tar.gz` | Read orientation counts and the model learned from them |
+| `${SAMPLE}_pileups.table`, `${SAMPLE}_contamination.table`, `${SAMPLE}_segments.table` | Pileups at common sites and the contamination estimate (only with the common-sites VCF) |
 
 ## Interpreting Results
 
@@ -161,16 +183,16 @@ In tumor-only mode from 30X WGS:
 
 ### Finding CHIP Candidates
 
-Clonal hematopoiesis variants are found in specific genes (DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, PPM1D, CBL, GNB1, IDH1, IDH2). The somatic VCF has no gene names in it, so a `grep` for gene symbols finds nothing. Filter by position instead, with a BED file of those genes' GRCh38 coordinates (from Ensembl BioMart or the UCSC Table Browser, `chr`-prefixed, saved as `${GENOME_DIR}/somatic/chip_genes.bed`):
+Clonal hematopoiesis variants are found in specific genes. `assets/chip_genes_grch38.bed` lists 33 of them (DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, U2AF1, ZRSR2, PPM1D, CBL, GNB1, IDH1, IDH2 and others): each gene body from GENCODE 50's basic annotation, with 100 bp either side. With the default `INTERVALS=chip` every call is already inside those genes. The somatic VCF has no gene names in it, so after a whole-genome run filter by position with the same file:
 
 ```bash
 source versions.env   # from the repository root
 docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
-  bcftools view -f PASS -R /genome/somatic/chip_genes.bed \
+  bcftools view -f PASS -R /genome/${SAMPLE}/somatic/chip_genes_grch38.bed \
     "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz"
 ```
 
-The same file as `INTERVALS=/genome/somatic/chip_genes.bed` restricts Mutect2 to those genes, which takes minutes instead of hours.
+(Copy `assets/chip_genes_grch38.bed` into `${GENOME_DIR}/${SAMPLE}/somatic/` first if that run did not.)
 
 ### Cross-Referencing with Other Steps
 
@@ -185,7 +207,8 @@ The same file as `INTERVALS=/genome/somatic/chip_genes.bed` restricts Mutect2 to
 
 | Scope | Approximate Time | Memory |
 |---|---|---|
-| Full genome (no intervals) | 2-6 hours | 8 GB |
+| CHIP genes (default) | minutes | 8 GB |
+| Full genome (`INTERVALS=genome`) | 2-6 hours | 8 GB |
 | Single chromosome (`INTERVALS=chr22`) | 15-30 minutes | 8 GB |
 | Targeted region (e.g., TP53 locus) | <5 minutes | 8 GB |
 
@@ -216,7 +239,7 @@ gatk Mutect2 \
 
 ## Notes
 
-- The script is **idempotent**: if the filtered output VCF already exists, it skips execution. Delete the output file to force re-run.
+- The script is **idempotent**: it skips execution when the filtered VCF is complete and `${SAMPLE}_somatic_filtered.run` matches this run: the same `INTERVALS` value and the same optional resources present. A CHIP result is never returned for `INTERVALS=genome`, or the other way round, and installing gnomAD, the Panel of Normals or the common-sites VCF after a run makes the next run call again. Delete the output file to force a re-run.
 - `--max-mnp-distance 0` prevents merging adjacent SNPs into multi-nucleotide polymorphisms (consistent with step 20).
 - The `.stats` file generated by Mutect2 is automatically consumed by FilterMutectCalls. Do not delete it before filtering completes.
 - The `ALIGN_DIR` variable lets you use BWA-MEM2 alignments (`ALIGN_DIR=aligned_bwamem2`) if available.

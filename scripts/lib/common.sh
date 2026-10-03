@@ -18,9 +18,10 @@
 #   THREADS        CPU budget of one step. Default 8; a script that wants another
 #                  default sets THREADS=${THREADS:-N} before sourcing this file.
 #   CONTAINER_ENGINE  docker by default.
-# and the helpers validate_sample, require_image, cpath, run_in, fetch,
-# install_vep_cache, lock_acquire / lock_release and pipeline_images, described
-# where they are defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
+# and the helpers validate_sample, require_image, cpath, run_in, have_output,
+# wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
+# lock_acquire / lock_release and pipeline_images, described where they are
+# defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
 PGP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=../versions.env
@@ -85,7 +86,8 @@ fi
 #   --user UID:GID, HOME=/tmp outputs belong to the caller, not to root.
 # Opt-outs, each named at the call site with the reason:
 #   --net      the step downloads something (a database, a pip package).
-#   --root     the image cannot run as an unprivileged user.
+#   --root     the image cannot run as an unprivileged user: the container runs
+#              as root (--user 0:0), also when the image names another user.
 #   --rw DIR   DIR (inside GENOME_DIR) is writable too, e.g. a shared index.
 # Everything after the opt-outs goes to `docker run` unchanged.
 # When an unprivileged run fails and the sample directory holds a path the
@@ -109,7 +111,13 @@ run_in() {
   done
   local -a args=(run --rm)
   if $isolate; then args+=(--network none); fi
-  if ! $root; then args+=(--user "$(id -u):$(id -g)" -e HOME=/tmp); fi
+  # --root is explicit: an image whose default user is not root (the
+  # TelomereHunter image) could not write into the sample directory otherwise.
+  if $root; then
+    args+=(--user 0:0)
+  else
+    args+=(--user "$(id -u):$(id -g)" -e HOME=/tmp)
+  fi
   args+=(-v "${GENOME_DIR:?}:/genome:ro")
   if [ -n "${SAMPLE:-}" ]; then
     mkdir -p "${GENOME_DIR}/${SAMPLE}"
@@ -126,6 +134,73 @@ run_in() {
     fi
   fi
   return "$rc"
+}
+
+# have_output FILE...: true when every FILE is a finished output, the test a
+# step uses before it skips work. Every FILE must be non-empty, and by name:
+#   .vcf                  starts with ##fileformat=VCF and has a #CHROM line;
+#   .vcf.gz, .bcf, .bam   ends with the BGZF end-of-file block, which htslib
+#                         and htsjdk write only when they close the file, and
+#                         starts with the format's own header.
+# So an empty file left by a failed redirect, or one cut short by a killed
+# run, is redone instead of trusted.
+have_output() {
+  local f first
+  for f in "$@"; do
+    [ -s "$f" ] || return 1
+    case "$f" in
+      *.vcf)
+        first=$(head -n 1 "$f")
+        [[ "$first" == "##fileformat=VCF"* ]] || return 1
+        grep -q '^#CHROM' "$f" || return 1 ;;
+      *.vcf.gz|*.bcf|*.bam)
+        _bgzf_complete "$f" || return 1
+        first=$(gzip -cd "$f" 2>/dev/null | head -c 16 | tr -d '\000') || true
+        case "$f" in
+          *.vcf.gz) [[ "$first" == "##fileformat=VCF"* ]] || return 1 ;;
+          *.bcf) [[ "$first" == BCF* ]] || return 1 ;;
+          *.bam) [[ "$first" == BAM* ]] || return 1 ;;
+        esac ;;
+    esac
+  done
+}
+
+# wrote_vcf FILE: true when FILE is non-empty and starts with a VCF header,
+# plain or gzip-compressed. The check after a tool that exited 0: it catches
+# a run that wrote nothing where the tool said it succeeded.
+wrote_vcf() {
+  local first
+  [ -s "$1" ] || return 1
+  first=$(gzip -cdf "$1" 2>/dev/null | head -c 16) || true
+  [[ "$first" == "##fileformat=VCF"* ]]
+}
+
+# _bgzf_complete FILE: true when FILE ends with the 28-byte BGZF EOF block.
+_bgzf_complete() {
+  local last
+  last=$(tail -c 28 "$1" | od -An -v -tx1 | tr -d ' \n')
+  [ "$last" = "1f8b08040000000000ff0600424302001b0003000000000000000000" ]
+}
+
+# atomic_out FILE COMMAND [ARGS...]: run COMMAND with its standard output in
+# FILE.tmp, and rename that to FILE only when COMMAND exits 0 and wrote
+# something. Otherwise FILE.tmp is removed, FILE is left as it was and the
+# exit code is returned, so a failed image pull or a crash never leaves an
+# empty FILE behind for the next run to accept.
+atomic_out() {
+  local out=$1 rc=0
+  shift
+  rm -f "${out}.tmp"
+  "$@" > "${out}.tmp" || rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -s "${out}.tmp" ]; then
+    echo "ERROR: $1 wrote nothing for ${out}." >&2
+    rc=1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    rm -f "${out}.tmp"
+    return "$rc"
+  fi
+  mv -f "${out}.tmp" "$out"
 }
 
 # _digest md5|sha256|sum FILE: the checksum of FILE (sum = BSD sum, the
@@ -229,6 +304,100 @@ fetch() {
     return 1
   fi
   mv -f "$part" "$dest"
+}
+
+# --- Pinned data files ----------------------------------------------------------
+# Small reference files from a fixed commit or release, each checked before it
+# is stored. setup.sh installs them (install_data_file); a step only reads
+# them (data_file) and runs no download of its own. HLA_DB_RELEASE can be
+# overridden from the environment; step 08 keys its T1K index on it, so a new
+# release builds a new index.
+HLA_DB_RELEASE=${HLA_DB_RELEASE:-3.65.0}
+GENCODE_RELEASE=50
+DELLY_EXCL_COMMIT=72a05f3cd23bf55f1edd723b9504a0faf1fba230
+# shellcheck disable=SC2034  # read by setup.sh and validate-setup.sh
+DATA_FILES="delly_exclude cytoband hla_dat gencode_genes"
+
+# data_file NAME: print the host path of data file NAME and return 0 when it
+# is installed, 1 when it is not (the path is printed either way).
+#   delly_exclude  Delly's GRCh38 exclude map: telomeres, centromeres and the
+#                  extra contigs (step 19)
+#   cytoband       UCSC's GRCh38 chromosome bands, chr1-22, X and Y (step 10)
+#   hla_dat        hla.dat of IPD-IMGT/HLA release HLA_DB_RELEASE (step 08)
+#   gencode_genes  the gene lines of GENCODE's basic annotation, release
+#                  GENCODE_RELEASE: T1K takes HLA gene coordinates from it (step 08)
+data_file() {
+  local out
+  case "$1" in
+    delly_exclude) out="${GENOME_DIR:?}/reference/delly_human.hg38.excl.tsv" ;;
+    cytoband) out="${GENOME_DIR:?}/reference/cytoBand.hg38.txt" ;;
+    hla_dat) out="${GENOME_DIR:?}/hla/IPD-IMGT-HLA_${HLA_DB_RELEASE}/hla.dat" ;;
+    gencode_genes) out="${GENOME_DIR:?}/reference/gencode.v${GENCODE_RELEASE}.basic.genes.gtf" ;;
+    *) echo "ERROR: unknown data file '${1}'" >&2; return 2 ;;
+  esac
+  printf '%s\n' "$out"
+  [ -s "$out" ]
+}
+
+# install_data_file NAME: download, check and store data file NAME unless it
+# is installed. Progress goes to stderr. Returns 1 when it cannot.
+install_data_file() {
+  local out url gz md5
+  out=$(data_file "$1") && return 0
+  [ -n "$out" ] || return 2
+  case "$1" in
+    delly_exclude)
+      fetch "https://raw.githubusercontent.com/dellytools/delly/${DELLY_EXCL_COMMIT}/excludeTemplates/human.hg38.excl.tsv" \
+        "$out" sha256 caef8593f82f513694ae41b429680eab8abe39c057a119dae7760715aef006ee >&2 || return 1 ;;
+    cytoband)
+      gz="${out}.download.gz"
+      fetch https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/cytoBand.txt.gz "$gz" \
+        sha256 e514e48b0a12a516fd5231b44241a20a282f290bdd6131cadcddc6276ee26082 >&2 || return 1
+      # TelomereHunter reads chr1-22, X and Y and reports every other line
+      # (the ALT, random and chrM rows) as invalid.
+      _keep_lines "$gz" "$out" '$1 ~ /^chr([0-9]+|X|Y)$/' || return 1 ;;
+    hla_dat)
+      url="https://raw.githubusercontent.com/ANHIG/IMGTHLA/v${HLA_DB_RELEASE}-alpha"
+      # md5checksum.txt lines read "MD5 (hla.dat.zip) = <md5>".
+      md5=$(_get "${url}/md5checksum.txt" - 2>/dev/null | awk '$2 == "(hla.dat.zip)" {print $NF}') || md5=""
+      if [ -z "$md5" ]; then
+        echo "ERROR: no md5 for hla.dat.zip in ${url}/md5checksum.txt (is ${HLA_DB_RELEASE} an IPD-IMGT/HLA release?)" >&2
+        return 1
+      fi
+      fetch "${url}/hla.dat.zip" "${out}.zip" md5 "$md5" >&2 || return 1
+      # The T1K image has Perl's unzip module; the host may have no unzip.
+      # shellcheck disable=SC2154  # T1K_IMAGE comes from versions.env
+      run_in --rw "$(dirname "$out")" "$T1K_IMAGE" perl -e \
+        'use IO::Uncompress::Unzip qw(unzip $UnzipError); unzip($ARGV[0] => $ARGV[1]) or die "unzip failed: $UnzipError\n";' \
+        "$(cpath "${out}.zip")" "$(cpath "${out}.tmp")" >&2 || { rm -f "${out}.tmp"; return 1; }
+      if ! grep -q 'IPD-IMGT/HLA' "${out}.tmp" 2>/dev/null; then
+        rm -f "${out}.tmp"
+        echo "ERROR: ${out}.zip held no IPD-IMGT/HLA hla.dat" >&2
+        return 1
+      fi
+      mv -f "${out}.tmp" "$out"
+      rm -f "${out}.zip" ;;
+    gencode_genes)
+      url="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${GENCODE_RELEASE}/gencode.v${GENCODE_RELEASE}.basic.annotation.gtf.gz"
+      gz="${out}.download.gz"
+      fetch "$url" "$gz" md5 "$(dirname "$url")/MD5SUMS" >&2 || return 1
+      _keep_lines "$gz" "$out" '$3 == "gene"' || return 1 ;;
+  esac
+  [ -s "$out" ]
+}
+
+# _keep_lines GZ OUT AWK_CONDITION: write the tab-separated lines of GZ that
+# match AWK_CONDITION to OUT (through OUT.tmp) and remove GZ. Fails, keeping
+# no OUT, when no line matches.
+_keep_lines() {
+  if gzip -cd "$1" | awk -F'\t' "$3" > "${2}.tmp" && [ -s "${2}.tmp" ]; then
+    mv -f "${2}.tmp" "$2"
+    rm -f "$1"
+  else
+    rm -f "${2}.tmp" "$1"
+    echo "ERROR: no usable lines in $(basename "$1")" >&2
+    return 1
+  fi
 }
 
 # vep_cache_url RELEASE: where Ensembl publishes the indexed GRCh38 VEP cache.

@@ -241,6 +241,46 @@ else
     fi
   fi
 
+  # --- ClinVar release date (clinvar/RELEASE, written by setup.sh) ---
+  # NCBI publishes ClinVar monthly; a copy over 35 days old misses the last release.
+  if [ -f "${GENOME_DIR}/clinvar/clinvar.vcf.gz" ]; then
+    CLINVAR_RELEASE=$(head -n 1 "${GENOME_DIR}/clinvar/RELEASE" 2>/dev/null || true)
+    if [[ "$CLINVAR_RELEASE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+      RELEASE_EPOCH=$(date -u -d "$CLINVAR_RELEASE" +%s 2>/dev/null \
+        || date -u -j -f %Y-%m-%d "$CLINVAR_RELEASE" +%s 2>/dev/null || echo "")
+      if [ -n "$RELEASE_EPOCH" ]; then
+        CLINVAR_AGE=$(( ($(date -u +%s) - RELEASE_EPOCH) / 86400 ))
+        if [ "$CLINVAR_AGE" -gt 35 ]; then
+          warn "ClinVar release ${CLINVAR_RELEASE} is ${CLINVAR_AGE} days old (over 35)."
+          echo "       Replace it with the current release: ./scripts/setup.sh --refresh clinvar ${GENOME_DIR}"
+        else
+          pass "ClinVar release ${CLINVAR_RELEASE} (${CLINVAR_AGE} days old)"
+        fi
+      else
+        warn "ClinVar release ${CLINVAR_RELEASE}: could not work out its age on this system"
+      fi
+    else
+      warn "ClinVar release date unknown (no ${GENOME_DIR}/clinvar/RELEASE)."
+      echo "       Record it with the current release: ./scripts/setup.sh --refresh clinvar ${GENOME_DIR}"
+    fi
+  fi
+
+  # --- Small pinned data files (setup.sh installs them) ---
+  for name in $DATA_FILES; do
+    case "$name" in
+      delly_exclude) what="Delly exclude map (step 19 runs without it, slower and with more artefacts)" ;;
+      cytoband) what="GRCh38 chromosome bands (step 10 falls back to hg19 bands)" ;;
+      hla_dat) what="IPD-IMGT/HLA ${HLA_DB_RELEASE} (step 08 is skipped without it)" ;;
+      gencode_genes) what="GENCODE ${GENCODE_RELEASE} gene coordinates (step 08 is skipped without them)" ;;
+    esac
+    if DATA_PATH=$(data_file "$name"); then
+      pass "${what%% (*}: present"
+    else
+      warn "${what} not found at: ${DATA_PATH}"
+      echo "       Install it: ./scripts/setup.sh ${GENOME_DIR}"
+    fi
+  done
+
   # --- VEP cache of the VEP image's release, for step 13 (optional) ---
   VEP_DIR="${GENOME_DIR}/vep_cache/homo_sapiens"
   if [ -f "${VEP_DIR}/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then

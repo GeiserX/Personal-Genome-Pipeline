@@ -37,17 +37,19 @@ process ROH {
         ROH_FLAGS="\${ROH_FLAGS} -G30"
     fi
 
-    bcftools roh \${ROH_FLAGS} \\
-        -o ${meta.id}_roh.txt \\
-        ${vcf}
+    # Only PASS calls (and records with no filter, as chip VCFs have), as in
+    # scripts/11-roh-analysis.sh. pipefail: a failed view must fail the task.
+    set -o pipefail
+    bcftools view -f PASS,. -Ou ${vcf} \\
+        | bcftools roh \${ROH_FLAGS} -o ${meta.id}_roh.txt -
 
-    # Generate summary: autosomal ROH segments >1MB
+    # Summary: autosomal segments of 5 Mb or more, the threshold of
+    # docs/11-roh-analysis.md; the bash step writes the same file.
     echo "# ROH Summary for ${meta.id}" > ${meta.id}_roh_summary.txt
-    echo "# Segments >1MB on autosomes (excludes chrX/chrY)" >> ${meta.id}_roh_summary.txt
-    echo -e "chrom\\tstart\\tend\\tlength_bp\\tlength_mb" >> ${meta.id}_roh_summary.txt
-    grep '^RG' ${meta.id}_roh.txt 2>/dev/null | \\
-        awk '\$3 !~ /chrX|chrY/ && \$6 > 1000000 {printf "%s\\t%s\\t%s\\t%s\\t%.1f\\n", \$3,\$4,\$5,\$6,\$6/1e6}' \\
-        >> ${meta.id}_roh_summary.txt || true
+    echo "# Segments >=5MB on autosomes (excludes chrX/chrY)" >> ${meta.id}_roh_summary.txt
+    printf 'chrom\\tstart\\tend\\tlength_bp\\tlength_mb\\n' >> ${meta.id}_roh_summary.txt
+    awk '\$1 == "RG" && \$3 !~ /chrX|chrY/ && \$6 >= 5000000 {printf "%s\\t%s\\t%s\\t%s\\t%.1f\\n", \$3, \$4, \$5, \$6, \$6 / 1e6}' \\
+        ${meta.id}_roh.txt >> ${meta.id}_roh_summary.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

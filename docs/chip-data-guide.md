@@ -33,7 +33,7 @@ If you have raw data from a consumer genotyping service instead of whole genome 
 ### AncestryDNA
 1. Go to **Settings > DNA Membership Details**
 2. Click **Download DNA Data**
-3. You get a `.txt` file (tab-separated, ~15 MB zipped)
+3. You get a `.txt` file (tab-separated, ~15 MB zipped). Its layout differs from 23andMe's: a column header row, **five** columns (`rsid chromosome position allele1 allele2`) and chromosome **numbers** for the sex chromosomes and the mitochondrion (23 = X, 24 = Y, 25 = the X pseudoautosomal regions, 26 = MT). A no-call is `0`.
 
 > **Important:** All three services use **GRCh37 (hg19)** coordinates. This pipeline requires **GRCh38**. The conversion steps below handle this.
 
@@ -76,13 +76,21 @@ wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
   "https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19ToHg38.over.chain.gz"
 ```
 
-> **GRCh38 reference required:** The liftover step (stage 3) needs `Homo_sapiens_assembly38.fasta` in `${GENOME_DIR}/reference/`. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.
+> **GRCh38 reference required:** The liftover step (stage 3) needs `Homo_sapiens_assembly38.fasta` in `${GENOME_DIR}/reference/` and its sequence dictionary `Homo_sapiens_assembly38.dict`, which Picard LiftoverVcf reads. `setup.sh` creates both; `chip-to-vcf.sh` checks for them before it converts anything. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.
 
 ### Conversion Workflow
 
-All three vendor formats need to be converted to a tab-separated file with columns: `rsID  chromosome  position  genotype` (23andMe/AncestryDNA are already in this format). Then `bcftools convert --tsv2vcf` creates a proper VCF by looking up each position's reference allele from the FASTA.
+All three vendor formats need to be converted to a tab-separated file with columns: `rsID  chromosome  position  genotype`, sorted by chromosome and position. 23andMe files are already in this layout; MyHeritage (CSV) and AncestryDNA (two allele columns, numeric chromosome codes) need a pre-step. Then `bcftools convert --tsv2vcf` creates a proper VCF by looking up each position's reference allele from the FASTA.
 
-A ready-to-use script is provided at `scripts/chip-to-vcf.sh`. You can also run the steps manually:
+A ready-to-use script is provided at `scripts/chip-to-vcf.sh`. It detects the format (or takes it as its second argument: `23andme`, `ancestrydna` or `myheritage`), runs the pre-step and writes the TSV to `raw/${SAMPLE}_tsv2vcf.tsv`, so your raw file is never changed:
+
+```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/chip-to-vcf.sh your_name            # auto-detect
+./scripts/chip-to-vcf.sh your_name ancestrydna
+```
+
+You can also run the steps manually:
 
 ```bash
 source versions.env   # from the repository root
@@ -91,17 +99,34 @@ SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"
 
-# --- Pre-step: Convert MyHeritage CSV to TSV ---
-# (Skip this for 23andMe/AncestryDNA — their files are already TSV)
-#
-# MyHeritage CSVs have quoted fields and a different header.
-# Strip comments, headers, and quotes, then rearrange to TSV.
+RAW="${GENOME_DIR}/${SAMPLE}/raw"
+TSV="${RAW}/${SAMPLE}_tsv2vcf.tsv"
 
-grep -v "^#" "${GENOME_DIR}/${SAMPLE}/raw/MyHeritage_raw_dna_data.csv" | \
+# --- Pre-step: one TSV of rsid, chromosome, position, genotype ---
+# 23andMe: drop the comment header.
+grep -v '^#' "${RAW}/${SAMPLE}_raw.txt" > "$TSV"
+
+# MyHeritage instead: quoted CSV fields and its own header.
+grep -v "^#" "${RAW}/MyHeritage_raw_dna_data.csv" | \
   grep -v "^RSID" | \
   sed 's/"//g' | \
   awk -F',' '{print $1"\t"$2"\t"$3"\t"$4}' \
-  > "${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt"
+  > "$TSV"
+
+# AncestryDNA instead: skip the header row, join the two allele columns,
+# map 23 and 25 to X, 24 to Y, 26 to MT, and a no-call (0) to "--".
+# A row without five columns or with an empty allele stops here with its line
+# number (a cut file); fix or re-download the file before you go on.
+tr -d '\r' < "${RAW}/${SAMPLE}_raw.txt" | awk -F'\t' -v OFS='\t' '/^#/ || NF == 0 || tolower($1) == "rsid" {next}
+  NF != 5 || $4 == "" || $5 == "" {printf "ERROR: line %d: want five columns with both alleles: %s\n", NR, $0 > "/dev/stderr"; exit 1}
+  {c = $2; if (c == "23" || c == "25") c = "X"; else if (c == "24") c = "Y"; else if (c == "26") c = "MT"
+   a = $4; b = $5; if (a == "0" || b == "0") {a = "-"; b = "-"}; print $1, c, $3, a b}' \
+  > "$TSV" || { echo "Stopped: fix the AncestryDNA file first."; rm -f "$TSV"; }
+
+# All formats: sort by chromosome, then position. bcftools writes rows in
+# input order, and the index needs each chromosome in one block (AncestryDNA
+# lists its X pseudoautosomal rows after Y).
+LC_ALL=C sort -t "$(printf '\t')" -k2,2 -k3,3n "$TSV" -o "$TSV"
 
 # --- Stage 1: Import genotypes + fix ref/alt (single step) ---
 #
@@ -115,7 +140,7 @@ grep -v "^#" "${GENOME_DIR}/${SAMPLE}/raw/MyHeritage_raw_dna_data.csv" | \
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
-  bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_raw.txt" \
+  bcftools convert --tsv2vcf "/genome/${SAMPLE}/raw/${SAMPLE}_tsv2vcf.tsv" \
     -f /genome/reference_hg19/human_g1k_v37.fasta \
     -s "${SAMPLE}" \
     -c ID,CHROM,POS,AA \
@@ -169,7 +194,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 > **X/Y/MT chromosomes:** All chromosomes are converted (MT is renamed to chrM to match GRCh38 convention). Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
 
-> **23andMe / AncestryDNA:** These are already tab-separated. Skip the MyHeritage CSV conversion pre-step and place your file directly at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`.
+> **23andMe / AncestryDNA:** Place your file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`. Both are tab-separated but not in the same layout: AncestryDNA needs its own pre-step above (two allele columns, numeric chromosome codes), which `chip-to-vcf.sh` runs for you. AncestryDNA reports two alleles on X, Y and MT, so its genotypes there are diploid; 23andMe reports one allele there for a male.
 
 ### Optional: Imputation
 
