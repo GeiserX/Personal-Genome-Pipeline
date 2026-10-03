@@ -60,7 +60,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 
 - **PharmCAT**: diff the diplotype table on the HG002 fixture between the old and the new image, and run the CPIC parser tests on a `report.json` from the new version.
 - **VEP major**: move `VEP_CACHE_RELEASE` to the new major in the same PR, download the new cache (about 26 GB) and rerun step 13. CI cannot run the offline cache.
-- **PCGR/CPSR**: move `PCGR_DATA_BUNDLE` and `PCGR_VEP_CACHE_RELEASE` with the image, and rerun step 17 on a sample with an earlier result. CI does not run CPSR; the image test only checks that `cpsr --help` still lists every flag step 17 passes.
+- **PCGR/CPSR**: move `PCGR_DATA_BUNDLE` and `PCGR_VEP_CACHE_RELEASE` with the image, and rerun step 17 on a sample with an earlier result. CI does not run CPSR on a sample. The image test checks that `cpsr --help` still lists every flag step 17 passes, that `cpsr --version` names the release line of the image tag and the `pcgrr` R package its full release, and runs the bundled VEP with `--database` on 50 variants.
 - **Python**: resolve `scripts/cyrius-constraints.txt` again in the new image, as its header says, and rerun step 21 on a test BAM.
 - **Nextflow**: run the stub and E2E jobs on the new version, then update the validated version in `nextflow.config` and the prose in [Nextflow Execution](nextflow.md) and [Lessons Learned](lessons-learned.md).
 - **pypgx, when the hold ends**: check out the matching pypgx-bundle tag and compare the gene calls on the fixture.

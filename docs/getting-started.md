@@ -181,7 +181,7 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38.fasta \
     --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,stranger,pypgx,ancestry' \
     --vep_cache /path/to/vep_cache \
     --pcgr_data /path/to/pcgr_data \
-    --vep_cache_cpsr /path/to/vep_cache_113 \
+    --vep_cache_cpsr /path/to/vep_cache_115 \
     --clinvar /path/to/clinvar/clinvar_pathogenic_chr.vcf.gz \
     --clinvar_index /path/to/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi \
     --expansion_catalog /path/to/variant_catalog.json \
