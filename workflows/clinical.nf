@@ -12,6 +12,7 @@
 
 include { CPSR               } from '../modules/local/cpsr/main'
 include { ROH                } from '../modules/local/roh/main'
+include { PRS_SCORE_SITES    } from '../modules/local/prs/main'
 include { PRS                } from '../modules/local/prs/main'
 include { ANCESTRY           } from '../modules/local/ancestry/main'
 include { MITO_EXTRACT_CHRM  } from '../modules/local/mito_haplogroup/main'
@@ -25,6 +26,9 @@ workflow CLINICAL {
     ch_vep_cache_cpsr   // channel: path — VEP cache for CPSR (PCGR_VEP_CACHE_RELEASE, 115)
     ch_pgs_scoring      // channel: path — PGS Catalog scoring files directory
     ch_ancestry_ref     // channel: path — ancestry reference panel
+    ch_gvcf             // channel: [meta, gvcf, gvcf_index] — DEEPVARIANT's, for the samples it called
+    ch_reference        // channel: val(path) — reference FASTA (gVCF expansion)
+    ch_reference_fai    // channel: val(path) — reference .fai
 
     main:
     ch_versions = Channel.empty()
@@ -63,9 +67,29 @@ workflow CLINICAL {
         if (!params.pgs_scoring) {
             log.warn "prs skipped: --pgs_scoring is not set."
         } else {
-            PRS(ch_vcf, ch_pgs_scoring)
+            // With a gVCF the score positions are genotyped from it, so a
+            // site where the sample matches the reference counts as 0/0.
+            ch_prs_input = ch_vcf
+                .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+                .join(ch_gvcf.map { meta, gvcf, gidx -> [meta.id, gvcf, gidx] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .branch { row ->
+                    gvcf: row[4] != null
+                    vcf:  true
+                }
+            PRS_SCORE_SITES(
+                ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5]] },
+                ch_pgs_scoring,
+                ch_reference,
+                ch_reference_fai
+            )
+            PRS(
+                PRS_SCORE_SITES.out.vcf.map { meta, sites -> [meta, sites, [], 'gvcf'] }
+                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] }),
+                ch_pgs_scoring
+            )
             ch_prs_scores = PRS.out.scores
-            ch_versions   = ch_versions.mix(PRS.out.versions)
+            ch_versions   = ch_versions.mix(PRS_SCORE_SITES.out.versions, PRS.out.versions)
         }
     }
 

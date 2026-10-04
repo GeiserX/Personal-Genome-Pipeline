@@ -6,6 +6,14 @@
     1. Preprocess VCF (normalize, filter to PGx positions)
     2. Run PharmCAT (star allele calling + drug recommendation reports)
 
+    PharmCAT reads a PGx position missing from its input as "not covered",
+    and a variants-only VCF lists only where the sample differs from the
+    reference. When the sample has a gVCF (DEEPVARIANT wrote one), step 1
+    first expands its reference blocks over PharmCAT's gene regions into a
+    plain VCF, as scripts/07-pharmacogenomics.sh does: a covered position
+    becomes a 0/0 call, an uncovered one (./.) stays missing. The expanded
+    file is named without .g.vcf, which PharmCAT refuses.
+
     Equivalent to: scripts/07-pharmacogenomics.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -15,7 +23,7 @@ process PHARMCAT_PREPROCESS {
     label 'process_low'
 
     input:
-    tuple val(meta), path(vcf), path(vcf_index)
+    tuple val(meta), path(vcf), path(vcf_index), path(gvcf), path(gvcf_index)  // gVCF pair or []
     path(reference)
     path(reference_fai)  // staged beside the FASTA, so no task builds its own
 
@@ -27,9 +35,18 @@ process PHARMCAT_PREPROCESS {
     task.ext.when == null || task.ext.when
 
     script:
+    def pgx_input = gvcf ? "${meta.id}.pgx_regions.vcf.gz" : "${vcf}"
+    def expand = gvcf ? """
+    echo "Input: ${gvcf} (reference blocks expanded over PharmCAT's gene regions)"
+    bcftools convert --gvcf2vcf -f ${reference} -R /pharmcat/pharmcat_regions.bed -Ou ${gvcf} \\
+        | bcftools view --trim-alt-alleles -i 'GT!="mis"' -Oz -o ${meta.id}.pgx_regions.vcf.gz --write-index=tbi
+    """ : """
+    echo "Input: ${vcf} (no gVCF: PGx positions where the sample matches the reference read as missing)"
     """
+    """
+    ${expand}
     python3 /pharmcat/pharmcat_vcf_preprocessor \\
-        -vcf ${vcf} \\
+        -vcf ${pgx_input} \\
         -refFna ${reference} \\
         -o ./ \\
         -bf ${meta.id}

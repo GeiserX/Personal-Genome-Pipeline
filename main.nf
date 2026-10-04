@@ -385,7 +385,8 @@ workflow {
         ch_clinvar,
         ch_clinvar_index,
         ch_bam,
-        ch_pypgx_bundle
+        ch_pypgx_bundle,
+        UPSTREAM.out.gvcf
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -419,7 +420,10 @@ workflow {
         ch_pcgr_data,
         ch_vep_cache_cpsr,
         ch_pgs_scoring,
-        ch_ancestry_ref
+        ch_ancestry_ref,
+        UPSTREAM.out.gvcf,
+        ch_reference,
+        ch_reference_fai
     )
 
     // ═══════════════════════════════════════════════════════════════════
