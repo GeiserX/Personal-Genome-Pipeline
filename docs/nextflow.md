@@ -42,7 +42,7 @@ nextflow run main.nf \
 #    --tools '...,expansion_hunter'            + --expansion_catalog (and a sex column)
 #    --tools '...,annotsv'                     + --annotsv_annotations
 #    --tools '...,cnvpytor'                    + --cnvpytor_resources
-#    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly call -x)
+#    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly sr -x)
 #    --tools '...,manta'                       (optional --manta_call_regions <regions.bed.gz>, its .tbi beside it)
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
 #    TelomereHunter uses its own hg19 bands and the run logs a warning
@@ -245,8 +245,8 @@ Several tools require large reference databases that are **not automatically dow
 | Parameter | Required by | Size |
 |-----------|------------|------|
 | `--vep_cache` | VEP annotation | ~28 GB download (release 116) |
-| `--pcgr_data` | CPSR cancer predisposition | ~5 GB bundle (20250314) |
-| `--vep_cache_cpsr` | CPSR | ~25 GB download (release 113) |
+| `--pcgr_data` | CPSR cancer predisposition | ~7 GB bundle (20260620) |
+| `--vep_cache_cpsr` | CPSR | ~24 GB download (release 115) |
 | `--pypgx_bundle` | PyPGx star allele calling | ~370 MB |
 | `--annotsv_annotations` | AnnotSV SV classification | ~5.3 GB download |
 | `--cadd_snv`, `--spliceai_snv`, etc. | vcfanno score annotation | ~100 GB total |
@@ -290,7 +290,7 @@ With `-profile docker` every container runs with `--network none` (`process.cont
 
 ### Cyrius runtime installation
 
-The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** (the docker profile exempts `CYRIUS` from `--network none` for this) and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself is pinned here: its dependencies (pysam, numpy, scipy, statsmodels) and the `PYTHON_IMAGE` base tag are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
+The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** (the docker profile exempts `CYRIUS` from `--network none` for this) and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself and the `PYTHON_IMAGE` base (a patch tag pinned to its digest) are pinned here: its dependencies (pysam, numpy, scipy, statsmodels) are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
 
 ### CI validation scope
 

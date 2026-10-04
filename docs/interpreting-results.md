@@ -6,7 +6,7 @@ You've run the pipeline. Now you have directories full of VCFs, TSVs, and HTML r
 
 Decide what you want to know before you open the reports. A default run looks further than most people expect:
 
-- **Secondary findings are on by default.** Step 17 runs CPSR with `--secondary_findings`. Besides the cancer genes, CPSR then reports pathogenic and likely pathogenic variants in the 81 genes of the ACMG SF v3.2 list, the version CPSR 2.2.5 carries. That list includes genes for inherited heart conditions that can cause sudden death (cardiomyopathies, arrhythmias), familial hypercholesterolaemia and some metabolic diseases. A finding there can be serious and actionable even though you never asked about it.
+- **Secondary findings are on by default.** Step 17 runs CPSR with `--secondary_findings`. Besides the cancer genes, CPSR then reports pathogenic and likely pathogenic variants in the genes of the ACMG SF list of secondary findings. That list includes genes for inherited heart conditions that can cause sudden death (cardiomyopathies, arrhythmias), familial hypercholesterolaemia and some metabolic diseases. A finding there can be serious and actionable even though you never asked about it.
 - **APOE and Alzheimer's disease.** Step 25 computes a score for late-onset Alzheimer's disease (PGS000334). Its two largest weights are the APOE variants rs429358 and rs7412, which define the ε2, ε3 and ε4 alleles, and the summary report lists that score with the others. The ε4 allele raises the risk; it does not say who will get the disease. Many people choose not to learn their APOE status. Decide before you open the step 25 output.
 - **Your relatives.** You share half your DNA with each parent, child and sibling. A pathogenic variant in a dominant gene means each of them has a 50% chance of carrying it too, so a result about you is also information about them. Comparing two genomes (see [multi-sample](multi-sample.md)) can also reveal unexpected family relationships.
 - **Insurance.** The rules depend on where you live. In the United States, GINA stops health insurers and employers from using genetic information, but it does not cover life, disability or long-term-care insurance. Elsewhere the rules differ. Some insurers ask whether you have had a genetic test, and a result entered in your medical record can count. Check what applies to you before you act on a finding.
@@ -112,7 +112,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 
 ### 3. CPSR Report (Step 17)
 
-**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). Step 17 also turns on CPSR's secondary findings: the ACMG SF v3.2 list of 81 genes, which includes cardiac and metabolic genes outside cancer (see [Before you look](#before-you-look-what-the-pipeline-can-tell-you)).
+**What it tells you:** Cancer predisposition screening using CPSR's curated cancer gene panels (panel 0 covers 500+ genes). Step 17 also turns on CPSR's secondary findings: the ACMG SF list, which includes cardiac and metabolic genes outside cancer (see [Before you look](#before-you-look-what-the-pipeline-can-tell-you)).
 
 **Where to look:** `${SAMPLE}/cpsr/` — open the HTML report in a browser.
 

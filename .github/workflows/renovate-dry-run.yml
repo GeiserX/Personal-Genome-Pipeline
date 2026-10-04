@@ -171,7 +171,8 @@ jobs:
           def env_images(text):
               out = []
               for m in re.finditer(r'^[A-Z0-9_]+_IMAGE="([^"]*)"', text, re.M):
-                  out.append(re.split(r"@|:(?=[^:/]*$)", m.group(1), maxsplit=1)[0])
+                  # name:tag@sha256:..., name@sha256:... or name:tag -> name
+                  out.append(re.sub(r":[^:/]*$", "", m.group(1).split("@", 1)[0]))
               return out
 
           def key(dep):

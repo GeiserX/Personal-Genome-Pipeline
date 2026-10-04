@@ -222,13 +222,16 @@ def ver(text):
 # Container registries (the v2 API every registry speaks)
 
 def split_image(image):
-    """'quay.io/biocontainers/x:1--h_0' -> ('quay.io', 'biocontainers/x', '1--h_0', None)."""
+    """'quay.io/biocontainers/x:1--h_0' -> ('quay.io', 'biocontainers/x', '1--h_0', None);
+    'python:3.11.17@sha256:ab' -> ('docker.io', 'library/python', '3.11.17', 'sha256:ab'): a
+    tag pinned to a digest keeps its tag; 'a/b@sha256:ab' (digest only) has tag None."""
     digest = None
     if "@" in image:
         image, digest = image.split("@", 1)
-        tag = None
+    if ":" in image.split("/")[-1]:
+        image, _, tag = image.rpartition(":")
     else:
-        image, _, tag = image.rpartition(":") if ":" in image.split("/")[-1] else (image, "", "latest")
+        tag = None if digest else "latest"
     parts = image.split("/")
     if len(parts) > 1 and ("." in parts[0] or ":" in parts[0]):
         host, repo = parts[0], "/".join(parts[1:])
@@ -487,8 +490,8 @@ def images(report, pins, notes):
     for var in sorted(v for v in pins if v.endswith("_IMAGE")):
         image = pins[var]
         host, repo, tag, digest = split_image(image)
-        if digest:
-            continue
+        if digest and not tag:
+            continue  # digest only: the digests section reports it
         try:
             tags = list_tags(host, repo)
             if tag not in tags:
@@ -514,20 +517,27 @@ def images(report, pins, notes):
 
 
 def digests(report, pins):
+    """A tag pinned to a digest (name:tag@sha256:...) is compared with what its
+    own tag points at now; a digest-only pin with the publisher's `latest`."""
     for var in sorted(v for v in pins if v.endswith("_IMAGE")):
         host, repo, tag, digest = split_image(pins[var])
         if not digest:
             continue
         try:
-            latest = manifest_digest(host, repo, "latest")
-            versioned = [t for t in list_tags(host, repo) if re.search(r"\d", t)]
+            now = manifest_digest(host, repo, tag or "latest")
+            versioned = [] if tag else [t for t in list_tags(host, repo) if re.search(r"\d", t)]
         except LOOKUP_ERRORS as e:
             report.error(var, e)
             continue
-        state = "same as publisher's latest" if latest == digest else "publisher's latest moved"
+        if tag:
+            state = (f"`{tag}` still points at the pinned digest" if now == digest else
+                     f"`{tag}` was rebuilt: move the digest after the image test passes on it")
+        else:
+            state = "same as publisher's latest" if now == digest else "publisher's latest moved"
         if versioned:
             state += "; versioned tags now exist: " + ", ".join(sorted(versioned, key=ver)[-3:])
-        report.digest_rows.append((var, f"{repo}@{digest[:19]}", latest[:19], state))
+        pinned = f"{repo}:{tag}@{digest[:19]}" if tag else f"{repo}@{digest[:19]}"
+        report.digest_rows.append((var, pinned, f"{tag or 'latest'}: {now[:19]}", state))
 
 
 def build(pins, notes, versions_path, setup_path, sections):
@@ -586,7 +596,8 @@ def render(report, sections):
         out += [f"Current: {len(report.current)} images ({', '.join(report.current) or 'none'}).", ""]
     if "digests" in sections:
         out += ["### Images pinned by digest", "",
-                "| Variable | Pinned | Publisher's `latest` | State |", "|---|---|---|---|"]
+                "| Variable | Pinned | What the tag points at now (`latest` for a digest-only pin) | State |",
+                "|---|---|---|---|"]
         out += [f"| {v} | `{p}` | `{d}` | {esc(s)} |" for v, p, d, s in report.digest_rows]
         out.append("")
     if report.errors:
@@ -758,7 +769,38 @@ def self_test():
     check(split_image("python:3.11")[:3] == ("docker.io", "library/python", "3.11"), "Docker Hub library image")
     check(split_image("quay.io/biocontainers/t1k:1.0.9--h5ca1c30_0")[:3]
           == ("quay.io", "biocontainers/t1k", "1.0.9--h5ca1c30_0"), "quay image")
-    check(split_image("a/b@sha256:00")[3] == "sha256:00", "digest pin")
+    check(split_image("a/b@sha256:00")[2:] == (None, "sha256:00"), "digest-only pin has no tag")
+    check(split_image("python:3.11.17@sha256:ab") == ("docker.io", "library/python", "3.11.17", "sha256:ab"),
+          "a tag pinned to a digest keeps its tag")
+    rt = Report()
+    _orig = globals()["list_tags"]
+    globals()["list_tags"] = lambda host, repo: ["3.11.17", "3.11.18", "3.14.0"]
+    try:
+        images(rt, {"PYTHON_IMAGE": "python:3.11.17@sha256:ab"}, {})
+    finally:
+        globals()["list_tags"] = _orig
+    check([(r[0], r[1], r[2]) for r in rt.image_rows] == [("PYTHON_IMAGE", "3.11.17", "3.14.0")],
+          "a tag pinned to a digest is still checked for newer tags")
+    asked = []
+
+    def fake_digest(host, repo, ref):
+        asked.append(ref)
+        return {"latest": "sha256:" + "1" * 64, "3.11.17": "sha256:" + "2" * 64}.get(ref, "sha256:" + "3" * 64)
+    _orig_d, _orig_t = globals()["manifest_digest"], globals()["list_tags"]
+    globals()["manifest_digest"], globals()["list_tags"] = fake_digest, (lambda host, repo: ["latest"])
+    try:
+        rd = Report()
+        digests(rd, {"PYTHON_IMAGE": "python:3.11.17@sha256:" + "2" * 64,
+                     "OLD_IMAGE": "a/b@sha256:" + "1" * 64})
+        rm = Report()
+        digests(rm, {"PYTHON_IMAGE": "python:3.11.17@sha256:" + "4" * 64})
+    finally:
+        globals()["manifest_digest"], globals()["list_tags"] = _orig_d, _orig_t
+    states = {r[0]: r[3] for r in rd.digest_rows}
+    check("3.11.17" in asked and "still points at the pinned digest" in states.get("PYTHON_IMAGE", ""),
+          "a tag pinned to a digest is compared with its own tag, not with latest")
+    check(states.get("OLD_IMAGE") == "same as publisher's latest", "a digest-only pin is compared with latest")
+    check(rm.digest_rows and "was rebuilt" in rm.digest_rows[0][3], "a rebuilt tag is reported")
     sent = []
 
     def fake_request(url, headers=None, **kw):

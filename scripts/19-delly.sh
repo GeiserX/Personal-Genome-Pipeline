@@ -44,9 +44,10 @@ else
 fi
 
 echo "[1/3] Calling structural variants..."
+# Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`.
 run_in --cpus 4 --memory 8g \
   "$DELLY_IMAGE" \
-  delly call \
+  delly sr \
     -g "${REF_FASTA_C}" \
     ${EXCL_ARGS[@]+"${EXCL_ARGS[@]}"} \
     -o "/genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf" \

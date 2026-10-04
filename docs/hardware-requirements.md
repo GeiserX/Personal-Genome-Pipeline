@@ -36,7 +36,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 ### Shared Reference Data (One-Time)
 
-One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes); the download sizes were read from each server on 2026-10-02. Each total is the sum of the rows above it; the `setup.sh` line is the sum of the rows it names. [Reference setup](00-reference-setup.md) has the commands, under a heading per database with the same size.
+One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes); the download sizes were read from each server on 2026-10-02 (the two step 17 rows on 2026-10-03). Each total is the sum of the rows above it; the `setup.sh` line is the sum of the rows it names. [Reference setup](00-reference-setup.md) has the commands, under a heading per database with the same size.
 
 **Default run** (`setup.sh` downloads the first three rows and the Docker images; the VEP caches and the PCGR bundle are for steps 13 and 17, which a default run skips when they are missing):
 
@@ -46,10 +46,10 @@ One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes)
 | ClinVar VCF + chr-renamed and pathogenic-only copies | ~0.2 GB | ~0.4 GB | step 6 |
 | AnnotSV annotations | ~5 GB | ~20 GB | step 5 |
 | VEP cache, release 116 | ~26 GB | ~30 GB | step 13 |
-| PCGR/CPSR ref data bundle (20250314) | ~5 GB | ~5 GB | step 17 |
-| VEP cache, release 113 | ~23 GB | ~27 GB | step 17 (CPSR's own VEP) |
+| PCGR/CPSR ref data bundle (20260620) | ~7 GB | ~7 GB | step 17 |
+| VEP cache, release 115 | ~24 GB | ~28 GB | step 17 (CPSR's own VEP) |
 | Docker images | ~10-15 GB | ~10-15 GB | every step |
-| **Total, default run** | **~72-77 GB** | **~95-100 GB** | |
+| **Total, default run** | **~75-80 GB** | **~98-103 GB** | |
 | Of which `setup.sh` downloads (first three rows + Docker images) | ~18-23 GB | ~33-38 GB | |
 
 **Optional** (only for the step named):
@@ -80,8 +80,8 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 
 | Scenario | Download Size |
 |---|---|
-| Default run | ~72-77 GB |
-| Default run + annotation databases | ~250 GB |
+| Default run | ~75-80 GB |
+| Default run + annotation databases | ~250-255 GB |
 
 ### Total Disk Requirements
 

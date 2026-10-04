@@ -70,8 +70,10 @@ at the planted deletion), `vcf_field`, `tsv_cell`, `tsv_count`, `csv_cell`,
 
 - VEP runs with `--database` on 50 variants. The offline cache (about 26 GB)
   does not fit a runner.
-- PCGR: the CPSR report needs the PCGR data bundle and a VEP 113 cache. The row
-  runs what the image carries: `cpsr --version`, its VEP on 50 variants with
-  `--database`, and the R package that writes the report.
+- PCGR: the CPSR report needs the PCGR data bundle and the VEP cache of
+  `PCGR_VEP_CACHE_RELEASE` (about 31 GB together). The row runs what the image
+  carries: `cpsr --version`, its VEP on 50 variants with `--database`, the R
+  package that writes the report, and a check that `cpsr --help` lists every
+  flag step 17 passes.
 - AnnotSV annotates only in the monthly and dispatched runs (5.3 GB of data).
   A pull request that changes it gets a warning to start the workflow by hand.

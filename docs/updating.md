@@ -52,17 +52,15 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 | Pin | Rule | Why | When it ends |
 |---|---|---|---|
 | pypgx 0.26.0 | only `0.26.0--` tags | 0.27.0 pulled pandas 3.0 and broke every gene while its smoke test still passed | upstream releases the pandas fix and a pypgx-bundle tag of the same version exists; move `PYPGX_BUNDLE_VERSION` with it |
-| Delly 2.1.0 | disabled | 2.3.0 renamed `delly call` to `delly sr`; 2.6.0 has the pin's build hash, so a bump would look safe and break step 19 | the bump that changes `scripts/19-delly.sh` and the Delly module removes the rule |
 | plink2 2.00a5.10 | disabled | the only versioned tag `pgscatalog/plink2` ships, and the build pgsc_calc uses | a newer tag from that publisher |
 | Manta, Strelka2, duphold, Octopus, GRIDSS | disabled | legacy: archived or quiet upstream | bump by hand after a run on the fixture |
-| TelomereHunter, haplogrep3 | disabled | personal-account images pinned by digest, with no versioned tags | they move to biocontainers, and the rule goes with them |
 | fastp 1.3.6, Sniffles 2.8.0 | none needed | 1.3.7 and 2.8.1 have no biocontainer tag in the normal shape yet | Renovate proposes them once the tag exists |
 
 ## What to check by hand
 
 - **PharmCAT**: diff the diplotype table on the HG002 fixture between the old and the new image, and run the CPIC parser tests on a `report.json` from the new version.
 - **VEP major**: move `VEP_CACHE_RELEASE` to the new major in the same PR, download the new cache (about 26 GB) and rerun step 13. CI cannot run the offline cache.
-- **PCGR/CPSR**: move `PCGR_DATA_BUNDLE` and `PCGR_VEP_CACHE_RELEASE` with the image, and rerun step 17 on a sample with an earlier result. CI does not run CPSR.
+- **PCGR/CPSR**: move `PCGR_DATA_BUNDLE` and `PCGR_VEP_CACHE_RELEASE` with the image, and rerun step 17 on a sample with an earlier result. CI does not run CPSR on a sample. The image test checks that `cpsr --help` still lists every flag step 17 passes, that `cpsr --version` names the release line of the image tag and the `pcgrr` R package its full release, and runs the bundled VEP with `--database` on 50 variants.
 - **Python**: resolve `scripts/cyrius-constraints.txt` again in the new image, as its header says, and rerun step 21 on a test BAM.
 - **Nextflow**: run the stub and E2E jobs on the new version, then update the validated version in `nextflow.config` and the prose in [Nextflow Execution](nextflow.md) and [Lessons Learned](lessons-learned.md).
 - **pypgx, when the hold ends**: check out the matching pypgx-bundle tag and compare the gene calls on the fixture.

@@ -3,12 +3,13 @@
 and this test import or run the same file; there is no copy to keep in sync).
 
 Checks:
-  1. the real PharmCAT 3.2.0 report.json of the HG002 fixture
-     (tests/fixtures/pharmcat/report-3.2.0.json) parses to genes; a gene PharmCAT
-     lists several possible diplotypes for, with different phenotypes (CYP2C19,
-     528 of them), is 'ambiguous' and never read as its first diplotype; a
-     report that parses to zero genes makes `pgx_parse.py cpic-report` exit 1
-     with a PARSING FAILED report, never an all-clear;
+  1. the real PharmCAT report.json of the HG002 fixture, from each PharmCAT
+     release in REAL_REPORTS (tests/fixtures/pharmcat/report-<version>.json),
+     parses to genes; a gene PharmCAT lists several possible diplotypes for,
+     with different phenotypes (CYP2C19, 528 of them in 3.2.0), is 'ambiguous'
+     and never read as its first diplotype; a report that parses to zero genes
+     makes `pgx_parse.py cpic-report` exit 1 with a PARSING FAILED report,
+     never an all-clear;
   2. on PharmCAT's own example report (pharmcat-docs-example.json, 10 genes
      with a non-normal phenotype) every such gene gets a drug list, with the
      recommendation for its own diplotype; synthetic genes check the fallbacks:
@@ -34,7 +35,14 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
 import pgx_parse  # noqa: E402
 
-FIXTURE = os.path.join(REPO, "tests", "fixtures", "pharmcat", "report-3.2.0.json")
+FIXTURES = os.path.join(REPO, "tests", "fixtures", "pharmcat")
+# One real HG002 report per PharmCAT release the parser is tested on: the
+# version, and the genes it lists more than one possible diplotype for, with
+# how many.
+REAL_REPORTS = (
+    ("3.2.0", {"CYP2C19": 528, "CYP2B6": 4}),
+    ("3.4.0", {"CYP2C19": 528, "CYP2B6": 4}),
+)
 EXAMPLE = os.path.join(REPO, "tests", "fixtures", "pharmcat", "pharmcat-docs-example.json")
 FAILS = 0
 
@@ -91,32 +99,40 @@ def block(rec, gene):
 def main():
     work = tempfile.mkdtemp()
     try:
-        # 1. the real report
-        with open(FIXTURE) as f:
-            real = json.load(f)
-        status, calls = pgx_parse.parse_genes(real)
-        print(f"fixture: PharmCAT {real.get('pharmcatVersion')}, {len(calls)} genes: "
-              + ", ".join(f"{c.gene} {c.diplotype} ({c.status})" for c in calls))
-        check("the HG002 report parses (status OK)", status == "OK", status)
-        check("the HG002 report yields genes", len(calls) >= 10, len(calls))
-        check("the HG002 report calls at least one gene", any(c.called for c in calls))
-        rc, rec, rows, _ = run_report(work, "HG002", real)
-        check("cpic-report on the HG002 report exits 0", rc == 0, rc)
-        check("one phenotypes row per gene, with a Status", len(rows) == len(calls) and all(len(r) == 4 for r in rows), rows[:3])
-        by = {c.gene: c for c in calls}
-        c19 = by.get("CYP2C19")
-        check("HG002 CYP2C19: 528 possible diplotypes, status ambiguous",
-              c19 is not None and len(c19.labels) == 528 and c19.status == "ambiguous", c19 and (len(c19.labels), c19.status))
-        check("HG002 CYP2C19: not reported as its first diplotype's Normal Metabolizer",
-              c19 is not None and c19.phenotype.startswith("ambiguous: ") and "(1 of 528 possible)" in c19.diplotype,
-              c19 and (c19.diplotype, c19.phenotype))
-        check("HG002 CYP2B6 is ambiguous too", by.get("CYP2B6") is not None and by["CYP2B6"].status == "ambiguous")
-        check("the recommendations list the ambiguous genes in their own section",
-              "Genes With More Than One Possible Result:" in rec and "  CYP2C19 -- 528 possible diplotypes" in rec, rec[:2000])
-        check("the phenotypes table says ambiguous for CYP2C19",
-              any(r[0] == "CYP2C19" and r[3] == "ambiguous" for r in rows), rows)
-        guidance = pgx_parse.drug_guidance(real)
-        check("the report's drugs section is read", sum(len(v) for v in guidance.values()) > 0)
+        # 1. the real reports, one per PharmCAT release
+        for version, ambiguous in REAL_REPORTS:
+            with open(os.path.join(FIXTURES, f"report-{version}.json")) as f:
+                real = json.load(f)
+            tag = f"{version}:"
+            status, calls = pgx_parse.parse_genes(real)
+            print(f"fixture: PharmCAT {real.get('pharmcatVersion')}, {len(calls)} genes: "
+                  + ", ".join(f"{c.gene} {c.diplotype} ({c.status})" for c in calls))
+            check(f"{tag} the report is PharmCAT {version}", real.get("pharmcatVersion") == version, real.get("pharmcatVersion"))
+            check(f"{tag} the HG002 report parses (status OK)", status == "OK", status)
+            check(f"{tag} the HG002 report yields genes", len(calls) >= 10, len(calls))
+            check(f"{tag} the HG002 report calls at least one gene", any(c.called for c in calls))
+            rc, rec, rows, _ = run_report(work, f"HG002_{version}", real)
+            check(f"{tag} cpic-report on the HG002 report exits 0", rc == 0, rc)
+            check(f"{tag} one phenotypes row per gene, with a Status",
+                  len(rows) == len(calls) and all(len(r) == 4 for r in rows), rows[:3])
+            by = {c.gene: c for c in calls}
+            check(f"{tag} the genes with more than one possible diplotype are {sorted(ambiguous)}",
+                  sorted(c.gene for c in calls if len(c.labels) > 1) == sorted(ambiguous),
+                  [(c.gene, len(c.labels)) for c in calls if len(c.labels) > 1])
+            for gene, n in sorted(ambiguous.items()):
+                g = by.get(gene)
+                check(f"{tag} HG002 {gene}: {n} possible diplotypes, status ambiguous",
+                      g is not None and len(g.labels) == n and g.status == "ambiguous", g and (len(g.labels), g.status))
+                check(f"{tag} HG002 {gene}: not reported as its first diplotype's phenotype",
+                      g is not None and g.phenotype.startswith("ambiguous: ") and f"(1 of {n} possible)" in g.diplotype,
+                      g and (g.diplotype, g.phenotype))
+                check(f"{tag} the recommendations list {gene} with the ambiguous genes",
+                      "Genes With More Than One Possible Result:" in rec and f"  {gene} -- {n} possible diplotypes" in rec,
+                      rec[:2000])
+                check(f"{tag} the phenotypes table says ambiguous for {gene}",
+                      any(r[0] == gene and r[3] == "ambiguous" for r in rows), rows)
+            guidance = pgx_parse.drug_guidance(real)
+            check(f"{tag} the report's drugs section is read", sum(len(v) for v in guidance.values()) > 0)
 
         with open(EXAMPLE) as f:
             example = json.load(f)

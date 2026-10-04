@@ -14,7 +14,7 @@ Mitochondrial haplogroup reveals deep maternal ancestry and can identify mtDNA d
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
-> Pinned by immutable digest: the publisher offers no versioned tags (`genepi/haplogrep3` was removed from Docker Hub).
+> The image is the Bioconda build of haplogrep3 3.2.2. It classifies without a network: the image test runs it with `--network none`. It replaced a digest-pinned build of 3.2.1 from a personal Docker Hub account; on the image test's chrM calls of the HG002 fixture both give H5a7 with quality 1.0000 and the same found and remaining polymorphisms.
 
 ## Command
 ```bash
@@ -27,8 +27,8 @@ docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf "${BCFTOOLS
   bcftools view -r chrM /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz
 
 # Step 2: Run haplogrep3
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE} "${HAPLOGREP3_IMAGE}" \
-  classify \
+docker run --rm --network none -v ${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE} "${HAPLOGREP3_IMAGE}" \
+  haplogrep3 classify \
     --tree phylotree-fu-rcrs@1.2 \
     --input /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz \
     --output /genome/${SAMPLE}/mito/${SAMPLE}_haplogroup.txt \

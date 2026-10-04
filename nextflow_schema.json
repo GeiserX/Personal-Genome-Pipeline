@@ -93,7 +93,7 @@
                 "vep_cache_cpsr": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP cache for CPSR (release 113, separate from the VEP step's release 116 cache).",
+                    "description": "VEP cache for CPSR (release 115, PCGR_VEP_CACHE_RELEASE in versions.env; separate from the VEP step's release 116 cache).",
                     "fa_icon": "fas fa-database"
                 },
                 "pcgr_data": {
@@ -238,7 +238,7 @@
                 "delly_exclude": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Optional Delly exclude map, passed as `delly call -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
+                    "description": "Optional Delly exclude map, passed as `delly sr -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
                     "fa_icon": "fas fa-file"
                 },
                 "manta_call_regions": {

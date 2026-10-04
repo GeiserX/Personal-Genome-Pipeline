@@ -76,13 +76,13 @@ docker_log_has "^run image=[^ ]*gridss.* -t ${THREADS:-8} " "GRIDSS did not get 
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 delly-no-map "${SCRIPTS}/19-delly.sh" sample1
 output_has delly-no-map "WARNING: Delly's exclude map is not installed"
-if awk '/^run / && /delly call/ && / -x / { found = 1 } END { exit !found }' "$FAKE_DOCKER_LOG"; then
+if awk '/^run / && /delly sr/ && / -x / { found = 1 } END { exit !found }' "$FAKE_DOCKER_LOG"; then
   fail "Delly got -x although no exclude map is installed"
 fi
 printf 'chr1\t0\t10000\ttelomere\n' > "${GENOME_DIR}/reference/delly_human.hg38.excl.tsv"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 delly "${SCRIPTS}/19-delly.sh" sample1
-docker_log_has '^run image=[^ ]*delly.* delly call .*-x /genome/reference/delly_human\.hg38\.excl\.tsv ' "Delly ran without its exclude map"
+docker_log_has '^run image=[^ ]*delly.* delly sr .*-x /genome/reference/delly_human\.hg38\.excl\.tsv ' "Delly ran without its exclude map"
 
 # --- duphold --------------------------------------------------------------------------
 mkdir -p "${GENOME_DIR}/sample1/manta/results/variants"

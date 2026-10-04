@@ -31,12 +31,15 @@ process TELOMERE_HUNTER {
     script:
     // Without -b TelomereHunter classifies reads by its own hg19 bands;
     // workflows/bam_analysis.nf warns when --cytoband is not set.
+    // --plotNone: the Bioconda build's plots fail (its R has no dplyr, and its
+    // PyPDF2 is written for Python 3); the summary does not need them.
     def band_arg = cytoband ? "-b ${cytoband}" : ''
     """
     telomerehunter \\
         -ibt ${bam} \\
         -o ./ \\
         -p ${meta.id} \\
+        --plotNone \\
         ${band_arg}
 
     cat <<-END_VERSIONS > versions.yml
