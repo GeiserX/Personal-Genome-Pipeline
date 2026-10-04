@@ -10,8 +10,11 @@ name: E2E
 #                  dispatch-only job could not run before this file is on
 #                  main) and on dispatch; it does nothing when the release
 #                  already exists and was built by the same script.
-#   e2e            runs every case in tests/e2e/ on that data set. Runs on
-#                  pull requests that touch the pipeline, monthly, on dispatch.
+#   e2e            runs every case in tests/e2e/ on that data set, then the
+#                  parity check: the bash single steps and the Nextflow
+#                  pipeline, both from the fixture's FASTQ, must agree
+#                  (scripts/ci/parity-diff.sh). Runs on pull requests that
+#                  touch the pipeline, monthly, on dispatch.
 #   settle-doubts  answers questions a code review could not answer without
 #                  running the tools. Not a gate: it prints a table.
 #
@@ -39,6 +42,7 @@ on:
       - 'tests/fixtures/VERSION'
       - 'main.nf'
       - 'nextflow.config'
+      - 'assets/**'
       - 'versions.env'
       - '.github/workflows/e2e.yml'
   schedule:
@@ -203,9 +207,21 @@ jobs:
           fi
 
       - name: Run the e2e cases
+        id: cases
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/e2e-run.sh
+
+      # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
+      # and the Nextflow pipeline on the same reads as sample HG002P. Runs
+      # after a failed case too, so a run shows every difference at once.
+      - name: Parity self-test (a planted difference in each item must be caught)
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        run: scripts/ci/parity-diff.sh --self-test "${E2E_WORK}/genome/HG002P" HG002P
+
+      - name: Parity of the bash scripts and the Nextflow pipeline
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        run: scripts/ci/parity-diff.sh "${E2E_WORK}/genome/HG002P" "${E2E_WORK}/genome/nf-fastq/HG002P" HG002P
 
       - name: Upload case logs
         if: always()
