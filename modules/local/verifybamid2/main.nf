@@ -21,7 +21,7 @@ process VERIFYBAMID2 {
     label 'process_low'
 
     publishDir { "${params.outdir}/${meta.id}/qc/verifybamid2" }, mode: params.publish_dir_mode,
-        pattern: "${meta.id}.{selfSM,Ancestry,log}"
+        pattern: "*.{selfSM,Ancestry,log}"
 
     input:
     tuple val(meta), path(bam), path(bai)

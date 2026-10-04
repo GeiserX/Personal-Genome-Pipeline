@@ -27,7 +27,7 @@ process SOMALIER {
     label 'process_low'
 
     publishDir { "${params.outdir}/${meta.id}/qc/somalier" }, mode: params.publish_dir_mode,
-        pattern: "${meta.id}.somalier"
+        pattern: "*.somalier"
 
     input:
     tuple val(meta), path(bam), path(bai)
