@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Step 33 (somalier, VerifyBamID2) on the fixture, with three controls:
+#   - setup.sh --sample-qc-data installs somalier's sites and VerifyBamID2's
+#     panel, each checked against its pinned sha256;
+#   - the clean HG002 BAM of case 20: FREEMIX stays below 0.03. Only 2 of
+#     somalier's chrX sites fall inside the slices, too few for a sex call, so
+#     the step says it could not check the sex and goes on;
+#   - sex: with sites at the slice's own chrX calls (case 21; HG002 is male,
+#     so somalier sees them homozygous), declared female stops the step,
+#     declared male passes, and SEX_CHECK=warn goes on;
+#   - contamination: reads of HG001, an unrelated GIAB sample streamed from
+#     GIAB's GRCh38 BAM, added to HG002's until they are about 10% of the mix:
+#     FREEMIX rises above 0.03, which warns and never stops the step.
+# Writes ${GENOME_DIR}/reference/somalier/sites_slice_chrX.vcf for case qc-2.
+. "$(dirname "$0")/lib.sh"
+
+G="$GENOME_DIR"
+REF="${G}/reference/GRCh38_no_alt_analysis_set.fasta"
+QC="${G}/${SAMPLE}/qc"
+# tval FILE KEY: the value of KEY in a step 33 table.
+tval() { awk -F'\t' -v k="$2" '$1 == k { print $2; exit }' "$1" 2>/dev/null; }
+# below A B / above A B: numeric comparisons that fail on an empty value.
+below() { [ -n "$1" ] && awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }'; }
+above() { [ -n "$1" ] && awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 > b + 0) }'; }
+
+# --- 1. setup.sh installs the data -----------------------------------------------------
+"${REPO}/scripts/setup.sh" --sample-qc-data "$G" > "${CASE_TMP}/setup.log" 2>&1
+check_eq "setup.sh --sample-qc-data exits 0" "$?" 0
+cat "${CASE_TMP}/setup.log"
+SITES="${G}/reference/somalier/sites.hg38.vcf.gz"
+PANEL="${G}/reference/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat"
+check_ge "somalier sites" "$(gzip -dc "$SITES" 2>/dev/null | grep -vc '^#' || true)" 17000
+for e in UD mu bed; do
+  check_eq "VerifyBamID2 panel .${e} lines" "$(wc -l < "${PANEL}.${e}" 2>/dev/null | tr -d ' ')" 100000
+done
+
+# --- 2. the clean sample -----------------------------------------------------------------
+run_step 33-sample-qc.sh "$SAMPLE"
+check_step_exit 33-sample-qc.sh
+T="${QC}/${SAMPLE}_sample_qc.tsv"
+cat "$T" 2>/dev/null
+check_eq "somalier reads the sample under its @RG SM" "$(tval "$T" somalier_id)" "$SAMPLE"
+check_ge "somalier sites genotyped on the slices" "$(tval "$T" sites_genotyped)" 60
+check_eq "no sex call from 2 chrX sites" "$(tval "$T" inferred_sex)" unknown
+check_eq "so the sex is not checked" "$(tval "$T" sex_check)" not_checked
+check "FREEMIX of the clean sample is below 0.03 ($(tval "$T" freemix))" below "$(tval "$T" freemix)" 0.03
+check_eq "contamination verdict" "$(tval "$T" contamination)" ok
+check_eq "VerifyBamID2's marker check was skipped (the slices hold fewer than 1,000 markers)" \
+  "$(tval "$T" verifybamid2_marker_check)" skipped
+check "the log says why it ran again" has 'Fewer than 1,000 panel markers have reads' "$(cat "$STEP_LOG")"
+
+# --- 3. sex, from sites at the slice's own chrX calls ----------------------------------------
+# HG002 is male: case 21 calls chrX outside the pseudoautosomal regions
+# haploid, and somalier finds those sites homozygous. Its rule: male when
+# heterozygous / homozygous-ALT chrX sites is below 0.05 over more than 10.
+XS="${G}/reference/somalier/sites_slice_chrX.vcf"
+bcf view -H -f PASS -v snps -r chrX:2781480-155701382 "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
+  | awk -F'\t' -v OFS='\t' '{ split($5, a, ","); print $1, $2, ".", $4, a[1], ".", "PASS", "AF=0.5" }' \
+  > "${CASE_TMP}/x_sites.tsv"
+check_ge "chrX SNVs of case 21 outside the PARs" "$(wc -l < "${CASE_TMP}/x_sites.tsv" | tr -d ' ')" 20
+python3 - "$SITES" "${CASE_TMP}/x_sites.tsv" "${REF}.fai" "$XS" <<'PY'
+import gzip, sys
+sites, extra, fai, out = sys.argv[1:]
+order = {l.split("\t")[0]: i for i, l in enumerate(open(fai))}
+head, recs = [], []
+for l in gzip.open(sites, "rt"):
+    if l.startswith("##"):
+        head.append(l)
+    elif l.startswith("#"):
+        cols = l
+    else:
+        recs.append(l.rstrip("\n").split("\t")[:8])
+seen = {(r[0], r[1]) for r in recs}
+recs += [r.rstrip("\n").split("\t") for r in open(extra) if tuple(r.split("\t")[:2]) not in seen]
+recs.sort(key=lambda r: (order.get(r[0], 1 << 30), int(r[1])))
+with open(out, "w") as f:
+    f.writelines(head)
+    f.write(cols)
+    f.writelines("\t".join(r) + "\n" for r in recs)
+print(len(recs), "sites")
+PY
+
+SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" female
+check "declared female: the step stops (exit ${STEP_RC})" test "$STEP_RC" -ne 0
+check "the message names both sexes" has 'SEX CHECK MISMATCH: declared female, somalier infers male' "$(cat "$STEP_LOG")"
+check "and how to go on" has 'Set SEX_CHECK=warn' "$(cat "$STEP_LOG")"
+cat "$T" 2>/dev/null
+check_ge "chrX sites somalier genotyped" "$(tval "$T" x_sites)" 11
+check_ge "homozygous ALT among them" "$(tval "$T" x_hom_alt)" 10
+check_eq "the table records the mismatch" "$(tval "$T" sex_check)" mismatch
+
+SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" male
+check_step_exit 33-sample-qc.sh
+check_eq "declared male: the check passes" "$(tval "$T" sex_check)" ok
+check "the log says so" has 'Sex check: OK' "$(cat "$STEP_LOG")"
+
+SEX_CHECK=warn SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" female
+check_step_exit 33-sample-qc.sh
+check "SEX_CHECK=warn: the mismatch is printed and the step goes on" has 'SEX_CHECK=warn: continuing' "$(cat "$STEP_LOG")"
+
+# Leave the table of the default run for the report cases that follow.
+run_step 33-sample-qc.sh "$SAMPLE"
+check_step_exit 33-sample-qc.sh
+
+# --- 4. contamination: HG001 reads mixed into HG002 ------------------------------------------
+# HG001 (NA12878) is not related to HG002. Its GIAB GRCh38 BAM is streamed
+# over the slices that hold most panel markers (HLA, chr20, chr2, chr12, chr1,
+# chr19) and sampled to about a ninth of HG002's depth, so about 10% of the
+# mixed reads are HG001's. Its read groups are dropped, so the mix reads as
+# the one sample of HG002's header.
+HG001_BAM=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/NA12878/NIST_NA12878_HG001_HiSeq_300x/NHGRI_Illumina300X_novoalign_bams/HG001.GRCh38_full_plus_hs38d1_analysis_set_minus_alts.300x.bam
+REGIONS="chr6:29900000-33100000 chr20:10000000-10500000 chr2:233600000-233800000 chr12:47800000-47950000 chr1:109600000-109800000 chr19:40800000-41050000"
+M="${SAMPLE}mix"
+mkdir -p "${G}/${M}/aligned" "${G}/contam"
+HG002_DP=$(sam coverage -r chr20:10000000-10500000 "${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | awk 'NR == 2 { print $7 }')
+echo "HG002 depth on the chr20 slice: ${HG002_DP:-?}x"
+# GIAB's HG001 BAM is about 300x; a ninth of HG002's depth from it:
+FRACTION=$(awk -v d="${HG002_DP:-30}" 'BEGIN { printf "%.4f", d / 9 / 300 }')
+echo "streaming HG001 at a fraction of ${FRACTION}"
+curl -fsSL --retry 5 -o "${G}/contam/hg001.bai" "${HG001_BAM}.bai"
+# shellcheck disable=SC2086  # the regions split on purpose
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+  -v "${G}:/genome" -w /genome "$SAMTOOLS_IMAGE" \
+  samtools view -M -s "7${FRACTION#0}" -x RG -F 0x900 -X "$HG001_BAM" /genome/contam/hg001.bai $REGIONS \
+  > "${G}/contam/hg001.sam" 2> "${CASE_TMP}/stream.log"
+check_eq "HG001 reads streamed" "$?" 0
+tail -n 3 "${CASE_TMP}/stream.log"
+N_HG001=$(wc -l < "${G}/contam/hg001.sam" | tr -d ' ')
+# shellcheck disable=SC2086
+N_HG002=$(sam view -c -F 0x900 "${SAMPLE}/aligned/${SAMPLE}_sorted.bam" $REGIONS 2>/dev/null)
+echo "reads in those regions: HG002 ${N_HG002:-?}, HG001 ${N_HG001}"
+SHARE=$(awk -v a="$N_HG001" -v b="${N_HG002:-0}" 'BEGIN { printf "%.3f", (a + b) ? a / (a + b) : 0 }')
+check "HG001's share of the mixed reads is about 10% (${SHARE})" \
+  awk -v s="$SHARE" 'BEGIN { exit !(s >= 0.07 && s <= 0.14) }'
+in_genome "$SAMTOOLS_IMAGE" sh -c "set -e
+  { samtools view -H ${SAMPLE}/aligned/${SAMPLE}_sorted.bam; samtools view ${SAMPLE}/aligned/${SAMPLE}_sorted.bam; cat contam/hg001.sam; } \
+    | samtools sort -@ 2 -m 1G -o ${M}/aligned/${M}_sorted.bam -
+  samtools index ${M}/aligned/${M}_sorted.bam"
+rm -f "${G}/contam/hg001.sam"
+check "the mixed BAM passes quickcheck" sam quickcheck "${M}/aligned/${M}_sorted.bam"
+
+run_step 33-sample-qc.sh "$M"
+check_step_exit 33-sample-qc.sh
+TM="${G}/${M}/qc/${M}_sample_qc.tsv"
+cat "$TM" 2>/dev/null
+check "FREEMIX of the mix is above 0.03 ($(tval "$TM" freemix))" above "$(tval "$TM" freemix)" 0.03
+check_eq "contamination verdict" "$(tval "$TM" contamination)" warn
+check "the step warns, and still exits 0" has 'is above 0\.03: about [0-9]+% of the reads may come' "$(cat "$STEP_LOG")"
+echo "FREEMIX: clean $(tval "$T" freemix), with ${SHARE} HG001 reads $(tval "$TM" freemix)" >> "$E2E_NOTES"
+in_genome "$BCFTOOLS_IMAGE" rm -rf "$M" contam
+
+finish

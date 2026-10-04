@@ -370,6 +370,19 @@ else
     fi
   done
 
+  # --- somalier's sites and VerifyBamID2's panel, for step 33 (setup.sh installs them) ---
+  QC_MISSING=""
+  for f in somalier/sites.hg38.vcf.gz verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.UD \
+           verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.mu verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.bed; do
+    [ -s "${GENOME_DIR}/reference/${f}" ] || QC_MISSING="${QC_MISSING} reference/${f}"
+  done
+  if [ -z "$QC_MISSING" ]; then
+    pass "somalier sites and VerifyBamID2 panel (step 33): present"
+  else
+    warn "Step 33 (sample identity and contamination) data not found:${QC_MISSING}"
+    echo "       Install it: ./scripts/setup.sh --sample-qc-data ${GENOME_DIR}"
+  fi
+
   # --- VEP cache of the VEP image's release, for step 13 (optional) ---
   VEP_DIR="${GENOME_DIR}/vep_cache/homo_sapiens"
   if [ -f "${VEP_DIR}/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then

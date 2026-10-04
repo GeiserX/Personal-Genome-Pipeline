@@ -12,8 +12,9 @@
 #   2. ClinVar database (~200 MB), with its release date in clinvar/RELEASE
 #   3. All Docker images (~10-15 GB)
 #   4. The reference's sequence dictionary and small pinned data files: Delly's
-#      exclude map, GRCh38 chromosome bands, an IPD-IMGT/HLA release and the
-#      GENCODE gene coordinates T1K needs (~350 MB)
+#      exclude map, GRCh38 chromosome bands, an IPD-IMGT/HLA release, the
+#      GENCODE gene coordinates T1K needs (~350 MB), and somalier's sites and
+#      VerifyBamID2's marker panel for step 33 (~10 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
 #
 # VEP cache (~26 GB) and PCGR ref data (~7 GB) are downloaded separately
@@ -33,9 +34,13 @@ set -euo pipefail
 
 PULL_ONLY=false
 REFRESH=""
+SAMPLE_QC_ONLY=false
 case "${1:-}" in
   --pull-only)
     PULL_ONLY=true
+    shift ;;
+  --sample-qc-data)
+    SAMPLE_QC_ONLY=true
     shift ;;
   --refresh)
     REFRESH=${2:-}
@@ -52,6 +57,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "Usage: $0 <genome_dir>"
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
+  echo "       $0 --sample-qc-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -59,6 +65,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --refresh clinvar"
   echo "                Download NCBI's current ClinVar, rebuild the files made from it"
   echo "                and record its release date in <genome_dir>/clinvar/RELEASE."
+  echo "  --sample-qc-data"
+  echo "                Install only somalier's sites and VerifyBamID2's panel (step 33) and exit."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -80,6 +88,47 @@ REF_FASTA_URL=${REF_FASTA_URL:-https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/
 REF_FAI_URL="${REF_FASTA_URL%.gz}.fai"
 if [ -z "${REF_FASTA_MD5+x}" ]; then REF_FASTA_MD5="$(dirname "$REF_FASTA_URL")/md5checksums.txt"; fi
 if [ -z "${REF_FAI_MD5+x}" ]; then REF_FAI_MD5="$(dirname "$REF_FASTA_URL")/md5checksums.txt"; fi
+
+# --- Step 33: somalier's sites and VerifyBamID2's marker panel ----------------------
+# Pinned files, each checked against the sha256 recorded here. Step 33
+# (scripts/33-sample-qc.sh) and validate-setup.sh read them under these names.
+SOMALIER_SITES_URL=https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz
+SOMALIER_SITES_SHA256=d1a853b8bb2e5f1a520bc67c8303be699543d225d785bce51e8335a2420489b5
+# The panel of the VerifyBamID release VERIFYBAMID2_IMAGE packages (v2.0.3).
+VB2_PANEL_URL=https://raw.githubusercontent.com/Griffan/VerifyBamID/v2.0.3/resource/1000g.phase3.100k.b38.vcf.gz.dat
+VB2_PANEL_SHA256="UD 259e320123756bb702542e3b3c4d766b481426d96cd63abd4b9f9fced035f375
+mu f7e8b4fad17cc433d887f18bf183fa4b89597d5a375f22133f44f39c5e35ffc8
+bed 0025d782137e5906bbc7afc553c49d2c82c5b8f0bfa0649bc415887442f42869"
+
+# install_sample_qc_data: install both under GENOME_DIR/reference unless they
+# are there. Returns 1 when a download fails its check.
+install_sample_qc_data() {
+  local dest="${GENOME_DIR}/reference" ext sha rc=0
+  if [ -s "${dest}/somalier/sites.hg38.vcf.gz" ]; then
+    echo "[OK] somalier sites (step 33) already present."
+  elif fetch "$SOMALIER_SITES_URL" "${dest}/somalier/sites.hg38.vcf.gz" sha256 "$SOMALIER_SITES_SHA256"; then
+    echo "[OK] somalier sites (step 33): ${dest}/somalier/sites.hg38.vcf.gz"
+  else
+    echo "[WARN] Could not install somalier's sites. Step 33 needs them; re-run setup.sh."
+    rc=1
+  fi
+  while read -r ext sha; do
+    if [ -s "${dest}/verifybamid2/$(basename "$VB2_PANEL_URL").${ext}" ]; then
+      continue
+    fi
+    if ! fetch "${VB2_PANEL_URL}.${ext}" "${dest}/verifybamid2/$(basename "$VB2_PANEL_URL").${ext}" sha256 "$sha"; then
+      echo "[WARN] Could not install VerifyBamID2's panel (.${ext}). Step 33 needs it; re-run setup.sh."
+      rc=1
+    fi
+  done <<<"$VB2_PANEL_SHA256"
+  [ "$rc" -eq 0 ] && echo "[OK] VerifyBamID2 panel (step 33): ${dest}/verifybamid2/"
+  return "$rc"
+}
+
+if $SAMPLE_QC_ONLY; then
+  install_sample_qc_data
+  exit $?
+fi
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
 # lines marked `# optional`). Sets PULLED, SKIPPED and FAILED.
@@ -397,6 +446,8 @@ for name in $DATA_FILES; do
     echo "[WARN] Could not install the ${what}. Re-run setup.sh to try again."
   fi
 done
+# A failed download does not stop setup here either.
+install_sample_qc_data || true
 
 ###############################################################################
 # Phase 5: AnnotSV annotation data (step 5, a default step)
