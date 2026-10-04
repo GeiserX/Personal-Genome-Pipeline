@@ -39,10 +39,10 @@ MISSING_IMAGES=()
 
 # check_bam_reference HEADER: the sample BAM was aligned to REF_FASTA. Its @SQ
 # names and lengths must be the .fai's, in the same order (callers look reads
-# up by contig index), it must be coordinate-sorted, and samtools quickcheck
-# must pass. Tools give wrong results on a BAM from another reference long
-# before any of them fails, so this stops the run here. A header with no @SQ
-# line at all is left to quickcheck, which fails a BAM without one.
+# up by contig index), and it must be coordinate-sorted. Tools give wrong
+# results on a BAM from another reference long before any of them fails, so
+# this stops the run here. A header with no @SQ line at all is left to
+# check_bam_quickcheck, which fails a BAM without one.
 check_bam_reference() {
   local header=$1 fai="${REF_FASTA}.fai" diff so
   if [ -f "$fai" ] && grep -q '^@SQ' <<< "$header"; then
@@ -81,6 +81,12 @@ check_bam_reference() {
     "") warn "BAM header does not say how it is sorted (no @HD SO: tag); steps need a coordinate-sorted BAM" ;;
     *) fail "BAM is sorted by ${so}, not by coordinate: sort it (samtools sort) or realign with step 02" ;;
   esac
+}
+
+# check_bam_quickcheck: the sample BAM passes samtools quickcheck (a header
+# with at least one sequence, and the end-of-file block). Runs whether or not
+# its header could be read.
+check_bam_quickcheck() {
   if run_in "${SAMTOOLS_IMAGE}" samtools quickcheck "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" >/dev/null 2>&1; then
     pass "BAM passes samtools quickcheck"
   else
@@ -623,8 +629,9 @@ if [ -n "$SAMPLE" ]; then
           echo "         samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
         fi
       else
-        warn "Could not read the BAM header to check for a read group (@RG)"
+        fail "Could not read the BAM header (samtools view -H failed): the BAM is unreadable or not a BAM"
       fi
+      check_bam_quickcheck
     fi
 
     if $HAS_VCF && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then

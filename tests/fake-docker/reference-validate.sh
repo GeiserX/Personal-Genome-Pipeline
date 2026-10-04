@@ -4,7 +4,8 @@
 #     ALLOW_ALT_REFERENCE=true turns the failure into a warning;
 #   - a BAM whose @SQ lines are not the .fai's (another length, an extra
 #     contig, another order) fails and names the first difference;
-#   - a BAM sorted by name, or one samtools quickcheck rejects, fails;
+#   - a BAM sorted by name, one samtools quickcheck rejects, or one whose
+#     header samtools cannot read, fails (quickcheck runs in every case);
 #   - the default reference with a BAM aligned to it passes every one.
 # The fake docker answers `samtools view -H` with HEADER and `samtools
 # quickcheck` with QUICKCHECK_RC through a run hook.
@@ -34,7 +35,10 @@ cat > "${CASE_WORK}/bam-hook" <<'HOOK'
 #!/usr/bin/env bash
 shift   # the image
 case "$*" in
-  *"samtools view -H"*) cat "${CASE_WORK}/header.sam" ;;
+  *"samtools view -H"*)
+    # view.rc, when present, makes the header unreadable.
+    if [ -f "${CASE_WORK}/view.rc" ]; then exit "$(cat "${CASE_WORK}/view.rc")"; fi
+    cat "${CASE_WORK}/header.sam" ;;
   *"samtools quickcheck"*) exit "$(cat "${CASE_WORK}/quickcheck.rc")" ;;
 esac
 exit 0
@@ -97,5 +101,13 @@ output_has by-name '\[FAIL\].*BAM is sorted by queryname, not by coordinate'
 scenario "$NOALT" "$(header "$NOALT")" 1
 run_expect 1 quickcheck "${SCRIPTS}/validate-setup.sh" sample1
 output_has quickcheck '\[FAIL\].*BAM fails samtools quickcheck'
+
+# A header samtools cannot read: a failure, and quickcheck still runs.
+scenario "$NOALT" "$(header "$NOALT")" 1
+echo 1 > "${CASE_WORK}/view.rc"
+run_expect 1 no-header "${SCRIPTS}/validate-setup.sh" sample1
+output_has no-header '\[FAIL\].*Could not read the BAM header'
+output_has no-header '\[FAIL\].*BAM fails samtools quickcheck'
+rm -f "${CASE_WORK}/view.rc"
 
 echo "reference-validate: ALT contigs, a BAM from another reference, a name-sorted BAM and a broken BAM fail; the default reference passes"
