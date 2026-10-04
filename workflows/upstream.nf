@@ -98,15 +98,15 @@ workflow UPSTREAM {
     ch_bam = ch_all_bam
         .map { meta, bam, bai -> [meta.id, meta, bam, bai] }
         .join(ch_sex_checked)
-        .map { id, meta, bam, bai, inferred -> [meta, bam, bai] }
+        .map { _id, meta, bam, bai, _inferred -> [meta, bam, bai] }
 
     //
     // Small variant calling, on the checked BAMs of the rows that need it
     //
     ch_call = ch_bam
         .map { meta, bam, bai -> [meta.id, meta, bam, bai] }
-        .join(ch_to_call.map { meta, bam, bai -> [meta.id, true] })
-        .map { id, meta, bam, bai, call -> [meta, bam, bai] }
+        .join(ch_to_call.map { meta, _bam, _bai -> [meta.id, true] })
+        .map { _id, meta, bam, bai, _call -> [meta, bam, bai] }
 
     DEEPVARIANT(ch_call, ch_reference, ch_reference_fai, ch_par_bed)
     ch_versions = ch_versions.mix(DEEPVARIANT.out.versions)
