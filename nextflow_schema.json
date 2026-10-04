@@ -2,7 +2,7 @@
     "$schema": "http://json-schema.org/draft-07/schema",
     "$id": "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/nextflow_schema.json",
     "title": "Personal Genome Pipeline Parameters",
-    "description": "Post-processing & clinical interpretation for whole genome sequencing",
+    "description": "Whole genome sequencing from FASTQ, BAM or VCF to clinical interpretation",
     "type": "object",
     "definitions": {
         "input_output_options": {
@@ -15,7 +15,7 @@
                     "type": "string",
                     "format": "file-path",
                     "mimetype": "text/csv",
-                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index, plus sex when expansion_hunter is enabled).",
+                    "description": "Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled.",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
@@ -37,6 +37,37 @@
                     "default": "copy",
                     "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
                     "fa_icon": "fas fa-copy"
+                }
+            }
+        },
+        "reads_to_vcf_options": {
+            "title": "Reads to VCF",
+            "type": "object",
+            "description": "Alignment and variant calling of the samplesheet rows that start from FASTQ or from a BAM without a VCF.",
+            "properties": {
+                "skip_trim": {
+                    "type": "boolean",
+                    "description": "Align the raw reads, without fastp trimming (SKIP_TRIM=true in scripts/01b-fastp-qc.sh).",
+                    "default": false,
+                    "fa_icon": "fas fa-cut"
+                },
+                "minimap2_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "minimap2 index built with -x sr. Default: <reference base>.sr.mmi beside the FASTA, the file scripts/02-alignment.sh builds; when neither exists the run builds one.",
+                    "fa_icon": "fas fa-database"
+                },
+                "intervals": {
+                    "type": "string",
+                    "description": "Space-separated regions DeepVariant calls (its --regions, INTERVALS in scripts/03-deepvariant.sh). Unset calls the whole genome.",
+                    "fa_icon": "fas fa-map"
+                },
+                "sex_check": {
+                    "type": "string",
+                    "description": "What to do when the sex indexcov infers from a BAM differs from the samplesheet's: fail stops the run before any BAM step; warn logs it and goes on with the declared sex.",
+                    "default": "fail",
+                    "enum": ["fail", "warn"],
+                    "fa_icon": "fas fa-venus-mars"
                 }
             }
         },
@@ -283,6 +314,7 @@
     },
     "allOf": [
         { "$ref": "#/definitions/input_output_options" },
+        { "$ref": "#/definitions/reads_to_vcf_options" },
         { "$ref": "#/definitions/reference_data" },
         { "$ref": "#/definitions/tool_selection" },
         { "$ref": "#/definitions/annotation_databases" },
