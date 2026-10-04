@@ -2,7 +2,7 @@
 
 One-time downloads required before running the pipeline. Each heading below gives the size of its download; [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) adds them up (about 75 GB for a default run, 250 GB with the optional annotation databases).
 
-> **Estimated time:** 1-3 hours depending on internet speed. The two VEP caches (26 GB for step 13, 23 GB for step 17) are the largest downloads of a default run.
+> **Estimated time:** 1-3 hours depending on internet speed. The two VEP caches (26 GB for step 13, 24 GB for step 17) are the largest downloads of a default run.
 
 ## GRCh38 Reference Genome
 
