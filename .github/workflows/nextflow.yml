@@ -162,7 +162,21 @@ jobs:
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
         run: |
-          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools"
+          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
+            -work-dir "${RUNNER_TEMP}/all-tools-work"
+
+      # The stub samplesheet has three samples with a BAM (one aligned from
+      # FASTQ): the T1K index is built once for all of them, each is typed,
+      # and each called sample went through INDEXCOV before DEEPVARIANT.
+      - name: T1K_BUILD ran once, HLA_TYPING once per sample with a BAM
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          count() { find "${RUNNER_TEMP}/all-tools-work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+            | grep -cE "(^|:)$1( |\$)" || true; }
+          build=$(count T1K_BUILD) typing=$(count HLA_TYPING) indexcov=$(count INDEXCOV) dv=$(count DEEPVARIANT)
+          bams=$(awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["bam"] != "" || $c["fastq_1"] != ""' assets/test_samplesheet.csv | wc -l)
+          echo "samples with a BAM: ${bams}; T1K_BUILD tasks: ${build}; HLA_TYPING tasks: ${typing}; INDEXCOV tasks: ${indexcov}; DEEPVARIANT tasks: ${dv}"
+          [ "$bams" -ge 2 ] && [ "$build" -eq 1 ] && [ "$typing" -eq "$bams" ] && [ "$indexcov" -eq "$bams" ] && [ "$dv" -eq 2 ]
 
       # gen-containers-config.sh --check (Guard) proves every process in
       # modules/ has a selector; this proves every one of them ran and got
