@@ -11,7 +11,10 @@
 # Most GWAS-derived scores also have ancestry bias (European-centric).
 # Treat these as exploratory, not clinical.
 #
-# Requires: VCF from step 3
+# Requires: VCF from step 3. With step 3's gVCF next to it, the score
+# positions are genotyped from the gVCF, so a site where you match the
+# reference is a real 0/0 (a dosage of 2 for a reference effect allele)
+# instead of a missing site. Without it the sum leaves those sites out.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -21,6 +24,7 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 validate_sample "$SAMPLE"
 
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+GVCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/prs"
 SCORING_DIR="${GENOME_DIR}/prs_scores"
 mkdir -p "$OUTDIR" "$SCORING_DIR"
@@ -100,45 +104,12 @@ for ENTRY in "${PGS_SCORES[@]}"; do
   fi
 done
 
-echo ""
-echo "[2/3] Converting VCF to plink2 format..."
-
-# Convert VCF to plink2 binary format for scoring
-run_in --cpus 4 --memory 8g \
-  "${PLINK2_IMAGE}" \
-  plink2 \
-    --vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
-    --make-pgen \
-    --out "/genome/${SAMPLE}/prs/${SAMPLE}" \
-    --threads 4 \
-    --memory 6000 \
-    --set-all-var-ids '@:#' \
-    --new-id-max-allele-len 100 \
-    --chr 1-22 \
-    --allow-extra-chr \
-    --output-chr chrM
-
-echo ""
-echo "[3/3] Calculating polygenic risk scores..."
-
-HOMREF_NOTE="hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions"
-
-# Process each scoring file
-RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
-echo -e "Condition\tPGS_ID\tScore_SUM\tVariants_Matched\tVariants_Total" > "$RESULTS_FILE"
-
+# Each score as plink2 --score input: chr:pos variant ID (GRCh38 hm_chr/hm_pos),
+# effect allele, weight. Rows the catalog could not map to GRCh38 have an
+# empty hm_pos and are skipped.
 for ENTRY in "${PGS_SCORES[@]}"; do
   PGS_ID="${ENTRY%%|*}"
-  CONDITION="${ENTRY#*|}"
-  SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
-
-  echo "  Scoring: ${CONDITION} (${PGS_ID})..."
-
-  # Convert the harmonised PGS Catalog file to plink2 --score input:
-  # chr:pos variant ID (GRCh38 hm_chr/hm_pos), effect allele, weight.
-  # Rows the catalog could not map to GRCh38 have an empty hm_pos and are skipped.
-  FORMATTED="${OUTDIR}/${PGS_ID}_formatted.tsv"
-  gzip -cd "$SCORE_FILE" | \
+  gzip -cd "${SCORING_DIR}/${PGS_ID}.txt.gz" | \
     awk -F'\t' '/^#/ {next}
     !hdr {
       for(i=1;i<=NF;i++) {
@@ -161,14 +132,97 @@ for ENTRY in "${PGS_SCORES[@]}"; do
           printf "%s:%s\t%s\t%s\n", chr, pos, ea, ew;
         }
       }
-    }' > "$FORMATTED"
-
-  TOTAL_VARS=$(wc -l < "$FORMATTED" | tr -d ' ')
-
-  if [ "$TOTAL_VARS" -eq 0 ]; then
-    echo "ERROR: No GRCh38 hm_chr/hm_pos/effect_allele/effect_weight rows in ${SCORE_FILE}" >&2
+    }' > "${OUTDIR}/${PGS_ID}_formatted.tsv"
+  if [ ! -s "${OUTDIR}/${PGS_ID}_formatted.tsv" ]; then
+    echo "ERROR: No GRCh38 hm_chr/hm_pos/effect_allele/effect_weight rows in ${SCORING_DIR}/${PGS_ID}.txt.gz" >&2
     exit 1
   fi
+done
+
+echo ""
+if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
+  INPUT_KIND=gvcf
+  echo "[2/3] Genotyping the score positions from the gVCF (${GVCF})..."
+  # Every score position, once, as CHROM<TAB>POS for bcftools -R/-T, and the
+  # effect alleles of each position for the step below.
+  SITES="${OUTDIR}/score_sites.tsv"
+  ALLELES="${OUTDIR}/score_alleles.tsv"
+  FORMATTED_FILES=()
+  for ENTRY in "${PGS_SCORES[@]}"; do FORMATTED_FILES+=("${OUTDIR}/${ENTRY%%|*}_formatted.tsv"); done
+  cat "${FORMATTED_FILES[@]}" | awk -F'\t' '{split($1, a, ":"); print a[1] "\t" a[2] "\t" $2}' \
+    | sort -u -k1,1 -k2,2n -k3,3 > "$ALLELES"
+  cut -f1,2 "$ALLELES" | uniq > "$SITES"
+  # gvcf2vcf expands each reference block overlapping a score position into
+  # one 0/0 record per base, with the base from the reference; -T keeps the
+  # score positions, --trim-alt-alleles drops the <*> allele, and a no-call
+  # (./.) is dropped, so a position without coverage stays missing.
+  # A 0/0 record then has ALT '.', which no effect allele can match: the awk
+  # sets ALT to the position's first effect allele that is not the reference,
+  # so a score whose effect allele is not the reference matches it with a
+  # dosage of 0 and counts as matched.
+  SITES_VCF="${OUTDIR}/${SAMPLE}_score_sites.vcf"
+  rm -f "${SITES_VCF}.tmp"
+  # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+  run_in --cpus 2 --memory 8g \
+    "${BCFTOOLS_IMAGE}" \
+    bash -euo pipefail -c '
+      bcftools convert --gvcf2vcf -f "$1" -R "$2" -Ou "$3" \
+        | bcftools view -T "$2" --trim-alt-alleles -i "GT!=\"mis\"" -Ov' \
+    _ "${REF_FASTA_C}" "$(cpath "$SITES")" "/genome/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz" \
+  | awk -F'\t' -v OFS='\t' -v alleles="$ALLELES" '
+      BEGIN { while ((getline l < alleles) > 0) { split(l, f, "\t"); k = f[1] ":" f[2]; ea[k] = ea[k] " " f[3] } }
+      /^#/ { print; next }
+      $5 == "." {
+        n = split(ea[$1 ":" $2], c, " ")
+        for (i = 1; i <= n; i++) if (c[i] != $4) { $5 = c[i]; break }
+      }
+      { print }' > "${SITES_VCF}.tmp"
+  mv -f "${SITES_VCF}.tmp" "$SITES_VCF"
+  PLINK_VCF="/genome/${SAMPLE}/prs/${SAMPLE}_score_sites.vcf"
+else
+  INPUT_KIND=vcf
+  echo "[2/3] Converting VCF to plink2 format (no gVCF: sites where you match the reference are missing)..."
+  PLINK_VCF="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+fi
+
+# Convert to plink2 binary format for scoring
+run_in --cpus 4 --memory 8g \
+  "${PLINK2_IMAGE}" \
+  plink2 \
+    --vcf "$PLINK_VCF" \
+    --make-pgen \
+    --out "/genome/${SAMPLE}/prs/${SAMPLE}" \
+    --threads 4 \
+    --memory 6000 \
+    --set-all-var-ids '@:#' \
+    --new-id-max-allele-len 100 \
+    --chr 1-22 \
+    --allow-extra-chr \
+    --output-chr chrM
+if [ "$INPUT_KIND" = gvcf ]; then
+  rm -f "${OUTDIR}/${SAMPLE}_score_sites.vcf" "${OUTDIR}/score_sites.tsv" "${OUTDIR}/score_alleles.tsv"
+fi
+
+echo ""
+echo "[3/3] Calculating polygenic risk scores..."
+
+HOMREF_NOTE="hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions"
+
+# Process each scoring file. Matched_Pct is Variants_Matched / Variants_Total;
+# Input says what was scored: gvcf (hom-ref sites included) or vcf (variant
+# sites only, the biased sum).
+RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
+echo -e "Condition\tPGS_ID\tScore_SUM\tVariants_Matched\tVariants_Total\tMatched_Pct\tInput" > "$RESULTS_FILE"
+
+for ENTRY in "${PGS_SCORES[@]}"; do
+  PGS_ID="${ENTRY%%|*}"
+  CONDITION="${ENTRY#*|}"
+  SCORE_FILE="${SCORING_DIR}/${PGS_ID}.txt.gz"
+
+  echo "  Scoring: ${CONDITION} (${PGS_ID})..."
+
+  FORMATTED="${OUTDIR}/${PGS_ID}_formatted.tsv"
+  TOTAL_VARS=$(wc -l < "$FORMATTED" | tr -d ' ')
 
   # Remove any score left by an earlier run, so a failed plink2 run cannot be
   # reported with an old number.
@@ -191,8 +245,11 @@ for ENTRY in "${PGS_SCORES[@]}"; do
       --allow-extra-chr; then
     # None of the score's variants is in this VCF: report that, not a failure.
     if grep -q 'No valid variants' "${OUTDIR}/${PGS_ID}.log" 2>/dev/null; then
-      echo -e "${CONDITION}\t${PGS_ID}\tNA\t0\t${TOTAL_VARS}" >> "$RESULTS_FILE"
-      echo "    No variant of ${PGS_ID} is present in this VCF; no score."
+      echo -e "${CONDITION}\t${PGS_ID}\tNA\t0\t${TOTAL_VARS}\t0.0\t${INPUT_KIND}" >> "$RESULTS_FILE"
+      echo "    No variant of ${PGS_ID} is present in this input; no score."
+      if [ "$INPUT_KIND" = vcf ]; then
+        echo "    ${HOMREF_NOTE}"
+      fi
       continue
     fi
     echo "ERROR: plink2 --score failed for ${PGS_ID}; see ${OUTDIR}/${PGS_ID}.log" >&2
@@ -216,9 +273,16 @@ for ENTRY in "${PGS_SCORES[@]}"; do
     echo "ERROR: ${SSCORE} has no SCORE1_SUM or ALLELE_CT column" >&2
     exit 1
   fi
-  echo -e "${CONDITION}\t${PGS_ID}\t${SCORE}\t${USED_VARS}\t${TOTAL_VARS}" >> "$RESULTS_FILE"
-  echo "    Score (sum): ${SCORE} (${USED_VARS}/${TOTAL_VARS} variants matched)"
-  echo "    ${HOMREF_NOTE}"
+  PCT=$(awk -v u="$USED_VARS" -v t="$TOTAL_VARS" 'BEGIN { printf "%.1f", 100 * u / t }')
+  echo -e "${CONDITION}\t${PGS_ID}\t${SCORE}\t${USED_VARS}\t${TOTAL_VARS}\t${PCT}\t${INPUT_KIND}" >> "$RESULTS_FILE"
+  echo "    Score (sum): ${SCORE}"
+  echo "    Matched: ${USED_VARS} of ${TOTAL_VARS} score variants (${PCT}%)"
+  if awk -v p="$PCT" 'BEGIN { exit !(p < 50) }'; then
+    echo "    WARNING: under half of the score's variants were genotyped; the sum is not comparable to published distributions."
+  fi
+  if [ "$INPUT_KIND" = vcf ]; then
+    echo "    ${HOMREF_NOTE}"
+  fi
 done
 
 echo ""

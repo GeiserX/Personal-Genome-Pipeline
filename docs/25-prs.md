@@ -22,6 +22,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Input
 
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
+- gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
 
 ## Command
 
@@ -56,16 +57,18 @@ curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported
 ## What the Script Does Internally
 
 1. Downloads the GRCh38-harmonized scoring file of each score from the PGS Catalog FTP (one-time, cached in `${GENOME_DIR}/prs_scores/`). The download goes to a `.part` file first, and the file is kept only if its `#HmPOS_build` header says `GRCh38`. If the download fails or the build is anything else, the step stops with an error. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
-2. Converts your VCF to plink2 binary format (pgen/pvar/psam), restricting to autosomes (chr1-22) and assigning variant IDs in `chr:pos` format (matching PGS Catalog convention)
-3. For each scoring file, reformats the harmonized PGS Catalog columns (`hm_chr`, `hm_pos`, effect allele, weight) into plink2's `--score` input format, deduplicating entries with the same variant ID and allele. Rows the catalog could not map to GRCh38 have no `hm_pos` and are dropped
-4. Deletes any `.sscore` left by an earlier run, then runs `plink2 --score ... cols=+scoresums` for each condition. A plink2 failure stops the step. The one exception is a score with no variant at all in your VCF, which is reported as `NA` with 0 matched
-5. Collects all results into a summary TSV
+2. For each scoring file, reformats the harmonized PGS Catalog columns (`hm_chr`, `hm_pos`, effect allele, weight) into plink2's `--score` input format, deduplicating entries with the same variant ID and allele. Rows the catalog could not map to GRCh38 have no `hm_pos` and are dropped
+3. Builds the genotypes to score, restricted to autosomes (chr1-22), with variant IDs in `chr:pos` format (matching PGS Catalog convention):
+   - **With step 3's gVCF** (`vcf/${SAMPLE}.g.vcf.gz`, the default since step 3 writes one): genotypes every score position from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a score position into a 0/0 call with the reference base, and a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets the position's effect allele as its ALT when that allele is not the reference, so a score whose effect allele is the other allele matches it with a dosage of 0.
+   - **Without a gVCF** (an older run): converts the variant-only VCF, so every site where you match the reference is missing (see below).
+4. Deletes any `.sscore` left by an earlier run, then runs `plink2 --score ... cols=+scoresums` for each condition. A plink2 failure stops the step. The one exception is a score with no variant at all in the input, which is reported as `NA` with 0 matched
+5. Collects all results into a summary TSV and prints the matched share of each score, with a warning under 50%
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | Tab-delimited summary: `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total` |
+| `${SAMPLE}_prs_summary.tsv` | Tab-delimited summary: `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Input` |
 | `${PGS_ID}.sscore` | Raw plink2 score output per condition |
 | `${PGS_ID}_formatted.tsv` | Reformatted scoring file used for each calculation |
 | `${SAMPLE}.pgen/.pvar/.psam` | plink2 binary genotype files (intermediate) |
@@ -74,25 +77,29 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 ## Runtime
 
-~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 9 conditions).
+~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 9 conditions). With a gVCF the step first expands the reference blocks around every score position; the large scores (millions of positions) reach most of the genome, so that pass reads most of the gVCF.
 
 ## Interpreting Results
 
 The summary TSV contains a raw score for each condition. Here is what the columns mean:
 
 - **Score_SUM**: Weighted sum of the effect alleles you carry (plink2's `SCORE1_SUM` column). Higher = more genetic predisposition.
-- **Variants_Matched**: How many scoring variants were found in your VCF (plink2's `ALLELE_CT` divided by 2).
+- **Variants_Matched**: How many scoring variants were genotyped (plink2's `ALLELE_CT` divided by 2).
 - **Variants_Total**: Variants in the scoring file with a GRCh38 position.
+- **Matched_Pct**: `Variants_Matched / Variants_Total` as a percentage. The step prints it under every score and warns below 50%.
+- **Input**: `gvcf` when the score positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-### The score is biased until the pipeline keeps hom-ref sites
+### Hom-ref sites come from the gVCF
 
-The VCF from step 3 lists only sites where you differ from the reference. A scoring variant whose effect allele is the reference allele is therefore missing from the VCF when you carry two copies of it, and it adds nothing to your sum. So the sum misses the weight of every reference-allele effect allele you carry on two copies, and `Variants_Matched` counts only the sites present in the VCF. The step prints this line under every score:
+The VCF from step 3 lists only sites where you differ from the reference. A scoring variant whose effect allele is the reference allele is missing from that VCF when you carry two copies of it, and with `no-mean-imputation` it adds nothing to your sum. Step 3 also writes a gVCF, which records where you match the reference, and step 25 reads those sites from it as 0/0. With the gVCF, a site is missing only when it was not covered.
+
+Without a gVCF (`Input` is `vcf`, a sample called by an older version), the sum misses the weight of every reference-allele effect allele you carry on two copies, and `Variants_Matched` counts only the sites present in the VCF. The step then prints this line under every score:
 
 ```
 hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions
 ```
 
-Scoring from a gVCF, which records hom-ref sites, removes the bias.
+Call the sample again with step 3 to get the gVCF.
 
 ### What these scores are NOT
 
@@ -114,6 +121,8 @@ Comparing two people is only defensible when both were scored with the same PGS 
 Check the `Variants_Matched / Variants_Total` ratio. If fewer than 50% of scoring variants matched, the score is less reliable. Low matching rates usually indicate:
 - The scoring file was built on array data with different variant coverage than WGS
 - Variant ID format mismatches between your VCF and the scoring file
+- No gVCF (`Input` is `vcf`): every site where you match the reference counts as unmatched
+- Score positions without coverage in your data (no-call blocks in the gVCF)
 
 ## Limitations
 

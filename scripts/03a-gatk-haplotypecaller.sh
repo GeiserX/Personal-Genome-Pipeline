@@ -3,6 +3,10 @@
 # Alternative to step 03 (DeepVariant). Outputs to vcf_gatk/ to avoid conflicts.
 # Input: sorted BAM + GRCh38 reference (with .dict and .fai)
 # Output: VCF.gz in $GENOME_DIR/<sample>/vcf_gatk/
+# Ploidy: every contig is called diploid, chrX and chrY of a male sample too,
+# so a male sample can get heterozygous calls there that cannot be real.
+# Step 03 with `male` calls them haploid. Reads flagged as duplicates by
+# step 02 are skipped (GATK's default read filter).
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}

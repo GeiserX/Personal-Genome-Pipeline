@@ -15,28 +15,36 @@
 # PASS records on contigs that ClinVar or the reference lacks (on the fixture
 # chr4, chr16 and chr19, 1155 records, 1171 after the multiallelic split), so
 # pass.vcf.gz went from 27744 to 26573 records with the old images too.
+#
+# Steps 06, 11, 14 and 20 changed on purpose again when step 02 started to
+# mark duplicates and to map with a minimap2 index built with the sr preset
+# (package alignment-markdup-gvcf-sex): the callers skip reads flagged as
+# duplicates and the sr index places some reads differently, so the call sets
+# moved: step 06 26573 to 26255 records, step 11 ST 27021 to 26691 and RG 38
+# to 40, step 20 chrM 31 to 33 records with the same 19 PASS, and a few step 14
+# chromosomes. The HLA alleles of step 08 did not change.
 . "$(dirname "$0")/lib.sh"
 
 BASELINE=$(cat <<'BASE'
-step06 pass.vcf.gz records 26573
+step06 pass.vcf.gz records 26255
 step06 clinvar_hits.vcf records 1
-step11 ST lines 27021
-step11 RG lines 38
-step14 chr1 records 242
-step14 chr2 records 239
+step11 ST lines 26691
+step11 RG lines 40
+step14 chr1 records 243
+step14 chr2 records 240
 step14 chr4 records 508
-step14 chr5 records 284
-step14 chr6 records 22264
+step14 chr5 records 319
+step14 chr6 records 21898
 step14 chr10 records 130
-step14 chr12 records 226
+step14 chr12 records 227
 step14 chr16 records 70
-step14 chr19 records 577
-step14 chr20 records 1061
-step14 chr22 records 577
+step14 chr19 records 576
+step14 chr20 records 1063
+step14 chr22 records 579
 step14 chrX records 1161
-step20 chrM records 31
+step20 chrM records 33
 step20 chrM PASS records 19
-step20 chrM call set md5 6015b376c274d306b5dd66d3571c62ee
+step20 chrM call set md5 fb857ef21e2631db3b73978bfe5d3fb6
 step08 HLA-A HLA-A*01:01 HLA-A*26:01
 step08 HLA-B HLA-B*35:08 HLA-B*38:01
 step08 HLA-C HLA-C*04:01 HLA-C*12:03
