@@ -32,6 +32,22 @@ def stale_note(sec):
     return ""
 
 
+# A section the summary lacks (one written before the section existed).
+MISSING = {"title": "", "state": "missing", "note": None, "data": {}}
+
+
+def freemix_text(q):
+    """FREEMIX with its verdict, as both reports print it."""
+    if q.get("contamination") == "not_run" or not q.get("freemix"):
+        return "not run"
+    warn = q.get("freemix_warn_above", "")
+    few = (f"; {q.get('freemix_markers') or 'fewer than 1,000'} markers, below VerifyBamID2's 1,000"
+           if q.get("verifybamid2_marker_check") == "skipped" else "")
+    if q.get("contamination") == "warn":
+        return f"{q['freemix']} (above {warn}: possible contamination, see docs/33-sample-qc.md{few})"
+    return f"{q['freemix']} (warning above {warn}{few})"
+
+
 # --- text ------------------------------------------------------------------------
 
 def text_report(s):
@@ -59,11 +75,11 @@ def text_report(s):
         return sec["state"] in ("ok", "stale")
 
     # QC
-    cov, sexc = S["coverage"], S["sex_check"]
-    if cov["state"] != "missing" or sexc["state"] != "missing":
+    cov, sexc, sqc = S["coverage"], S["sex_check"], S.get("sample_qc", MISSING)
+    if cov["state"] != "missing" or sexc["state"] != "missing" or sqc["state"] != "missing":
         w("## Quality control")
         w("---")
-        for sec in (cov, sexc):
+        for sec in (cov, sexc, sqc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
         md = cov["data"].get("mean_depth")
@@ -73,6 +89,15 @@ def text_report(s):
         w(f"  Inferred sex: {inferred or 'not available'}")
         w(f"  Declared sex: {declared or 'not declared'}"
           + ("  ** DOES NOT MATCH the inferred sex **" if inferred and declared and inferred != declared else ""))
+        if sqc["state"] in ("ok", "stale"):
+            q = sqc["data"]
+            w(f"  Sex from the reads (somalier): {q.get('inferred_sex')}"
+              + ("  ** DOES NOT MATCH the declared sex **" if q.get("sex_check") == "mismatch" else ""))
+            if q.get("sex_check") == "not_checked":
+                w(f"    not checked: {q.get('sex_check_reason')}")
+            w(f"  Contamination (VerifyBamID2 FREEMIX): {freemix_text(q)}")
+            if q.get("same_person_as"):
+                w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         w("")
 
     if head("variants", "Variant Calling (DeepVariant)"):
@@ -212,8 +237,9 @@ def text_report(s):
 
     if head("clinical", "Clinical Variant Filter"):
         d = S["clinical"]["data"]
-        w(f"  Clinical variants: {d['variants']} in {d['genes']} genes")
-        w("  By impact: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_impact"].items())))
+        w(f"  Clinical variants: {d['variants']}" + (f" in {d['genes']} genes" if "genes" in d else ""))
+        if d.get("by_impact"):
+            w("  By impact: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_impact"].items())))
         w("")
 
     if head("slivar", "Variant Prioritization (slivar)"):
@@ -298,6 +324,11 @@ def badge(text, colour):
     return f'<span class="badge badge-{colour}">{E(str(text))}</span>'
 
 
+def done_badge(sec):
+    """The Status badge of a section that ran: Complete, or Stale for a result from an earlier run."""
+    return badge("Stale", "yellow") if sec["state"] == "stale" else badge("Complete", "green")
+
+
 def card(sec, title, body, full=False):
     """A card for one section; a missing one shows 'Not run', a stale one its note."""
     lines = [f'  <div class="card{" full-width" if full else ""}">', f"    <h2>{E(title)}</h2>"]
@@ -334,8 +365,24 @@ def html_report(s):
     qc = [stat("Mean depth", f"{md:.1f}x" if isinstance(md, (int, float)) else "not available"),
           stat("Inferred sex (indexcov)", sex_badge),
           stat("Declared sex", E(declared or "not declared"))]
+    sqc = S.get("sample_qc", MISSING)
+    if sqc["state"] in ("ok", "stale"):
+        q = sqc["data"]
+        check = q.get("sex_check")
+        qc.append(stat("Sex from the reads (somalier)",
+                       badge(q.get("inferred_sex", "unknown"),
+                             "green" if check == "ok" else "red" if check == "mismatch" else "gray")))
+        if check == "not_checked":
+            qc.append(stat("Not checked", f'<span style="font-weight:normal;font-size:13px">'
+                                          f'{E(q.get("sex_check_reason", ""))}</span>'))
+        colour = {"ok": "green", "warn": "yellow"}.get(q.get("contamination"), "gray")
+        qc.append(stat("Contamination (FREEMIX)", badge(freemix_text(q), colour)))
+        if q.get("same_person_as"):
+            qc.append(stat("The same person as", badge(q["same_person_as"], "red")))
+    else:
+        qc.append(stat("Identity and contamination (step 33)", badge("Not run", "gray")))
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
-               for sec in (cov, sexc) if stale_note(sec)]
+               for sec in (cov, sexc, sqc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
     v = S["variants"]["data"]
@@ -356,15 +403,20 @@ def html_report(s):
                      else badge("Not run", "gray"))]
     if pg.get("version"):
         pgx_body.append(stat("PharmCAT version", E(pg["version"])))
-    if S["cpic"]["state"] in ("ok", "stale"):
-        pgx_body += [stat("Genes with a non-normal phenotype", cp["non_normal"]),
-                     stat("Genes with more than one possible result", cp.get("ambiguous", 0)),
-                     stat("Genes not called", cp["not_called"])]
-        if S["cpic"]["state"] == "stale":
-            pgx_body.insert(0, f'    <div class="stale">{E(stale_note(S["cpic"]))}</div>')
     if S["pypgx"]["state"] in ("ok", "stale") and "comparison" in S["pypgx"]["data"]:
         pgx_body.append(stat("PharmCAT vs pypgx conflicts", S["pypgx"]["data"]["comparison"]["conflicts"]))
     a(card(S["pharmcat"], "Pharmacogenomics", pgx_body))
+
+    cpic_body = [stat("Status", done_badge(S["cpic"]))]
+    if not cp.get("parse_failed"):
+        cpic_body += [stat("Genes with a non-normal phenotype", cp.get("non_normal", 0)),
+                      stat("Genes with more than one possible result", cp.get("ambiguous", 0)),
+                      stat("Genes not called", cp.get("not_called", 0))]
+    else:
+        cpic_body.append(stat("PharmCAT report", badge("could not be parsed", "red")))
+    cpic_body.append(stat("Tip", '<span style="font-weight:normal;font-size:13px">Recommendations per gene: '
+                                 f'cpic/{E(s["sample"])}_cpic_recommendations.txt</span>'))
+    a(card(S["cpic"], "CPIC Drug Recommendations", cpic_body))
 
     calls = s["cyp2d6"]["calls"]
     agree = s["cyp2d6"]["agree"]
@@ -404,14 +456,15 @@ def html_report(s):
     a(card(S["expansions"], "Repeat Expansions", eh_body))
 
     r, hg, tl = S["roh"]["data"], S["haplogroup"]["data"], S["telomere"]["data"]
-    anc = [stat("Mitochondrial haplogroup", E(hg.get("haplogroup", "N/A"))),
-           stat("ROH total", f"{r.get('total_mb', 'N/A')} MB"),
-           stat("ROH largest segment", f"{r.get('largest_mb', 'N/A')} MB"),
-           stat("Autosomal ROH > 5 MB", len(r["autosomal_over_5mb"]) if "autosomal_over_5mb" in r else "N/A"),
-           stat("Telomere content", E(str(tl.get("tel_content", "N/A"))))]
-    notes = [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
-             for k in ("haplogroup", "roh", "telomere") if stale_note(S[k])]
-    a(['  <div class="card">', "    <h2>Ancestry &amp; Identity</h2>"] + notes + anc + ["  </div>"])
+    a(card(S["roh"], "Runs of Homozygosity",
+           [stat("Status", done_badge(S["roh"])),
+            stat("ROH total", f"{r.get('total_mb', 0):.1f} MB"),
+            stat("ROH largest segment", f"{r.get('largest_mb', 0):.1f} MB"),
+            stat("Segments", r.get("segments", 0)),
+            stat("Autosomal ROH > 5 MB", len(r.get("autosomal_over_5mb", [])))]))
+    a(card(S["haplogroup"], "Mitochondrial Haplogroup",
+           [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", ".")))]))
+    a(card(S["telomere"], "Telomere Length", [stat("Telomere content", E(str(tl.get("tel_content", "."))))]))
 
     mi = S["mito"]["data"]
     a(card(S["mito"], "Mitochondrial Analysis", [stat("chrM variants (PASS)", mi.get("pass")),
@@ -419,7 +472,8 @@ def html_report(s):
 
     cl = S["clinical"]["data"]
     a(card(S["clinical"], "Clinical Variant Filter",
-           [stat("Total interesting variants", cl.get("variants")), stat("Genes", cl.get("genes"))]
+           [stat("Total interesting variants", cl.get("variants"))]
+           + ([stat("Genes", cl["genes"])] if "genes" in cl else [])
            + [stat(f"{k} impact", v) for k, v in sorted((cl.get("by_impact") or {}).items())]))
 
     sl = S["slivar"]["data"]
@@ -491,6 +545,7 @@ def main(argv=None):
     ap.add_argument("--sample")
     ap.add_argument("--sample-dir")
     ap.add_argument("--json", help="where to write the collected summary (default SAMPLE_DIR/summary.json)")
+    ap.add_argument("--declared-sex", help="the samplesheet's sex, when no run status or manifest records it")
     ap.add_argument("-o", "--out", action="append", default=[],
                     help="report to write: .txt for text, .html for HTML (repeatable)")
     a = ap.parse_args(argv)
@@ -501,7 +556,7 @@ def main(argv=None):
         with open(a.summary) as f:
             s = json.load(f)
     elif a.sample and a.sample_dir:
-        s = collect_summary.collect(a.sample, a.sample_dir)
+        s = collect_summary.collect(a.sample, a.sample_dir, a.declared_sex)
         write(a.json or os.path.join(a.sample_dir, "summary.json"), json.dumps(s, indent=1) + "\n")
     else:
         ap.error("give --summary, or --sample and --sample-dir")

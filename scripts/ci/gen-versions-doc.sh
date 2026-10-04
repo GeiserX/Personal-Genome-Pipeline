@@ -41,9 +41,8 @@ HEADER
         line = substr(line, 1, RSTART)
       }
       val = line; sub(/^[^=]*="/, "", val); sub(/".*$/, "", val)
-      # A digest goes first, so a tag+digest pin (python:3.11.17@sha256:...)
-      # gives tool python and version 3.11.17@sha256:..., not a tool named
-      # after its tag. A tag is a colon after the last slash (a registry port
+      # A digest goes first, so a tag+digest pin (NAME:TAG@sha256:...) gives
+      # tool NAME and version TAG@sha256:..., not a tool named after its tag. A tag is a colon after the last slash (a registry port
       # is not one).
       digest = ""
       if (index(val, "@") > 0) {

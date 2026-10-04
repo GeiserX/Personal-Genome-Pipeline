@@ -21,6 +21,14 @@ Each section has a state:
 
 The run manifest (S/run_manifest.tsv, bin/write_manifest.sh) is copied in for
 the report footer, with the ClinVar release date and the HLA database release.
+
+  collect_summary.py sample-qc --sample S --somalier-samples F --selfsm F [...]
+
+writes the sample identity and contamination table of step 33 (and of the
+Nextflow SAMPLE_QC process): the sex somalier infers from the reads, the
+declared sex, VerifyBamID2's FREEMIX against a warning threshold, and the
+other samples somalier finds to be the same person. Both callers stop on the
+sex_check value this writes, so the rule lives here once.
 """
 import argparse
 import csv
@@ -440,7 +448,12 @@ def sec_cpsr(d, s):
 def sec_clinical(d, s):
     p = first_existing(d, [f"clinical/{s}_clinical_summary.tsv"])
     if not p:
-        return None, {}
+        # The Nextflow report gets the clinical VCF, not the summary table:
+        # the count only (one record per variant, as in the table).
+        v = first_existing(d, [f"clinical/{s}_clinical.vcf.gz"])
+        if not v:
+            return None, {}
+        return v, {"variants": sum(1 for _ in vcf_records(v))}
     rows = read_tsv(p)
     by = {}
     for r in rows:
@@ -452,7 +465,11 @@ def sec_clinical(d, s):
 def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
-        return None, {}
+        # The Nextflow report gets the prioritized VCF: the count only.
+        v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
+        if not v:
+            return None, {}
+        return v, {"prioritized": sum(1 for _ in vcf_records(v))}
     rows = read_tsv(p)
     out = {"prioritized": len(rows)}
     ch = os.path.join(os.path.dirname(p), f"{s}_compound_hets.tsv")
@@ -488,10 +505,106 @@ def sec_sex_check(d, s):
     return p, {"inferred_sex": sex, "cn_chrX": row.get("CNchrX", ""), "cn_chrY": row.get("CNchrY", "")}
 
 
+# --- sample identity and contamination (step 33) ----------------------------------
+
+FREEMIX_WARN = 0.03   # VerifyBamID2 FREEMIX above this is reported as possible contamination
+SAME_PERSON = 0.9     # somalier relatedness at or above this: the same person (a duplicate or a swap)
+SOMALIER_SEX = {"1": "male", "2": "female"}   # its samples.tsv sex column; -9 unknown, -2 X and Y disagree
+
+
+def read_rows(path):
+    """Rows of a tab-separated file whose header may start with '#'."""
+    with open_text(path) as f:
+        lines = [l.rstrip("\n").split("\t") for l in f if l.strip()]
+    if not lines:
+        return []
+    head = [lines[0][0].lstrip("#")] + lines[0][1:]
+    return [dict(zip(head, r)) for r in lines[1:]]
+
+
+def num(x):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v else None   # NaN is no value
+
+
+def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_sex=None,
+                    freemix_warn=FREEMIX_WARN, somalier_id=None, marker_check=""):
+    """The step 33 verdict for one sample, as ordered (key, value) pairs."""
+    sid = somalier_id or sample
+    rows = read_rows(samples_tsv)
+    row = next((r for r in rows if r.get("sample_id") == sid), None)
+    if row is None:
+        raise Unreadable(f"{os.path.basename(samples_tsv)} has no row for sample '{sid}' "
+                         f"(it has: {', '.join(r.get('sample_id', '?') for r in rows) or 'none'})")
+    inferred = SOMALIER_SEX.get(row.get("sex", ""), "unknown")
+    declared = (declared_sex or "").lower() or None
+    if not declared:
+        sex_check, why = "not_checked", "no declared sex"
+    elif inferred == "unknown":
+        sex_check = "not_checked"
+        why = (f"somalier could not tell the sex from {row.get('X_n', '0')} chrX sites "
+               f"(it needs more than 10 with reads, and allele balances that look like one person)")
+    elif inferred == declared:
+        sex_check, why = "ok", f"declared {declared}, somalier infers {inferred}"
+    else:
+        sex_check, why = "mismatch", f"declared {declared}, somalier infers {inferred}"
+    gt = num(row.get("gt_depth_mean"))
+    ydp = num(row.get("Y_depth_mean"))
+    xdp = num(row.get("X_depth_mean"))
+    sites = sum(int(num(row.get(k)) or 0) for k in ("n_hom_ref", "n_het", "n_hom_alt"))
+    out = [("sample", sample), ("somalier_id", sid), ("declared_sex", declared or ""),
+           ("inferred_sex", inferred), ("sex_check", sex_check), ("sex_check_reason", why),
+           ("sites_genotyped", str(sites)), ("depth_at_sites", row.get("gt_depth_mean", "")),
+           ("x_sites", row.get("X_n", "")), ("x_het", row.get("X_het", "")),
+           ("x_hom_alt", row.get("X_hom_alt", "")),
+           ("x_depth_ratio", f"{xdp / gt:.2f}" if gt and xdp is not None else ""),
+           ("y_sites", row.get("Y_n", "")),
+           ("y_depth_ratio", f"{ydp / gt:.2f}" if gt and ydp is not None else "")]
+    freemix, status, markers = None, "not_run", ""
+    if selfsm:
+        sm = read_rows(selfsm)
+        freemix = num(sm[0].get("FREEMIX")) if sm else None
+        if freemix is None:
+            raise Unreadable(f"{os.path.basename(selfsm)} has no FREEMIX value")
+        status = "warn" if freemix > freemix_warn else "ok"
+        markers = sm[0].get("#SNPS", "")
+    # marker_check: passed, or skipped when fewer than 1,000 panel markers had
+    # reads and VerifyBamID2 ran with --DisableSanityCheck.
+    out += [("freemix", f"{freemix:.4f}" if freemix is not None else ""),
+            ("freemix_warn_above", f"{freemix_warn:g}"), ("contamination", status),
+            ("freemix_markers", markers), ("verifybamid2_marker_check", marker_check)]
+    same = []
+    if pairs_tsv:
+        for r in read_rows(pairs_tsv):
+            a, b = r.get("sample_a"), r.get("sample_b")
+            rel = num(r.get("relatedness"))
+            if sid in (a, b) and a != b and rel is not None and rel >= SAME_PERSON:
+                same.append(f"{b if a == sid else a} ({rel:.2f})")
+    out.append(("same_person_as", ", ".join(same)))
+    return out
+
+
+def sec_sample_qc(d, s):
+    p = first_existing(d, [f"qc/{s}_sample_qc.tsv"])
+    if not p:
+        return None, {}
+    data = {}
+    for r in read_tsv(p):
+        if r.get("key"):
+            data[r["key"]] = r.get("value", "")
+    if "inferred_sex" not in data:
+        raise Unreadable(f"{os.path.basename(p)} has no inferred_sex row")
+    return p, data
+
+
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
+    ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),
@@ -561,7 +674,7 @@ def manifest_value(rows, section, key):
     return None
 
 
-def collect(sample, sample_dir):
+def collect(sample, sample_dir, declared_sex=None):
     status = read_run_status(sample_dir)
     manifest = read_manifest(sample_dir)
     sections = {}
@@ -610,7 +723,9 @@ def collect(sample, sample_dir):
         "run": {
             "status_file": status is not None,
             "started_utc": status["started_utc"] if status else None,
-            "declared_sex": (status or {}).get("declared_sex") or manifest_value(manifest, "run", "declared_sex"),
+            "declared_sex": (declared_sex or (status or {}).get("declared_sex")
+                             or manifest_value(manifest, "run", "declared_sex")
+                             or sections["sample_qc"]["data"].get("declared_sex") or None),
         },
         "databases": {
             "clinvar_release": clinvar_date,
@@ -625,13 +740,48 @@ def collect(sample, sample_dir):
     return summary
 
 
+def sample_qc_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py sample-qc",
+                                 description="Write the step 33 table (key, value) for one sample.")
+    ap.add_argument("--sample", required=True)
+    ap.add_argument("--somalier-samples", required=True, help="somalier relate's samples.tsv")
+    ap.add_argument("--somalier-pairs", help="somalier relate's pairs.tsv (other samples of the run)")
+    ap.add_argument("--somalier-id", help="the sample's name in somalier's files (its @RG SM; default --sample)")
+    ap.add_argument("--selfsm", help="VerifyBamID2's .selfSM")
+    ap.add_argument("--declared-sex", choices=["male", "female", ""], default="")
+    ap.add_argument("--freemix-warn", type=float, default=FREEMIX_WARN)
+    ap.add_argument("--marker-check", choices=["passed", "skipped", ""], default="",
+                    help="skipped: VerifyBamID2 ran with --DisableSanityCheck (fewer than 1,000 markers had reads)")
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args(argv)
+    try:
+        rows = sample_qc_table(a.sample, a.somalier_samples, a.selfsm, a.somalier_pairs, a.declared_sex,
+                               a.freemix_warn, a.somalier_id, a.marker_check)
+    except (Unreadable, OSError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("key\tvalue\n")
+        for k, v in rows:
+            f.write(f"{k}\t{v}\n")
+    os.replace(tmp, a.out)
+    for k, v in rows:
+        print(f"  {k}: {v}")
+    return 0
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["sample-qc"]:
+        return sample_qc_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--sample-dir", required=True)
+    ap.add_argument("--declared-sex", help="the samplesheet's sex, when no run status or manifest records it")
     ap.add_argument("--out", help="summary JSON (default: SAMPLE_DIR/summary.json)")
     a = ap.parse_args(argv)
-    summary = collect(a.sample, a.sample_dir)
+    summary = collect(a.sample, a.sample_dir, a.declared_sex)
     out = a.out or os.path.join(a.sample_dir, "summary.json")
     tmp = out + ".tmp"
     with open(tmp, "w") as f:

@@ -3,8 +3,10 @@
     REPORTING — HTML Report Generation & MultiQC Aggregation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Produces two kinds of report:
-    1. Per-sample consolidated HTML report (ClinVar, PGx, CPSR, clinical filter,
-       slivar, ROH, mito haplogroup, CPIC)
+    1. Per-sample consolidated HTML report, rendered by bin/render_report.py
+       as the bash report is (QC, sample identity and contamination, variant
+       counts, ClinVar, PGx, CPIC, CPSR, clinical filter, slivar, ROH, mito
+       haplogroup)
     2. Cross-sample MultiQC dashboard aggregating QC outputs (fastp, mosdepth, etc.)
 
     Both modules are gated on params.tools containing their tool name.
@@ -17,7 +19,7 @@ include { MULTIQC     } from '../modules/local/multiqc/main'
 workflow REPORTING {
 
     take:
-    ch_report_inputs  // channel: [meta, clinvar_hits, pharmcat_html, clinical_vcf, cpsr_html, slivar_vcf, roh_txt, haplogroup_txt, cpic_txt]
+    ch_report_inputs  // channel: [meta, vcf, [output files of the steps that ran for the sample]]
     ch_multiqc_files  // channel: flat collection of QC files (fastp, mosdepth, samtools, etc.)
 
     main:
