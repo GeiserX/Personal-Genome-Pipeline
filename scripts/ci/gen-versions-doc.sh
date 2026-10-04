@@ -41,15 +41,21 @@ HEADER
         line = substr(line, 1, RSTART)
       }
       val = line; sub(/^[^=]*="/, "", val); sub(/".*$/, "", val)
+      # A digest goes first, so a tag+digest pin (python:3.11.17@sha256:...)
+      # gives tool python and version 3.11.17@sha256:..., not a tool named
+      # after its tag. A tag is a colon after the last slash (a registry port
+      # is not one).
+      digest = ""
       if (index(val, "@") > 0) {
-        image = substr(val, 1, index(val, "@") - 1)
-        version = substr(val, index(val, "@") + 1)
-      } else if (index(val, ":") > 0) {
-        image = val; sub(/:[^:]*$/, "", image)
-        version = val; sub(/^.*:/, "", version)
-      } else {
-        image = val; version = "(none)"
+        digest = substr(val, index(val, "@") + 1)
+        val = substr(val, 1, index(val, "@") - 1)
       }
+      image = val; tag = ""
+      if (match(val, /:[^:\/]*$/)) {
+        image = substr(val, 1, RSTART - 1)
+        tag = substr(val, RSTART + 1)
+      }
+      version = (tag != "" && digest != "") ? tag "@" digest : (tag != "" ? tag : (digest != "" ? digest : "(none)"))
       tool = image; sub(/^.*\//, "", tool)
       printf "| %s | %s | `%s` | `%s` | `%s` | %s |\n", cell(group), cell(tool), var, image, version, cell(note)
       n++
