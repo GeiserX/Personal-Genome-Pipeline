@@ -151,6 +151,17 @@ for l in "${LOCI[@]}"; do
   esac
 done >> "${W}/ab.tsv"
 
+# Every region has a depth for both references and both MAPQ floors, and
+# every all-reads depth is above 0: a short or empty table is a broken run,
+# not a measurement, so it fails before any table is written. (A MAPQ >= 1
+# depth of 0 is a possible result.)
+rows=$(grep -c . "${W}/ab.tsv" || true)
+zero=$(awk -F'\t' '$3 == 0 && $4 <= 0' "${W}/ab.tsv" | wc -l | tr -d ' ')
+if [ "$rows" -ne $(( ${#REGION_ORDER[@]} * 4 )) ] || [ "$zero" -ne 0 ]; then
+  echo "ERROR: ab.tsv has ${rows} depths (want $(( ${#REGION_ORDER[@]} * 4 ))) and ${zero} regions with no reads at all" >&2
+  exit 1
+fi
+
 # --- 3. Table -------------------------------------------------------------------
 {
   echo "### Depth with and without ALT contigs (fixture ${TAG}, HG002 at about 30x)"
@@ -179,13 +190,3 @@ done >> "${W}/ab.tsv"
 } > "${W}/ab.md"
 cat "${W}/ab.md"
 cat "${W}/ab.md" >> "$SUMMARY"
-
-# Every region has a depth for both references and both MAPQ floors, and
-# every all-reads depth is above 0: a short or empty table is a broken run,
-# not a measurement. (A MAPQ >= 1 depth of 0 is a possible result.)
-rows=$(grep -c . "${W}/ab.tsv" || true)
-zero=$(awk -F'\t' '$3 == 0 && $4 <= 0' "${W}/ab.tsv" | wc -l | tr -d ' ')
-if [ "$rows" -ne $(( ${#REGION_ORDER[@]} * 4 )) ] || [ "$zero" -ne 0 ]; then
-  echo "ERROR: ab.tsv has ${rows} depths (want $(( ${#REGION_ORDER[@]} * 4 ))) and ${zero} regions with no reads at all" >&2
-  exit 1
-fi
