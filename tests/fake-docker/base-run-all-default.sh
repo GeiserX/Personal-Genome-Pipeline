@@ -1,79 +1,25 @@
 #!/usr/bin/env bash
-# run-all.sh with the default settings (SKIP_VALIDATION unset, no optional
-# data) on a sample that already has a BAM and a VCF: the pre-flight
-# validation passes, the steps whose data is not installed are skipped, and
-# the run exits 0.
-#
-# The hook stands in for the tools: it writes the files each step checks
-# after its container (Manta's VCFs, goleft's .ped, Cyrius's .tsv, PharmCAT's
-# JSON, plink2's .sscore) and answers the bcftools calls whose output a step
-# reads (contig list, record count). Everything else goes to the generic
-# output hook from lib.sh.
+# run-all.sh with the default settings on a sample that has a BAM and a VCF,
+# ClinVar installed and no optional data. run-all.sh is a launcher: it runs
+# validate-setup.sh, writes a one-row samplesheet and starts the Nextflow
+# pipeline (a fake nextflow here, which logs its arguments) with -resume, the
+# --tools list of a default run minus the steps whose data is missing, and
+# the database parameters it found. Then the two reports run.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
 export GENOME_DIR="${CASE_WORK}/genome"
-seed_reference "$GENOME_DIR"
-seed_clinvar "$GENOME_DIR"
-seed_sample "$GENOME_DIR" sample1
+G=$GENOME_DIR
+seed_reference "$G"
+seed_clinvar "$G"
+seed_sample "$G" sample1
 
-# Step 25 downloads PGS Catalog scoring files and refuses one without a
-# GRCh38 #HmPOS_build header. Seed harmonised files so it scores, as it does
-# on a second run.
-mkdir -p "${GENOME_DIR}/prs_scores"
-for id in PGS000018 PGS000014 PGS000004 PGS000662 PGS000016 PGS000334 PGS000027 PGS000017 PGS000055; do
-  printf '#HmPOS_build=GRCh38\neffect_allele\teffect_weight\thm_chr\thm_pos\nA\t0.1\t1\t1000\n' \
-    | gzip -c > "${GENOME_DIR}/prs_scores/${id}.txt.gz"
-done
-
+# The ExpansionHunter catalog comes out of its image (`cat` in the container).
 use_output_hook
 cat > "${CASE_WORK}/tools-hook" <<'HOOK'
 #!/usr/bin/env bash
-set -euo pipefail
-. "${CASE_WORK:?}/host-path.sh"
-args="${*:2}"
-# opt NAME: the word after NAME in the command (a bash -c body spans lines),
-# quotes stripped.
-opt() {
-  local -a w
-  read -r -d '' -a w <<<"$args" || true
-  local i
-  for ((i = 0; i < ${#w[@]} - 1; i++)); do
-    if [ "${w[i]}" = "$1" ]; then printf '%s' "${w[i + 1]//[\'\"]/}"; return 0; fi
-  done
-  return 1
-}
-put() {   # put CONTAINER_PATH CONTENT
-  local h
-  h=$(host_path "$1")
-  mkdir -p "$(dirname "$h")"
-  printf '%b' "$2" > "$h"
-}
-case "$args" in
-  configManta.py*)
-    put "$(opt --runDir)/runWorkflow.py" '#!/usr/bin/env python\n' ;;
-  */runWorkflow.py*)
-    d="$(dirname "$2")/results/variants"
-    for f in diploidSV candidateSV candidateSmallIndels; do
-      h=$(host_path "${d}/${f}.vcf.gz")
-      mkdir -p "$(dirname "$h")"
-      printf '##fileformat=VCFv4.1\n' | gzip -c > "$h"
-      : > "${h}.tbi"
-    done ;;
-  "goleft indexcov"*)
-    d=$(opt --directory)
-    put "${d}/${d##*/}-indexcov.ped" \
-      '#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\nsample1\tsample1\t-9\t-9\t1\t-9\t1.02\t0.98\n' ;;
-  *"cyrius "*)
-    put "$(opt --outDir)/$(opt --prefix).tsv" 'Sample\tGenotype\tFilter\nsample1\t*1/*1\tPASS\n' ;;
-  *pharmcat.jar*)
-    put "$(opt -o)/$(opt -bf).report.json" '{}\n' ;;
-  "plink2 "*--score*)
-    put "$(opt --out).sscore" '#IID\tALLELE_CT\tNAMED_ALLELE_DOSAGE_SUM\tSCORE1_AVG\tSCORE1_SUM\nsample1\t2\t1\t0.05\t0.1\n' ;;
-  "bcftools index -s "*)
-    printf 'chr1\t248956422\t1\n' ;;
-  "bcftools index -n "*|*"| wc -l"*)
-    echo 1 ;;
+case "${*:2}" in
+  "cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json") echo '[{"LocusId": "HTT"}]' ;;
 esac
 exec "${CASE_WORK}/hook-outputs" "$@"
 HOOK
@@ -81,9 +27,39 @@ chmod +x "${CASE_WORK}/tools-hook"
 export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/tools-hook"
 
 run_expect 0 run-all "${SCRIPTS}/run-all.sh" sample1 male
-output_lacks run-all 'Setup validation failed'
+output_has run-all '=== Summary ==='   # validate-setup.sh ran first
 output_lacks run-all 'unbound variable'
-# Exact counts: a step that turns from ok into skipped must fail this case.
-# The 8 skipped are CPSR, pypgx, VEP and CNVpytor (data not installed),
-# AnnotSV (no annotations), and vcfanno, clinical filter and slivar (need VEP).
-output_has run-all '^  21 ok, 8 skipped, 0 failed$'
+
+NFLOG=$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" || true)
+[ "$(grep -c . <<<"$NFLOG")" -eq 1 ] || fail "nextflow was called $(grep -c . <<<"$NFLOG") times, expected once: ${NFLOG}"
+SHEET="${G}/sample1/nextflow/samplesheet.csv"
+TOOLS='pharmcat,cpic,roh,mito_haplogroup,mosdepth,telomere_hunter,mito_variants,cyrius,manta,delly,duphold,survivor_merge,multiqc,clinvar,expansion_hunter,stranger'
+CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
+want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=25.10.8 :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
+  --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
+  --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json")"
+[ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
+  got:  ${NFLOG}
+  want: ${want}"
+grep -q '^NEXTFLOW_VERSION="25.10.8"' "${REPO_ROOT}/versions.env" || fail "versions.env no longer pins Nextflow 25.10.8: update this case's NXF_VER"
+
+B="${G}/sample1/aligned/sample1_sorted.bam" V="${G}/sample1/vcf/sample1.vcf.gz"
+[ "$(cat "$SHEET")" = "sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex
+sample1,,,${B},${B}.bai,${V},${V}.tbi,male" ] || fail "samplesheet: $(cat "$SHEET")"
+output_has run-all 'NOTE: starting from the existing VCF'
+
+# Exact counts: a step that turns from run into skipped, or back, fails here.
+# Skipped: VEP, CPSR, CNVpytor, AnnotSV, pypgx, HLA and PRS (data not
+# installed), and vcfanno, clinical filter and slivar (need VEP).
+[ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 16 ] || fail "not 16 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
+[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 10 ] || fail "not 10 steps skipped"
+output_has run-all '^  31 slivar +skipped +\(needs VEP, data not installed: vep_cache/'
+output_has run-all '^  25 PRS +skipped +\(data not installed: prs_scores\)'
+
+STATUS="${G}/sample1/logs/run_status.tsv"
+grep -q $'^meta\tdeclared_sex\tmale$' "$STATUS" || fail "run_status.tsv lacks the declared sex"
+grep -q $'^step\t13\tskipped (data not installed: ' "$STATUS" || fail "run_status.tsv lacks step 13 skipped"
+for s in 06 07 16 21 27 28; do grep -q $'^step\t'"${s}"$'\tok$' "$STATUS" || fail "run_status.tsv lacks step ${s} ok: $(cat "$STATUS")"; done
+grep -q $'^run\twritten_by\trun-all.sh' "${G}/sample1/run_manifest.tsv" || fail "no run manifest from run-all.sh"
+for l in 24-html-report generate-report; do [ -s "${G}/sample1/logs/${l}.log" ] || fail "the report ${l} did not run"; done
+echo "run-all.sh validated the setup, wrote the samplesheet and started nextflow once with the default flags."

@@ -103,6 +103,9 @@ docker_log_has() {
 # on the current PATH except NAME..., so `command -v NAME` fails.
 hide_commands() {
   local bin="${CASE_WORK}/path-without" d f n h skip
+  # A fresh directory each call: links left by an earlier call would keep a
+  # command this call hides.
+  rm -rf "$bin"
   mkdir -p "$bin"
   local -a dirs
   IFS=: read -r -a dirs <<<"$PATH"
