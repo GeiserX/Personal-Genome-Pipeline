@@ -144,7 +144,7 @@ compare() {
     if [ -n "$bad" ]; then
       result=MISSING detail="no file:${bad}"
     elif [ "$item" = variants ]; then
-      read -r oa ob sh mm < <(variants "$a" "$b" "$s" 2>"${tmp}/err" || true)
+      read -r oa ob sh mm < <(variants "$a" "$b" "$s" 2>"${tmp}/err" || true) || true
       if ! [[ "${oa:-}${ob:-}${sh:-}${mm:-}" =~ ^[0-9]+$ ]]; then
         result=ERROR detail="bcftools isec failed: $(head -c 200 "${tmp}/err" | tr '\n' ' ')"
       else

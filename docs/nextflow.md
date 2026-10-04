@@ -18,9 +18,9 @@ Every BAM then goes through a sex check (indexcov), and the pipeline runs pharma
 
 1. **Docker** (already required for the bash pipeline)
 2. **Java 17 or later** (Nextflow 25.10 runtime requirement; CI runs Java 17)
-3. **Nextflow 25.10.4**, the version CI validates. Pin it when installing, because the plain installer fetches the newest release:
+3. **Nextflow 25.10.8**, the version CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
    ```bash
-   curl -s https://get.nextflow.io | NXF_VER=25.10.4 bash
+   curl -s https://get.nextflow.io | NXF_VER=25.10.8 bash
    sudo mv nextflow /usr/local/bin/
    ```
 
@@ -329,7 +329,7 @@ The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip 
 
 ### CI validation scope
 
-`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup and html_report; and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
+`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup and html_report; and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
 
 ---
 

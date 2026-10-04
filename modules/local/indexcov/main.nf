@@ -8,9 +8,10 @@
 
     The process only reports: <sample>_sex_check.tsv holds the inferred sex
     (male, female or unknown) and CNchrX and CNchrY, read from the .ped by
-    column name. main.nf compares it with the samplesheet's sex and stops the
-    run on a mismatch (--sex_check warn logs it instead), before DeepVariant
-    or any other BAM step starts, since they take the declared sex.
+    column name. workflows/upstream.nf compares it with the samplesheet's
+    sex and stops the run on a mismatch (--sex_check warn logs it instead),
+    before DeepVariant or any other BAM step starts, since they take the
+    declared sex.
 
     Equivalent to: scripts/16-indexcov.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
