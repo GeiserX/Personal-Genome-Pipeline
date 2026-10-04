@@ -23,7 +23,7 @@ SCRIPTS="${REPO_ROOT}/scripts"
 # URL and expect the md5 of its placeholder (see download-body.sh).
 # shellcheck source=download-body.sh
 . "${REPO_ROOT}/scripts/ci/fake-docker/download-body.sh"
-export REF_FASTA_URL="https://fake.invalid/reference/Homo_sapiens_assembly38.fasta"
+export REF_FASTA_URL="https://fake.invalid/reference/GRCh38_no_alt_analysis_set.fasta"
 REF_FASTA_MD5=$(fake_body "$REF_FASTA_URL" | fake_md5)
 REF_FAI_MD5=$(fake_body "${REF_FASTA_URL}.fai" | fake_md5)
 export REF_FASTA_MD5 REF_FAI_MD5
@@ -38,8 +38,8 @@ fail() {
 # validate-setup.sh rejects a reference smaller than 3 GB.
 seed_reference() {
   mkdir -p "$1/reference"
-  truncate -s 3200000000 "$1/reference/Homo_sapiens_assembly38.fasta"
-  printf 'chr1\t248956422\t6\t60\t61\n' > "$1/reference/Homo_sapiens_assembly38.fasta.fai"
+  truncate -s 3200000000 "$1/reference/GRCh38_no_alt_analysis_set.fasta"
+  printf 'chr1\t248956422\t6\t60\t61\n' > "$1/reference/GRCh38_no_alt_analysis_set.fasta.fai"
 }
 
 # seed_clinvar GENOME_DIR: the raw ClinVar download and the two files setup.sh

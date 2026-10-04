@@ -50,9 +50,9 @@ gh release download "$TAG" -R "$GH_REPO" -D "$FX" --clobber
 (cd "$FX" && sha256sum -c --quiet SHA256SUMS)
 mkdir -p "${G}/reference" "${G}/${SAMPLE}/fastq"
 in_fx() { docker run --rm -i -v "${FX}:/f" -v "${G}:/genome" -w /f "$SAMTOOLS_IMAGE" "$@"; }
-in_fx samtools faidx -o /genome/reference/Homo_sapiens_assembly38.fasta /f/fixture_ref.fa.gz chr20 chrM
-in_g "$SAMTOOLS_IMAGE" samtools faidx reference/Homo_sapiens_assembly38.fasta
-in_g "$SAMTOOLS_IMAGE" samtools dict -o reference/Homo_sapiens_assembly38.dict reference/Homo_sapiens_assembly38.fasta
+in_fx samtools faidx -o /genome/reference/GRCh38_no_alt_analysis_set.fasta /f/fixture_ref.fa.gz chr20 chrM
+in_g "$SAMTOOLS_IMAGE" samtools faidx reference/GRCh38_no_alt_analysis_set.fasta
+in_g "$SAMTOOLS_IMAGE" samtools dict -o reference/GRCh38_no_alt_analysis_set.dict reference/GRCh38_no_alt_analysis_set.fasta
 # Reads the GIAB alignment placed on chr20 or chrM, as pairs.
 in_fx samtools view -u /f/HG002_slice.bam chr20 chrM \
   | in_fx samtools collate -u -O - /tmp/c \
@@ -83,7 +83,7 @@ ERR03A=$(grep -m1 -iE 'read group|USER ERROR|sample list|samples cannot|Exceptio
 run_dv() {   # run_dv <sample> <out name>: step 03's command on the chr20 slice only
   docker run --rm --cpus 4 --memory 14g -v "${G}:/genome" "$DEEPVARIANT_IMAGE" \
     /opt/deepvariant/bin/run_deepvariant --model_type=WGS \
-      --ref=/genome/reference/Homo_sapiens_assembly38.fasta \
+      --ref=/genome/reference/GRCh38_no_alt_analysis_set.fasta \
       --reads="/genome/$1/aligned/$1_sorted.bam" \
       --regions="$SLICE" \
       --output_vcf="/genome/$1/$2.vcf.gz" --num_shards=4
@@ -111,14 +111,14 @@ row 3 "Do the two model directories hardcoded in scripts/03e-clair3.sh exist in 
   "$(grep -E 'present|MISSING|models in' "${LOGS}/q3.log" | cut -c1-700)"
 
 # --- 4. TIDDIT with only a BWA-MEM2 index ---------------------------------------
-in_g "$BWAMEM2_IMAGE" bwa-mem2 index reference/Homo_sapiens_assembly38.fasta > "${LOGS}/q4_index.log" 2>&1
-IDX_FILES=$(cd "${G}/reference" && ls Homo_sapiens_assembly38.fasta.* | tr '\n' ' ')
+in_g "$BWAMEM2_IMAGE" bwa-mem2 index reference/GRCh38_no_alt_analysis_set.fasta > "${LOGS}/q4_index.log" 2>&1
+IDX_FILES=$(cd "${G}/reference" && ls GRCh38_no_alt_analysis_set.fasta.* | tr '\n' ' ')
 "${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4.log" 2>&1; RC=$?
 ASM=$(grep -m1 -E 'BWA index detected|No BWA index' "${LOGS}/q4.log")
 ERR=$(grep -E '^[A-Za-z]+Error|Exception' "${LOGS}/q4.log" | tail -n 1)
 # Control: the same run with the BWA-MEM2 index moved away (--skip_assembly).
 mkdir -p "${G}/bwamem2-aside"
-mv "${G}/reference/Homo_sapiens_assembly38.fasta.bwt.2bit.64" "${G}/bwamem2-aside/"
+mv "${G}/reference/GRCh38_no_alt_analysis_set.fasta.bwt.2bit.64" "${G}/bwamem2-aside/"
 in_g "$BCFTOOLS_IMAGE" rm -rf "${SAMPLE}/sv_tiddit"   # written by root inside the container
 "${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4_control.log" 2>&1; RCC=$?
 SVC=$(in_g "$BCFTOOLS_IMAGE" bcftools view -H "${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz" 2>/dev/null | wc -l | tr -d ' ')
@@ -135,7 +135,7 @@ in_g "$BCFTOOLS_IMAGE" bcftools query -f '%ID\t%CHROM\t%POS\t%REF\t%ALT{0}\t[%GT
 awk 'BEGIN {OFS = "\t"; print "#AncestryDNA raw data download (synthetic, from the GIAB truth)"; print "rsid\tchromosome\tposition\tallele1\tallele2"}
      {a1 = ($6 ~ /^0/) ? $4 : $5; a2 = ($6 ~ /1$/) ? $5 : $4; print "rs" NR, $2, $3, a1, a2}' \
   "${G}/chip/truth20.tsv" > "${G}/chip/ancestry_5col.txt"
-in_g "$BCFTOOLS_IMAGE" bcftools convert --tsv2vcf chip/ancestry_5col.txt -f reference/Homo_sapiens_assembly38.fasta \
+in_g "$BCFTOOLS_IMAGE" bcftools convert --tsv2vcf chip/ancestry_5col.txt -f reference/GRCh38_no_alt_analysis_set.fasta \
   -s "$SAMPLE" -c ID,CHROM,POS,AA -Oz -o chip/out.vcf.gz > "${LOGS}/q5.log" 2>&1; RC=$?
 in_g "$BCFTOOLS_IMAGE" bcftools query -f '%POS\t%REF>%ALT\t[%GT]\n' chip/out.vcf.gz \
   > "${G}/chip/out_gt.tsv" 2>/dev/null || true
@@ -267,7 +267,7 @@ run_dv "$TRIM" dv_trim > "${LOGS}/q11_dv_trim.log" 2>&1
 happy() {   # happy <sample> <vcf name>: SNP and INDEL recall/precision/F1 on the slice
   docker run --rm --user root -v "${G}:/genome" "$HAPPY_IMAGE" /opt/hap.py/bin/hap.py \
     /genome/reference/HG002_truth_chr20.vcf.gz "/genome/$1/$2.vcf.gz" \
-    -r /genome/reference/Homo_sapiens_assembly38.fasta -f /genome/reference/HG002_truth_chr20.bed \
+    -r /genome/reference/GRCh38_no_alt_analysis_set.fasta -f /genome/reference/HG002_truth_chr20.bed \
     -o "/genome/$1/happy_$2" --engine=vcfeval > "${LOGS}/q11_happy_$2.log" 2>&1 || true
   awk -F',' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
              ($1 == "SNP" || $1 == "INDEL") && $2 == "PASS" {

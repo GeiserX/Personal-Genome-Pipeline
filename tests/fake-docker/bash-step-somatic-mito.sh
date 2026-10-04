@@ -12,7 +12,7 @@
 export GENOME_DIR="${CASE_WORK}/genome"
 seed_reference "$GENOME_DIR"
 seed_sample "$GENOME_DIR" sample1
-printf '@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:248956422\n' > "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict"
+printf '@HD\tVN:1.6\n@SQ\tSN:chr1\tLN:248956422\n' > "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.dict"
 use_output_hook
 
 # --- step 29 ---------------------------------------------------------------------------

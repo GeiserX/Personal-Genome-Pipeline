@@ -18,7 +18,7 @@ check "gVCF index exists" nonempty "${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz.tbi"
 # --- five hom-ref sites on the chr20 slice, from the truth set -------------------
 SITES="${CASE_TMP}/homref_sites.tsv"
 python3 - "${FIXTURE_DIR}/HG002_truth_chr20.bed" "${FIXTURE_DIR}/HG002_truth_chr20.vcf.gz" \
-  "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta" > "$SITES" <<'PY'
+  "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta" > "$SITES" <<'PY'
 import gzip, sys
 bed, truth, fasta = sys.argv[1:4]
 iv = [tuple(int(x) for x in l.split()[1:3]) for l in open(bed) if l.startswith("chr20\t")]

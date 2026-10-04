@@ -7,7 +7,8 @@
 #                                            release and rebuild the files made from it
 #
 # This script downloads everything needed to run the pipeline:
-#   1. GRCh38 reference genome + index (~3.5 GB)
+#   1. GRCh38 reference genome + index: NCBI's GRCh38 no-ALT analysis set
+#      (~0.9 GB download, ~3.2 GB unpacked)
 #   2. ClinVar database (~200 MB), with its release date in clinvar/RELEASE
 #   3. All Docker images (~10-15 GB)
 #   4. The reference's sequence dictionary and small pinned data files: Delly's
@@ -22,8 +23,12 @@
 # <file>.part, checked, and only then renamed, so a file that exists is whole.
 #
 # The reference can be replaced by another GRCh38 build: set REF_FASTA (where
-# it is stored), REF_FASTA_URL and REF_FASTA_MD5 (and REF_FAI_MD5, or leave it
-# empty to build the index with samtools).
+# it is stored), REF_FASTA_URL (a .gz URL is unpacked) and REF_FASTA_MD5 (an
+# md5, the URL of a checksum file that lists the download, or empty for no
+# check), and REF_FAI_MD5 the same way for the .fai published beside it (empty
+# builds the index with samtools). docs/00-reference-setup.md lists the builds
+# that work and docs/realignment.md what a change of reference means for
+# existing samples.
 set -euo pipefail
 
 PULL_ONLY=false
@@ -67,10 +72,14 @@ export GENOME_DIR
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 
-REF_FASTA_URL=${REF_FASTA_URL:-https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta}
-# md5 of the two files as the bucket reports them (x-goog-hash).
-if [ -z "${REF_FASTA_MD5+x}" ]; then REF_FASTA_MD5=7ff134953dcca8c8997453bbb80b6b5e; fi
-if [ -z "${REF_FAI_MD5+x}" ]; then REF_FAI_MD5=f76371b113734a56cde236bc0372de0a; fi
+# NCBI's GRCh38 analysis set without ALT contigs: chr1-22, X, Y, M, the
+# unplaced and unlocalized scaffolds and chrEBV, 195 sequences. NCBI lists the
+# md5 of every file of the directory in md5checksums.txt, which is read at
+# download time, and publishes the .fai beside the FASTA.
+REF_FASTA_URL=${REF_FASTA_URL:-https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz}
+REF_FAI_URL="${REF_FASTA_URL%.gz}.fai"
+if [ -z "${REF_FASTA_MD5+x}" ]; then REF_FASTA_MD5="$(dirname "$REF_FASTA_URL")/md5checksums.txt"; fi
+if [ -z "${REF_FAI_MD5+x}" ]; then REF_FAI_MD5="$(dirname "$REF_FASTA_URL")/md5checksums.txt"; fi
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
 # lines marked `# optional`). Sets PULLED, SKIPPED and FAILED.
@@ -250,7 +259,7 @@ echo "[OK] ${AVAIL_GB} GB free in ${GENOME_DIR}."
 # Phase 1: Reference Genome
 ###############################################################################
 echo ""
-echo "=== Phase 1: Reference Genome (~3.5 GB) ==="
+echo "=== Phase 1: Reference Genome (~0.9 GB download, ~3.2 GB unpacked) ==="
 
 FASTA="$REF_FASTA"
 FAI="${REF_FASTA}.fai"
@@ -262,18 +271,32 @@ if [ -f "$FASTA" ] && [ -f "$FAI" ]; then
 else
   echo "Downloading GRCh38 reference genome..."
   echo "  Source: ${REF_FASTA_URL}"
-  echo "  Size: ~3.1 GB (FASTA) + ~2 MB (index)"
 
   if [ ! -f "$FASTA" ]; then
+    case "$REF_FASTA_URL" in
+      *.gz) DL="${FASTA}.download.gz" ;;
+      *) DL="$FASTA" ;;
+    esac
     # shellcheck disable=SC2046  # the checksum arguments are dropped when REF_FASTA_MD5 is empty
-    fetch "$REF_FASTA_URL" "$FASTA" $([ -z "$REF_FASTA_MD5" ] || printf 'md5 %s' "$REF_FASTA_MD5") || {
+    fetch "$REF_FASTA_URL" "$DL" $([ -z "$REF_FASTA_MD5" ] || printf 'md5 %s' "$REF_FASTA_MD5") || {
       echo "  The download is resumed when setup.sh runs again."
       exit 1
     }
+    if [ "$DL" != "$FASTA" ]; then
+      echo "  Unpacking $(basename "$REF_FASTA_URL")..."
+      if gzip -dc "$DL" > "${FASTA}.tmp"; then
+        mv -f "${FASTA}.tmp" "$FASTA"
+        rm -f "$DL"
+      else
+        rm -f "${FASTA}.tmp" "$DL"
+        echo "ERROR: could not unpack $(basename "$REF_FASTA_URL"); removed it, run setup.sh again." >&2
+        exit 1
+      fi
+    fi
   fi
 
   if [ ! -f "$FAI" ]; then
-    if [ -z "$REF_FAI_MD5" ] || ! fetch "${REF_FASTA_URL}.fai" "$FAI" md5 "$REF_FAI_MD5"; then
+    if [ -z "$REF_FAI_MD5" ] || ! fetch "$REF_FAI_URL" "$FAI" md5 "$REF_FAI_MD5"; then
       echo "  Generating index with samtools..."
       # The index goes next to the FASTA, so its directory is writable here.
       run_in --rw "$REFDIR" "$SAMTOOLS_IMAGE" \
@@ -282,6 +305,7 @@ else
   fi
   echo "[OK] Reference genome downloaded."
 fi
+if [ -f "$FAI" ]; then echo "[OK] Reference: ${FASTA} ($(grep -c . "$FAI") sequences)"; fi
 
 ###############################################################################
 # Phase 2: ClinVar Database
