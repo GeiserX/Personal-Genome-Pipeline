@@ -5,11 +5,11 @@
     Types HLA-A, B, C (Class I) and DRB1, DQB1, DPB1 (Class II)
     at 4-digit resolution using IPD-IMGT/HLA database against GRCh38.
 
-    Two-step process:
-    1. Build HLA coordinate reference from genome (one-time, cached)
-    2. Run T1K genotyping against the BAM
+    The index (allele sequences and their GRCh38 coordinates) comes from
+    T1K_BUILD, built once per run for every sample; this process types one
+    BAM against it.
 
-    Equivalent to: scripts/08-hla-typing.sh
+    Equivalent to: step 2 of scripts/08-hla-typing.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -21,9 +21,8 @@ process HLA_TYPING {
 
     input:
     tuple val(meta), path(bam), path(bai)
-    path(reference)
-    path(reference_fai)  // staged beside the FASTA, so no task builds its own
-    path(hla_dat)
+    path(seq_fa)    // T1K_BUILD: allele sequences
+    path(coord_fa)  // T1K_BUILD: their GRCh38 coordinates
 
     output:
     tuple val(meta), path("*_hla_genotype.tsv"), emit: hla_alleles
@@ -35,30 +34,10 @@ process HLA_TYPING {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    # Step 1: Build coordinate file from reference genome using pre-downloaded hla.dat
-    t1k-build.pl \\
-        -d ${hla_dat} \\
-        -g ${reference} \\
-        -o hlaidx_grch38
-
-    # Step 3: Run HLA typing
-    # Locate build output (file naming varies across T1K versions). A glob, not
-    # `ls | head`: under pipefail a failed ls would stop the task before the
-    # message below.
-    SEQ_FA=""
-    COORD_FA=""
-    for f in hlaidx_grch38/*dna_seq.fa; do if [ -f "\$f" ]; then SEQ_FA=\$f; break; fi; done
-    for f in hlaidx_grch38/*dna_coord.fa; do if [ -f "\$f" ]; then COORD_FA=\$f; break; fi; done
-    if [ -z "\$SEQ_FA" ] || [ -z "\$COORD_FA" ]; then
-        echo "ERROR: t1k-build did not produce expected output files in hlaidx_grch38/"
-        ls -la hlaidx_grch38/ 2>/dev/null
-        exit 1
-    fi
-
     run-t1k \\
         -b ${bam} \\
-        -f "\$SEQ_FA" \\
-        -c "\$COORD_FA" \\
+        -f ${seq_fa} \\
+        -c ${coord_fa} \\
         --preset hla-wgs \\
         -t ${task.cpus} \\
         --od ./ \\

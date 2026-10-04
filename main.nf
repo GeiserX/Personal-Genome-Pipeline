@@ -80,6 +80,7 @@ workflow {
         ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
         ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
         ['hla_typing',       'hla_dat',           '--hla_dat'],
+        ['hla_typing',       'hla_genes',         '--hla_genes'],
         ['clinvar',          'clinvar',           '--clinvar'],
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
@@ -356,8 +357,10 @@ workflow {
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
 
-    // HLA reference database (IPD-IMGT/HLA hla.dat)
-    ch_hla_dat = Channel.value(params.hla_dat ? file(params.hla_dat, checkIfExists: true) : [])
+    // HLA reference database (IPD-IMGT/HLA hla.dat) and the gene annotation
+    // T1K takes the genes' GRCh38 coordinates from
+    ch_hla_dat   = Channel.value(params.hla_dat   ? file(params.hla_dat, checkIfExists: true)   : [])
+    ch_hla_genes = Channel.value(params.hla_genes ? file(params.hla_genes, checkIfExists: true) : [])
 
     // AnnotSV annotation directory (the biocontainer ships no annotation data)
     ch_annotsv_annotations = Channel.value(params.annotsv_annotations ? file(params.annotsv_annotations, checkIfExists: true) : [])
@@ -429,6 +432,7 @@ workflow {
         ch_reference_dict,
         ch_expansion_catalog,
         ch_hla_dat,
+        ch_hla_genes,
         ch_cytoband
     )
 

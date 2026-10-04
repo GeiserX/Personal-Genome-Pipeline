@@ -248,6 +248,12 @@
                     "description": "Pre-downloaded IPD-IMGT/HLA hla.dat file for T1K HLA typing.",
                     "fa_icon": "fas fa-file"
                 },
+                "hla_genes": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Gene annotation (GTF) T1K takes each HLA gene's GRCh38 coordinates from: the gene lines of GENCODE's basic annotation that scripts/setup.sh installs as reference/gencode.v<release>.basic.genes.gtf. Required with hla_typing.",
+                    "fa_icon": "fas fa-file"
+                },
                 "slivar_bin": {
                     "type": "string",
                     "format": "file-path",
