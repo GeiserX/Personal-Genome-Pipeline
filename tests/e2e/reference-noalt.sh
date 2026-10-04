@@ -2,7 +2,8 @@
 # The default reference has no ALT or HLA contigs, and validate-setup.sh
 # holds a run to it, with real samtools reading the BAM step 02 wrote:
 #   - the fixture reference (the no-ALT analysis set) passes, and the BAM
-#     aligned to it matches its .fai sequence for sequence;
+#     aligned to it matches its .fai sequence for sequence; its header passes
+#     the checks docs/realignment.md gives;
 #   - the same FASTA with an ALT contig in its .fai fails (named), and that
 #     BAM then fails as aligned to another reference, naming the first
 #     sequence that differs; ALLOW_ALT_REFERENCE=true turns the ALT failure
@@ -17,6 +18,13 @@ check "the fixture reference has no ALT or HLA contig" \
   awk -F'\t' '$1 ~ /_alt$/ || $1 ~ /^HLA-/ {found = 1} END {exit found}' "${REF}.fai"
 check "step 02 left a BAM (case 20)" test -s "$BAM"
 N=$(grep -c . "${REF}.fai")
+
+# The header checks docs/realignment.md gives for a realigned BAM.
+HDR=$(sam view -H "${SAMPLE}/aligned/${SAMPLE}_sorted.bam")
+check_eq "the BAM lists as many sequences as the .fai" "$(grep -c '^@SQ' <<< "$HDR")" "$N"
+check_eq "the BAM lists no ALT or HLA contig" "$(grep -c -E 'SN:(chr[^[:space:]]*_alt|HLA-)' <<< "$HDR" || true)" 0
+check "the minimap2 @PG line names the reference's index" \
+  has 'GRCh38_no_alt_analysis_set\.sr\.mmi' "$(grep '^@PG' <<< "$HDR")"
 
 # validate NAME [VAR=VALUE...]: validate-setup.sh for the sample, output in
 # CASE_TMP/NAME.log. Its exit code is not checked: on the runner it also fails
