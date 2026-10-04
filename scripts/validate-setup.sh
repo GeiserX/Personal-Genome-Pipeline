@@ -78,7 +78,14 @@ check_bam_reference() {
   so=$(awk -F'\t' '/^@HD/ { for (i = 2; i <= NF; i++) if ($i ~ /^SO:/) print substr($i, 4) }' <<< "$header")
   case "$so" in
     coordinate) pass "BAM is coordinate-sorted (@HD SO:coordinate)" ;;
-    "") warn "BAM header does not say how it is sorted (no @HD SO: tag); steps need a coordinate-sorted BAM" ;;
+    "")
+      # samtools index refuses an unsorted BAM, so an index beside it shows
+      # the order the header does not state.
+      if [ -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" ]; then
+        pass "BAM is coordinate-sorted (no @HD SO: tag, but samtools only indexes a sorted BAM and its .bai exists)"
+      else
+        fail "BAM header does not say how it is sorted (no @HD SO: tag) and it has no .bai: sort and index it (samtools sort, samtools index) or realign with step 02"
+      fi ;;
     *) fail "BAM is sorted by ${so}, not by coordinate: sort it (samtools sort) or realign with step 02" ;;
   esac
 }

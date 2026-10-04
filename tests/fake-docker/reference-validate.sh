@@ -4,8 +4,9 @@
 #     ALLOW_ALT_REFERENCE=true turns the failure into a warning;
 #   - a BAM whose @SQ lines are not the .fai's (another length, an extra
 #     contig, another order) fails and names the first difference;
-#   - a BAM sorted by name, one samtools quickcheck rejects, or one whose
-#     header samtools cannot read, fails (quickcheck runs in every case);
+#   - a BAM sorted by name, one with no sort order in its header and no .bai,
+#     one samtools quickcheck rejects, or one whose header samtools cannot
+#     read, fails (quickcheck runs in every case);
 #   - the default reference with a BAM aligned to it passes every one.
 # The fake docker answers `samtools view -H` with HEADER and `samtools
 # quickcheck` with QUICKCHECK_RC through a run hook.
@@ -101,6 +102,16 @@ output_has by-name '\[FAIL\].*BAM is sorted by queryname, not by coordinate'
 scenario "$NOALT" "$(header "$NOALT")" 1
 run_expect 1 quickcheck "${SCRIPTS}/validate-setup.sh" sample1
 output_has quickcheck '\[FAIL\].*BAM fails samtools quickcheck'
+
+# No @HD SO: tag: the .bai shows the BAM is sorted (samtools index refuses an
+# unsorted one); without a .bai it is a failure.
+scenario "$NOALT" "$(header "$NOALT" | grep -v '^@HD')" 0
+run_expect 0 no-so "${SCRIPTS}/validate-setup.sh" sample1
+output_has no-so '\[OK\].*BAM is coordinate-sorted \(no @HD SO: tag, but samtools only indexes a sorted BAM and its \.bai exists\)'
+mv "${GENOME_DIR}/sample1/aligned/sample1_sorted.bam.bai" "${CASE_WORK}/bai.aside"
+run_expect 1 no-so-no-bai "${SCRIPTS}/validate-setup.sh" sample1
+output_has no-so-no-bai '\[FAIL\].*no @HD SO: tag\) and it has no \.bai'
+mv "${CASE_WORK}/bai.aside" "${GENOME_DIR}/sample1/aligned/sample1_sorted.bam.bai"
 
 # A header samtools cannot read: a failure, and quickcheck still runs.
 scenario "$NOALT" "$(header "$NOALT")" 1
