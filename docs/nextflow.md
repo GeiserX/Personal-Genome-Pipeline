@@ -31,7 +31,7 @@ EOF
 #    skipped with a warning until --pgs_scoring or a score file is set)
 nextflow run main.nf \
     --input samplesheet.csv \
-    --reference /path/to/Homo_sapiens_assembly38.fasta \
+    --reference /path/to/GRCh38_no_alt_analysis_set.fasta \
     --outdir ./results \
     -profile docker
 
@@ -48,6 +48,8 @@ nextflow run main.nf \
 #    TelomereHunter uses its own hg19 bands and the run logs a warning
 #    An unknown name in --tools stops the run.
 ```
+
+`--reference` is the FASTA the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
 
 ### Resume After Failure
 

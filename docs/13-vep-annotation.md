@@ -31,7 +31,7 @@ THREADS=8 ./scripts/13-vep-annotation.sh your_sample
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" in 00-reference-setup.md
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see "The reference path on every page" in 00-reference-setup.md
 
 docker run --rm \
   --cpus 8 --memory 16g \

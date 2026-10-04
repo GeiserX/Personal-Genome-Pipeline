@@ -50,7 +50,8 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 - [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/): prerequisites, platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA entry paths, directory layout
 - [Quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/): verify the setup on public data before your own
 - [Hardware and storage requirements](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/): download sizes, per-step runtime, memory and disk figures
-- [Reference data setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/): the GRCh38 reference and every database
+- [Reference data setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/): the GRCh38 reference (the no-ALT analysis set) and every database
+- [Realigning after a reference change](https://geiserx.github.io/Personal-Genome-Pipeline/realignment/): moving a BAM aligned to another GRCh38 file onto the pipeline's reference
 - [Vendor compatibility guide](https://geiserx.github.io/Personal-Genome-Pipeline/vendor-guide/): what each provider delivers and how to get it
 - [Pipeline overview](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/): every step with its tool and image, which ones a default run includes, and the page for each step
 - [Nextflow](https://geiserx.github.io/Personal-Genome-Pipeline/nextflow/): the workflow runner, parallel steps and resume

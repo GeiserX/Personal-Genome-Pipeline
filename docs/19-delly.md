@@ -25,13 +25,13 @@ export GENOME_DIR=/path/to/your/data
 ./scripts/19-delly.sh your_sample
 ```
 
-The script passes Delly's GRCh38 exclude map (`-x`): telomeres, centromeres and every contig beyond chr1-22, X, Y and M. `setup.sh` installs it from a pinned commit of the Delly repository as `reference/delly_human.hg38.excl.tsv` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without it Delly spends hours in those regions and calls artefacts there; the script then runs without `-x` and says so.
+The script passes Delly's GRCh38 exclude map (`-x`): telomeres, centromeres and every contig beyond chr1-22, X, Y and M (on the default no-ALT reference, the unplaced scaffolds and `chrEBV`; the map also names the ALT and decoy contigs of a full reference). `setup.sh` installs it from a pinned commit of the Delly repository as `reference/delly_human.hg38.excl.tsv` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without it Delly spends hours in those regions and calls artefacts there; the script then runs without `-x` and says so.
 
 What the script runs. Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`; the pinned 2.6.0 answers `Unrecognized command` to `delly call`.
 
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # SV calling (all SV types)
 docker run --rm \
   --cpus 4 --memory 8g \
@@ -63,7 +63,7 @@ docker run --rm \
 Delly also has a dedicated CNV mode using read-depth only (similar to CNVpytor):
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \

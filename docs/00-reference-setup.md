@@ -1,43 +1,77 @@
 # Step 0: Reference Data Setup
 
-One-time downloads required before running the pipeline. Each heading below gives the size of its download; [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) adds them up (about 75 GB for a default run, 250 GB with the optional annotation databases).
+One-time downloads required before running the pipeline. Each heading below gives the size of its download; [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) adds them up (about 73 GB for a default run, 248 GB with the optional annotation databases).
 
 > **Estimated time:** 1-3 hours depending on internet speed. The two VEP caches (26 GB for step 13, 24 GB for step 17) are the largest downloads of a default run.
 
 ## GRCh38 Reference Genome
 
-The foundation for everything. All tools need this.
+The foundation for everything. All tools need this. The pipeline uses NCBI's **GRCh38 no-ALT analysis set**: chr1-22, X, Y and M, the unplaced and unlocalized scaffolds and the EBV genome, 195 sequences, with UCSC names (`chr1`, `chrM`). `setup.sh` downloads it, checks it and stores it as `reference/GRCh38_no_alt_analysis_set.fasta`:
+
+```bash
+./scripts/setup.sh ${GENOME_DIR}
+```
+
+By hand, the same steps:
 
 ```bash
 export GENOME_DIR=/path/to/your/data
 mkdir -p ${GENOME_DIR}/reference
 cd ${GENOME_DIR}/reference
+NCBI=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids
 
-# Download GRCh38 reference (~3 GB), from the Broad's public references bucket
-wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta
-wget -c https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.fasta.fai
+# Download (~0.9 GB compressed, ~3.2 GB unpacked) and its index
+wget -c ${NCBI}/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
+wget -c ${NCBI}/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.fai
+wget ${NCBI}/md5checksums.txt
 
-# Verify the download (the MD5 the bucket publishes for this object)
-md5sum Homo_sapiens_assembly38.fasta
-# Expected: 7ff134953dcca8c8997453bbb80b6b5e
+# Verify both against the md5 NCBI lists for them; each line must say OK
+grep -E ' \./GCA_000001405\.15_GRCh38_no_alt_analysis_set\.fna\.(gz|fai)$' md5checksums.txt | md5sum -c -
+
+# Unpack under the name the scripts read
+gzip -dc GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz > GRCh38_no_alt_analysis_set.fasta
+mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.fai GRCh38_no_alt_analysis_set.fasta.fai
+wc -l GRCh38_no_alt_analysis_set.fasta.fai   # 195
 ```
+
+### Why the no-ALT analysis set
+
+GRCh38 also has ALT contigs: second copies of regions that vary a lot between people, such as the MHC (the HLA genes), KIR and the CYP2D6 locus. A reference with them (the Broad `hg38` FASTA, 3,366 sequences with ALT, HLA and decoy contigs) only helps an aligner that is run ALT-aware, and none of the aligners here is. With them, a read that matches the primary copy and an ALT copy equally well gets mapping quality 0, and callers ignore it: depth thins at exactly those loci, and depth-based callers can report a deletion that is not there. The [measured loss](realignment.md#how-much-depth-alt-contigs-cost) is in the realignment page.
+
+The no-ALT analysis set has each of those regions once. It is the reference DeepVariant's case studies use, the one the GIAB v4.2.1 benchmark is defined on, and the one PharmCAT normalises against. chr1-22, X, Y and M are the same sequence as in the Broad file, so ClinVar, the VEP cache and the score files stay valid.
+
+Two other references were considered and are not the default:
+
+- **The no-ALT set plus the hs38d1 decoys** (`GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set.fna.gz` in the same NCBI directory, 2,580 sequences). The decoys catch reads from sequence missing in the primary assembly, which removes some false calls for callers less robust than DeepVariant. None of the tools here expects them, and its 2,385 extra contigs are more that CNVpytor and Delly have to be kept away from. It works through `REF_FASTA` (below).
+- **GIAB's GRCh38 file that also masks false duplications.** It is the natural next step if a benchmark run shows a gain.
+
+GSTT1 lies on an ALT contig in GRCh38, so pypgx (step 32) cannot call it on the default reference; the step says so and calls the other genes.
+
+Every sample aligned to another reference has to be aligned again. [Realigning after a reference change](realignment.md) says what to redo, what to keep and how to check a BAM.
 
 ### The reference path on every page
 
-The step scripts read the reference from `${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta`. The commands on the other pages of these docs write that path as `${REF_FASTA}`, relative to `GENOME_DIR`: on the host it is `${GENOME_DIR}/${REF_FASTA}`, and inside a container that mounts `GENOME_DIR` at `/genome` it is `/genome/${REF_FASTA}`. Set it once in the shell where you paste those commands:
+The step scripts read the reference from `${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta`. The commands on the other pages of these docs write that path as `${REF_FASTA}`, relative to `GENOME_DIR`: on the host it is `${GENOME_DIR}/${REF_FASTA}`, and inside a container that mounts `GENOME_DIR` at `/genome` it is `/genome/${REF_FASTA}`. Set it once in the shell where you paste those commands:
 
 ```bash
-export REF_FASTA=reference/Homo_sapiens_assembly38.fasta
+export REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta
 ```
 
-The scripts do not read `REF_FASTA` yet; they use this path directly.
+The scripts read `REF_FASTA` too, as a path relative to `GENOME_DIR` or as an absolute path inside it, so the same variable points both at another reference. `setup.sh` then also needs `REF_FASTA_URL` (a `.gz` URL is unpacked) and `REF_FASTA_MD5` (an md5, the URL of a checksum file that lists the download, or empty), and `REF_FAI_MD5` the same way for the `.fai` published beside it (empty builds the index with samtools). For the decoy variant:
+
+```bash
+export REF_FASTA=reference/GRCh38_no_alt_plus_hs38d1_analysis_set.fasta
+export REF_FASTA_URL=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set.fna.gz
+./scripts/setup.sh ${GENOME_DIR}   # checks both files against NCBI's md5checksums.txt
+```
+
+`validate-setup.sh` fails when the reference has ALT or HLA contigs. To keep such a reference on purpose, set `ALLOW_ALT_REFERENCE=true` as well; the check then warns instead.
 
 ### Why GRCh38?
 
 This pipeline uses **GRCh38** (also called hg38) exclusively. It's the current standard genome build with:
 - Corrected mitochondrial sequence (rCRS)
 - Better representation of centromeres and telomeres
-- ALT contigs for highly polymorphic regions (MHC, KIR)
 - `chr` prefix naming (chr1, chr2, ..., chrX, chrY, chrM)
 
 If your data is on **GRCh37/hg19**, extract FASTQ from BAM and re-align. See [vendor-guide.md](vendor-guide.md#genome-build-grch37-hg19-vs-grch38-hg38).
@@ -71,12 +105,12 @@ It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both
 
 | File | Source | Used by | Without it |
 |---|---|---|---|
-| `reference/delly_human.hg38.excl.tsv` | Delly's GRCh38 exclude map at a pinned commit (sha256 checked) | step 19 (`delly sr -x`) | Delly runs without it: slower, and with calls in centromeres, telomeres and the extra contigs |
+| `reference/delly_human.hg38.excl.tsv` | Delly's GRCh38 exclude map at a pinned commit (sha256 checked) | step 19 (`delly sr -x`) | Delly runs without it: slower, and with calls in centromeres, telomeres and the unplaced scaffolds |
 | `reference/cytoBand.hg38.txt` | UCSC's GRCh38 chromosome bands, chr1-22, X and Y (sha256 checked) | step 10 (`telomerehunter -b`) | TelomereHunter falls back to its hg19 bands |
 | `hla/IPD-IMGT-HLA_<release>/hla.dat` | IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.65.0) from the IMGTHLA repository (md5 checked) | step 8 | step 8 is skipped |
 | `reference/gencode.v50.basic.genes.gtf` | the gene lines of GENCODE 50's basic annotation (md5 checked) | step 8 (gene positions for T1K) | step 8 is skipped |
 
-`setup.sh` also writes the reference's sequence dictionary (`Homo_sapiens_assembly38.dict`), which GATK, Picard and `chip-to-vcf.sh` need.
+`setup.sh` also writes the reference's sequence dictionary (`GRCh38_no_alt_analysis_set.dict`), which GATK, Picard and `chip-to-vcf.sh` need.
 
 ## AnnotSV Annotations (~5 GB)
 
@@ -346,7 +380,7 @@ GATK HaplotypeCaller requires a `.dict` file alongside the reference FASTA. `set
 
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see "The reference path on every page" above
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
   "${GATK_IMAGE}" \
@@ -361,7 +395,7 @@ BWA-MEM2 requires its own index files (different from minimap2's `.mmi`). Buildi
 The practical route is to build the index once on a machine (or a rented cloud instance) with at least 96 GB of RAM, then copy the five index files next to the FASTA on your own machine. With less memory the build is killed (exit code 137).
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see "The reference path on every page" above
 source versions.env   # from the repository root: BWAMEM2_IMAGE, the image step 02a uses
 docker run --rm --user root \
   --cpus 8 --memory 96g \
@@ -402,14 +436,14 @@ wget -c https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/Ashkena
 
 [Hardware and storage requirements](hardware-requirements.md#shared-reference-data-one-time) has the one table of every download above, with the totals.
 
-> **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB total).
+> **Tip:** If disk space is tight, you can skip the VEP cache (step 13) and PCGR bundle (step 17) initially. The core pipeline (steps 2-3-6-7) only needs the reference FASTA and ClinVar (~3.5 GB unpacked).
 
 ## Verifying Your Setup
 
 After all downloads, verify everything is in place:
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see "The reference path on every page" above
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see "The reference path on every page" above
 echo "Checking reference setup..."
 [ -f "${GENOME_DIR}/${REF_FASTA}" ] && echo "  GRCh38 FASTA: OK" || echo "  GRCh38 FASTA: MISSING"
 [ -f "${GENOME_DIR}/${REF_FASTA}.fai" ] && echo "  FASTA index: OK" || echo "  FASTA index: MISSING"

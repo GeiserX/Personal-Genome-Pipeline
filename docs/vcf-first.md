@@ -33,7 +33,7 @@ Every command below runs in the folder that holds your VCF, writes its new files
 ```bash
 # Setup: change these four lines to your own paths.
 PGP=/path/to/Personal-Genome-Pipeline        # this repository
-REF=/path/to/Homo_sapiens_assembly38.fasta   # with its .fai beside it
+REF=/path/to/GRCh38_no_alt_analysis_set.fasta   # with its .fai beside it
 VCF=/path/to/your_vendor_file.vcf.gz         # with its .tbi beside it
 LABEL=sample1                                # a neutral name for the samplesheet and the outputs
 ```

@@ -56,7 +56,7 @@ Before it starts, the step reads Docker's memory limit (`docker info`). Below 32
 GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 source versions.env   # from the repository root: BWA_IMAGE, the image step 04b uses for this
 docker run --rm -v "${GENOME_DIR}:/genome" \
   "${BWA_IMAGE}" \

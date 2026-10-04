@@ -357,6 +357,12 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** pypgx calls copy number from read depth. On a reference with ALT contigs and an aligner that is not run ALT-aware, reads from the CYP2D locus can split between the primary copy and an ALT copy, depth on the primary drops, and a depth-based caller can report a whole-gene deletion that is not there.
 - **Rule:** on a reference with ALT contigs, compare CYP2D6 depth with its flanks before trusting any copy-number call from pypgx or Cyrius, and report CYP2D6 only when two callers agree. A Cyrius `None/None` means "no call", not "no deletion" and not "deletion". If you have a clinical lab result for CYP2D6, it outranks all of these.
 
+### A reference with ALT contigs and an aligner that is not run ALT-aware thin the depth at paralogous loci
+- **Failed:** `setup.sh` installed the Broad `Homo_sapiens_assembly38.fasta` (3,366 sequences, with ALT, HLA and decoy contigs), and step 02 aligned with plain `minimap2 -x sr`. A read that matches a primary locus and its ALT copy equally well got MAPQ 0, and callers skip MAPQ 0 reads, so depth thinned at CYP2D6, the MHC and KIR. Measured on the HG002 fixture (`ALT depth A/B` workflow): depth at MAPQ >= 1 was 0.0x at CYP2D6 and HLA-A where the no-ALT analysis set gives 16.8x and 26.9x, and 85% of the MHC reads were aligned to ALT or HLA contigs. See [realignment](realignment.md#how-much-depth-alt-contigs-cost).
+- **Root cause:** ALT contigs only help an aligner that is run ALT-aware (BWA-MEM with the `.alt` file and its post-processing, or DRAGEN's graph reference); the pipeline runs none. The extra contigs also forced per-contig workarounds in CNVpytor and Delly.
+- **Fix:** the default reference is NCBI's GRCh38 no-ALT analysis set, `reference/GRCh38_no_alt_analysis_set.fasta` (195 sequences), under a new name so an old file is never read by accident. `validate-setup.sh` fails on a reference with `_alt` or `HLA-` contigs (unless `ALLOW_ALT_REFERENCE=true`) and on a BAM whose `@SQ` names and lengths differ from the `.fai`, naming the first difference.
+- **Rule:** a change of reference means realigning every sample, from FASTQ or from the old BAM ([realignment](realignment.md)). Never run a step on a BAM whose header does not match the reference; `validate-setup.sh` checks it.
+
 ## CNVpytor migration (2026-07)
 
 ### CNVpytor 1.3.2 biocontainer ships without GC/mask data and its downloader is broken

@@ -103,11 +103,14 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 560 MB.
 
-The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. This block uses the biocontainers samtools image because it ships CA certificates and can fetch over `https://`; the `staphb/samtools` image used elsewhere has none and fails with "Libcurl reported error 60". The CRAM was made against the same GRCh38 contigs as `Homo_sapiens_assembly38.fasta`, which decodes it.
+The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The first container uses the biocontainers samtools image because it ships CA certificates and can fetch over `https://`; the `staphb/samtools` image used elsewhere has none and fails with "Libcurl reported error 60". chr22 is the same sequence in every GRCh38 file, so the pipeline's reference decodes it.
+
+The 1000 Genomes CRAM was aligned to a GRCh38 file with ALT, HLA and decoy contigs (3,366 sequences), and its header lists all of them, which Manta and `validate-setup.sh` refuse against the pipeline's 195-sequence reference. So the `awk` between the two containers replaces the header's sequence lines with the reference's own (from its `.dict`) and drops the few reads whose mate sits on a contig the reference does not have. That is enough for this mechanics test; a real sample from another reference is realigned instead ([realignment](realignment.md)).
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-# Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA and .fai
+source versions.env   # from the repository root
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+# Uses GENOME_DIR and SAMPLE from Option A; needs the reference FASTA, .fai and .dict
 mkdir -p ${GENOME_DIR}/${SAMPLE}/aligned
 
 docker run --rm --user root \
@@ -115,15 +118,22 @@ docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   -w /tmp \
   quay.io/biocontainers/samtools:1.20--h50ea8bc_0 \
-  bash -c "set -euo pipefail
-    samtools view -b -@ 4 \
-      -T /genome/${REF_FASTA} \
-      -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
-      https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22
+  samtools view -h -@ 4 -T "/genome/${REF_FASTA}" \
+    https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22 \
+| awk -v dict="${GENOME_DIR}/${REF_FASTA%.fasta}.dict" '
+    BEGIN { print "@HD\tVN:1.6\tSO:coordinate"
+            while ((getline l < dict) > 0) if (l ~ /^@SQ/) { print l; split(l, f, "\t"); sub(/^SN:/, "", f[2]); keep[f[2]] = 1 } }
+    /^@HD/ || /^@SQ/ { next }
+    /^@/ { print; next }
+    $7 == "=" || $7 == "*" || ($7 in keep) { print }' \
+| docker run --rm -i --user "$(id -u):$(id -g)" \
+  -v "${GENOME_DIR}:/genome" \
+  "${SAMTOOLS_IMAGE}" \
+  bash -c "samtools view -b -@ 4 -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam - &&
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
 ```
 
-**Alternative: extract chr22 from a full BAM you already have.** Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
+**Alternative: extract chr22 from a full BAM you already have** and that was aligned to the pipeline's reference (a BAM from another reference needs a [realignment](realignment.md) first). Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
 source versions.env   # from the repository root
 cd ${GENOME_DIR}/${SAMPLE}/aligned

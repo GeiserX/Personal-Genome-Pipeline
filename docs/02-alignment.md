@@ -31,7 +31,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 What the script runs, written as plain commands:
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 REF="${GENOME_DIR}/${REF_FASTA}"

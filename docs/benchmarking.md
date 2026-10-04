@@ -129,6 +129,8 @@ wget -c -P "${GENOME_DIR}/giab" \
 
 The BED file defines the regions where the truth set is confident. Variants outside these regions are excluded from benchmarking because the truth status is unknown.
 
+GIAB defines the v4.2.1 benchmark on the GRCh38 no-ALT analysis set, the reference this pipeline uses (GIAB hosts the same file under `release/references/GRCh38`), so the truth set and your calls share one coordinate system and one contig list. Calls from a BAM aligned to a reference with ALT contigs lose depth, and so recall, at CYP2D6, the MHC and the other loci those contigs copy, which a benchmark then counts as caller errors.
+
 ### Alternative: NA12878 (HG001)
 
 The pipeline's [quick-test.md](quick-test.md) uses NA12878 (HG001), which is also a valid truth set:
@@ -158,7 +160,7 @@ ${GENOME_DIR}/giab/
 `HAPPY_IMAGE` is a community build of hap.py 0.3.12 with RTG Tools, which `--engine=vcfeval` needs. The Bioconda image (hap.py 0.3.15) has no RTG Tools, so it stops on `--engine=vcfeval` with `rtg: command not found`. With hap.py's own engine (xcmp) the two images give the same counts on a GIAB chr20 truth slice, but the comparison engine is what decides how two spellings of one variant are matched, so the benchmark keeps vcfeval and this image.
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # IMPORTANT: SAMPLE must be the GIAB sample that matches the truth set.
 # If using HG002 truth, you must have sequenced and called variants on HG002.
@@ -328,7 +330,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
 ### Step 3: Truth Set Benchmark (if Using HG002)
 
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # Benchmark each caller's chr22 output against GIAB truth set
 for CALLER_DIR in vcf vcf_gatk vcf_freebayes; do
