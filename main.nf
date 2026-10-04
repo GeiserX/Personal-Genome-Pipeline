@@ -4,8 +4,8 @@
     Personal Genome Pipeline — whole genome, from reads to report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Each samplesheet row starts from FASTQ (trimmed, aligned and called
-    here), from a BAM (called here), or from a VCF with an optional BAM
-    from any other caller (e.g. nf-core/sarek). From there it runs
+    here), from a BAM or CRAM (called here), or from a VCF with an optional
+    BAM or CRAM from any other caller (e.g. nf-core/sarek). From there it runs
     pharmacogenomics, variant annotation, clinical screening, BAM analysis,
     structural variant calling, and consolidated reporting.
 
@@ -29,6 +29,8 @@ include { BAM_ANALYSIS } from './workflows/bam_analysis'
 include { SV           } from './workflows/sv'
 include { REPORTING    } from './workflows/reporting'
 include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
+include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
+include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -49,6 +51,10 @@ workflow {
     if (!(params.sex_check in ['fail', 'warn'])) {
         error "--sex_check must be 'fail' or 'warn', got '${params.sex_check}'."
     }
+    if (!(params.freemix_warn instanceof Number) || params.freemix_warn <= 0 || params.freemix_warn >= 1) {
+        error "--freemix_warn must be a fraction between 0 and 1 (FREEMIX above it is reported as possible " +
+              "contamination), got '${params.freemix_warn}'."
+    }
     if (params.reference.endsWith('.gz')) {
         error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +
               "decompress it (gunzip, or bgzip -d) and run 'samtools faidx' on the result."
@@ -64,7 +70,7 @@ workflow {
         'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
-        'html_report', 'multiqc',
+        'sample_qc', 'cram_archive', 'html_report', 'multiqc',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -86,6 +92,8 @@ workflow {
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
         ['annotsv',          'annotsv_annotations', '--annotsv_annotations'],
         ['cnvpytor',         'cnvpytor_resources', '--cnvpytor_resources'],
+        ['sample_qc',        'somalier_sites',     '--somalier_sites'],
+        ['sample_qc',        'verifybamid2_panel', '--verifybamid2_panel'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -134,7 +142,10 @@ workflow {
     // Columns: sample, then one starting point per row:
     //   fastq_1,fastq_2  reads: trimmed, aligned and called here
     //   bam,bam_index    a BAM without a VCF: called here
-    //   vcf,vcf_index    a VCF from any caller, with bam,bam_index optional
+    //   cram,crai        a CRAM instead of the BAM (read with --reference,
+    //                    which must be the FASTA it was written with)
+    //   vcf,vcf_index    a VCF from any caller, with bam,bam_index or
+    //                    cram,crai optional
     // and sex (male or female), required on every row that is called.
     // Rows are read and checked here, before any task starts, so a bad row
     // stops the run at once.
@@ -153,7 +164,7 @@ workflow {
             error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
         }
         // Pairs go together
-        [['fastq_1', 'fastq_2'], ['bam', 'bam_index'], ['vcf', 'vcf_index']].each { a, b ->
+        [['fastq_1', 'fastq_2'], ['bam', 'bam_index'], ['cram', 'crai'], ['vcf', 'vcf_index']].each { a, b ->
             if (row[a] && !row[b]) {
                 error "Sample '${row.sample}': '${a}' provided without '${b}'. Both are required together."
             }
@@ -161,25 +172,32 @@ workflow {
                 error "Sample '${row.sample}': '${b}' provided without '${a}'. Both are required together."
             }
         }
-        if (row.fastq_1 && (row.bam || row.vcf)) {
-            error "Sample '${row.sample}': a row starts from FASTQ or from a BAM or VCF, not both. " +
-                  "Remove the fastq columns to use the BAM or VCF, or the bam and vcf columns to align the reads."
+        if (row.fastq_1 && (row.bam || row.cram || row.vcf)) {
+            error "Sample '${row.sample}': a row starts from FASTQ or from a BAM, CRAM or VCF, not both. " +
+                  "Remove the fastq columns to use the BAM, CRAM or VCF, or the other columns to align the reads."
         }
-        if (!row.fastq_1 && !row.bam && !row.vcf) {
+        if (row.bam && row.cram) {
+            error "Sample '${row.sample}': the row has both a BAM and a CRAM. Keep one of them."
+        }
+        if (row.cram && !(row.cram ==~ /.*\.cram$/)) {
+            error "Sample '${row.sample}': the cram column names ${row.cram}, which does not end in .cram. " +
+                  "A BAM goes in the bam column."
+        }
+        if (!row.fastq_1 && !row.bam && !row.cram && !row.vcf) {
             error "Sample '${row.sample}': the row has no input. Give fastq_1 and fastq_2, or bam and bam_index, " +
-                  "or vcf and vcf_index (with an optional bam and bam_index)."
+                  "or cram and crai, or vcf and vcf_index (with an optional bam and bam_index, or cram and crai)."
         }
         // Sex sets the chrX/chrY ploidy of DeepVariant and of ExpansionHunter
         // (whose default is female), and INDEXCOV checks it against the BAM
         if (row.sex && !(row.sex.toLowerCase() in ['male', 'female'])) {
             error "Sample '${row.sample}': sex '${row.sex}' is not recognised. Use 'male' or 'female'."
         }
-        if ((row.fastq_1 || (row.bam && !row.vcf)) && !row.sex) {
+        if ((row.fastq_1 || ((row.bam || row.cram) && !row.vcf)) && !row.sex) {
             error "Sample '${row.sample}': DeepVariant calls this row and needs the sample's sex: a male sample " +
                   "is called haploid on chrX and chrY outside the pseudoautosomal regions. Add a 'sex' column " +
                   "(male or female)."
         }
-        if (tools_list.contains('expansion_hunter') && row.bam && !row.sex) {
+        if (tools_list.contains('expansion_hunter') && (row.bam || row.cram) && !row.sex) {
             error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
                   "Add a 'sex' column (male or female) to the samplesheet, or remove 'expansion_hunter' from --tools."
         }
@@ -206,6 +224,20 @@ workflow {
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
     ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
     ch_par_bed        = Channel.value(file("${projectDir}/assets/par_grch38.bed", checkIfExists: true))
+
+    // ─── CRAM rows ──────────────────────────────────────────────────────
+    // CRAM_TO_BAM writes each CRAM out as a BAM in the work directory, checked
+    // against the CRAM (samtools flagstat), and the row goes on as a BAM row:
+    // every BAM step then reads it as it reads any BAM. The decoding needs the
+    // reference the CRAM was written with; samtools stops on another one.
+    def cram_ids = samplesheet_rows.findAll { row -> row.cram }.collect { row -> row.sample } as Set
+    def cram_vcf_ids = samplesheet_rows.findAll { row -> row.cram && row.vcf }.collect { row -> row.sample } as Set
+    ch_cram = ch_rows
+        .filter { meta, row -> row.cram }
+        .map { meta, row -> [meta, file(row.cram, checkIfExists: true), file(row.crai, checkIfExists: true)] }
+    CRAM_TO_BAM(ch_cram, ch_reference, ch_reference_fai)
+    ch_bam_call  = ch_bam_call.mix(CRAM_TO_BAM.out.bam.filter { meta, bam, bai -> !cram_vcf_ids.contains(meta.id) })
+    ch_bam_given = ch_bam_given.mix(CRAM_TO_BAM.out.bam.filter { meta, bam, bai -> cram_vcf_ids.contains(meta.id) })
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 0: UPSTREAM — FASTQ to BAM, sex check, BAM to VCF and gVCF
@@ -313,13 +345,6 @@ workflow {
     // ─── Optional reference databases ───────────────────────────────────
     // Empty list [] = "no file" — standard Nextflow pattern for optional path inputs.
     // Processes check truthiness (e.g., `if (myfile)`) to skip absent databases.
-    // Per-slot sentinel files avoid Nextflow staging collisions when multiple
-    // optional report inputs are all absent in the same process invocation.
-    def empty_clinvar  = file("${projectDir}/assets/stub/EMPTY_CLINVAR")
-    def empty_pharmcat = file("${projectDir}/assets/stub/EMPTY_PHARMCAT")
-    def empty_clinical = file("${projectDir}/assets/stub/EMPTY_CLINICAL")
-    def empty_cpsr     = file("${projectDir}/assets/stub/EMPTY_CPSR")
-    def empty_slivar   = file("${projectDir}/assets/stub/EMPTY_SLIVAR")
 
     // ClinVar
     ch_clinvar       = params.clinvar       ? Channel.value(file(params.clinvar, checkIfExists: true))       : Channel.value([])
@@ -374,6 +399,11 @@ workflow {
 
     // UCSC GRCh38 chromosome bands for TelomereHunter (-b)
     ch_cytoband = Channel.value(params.cytoband ? file(params.cytoband, checkIfExists: true) : [])
+
+    // Sample identity and contamination (sample_qc): somalier's sites VCF and
+    // the folder of VerifyBamID2's marker panel (.UD, .mu, .bed)
+    ch_somalier_sites     = Channel.value(params.somalier_sites     ? file(params.somalier_sites, checkIfExists: true)     : [])
+    ch_verifybamid2_panel = Channel.value(params.verifybamid2_panel ? file(params.verifybamid2_panel, checkIfExists: true) : [])
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
@@ -437,8 +467,19 @@ workflow {
         ch_expansion_catalog,
         ch_hla_dat,
         ch_hla_genes,
-        ch_cytoband
+        ch_cytoband,
+        ch_somalier_sites,
+        ch_verifybamid2_panel
     )
+
+    // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
+    // The CRAM of every BAM, checked against it, published beside it; a row
+    // given as CRAM already has one. The BAM is never deleted here.
+    ch_cram_versions = Channel.empty()
+    if (tools_list.contains('cram_archive')) {
+        CRAM_ARCHIVE(ch_bam.filter { meta, bam, bai -> !cram_ids.contains(meta.id) }, ch_reference, ch_reference_fai)
+        ch_cram_versions = CRAM_ARCHIVE.out.versions
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 5: SV — Structural variant calling & annotation (opt-in)
@@ -457,33 +498,27 @@ workflow {
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
 
-    // Build per-sample report inputs by joining available outputs.
-    // Uses remainder:true so samples without a given output get null → EMPTY
-    // (the first five, which have sentinel files) or [] (ROH, haplogroup and
-    // CPIC, which the module tests for emptiness). The join also makes the
-    // report wait for every selected step it shows.
+    // Per-sample report inputs: the sample's VCF, and the output files of the
+    // steps that ran for it, as one list (HTML_REPORT links each where
+    // bin/collect_summary.py reads it). remainder: true keeps a sample a step
+    // did not run for; that step's slot is null and drops out of the list. The
+    // join also makes the report wait for every selected step it shows.
     ch_report_inputs = ch_vcf
-        .map { meta, vcf, idx -> [meta.id, meta] }
+        .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pharmcat_json.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pharmcat_html.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cpic_phenotypes.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cpic_recommendations.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.clinical_vcf.map     { meta, f -> [meta.id, f] }, remainder: true)
-        .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
-        .join(PGX.out.cpic_recommendations.map    { meta, f -> [meta.id, f] }, remainder: true)
-        .map { items ->
-            def meta       = items[1]
-            def clinvar    = items[2] ?: empty_clinvar
-            def pharmcat   = items[3] ?: empty_pharmcat
-            def clinical   = items[4] ?: empty_clinical
-            def cpsr       = items[5] ?: empty_cpsr
-            def slivar     = items[6] ?: empty_slivar
-            def roh        = items[7] ?: []
-            def haplogroup = items[8] ?: []
-            def cpic       = items[9] ?: []
-            [meta, clinvar, pharmcat, clinical, cpsr, slivar, roh, haplogroup, cpic]
-        }
+        .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
+        .filter { items -> items[1] != null }
+        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
@@ -505,7 +540,9 @@ workflow {
             CLINICAL.out.versions,
             BAM_ANALYSIS.out.versions,
             SV.out.versions,
-            REPORTING.out.versions
+            REPORTING.out.versions,
+            CRAM_TO_BAM.out.versions,
+            ch_cram_versions
         )
         .map { f -> f.text }
         .unique()
