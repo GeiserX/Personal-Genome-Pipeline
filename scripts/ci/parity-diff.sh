@@ -208,7 +208,9 @@ self_test() {
   }
   # drop_first FILE: remove the first record of a bgzipped VCF in $t/nf
   drop_first() {
-    in_t "f=/n/$1; p=\$(bcftools query -f '%CHROM:%POS\n' \$f | head -n 1)
+    # awk reads to the end: head would close the pipe and pipefail would
+    # turn bcftools' SIGPIPE into a failed step.
+    in_t "f=/n/$1; p=\$(bcftools query -f '%CHROM:%POS\n' \$f | awk 'NR == 1')
           bcftools view -t \"^\$p\" -Oz -o /n/x.vcf.gz \$f; mv /n/x.vcf.gz \$f; bcftools index -f -t \$f"
   }
   # expect NAME PATTERN [KNOWN]: compare must exit 1 (0 with KNOWN) and print PATTERN

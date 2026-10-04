@@ -3,7 +3,10 @@
 # MINIMAP2_INDEX (the reference is given from a folder without the .sr.mmi
 # case 20 built, so the run builds its own), ALIGN_MINIMAP2, ALIGN_MARKDUP,
 # INDEXCOV, DEEPVARIANT (male: haploid chrX/chrY outside the PARs), then the
-# default tools plus clinvar and hla_typing. Sample HG002P, the name case
+# default tools plus clinvar and hla_typing. Not cyrius: it normalises depth
+# over bins on every autosome and stops on the first contig the BAM lacks,
+# and a BAM aligned from the fixture reads has only the fixture's slices
+# (case 37 gives step 21 a separate BAM for that reason). Sample HG002P, the name case
 # nextflow-from-fastq-1-bash ran the bash steps under; the E2E workflow
 # compares the two with scripts/ci/parity-diff.sh.
 #
@@ -45,7 +48,7 @@ cat > "${CASE_TMP}/e2e.config" <<'NFCONF'
 process.errorStrategy = 'ignore'
 NFCONF
 
-TOOLS=pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,clinvar,hla_typing
+TOOLS=pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc,clinvar,hla_typing
 echo "+ nextflow run main.nf -profile docker (from FASTQ)"
 (
   cd "$CASE_TMP" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
