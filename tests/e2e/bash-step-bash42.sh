@@ -18,13 +18,13 @@ export REPO_ROOT=/repo CASE_WORK=/work FAKE_DOCKER_LOG=/work/docker.log
 export PATH="/repo/scripts/ci/fake-docker:${PATH}" GENOME_DIR=/work/genome
 G=$GENOME_DIR
 mkdir -p "$G/reference" "$G/s1/aligned" "$G/vep_cache" "$G/pcgr_data"
-for f in reference/Homo_sapiens_assembly38.fasta reference/Homo_sapiens_assembly38.fasta.fai \
+for f in reference/GRCh38_no_alt_analysis_set.fasta reference/GRCh38_no_alt_analysis_set.fasta.fai \
          s1/aligned/s1_sorted.bam s1/aligned/s1_sorted.bam.bai s1/vcf/s1.vcf.gz; do
   mkdir -p "$(dirname "$G/$f")"; echo placeholder > "$G/$f"
 done
 # Both BWA indexes: step 04a then runs TIDDIT with no extra argument (and so
 # did the version before, which looked for the BWA-MEM2 one).
-for ext in amb ann bwt pac sa bwt.2bit.64; do echo placeholder > "$G/reference/Homo_sapiens_assembly38.fasta.$ext"; done
+for ext in amb ann bwt pac sa bwt.2bit.64; do echo placeholder > "$G/reference/GRCh38_no_alt_analysis_set.fasta.$ext"; done
 . /repo/versions.env
 mkdir -p "$G/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEASE}_GRCh38" "$G/pcgr_data/${PCGR_DATA_BUNDLE}/data"
 echo species > "$G/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEASE}_GRCh38/info.txt"

@@ -11,7 +11,7 @@
 CAT="${GENOME_DIR}/reference/eh_catalog_fixture.json"
 docker run --rm "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
   > "${CASE_TMP}/catalog.json"
-python3 - "${CASE_TMP}/catalog.json" "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai" "$CAT" <<'PY2'
+python3 - "${CASE_TMP}/catalog.json" "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta.fai" "$CAT" <<'PY2'
 import json, sys
 loci = json.load(open(sys.argv[1]))
 contigs = {line.split("\t")[0] for line in open(sys.argv[2])}

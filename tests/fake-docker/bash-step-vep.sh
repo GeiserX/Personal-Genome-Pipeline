@@ -35,7 +35,7 @@ chmod +x "${CASE_WORK}/vep-hook"
 export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/vep-hook"
 
 THREADS=3 run_expect 0 vep "${SCRIPTS}/13-vep-annotation.sh" sample1
-docker_log_has '^run image=[^ ]*ensembl-vep.* vep .*--fasta /genome/reference/Homo_sapiens_assembly38\.fasta ' \
+docker_log_has '^run image=[^ ]*ensembl-vep.* vep .*--fasta /genome/reference/GRCh38_no_alt_analysis_set\.fasta ' \
   "step 13 did not pass the reference FASTA to vep"
 docker_log_has '^run image=[^ ]*ensembl-vep.* --compress_output bgzip ' "step 13 did not ask vep for bgzip output"
 docker_log_has "^run image=[^ ]*ensembl-vep.* --cache_version ${VEP_CACHE_RELEASE} " "step 13 did not pass --cache_version ${VEP_CACHE_RELEASE}"

@@ -30,13 +30,13 @@ run_expect 0 setup-again "${SCRIPTS}/setup.sh" "$G"
 docker_log_has '^curl [^ ]*/clinvar\.vcf\.gz -> ' "the second run did not download ClinVar again"
 [ -s "${G}/clinvar/clinvar.vcf.gz" ] || fail "the second run left no clinvar.vcf.gz"
 [ ! -e "${G}/clinvar/clinvar.vcf.gz.part" ] || fail "clinvar.vcf.gz.part is still there after a complete download"
-if grep -q '^curl [^ ]*Homo_sapiens_assembly38\.fasta -> ' "$FAKE_DOCKER_LOG"; then
+if grep -q '^curl [^ ]*GRCh38_no_alt_analysis_set\.fasta -> ' "$FAKE_DOCKER_LOG"; then
   fail "the second run downloaded the reference again although it was complete"
 fi
 
 # --- 2. private data directory -------------------------------------------------
 [ "$(mode "$G")" = "drwx------" ] || fail "GENOME_DIR is $(mode "$G"), expected drwx------"
-for f in reference/Homo_sapiens_assembly38.fasta clinvar/clinvar.vcf.gz; do
+for f in reference/GRCh38_no_alt_analysis_set.fasta clinvar/clinvar.vcf.gz; do
   [ "$(mode "${G}/${f}")" = "-rw-------" ] || fail "${f} is $(mode "${G}/${f}"), expected -rw-------"
 done
 
@@ -54,7 +54,7 @@ G3="${CASE_WORK}/genome3"
 mkdir -p "$G3"
 REF_FASTA_MD5=00000000000000000000000000000000 run_rc setup-bad-ref "${SCRIPTS}/setup.sh" "$G3"
 [ "$RC" -ne 0 ] || fail "setup.sh exited 0 although the reference did not match its recorded md5"
-[ ! -e "${G3}/reference/Homo_sapiens_assembly38.fasta" ] || fail "a reference with a wrong md5 was kept"
+[ ! -e "${G3}/reference/GRCh38_no_alt_analysis_set.fasta" ] || fail "a reference with a wrong md5 was kept"
 
 # --- 4. a lock left by a killed run -------------------------------------------------
 export GENOME_DIR="$G"

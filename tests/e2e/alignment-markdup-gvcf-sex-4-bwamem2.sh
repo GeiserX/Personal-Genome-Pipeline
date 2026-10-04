@@ -14,7 +14,7 @@ mkdir -p "$MINI" "${GENOME_DIR}/${BS}/fastq"
 
 # One contig per fixture region, named chr_start_end (1-based, inclusive).
 mapfile -t REGS < <(awk '{printf "%s:%d-%d\n", $1, $2 + 1, $3}' "${FIXTURE_DIR}/regions.bed")
-sam faidx reference/Homo_sapiens_assembly38.fasta "${REGS[@]}" | sed -E '/^>/ s/[:-]/_/g' > "$MREF"
+sam faidx reference/GRCh38_no_alt_analysis_set.fasta "${REGS[@]}" | sed -E '/^>/ s/[:-]/_/g' > "$MREF"
 check_eq "mini reference contigs (one per fixture region)" "$(grep -c '^>' "$MREF" || true)" "${#REGS[@]}"
 check_ge "mini reference bases" "$(grep -v '^>' "$MREF" | tr -d '\n' | wc -c | tr -d ' ')" 5000000
 
