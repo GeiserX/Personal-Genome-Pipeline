@@ -162,7 +162,53 @@ jobs:
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
         run: |
-          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools"
+          nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
+            -work-dir "${RUNNER_TEMP}/all-tools-work"
+
+      # The stub samplesheet has three samples with a BAM (one aligned from
+      # FASTQ): the T1K index is built once for all of them, each is typed,
+      # and each called sample went through INDEXCOV before DEEPVARIANT.
+      - name: T1K_BUILD ran once, HLA_TYPING once per sample with a BAM
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          count() { find "${RUNNER_TEMP}/all-tools-work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+            | grep -cE "(^|:)$1( |\$)" || true; }
+          build=$(count T1K_BUILD) typing=$(count HLA_TYPING) indexcov=$(count INDEXCOV) dv=$(count DEEPVARIANT)
+          bams=$(awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["bam"] != "" || $c["fastq_1"] != ""' assets/test_samplesheet.csv | wc -l)
+          echo "samples with a BAM: ${bams}; T1K_BUILD tasks: ${build}; HLA_TYPING tasks: ${typing}; INDEXCOV tasks: ${indexcov}; DEEPVARIANT tasks: ${dv}"
+          [ "$bams" -ge 2 ] && [ "$build" -eq 1 ] && [ "$typing" -eq "$bams" ] && [ "$indexcov" -eq "$bams" ] && [ "$dv" -eq 2 ]
+
+      # The common path of an existing user: VCF+BAM rows only, and a
+      # reference with no .sr.mmi beside it. The FASTQ channel is empty, so
+      # MINIMAP2_INDEX and the alignment must not run, and the run must still
+      # end (no hang on the empty channel). The all-tools run above, whose
+      # sheet has a FASTQ row, is the control: there the same count finds them.
+      - name: A VCF+BAM sheet with no index beside the reference aligns nothing
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          [ ! -e assets/stub/reference.sr.mmi ] || { echo "FAIL: assets/stub/reference.sr.mmi exists, the case is not tested"; exit 1; }
+          sheet="${RUNNER_TEMP}/vcf_bam_only.csv"
+          awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; print; next}
+            $c["vcf"] != "" && $c["bam"] != "" && $c["fastq_1"] == ""' assets/test_samplesheet.csv > "$sheet"
+          cat "$sheet"
+          [ "$(awk 'NR > 1' "$sheet" | wc -l)" -eq 1 ] || { echo "FAIL: want one VCF+BAM row in the stub samplesheet"; exit 1; }
+          nextflow run main.nf -profile test -stub -ansi-log false --input "$sheet" \
+            --outdir "${RUNNER_TEMP}/vcf-bam-out" -work-dir "${RUNNER_TEMP}/vcf-bam-work"
+          count() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+            | grep -cE "(^|:)$2( |\$)" || true; }
+          bad=0
+          for p in MINIMAP2_INDEX ALIGN_MINIMAP2 ALIGN_MARKDUP; do
+            here=$(count "${RUNNER_TEMP}/vcf-bam-work" "$p") control=$(count "${RUNNER_TEMP}/all-tools-work" "$p")
+            echo "${p}: ${here} tasks here, ${control} in the all-tools run"
+            [ "$here" -eq 0 ] && [ "$control" -ge 1 ] || bad=1
+          done
+          for p in FASTP DEEPVARIANT; do
+            here=$(count "${RUNNER_TEMP}/vcf-bam-work" "$p"); echo "${p}: ${here} tasks here"; [ "$here" -eq 0 ] || bad=1
+          done
+          indexcov=$(count "${RUNNER_TEMP}/vcf-bam-work" INDEXCOV); echo "INDEXCOV: ${indexcov} tasks here"
+          [ "$indexcov" -eq 1 ] || bad=1
+          [ "$bad" -eq 0 ]
 
       # gen-containers-config.sh --check (Guard) proves every process in
       # modules/ has a selector; this proves every one of them ran and got

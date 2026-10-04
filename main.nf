@@ -1,9 +1,11 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Personal Genome Pipeline — Post-processing & Clinical Interpretation
+    Personal Genome Pipeline — whole genome, from reads to report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek) and runs
+    Each samplesheet row starts from FASTQ (trimmed, aligned and called
+    here), from a BAM (called here), or from a VCF with an optional BAM
+    from any other caller (e.g. nf-core/sarek). From there it runs
     pharmacogenomics, variant annotation, clinical screening, BAM analysis,
     structural variant calling, and consolidated reporting.
 
@@ -19,6 +21,7 @@ nextflow.enable.dsl = 2
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+include { UPSTREAM     } from './workflows/upstream'
 include { PGX          } from './workflows/pgx'
 include { ANNOTATION   } from './workflows/annotation'
 include { CLINICAL     } from './workflows/clinical'
@@ -42,6 +45,9 @@ workflow {
 
     if (!params.reference) {
         error "Please provide a reference FASTA with --reference <path/to/GRCh38.fasta>"
+    }
+    if (!(params.sex_check in ['fail', 'warn'])) {
+        error "--sex_check must be 'fail' or 'warn', got '${params.sex_check}'."
     }
     if (params.reference.endsWith('.gz')) {
         error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +
@@ -74,6 +80,7 @@ workflow {
         ['cpsr',             'vep_cache_cpsr',    '--vep_cache_cpsr'],
         ['expansion_hunter', 'expansion_catalog', '--expansion_catalog'],
         ['hla_typing',       'hla_dat',           '--hla_dat'],
+        ['hla_typing',       'hla_genes',         '--hla_genes'],
         ['clinvar',          'clinvar',           '--clinvar'],
         ['clinvar',          'clinvar_index',     '--clinvar_index'],
         ['pypgx',            'pypgx_bundle',      '--pypgx_bundle'],
@@ -124,14 +131,18 @@ workflow {
     }
 
     // ─── Parse samplesheet ──────────────────────────────────────────────
-    // Expected columns: sample,vcf,vcf_index,bam,bam_index[,sex]
+    // Columns: sample, then one starting point per row:
+    //   fastq_1,fastq_2  reads: trimmed, aligned and called here
+    //   bam,bam_index    a BAM without a VCF: called here
+    //   vcf,vcf_index    a VCF from any caller, with bam,bam_index optional
+    // and sex (male or female), required on every row that is called.
     // Rows are read and checked here, before any task starts, so a bad row
     // stops the run at once.
     def samplesheet_rows = file(params.input, checkIfExists: true).splitCsv(header: true, strip: true)
     def seen_samples = [] as Set
     samplesheet_rows.each { row ->
-        if (!row.sample || !row.vcf || !row.vcf_index) {
-            error "Samplesheet must have 'sample', 'vcf', and 'vcf_index' columns. Got: ${row.keySet()}"
+        if (!row.sample) {
+            error "Samplesheet row without a 'sample' value. Columns found: ${row.keySet()}"
         }
         // Sanitize sample ID — used in shell commands, file paths, and HTML output
         if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
@@ -141,16 +152,32 @@ workflow {
         if (!seen_samples.add(row.sample)) {
             error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
         }
-        // Validate BAM/BAI are provided together
-        if (row.bam && !row.bam_index) {
-            error "Sample '${row.sample}': 'bam' provided without 'bam_index'. Both are required together."
+        // Pairs go together
+        [['fastq_1', 'fastq_2'], ['bam', 'bam_index'], ['vcf', 'vcf_index']].each { a, b ->
+            if (row[a] && !row[b]) {
+                error "Sample '${row.sample}': '${a}' provided without '${b}'. Both are required together."
+            }
+            if (!row[a] && row[b]) {
+                error "Sample '${row.sample}': '${b}' provided without '${a}'. Both are required together."
+            }
         }
-        if (!row.bam && row.bam_index) {
-            error "Sample '${row.sample}': 'bam_index' provided without 'bam'. Both are required together."
+        if (row.fastq_1 && (row.bam || row.vcf)) {
+            error "Sample '${row.sample}': a row starts from FASTQ or from a BAM or VCF, not both. " +
+                  "Remove the fastq columns to use the BAM or VCF, or the bam and vcf columns to align the reads."
         }
-        // Sex sets the chrX ploidy for ExpansionHunter (its default is female)
+        if (!row.fastq_1 && !row.bam && !row.vcf) {
+            error "Sample '${row.sample}': the row has no input. Give fastq_1 and fastq_2, or bam and bam_index, " +
+                  "or vcf and vcf_index (with an optional bam and bam_index)."
+        }
+        // Sex sets the chrX/chrY ploidy of DeepVariant and of ExpansionHunter
+        // (whose default is female), and INDEXCOV checks it against the BAM
         if (row.sex && !(row.sex.toLowerCase() in ['male', 'female'])) {
             error "Sample '${row.sample}': sex '${row.sex}' is not recognised. Use 'male' or 'female'."
+        }
+        if ((row.fastq_1 || (row.bam && !row.vcf)) && !row.sex) {
+            error "Sample '${row.sample}': DeepVariant calls this row and needs the sample's sex: a male sample " +
+                  "is called haploid on chrX and chrY outside the pseudoautosomal regions. Add a 'sex' column " +
+                  "(male or female)."
         }
         if (tools_list.contains('expansion_hunter') && row.bam && !row.sex) {
             error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
@@ -158,22 +185,42 @@ workflow {
         }
     }
 
-    Channel
+    ch_rows = Channel
         .fromList(samplesheet_rows)
-        .map { row ->
-            def meta = [id: row.sample, sex: row.sex ? row.sex.toLowerCase() : null]
-            def vcf = file(row.vcf, checkIfExists: true)
-            def vcf_index = file(row.vcf_index, checkIfExists: true)
-            def bam = row.bam ? file(row.bam, checkIfExists: true) : []
-            def bam_index = row.bam_index ? file(row.bam_index, checkIfExists: true) : []
-            [meta, vcf, vcf_index, bam, bam_index]
-        }
-        .set { ch_input }
+        .map { row -> [[id: row.sample, sex: row.sex ? row.sex.toLowerCase() : null], row] }
 
-    // ─── Branch input channels ──────────────────────────────────────────
-    ch_vcf_input = ch_input.map { meta, vcf, vcf_index, bam, bam_index ->
-        [meta, vcf, vcf_index]
-    }
+    ch_fastq = ch_rows
+        .filter { meta, row -> row.fastq_1 }
+        .map { meta, row -> [meta, file(row.fastq_1, checkIfExists: true), file(row.fastq_2, checkIfExists: true)] }
+    ch_bam_call = ch_rows
+        .filter { meta, row -> row.bam && !row.vcf }
+        .map { meta, row -> [meta, file(row.bam, checkIfExists: true), file(row.bam_index, checkIfExists: true)] }
+    ch_bam_given = ch_rows
+        .filter { meta, row -> row.bam && row.vcf }
+        .map { meta, row -> [meta, file(row.bam, checkIfExists: true), file(row.bam_index, checkIfExists: true)] }
+    ch_vcf_given = ch_rows
+        .filter { meta, row -> row.vcf }
+        .map { meta, row -> [meta, file(row.vcf, checkIfExists: true), file(row.vcf_index, checkIfExists: true)] }
+
+    // ─── Reference genome ───────────────────────────────────────────────
+    ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
+    ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
+    ch_par_bed        = Channel.value(file("${projectDir}/assets/par_grch38.bed", checkIfExists: true))
+
+    // ═══════════════════════════════════════════════════════════════════
+    // WORKFLOW 0: UPSTREAM — FASTQ to BAM, sex check, BAM to VCF and gVCF
+    // ═══════════════════════════════════════════════════════════════════
+    UPSTREAM(
+        ch_fastq,
+        ch_bam_call,
+        ch_bam_given,
+        ch_reference,
+        ch_reference_fai,
+        ch_par_bed
+    )
+
+    // Every sample's VCF: the one given, or the one DeepVariant called
+    ch_vcf_input = ch_vcf_given.mix(UPSTREAM.out.vcf)
 
     // ─── Input check ────────────────────────────────────────────────────
     // VCF_PRECHECK reads each VCF once before any analysis. Two problems stop
@@ -247,13 +294,10 @@ workflow {
                 }
         )
 
-    ch_bam = ch_input
-        .filter { meta, vcf, vcf_index, bam, bam_index -> bam }
-        .map { meta, vcf, vcf_index, bam, bam_index -> [meta, bam, bam_index] }
+    // Every BAM, given or aligned here, once INDEXCOV has checked its sex
+    ch_bam = UPSTREAM.out.bam
 
-    // ─── Reference genome ───────────────────────────────────────────────
-    ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
-    ch_reference_fai  = Channel.value(file("${params.reference}.fai", checkIfExists: true))
+    // ─── Sequence dictionary ────────────────────────────────────────────
     // Only MITO_VARIANTS (GATK) reads the sequence dictionary
     ch_reference_dict = Channel.value([])
     if (tools_list.contains('mito_variants')) {
@@ -313,13 +357,15 @@ workflow {
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
 
-    // HLA reference database (IPD-IMGT/HLA hla.dat)
-    ch_hla_dat = Channel.value(params.hla_dat ? file(params.hla_dat, checkIfExists: true) : [])
+    // HLA reference database (IPD-IMGT/HLA hla.dat) and the gene annotation
+    // T1K takes the genes' GRCh38 coordinates from
+    ch_hla_dat   = Channel.value(params.hla_dat   ? file(params.hla_dat, checkIfExists: true)   : [])
+    ch_hla_genes = Channel.value(params.hla_genes ? file(params.hla_genes, checkIfExists: true) : [])
 
     // AnnotSV annotation directory (the biocontainer ships no annotation data)
     ch_annotsv_annotations = Channel.value(params.annotsv_annotations ? file(params.annotsv_annotations, checkIfExists: true) : [])
 
-    // Delly exclude map (regions skipped by delly call -x)
+    // Delly exclude map (regions skipped by delly sr -x)
     ch_delly_exclude = Channel.value(params.delly_exclude ? file(params.delly_exclude, checkIfExists: true) : [])
 
     // Manta call regions (configManta.py --callRegions): a bgzipped BED with its .tbi beside it
@@ -339,7 +385,8 @@ workflow {
         ch_clinvar,
         ch_clinvar_index,
         ch_bam,
-        ch_pypgx_bundle
+        ch_pypgx_bundle,
+        UPSTREAM.out.gvcf
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -373,7 +420,10 @@ workflow {
         ch_pcgr_data,
         ch_vep_cache_cpsr,
         ch_pgs_scoring,
-        ch_ancestry_ref
+        ch_ancestry_ref,
+        UPSTREAM.out.gvcf,
+        ch_reference,
+        ch_reference_fai
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -386,6 +436,7 @@ workflow {
         ch_reference_dict,
         ch_expansion_catalog,
         ch_hla_dat,
+        ch_hla_genes,
         ch_cytoband
     )
 
@@ -447,6 +498,7 @@ workflow {
     // image it ran in; one file collects them, one block per process.
     Channel.empty()
         .mix(
+            UPSTREAM.out.versions,
             VCF_PRECHECK.out.versions,
             PGX.out.versions,
             ANNOTATION.out.versions,

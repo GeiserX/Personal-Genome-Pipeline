@@ -10,6 +10,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+include { T1K_BUILD        } from '../modules/local/t1k_build/main'
 include { HLA_TYPING       } from '../modules/local/hla_typing/main'
 include { EXPANSION_HUNTER } from '../modules/local/expansion_hunter/main'
 include { STRANGER         } from '../modules/local/stranger/main'
@@ -27,6 +28,7 @@ workflow BAM_ANALYSIS {
     ch_reference_dict    // channel: val(path) — reference .dict
     ch_expansion_catalog // channel: val(path) — ExpansionHunter variant catalog JSON
     ch_hla_dat           // channel: val(path) — Pre-downloaded IPD-IMGT/HLA hla.dat
+    ch_hla_genes         // channel: val(path) — gene annotation (GTF) T1K takes coordinates from
     ch_cytoband          // channel: val(path) — UCSC GRCh38 chromosome bands or []
 
     main:
@@ -44,11 +46,14 @@ workflow BAM_ANALYSIS {
     //
     // MODULE 1: HLA Typing (T1K)
     // Gates on: params.tools contains 'hla_typing'
+    // T1K_BUILD reads only value channels, so it runs once and its index
+    // serves every sample's HLA_TYPING task.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('hla_typing')) {
-        HLA_TYPING(ch_bam, ch_reference, ch_reference_fai, ch_hla_dat)
+        T1K_BUILD(ch_hla_dat, ch_hla_genes)
+        HLA_TYPING(ch_bam, T1K_BUILD.out.seq_fa, T1K_BUILD.out.coord_fa)
         ch_hla_alleles = HLA_TYPING.out.hla_alleles
-        ch_versions    = ch_versions.mix(HLA_TYPING.out.versions)
+        ch_versions    = ch_versions.mix(T1K_BUILD.out.versions, HLA_TYPING.out.versions)
     }
 
     //

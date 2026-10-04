@@ -6,12 +6,102 @@
     Converts VCF to plink2 binary format, then runs --score for each scoring file
     found in the scoring directory.
 
+    With a gVCF (DEEPVARIANT wrote one), PRS_SCORE_SITES first genotypes every
+    score position from it, so a site where the sample matches the reference
+    is a real 0/0 (a dosage of 2 for a reference effect allele) instead of a
+    missing site; without one the sum leaves those sites out. The summary's
+    Input column says which: gvcf or vcf.
+
     NOTE: Raw PRS from a single sample are NOT directly interpretable without a
     population reference distribution. Treat as exploratory, not clinical.
 
     Equivalent to: scripts/25-prs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+
+// The score positions genotyped from the gVCF, as step 25 does: gvcf2vcf
+// expands each reference block over a score position into a 0/0 record with
+// the reference base, -T keeps the score positions, --trim-alt-alleles drops
+// <*>, and a no-call is dropped, so a position without coverage stays
+// missing. A 0/0 record has ALT '.', which no effect allele matches: the awk
+// sets ALT to the position's first effect allele that is not the reference,
+// so such a score allele matches with a dosage of 0 and counts as matched.
+process PRS_SCORE_SITES {
+    tag "$meta.id"
+    label 'process_low'
+
+    input:
+    tuple val(meta), path(gvcf), path(gvcf_index)
+    path(scoring_dir)
+    path(reference)
+    path(reference_fai)  // staged beside the FASTA
+
+    output:
+    tuple val(meta), path("${meta.id}_score_sites.vcf"), emit: vcf
+    path "versions.yml",                                 emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    # Every score position, once, as CHROM<TAB>POS, and its effect alleles:
+    # the rows PRS scores (hm_chr, hm_pos, effect_allele and effect_weight set).
+    for SCORE_FILE in ${scoring_dir}/*.txt.gz ${scoring_dir}/*.txt; do
+        [ -f "\${SCORE_FILE}" ] || continue
+        gzip -cdf "\${SCORE_FILE}" | \\
+            awk -F'\\t' '/^#/ {next}
+            !hdr {
+                for(i=1;i<=NF;i++) {
+                    if(\$i=="hm_chr") chr_col=i;
+                    if(\$i=="hm_pos") pos_col=i;
+                    if(\$i=="effect_allele") ea_col=i;
+                    if(\$i=="effect_weight") ew_col=i;
+                }
+                hdr=1
+                next
+            }
+            chr_col && pos_col && ea_col && ew_col {
+                chr=\$chr_col; pos=\$pos_col; ea=\$ea_col; ew=\$ew_col;
+                if(chr!="" && pos!="" && ea!="" && ew!="") {
+                    if(chr !~ /^chr/) chr="chr"chr;
+                    print chr "\\t" pos "\\t" ea
+                }
+            }'
+    done | sort -u -k1,1 -k2,2n -k3,3 > score_alleles.tsv
+    cut -f1,2 score_alleles.tsv | uniq > score_sites.tsv
+    if [ ! -s score_sites.tsv ]; then
+        echo "ERROR: no GRCh38 hm_chr/hm_pos/effect_allele/effect_weight rows in ${scoring_dir}" >&2
+        exit 1
+    fi
+
+    bcftools convert --gvcf2vcf -f ${reference} -R score_sites.tsv -Ou ${gvcf} \\
+        | bcftools view -T score_sites.tsv --trim-alt-alleles -i 'GT!="mis"' -Ov \\
+        | awk -F'\\t' -v OFS='\\t' -v alleles=score_alleles.tsv '
+            BEGIN { while ((getline l < alleles) > 0) { split(l, f, "\\t"); k = f[1] ":" f[2]; ea[k] = ea[k] " " f[3] } }
+            /^#/ { print; next }
+            \$5 == "." {
+                n = split(ea[\$1 ":" \$2], c, " ")
+                for (i = 1; i <= n; i++) if (c[i] != \$4) { \$5 = c[i]; break }
+            }
+            { print }' > ${meta.id}_score_sites.vcf
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_score_sites.vcf
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
 
 process PRS {
     tag "$meta.id"
@@ -20,7 +110,9 @@ process PRS {
     publishDir { "${params.outdir}/${meta.id}/prs" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(vcf), path(vcf_index)
+    // input_kind: gvcf when vcf is PRS_SCORE_SITES' output (vcf_index is
+    // then []), vcf for the sample's variants-only VCF.
+    tuple val(meta), path(vcf), path(vcf_index), val(input_kind)
     path(scoring_dir)
 
     output:
@@ -49,7 +141,7 @@ process PRS {
     # Step 2: Score each PGS file in scoring directory.
     # Only GRCh38-harmonised PGS Catalog files are accepted (#HmPOS_build=GRCh38);
     # an author-reported file is often GRCh37 and would score the wrong positions.
-    echo -e "Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total" > ${meta.id}_prs_summary.tsv
+    echo -e "Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total\\tMatched_Pct\\tInput" > ${meta.id}_prs_summary.tsv
 
     for SCORE_FILE in ${scoring_dir}/*.txt.gz ${scoring_dir}/*.txt; do
         [ -f "\${SCORE_FILE}" ] || continue
@@ -103,7 +195,7 @@ process PRS {
             --memory \$(( ${task.memory.toMega()} - 500 )) \\
             --allow-extra-chr; then
             if grep -q 'No valid variants' "\${PGS_ID}.log" 2>/dev/null; then
-                echo -e "\${PGS_ID}\\t\${PGS_ID}\\tNA\\t0\\t\${TOTAL_VARS}" >> ${meta.id}_prs_summary.tsv
+                echo -e "\${PGS_ID}\\t\${PGS_ID}\\tNA\\t0\\t\${TOTAL_VARS}\\t0.0\\t${input_kind}" >> ${meta.id}_prs_summary.tsv
                 continue
             fi
             echo "ERROR: plink2 --score failed for \${PGS_ID}" >&2
@@ -111,13 +203,17 @@ process PRS {
         fi
 
         # Columns by name; ALLELE_CT/2 = variants matched (two alleles per autosomal site)
-        ROW=\$(awk -F'\\t' 'NR==1 { for(i=1;i<=NF;i++) col[\$i]=i; next }
-            NR==2 && ("SCORE1_SUM" in col) && ("ALLELE_CT" in col) { print \$col["SCORE1_SUM"] "\\t" \$col["ALLELE_CT"]/2 }' "\${PGS_ID}.sscore")
+        # Matched_Pct is Variants_Matched / Variants_Total, as step 25 writes it.
+        ROW=\$(awk -F'\\t' -v t="\${TOTAL_VARS}" 'NR==1 { for(i=1;i<=NF;i++) col[\$i]=i; next }
+            NR==2 && ("SCORE1_SUM" in col) && ("ALLELE_CT" in col) {
+                u = \$col["ALLELE_CT"]/2
+                printf "%s\\t%s\\t%s\\t%.1f\\n", \$col["SCORE1_SUM"], u, t, 100 * u / t
+            }' "\${PGS_ID}.sscore")
         if [ -z "\${ROW}" ]; then
             echo "ERROR: \${PGS_ID}.sscore has no SCORE1_SUM or ALLELE_CT column" >&2
             exit 1
         fi
-        echo -e "\${PGS_ID}\\t\${PGS_ID}\\t\${ROW}\\t\${TOTAL_VARS}" >> ${meta.id}_prs_summary.tsv
+        echo -e "\${PGS_ID}\\t\${PGS_ID}\\t\${ROW}\\t${input_kind}" >> ${meta.id}_prs_summary.tsv
     done
 
     cat <<-END_VERSIONS > versions.yml

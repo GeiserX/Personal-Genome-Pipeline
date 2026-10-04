@@ -23,6 +23,7 @@ workflow PGX {
     ch_clinvar_index  // channel: val(path) — ClinVar VCF index or []
     ch_bam            // channel: [meta, bam, bai]
     ch_pypgx_bundle   // channel: val(path) — pypgx-bundle directory
+    ch_gvcf           // channel: [meta, gvcf, gvcf_index] — DEEPVARIANT's, for the samples it called
 
     main:
     ch_versions    = Channel.empty()
@@ -34,7 +35,15 @@ workflow PGX {
     ch_pharmcat_html = Channel.empty()
     ch_pharmcat_json = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('pharmcat')) {
-        PHARMCAT_PREPROCESS(ch_vcf, ch_reference, ch_reference_fai)
+        // A sample with a gVCF has its reference blocks expanded over
+        // PharmCAT's regions, so a PGx position where it matches the
+        // reference is a 0/0 call instead of missing; [] for the others.
+        ch_pharmcat_input = ch_vcf
+            .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+            .join(ch_gvcf.map { meta, gvcf, gidx -> [meta.id, gvcf, gidx] }, remainder: true)
+            .filter { row -> row[1] != null }
+            .map { row -> [row[1], row[2], row[3], row[4] ?: [], row[5] ?: []] }
+        PHARMCAT_PREPROCESS(ch_pharmcat_input, ch_reference, ch_reference_fai)
         PHARMCAT(PHARMCAT_PREPROCESS.out.preprocessed_vcf)
         ch_pharmcat_html = PHARMCAT.out.html_report
         ch_pharmcat_json = PHARMCAT.out.json_report

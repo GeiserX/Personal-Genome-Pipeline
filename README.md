@@ -28,7 +28,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs), Cyrius and CPIC drug recommendations.
 - Repeat expansions, HLA typing, telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
 - Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. One exception: Cyrius is installed from PyPI at run time (version and dependencies pinned). No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
-- Two ways to run it: one bash script per step, or a Nextflow DSL2 pipeline.
+- One Nextflow DSL2 pipeline from FASTQ, BAM or VCF to the report, and every step also as a bash script you can run on its own.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 
 ## Quick start

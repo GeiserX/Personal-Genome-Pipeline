@@ -1,8 +1,14 @@
 # Nextflow Execution
 
-The pipeline has a [Nextflow](https://www.nextflow.io/) DSL2 execution path for **post-calling interpretation and clinical analysis**. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, variant annotation, clinical screening, structural variant analysis, and reporting across 6 workflows: 35 processes in 29 module files under `modules/local/`. The VCF needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`. Each samplesheet row starts from one of three places:
 
-> **Both execution paths are maintained.** The bash scripts (`run-all.sh`) remain the simpler option for single-machine use. Nextflow adds automatic parallelism and content-hash resume. It has a Singularity profile, but that profile is untested (see [Profiles](#profiles)). Both paths produce biologically equivalent results, though output file names and report scope may differ.
+- **FASTQ**: the reads are trimmed (fastp), aligned (minimap2, read group, duplicates marked) and called (DeepVariant, a VCF and a gVCF, chrX and chrY haploid for a male sample);
+- **a BAM** without a VCF: it is called;
+- **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM.
+
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 44 processes in 34 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+
+> **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` still chains them on one machine. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
 ---
 
@@ -12,19 +18,20 @@ The pipeline has a [Nextflow](https://www.nextflow.io/) DSL2 execution path for 
 
 1. **Docker** (already required for the bash pipeline)
 2. **Java 17 or later** (Nextflow 25.10 runtime requirement; CI runs Java 17)
-3. **Nextflow 25.10.4**, the version CI validates. Pin it when installing, because the plain installer fetches the newest release:
+3. **Nextflow 25.10.8**, the version CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
    ```bash
-   curl -s https://get.nextflow.io | NXF_VER=25.10.4 bash
+   curl -s https://get.nextflow.io | NXF_VER=25.10.8 bash
    sudo mv nextflow /usr/local/bin/
    ```
 
 ### Run the Pipeline
 
 ```bash
-# 1. Create a samplesheet CSV
+# 1. Create a samplesheet CSV: one row per sample, from FASTQ, a BAM, or a VCF
 cat > samplesheet.csv << 'EOF'
-sample,vcf,vcf_index,bam,bam_index
-sample1,/path/to/sample1.vcf.gz,/path/to/sample1.vcf.gz.tbi,/path/to/sample1_sorted.bam,/path/to/sample1_sorted.bam.bai
+sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex
+sample1,/path/to/sample1_R1.fastq.gz,/path/to/sample1_R2.fastq.gz,,,,,female
+sample2,,,/path/to/sample2_sorted.bam,/path/to/sample2_sorted.bam.bai,/path/to/sample2.vcf.gz,/path/to/sample2.vcf.gz.tbi,male
 EOF
 
 # 2. Run (default tools need no external databases; prs and vcfanno are
@@ -40,6 +47,7 @@ nextflow run main.nf \
 #    --tools '...,cpsr'                        + --pcgr_data + --vep_cache_cpsr
 #    --tools '...,clinvar'                     + --clinvar + --clinvar_index
 #    --tools '...,expansion_hunter'            + --expansion_catalog (and a sex column)
+#    --tools '...,hla_typing'                  + --hla_dat + --hla_genes (hla.dat and the GENCODE gene lines setup.sh installs)
 #    --tools '...,annotsv'                     + --annotsv_annotations
 #    --tools '...,cnvpytor'                    + --cnvpytor_resources
 #    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly sr -x)
@@ -49,7 +57,18 @@ nextflow run main.nf \
 #    An unknown name in --tools stops the run.
 ```
 
-`--reference` is the FASTA the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
+`--reference` is the FASTA the reads are aligned to and the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a given BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
+
+### From reads
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--skip_trim` | false | Align the raw reads, without fastp (`SKIP_TRIM=true` of step 01b) |
+| `--minimap2_index` | `<reference base>.sr.mmi` beside the FASTA | The minimap2 index built with `-x sr`, the file step 02 builds. When it is not there, the run builds one (about 30 minutes for GRCh38, cached by `-resume`) |
+| `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
+| `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex |
+
+The trimmed reads stay in the work directory; the fastp reports are published. A run from FASTQ needs the same memory as step 02 for alignment (minimap2 peaks near 10 GB on a 1.8 Gb reference) and DeepVariant's (32 GB by default); `--max_memory` caps both.
 
 ### Resume After Failure
 
@@ -68,17 +87,18 @@ Only the failed and downstream steps re-run.
 | Column | Required | Description |
 |--------|----------|-------------|
 | `sample` | Yes | Sample identifier (used as output directory name) |
-| `vcf` | Yes | Path to bgzipped VCF (`.vcf.gz`) |
-| `vcf_index` | Yes | Path to tabix index (`.vcf.gz.tbi`) |
-| `bam` | No* | Path to aligned BAM (needed for BAM-based steps like pypgx) |
-| `bam_index` | No* | Path to BAM index (`.bam.bai`) |
-| `sex` | No** | `male` or `female` |
+| `fastq_1`, `fastq_2` | One of three* | Paired gzipped FASTQ: trimmed, aligned and called |
+| `bam`, `bam_index` | One of three* | Aligned BAM and its index (`.bam.bai`): called when the row has no VCF |
+| `vcf`, `vcf_index` | One of three* | Bgzipped VCF (`.vcf.gz`) and its tabix index from any caller; a BAM on the same row is optional |
+| `sex` | On called rows** | `male` or `female` |
 
-\* BAM is technically optional (VCF-only runs are valid for annotation and PGx), but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) require BAM input. **Provide BAM for full analysis.**
+\* A row starts from FASTQ, or from a BAM, or from a VCF (with or without a BAM); a row with FASTQ and a BAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
 
-The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF is the better PharmCAT input, but the pipeline does not expand its reference blocks yet, so with `pharmcat` selected a gVCF stops the run; a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
+The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF given in the `vcf` column stops the run with `pharmcat` selected: the pipeline expands the reference blocks of the gVCF DeepVariant writes for a called row, not of a given one, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
 
-\*\* `sex` is required on every row that has a BAM when `expansion_hunter` is in `--tools`: it sets the chrX ploidy, and ExpansionHunter's default is female. A BAM row without it stops the run at parse time. VCF-only rows never reach ExpansionHunter, so they need no `sex`.
+\*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
+
+**Sex check.** `INDEXCOV` (goleft indexcov, seconds per sample: it reads only the `.bai`) infers each BAM's sex from the chrX and chrY copy numbers and writes it to `<sample>_sex_check.tsv`. When the row declares a sex and indexcov infers another (or cannot tell), the run stops before any step reads the BAM, and the message gives both values and the copy numbers: the sample is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome aneuploidy. `--sex_check warn` logs it and goes on with the declared sex. On a small region slice, like the test fixture, indexcov's call is not reliable.
 
 Each `sample` value must appear once; a repeated id stops the run, because the id names the output directory and keys every per-sample join.
 
@@ -129,6 +149,11 @@ nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
 ```
 results/
 ├── sample1/
+│   ├── fastq_trimmed/      # fastp reports, JSON + HTML (FASTQ rows)
+│   ├── aligned/            # <sample>_sorted.bam + .bai: minimap2, duplicates marked (FASTQ rows)
+│   ├── vcf/                # <sample>.vcf.gz and <sample>.g.vcf.gz + .tbi: DeepVariant (called rows)
+│   ├── indexcov/           # goleft indexcov coverage plots and .ped (rows with a BAM)
+│   ├── <sample>_sex_check.tsv  # the sex indexcov infers, with CNchrX and CNchrY
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
 │   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
 │   ├── pypgx/              # pypgx star allele calling (optional)
@@ -172,6 +197,7 @@ The pipeline does not anonymise anything: the outputs carry whatever identified 
 
 - **The VCF's sample name** (the last column of its `#CHROM` line) is repeated in the ClinVar VCFs (`clinvar/<sample>_clinvar_hits.vcf`, `<sample>_pass.vcf.gz`), on every line of `roh/<sample>_roh.txt`, in `mito/<sample>_haplogroup.txt` and as `sampleId` in the PharmCAT JSON files.
 - **The input's header lines** pass through into the ClinVar VCFs, including the provider's and bcftools' command lines, which often name the sample or a file.
+- **A BAM the pipeline aligned** names the sample label in its `@RG` line, and its `@PG` lines hold the command lines with your file paths.
 - **The input file name** is in the `##bcftools_viewCommand` and `##bcftools_normCommand` lines of the ClinVar VCFs, and can be in the command lines other tools print into their outputs.
 - **`pipeline_info/`** (report, timeline, trace) holds absolute paths of your machine.
 - **The samplesheet's `sample` label** names every output folder and file.
@@ -189,35 +215,43 @@ bcftools index -t SAMPLE.vcf.gz
 
 ---
 
-## Nextflow vs Bash: Which Should I Use?
+## The pipeline and the single-step scripts
 
-| Feature | Bash (`run-all.sh`) | Nextflow (`main.nf`) |
-|---------|---------------------|----------------------|
-| Setup complexity | Just Docker | Docker + Java + Nextflow |
-| Resume on failure | File-existence checks | Content-hash caching (more robust) |
-| Parallelism | Manual (`wait`, throttle) | Automatic DAG-based |
-| HPC / Singularity | Not supported | Profile exists, untested |
-| Learning curve | Shell scripting | Nextflow DSL2 + Groovy |
-| Target audience | Non-bioinformaticians | Bioinformaticians, HPC users |
-
-**Recommendation:** If you're comfortable with bash and running on a single machine, use the bash scripts. If you want automatic parallelism or robust resume, use Nextflow.
+Run the pipeline for a sample: it runs every step a default run selects, in parallel where the inputs allow, and `-resume` reruns only what changed. Run a numbered script to run or rerun one step by hand, on the layout `run-all.sh` and `setup.sh` use; the scripts and the modules run the same commands from the same images (see the parity section below). The pipeline needs Java 17 or later and Nextflow beside Docker; the scripts need Docker only. The HPC/Singularity profile exists but is untested.
 
 ---
 
 ## Known Limitations & Design Decisions
 
-### Post-calling scope
+### Scope: from reads to report
 
-This Nextflow pipeline is a **post-calling interpretation pipeline**, not a FASTQ-to-results pipeline. It accepts VCF + BAM from any upstream caller (e.g. nf-core/sarek, DRAGEN, the bash alignment scripts) and runs pharmacogenomics, annotation, clinical screening, structural variant calling, and reporting. Alignment and primary variant calling are handled upstream.
+The pipeline starts from paired short-read FASTQ, from a BAM or from a VCF. The reads go through fastp, minimap2 with the `sr` preset (`samtools fixmate`, `sort`, `markdup`) and DeepVariant's WGS model, with the flags of steps 01b, 02 and 03. Other starting points are scripts (below): ORA files, long reads, other aligners and callers, chip data.
 
 ### Bash vs Nextflow parity
 
-Both execution paths (bash `run-all.sh` and Nextflow `main.nf`) aim for **biologically equivalent results** — the same clinical conclusions, gene calls, and risk assessments. However, they are **not output-identical**: file names, directory structure, report formatting, and intermediate files may differ. When in doubt, the bash scripts are the reference implementation.
+The pipeline and the scripts run the same commands from the same images, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
+
+| Item | Compared |
+|---|---|
+| alignment | `samtools flagstat` of the two BAMs |
+| variants | `bcftools isec` of the two VCFs: records in one only, and shared records with another FILTER or GT |
+| gvcf | every gVCF record |
+| clinvar | the rows of `<sample>_clinvar_hits.tsv` |
+| roh | the `bcftools roh` segments and the 5 Mb summary |
+| pharmcat | the diplotype of each gene |
+| prs | each score's sum, matched variant count and input (gVCF or VCF) |
+
+A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 
 Where a module and its script differ on purpose:
 
 | Step | Script | Module |
 |---|---|---|
+| Alignment (02) | pipes minimap2 into samtools, each in its own image | `ALIGN_MINIMAP2` writes the SAM compressed with `gzip -1` and `ALIGN_MARKDUP` reads it: a task runs in one image, and no image in `versions.env` holds both tools. Same commands and the same BAM, plus a temporary file in the work directory, about as large as the gzipped FASTQ |
+| Sex check (16) | runs beside the other steps and stops itself on a mismatch | `INDEXCOV` runs before every BAM step, and a mismatch stops the run before DeepVariant starts |
+| DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
+| HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
+| PRS (25) | labels each score with its trait | the `Condition` column repeats the PGS id: the module scores whatever files `--pgs_scoring` holds |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
 | HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` shows a subset: ClinVar, PharmCAT, CPSR, clinical filter, slivar, ROH, mito haplogroup, CPIC. For the full report, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
@@ -228,8 +262,7 @@ Scripts with no module, and why:
 | Script | Why it stays bash-only |
 |---|---|
 | `01-ora-to-fastq.sh` | `orad` is a native binary that runs on the host, on the raw reads |
-| `01b-fastp-qc.sh`, `02-alignment.sh`, `02a-alignment-bwamem2.sh`, `03-deepvariant.sh`, `16-indexcov.sh` | read QC, alignment, calling and the BAM-index sex check run before the VCF and BAM this pipeline starts from |
-| `03a-gatk-haplotypecaller.sh`, `03b-freebayes.sh`, `03c-strelka2-germline.sh`, `03d-octopus.sh`, `03e-clair3.sh` | alternative small-variant callers: the pipeline takes the VCF from whichever caller ran |
+| `02a-alignment-bwamem2.sh`, `03a-gatk-haplotypecaller.sh`, `03b-freebayes.sh`, `03c-strelka2-germline.sh`, `03d-octopus.sh`, `03e-clair3.sh` | alternative and legacy aligners and callers, kept for benchmarking: the pipeline aligns with minimap2 and calls with DeepVariant, and takes the VCF of any other caller in the `vcf` column |
 | `02b-alignment-longread.sh`, `04c-sniffles2.sh` | the long-read path: the samplesheet holds one short-read BAM per sample |
 | `04a-tiddit.sh` | an alternative to Manta; its local assembly needs the classic BWA index |
 | `04b-gridss.sh` | needs a 31 GB Java heap and the BWA index, more than the SV modules are sized for |
@@ -296,7 +329,7 @@ The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip 
 
 ### CI validation scope
 
-`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup and html_report (see [Testing](testing.md#the-e2e-job)). It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
+`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup and html_report; and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
 
 ---
 
