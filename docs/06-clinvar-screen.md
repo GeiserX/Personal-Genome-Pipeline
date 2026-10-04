@@ -16,7 +16,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Sample VCF from DeepVariant (step 3)
-- Reference FASTA and its `.fai`: `reference/Homo_sapiens_assembly38.fasta` (used to left-align indels)
+- Reference FASTA and its `.fai`: `reference/GRCh38_no_alt_analysis_set.fasta` (used to left-align indels)
 - `clinvar_pathogenic_chr.vcf.gz` from reference setup (step 00) — chr-prefixed, filtered to Pathogenic/Likely_pathogenic only
 
 ## Command

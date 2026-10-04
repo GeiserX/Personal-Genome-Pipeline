@@ -49,7 +49,7 @@
                 "reference": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Path to GRCh38 reference FASTA file.",
+                    "description": "Path to the GRCh38 reference FASTA the BAMs were aligned to: the no-ALT analysis set that scripts/setup.sh installs as reference/GRCh38_no_alt_analysis_set.fasta.",
                     "fa_icon": "fas fa-dna"
                 },
                 "clinvar": {

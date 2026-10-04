@@ -17,7 +17,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Command
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
@@ -58,7 +58,7 @@ docker run --rm \
 # Output: diploidSV.vcf.gz (~7-9K structural variants)
 ```
 
-`scripts/04-manta.sh` runs the same three steps. It reads the CPU count from `THREADS` (default 8) and the BAM from `${SAMPLE}/${ALIGN_DIR}/` (default `aligned`). With `MANTA_CALL_REGIONS` set to a bgzipped BED under `GENOME_DIR` (its `.tbi` beside it), Manta calls only those regions (`configManta.py --callRegions`), for example chr1-22, X and Y without the ALT and decoy contigs. When Manta reported no inversion, the script copies `diploidSV.raw.vcf.gz` to `diploidSV.vcf.gz` instead of starting a container, and says so. Run on a folder that holds Manta's results from before the inversion step, it converts them without calling again.
+`scripts/04-manta.sh` runs the same three steps. It reads the CPU count from `THREADS` (default 8) and the BAM from `${SAMPLE}/${ALIGN_DIR}/` (default `aligned`). With `MANTA_CALL_REGIONS` set to a bgzipped BED under `GENOME_DIR` (its `.tbi` beside it), Manta calls only those regions (`configManta.py --callRegions`), for example chr1-22, X and Y without the unplaced scaffolds and `chrEBV`. When Manta reported no inversion, the script copies `diploidSV.raw.vcf.gz` to `diploidSV.vcf.gz` instead of starting a container, and says so. Run on a folder that holds Manta's results from before the inversion step, it converts them without calling again.
 
 ## Output
 - `results/variants/diploidSV.vcf.gz` — main output (all SV calls), with each inversion as one `SVTYPE=INV` record; steps 05, 15 and 22 read this file

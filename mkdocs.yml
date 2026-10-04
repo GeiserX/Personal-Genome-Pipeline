@@ -140,6 +140,7 @@ nav:
       - Vendor Compatibility Guide: vendor-guide.md
       - Starting from a Vendor VCF: vcf-first.md
       - "Step 0: Reference Data Setup": 00-reference-setup.md
+      - Realigning After a Reference Change: realignment.md
       - "Quick Test: Verify Your Setup Before Running on Real Data": quick-test.md
       - Nextflow Execution (v0.5.0): nextflow.md
   - Pipeline steps:

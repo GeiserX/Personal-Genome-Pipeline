@@ -11,10 +11,12 @@
 #   umask 077      files the host side writes are readable by their owner only.
 #   GENOME_DIR     as exported by the caller (not required here: setup.sh and
 #                  validate-setup.sh run without it).
-#   REF_FASTA      host path of the GRCh38 FASTA (override from the environment;
-#                  it must lie inside GENOME_DIR, the only directory containers
-#                  see). REF_FASTA_C is the same file inside a container,
-#                  REF_DICT its GATK sequence dictionary.
+#   REF_FASTA      host path of the GRCh38 FASTA. Default: the NCBI GRCh38
+#                  no-ALT analysis set setup.sh installs. Override from the
+#                  environment, absolute or relative to GENOME_DIR; it must lie
+#                  inside GENOME_DIR, the only directory containers see.
+#                  REF_FASTA_C is the same file inside a container, REF_DICT
+#                  its GATK sequence dictionary.
 #   THREADS        CPU budget of one step. Default 8; a script that wants another
 #                  default sets THREADS=${THREADS:-N} before sourcing this file.
 #   CONTAINER_ENGINE  docker by default.
@@ -67,7 +69,13 @@ cpath() {
 # shellcheck disable=SC2034  # REF_DICT and REF_FASTA_C are read by the scripts
 if [ -n "${GENOME_DIR:-}" ]; then
   GENOME_DIR=${GENOME_DIR%/}
-  REF_FASTA=${REF_FASTA:-${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta}
+  # A new file name on purpose: a reference with ALT contigs left from an
+  # older version is never picked up by accident (docs/realignment.md).
+  REF_FASTA=${REF_FASTA:-${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta}
+  case "$REF_FASTA" in
+    /*) ;;
+    *) REF_FASTA="${GENOME_DIR}/${REF_FASTA}" ;;
+  esac
   # GATK names the dictionary after the FASTA without its extensions:
   # ref.fasta and ref.fa.gz both give ref.dict.
   REF_DICT="${REF_FASTA%.gz}"

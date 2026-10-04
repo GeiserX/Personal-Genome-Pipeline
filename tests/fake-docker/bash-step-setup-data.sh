@@ -37,13 +37,13 @@ done
 printf 'rs1\t1\t100\tAG\n' > "${GENOME_DIR}/chip1/raw/chip1_raw.txt"
 : > "$FAKE_DOCKER_LOG"
 run_expect 1 chip-no-dict "${SCRIPTS}/chip-to-vcf.sh" chip1
-output_has chip-no-dict 'Required file not found: .*Homo_sapiens_assembly38\.dict'
+output_has chip-no-dict 'Required file not found: .*GRCh38_no_alt_analysis_set\.dict'
 if grep -q '^run ' "$FAKE_DOCKER_LOG"; then fail "chip-to-vcf.sh started a container without the sequence dictionary"; fi
 
 run_expect 0 setup "${SCRIPTS}/setup.sh" "$GENOME_DIR"
-docker_log_has '^run image=[^ ]*gatk.* gatk CreateSequenceDictionary -R /genome/reference/Homo_sapiens_assembly38\.fasta ' \
+docker_log_has '^run image=[^ ]*gatk.* gatk CreateSequenceDictionary -R /genome/reference/GRCh38_no_alt_analysis_set\.fasta ' \
   "setup.sh did not create the sequence dictionary"
-[ -f "${GENOME_DIR}/reference/Homo_sapiens_assembly38.dict" ] || fail "setup.sh left no Homo_sapiens_assembly38.dict"
+[ -f "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.dict" ] || fail "setup.sh left no GRCh38_no_alt_analysis_set.dict"
 for what in 'Delly exclude map' 'GRCh38 chromosome bands' 'IPD-IMGT/HLA' 'GENCODE'; do
   output_has setup "\[WARN\] Could not install the ${what}"
 done

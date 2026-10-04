@@ -64,9 +64,11 @@ case "$CNVPYTOR_IMG_DATA" in
 esac
 PYTOR="/genome/${SAMPLE}/cnvpytor/${SAMPLE}.pytor"
 
-# Process only the canonical GRCh38 chromosomes. A full-reference BAM also carries
-# hundreds of ALT/HLA/decoy contigs the GC-correction data does not cover; without
-# this restriction, read-depth import chokes on them and produces no calls.
+# Process only the canonical GRCh38 chromosomes. The default no-ALT reference
+# still carries unplaced and unlocalized scaffolds and chrEBV, and a BAM from a
+# full reference (REF_FASTA) hundreds of ALT, HLA and decoy contigs. The
+# GC-correction data covers none of them; without this restriction read-depth
+# import chokes on them and produces no calls.
 CANONICAL_CHROMS=(chr{1..22} chrX chrY)
 
 # cnvpytor invocation with the genome data + pinned resource mounts

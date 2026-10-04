@@ -12,7 +12,7 @@ DUPS=$(awk '/ duplicates$/ {print $1; exit}' <<< "$FS")
 check_ge "reads flagged as duplicates (samtools flagstat)" "${DUPS:-0}" 1
 check "the BAM header records samtools markdup" has '^@PG.*ID:samtools.*markdup' "$(sam view -H "$BAM" 2>/dev/null)"
 check "the minimap2 index is named after the reference (.sr.mmi)" \
-  nonempty reference/Homo_sapiens_assembly38.sr.mmi
+  nonempty reference/GRCh38_no_alt_analysis_set.sr.mmi
 check_eq "temporary index files left in reference/" \
   "$(find "${GENOME_DIR}/reference" -maxdepth 1 -name '*.mmi.tmp*' | wc -l | tr -d ' ')" 0
 

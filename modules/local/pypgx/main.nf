@@ -51,14 +51,25 @@ process PYPGX {
     CTRL="\$OUTBASE/control_statistics.zip"
     FAILED=""
     SUCCEEDED=0
+    BAM_GENES="${bam_genes}"
+
+    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a
+    # reference without ALT contigs (the default) has no such contig, and
+    # depth preparation then fails for every SV gene. Leave GSTT1 out in that
+    # case and say so, as scripts/32-pypgx.sh does.
+    if ! python3 -c "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 1)" ${bam}; then
+      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
+      BAM_GENES=\$(echo "\$BAM_GENES" | tr " " "\\n" | grep -vx GSTT1 | tr "\\n" " ")
+      FAILED="\${FAILED} GSTT1"
+    fi
 
     # Phase 1: Prepare depth of coverage for SV genes
-    echo "--- Preparing depth of coverage for SV genes ---"
+    echo "--- Preparing depth of coverage for SV genes: \${BAM_GENES} ---"
     DOC_OK=true
     if ! pypgx prepare-depth-of-coverage \\
-      "\$DOC" ${bam} --assembly GRCh38 2>&1; then
+      "\$DOC" ${bam} --assembly GRCh38 --genes \$BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed"
-      for GENE in ${bam_genes}; do FAILED="\${FAILED} \${GENE}"; done
+      for GENE in \$BAM_GENES; do FAILED="\${FAILED} \${GENE}"; done
       DOC_OK=false
     fi
 
@@ -74,7 +85,7 @@ process PYPGX {
 
     # Phase 3a: BAM-based genes with SV detection
     if [ "\$DOC_OK" = true ]; then
-      for GENE in ${bam_genes}; do
+      for GENE in \$BAM_GENES; do
         echo "--- Calling \${GENE} (BAM + VCF) ---"
         EXTRA=""
         [ -f "\$CTRL" ] && EXTRA="--control-statistics \$CTRL"

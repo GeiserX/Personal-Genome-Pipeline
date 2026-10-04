@@ -6,7 +6,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 - **1 sample:** 500 GB free disk, 16 GB RAM (steps run a few at a time, see [RAM](#ram-requirements)), 4+ CPU cores
 - **2 samples:** 1 TB free disk, 32 GB RAM, 8+ CPU cores (recommended)
-- **First-time setup downloads:** ~75 GB for the default run, ~250 GB with the optional annotation databases ([table](#shared-reference-data-one-time))
+- **First-time setup downloads:** ~73 GB for the default run, ~248 GB with the optional annotation databases ([table](#shared-reference-data-one-time))
 - **Total time per sample:** 6-12 hours for a default `run-all.sh` on a 16-core desktop ([per step](#runtime-per-step))
 - **GRIDSS (step 4b, opt-in):** needs a 32 GB container on its own, so 32 GB of RAM or more
 
@@ -42,15 +42,15 @@ One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes)
 
 | Resource | Download | On disk | Used by |
 |---|---|---|---|
-| GRCh38 FASTA + `.fai` | ~3 GB | ~3 GB | every step |
+| GRCh38 no-ALT analysis set, FASTA + `.fai` (unpacked by `setup.sh`) | ~0.8 GB | ~3 GB | every step |
 | ClinVar VCF + chr-renamed and pathogenic-only copies | ~0.2 GB | ~0.4 GB | step 6 |
 | AnnotSV annotations | ~5 GB | ~20 GB | step 5 |
 | VEP cache, release 116 | ~26 GB | ~30 GB | step 13 |
 | PCGR/CPSR ref data bundle (20260620) | ~7 GB | ~7 GB | step 17 |
 | VEP cache, release 115 | ~24 GB | ~28 GB | step 17 (CPSR's own VEP) |
 | Docker images | ~10-15 GB | ~10-15 GB | every step |
-| **Total, default run** | **~75-80 GB** | **~98-103 GB** | |
-| Of which `setup.sh` downloads (first three rows + Docker images) | ~18-23 GB | ~33-38 GB | |
+| **Total, default run** | **~73-78 GB** | **~98-103 GB** | |
+| Of which `setup.sh` downloads (first three rows + Docker images) | ~16-21 GB | ~33-38 GB | |
 
 **Optional** (only for the step named):
 
@@ -80,8 +80,8 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 
 | Scenario | Download Size |
 |---|---|
-| Default run | ~75-80 GB |
-| Default run + annotation databases | ~250-255 GB |
+| Default run | ~73-78 GB |
+| Default run + annotation databases | ~248-253 GB |
 
 ### Total Disk Requirements
 
@@ -210,7 +210,7 @@ Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
 
 ### One-Time Downloads
 
-About 75 GB for a default run and 250 GB with the annotation databases; the [table above](#shared-reference-data-one-time) has every download. The VEP caches come from slow servers, so use `wget -c` to resume.
+About 73 GB for a default run and 248 GB with the annotation databases; the [table above](#shared-reference-data-one-time) has every download. The VEP caches come from slow servers, so use `wget -c` to resume.
 
 ### Ongoing Downloads
 

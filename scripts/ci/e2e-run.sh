@@ -70,21 +70,17 @@ done
 (cd "$FIXTURE_DIR" && sha256sum -c SHA256SUMS)
 
 # --- 2. GENOME_DIR layout -----------------------------------------------------
-# Today's scripts read reference/Homo_sapiens_assembly38.fasta; the no-alt name
-# is there too so a script that switches to it finds the same file.
+# The reference under the name scripts/lib/common.sh reads by default.
 echo "=== Layout ${GENOME_DIR} ==="
 mkdir -p "${GENOME_DIR}/reference" "${GENOME_DIR}/clinvar" "${GENOME_DIR}/annotations" \
   "${GENOME_DIR}/${SAMPLE}/fastq" "${GENOME_DIR}/${SAMPLE}/vep"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38"
+REF="${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set"
 if [ ! -s "${REF}.fasta" ]; then
   gzip -dc "${FIXTURE_DIR}/fixture_ref.fa.gz" > "${REF}.fasta.tmp"
   mv "${REF}.fasta.tmp" "${REF}.fasta"
 fi
 cp "${FIXTURE_DIR}/fixture_ref.fa.gz.fai" "${REF}.fasta.fai"
 cp "${FIXTURE_DIR}/fixture_ref.dict" "${REF}.dict"
-for ext in fasta fasta.fai dict; do
-  ln -f "${REF}.${ext}" "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.${ext}"
-done
 for f in clinvar.vcf.gz clinvar_chr.vcf.gz clinvar_pathogenic_chr.vcf.gz; do
   cp "${FIXTURE_DIR}/${f}" "${FIXTURE_DIR}/${f}.tbi" "${GENOME_DIR}/clinvar/"
 done

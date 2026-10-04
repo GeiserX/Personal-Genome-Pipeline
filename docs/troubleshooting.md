@@ -259,7 +259,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 | chr1 length | 249,250,621 | 248,956,422 |
 | Chromosome prefix | Often no `chr` | `chr` in UCSC-style files (what the pipeline needs); none in Ensembl-style files |
 | Mitochondria name | `MT` (or `chrM`) | `chrM` (UCSC style) or `MT` (Ensembl style) |
-| ALT contigs | No | Yes |
+| ALT contigs | No | Yes in the full assembly; the pipeline's reference (the no-ALT analysis set) leaves them out |
 
 The prefix alone does not tell the build: some providers deliver GRCh38 with Ensembl names (`1`, `MT`). Check chr1's length. A GRCh38 VCF with Ensembl names needs only a rename, which the Nextflow pipeline prints when it stops on it: see [Starting from a Vendor VCF](vcf-first.md).
 
@@ -286,7 +286,7 @@ Do **not** use LiftOver on BAM files. Re-alignment from FASTQ is cleaner and avo
 **Fix:** Convert CRAM to BAM (requires the reference genome used for encoding, which is usually GRCh38):
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v ${GENOME_DIR}:/genome \
   "${SAMTOOLS_IMAGE}" \
@@ -462,7 +462,7 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 **Fix:**
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # scripts/03-deepvariant.sh has fixed limits (--cpus 8 --memory 32g), so run step 3
 # manually with reduced resources:
 docker run --rm \
@@ -555,7 +555,7 @@ docker run --rm --user root \
 **Fix:**
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 # Verify your VCF has the GT field
 docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools query -f '[%GT]\n' /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz | head -1
@@ -578,7 +578,7 @@ docker run --rm --user root -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
 **Note:** PharmCAT 3.2.0 includes a VCF preprocessor. If direct input fails, try the preprocessor first:
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
@@ -608,7 +608,7 @@ docker run --rm \
 
 **Fix:** If running manually, use the v5 syntax:
 ```bash
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 ExpansionHunter \
   --reads /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
   --reference "/genome/${REF_FASTA}" \
@@ -778,8 +778,8 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
 3. Consider running only on specific chromosomes to reduce scope:
    ```bash
    source versions.env   # from the repository root
-   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-   # Run Delly on chr1-chr22 only (skip ALT contigs)
+   REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+   # Delly on the sample's BAM without the exclude map step 19 passes
    docker run --rm --user root \
      --cpus 4 --memory 8g \
      -v "${GENOME_DIR}:/genome" \
@@ -788,9 +788,10 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
        -g "/genome/${REF_FASTA}" \
        -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
        /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
-   # Delly processes all standard chromosomes by default; slowness usually
-   # comes from ALT contigs. You can exclude them with the -x (exclude) flag
-   # using a BED file of regions to skip.
+   # Delly processes every contig of the reference; slowness usually comes
+   # from centromeres, telomeres and the unplaced scaffolds. Step 19 skips
+   # them with Delly's exclude map (-x reference/delly_human.hg38.excl.tsv,
+   # installed by setup.sh); add it here the same way.
    ```
 
 ---
@@ -798,10 +799,10 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
 ### Step 20: GATK Mutect2 mitochondrial mode
 
 **Problem: "Cannot create sequence dictionary"**
-The script tries to create `Homo_sapiens_assembly38.dict` if it does not exist. If you get permission errors, create it manually:
+The script tries to create the reference's sequence dictionary (`GRCh38_no_alt_analysis_set.dict`) if it does not exist. If you get permission errors, create it manually:
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "${GATK_IMAGE}" \
@@ -1030,7 +1031,7 @@ RESOURCE CAUTION:
 2. Multi-allelic sites may be inflating the count. Normalize:
    ```bash
    source versions.env   # from the repository root
-   REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+   REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
    docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
      bcftools norm -m -both \
        -f "/genome/${REF_FASTA}" \

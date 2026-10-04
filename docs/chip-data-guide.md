@@ -76,7 +76,7 @@ wget -q -O "${GENOME_DIR}/liftover/hg19ToHg38.over.chain.gz" \
   "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz"
 ```
 
-> **GRCh38 reference required:** The liftover step (stage 3) needs `Homo_sapiens_assembly38.fasta` in `${GENOME_DIR}/reference/` and its sequence dictionary `Homo_sapiens_assembly38.dict`, which Picard LiftoverVcf reads. `setup.sh` creates both; `chip-to-vcf.sh` checks for them before it converts anything. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.
+> **GRCh38 reference required:** The liftover step (stage 3) needs the pipeline's reference, `GRCh38_no_alt_analysis_set.fasta` in `${GENOME_DIR}/reference/`, and its sequence dictionary `GRCh38_no_alt_analysis_set.dict`, which Picard LiftoverVcf reads. `setup.sh` creates both; `chip-to-vcf.sh` checks for them before it converts anything. If you haven't set up the pipeline's reference data yet, follow [step 00 — reference setup](00-reference-setup.md) first.
 
 ### Conversion Workflow
 
@@ -94,7 +94,7 @@ You can also run the steps manually:
 
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 SAMPLE=your_name
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/${SAMPLE}/vcf"

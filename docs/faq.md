@@ -36,6 +36,9 @@ No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enou
 **Q: My data is aligned to hg19/GRCh37. What do I?**
 Extract FASTQ from your BAM (`samtools fastq`) and re-align to GRCh38 using step 2. LiftOver is an alternative but introduces artifacts. Re-alignment is cleaner.
 
+**Q: My BAM is GRCh38, but `validate-setup.sh` says it "was aligned to a different reference". Why?**
+The pipeline aligns to the GRCh38 no-ALT analysis set (195 sequences). A BAM aligned to another GRCh38 file, such as one with ALT, HLA or decoy contigs (most vendor BAMs, and this pipeline's own BAMs from before the switch), has a different contig list, and reads at CYP2D6, the MHC and KIR were placed with mapping quality 0 where the reference holds two copies. Realign it: [Realigning after a reference change](realignment.md) has the commands and the checks.
+
 **Q: I found a pathogenic variant. Should I be worried?**
 Probably not. A typical genome shows 0-10 pathogenic/likely pathogenic ClinVar hits, almost all heterozygous (one copy) for recessive conditions. This means you're a **carrier**, not affected. Only worry if: (1) the variant is in a **dominant** gene, (2) you have **two** pathogenic variants in the same recessive gene, or (3) it is in a cancer predisposition gene (BRCA1/2, MLH1, etc.). See [interpreting-results.md](interpreting-results.md) for details.
 
@@ -43,7 +46,7 @@ Probably not. A typical genome shows 0-10 pathogenic/likely pathogenic ClinVar h
 VUS (Variants of Uncertain Significance) mean there is not enough evidence to classify the variant as pathogenic or benign. The majority will eventually be reclassified as benign. They are **not actionable** — do not change your medical care based on a VUS. Check back in 1-2 years with an updated ClinVar database.
 
 **Q: How often should I re-run the analysis?**
-ClinVar and other databases are updated monthly. Re-running the ClinVar screen (step 6, ~5 minutes) and CPSR (step 17, ~30 minutes) every 6-12 months with updated databases can catch newly classified variants. The compute-heavy steps (alignment, variant calling) do not need to be re-run unless you get new sequencing data.
+ClinVar and other databases are updated monthly. Re-running the ClinVar screen (step 6, ~5 minutes) and CPSR (step 17, ~30 minutes) every 6-12 months with updated databases can catch newly classified variants. The compute-heavy steps (alignment, variant calling) do not need to be re-run unless you get new sequencing data or the pipeline changes its reference ([realignment](realignment.md)).
 
 **Q: I ran the pipeline on two people (me and my partner). How do I compare?**
 See [docs/multi-sample.md](multi-sample.md) for carrier cross-screening, pharmacogenomics comparison, and family analysis.

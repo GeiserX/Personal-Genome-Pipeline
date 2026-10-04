@@ -46,7 +46,7 @@ echo "+ nextflow run main.nf -profile docker (hardening)"
     -c "${CASE_TMP}/e2e.config" \
     -work-dir "$WORK" \
     --input "$SHEET" \
-    --reference "${G}/reference/Homo_sapiens_assembly38.fasta" \
+    --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
     --tools clinvar,pharmcat,mosdepth,delly,manta,vcfanno,pypgx,telomere_hunter,mito_haplogroup \
     --clinvar "${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" \
     --clinvar_index "${G}/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi" \

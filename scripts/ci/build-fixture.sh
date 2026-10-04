@@ -15,9 +15,8 @@
 #                                          bins on chr1-chr22
 #   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr2 chr4 chr5 chr6 chr10
 #                                          chr12 chr16 chr19 chr20 chr22 chrX chrY
-#                                          chrM of the NCBI GRCh38 no-alt analysis
-#                                          set, plus the one ALT contig pypgx
-#                                          needs for GSTT1
+#                                          chrM of the NCBI GRCh38 no-ALT analysis
+#                                          set, the pipeline's default reference
 #   clinvar.vcf.gz, clinvar_chr.vcf.gz,    ClinVar records inside the regions,
 #   clinvar_pathogenic_chr.vcf.gz (+.tbi)  plus one planted record (planted.tsv)
 #   HG002_vep.vcf                          up to 200 GIAB truth variants annotated
@@ -84,14 +83,12 @@ REGIONS=(
 )
 CONTIGS=(chr1 chr2 chr4 chr5 chr6 chr10 chr12 chr16 chr19 chr20 chr22 chrX chrY chrM)
 # pypgx (step 32) reads depth over the region of every gene it can call
-# copy number for (on chr1, chr2, chr4, chr6, chr10, chr16, chr19, chr22, chrX
-# and one ALT contig) before it calls any of them. samtools refuses a region on
-# a contig the BAM does not have, and then step 32 calls no BAM gene at all,
-# CYP2D6 included; so all of those contigs are here. The GRCh38 GSTT1 region is
-# on this ALT contig: today's default reference (Broad hg38) has it, the no-alt
-# analysis set does not.
-GSTT1_ALT=chr22_KI270879v1_alt
-GSTT1_ALT_ACC=KI270879.1
+# copy number for (on chr1, chr2, chr4, chr6, chr10, chr16, chr19, chr22 and
+# chrX) before it calls any of them. samtools refuses a region on a contig the
+# BAM does not have, and then step 32 calls no BAM gene at all, CYP2D6
+# included; so all of those contigs are here. The GRCh38 GSTT1 region is on an
+# ALT contig, which the default no-ALT reference does not have: step 32 leaves
+# GSTT1 out here as it does on a real sample.
 # chrM is kept at about this depth: the GIAB BAM has thousands of x on chrM,
 # which only slows every step down.
 CHRM_DEPTH=${CHRM_DEPTH:-500}
@@ -148,16 +145,6 @@ rm -f "${WORK}/${REF_NAME}"
 sam faidx /w/.work/full.fa
 sam faidx -o /w/.work/mini.fa /w/.work/full.fa "${CONTIGS[@]}"
 rm -f "${WORK}/full.fa" "${WORK}/full.fa.fai"
-curl -fsSL --retry 5 --retry-delay 10 \
-  "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${GSTT1_ALT_ACC}&rettype=fasta&retmode=text" \
-  | awk -v name="$GSTT1_ALT" '/^>/ {print ">" name; next} NF' > "${WORK}/alt.fa"
-ALT_LEN=$(grep -v '^>' "${WORK}/alt.fa" | tr -d '\n' | wc -c)
-if [ "$ALT_LEN" -lt 281486 ]; then
-  echo "ERROR: ${GSTT1_ALT_ACC} is ${ALT_LEN} bp, shorter than pypgx's GSTT1 region" >&2
-  exit 1
-fi
-cat "${WORK}/alt.fa" >> "${WORK}/mini.fa"
-rm -f "${WORK}/alt.fa"
 bgzip -@ "$THREADS" -c "${WORK}/mini.fa" > "${OUT}/fixture_ref.fa.gz"
 rm -f "${WORK}/mini.fa"
 sam faidx /w/fixture_ref.fa.gz
@@ -381,6 +368,11 @@ printf '%s\n' "${REGIONS[@]}" | awk -F'[:-]' 'BEGIN {OFS = "\t"} NF == 3 {print 
 echo "[8/8] Checks"
 rm -rf "$WORK"
 sam quickcheck -v "/w/${SAMPLE}_slice.bam" "/w/${SAMPLE}_cyrius.bam"
+# The default reference has no ALT or HLA contigs, and neither has its slice.
+if awk -F'\t' '$1 ~ /_alt$/ || $1 ~ /^HLA-/ {found = 1} END {exit !found}' "${OUT}/fixture_ref.fa.gz.fai"; then
+  echo "ERROR: fixture_ref.fa.gz has ALT or HLA contigs" >&2
+  exit 1
+fi
 for f in "${OUT}"/*.gz; do gzip -t "$f"; done
 IDXSTATS=$(sam idxstats "/w/${SAMPLE}_slice.bam")
 for c in "${CONTIGS[@]}"; do
@@ -417,7 +409,6 @@ fi
   echo "subsample_fraction: ${FRACTION} (seed ${SEED})"
   echo "chr20_slice_depth_after: ${SLICE_DEPTH}"
   echo "chrM_depth_before: ${FULL_CHRM}; kept fraction ${CHRM_FRACTION}"
-  echo "gstt1_alt_contig: ${GSTT1_ALT} from NCBI ${GSTT1_ALT_ACC} (${ALT_LEN} bp)"
   echo "read_pairs: ${R1_READS}"
   echo "cyrius_regions: ${CYRIUS_BED_URL} (sha256 ${CYRIUS_BED_SHA}); ${CYRIUS_BINS} norm bins; ${CYRIUS_READS} reads in ${SAMPLE}_cyrius.bam"
   echo "truth_source: ${TRUTH_BASE}.vcf.gz"

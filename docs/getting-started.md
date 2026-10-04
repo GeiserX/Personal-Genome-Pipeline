@@ -38,7 +38,7 @@ That's it. Every analysis tool runs inside Docker -- no conda environments, no P
 
 | Resource | Size | Required For |
 |---|---|---|
-| GRCh38 reference FASTA + index | ~3.5 GB | All steps |
+| GRCh38 reference FASTA + index (no-ALT analysis set) | ~0.8 GB download, ~3 GB unpacked | All steps |
 | ClinVar database | ~200 MB | Step 6 (ClinVar screen) |
 | VEP cache | ~26 GB | Step 13 (VEP annotation) |
 | PCGR/CPSR data bundle + VEP 115 cache | ~31 GB | Step 17 (cancer predisposition) |
@@ -102,10 +102,9 @@ Most common if you downloaded data from Nebula, Dante Labs, Novogene, BGI, or an
 export GENOME_DIR=/path/to/your/data
 export SAMPLE=your_name
 
-# 2. Download the GRCh38 reference genome (~3.1 GB)
-mkdir -p ${GENOME_DIR}/reference
-# Download Homo_sapiens_assembly38.fasta + .fai from GATK resource bundle
-# See docs/00-reference-setup.md for details
+# 2. Download the GRCh38 no-ALT reference genome (~0.8 GB, ~3 GB unpacked),
+#    ClinVar and the images; see docs/00-reference-setup.md for details
+./scripts/setup.sh $GENOME_DIR
 
 # 3. Run the pipeline
 ./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~10-20 min)
@@ -130,6 +129,10 @@ export GENOME_DIR=/path/to/your/data
 export SAMPLE=your_name
 
 # Your BAM should be at: ${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
+# It must be aligned to this pipeline's reference; validate-setup.sh checks
+# its header against it. A BAM aligned to another reference (most vendor BAMs)
+# is realigned first: docs/realignment.md.
+./scripts/validate-setup.sh $SAMPLE
 # Skip step 2 (alignment) and start directly with variant calling:
 ./scripts/03-deepvariant.sh $SAMPLE
 ./scripts/06-clinvar-screen.sh $SAMPLE
@@ -218,8 +221,8 @@ The pipeline expects this layout (created automatically by the scripts):
 ```
 ${GENOME_DIR}/
   reference/
-    Homo_sapiens_assembly38.fasta      # GRCh38 reference genome
-    Homo_sapiens_assembly38.fasta.fai  # FASTA index
+    GRCh38_no_alt_analysis_set.fasta      # GRCh38 reference genome (no ALT contigs)
+    GRCh38_no_alt_analysis_set.fasta.fai  # FASTA index
   clinvar/
     clinvar.vcf.gz                     # ClinVar database, as downloaded
     clinvar.vcf.gz.tbi                 # ClinVar index

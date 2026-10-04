@@ -3,7 +3,7 @@
 # after lib.sh. Not a case itself: the runner only runs *.sh files.
 
 G="$GENOME_DIR"
-REF="${G}/reference/Homo_sapiens_assembly38.fasta"
+REF="${G}/reference/GRCh38_no_alt_analysis_set.fasta"
 CHR_VCF="${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"   # case 21's DeepVariant call on the slices
 INTAKE="${G}/intake"                              # inputs these cases build
 mkdir -p "$INTAKE"

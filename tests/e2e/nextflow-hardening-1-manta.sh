@@ -30,7 +30,7 @@ V="${GENOME_DIR}/${INV}/manta/results/variants"
 mkdir -p "${GENOME_DIR}/${INV}/aligned" "$V"
 ln -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${GENOME_DIR}/${INV}/aligned/${INV}_sorted.bam"
 ln -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" "${GENOME_DIR}/${INV}/aligned/${INV}_sorted.bam.bai"
-CHR20_LEN=$(awk '$1 == "chr20" {print $2}' "${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta.fai")
+CHR20_LEN=$(awk '$1 == "chr20" {print $2}' "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta.fai")
 {
   printf '##fileformat=VCFv4.1\n##source=GenerateSVCandidates 1.6.0\n##contig=<ID=chr20,length=%s>\n' "$CHR20_LEN"
   cat <<'HEADER'

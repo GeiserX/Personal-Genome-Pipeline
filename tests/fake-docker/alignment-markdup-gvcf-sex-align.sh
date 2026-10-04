@@ -58,15 +58,15 @@ export FAKE_DOCKER_RUN_HOOK="${CASE_WORK}/tools-hook"
 A="${GENOME_DIR}/sample1/aligned"
 REFD="${GENOME_DIR}/reference"
 BAM="${A}/sample1_sorted.bam"
-MMI="${REFD}/Homo_sapiens_assembly38.sr.mmi"
+MMI="${REFD}/GRCh38_no_alt_analysis_set.sr.mmi"
 leftovers() { find "$A" "$REFD" -mindepth 1 \( -name '*tmp*' -o -name '*.part*' \) 2>/dev/null; }
 
 # --- step 02: index, align, mark duplicates ------------------------------------
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 align env THREADS=2 "${SCRIPTS}/02-alignment.sh" sample1
-docker_log_has 'minimap2 -x sr -t 2 -d /genome/reference/Homo_sapiens_assembly38\.sr\.mmi\.tmp\.[0-9]+ ' \
+docker_log_has 'minimap2 -x sr -t 2 -d /genome/reference/GRCh38_no_alt_analysis_set\.sr\.mmi\.tmp\.[0-9]+ ' \
   "step 02 did not build the index with -x sr under a temporary name next to the reference"
-docker_log_has 'minimap2 -t 2 -a -x sr .*/genome/reference/Homo_sapiens_assembly38\.sr\.mmi ' \
+docker_log_has 'minimap2 -t 2 -a -x sr .*/genome/reference/GRCh38_no_alt_analysis_set\.sr\.mmi ' \
   "step 02 did not map with -t 2 against the .sr.mmi index"
 docker_log_has 'samtools.*--cpus 2 .*fixmate.*-m.*sort.*markdup.* _ 2 /genome/sample1/aligned/sample1\.sort_tmp /genome/sample1/aligned/sample1_sorted\.tmp\.bam' \
   "step 02 did not run fixmate -m, sort and markdup on 2 threads into a temporary BAM"
@@ -100,10 +100,10 @@ run_rc index-dies env FAKE_INDEX=fail "${SCRIPTS}/02-alignment.sh" sample1
 # --- step 02a: BWA-MEM2 ---------------------------------------------------------
 A="${GENOME_DIR}/sample1/aligned_bwamem2"
 BAM="${A}/sample1_sorted.bam"
-IDX="${REFD}/Homo_sapiens_assembly38.fasta"
+IDX="${REFD}/GRCh38_no_alt_analysis_set.fasta"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 bwamem2 env THREADS=2 "${SCRIPTS}/02a-alignment-bwamem2.sh" sample1
-docker_log_has 'bwa-mem2 index -p /genome/reference/Homo_sapiens_assembly38\.fasta\.tmp\.[0-9]+ ' \
+docker_log_has 'bwa-mem2 index -p /genome/reference/GRCh38_no_alt_analysis_set\.fasta\.tmp\.[0-9]+ ' \
   "step 02a did not build the index under a temporary prefix"
 if awk '/bwa-mem2 index/ && /--memory/ { bad = 1 } END { exit !bad }' "$FAKE_DOCKER_LOG"; then
   fail "step 02a still caps the memory of the index build"

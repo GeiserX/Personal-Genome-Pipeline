@@ -12,7 +12,7 @@ run_expect 0 setup "${SCRIPTS}/setup.sh" "$G"
 output_lacks setup 'unbound variable'
 output_has setup 'Setup complete!'
 
-for f in reference/Homo_sapiens_assembly38.fasta reference/Homo_sapiens_assembly38.fasta.fai \
+for f in reference/GRCh38_no_alt_analysis_set.fasta reference/GRCh38_no_alt_analysis_set.fasta.fai \
          clinvar/clinvar.vcf.gz clinvar/clinvar.vcf.gz.tbi; do
   [ -s "${G}/${f}" ] || fail "setup.sh did not download ${f}"
 done

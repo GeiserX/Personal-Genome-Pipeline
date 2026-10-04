@@ -33,7 +33,7 @@ Most consumer WGS vendors use Illumina sequencing platforms (NovaSeq 6000, NovaS
 ### Getting Started
 
 1. **If you have FASTQ:** Copy R1 and R2 files to `${GENOME_DIR}/${SAMPLE}/fastq/`. Start with step 2 (alignment).
-2. **If you have BAM:** Copy to `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`. Make sure the BAM index (`.bai`) is present. Start with step 3 (variant calling).
+2. **If you have BAM:** Copy to `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`. Make sure the BAM index (`.bai`) is present. A vendor BAM is usually aligned to another GRCh38 file (with ALT contigs, decoys or a different contig list), and `validate-setup.sh` then stops with "this BAM was aligned to a different reference". Turn it back into FASTQ and start with step 2, as [Realigning after a reference change](realignment.md#from-an-existing-bam) shows. Only a BAM aligned to the GRCh38 no-ALT analysis set starts at step 3 (variant calling).
 3. **If you have VCF:** Copy to `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`. Make sure the index (`.tbi`) is present. Start with step 6 (ClinVar screen).
 
 A provider's VCF often needs fixing before the pipeline can read it: contigs named the Ensembl way (`1`, `MT` instead of `chr1`, `chrM`), gVCF reference blocks (PharmCAT refuses a gVCF, and any file named `.g.vcf`), and header lines that name you. The Nextflow pipeline checks the first two before any analysis and stops with the fix; the bash steps do not check. A gVCF is the better PharmCAT input, but the pipeline does not expand its blocks yet, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for all three.
@@ -160,7 +160,7 @@ If your lab provided a DRAGEN-called VCF, you can skip steps 2-3 and go directly
 ### Entry Point
 
 - **ORA files:** Path D (decompress first)
-- **BAM:** Path B (variant calling + analysis)
+- **BAM:** Path B (variant calling + analysis) when it was aligned to the no-ALT analysis set; otherwise back to FASTQ and Path A ([realignment](realignment.md#from-an-existing-bam))
 - **VCF:** Path C (analysis only)
 
 ---
@@ -171,7 +171,7 @@ Some providers deliver CRAM instead of BAM (40-60% smaller). Convert to BAM firs
 
 ```bash
 source versions.env   # from the repository root
-REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
   "${SAMTOOLS_IMAGE}" \
@@ -187,7 +187,7 @@ docker run --rm \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
-**Important:** CRAM decoding requires the same reference genome used for encoding. This pipeline uses `Homo_sapiens_assembly38.fasta` (GRCh38). If your CRAM was encoded against a different reference, you'll get errors.
+**Important:** CRAM decoding needs the reference the CRAM was encoded against, sequence for sequence. The pipeline's own reference (the GRCh38 no-ALT analysis set) decodes reads on chr1-22, X, Y and M of any GRCh38 CRAM, because those sequences are the same in every GRCh38 file, but not reads on ALT, HLA or decoy contigs. For a CRAM from another GRCh38 file, decode it with the provider's reference (point `-T` at it) and then realign: the BAM keeps the provider's contig list, which `validate-setup.sh` refuses ([realignment](realignment.md#from-an-existing-bam)).
 
 ---
 

@@ -110,7 +110,7 @@ User's FASTQ/BAM/VCF
 - Containers: `run_in --cpus N --memory Xg "${TOOL_IMAGE}" tool ...`. It mounts `GENOME_DIR` read-only at `/genome` and the sample directory writable, with no network, as the calling user
 - Opt out at the call, with the reason in a comment: `--rw DIR` (shared index or database), `--net` (the step downloads), `--root` (the image cannot run unprivileged)
 - Images come from `versions.env` as quoted variables; a script never spells an image name or tag
-- Reference: `${REF_FASTA}` on the host, `${REF_FASTA_C}` inside a container
+- Reference: `${REF_FASTA}` on the host, `${REF_FASTA_C}` inside a container; never spell the reference file name in a step script
 - Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`
 - Validate all input files exist before running Docker commands
 - Print clear status messages: step name, input files, output location
@@ -144,7 +144,7 @@ Change its line in `versions.env`, plus the coupled data variable its comment na
 
 - All processing is local; genomic data never leaves the machine
 - Pin tool versions; never use floating tags
-- Reference genome: GRCh38/hg38
+- Reference genome: GRCh38, NCBI's no-ALT analysis set (`reference/GRCh38_no_alt_analysis_set.fasta`). No aligner here runs ALT-aware, so a reference with ALT contigs gives MAPQ 0 at CYP2D6, the MHC and KIR; `validate-setup.sh` refuses one (unless `ALLOW_ALT_REFERENCE=true`) and refuses a BAM whose @SQ lines differ from the `.fai`. A change of reference means realigning every sample (`docs/realignment.md`)
 - License: GPL-3.0
 
 ## Tool-Specific Gotchas

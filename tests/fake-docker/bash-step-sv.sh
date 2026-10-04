@@ -17,7 +17,7 @@
 export GENOME_DIR="${CASE_WORK}/genome"
 seed_reference "$GENOME_DIR"
 seed_sample "$GENOME_DIR" sample1
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta"
 use_output_hook
 cat > "${CASE_WORK}/sv-hook" <<'HOOK'
 #!/usr/bin/env bash
