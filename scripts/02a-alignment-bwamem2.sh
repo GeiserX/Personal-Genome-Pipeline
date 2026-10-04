@@ -81,7 +81,7 @@ if [ ! -f "$BWA_INDEX" ]; then
     echo "ERROR: bwa-mem2 index was killed (exit 137), almost always for lack of memory." >&2
     echo "  It needs about 28 GB of RAM per Gbp of reference: about 90 GB for GRCh38." >&2
     echo "  Build the index on a larger machine and copy the five ${REF##*/}.* index files next to the FASTA," >&2
-    echo "  or use step 02 (minimap2), which needs 16 GB." >&2
+    echo "  or use step 02 (minimap2), which needs about 20 GB of RAM for GRCh38." >&2
     exit 1
   elif [ "$rc" -ne 0 ]; then
     echo "ERROR: bwa-mem2 index failed (exit ${rc})." >&2
