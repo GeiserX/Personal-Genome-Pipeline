@@ -118,7 +118,10 @@ variants() {
     bcftools isec -p "$d" "/a/$1" "/b/$2" >/dev/null
     n() { grep -vc "^#" "$1" || true; }
     q() { bcftools query -f "%CHROM\t%POS\t%REF\t%ALT\t%FILTER\t[%GT]\n" "$1"; }
-    mis=$(paste <(q "$d/0002.vcf") <(q "$d/0003.vcf") | awk -F"\t" "\$5 != \$11 || \$6 != \$12" | wc -l)
+    # Each side sorted, so records at one position pair by key whatever
+    # order each VCF holds them in; a pair whose keys differ counts too.
+    mis=$(paste <(q "$d/0002.vcf" | LC_ALL=C sort) <(q "$d/0003.vcf" | LC_ALL=C sort) \
+      | awk -F"\t" "\$1 != \$7 || \$2 != \$8 || \$3 != \$9 || \$4 != \$10 || \$5 != \$11 || \$6 != \$12" | wc -l)
     echo "$(n "$d/0000.vcf") $(n "$d/0001.vcf") $(n "$d/0002.vcf") $mis"' _ "$fa" "$fb"
 }
 
