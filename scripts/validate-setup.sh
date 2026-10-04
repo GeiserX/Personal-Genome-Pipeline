@@ -44,7 +44,7 @@ MISSING_IMAGES=()
 # this stops the run here. A header with no @SQ line at all is left to
 # check_bam_quickcheck, which fails a BAM without one.
 check_bam_reference() {
-  local header=$1 fai="${REF_FASTA}.fai" diff so
+  local header=$1 fai="${REF_FASTA}.fai" diff so bam
   if [ -f "$fai" ] && grep -q '^@SQ' <<< "$header"; then
     diff=$(printf '%s\n' "$header" | awk -F'\t' '
       FNR == 1 { file++ }
@@ -79,10 +79,14 @@ check_bam_reference() {
   case "$so" in
     coordinate) pass "BAM is coordinate-sorted (@HD SO:coordinate)" ;;
     "")
-      # samtools index refuses an unsorted BAM, so an index beside it shows
-      # the order the header does not state.
-      if [ -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" ]; then
-        pass "BAM is coordinate-sorted (no @HD SO: tag, but samtools only indexes a sorted BAM and its .bai exists)"
+      # samtools index refuses an unsorted BAM, so an index made from this
+      # BAM shows the order the header does not state. One older than the BAM
+      # may belong to a BAM it replaced (htslib warns about that too).
+      bam="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+      if [ -f "${bam}.bai" ] && [ ! "${bam}.bai" -ot "$bam" ]; then
+        pass "BAM is coordinate-sorted (no @HD SO: tag, but samtools only indexes a sorted BAM and its .bai is not older than it)"
+      elif [ -f "${bam}.bai" ]; then
+        fail "BAM header does not say how it is sorted (no @HD SO: tag) and its .bai is older than the BAM: index it again (samtools index fails on an unsorted BAM) or realign with step 02"
       else
         fail "BAM header does not say how it is sorted (no @HD SO: tag) and it has no .bai: sort and index it (samtools sort, samtools index) or realign with step 02"
       fi ;;
