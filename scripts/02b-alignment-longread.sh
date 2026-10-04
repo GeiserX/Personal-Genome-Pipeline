@@ -171,6 +171,6 @@ echo "Index: ${OUTPUT_DIR}/${SAMPLE}_sorted.bam.bai"
 ls -lh "${OUTPUT_DIR}/${SAMPLE}_sorted.bam" 2>/dev/null || true
 echo ""
 echo "Next steps:"
-echo "  - Variant calling: PLATFORM=${PLATFORM} ./scripts/03e-clair3.sh ${SAMPLE}"
+echo "  - Variant calling: PLATFORM=${PLATFORM} ./scripts/03e-clair3.sh ${SAMPLE} [male|female]"
 echo "  - SV calling:      ALIGN_DIR=aligned_longread ./scripts/04c-sniffles2.sh ${SAMPLE}"
-echo "  - Or use DeepVariant with --model_type=$([ "$PLATFORM" = "ont" ] && echo "ONT_R104" || echo "PACBIO")"
+echo "  - Or DeepVariant: ALIGN_DIR=aligned_longread MODEL_TYPE=$([ "$PLATFORM" = "ont" ] && echo "ONT_R104" || echo "PACBIO") ./scripts/03-deepvariant.sh ${SAMPLE} [male|female]"

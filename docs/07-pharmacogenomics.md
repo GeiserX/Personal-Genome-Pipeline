@@ -22,14 +22,26 @@ REF_FASTA=reference/Homo_sapiens_assembly38.fasta   # see 00-reference-setup.md#
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
+# Step 0 (when step 3 wrote a gVCF): expand its reference blocks over
+# PharmCAT's gene regions into a plain VCF, so a covered position where you
+# match the reference is a 0/0 call and an uncovered one (./.) stays missing
+docker run --rm \
+  -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  -v "${GENOME_DIR}:/genome" \
+  "${PHARMCAT_IMAGE}" \
+  sh -c 'bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
+    | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Oz -o "$3" --write-index=tbi' sh \
+    "/genome/${REF_FASTA}" /data/${SAMPLE}.g.vcf.gz /data/${SAMPLE}.pgx_regions.vcf.gz
+
 # Step 1: preprocess the VCF against the GRCh38 reference
+# (-vcf /data/${SAMPLE}.vcf.gz when there is no gVCF)
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   -v "${GENOME_DIR}:/genome" \
   "${PHARMCAT_IMAGE}" \
   python3 /pharmcat/pharmcat_vcf_preprocessor \
-    -vcf /data/${SAMPLE}.vcf.gz \
+    -vcf /data/${SAMPLE}.pgx_regions.vcf.gz \
     -refFna "/genome/${REF_FASTA}" \
     -o /data/ \
     -bf ${SAMPLE}
@@ -57,13 +69,14 @@ docker run --rm \
 
 ### Input the preprocessor or PharmCAT refuses
 
-- **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). The Nextflow pipeline stops before any analysis on such input when `pharmcat` is selected; the script does not check. Remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md). A variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered.
+- **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). Yet a gVCF is the better input: a variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered. So the script reads `vcf/${SAMPLE}.g.vcf.gz` when step 3 wrote one and expands its reference blocks into `${SAMPLE}.pgx_regions.vcf.gz` (step 0 above, deleted afterwards), which PharmCAT accepts; without a gVCF it reads `${SAMPLE}.vcf.gz`, and does not check whether that file is itself a gVCF (PharmCAT then stops on it). The Nextflow pipeline does not expand a gVCF: it stops before any analysis on one when `pharmcat` is selected. For a vendor gVCF, remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md).
 - **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 still bundles vcf-parser 0.3.1 and fails the same way.
 
 ## Output
 - HTML report with drug recommendations per gene
 - JSON report used by step 27 (`${SAMPLE}.report.json`)
 - Preprocessed VCF (`${SAMPLE}.preprocessed.vcf.bgz`) generated as an intermediate
+- `${SAMPLE}.missing_pgx_var.vcf`: the PGx positions absent from PharmCAT's input. With the gVCF these are the positions without coverage; with a variants-only VCF they include every position where you match the reference.
 - Covers CYP2C19, CYP2D6, CYP2B6, CYP3A4/5, UGT1A1, DPYD, NAT2, TPMT, etc.
 - Star allele calls with metabolizer status (Poor/Intermediate/Normal/Rapid/Ultra-rapid)
 

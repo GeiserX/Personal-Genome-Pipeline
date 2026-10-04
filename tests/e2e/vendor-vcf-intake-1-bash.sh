@@ -6,7 +6,7 @@
 #   - step 07 runs on a VCF whose header has a ##FILTER line with escaped
 #     quotes, as `bcftools filter -s LowDP -e '... GT!="0/0"'` writes it, and
 #     PharmCAT calls exactly what it called on the same records without that
-#     line (case 31).
+#     line (case 31). The copy has the gVCF too, which step 07 reads first.
 . "$(dirname "$0")/lib.sh"
 . "$(dirname "$0")/vendor-vcf-intake.inc"
 
@@ -30,6 +30,12 @@ mkdir -p "${G}/${S2}/vcf"
 printf '%s\n' '##FILTER=<ID=LowDP,Description="Set if true: FORMAT/DP<10 && GT!=\"0/0\"">' > "${INTAKE}/lowdp.hdr"
 bcf annotate --no-version -h intake/lowdp.hdr -Oz -o "${S2}/vcf/${S2}.vcf.gz" "${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 bcf index -f -t "${S2}/vcf/${S2}.vcf.gz"
+# Step 07 reads the gVCF of step 03 when there is one, as case 31 did, so the
+# copy gets the same gVCF with the same header line.
+bcf annotate --no-version -h intake/lowdp.hdr -Oz -o "${S2}/vcf/${S2}.g.vcf.gz" "${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz"
+bcf index -f -t "${S2}/vcf/${S2}.g.vcf.gz"
+check_eq "the gVCF copy's header carries the escaped quotes" \
+  "$(bcf view -h "${S2}/vcf/${S2}.g.vcf.gz" | grep -c 'GT!=\\"0/0\\"' || true)" 1
 check_eq "the copy's header carries the escaped quotes" \
   "$(bcf view -h "${S2}/vcf/${S2}.vcf.gz" | grep -c 'GT!=\\"0/0\\"' || true)" 1
 check_eq "the copy has the same records" \
@@ -37,6 +43,7 @@ check_eq "the copy has the same records" \
 
 run_step 07-pharmacogenomics.sh "$S2"
 check_step_exit 07-pharmacogenomics.sh
+check "step 07 read the gVCF copy" grep -q "^Input: .*/${S2}.g.vcf.gz " "$STEP_LOG"
 for f in match phenotype; do
   A=$(json_calls "${G}/${SAMPLE}/vcf/${SAMPLE}.${f}.json")
   B=$(json_calls "${G}/${S2}/vcf/${S2}.${f}.json")
@@ -49,5 +56,6 @@ for f in match phenotype; do
   fi
 done
 check "step 07 leaves no rewritten copy behind" test ! -e "${G}/${S2}/vcf/${S2}.pharmcat_input.vcf"
+check "step 07 leaves no expanded gVCF behind" test ! -e "${G}/${S2}/vcf/${S2}.pgx_regions.vcf.gz"
 
 finish
