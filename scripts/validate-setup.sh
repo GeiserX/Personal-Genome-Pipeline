@@ -37,6 +37,57 @@ FAILURES=0
 WARNINGS=0
 MISSING_IMAGES=()
 
+# check_bam_reference HEADER: the sample BAM was aligned to REF_FASTA. Its @SQ
+# names and lengths must be the .fai's, in the same order (callers look reads
+# up by contig index), it must be coordinate-sorted, and samtools quickcheck
+# must pass. Tools give wrong results on a BAM from another reference long
+# before any of them fails, so this stops the run here. A header with no @SQ
+# line at all is left to quickcheck, which fails a BAM without one.
+check_bam_reference() {
+  local header=$1 fai="${REF_FASTA}.fai" diff so
+  if [ -f "$fai" ] && grep -q '^@SQ' <<< "$header"; then
+    diff=$(printf '%s\n' "$header" | awk -F'\t' '
+      FNR == 1 { file++ }
+      file == 1 && /^@SQ/ {
+        sn = ""; ln = ""
+        for (i = 2; i <= NF; i++) {
+          if ($i ~ /^SN:/) sn = substr($i, 4)
+          else if ($i ~ /^LN:/) ln = substr($i, 4)
+        }
+        bam[++nb] = sn " (" ln " bp)"
+      }
+      file == 2 && NF >= 2 { ref[++nr] = $1 " (" $2 " bp)" }
+      END {
+        n = nb > nr ? nb : nr
+        for (i = 1; i <= n; i++) {
+          if (bam[i] != ref[i]) {
+            printf "sequence %d is %s in the BAM and %s in the reference", i,
+              (i <= nb ? bam[i] : "missing"), (i <= nr ? ref[i] : "missing")
+            exit
+          }
+        }
+      }' - "$fai")
+    if [ -z "$diff" ]; then
+      pass "BAM header matches the reference: the same $(grep -c . "$fai") sequences in the same order"
+    else
+      fail "this BAM was aligned to a different reference: realign (docs/realignment.md)"
+      echo "       First difference: ${diff}."
+      echo "       Reference: ${REF_FASTA}"
+    fi
+  fi
+  so=$(awk -F'\t' '/^@HD/ { for (i = 2; i <= NF; i++) if ($i ~ /^SO:/) print substr($i, 4) }' <<< "$header")
+  case "$so" in
+    coordinate) pass "BAM is coordinate-sorted (@HD SO:coordinate)" ;;
+    "") warn "BAM header does not say how it is sorted (no @HD SO: tag); steps need a coordinate-sorted BAM" ;;
+    *) fail "BAM is sorted by ${so}, not by coordinate: sort it (samtools sort) or realign with step 02" ;;
+  esac
+  if run_in "${SAMTOOLS_IMAGE}" samtools quickcheck "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" >/dev/null 2>&1; then
+    pass "BAM passes samtools quickcheck"
+  else
+    fail "BAM fails samtools quickcheck (truncated, no sequences in its header, or not a BAM): realign with step 02"
+  fi
+}
+
 ###############################################################################
 # 1. System Requirements
 ###############################################################################
@@ -210,6 +261,27 @@ else
   else
     fail "FASTA index not found at: ${FAI}"
     echo "       Download it: ./scripts/setup.sh ${GENOME_DIR}"
+  fi
+
+  # --- No ALT or HLA contigs ---
+  # No aligner here runs ALT-aware: a read that matches the primary assembly
+  # and an ALT or HLA contig equally gets MAPQ 0, and callers drop it. Depth
+  # then thins at CYP2D6, the MHC, KIR and other loci those contigs copy.
+  if [ -f "$FAI" ]; then
+    ALT_CONTIGS=$(awk -F'\t' '$1 ~ /_alt$/ || $1 ~ /^HLA-/' "$FAI" | wc -l | tr -d ' ')
+    if [ "$ALT_CONTIGS" -eq 0 ]; then
+      pass "Reference has no ALT or HLA contigs ($(grep -c . "$FAI") sequences)"
+    elif [ "${ALLOW_ALT_REFERENCE:-false}" = "true" ]; then
+      warn "Reference has ${ALT_CONTIGS} ALT/HLA contigs (allowed by ALLOW_ALT_REFERENCE=true)."
+      echo "       Reads that match a primary locus and its ALT copy equally get MAPQ 0, so depth"
+      echo "       and calls thin at CYP2D6, the MHC and KIR. See docs/realignment.md."
+    else
+      fail "Reference has ${ALT_CONTIGS} ALT/HLA contigs (first: $(awk -F'\t' '$1 ~ /_alt$/ || $1 ~ /^HLA-/ {print $1; exit}' "$FAI"))."
+      echo "       No step aligns ALT-aware, so reads that match a primary locus and its ALT copy"
+      echo "       equally get MAPQ 0 and callers ignore them: depth and calls thin at CYP2D6, the MHC"
+      echo "       and KIR. Use the default no-ALT reference (./scripts/setup.sh ${GENOME_DIR}),"
+      echo "       or set ALLOW_ALT_REFERENCE=true to keep this one on purpose. See docs/realignment.md."
+    fi
   fi
 
   # --- ClinVar chr-prefixed VCF ---
@@ -537,6 +609,7 @@ if [ -n "$SAMPLE" ]; then
       # DeepVariant takes the sample name from it.
       if BAM_HEADER=$(run_in "${SAMTOOLS_IMAGE}" \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
+        check_bam_reference "$BAM_HEADER"
         if grep -q '^@RG' <<< "$BAM_HEADER"; then
           pass "BAM has a read group (@RG)"
         else
