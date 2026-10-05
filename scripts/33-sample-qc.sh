@@ -114,7 +114,7 @@ done
 # --- 2. VerifyBamID2: contamination ----------------------------------------------
 # VerifyBamID2 refuses to estimate when fewer than 1,000 panel markers have
 # reads (a targeted or sliced BAM). Then it runs again without that check,
-# and the table says on how many markers FREEMIX rests.
+# and the table says the marker check was skipped.
 echo ""
 echo "--- VerifyBamID2"
 VB_OUT="/genome/${SAMPLE}/qc/verifybamid2/${SAMPLE}"

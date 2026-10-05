@@ -52,7 +52,7 @@ verifybamid2 --SVDPrefix "${VERIFYBAMID2_PANEL}" --Reference "${REF_FASTA}" \
 python3 bin/collect_summary.py sample-qc --sample ${SAMPLE} ...   # the verdict table
 ```
 
-somalier names the sample after the BAM's `@RG SM` tag; every BAM step 02 writes has one.
+The bash step lets somalier name the sample after the BAM's `@RG SM` tag; every BAM step 02 writes has one. In Nextflow, somalier names each sample by its samplesheet id instead, so two rows whose BAMs share an `SM` stay two samples, and a BAM with no read group works.
 
 VerifyBamID2 refuses to estimate when fewer than 1,000 panel markers have reads ("Insufficient Available markers"), as on a targeted (WES) or sliced BAM. The step then runs it again with `--DisableSanityCheck` and records `verifybamid2_marker_check skipped`, so the report says FREEMIX rests on fewer than 1,000 markers. On the CI fixture, with about 320 markers that have reads, FREEMIX still read 0.0004 for the clean HG002 and 0.093 for HG002 with 9.3% of its reads from HG001.
 
@@ -62,9 +62,9 @@ In Nextflow, add `sample_qc` to `--tools` with `--somalier_sites` and `--verifyb
 | File | Description |
 |---|---|
 | `qc/${SAMPLE}_sample_qc.tsv` | The verdict, one `key` and `value` per line: `inferred_sex`, `sex_check` (`ok`, `mismatch` or `not_checked` with `sex_check_reason`), the chrX and chrY numbers it rests on, `freemix`, `contamination` (`ok` or `warn`), `panel_markers`, `verifybamid2_marker_check` (`passed`, or `skipped` when fewer than 1,000 markers had reads), `same_person_as` |
-| `qc/somalier/${SAMPLE}.samples.tsv` | somalier's per-sample table: depth, genotype counts, chrX and chrY counts, inferred `sex` (1 male, 2 female, -9 unknown) |
+| `qc/somalier/${SAMPLE}.samples.tsv` | somalier's per-sample table: depth, genotype counts, chrX and chrY counts, inferred `sex` (1 male, 2 female, -9 unknown, -2 when chrX looks female but chrY has reads) |
 | `qc/somalier/${SAMPLE}.pairs.tsv`, `.html` | Relatedness of every pair (one sample here; every sample of the run in Nextflow, under `somalier/`) |
-| `qc/verifybamid2/${SAMPLE}.selfSM` | VerifyBamID2's result: `#SNPS` markers used, `AVG_DP`, `FREEMIX` |
+| `qc/verifybamid2/${SAMPLE}.selfSM` | VerifyBamID2's result: `#SNPS` the size of the panel, `AVG_DP`, `FREEMIX` |
 
 The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in its Quality Control card.
 

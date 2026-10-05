@@ -96,11 +96,11 @@ Only the failed and downstream steps re-run.
 | `vcf`, `vcf_index` | One of three* | Bgzipped VCF (`.vcf.gz`) and its tabix index from any caller; a BAM on the same row is optional |
 | `sex` | On called rows** | `male` or `female` |
 
-\* A row starts from FASTQ, or from a BAM, or from a VCF (with or without a BAM); a row with FASTQ and a BAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
+\* A row starts from FASTQ, or from a BAM or CRAM, or from a VCF (with or without a BAM or CRAM); a row with FASTQ and a BAM, CRAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
 
 The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF given in the `vcf` column stops the run with `pharmcat` selected: the pipeline expands the reference blocks of the gVCF DeepVariant writes for a called row, not of a given one, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
 
-\*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
+\*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM or CRAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM or CRAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
 
 **Sex check.** With `sample_qc` in `--tools`, somalier also infers the sex from the reads (chrX heterozygosity) and the same rule and `--sex_check` apply; see [Step 33](33-sample-qc.md). `INDEXCOV` (goleft indexcov, seconds per sample: it reads only the `.bai`) infers each BAM's sex from the chrX and chrY copy numbers and writes it to `<sample>_sex_check.tsv`. When the row declares a sex and indexcov infers another (or cannot tell), the run stops before any step reads the BAM, and the message gives both values and the copy numbers: the sample is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome aneuploidy. `--sex_check warn` logs it and goes on with the declared sex. On a small region slice, like the test fixture, indexcov's call is not reliable.
 
@@ -154,10 +154,13 @@ nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
 results/
 ├── sample1/
 │   ├── fastq_trimmed/      # fastp reports, JSON + HTML (FASTQ rows)
-│   ├── aligned/            # <sample>_sorted.bam + .bai: minimap2, duplicates marked (FASTQ rows)
+│   ├── aligned/            # <sample>_sorted.bam + .bai: minimap2, duplicates marked (FASTQ rows);
+│   │                       #   <sample>_sorted.cram + .crai, checked against the BAM (cram_archive)
 │   ├── vcf/                # <sample>.vcf.gz and <sample>.g.vcf.gz + .tbi: DeepVariant (called rows)
 │   ├── indexcov/           # goleft indexcov coverage plots and .ped (rows with a BAM)
 │   ├── <sample>_sex_check.tsv  # the sex indexcov infers, with CNchrX and CNchrY
+│   ├── qc/                 # <sample>_sample_qc.tsv: somalier's sex, FREEMIX, same person as (sample_qc);
+│   │                       #   somalier/ and verifybamid2/ hold each tool's own files
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
 │   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
 │   ├── pypgx/              # pypgx star allele calling (optional)
@@ -183,8 +186,10 @@ results/
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers (optional)
-│   └── *_report.html       # Summary HTML report (published to sample root): ClinVar, PharmCAT, CPIC,
+│   ├── summary.json        # The numbers the report is rendered from (html_report)
+│   └── *_report.html       # Summary HTML report (published to sample root): QC, ClinVar, PharmCAT, CPIC,
 │                           #   CPSR, clinical filter, slivar, ROH, mito haplogroup; "Not run" for a tool not selected
+├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
     ├── timeline_*.html

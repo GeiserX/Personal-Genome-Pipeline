@@ -8,7 +8,7 @@
     scripts/setup.sh installs). VerifyBamID2 refuses to estimate when fewer
     than 1,000 markers have reads (a targeted or sliced BAM); the task then
     runs it again with --DisableSanityCheck and writes "skipped" to
-    <id>.marker_check, so the report says on how many markers FREEMIX rests.
+    <id>.marker_check, so the report says the marker check was skipped.
     SAMPLE_QC compares FREEMIX with --freemix_warn; contamination never stops
     the run.
 
@@ -31,6 +31,7 @@ process VERIFYBAMID2 {
 
     output:
     tuple val(meta), path("${meta.id}.selfSM"), path("${meta.id}.marker_check"), emit: selfsm
+    path "${meta.id}.Ancestry",                                    emit: ancestry, optional: true
     path "${meta.id}.log",                                         emit: log
     path "versions.yml",                                           emit: versions
 
