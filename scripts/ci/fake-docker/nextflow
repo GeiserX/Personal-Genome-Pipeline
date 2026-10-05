@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fake `nextflow` for scripts/ci/run-fake-docker-suite.sh.
+#
+# Runs nothing. Appends one line per call to $FAKE_DOCKER_LOG,
+#   nextflow :: cwd=<directory> :: <arguments, shell-quoted>
+# plus the value of NXF_VER, and exits with FAKE_NEXTFLOW_RC (default 0). A
+# case reads the line to check the flags run-all.sh built.
+set -uo pipefail
+printf 'nextflow :: cwd=%s :: NXF_VER=%s :: %s\n' "$PWD" "${NXF_VER:-}" "$(printf '%q ' "$@")" >> "${FAKE_DOCKER_LOG:-/dev/null}"
+[ "${1:-}" != -version ] || { echo "nextflow version ${NXF_VER:-25.10.8}"; exit 0; }
+exit "${FAKE_NEXTFLOW_RC:-0}"
