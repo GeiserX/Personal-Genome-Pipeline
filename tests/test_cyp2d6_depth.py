@@ -15,7 +15,7 @@ mosdepth region files of all reads and of MAPQ >= 1):
 
 Also: the check file has the status, the message and the four depths, the
 `bed` command prints CYP2D6 and both flanks, and an input without a CYP2D6
-row exits 2.
+row, or with regions other than those, exits 2.
 
 Run: python3 tests/test_cyp2d6_depth.py
 """
@@ -90,6 +90,13 @@ with tempfile.TemporaryDirectory() as tmp:
     with contextlib.redirect_stderr(io.StringIO()):
         rc = dc.main(["check", "--all", bad, "--mapq1", bad, "--out", os.path.join(tmp, "x.tsv")])
     expect("an input without a CYP2D6 row exits 2", rc, 2)
+
+    moved = os.path.join(tmp, "moved.bed")
+    with open(os.path.join(DEPTH, "clean_no_alt.q0.bed")) as f, open(moved, "w") as out:
+        out.write(f.read().replace("42123192", "42123000"))
+    with contextlib.redirect_stderr(io.StringIO()):
+        rc = dc.main(["check", "--all", moved, "--mapq1", moved, "--out", os.path.join(tmp, "y.tsv")])
+    expect("regions other than the ones `bed` prints exit 2", rc, 2)
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

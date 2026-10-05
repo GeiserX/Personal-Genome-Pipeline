@@ -44,7 +44,7 @@ MIN_GENE_RATIO = 0.15
 def read_regions(path):
     """{'gene': mean, 'flank': mean} from a mosdepth regions file (chrom,
     start, end, name, mean), length-weighted over the rows of each name."""
-    total, length = {}, {}
+    total, length, seen = {}, {}, set()
     opener = gzip.open if path.endswith(".gz") else open
     with opener(path, "rt") as f:
         for line in f:
@@ -56,12 +56,18 @@ def read_regions(path):
             name = "gene" if fields[3] == "CYP2D6" else "flank" if "flank" in fields[3].lower() else None
             if name is None:
                 continue
+            seen.add((fields[0], int(fields[1]), int(fields[2]), name))
             n = int(fields[2]) - int(fields[1])
             total[name] = total.get(name, 0.0) + float(fields[4]) * n
             length[name] = length.get(name, 0) + n
     missing = {"gene", "flank"} - set(length)
     if missing:
         raise ValueError(f"{path}: no {' or '.join(sorted(missing))} region (name CYP2D6, or one containing 'flank')")
+    # The regions must be the ones `bed` prints: the Nextflow module writes
+    # its own copy of them, and a drift there would compare other stretches.
+    want = {(c, s, e, "gene" if n == "CYP2D6" else "flank") for c, s, e, n in REGIONS}
+    if seen != want:
+        raise ValueError(f"{path}: its regions differ from the ones `cyp2d6_depth_check.py bed` prints")
     return {k: total[k] / length[k] for k in length}
 
 

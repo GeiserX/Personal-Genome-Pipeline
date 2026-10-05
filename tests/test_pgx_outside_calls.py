@@ -14,6 +14,13 @@ compares both files it writes, byte for byte:
   6. HLA           T1K's HLA-A and HLA-B, truncated to two fields
   7. HLA edges     one allele (read as homozygous); an allele of quality 0
 
+and what step 27 (bin/pgx_parse.py cpic-report --consensus) makes of it:
+
+  8. CYP2D6 held back: the CPIC report says so, names the drugs it affects,
+     and drops the pypgx-only warning it prints without the table
+  9. HLA passed on: the CPIC report lists it in the outside-call section and
+     marks the gene PharmCAT reports with callSource OUTSIDE
+
 Run: python3 tests/test_pgx_outside_calls.py
 """
 import os
@@ -105,6 +112,58 @@ case("7 HLA one allele, and an allele of quality 0", "HLA-A\t*02:01/*02:01\n",
      "\tHLA-B*07:02:01 (quality 60); HLA-B*44:02:01 (quality 0)\n"
      "CYP2D6\tindeterminate\tno\tno caller made a call\tpypgx: not run; Cyrius: not run; depth check: not run\n",
      hla="t1k_genotype_homozygous_lowqual.tsv")
+
+# --- step 27 with the consensus table ------------------------------------------
+PARSE = os.path.join(REPO, "bin", "pgx_parse.py")
+REPORTS = os.path.join(REPO, "tests", "fixtures", "pharmcat")
+
+
+def cpic(report, **inputs):
+    """The recommendations text of pgx_parse.py cpic-report, with a consensus
+    table from pgx_outside_calls.py when consensus_from is given."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cmd = [sys.executable, PARSE, "cpic-report", "--sample", "T", "--outdir", tmp,
+               "--report", os.path.join(REPORTS, report)]
+        if "pypgx" in inputs:
+            cmd += ["--pypgx", os.path.join(FX, inputs["pypgx"])]
+        if "consensus_from" in inputs:
+            cons = os.path.join(tmp, "consensus.tsv")
+            gen = [sys.executable, SCRIPT, "--calls", os.path.join(tmp, "calls.tsv"), "--consensus", cons]
+            for opt, name in inputs["consensus_from"].items():
+                gen += ["--" + opt.replace("_", "-"), os.path.join(FX, name)]
+            subprocess.run(gen, check=True, capture_output=True)
+            cmd += ["--consensus", cons]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            return f"exit {r.returncode}: {r.stderr}"
+        return open(os.path.join(tmp, "T_cpic_recommendations.txt")).read()
+
+
+def report_has(desc, text, needle, present=True):
+    if (needle in text) == present:
+        print(f"PASS {desc}")
+    else:
+        print(f"FAIL {desc}: {'missing' if present else 'unexpected'} {needle!r}\n{text}")
+        FAILS.append(desc)
+
+
+# 8. The 3.4.0 report of the fixture: PharmCAT has no CYP2D6 result.
+plain = cpic("report-3.4.0.json", pypgx="pypgx_cyp2d6_1_4.tsv")
+report_has("8 control: without the table, pypgx's call alone draws a warning", plain,
+           "WARNING: PharmCAT has no result for CYP2D6, but pypgx")
+held = cpic("report-3.4.0.json", pypgx="pypgx_cyp2d6_1_4.tsv",
+            consensus_from={"pypgx": "pypgx_cyp2d6_1_4.tsv", "depth_check": "depth_check_ok.tsv"})
+report_has("8 the report has the outside-call section", held, "Calls From Other Tools (outside calls, step 36):")
+report_has("8 CYP2D6 is indeterminate and why", held,
+           "CYP2D6   indeterminate            not passed to PharmCAT: " + "one caller only")
+report_has("8 it names the drugs CYP2D6 affects", held, "No drug guidance is given for CYP2D6 here. Drugs affected by CYP2D6: ")
+report_has("8 no pypgx-only warning for the held-back gene", held, "PharmCAT has no result for CYP2D6", False)
+
+# 9. PharmCAT's example report has HLA-B from an outside call.
+passed = cpic("pharmcat-docs-example.json", consensus_from={"hla": "t1k_genotype.tsv"})
+report_has("9 HLA-B is listed as passed from T1K", passed,
+           "HLA-B    *07:02/*44:02            passed to PharmCAT from T1K (step 08); PharmCAT reports it as an outside call.")
+report_has("9 the gene line marks PharmCAT's outside call", passed, "[outside call]")
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")
