@@ -150,13 +150,21 @@ echo "HG002 depth on the chr20 slice: ${HG002_DP:-?}x"
 FRACTION=$(awk -v d="${HG002_DP:-30}" 'BEGIN { printf "%.4f", d / 9 / 300 }')
 echo "streaming HG001 at a fraction of ${FRACTION}"
 curl -fsSL --retry 5 -o "${G}/contam/hg001.bai" "${HG001_BAM}.bai"
-# shellcheck disable=SC2086  # the regions split on purpose
-docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-  -v "${G}:/genome" -w /genome "$SAMTOOLS_IMAGE" \
-  samtools view -M -s "7${FRACTION#0}" -x RG -F 0x900 -X "$HG001_BAM" /genome/contam/hg001.bai $REGIONS \
-  > "${G}/contam/hg001.sam" 2> "${CASE_TMP}/stream.log"
-check_eq "HG001 reads streamed" "$?" 0
+# Three attempts: one network hiccup on the NCBI stream must not fail the job.
+for attempt in 1 2 3; do
+  # shellcheck disable=SC2086  # the regions split on purpose
+  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    -v /etc/ssl/certs:/etc/ssl/certs:ro -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    -v "${G}:/genome" -w /genome "$SAMTOOLS_IMAGE" \
+    samtools view -M -s "7${FRACTION#0}" -x RG -F 0x900 -X "$HG001_BAM" /genome/contam/hg001.bai $REGIONS \
+    > "${G}/contam/hg001.sam" 2> "${CASE_TMP}/stream.log"
+  STREAM_RC=$?
+  [ "$STREAM_RC" -eq 0 ] && break
+  echo "HG001 stream attempt ${attempt} failed (exit ${STREAM_RC}):"
+  tail -n 3 "${CASE_TMP}/stream.log"
+  [ "$attempt" -lt 3 ] && sleep 30
+done
+check_eq "HG001 reads streamed" "$STREAM_RC" 0
 tail -n 3 "${CASE_TMP}/stream.log"
 N_HG001=$(wc -l < "${G}/contam/hg001.sam" | tr -d ' ')
 # shellcheck disable=SC2086

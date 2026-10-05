@@ -9,7 +9,9 @@
 #   - declared male with --sex_check warn (for INDEXCOV's reading): the run
 #     ends, and the report, rendered by bin/render_report.py, shows somalier's
 #     sex, FREEMIX and the ROH and haplogroup cards, with the numbers of the
-#     summary it was rendered from.
+#     summary it was rendered from. The same BAM is given a second time under
+#     another id (BAMs with the same @RG SM): somalier keeps the two rows
+#     apart and SAMPLE_QC names each one as the other's same person.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -20,17 +22,20 @@ XS="${G}/reference/somalier/sites_slice_chrX.vcf"
 PANEL_DIR="${G}/reference/verifybamid2_fixture"
 check "case qc-1 wrote the sites with the slice's chrX calls" test -s "$XS"
 
-# nf_run NAME SEX [ARGS...]: one run on a VCF+BAM row declaring SEX. Sets RC,
-# LOG, OUT and TRACE.
+# nf_run NAME SEX [ARGS...]: one run on a VCF+BAM row declaring SEX, plus the
+# same files under the id DUP_ID when it is set. Sets RC, LOG, OUT and TRACE.
 nf_run() {
-  local name=$1 sex=$2 dir="${CASE_TMP}/$1"
+  local name=$1 sex=$2 dir="${CASE_TMP}/$1" id
   shift 2
   rm -rf "$dir"
   mkdir -p "$dir"
-  printf 'sample,vcf,vcf_index,bam,bam_index,sex\n%s,%s,%s,%s,%s,%s\n' "$SAMPLE" \
-    "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi" \
-    "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" \
-    "$sex" > "${dir}/samplesheet.csv"
+  echo 'sample,vcf,vcf_index,bam,bam_index,sex' > "${dir}/samplesheet.csv"
+  for id in "$SAMPLE" ${DUP_ID:+"$DUP_ID"}; do
+    printf '%s,%s,%s,%s,%s,%s\n' "$id" \
+      "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi" \
+      "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" \
+      "$sex" >> "${dir}/samplesheet.csv"
+  done
   OUT="${dir}/out"
   echo "+ nextflow run main.nf (${name}, declared ${sex}) $*"
   ( cd "$dir" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
@@ -62,16 +67,24 @@ check "the message says how to go on" has 'rerun with --sex_check warn' "$(cat "
 check_eq "declared female: SAMPLE_QC tasks" "$(ran SAMPLE_QC)" 1
 check_eq "declared female: no HTML_REPORT task" "$(ran HTML_REPORT)" 0
 
-nf_run male male --sex_check warn
+D="${SAMPLE}dup"
+DUP_ID="$D" nf_run male male --sex_check warn
 check_eq "declared male, --sex_check warn: the run exits 0" "$RC" 0
-for p in SOMALIER SOMALIER_RELATE VERIFYBAMID2 SAMPLE_QC HTML_REPORT; do
-  check_eq "${p} tasks" "$(ran "$p")" 1
+check_eq "SOMALIER_RELATE tasks" "$(ran SOMALIER_RELATE)" 1
+for p in SOMALIER VERIFYBAMID2 SAMPLE_QC HTML_REPORT; do
+  check_eq "${p} tasks (two rows)" "$(ran "$p")" 2
 done
 R="${OUT}/${SAMPLE}"
 T="${R}/qc/${SAMPLE}_sample_qc.tsv"
+TD="${OUT}/${D}/qc/${D}_sample_qc.tsv"
 cat "$T" 2>/dev/null
-check_eq "SAMPLE_QC: somalier infers male" "$(awk -F'\t' '$1 == "inferred_sex" {print $2}' "$T" 2>/dev/null)" male
-check_eq "SAMPLE_QC: the sex check passes" "$(awk -F'\t' '$1 == "sex_check" {print $2}' "$T" 2>/dev/null)" ok
+tv() { awk -F'\t' -v k="$2" '$1 == k {print $2}' "$1" 2>/dev/null; }
+check_eq "SAMPLE_QC: somalier infers male" "$(tv "$T" inferred_sex)" male
+check_eq "SAMPLE_QC: the sex check passes" "$(tv "$T" sex_check)" ok
+check_eq "somalier names the sample by its samplesheet id" "$(tv "$T" somalier_id)" "$SAMPLE"
+check_eq "somalier names the second row by its own id" "$(tv "$TD" somalier_id)" "$D"
+check "the first row is the same person as the second" has "^${D} \\([0-9.]+\\)$" "$(tv "$T" same_person_as)"
+check "the second row is the same person as the first" has "^${SAMPLE} \\([0-9.]+\\)$" "$(tv "$TD" same_person_as)"
 check "VERIFYBAMID2 published its selfSM" test -s "${R}/qc/verifybamid2/${SAMPLE}.selfSM"
 check "SOMALIER_RELATE published its tables" test -s "${OUT}/somalier/somalier.samples.tsv"
 
