@@ -26,16 +26,23 @@ echo "reads in the BAM: ${N_BAM}"
 # --- 1. the two planted faults ---------------------------------------------------------
 # A docker in front of the e2e shim: it runs every call, and after the call
 # that writes <sample>_sorted.part.cram it damages that file as FAULT says.
+# It takes its own folder off PATH first: the shim looks for the next docker
+# on PATH too, and would otherwise call this wrapper back, without end.
 mkdir -p "${CASE_TMP}/fault"
 cat > "${CASE_TMP}/fault/docker" <<'WRAP'
 #!/usr/bin/env bash
 self_dir="$(cd "$(dirname "$0")" && pwd)"
 real=""
 IFS=: read -r -a dirs <<< "$PATH"
+keep=()
 for d in "${dirs[@]}"; do
   [ "$d" = "$self_dir" ] && continue
-  if [ -x "${d}/docker" ]; then real="${d}/docker"; break; fi
+  keep+=("$d")
+  if [ -z "$real" ] && [ -x "${d}/docker" ]; then real="${d}/docker"; fi
 done
+PATH=$(IFS=:; echo "${keep[*]}")
+export PATH
+[ -n "$real" ] || { echo "fault wrapper: no docker on PATH" >&2; exit 127; }
 "$real" "$@" || exit $?
 args=" $* "
 case "$args" in
