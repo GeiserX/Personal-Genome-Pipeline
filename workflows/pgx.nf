@@ -96,7 +96,8 @@ workflow PGX {
             ch_bam.map { meta, bam, bai -> [meta.id, meta, bam, bai] }
                 .join(ch_depth)
                 .map { id, meta, bam, bai, q0, q1 -> tuple(meta, bam, bai, q0, q1) },
-            ch_cyrius_install
+            ch_cyrius_install,
+            Channel.value(file("${projectDir}/scripts/cyrius-constraints.txt", checkIfExists: true))
         )
         ch_cyrius_results = CYRIUS.out.cyp2d6_results
         ch_versions       = ch_versions.mix(CYRIUS.out.versions)

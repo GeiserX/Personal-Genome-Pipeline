@@ -177,8 +177,9 @@ KIR_COORD=$(find "$KIR_IDX" -maxdepth 1 -name '*dna_coord.fa' | head -n 1)
 
 mkdir -p "$KIR_DIR"
 rm -f "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv" "${KIR_DIR}/${SAMPLE}_kir_t1k_genotype.tsv"
-# T1K may stop when it extracts no KIR read at all: that is "too few reads",
-# any other failure is an error.
+# T1K may stop when it extracts no KIR read at all: that is "too few reads"
+# when its candidate reads file exists and is empty; any other failure (no
+# candidate file at all, or candidate reads it failed to type) is an error.
 RC=0
 run_in \
   --cpus "${THREADS}" --memory 8g \
@@ -191,9 +192,16 @@ run_in \
     -t "${THREADS}" \
     --od "/genome/${SAMPLE}/kir_t1k/" \
     -o "${SAMPLE}_kir_t1k" || RC=$?
-if [ "$RC" -ne 0 ] && [ -s "${KIR_DIR}/${SAMPLE}_kir_t1k_candidate_1.fq" ]; then
-  echo "ERROR: run-t1k failed (exit ${RC}) with KIR reads to type." >&2
-  exit "$RC"
+if [ "$RC" -ne 0 ]; then
+  CAND=""
+  for c in "${KIR_DIR}/${SAMPLE}_kir_t1k_candidate_1.fq" "${KIR_DIR}/${SAMPLE}_kir_t1k_candidate.fq"; do
+    [ -e "$c" ] && CAND=$c && break
+  done
+  if [ -z "$CAND" ] || [ -s "$CAND" ]; then
+    echo "ERROR: run-t1k failed (exit ${RC})$([ -n "$CAND" ] && echo ' with KIR reads to type' || echo ' before extracting reads')." >&2
+    exit "$RC"
+  fi
+  echo "run-t1k exited ${RC}: it extracted no KIR read (${CAND} is empty)."
 fi
 KIR_RELEASE=$(grep -m 1 'IPD-KIR Release Version' "$KIR_DAT" | sed 's/^CC *//') || KIR_RELEASE=""
 {

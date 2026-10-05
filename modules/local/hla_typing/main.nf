@@ -151,8 +151,9 @@ process KIR_TYPING {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    # T1K may stop when it extracts no KIR read at all; that is "too few
-    # reads", any other failure is an error.
+    # T1K may stop when it extracts no KIR read at all: that is "too few
+    # reads" when its candidate reads file exists and is empty; any other
+    # failure (no candidate file, or candidate reads it failed to type) is an error.
     rc=0
     run-t1k \\
         -b ${bam} \\
@@ -163,11 +164,15 @@ process KIR_TYPING {
         --od ./ \\
         -o ${prefix}_kir_t1k || rc=\$?
     if [ "\$rc" -ne 0 ]; then
-        if [ -s ${prefix}_kir_t1k_candidate_1.fq ]; then
-            echo "ERROR: run-t1k failed (exit \$rc) with KIR reads to type" >&2
+        cand=""
+        for c in ${prefix}_kir_t1k_candidate_1.fq ${prefix}_kir_t1k_candidate.fq; do
+            if [ -e "\$c" ]; then cand=\$c; break; fi
+        done
+        if [ -z "\$cand" ] || [ -s "\$cand" ]; then
+            echo "ERROR: run-t1k failed (exit \$rc); candidate reads: \${cand:-none written}" >&2
             exit "\$rc"
         fi
-        echo "run-t1k exited \$rc and extracted no KIR read"
+        echo "run-t1k exited \$rc and extracted no KIR read (\$cand is empty)"
     fi
     { echo "database: \$(cat ${release})"; echo "t1k: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}"; } > database_release.txt
     if [ -s ${prefix}_kir_t1k_genotype.tsv ] && awk -F'\\t' '\$5 > 0 || \$8 > 0 {found = 1} END {exit !found}' ${prefix}_kir_t1k_genotype.tsv; then

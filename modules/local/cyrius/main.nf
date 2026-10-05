@@ -31,6 +31,7 @@ process CYRIUS {
     input:
     tuple val(meta), path(bam), path(bai), path(depth_q0), path(depth_q1)
     path(cyrius_install)  // setup.sh --cyrius: GENOME_DIR/tools/cyrius-<version>
+    path(cyrius_lock)     // scripts/cyrius-constraints.txt, which the install must come from
 
     output:
     tuple val(meta), path("*_cyp2d6.tsv"),                       emit: cyp2d6_results
@@ -43,8 +44,11 @@ process CYRIUS {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    if [ ! -f ${cyrius_install}/INSTALLED ]; then
-        echo "ERROR: ${cyrius_install} is not a Cyrius install made by scripts/setup.sh --cyrius" >&2
+    # The stamp setup.sh --cyrius writes: this image and this lock file.
+    want="python=${task.container} lock=\$(sha256sum ${cyrius_lock} | cut -d' ' -f1)"
+    if [ "\$(cat ${cyrius_install}/INSTALLED 2>/dev/null)" != "\$want" ]; then
+        echo "ERROR: ${cyrius_install} is not a Cyrius install for this image and scripts/cyrius-constraints.txt" >&2
+        echo "  (want '\$want'). Run scripts/setup.sh --cyrius <genome_dir> again." >&2
         exit 1
     fi
     cyp2d6_depth_check.py check --all ${depth_q0} --mapq1 ${depth_q1} --out ${meta.id}_cyp2d6_depth_check.tsv
