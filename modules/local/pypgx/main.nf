@@ -7,6 +7,10 @@
     2. Call BAM-based genes (CYP2D6, CYP2A6, GSTM1, GSTT1) with SV detection
     3. Call VCF-based genes (~19 additional pharmacogenes)
 
+    CYP2D6 copy number comes from read depth: the depth CYP2D6_DEPTH measured
+    is judged first (bin/cyp2d6_depth_check.py), and when the reads there are
+    multi-mapped the summary's CYP2D6 row says Indeterminate.
+
     Equivalent to: scripts/32-pypgx.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -18,7 +22,7 @@ process PYPGX {
     publishDir { "${params.outdir}/${meta.id}/pypgx" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index)
+    tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index), path(depth_q0), path(depth_q1)
     path(reference)
     path(reference_fai)
     path(pypgx_bundle)
@@ -26,6 +30,7 @@ process PYPGX {
     output:
     tuple val(meta), path("${meta.id}_pypgx_results"), emit: results
     tuple val(meta), path("${meta.id}_pypgx_summary.tsv"), emit: summary
+    tuple val(meta), path("${meta.id}_cyp2d6_depth_check.tsv"), emit: depth_check
     path "versions.yml",                                emit: versions
 
     when:
@@ -37,6 +42,10 @@ process PYPGX {
     """
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
+
+    # CYP2D6 depth check (CYP2D6_DEPTH measured it)
+    cyp2d6_depth_check.py check --all ${depth_q0} --mapq1 ${depth_q1} --out ${meta.id}_cyp2d6_depth_check.tsv
+    DEPTH_STATUS=\$(awk -F'\\t' '\$1 == "status" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)
 
     # pypgx reads its bundle from ~/pypgx-bundle. HOME is the task directory,
     # so nothing is written inside the image (a read-only Singularity image
@@ -172,6 +181,15 @@ called = sum(1 for r in rows if r[1] != 'FAILED')
 print(f'Summary: {called}/{len(rows)} genes called')
 "
 
+    # A CYP2D6 call from multi-mapped depth is not a call: the row says so
+    # (the call stays in CYP2D6/results.zip), as scripts/32-pypgx.sh does.
+    if [ "\$DEPTH_STATUS" != ok ]; then
+        awk -F'\\t' -v OFS='\\t' '\$1 == "CYP2D6" {\$2 = "Indeterminate"; \$3 = "Indeterminate (CYP2D6 depth check)"} {print}' \\
+            ${meta.id}_pypgx_summary.tsv > summary.tmp
+        mv summary.tmp ${meta.id}_pypgx_summary.tsv
+        echo "WARNING: \$(awk -F'\\t' '\$1 == "message" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)"
+    fi
+
     # printf, not a here-document: the column-0 lines above stop Nextflow
     # from stripping this script's indent, and an indented END_VERSIONS
     # would not end a <<- here-document.
@@ -182,6 +200,7 @@ print(f'Summary: {called}/{len(rows)} genes called')
     """
     mkdir -p ${meta.id}_pypgx_results
     printf 'Gene\\tDiplotype\\tPhenotype\\tSV_detected\\tSource\\n' > ${meta.id}_pypgx_summary.tsv
+    printf 'metric\\tvalue\\nstatus\\tok\\nmessage\\tstub\\n' > ${meta.id}_cyp2d6_depth_check.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

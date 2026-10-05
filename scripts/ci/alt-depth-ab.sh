@@ -12,7 +12,9 @@
 #   with-ALT  the Broad hg38 FASTA the pipeline used before (3,366 sequences,
 #             ALT, HLA and decoy contigs)
 # It also counts the primary alignments each reference places on ALT or HLA
-# contigs, which a caller or T1K reading chr6 and chr22 never sees.
+# contigs, which a caller or T1K reading chr6 and chr22 never sees, and runs
+# the CYP2D6 depth check of steps 21 and 32 (bin/cyp2d6_depth_check.py) on
+# each mapping: it must pass the no-ALT one and flag the with-ALT one.
 #
 # The whole-genome minimap2 index is built in parts of IDX_PART bases (-I),
 # so it fits a 16 GB runner, and mapped with --split-prefix, which merges the
@@ -142,6 +144,20 @@ for kind in no-ALT with-ALT; do
   rm -f "${W}/ref.mmi"
 done
 
+# The CYP2D6 depth check on each mapping of the CYP2D read set.
+check_fail=0
+: > "${W}/depth_check.tsv"
+for kind in no-ALT with-ALT; do
+  python3 "${REPO}/bin/cyp2d6_depth_check.py" check --all "${W}/${kind}_cyp2d_q0.regions.bed.gz" \
+    --mapq1 "${W}/${kind}_cyp2d_q1.regions.bed.gz" --out "${W}/depth_check_${kind}.tsv"
+  status=$(awk -F'\t' '$1 == "status" {print $2}' "${W}/depth_check_${kind}.tsv")
+  printf '%s\t%s\t%s\n' "$kind" "$status" "$(awk -F'\t' '$1 == "message" {print $2}' "${W}/depth_check_${kind}.tsv")" >> "${W}/depth_check.tsv"
+  case "$kind:$status" in
+    no-ALT:ok|with-ALT:unreliable) ;;
+    *) echo "ERROR: the CYP2D6 depth check says '${status}' for the ${kind} mapping" >&2; check_fail=1 ;;
+  esac
+done
+
 # A region's depth comes from the read set of its own locus.
 for l in "${LOCI[@]}"; do
   read -r name _ <<< "$l"
@@ -178,6 +194,12 @@ fi
     done
   done
   echo
+  echo "CYP2D6 depth check of steps 21 and 32 (bin/cyp2d6_depth_check.py) on each mapping:"
+  echo
+  echo "| Reference | Status | Message |"
+  echo "|---|---|---|"
+  awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}' "${W}/depth_check.tsv"
+  echo
   echo "| Reference | Read set | Primary alignments | On ALT or HLA contigs |"
   echo "|---|---|---|---|"
   awk -F'\t' '{printf "| %s | %s | %d | %d |\n", $1, $2, $3, $4}' "${W}/placement.tsv"
@@ -190,3 +212,4 @@ fi
 } > "${W}/ab.md"
 cat "${W}/ab.md"
 cat "${W}/ab.md" >> "$SUMMARY"
+exit "$check_fail"
