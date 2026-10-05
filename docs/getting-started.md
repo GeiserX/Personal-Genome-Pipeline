@@ -125,7 +125,7 @@ Without Java or Nextflow, `run-all.sh` stops with exit 2 and prints the install 
 
 It writes the choice to `<sample>/nextflow/samplesheet.csv` and uses that file again on the next run while every file it names exists and its BAM is the one this call names (`ALIGN_DIR` below), so a rerun finds its tasks in the cache even after the pipeline wrote a BAM and a VCF next to the FASTQ. Delete the samplesheet to choose again.
 
-When the run starts from an existing VCF, the pipeline does not read a gVCF beside it: `vcf/<sample>.g.vcf.gz` from an earlier `03-deepvariant.sh` run stays on disk but unused, so PharmCAT and PRS read only the VCF's variant sites. To get the gVCF-based calls, delete the VCF and its index so the BAM is called again, or run `./scripts/07-pharmacogenomics.sh <sample>` and `./scripts/25-prs.sh <sample>` by hand, which read the gVCF. With the VCF alone (no BAM, no FASTQ), the steps that read a BAM are listed as `skipped (no BAM)`.
+When the run starts from an existing VCF, the pipeline does not read a gVCF beside it: `vcf/<sample>.g.vcf.gz` from an earlier `03-deepvariant.sh` run stays on disk but unused, so PharmCAT and PRS read only the VCF's variant sites. Run `./scripts/07-pharmacogenomics.sh <sample>` and `./scripts/25-prs.sh <sample>` by hand to get the calls that read the gVCF. When the sample also has its indexed BAM, deleting the VCF and its index is the other way: the BAM is called again, with a gVCF the pipeline reads. With the VCF alone (no BAM, no FASTQ) that would leave no input; such a run lists the steps that read a BAM as `skipped (no BAM)`.
 
 **Switches.** Environment variables, set before the command:
 
