@@ -3,8 +3,10 @@
     SOMALIER, SOMALIER_RELATE, SAMPLE_QC — Is the sample the person you think?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     SOMALIER reads each BAM's genotypes and depth at somalier's known sites
-    (--somalier_sites). It names the sample after the BAM's @RG SM tag, which
-    <id>.somalier_id holds.
+    (--somalier_sites). It names the sample by its samplesheet id
+    (SOMALIER_SAMPLE_NAME), not the BAM's @RG SM tag: two rows whose BAMs
+    share an SM stay two samples, and a BAM with no read group works.
+    <id>.somalier_id holds the name.
 
     SOMALIER_RELATE runs once over every sample of the run: per sample, the
     sex somalier infers from heterozygosity at chrX sites and chrY depth; per
@@ -44,14 +46,14 @@ process SOMALIER {
 
     script:
     """
-    somalier extract -d extract --sites ${sites} -f ${reference} ${bam}
+    SOMALIER_SAMPLE_NAME=${meta.id} somalier extract -d extract --sites ${sites} -f ${reference} ${bam}
     n=\$(find extract -name '*.somalier' | wc -l)
     if [ "\$n" -ne 1 ]; then
         echo "ERROR: somalier extract wrote \$n files, expected one" >&2
         exit 1
     fi
     f=\$(find extract -name '*.somalier')
-    # relate reports the sample by the name inside the file (the @RG SM)
+    # relate reports the sample by the name inside the file (the id here)
     basename "\$f" .somalier > ${meta.id}.somalier_id
     mv "\$f" ${meta.id}.somalier
 
