@@ -4,6 +4,10 @@
 # script-only steps (GRIDSS=true, EXTRA_CALLERS=...) run after the pipeline,
 # their failure making run-all.sh exit 1. Unknown names in TOOLS or
 # EXTRA_CALLERS stop it with exit 2 before nextflow.
+#   plain run      the host's CPU count and RAM as --max_cpus and --max_memory;
+#                  BENCHMARK=true with one caller VCF is skipped, not failed
+#   ALIGN_DIR run  its BAM replaces the plain run's samplesheet row
+#   plain again    back to aligned/: a kept row names this call's BAM only
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -18,7 +22,19 @@ cp "${G}/sample1/aligned/sample1_sorted.bam" "${G}/sample1/aligned/sample1_sorte
 rm -f "${G}/sample1/vcf/sample1.vcf.gz" "${G}/sample1/vcf/sample1.vcf.gz.tbi"
 last() { grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1; }
 has_args() { grep -qF -- "$(printf '%q ' "$@")" <<<"$(last)" || fail "nextflow lacks '$*': $(last)"; }
+lacks_arg() { if grep -qF -- " $1 " <<<"$(last)"; then fail "$1 passed $2: $(last)"; fi; }
+row() { sed -n 2p "${G}/sample1/nextflow/samplesheet.csv"; }
+A="${G}/sample1/aligned/sample1_sorted.bam" B="${G}/sample1/aligned_bwamem2/sample1_sorted.bam"
 
+# A plain run: the host's caps, none of the switch flags
+run_expect 0 plain env BENCHMARK=true "${SCRIPTS}/run-all.sh" sample1 male
+has_args --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB"
+for f in --skip_trim --intervals; do lacks_arg "$f" "without its switch"; done
+[ "$(row)" = "sample1,,,${A},${A}.bai,,,male" ] || fail "plain run row: $(row)"
+output_has plain '^  benchmark-variants skipped \(only one caller VCF'
+[ ! -e "${G}/sample1/logs/benchmark-variants.log" ] || fail "benchmark-variants.sh ran with one caller VCF"
+
+# Every switch at once, after the plain run
 run_rc switches env THREADS=4 SKIP_TRIM=true INTERVALS="chr20:1-100 chr22" ALIGN_DIR=aligned_bwamem2 TOOLS=pharmcat,cpic \
   GRIDSS=true EXTRA_CALLERS=gatk MAX_JOBS=3 "${SCRIPTS}/run-all.sh" sample1 male --max_memory 8.GB --sex_check warn
 has_args --tools pharmcat,cpic
@@ -26,8 +42,8 @@ has_args --intervals "chr20:1-100 chr22"
 has_args --max_cpus 4
 has_args --skip_trim true
 has_args --max_memory 8.GB --sex_check warn
-B="${G}/sample1/aligned_bwamem2/sample1_sorted.bam"
-[ "$(sed -n 2p "${G}/sample1/nextflow/samplesheet.csv")" = "sample1,,,${B},${B}.bai,,,male" ] || fail "ALIGN_DIR not used: $(cat "${G}/sample1/nextflow/samplesheet.csv")"
+[ "$(grep -o ' --max_memory ' <<<"$(last)" | wc -l)" -eq 1 ] || fail "--max_memory passed twice: $(last)"
+[ "$(row)" = "sample1,,,${B},${B}.bai,,,male" ] || fail "ALIGN_DIR not used, the plain run's row was kept: $(row)"
 output_has switches '^  07 PharmCAT +runs$'
 output_has switches '^  11 ROH +skipped +\(not in TOOLS\)$'
 output_has switches 'MAX_JOBS is no longer read'
@@ -38,11 +54,9 @@ for s in 04b-gridss 03a-gatk-haplotypecaller; do [ -f "${G}/sample1/logs/${s}.lo
 grep -qE $'^step\t04b\t(ok|failed)$' "${G}/sample1/logs/run_status.tsv" || fail "step 04b has no status line"
 [ -s "${G}/sample1/logs/24-html-report.log" ] || fail "the reports did not run after the script-only steps"
 
-# Without the switches none of those flags is passed
-run_expect 0 plain "${SCRIPTS}/run-all.sh" sample1 male
-for f in --max_cpus --skip_trim --intervals --max_memory; do
-  if grep -qF -- " ${f} " <<<"$(last)"; then fail "${f} passed without its switch: $(last)"; fi
-done
+# Without ALIGN_DIR again: the row from the ALIGN_DIR run is not reused
+run_expect 0 plain2 env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male
+[ "$(row)" = "sample1,,,${A},${A}.bai,,,male" ] || fail "the ALIGN_DIR run's row was kept without ALIGN_DIR: $(row)"
 
 n=$(grep -c '^nextflow :: ' "$FAKE_DOCKER_LOG")
 run_expect 2 badtool env TOOLS=pharmcat,clinvar_screen "${SCRIPTS}/run-all.sh" sample1 male

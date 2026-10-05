@@ -4,7 +4,10 @@
 # validate-setup.sh, writes a one-row samplesheet and starts the Nextflow
 # pipeline (a fake nextflow here, which logs its arguments) with -resume, the
 # --tools list of a default run minus the steps whose data is missing, and
-# the database parameters it found. Then the two reports run.
+# the database parameters it found, and the host's CPU count and RAM as the
+# caps, since Nextflow refuses a task that asks for more. Then the two reports
+# run. prs_scores/ exists but holds no scoring file, as after a failed first
+# download: PRS is skipped, not started on nothing.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -13,6 +16,7 @@ G=$GENOME_DIR
 seed_reference "$G"
 seed_clinvar "$G"
 seed_sample "$G" sample1
+mkdir -p "${G}/prs_scores"
 
 # The ExpansionHunter catalog comes out of its image (`cat` in the container).
 use_output_hook
@@ -37,7 +41,8 @@ TOOLS='pharmcat,cpic,roh,mito_haplogroup,mosdepth,telomere_hunter,mito_variants,
 CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=25.10.8 :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
-  --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json")"
+  --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json" \
+  --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
 [ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
   got:  ${NFLOG}
   want: ${want}"
@@ -46,7 +51,7 @@ grep -q '^NEXTFLOW_VERSION="25.10.8"' "${REPO_ROOT}/versions.env" || fail "versi
 B="${G}/sample1/aligned/sample1_sorted.bam" V="${G}/sample1/vcf/sample1.vcf.gz"
 [ "$(cat "$SHEET")" = "sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex
 sample1,,,${B},${B}.bai,${V},${V}.tbi,male" ] || fail "samplesheet: $(cat "$SHEET")"
-output_has run-all 'NOTE: starting from the existing VCF'
+output_has run-all 'NOTE: starting from the existing VCF: .* a gVCF beside it is not read'
 
 # Exact counts: a step that turns from run into skipped, or back, fails here.
 # Skipped: VEP, CPSR, CNVpytor, AnnotSV, pypgx, HLA and PRS (data not
@@ -54,7 +59,7 @@ output_has run-all 'NOTE: starting from the existing VCF'
 [ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 16 ] || fail "not 16 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
 [ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 10 ] || fail "not 10 steps skipped"
 output_has run-all '^  31 slivar +skipped +\(needs VEP, data not installed: vep_cache/'
-output_has run-all '^  25 PRS +skipped +\(data not installed: prs_scores\)'
+output_has run-all '^  25 PRS +skipped +\(data not installed: prs_scores/<PGS id>\.txt\.gz\)$'
 
 STATUS="${G}/sample1/logs/run_status.tsv"
 grep -q $'^meta\tdeclared_sex\tmale$' "$STATUS" || fail "run_status.tsv lacks the declared sex"

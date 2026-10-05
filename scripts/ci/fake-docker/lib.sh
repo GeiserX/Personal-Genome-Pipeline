@@ -64,6 +64,13 @@ seed_sample() {
   printf 'placeholder\n' > "${g}/${s}/vcf/${s}.vcf.gz.tbi"
 }
 
+# host_cpus, host_mem_gb: the --max_cpus and --max_memory (in GB) run-all.sh
+# passes when neither THREADS nor the option is given.
+host_cpus() { getconf _NPROCESSORS_ONLN; }
+host_mem_gb() {
+  awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo 2>/dev/null || echo $(( $(sysctl -n hw.memsize) / 1073741824 ))
+}
+
 # run_expect CODE NAME COMMAND [ARGS...]: run COMMAND, keep its output in
 # ${CASE_WORK}/NAME.out, print it, and fail unless it exited with CODE.
 run_expect() {

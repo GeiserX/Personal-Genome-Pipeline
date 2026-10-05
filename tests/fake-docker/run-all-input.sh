@@ -8,6 +8,8 @@
 #   BAM and VCF             -> a BAM+VCF row (not called again)
 #   VCF of that row removed -> a BAM row (called again, with a gVCF)
 #   nothing                 -> exit 1, nextflow not started
+#   VCF only                -> a VCF row; the steps that read a BAM are
+#                              skipped ("no BAM"), not recorded ok
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -46,4 +48,20 @@ mkdir -p "${G}/s3"
 run_expect 1 none "${SCRIPTS}/run-all.sh" s3 male
 output_has none 'ERROR: no input for s3'
 [ "$(calls)" -eq 4 ] || fail "nextflow started without an input: $(calls) calls"
+
+# VCF only
+seed_sample "$G" s4
+rm -rf "${G}/s4/aligned"
+V="${G}/s4/vcf/s4.vcf.gz"
+run_expect 0 vcfonly "${SCRIPTS}/run-all.sh" s4 female
+[ "$(row s4)" = "s4,,,,,${V},${V}.tbi,female" ] || fail "VCF row: $(row s4)"
+output_has vcfonly '^  07 PharmCAT +runs$'
+for s in '04 Manta' '16b mosdepth' '28 MultiQC'; do output_has vcfonly "^  ${s} +skipped +\(no BAM\)$"; done
+ST=$(cat "${G}/s4/logs/run_status.tsv")
+grep -q $'^step\t07\tok$' <<<"$ST" || fail "step 07 not ok: ${ST}"
+for s in 16 16b 04 19 28; do
+  grep -q $'^step\t'"${s}"$'\tskipped (no BAM)$' <<<"$ST" || fail "step ${s} is not 'skipped (no BAM)': ${ST}"
+done
+grep -qF -- " $(printf '%q ' --tools pharmcat,cpic,roh,mito_haplogroup,clinvar)--" <<<"$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1)" \
+  || fail "a BAM step is in --tools: $(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1)"
 echo "The samplesheet follows the inputs and stays the same across a rerun."
