@@ -84,5 +84,6 @@ Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for Ve
 
 ## Notes
 - The CI fixture holds only small slices of HG002, with 2 of somalier's chrX sites and 320 of VerifyBamID2's markers: somalier reports `unknown` there, and VerifyBamID2 runs without its marker check. The end-to-end case adds sites at the slice's own chrX calls to show the sex check stop a female-declared HG002, and mixes about 10% of HG001's reads into HG002 to show FREEMIX rise above 0.03.
+- somalier stops with `sequence chr11 not found in fasta` when the reference lacks a contig its sites file names. Every full GRCh38 FASTA has chr1 to chr22, chrX and chrY; for a cut-down reference, give `SOMALIER_SITES` a copy of the sites without the missing contigs, as the end-to-end case does for its 14-contig fixture reference.
 - VerifyBamID2's panel is GRCh38 (`b38`); for a GRCh37 BAM the pipeline would need the `b37` files, which it does not install.
 - somalier compares samples only inside one `somalier relate` call: a Nextflow run relates every sample of its samplesheet. To compare samples run at different times with the bash step, run `somalier relate --infer --sites <sites> -o out */qc/somalier/*.somalier` in `SOMALIER_IMAGE` over their `.somalier` files.
