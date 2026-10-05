@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your PharmCAT report (step 7) and writes a plain-text list of the medications whose prescribing guidance depends on your result: for every gene where you are not a normal metabolizer, the drugs PharmCAT's own report matched to your phenotype, with the CPIC recommendation text. With pypgx output (step 32) it also compares the two callers and warns about a gene PharmCAT could not call while pypgx did.
+Reads your PharmCAT report (step 7) and writes a plain-text list of the medications whose prescribing guidance depends on your result: for every gene where you are not a normal metabolizer, the drugs PharmCAT's own report matched to your phenotype, with the CPIC recommendation text. With pypgx output (step 32) it also compares the two callers and warns about a gene PharmCAT could not call while pypgx did. With the consensus table of [step 36](36-pgx-consensus.md) it lists the calls other tools gave PharmCAT (HLA-A and HLA-B from T1K, a CYP2D6 call pypgx and Cyrius agree on) and why a gene was held back.
 
 ## Why
 
@@ -22,6 +22,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 - PharmCAT JSON report from step 7: the first `*.report.json` (or `*_pharmcat.json`) in `${GENOME_DIR}/${SAMPLE}/pharmcat/`, else in `${GENOME_DIR}/${SAMPLE}/vcf/`.
 - Optional: `${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` from step 32.
+- Optional: `${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv` from step 36.
 
 ## Command
 
@@ -36,7 +37,8 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 3. For each gene with a non-normal phenotype it lists the drugs from the report's `drugs` section: CPIC's recommendation for the called diplotype per drug first, then the drugs DPWG or the FDA name. PharmCAT lists an annotation for every diplotype the sample may have, so only the ones for the called diplotype (or, without diplotype labels, its phenotype) are shown. When the report names no drug for the gene, it falls back to the gene's `relatedDrugs`, then to a small static table, and finally prints a line saying the gene is not in the drug table, so a gene is never skipped silently.
 4. When PharmCAT lists more than one possible diplotype for a gene and their phenotypes differ (positions missing from the VCF leave it unable to choose), the gene is `ambiguous`: it is listed in its own section with the possible phenotypes and no drug guidance, never as its first diplotype.
 5. With the pypgx summary it writes the comparison table and, for a gene PharmCAT reports as not called or ambiguous but pypgx called (CYP2D6 is the usual one), a warning in the recommendations naming every drug PharmCAT links to that gene. When pypgx's call is normal the line is a note instead.
-6. A report that cannot be read, or that yields no gene, writes a "PARSING FAILED" report and the step exits 1. It never writes an all-clear report from a format it could not read.
+6. With step 36's consensus table it writes a section "Calls From Other Tools": each gene passed to PharmCAT as an outside call, from which tool, and whether PharmCAT's report shows it as one (`callSource` `OUTSIDE`); and each gene held back, with the reason and what each caller said. For a held-back CYP2D6 it names the drugs CYP2D6 affects and says no guidance is given for them, and the pypgx-only warning of point 5 is not printed for it: one caller's call is what the consensus refused. Genes PharmCAT reports as outside calls carry `[outside call]` in the gene results.
+7. A report that cannot be read, or that yields no gene, writes a "PARSING FAILED" report and the step exits 1. It never writes an all-clear report from a format it could not read.
 
 The comparison used to be written by step 32. It moved here because `run-all.sh` starts steps 7 and 32 side by side, so step 32 could read a missing or previous-run PharmCAT report; step 27 runs after both.
 
@@ -44,7 +46,7 @@ The comparison used to be written by step 32. It moved here because `run-all.sh`
 
 | File | Contents |
 |---|---|
-| `cpic/${SAMPLE}_cpic_recommendations.txt` | Gene results, the medications for each non-normal gene, uncallable genes, and the pypgx warnings |
+| `cpic/${SAMPLE}_cpic_recommendations.txt` | Gene results, the medications for each non-normal gene, the calls from other tools (step 36), uncallable genes, and the pypgx warnings |
 | `cpic/${SAMPLE}_phenotypes.tsv` | One row per gene: `Gene`, `Diplotype`, `Phenotype`, `Status` (`normal`, `non-normal`, `ambiguous` or `not called`) |
 | `pypgx/${SAMPLE}_pharmcat_comparison.tsv` | PharmCAT and pypgx diplotypes side by side (only when step 32 ran) |
 
@@ -68,6 +70,10 @@ CYP2D6       *x/*y                          <phenotype>
 
 Only genes where your phenotype is not normal appear here, each with the drugs and the CPIC recommendation PharmCAT matched to your result. A phenotype PharmCAT leaves unassigned (`n/a`, `no phenotype assigned`) is listed too: the drug guidance for such genes depends on the diplotype, and the report shows it. Genes that could not be called are listed separately at the end. Their absence from the medications section does NOT mean normal function.
 
+### Calls From Other Tools
+
+When step 36 ran, this section lists HLA-A, HLA-B and CYP2D6: passed to PharmCAT (then their drug guidance is in the sections above, as for any gene PharmCAT called) or not, and why. `indeterminate` for CYP2D6 means the callers did not agree, only one ran, or the depth at CYP2D6 could not be trusted: no drug guidance is given for CYP2D6 then, and the drugs it affects are listed so you know what is not covered.
+
 ### PharmCAT and pypgx
 
 When step 32 ran, this section names each gene PharmCAT could not call but pypgx did, with pypgx's call and the drugs it affects. Read those drugs with the pypgx call and [docs/32-pypgx.md](32-pypgx.md).
@@ -82,7 +88,7 @@ When step 32 ran, this section names each gene PharmCAT could not call but pypgx
 
 - The drug guidance is the one bundled with the pinned PharmCAT release; newer CPIC guidelines arrive with a PharmCAT update.
 - The static fallback table is used only when the report names no drug for a gene.
-- CYP2D6 from a short-read VCF is less reliable than a depth-based caller. Compare with Cyrius (step 21) and pypgx (step 32) before acting on CYP2D6.
+- CYP2D6 has drug guidance here only when pypgx (step 32) and Cyrius (step 21, opt-in) agree and the depth check passed (step 36). Without Cyrius it is always held back.
 - This is NOT medical advice. Always consult a healthcare professional before making medication changes.
 
 ## Links

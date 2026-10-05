@@ -6,7 +6,7 @@ The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`.
 - **a BAM or a CRAM** without a VCF: it is called;
 - **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM or CRAM.
 
-Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 50 processes in 37 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 55 processes in 39 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
 > **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` still chains them on one machine. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
@@ -55,6 +55,11 @@ nextflow run main.nf \
 #    --tools '...,sample_qc'                   + --somalier_sites + --verifybamid2_panel (setup.sh --sample-qc-data
 #                                                installs both; see docs/33-sample-qc.md)
 #    --tools '...,cram_archive'                writes a checked CRAM beside each BAM (docs/34-cram-archive.md)
+#    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
+#    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
+#    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
+#    With pharmcat, PGX_CONSENSUS gives PharmCAT the HLA types of hla_typing and a CYP2D6 call only when
+#    pypgx and cyrius agree (docs/36-pgx-consensus.md); PharmCAT then waits for those BAM steps.
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
 #    TelomereHunter uses its own hg19 bands and the run logs a warning
 #    An unknown name in --tools stops the run.
@@ -94,11 +99,12 @@ Only the failed and downstream steps re-run.
 | `bam`, `bam_index` | One of three* | Aligned BAM and its index (`.bam.bai`): called when the row has no VCF |
 | `cram`, `crai` | Instead of a BAM | Aligned CRAM and its index, read with `--reference` (the FASTA it was written with). `CRAM_TO_BAM` writes it out as a BAM in the work directory, checked against it, and the row goes on as a BAM row |
 | `vcf`, `vcf_index` | One of three* | Bgzipped VCF (`.vcf.gz`) and its tabix index from any caller; a BAM on the same row is optional |
+| `gvcf`, `gvcf_index` | No | The gVCF of the row's VCF (step 03 writes one) and its index. PharmCAT and PRS read it as they read the gVCF DEEPVARIANT writes; the row is not called again. Needs `vcf` on the row; `run-all.sh` fills it from `vcf/<sample>.g.vcf.gz` |
 | `sex` | On called rows** | `male` or `female` |
 
-\* A row starts from FASTQ, or from a BAM or CRAM, or from a VCF (with or without a BAM or CRAM); a row with FASTQ and a BAM, CRAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
+\* A row starts from FASTQ, or from a BAM or CRAM, or from a VCF (with or without a BAM or CRAM); a row with FASTQ and a BAM, CRAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx, cyrius, parascopy) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF, and a VCF row can give its gVCF in the `gvcf` column; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
 
-The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF given in the `vcf` column stops the run with `pharmcat` selected: the pipeline expands the reference blocks of the gVCF DeepVariant writes for a called row, not of a given one, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
+The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF given in the `vcf` column stops the run with `pharmcat` selected: the pipeline expands the reference blocks of the gVCF DeepVariant writes for a called row, or of the one in the `gvcf` column, not of a gVCF given as the VCF, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
 
 \*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM or CRAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM or CRAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
 
@@ -121,8 +127,8 @@ sample1,results/variant_calling/deepvariant/sample1/sample1.deepvariant.vcf.gz,r
 
 | Profile | Description |
 |---------|-------------|
-| `docker` | Run with Docker containers (default for local). Every container runs with `--network none` except `cyrius`, which pip-installs Cyrius at run time. |
-| `singularity` | Singularity/Apptainer. **Untested.** Two modules write inside their image and need a writable container: `cyrius` (pip-installs at run time) and `cnvpytor` (copies resources into its `site-packages`). This profile does not cut the network. |
+| `docker` | Run with Docker containers (default for local). Every container runs with `--network none`. |
+| `singularity` | Singularity/Apptainer. **Untested.** One module writes inside its image and needs a writable container: `cnvpytor` (copies resources into its `site-packages`). This profile does not cut the network. |
 | `test` | Minimal test with reduced resources |
 | `test_full` | Full-size test with real WGS data |
 
@@ -177,7 +183,10 @@ results/
 │   ├── expansion_hunter/   # Repeat expansion calls
 │   ├── telomere/           # Telomere length estimation
 │   ├── coverage/           # Coverage statistics (mosdepth)
-│   ├── cyrius/             # CYP2D6 star allele (Cyrius)
+│   ├── cyrius/             # CYP2D6 star allele (Cyrius, opt-in) and the CYP2D6 depth check
+│   ├── pgx_consensus/      # PharmCAT's outside calls (HLA-A/B, an agreed CYP2D6) and who said what
+│   ├── kir/                # KIR genotypes and the IPD-KIR release (--kir)
+│   ├── paralogs/           # SMN1/SMN2 copy number (Parascopy, opt-in)
 │   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV;
 │   │                       #   diploidSV.raw.vcf.gz as Manta wrote it (an inversion is two BND records)
 │   ├── sv_duphold/         # Manta SVs with duphold depth tags (optional)
@@ -264,7 +273,7 @@ Where a module and its script differ on purpose:
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
 | HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mito haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
-| Cyrius (21) | holds Cyrius' dependencies to `scripts/cyrius-constraints.txt` | pins Cyrius only (see [Cyrius runtime installation](#cyrius-runtime-installation)) |
+| Cyrius (21) | runs Cyrius from the install `setup.sh --cyrius` made | the same install, given as `--cyrius_install` (see [Cyrius, opt-in](#cyrius-opt-in)) |
 
 Scripts with no module, and why:
 
@@ -330,11 +339,11 @@ Every task script runs under `bash -euo pipefail` (`process.shell` in `conf/base
 
 ### No network inside the containers
 
-With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. `CYRIUS` is the one exception, below. The `singularity` profile does not cut the network.
+With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. There is no exception. The `singularity` profile does not cut the network.
 
-### Cyrius runtime installation
+### Cyrius, opt-in
 
-The Cyrius module (CYP2D6 star allele calling) installs `cyrius==1.1.1` via pip at runtime because no pre-built container image exists. This requires **network access on every run** (the docker profile exempts `CYRIUS` from `--network none` for this) and means Nextflow's container-only reproducibility guarantee does not apply to this module. Only Cyrius itself and the `PYTHON_IMAGE` base (a patch tag pinned to its digest) are pinned here: its dependencies (pysam, numpy, scipy, statsmodels) are not, so they resolve to whatever is newest on the day. The bash script (`scripts/21-cyrius.sh`) also pins `cyrius==1.1.1` and holds the dependencies to the versions in `scripts/cyrius-constraints.txt`; the base tag moves there too.
+Cyrius (CYP2D6 star alleles) is under a non-commercial licence and is not in the default tools. `scripts/setup.sh --cyrius <genome_dir>` installs it once into `tools/cyrius-1.1.1/`, with `pip --require-hashes --no-deps --only-binary :all:` from `scripts/cyrius-constraints.txt`, which pins every wheel by its sha256. The `CYRIUS` module runs it from there (`--tools ...,cyrius --cyrius_install <genome_dir>/tools/cyrius-1.1.1`) with no network, like every other task. See [step 21](21-cyrius.md).
 
 ### CI validation scope
 

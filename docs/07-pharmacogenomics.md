@@ -54,13 +54,17 @@ docker run --rm \
     /data/${SAMPLE}.preprocessed.vcf.bgz /data/${SAMPLE}.pharmcat_input.vcf \
     '/^##/ { gsub(/\\"/, "\047"); gsub(/\\/, "/") } { print }'
 
-# Step 3: run PharmCAT on the rewritten copy
+# Step 3: run PharmCAT on the rewritten copy, with step 36's outside calls
+# (HLA-A, HLA-B, an agreed CYP2D6) when that file is not empty; without it,
+# leave out the second -v and -po
 docker run --rm \
   --cpus 2 --memory 4g \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
+  -v ${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv:/outside_calls.tsv:ro \
   "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
     -vcf /data/${SAMPLE}.pharmcat_input.vcf \
+    -po /outside_calls.tsv \
     -o /data/ \
     -bf ${SAMPLE} \
     -reporterJson \
@@ -69,11 +73,11 @@ docker run --rm \
 
 ### Input the preprocessor or PharmCAT refuses
 
-- **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). Yet a gVCF is the better input: a variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered. So the script reads `vcf/${SAMPLE}.g.vcf.gz` when step 3 wrote one and expands its reference blocks into `${SAMPLE}.pgx_regions.vcf.gz` (step 0 above, deleted afterwards), which PharmCAT accepts; without a gVCF it reads `${SAMPLE}.vcf.gz`, and does not check whether that file is itself a gVCF (PharmCAT then stops on it). The Nextflow pipeline does not expand a gVCF: it stops before any analysis on one when `pharmcat` is selected. For a vendor gVCF, remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md).
+- **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). Yet a gVCF is the better input: a variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered. So the script reads `vcf/${SAMPLE}.g.vcf.gz` when step 3 wrote one and expands its reference blocks into `${SAMPLE}.pgx_regions.vcf.gz` (step 0 above, deleted afterwards), which PharmCAT accepts; without a gVCF it reads `${SAMPLE}.vcf.gz`, and does not check whether that file is itself a gVCF (PharmCAT then stops on it). The Nextflow pipeline does the same with DeepVariant's gVCF, or with the gVCF a samplesheet row gives in its `gvcf` column (`run-all.sh` fills it from `vcf/${SAMPLE}.g.vcf.gz`); a gVCF given in the `vcf` column stops the run before any analysis when `pharmcat` is selected. For a vendor gVCF, remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md).
 - **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 still bundles vcf-parser 0.3.1 and fails the same way.
 
 ## Output
-- HTML report with drug recommendations per gene
+- HTML report with drug recommendations per gene, including HLA-A, HLA-B and CYP2D6 when [step 36](36-pgx-consensus.md) passed them as outside calls
 - JSON report used by step 27 (`${SAMPLE}.report.json`)
 - Preprocessed VCF (`${SAMPLE}.preprocessed.vcf.bgz`) generated as an intermediate
 - `${SAMPLE}.missing_pgx_var.vcf`: the PGx positions absent from PharmCAT's input. With the gVCF these are the positions without coverage; with a variants-only VCF they include every position where you match the reference.
@@ -84,13 +88,13 @@ docker run --rm \
 | Gene | Drugs Affected | Example |
 |---|---|---|
 | CYP2C19 | SSRIs, PPIs, clopidogrel | One \*17 with one normal allele = rapid metabolizer → citalopram and escitalopram clear faster |
-| CYP2D6 | 25% of all drugs, opioids, tamoxifen | Complex — may need BAM-based calling |
+| CYP2D6 | 25% of all drugs, opioids, tamoxifen | Not called from a VCF; an outside call from step 36 when pypgx and Cyrius agree |
 | UGT1A1 | Irinotecan, bilirubin clearance | Two \*28 alleles are associated with Gilbert's syndrome |
 | DPYD | 5-FU, capecitabine (chemo) | Poor = lethal toxicity |
 | NAT2 | Isoniazid, hydralazine | Slow acetylator = increased toxicity |
 
 ## Limitations
-- **CYP2D6** often returns `Not called` — gene has pseudogene homology that confounds VCF-based calling. Use Cyrius or StellarPGx (BAM-based) if CYP2D6 is critical.
+- **HLA-A, HLA-B and CYP2D6** are not called from a VCF: PharmCAT 3.4.0 reports them with no result (`callSource` `NONE`). [Step 36](36-pgx-consensus.md) gives PharmCAT T1K's HLA types (step 8) and a CYP2D6 call only when pypgx (step 32) and Cyrius (step 21, opt-in) agree on depth that passed its check; PharmCAT reads them with `-po` (`callSource` `OUTSIDE`). Run step 36 before this step, or run this step again after it. A disagreement, or one caller alone, leaves CYP2D6 without a result, on purpose.
 - PharmCAT may disagree with lab reports on complex haplotypes (e.g., NAT2). Discrepancies can arise from different genome builds (hg19 vs hg38), different star allele definitions, or different variant calling pipelines. When a discrepancy matters clinically, compare both sets of raw variant calls and consult the PharmVar database for the current allele definitions — do not blindly trust either source.
 - PharmCAT output structure changes across releases. If you upgrade PharmCAT, re-test step 27 (`27-cpic-lookup.sh`) because it parses the JSON output directly.
 

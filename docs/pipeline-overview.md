@@ -5,8 +5,8 @@
 | Category | What It Finds | Steps |
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
-| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels) | 6, 17 |
-| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.) | 7, 21, 27, 32 |
+| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels), SMN1/SMN2 copy number (opt-in) | 6, 17, 35 |
+| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.), with HLA-A/B from T1K and CYP2D6 only when two callers agree | 7, 21, 27, 32, 36 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
@@ -53,7 +53,13 @@ graph LR
 
     BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
-    BAM --> cyrius["Cyrius<br/><small>CYP2D6</small>"]
+    BAM --> cyrius["Cyrius<br/><small>CYP2D6, opt-in</small>"]
+    BAM --> hla["T1K<br/><small>HLA (+ KIR, opt-in)</small>"]
+    BAM --> paralogs["Parascopy<br/><small>SMN1/SMN2, opt-in</small>"]
+    hla --> consensus36["PGx consensus<br/><small>outside calls</small>"]
+    pypgx --> consensus36
+    cyrius --> consensus36
+    consensus36 --> pharmcat
     BAM --> telomere["TelomereHunter"]
     BAM --> coverage["mosdepth<br/>+ indexcov"]
     BAM --> mito["Mutect2<br/><small>Mitochondrial</small>"]
@@ -79,7 +85,7 @@ graph LR
 
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
-    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo,sampleqc,cram analysis
+    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,hla,paralogs,consensus36,telomere,coverage,mito,haplo,sampleqc,cram analysis
     class manta,delly,cnvpytor,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
@@ -119,7 +125,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 | # | Step | Tool | Image variable | Required? |
 |---|---|---|---|---|
-| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `PYTHON_IMAGE` | Experimental |
+| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `PYTHON_IMAGE` | Opt-in (`TOOLS=...,cyrius`; non-commercial licence) |
 | 22 | [SV Consensus Merge](22-survivor-merge.md) | bcftools | `BCFTOOLS_IMAGE` | Experimental |
 | 23 | [Clinical Filter](23-clinical-filter.md) | bcftools +split-vep | `BCFTOOLS_IMAGE` | If step 13 run |
 | 24 | [HTML Report](24-html-report.md) | bash + bcftools | `BCFTOOLS_IMAGE` | Recommended |
@@ -133,12 +139,14 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `PYPGX_IMAGE` | Recommended |
 | 33 | [Sample Identity and Contamination](33-sample-qc.md) | somalier + VerifyBamID2 | `SOMALIER_IMAGE` + `VERIFYBAMID2_IMAGE` | Recommended |
 | 34 | [CRAM Archive](34-cram-archive.md) | samtools | `SAMTOOLS_IMAGE` | Optional, when the analysis is done |
+| 35 | [Paralog Genes: SMN1/SMN2](35-paralogs.md) | Parascopy | `PARASCOPY_IMAGE` | Opt-in (`TOOLS=...,parascopy`) |
+| 36 | [PGx Consensus](36-pgx-consensus.md) | Python | `PYTHON_IMAGE` | Runs with step 7 when step 8, 21 or 32 ran |
 
 ### What a default run covers
 
-A default `./scripts/run-all.sh <sample> <sex>` runs **31 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 30, 31 and 32. Steps 5, 13, 17, 18 and 32 are reported as skipped when their data is not installed, and 23, 30 and 31 when step 13 did not run. It ends with the summary report (`generate-report.sh`).
+A default `./scripts/run-all.sh <sample> <sex>` runs **31 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 22, 23, 24, 25, 27, 28, 30, 31, 32 and 36. Steps 5, 8, 13, 17, 18 and 32 are reported as skipped when their data is not installed, 23, 30 and 31 when step 13 did not run, and 36 (inside the PharmCAT stage) runs when step 8 or 32 did. It ends with the summary report (`generate-report.sh`).
 
-Off unless you ask for them: 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 26 (`ANCESTRY=true`), 29 (`SOMATIC=true`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
+Off unless you ask for them: 21 (`TOOLS=...,cyrius`, after `setup.sh --cyrius`), 35 (`TOOLS=...,parascopy`, after `setup.sh --parascopy-data`), KIR typing in step 8 (`KIR=true`, after `setup.sh --kir-data`), 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 26 (`ANCESTRY=true`), 29 (`SOMATIC=true`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
 
 The [Nextflow pipeline](nextflow.md) runs the same chain from a samplesheet, from FASTQ (steps 1b, 2, 16 and 3) to the report, with the steps above that have a module.
 

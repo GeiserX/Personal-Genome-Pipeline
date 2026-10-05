@@ -1,6 +1,6 @@
 # Step 21: CYP2D6 Star Allele Calling with Cyrius
 
-> **EXPERIMENTAL:** Cyrius is installed with pip at runtime inside a generic Python container, so the step needs network access. The version (1.1.1) and its dependencies are pinned. Results should be cross-referenced with PharmCAT's CYP2D6 call.
+> **OPT-IN, NON-COMMERCIAL LICENCE:** a default run leaves this step out. Cyrius 1.1.1, as published on PyPI, is under the [PolyForm Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0): use for a non-commercial purpose only, and no distribution of it or of changed copies. (Its source files still carry GPL-3.0 headers from before Illumina changed the licence in December 2022; the licence of the package is PolyForm Strict.) It has had no release since May 2021. You install it yourself, once, with `./scripts/setup.sh --cyrius ${GENOME_DIR}`; the pipeline does not ship it.
 
 ## What This Does
 
@@ -8,7 +8,7 @@ Calls CYP2D6 star alleles (diplotypes) from your WGS BAM using Illumina's Cyrius
 
 ## Why
 
-PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calling is limited for WGS data. Cyrius was purpose-built by Illumina to resolve CYP2D6 using read-depth patterns across the CYP2D6/CYP2D7 region. Running Cyrius separately gives you a CYP2D6 diplotype that you can cross-reference with PharmCAT's results.
+PharmCAT (step 7) calls no CYP2D6 from a VCF. Cyrius was purpose-built by Illumina to resolve CYP2D6 using read-depth patterns across the CYP2D6/CYP2D7 region. It is the second CYP2D6 caller beside pypgx (step 32): [step 36](36-pgx-consensus.md) passes a CYP2D6 call to PharmCAT only when the two agree. Without Cyrius, no CYP2D6 call reaches PharmCAT, because one depth-based caller alone is not enough to steer drug guidance.
 
 ## Tool
 
@@ -20,38 +20,50 @@ PharmCAT (step 7) handles most pharmacogenes well, but its internal CYP2D6 calli
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
-Cyrius is installed inside the container at runtime with `pip install -c /constraints.txt 'cyrius==1.1.1'`. The constraints file is `scripts/cyrius-constraints.txt`, mounted read-only; it pins Cyrius's dependencies (pysam, numpy, scipy, statsmodels and theirs) to versions resolved once on this image. No dedicated Cyrius Docker image is required. If pip fails (for example without network), its own error is in the step log.
+Cyrius is not in any image. `./scripts/setup.sh --cyrius ${GENOME_DIR}` installs it once, in this image, into `${GENOME_DIR}/tools/cyrius-1.1.1/`:
+
+```bash
+pip install --require-hashes --no-deps --only-binary :all: --target <dir> -r scripts/cyrius-constraints.txt
+```
+
+`scripts/cyrius-constraints.txt` pins Cyrius and every package it needs (pysam, numpy, scipy, statsmodels and theirs) with the sha256 of each wheel, so pip installs exactly those files: nothing resolved, nothing built from source. This install is the only part that uses the network. The step then runs `python3 -m cyrius` from that directory with no network, like every other step. The install records the image and the lock file it came from; when either changes, the step asks you to run `setup.sh --cyrius` again. No Cyrius image is published: one opt-in step under a non-commercial licence does not justify a registry image to maintain.
 
 ## Input
 
 - Sorted BAM with index from alignment (step 2):
   - `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`
   - `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai`
+- The Cyrius install of `./scripts/setup.sh --cyrius`
 
 ## Command
 
 ```bash
+./scripts/setup.sh --cyrius "$GENOME_DIR"   # once
 ./scripts/21-cyrius.sh your_name
 ```
 
+With `run-all.sh`, name it: `TOOLS=...,cyrius`. With Nextflow: `--tools ...,cyrius --cyrius_install ${GENOME_DIR}/tools/cyrius-1.1.1`.
+
 ## What the Script Does Internally
 
-1. Validates that the sorted BAM and its index exist
-2. Creates a manifest file listing the BAM path (Cyrius requires this)
-3. Installs Cyrius 1.1.1 in a Python 3.11 container and runs its `cyrius` command with `--genome 38` (GRCh38)
-4. Parses the output TSV to display the called diplotype
+1. Validates that the sorted BAM, its index and the Cyrius install exist
+2. Checks the depth at CYP2D6 against its flanks ([depth check](32-pypgx.md#cyp2d6-depth-check)), with `${MOSDEPTH_IMAGE}`
+3. Creates a manifest file listing the BAM path (Cyrius requires this) and runs `python3 -m cyrius --genome 38` (GRCh38) from the install, with no network
+4. When the depth check found multi-mapped reads, sets the call's Filter to `CYP2D6_depth_unreliable`: [step 36](36-pgx-consensus.md) then does not pass it on
+5. Parses the output TSV to display the called diplotype
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_cyp2d6.tsv` | Tab-delimited results with sample name, diplotype, and supporting evidence |
+| `${SAMPLE}_cyp2d6.tsv` | Tab-delimited results with sample name, diplotype, and Filter (`PASS`, a reason Cyrius gives, or `CYP2D6_depth_unreliable`) |
+| `${SAMPLE}_cyp2d6_depth_check.tsv` | The CYP2D6 depth check: status (`ok` or `unreliable`), its message and the four depths |
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/cyrius/`.
 
 ## Runtime
 
-~5-15 minutes (includes pip install overhead on first run).
+~5-15 minutes. The one-time install (`setup.sh --cyrius`) takes about a minute.
 
 ## Interpreting Results
 
@@ -80,7 +92,6 @@ Codeine, tramadol, oxycodone, tamoxifen, ondansetron, atomoxetine, most tricycli
 
 - Cyrius works best with 30X+ WGS data. Lower coverage may produce uncertain calls.
 - Rare hybrid alleles (e.g., *36, *68) may not be resolved.
-- The pip-install-at-runtime approach adds startup time and requires internet. If you run this frequently, consider building a custom Docker image with Cyrius pre-installed.
 - Cyrius only calls CYP2D6. For other pharmacogenes, rely on PharmCAT (step 7).
 - **Cyrius has not been updated since May 2021** (v1.1.1). A 2025 study (BCyrius, PMID 39901590) found Cyrius fails to call or miscalls 50/360 simulated samples (13.9%) due to its outdated star allele database. Consider Aldy as an alternative (see below).
 
@@ -108,13 +119,12 @@ docker run --rm --user root \
   "
 ```
 
-> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution. This is why it is documented here as an optional recommendation rather than replacing Cyrius in the pipeline script. A GPL-compatible alternative (pypgx) is available in step 32.
+> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution, the same kind of restriction as Cyrius's PolyForm Strict licence. That is why both stay outside a default run: Aldy is documented here only, and Cyrius is opt-in. A GPL-compatible caller (pypgx) is step 32.
 
 ## Notes
 
 - The script creates a manifest file listing the BAM path, then runs Cyrius in a single container invocation. It exits with an error when Cyrius writes no result file.
-- Cross-reference the Cyrius diplotype with PharmCAT's CYP2D6 call and pypgx (step 32). Cyrius can fail on some WGS samples due to CYP2D7 pseudogene homology; pypgx handles this more robustly. If all three disagree, Aldy (see above) has the broadest star allele coverage among available callers.
-- Step 27 (CPIC lookup) currently reads PharmCAT JSON only. To translate a Cyrius diplotype into drug recommendations, consult [CPIC guidelines](https://cpicpgx.org/guidelines/) manually.
+- [Step 36](36-pgx-consensus.md) compares the Cyrius diplotype with pypgx's (step 32). Only when both give the same diplotype and the depth check passed does PharmCAT get it, and with it the CPIC drug recommendations of step 27. Otherwise CYP2D6 is `indeterminate`, and the CPIC report says what each caller said. Cyrius can fail on some WGS samples due to CYP2D7 pseudogene homology. If the callers disagree, Aldy (see above) has the broadest star allele coverage among available callers.
 
 ## Links
 

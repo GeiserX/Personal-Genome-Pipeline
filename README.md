@@ -25,9 +25,9 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Takes FASTQ, BAM, VCF or Illumina ORA from any vendor (Nebula, Dante Labs, Sequencing.com, Novogene, DRAGEN), plus long reads from Nanopore and PacBio HiFi.
 - Calls SNPs and indels with DeepVariant, and structural and copy number variants with Manta, Delly and CNVpytor merged into a consensus.
 - Screens ClinVar and runs CPSR cancer predisposition panels, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritization.
-- Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs), Cyrius and CPIC drug recommendations.
-- Repeat expansions, HLA typing, telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
-- Every tool runs in a Docker container with CPU and memory limits, pinned by tag or digest in `versions.env`. One exception: Cyrius is installed from PyPI at run time (version and dependencies pinned). No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
+- Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs) and CPIC drug recommendations. PharmCAT gets T1K's HLA types, and a CYP2D6 call only when pypgx and Cyrius (opt-in, non-commercial licence) agree.
+- Repeat expansions, HLA typing (KIR opt-in), SMN1/SMN2 copy number (opt-in), telomere length, mitochondrial haplogroup and heteroplasmy, ROH, ancestry and polygenic risk scores.
+- Every tool runs in a Docker container with CPU and memory limits and no network, pinned by tag or digest in `versions.env`. The opt-in Cyrius is installed once by `setup.sh --cyrius` from PyPI, every file checked against its hash, and then runs offline too. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
 - One Nextflow DSL2 pipeline from FASTQ, BAM or VCF to the report, and every step also as a bash script you can run on its own.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 

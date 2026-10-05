@@ -266,7 +266,7 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38_no_alt_
 
 # With the tools that need databases
 nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38_no_alt_analysis_set.fasta \
-    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,stranger,pypgx,ancestry' \
+    --tools 'pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,hla_typing,telomere_hunter,mosdepth,mito_variants,html_report,multiqc,vep,slivar,clinical_filter,cpsr,clinvar,expansion_hunter,stranger,pypgx,ancestry' \
     --vep_cache /path/to/vep_cache \
     --pcgr_data /path/to/pcgr_data/20260620 \
     --vep_cache_cpsr /path/to/vep_cache \
