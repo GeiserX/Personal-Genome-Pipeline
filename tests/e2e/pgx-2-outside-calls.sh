@@ -2,12 +2,27 @@
 # PharmCAT gets T1K's HLA types as outside calls, and the CPIC report has an
 # HLA section sourced from the outside-call file.
 #
-# Bash: step 36 on HG002 (HLA from case bash-step-08, pypgx from case 38, no
-# Cyrius), then steps 07 and 27. pypgx alone is one caller, so CYP2D6 stays
-# indeterminate and does not reach PharmCAT.
+# Bash: steps 36, 07 and 27 on HG002pgx, a copy of HG002's VCF, gVCF, HLA
+# types (case bash-step-08) and pypgx output (case 38), no Cyrius; a copy, so
+# the later cases still read HG002's own PharmCAT report of case 31. pypgx
+# alone is one caller, so CYP2D6 stays indeterminate and does not reach
+# PharmCAT.
 # Nextflow: the leg of case nextflow-from-fastq-2 (pharmcat, cpic and
 # hla_typing) ran PGX_CONSENSUS before PHARMCAT; its outputs are checked here.
 . "$(dirname "$0")/lib.sh"
+
+SAMPLE_SRC=$SAMPLE
+SAMPLE=${SAMPLE_SRC}pgx
+rm -rf "${GENOME_DIR:?}/${SAMPLE}"
+mkdir -p "${GENOME_DIR}/${SAMPLE}"
+for d in vcf hla_t1k pypgx; do
+  cp -r "${GENOME_DIR}/${SAMPLE_SRC}/${d}" "${GENOME_DIR}/${SAMPLE}/${d}"
+  for f in "${GENOME_DIR}/${SAMPLE}/${d}/${SAMPLE_SRC}"[._]*; do
+    [ -e "$f" ] && mv "$f" "${f%/*}/${SAMPLE}${f##*/"${SAMPLE_SRC}"}"
+  done
+done
+rm -f "${GENOME_DIR}/${SAMPLE}/vcf/"*report* "${GENOME_DIR}/${SAMPLE}/vcf/"*.json
+find "${GENOME_DIR}/${SAMPLE}" -maxdepth 2 -type f | head -40
 
 run_step 36-pgx-consensus.sh "$SAMPLE"
 check_step_exit 36-pgx-consensus.sh
