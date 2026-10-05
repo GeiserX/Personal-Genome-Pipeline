@@ -155,7 +155,7 @@ workflow BAM_ANALYSIS {
             .map { meta, f, id_file -> [meta.id, meta, id_file] }
             .join(VERIFYBAMID2.out.selfsm.map { meta, selfsm, marker_check -> [meta.id, selfsm, marker_check] })
             .map { _id, meta, id_file, selfsm, marker_check -> [meta, id_file, selfsm, marker_check] }
-        SAMPLE_QC(ch_qc_in, SOMALIER_RELATE.out.samples.first(), SOMALIER_RELATE.out.pairs.first())
+        SAMPLE_QC(ch_qc_in, SOMALIER_RELATE.out.samples, SOMALIER_RELATE.out.pairs)
         ch_sample_qc = SAMPLE_QC.out.table.map { meta, tsv ->
             def qc = [:]
             tsv.text.readLines().drop(1).each { line ->
