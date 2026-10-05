@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # sample_qc in the Nextflow pipeline (SOMALIER, SOMALIER_RELATE, VERIFYBAMID2,
 # SAMPLE_QC) on the VCF+BAM row of cases 20 and 21, with the sites case qc-1
-# wrote (somalier's plus the slice's own chrX calls) and the panel setup.sh
-# installed there:
+# wrote (somalier's on the fixture's contigs, plus the slice's own chrX
+# calls) and the panel qc-1 cut to those contigs:
 #   - declared female: INDEXCOV reads the slices as female (case 34) and lets
 #     the row through, but somalier finds HG002 male from the reads and stops
 #     the run, naming both sexes; the report is never written;
@@ -16,7 +16,8 @@ command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
 
 G="$GENOME_DIR"
 XS="${G}/reference/somalier/sites_slice_chrX.vcf"
-PANEL_DIR="${G}/reference/verifybamid2"
+# Case qc-1 cut the panel to the fixture reference's contigs here.
+PANEL_DIR="${G}/reference/verifybamid2_fixture"
 check "case qc-1 wrote the sites with the slice's chrX calls" test -s "$XS"
 
 # nf_run NAME SEX [ARGS...]: one run on a VCF+BAM row declaring SEX. Sets RC,

@@ -11,7 +11,11 @@
 #   - contamination: reads of HG001, an unrelated GIAB sample streamed from
 #     GIAB's GRCh38 BAM, added to HG002's until they are about 10% of the mix:
 #     FREEMIX rises above 0.03, which warns and never stops the step.
-# Writes ${GENOME_DIR}/reference/somalier/sites_slice_chrX.vcf for case qc-2.
+# The fixture's reference holds 14 of GRCh38's contigs, and somalier stops on
+# a site whose contig the FASTA lacks ("sequence chr11 not found in fasta"),
+# so every run here reads the installed sites and panel cut to those contigs
+# (SOMALIER_SITES, VERIFYBAMID2_PANEL). They and the sites with the slice's
+# chrX calls stay under reference/ for case qc-2.
 . "$(dirname "$0")/lib.sh"
 
 G="$GENOME_DIR"
@@ -33,6 +37,31 @@ check_ge "somalier sites" "$(gzip -dc "$SITES" 2>/dev/null | grep -vc '^#' || tr
 for e in UD mu bed; do
   check_eq "VerifyBamID2 panel .${e} lines" "$(wc -l < "${PANEL}.${e}" 2>/dev/null | tr -d ' ')" 100000
 done
+
+# The installed files, cut to the fixture reference's contigs.
+FIX_SITES="${G}/reference/somalier/sites_fixture.vcf"
+FIX_PANEL="${G}/reference/verifybamid2_fixture/1000g.phase3.100k.b38.vcf.gz.dat"
+mkdir -p "$(dirname "$FIX_PANEL")"
+python3 - "${REF}.fai" "$SITES" "$FIX_SITES" "$PANEL" "$FIX_PANEL" <<'PY'
+import gzip, sys
+fai, sites, fix_sites, panel, fix_panel = sys.argv[1:]
+contigs = {l.split("\t")[0] for l in open(fai)}
+with gzip.open(sites, "rt") as f, open(fix_sites, "w") as out:
+    for l in f:
+        if l.startswith("#") or l.split("\t", 1)[0] in contigs:
+            out.write(l)
+bed = open(panel + ".bed").read().splitlines()
+keep = [i for i, l in enumerate(bed) if l.split("\t", 1)[0] in contigs]
+for ext in ("bed", "mu", "UD"):
+    lines = open(panel + "." + ext).read().splitlines()
+    assert len(lines) == len(bed), ext
+    with open(fix_panel + "." + ext, "w") as out:
+        out.writelines(lines[i] + "\n" for i in keep)
+print(len(keep), "panel markers on the fixture's contigs")
+PY
+check_ge "somalier sites on the fixture's contigs" "$(grep -vc '^#' "$FIX_SITES" 2>/dev/null || true)" 9000
+check_ge "panel markers on the fixture's contigs" "$(wc -l < "${FIX_PANEL}.bed" 2>/dev/null | tr -d ' ')" 40000
+export SOMALIER_SITES="$FIX_SITES" VERIFYBAMID2_PANEL="$FIX_PANEL"
 
 # --- 2. the clean sample -----------------------------------------------------------------
 run_step 33-sample-qc.sh "$SAMPLE"
@@ -58,12 +87,12 @@ bcf view -H -f PASS -v snps -r chrX:2781480-155701382 "${SAMPLE}/vcf/${SAMPLE}.v
   | awk -F'\t' -v OFS='\t' '{ split($5, a, ","); print $1, $2, ".", $4, a[1], ".", "PASS", "AF=0.5" }' \
   > "${CASE_TMP}/x_sites.tsv"
 check_ge "chrX SNVs of case 21 outside the PARs" "$(wc -l < "${CASE_TMP}/x_sites.tsv" | tr -d ' ')" 20
-python3 - "$SITES" "${CASE_TMP}/x_sites.tsv" "${REF}.fai" "$XS" <<'PY'
-import gzip, sys
+python3 - "$FIX_SITES" "${CASE_TMP}/x_sites.tsv" "${REF}.fai" "$XS" <<'PY'
+import sys
 sites, extra, fai, out = sys.argv[1:]
 order = {l.split("\t")[0]: i for i, l in enumerate(open(fai))}
 head, recs = [], []
-for l in gzip.open(sites, "rt"):
+for l in open(sites):
     if l.startswith("##"):
         head.append(l)
     elif l.startswith("#"):
