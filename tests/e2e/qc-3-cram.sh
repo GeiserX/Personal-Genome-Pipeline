@@ -15,6 +15,10 @@
 G="$GENOME_DIR"
 C="${SAMPLE}cram"
 A="${G}/${C}/aligned"
+# The folder is this case's alone: start from nothing (a run the e2e timeout
+# stopped can leave one behind) and remove it however the case ends.
+in_genome "$BCFTOOLS_IMAGE" rm -rf "$C"
+trap 'in_genome "$BCFTOOLS_IMAGE" rm -rf "$C"' EXIT
 mkdir -p "$A"
 ln -f "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${A}/${C}_sorted.bam"
 ln -f "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" "${A}/${C}_sorted.bam.bai"
@@ -148,7 +152,5 @@ if command -v nextflow >/dev/null; then
 else
   fail "nextflow is not on PATH"
 fi
-
-in_genome "$BCFTOOLS_IMAGE" rm -rf "$C"
 
 finish

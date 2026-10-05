@@ -10,7 +10,8 @@
 # VerifyBamID2 failure, or missing data, stops the step.
 # Step 34: a CRAM whose flagstat differs from the BAM's, or that fails
 # quickcheck, is removed and the BAM kept, also with --delete-bam; the BAM is
-# deleted only after the check passed; --restore refuses to write over a BAM.
+# deleted only after the check passed; --restore refuses to write over a BAM
+# and leaves no partial BAM when it fails.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 # shellcheck source=../../versions.env
@@ -65,7 +66,8 @@ case "$*" in
   "samtools view"*" -C "*)
     FLAG=-o; h=$(host_path "$(arg "$@")"); printf 'fake cram' > "$h" ;;
   "samtools view"*" -b "*)
-    FLAG=-o; h=$(host_path "$(arg "$@")"); printf 'fake bam' > "$h" ;;
+    FLAG=-o; h=$(host_path "$(arg "$@")"); printf 'fake bam' > "$h"
+    if [ -n "${FAKE_VIEW_FAIL:-}" ]; then echo "samtools view: disk full" >&2; exit 1; fi ;;
   "samtools index"*)
     for a in "$@"; do last=$a; done
     h=$(host_path "$last"); case "$h" in *.cram) : > "${h}.crai" ;; *) : > "${h}.bai" ;; esac ;;
@@ -155,6 +157,10 @@ output_has cram-restore-again 'exists already; there is nothing to restore'
 rm -f "${A}/sample1_sorted.bam" "${A}/sample1_sorted.bam.bai"
 FAKE_CRAM_READS=999 run_expect 1 cram-restore-differs "${SCRIPTS}/34-cram-archive.sh" sample1 --restore
 [ ! -e "${A}/sample1_sorted.bam" ] && [ ! -e "${A}/sample1_sorted.part.bam" ] || fail "--restore kept a BAM that does not match the CRAM"
+
+FAKE_VIEW_FAIL=1 run_expect 1 cram-restore-write-fails "${SCRIPTS}/34-cram-archive.sh" sample1 --restore
+output_has cram-restore-write-fails 'samtools could not write the BAM from the CRAM'
+[ ! -e "${A}/sample1_sorted.part.bam" ] || fail "a failed --restore left its partial BAM"
 
 run_expect 2 cram-bad-option "${SCRIPTS}/34-cram-archive.sh" sample1 --delete
 echo "PASS: steps 33 and 34"

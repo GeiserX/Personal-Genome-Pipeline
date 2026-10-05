@@ -36,7 +36,7 @@ The check is that the CRAM passes `samtools quickcheck` (a CRAM cut short has no
 
 `--restore` does the same in reverse: the BAM is written under a `.part` name, checked against the CRAM, and moved into place. It refuses to write over a BAM that exists.
 
-In Nextflow, `cram_archive` in `--tools` runs the same conversion and check (`CRAM_ARCHIVE`) for every BAM of the run and publishes `<outdir>/<sample>/aligned/<sample>_sorted.cram`. It never deletes anything: delete the BAM yourself once the CRAM is there, or run this script on it.
+In Nextflow, `cram_archive` in `--tools` runs the same conversion and check (`CRAM_ARCHIVE`) for every BAM of the run, except the rows given as CRAM, which have one already, and publishes `<outdir>/<sample>/aligned/<sample>_sorted.cram`. It never deletes anything: delete the BAM yourself once the CRAM is there, or run this script on it.
 
 ## Output Files
 | File | Description |

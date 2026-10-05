@@ -75,20 +75,23 @@ if [ "$MODE" = --restore ]; then
     exit 1
   fi
   echo "Writing ${BAM} from ${CRAM}..."
+  # fail_restore WHY: remove the partial BAM and its index, then stop.
+  fail_restore() {
+    rm -f "${ALN}/${SAMPLE}_sorted.part.bam" "${ALN}/${SAMPLE}_sorted.part.bam.bai" "${ALN}/${SAMPLE}_sorted.part.bam.flagstat"
+    echo "ERROR: $1 Nothing was kept." >&2
+    exit 1
+  }
   rm -f "${ALN}/${SAMPLE}_sorted.part.bam" "${ALN}/${SAMPLE}_sorted.part.bam.bai"
   run_in --cpus "$THREADS" --memory 4g "$SAMTOOLS_IMAGE" \
     samtools view -@ "$THREADS" -b --reference "$REF_FASTA_C" \
-      -o "${C}.part.bam" "${C}.cram"
+      -o "${C}.part.bam" "${C}.cram" || fail_restore "samtools could not write the BAM from the CRAM."
   run_in --cpus "$THREADS" --memory 2g "$SAMTOOLS_IMAGE" \
-    samtools index -@ "$THREADS" "${C}.part.bam"
-  flagstat "${C}.cram" "${ALN}/${SAMPLE}_sorted.cram.flagstat"
-  flagstat "${C}.part.bam" "${ALN}/${SAMPLE}_sorted.part.bam.flagstat"
-  if ! run_in "$SAMTOOLS_IMAGE" samtools quickcheck -v "${C}.part.bam" \
-     || ! same_reads "${ALN}/${SAMPLE}_sorted.part.bam.flagstat" "${ALN}/${SAMPLE}_sorted.cram.flagstat"; then
-    rm -f "${ALN}/${SAMPLE}_sorted.part.bam" "${ALN}/${SAMPLE}_sorted.part.bam.bai" "${ALN}/${SAMPLE}_sorted.part.bam.flagstat"
-    echo "ERROR: the BAM written from the CRAM does not match it; nothing was kept." >&2
-    exit 1
-  fi
+    samtools index -@ "$THREADS" "${C}.part.bam" || fail_restore "samtools could not index the BAM."
+  flagstat "${C}.cram" "${ALN}/${SAMPLE}_sorted.cram.flagstat" || fail_restore "samtools flagstat failed on the CRAM."
+  flagstat "${C}.part.bam" "${ALN}/${SAMPLE}_sorted.part.bam.flagstat" || fail_restore "samtools flagstat failed on the BAM."
+  run_in "$SAMTOOLS_IMAGE" samtools quickcheck -v "${C}.part.bam" || fail_restore "The BAM fails samtools quickcheck."
+  same_reads "${ALN}/${SAMPLE}_sorted.part.bam.flagstat" "${ALN}/${SAMPLE}_sorted.cram.flagstat" \
+    || fail_restore "The BAM written from the CRAM does not hold the same reads."
   mv -f "${ALN}/${SAMPLE}_sorted.part.bam.bai" "${BAM}.bai"
   mv -f "${ALN}/${SAMPLE}_sorted.part.bam" "$BAM"
   rm -f "${ALN}/${SAMPLE}_sorted.part.bam.flagstat"
