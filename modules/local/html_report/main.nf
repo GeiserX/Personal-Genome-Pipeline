@@ -3,9 +3,9 @@
     HTML_REPORT — The sample's HTML report, rendered by bin/render_report.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     The same code scripts/24-html-report.sh runs: bin/collect_summary.py
-    reads the step outputs into <id>_summary.json, and render_report.py
-    writes the report from it, so a number on the Nextflow report is the
-    number the bash report shows for the same file.
+    reads the step outputs into summary.json (the bash step's name for it),
+    and render_report.py writes the report from it, so a number on the
+    Nextflow report is the number the bash report shows for the same file.
 
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
@@ -29,7 +29,7 @@ process HTML_REPORT {
 
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
-    tuple val(meta), path("${meta.id}_summary.json"), emit: summary
+    tuple val(meta), path("summary.json"),             emit: summary
     path "versions.yml",                              emit: versions
 
     when:
@@ -64,7 +64,7 @@ process HTML_REPORT {
     render_report.py \\
         --sample ${id} \\
         --sample-dir "\$S" \\
-        --json ${id}_summary.json \\
+        --json summary.json \\
         --declared-sex "${meta.sex ?: ''}" \\
         -o ${id}_report.html
 
@@ -73,7 +73,7 @@ process HTML_REPORT {
 
     stub:
     """
-    touch ${meta.id}_report.html ${meta.id}_summary.json
+    touch ${meta.id}_report.html summary.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

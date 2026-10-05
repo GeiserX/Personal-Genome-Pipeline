@@ -76,7 +76,7 @@ check "VERIFYBAMID2 published its selfSM" test -s "${R}/qc/verifybamid2/${SAMPLE
 check "SOMALIER_RELATE published its tables" test -s "${OUT}/somalier/somalier.samples.tsv"
 
 HTML="${R}/${SAMPLE}_report.html"
-JSON="${R}/${SAMPLE}_summary.json"
+JSON="${R}/summary.json"
 check "the report exists" test -s "$HTML"
 check "summary.json validates against the schema" \
   python3 "${REPO}/tests/schema/validate.py" "${REPO}/tests/schema/summary.schema.json" "$JSON"
