@@ -67,3 +67,4 @@ Seconds. PharmCAT (step 7) runs again afterwards, a few minutes.
 - The two diplotypes must be the same up to the order of the alleles. The one passed to PharmCAT is pypgx's.
 - PharmCAT turns the HLA alleles into its own phenotypes (`*57:01 positive`, `*58:01 negative` and so on) and gives the drug guidance for them; step 27 marks those genes `[outside call]`.
 - Step 7 run before this step gives a report without the outside calls. Run step 7 again after it, as the command order above does.
+- Steps 8, 21 and 32 delete this step's two files when they start: a call made from an earlier result never reaches PharmCAT. After running any of them again, run this step and step 7 again.

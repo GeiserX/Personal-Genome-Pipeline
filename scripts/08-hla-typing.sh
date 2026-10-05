@@ -46,6 +46,12 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
+# This step feeds step 36's outside calls for PharmCAT. Remove the ones made
+# from an earlier result, so step 07 never reads a call this run has not
+# confirmed; step 36 writes them again.
+rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
+  "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+
 # The HLA database and the gene coordinates are installed by setup.sh. Without
 # them there is nothing to type against: the step says so and stops without
 # failing, as other steps do when their data is not installed.

@@ -41,6 +41,12 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
+# This step feeds step 36's outside calls for PharmCAT. Remove the ones made
+# from an earlier result, so step 07 never reads a call this run has not
+# confirmed; step 36 writes them again.
+rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
+  "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+
 # Validate pypgx-bundle (required for Beagle phasing panels and CNV models)
 PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
 if [ ! -d "$PYPGX_BUNDLE" ]; then

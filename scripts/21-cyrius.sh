@@ -33,6 +33,12 @@ OUTDIR="${GENOME_DIR}/${SAMPLE}/cyrius"
 CYRIUS_DIR="${GENOME_DIR}/tools/cyrius-${CYRIUS_VERSION}"
 mkdir -p "$OUTDIR"
 
+# This step feeds step 36's outside calls for PharmCAT. Remove the ones made
+# from an earlier result, so step 07 never reads a call this run has not
+# confirmed; step 36 writes them again.
+rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
+  "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+
 # Validate inputs
 for FILE in "$BAM" "$BAI"; do
   if [ ! -f "$FILE" ]; then
@@ -83,6 +89,8 @@ DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || tr
 # [2/3] Cyrius, from the install setup.sh made, with no network. The manifest
 # (the BAM path) is created inside the container.
 echo "[2/3] Running Cyrius CYP2D6 caller..."
+RESULT_FILE="${OUTDIR}/${SAMPLE}_cyp2d6.tsv"
+rm -f "$RESULT_FILE"   # a failed run must not leave the last one's call behind
 # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
 run_in --cpus 4 --memory 8g -w /tmp \
   "${PYTHON_IMAGE}" \
@@ -99,7 +107,6 @@ run_in --cpus 4 --memory 8g -w /tmp \
 echo ""
 echo "[3/3] Parsing results..."
 
-RESULT_FILE="${OUTDIR}/${SAMPLE}_cyp2d6.tsv"
 if [ ! -f "$RESULT_FILE" ]; then
   echo "ERROR: Cyrius finished but wrote no ${RESULT_FILE}. Check the messages above." >&2
   exit 1
