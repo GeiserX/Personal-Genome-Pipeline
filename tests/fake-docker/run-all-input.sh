@@ -10,6 +10,10 @@
 #   nothing                 -> exit 1, nextflow not started
 #   VCF only                -> a VCF row; the steps that read a BAM are
 #                              skipped ("no BAM"), not recorded ok
+#   a file without its index is not an input:
+#     VCF without .tbi      -> a BAM row (called again)
+#     BAM without .bai      -> the FASTQ row (aligned again)
+#     neither index, no FASTQ -> exit 1, nextflow not started
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -64,4 +68,20 @@ for s in 16 16b 04 19 28; do
 done
 grep -qF -- " $(printf '%q ' --tools pharmcat,cpic,roh,mito_haplogroup,clinvar)--" <<<"$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1)" \
   || fail "a BAM step is in --tools: $(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1)"
+# The index decides: a BAM or a VCF without its index is not an input
+seed_sample "$G" s5
+mkdir -p "${G}/s5/fastq"
+for r in R1 R2; do printf 'placeholder\n' > "${G}/s5/fastq/s5_${r}.fastq.gz"; done
+B="${G}/s5/aligned/s5_sorted.bam" V="${G}/s5/vcf/s5.vcf.gz"
+rm -f "${V}.tbi"
+run_expect 0 notbi "${SCRIPTS}/run-all.sh" s5 male
+[ "$(row s5)" = "s5,,,${B},${B}.bai,,,male" ] || fail "a VCF without its index was used: $(row s5)"
+rm -f "${B}.bai"
+run_expect 0 nobai "${SCRIPTS}/run-all.sh" s5 male
+[ "$(row s5)" = "s5,${G}/s5/fastq/s5_R1.fastq.gz,${G}/s5/fastq/s5_R2.fastq.gz,,,,,male" ] || fail "a BAM without its index was used: $(row s5)"
+rm -rf "${G}/s5/fastq"
+n=$(calls)
+run_expect 1 noindex "${SCRIPTS}/run-all.sh" s5 male
+output_has noindex 'ERROR: no input for s5'
+[ "$(calls)" -eq "$n" ] || fail "nextflow started on a BAM and a VCF without their indexes"
 echo "The samplesheet follows the inputs and stays the same across a rerun."
