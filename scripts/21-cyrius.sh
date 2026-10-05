@@ -32,6 +32,9 @@ BAI="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai"
 OUTDIR="${GENOME_DIR}/${SAMPLE}/cyrius"
 CYRIUS_DIR="${GENOME_DIR}/tools/cyrius-${CYRIUS_VERSION}"
 mkdir -p "$OUTDIR"
+# A run that stops anywhere below must not leave the last run's call behind.
+RESULT_FILE="${OUTDIR}/${SAMPLE}_cyp2d6.tsv"
+rm -f "$RESULT_FILE"
 
 # This step feeds step 36's outside calls for PharmCAT. Remove the ones made
 # from an earlier result, so step 07 never reads a call this run has not
@@ -89,8 +92,6 @@ DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || tr
 # [2/3] Cyrius, from the install setup.sh made, with no network. The manifest
 # (the BAM path) is created inside the container.
 echo "[2/3] Running Cyrius CYP2D6 caller..."
-RESULT_FILE="${OUTDIR}/${SAMPLE}_cyp2d6.tsv"
-rm -f "$RESULT_FILE"   # a failed run must not leave the last one's call behind
 # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
 run_in --cpus 4 --memory 8g -w /tmp \
   "${PYTHON_IMAGE}" \
