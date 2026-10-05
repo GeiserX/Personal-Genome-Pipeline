@@ -80,7 +80,7 @@ The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in i
 | `same_person_as` set | Two samples of the run share their genome (relatedness 0.9 or more) | A duplicate row, a resequenced sample, an identical twin, or a swap |
 
 ## Runtime
-Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for VerifyBamID2), not the whole file. On CI's fixture slice the step takes about a minute; a whole genome has not been timed here.
+Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for VerifyBamID2), not the whole file. On CI's fixture slices one run of the step takes a few seconds (the e2e case runs it six times, and streams HG001's reads, in 58 seconds); a whole genome has not been timed here.
 
 ## Notes
 - The CI fixture holds only small slices of HG002, with 2 of somalier's chrX sites and 320 of VerifyBamID2's markers: somalier reports `unknown` there, and VerifyBamID2 runs without its marker check. The end-to-end case adds sites at the slice's own chrX calls to show the sex check stop a female-declared HG002, and mixes about 10% of HG001's reads into HG002 to show FREEMIX rise above 0.03.

@@ -4,7 +4,7 @@
 Writes the sample's alignments as CRAM beside the BAM, checks that the CRAM holds exactly the same reads, and, only when you ask and only after that check passed, deletes the BAM. `--restore` writes the BAM back from the CRAM.
 
 ## Why
-A 30x genome keeps 30 to 80 GB of BAM after the analysis is done. A CRAM stores each read as its difference from the reference and is about half that size or less, with nothing lost: every read, base quality, flag and tag is still there. Most people keep their alignments to rerun a step when a tool or database improves; a CRAM keeps that option for half the disk.
+A 30x genome keeps 30 to 80 GB of BAM after the analysis is done. A CRAM stores each read as its difference from the reference and is about half that size or less (on the CI fixture, 68 MB of CRAM for 133 MB of BAM), with nothing lost: every read, base quality, flag and tag is still there. Most people keep their alignments to rerun a step when a tool or database improves; a CRAM keeps that option for half the disk.
 
 The price is the reference: a CRAM can only be read with the same FASTA it was written with. Keep `reference/GRCh38_no_alt_analysis_set.fasta` (or your `REF_FASTA`) as long as you keep the CRAM. samtools checks each contig's MD5 when it reads a CRAM and stops with an error on a different file, so a wrong reference cannot give silently wrong reads.
 
