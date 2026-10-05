@@ -33,7 +33,12 @@ UNRELIABLE = ("CYP2D6 copy number unreliable: reads are multi-mapped "
               "(was this BAM aligned to a reference with ALT contigs?)")
 NO_DEPTH = ("CYP2D6 copy number unreliable: no reads in the flanks of CYP2D6 "
             "(chr22:42.05-42.25 Mb), so its depth cannot be compared")
-MAX_RATIO = 0.6
+# A depth fit for a copy-number call has at least this share of its reads at
+# MAPQ >= 1, at CYP2D6 and in the flanks.
+MIN_MAPQ1_SHARE = 0.6
+# Below this ratio of CYP2D6 to flank depth (all reads) the gene has too few
+# reads for its MAPQ share to mean anything: both copies deleted (*5/*5).
+MIN_GENE_RATIO = 0.15
 
 
 def read_regions(path):
@@ -61,12 +66,27 @@ def read_regions(path):
 
 
 def assess(gene_all, gene_q1, flank_all, flank_q1):
-    """(status, message) for the four mean depths."""
+    """(status, message) for the four mean depths.
+
+    Unreliable when more than 40% of the reads at CYP2D6 or in its flanks have
+    MAPQ 0: the aligner placed them on more than one sequence. A deletion
+    leaves few reads at CYP2D6, but the ones it leaves map uniquely and the
+    flanks are untouched, so it passes.
+
+    Why not compare CYP2D6 with the flanks at MAPQ >= 1 against 0.6, as first
+    planned: on the fixture's CYP2D slice (ALT depth A/B run 37177862776) the
+    no-ALT BAM has CYP2D6/flanks 0.62 for all reads and 0.57 at MAPQ >= 1, the
+    normal value of the locus, which that rule flags; the with-ALT BAM places
+    a third of the primary alignments on chr22_KI270879v1_alt, so all-reads
+    depth falls too (0.28) and that rule passes it. The MAPQ >= 1 share
+    separates the two: 0.91 at CYP2D6 without ALT contigs, 0.005 with them.
+    """
     if flank_all <= 0:
         return "unreliable", NO_DEPTH
     ratio_all = gene_all / flank_all
-    ratio_q1 = gene_q1 / flank_q1 if flank_q1 > 0 else 0.0
-    if ratio_q1 < MAX_RATIO and ratio_all >= MAX_RATIO:
+    share_gene = gene_q1 / gene_all if gene_all > 0 else 1.0
+    share_flank = flank_q1 / flank_all
+    if share_flank < MIN_MAPQ1_SHARE or (ratio_all >= MIN_GENE_RATIO and share_gene < MIN_MAPQ1_SHARE):
         return "unreliable", UNRELIABLE
     return "ok", "CYP2D6 depth is fit for a copy-number call"
 
