@@ -17,7 +17,10 @@
 # Environment:
 #   PARASCOPY_POPULATION  model of AFR, AMR, EAS, EUR or SAS (default EUR)
 #   PARASCOPY_DEPTH_BED   background windows (one size) for a BAM that covers
-#                         part of the genome; default Parascopy's GRCh38 set
+#                         part of the genome; default Parascopy's GRCh38 set.
+#                         With it the depth is not stratified by GC content
+#                         (--no-gc): a few regions rarely span the GC range
+#                         Parascopy's GC model needs, and it stops on them.
 #
 # Output: ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_smn_copy_number.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_parascopy/ (Parascopy's own files)
@@ -52,7 +55,7 @@ if [ ! -f "$TABLE" ] || [ ! -f "$MODEL" ]; then
 fi
 BACKGROUND=(-g GRCh38)
 if [ -n "${PARASCOPY_DEPTH_BED:-}" ]; then
-  BACKGROUND=(-b "$(cpath "$PARASCOPY_DEPTH_BED")")
+  BACKGROUND=(-b "$(cpath "$PARASCOPY_DEPTH_BED")" --no-gc)
   echo "Background windows: ${PARASCOPY_DEPTH_BED}"
 fi
 echo "Model: ${POP} (${MODEL})"

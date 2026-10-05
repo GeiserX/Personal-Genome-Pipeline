@@ -15,7 +15,8 @@
 
     Background depth comes from Parascopy's own GRCh38 windows, or from
     --parascopy_depth_bed (windows of one size) for a BAM that covers only
-    part of the genome.
+    part of the genome, without GC stratification (--no-gc): a few regions
+    rarely span the GC range Parascopy's GC model needs, and it stops on them.
 
     Equivalent to: scripts/35-paralogs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,7 +44,7 @@ process PARASCOPY {
     task.ext.when == null || task.ext.when
 
     script:
-    def background = depth_bed ? "-b ${depth_bed}" : '-g GRCh38'
+    def background = depth_bed ? "-b ${depth_bed} --no-gc" : '-g GRCh38'
     def model = "${parascopy_data}/models_GRCh38_1KGP/${params.parascopy_population}/SMN1.gz"
     """
     [ -f "${model}" ] || { echo "ERROR: no Parascopy model ${model} (populations: AFR AMR EAS EUR SAS)" >&2; exit 1; }
