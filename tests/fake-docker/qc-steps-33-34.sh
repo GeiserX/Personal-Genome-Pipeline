@@ -4,7 +4,8 @@
 # (bin/collect_summary.py sample-qc) for real on the host.
 #
 # Step 33: a sex somalier infers that differs from the declared one stops the
-# step; SEX_CHECK=warn goes on; a sex somalier cannot tell is not checked;
+# step; SEX_CHECK=warn goes on; a sex somalier cannot tell, or reads as X and Y
+# disagreeing (-2), is not checked;
 # FREEMIX above 0.03 warns and exits 0; "Insufficient Available markers"
 # reruns VerifyBamID2 with --DisableSanityCheck and records it; any other
 # VerifyBamID2 failure, or missing data, stops the step.
@@ -102,6 +103,10 @@ output_has qc-match 'Sex check: OK'
 
 FAKE_SOMALIER_SEX=-9 run_expect 0 qc-unknown "${SCRIPTS}/33-sample-qc.sh" sample1 female
 output_has qc-unknown 'Sex check: not done \(somalier could not tell the sex'
+
+# somalier's -2: chrX heterozygous like a female, yet chrY has reads
+FAKE_SOMALIER_SEX=-2 run_expect 0 qc-x-and-y "${SCRIPTS}/33-sample-qc.sh" sample1 female
+output_has qc-x-and-y 'Sex check: not done \(chrX is heterozygous like a female sample but chrY has reads'
 
 FAKE_SOMALIER_SEX=2 FAKE_FREEMIX=0.12 run_expect 0 qc-contaminated "${SCRIPTS}/33-sample-qc.sh" sample1 female
 output_has qc-contaminated 'FREEMIX 0\.1200 is above 0\.03: about 12% of the reads may come'

@@ -543,6 +543,10 @@ def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_s
     declared = (declared_sex or "").lower() or None
     if not declared:
         sex_check, why = "not_checked", "no declared sex"
+    elif row.get("sex", "") == "-2":
+        sex_check = "not_checked"
+        why = ("chrX is heterozygous like a female sample but chrY has reads: "
+               "a sex-chromosome aneuploidy or a mixed sample")
     elif inferred == "unknown":
         sex_check = "not_checked"
         why = (f"somalier could not tell the sex from {row.get('X_n', '0')} chrX sites "
@@ -747,7 +751,7 @@ def sample_qc_main(argv):
     ap.add_argument("--sample", required=True)
     ap.add_argument("--somalier-samples", required=True, help="somalier relate's samples.tsv")
     ap.add_argument("--somalier-pairs", help="somalier relate's pairs.tsv (other samples of the run)")
-    ap.add_argument("--somalier-id", help="the sample's name in somalier's files (its @RG SM; default --sample)")
+    ap.add_argument("--somalier-id", help="the sample's name in somalier's files (the BAM's @RG SM in the bash step, the samplesheet id in Nextflow; default --sample)")
     ap.add_argument("--selfsm", help="VerifyBamID2's .selfSM")
     ap.add_argument("--declared-sex", choices=["male", "female", ""], default="")
     ap.add_argument("--freemix-warn", type=float, default=FREEMIX_WARN)
