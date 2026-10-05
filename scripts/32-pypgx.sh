@@ -40,6 +40,9 @@ for f in "$BAM" "${BAM}.bai" "$VCF" "${VCF}.tbi"; do
 done
 
 mkdir -p "$OUTPUT_DIR"
+# A run that stops anywhere below must not leave the last run's summary and
+# depth check behind for step 36 to read.
+rm -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" "${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
 
 # This step feeds step 36's outside calls for PharmCAT. Remove the ones made
 # from an earlier result, so step 07 never reads a call this run has not
