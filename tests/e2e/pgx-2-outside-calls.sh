@@ -2,9 +2,10 @@
 # PharmCAT gets T1K's HLA types as outside calls, and the CPIC report has an
 # HLA section sourced from the outside-call file.
 #
-# Bash: steps 36, 07 and 27 on HG002pgx, a copy of HG002's VCF, gVCF, HLA
+# Bash: steps 36, 07 and 27 on HG002oc, a copy of HG002's VCF, gVCF, HLA
 # types (case bash-step-08) and pypgx output (case 38), no Cyrius; a copy, so
-# the later cases still read HG002's own PharmCAT report of case 31. pypgx
+# the later cases still read HG002's own PharmCAT report of case 31 (and not
+# HG002pgx, the sample case reports-and-pgx-correctness-pgx makes). pypgx
 # alone is one caller, so CYP2D6 stays indeterminate and does not reach
 # PharmCAT.
 # Nextflow: the leg of case nextflow-from-fastq-2 (pharmcat, cpic and
@@ -12,7 +13,7 @@
 . "$(dirname "$0")/lib.sh"
 
 SAMPLE_SRC=$SAMPLE
-SAMPLE=${SAMPLE_SRC}pgx
+SAMPLE=${SAMPLE_SRC}oc
 rm -rf "${GENOME_DIR:?}/${SAMPLE}"
 mkdir -p "${GENOME_DIR}/${SAMPLE}"
 for d in vcf hla_t1k pypgx; do
