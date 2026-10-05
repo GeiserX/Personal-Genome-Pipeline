@@ -541,12 +541,13 @@ def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_s
                          f"(it has: {', '.join(r.get('sample_id', '?') for r in rows) or 'none'})")
     inferred = SOMALIER_SEX.get(row.get("sex", ""), "unknown")
     declared = (declared_sex or "").lower() or None
-    if not declared:
-        sex_check, why = "not_checked", "no declared sex"
-    elif row.get("sex", "") == "-2":
+    # -2 first: it is worth saying even when no sex was declared
+    if row.get("sex", "") == "-2":
         sex_check = "not_checked"
         why = ("chrX is heterozygous like a female sample but chrY has reads: "
                "a sex-chromosome aneuploidy or a mixed sample")
+    elif not declared:
+        sex_check, why = "not_checked", "no declared sex"
     elif inferred == "unknown":
         sex_check = "not_checked"
         why = (f"somalier could not tell the sex from {row.get('X_n', '0')} chrX sites "
