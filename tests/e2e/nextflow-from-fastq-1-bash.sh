@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The bash leg of the parity check (scripts/ci/parity-diff.sh): the single
-# step scripts on the fixture reads, the way run-all.sh chains them, as sample
-# HG002P: 01b (fastp), 02 (minimap2, markdup), 03 (DeepVariant, male), 06, 07,
-# 11 and 25. The next case runs the Nextflow pipeline on the same reads under
-# the same sample name; the E2E workflow then compares the two.
+# step scripts on the fixture reads, as sample HG002P: 01b (fastp), 02
+# (minimap2, markdup), 03 (DeepVariant, male), 06, 08 and 36 (T1K's HLA types
+# as PharmCAT's outside calls), 07, 11 and 25. The next case runs the
+# Nextflow pipeline on the same reads under the same sample name; the E2E
+# workflow then compares the two.
 #
 # PRS scores a synthetic file (the nine PGS ids of step 25 so nothing is
 # downloaded): five chr20 sites where HG002 matches the reference (GIAB
@@ -30,6 +31,12 @@ INTERVALS="$INTERVALS" run_step 03-deepvariant.sh "$P" male
 check_step_exit 03-deepvariant.sh
 run_step 06-clinvar-screen.sh "$P"
 check_step_exit 06-clinvar-screen.sh
+# HLA types first: PharmCAT reads them as outside calls (step 36), as the
+# pipeline's PHARMCAT reads PGX_CONSENSUS's.
+run_step 08-hla-typing.sh "$P"
+check_step_exit 08-hla-typing.sh
+run_step 36-pgx-consensus.sh "$P"
+check_step_exit 36-pgx-consensus.sh
 run_step 07-pharmacogenomics.sh "$P"
 check_step_exit 07-pharmacogenomics.sh
 run_step 11-roh-analysis.sh "$P"

@@ -8,6 +8,8 @@
     matches to them. With the PYPGX summary it also writes the PharmCAT/pypgx
     comparison (published to pypgx/, as the bash steps do) and warns, in the
     recommendations, about a gene PharmCAT could not call but pypgx did.
+    With PGX_CONSENSUS's table it lists the calls other tools gave PharmCAT
+    (HLA from T1K, an agreed CYP2D6) and why a gene was held back.
     Fails when the report yields no gene.
 
     Equivalent to: scripts/27-cpic-lookup.sh
@@ -24,8 +26,9 @@ process CPIC_LOOKUP {
         pattern: "*_pharmcat_comparison.tsv"
 
     input:
-    // pypgx_summary is [] when pypgx is not in --tools
-    tuple val(meta), path(pharmcat_json), path(pypgx_summary)
+    // pypgx_summary is [] when pypgx is not in --tools; consensus is [] when
+    // PGX_CONSENSUS did not run for the sample
+    tuple val(meta), path(pharmcat_json), path(pypgx_summary), path(consensus)
 
     output:
     tuple val(meta), path("${meta.id}_cpic_recommendations.txt"), emit: recommendations
@@ -38,12 +41,14 @@ process CPIC_LOOKUP {
 
     script:
     def pypgx_args = pypgx_summary ? "--pypgx ${pypgx_summary} --comparison ${meta.id}_pharmcat_comparison.tsv" : ''
+    def consensus_args = consensus ? "--consensus ${consensus}" : ''
     """
     pgx_parse.py cpic-report \\
         --sample ${meta.id} \\
         --report ${pharmcat_json} \\
         --outdir . \\
-        ${pypgx_args}
+        ${pypgx_args} \\
+        ${consensus_args}
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
