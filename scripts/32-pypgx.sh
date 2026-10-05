@@ -41,27 +41,6 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-# CYP2D6 depth check: mosdepth over CYP2D6 and its flanks, all reads and
-# MAPQ >= 1, judged by bin/cyp2d6_depth_check.py (the regions come from it too).
-DEPTH_DIR="${OUTPUT_DIR}/cyp2d6_depth"
-CHECK="${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
-mkdir -p "$DEPTH_DIR"
-rm -f "$CHECK"
-echo "CYP2D6 depth check..."
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
-  python3 /pgp-bin/cyp2d6_depth_check.py bed > "${DEPTH_DIR}/regions.bed"
-for Q in 0 1; do
-  run_in --cpus 2 --memory 2g "${MOSDEPTH_IMAGE}" \
-    mosdepth -n -c chr22 -t 2 -Q "$Q" -b "$(cpath "${DEPTH_DIR}/regions.bed")" \
-      "$(cpath "${DEPTH_DIR}/q${Q}")" "$(cpath "$BAM")"
-done
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
-  python3 /pgp-bin/cyp2d6_depth_check.py check \
-    --all "$(cpath "${DEPTH_DIR}/q0.regions.bed.gz")" \
-    --mapq1 "$(cpath "${DEPTH_DIR}/q1.regions.bed.gz")" \
-    --out "$(cpath "$CHECK")"
-DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK")
-
 # Validate pypgx-bundle (required for Beagle phasing panels and CNV models)
 PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
 if [ ! -d "$PYPGX_BUNDLE" ]; then
@@ -83,6 +62,28 @@ if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
   echo "  git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git ${PYPGX_BUNDLE}" >&2
   exit 1
 fi
+
+# CYP2D6 depth check: mosdepth over CYP2D6 and its flanks, all reads and
+# MAPQ >= 1, judged by bin/cyp2d6_depth_check.py (the regions come from it too).
+DEPTH_DIR="${OUTPUT_DIR}/cyp2d6_depth"
+CHECK="${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
+mkdir -p "$DEPTH_DIR"
+rm -f "$CHECK"
+echo "CYP2D6 depth check..."
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+  python3 /pgp-bin/cyp2d6_depth_check.py bed > "${DEPTH_DIR}/regions.bed"
+for Q in 0 1; do
+  run_in --cpus 2 --memory 2g "${MOSDEPTH_IMAGE}" \
+    mosdepth -n -c chr22 -t 2 -Q "$Q" -b "$(cpath "${DEPTH_DIR}/regions.bed")" \
+      "$(cpath "${DEPTH_DIR}/q${Q}")" "$(cpath "$BAM")"
+done
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+  python3 /pgp-bin/cyp2d6_depth_check.py check \
+    --all "$(cpath "${DEPTH_DIR}/q0.regions.bed.gz")" \
+    --mapq1 "$(cpath "${DEPTH_DIR}/q1.regions.bed.gz")" \
+    --out "$(cpath "$CHECK")"
+# A check that wrote nothing counts as failed: CYP2D6 is then Indeterminate.
+DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || true)
 
 # Curated gene list: CPIC Level A/B + key genes PharmCAT misses
 # BAM-based (structural variation): CYP2D6, CYP2A6, GSTM1, GSTT1
@@ -259,7 +260,7 @@ if [ "$DEPTH_STATUS" != ok ] && [ -f "$SUMMARY" ]; then
   awk -F'\t' -v OFS='\t' '$1 == "CYP2D6" {$2 = "Indeterminate"; $3 = "Indeterminate (CYP2D6 depth check)"} {print}' \
     "$SUMMARY" > "${SUMMARY}.tmp"
   mv "${SUMMARY}.tmp" "$SUMMARY"
-  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK")"
+  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || echo "the CYP2D6 depth check wrote no result")"
   echo "  The CYP2D6 row of ${SUMMARY} says Indeterminate; see ${CHECK}."
 fi
 

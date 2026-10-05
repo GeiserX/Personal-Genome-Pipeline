@@ -23,7 +23,7 @@ want=$(printf 'sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex,gvcf,gvcf_
   "$B" "${B}.bai" "$V" "${V}.tbi" "$GV" "${GV}.tbi")
 run_expect 0 gvcf "${SCRIPTS}/run-all.sh" s1 male
 [ "$(sheet s1)" = "$want" ] || fail "BAM+VCF+gVCF samplesheet: $(sheet s1)"
-output_has gvcf 'reads the gVCF beside it'
+output_has gvcf 'PharmCAT and PRS read the gVCF beside it'
 output_lacks gvcf 'a gVCF beside it is not read'
 run_expect 0 rerun "${SCRIPTS}/run-all.sh" s1 male
 [ "$(sheet s1)" = "$want" ] || fail "the rerun changed the samplesheet: $(sheet s1)"

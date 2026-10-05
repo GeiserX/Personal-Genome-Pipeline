@@ -77,7 +77,8 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
     --all "$(cpath "${DEPTH_DIR}/q0.regions.bed.gz")" \
     --mapq1 "$(cpath "${DEPTH_DIR}/q1.regions.bed.gz")" \
     --out "$(cpath "$CHECK")"
-DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK")
+# A check that wrote nothing counts as failed: the call is then marked.
+DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || true)
 
 # [2/3] Cyrius, from the install setup.sh made, with no network. The manifest
 # (the BAM path) is created inside the container.
@@ -107,7 +108,7 @@ if [ "$DEPTH_STATUS" != ok ]; then
   # Keep Cyrius's genotype for the record; the Filter says it cannot be used.
   awk -F'\t' -v OFS='\t' 'NR > 1 {$3 = "CYP2D6_depth_unreliable"} {print}' "$RESULT_FILE" > "${RESULT_FILE}.tmp"
   mv "${RESULT_FILE}.tmp" "$RESULT_FILE"
-  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK")"
+  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || echo "the CYP2D6 depth check wrote no result")"
   echo "  The call below is marked CYP2D6_depth_unreliable and step 36 does not pass it to PharmCAT."
 fi
 echo ""
