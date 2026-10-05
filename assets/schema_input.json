@@ -32,6 +32,16 @@
                 "description": "Path to VCF tabix index (.tbi)",
                 "pattern": "^\\S+\\.vcf\\.gz\\.tbi$"
             },
+            "gvcf": {
+                "type": "string",
+                "description": "The gVCF of the row's VCF (step 03 writes one beside it), optional. PharmCAT and PRS then read a position where the sample matches the reference as 0/0 instead of missing; DEEPVARIANT does not run for the row. Needs vcf on the same row.",
+                "pattern": "^\\S+\\.vcf\\.gz$"
+            },
+            "gvcf_index": {
+                "type": "string",
+                "description": "Path to the gVCF's tabix index (.tbi)",
+                "pattern": "^\\S+\\.vcf\\.gz\\.tbi$"
+            },
             "bam": {
                 "type": "string",
                 "description": "Path to aligned BAM file: called when the row has no VCF, used by the BAM-based steps either way",

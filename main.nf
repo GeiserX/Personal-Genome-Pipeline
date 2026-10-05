@@ -70,7 +70,7 @@ workflow {
         'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
-        'sample_qc', 'cram_archive', 'html_report', 'multiqc',
+        'sample_qc', 'cram_archive', 'parascopy', 'html_report', 'multiqc',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -94,6 +94,8 @@ workflow {
         ['cnvpytor',         'cnvpytor_resources', '--cnvpytor_resources'],
         ['sample_qc',        'somalier_sites',     '--somalier_sites'],
         ['sample_qc',        'verifybamid2_panel', '--verifybamid2_panel'],
+        ['cyrius',           'cyrius_install',     '--cyrius_install'],
+        ['parascopy',        'parascopy_data',     '--parascopy_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -108,6 +110,18 @@ workflow {
     if (params.slivar_bin) {
         log.warn "--slivar_bin is deprecated and ignored: slivar now runs from the pinned image " +
                  "(SLIVAR_IMAGE in versions.env). Remove the option; the next release drops it."
+    }
+
+    // KIR is a second T1K pass of hla_typing, against IPD-KIR
+    if (params.kir && !tools_list.contains('hla_typing')) {
+        error "--kir types the KIR genes in a second T1K pass of hla_typing: add 'hla_typing' to --tools."
+    }
+    if (params.kir && !params.kir_dat) {
+        error "--kir needs --kir_dat, IPD-KIR's kir.dat (scripts/setup.sh --kir-data installs it)."
+    }
+    if (tools_list.contains('parascopy') && !(params.parascopy_population in ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
+        error "--parascopy_population must be one of AFR, AMR, EAS, EUR, SAS (the 1000 Genomes models), " +
+              "got '${params.parascopy_population}'."
     }
 
     // cpic requires pharmcat (it parses PharmCAT JSON output)
@@ -145,7 +159,9 @@ workflow {
     //   cram,crai        a CRAM instead of the BAM (read with --reference,
     //                    which must be the FASTA it was written with)
     //   vcf,vcf_index    a VCF from any caller, with bam,bam_index or
-    //                    cram,crai optional
+    //                    cram,crai optional, and gvcf,gvcf_index optional:
+    //                    the gVCF of the same calls (step 03 writes one), read
+    //                    by PharmCAT and PRS as DEEPVARIANT's would be
     // and sex (male or female), required on every row that is called.
     // Rows are read and checked here, before any task starts, so a bad row
     // stops the run at once.
@@ -164,7 +180,7 @@ workflow {
             error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
         }
         // Pairs go together
-        [['fastq_1', 'fastq_2'], ['bam', 'bam_index'], ['cram', 'crai'], ['vcf', 'vcf_index']].each { a, b ->
+        [['fastq_1', 'fastq_2'], ['bam', 'bam_index'], ['cram', 'crai'], ['vcf', 'vcf_index'], ['gvcf', 'gvcf_index']].each { a, b ->
             if (row[a] && !row[b]) {
                 error "Sample '${row.sample}': '${a}' provided without '${b}'. Both are required together."
             }
@@ -175,6 +191,10 @@ workflow {
         if (row.fastq_1 && (row.bam || row.cram || row.vcf)) {
             error "Sample '${row.sample}': a row starts from FASTQ or from a BAM, CRAM or VCF, not both. " +
                   "Remove the fastq columns to use the BAM, CRAM or VCF, or the other columns to align the reads."
+        }
+        if (row.gvcf && !row.vcf) {
+            error "Sample '${row.sample}': a gvcf goes with the vcf it belongs to. A row without a VCF is " +
+                  "called here, and DEEPVARIANT writes its own gVCF: remove the gvcf columns, or add the vcf."
         }
         if (row.bam && row.cram) {
             error "Sample '${row.sample}': the row has both a BAM and a CRAM. Keep one of them."
@@ -219,6 +239,9 @@ workflow {
     ch_vcf_given = ch_rows
         .filter { meta, row -> row.vcf }
         .map { meta, row -> [meta, file(row.vcf, checkIfExists: true), file(row.vcf_index, checkIfExists: true)] }
+    ch_gvcf_given = ch_rows
+        .filter { meta, row -> row.gvcf }
+        .map { meta, row -> [meta, file(row.gvcf, checkIfExists: true), file(row.gvcf_index, checkIfExists: true)] }
 
     // ─── Reference genome ───────────────────────────────────────────────
     ch_reference      = Channel.value(file(params.reference, checkIfExists: true))
@@ -251,8 +274,10 @@ workflow {
         ch_par_bed
     )
 
-    // Every sample's VCF: the one given, or the one DeepVariant called
+    // Every sample's VCF: the one given, or the one DeepVariant called; and
+    // its gVCF, when the samplesheet gives one or DeepVariant wrote one
     ch_vcf_input = ch_vcf_given.mix(UPSTREAM.out.vcf)
+    ch_gvcf      = ch_gvcf_given.mix(UPSTREAM.out.gvcf)
 
     // ─── Input check ────────────────────────────────────────────────────
     // VCF_PRECHECK reads each VCF once before any analysis. Two problems stop
@@ -405,8 +430,37 @@ workflow {
     ch_somalier_sites     = Channel.value(params.somalier_sites     ? file(params.somalier_sites, checkIfExists: true)     : [])
     ch_verifybamid2_panel = Channel.value(params.verifybamid2_panel ? file(params.verifybamid2_panel, checkIfExists: true) : [])
 
+    // Opt-in steps: Cyrius's install (setup.sh --cyrius), IPD-KIR's kir.dat
+    // (--kir), Parascopy's homology table and models, and its background
+    // windows for a BAM that covers part of the genome
+    ch_cyrius_install = Channel.value(params.cyrius_install ? file(params.cyrius_install, checkIfExists: true) : [])
+    ch_kir_dat        = Channel.value(params.kir_dat ? file(params.kir_dat, checkIfExists: true) : [])
+    ch_parascopy_data = Channel.value(params.parascopy_data ? file(params.parascopy_data, checkIfExists: true) : [])
+    ch_parascopy_bed  = Channel.value(params.parascopy_depth_bed ? file(params.parascopy_depth_bed, checkIfExists: true) : [])
+
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 1: PGX — Pharmacogenomics & ClinVar screening
+    // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
+    // mito, SMN1/SMN2, sample QC. First, because PGX reads the HLA types.
+    // ═══════════════════════════════════════════════════════════════════
+    BAM_ANALYSIS(
+        ch_bam,
+        ch_reference,
+        ch_reference_fai,
+        ch_reference_dict,
+        ch_expansion_catalog,
+        ch_hla_dat,
+        ch_hla_genes,
+        ch_cytoband,
+        ch_somalier_sites,
+        ch_verifybamid2_panel,
+        ch_kir_dat,
+        ch_parascopy_data,
+        ch_parascopy_bed
+    )
+
+    // ═══════════════════════════════════════════════════════════════════
+    // WORKFLOW 2: PGX — Pharmacogenomics & ClinVar screening; PharmCAT gets
+    // the HLA types and an agreed CYP2D6 call as outside calls
     // ═══════════════════════════════════════════════════════════════════
     PGX(
         ch_vcf,
@@ -416,11 +470,13 @@ workflow {
         ch_clinvar_index,
         ch_bam,
         ch_pypgx_bundle,
-        UPSTREAM.out.gvcf
+        ch_gvcf,
+        BAM_ANALYSIS.out.hla_alleles,
+        ch_cyrius_install
     )
 
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 2: ANNOTATION — VEP → vcfanno → slivar / clinical_filter
+    // WORKFLOW 3: ANNOTATION — VEP → vcfanno → slivar / clinical_filter
     // ═══════════════════════════════════════════════════════════════════
     ANNOTATION(
         ch_vcf,
@@ -443,7 +499,7 @@ workflow {
     )
 
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 3: CLINICAL — CPSR, ROH, PRS, ancestry, mito haplogroup
+    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS, ancestry, mito haplogroup
     // ═══════════════════════════════════════════════════════════════════
     CLINICAL(
         ch_vcf,
@@ -451,25 +507,9 @@ workflow {
         ch_vep_cache_cpsr,
         ch_pgs_scoring,
         ch_ancestry_ref,
-        UPSTREAM.out.gvcf,
+        ch_gvcf,
         ch_reference,
         ch_reference_fai
-    )
-
-    // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 4: BAM_ANALYSIS — HLA, STR, telomere, coverage, mito, CYP2D6
-    // ═══════════════════════════════════════════════════════════════════
-    BAM_ANALYSIS(
-        ch_bam,
-        ch_reference,
-        ch_reference_fai,
-        ch_reference_dict,
-        ch_expansion_catalog,
-        ch_hla_dat,
-        ch_hla_genes,
-        ch_cytoband,
-        ch_somalier_sites,
-        ch_verifybamid2_panel
     )
 
     // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
