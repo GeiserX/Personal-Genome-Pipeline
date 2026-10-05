@@ -28,12 +28,12 @@ docker_log_has "^run image=[^ ]*bcftools[^ ]* :: .*--network none .*--user [0-9]
   "step 11 did not run bcftools with --network none, the caller's user, /genome read-only and the sample directory writable"
 [ -f "${GENOME_DIR}/sample1/vcf/sample1_roh.txt" ] || fail "step 11 wrote no output (the hook did not run)"
 
-# --- a step that downloads and installs (Cyrius: pip) -------------------------
+# --- a setup that downloads and installs (Cyrius: pip, setup.sh --cyrius) ----
 : > "$FAKE_DOCKER_LOG"
-run_rc cyrius "${SCRIPTS}/21-cyrius.sh" sample1
-docker_log_has '^run image=[^ ]*python' "step 21 never ran the python image"
+run_rc cyrius "${SCRIPTS}/setup.sh" --cyrius "$GENOME_DIR"
+docker_log_has '^run image=[^ ]*python' "setup.sh --cyrius never ran the python image"
 if awk '/^run image=[^ ]*python/ && (/--network none/ || !/--user [0-9]+:[0-9]+ /) { bad = 1 } END { exit !bad }' "$FAKE_DOCKER_LOG"; then
-  fail "step 21 (pip install) ran without network or not as the calling user; it needs --net and no --root"
+  fail "setup.sh --cyrius (pip install) ran without network or not as the calling user; it needs --net and no --root"
 fi
 
 # --- read-only data directory ---------------------------------------------------
