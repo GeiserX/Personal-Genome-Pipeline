@@ -51,9 +51,9 @@ workflow {
     if (!(params.sex_check in ['fail', 'warn'])) {
         error "--sex_check must be 'fail' or 'warn', got '${params.sex_check}'."
     }
-    if (!(params.freemix_warn instanceof Number) || params.freemix_warn <= 0 || params.freemix_warn >= 1) {
-        error "--freemix_warn must be a fraction between 0 and 1 (FREEMIX above it is reported as possible " +
-              "contamination), got '${params.freemix_warn}'."
+    if (!(params.freemix_warn instanceof Number) || params.freemix_warn < 0 || params.freemix_warn >= 1) {
+        error "--freemix_warn must be a fraction from 0 up to (not including) 1 (FREEMIX above it is reported " +
+              "as possible contamination), got '${params.freemix_warn}'."
     }
     if (params.reference.endsWith('.gz')) {
         error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +

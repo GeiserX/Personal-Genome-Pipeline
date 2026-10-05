@@ -307,7 +307,7 @@
                     "description": "VerifyBamID2's FREEMIX (estimated share of reads from another person) above which sample_qc reports possible contamination. A warning only; it never stops the run.",
                     "default": 0.03,
                     "minimum": 0,
-                    "maximum": 1,
+                    "exclusiveMaximum": 1,
                     "fa_icon": "fas fa-vial"
                 }
             }

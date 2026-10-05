@@ -126,7 +126,7 @@ output_has qc-sm-name "somalier reads the sample as 'SM_from_header'"
 
 mv "${GENOME_DIR}/reference/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.mu" "${CASE_WORK}/mu"
 run_expect 1 qc-no-panel "${SCRIPTS}/33-sample-qc.sh" sample1
-output_has qc-no-panel 'Install it with: ./scripts/setup.sh'
+output_has qc-no-panel 'Install it with: ./scripts/setup.sh --sample-qc-data '
 mv "${CASE_WORK}/mu" "${GENOME_DIR}/reference/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.mu"
 
 # --- step 34 -----------------------------------------------------------------------------

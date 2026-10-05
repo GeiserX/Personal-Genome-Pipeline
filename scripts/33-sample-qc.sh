@@ -69,7 +69,7 @@ for f in "$BAM" "${BAM}.bai" "$REF_FASTA" "${REF_FASTA}.fai" "$SITES" "${PANEL}.
   if [ ! -f "$f" ]; then
     echo "ERROR: File not found: ${f}" >&2
     case "$f" in
-      "$SITES"|"$PANEL".*) echo "  Install it with: ./scripts/setup.sh ${GENOME_DIR}" >&2 ;;
+      "$SITES"|"$PANEL".*) echo "  Install it with: ./scripts/setup.sh --sample-qc-data ${GENOME_DIR}" >&2 ;;
     esac
     exit 1
   fi
