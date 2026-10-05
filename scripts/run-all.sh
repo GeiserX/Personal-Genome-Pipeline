@@ -1,37 +1,35 @@
 #!/usr/bin/env bash
-# run-all.sh: the whole pipeline for one sample. Runs validate-setup.sh, then the
-# Nextflow pipeline (main.nf) with -resume, so a rerun redoes only what changed.
+# run-all.sh: the whole pipeline for one sample: validate-setup.sh, then main.nf with -resume (a rerun redoes only what changed).
 # Usage: GENOME_DIR=/data ./scripts/run-all.sh <sample> <male|female> [nextflow options]
-#   Options after the sex go to `nextflow run` as given, e.g. --max_memory 32.GB.
-# Needs Docker, Java 17+ and Nextflow (NEXTFLOW_VERSION in versions.env). Results: GENOME_DIR/<sample>/.
-# Input, first match: aligned/<sample>_sorted.bam with .bai (plus vcf/<sample>.vcf.gz with .tbi:
-#   not called again); fastq/<sample>_R1.fastq.gz and _R2; the VCF alone. Kept in
-#   <sample>/nextflow/samplesheet.csv while its files exist, so a rerun finds its cached tasks.
+#   Options after the sex go to `nextflow run` as given (--sex_check warn); --max_cpus (THREADS) and --max_memory default to the host's.
+# Needs Docker, bash 4.4+, Java 17+ and Nextflow (NEXTFLOW_VERSION in versions.env). Results: GENOME_DIR/<sample>/.
+# Input, first match: aligned/<sample>_sorted.bam with .bai (plus vcf/<sample>.vcf.gz with .tbi: not called
+#   again, and a gVCF beside it is not read); fastq/<sample>_R1.fastq.gz and _R2; the VCF alone. Kept in
+#   <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's, so a rerun finds its tasks.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
 #   (only these --tools names); REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS as for the single steps.
-# Script-only steps, run after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14), ANCESTRY=true
-#   (26), SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true.
-# Then the HTML report (step 24) and the text report. A step whose data is missing is skipped, saying so.
+# Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14), ANCESTRY=true (26),
+#   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
+#   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report. A step without its data or BAM is skipped.
 set -euo pipefail
 case "${1:-}" in -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;; esac
 SAMPLE=${1:-} SEX=${2:-}
-if [ -z "$SAMPLE" ] || [[ ! "$SEX" =~ ^(male|female)$ ]]; then
-  { echo "Usage: $0 <sample> <male|female> [nextflow options]"; [ -z "$SEX" ] || echo "ERROR: sex must be 'male' or 'female', got '${SEX}'."; } >&2; exit 2
-fi
+[ -n "$SAMPLE" ] && [[ "$SEX" =~ ^(male|female)$ ]] || { { echo "Usage: $0 <sample> <male|female> [nextflow options]"
+  [ -z "$SEX" ] || echo "ERROR: sex must be 'male' or 'female', got '${SEX}'."; } >&2; exit 2; }
+((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404)) || { echo "ERROR: run-all.sh needs bash 4.4 or later (this is ${BASH_VERSION}); on macOS: brew install bash" >&2; exit 2; }
 shift 2; SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) USER_THREADS=${THREADS:-}
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "${SCRIPT_DIR}/lib/common.sh"
 validate_sample "$SAMPLE"
-G=$GENOME_DIR S="${GENOME_DIR}/${SAMPLE}" LOG_DIR="${GENOME_DIR}/${SAMPLE}/logs"
+G=$GENOME_DIR S="${GENOME_DIR}/${SAMPLE}" LOG_DIR="${GENOME_DIR}/${SAMPLE}/logs" T=${TOOLS:-} C=${EXTRA_CALLERS:-}
 on() { [[ "${!1:-}" =~ ^(true|1)$ ]]; }
 java_major=$(java -version 2>&1 | awk -F'"' '/version "/ {split($2, v, "."); print (v[1] == 1 ? v[2] : v[1]); exit}') || true
 if ! command -v nextflow >/dev/null 2>&1 || [[ ! "${java_major:-}" =~ ^[0-9]+$ ]] || [ "$java_major" -lt 17 ]; then
   printf '%s\n' "ERROR: run-all.sh starts the Nextflow pipeline and needs Java 17 or later (found: ${java_major:-none}) and Nextflow ($(command -v nextflow || echo 'not on PATH'))." \
     "  Install the release CI validates:  curl -s https://get.nextflow.io | NXF_VER=${NEXTFLOW_VERSION} bash && sudo mv nextflow /usr/local/bin/" \
-    "  Or run the steps one by one: ./scripts/<step>.sh ${SAMPLE} (docs/getting-started.md)." >&2; exit 2
-fi
+    "  Or run the steps one by one: ./scripts/<step>.sh ${SAMPLE} (docs/getting-started.md)." >&2; exit 2; fi
 on SKIP_VALIDATION || "${SCRIPT_DIR}/validate-setup.sh" "$SAMPLE" \
   || { echo "ERROR: setup validation failed; fix the items above. To bypass: SKIP_VALIDATION=true $0 ${SAMPLE} ${SEX}" >&2; exit 1; }
 mkdir -p "${S}/nextflow" "$LOG_DIR"
@@ -39,11 +37,11 @@ GENOME_DIR="$G" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$
 STATUS="${LOG_DIR}/run_status.tsv"  # bin/collect_summary.py marks results older than this run stale
 printf '# run-all.sh: when this run started and how each step ended\nmeta\tstarted_epoch\t%s\nmeta\tstarted_utc\t%s\nmeta\tdeclared_sex\t%s\n' \
   "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" > "$STATUS"
-# Every step of a default run: it runs, or it is skipped with the reason.
-NF=() SEL=() RUNS=(16) KNOWN="" OPTIN=()
+NF=() SEL=() RUNS=() KNOWN="" OPTIN=()  # every step of a default run: it runs, or it is skipped with the reason
 need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: ${f#"$G"/}"; return; }; done; }
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}"); printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -59,6 +57,22 @@ for s in whole_genome_SNVs.tsv.gz:cadd_snv gnomad.genomes.r4.0.indel.tsv.gz:cadd
   f="${A}/${s%%:*}"; [ -e "${f}.tbi" ] || f=${f/.raw./.masked.}
   [ ! -e "${f}.tbi" ] || SCORES+=("--${s#*:}" "$f" "--${s#*:}_index" "${f}.tbi")
 done
+# The samplesheet: the last run's while every file it names exists and its BAM is this call's (ALIGN_DIR).
+SHEET="${S}/nextflow/samplesheet.csv" row=""
+B="${S}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam" V="${S}/vcf/${SAMPLE}.vcf.gz" F="${S}/fastq/${SAMPLE}_R"
+[ ! -f "$SHEET" ] || row=$(awk -F, 'NR == 2 {print $2","$3","$4","$5","$6","$7}' "$SHEET")
+IFS=, read -r -a cols <<< "$row"; for f in "${cols[@]}"; do [ -z "$f" ] || [ -e "$f" ] || row=""; done
+[ "${cols[2]:-}" = "$B" ] || [ -z "${cols[2]:-}${ALIGN_DIR:-}" ] || row=""
+[ -n "$row" ] || if [ -f "$B" ] && [ -f "${B}.bai" ] && [ -f "$V" ] && [ -f "${V}.tbi" ]; then row=",,${B},${B}.bai,${V},${V}.tbi"
+elif [ -f "$B" ] && [ -f "${B}.bai" ]; then row=",,${B},${B}.bai,,"
+elif [ -f "${F}1.fastq.gz" ] && [ -f "${F}2.fastq.gz" ]; then row="${F}1.fastq.gz,${F}2.fastq.gz,,,,"
+elif [ -f "$V" ] && [ -f "${V}.tbi" ]; then row=",,,,${V},${V}.tbi"
+else echo "ERROR: no input for ${SAMPLE}: no ${B}, no ${F}1/2.fastq.gz and no ${V}, each with its index." >&2; exit 1; fi
+printf 'sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex\n%s,%s,%s\n' "$SAMPLE" "$row" "$SEX" > "$SHEET"
+IFS=, read -r f1 _ fb _ fv _ <<< "$row"; NOBAM=${f1}${fb}
+[ -z "$fb" ] || [ -z "$fv" ] || echo "NOTE: starting from the existing VCF: PharmCAT and PRS read its variant sites only, and a gVCF beside it is not read. To call again with a gVCF, remove the VCF and its index."
+echo "[Input] ${SHEET}: ${row}"
+if [ -n "$NOBAM" ]; then RUNS=(16); else printf 'step\t16\tskipped (no BAM)\n' >> "$STATUS"; fi
 echo "[Steps] ${SAMPLE} (${SEX})"
 for p in "07 PharmCAT:pharmcat" "27 CPIC lookup:cpic" "11 ROH:roh" "12 Mito haplogroup:mito_haplogroup" "16b mosdepth:mosdepth" \
          "10 TelomereHunter:telomere_hunter" "20 Mito variants (Mutect2):mito_variants" "21 Cyrius CYP2D6:cyrius" "04 Manta:manta" \
@@ -78,31 +92,18 @@ plan "17 CPSR" cpsr "$(need "${G}/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEAS
 plan "18 CNVpytor" cnvpytor "$(need "${G}/reference/cnvpytor/gc_hg38.pytor")" && NF+=(--cnvpytor_resources "${G}/reference/cnvpytor")
 plan "05 AnnotSV" annotsv "$(need "${G}/annotsv_annotations/Annotations_Human/Genes/GRCh38")" && NF+=(--annotsv_annotations "${G}/annotsv_annotations")
 plan "32 pypgx" pypgx "$(need "${G}/reference/pypgx-bundle")" && NF+=(--pypgx_bundle "${G}/reference/pypgx-bundle")
-plan "25 PRS" prs "$(need "${G}/prs_scores")" && NF+=(--pgs_scoring "${G}/prs_scores")
-T=${TOOLS:-} C=${EXTRA_CALLERS:-}
+plan "25 PRS" prs "$(need "$(compgen -G "${G}/prs_scores/*.txt.gz" | head -n 1 || echo "${G}/prs_scores/<PGS id>.txt.gz")")" && NF+=(--pgs_scoring "${G}/prs_scores")
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
-[ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [ -z "$USER_THREADS" ] || NF+=(--max_cpus "$USER_THREADS")
+[ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")
+M=$(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo 2>/dev/null || echo $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 )))
+[[ " $* " == *" --max_memory"* ]] || [ "${M:-0}" -lt 1 ] || NF+=(--max_memory "${M}.GB")
 if on SKIP_TRIM; then NF+=(--skip_trim true); fi
 for v in GRIDSS:04b-gridss IMPUTATION:14-imputation-prep ANCESTRY:26-ancestry SOMATIC:29-mutect2-somatic; do if on "${v%%:*}"; then OPTIN+=("${v#*:}.sh"); fi; done
 for c in ${C//,/ }; do OPTIN+=("$(cd "$SCRIPT_DIR" && compgen -G "03[a-d]-${c}*.sh")") || { echo "ERROR: unknown caller '${c}' in EXTRA_CALLERS (gatk, freebayes, strelka2, octopus)" >&2; exit 2; }; done
-if on BENCHMARK; then OPTIN+=(benchmark-variants.sh); fi
+if ! on BENCHMARK; then :; elif [ -n "$C" ] || compgen -G "${S}/vcf_*/${SAMPLE}.vcf.gz" >/dev/null || [ -f "${S}/vcf_strelka2/results/variants/variants.vcf.gz" ]; then OPTIN+=(benchmark-variants.sh)
+else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS, or run a 03a-03d script first)"; fi
 [ -z "${MAX_JOBS:-}" ] || echo "NOTE: MAX_JOBS is no longer read: Nextflow schedules by --max_cpus (THREADS) and --max_memory."
-# The samplesheet: the last run's while every file it names exists, so -resume finds its tasks.
-SHEET="${S}/nextflow/samplesheet.csv" row=""
-[ ! -f "$SHEET" ] || row=$(awk -F, 'NR == 2 {print $2","$3","$4","$5","$6","$7}' "$SHEET")
-IFS=, read -r -a cols <<< "$row"; for f in "${cols[@]}"; do [ -z "$f" ] || [ -e "$f" ] || row=""; done
-B="${S}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam" V="${S}/vcf/${SAMPLE}.vcf.gz" F="${S}/fastq/${SAMPLE}_R"
-if [ -n "$row" ]; then :
-elif [ -f "$B" ] && [ -f "${B}.bai" ] && [ -f "$V" ] && [ -f "${V}.tbi" ]; then row=",,${B},${B}.bai,${V},${V}.tbi"
-elif [ -f "$B" ] && [ -f "${B}.bai" ]; then row=",,${B},${B}.bai,,"
-elif [ -f "${F}1.fastq.gz" ] && [ -f "${F}2.fastq.gz" ]; then row="${F}1.fastq.gz,${F}2.fastq.gz,,,,"
-elif [ -f "$V" ] && [ -f "${V}.tbi" ]; then row=",,,,${V},${V}.tbi"
-else echo "ERROR: no input for ${SAMPLE}: no ${B}, no ${F}1/2.fastq.gz and no ${V}, each with its index." >&2; exit 1; fi
-printf 'sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex\n%s,%s,%s\n' "$SAMPLE" "$row" "$SEX" > "$SHEET"
-IFS=, read -r _ _ fb _ fv _ <<< "$row"
-[ -z "$fb" ] || [ -z "$fv" ] || echo "NOTE: starting from the existing VCF, so PharmCAT and PRS read its variant sites only. Remove the VCF to call again with a gVCF."
-echo "[Input] ${SHEET}: ${row}"
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
 rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker -resume --input "$SHEET" --reference "$REF_FASTA" \

@@ -40,7 +40,7 @@ dmesg | grep -i "oom\|killed" | tail -10
 
 **Fix:**
 1. Increase the `--memory` flag in the script that failed. With `run-all.sh` you do not edit a script: the pipeline gives each task a memory request and doubles it on the one retry after an out-of-memory exit, up to `--max_memory`
-2. Reduce parallelism (run fewer steps simultaneously). With `run-all.sh`, set `--max_memory` to what Docker may use, e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB`, and `THREADS=N` to cap the CPUs of each task (`--max_cpus`); a rerun reuses the steps that finished
+2. Reduce parallelism (run fewer steps simultaneously). With `run-all.sh`, set `--max_memory` to what Docker may use, e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB` (without it, the machine's RAM), and `THREADS=N` to cap the CPUs of each task (`--max_cpus`, by default the machine's CPU count); a rerun reuses the steps that finished
 3. Increase Docker Desktop memory allocation (see [Docker Desktop not enough memory](#docker-desktop-not-enough-memory-macwindows))
 4. For DeepVariant, reduce `--num_shards` (each shard needs ~2-4 GB)
 

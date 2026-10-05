@@ -10,6 +10,9 @@
 #   2. A second run finds every task in Nextflow's cache (-resume): no task
 #      runs again, and it ends in minutes.
 #   3. The reports and logs/run_status.tsv are written.
+#   4. It runs as the guide documents it, without THREADS or --max_memory:
+#      the launcher passes the runner's CPU count and RAM, and Nextflow starts
+#      the 8-CPU and 32 GB tasks capped to them instead of refusing them.
 # Both comparisons get a negative control in the same run: a planted missing
 # file must be reported, and the first run's trace (tasks COMPLETED) must fail
 # the all-cached check.
@@ -38,9 +41,9 @@ TOOLS=pharmcat,cpic,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_varian
 
 launch() {  # launch NAME: run-all.sh, output to the case log and logs/<case>.<NAME>.log; exit code in RC, seconds in SECS
   local t0=$SECONDS
-  echo "+ scripts/run-all.sh ${P} male --sex_check warn --max_memory 14.GB (${1})"
-  GENOME_DIR="$G2" SKIP_VALIDATION=true TOOLS="$TOOLS" INTERVALS="$INTERVALS" \
-    "${REPO}/scripts/run-all.sh" "$P" male --sex_check warn --max_memory 14.GB 2>&1 | tee "${E2E_WORK}/logs/${CASE_NAME}.${1}.log"
+  echo "+ scripts/run-all.sh ${P} male --sex_check warn, THREADS unset (${1})"
+  env -u THREADS GENOME_DIR="$G2" SKIP_VALIDATION=true TOOLS="$TOOLS" INTERVALS="$INTERVALS" \
+    "${REPO}/scripts/run-all.sh" "$P" male --sex_check warn 2>&1 | tee "${E2E_WORK}/logs/${CASE_NAME}.${1}.log"
   RC=${PIPESTATUS[0]} SECS=$((SECONDS - t0))
   echo "+ exit ${RC} after ${SECS}s"
 }
@@ -66,6 +69,12 @@ check "the first run wrote a trace" test -s "${FIRST_TRACE:-/dev/null}"
 check_ge "tasks completed in the first run" "$(status_count "${FIRST_TRACE:-/dev/null}" COMPLETED)" 10
 check "the samplesheet is a FASTQ row" has "^${P},${G2}/${P}/fastq/${P}_R1.fastq.gz,${G2}/${P}/fastq/${P}_R2.fastq.gz,,,,,male\$" \
   "$(sed -n 2p "${G2}/${P}/nextflow/samplesheet.csv")"
+
+# --- 4. the caps are the runner's ---------------------------------------------------------
+NFCMD=$(grep -m1 -F '$> nextflow run' "${G2}/${P}/nextflow/.nextflow.log" 2>/dev/null || true)
+echo "+ ${NFCMD#*\$> }"
+check "nextflow got --max_cpus with the runner's CPU count" has " --max_cpus $(getconf _NPROCESSORS_ONLN) " "${NFCMD} "
+check "nextflow got --max_memory with the runner's RAM" has " --max_memory $(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo)\.GB " "${NFCMD} "
 
 # --- 1. the same published files as the direct run, and parity with the bash steps -------
 published "$DIRECT" > "${CASE_TMP}/direct.txt"

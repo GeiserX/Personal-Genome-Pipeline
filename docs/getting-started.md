@@ -123,14 +123,16 @@ Without Java or Nextflow, `run-all.sh` stops with exit 2 and prints the install 
 2. `fastq/<sample>_R1.fastq.gz` and `_R2.fastq.gz`;
 3. `vcf/<sample>.vcf.gz` alone.
 
-It writes the choice to `<sample>/nextflow/samplesheet.csv` and uses that file again on the next run while every file it names exists, so a rerun finds its tasks in the cache even after the pipeline wrote a BAM and a VCF next to the FASTQ. Delete the samplesheet to choose again. When the run started from an existing VCF, PharmCAT and PRS read only its variant sites: delete that VCF (and its index) to call the BAM again, with a gVCF.
+It writes the choice to `<sample>/nextflow/samplesheet.csv` and uses that file again on the next run while every file it names exists and its BAM is the one this call names (`ALIGN_DIR` below), so a rerun finds its tasks in the cache even after the pipeline wrote a BAM and a VCF next to the FASTQ. Delete the samplesheet to choose again.
+
+When the run starts from an existing VCF, the pipeline does not read a gVCF beside it: `vcf/<sample>.g.vcf.gz` from an earlier `03-deepvariant.sh` run stays on disk but unused, so PharmCAT and PRS read only the VCF's variant sites. To get the gVCF-based calls, delete the VCF and its index so the BAM is called again, or run `./scripts/07-pharmacogenomics.sh <sample>` and `./scripts/25-prs.sh <sample>` by hand, which read the gVCF. With the VCF alone (no BAM, no FASTQ), the steps that read a BAM are listed as `skipped (no BAM)`.
 
 **Switches.** Environment variables, set before the command:
 
 | Switch | What it does | Nextflow parameter |
 |---|---|---|
 | `SKIP_VALIDATION=true` | does not run `validate-setup.sh` first | |
-| `THREADS=N` | at most N CPUs per task (the pipeline's default is 16) | `--max_cpus N` |
+| `THREADS=N` | at most N CPUs per task (default: the machine's CPU count) | `--max_cpus N` |
 | `SKIP_TRIM=true` | aligns the raw reads, without fastp | `--skip_trim true` |
 | `INTERVALS="chr20 chr22"` | the regions DeepVariant calls (whole genome by default) | `--intervals` |
 | `ALIGN_DIR=dir` | takes the BAM from `<sample>/dir/` instead of `aligned/` | the samplesheet's `bam` |
@@ -138,11 +140,13 @@ It writes the choice to `<sample>/nextflow/samplesheet.csv` and uses that file a
 | `REF_FASTA=path` | another reference inside `GENOME_DIR` (see [Realigning](realignment.md)) | `--reference` |
 | `EH_CATALOG=file` | another ExpansionHunter catalog; by default the one inside the ExpansionHunter image, copied once to `reference/expansionhunter_variant_catalog.json` | `--expansion_catalog` |
 | `MANTA_CALL_REGIONS=file` | a bgzipped BED of the regions Manta calls | `--manta_call_regions` |
-| `GRIDSS=true`, `IMPUTATION=true`, `ANCESTRY=true`, `SOMATIC=true` | run steps 4b, 14, 26 and 29 after the pipeline: they exist only as scripts | |
+| `GRIDSS=true`, `IMPUTATION=true`, `ANCESTRY=true`, `SOMATIC=true` | run steps 4b, 14, 26 and 29 as scripts after the pipeline | |
 | `EXTRA_CALLERS=gatk,freebayes,strelka2,octopus` | run the alternative callers 3a to 3d after the pipeline | |
-| `BENCHMARK=true` | runs `benchmark-variants.sh` after them | |
+| `BENCHMARK=true` | runs `benchmark-variants.sh` after them; it needs `EXTRA_CALLERS` or a second caller's VCF from an earlier 3a-3d run, and is skipped without one | |
 
-Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 32.GB` on a 32 GB machine, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit, and `--max_cpus` and `--max_memory` cap each task.
+GRIDSS runs after the pipeline's SV consensus (step 22), so that consensus holds Manta, Delly and CNVpytor only. After `GRIDSS=true`, run `./scripts/22-survivor-merge.sh your_name` to rebuild it with the GRIDSS calls.
+
+Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 30.GB` to leave 2 GB to the rest of a 32 GB machine, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit, and `--max_cpus` and `--max_memory` cap each task.
 
 **Data.** `run-all.sh` passes each database it finds under `GENOME_DIR`; a step without its data is listed as `skipped (data not installed: ...)`, and the run goes on:
 
@@ -157,7 +161,7 @@ Options after the sex go to `nextflow run` unchanged, for example `./scripts/run
 | 18 CNVpytor | `reference/cnvpytor/gc_hg38.pytor` | `--cnvpytor_resources` |
 | 5 AnnotSV | `annotsv_annotations/Annotations_Human/` | `--annotsv_annotations` |
 | 32 pypgx | `reference/pypgx-bundle/` | `--pypgx_bundle` |
-| 25 PRS | `prs_scores/` (run `./scripts/25-prs.sh <sample>` once to download the scoring files) | `--pgs_scoring` |
+| 25 PRS | `prs_scores/*.txt.gz` (run `./scripts/25-prs.sh <sample>` once to download the scoring files) | `--pgs_scoring` |
 | 10 TelomereHunter, 19 Delly | `reference/cytoBand.hg38.txt`, `reference/delly_human.hg38.excl.tsv` (optional) | `--cytoband`, `--delly_exclude` |
 
 **Where things land.** Results go to `${GENOME_DIR}/<sample>/`, in the folders of the pipeline's [output structure](nextflow.md#output-structure). Most match the single scripts' folders; the pipeline writes PharmCAT to `pharmcat/`, ROH to `roh/`, depth to `coverage/` and HLA types to `hla/`, where the scripts use `vcf/`, `vcf/`, `mosdepth/` and `hla_t1k/`. The reports read both. At the end `run-all.sh` renders the full HTML report (`<sample>_report.html`, step 24), the text report (`<sample>_report.txt`) and the `summary.json` both are made from.
