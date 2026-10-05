@@ -41,7 +41,7 @@ def freemix_text(q):
     if q.get("contamination") == "not_run" or not q.get("freemix"):
         return "not run"
     warn = q.get("freemix_warn_above", "")
-    few = (f"; {q.get('freemix_markers') or 'fewer than 1,000'} markers, below VerifyBamID2's 1,000"
+    few = ("; fewer than 1,000 panel markers had reads, so VerifyBamID2 ran without its marker check"
            if q.get("verifybamid2_marker_check") == "skipped" else "")
     if q.get("contamination") == "warn":
         return f"{q['freemix']} (above {warn}: possible contamination, see docs/33-sample-qc.md{few})"

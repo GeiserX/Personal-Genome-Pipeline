@@ -83,10 +83,13 @@ check "the log says why it ran again" has 'Fewer than 1,000 panel markers have r
 # haploid, and somalier finds those sites homozygous. Its rule: male when
 # heterozygous / homozygous-ALT chrX sites is below 0.05 over more than 10.
 XS="${G}/reference/somalier/sites_slice_chrX.vcf"
-bcf view -H -f PASS -v snps -r chrX:2781480-155701382 "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
+# Only calls with no reference read in DeepVariant's AD: a few chrX sites
+# whose reads are mixed (paralogous mapping) read as heterozygous to
+# somalier, and 2 such sites in 39 already break its male rule (below 0.05).
+bcf view -H -f PASS -v snps -i 'FMT/AD[0:0]==0 && QUAL>=30' -r chrX:2781480-155701382 "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
   | awk -F'\t' -v OFS='\t' '{ split($5, a, ","); print $1, $2, ".", $4, a[1], ".", "PASS", "AF=0.5" }' \
   > "${CASE_TMP}/x_sites.tsv"
-check_ge "chrX SNVs of case 21 outside the PARs" "$(wc -l < "${CASE_TMP}/x_sites.tsv" | tr -d ' ')" 20
+check_ge "chrX SNVs of case 21 outside the PARs, no reference read" "$(wc -l < "${CASE_TMP}/x_sites.tsv" | tr -d ' ')" 15
 python3 - "$FIX_SITES" "${CASE_TMP}/x_sites.tsv" "${REF}.fai" "$XS" <<'PY'
 import sys
 sites, extra, fai, out = sys.argv[1:]

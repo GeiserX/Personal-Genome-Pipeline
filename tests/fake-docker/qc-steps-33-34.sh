@@ -116,7 +116,7 @@ output_has qc-few-markers 'Fewer than 1,000 panel markers have reads'
 [ "$(grep -c ' verifybamid2 --SVDPrefix ' "$FAKE_DOCKER_LOG")" -eq 2 ] || fail "VerifyBamID2 did not run exactly twice"
 docker_log_has 'verifybamid2 .*--DisableSanityCheck' "the second VerifyBamID2 call lacks --DisableSanityCheck"
 [ "$(tval verifybamid2_marker_check)" = skipped ] || fail "the skipped marker check was not recorded"
-[ "$(tval freemix_markers)" = 320 ] || fail "the number of markers was not recorded"
+[ "$(tval panel_markers)" = 320 ] || fail "the panel size was not recorded"
 
 FAKE_VB2_FAIL=1 run_expect 1 qc-vb2-crash "${SCRIPTS}/33-sample-qc.sh" sample1
 output_has qc-vb2-crash 'ERROR: VerifyBamID2 failed'

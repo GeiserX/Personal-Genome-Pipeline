@@ -570,12 +570,13 @@ def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_s
         if freemix is None:
             raise Unreadable(f"{os.path.basename(selfsm)} has no FREEMIX value")
         status = "warn" if freemix > freemix_warn else "ok"
+        # #SNPS of the selfSM is the size of the panel, not the markers with reads
         markers = sm[0].get("#SNPS", "")
     # marker_check: passed, or skipped when fewer than 1,000 panel markers had
     # reads and VerifyBamID2 ran with --DisableSanityCheck.
     out += [("freemix", f"{freemix:.4f}" if freemix is not None else ""),
             ("freemix_warn_above", f"{freemix_warn:g}"), ("contamination", status),
-            ("freemix_markers", markers), ("verifybamid2_marker_check", marker_check)]
+            ("panel_markers", markers), ("verifybamid2_marker_check", marker_check)]
     same = []
     if pairs_tsv:
         for r in read_rows(pairs_tsv):

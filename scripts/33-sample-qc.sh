@@ -169,7 +169,7 @@ echo "Results: ${TABLE}"
 echo "  somalier:     ${OUT}/somalier/${SAMPLE}.samples.tsv, ${SAMPLE}.html"
 echo "  VerifyBamID2: ${OUT}/verifybamid2/${SAMPLE}.selfSM"
 echo ""
-echo "Contamination: FREEMIX $(val freemix) on $(val freemix_markers) markers (VerifyBamID2's marker check ${SANITY_CHECK})"
+echo "Contamination: FREEMIX $(val freemix) (VerifyBamID2's marker check ${SANITY_CHECK})"
 if [ "$(val contamination)" = warn ]; then
   echo "!!! FREEMIX $(val freemix) is above ${FREEMIX_WARN}: about $(awk -v f="$(val freemix)" 'BEGIN { printf "%d", f * 100 + 0.5 }')% of the reads may come" >&2
   echo "!!! from another person. Calls, above all heterozygous ones, are less reliable; see docs/33-sample-qc.md." >&2

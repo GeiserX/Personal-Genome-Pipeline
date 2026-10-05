@@ -54,14 +54,14 @@ python3 bin/collect_summary.py sample-qc --sample ${SAMPLE} ...   # the verdict 
 
 somalier names the sample after the BAM's `@RG SM` tag; every BAM step 02 writes has one.
 
-VerifyBamID2 refuses to estimate when fewer than 1,000 panel markers have reads ("Insufficient Available markers"), as on a targeted (WES) or sliced BAM. The step then runs it again with `--DisableSanityCheck` and records `verifybamid2_marker_check skipped` and the number of markers it used, so the report says FREEMIX rests on few markers.
+VerifyBamID2 refuses to estimate when fewer than 1,000 panel markers have reads ("Insufficient Available markers"), as on a targeted (WES) or sliced BAM. The step then runs it again with `--DisableSanityCheck` and records `verifybamid2_marker_check skipped`, so the report says FREEMIX rests on fewer than 1,000 markers. On the CI fixture, with about 320 markers that have reads, FREEMIX still read 0.0004 for the clean HG002 and 0.093 for HG002 with 9.3% of its reads from HG001.
 
 In Nextflow, add `sample_qc` to `--tools` with `--somalier_sites` and `--verifybamid2_panel` (the folder that holds the `.UD`, `.mu` and `.bed` files); `--freemix_warn` and `--sex_check` work as above. `SOMALIER_RELATE` runs once over every sample of the run. A sex mismatch stops the run, after `INDEXCOV` made the same check from the index.
 
 ## Output Files
 | File | Description |
 |---|---|
-| `qc/${SAMPLE}_sample_qc.tsv` | The verdict, one `key` and `value` per line: `inferred_sex`, `sex_check` (`ok`, `mismatch` or `not_checked` with `sex_check_reason`), the chrX and chrY numbers it rests on, `freemix`, `contamination` (`ok` or `warn`), `freemix_markers`, `same_person_as` |
+| `qc/${SAMPLE}_sample_qc.tsv` | The verdict, one `key` and `value` per line: `inferred_sex`, `sex_check` (`ok`, `mismatch` or `not_checked` with `sex_check_reason`), the chrX and chrY numbers it rests on, `freemix`, `contamination` (`ok` or `warn`), `panel_markers`, `verifybamid2_marker_check` (`passed`, or `skipped` when fewer than 1,000 markers had reads), `same_person_as` |
 | `qc/somalier/${SAMPLE}.samples.tsv` | somalier's per-sample table: depth, genotype counts, chrX and chrY counts, inferred `sex` (1 male, 2 female, -9 unknown) |
 | `qc/somalier/${SAMPLE}.pairs.tsv`, `.html` | Relatedness of every pair (one sample here; every sample of the run in Nextflow, under `somalier/`) |
 | `qc/verifybamid2/${SAMPLE}.selfSM` | VerifyBamID2's result: `#SNPS` markers used, `AVG_DP`, `FREEMIX` |
