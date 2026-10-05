@@ -108,7 +108,8 @@ if [ "$DEPTH_STATUS" != ok ]; then
   # Keep Cyrius's genotype for the record; the Filter says it cannot be used.
   awk -F'\t' -v OFS='\t' 'NR > 1 {$3 = "CYP2D6_depth_unreliable"} {print}' "$RESULT_FILE" > "${RESULT_FILE}.tmp"
   mv "${RESULT_FILE}.tmp" "$RESULT_FILE"
-  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || echo "the CYP2D6 depth check wrote no result")"
+  MSG=$(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || true)
+  echo "WARNING: ${MSG:-the CYP2D6 depth check wrote no result}"
   echo "  The call below is marked CYP2D6_depth_unreliable and step 36 does not pass it to PharmCAT."
 fi
 echo ""

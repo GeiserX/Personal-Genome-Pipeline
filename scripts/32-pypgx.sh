@@ -260,7 +260,8 @@ if [ "$DEPTH_STATUS" != ok ] && [ -f "$SUMMARY" ]; then
   awk -F'\t' -v OFS='\t' '$1 == "CYP2D6" {$2 = "Indeterminate"; $3 = "Indeterminate (CYP2D6 depth check)"} {print}' \
     "$SUMMARY" > "${SUMMARY}.tmp"
   mv "${SUMMARY}.tmp" "$SUMMARY"
-  echo "WARNING: $(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || echo "the CYP2D6 depth check wrote no result")"
+  MSG=$(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || true)
+  echo "WARNING: ${MSG:-the CYP2D6 depth check wrote no result}"
   echo "  The CYP2D6 row of ${SUMMARY} says Indeterminate; see ${CHECK}."
 fi
 
