@@ -165,16 +165,16 @@ jobs:
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
             -work-dir "${RUNNER_TEMP}/all-tools-work"
 
-      # The stub samplesheet has three samples with a BAM (one aligned from
-      # FASTQ): the T1K index is built once for all of them, each is typed,
-      # and each called sample went through INDEXCOV before DEEPVARIANT.
+      # The stub samplesheet has four samples with alignments (one aligned
+      # from FASTQ, one given as CRAM): the T1K index is built once for all of
+      # them, each is typed, and each went through INDEXCOV.
       - name: T1K_BUILD ran once, HLA_TYPING once per sample with a BAM
         if: steps.scope.outputs.run == 'true'
         run: |
           count() { find "${RUNNER_TEMP}/all-tools-work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
             | grep -cE "(^|:)$1( |\$)" || true; }
           build=$(count T1K_BUILD) typing=$(count HLA_TYPING) indexcov=$(count INDEXCOV) dv=$(count DEEPVARIANT)
-          bams=$(awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["bam"] != "" || $c["fastq_1"] != ""' assets/test_samplesheet.csv | wc -l)
+          bams=$(awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["bam"] != "" || $c["fastq_1"] != "" || $c["cram"] != ""' assets/test_samplesheet.csv | wc -l)
           echo "samples with a BAM: ${bams}; T1K_BUILD tasks: ${build}; HLA_TYPING tasks: ${typing}; INDEXCOV tasks: ${indexcov}; DEEPVARIANT tasks: ${dv}"
           [ "$bams" -ge 2 ] && [ "$build" -eq 1 ] && [ "$typing" -eq "$bams" ] && [ "$indexcov" -eq "$bams" ] && [ "$dv" -eq 2 ]
 

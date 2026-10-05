@@ -4,7 +4,7 @@
 Ultra-fast whole-genome coverage profiling directly from the BAM index file. Infers sex chromosome copy number (CNchrX, CNchrY) and detects sex chromosome aneuploidies (XXY, XYY, X0). Produces per-chromosome depth uniformity plots.
 
 ## Why
-Coverage QC catches alignment problems, sample swaps, and sequencing artifacts early — before spending hours on variant calling. Comparing the sex inferred from X/Y coverage with the sex you declare is a cheap sample-identity check: a swapped sample usually shows up as a mismatch. It can also reveal sex-chromosome aneuploidies like Klinefelter syndrome (XXY). It cannot tell two samples of the same sex apart.
+Coverage QC catches alignment problems, sample swaps, and sequencing artifacts early — before spending hours on variant calling. Comparing the sex inferred from X/Y coverage with the sex you declare is a cheap sample-identity check: a swapped sample usually shows up as a mismatch. It can also reveal sex-chromosome aneuploidies like Klinefelter syndrome (XXY). It cannot tell two samples of the same sex apart; [step 33](33-sample-qc.md) checks the sex again from the reads, compares the samples of a run with each other, and estimates contamination.
 
 ## Tool
 - **goleft indexcov** (Brent Pedersen)

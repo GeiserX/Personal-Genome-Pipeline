@@ -60,9 +60,9 @@ Both are mature workflow engines. We chose Nextflow because:
 
 Snakemake's Python DSL and HPC scheduler integration are genuine strengths, but the nf-core ecosystem size and sarek compatibility are decisive.
 
-### Scope: Post-processing focus
+### Scope
 
-Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rather than duplicate that work, this pipeline focuses on what sarek does NOT cover: pharmacogenomics, PRS, ancestry, telomere, repeat expansions, clinical interpretation, and reporting. The Nextflow pipeline accepts sarek output (VCF + BAM) as its primary input.
+v0.5.0 started as post-processing: alignment and variant calling were left to nf-core/sarek, and the Nextflow pipeline took sarek's VCF and BAM. That is no longer the scope. The Nextflow pipeline now starts from FASTQ as well (fastp, minimap2 with read groups and duplicate marking, the indexcov sex check, DeepVariant with a gVCF), and a samplesheet row can also start from a BAM, a CRAM or a VCF, sarek's included. Nextflow is the pipeline; the numbered scripts are single steps that share its images and helpers ([docs/nextflow.md](docs/nextflow.md)).
 
 ### Delivery
 
@@ -96,7 +96,7 @@ Every step currently runs on a single sample in isolation. This work would make 
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
 - [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
 - [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
-- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
+- [x] **Somalier sample identity QC** — step 33 (`sample_qc` in Nextflow): somalier's sex from the reads checked against the declared sex, the relatedness of every pair of samples in a run, and VerifyBamID2's contamination estimate
 - [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
 - [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with slivar inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 

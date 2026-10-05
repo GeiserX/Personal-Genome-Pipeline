@@ -3,8 +3,9 @@
     BAM_ANALYSIS — Parallel BAM-based analyses
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs HLA typing, repeat expansion detection, telomere length estimation,
-    coverage statistics, mitochondrial variant calling, and CYP2D6 star alleles
-    ALL in parallel from a single BAM input.
+    coverage statistics, mitochondrial variant calling, CYP2D6 star alleles
+    and the sample identity and contamination check ALL in parallel from a
+    single BAM input.
 
     Each module is gated on params.tools containing the tool name.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -18,6 +19,10 @@ include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
 include { CYRIUS           } from '../modules/local/cyrius/main'
+include { SOMALIER         } from '../modules/local/somalier/main'
+include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
+include { SAMPLE_QC        } from '../modules/local/somalier/main'
+include { VERIFYBAMID2     } from '../modules/local/verifybamid2/main'
 
 workflow BAM_ANALYSIS {
 
@@ -30,6 +35,8 @@ workflow BAM_ANALYSIS {
     ch_hla_dat           // channel: val(path) — Pre-downloaded IPD-IMGT/HLA hla.dat
     ch_hla_genes         // channel: val(path) — gene annotation (GTF) T1K takes coordinates from
     ch_cytoband          // channel: val(path) — UCSC GRCh38 chromosome bands or []
+    ch_somalier_sites    // channel: val(path) — somalier sites VCF or []
+    ch_verifybamid2_panel // channel: val(path) — folder of VerifyBamID2's .UD/.mu/.bed panel or []
 
     main:
     ch_versions = Channel.empty()
@@ -42,6 +49,7 @@ workflow BAM_ANALYSIS {
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
     ch_cyrius_results   = Channel.empty()
+    ch_sample_qc        = Channel.empty()
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -130,6 +138,60 @@ workflow BAM_ANALYSIS {
         ch_versions       = ch_versions.mix(CYRIUS.out.versions)
     }
 
+    //
+    // MODULE 7: Sample identity and contamination (somalier, VerifyBamID2)
+    // Gates on: params.tools contains 'sample_qc' (main.nf requires
+    // --somalier_sites and --verifybamid2_panel with it)
+    // SOMALIER_RELATE runs once over every sample, so two rows that are the
+    // same person are reported. A sex that disagrees with the samplesheet
+    // stops the run as INDEXCOV's check does (--sex_check warn logs it);
+    // contamination only warns.
+    //
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('sample_qc')) {
+        SOMALIER(ch_bam, ch_reference, ch_reference_fai, ch_somalier_sites)
+        SOMALIER_RELATE(SOMALIER.out.extract.map { meta, f, id_file -> f }.collect(), ch_somalier_sites)
+        VERIFYBAMID2(ch_bam, ch_reference, ch_reference_fai, ch_verifybamid2_panel)
+        ch_qc_in = SOMALIER.out.extract
+            .map { meta, f, id_file -> [meta.id, meta, id_file] }
+            .join(VERIFYBAMID2.out.selfsm.map { meta, selfsm, marker_check -> [meta.id, selfsm, marker_check] })
+            .map { _id, meta, id_file, selfsm, marker_check -> [meta, id_file, selfsm, marker_check] }
+        SAMPLE_QC(ch_qc_in, SOMALIER_RELATE.out.samples, SOMALIER_RELATE.out.pairs)
+        ch_sample_qc = SAMPLE_QC.out.table.map { meta, tsv ->
+            def qc = [:]
+            tsv.text.readLines().drop(1).each { line ->
+                def kv = line.split('\t', 2)
+                qc[kv[0]] = kv.size() > 1 ? kv[1] : ''
+            }
+            if (qc.sex_check == 'mismatch') {
+                def msg = "Sample '${meta.id}': the samplesheet says sex ${meta.sex}, but somalier infers " +
+                          "${qc.inferred_sex} from the reads (chrX sites ${qc.x_sites}: ${qc.x_het} heterozygous, " +
+                          "${qc.x_hom_alt} homozygous ALT; chrY depth ratio ${qc.y_depth_ratio}). Either the sample " +
+                          "is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome " +
+                          "aneuploidy. DeepVariant's chrX/chrY ploidy and ExpansionHunter take the declared sex."
+                if (params.sex_check == 'warn') {
+                    log.warn "${msg} --sex_check warn is set: going on with ${meta.sex}."
+                } else {
+                    error "${msg} Correct the sex column, or rerun with --sex_check warn to go on with the declared sex."
+                }
+            } else {
+                log.info "Sample '${meta.id}': somalier infers ${qc.inferred_sex} from the reads; " +
+                         "declared ${meta.sex ?: 'nothing'} (${qc.sex_check_reason})."
+            }
+            if (qc.contamination == 'warn') {
+                log.warn "Sample '${meta.id}': VerifyBamID2 estimates FREEMIX ${qc.freemix}, above --freemix_warn " +
+                         "${qc.freemix_warn_above}: about that share of the reads may come from another person. " +
+                         "Calls, above all heterozygous ones, are less reliable; see docs/33-sample-qc.md."
+            }
+            if (qc.same_person_as) {
+                log.warn "Sample '${meta.id}': somalier finds the same person in ${qc.same_person_as}: a duplicate " +
+                         "row or a sample swap."
+            }
+            [meta, tsv]
+        }
+        ch_versions = ch_versions.mix(SOMALIER.out.versions, SOMALIER_RELATE.out.versions,
+                                      VERIFYBAMID2.out.versions, SAMPLE_QC.out.versions)
+    }
+
     emit:
     hla_alleles      = ch_hla_alleles
     expansion_vcf    = ch_expansion_vcf
@@ -138,5 +200,6 @@ workflow BAM_ANALYSIS {
     coverage         = ch_coverage
     mito_vcf         = ch_mito_vcf
     cyrius_results   = ch_cyrius_results
+    sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     versions         = ch_versions
 }

@@ -101,7 +101,7 @@ It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both
 
 ## Small pinned data files
 
-`setup.sh` also installs four small files, each from a fixed commit or release and checked before it is stored. A failed download does not stop setup; the next run tries again, and `validate-setup.sh` lists what is missing.
+`setup.sh` also installs these small files, each from a fixed commit or release and checked before it is stored (`./scripts/setup.sh --sample-qc-data ${GENOME_DIR}` installs only the last two). A failed download does not stop setup; the next run tries again, and `validate-setup.sh` lists what is missing.
 
 | File | Source | Used by | Without it |
 |---|---|---|---|
@@ -109,6 +109,8 @@ It downloads the new file under `clinvar/.refresh/`, checks the md5, builds both
 | `reference/cytoBand.hg38.txt` | UCSC's GRCh38 chromosome bands, chr1-22, X and Y (sha256 checked) | step 10 (`telomerehunter -b`) | TelomereHunter falls back to its hg19 bands |
 | `hla/IPD-IMGT-HLA_<release>/hla.dat` | IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.65.0) from the IMGTHLA repository (md5 checked) | step 8 | step 8 is skipped |
 | `reference/gencode.v50.basic.genes.gtf` | the gene lines of GENCODE 50's basic annotation (md5 checked) | step 8 (gene positions for T1K) | step 8 is skipped |
+| `reference/somalier/sites.hg38.vcf.gz` | somalier's GRCh38 sites, 17,766 SNPs (sha256 checked) | step 33 (`somalier extract`), Nextflow `--somalier_sites` | step 33 stops and says to install it |
+| `reference/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.{UD,mu,bed}` | VerifyBamID2's 1000 Genomes panel of 100,000 markers, from the VerifyBamID v2.0.3 release (sha256 checked) | step 33 (`verifybamid2`), Nextflow `--verifybamid2_panel` | step 33 stops and says to install it |
 
 `setup.sh` also writes the reference's sequence dictionary (`GRCh38_no_alt_analysis_set.dict`), which GATK, Picard and `chip-to-vcf.sh` need.
 

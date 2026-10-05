@@ -1,23 +1,20 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    HTML_REPORT — Summary HTML report of key pipeline results
+    HTML_REPORT — The sample's HTML report, rendered by bin/render_report.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Generates a self-contained HTML file summarising ClinVar hits (grouped by
-    ClinVar review stars, via bin/clinvar_hits.awk), pharmacogenomics, cancer
-    predisposition (CPSR), clinical filtering, slivar variant prioritization,
-    runs of homozygosity, the mitochondrial haplogroup and the CPIC lookup.
-    Every card is always written; a card whose input is absent (its tool was
-    not in --tools) says "Not run" or N/A.
+    The same code scripts/24-html-report.sh runs: bin/collect_summary.py
+    reads the step outputs into summary.json (the bash step's name for it),
+    and render_report.py writes the report from it, so a number on the
+    Nextflow report is the number the bash report shows for the same file.
 
-    ROH total and largest segment are summed over the RG lines of
-    <id>_roh.txt the way bin/collect_summary.py sums them for the bash
-    report, so both reports print the same numbers from the same file.
+    The inputs are the outputs of the steps that ran for this sample, as one
+    list (main.nf joins them, so the report waits for each). They are linked
+    into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
+    cpic/, roh/, mito/, ...); a step that did not run has no file, and its
+    card says "Not run". The called or given VCF comes separately, because
+    its name is the user's.
 
-    A subset of scripts/24-html-report.sh. The script renders its report from
-    bin/collect_summary.py's summary (QC, PRS, HLA, CYP2D6, SVs, mito and the
-    run manifest included); this process cannot run it yet, because its image
-    (bcftools) has no Python. For the full report on a Nextflow run:
-      GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>
+    Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -28,304 +25,59 @@ process HTML_REPORT {
     publishDir { "${params.outdir}/${meta.id}" }, mode: params.publish_dir_mode
 
     input:
-    // roh_txt, haplogroup_txt and cpic_txt are [] when their tool did not run
-    tuple val(meta), path(clinvar_hits), path(pharmcat_html), path(clinical_vcf), path(cpsr_html), path(slivar_vcf),
-          path(roh_txt), path(haplogroup_txt), path(cpic_txt)
+    tuple val(meta), path(vcf, stageAs: 'input/sample.vcf.gz'), path(outputs, stageAs: 'input/*')
 
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
-    path "versions.yml",                             emit: versions
+    tuple val(meta), path("summary.json"),             emit: summary
+    path "versions.yml",                              emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
-    def has_clinvar  = clinvar_hits  && !clinvar_hits.name.startsWith('EMPTY')  ? true : false
-    def has_pharmcat = pharmcat_html && !pharmcat_html.name.startsWith('EMPTY') ? true : false
-    def has_clinical = clinical_vcf  && !clinical_vcf.name.startsWith('EMPTY')  ? true : false
-    def has_cpsr     = cpsr_html     && !cpsr_html.name.startsWith('EMPTY')     ? true : false
-    def has_slivar   = slivar_vcf    && !slivar_vcf.name.startsWith('EMPTY')    ? true : false
-    def has_roh        = roh_txt        ? true : false
-    def has_haplogroup = haplogroup_txt ? true : false
-    def has_cpic       = cpic_txt       ? true : false
-    def cpic_name      = has_cpic ? cpic_txt.name : ''
+    def id = meta.id
     """
-    #!/usr/bin/env bash
-    set -euo pipefail
+    # Where collect_summary.py looks for each output (bin/collect_summary.py)
+    S=layout/${id}
+    mkdir -p "\$S"
+    place() { mkdir -p "\$S/\$1" && ln -s "\$(readlink -f "\$2")" "\$S/\$1/\$(basename "\$2")"; }
+    place vcf input/sample.vcf.gz && mv "\$S/vcf/sample.vcf.gz" "\$S/vcf/${id}.vcf.gz"
+    for f in input/*; do
+        case "\$(basename "\$f")" in
+            sample.vcf.gz) ;;
+            ${id}_clinvar_hits.vcf)                       place clinvar "\$f" ;;
+            ${id}.report.json|${id}.report.html)          place pharmcat "\$f" ;;
+            ${id}_phenotypes.tsv|${id}_cpic_recommendations.txt) place cpic "\$f" ;;
+            ${id}_clinical.vcf.gz)                        place clinical "\$f" ;;
+            ${id}.cpsr.grch38.html)                       place cpsr "\$f" ;;
+            ${id}_prioritized.vcf.gz)                     place slivar "\$f" ;;
+            ${id}_roh.txt)                                place roh "\$f" ;;
+            ${id}_haplogroup.txt)                         place mito "\$f" ;;
+            ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
+            ${id}_sample_qc.tsv)                          place qc "\$f" ;;
+            *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
+        esac
+    done
+    find layout | sort
 
-    # --- Collect ClinVar hits ---
-    # clinvar_hits is CLINVAR_SCREEN's <id>_clinvar_hits.vcf: the sample's matching
-    # records with ClinVar's GENEINFO, CLNSIG and CLNREVSTAT copied on.
-    CLINVAR_HITS="N/A"
-    CLINVAR_ROWS=""
-    if [ "${has_clinvar}" = "true" ] && [ -f "${clinvar_hits}" ]; then
-        CLINVAR_HITS=\$(grep -c -v '^#' "${clinvar_hits}" || true)
-        # bin/clinvar_hits.awk (on the task PATH) gives one row per hit with
-        # its ClinVar review stars; the best-reviewed hits come first.
-        CLINVAR_ROWS=\$(awk -f "\$(command -v clinvar_hits.awk)" "${clinvar_hits}" \\
-            | sort -t "\$(printf '\\t')" -k1,1nr -k2,2V -k3,3n | head -20 | \\
-            awk -F'\\t' '
-                function esc(x) { gsub(/&/,"\\\\&amp;",x); gsub(/</,"\\\\&lt;",x); gsub(/>/,"\\\\&gt;",x); gsub(/"/,"\\\\&quot;",x); return x }
-                {
-                    printf "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",
-                        esc(\$2),esc(\$3),esc(\$4),esc(\$5),esc(\$6),esc(\$7),esc(\$8),esc(\$9),esc(\$1);
-                }' || true)
-    fi
+    render_report.py \\
+        --sample ${id} \\
+        --sample-dir "\$S" \\
+        --json summary.json \\
+        --declared-sex "${meta.sex ?: ''}" \\
+        -o ${id}_report.html
 
-    # --- PharmCAT status ---
-    PHARMCAT_STATUS="Not run"
-    if [ "${has_pharmcat}" = "true" ] && [ -f "${pharmcat_html}" ]; then
-        PHARMCAT_STATUS="Complete"
-    fi
-
-    # --- Clinical filter counts ---
-    CLINICAL_TOTAL="N/A"
-    if [ "${has_clinical}" = "true" ] && [ -f "${clinical_vcf}" ]; then
-        CLINICAL_TOTAL=\$(bcftools view -H "${clinical_vcf}" | wc -l | tr -d ' ')
-    fi
-
-    # --- CPSR status ---
-    CPSR_STATUS="Not run"
-    if [ "${has_cpsr}" = "true" ] && [ -f "${cpsr_html}" ]; then
-        CPSR_STATUS="Complete"
-    fi
-
-    # --- Slivar status ---
-    SLIVAR_STATUS="Not run"
-    SLIVAR_COUNT="N/A"
-    if [ "${has_slivar}" = "true" ] && [ -f "${slivar_vcf}" ]; then
-        SLIVAR_STATUS="Complete"
-        SLIVAR_COUNT=\$(bcftools view -H "${slivar_vcf}" | wc -l | tr -d ' ')
-    fi
-
-    # --- Runs of homozygosity: every RG segment, as bin/collect_summary.py counts them ---
-    ROH_STATUS="Not run"
-    ROH_SEGMENTS="N/A"
-    ROH_TOTAL="N/A"
-    ROH_LARGEST="N/A"
-    if [ "${has_roh}" = "true" ] && [ -f "${roh_txt}" ]; then
-        ROH_STATUS="Complete"
-        read -r ROH_SEGMENTS ROH_TOTAL ROH_LARGEST < <(awk '\$1 == "RG" && NF >= 6 && \$6 ~ /^[0-9.]+\$/ {
-                n++; t += \$6; if (\$6 + 0 > m) m = \$6 + 0 }
-            END { printf "%d %.1f %.1f\\n", n, t / 1e6, m / 1e6 }' "${roh_txt}")
-        ROH_TOTAL="\${ROH_TOTAL} MB"
-        ROH_LARGEST="\${ROH_LARGEST} MB"
-    fi
-
-    # --- Mitochondrial haplogroup: the Haplogroup column of haplogrep3's table ---
-    HAPLOGROUP_STATUS="Not run"
-    HAPLOGROUP="N/A"
-    if [ "${has_haplogroup}" = "true" ] && [ -f "${haplogroup_txt}" ]; then
-        HAPLOGROUP_STATUS="Complete"
-        HAPLOGROUP=\$(awk -F'\\t' '
-            function esc(x) { gsub(/&/,"\\\\&amp;",x); gsub(/</,"\\\\&lt;",x); gsub(/>/,"\\\\&gt;",x); gsub(/"/,"",x); return x }
-            NR == 1 { for (i = 1; i <= NF; i++) { h = \$i; gsub(/"/, "", h); if (h == "Haplogroup") c = i }; next }
-            NR == 2 { print esc(\$(c ? c : 2)); exit }' "${haplogroup_txt}")
-        HAPLOGROUP=\${HAPLOGROUP:-none called}
-    fi
-
-    # --- CPIC lookup status ---
-    CPIC_STATUS="Not run"
-    if [ "${has_cpic}" = "true" ] && [ -f "${cpic_txt}" ]; then
-        CPIC_STATUS="Complete"
-    fi
-
-    # --- ClinVar badge colour ---
-    CLINVAR_BADGE="badge-green"
-    if [ "\$CLINVAR_HITS" != "N/A" ] && [ "\$CLINVAR_HITS" -gt 5 ] 2>/dev/null; then
-        CLINVAR_BADGE="badge-yellow"
-    fi
-
-    # --- Generate HTML ---
-    cat > ${meta.id}_report.html << 'HTMLHEAD'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Personal Genome Pipeline Report</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-         background: #f5f5f5; color: #333; line-height: 1.6; }
-  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
-  .header { background: linear-gradient(135deg, #1a5276 0%, #2e86c1 100%);
-            color: white; padding: 30px; border-radius: 12px; margin-bottom: 24px; }
-  .header h1 { font-size: 28px; margin-bottom: 8px; }
-  .header .meta { opacity: 0.85; font-size: 14px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 24px; }
-  .card { background: white; border-radius: 10px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  .card h2 { font-size: 18px; color: #1a5276; margin-bottom: 16px;
-             padding-bottom: 8px; border-bottom: 2px solid #eee; }
-  .stat { display: flex; justify-content: space-between; padding: 8px 0;
-          border-bottom: 1px solid #f0f0f0; }
-  .stat:last-child { border-bottom: none; }
-  .stat .label { color: #666; }
-  .stat .value { font-weight: 600; }
-  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px;
-           font-size: 13px; font-weight: 600; }
-  .badge-green { background: #d5f5e3; color: #196f3d; }
-  .badge-yellow { background: #fef9e7; color: #7d6608; }
-  .badge-gray { background: #eee; color: #666; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
-  th { background: #f8f9fa; font-weight: 600; color: #555; }
-  .full-width { grid-column: 1 / -1; }
-  .disclaimer { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
-                padding: 16px; margin-top: 24px; font-size: 14px; }
-  .footer { text-align: center; color: #999; font-size: 13px; margin-top: 24px; padding: 16px; }
-  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<div class="container">
-HTMLHEAD
-
-    cat >> ${meta.id}_report.html << EOF
-<div class="header">
-  <h1>Genomic Analysis Report</h1>
-  <div class="meta">
-    Sample: <strong>${meta.id}</strong> &nbsp;|&nbsp;
-    Generated: \$(date '+%Y-%m-%d %H:%M') &nbsp;|&nbsp;
-    Pipeline: <a href="https://github.com/GeiserX/Personal-Genome-Pipeline" style="color:#aed6f1">Personal-Genome-Pipeline</a>
-  </div>
-</div>
-<div class="grid">
-EOF
-
-    # Card: ClinVar
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>ClinVar Screening</h2>
-    <div class="stat"><span class="label">ClinVar matches</span>
-      <span class="value"><span class="badge \${CLINVAR_BADGE}">\${CLINVAR_HITS}</span></span></div>
-    <div class="stat"><span class="label">Status</span>
-      <span class="value">\$([ "\$CLINVAR_HITS" = "N/A" ] && echo '<span class="badge badge-gray">Not run</span>' || echo '<span class="badge badge-green">Complete</span>')</span></div>
-  </div>
-EOF
-
-    # Card: Pharmacogenomics
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Pharmacogenomics</h2>
-    <div class="stat"><span class="label">PharmCAT report</span>
-      <span class="value"><span class="badge \$([ "\$PHARMCAT_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${PHARMCAT_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Tip</span>
-      <span class="value" style="font-weight:normal;font-size:13px">Open the PharmCAT HTML report for full drug-gene details</span></div>
-  </div>
-EOF
-
-    # Card: Cancer Predisposition
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Cancer Predisposition</h2>
-    <div class="stat"><span class="label">CPSR report</span>
-      <span class="value"><span class="badge \$([ "\$CPSR_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${CPSR_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Tip</span>
-      <span class="value" style="font-weight:normal;font-size:13px">Open the CPSR HTML report for tier classification details</span></div>
-  </div>
-EOF
-
-    # Card: Clinical Filter
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Clinical Variant Filter</h2>
-    <div class="stat"><span class="label">Total interesting variants</span><span class="value">\${CLINICAL_TOTAL}</span></div>
-  </div>
-EOF
-
-    # Card: Slivar
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Variant Prioritization (Slivar)</h2>
-    <div class="stat"><span class="label">Status</span>
-      <span class="value"><span class="badge \$([ "\$SLIVAR_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${SLIVAR_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Prioritized variants</span><span class="value">\${SLIVAR_COUNT}</span></div>
-    <div class="stat"><span class="label">Tip</span>
-      <span class="value" style="font-weight:normal;font-size:13px">Rare HIGH/MODERATE + deleterious + ClinVar pathogenic tiers</span></div>
-  </div>
-EOF
-
-    # Card: Runs of homozygosity
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Runs of Homozygosity</h2>
-    <div class="stat"><span class="label">Status</span>
-      <span class="value"><span class="badge \$([ "\$ROH_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${ROH_STATUS}</span></span></div>
-    <div class="stat"><span class="label">ROH total</span><span class="value">\${ROH_TOTAL}</span></div>
-    <div class="stat"><span class="label">ROH largest segment</span><span class="value">\${ROH_LARGEST}</span></div>
-    <div class="stat"><span class="label">Segments</span><span class="value">\${ROH_SEGMENTS}</span></div>
-  </div>
-EOF
-
-    # Card: Mitochondrial haplogroup
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>Mitochondrial Haplogroup</h2>
-    <div class="stat"><span class="label">Status</span>
-      <span class="value"><span class="badge \$([ "\$HAPLOGROUP_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${HAPLOGROUP_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Haplogroup</span><span class="value">\${HAPLOGROUP}</span></div>
-  </div>
-EOF
-
-    # Card: CPIC drug-gene lookup
-    cat >> ${meta.id}_report.html << EOF
-  <div class="card">
-    <h2>CPIC Drug Recommendations</h2>
-    <div class="stat"><span class="label">Status</span>
-      <span class="value"><span class="badge \$([ "\$CPIC_STATUS" = "Complete" ] && echo "badge-green" || echo "badge-gray")">\${CPIC_STATUS}</span></span></div>
-    <div class="stat"><span class="label">Tip</span>
-      <span class="value" style="font-weight:normal;font-size:13px">\$([ "\$CPIC_STATUS" = "Complete" ] && echo "Recommendations per gene: cpic/${cpic_name}" || echo "Add cpic (and pharmcat) to --tools")</span></div>
-  </div>
-EOF
-
-    # ClinVar detail table
-    if [ -n "\$CLINVAR_ROWS" ]; then
-        cat >> ${meta.id}_report.html << EOF
-  <div class="card full-width">
-    <h2>ClinVar Hits (Top 20, best-reviewed first)</h2>
-    <table>
-      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th><th>Significance</th><th>Review status</th><th>Stars</th></tr>
-      \${CLINVAR_ROWS}
-    </table>
-  </div>
-EOF
-    fi
-
-    # Close grid, disclaimer, footer
-    cat >> ${meta.id}_report.html << 'HTMLFOOT'
-</div>
-
-<div class="disclaimer">
-  <strong>Disclaimer:</strong> This report is for educational and research purposes only.
-  It is not a clinical diagnosis. Always discuss genomic findings with a qualified healthcare
-  professional before making any medical decisions. Variants of Uncertain Significance (VUS)
-  are not clinically actionable.
-</div>
-
-<div class="footer">
-  Generated by <a href="https://github.com/GeiserX/Personal-Genome-Pipeline">Personal-Genome-Pipeline</a>
-  — 100% local analysis, no data uploaded
-</div>
-
-</div>
-</body>
-</html>
-HTMLFOOT
-
-    # printf, not a here-document: the column-0 lines above stop Nextflow
-    # from stripping this script's indent, and an indented END_VERSIONS
-    # would not end a <<- here-document.
-    printf '"%s":\\n    bcftools: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
+    printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
-    touch ${meta.id}_report.html
+    touch ${meta.id}_report.html summary.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

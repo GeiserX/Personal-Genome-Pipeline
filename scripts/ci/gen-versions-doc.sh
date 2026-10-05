@@ -41,6 +41,11 @@ HEADER
         line = substr(line, 1, RSTART)
       }
       val = line; sub(/^[^=]*="/, "", val); sub(/".*$/, "", val)
+      # The Image and Pinned version cells keep the shape that the Renovate
+      # docs/versions.md matcher reads (renovate.json): a tag+digest pin
+      # (NAME:TAG@sha256:...) is image NAME:TAG and version sha256:..., a
+      # digest-only pin NAME and sha256:..., a tag pin NAME and TAG. The Tool
+      # cell is the name alone, without a tag.
       if (index(val, "@") > 0) {
         image = substr(val, 1, index(val, "@") - 1)
         version = substr(val, index(val, "@") + 1)
@@ -50,7 +55,9 @@ HEADER
       } else {
         image = val; version = "(none)"
       }
-      tool = image; sub(/^.*\//, "", tool)
+      name = image
+      if (index(val, "@") > 0) sub(/:[^:\/]*$/, "", name)
+      tool = name; sub(/^.*\//, "", tool)
       printf "| %s | %s | `%s` | `%s` | `%s` | %s |\n", cell(group), cell(tool), var, image, version, cell(note)
       n++
     }

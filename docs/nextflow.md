@@ -3,10 +3,10 @@
 The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`. Each samplesheet row starts from one of three places:
 
 - **FASTQ**: the reads are trimmed (fastp), aligned (minimap2, read group, duplicates marked) and called (DeepVariant, a VCF and a gVCF, chrX and chrY haploid for a male sample);
-- **a BAM** without a VCF: it is called;
-- **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM.
+- **a BAM or a CRAM** without a VCF: it is called;
+- **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM or CRAM.
 
-Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 44 processes in 34 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 50 processes in 37 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
 > **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` still chains them on one machine. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
@@ -52,6 +52,9 @@ nextflow run main.nf \
 #    --tools '...,cnvpytor'                    + --cnvpytor_resources
 #    --tools '...,delly'                       (optional --delly_exclude <excl.tsv>, passed as delly sr -x)
 #    --tools '...,manta'                       (optional --manta_call_regions <regions.bed.gz>, its .tbi beside it)
+#    --tools '...,sample_qc'                   + --somalier_sites + --verifybamid2_panel (setup.sh --sample-qc-data
+#                                                installs both; see docs/33-sample-qc.md)
+#    --tools '...,cram_archive'                writes a checked CRAM beside each BAM (docs/34-cram-archive.md)
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
 #    TelomereHunter uses its own hg19 bands and the run logs a warning
 #    An unknown name in --tools stops the run.
@@ -66,7 +69,7 @@ nextflow run main.nf \
 | `--skip_trim` | false | Align the raw reads, without fastp (`SKIP_TRIM=true` of step 01b) |
 | `--minimap2_index` | `<reference base>.sr.mmi` beside the FASTA | The minimap2 index built with `-x sr`, the file step 02 builds. When it is not there, the run builds one (about 30 minutes for GRCh38, cached by `-resume`) |
 | `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
-| `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex |
+| `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex. With `sample_qc`, the same applies to the sex somalier infers from the reads |
 
 The trimmed reads stay in the work directory; the fastp reports are published. A run from FASTQ needs the same memory as step 02 for alignment (minimap2 peaks near 10 GB on a 1.8 Gb reference) and DeepVariant's (32 GB by default); `--max_memory` caps both.
 
@@ -89,22 +92,23 @@ Only the failed and downstream steps re-run.
 | `sample` | Yes | Sample identifier (used as output directory name) |
 | `fastq_1`, `fastq_2` | One of three* | Paired gzipped FASTQ: trimmed, aligned and called |
 | `bam`, `bam_index` | One of three* | Aligned BAM and its index (`.bam.bai`): called when the row has no VCF |
+| `cram`, `crai` | Instead of a BAM | Aligned CRAM and its index, read with `--reference` (the FASTA it was written with). `CRAM_TO_BAM` writes it out as a BAM in the work directory, checked against it, and the row goes on as a BAM row |
 | `vcf`, `vcf_index` | One of three* | Bgzipped VCF (`.vcf.gz`) and its tabix index from any caller; a BAM on the same row is optional |
 | `sex` | On called rows** | `male` or `female` |
 
-\* A row starts from FASTQ, or from a BAM, or from a VCF (with or without a BAM); a row with FASTQ and a BAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
+\* A row starts from FASTQ, or from a BAM or CRAM, or from a VCF (with or without a BAM or CRAM); a row with FASTQ and a BAM, CRAM or VCF stops the run. A VCF-only row is valid for annotation and PGx, but most default tools (mosdepth, telomere_hunter, cyrius, mito_variants) and opt-in tools (expansion_hunter, hla_typing, pypgx) need a BAM. **Provide reads or a BAM for full analysis.** A row the pipeline calls gets a VCF and a gVCF; PharmCAT and PRS then read the sites where the sample matches the reference from the gVCF.
 
 The VCF must name its contigs the GRCh38 way with chr (`chr1` to `chr22`, `chrX`, `chrY`, `chrM`); a VCF named `1`, `MT` stops the run with the rename command. A gVCF given in the `vcf` column stops the run with `pharmcat` selected: the pipeline expands the reference blocks of the gVCF DeepVariant writes for a called row, not of a given one, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for both.
 
-\*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
+\*\* `sex` is required on every row the pipeline calls (FASTQ, or a BAM or CRAM without a VCF): for a male sample DeepVariant calls chrX and chrY haploid outside the pseudoautosomal regions. It is required on every row with a BAM or CRAM when `expansion_hunter` is in `--tools`, where it sets the chrX ploidy (ExpansionHunter's default is female). A row that needs it and lacks it stops the run at parse time.
 
-**Sex check.** `INDEXCOV` (goleft indexcov, seconds per sample: it reads only the `.bai`) infers each BAM's sex from the chrX and chrY copy numbers and writes it to `<sample>_sex_check.tsv`. When the row declares a sex and indexcov infers another (or cannot tell), the run stops before any step reads the BAM, and the message gives both values and the copy numbers: the sample is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome aneuploidy. `--sex_check warn` logs it and goes on with the declared sex. On a small region slice, like the test fixture, indexcov's call is not reliable.
+**Sex check.** With `sample_qc` in `--tools`, somalier also infers the sex from the reads (chrX heterozygosity) and the same rule and `--sex_check` apply; see [Step 33](33-sample-qc.md). `INDEXCOV` (goleft indexcov, seconds per sample: it reads only the `.bai`) infers each BAM's sex from the chrX and chrY copy numbers and writes it to `<sample>_sex_check.tsv`. When the row declares a sex and indexcov infers another (or cannot tell), the run stops before any step reads the BAM, and the message gives both values and the copy numbers: the sample is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome aneuploidy. `--sex_check warn` logs it and goes on with the declared sex. On a small region slice, like the test fixture, indexcov's call is not reliable.
 
 Each `sample` value must appear once; a repeated id stops the run, because the id names the output directory and keys every per-sample join.
 
 ### Using Sarek Output
 
-If you ran [nf-core/sarek](https://nf-co.re/sarek) for alignment and variant calling, point the samplesheet at sarek's output files. Sarek 3.x writes CRAM by default, and this pipeline reads BAM only, so run sarek with `--save_output_as_bam` to get the `.recal.bam` files below (or convert the CRAM with `samtools view -b -T <reference>`):
+If you ran [nf-core/sarek](https://nf-co.re/sarek) for alignment and variant calling, point the samplesheet at sarek's output files. Sarek 3.x writes CRAM by default: give it in the `cram` and `crai` columns, with sarek's reference as `--reference`, or run sarek with `--save_output_as_bam` to get the `.recal.bam` files below:
 
 ```csv
 sample,vcf,vcf_index,bam,bam_index
@@ -150,10 +154,13 @@ nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
 results/
 ├── sample1/
 │   ├── fastq_trimmed/      # fastp reports, JSON + HTML (FASTQ rows)
-│   ├── aligned/            # <sample>_sorted.bam + .bai: minimap2, duplicates marked (FASTQ rows)
+│   ├── aligned/            # <sample>_sorted.bam + .bai: minimap2, duplicates marked (FASTQ rows);
+│   │                       #   <sample>_sorted.cram + .crai, checked against the BAM (cram_archive)
 │   ├── vcf/                # <sample>.vcf.gz and <sample>.g.vcf.gz + .tbi: DeepVariant (called rows)
 │   ├── indexcov/           # goleft indexcov coverage plots and .ped (rows with a BAM)
 │   ├── <sample>_sex_check.tsv  # the sex indexcov infers, with CNchrX and CNchrY
+│   ├── qc/                 # <sample>_sample_qc.tsv: somalier's sex, FREEMIX, same person as (sample_qc);
+│   │                       #   somalier/ and verifybamid2/ hold each tool's own files
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
 │   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
 │   ├── pypgx/              # pypgx star allele calling (optional)
@@ -179,8 +186,10 @@ results/
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers (optional)
-│   └── *_report.html       # Summary HTML report (published to sample root): ClinVar, PharmCAT, CPIC,
+│   ├── summary.json        # The numbers the report is rendered from (html_report)
+│   └── *_report.html       # Summary HTML report (published to sample root): QC, ClinVar, PharmCAT, CPIC,
 │                           #   CPSR, clinical filter, slivar, ROH, mito haplogroup; "Not run" for a tool not selected
+├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
     ├── timeline_*.html
@@ -253,7 +262,7 @@ Where a module and its script differ on purpose:
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
 | PRS (25) | labels each score with its trait | the `Condition` column repeats the PGS id: the module scores whatever files `--pgs_scoring` holds |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
-| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` shows a subset: ClinVar, PharmCAT, CPSR, clinical filter, slivar, ROH, mito haplogroup, CPIC. For the full report, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
+| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mito haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
 | Cyrius (21) | holds Cyrius' dependencies to `scripts/cyrius-constraints.txt` | pins Cyrius only (see [Cyrius runtime installation](#cyrius-runtime-installation)) |
 

@@ -37,17 +37,20 @@ Two more files, when present:
 `${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html` and `${GENOME_DIR}/${SAMPLE}/summary.json`.
 
 The report contains:
-- **Quality Control** — mean depth (mosdepth), sex inferred from X/Y coverage (indexcov) against the declared sex
+- **Quality Control** — mean depth (mosdepth), sex inferred from X/Y coverage (indexcov) against the declared sex, and from step 33: the sex somalier infers from the reads, FREEMIX (VerifyBamID2's estimate of reads from another person) against its warning threshold, and any other sample that is the same person
 - **Variant Calling** — total variants, PASS count, SNPs, indels (one pass over the VCF)
 - **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column
-- **Pharmacogenomics** — PharmCAT version, CPIC genes with a non-normal phenotype, PharmCAT/pypgx conflicts, and a table of the non-normal genes
+- **Pharmacogenomics** — PharmCAT version and PharmCAT/pypgx conflicts
+- **CPIC Drug Recommendations** — genes with a non-normal phenotype, with more than one possible result, not called, and a table of the non-normal genes
 - **CYP2D6 Across Callers** — PharmCAT, pypgx and Cyrius side by side, with whether they agree
 - **HLA Typing** — T1K alleles per locus and the IPD-IMGT/HLA release
 - **Polygenic Risk Scores** — the raw scores (not percentiles)
 - **Structural Variants** — Manta, Delly, CNVpytor and consensus counts
 - **Cancer Predisposition** — CPSR status and the classification breakdown (read by column name from `${SAMPLE}.cpsr.grch38.classification.tsv.gz`)
 - **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK)
-- **Ancestry & Identity** — haplogroup, ROH, telomere content
+- **Runs of Homozygosity** — total, largest segment, segments, autosomal runs over 5 MB
+- **Mitochondrial Haplogroup** — haplogrep3's call
+- **Telomere Length** — TelomereHunter's telomere content
 - **Mitochondrial** — chrM PASS variants and heteroplasmic calls (allele fraction 0.05 to 0.95; below 5% NUMT reads and noise dominate)
 - **Clinical Filter** and **slivar** — variant counts from steps 23 and 31
 - **Steps Not Run** and **Not Assessed by This Pipeline**
@@ -82,4 +85,4 @@ start ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html
 - Steps that were not run show "Not run" and are listed under Steps Not Run — this is expected
 - The report contains health findings: the ClinVar table lists your pathogenic and likely pathogenic variants, and other sections summarise pharmacogenomics, CPSR and the other steps. It holds no raw reads or full VCF, but share it only as you would share a medical record
 - Re-run this script anytime to update the report after running additional steps
-- The Nextflow `HTML_REPORT` module still renders its own, smaller report (ClinVar with stars, PharmCAT, the CPIC lookup, CPSR, clinical filter, slivar, runs of homozygosity and the mitochondrial haplogroup): its image has no Python. Its ROH total and largest segment are summed the way this script sums them, so both reports print the same numbers. For the full report on a Nextflow run, run this script with `GENOME_DIR` set to the `--outdir`
+- The Nextflow `HTML_REPORT` module runs the same `bin/render_report.py` on the outputs of its run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mitochondrial haplogroup steps, so both reports print the same numbers for the same file. Its clinical filter and slivar cards show counts only. For every section on a Nextflow run, run this script with `GENOME_DIR` set to the `--outdir`

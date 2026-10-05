@@ -15,7 +15,8 @@
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
-| **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, SV filtering | 1b, 15, 16, 16b, 28 |
+| **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, sample identity and contamination, SV filtering | 1b, 15, 16, 16b, 28, 33 |
+| **Storage** | Alignments kept as a checked CRAM, about half the size of the BAM | 34 |
 
 ## Pipeline Overview
 
@@ -57,6 +58,8 @@ graph LR
     BAM --> coverage["mosdepth<br/>+ indexcov"]
     BAM --> mito["Mutect2<br/><small>Mitochondrial</small>"]
     BAM --> haplo["Haplogrep3<br/><small>mtDNA haplogroup</small>"]
+    BAM --> sampleqc["somalier + VerifyBamID2<br/><small>Identity + contamination</small>"]
+    BAM --> cram["CRAM archive"]
 
     %% Reporting
     clinical --> report["HTML Report<br/>+ MultiQC"]
@@ -64,6 +67,7 @@ graph LR
     clinvar --> report
     pharmcat --> report
     cpsr --> report
+    sampleqc --> report
 
     %% Styling
     classDef input fill:#0ea5e9,stroke:#0284c7,color:#fff
@@ -75,7 +79,7 @@ graph LR
 
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
-    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
+    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo,sampleqc,cram analysis
     class manta,delly,cnvpytor,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
@@ -127,12 +131,14 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 30 | [Annotation Enrichment](30-vcfanno.md) | vcfanno | `VCFANNO_IMAGE` | If step 13 run |
 | 31 | [Variant Prioritization](31-slivar.md) | slivar | `SLIVAR_IMAGE` | If step 13 run |
 | 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `PYPGX_IMAGE` | Recommended |
+| 33 | [Sample Identity and Contamination](33-sample-qc.md) | somalier + VerifyBamID2 | `SOMALIER_IMAGE` + `VERIFYBAMID2_IMAGE` | Recommended |
+| 34 | [CRAM Archive](34-cram-archive.md) | samtools | `SAMTOOLS_IMAGE` | Optional, when the analysis is done |
 
 ### What a default run covers
 
 A default `./scripts/run-all.sh <sample> <sex>` runs **31 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 30, 31 and 32. Steps 5, 13, 17, 18 and 32 are reported as skipped when their data is not installed, and 23, 30 and 31 when step 13 did not run. It ends with the summary report (`generate-report.sh`).
 
-Off unless you ask for them: 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 26 (`ANCESTRY=true`), 29 (`SOMATIC=true`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand.
+Off unless you ask for them: 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 26 (`ANCESTRY=true`), 29 (`SOMATIC=true`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
 
 The [Nextflow pipeline](nextflow.md) runs the same chain from a samplesheet, from FASTQ (steps 1b, 2, 16 and 3) to the report, with the steps above that have a module.
 

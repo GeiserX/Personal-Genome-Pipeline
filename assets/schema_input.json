@@ -42,9 +42,19 @@
                 "description": "Path to BAM index (.bai)",
                 "pattern": "^\\S+\\.bam\\.bai$"
             },
+            "cram": {
+                "type": "string",
+                "description": "Path to a CRAM instead of the BAM (no bam on the same row). It is read with --reference, which must be the FASTA the CRAM was written with.",
+                "pattern": "^\\S+\\.cram$"
+            },
+            "crai": {
+                "type": "string",
+                "description": "Path to the CRAM index (.crai)",
+                "pattern": "^\\S+\\.crai$"
+            },
             "sex": {
                 "type": "string",
-                "description": "Sample sex (male or female). Required on every row that is called (FASTQ, or a BAM without a VCF), where it sets DeepVariant's chrX/chrY ploidy, and when expansion_hunter is in --tools. INDEXCOV checks it against the BAM.",
+                "description": "Sample sex (male or female). Required on every row that is called (FASTQ, or a BAM or CRAM without a VCF), where it sets DeepVariant's chrX/chrY ploidy, and when expansion_hunter is in --tools. INDEXCOV checks it against the BAM, and somalier against the reads with sample_qc.",
                 "enum": ["male", "female"]
             }
         },
@@ -52,6 +62,7 @@
         "anyOf": [
             { "required": ["fastq_1", "fastq_2"] },
             { "required": ["bam", "bam_index"] },
+            { "required": ["cram", "crai"] },
             { "required": ["vcf", "vcf_index"] }
         ]
     }
