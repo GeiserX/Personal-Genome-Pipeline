@@ -41,21 +41,23 @@ HEADER
         line = substr(line, 1, RSTART)
       }
       val = line; sub(/^[^=]*="/, "", val); sub(/".*$/, "", val)
-      # A digest goes first, so a tag+digest pin (NAME:TAG@sha256:...) gives
-      # tool NAME and version TAG@sha256:..., not a tool named after its tag. A tag is a colon after the last slash (a registry port
-      # is not one).
-      digest = ""
+      # The Image and Pinned version cells keep the shape that the Renovate
+      # docs/versions.md matcher reads (renovate.json): a tag+digest pin
+      # (NAME:TAG@sha256:...) is image NAME:TAG and version sha256:..., a
+      # digest-only pin NAME and sha256:..., a tag pin NAME and TAG. The Tool
+      # cell is the name alone, without a tag.
       if (index(val, "@") > 0) {
-        digest = substr(val, index(val, "@") + 1)
-        val = substr(val, 1, index(val, "@") - 1)
+        image = substr(val, 1, index(val, "@") - 1)
+        version = substr(val, index(val, "@") + 1)
+      } else if (index(val, ":") > 0) {
+        image = val; sub(/:[^:]*$/, "", image)
+        version = val; sub(/^.*:/, "", version)
+      } else {
+        image = val; version = "(none)"
       }
-      image = val; tag = ""
-      if (match(val, /:[^:\/]*$/)) {
-        image = substr(val, 1, RSTART - 1)
-        tag = substr(val, RSTART + 1)
-      }
-      version = (tag != "" && digest != "") ? tag "@" digest : (tag != "" ? tag : (digest != "" ? digest : "(none)"))
-      tool = image; sub(/^.*\//, "", tool)
+      name = image
+      if (index(val, "@") > 0) sub(/:[^:\/]*$/, "", name)
+      tool = name; sub(/^.*\//, "", tool)
       printf "| %s | %s | `%s` | `%s` | `%s` | %s |\n", cell(group), cell(tool), var, image, version, cell(note)
       n++
     }

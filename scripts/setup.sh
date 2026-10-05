@@ -94,16 +94,16 @@ if [ -z "${REF_FAI_MD5+x}" ]; then REF_FAI_MD5="$(dirname "$REF_FASTA_URL")/md5c
 # (scripts/33-sample-qc.sh) and validate-setup.sh read them under these names.
 SOMALIER_SITES_URL=https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz
 SOMALIER_SITES_SHA256=d1a853b8bb2e5f1a520bc67c8303be699543d225d785bce51e8335a2420489b5
-# The panel of the VerifyBamID release VERIFYBAMID2_IMAGE packages (v2.0.3).
-VB2_PANEL_URL=https://raw.githubusercontent.com/Griffan/VerifyBamID/v2.0.3/resource/1000g.phase3.100k.b38.vcf.gz.dat
-VB2_PANEL_SHA256="UD 259e320123756bb702542e3b3c4d766b481426d96cd63abd4b9f9fced035f375
-mu f7e8b4fad17cc433d887f18bf183fa4b89597d5a375f22133f44f39c5e35ffc8
-bed 0025d782137e5906bbc7afc553c49d2c82c5b8f0bfa0649bc415887442f42869"
+# The panel of the VerifyBamID release VERIFYBAMID2_IMAGE packages (v2.0.3):
+# one line per file, its URL and its sha256.
+VB2_PANEL_FILES="https://raw.githubusercontent.com/Griffan/VerifyBamID/v2.0.3/resource/1000g.phase3.100k.b38.vcf.gz.dat.UD 259e320123756bb702542e3b3c4d766b481426d96cd63abd4b9f9fced035f375
+https://raw.githubusercontent.com/Griffan/VerifyBamID/v2.0.3/resource/1000g.phase3.100k.b38.vcf.gz.dat.mu f7e8b4fad17cc433d887f18bf183fa4b89597d5a375f22133f44f39c5e35ffc8
+https://raw.githubusercontent.com/Griffan/VerifyBamID/v2.0.3/resource/1000g.phase3.100k.b38.vcf.gz.dat.bed 0025d782137e5906bbc7afc553c49d2c82c5b8f0bfa0649bc415887442f42869"
 
 # install_sample_qc_data: install both under GENOME_DIR/reference unless they
 # are there. Returns 1 when a download fails its check.
 install_sample_qc_data() {
-  local dest="${GENOME_DIR}/reference" ext sha rc=0
+  local dest="${GENOME_DIR}/reference" url sha rc=0
   if [ -s "${dest}/somalier/sites.hg38.vcf.gz" ]; then
     echo "[OK] somalier sites (step 33) already present."
   elif fetch "$SOMALIER_SITES_URL" "${dest}/somalier/sites.hg38.vcf.gz" sha256 "$SOMALIER_SITES_SHA256"; then
@@ -112,15 +112,15 @@ install_sample_qc_data() {
     echo "[WARN] Could not install somalier's sites. Step 33 needs them; re-run setup.sh."
     rc=1
   fi
-  while read -r ext sha; do
-    if [ -s "${dest}/verifybamid2/$(basename "$VB2_PANEL_URL").${ext}" ]; then
+  while read -r url sha; do
+    if [ -s "${dest}/verifybamid2/$(basename "$url")" ]; then
       continue
     fi
-    if ! fetch "${VB2_PANEL_URL}.${ext}" "${dest}/verifybamid2/$(basename "$VB2_PANEL_URL").${ext}" sha256 "$sha"; then
-      echo "[WARN] Could not install VerifyBamID2's panel (.${ext}). Step 33 needs it; re-run setup.sh."
+    if ! fetch "$url" "${dest}/verifybamid2/$(basename "$url")" sha256 "$sha"; then
+      echo "[WARN] Could not install $(basename "$url") of VerifyBamID2's panel. Step 33 needs it; re-run setup.sh."
       rc=1
     fi
-  done <<<"$VB2_PANEL_SHA256"
+  done <<<"$VB2_PANEL_FILES"
   [ "$rc" -eq 0 ] && echo "[OK] VerifyBamID2 panel (step 33): ${dest}/verifybamid2/"
   return "$rc"
 }
