@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Steps 03 and 03e and run-all.sh take the sample's sex:
+# Steps 03 and 03e take the sample's sex:
 #   03 male    DeepVariant gets --haploid_contigs=chrX,chrY and the PAR BED;
 #              female and no sex do not; any other value stops with exit 2.
 #   03         writes a VCF and a gVCF with their indexes under temporary
@@ -7,8 +7,6 @@
 #              intermediate files in the sample directory, removed after; a
 #              run that leaves no gVCF fails and keeps the earlier VCF.
 #   03e male   Clair3 gets --gender=male and the PAR BED; CLAIR3_MODEL wins.
-#   run-all    passes the sex to step 03, and calls again when the VCF has
-#              no index; it aligns again when the BAM has no index.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -118,16 +116,3 @@ if awk '/run_clair3/ && /--gender/ { bad = 1 } END { exit !bad }' "$FAKE_DOCKER_
 fi
 docker_log_has 'run_clair3\.sh .*--model_path=/opt/models/hifi_revio ' "Clair3 HiFi model path changed"
 run_expect 2 clair3-badsex env PLATFORM=ont "${SCRIPTS}/03e-clair3.sh" sample1 M
-
-# --- run-all: sex to step 03; index decides the skips ------------------------------
-# DeepVariant fails here on purpose: the run stops at phase 2, after the call
-# this checks. A VCF without its index is called again.
-rm -f "${V}/sample1.vcf.gz.tbi"
-: > "$FAKE_DOCKER_LOG"
-run_rc run-all env SKIP_VALIDATION=true FAKE_DV=fail "${SCRIPTS}/run-all.sh" sample1 male
-output_has run-all 'BAM and its index already exist, skipping alignment'
-output_has run-all '\[Phase 2\] Variant calling'
-docker_log_has 'run_deepvariant .*--haploid_contigs=chrX.?,chrY ' "run-all did not pass male to step 03"
-rm -f "${GENOME_DIR}/sample1/aligned/sample1_sorted.bam.bai"
-run_rc run-all-nobai env SKIP_VALIDATION=true "${SCRIPTS}/run-all.sh" sample1 male
-output_has run-all-nobai '\[Phase 1\] Alignment'

@@ -96,7 +96,7 @@ The CI pipeline enforces this with automated scanning.
 7. **Update these files:**
    - [`mkdocs.yml`](mkdocs.yml): the page in `nav:`
    - [`docs/pipeline-overview.md`](docs/pipeline-overview.md): the category table
-   - `scripts/run-all.sh`: add to the appropriate phase
+   - `scripts/run-all.sh`: one entry in its step list (a `plan` call), so a default run passes the module's name in `--tools` (and its database parameter when the data is under `GENOME_DIR`). A bash-only step that a default run should include gets a switch there instead, run after the pipeline
    - [`tests/smoke/commands.tsv`](tests/smoke/commands.tsv): a row for the image, a real command on the fixture and a check on what the tool wrote. [`container-test.yml`](.github/workflows/container-test.yml) fails for an image with no row
    - `scripts/validate-setup.sh`: only if the step needs reference data to check
    - `docs/interpreting-results.md`: add output interpretation

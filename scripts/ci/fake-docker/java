@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Fake `java` for scripts/ci/run-fake-docker-suite.sh: answers -version the
+# way a JDK does (on stderr) with FAKE_JAVA_VERSION (default 17.0.2), so a
+# case does not depend on the Java the runner has.
+set -uo pipefail
+[ "${1:-}" = -version ] || { echo "fake java: only -version is answered" >&2; exit 1; }
+echo "openjdk version \"${FAKE_JAVA_VERSION:-17.0.2}\" 2024-01-16" >&2

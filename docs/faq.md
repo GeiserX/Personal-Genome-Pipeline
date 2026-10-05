@@ -28,7 +28,10 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop a default `run-all.sh` takes about 6-12 hours per sample, because it runs independent steps in parallel. [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) has the time of each step, and the [pipeline overview](pipeline-overview.md#what-a-default-run-covers) lists which steps a default run includes and which are opt-in.
+On a 16-core/32GB desktop a default `run-all.sh` takes about 6-12 hours per sample, because the Nextflow pipeline it starts runs independent steps in parallel. Run it again after a failure or an interruption and it reuses every step that finished, so only the rest runs. [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) has the time of each step, and the [pipeline overview](pipeline-overview.md#what-a-default-run-covers) lists which steps a default run includes and which are opt-in.
+
+**Q: Do I need Java and Nextflow?**
+For `run-all.sh`, yes: it starts the Nextflow pipeline, which needs Java 17 or later and Nextflow (25.10.8 is the release CI validates); without them it stops and prints the install line. Each step also runs as a script with Docker alone. [Full run](getting-started.md#full-run) has both.
 
 **Q: Can I run this on a Raspberry Pi?**
 No. Most bioinformatics Docker images are amd64 only, and a Pi doesn't have enough RAM. Minimum is a desktop/server with 16 GB RAM and an x86_64 CPU.

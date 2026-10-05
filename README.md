@@ -33,21 +33,22 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 
 ## Quick start
 
-Start from FASTQ (other entry points in [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/)):
+Put the reads at `$GENOME_DIR/<sample>/fastq/<sample>_R1.fastq.gz` and `_R2.fastq.gz` (a BAM or a VCF works too), then:
 
 ```bash
 export GENOME_DIR=/path/to/your/data SAMPLE=your_name
+./scripts/setup.sh $GENOME_DIR          # the GRCh38 reference, ClinVar and the images, once
 ./scripts/validate-setup.sh $SAMPLE
-./scripts/02-alignment.sh $SAMPLE && ./scripts/03-deepvariant.sh $SAMPLE && ./scripts/06-clinvar-screen.sh $SAMPLE && ./scripts/07-pharmacogenomics.sh $SAMPLE
+./scripts/run-all.sh $SAMPLE male       # or female
 ```
 
-Download the GRCh38 reference and databases first with [reference setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/). Try a small public dataset with the [quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/).
+`run-all.sh` starts the Nextflow pipeline, so it needs Java 17 or later and Nextflow 25.10.8 beside Docker and bash 4.4; a rerun reuses every finished step. [Full run](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/#full-run) has the install line and the switches, and each step also runs on its own as a script. Optional databases are in [reference setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/). Try a small public dataset with the [quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/).
 
 ## Documentation
 
 The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipeline/**, one page per pipeline step included.
 
-- [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/): prerequisites, platform notes (macOS, WSL2, Unraid), the FASTQ, BAM, VCF and ORA entry paths, directory layout
+- [Getting started](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/): prerequisites, platform notes (macOS, WSL2, Unraid), the full run with `run-all.sh` and its switches, the FASTQ, BAM, VCF and ORA entry paths step by step, directory layout
 - [Quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/): verify the setup on public data before your own
 - [Hardware and storage requirements](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/): download sizes, per-step runtime, memory and disk figures
 - [Reference data setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/): the GRCh38 reference (the no-ALT analysis set) and every database

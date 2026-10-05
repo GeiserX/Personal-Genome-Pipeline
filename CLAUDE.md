@@ -14,8 +14,8 @@ Whole genome sequencing (WGS) analysis pipeline for consumer hardware. Takes raw
 # Validate setup
 ./scripts/validate-setup.sh
 
-# Run all steps
-GENOME_DIR=/path/to/data ./scripts/run-all.sh sample_name
+# Run all steps: starts the Nextflow pipeline (needs Java 17+ and Nextflow, NEXTFLOW_VERSION in versions.env)
+GENOME_DIR=/path/to/data ./scripts/run-all.sh sample_name male
 
 # Run individual step
 GENOME_DIR=/path/to/data ./scripts/03-deepvariant.sh sample_name
@@ -24,7 +24,7 @@ GENOME_DIR=/path/to/data ./scripts/03-deepvariant.sh sample_name
 shellcheck scripts/*.sh
 ```
 
-Requirements: 16+ cores recommended, 500 GB disk per sample, Docker. Runs on Linux, macOS, WSL2.
+Requirements: 16+ cores recommended, 500 GB disk per sample, Docker, bash 4.4+; Java 17+ and Nextflow for `run-all.sh`. Runs on Linux, macOS, WSL2.
 
 ### Testing Changes
 
@@ -63,7 +63,7 @@ personal-genome-pipeline/
     03c-strelka2-germline.sh   # Alternative caller
     04a-tiddit.sh              # Alternative SV caller
     benchmark-variants.sh      # Concordance benchmarking
-    run-all.sh                 # Orchestrator
+    run-all.sh                 # Launcher: samplesheet + nextflow run main.nf -resume, then the reports
     validate-setup.sh          # Pre-flight check
     generate-report.sh         # Summary report
   scripts/lib/common.sh        # Sourced by every script: versions.env, run_in, fetch, validate_sample
@@ -129,10 +129,10 @@ User's FASTQ/BAM/VCF
 
 1. Add the image as one line in `versions.env` (`setup.sh` and `validate-setup.sh` read their list from it)
 2. Create `scripts/NN-tool-name.sh` following script conventions
-3. Create `modules/local/<tool>/main.nf` with no `container` line, add its process to the table in `scripts/ci/gen-containers-config.sh` and run it; or note in `docs/nextflow.md` why the step stays bash-only
+3. Create `modules/local/<tool>/main.nf` with no `container` line, add its process to the table in `scripts/ci/gen-containers-config.sh` and run it; or note in `docs/nextflow.md` why the step stays bash-only. Adding a step means a module plus, optionally, its script
 4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav:` in `mkdocs.yml`
 5. Add the step to the category table in `docs/pipeline-overview.md`
-6. Update `scripts/run-all.sh` with the new step
+6. Add the module to the step list (a `plan` call) in `scripts/run-all.sh` (its `--tools` name and database parameter), so a default run includes it
 7. Add a row for the image to `tests/smoke/commands.tsv`: a real command on the fixture and a check on what it wrote (an image with no row fails `container-test.yml`)
 8. Update `docs/00-reference-setup.md` if new reference data needed
 9. Update `docs/interpreting-results.md` if output needs explanation

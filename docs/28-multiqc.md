@@ -61,7 +61,7 @@ In the Nextflow pipeline, `multiqc` reads the mosdepth summaries only. A run wit
 
 ## Notes
 
-- MultiQC runs after all other steps to capture the most outputs. In `run-all.sh`, it runs alongside the HTML summary report at the end
+- MultiQC runs after all other steps to capture the most outputs. Through `run-all.sh` it is the pipeline's `MULTIQC` task: it reads the mosdepth summaries (above) and writes `${GENOME_DIR}/multiqc/multiqc_report.html`, beside the sample folders rather than inside one. Run `./scripts/28-multiqc.sh <sample_name>` for the script's report of every QC file in the sample folder
 - The report title includes the sample name for easy identification
 - If you add new tools to the pipeline that MultiQC supports, their outputs are picked up automatically on the next run
 - To re-generate the report (e.g., after running additional steps), delete the `multiqc/` directory and re-run

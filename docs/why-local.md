@@ -31,7 +31,8 @@ Read from the scripts on 2026-10-02. No step runs its container with networking 
 | Step 8 (HLA, T1K) | the current IPD-IMGT/HLA database from EBI (`t1k-build.pl --download`, no version pinned) | first run, until the index exists |
 | Step 13 (VEP) | the 26 GB VEP cache from Ensembl | when the script is run by hand without the cache (`run-all.sh` skips the step instead) |
 | Step 21 (Cyrius) | `cyrius==1.1.1` and its dependencies from PyPI, versions held by `scripts/cyrius-constraints.txt` | every run |
-| Step 25 (PRS) | PGS scoring files from the PGS Catalog (EBI) | first run, then cached |
+| Step 25 (PRS) | PGS scoring files from the PGS Catalog (EBI) | the script's first run, then cached in `prs_scores/` (`run-all.sh` downloads nothing: it scores the files already there and skips the step without them) |
+| `run-all.sh` | the Nextflow release `NXF_VER` names (`NEXTFLOW_VERSION` in `versions.env`), from GitHub | the first run, when that release is not installed yet |
 | Step 26 (ancestry, opt-in) | 1000 Genomes sites and population labels | first run, then cached |
 | Step 4b (GRIDSS, opt-in) | the ENCODE blacklist BED from GitHub | first run, then cached |
 | Step 28 (MultiQC) | MultiQC's update check at `api.multiqc.info`, which sends the MultiQC and Python versions and the operating system | every run (MultiQC's default; the step does not turn it off) |
