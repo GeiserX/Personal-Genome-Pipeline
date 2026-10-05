@@ -1,0 +1,7 @@
+metric	value
+status	unreliable
+message	CYP2D6 copy number unreliable: reads are multi-mapped (was this BAM aligned to a reference with ALT contigs?)
+gene_depth_all	4.14
+gene_depth_mapq1	0.02
+flank_depth_all	14.96
+flank_depth_mapq1	8.12

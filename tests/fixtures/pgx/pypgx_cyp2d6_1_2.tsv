@@ -1,0 +1,3 @@
+Gene	Diplotype	Phenotype	CNV_call	Source
+CYP2D6	*1/*2	Normal Metabolizer	Normal	BAM
+CYP2C19	*1/*1	Normal Metabolizer	N/A	VCF
