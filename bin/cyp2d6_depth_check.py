@@ -113,9 +113,13 @@ def check(args):
         ("flank_depth_all", f"{d_all['flank']:.2f}"),
         ("flank_depth_mapq1", f"{d_q1['flank']:.2f}"),
     ]
-    with open(args.out, "w") as f:
-        f.write("metric\tvalue\n")
-        f.writelines(f"{k}\t{v}\n" for k, v in rows)
+    try:
+        with open(args.out, "w") as f:
+            f.write("metric\tvalue\n")
+            f.writelines(f"{k}\t{v}\n" for k, v in rows)
+    except OSError as e:
+        print(f"ERROR: cannot write {args.out}: {e}", file=sys.stderr)
+        return 2
     print(f"CYP2D6 depth check: {status}: {message}")
     print("  mean depth, all reads: CYP2D6 {:.2f}, flanks {:.2f}; MAPQ >= 1: CYP2D6 {:.2f}, flanks {:.2f}".format(
         d_all["gene"], d_all["flank"], d_q1["gene"], d_q1["flank"]))

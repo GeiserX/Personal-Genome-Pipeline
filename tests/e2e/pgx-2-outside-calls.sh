@@ -19,8 +19,10 @@ for g in HLA-A HLA-B; do
   check "${g} is an outside call (two-field alleles)" grep -Eq "^${g}"$'\t''\*[0-9]+:[0-9]+/\*[0-9]+:[0-9]+$' "$CALLS"
 done
 check "CYP2D6 is not passed on (pypgx alone)" lacks '^CYP2D6' "$(cat "$CALLS" 2>/dev/null)"
-check "the table says CYP2D6 is indeterminate, from one caller" \
-  grep -q $'^CYP2D6\tindeterminate\tno\tone caller only' "$CONS"
+# pypgx alone (the fixture's slice may give it no call): never passed on
+check "the table says CYP2D6 is indeterminate: pypgx alone" \
+  grep -Eq $'^CYP2D6\tindeterminate\tno\t(one caller only|no caller made a call)' "$CONS"
+echo "- PGx consensus on the fixture: $(awk -F'\t' '$1 == "CYP2D6" {print $2 ", " $4 " (" $5 ")"}' "$CONS" 2>/dev/null)" >> "$E2E_NOTES"
 
 run_step 07-pharmacogenomics.sh "$SAMPLE"
 check_step_exit 07-pharmacogenomics.sh
@@ -44,7 +46,7 @@ for g in HLA-A HLA-B; do
   check "the CPIC report lists ${g} as passed from T1K and seen by PharmCAT" \
     grep -Eq "^  ${g} +\*[0-9:/*]+ +passed to PharmCAT from T1K \(step 08\); PharmCAT reports it as an outside call\.$" "$REC"
 done
-check "the CPIC report says CYP2D6 was held back" grep -Eq '^  CYP2D6 +indeterminate +not passed to PharmCAT: one caller only' "$REC"
+check "the CPIC report says CYP2D6 was held back" grep -Eq '^  CYP2D6 +indeterminate +not passed to PharmCAT: (one caller only|no caller made a call)' "$REC"
 
 # --- the Nextflow leg ------------------------------------------------------------
 P=HG002P
