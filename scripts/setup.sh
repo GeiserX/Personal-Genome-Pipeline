@@ -325,7 +325,7 @@ install_ancestry_panel() {
   # or more (its maf_ref). The whole GRCh38 table holds about 62 million
   # SNVs; genotyping all of them from a gVCF would take step 25 hours.
   echo "  Listing the panel's common GRCh38 SNVs (plink2 on the panel's genotypes)..."
-  local tmp="${dir}/.${name}.sites.tmp" prefix mem_mb
+  local tmp="${dir}/.${name}.sites.tmp" prefix
   rm -rf "$tmp"
   mkdir -p "$tmp"
   # shellcheck disable=SC2016  # $1 and $2 belong to the inner sh
@@ -335,26 +335,31 @@ install_ancestry_panel() {
     echo "[WARN] Could not unpack the GRCh38 genotypes of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1
   fi
-  # plink2 holds the panel's variant table in memory (4 GB was too little for
-  # the 1000 Genomes panel on a 16 GB runner): three quarters of the RAM.
-  if [ -r /proc/meminfo ]; then
-    mem_mb=$(awk '/^MemTotal:/ {print int($2 * 3 / 4 / 1024)}' /proc/meminfo)
-  else
-    mem_mb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 17179869184) * 3 / 4 / 1048576 ))
-  fi
   prefix=$(find "$tmp" -maxdepth 1 -name 'GRCh38_*_ALL.pgen' | head -1)
   prefix=${prefix%.pgen}
-  if [ -z "$prefix" ] || ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs \
-        --autosome --snps-only just-acgt --max-alleles 2 --rm-dup exclude-all --maf 0.05 \
-        --make-just-pvar --threads "$THREADS" --memory "$mem_mb" --out "$(cpath "${tmp}/common")" >/dev/null \
-     || ! awk -F'\t' -v OFS='\t' '
+  # One chromosome at a time: plink2 then loads a 22nd of the panel's variant
+  # table (the whole table, 61.6 million variants, did not fit a 16 GB runner).
+  local c ok=true
+  [ -n "$prefix" ] || ok=false
+  for c in $(seq 1 22); do
+    $ok || break
+    # A panel without a common SNV on a chromosome ("No variants remaining") is not an error.
+    if ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs --chr "$c" \
+          --snps-only just-acgt --max-alleles 2 --maf 0.05 \
+          --make-just-pvar --threads "$THREADS" --memory 4000 --out "$(cpath "${tmp}/common_${c}")" > "${tmp}/plink2.log" 2>&1 \
+       && ! grep -q 'No variants remaining' "${tmp}/plink2.log"; then
+      tail -n 5 "${tmp}/plink2.log"
+      ok=false
+    fi
+  done
+  if ! $ok || ! awk -F'\t' -v OFS='\t' '
           /^##/ { next }
           /^#/ { for (i = 1; i <= NF; i++) c[$i] = i; next }
           {
             chr = $c["#CHROM"]; sub(/^chr/, "", chr)
             r = $c["REF"]; a = $c["ALT"]
             if (r ~ /^[ACGT]$/ && a ~ /^[ACGT]$/) print "chr" chr, $c["POS"], r, a
-          }' "${tmp}/common.pvar" | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 -k4,4 > "${sites}.part" || [ ! -s "${sites}.part" ]; then
+          }' "${tmp}"/common_*.pvar | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 -k4,4 > "${sites}.part" || [ ! -s "${sites}.part" ]; then
     rm -rf "$tmp" "${sites}.part"
     echo "[WARN] Could not list the common GRCh38 SNVs of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1

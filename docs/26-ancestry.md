@@ -29,7 +29,7 @@ The images of step 25, all pinned in `versions.env`: `PGSC_UTILS_IMAGE`, `PLINK2
 ## Input
 
 - VCF from DeepVariant (step 3), and its gVCF beside it: the panel's SNVs are genotyped from the gVCF, so the sites where you match the reference count in the projection. Without a gVCF only your variant sites are projected, which weakens it.
-- The panel and its site list, installed once (7.4 GB, and about 24 GB of disk while pgsc_calc runs): `./scripts/setup.sh --ancestry-panel <genome_dir>`. It is opt-in for that reason; see the measured numbers in [step 25](25-prs.md#the-reference-panel-on-a-github-hosted-runner).
+- The panel and its site list, installed once (7.4 GB, and about 23 GB of disk while pgsc_calc runs): `./scripts/setup.sh --ancestry-panel <genome_dir>`. It is opt-in for that reason; see the measured numbers in [step 25](25-prs.md#the-reference-panel-on-a-github-hosted-runner).
 - Java 17+ and Nextflow, as for step 25.
 
 ## Command

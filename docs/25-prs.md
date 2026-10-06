@@ -22,7 +22,7 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
 - gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
 - The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
-- Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 24 GB of disk while pgsc_calc uses it (measured below).
+- Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 23 GB of disk while pgsc_calc uses it (measured below).
 - Java 17+ and Nextflow on the host, as for `run-all.sh`.
 
 ## Command
@@ -96,13 +96,13 @@ Without the panel, about 20-40 minutes: most of it is the gVCF pass over every s
 
 The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_PANEL` in `versions.env`), published by the PGS Catalog at https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources/. Measured by the E2E case `tests/e2e/prs-3-panel-measure.sh` on `ubuntu-latest` (4 CPUs, 16 GB RAM), with pgsc_calc projecting the PGS Catalog's synthetic genome-wide test target (600 samples) onto the panel and scoring PGS000018 (1.7 million variants):
 
-| What | Measured |
+| What | Measured (three dispatched runs) |
 |---|---|
-| Download | 7.43 GB (7,434,464,202 bytes). EBI served one connection at about 1.2 MB/s, about 100 minutes for the file; 8 byte ranges at once took 10 minutes |
-| Variants of the panel's GRCh38 table | 61.6 million biallelic SNVs on the autosomes; `setup.sh` keeps the ones with a panel frequency of 5% or more, the ones pgsc_calc's projection can use |
-| Disk while pgsc_calc runs | 16.1 GB on top of the panel (its work folder held 12.5 GB at the end): about 24 GB with the panel |
-| Memory | 7.3 GB at the peak for the whole machine; the largest task, 6.9 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
-| Time | 28.5 minutes for the run, on 4 CPUs |
+| Download | 7.43 GB (7,434,464,202 bytes). EBI served one connection at about 1.2 MB/s, about 100 minutes for the file; 8 byte ranges at once took 10 to 19 minutes |
+| Variants of the panel's GRCh38 table | 61.6 million biallelic SNVs on the autosomes; `setup.sh` keeps the ones with a panel frequency of 5% or more, the ones pgsc_calc's projection can use, listing them one chromosome at a time with plink2 (the whole table at once did not fit in 16 GB) |
+| Disk while pgsc_calc runs | 14.9 to 16.1 GB on top of the panel (its work folder held 12.5 GB at the end): about 23 GB with the panel |
+| Memory | 7.3 to 7.5 GB at the peak for the whole machine; the largest task, 6.9 to 7.1 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
+| Time | 23 to 28.5 minutes for the run, on 4 CPUs |
 
 The run fits a 16 GB machine. It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on a dispatched E2E run.
 
