@@ -314,8 +314,9 @@ install_ancestry_panel() {
     echo "[OK] ancestry panel ${name} (steps 25 and 26) already present."
     return 0
   fi
-  echo "Downloading pgsc_calc's ancestry panel ${name} (the 1000 Genomes panel is about 7 GB; an interrupted download resumes)..."
-  if ! fetch "${PGSC_RESOURCES}/${name}.tar.zst" "$panel" md5 "${PGSC_RESOURCES}/md5s.txt"; then
+  [ -s "$panel" ] || echo "Downloading pgsc_calc's ancestry panel ${name} (the 1000 Genomes panel is about 7 GB; an interrupted download resumes)..."
+  # fetch stores a download only once its md5 matches, so a panel that is there is whole.
+  if [ ! -s "$panel" ] && ! fetch "${PGSC_RESOURCES}/${name}.tar.zst" "$panel" md5 "${PGSC_RESOURCES}/md5s.txt"; then
     echo "[WARN] Could not download the ancestry panel; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1
   fi

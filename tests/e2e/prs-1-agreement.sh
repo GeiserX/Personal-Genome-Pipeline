@@ -12,8 +12,18 @@
 #     pgsc_calc, and the hom-ref part alone must be 2 x (1+2+4+8+16) = 62;
 #   - control: plink2 on the same score with one weight changed must differ
 #     from pgsc_calc's sum, so the comparison can fail.
-# Writes nothing other cases read; removes what it made.
+# Writes nothing other cases read; removes what it made. On a dispatched run
+# it also starts case prs-3's download of the 1000 Genomes panel in the
+# background, so the 7.4 GB arrive while cases prs-1 and prs-2 run.
 . "$(dirname "$0")/lib.sh"
+
+if [ "${GITHUB_EVENT_NAME:-}" = workflow_dispatch ] || [ "${PGSC_MEASURE:-}" = 1 ]; then
+  rm -f "${E2E_WORK}/panel-download.status"
+  # Its own session, so the case's timeout does not stop it; it ends on its own.
+  setsid nohup timeout 2700 bash "$(dirname "$0")/prs-3-panel-measure.sh" --download \
+    > "${E2E_WORK}/logs/panel-download.log" 2>&1 < /dev/null &
+  echo "started the 1000 Genomes panel download for case prs-3"
+fi
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
 D="${GENOME_DIR}/${SAMPLE}"

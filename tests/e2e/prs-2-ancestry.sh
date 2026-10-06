@@ -3,10 +3,10 @@
 # and 03 left HG002's VCF and gVCF on the fixture's slices):
 #   - without a panel, step 26 says so in one line and exits 0;
 #   - setup.sh --ancestry-panel installs a panel and its GRCh38 site list.
-#     On a pull request the panel is the PGS Catalog's small synthetic one
+#     The panel is the PGS Catalog's small synthetic one
 #     (GRCh38_HAPNEST_reference, 268 MB), so the run fits the job; the 1000
-#     Genomes panel users install is measured in case prs-3 (monthly and
-#     dispatched runs only, see docs/25-prs.md);
+#     Genomes panel users install is measured in case prs-3 (dispatched runs
+#     only, see docs/25-prs.md);
 #   - step 26 projects HG002 onto it: the ancestry table has a population
 #     label, its probabilities and the principal components, and step 25's
 #     summary has a percentile for the score, with that population as its group;
@@ -14,7 +14,7 @@
 # The score is synthetic: panel SNVs inside the fixture's slices (so the panel's
 # own samples carry them too), effect allele = the panel's ALT, no
 # strand-ambiguous pair (pgsc_calc drops those).
-# PANEL_NAME (from prs-3) picks another panel. Removes what it made.
+# PANEL_NAME picks another installed panel. Removes what it made.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
