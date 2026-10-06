@@ -90,11 +90,13 @@ VERIFYBAMID2         VERIFYBAMID2_IMAGE
 # Processes that run on the host, because they start a pinned pipeline of
 # their own, which starts its own containers: the process, the versions.env
 # variable of that pipeline's release, and the images handed to it, as
-# LABEL=VARIABLE (LABEL is the pipeline's own process label). The generated
-# line gives the process ext.pipeline_version and ext.pipeline_images, and
-# the process writes the release as the first line of its versions.yml.
+# LABEL=VARIABLE (LABEL is the pipeline's own process label), and
+# sha256=VARIABLE, the checksum of the release's archive. The generated line
+# gives the process ext.pipeline_version, ext.pipeline_sha256 and
+# ext.pipeline_images, and the process writes the release as the first line
+# of its versions.yml.
 NATIVE='
-PRS  PGSC_CALC_VERSION  pgscatalog_utils=PGSC_UTILS_IMAGE plink2=PLINK2_IMAGE zstd=PGSC_ZSTD_IMAGE report=PGSC_REPORT_IMAGE pyyaml=PGSC_PYYAML_IMAGE fraposa=PGSC_FRAPOSA_IMAGE
+PRS  PGSC_CALC_VERSION  sha256=PGSC_CALC_SHA256 pgscatalog_utils=PGSC_UTILS_IMAGE plink2=PLINK2_IMAGE zstd=PGSC_ZSTD_IMAGE report=PGSC_REPORT_IMAGE pyyaml=PGSC_PYYAML_IMAGE fraposa=PGSC_FRAPOSA_IMAGE
 '
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -142,13 +144,14 @@ render() {
     NF < 2 { next }
     {
       if (val[$2] == "") { printf "ERROR: %s (process %s) is not set in versions.env\n", $2, $1 > "/dev/stderr"; bad = 1; next }
-      imgs = ""
+      imgs = ""; sha = ""
       for (i = 3; i <= NF; i++) {
         split($i, kv, "=")
         if (val[kv[2]] == "") { printf "ERROR: %s (process %s) is not set in versions.env\n", kv[2], $1 > "/dev/stderr"; bad = 1; next }
+        if (kv[1] == "sha256") { sha = val[kv[2]]; continue }
         imgs = imgs (imgs == "" ? "" : ";") kv[1] "=" val[kv[2]]
       }
-      printf "    withName: %s%s%s { ext.pipeline_version = %s%s%s; ext.pipeline_images = %s%s%s }\n", q, $1, q, q, val[$2], q, q, imgs, q
+      printf "    withName: %s%s%s { ext.pipeline_version = %s%s%s; ext.pipeline_sha256 = %s%s%s; ext.pipeline_images = %s%s%s }\n", q, $1, q, q, val[$2], q, q, sha, q, q, imgs, q
     }
     END { exit bad }
   ' <(printf '%s\n' "$values") <(awk 'NF >= 2' <<<"$NATIVE" | sort)

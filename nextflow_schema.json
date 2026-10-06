@@ -239,7 +239,7 @@
                 "pgsc_calc": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "The pgsc_calc checkout setup.sh makes (<genome_dir>/tools/pgsc_calc-<release>). With it prs runs pgsc_calc offline; without, Nextflow fetches pgscatalog/pgsc_calc at the release versions.env pins.",
+                    "description": "The pgsc_calc checkout setup.sh makes (<genome_dir>/tools/pgsc_calc-<release>). With it prs runs pgsc_calc offline; without, the PRS task fetches GitHub's archive of the release versions.env pins, checked against its sha256.",
                     "fa_icon": "fas fa-folder"
                 },
                 "expansion_catalog": {

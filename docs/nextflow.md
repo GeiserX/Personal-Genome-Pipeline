@@ -342,7 +342,7 @@ Every task script runs under `bash -euo pipefail` (`process.shell` in `conf/base
 
 With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. The `singularity` profile does not cut the network.
 
-One process runs on the host instead of in a container: `PRS` starts pgsc_calc, a Nextflow pipeline of its own that starts its own containers. It gets the images of `versions.env` through `conf/containers.config` (`ext.pipeline_images`, written by `scripts/ci/gen-containers-config.sh`), and gives every one of its containers `--network none`. With `--pgsc_calc <genome_dir>/tools/pgsc_calc-<release>` (setup.sh installs it with its nf-schema plugin) it runs offline; without, Nextflow first fetches pgscatalog/pgsc_calc at the pinned release and the plugin.
+One process runs on the host instead of in a container: `PRS` starts pgsc_calc, a Nextflow pipeline of its own that starts its own containers. It gets the images of `versions.env` through `conf/containers.config` (`ext.pipeline_images`, written by `scripts/ci/gen-containers-config.sh`), and gives every one of its containers `--network none`. With `--pgsc_calc <genome_dir>/tools/pgsc_calc-<release>` (setup.sh installs it with its nf-schema plugin) it runs offline; without, the task first fetches GitHub's archive of the pinned release, checked against `PGSC_CALC_SHA256`, and Nextflow the plugin.
 
 ### Cyrius, opt-in
 

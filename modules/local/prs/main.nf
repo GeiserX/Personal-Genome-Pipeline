@@ -117,8 +117,9 @@ process PRS_SCORE_SITES {
 // container): pgsc_calc is a Nextflow pipeline and starts its own containers,
 // each with --network none. ext.pipeline_version and ext.pipeline_images
 // come from versions.env through conf/containers.config. With --pgsc_calc
-// (the checkout setup.sh makes) it runs offline; without, Nextflow fetches
-// pgscatalog/pgsc_calc at that release and its nf-schema plugin first.
+// (the copy setup.sh makes) it runs offline; without, the task fetches the
+// release's archive (checked against ext.pipeline_sha256) and Nextflow its
+// nf-schema plugin first.
 process PRS {
     tag "$meta.id"
     label 'process_medium'
@@ -142,7 +143,7 @@ process PRS {
 
     script:
     def release  = task.ext.pipeline_version
-    def pipeline = params.pgsc_calc ? "${params.pgsc_calc}/main.nf" : "pgscatalog/pgsc_calc -r ${release}"
+    def pipeline = params.pgsc_calc ? "${params.pgsc_calc}/main.nf" : 'pgsc_calc-src/main.nf'
     def ancestry = panel ? "--run_ancestry \$(readlink -f ${panel})" : ''
     def labels = task.ext.pipeline_images.tokenize(';').collect { kv ->
         def i = kv.indexOf('=')
@@ -153,9 +154,16 @@ process PRS {
         "\"    withLabel: '${kv.substring(0, i)}' { ext.docker = '${image}'; ext.docker_version = '' }\""
     }.join(' ')
     def engine  = workflow.containerEngine ?: 'docker'
-    // With the checkout setup.sh makes (it installs the nf-schema plugin
-    // pgsc_calc needs too) nothing is fetched; without, Nextflow pulls both.
-    def offline = params.pgsc_calc ? 'export NXF_OFFLINE=true' : ''
+    // With the copy setup.sh makes (it installs the nf-schema plugin pgsc_calc
+    // needs too) nothing is fetched. Without, the task fetches GitHub's
+    // archive of the release (checked against PGSC_CALC_SHA256, as setup.sh
+    // and step 25 do; not `nextflow run owner/repo`, whose GitHub API calls
+    // shared runners exhaust) and Nextflow fetches the plugin.
+    def offline = params.pgsc_calc ? 'export NXF_OFFLINE=true' :
+        "curl -fsSL --retry 3 -o pgsc_calc.tar.gz https://github.com/PGScatalog/pgsc_calc/archive/refs/tags/${release}.tar.gz\n" +
+        "    if command -v sha256sum >/dev/null; then SUM=sha256sum; else SUM='shasum -a 256'; fi\n" +
+        "    echo '${task.ext.pipeline_sha256}  pgsc_calc.tar.gz' | \$SUM -c -\n" +
+        "    mkdir pgsc_calc-src && tar -xzf pgsc_calc.tar.gz -C pgsc_calc-src --strip-components 1 && rm -f pgsc_calc.tar.gz"
     """
     VCF=\$(readlink -f target/*)
     case "\$VCF" in
@@ -197,7 +205,7 @@ process PRS {
         fi
     fi
     # Its run reports carry the time of the run in their names.
-    rm -rf work .nextflow pgsc_calc/pipeline_info
+    rm -rf work .nextflow pgsc_calc/pipeline_info pgsc_calc-src
 
     printf '"%s":\\n    pgsc_calc: %s\\n' "${task.process}" "${release}" > versions.yml
     """
