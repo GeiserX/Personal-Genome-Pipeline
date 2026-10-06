@@ -6,7 +6,9 @@ Checks:
   1. prs-format writes a harmonised file as pgsc_calc's custom GRCh38 file:
      chr_name/chr_position from hm_chr/hm_pos without "chr", the other allele
      from other_allele or hm_inferOtherAllele (never "A/G"), rows without a
-     GRCh38 position dropped, the label from assets/pgs_scores.tsv; and it
+     GRCh38 position dropped, rows off the autosomes (chrX, chrY) dropped
+     from both the score and the allele list, the label from
+     assets/pgs_scores.tsv; and it
      refuses a GRCh37 file and a non-additive one;
   2. prs-table without a panel: the sum from aggregated_scores.txt.gz as
      pgsc_calc wrote it but without ".0", matched and total counts from the
@@ -55,7 +57,9 @@ HM = ("#pgs_id=PGS000001\n#trait_reported=Something else\n#HmPOS_build=GRCh38\n"
       "rs1\t1\t100\tA\tG\t0.5\t1\t1100\t\n"
       "rs2\t1\t200\tc\t\t-0.25\tchr2\t2200\tT\n"
       "rs3\t1\t300\tG\t\t1\t3\t3300\tA/C\n"
-      "rs4\t1\t400\tT\tC\t2\t\t\t\n")
+      "rs4\t1\t400\tT\tC\t2\t\t\t\n"
+      "rs5\tX\t500\tA\tG\t1\tX\t51000000\t\n"
+      "rs6\tY\t600\tC\tT\t1\tchrY\t2800000\t\n")
 
 
 def read_rows(path):
@@ -102,11 +106,11 @@ def main():
         check("prs-format: the header pgsc_calc reads, labelled from the score list",
               lines[:5] == ["#pgs_id=PGS000001", "#pgs_name=PGS000001", "#trait_reported=Coronary artery disease",
                             "#genome_build=GRCh38", "chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight"], lines[:5])
-        check("prs-format: GRCh38 positions without chr, other allele from hm_inferOtherAllele, A/C dropped, unplaced row dropped",
+        check("prs-format: GRCh38 positions without chr, other allele from hm_inferOtherAllele, A/C dropped, unplaced and chrX/chrY rows dropped",
               lines[5:] == ["1\t1100\tA\tG\t0.5", "2\t2200\tC\tT\t-0.25", "3\t3300\tG\t\t1"], lines[5:])
         with open(f"{work}/alleles.tsv") as f:
             al = f.read().splitlines()
-        check("prs-format: every effect and other allele, chr-prefixed and sorted",
+        check("prs-format: every effect and other allele of the autosomes, chr-prefixed and sorted",
               al == ["chr1\t1100\tA", "chr1\t1100\tG", "chr2\t2200\tC", "chr2\t2200\tT", "chr3\t3300\tG"], al)
         put(f"{work}/bad37/PGS000009.txt.gz", HM.replace("HmPOS_build=GRCh38", "HmPOS_build=GRCh37"), gz=True)
         rc = collect_summary.main(["prs-format", "--scores", f"{work}/bad37", "--out", f"{work}/o37", "--alleles", f"{work}/a37"])
