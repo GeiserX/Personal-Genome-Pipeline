@@ -15,7 +15,8 @@ Checks:
   3. prs-table with a panel: the percentile and group of the target sample
      only (not the reference samples in the same file), and the ancestry table
      with the population and the principal components;
-  4. --zero-matches: every score unmatched, no sum;
+  4. --zero-matches: every score unmatched, no sum; --below-threshold: no
+     sum, the matched count unknown and the rate from pgscatalog-match's log;
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
      percentiles only then.
@@ -160,6 +161,16 @@ def main():
         rc = collect_summary.main(["prs-table", "--sample", "S", "--results", f"{work}/none", "--sampleset", "sample",
                                    "--scores", f"{work}/pgs", "--input-kind", "vcf", "--out", out])
         check("prs-table: no pgsc_calc output and no --zero-matches is an error", rc == 1, rc)
+
+        # 4b. every score under pgsc_calc's minimum overlap: no sum, matched unknown, the rate from the log
+        put(f"{work}/below.log", "ERROR Score PGS000001 fails minimum matching threshold (33.33% variants match)\n"
+            "ERROR pgscatalog.core.lib.pgsexceptions.ZeroMatchesError: All scores fail to meet match threshold 0.75\n")
+        rc = collect_summary.main(["prs-table", "--sample", "S", "--results", f"{work}/none", "--sampleset", "sample",
+                                   "--scores", f"{work}/pgs", "--input-kind", "gvcf", "--below-threshold", f"{work}/below.log",
+                                   "--out", out])
+        hdr, rows = read_rows(out)
+        check("prs-table --below-threshold: no sum, matched NA (not 0), the rate from the log, NA without one",
+              rc == 0 and [r[2:6] for r in rows] == [["NA", "NA", "3", "33.3"], ["NA", "NA", "5", "NA"]], rows)
 
         # 5. the reports
         d = f"{work}/sample_raw/S"

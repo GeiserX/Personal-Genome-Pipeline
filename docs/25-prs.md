@@ -101,7 +101,7 @@ MEASUREMENT_TABLE
 ## Interpreting Results
 
 - **Score_SUM**: weighted sum of the effect alleles you carry. Higher = more genetic predisposition, but only relative to other people scored the same way.
-- **Variants_Matched**: score variants pgsc_calc matched in your genotypes.
+- **Variants_Matched**: score variants pgsc_calc matched in your genotypes. `NA` when every score fell under pgsc_calc's 75% match rate: pgsc_calc then stops and publishes no match counts, and `Matched_Pct` is the rate its log gave.
 - **Variants_Total**: variants of the scoring file with a GRCh38 position.
 - **Matched_Pct**: `Variants_Matched / Variants_Total` as a percentage; the step warns below 50%, and pgsc_calc gives no sum below 75%.
 - **Percentile**: with the panel, where your score falls among the reference samples of `Ancestry_Group` (pgsc_calc's empirical percentile, `percentile_MostSimilarPop`). `NA` without the panel.

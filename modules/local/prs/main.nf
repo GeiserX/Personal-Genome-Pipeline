@@ -186,8 +186,11 @@ process PRS {
     cat pgsc_calc.log
     mv pgsc_calc.log pgsc_calc.nextflow.log pgsc_calc/
     if [ "\$rc" -ne 0 ]; then
-        if grep -qE 'ZeroMatchesError|No match candidates found for any scoring files|All scores fail to meet match threshold' pgsc_calc/pgsc_calc*.log; then
-            echo "None of the scores matched enough of its variants in this input; no score." > pgsc_calc/ZERO_MATCHES
+        # As step 25: every score under the minimum overlap, or no score variant at all.
+        if grep -q 'All scores fail to meet match threshold' pgsc_calc/pgsc_calc*.log; then
+            echo "Every score matched under pgsc_calc's minimum overlap; no score." > pgsc_calc/BELOW_THRESHOLD
+        elif grep -qE 'ZeroMatchesError|No match candidates found for any scoring files' pgsc_calc/pgsc_calc*.log; then
+            echo "None of the score variants is in this input; no score." > pgsc_calc/ZERO_MATCHES
         else
             echo "ERROR: pgsc_calc failed (exit \$rc); see pgsc_calc/pgsc_calc.log" >&2
             exit 1
@@ -229,10 +232,11 @@ process PRS_SUMMARY {
     script:
     def anc = panel_name ? "--panel '${panel_name}' --ancestry-out ${meta.id}_ancestry.tsv" : ''
     """
-    ZERO=""
-    if [ -f ${results}/ZERO_MATCHES ]; then ZERO=--zero-matches; fi
+    FLAGS=()
+    if [ -f ${results}/ZERO_MATCHES ]; then FLAGS=(--zero-matches); fi
+    if [ -f ${results}/BELOW_THRESHOLD ]; then FLAGS=(--below-threshold ${results}/pgsc_calc.log); fi
     collect_summary.py prs-table --sample ${meta.id} --results ${results} --sampleset sample \\
-        --scores pgs --input-kind ${input_kind} \$ZERO ${anc} --out ${meta.id}_prs_summary.tsv
+        --scores pgs --input-kind ${input_kind} \${FLAGS[@]+"\${FLAGS[@]}"} ${anc} --out ${meta.id}_prs_summary.tsv
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """

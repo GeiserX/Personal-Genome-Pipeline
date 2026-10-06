@@ -48,6 +48,7 @@ import glob
 import gzip
 import json
 import os
+import re
 import sys
 import zlib
 from datetime import datetime, timezone
@@ -452,12 +453,20 @@ def read_gz_tsv(path):
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False):
+# pgscatalog-match's log line for a score under the minimum overlap.
+BELOW_RE = re.compile(r"Score (\S+) fails minimum matching threshold \(([0-9.]+)% variants match\)")
+
+
+def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, below_log=None):
     """Rows of the summary table (PRS_COLUMNS) and the ancestry rows (key,
     value), from pgsc_calc's output folder RESULTS for SAMPLESET. Totals and
     labels come from the files prs-format wrote in SCORES_DIR. With
     zero_matches (pgsc_calc stopped because no score variant is in the
-    sample's genotypes) every score is reported unmatched."""
+    sample's genotypes) every score is reported unmatched. With below_log
+    (pgsc_calc stopped because every score matched under its minimum
+    overlap, so it published no match summary) no score has a sum, the
+    matched count is unknown (NA), and the match rate is read from that log
+    when pgscatalog-match printed it."""
     totals, labels = {}, {}
     for p in sorted(glob.glob(os.path.join(scores_dir, "*.txt.gz"))):
         pid, n = pgs_id_of(p), 0
@@ -471,8 +480,12 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False):
     if not totals:
         raise Unreadable(f"no formatted scoring file in {scores_dir}")
     matched, sums, pct, group = {}, {}, {}, {}
-    pops = {}
-    if not zero_matches:
+    pops, rate = {}, {}
+    if below_log:
+        with open(below_log, errors="replace") as f:
+            for m in BELOW_RE.finditer(f.read()):
+                rate[pgs_id_of(m.group(1))] = f"{float(m.group(2)):.1f}"
+    elif not zero_matches:
         summ = os.path.join(results, sampleset, "match", f"{sampleset}_summary.csv")
         if not os.path.isfile(summ):
             raise Unreadable(f"pgsc_calc wrote no match summary ({summ})")
@@ -507,6 +520,9 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False):
     rows = []
     for pid in sorted(totals):
         m, t = matched.get(pid, 0), totals[pid]
+        if below_log:
+            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA", input_kind])
+            continue
         rows.append([labels.get(pid, pid), pid, sums.get(pid, "NA"), str(m), str(t),
                      f"{100 * m / t:.1f}" if t else "0.0", pct.get(pid, "NA"), group.get(pid, "NA"), input_kind])
     ancestry = []
@@ -533,11 +549,13 @@ def prs_table_main(argv):
     ap.add_argument("--panel", default="", help="name of the ancestry reference panel, when one was used")
     ap.add_argument("--zero-matches", action="store_true",
                     help="pgsc_calc stopped because no score variant is in the sample's genotypes")
+    ap.add_argument("--below-threshold", metavar="LOG",
+                    help="pgsc_calc stopped because every score matched under its minimum overlap; LOG is its console output")
     ap.add_argument("--out", required=True)
     ap.add_argument("--ancestry-out", help="written when pgsc_calc ran with the panel: PCs and population")
     a = ap.parse_args(argv)
     try:
-        rows, ancestry = prs_table(a.results, a.sampleset, a.scores, a.input_kind, a.zero_matches)
+        rows, ancestry = prs_table(a.results, a.sampleset, a.scores, a.input_kind, a.zero_matches, a.below_threshold)
     except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -554,7 +572,10 @@ def prs_table_main(argv):
         os.replace(a.ancestry_out + ".tmp", a.ancestry_out)
     for r in rows:
         extra = f", percentile {r[6]} among {r[7]}" if r[6] != "NA" else ""
-        print(f"  {r[0]} ({r[1]}): sum {r[2]}, {r[3]} of {r[4]} variants matched ({r[5]}%){extra}")
+        if r[3] == "NA":
+            print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
+        else:
+            print(f"  {r[0]} ({r[1]}): sum {r[2]}, {r[3]} of {r[4]} variants matched ({r[5]}%){extra}")
     return 0
 
 

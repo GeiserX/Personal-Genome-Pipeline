@@ -267,10 +267,13 @@ else
   cat "$LOG"
 fi
 if [ "$rc" -ne 0 ]; then
-  # No variant of any score is in the genotypes: report every score unmatched.
-  if grep -qE 'ZeroMatchesError|No match candidates found for any scoring files|All scores fail to meet match threshold' \
-       "$LOG" "${WORK}/nextflow.log" 2>/dev/null; then
-    echo "  None of the scores matched enough of its variants in this input; no score."
+  # Every score under pgsc_calc's minimum overlap: no sum, the match rates
+  # from its log. Not one score variant in the genotypes: every score unmatched.
+  if grep -q 'All scores fail to meet match threshold' "$LOG" "${WORK}/nextflow.log" 2>/dev/null; then
+    echo "  Every score matched under pgsc_calc's minimum overlap of its variants in this input; no score."
+    ZERO=(--below-threshold "$(cpath "$LOG")")
+  elif grep -qE 'ZeroMatchesError|No match candidates found for any scoring files' "$LOG" "${WORK}/nextflow.log" 2>/dev/null; then
+    echo "  None of the score variants is in this input; no score."
     ZERO=(--zero-matches)
   else
     echo "ERROR: pgsc_calc failed (exit ${rc}); see ${LOG} and ${WORK}/nextflow.log" >&2
