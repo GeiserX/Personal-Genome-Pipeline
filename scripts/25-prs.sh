@@ -134,21 +134,24 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${SCORE_LIST}:/pgs_scores.tsv:ro" "$
     --out "$(cpath "${WORK}/scores")" --alleles "$(cpath "${WORK}/score_alleles.tsv")"
 
 # --- 3. The genotypes pgsc_calc scores ---------------------------------------------
+# Both inputs end as target.vcf.gz: the score positions (and with the panel the
+# panel's SNVs) only. That keeps chrX out (plink2 refuses it without the
+# sample's sex) and gives pgsc_calc a small file to convert.
 echo ""
 TARGET="${WORK}/target.vcf.gz"
+# ALLELES: every candidate ALT of each position (score effect and other
+# alleles, the panel's ALT); SITES: each position once, for bcftools -R/-T.
+ALLELES="${WORK}/alleles.tsv"
+SITES="${WORK}/sites.tsv"
+if $USE_PANEL; then
+  { cat "${WORK}/score_alleles.tsv"; cut -f1,2,4 "$PANEL_SITES"; } | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 > "$ALLELES"
+else
+  cp "${WORK}/score_alleles.tsv" "$ALLELES"
+fi
+cut -f1,2 "$ALLELES" | uniq > "$SITES"
 if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
   INPUT_KIND=gvcf
   echo "[3/5] Genotyping the score positions$($USE_PANEL && echo " and the panel's") from the gVCF (${GVCF})..."
-  # ALLELES: every candidate ALT of each position (score effect and other
-  # alleles, the panel's ALT); SITES: each position once, for bcftools -R/-T.
-  ALLELES="${WORK}/alleles.tsv"
-  SITES="${WORK}/sites.tsv"
-  if $USE_PANEL; then
-    { cat "${WORK}/score_alleles.tsv"; cut -f1,2,4 "$PANEL_SITES"; } | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 > "$ALLELES"
-  else
-    cp "${WORK}/score_alleles.tsv" "$ALLELES"
-  fi
-  cut -f1,2 "$ALLELES" | uniq > "$SITES"
   # gvcf2vcf expands each reference block overlapping a position into one 0/0
   # record per base, with the base from the reference; -T keeps the positions,
   # --trim-alt-alleles drops the <*> allele, and a no-call (./.) is dropped,
@@ -172,14 +175,18 @@ if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
         for (i = 1; i <= n; i++) if (c[i] != $4) { $5 = c[i]; break }
       }
       { print }' | gzip -c > "${TARGET}.tmp"
-  mv -f "${TARGET}.tmp" "$TARGET"
-  rm -f "$ALLELES" "$SITES"
-  TARGET_PREFIX="${WORK}/target"
 else
   INPUT_KIND=vcf
   echo "[3/5] No gVCF beside the VCF: scoring the variant sites only (sites where you match the reference are missing)..."
-  TARGET_PREFIX="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}"
+  # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+  run_in --cpus 1 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -euo pipefail -c 'bcftools view -T "$1" -Ov "$2"' \
+    _ "$(cpath "$SITES")" "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" | gzip -c > "${TARGET}.tmp"
 fi
+mv -f "${TARGET}.tmp" "$TARGET"
+rm -f "$ALLELES" "$SITES"
+N_TARGET=$({ gzip -dc "$TARGET" | grep -vc '^#'; } || true)
+echo "  ${N_TARGET} genotyped positions for pgsc_calc"
 
 # --- 4. pgsc_calc ------------------------------------------------------------------
 echo ""
@@ -193,6 +200,8 @@ if [ ! -f "${PGSC_CALC_DIR}/main.nf" ]; then
   mkdir -p "${PGSC_CALC_DIR}.part"
   tar -xzf "${PGSC_CALC_DIR}.tar.gz" -C "${PGSC_CALC_DIR}.part" --strip-components 1
   rm -f "${PGSC_CALC_DIR}.tar.gz"
+  # An incomplete folder left by an earlier run would receive the new one inside it.
+  rm -rf "$PGSC_CALC_DIR"
   mv "${PGSC_CALC_DIR}.part" "$PGSC_CALC_DIR"
 fi
 NXF_HOME=${NXF_HOME:-${HOME}/.nextflow}
@@ -234,23 +243,29 @@ docker_ref() {
   # shellcheck disable=SC2016  # $(id -u) is expanded by the task's shell
   echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"'"
 } > "${WORK}/images.config"
-printf 'sampleset,path_prefix,chrom,format\n%s,%s,,vcf\n' "$SAMPLESET" "$TARGET_PREFIX" > "${WORK}/samplesheet.csv"
+printf 'sampleset,path_prefix,chrom,format\n%s,%s,,vcf\n' "$SAMPLESET" "${WORK}/target" > "${WORK}/samplesheet.csv"
 PANEL_ARGS=()
 if $USE_PANEL; then PANEL_ARGS=(--run_ancestry "$PANEL"); fi
 LOG="${WORK}/pgsc_calc.log"
 rc=0
-# A fresh work folder each run: pgsc_calc keeps converted genotypes with
-# storeDir, and an old run's would be scored instead of this VCF. The
-# nf-core institutional configs are not fetched (NXF_OFFLINE).
-( cd "$WORK" && NXF_OFFLINE=true nextflow -log "${WORK}/nextflow.log" run "${PGSC_CALC_DIR}/main.nf" \
-    -profile docker -c "${WORK}/images.config" -work-dir "${WORK}/work" -ansi-log false \
-    --input "${WORK}/samplesheet.csv" --target_build GRCh38 \
-    --scorefile "${WORK}/scores/*.txt.gz" \
-    ${PANEL_ARGS[@]+"${PANEL_ARGS[@]}"} \
-    --outdir "${WORK}/results" \
-    --max_cpus "$PGSC_CPUS" --max_memory "$PGSC_MAX_MEMORY" ) > "$LOG" 2>&1 || rc=$?
-cat "$LOG"
 ZERO=()
+if [ "$N_TARGET" -eq 0 ]; then
+  # Not one score position is in the input: there is nothing for pgsc_calc to match.
+  echo "  None of the score positions is in this input; no score." | tee "$LOG"
+  ZERO=(--zero-matches)
+else
+  # A fresh work folder each run: pgsc_calc keeps converted genotypes with
+  # storeDir, and an old run's would be scored instead of this VCF. The
+  # nf-core institutional configs are not fetched (NXF_OFFLINE).
+  ( cd "$WORK" && NXF_OFFLINE=true nextflow -log "${WORK}/nextflow.log" run "${PGSC_CALC_DIR}/main.nf" \
+      -profile docker -c "${WORK}/images.config" -work-dir "${WORK}/work" -ansi-log false \
+      --input "${WORK}/samplesheet.csv" --target_build GRCh38 \
+      --scorefile "${WORK}/scores/*.txt.gz" \
+      ${PANEL_ARGS[@]+"${PANEL_ARGS[@]}"} \
+      --outdir "${WORK}/results" \
+      --max_cpus "$PGSC_CPUS" --max_memory "$PGSC_MAX_MEMORY" ) > "$LOG" 2>&1 || rc=$?
+  cat "$LOG"
+fi
 if [ "$rc" -ne 0 ]; then
   # No variant of any score is in the genotypes: report every score unmatched.
   if grep -qE 'ZeroMatchesError|No match candidates found for any scoring files|All scores fail to meet match threshold' \
@@ -281,8 +296,9 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
     --sample "$SAMPLE" --results "$(cpath "${WORK}/results")" --sampleset "$SAMPLESET" \
     --scores "$(cpath "${WORK}/scores")" --input-kind "$INPUT_KIND" \
     ${ZERO[@]+"${ZERO[@]}"} ${ANC_ARGS[@]+"${ANC_ARGS[@]}"} --out "$(cpath "$RESULTS_FILE")"
-# Kept: pgsc_calc's results (its HTML report, the match log); dropped: its work folder.
-rm -rf "${WORK}/work" "${WORK}/.nextflow"
+# Kept: pgsc_calc's results (its HTML report, the match log); dropped: its work
+# folder and its run reports, whose names carry the time of the run.
+rm -rf "${WORK}/work" "${WORK}/.nextflow" "${WORK}/results/pipeline_info"
 
 if awk -F'\t' 'NR > 1 && $6 + 0 < 50 {found = 1} END {exit !found}' "$RESULTS_FILE"; then
   echo "WARNING: under half of a score's variants were genotyped; that sum is not comparable to published distributions."

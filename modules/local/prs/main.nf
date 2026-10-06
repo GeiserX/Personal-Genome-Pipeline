@@ -7,7 +7,8 @@
                      prs-format), labelled from assets/pgs_scores.tsv
     PRS_SCORE_SITES  genotypes the score positions (and, with a panel, the
                      panel's) from the gVCF, so a site where the sample
-                     matches the reference is a real 0/0
+                     matches the reference is a real 0/0; without a gVCF it
+                     cuts the variant-only VCF to those positions
     PRS              runs pgsc_calc (PGSC_CALC_VERSION) on the host: it is a
                      Nextflow pipeline of its own and starts its own
                      containers, with the images versions.env pins and no
@@ -61,15 +62,17 @@ process PRS_SCORE_SITES {
     label 'process_low'
 
     input:
-    tuple val(meta), path(gvcf), path(gvcf_index)
+    // kind gvcf: the sample's gVCF, its reference blocks expanded at the
+    // positions; kind vcf: its variant-only VCF, cut to the positions.
+    tuple val(meta), path(gvcf), path(gvcf_index), val(input_kind)
     path(score_alleles)
     path(panel_sites)    // [] without an ancestry panel
     path(reference)
     path(reference_fai)  // staged beside the FASTA
 
     output:
-    tuple val(meta), path("${meta.id}_score_sites.vcf.gz"), emit: vcf
-    path "versions.yml",                                    emit: versions
+    tuple val(meta), path("${meta.id}_score_sites.vcf.gz"), val(input_kind), emit: vcf
+    path "versions.yml",                                                    emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -84,6 +87,9 @@ process PRS_SCORE_SITES {
         exit 1
     fi
 
+    if [ "${input_kind}" = vcf ]; then
+        bcftools view -T sites.tsv -Ov ${gvcf} | gzip -c > ${meta.id}_score_sites.vcf.gz
+    else
     bcftools convert --gvcf2vcf -f ${reference} -R sites.tsv -Ou ${gvcf} \\
         | bcftools view -T sites.tsv --trim-alt-alleles -i 'GT!="mis"' -Ov \\
         | awk -F'\\t' -v OFS='\\t' -v alleles=alleles.tsv '
@@ -94,6 +100,7 @@ process PRS_SCORE_SITES {
                 for (i = 1; i <= n; i++) if (c[i] != \$4) { \$5 = c[i]; break }
             }
             { print }' | gzip -c > ${meta.id}_score_sites.vcf.gz
+    fi
     rm -f alleles.tsv sites.tsv
 
     printf '"%s":\\n    bcftools: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
@@ -161,6 +168,13 @@ process PRS {
     cat images.config
     ${offline}
     rc=0
+    mkdir -p pgsc_calc
+    if [ "\$(gzip -dc "\$VCF" | grep -vc '^#' || true)" -eq 0 ]; then
+        # Not one score position is in the input: nothing for pgsc_calc to match.
+        echo "None of the score positions is in this input; no score." | tee pgsc_calc/ZERO_MATCHES
+        echo "pgsc_calc not run: no score position in the input" > pgsc_calc.log
+        touch pgsc_calc.nextflow.log
+    else
     nextflow -log pgsc_calc.nextflow.log run ${pipeline} \\
         -profile ${engine} -c images.config -work-dir work -ansi-log false \\
         --input samplesheet.csv --target_build GRCh38 \\
@@ -168,8 +182,8 @@ process PRS {
         ${ancestry} \\
         --outdir pgsc_calc \\
         --max_cpus ${task.cpus} --max_memory '${task.memory.toGiga()}.GB' > pgsc_calc.log 2>&1 || rc=\$?
+    fi
     cat pgsc_calc.log
-    mkdir -p pgsc_calc
     mv pgsc_calc.log pgsc_calc.nextflow.log pgsc_calc/
     if [ "\$rc" -ne 0 ]; then
         if grep -qE 'ZeroMatchesError|No match candidates found for any scoring files|All scores fail to meet match threshold' pgsc_calc/pgsc_calc*.log; then
@@ -179,7 +193,8 @@ process PRS {
             exit 1
         fi
     fi
-    rm -rf work .nextflow
+    # Its run reports carry the time of the run in their names.
+    rm -rf work .nextflow pgsc_calc/pipeline_info
 
     printf '"%s":\\n    pgsc_calc: %s\\n' "${task.process}" "${release}" > versions.yml
     """

@@ -257,6 +257,8 @@ install_pgsc_calc() {
   mkdir -p "${dir}.part"
   tar -xzf "$tgz" -C "${dir}.part" --strip-components 1 || { rm -rf "${dir}.part"; return 1; }
   rm -f "$tgz"
+  # An incomplete folder left by an earlier run would receive the new one inside it.
+  rm -rf "$dir"
   mv "${dir}.part" "$dir"
 }
 

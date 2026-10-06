@@ -90,16 +90,18 @@ workflow CLINICAL {
                     gvcf: row[4] != null
                     vcf:  true
                 }
+            // Both are cut to the score (and panel) positions: autosomes only,
+            // and a small file for pgsc_calc to convert.
             PRS_SCORE_SITES(
-                ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5]] },
+                ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5], 'gvcf'] }
+                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] }),
                 PRS_PREPARE.out.alleles,
                 ch_ancestry_sites,
                 ch_reference,
                 ch_reference_fai
             )
             PRS(
-                PRS_SCORE_SITES.out.vcf.map { meta, sites -> [meta, sites, 'gvcf'] }
-                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], 'vcf'] }),
+                PRS_SCORE_SITES.out.vcf,
                 PRS_PREPARE.out.scores,
                 ch_ancestry_ref
             )

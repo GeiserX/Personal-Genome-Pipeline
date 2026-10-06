@@ -67,9 +67,11 @@ Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant
 2. **Scores as pgsc_calc reads them.** `bin/collect_summary.py prs-format` writes each file as a custom GRCh38 scoring file: `chr_name` and `chr_position` from the harmonised `hm_chr` and `hm_pos`, the effect allele, the other allele (from `other_allele`, else `hm_inferOtherAllele` when it names one allele), the weight, and the catalog's trait as its label. Rows the catalog could not place on GRCh38 are dropped. pgsc_calc then needs no network and no liftover.
 3. **Genotypes.**
    - **With step 3's gVCF** (the default since step 3 writes one): every score position, and with the panel every panel SNV, is genotyped from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a position into a 0/0 call with the reference base; a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets as its ALT the position's first allele (a score's effect or other allele, the panel's ALT) that is not the reference, so pgsc_calc can match it. These genotypes are kept as `prs/pgsc_calc/target.vcf.gz`.
-   - **Without a gVCF** (an older run): the variant-only VCF is scored, so every site where you match the reference is missing (see below).
+   - **Without a gVCF** (an older run): the variant-only VCF is cut to the same positions, so every site where you match the reference is missing (see below). When not one position is left, pgsc_calc is not started and every score is reported unmatched.
+
+   Either way pgsc_calc gets only those positions: autosomes only (plink2 would refuse chrX without the sample's sex), and a small file to convert.
 4. **pgsc_calc.** Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum.
-5. **Summary.** `bin/collect_summary.py prs-table` reads pgsc_calc's match summary and scores into `${SAMPLE}_prs_summary.tsv`, and with the panel writes step 26's ancestry table. pgsc_calc's work folder is deleted; its results (its own HTML report, the match log) are kept.
+5. **Summary.** `bin/collect_summary.py prs-table` reads pgsc_calc's match summary and scores into `${SAMPLE}_prs_summary.tsv`, and with the panel writes step 26's ancestry table. pgsc_calc's work folder and its run reports (`pipeline_info/`, named after the time of the run) are deleted; its results (its own HTML report, the match log) are kept.
 
 The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline.
 
@@ -78,7 +80,7 @@ The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCO
 | File | Contents |
 |---|---|
 | `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `Input` |
-| `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored (from the gVCF) |
+| `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored: the score (and panel) positions, from the gVCF or the VCF |
 | `pgsc_calc/results/sample/score/` | pgsc_calc's scores, its HTML report `report.html`, and with the panel the ancestry-adjusted scores and the principal components |
 | `pgsc_calc/results/sample/match/` | pgsc_calc's match log and summary |
 | `pgsc_calc/pgsc_calc.log` | pgsc_calc's console output |
