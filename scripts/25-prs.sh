@@ -135,8 +135,10 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${SCORE_LIST}:/pgs_scores.tsv:ro" "$
 
 # --- 3. The genotypes pgsc_calc scores ---------------------------------------------
 # Both inputs end as target.vcf.gz: the score positions (and with the panel the
-# panel's SNVs) only. That keeps chrX out (plink2 refuses it without the
-# sample's sex) and gives pgsc_calc a small file to convert.
+# panel's SNVs) only. Both lists are autosomal (prs-format drops a score's
+# chrX, chrY and MT rows; the panel list is chromosomes 1 to 22), which keeps
+# chrX out (plink2 refuses it without the sample's sex) and gives pgsc_calc a
+# small file to convert.
 echo ""
 TARGET="${WORK}/target.vcf.gz"
 # ALLELES: every candidate ALT of each position (score effect and other

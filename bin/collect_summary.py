@@ -308,6 +308,7 @@ PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants
 # Columns of a scoring file that make a score non-additive: pgsc_calc scores
 # them, but this pipeline's custom file keeps effect_weight only.
 NON_ADDITIVE = ("dosage_0_weight", "dosage_1_weight", "dosage_2_weight")
+AUTOSOMES = frozenset(str(i) for i in range(1, 23))
 
 
 def pgs_id_of(path):
@@ -339,9 +340,12 @@ def single_allele(a):
 def format_pgs(path, out_dir, label=None):
     """Write the GRCh38-harmonised scoring file PATH as a custom GRCh38 file
     pgsc_calc reads (chr_name and chr_position from hm_chr and hm_pos), and
-    return (pgs_id, rows written, [(chrom, pos, allele), ...]) with the effect
-    and other alleles of every row. Raises Unreadable for a file that is not
-    harmonised to GRCh38, lacks a column, is not additive or has no row."""
+    return (pgs_id, rows written, rows dropped off the autosomes,
+    [(chrom, pos, allele), ...]) with the effect and other alleles of every
+    row. Only chromosomes 1 to 22 are kept: pgsc_calc converts the sample with
+    plink2, which stops on a chrX record when no sex is given. Raises
+    Unreadable for a file that is not harmonised to GRCh38, lacks a column, is
+    not additive or has no row."""
     header, cols, rows, alleles = {}, None, [], []
     with open_text(path) as f:
         for line in f:
@@ -375,7 +379,7 @@ def format_pgs(path, out_dir, label=None):
     pid = header.get("pgs_id") or pgs_id_of(path)
     trait = (label or header.get("trait_reported") or pid).replace("=", "-").replace("\n", " ")
     out = os.path.join(out_dir, f"{pid}.txt.gz")
-    n = 0
+    n = off = 0
     with gzip.open(out + ".tmp", "wt", encoding="utf-8") as w:
         w.write(f"#pgs_id={pid}\n#pgs_name={pid}\n#trait_reported={trait}\n#genome_build=GRCh38\n")
         w.write("chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n")
@@ -384,6 +388,9 @@ def format_pgs(path, out_dir, label=None):
             if not (chrom and pos and ea and ew):
                 continue   # a row the catalog could not place on GRCh38
             chrom = chrom[3:] if chrom.startswith("chr") else chrom
+            if chrom not in AUTOSOMES:
+                off += 1   # chrX, chrY, MT: plink2 refuses chrX without the sample's sex
+                continue
             oa = single_allele(get(r, "other_allele")) or single_allele(get(r, "hm_inferOtherAllele"))
             w.write(f"{chrom}\t{pos}\t{ea}\t{oa}\t{ew}\n")
             n += 1
@@ -392,9 +399,9 @@ def format_pgs(path, out_dir, label=None):
                 alleles.append((f"chr{chrom}", pos, oa))
     if n == 0:
         os.remove(out + ".tmp")
-        raise Unreadable(f"{name} has no row with hm_chr, hm_pos, effect_allele and effect_weight")
+        raise Unreadable(f"{name} has no autosomal row with hm_chr, hm_pos, effect_allele and effect_weight")
     os.replace(out + ".tmp", out)
-    return pid, n, alleles
+    return pid, n, off, alleles
 
 
 def prs_format_main(argv):
@@ -424,9 +431,10 @@ def prs_format_main(argv):
     allele_set = set()
     try:
         for p in files:
-            pid, n, al = format_pgs(p, a.out, labels.get(pgs_id_of(p)))
+            pid, n, off, al = format_pgs(p, a.out, labels.get(pgs_id_of(p)))
             allele_set.update(al)
-            print(f"  {pid}: {n} GRCh38 rows ({labels.get(pid) or 'label from the file'})")
+            dropped = f", {off} off the autosomes dropped" if off else ""
+            print(f"  {pid}: {n} GRCh38 rows{dropped} ({labels.get(pid) or 'label from the file'})")
     except (Unreadable, OSError, EOFError, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
