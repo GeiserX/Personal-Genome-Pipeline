@@ -49,7 +49,7 @@ With `run-all.sh`, name it: `TOOLS=...,cyrius`. With Nextflow: `--tools ...,cyri
 1. Validates that the sorted BAM, its index and the Cyrius install exist
 2. Checks the depth at CYP2D6 against its flanks ([depth check](32-pypgx.md#cyp2d6-depth-check)), with `${MOSDEPTH_IMAGE}`
 3. Creates a manifest file listing the BAM path (Cyrius requires this) and runs `python3 -m cyrius --genome 38` (GRCh38) from the install, with no network
-4. When the depth check found multi-mapped reads, sets the call's Filter to `CYP2D6_depth_unreliable`: [step 36](36-pgx-consensus.md) then does not pass it on
+4. When the depth check found multi-mapped reads, sets the call's Filter to `CYP2D6_depth_unreliable`: [step 36](36-pgx-consensus.md) then does not pass it on. Cyrius writes into `cyrius/partial/`, and its TSV moves to `${SAMPLE}_cyp2d6.tsv` only after this, so a run that stops earlier leaves no call for step 36
 5. Parses the output TSV to display the called diplotype
 
 ## Output

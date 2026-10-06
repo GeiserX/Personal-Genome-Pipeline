@@ -42,7 +42,8 @@ done
 mkdir -p "$OUTPUT_DIR"
 # A run that stops anywhere below must not leave the last run's summary and
 # depth check behind for step 36 to read.
-rm -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" "${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
+rm -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv.partial" \
+  "${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
 
 # This step feeds step 36's outside calls for PharmCAT. Remove the ones made
 # from an earlier result, so step 07 never reads a call this run has not
@@ -201,7 +202,9 @@ run_in --cpus 4 --memory 8g \
 echo ""
 echo "Extracting results and building summary..."
 
-# Consolidate per-gene results into a summary TSV
+# Consolidate per-gene results into a summary TSV. It is written as .partial
+# and renamed only after the depth check's verdict is applied below, so a run
+# that stops in between never leaves an unchecked CYP2D6 call for step 36.
 run_in --cpus 2 --memory 4g \
   -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   "${PYPGX_IMAGE}" \
@@ -253,26 +256,27 @@ for gene in all_genes:
                     cnv = 'N/A'
     rows.append([gene, diplotype, phenotype, cnv, source])
 
-with open(summary_path, 'w', newline='') as f:
+with open(summary_path + '.partial', 'w', newline='') as f:
     w = csv.writer(f, delimiter='\t', lineterminator='\n')
     w.writerow(['Gene', 'Diplotype', 'Phenotype', 'CNV_call', 'Source'])
     w.writerows(rows)
 
-print(f'Summary written: {summary_path}')
 print(f'Genes called: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)}')
 " 2>&1
 
 # A CYP2D6 call from multi-mapped depth is not a call: the row says so; the
 # call itself stays in CYP2D6/results.zip.
 SUMMARY="${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv"
-if [ "$DEPTH_STATUS" != ok ] && [ -f "$SUMMARY" ]; then
+if [ "$DEPTH_STATUS" != ok ] && [ -f "${SUMMARY}.partial" ]; then
   awk -F'\t' -v OFS='\t' '$1 == "CYP2D6" {$2 = "Indeterminate"; $3 = "Indeterminate (CYP2D6 depth check)"} {print}' \
-    "$SUMMARY" > "${SUMMARY}.tmp"
-  mv "${SUMMARY}.tmp" "$SUMMARY"
+    "${SUMMARY}.partial" > "${SUMMARY}.tmp"
+  mv "${SUMMARY}.tmp" "${SUMMARY}.partial"
   MSG=$(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || true)
   echo "WARNING: ${MSG:-the CYP2D6 depth check wrote no result}"
   echo "  The CYP2D6 row of ${SUMMARY} says Indeterminate; see ${CHECK}."
 fi
+mv "${SUMMARY}.partial" "$SUMMARY"
+echo "Summary written: ${SUMMARY}"
 
 # The PharmCAT comparison is written by step 27 (CPIC lookup), which runs after
 # both PharmCAT (step 7) and this step; here it could read a missing or

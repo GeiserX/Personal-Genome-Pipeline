@@ -35,6 +35,11 @@ mkdir -p "$OUTDIR"
 # A run that stops anywhere below must not leave the last run's call behind.
 RESULT_FILE="${OUTDIR}/${SAMPLE}_cyp2d6.tsv"
 rm -f "$RESULT_FILE"
+# Cyrius writes into PARTIAL; its TSV moves to RESULT_FILE only after the depth
+# check's verdict is applied, so a stop in between leaves no unchecked call.
+PARTIAL="${OUTDIR}/partial"
+rm -rf "$PARTIAL"
+mkdir -p "$PARTIAL"
 
 # This step feeds step 36's outside calls for PharmCAT. Remove the ones made
 # from an earlier result, so step 07 never reads a call this run has not
@@ -90,7 +95,7 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
 DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || true)
 
 # [2/3] Cyrius, from the install setup.sh made, with no network. The manifest
-# (the BAM path) is created inside the container.
+# (the BAM path) is created inside the container. Its output goes to PARTIAL.
 echo "[2/3] Running Cyrius CYP2D6 caller..."
 # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
 run_in --cpus 4 --memory 8g -w /tmp \
@@ -103,23 +108,30 @@ run_in --cpus 4 --memory 8g -w /tmp \
       --prefix "$3" \
       --outDir "$4" \
       --threads 4' \
-  _ "$(cpath "$CYRIUS_DIR")" "$(cpath "$BAM")" "${SAMPLE}_cyp2d6" "$(cpath "$OUTDIR")/"
+  _ "$(cpath "$CYRIUS_DIR")" "$(cpath "$BAM")" "${SAMPLE}_cyp2d6" "$(cpath "$PARTIAL")/"
 
 echo ""
 echo "[3/3] Parsing results..."
 
-if [ ! -f "$RESULT_FILE" ]; then
-  echo "ERROR: Cyrius finished but wrote no ${RESULT_FILE}. Check the messages above." >&2
+PARTIAL_TSV="${PARTIAL}/${SAMPLE}_cyp2d6.tsv"
+if [ ! -f "$PARTIAL_TSV" ]; then
+  echo "ERROR: Cyrius finished but wrote no ${PARTIAL_TSV}. Check the messages above." >&2
   exit 1
 fi
 if [ "$DEPTH_STATUS" != ok ]; then
   # Keep Cyrius's genotype for the record; the Filter says it cannot be used.
-  awk -F'\t' -v OFS='\t' 'NR > 1 {$3 = "CYP2D6_depth_unreliable"} {print}' "$RESULT_FILE" > "${RESULT_FILE}.tmp"
-  mv "${RESULT_FILE}.tmp" "$RESULT_FILE"
+  awk -F'\t' -v OFS='\t' 'NR > 1 {$3 = "CYP2D6_depth_unreliable"} {print}' "$PARTIAL_TSV" > "${PARTIAL_TSV}.tmp"
+  mv "${PARTIAL_TSV}.tmp" "$PARTIAL_TSV"
   MSG=$(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || true)
   echo "WARNING: ${MSG:-the CYP2D6 depth check wrote no result}"
   echo "  The call below is marked CYP2D6_depth_unreliable and step 36 does not pass it to PharmCAT."
 fi
+# The JSON (Cyrius's details) first, the TSV step 36 reads last.
+if [ -f "${PARTIAL}/${SAMPLE}_cyp2d6.json" ]; then
+  mv "${PARTIAL}/${SAMPLE}_cyp2d6.json" "${OUTDIR}/${SAMPLE}_cyp2d6.json"
+fi
+mv "$PARTIAL_TSV" "$RESULT_FILE"
+rm -rf "$PARTIAL"
 echo ""
 echo "  CYP2D6 Results:"
 echo "  ─────────────────"

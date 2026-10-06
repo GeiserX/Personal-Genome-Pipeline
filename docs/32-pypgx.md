@@ -110,7 +110,7 @@ A copy-number call from depth is only as good as the depth. Before pypgx runs, t
 
 Why the share of uniquely mapped reads, not the ratio of CYP2D6 to flank depth: on the e2e fixture's CYP2D slice mapped to the default no-ALT reference, CYP2D6 has 0.62 of the flank depth with all reads and 0.57 at MAPQ >= 1, its normal value; mapped to the Broad hg38 FASTA with ALT contigs, a third of the reads go to `chr22_KI270879v1_alt` and CYP2D6 keeps 0.28 of the flank depth with all reads. A ratio cut at 0.6 flags the clean BAM and passes the broken one. The share of MAPQ >= 1 reads at CYP2D6 is 0.91 without ALT contigs and 0.005 with them. The ALT depth A/B workflow (`scripts/ci/alt-depth-ab.sh`) runs the check on both mappings and fails unless it passes the first and flags the second.
 
-[Step 36](36-pgx-consensus.md) reads the check: with `unreliable`, no CYP2D6 call reaches PharmCAT, whatever the callers say.
+[Step 36](36-pgx-consensus.md) reads the check: with `unreliable`, no CYP2D6 call reaches PharmCAT, whatever the callers say. The summary is written as `${SAMPLE}_pypgx_summary.tsv.partial` and renamed only after the check's verdict is applied, so a run that stops in between leaves no unchecked CYP2D6 call.
 
 ## Output
 

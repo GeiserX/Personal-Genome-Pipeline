@@ -11,6 +11,11 @@
 #                       and no -po with an empty one
 #   step 35             refuses to run before its data is installed, and says
 #                       how to install it
+#   steps 21 and 32     mark a CYP2D6 call when the depth check fails, and a
+#                       caller that stops after writing its result leaves no
+#                       call where step 36 reads it
+# Files in CASE_WORK steer the hook: depth-status (the depth check's verdict,
+# ok by default) and interrupt (the caller writes its result, then fails).
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -43,10 +48,21 @@ put() {
 }
 case "$args" in
   *"cyp2d6_depth_check.py check"*)
-    put "$(opt --out)" 'metric\tvalue\nstatus\tok\nmessage\tfake\n' ;;
+    put "$(opt --out)" "metric\\tvalue\\nstatus\\t$(cat "${CASE_WORK}/depth-status" 2>/dev/null || echo ok)\\nmessage\\tfake\\n" ;;
   *"-m cyrius"*)
     # bash -c SCRIPT _ INSTALL BAM PREFIX OUTDIR
+    if [ -e "${CASE_WORK}/interrupt" ]; then
+      put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\t*1/*2\tPASS\n'
+      exit 1
+    fi
     put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\tNone\tNot_assigned_to_haplotypes\n' ;;
+  *"summary_path = "*)
+    # Step 32's summary, at the path its Python opens.
+    suffix=""
+    case "$args" in *"summary_path + '.partial'"*) suffix=.partial ;; esac
+    put "/genome/sample1/pypgx/sample1_pypgx_summary.tsv${suffix}" \
+      'Gene\tDiplotype\tPhenotype\tCNV_call\tSource\nCYP2D6\t*1/*2\tNormal Metabolizer\tNormal\tBAM\n'
+    [ ! -e "${CASE_WORK}/interrupt" ] || exit 1 ;;
 esac
 exec "${CASE_WORK}/hook-outputs" "$@"
 HOOK
@@ -105,4 +121,33 @@ grep 'pharmcat.jar' "$FAKE_DOCKER_LOG" | grep -q -- "-v ${OUT}:/outside_calls.ts
 # --- opt-in data not installed ---------------------------------------------------
 run_expect 1 paralogs "${SCRIPTS}/35-paralogs.sh" sample1
 output_has paralogs 'scripts/setup.sh --parascopy-data '
+# --- a failed depth check marks the call; a caller that stops publishes nothing -------
+CY_TSV="${G}/sample1/cyrius/sample1_cyp2d6.tsv"
+echo unreliable > "${CASE_WORK}/depth-status"
+run_expect 0 cyrius-unreliable "${SCRIPTS}/21-cyrius.sh" sample1
+[ "$(awk -F'\t' 'NR == 2 {print $3}' "$CY_TSV" 2>/dev/null)" = CYP2D6_depth_unreliable ] \
+  || fail "step 21 did not mark the Cyrius call after a failed depth check: $(cat "$CY_TSV" 2>/dev/null)"
+[ ! -e "${G}/sample1/cyrius/partial" ] || fail "step 21 left its partial directory behind"
+touch "${CASE_WORK}/interrupt"
+run_rc cyrius-interrupted "${SCRIPTS}/21-cyrius.sh" sample1
+[ "$RC" -ne 0 ] || fail "step 21 exited 0 when Cyrius failed"
+[ ! -e "$CY_TSV" ] || fail "Cyrius stopped after writing its TSV and step 21 left that unchecked call for step 36: $(cat "$CY_TSV")"
+rm -f "${CASE_WORK}/interrupt"
+
+BUNDLE="${G}/reference/pypgx-bundle"
+mkdir -p "$BUNDLE"
+git -C "$BUNDLE" -c user.name=case -c user.email=case@example.invalid -c init.defaultBranch=main init -q
+git -C "$BUNDLE" -c user.name=case -c user.email=case@example.invalid commit -q --allow-empty -m bundle
+git -C "$BUNDLE" tag "$PYPGX_BUNDLE_VERSION"
+SUMMARY="${G}/sample1/pypgx/sample1_pypgx_summary.tsv"
+run_expect 0 pypgx-unreliable "${SCRIPTS}/32-pypgx.sh" sample1
+[ "$(awk -F'\t' '$1 == "CYP2D6" {print $2}' "$SUMMARY" 2>/dev/null)" = Indeterminate ] \
+  || fail "step 32 did not mark CYP2D6 Indeterminate after a failed depth check: $(cat "$SUMMARY" 2>/dev/null)"
+[ ! -e "${SUMMARY}.partial" ] || fail "step 32 left its partial summary behind"
+touch "${CASE_WORK}/interrupt"
+run_rc pypgx-interrupted "${SCRIPTS}/32-pypgx.sh" sample1
+[ "$RC" -ne 0 ] || fail "step 32 exited 0 when its summary failed"
+[ ! -e "$SUMMARY" ] || fail "step 32 stopped after writing its summary and left that unchecked CYP2D6 call for step 36: $(cat "$SUMMARY")"
+rm -f "${CASE_WORK}/interrupt" "${CASE_WORK}/depth-status"
+
 echo "Cyrius installs hash-locked with network and runs without; step 07 passes only non-empty outside calls."
