@@ -57,6 +57,24 @@ docker run --rm \
 - Two alleles per locus (one per chromosome)
 - `${SAMPLE}/hla_t1k/database_release.txt` — the IPD-IMGT/HLA release the calls come from (read from `hla.dat`), the T1K version and the GENCODE release of the gene positions
 
+HLA-A and HLA-B go on to PharmCAT: [step 36](36-pgx-consensus.md) cuts them to two fields (`*57:01`) and writes them as PharmCAT's outside calls, so step 7 gives the drug guidance for them (abacavir, allopurinol, carbamazepine, oxcarbazepine, phenytoin and others) and step 27 lists it. An allele T1K gives a quality of 0 or below is not passed on.
+
+## KIR Genes (opt-in)
+
+`KIR=true` adds a second T1K pass over the KIR genes (killer-cell immunoglobulin-like receptors, chr19), with T1K's `kir-wgs` preset, against the IPD-KIR release `KIR_DB_RELEASE` names in `versions.env` (2.15.0). Install the database once:
+
+```bash
+./scripts/setup.sh --kir-data "$GENOME_DIR"     # kir/IPD-KIR_2.15.0/kir.dat, md5-checked
+KIR=true ./scripts/08-hla-typing.sh your_sample
+```
+
+The index is built once per T1K version, IPD-KIR release and GENCODE release (`t1k_idx/t1k-<version>_kir-<release>_gencode-<release>`). Several KIR genes (KIR2DL2, KIR2DL5, KIR2DS1-3, KIR2DS5, KIR3DS1) are not on the GRCh38 primary assembly and get no coordinates; T1K types them from the reads of the genes that are. Output, in `${SAMPLE}/kir_t1k/`:
+
+- `${SAMPLE}_kir_genotype.tsv` — the KIR genotypes in T1K's layout; when the BAM has too few reads at the KIR genes to type any of them, one line that says so instead;
+- `database_release.txt` — the IPD-KIR release (read from `kir.dat`), the T1K version and the GENCODE release.
+
+With Nextflow: `--kir true --kir_dat ${GENOME_DIR}/kir/IPD-KIR_2.15.0/kir.dat` with `hla_typing` in `--tools` (processes `KIR_BUILD` and `KIR_TYPING`); with `run-all.sh`: `KIR=true`. No step interprets the KIR genotypes yet: they matter for transplant matching and some immune conditions, not for drug guidance.
+
 ## Alternative: HLA-LA
 
 > **Known issue:** in this pipeline's tests the image below crashes during graph alignment, and HLA-LA is still unsolved (see [Troubleshooting](troubleshooting.md#hla-typing-step-8-known-difficulties)). The command is kept for reference; use T1K for results.

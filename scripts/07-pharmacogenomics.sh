@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # PharmCAT — Clinical pharmacogenomics (star alleles + drug recommendations)
-# Input: VCF.gz + GRCh38 reference; the gVCF from step 03 when there is one
+# Input: VCF.gz + GRCh38 reference; the gVCF from step 03 when there is one;
+#        the outside calls of step 36 (HLA-A, HLA-B, an agreed CYP2D6) when
+#        that step wrote any
 # Output: HTML + JSON reports with metabolizer status for 23 pharmacogenes
 set -euo pipefail
 
@@ -85,13 +87,28 @@ run_in \
   sh -c 'gzip -dc "$1" | awk "$3" > "$2"' sh \
     "/data/${SAMPLE}.preprocessed.vcf.bgz" "/data/${SAMPLE}.pharmcat_input.vcf" "$HEADER_FIX"
 
-# Step 3: Run PharmCAT on preprocessed VCF
+# Step 3: Run PharmCAT on preprocessed VCF. PharmCAT types neither HLA nor
+# CYP2D6 from a VCF; step 36 writes those calls from the BAM-based callers
+# (T1K, and CYP2D6 only when pypgx and Cyrius agree), and PharmCAT reads them
+# with -po. An empty file means nothing was agreed, and is not passed.
+OUTSIDE="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv"
+OUTSIDE_ARGS=() PO_ARGS=()
+if [ -s "$OUTSIDE" ]; then
+  echo "Outside calls (step 36): ${OUTSIDE}"
+  sed 's/^/  /' "$OUTSIDE"
+  OUTSIDE_ARGS=(-v "${OUTSIDE}:/outside_calls.tsv:ro")
+  PO_ARGS=(-po /outside_calls.tsv)
+else
+  echo "No outside calls (step 36 not run, or it passed none): HLA and CYP2D6 stay uncalled."
+fi
 run_in \
   --cpus 2 --memory 4g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+  ${OUTSIDE_ARGS[@]+"${OUTSIDE_ARGS[@]}"} \
   "${PHARMCAT_IMAGE}" \
   java -jar /pharmcat/pharmcat.jar \
     -vcf "/data/${SAMPLE}.pharmcat_input.vcf" \
+    ${PO_ARGS[@]+"${PO_ARGS[@]}"} \
     -o /data/ \
     -bf "$SAMPLE" \
     -reporterJson \
@@ -104,4 +121,5 @@ echo "=== PharmCAT complete ==="
 echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
 echo ""
 echo "Key genes covered: CYP2C19, CYP2D6, CYP2B6, CYP3A5, UGT1A1, DPYD, NAT2, TPMT"
-echo "NOTE: CYP2D6 may return 'Not called' — use Cyrius (BAM-based) for CYP2D6."
+echo "NOTE: PharmCAT calls no CYP2D6 or HLA from a VCF. Step 36 gives it T1K's HLA types and a"
+echo "  CYP2D6 call that pypgx (step 32) and Cyrius (step 21) agree on; run it, then this step again."

@@ -13,6 +13,13 @@
 # gene annotation (GENCODE's basic GTF), as T1K's README says. A FASTA or its
 # .fai there gives every gene "-1 -1" coordinates, and then T1K extracts no
 # reads from the BAM; the step stops when a typed gene has no coordinates.
+#
+# KIR=true adds an opt-in second pass: the KIR genes, typed by T1K's kir-wgs
+# preset against IPD-KIR release KIR_DB_RELEASE (versions.env; installed by
+# `setup.sh --kir-data`), written to kir_t1k/ with the release beside the
+# genotypes, as for HLA. Several KIR genes are not on the GRCh38 primary
+# assembly; T1K types them from the reads of the genes that are. A BAM with
+# too few KIR reads gets a genotype file that says so.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -38,6 +45,15 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
 done
 
 mkdir -p "$OUTPUT_DIR"
+# A run that stops anywhere below must not leave the last run's types behind
+# for step 36 to read.
+rm -f "${OUTPUT_DIR}/${SAMPLE}_hla_genotype.tsv"
+
+# This step feeds step 36's outside calls for PharmCAT. Remove the ones made
+# from an earlier result, so step 07 never reads a call this run has not
+# confirmed; step 36 writes them again.
+rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
+  "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
 
 # The HLA database and the gene coordinates are installed by setup.sh. Without
 # them there is nothing to type against: the step says so and stops without
@@ -131,3 +147,84 @@ RELEASE_LINE=$(grep -m 1 'IPD-IMGT/HLA Release' "$HLA_DAT" | sed 's/^CC *//') ||
 echo "=== T1K complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_hla_genotype.tsv"
 echo "Database: ${OUTPUT_DIR}/database_release.txt ($(head -n 1 "${OUTPUT_DIR}/database_release.txt"))"
+
+# --- KIR (opt-in: KIR=true) -------------------------------------------------------
+[[ "${KIR:-false}" =~ ^(true|1)$ ]] || exit 0
+KIR_DAT="${GENOME_DIR}/kir/IPD-KIR_${KIR_DB_RELEASE}/kir.dat"
+KIR_DIR="${GENOME_DIR}/${SAMPLE}/kir_t1k"
+if [ ! -s "$KIR_DAT" ]; then
+  echo "ERROR: KIR=true, but IPD-KIR ${KIR_DB_RELEASE} is not installed (${KIR_DAT})." >&2
+  echo "  Install it once (~40 MB): ./scripts/setup.sh --kir-data ${GENOME_DIR}" >&2
+  exit 1
+fi
+echo ""
+echo "=== T1K KIR typing (IPD-KIR ${KIR_DB_RELEASE}): ${SAMPLE} ==="
+KIR_IDX="${IDX_ROOT}/t1k-${T1K_VERSION}_kir-${KIR_DB_RELEASE}_gencode-${GENCODE_RELEASE}"
+lock_acquire "$LOCK"
+trap 'lock_release "$LOCK"' EXIT
+if [ ! -d "$KIR_IDX" ]; then
+  echo "Building the T1K ${T1K_VERSION} index for IPD-KIR ${KIR_DB_RELEASE}..."
+  rm -rf "${KIR_IDX}.part"
+  run_in --rw "$IDX_ROOT" --cpus 2 --memory 4g \
+    "${T1K_IMAGE}" \
+    t1k-build.pl \
+      -d "$(cpath "$KIR_DAT")" \
+      -g "$(cpath "$GENES_GTF")" \
+      --prefix kir \
+      -o "$(cpath "${KIR_IDX}.part")"
+  if [ -z "$(find "${KIR_IDX}.part" -maxdepth 1 -name '*dna_coord.fa' | head -n 1)" ] \
+     || [ -z "$(find "${KIR_IDX}.part" -maxdepth 1 -name '*dna_seq.fa' | head -n 1)" ]; then
+    echo "ERROR: t1k-build.pl wrote no *dna_seq.fa and *dna_coord.fa in ${KIR_IDX}.part" >&2
+    exit 1
+  fi
+  mv "${KIR_IDX}.part" "$KIR_IDX"
+fi
+lock_release "$LOCK"
+trap - EXIT
+KIR_SEQ=$(find "$KIR_IDX" -maxdepth 1 -name '*dna_seq.fa' | head -n 1)
+KIR_COORD=$(find "$KIR_IDX" -maxdepth 1 -name '*dna_coord.fa' | head -n 1)
+
+mkdir -p "$KIR_DIR"
+rm -f "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv" "${KIR_DIR}/${SAMPLE}_kir_t1k_genotype.tsv"
+# T1K may stop when it extracts no KIR read at all: that is "too few reads"
+# when its candidate reads file exists and is empty; any other failure (no
+# candidate file at all, or candidate reads it failed to type) is an error.
+RC=0
+run_in \
+  --cpus "${THREADS}" --memory 8g \
+  "${T1K_IMAGE}" \
+  run-t1k \
+    -b "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
+    -f "$(cpath "$KIR_SEQ")" \
+    -c "$(cpath "$KIR_COORD")" \
+    --preset kir-wgs \
+    -t "${THREADS}" \
+    --od "/genome/${SAMPLE}/kir_t1k/" \
+    -o "${SAMPLE}_kir_t1k" || RC=$?
+if [ "$RC" -ne 0 ]; then
+  CAND=""
+  for c in "${KIR_DIR}/${SAMPLE}_kir_t1k_candidate_1.fq" "${KIR_DIR}/${SAMPLE}_kir_t1k_candidate.fq"; do
+    [ -e "$c" ] && CAND=$c && break
+  done
+  if [ -z "$CAND" ] || [ -s "$CAND" ]; then
+    echo "ERROR: run-t1k failed (exit ${RC})$([ -n "$CAND" ] && echo ' with KIR reads to type' || echo ' before extracting reads')." >&2
+    exit "$RC"
+  fi
+  echo "run-t1k exited ${RC}: it extracted no KIR read (${CAND} is empty)."
+fi
+KIR_RELEASE=$(grep -m 1 'IPD-KIR Release Version' "$KIR_DAT" | sed 's/^CC *//') || KIR_RELEASE=""
+{
+  echo "database: ${KIR_RELEASE:-IPD-KIR ${KIR_DB_RELEASE} (no release line in kir.dat)}"
+  echo "t1k: ${T1K_VERSION}"
+  echo "coordinates: GENCODE ${GENCODE_RELEASE} basic annotation"
+} > "${KIR_DIR}/database_release.txt"
+T1K_OUT="${KIR_DIR}/${SAMPLE}_kir_t1k_genotype.tsv"
+if [ -s "$T1K_OUT" ] && awk -F'\t' '$5 > 0 || $8 > 0 {found = 1} END {exit !found}' "$T1K_OUT"; then
+  cp "$T1K_OUT" "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv"
+  echo "KIR genotypes: ${KIR_DIR}/${SAMPLE}_kir_genotype.tsv"
+else
+  printf '# KIR not typed: T1K found too few reads at the KIR genes (chr19 leukocyte receptor complex) in this BAM\n' \
+    > "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv"
+  echo "KIR: too few reads at the KIR genes to type any of them (${KIR_DIR}/${SAMPLE}_kir_genotype.tsv says so)."
+fi
+echo "Database: ${KIR_DIR}/database_release.txt ($(head -n 1 "${KIR_DIR}/database_release.txt"))"

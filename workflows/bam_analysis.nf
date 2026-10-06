@@ -2,10 +2,11 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     BAM_ANALYSIS — Parallel BAM-based analyses
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Runs HLA typing, repeat expansion detection, telomere length estimation,
-    coverage statistics, mitochondrial variant calling, CYP2D6 star alleles
-    and the sample identity and contamination check ALL in parallel from a
-    single BAM input.
+    Runs HLA typing (with an opt-in KIR pass), repeat expansion detection,
+    telomere length estimation, coverage statistics, mitochondrial variant
+    calling, SMN1/SMN2 copy number (opt-in) and the sample identity and
+    contamination check ALL in parallel from a single BAM input. The CYP2D6
+    callers run in the PGX workflow, which also reads the HLA types.
 
     Each module is gated on params.tools containing the tool name.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -13,12 +14,14 @@
 
 include { T1K_BUILD        } from '../modules/local/t1k_build/main'
 include { HLA_TYPING       } from '../modules/local/hla_typing/main'
+include { KIR_BUILD        } from '../modules/local/hla_typing/main'
+include { KIR_TYPING       } from '../modules/local/hla_typing/main'
 include { EXPANSION_HUNTER } from '../modules/local/expansion_hunter/main'
 include { STRANGER         } from '../modules/local/stranger/main'
 include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
-include { CYRIUS           } from '../modules/local/cyrius/main'
+include { PARASCOPY        } from '../modules/local/parascopy/main'
 include { SOMALIER         } from '../modules/local/somalier/main'
 include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
@@ -37,6 +40,9 @@ workflow BAM_ANALYSIS {
     ch_cytoband          // channel: val(path) — UCSC GRCh38 chromosome bands or []
     ch_somalier_sites    // channel: val(path) — somalier sites VCF or []
     ch_verifybamid2_panel // channel: val(path) — folder of VerifyBamID2's .UD/.mu/.bed panel or []
+    ch_kir_dat           // channel: val(path) — IPD-KIR kir.dat (--kir) or []
+    ch_parascopy_data    // channel: val(path) — Parascopy's homology table and models or []
+    ch_parascopy_bed     // channel: val(path) — Parascopy background windows or []
 
     main:
     ch_versions = Channel.empty()
@@ -48,7 +54,8 @@ workflow BAM_ANALYSIS {
     ch_telomere_results = Channel.empty()
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
-    ch_cyrius_results   = Channel.empty()
+    ch_kir_genotype     = Channel.empty()
+    ch_smn_copy_number  = Channel.empty()
     ch_sample_qc        = Channel.empty()
 
     //
@@ -62,6 +69,15 @@ workflow BAM_ANALYSIS {
         HLA_TYPING(ch_bam, T1K_BUILD.out.seq_fa, T1K_BUILD.out.coord_fa)
         ch_hla_alleles = HLA_TYPING.out.hla_alleles
         ch_versions    = ch_versions.mix(T1K_BUILD.out.versions, HLA_TYPING.out.versions)
+
+        // Opt-in: --kir, a second T1K pass over the KIR genes (main.nf
+        // requires --kir_dat with it)
+        if (params.kir) {
+            KIR_BUILD(ch_kir_dat, ch_hla_genes)
+            KIR_TYPING(ch_bam, KIR_BUILD.out.seq_fa, KIR_BUILD.out.coord_fa, KIR_BUILD.out.release)
+            ch_kir_genotype = KIR_TYPING.out.kir_genotype
+            ch_versions     = ch_versions.mix(KIR_BUILD.out.versions, KIR_TYPING.out.versions)
+        }
     }
 
     //
@@ -129,13 +145,14 @@ workflow BAM_ANALYSIS {
     }
 
     //
-    // MODULE 6: Cyrius (CYP2D6 star alleles)
-    // Gates on: params.tools contains 'cyrius'
+    // MODULE 6: Parascopy (SMN1/SMN2 copy number)
+    // Gates on: params.tools contains 'parascopy' (opt-in; main.nf requires
+    // --parascopy_data with it)
     //
-    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cyrius')) {
-        CYRIUS(ch_bam)
-        ch_cyrius_results = CYRIUS.out.cyp2d6_results
-        ch_versions       = ch_versions.mix(CYRIUS.out.versions)
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('parascopy')) {
+        PARASCOPY(ch_bam, ch_reference, ch_reference_fai, ch_parascopy_data, ch_parascopy_bed)
+        ch_smn_copy_number = PARASCOPY.out.copy_number
+        ch_versions        = ch_versions.mix(PARASCOPY.out.versions)
     }
 
     //
@@ -199,7 +216,8 @@ workflow BAM_ANALYSIS {
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     mito_vcf         = ch_mito_vcf
-    cyrius_results   = ch_cyrius_results
+    kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
+    smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     versions         = ch_versions
 }

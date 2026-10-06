@@ -4,11 +4,12 @@
 #   Options after the sex go to `nextflow run` as given (--sex_check warn); --max_cpus (THREADS) and --max_memory default to the host's.
 # Needs Docker, bash 4.4+, Java 17+ and Nextflow (NEXTFLOW_VERSION in versions.env). Results: GENOME_DIR/<sample>/.
 # Input, first match: aligned/<sample>_sorted.bam with .bai (plus vcf/<sample>.vcf.gz with .tbi: not called
-#   again, and a gVCF beside it is not read); fastq/<sample>_R1.fastq.gz and _R2; the VCF alone. Kept in
-#   <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's, so a rerun finds its tasks.
+#   again, and the gVCF beside it, vcf/<sample>.g.vcf.gz with .tbi, goes to PharmCAT and PRS); fastq/<sample>_R1.fastq.gz
+#   and _R2; the VCF alone. Kept in <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names); REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS as for the single steps.
+#   (only these --tools names; cyrius and parascopy run only when named); KIR=true (KIR genes with HLA);
+#   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION as for the single steps.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14), ANCESTRY=true (26),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
 #   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report. A step without its data or BAM is skipped.
@@ -39,9 +40,10 @@ printf '# run-all.sh: when this run started and how each step ended\nmeta\tstart
   "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" > "$STATUS"
 NF=() SEL=() RUNS=() KNOWN="" OPTIN=()  # every step of a default run: it runs, or it is skipped with the reason
 need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: ${f#"$G"/}"; return; }; done; }
+optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 35 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}"); printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -68,18 +70,24 @@ elif [ -f "$B" ] && [ -f "${B}.bai" ]; then row=",,${B},${B}.bai,,"
 elif [ -f "${F}1.fastq.gz" ] && [ -f "${F}2.fastq.gz" ]; then row="${F}1.fastq.gz,${F}2.fastq.gz,,,,"
 elif [ -f "$V" ] && [ -f "${V}.tbi" ]; then row=",,,,${V},${V}.tbi"
 else echo "ERROR: no input for ${SAMPLE}: no ${B}, no ${F}1/2.fastq.gz and no ${V}, each with its index." >&2; exit 1; fi
-printf 'sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex\n%s,%s,%s\n' "$SAMPLE" "$row" "$SEX" > "$SHEET"
-IFS=, read -r f1 _ fb _ fv _ <<< "$row"; NOBAM=${f1}${fb}
-[ -z "$fb" ] || [ -z "$fv" ] || echo "NOTE: starting from the existing VCF: PharmCAT and PRS read its variant sites only, and a gVCF beside it is not read. To call again with a gVCF, remove the VCF and its index."
+IFS=, read -r f1 _ fb _ fv _ <<< "$row"; NOBAM=${f1}${fb} GV="${S}/vcf/${SAMPLE}.g.vcf.gz" GCOL="" GROW=""
+# A BAM+VCF row is not called again: the gVCF beside the VCF, when there is one with its index, gives PharmCAT and PRS the reference calls.
+if [ -n "$fb" ] && [ -n "$fv" ]; then
+  if [ -f "$GV" ] && [ -f "${GV}.tbi" ]; then GCOL=",gvcf,gvcf_index" GROW=",${GV},${GV}.tbi"; echo "NOTE: starting from the existing VCF; PharmCAT and PRS read the gVCF beside it (${GV})."
+  else echo "NOTE: starting from the existing VCF, with no gVCF with its index beside it (${GV}): PharmCAT and PRS read its variant sites only. To call again with a gVCF, remove the VCF and its index."; fi
+fi
+printf 'sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex%s\n%s,%s,%s%s\n' "$GCOL" "$SAMPLE" "$row" "$SEX" "$GROW" > "$SHEET"
 echo "[Input] ${SHEET}: ${row}"
 if [ -n "$NOBAM" ]; then RUNS=(16); else printf 'step\t16\tskipped (no BAM)\n' >> "$STATUS"; fi
 echo "[Steps] ${SAMPLE} (${SEX})"
 for p in "07 PharmCAT:pharmcat" "27 CPIC lookup:cpic" "11 ROH:roh" "12 Mito haplogroup:mito_haplogroup" "16b mosdepth:mosdepth" \
-         "10 TelomereHunter:telomere_hunter" "20 Mito variants (Mutect2):mito_variants" "21 Cyrius CYP2D6:cyrius" "04 Manta:manta" \
+         "10 TelomereHunter:telomere_hunter" "20 Mito variants (Mutect2):mito_variants" "04 Manta:manta" \
          "19 Delly:delly" "15 duphold:duphold" "22 SV consensus merge:survivor_merge" "28 MultiQC:multiqc"; do plan "${p%:*}" "${p##*:}" || true; done
 plan "06 ClinVar screen" clinvar "$(need "$CV" "${CV}.tbi")" && NF+=(--clinvar "$CV" --clinvar_index "${CV}.tbi")
 H=$(data_file hla_dat || true) GT=$(data_file gencode_genes || true)
-plan "08 HLA typing (T1K)" hla_typing "$(need "$H" "$GT")" && NF+=(--hla_dat "$H" --hla_genes "$GT")
+plan "08 HLA typing (T1K)" hla_typing "$(need "$H" "$GT")" && NF+=(--hla_dat "$H" --hla_genes "$GT") \
+  && if on KIR; then K="${G}/kir/IPD-KIR_${KIR_DB_RELEASE}/kir.dat"; [ -s "$K" ] && NF+=(--kir true --kir_dat "$K") \
+    || echo "  KIR typing skipped: data not installed: ${K#"$G"/} (setup.sh --kir-data)"; fi
 plan "09 ExpansionHunter" expansion_hunter "$(need "$CAT")" && NF+=(--expansion_catalog "$CAT")
 plan "09b Stranger" stranger "$(need "$CAT")" || true
 plan "13 VEP" vep "$VEPW" && NF+=(--vep_cache "${G}/vep_cache") && arg --gnomad_constraint "${A}/gnomad_v4.1_constraint.tsv"
@@ -92,6 +100,12 @@ plan "17 CPSR" cpsr "$(need "${G}/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEAS
 plan "18 CNVpytor" cnvpytor "$(need "${G}/reference/cnvpytor/gc_hg38.pytor")" && NF+=(--cnvpytor_resources "${G}/reference/cnvpytor")
 plan "05 AnnotSV" annotsv "$(need "${G}/annotsv_annotations/Annotations_Human/Genes/GRCh38")" && NF+=(--annotsv_annotations "${G}/annotsv_annotations")
 plan "32 pypgx" pypgx "$(need "${G}/reference/pypgx-bundle")" && NF+=(--pypgx_bundle "${G}/reference/pypgx-bundle")
+CY="${G}/tools/cyrius-${CYRIUS_VERSION}" PS="${G}/reference/parascopy-${PARASCOPY_DATA_VERSION}"
+CYSTAMP="python=${PYTHON_IMAGE} lock=$(_digest sha256 "${SCRIPT_DIR}/cyrius-constraints.txt")"
+plan "21 Cyrius CYP2D6" cyrius "$(optin cyrius || { [ "$(cat "${CY}/INSTALLED" 2>/dev/null)" = "$CYSTAMP" ] \
+  || echo "data not installed: ${CY#"$G"/} for this version (setup.sh --cyrius)"; })" && NF+=(--cyrius_install "$CY")
+plan "35 Parascopy SMN1/SMN2" parascopy "$(optin parascopy || need "${PS}/homology_table/GRCh38.bed.gz")" && NF+=(--parascopy_data "$PS") \
+  && NF+=(--parascopy_population "${PARASCOPY_POPULATION:-EUR}")
 plan "25 PRS" prs "$(need "$(compgen -G "${G}/prs_scores/*.txt.gz" | head -n 1 || echo "${G}/prs_scores/<PGS id>.txt.gz")")" && NF+=(--pgs_scoring "${G}/prs_scores")
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"

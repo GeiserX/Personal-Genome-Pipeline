@@ -14,6 +14,11 @@
     becomes a 0/0 call, an uncovered one (./.) stays missing. The expanded
     file is named without .g.vcf, which PharmCAT refuses.
 
+    PharmCAT types neither HLA nor CYP2D6 from a VCF. When PGX_CONSENSUS
+    wrote outside calls for the sample (HLA-A and HLA-B from T1K, a CYP2D6
+    call pypgx and Cyrius agree on), step 2 reads them with -po; an empty
+    file is not passed.
+
     Equivalent to: scripts/07-pharmacogenomics.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -75,7 +80,8 @@ process PHARMCAT {
     publishDir { "${params.outdir}/${meta.id}/pharmcat" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(preprocessed_vcf)
+    // outside_calls is [] when PGX_CONSENSUS did not run for the sample
+    tuple val(meta), path(preprocessed_vcf), path(outside_calls)
 
     output:
     tuple val(meta), path("*.report.html"),  emit: html_report
@@ -95,13 +101,23 @@ process PHARMCAT {
     // below rewrites PharmCAT's own copy only, on ## lines: \" becomes ' and
     // any other \ becomes /. Remove it once a PharmCAT release bundles
     // vcf-parser newer than 0.3.1 (scripts/07-pharmacogenomics.sh does the same).
+    def outside = outside_calls ? "${outside_calls}" : ''
     """
     gzip -dc ${preprocessed_vcf} \\
         | awk '/^##/ { gsub(/\\\\"/, "\\047"); gsub(/\\\\/, "/") } { print }' \\
         > ${meta.id}.pharmcat_input.vcf
 
+    PO=()
+    if [ -n "${outside}" ] && [ -s "${outside}" ]; then
+        echo "Outside calls (PGX_CONSENSUS):"
+        cat "${outside}"
+        PO=(-po "${outside}")
+    else
+        echo "No outside calls: HLA and CYP2D6 stay uncalled."
+    fi
     java -jar /pharmcat/pharmcat.jar \\
         -vcf ${meta.id}.pharmcat_input.vcf \\
+        \${PO[@]+"\${PO[@]}"} \\
         -o ./ \\
         -bf ${meta.id} \\
         -reporterJson \\

@@ -37,7 +37,7 @@ output_lacks run-all 'unbound variable'
 NFLOG=$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" || true)
 [ "$(grep -c . <<<"$NFLOG")" -eq 1 ] || fail "nextflow was called $(grep -c . <<<"$NFLOG") times, expected once: ${NFLOG}"
 SHEET="${G}/sample1/nextflow/samplesheet.csv"
-TOOLS='pharmcat,cpic,roh,mito_haplogroup,mosdepth,telomere_hunter,mito_variants,cyrius,manta,delly,duphold,survivor_merge,multiqc,clinvar,expansion_hunter,stranger'
+TOOLS='pharmcat,cpic,roh,mito_haplogroup,mosdepth,telomere_hunter,mito_variants,manta,delly,duphold,survivor_merge,multiqc,clinvar,expansion_hunter,stranger'
 CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=25.10.8 :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
@@ -51,20 +51,24 @@ grep -q '^NEXTFLOW_VERSION="25.10.8"' "${REPO_ROOT}/versions.env" || fail "versi
 B="${G}/sample1/aligned/sample1_sorted.bam" V="${G}/sample1/vcf/sample1.vcf.gz"
 [ "$(cat "$SHEET")" = "sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex
 sample1,,,${B},${B}.bai,${V},${V}.tbi,male" ] || fail "samplesheet: $(cat "$SHEET")"
-output_has run-all 'NOTE: starting from the existing VCF: .* a gVCF beside it is not read'
+output_has run-all 'NOTE: starting from the existing VCF, with no gVCF with its index beside it'
 
 # Exact counts: a step that turns from run into skipped, or back, fails here.
 # Skipped: VEP, CPSR, CNVpytor, AnnotSV, pypgx, HLA and PRS (data not
-# installed), and vcfanno, clinical filter and slivar (need VEP).
-[ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 16 ] || fail "not 16 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
-[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 10 ] || fail "not 10 steps skipped"
+# installed), vcfanno, clinical filter and slivar (need VEP), and Cyrius and
+# Parascopy (opt-in: only with TOOLS naming them).
+[ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
+[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 12 ] || fail "not 12 steps skipped"
+output_has run-all '^  21 Cyrius CYP2D6 +skipped +\(opt-in: add cyrius to TOOLS\)$'
+output_has run-all '^  35 Parascopy SMN1/SMN2 +skipped +\(opt-in: add parascopy to TOOLS\)$'
 output_has run-all '^  31 slivar +skipped +\(needs VEP, data not installed: vep_cache/'
 output_has run-all '^  25 PRS +skipped +\(data not installed: prs_scores/<PGS id>\.txt\.gz\)$'
 
 STATUS="${G}/sample1/logs/run_status.tsv"
 grep -q $'^meta\tdeclared_sex\tmale$' "$STATUS" || fail "run_status.tsv lacks the declared sex"
 grep -q $'^step\t13\tskipped (data not installed: ' "$STATUS" || fail "run_status.tsv lacks step 13 skipped"
-for s in 06 07 16 21 27 28; do grep -q $'^step\t'"${s}"$'\tok$' "$STATUS" || fail "run_status.tsv lacks step ${s} ok: $(cat "$STATUS")"; done
+grep -q $'^step\t21\tskipped (opt-in: add cyrius to TOOLS)$' "$STATUS" || fail "run_status.tsv lacks step 21 skipped (opt-in)"
+for s in 06 07 16 27 28; do grep -q $'^step\t'"${s}"$'\tok$' "$STATUS" || fail "run_status.tsv lacks step ${s} ok: $(cat "$STATUS")"; done
 grep -q $'^run\twritten_by\trun-all.sh' "${G}/sample1/run_manifest.tsv" || fail "no run manifest from run-all.sh"
 for l in 24-html-report generate-report; do [ -s "${G}/sample1/logs/${l}.log" ] || fail "the report ${l} did not run"; done
 echo "run-all.sh validated the setup, wrote the samplesheet and started nextflow once with the default flags."

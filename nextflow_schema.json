@@ -104,8 +104,8 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry, pypgx, SV callers, cram_archive) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set.",
-                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry, pypgx, SV callers, cram_archive, cyrius, parascopy) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
             }
@@ -252,6 +252,43 @@
                     "type": "string",
                     "format": "file-path",
                     "description": "Gene annotation (GTF) T1K takes each HLA gene's GRCh38 coordinates from: the gene lines of GENCODE's basic annotation that scripts/setup.sh installs as reference/gencode.v<release>.basic.genes.gtf. Required with hla_typing.",
+                    "fa_icon": "fas fa-file"
+                },
+                "kir": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "With hla_typing: also type the KIR genes, in a second T1K pass with its kir-wgs preset. Needs --kir_dat.",
+                    "fa_icon": "fas fa-dna"
+                },
+                "kir_dat": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "IPD-KIR's kir.dat of release KIR_DB_RELEASE (versions.env), which `scripts/setup.sh --kir-data` installs as kir/IPD-KIR_<release>/kir.dat. Required with --kir.",
+                    "fa_icon": "fas fa-file"
+                },
+                "cyrius_install": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The Cyrius install `scripts/setup.sh --cyrius` makes (tools/cyrius-<version>), hash-locked by scripts/cyrius-constraints.txt. Required with cyrius. Cyrius is under the PolyForm Strict licence 1.0.0: non-commercial use only.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "parascopy_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Parascopy's GRCh38 homology table and 1000 Genomes models, which `scripts/setup.sh --parascopy-data` installs as reference/parascopy-<version>. Required with parascopy.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "parascopy_population": {
+                    "type": "string",
+                    "default": "EUR",
+                    "enum": ["AFR", "AMR", "EAS", "EUR", "SAS"],
+                    "description": "parascopy: the 1000 Genomes population whose model parameters are used.",
+                    "fa_icon": "fas fa-users"
+                },
+                "parascopy_depth_bed": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "parascopy: background windows (BED, all of one size) for a BAM that covers only part of the genome; default Parascopy's own GRCh38 windows.",
                     "fa_icon": "fas fa-file"
                 },
                 "slivar_bin": {

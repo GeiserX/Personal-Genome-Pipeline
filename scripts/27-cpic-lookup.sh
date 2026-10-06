@@ -6,7 +6,9 @@
 # gene phenotypes and the medications PharmCAT's own report matches to them,
 # so a gene PharmCAT calls is never dropped for missing from a hand-kept
 # table. With pypgx output (step 32) it also writes the PharmCAT/pypgx
-# comparison and warns about genes only pypgx could call.
+# comparison and warns about genes only pypgx could call. With step 36's
+# consensus table it lists the calls other tools gave PharmCAT (HLA from T1K,
+# an agreed CYP2D6) and why a gene was held back.
 #
 # Requires: PharmCAT output from step 7. No internet connection needed.
 set -euo pipefail
@@ -58,6 +60,21 @@ if [ -f "$PYPGX_SUMMARY" ]; then
   PYPGX_ARGS=(--pypgx "$(cpath "$PYPGX_SUMMARY")" --comparison "$(cpath "$COMPARISON")")
 else
   echo "pypgx summary not found (step 32 not run): no PharmCAT/pypgx comparison."
+fi
+
+# Step 36: what the BAM-based callers gave PharmCAT, and what they held back.
+CONSENSUS="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+if [ -f "$CONSENSUS" ]; then
+  echo "Outside-call consensus (step 36): ${CONSENSUS}"
+  PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
+elif grep -Eq '"callSource"[[:space:]]*:[[:space:]]*"OUTSIDE"' "$PHARMCAT_JSON"; then
+  # PharmCAT read outside calls, but step 36's table is gone (a caller step
+  # ran again since): pass the missing table, so the parser confirms none of
+  # them and gives them no drug guidance.
+  echo "WARNING: PharmCAT's report has outside calls, but step 36's consensus is missing: run step 36, then step 07, again."
+  PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
+else
+  echo "No outside-call consensus (step 36 not run): HLA and CYP2D6 from the BAM are not listed."
 fi
 
 # The parser, the drug lookup and the comparison live in bin/pgx_parse.py, the

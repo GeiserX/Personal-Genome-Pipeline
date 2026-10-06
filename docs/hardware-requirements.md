@@ -169,7 +169,7 @@ On a 16-core / 32 GB desktop, with each script's default CPU limit. These are es
 | 18 CNVpytor | ~1-3 h | |
 | 19 Delly | ~2-4 h | |
 | 20 Mito variants (Mutect2) | ~15-30 min | |
-| 21 Cyrius | ~5-15 min | includes the pip install |
+| 21 Cyrius | ~5-15 min | opt-in; `setup.sh --cyrius` installs it once (about a minute) |
 | 22 SV consensus | ~5-15 min | |
 | 23 Clinical filter | ~5-10 min | |
 | 24 HTML report | ~1-3 min | |
@@ -217,7 +217,7 @@ About 73 GB for a default run and 248 GB with the annotation databases; the [tab
 - **ClinVar updates:** ~200 MB/month (optional but recommended for latest pathogenic variant classifications)
 - **Docker image updates:** Variable (only when you want newer tool versions)
 
-> **Network during a run:** after setup, a few steps still fetch public files (the HLA database, PGS scoring files, Cyrius from PyPI, MultiQC's update check). None of these calls sends sample data. [Why run locally?](why-local.md#network-calls-during-a-run) lists each one.
+> **Network during a run:** after setup, a few scripts still fetch public files (PGS scoring files, and the data of the opt-in steps they are asked for); no step container has network. None of these calls sends sample data. [Why run locally?](why-local.md#network-calls-during-a-run) lists each one.
 
 ---
 

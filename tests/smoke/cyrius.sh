@@ -1,12 +1,16 @@
 # shellcheck shell=sh
-# PYTHON_IMAGE row: step 21 pip-installs Cyrius into this image, with the
-# dependency versions held by scripts/cyrius-constraints.txt, and runs it on
-# the fixture's Cyrius BAM. Cyrius makes no CYP2D6 call on the fixture
-# (Genotype None, as in the e2e case), so the row checks that it read depth.
+# PYTHON_IMAGE row: install Cyrius as `setup.sh --cyrius` does, every wheel
+# checked against its sha256 in scripts/cyrius-constraints.txt (--require-hashes,
+# --no-deps, --only-binary), into a directory; then run it from there as step 21
+# does, as a module with that directory on PYTHONPATH, on the fixture's Cyrius
+# BAM. Cyrius makes no CYP2D6 call on the fixture (Genotype None, as in the
+# e2e case), so the row checks that it read depth.
 set -e
 : "${CYRIUS_VERSION:?versions.env sets it}"
-pip install --user --no-cache-dir --disable-pip-version-check -q -c /in/cyrius-constraints.txt "cyrius==${CYRIUS_VERSION}"
-PATH="${HOME}/.local/bin:${PATH}"
+pip install --no-cache-dir --disable-pip-version-check -q --require-hashes --no-deps \
+  --only-binary :all: --target /out/cyrius -r /in/cyrius-constraints.txt
+PYTHONPATH=/out/cyrius python3 -c 'import importlib.metadata as m; print("cyrius", m.version("cyrius"))' > installed.txt
+cat installed.txt
 echo /in/HG002_cyrius.bam > manifest.txt
-cyrius --manifest manifest.txt --genome 38 --prefix HG002_cyp2d6 --outDir /out --threads 4
+PYTHONPATH=/out/cyrius python3 -m cyrius --manifest manifest.txt --genome 38 --prefix HG002_cyp2d6 --outDir /out --threads 4
 cat HG002_cyp2d6.tsv HG002_cyp2d6.json

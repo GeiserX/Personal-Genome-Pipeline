@@ -5,6 +5,13 @@
 #        ./scripts/setup.sh --refresh clinvar <genome_dir>
 #                                            replace ClinVar with NCBI's current
 #                                            release and rebuild the files made from it
+#        ./scripts/setup.sh --cyrius <genome_dir>
+#        ./scripts/setup.sh --parascopy-data <genome_dir>
+#        ./scripts/setup.sh --kir-data <genome_dir>
+#                                            what an opt-in step needs, and nothing
+#                                            else: Cyrius (step 21), Parascopy's
+#                                            homology table and models (step 35),
+#                                            IPD-KIR (step 08 with KIR=true)
 #
 # This script downloads everything needed to run the pipeline:
 #   1. GRCh38 reference genome + index: NCBI's GRCh38 no-ALT analysis set
@@ -35,7 +42,11 @@ set -euo pipefail
 PULL_ONLY=false
 REFRESH=""
 SAMPLE_QC_ONLY=false
+OPT_IN=""
 case "${1:-}" in
+  --cyrius|--parascopy-data|--kir-data)
+    OPT_IN=${1#--}
+    shift ;;
   --pull-only)
     PULL_ONLY=true
     shift ;;
@@ -58,6 +69,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -67,6 +79,11 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                and record its release date in <genome_dir>/clinvar/RELEASE."
   echo "  --sample-qc-data"
   echo "                Install only somalier's sites and VerifyBamID2's panel (step 33) and exit."
+  echo "  --cyrius      Install Cyrius for the opt-in step 21 (PyPI, hash-locked) and exit."
+  echo "                Cyrius is under the PolyForm Strict licence: non-commercial use only."
+  echo "  --parascopy-data"
+  echo "                Install Parascopy's GRCh38 homology table and models (step 35, ~50 MB) and exit."
+  echo "  --kir-data    Install the IPD-KIR ${KIR_DB_RELEASE:-} database (KIR=true in step 08, ~40 MB) and exit."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -129,6 +146,99 @@ if $SAMPLE_QC_ONLY; then
   install_sample_qc_data
   exit $?
 fi
+
+# --- Opt-in steps: Cyrius, Parascopy, KIR ------------------------------------------
+# None of these is installed by a plain setup.sh run: each belongs to a step a
+# default run leaves out, and each is asked for by its own flag.
+
+# install_cyrius: Cyrius (step 21) into GENOME_DIR/tools/cyrius-<version>,
+# installed by pip in PYTHON_IMAGE, the image step 21 runs it in, from
+# scripts/cyrius-constraints.txt: every package pinned with the sha256 of its
+# wheels (--require-hashes), nothing resolved (--no-deps) and nothing built
+# (--only-binary). The network is used here, never when step 21 runs. Cyrius
+# is under the PolyForm Strict licence 1.0.0 (non-commercial use only).
+install_cyrius() {
+  local dest="${GENOME_DIR}/tools/cyrius-${CYRIUS_VERSION}" lock="${PGP_ROOT}/scripts/cyrius-constraints.txt" stamp
+  stamp="python=${PYTHON_IMAGE} lock=$(_digest sha256 "$lock")"
+  if [ "$(cat "${dest}/INSTALLED" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] Cyrius ${CYRIUS_VERSION} (step 21) already installed: ${dest}"
+    return 0
+  fi
+  echo "Installing Cyrius ${CYRIUS_VERSION} from ${lock} (hash-locked) into ${dest}"
+  echo "  Cyrius is under the PolyForm Strict licence 1.0.0: non-commercial use only."
+  rm -rf "${dest}.part"
+  mkdir -p "${dest}.part"
+  # --net: pip downloads the locked wheels from PyPI.
+  if ! run_in --net --rw "${GENOME_DIR}/tools" -v "${lock}:/lock.txt:ro" "${PYTHON_IMAGE}" \
+      pip install --no-cache-dir --disable-pip-version-check -q --require-hashes --no-deps \
+        --only-binary :all: --target "$(cpath "${dest}.part")" -r /lock.txt; then
+    rm -rf "${dest}.part"
+    echo "[WARN] Could not install Cyrius. Step 21 needs it; run: $0 --cyrius ${GENOME_DIR}"
+    return 1
+  fi
+  echo "$stamp" > "${dest}.part/INSTALLED"
+  rm -rf "$dest"
+  mv "${dest}.part" "$dest"
+  echo "[OK] Cyrius ${CYRIUS_VERSION} (step 21): ${dest}"
+}
+
+# install_parascopy_data: Parascopy's precomputed GRCh38 homology table and
+# the model parameters of 1000 Genomes populations (step 35), Zenodo record
+# PARASCOPY_DATA_RECORD, each archive checked against its md5 there.
+PARASCOPY_DATA_RECORD=15019940
+PARASCOPY_FILES="GRCh38_v${PARASCOPY_DATA_VERSION}.tar.gz a95bf674f43317d3a4c1b8ddbb140945
+models_GRCh38_1KGP_v${PARASCOPY_DATA_VERSION}.tar.gz 244110d8fa883cf11334527ec2383498"
+install_parascopy_data() {
+  local dest="${GENOME_DIR}/reference/parascopy-${PARASCOPY_DATA_VERSION}" name md5
+  if [ -s "${dest}/homology_table/GRCh38.bed.gz" ] && [ -s "${dest}/models_GRCh38_1KGP/EUR/SMN1.gz" ]; then
+    echo "[OK] Parascopy ${PARASCOPY_DATA_VERSION} homology table and models (step 35) already present."
+    return 0
+  fi
+  rm -rf "${dest}.part"
+  mkdir -p "${dest}.part"
+  while read -r name md5; do
+    if ! fetch "https://zenodo.org/records/${PARASCOPY_DATA_RECORD}/files/${name}" "${dest}.part/${name}" md5 "$md5" \
+        || ! tar -xzf "${dest}.part/${name}" -C "${dest}.part"; then
+      rm -rf "${dest}.part"
+      echo "[WARN] Could not install Parascopy's data. Step 35 needs it; run: $0 --parascopy-data ${GENOME_DIR}"
+      return 1
+    fi
+    rm -f "${dest}.part/${name}"
+  done <<<"$PARASCOPY_FILES"
+  rm -rf "$dest"
+  mv "${dest}.part" "$dest"
+  echo "[OK] Parascopy ${PARASCOPY_DATA_VERSION} homology table and models (step 35): ${dest}"
+}
+
+# install_kir_data: kir.dat of IPD-KIR release KIR_DB_RELEASE (step 08 with
+# KIR=true), from the release branch of the IPD-KIR repository (2.15.0 is
+# branch 2150), checked against the md5 that release lists for it.
+install_kir_data() {
+  local branch=${KIR_DB_RELEASE//./} dest="${GENOME_DIR}/kir/IPD-KIR_${KIR_DB_RELEASE}/kir.dat" url md5
+  if [ -s "$dest" ]; then
+    echo "[OK] IPD-KIR ${KIR_DB_RELEASE} (step 08, KIR=true) already present."
+    return 0
+  fi
+  url="https://raw.githubusercontent.com/ANHIG/IPDKIR/${branch}"
+  # md5checksum.txt lines read "MD5 (kir.dat) = <md5>".
+  md5=$(_get "${url}/md5checksum.txt" - 2>/dev/null | awk '$2 == "(kir.dat)" {print $NF}') || md5=""
+  if [ -z "$md5" ] || ! fetch "${url}/kir.dat" "$dest" md5 "$md5"; then
+    echo "[WARN] Could not install IPD-KIR ${KIR_DB_RELEASE} (is it a release with a branch ${branch}?)."
+    return 1
+  fi
+  if ! grep -q "IPD-KIR Release Version ${KIR_DB_RELEASE}" "$dest"; then
+    rm -f "$dest"
+    echo "[WARN] ${url}/kir.dat does not say IPD-KIR Release Version ${KIR_DB_RELEASE}; removed it."
+    return 1
+  fi
+  echo "[OK] IPD-KIR ${KIR_DB_RELEASE} (step 08, KIR=true): ${dest}"
+}
+
+case "$OPT_IN" in
+  cyrius) install_cyrius; exit $? ;;
+  parascopy-data) install_parascopy_data; exit $? ;;
+  kir-data) install_kir_data; exit $? ;;
+esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
 # lines marked `# optional`). Sets PULLED, SKIPPED and FAILED.

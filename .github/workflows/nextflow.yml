@@ -132,10 +132,11 @@ jobs:
           nextflow run main.nf -profile test,docker -stub -ansi-log false -c "${RUNNER_TEMP}/ci.config" \
             --outdir "${RUNNER_TEMP}/test-out"
 
-      # The docker profile runs every container with --network none, except
-      # CYRIUS, which pip-installs Cyrius at run time. Each task's .command.run
-      # holds its docker run line.
-      - name: Every container but CYRIUS ran without network
+      # The docker profile runs every container with --network none, with no
+      # exception: Cyrius is opt-in and runs from the install setup.sh
+      # --cyrius made. A default run has no CYRIUS task at all. Each task's
+      # .command.run holds its docker run line.
+      - name: Every container ran without network, and a default run has no CYRIUS task
         if: steps.scope.outputs.run == 'true' && matrix.line == 'pinned'
         run: |
           total=0 cyrius=0 bad=0
@@ -144,17 +145,13 @@ jobs:
             line=$(grep -m1 'docker run' "$run" || true)
             [ -n "$line" ] || { echo "FAIL ${name:-$run}: no docker run line"; bad=$((bad + 1)); continue; }
             total=$((total + 1))
-            case "$name" in
-              *CYRIUS*) cyrius=$((cyrius + 1)); want=no ;;
-              *) want=yes ;;
-            esac
-            if grep -q -- '--network none' <<<"$line"; then got=yes; else got=no; fi
-            if [ "$got" != "$want" ]; then
-              echo "FAIL ${name}: --network none ${got}, want ${want}"; bad=$((bad + 1))
+            case "$name" in *CYRIUS*) cyrius=$((cyrius + 1)) ;; esac
+            if ! grep -q -- '--network none' <<<"$line"; then
+              echo "FAIL ${name}: no --network none"; bad=$((bad + 1))
             fi
           done < <(find work -name .command.run)
-          echo "tasks: ${total}, CYRIUS tasks: ${cyrius}, wrong: ${bad}"
-          [ "$total" -gt 1 ] && [ "$cyrius" -ge 1 ] && [ "$bad" -eq 0 ]
+          echo "tasks: ${total}, CYRIUS tasks: ${cyrius}, with network: ${bad}"
+          [ "$total" -gt 1 ] && [ "$cyrius" -eq 0 ] && [ "$bad" -eq 0 ]
 
       # Every tool with no container engine: the stubs only touch files. Each
       # process writes the tag of the image Nextflow gave it (task.container)

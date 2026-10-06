@@ -598,7 +598,7 @@ These steps check that the data is good enough for everything else. Look at them
 
 **Where to look:** `${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv`, two alleles per HLA gene.
 
-The main use is drug safety: a few HLA alleles predict severe reactions to specific drugs, for example HLA-B\*57:01 with abacavir and HLA-B\*58:01 with allopurinol ([step 8](08-hla-typing.md#key-hla-alleles-for-drug-safety) has the list). Typing from short-read WGS is approximate. If one of those alleles appears, or is missing and you are about to take the drug, ask for a clinical HLA test; do not rely on this output for transplant matching.
+The main use is drug safety: a few HLA alleles predict severe reactions to specific drugs, for example HLA-B\*57:01 with abacavir and HLA-B\*58:01 with allopurinol ([step 8](08-hla-typing.md#key-hla-alleles-for-drug-safety) has the list). Typing from short-read WGS is approximate. HLA-A and HLA-B also reach PharmCAT (step 36), so the PharmCAT report and the CPIC recommendations (step 27) give the drug guidance for them; the CPIC file marks them `[outside call]`. If one of those alleles appears, or is missing and you are about to take the drug, ask for a clinical HLA test; do not rely on this output for transplant matching. With `KIR=true` (opt-in) the KIR genes are typed too, in `${SAMPLE}/kir_t1k/`; no step interprets them.
 
 ## Clinical Filter (Step 23)
 
@@ -612,13 +612,20 @@ Step 23 keeps the HIGH-impact variants, the MODERATE ones below 1% in gnomAD exo
 
 slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODERATE with damaging scores, ClinVar pathogenic) and lists genes where you carry two such variants. Those compound-het candidates are not phased: from one genome the pipeline cannot tell whether the two variants sit on different copies of the gene (which can cause recessive disease) or on the same copy (which usually does not). Expect a thousand or more candidate pairs; nearly all are noise. A pair matters only in a gene that fits your health history, and confirming it needs a parent's DNA or long reads. See [step 31](31-slivar.md#interpretation).
 
-## More Pharmacogenomics: Cyrius, CPIC and pypgx (Steps 21, 27, 32)
+## More Pharmacogenomics: Cyrius, CPIC, pypgx and the Consensus (Steps 21, 27, 32, 36)
 
-- **CPIC lookup (step 27):** `${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt` turns PharmCAT's calls into the drugs with CPIC guidance. Only genes where you are not a normal metabolizer get drug entries. Genes PharmCAT could not call are listed separately at the end; their absence from the drug list does not mean normal function.
+- **CPIC lookup (step 27):** `${SAMPLE}/cpic/${SAMPLE}_cpic_recommendations.txt` turns PharmCAT's calls into the drugs with CPIC guidance. Only genes where you are not a normal metabolizer get drug entries. Genes PharmCAT could not call are listed separately at the end; their absence from the drug list does not mean normal function. Its section "Calls From Other Tools" says which of HLA-A, HLA-B and CYP2D6 reached PharmCAT from the BAM-based callers, and why the others did not.
+- **PGx consensus (step 36):** `${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv` shows, for HLA-A, HLA-B and CYP2D6, what each caller said and what was passed to PharmCAT. CYP2D6 is passed only when pypgx and Cyrius give the same diplotype and the depth at CYP2D6 passed its check; otherwise it reads `indeterminate`.
 - **pypgx (step 32):** `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` calls 23 genes, four of them (CYP2D6, CYP2A6, GSTM1, GSTT1) from the BAM, so it sees gene deletions and duplications PharmCAT cannot. `${SAMPLE}_pharmcat_comparison.tsv`, written into the same folder by step 27 (CPIC lookup), shows where the two tools agree.
-- **Cyrius (step 21, experimental):** `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` gives a second CYP2D6 call from the BAM.
+- **Cyrius (step 21, opt-in, non-commercial licence):** `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` gives a second CYP2D6 call from the BAM. Without it, CYP2D6 stays `indeterminate`.
 
-CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes confuse short reads. Act on a CYP2D6 result only when two callers agree, and take any result that would change a prescription to a pharmacist or a certified pharmacogenomics test first.
+CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes confuse short reads. The pipeline gives CYP2D6 drug guidance only when two callers agree; even then, take any result that would change a prescription to a pharmacist or a certified pharmacogenomics test first.
+
+## SMN1 and SMN2 Copy Number (Step 35, opt-in)
+
+**Where to look:** `${SAMPLE}/paralogs/${SAMPLE}_smn_copy_number.tsv`, one row per stretch of the SMN1/SMN2 locus with the copy number of the two genes together (agCN) and of each (psCN), each with a quality.
+
+One SMN1 copy suggests SMA carrier status; two do not rule it out (two copies on one chromosome, none on the other). Trust a value only with quality 20 or more and filter `PASS`, and confirm anything that matters with a clinical SMN1 test. [Step 35](35-paralogs.md#interpreting-results) explains the columns.
 
 ## Polygenic Risk Scores (Step 25)
 
@@ -807,7 +814,7 @@ The pipeline uses VEP because it is the most widely used and well-maintained too
 
 A clean result from these steps says nothing about the following. Each needs a different test or a different kind of data.
 
-- **Copy-number changes in genes with a near-identical copy.** Spinal muscular atrophy carrier status (loss of one SMN1 copy), most alpha-thalassaemia (HBA1/HBA2 deletions), GBA1 and CYP21A2 changes sit in regions where short reads cannot tell the gene from its paralog. The VCF-based screens do not see them. SMA carrier status needs a clinical SMN1 copy-number test.
+- **Copy-number changes in genes with a near-identical copy**, except SMN1/SMN2 with the opt-in step 35. Most alpha-thalassaemia (HBA1/HBA2 deletions), GBA1 and CYP21A2 changes sit in regions where short reads cannot tell the gene from its paralog. The VCF-based screens do not see them, and without step 35 neither is SMA carrier status. Step 35 estimates SMN1 copy number but cannot see a "2+0" carrier; SMA carrier status still needs a clinical SMN1 test.
 - **Mobile-element insertions.** Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions, and no step looks for them.
 - **Methylation and phasing from long reads.** The long-read branch stops at alignment, small variants and structural variants; see the [long-read guide](long-read-guide.md).
 - **Mosaic copy-neutral loss of heterozygosity**, present in only some cells (common in blood with age). Step 11 sees runs of homozygosity that are in every cell; it cannot see a change carried by a fraction of them.

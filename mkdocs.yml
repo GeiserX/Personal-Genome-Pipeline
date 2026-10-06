@@ -164,6 +164,7 @@ nav:
           - "Step 13: Variant Effect Predictor (VEP) Annotation": 13-vep-annotation.md
           - "Step 17: Cancer Predisposition Screening with CPSR": 17-cpsr.md
           - "Step 23: Clinical Variant Filter": 23-clinical-filter.md
+          - "Step 35: Paralog Genes, SMN1 and SMN2 Copy Number (Parascopy)": 35-paralogs.md
           - "Step 29: Somatic Variant Calling (Mutect2 Tumor-Only) [EXPERIMENTAL]": 29-mutect2-somatic.md
           - "Step 30: Annotation Enrichment (vcfanno)": 30-vcfanno.md
           - "Step 31: Variant Prioritization (slivar)": 31-slivar.md
@@ -172,6 +173,7 @@ nav:
           - "Step 21: CYP2D6 Star Allele Calling with Cyrius": 21-cyrius.md
           - "Step 27: CPIC Drug-Gene Recommendation Lookup": 27-cpic-lookup.md
           - "Step 32: Comprehensive Pharmacogenomics (pypgx)": 32-pypgx.md
+          - "Step 36: PGx Consensus (PharmCAT Outside Calls)": 36-pgx-consensus.md
       - HLA, repeats and telomeres:
           - "Step 8: HLA Typing (T1K)": 08-hla-typing.md
           - "Step 9: Short Tandem Repeat (STR) Expansion Screening": 09-str-expansions.md

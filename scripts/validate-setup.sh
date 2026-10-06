@@ -111,12 +111,13 @@ check_bam_quickcheck() {
 header "System Requirements"
 
 # --- bash version ---
+# 4.4: run-all.sh refuses anything older (it expands empty arrays under set -u).
 BASH_MAJOR="${BASH_VERSINFO[0]}"
 BASH_MINOR="${BASH_VERSINFO[1]}"
-if [ "$BASH_MAJOR" -ge 4 ]; then
-  pass "bash ${BASH_MAJOR}.${BASH_MINOR} (>= 4.0 required)"
+if [ $((BASH_MAJOR * 100 + BASH_MINOR)) -ge 404 ]; then
+  pass "bash ${BASH_MAJOR}.${BASH_MINOR} (>= 4.4 required)"
 else
-  fail "bash ${BASH_MAJOR}.${BASH_MINOR} — version 4.0+ is required. Install a newer bash."
+  fail "bash ${BASH_MAJOR}.${BASH_MINOR} — version 4.4+ is required. Install a newer bash (on macOS: brew install bash)."
 fi
 
 # --- Docker installed ---
@@ -470,6 +471,24 @@ else
     echo "       See docs/00-reference-setup.md for download instructions."
   else
     info "Annotation databases not downloaded (steps 30-31 will be skipped). See docs/00-reference-setup.md"
+  fi
+
+  # --- Opt-in steps: Cyrius (21), Parascopy (35), IPD-KIR (08 with KIR=true) ---
+  if [ "$(cat "${GENOME_DIR}/tools/cyrius-${CYRIUS_VERSION}/INSTALLED" 2>/dev/null)" = \
+       "python=${PYTHON_IMAGE} lock=$(_digest sha256 "${PGP_ROOT}/scripts/cyrius-constraints.txt")" ]; then
+    pass "Cyrius ${CYRIUS_VERSION} (opt-in step 21): installed"
+  else
+    info "Cyrius ${CYRIUS_VERSION} not installed (opt-in step 21; non-commercial licence): ./scripts/setup.sh --cyrius ${GENOME_DIR}"
+  fi
+  if [ -s "${GENOME_DIR}/reference/parascopy-${PARASCOPY_DATA_VERSION}/homology_table/GRCh38.bed.gz" ]; then
+    pass "Parascopy ${PARASCOPY_DATA_VERSION} homology table and models (opt-in step 35): present"
+  else
+    info "Parascopy data not installed (opt-in step 35): ./scripts/setup.sh --parascopy-data ${GENOME_DIR}"
+  fi
+  if [ -s "${GENOME_DIR}/kir/IPD-KIR_${KIR_DB_RELEASE}/kir.dat" ]; then
+    pass "IPD-KIR ${KIR_DB_RELEASE} (step 08 with KIR=true): present"
+  else
+    info "IPD-KIR ${KIR_DB_RELEASE} not installed (KIR=true in step 08): ./scripts/setup.sh --kir-data ${GENOME_DIR}"
   fi
 
   # --- GATK sequence dictionary (optional) ---
