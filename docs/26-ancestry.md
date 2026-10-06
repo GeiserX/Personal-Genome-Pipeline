@@ -20,7 +20,7 @@ A principal component analysis of one genome alone cannot work, since the axes c
 ## Tool
 
 - **pgsc_calc** (`PGSC_CALC_VERSION` in `versions.env`), run by step 25: FRAPOSA's online augmentation, decomposition and Procrustes projection (`--projection_method oadp`), then a random forest on the first principal components to assign the most similar population.
-- **Reference panel**: pgsc_calc's 1000 Genomes database `pgsc_1000G_v1` (`PGSC_PANEL` in `versions.env`), 3,202 samples in five super-populations (AFR, AMR, EAS, EUR, SAS), published by the PGS Catalog.
+- **Reference panel**: pgsc_calc's 1000 Genomes database `pgsc_1000G_v1` (`PGSC_PANEL` in `versions.env`), samples of the five 1000 Genomes super-populations (AFR, AMR, EAS, EUR, SAS), published by the PGS Catalog.
 
 ## Docker Images
 
@@ -29,7 +29,7 @@ The images of step 25, all pinned in `versions.env`: `PGSC_UTILS_IMAGE`, `PLINK2
 ## Input
 
 - VCF from DeepVariant (step 3), and its gVCF beside it: the panel's SNVs are genotyped from the gVCF, so the sites where you match the reference count in the projection. Without a gVCF only your variant sites are projected, which weakens it.
-- The panel and its site list, installed once (about 7 GB): `./scripts/setup.sh --ancestry-panel <genome_dir>`.
+- The panel and its site list, installed once (7.4 GB, and about 24 GB of disk while pgsc_calc runs): `./scripts/setup.sh --ancestry-panel <genome_dir>`. It is opt-in for that reason; see the measured numbers in [step 25](25-prs.md#the-reference-panel-on-a-github-hosted-runner).
 - Java 17+ and Nextflow, as for step 25.
 
 ## Command
@@ -81,7 +81,7 @@ The panel's extraction, QC and PCA come on top of step 25's run; see the measure
 
 ## Notes
 
-- The panel is one file kept as downloaded; pgsc_calc unpacks the GRCh38 part into its work folder on each run. The site list beside it (`pgsc_1000G_v1_GRCh38_sites.tsv`) is made by `setup.sh` from the panel's own variant table.
+- The panel is one file kept as downloaded; pgsc_calc unpacks the GRCh38 part into its work folder on each run. The site list beside it (`pgsc_1000G_v1_GRCh38_sites.tsv`) is made by `setup.sh` with plink2 from the panel's own genotypes: the biallelic autosomal SNVs with a panel frequency of 5% or more, the threshold pgsc_calc's projection applies (`maf_ref`).
 - pgsc_calc's synthetic HAPNEST panel (`GRCh38_HAPNEST_reference`, 268 MB) is what the pull-request tests project onto; `ANCESTRY_PANEL_NAME=GRCh38_HAPNEST_reference ./scripts/setup.sh --ancestry-panel <genome_dir>` installs it, but its populations are simulated and say nothing about you.
 
 ## Links

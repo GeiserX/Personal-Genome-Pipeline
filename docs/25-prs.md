@@ -22,7 +22,7 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
 - gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
 - The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
-- Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`).
+- Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 24 GB of disk while pgsc_calc uses it (measured below).
 - Java 17+ and Nextflow on the host, as for `run-all.sh`.
 
 ## Command
@@ -66,7 +66,7 @@ Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant
 1. **Scoring files.** Downloads the GRCh38-harmonised file of each score from the PGS Catalog FTP when it is not in `${GENOME_DIR}/prs_scores/` yet, checked against the md5 the catalog publishes beside it. A file whose `#HmPOS_build` header is not `GRCh38` is refused. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
 2. **Scores as pgsc_calc reads them.** `bin/collect_summary.py prs-format` writes each file as a custom GRCh38 scoring file: `chr_name` and `chr_position` from the harmonised `hm_chr` and `hm_pos`, the effect allele, the other allele (from `other_allele`, else `hm_inferOtherAllele` when it names one allele), the weight, and the catalog's trait as its label. Rows the catalog could not place on GRCh38 are dropped. pgsc_calc then needs no network and no liftover.
 3. **Genotypes.**
-   - **With step 3's gVCF** (the default since step 3 writes one): every score position, and with the panel every panel SNV, is genotyped from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a position into a 0/0 call with the reference base; a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets as its ALT the position's first allele (a score's effect or other allele, the panel's ALT) that is not the reference, so pgsc_calc can match it. These genotypes are kept as `prs/pgsc_calc/target.vcf.gz`.
+   - **With step 3's gVCF** (the default since step 3 writes one): every score position, and with the panel every common panel SNV (the site list `setup.sh` writes), is genotyped from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a position into a 0/0 call with the reference base; a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets as its ALT the position's first allele (a score's effect or other allele, the panel's ALT) that is not the reference, so pgsc_calc can match it. These genotypes are kept as `prs/pgsc_calc/target.vcf.gz`.
    - **Without a gVCF** (an older run): the variant-only VCF is cut to the same positions, so every site where you match the reference is missing (see below). When not one position is left, pgsc_calc is not started and every score is reported unmatched.
 
    Either way pgsc_calc gets only those positions: autosomes only (plink2 would refuse chrX without the sample's sex), and a small file to convert.
@@ -94,9 +94,17 @@ Without the panel, about 20-40 minutes: most of it is the gVCF pass over every s
 
 ## The reference panel on a GitHub-hosted runner
 
-The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_PANEL` in `versions.env`), published by the PGS Catalog at https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources/. Measured by the E2E case `tests/e2e/prs-3-panel-measure.sh` on `ubuntu-latest` (4 CPUs, 16 GB RAM), with pgsc_calc projecting the PGS Catalog's synthetic genome-wide test target (600 samples) onto the panel and scoring PGS000018:
+The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_PANEL` in `versions.env`), published by the PGS Catalog at https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources/. Measured by the E2E case `tests/e2e/prs-3-panel-measure.sh` on `ubuntu-latest` (4 CPUs, 16 GB RAM), with pgsc_calc projecting the PGS Catalog's synthetic genome-wide test target (600 samples) onto the panel and scoring PGS000018 (1.7 million variants):
 
-MEASUREMENT_TABLE
+| What | Measured |
+|---|---|
+| Download | 7.43 GB (7,434,464,202 bytes). EBI served one connection at about 1.2 MB/s, about 100 minutes for the file; 8 byte ranges at once took 10 minutes |
+| Variants of the panel's GRCh38 table | 61.6 million biallelic SNVs on the autosomes; `setup.sh` keeps the ones with a panel frequency of 5% or more, the ones pgsc_calc's projection can use |
+| Disk while pgsc_calc runs | 16.1 GB on top of the panel (its work folder held 12.5 GB at the end): about 24 GB with the panel |
+| Memory | 7.3 GB at the peak for the whole machine; the largest task, 6.9 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
+| Time | 28.5 minutes for the run, on 4 CPUs |
+
+The run fits a 16 GB machine. It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on a dispatched E2E run.
 
 ## Interpreting Results
 

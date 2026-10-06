@@ -302,8 +302,8 @@ install_prs() {
 # install_ancestry_panel: pgsc_calc's reference panel (PGSC_PANEL, the 1000
 # Genomes database; ANCESTRY_PANEL_NAME picks another file of the PGS
 # Catalog's resources folder, the tests use its small synthetic one), checked
-# against the md5 that folder lists, and beside it the panel's GRCh38
-# biallelic SNVs (chrN, position, REF, ALT), read from the panel's own .pvar:
+# against the md5 that folder lists, and beside it the panel's common GRCh38
+# biallelic SNVs (chrN, position, REF, ALT), from the panel's own genotypes:
 # step 25 genotypes them from the gVCF, so the projection counts the sites
 # where the sample matches the reference.
 install_ancestry_panel() {
@@ -320,24 +320,41 @@ install_ancestry_panel() {
     echo "[WARN] Could not download the ancestry panel; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1
   fi
-  echo "  Listing the panel's GRCh38 SNVs..."
-  # shellcheck disable=SC2016  # $1 belongs to the inner sh
-  if ! run_in "$PGSC_ZSTD_IMAGE" sh -c 'tar -xOf "$1" --wildcards "GRCh38_*_ALL.pvar.zst" | zstd -dc' _ "$(cpath "$panel")" \
-      | awk -F'\t' -v OFS='\t' '
+  # Only the SNVs pgsc_calc can use for the projection: its FILTER_VARIANTS
+  # keeps biallelic ACGT SNVs on the autosomes with a panel frequency of 5%
+  # or more (its maf_ref). The whole GRCh38 table holds about 62 million
+  # SNVs; genotyping all of them from a gVCF would take step 25 hours.
+  echo "  Listing the panel's common GRCh38 SNVs (plink2 on the panel's genotypes)..."
+  local tmp="${dir}/.${name}.sites.tmp" prefix
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+  # shellcheck disable=SC2016  # $1 and $2 belong to the inner sh
+  if ! run_in --rw "$dir" "$PGSC_ZSTD_IMAGE" sh -c 'cd "$2" && tar -xf "$1" --wildcards "GRCh38_*_ALL.pgen" "GRCh38_*_ALL.psam" "GRCh38_*_ALL.pvar.zst"' \
+      _ "$(cpath "$panel")" "$(cpath "$tmp")"; then
+    rm -rf "$tmp"
+    echo "[WARN] Could not unpack the GRCh38 genotypes of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
+    return 1
+  fi
+  prefix=$(find "$tmp" -maxdepth 1 -name 'GRCh38_*_ALL.pgen' | head -1)
+  prefix=${prefix%.pgen}
+  if [ -z "$prefix" ] || ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs \
+        --autosome --snps-only just-acgt --max-alleles 2 --rm-dup exclude-all --maf 0.05 \
+        --make-just-pvar --threads "$THREADS" --memory 4000 --out "$(cpath "${tmp}/common")" >/dev/null \
+     || ! awk -F'\t' -v OFS='\t' '
           /^##/ { next }
           /^#/ { for (i = 1; i <= NF; i++) c[$i] = i; next }
           {
             chr = $c["#CHROM"]; sub(/^chr/, "", chr)
-            if (chr !~ /^([1-9]|1[0-9]|2[0-2])$/) next
             r = $c["REF"]; a = $c["ALT"]
             if (r ~ /^[ACGT]$/ && a ~ /^[ACGT]$/) print "chr" chr, $c["POS"], r, a
-          }' | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 -k4,4 > "${sites}.part" || [ ! -s "${sites}.part" ]; then
-    rm -f "${sites}.part"
-    echo "[WARN] Could not read the GRCh38 variants of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
+          }' "${tmp}/common.pvar" | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 -k4,4 > "${sites}.part" || [ ! -s "${sites}.part" ]; then
+    rm -rf "$tmp" "${sites}.part"
+    echo "[WARN] Could not list the common GRCh38 SNVs of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1
   fi
+  rm -rf "$tmp"
   mv "${sites}.part" "$sites"
-  echo "[OK] ancestry panel ${name} (steps 25 and 26): ${panel} ($(wc -l < "$sites" | tr -d ' ') GRCh38 SNVs in ${sites##*/})"
+  echo "[OK] ancestry panel ${name} (steps 25 and 26): ${panel} ($(wc -l < "$sites" | tr -d ' ') common GRCh38 SNVs in ${sites##*/})"
 }
 
 case "$OPT_IN" in
