@@ -60,8 +60,8 @@ These steps take a VCF or BAM and work identically regardless of read technology
 | 22 | SURVIVOR Merge | Takes any SV VCF set |
 | 23 | Clinical Filter | VCF-only |
 | 24 | HTML Report | Aggregates existing outputs |
-| 25 | PRS | VCF-only via plink2 |
-| 26 | Ancestry | VCF-only via plink2 |
+| 25 | PRS | VCF-only via pgsc_calc |
+| 26 | Ancestry | VCF-only via pgsc_calc (with the ancestry panel) |
 | 27 | CPIC Lookup | Reads PharmCAT JSON output |
 
 ### Needs Long-Read Specific Scripts

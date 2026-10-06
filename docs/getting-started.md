@@ -276,8 +276,9 @@ nextflow run main.nf --input samplesheet.csv --reference /path/to/GRCh38_no_alt_
     --hla_dat /path/to/hla.dat \
     --hla_genes /path/to/gencode.v50.basic.genes.gtf \
     --pypgx_bundle /path/to/pypgx-bundle \
-    --ancestry_ref /path/to/1kg_common_snps.vcf.gz \
+    --ancestry_ref /path/to/reference/pgsc_calc/pgsc_1000G_v1.tar.zst \
     --pgs_scoring /path/to/prs_scores \
+    --pgsc_calc /path/to/tools/pgsc_calc-<release> \
     --outdir ./results -profile docker
 ```
 

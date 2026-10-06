@@ -177,7 +177,7 @@ results/
 │   ├── cpsr/               # Cancer predisposition report
 │   ├── roh/                # Runs of homozygosity
 │   ├── prs/                # Polygenic risk scores
-│   ├── ancestry/           # Ancestry PCA (optional)
+│   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
 │   ├── mito/               # Mitochondrial haplogroup and mitochondrial variant calls
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls
@@ -269,7 +269,7 @@ Where a module and its script differ on purpose:
 | Sex check (16) | runs beside the other steps and stops itself on a mismatch | `INDEXCOV` runs before every BAM step, and a mismatch stops the run before DeepVariant starts |
 | DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
-| PRS (25) | labels each score with its trait | the `Condition` column repeats the PGS id: the module scores whatever files `--pgs_scoring` holds |
+| PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
 | HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mito haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
@@ -304,13 +304,14 @@ Several tools require large reference databases that are **not automatically dow
 | `--annotsv_annotations` | AnnotSV SV classification | ~5.3 GB download |
 | `--cadd_snv`, `--spliceai_snv`, etc. | vcfanno score annotation | ~100 GB total |
 | `--gnomad_constraint` | Slivar gene constraint | ~95 MB |
-| `--pgs_scoring` | Polygenic risk scores | varies |
+| `--pgs_scoring` | Polygenic risk scores | ~400 MB (`setup.sh` fills `<genome_dir>/prs_scores`) |
+| `--ancestry_ref` | PRS percentiles and ancestry (step 26) | ~7 GB (`setup.sh --ancestry-panel`) |
 
 Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunter, HLA typing, pypgx, AnnotSV, CNVpytor) will **fail at startup** if enabled in `--tools` without their required parameters. vcfanno and prs are in the default tools but are skipped, with a warning, until a score file or `--pgs_scoring` is set. The gnomAD constraint table is optional for slivar; when it is set and no gene matches it, the task fails.
 
 ### Ancestry reference panel
 
-The `--ancestry_ref` parameter expects a **single VCF file** (not a directory). The step reads the panel only for its list of variant ids: it never merges the panel's genotypes with the sample or projects the sample onto the panel. On one sample it therefore produces a SNP overlap count and `pca_status: skipped_single_sample`, whatever panel is given.
+`--ancestry_ref` is pgsc_calc's panel, `<genome_dir>/reference/pgsc_calc/pgsc_1000G_v1.tar.zst`, with the `pgsc_1000G_v1_GRCh38_sites.tsv` that `setup.sh --ancestry-panel` writes beside it (the run stops when the list is missing). With it, `prs` genotypes the panel's SNVs from the gVCF too, pgsc_calc projects the sample onto the panel, each score gets a percentile among the most similar population, and `PRS_SUMMARY` publishes step 26's table in `ancestry/`. `ancestry` in `--tools` needs `prs` and `--ancestry_ref`; without them it is skipped with a warning. See [step 26](26-ancestry.md).
 
 ### SV consensus merge (experimental)
 
@@ -339,7 +340,9 @@ Every task script runs under `bash -euo pipefail` (`process.shell` in `conf/base
 
 ### No network inside the containers
 
-With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. There is no exception. The `singularity` profile does not cut the network.
+With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. The `singularity` profile does not cut the network.
+
+One process runs on the host instead of in a container: `PRS` starts pgsc_calc, a Nextflow pipeline of its own that starts its own containers. It gets the images of `versions.env` through `conf/containers.config` (`ext.pipeline_images`, written by `scripts/ci/gen-containers-config.sh`), and gives every one of its containers `--network none`. With `--pgsc_calc <genome_dir>/tools/pgsc_calc-<release>` (setup.sh installs it with its nf-schema plugin) it runs offline; without, Nextflow first fetches pgscatalog/pgsc_calc at the pinned release and the plugin.
 
 ### Cyrius, opt-in
 
