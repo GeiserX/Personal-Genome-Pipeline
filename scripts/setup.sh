@@ -341,14 +341,23 @@ install_ancestry_panel() {
   # table (the whole table, 61.6 million variants, did not fit a 16 GB runner).
   # --allow-extra-chr: the panel names contigs plink2 does not know, as
   # pgsc_calc's own plink2 calls on it allow.
-  local c ok=true
+  # plink2 still indexes the whole table: 4 GB of workspace ran out of memory
+  # even for chromosome 1. 8 GB, the most pgsc_calc's own call on the panel
+  # gets here, or three quarters of a smaller machine's RAM.
+  local c ok=true mem_mb
+  if [ -r /proc/meminfo ]; then
+    mem_mb=$(awk '/^MemTotal:/ {print int($2 * 3 / 4 / 1024)}' /proc/meminfo)
+  else
+    mem_mb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 17179869184) * 3 / 4 / 1048576 ))
+  fi
+  [ "$mem_mb" -le 8000 ] || mem_mb=8000
   [ -n "$prefix" ] || ok=false
   for c in $(seq 1 22); do
     $ok || break
     # A panel without a common SNV on a chromosome ("No variants remaining") is not an error.
     if ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs --chr "$c" \
           --allow-extra-chr --snps-only just-acgt --max-alleles 2 --maf 0.05 \
-          --make-just-pvar --threads "$THREADS" --memory 4000 --out "$(cpath "${tmp}/common_${c}")" > "${tmp}/plink2.log" 2>&1 \
+          --make-just-pvar --threads "$THREADS" --memory "$mem_mb" --out "$(cpath "${tmp}/common_${c}")" > "${tmp}/plink2.log" 2>&1 \
        && ! grep -q 'No variants remaining' "${tmp}/plink2.log"; then
       head -n 40 "${tmp}/plink2.log"
       ok=false
