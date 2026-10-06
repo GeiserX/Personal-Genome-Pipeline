@@ -81,7 +81,7 @@ The panel's extraction, QC and PCA come on top of step 25's run; see the measure
 
 ## Notes
 
-- The panel is one file kept as downloaded; pgsc_calc unpacks the GRCh38 part into its work folder on each run. The site list beside it (`pgsc_1000G_v1_GRCh38_sites.tsv`) is made by `setup.sh` with plink2 from the panel's own genotypes: the biallelic autosomal SNVs with a panel frequency of 5% or more, the threshold pgsc_calc's projection applies (`maf_ref`).
+- The panel is one file kept as downloaded; pgsc_calc unpacks the GRCh38 part into its work folder on each run. The site list beside it (`pgsc_1000G_v1_GRCh38_sites.tsv`) is made by `setup.sh` with plink2 from the panel's own genotypes: the biallelic autosomal SNVs with a panel frequency of 5% or more, the threshold pgsc_calc's projection applies (`maf_ref`): 6,966,553 of the 1000 Genomes panel's 61.6 million.
 - pgsc_calc's synthetic HAPNEST panel (`GRCh38_HAPNEST_reference`, 268 MB) is what the pull-request tests project onto; `ANCESTRY_PANEL_NAME=GRCh38_HAPNEST_reference ./scripts/setup.sh --ancestry-panel <genome_dir>` installs it, but its populations are simulated and say nothing about you.
 
 ## Links
