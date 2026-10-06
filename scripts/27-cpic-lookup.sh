@@ -67,6 +67,12 @@ CONSENSUS="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
 if [ -f "$CONSENSUS" ]; then
   echo "Outside-call consensus (step 36): ${CONSENSUS}"
   PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
+elif grep -Eq '"callSource"[[:space:]]*:[[:space:]]*"OUTSIDE"' "$PHARMCAT_JSON"; then
+  # PharmCAT read outside calls, but step 36's table is gone (a caller step
+  # ran again since): pass the missing table, so the parser confirms none of
+  # them and gives them no drug guidance.
+  echo "WARNING: PharmCAT's report has outside calls, but step 36's consensus is missing: run step 36, then step 07, again."
+  PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
 else
   echo "No outside-call consensus (step 36 not run): HLA and CYP2D6 from the BAM are not listed."
 fi

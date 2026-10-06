@@ -14,6 +14,10 @@
 #   steps 21 and 32     mark a CYP2D6 call when the depth check fails, and a
 #                       caller that stops after writing its result leaves no
 #                       call where step 36 reads it
+#   step 27             passes step 36's table, even a missing one, to the
+#                       parser when PharmCAT's report has outside calls, so
+#                       outside calls step 36 no longer confirms get no
+#                       drug guidance
 # Files in CASE_WORK steer the hook: depth-status (the depth check's verdict,
 # ok by default) and interrupt (the caller writes its result, then fails).
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -150,5 +154,23 @@ run_rc pypgx-interrupted "${SCRIPTS}/32-pypgx.sh" sample1
 [ "$RC" -ne 0 ] || fail "step 32 exited 0 when its summary failed"
 [ ! -e "$SUMMARY" ] || fail "step 32 stopped after writing its summary and left that unchecked CYP2D6 call for step 36: $(cat "$SUMMARY")"
 rm -f "${CASE_WORK}/interrupt" "${CASE_WORK}/depth-status"
+
+# --- step 27 after a caller step ran again (step 36's table removed) ---------------
+CONS="${G}/sample1/pgx_consensus/sample1_pgx_consensus.tsv"
+REPORT_JSON="${G}/sample1/pharmcat/sample1.report.json"
+rm -f "$CONS" "${G}"/sample1/pharmcat/*.report.json "${G}"/sample1/pharmcat/*_pharmcat.json "${G}"/sample1/vcf/*.report.json
+mkdir -p "${G}/sample1/pharmcat"
+printf '{"genes": {"HLA-B": {"callSource": "MATCHER"}}}\n' > "$REPORT_JSON"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 cpic-no-outside "${SCRIPTS}/27-cpic-lookup.sh" sample1
+if grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus'; then
+  fail "step 27 passed a consensus table that does not exist for a report without outside calls"
+fi
+printf '{"genes": {"HLA-B": {"callSource": "OUTSIDE"}}}\n' > "$REPORT_JSON"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 cpic-stale-outside "${SCRIPTS}/27-cpic-lookup.sh" sample1
+grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus /genome/sample1/pgx_consensus/sample1_pgx_consensus.tsv' \
+  || fail "step 27 did not pass step 36's missing table for a report with outside calls: $(grep pgx_parse "$FAKE_DOCKER_LOG")"
+output_has cpic-stale-outside "PharmCAT's report has outside calls, but step 36's consensus is missing"
 
 echo "Cyrius installs hash-locked with network and runs without; step 07 passes only non-empty outside calls."

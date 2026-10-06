@@ -20,6 +20,10 @@ and what step 27 (bin/pgx_parse.py cpic-report --consensus) makes of it:
      and drops the pypgx-only warning it prints without the table
   9. HLA passed on: the CPIC report lists it in the outside-call section and
      marks the gene PharmCAT reports with callSource OUTSIDE
+ 10. a stale report: PharmCAT's report has outside calls the consensus does
+     not pass on (another HLA-B, a CYP2D6 now held back, or no readable
+     table at all); they give no drug guidance and the report says to rerun
+     step 07
 
 Run: python3 tests/test_pgx_outside_calls.py
 """
@@ -159,11 +163,43 @@ report_has("8 CYP2D6 is indeterminate and why", held,
 report_has("8 it names the drugs CYP2D6 affects", held, "No drug guidance is given for CYP2D6 here. Drugs affected by CYP2D6: ")
 report_has("8 no pypgx-only warning for the held-back gene", held, "PharmCAT has no result for CYP2D6", False)
 
-# 9. PharmCAT's example report has HLA-B from an outside call.
-passed = cpic("pharmcat-docs-example.json", consensus_from={"hla": "t1k_genotype.tsv"})
+# 9. PharmCAT's example report has HLA-B from an outside call (and CYP2D6 and
+# MT-RNR1, which this consensus does not pass on: case 10).
+passed = cpic("pharmcat-docs-example.json", consensus_from={"hla": "t1k_genotype_docs_example.tsv"})
 report_has("9 HLA-B is listed as passed from T1K", passed,
-           "HLA-B    *07:02/*44:02            passed to PharmCAT from T1K (step 08); PharmCAT reports it as an outside call.")
+           "HLA-B    *15:02/*57:01            passed to PharmCAT from T1K (step 08); PharmCAT reports it as an outside call.")
 report_has("9 the gene line marks PharmCAT's outside call", passed, "[outside call]")
+report_has("9 the confirmed HLA-B keeps its drug guidance", passed, "  HLA-B -- ")
+report_has("9 no stale warning for the confirmed HLA-B", passed, "outside call HLA-B", False)
+
+
+def medications(text):
+    """The Affected Medications section of a recommendations text."""
+    return text.split("Affected Medications:", 1)[-1].split("Calls From Other Tools", 1)[0]
+
+
+# 10. Outside calls the consensus does not pass on.
+plain = cpic("pharmcat-docs-example.json")
+report_has("10 control: without the table, the example's CYP2D6 has drug guidance", medications(plain), "  CYP2D6 -- ")
+report_has("10 control: without the table, the example's HLA-B has drug guidance", medications(plain), "  HLA-B -- ")
+other = cpic("pharmcat-docs-example.json", consensus_from={"hla": "t1k_genotype.tsv"})
+report_has("10 HLA-B of another call gets no drug guidance", medications(other), "  HLA-B -- ", False)
+report_has("10 the report says the HLA-B outside call is stale", other,
+           "WARNING: PharmCAT's report has the outside call HLA-B *15:02/*57:01, which the consensus does not pass on")
+report_has("10 the consensus HLA-B is not shown as PharmCAT's", other,
+           "HLA-B    *07:02/*44:02            passed to PharmCAT from T1K (step 08); PharmCAT's report does not list it")
+held = cpic("pharmcat-docs-example.json", consensus_from={"pypgx": "pypgx_cyp2d6_1_4.tsv", "depth_check": "depth_check_ok.tsv"})
+report_has("10 a held-back CYP2D6 gets no drug guidance from an older report", medications(held), "  CYP2D6 -- ", False)
+report_has("10 the report says the CYP2D6 outside call is stale", held,
+           "WARNING: PharmCAT's report has the outside call CYP2D6 *1/*3, which the consensus does not pass on")
+report_has("10 and says how to fix it", held, "Rerun step 07, then this step. No drug guidance is given for CYP2D6 here.")
+with tempfile.TemporaryDirectory() as tmp:
+    r = subprocess.run([sys.executable, PARSE, "cpic-report", "--sample", "T", "--outdir", tmp,
+                        "--report", os.path.join(REPORTS, "pharmcat-docs-example.json"),
+                        "--consensus", os.path.join(tmp, "missing.tsv")], capture_output=True, text=True)
+    gone = open(os.path.join(tmp, "T_cpic_recommendations.txt")).read() if r.returncode == 0 else f"exit {r.returncode}"
+report_has("10 with the table missing, no outside call gets drug guidance", medications(gone), "  HLA-B -- ", False)
+report_has("10 with the table missing, the report says to run step 36 again", gone, "Run step 36 again, then steps 07 and 27.")
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

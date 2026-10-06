@@ -14,7 +14,10 @@ writes DIR/S_phenotypes.tsv and DIR/S_cpic_recommendations.txt, and with
 PGX_CONSENSUS, bin/pgx_outside_calls.py) the recommendations list the calls
 other tools gave PharmCAT (HLA from T1K, an agreed CYP2D6) and say why a gene
 was held back; a held-back gene gets no pypgx-only warning, which would
-steer by one caller. It exits 1 when the report cannot be
+steer by one caller. An outside call in PharmCAT's report counts only when
+the consensus passed that same call (an unreadable table confirms none): a
+report left from an earlier step 36 run gives no drug guidance for it. It
+exits 1 when the report cannot be
 read or yields no gene: a report that parses to nothing is a format change,
 never an all-clear.
 
@@ -405,6 +408,33 @@ def gene_drugs(gene, guidance, related):
     return list(dict.fromkeys(names))
 
 
+def unconfirm_outside(calls, rows):
+    """Mark every outside call in PharmCAT's report that the consensus rows did
+    not pass on, with the same diplotype, as not called; return those calls.
+    Such a call comes from an earlier step 36 run that step 07 has not
+    replaced, so it must give no drug guidance."""
+    passed = {r["Gene"]: r.get("Result", "") for r in rows if r.get("Outside_call") == "yes"}
+    stale = []
+    for c in calls:
+        if c.source == "OUTSIDE" and c.called and \
+                (c.gene not in passed or _norm(passed[c.gene]) != _norm(c.diplotype)):
+            c.called = False
+            c.phenotype = "outside call not confirmed by step 36"
+            stale.append(c)
+    return stale
+
+
+def stale_lines(stale, guidance, related):
+    lines = []
+    for c in stale:
+        names = gene_drugs(c.gene, guidance, related)
+        lines.append(f"  WARNING: PharmCAT's report has the outside call {c.gene} {c.diplotype}, which the "
+                     "consensus does not pass on: the report is older than step 36's last run.")
+        lines.append(f"           Rerun step 07, then this step. No drug guidance is given for {c.gene} here."
+                     + (f" Drugs affected by {c.gene}: {', '.join(names)}." if names else ""))
+    return lines
+
+
 def consensus_lines(rows, calls, guidance, related):
     """The section on what other tools gave PharmCAT and what was held back."""
     pc = {c.gene: c for c in calls}
@@ -413,7 +443,8 @@ def consensus_lines(rows, calls, guidance, related):
         gene, result = r["Gene"], r.get("Result", "")
         if r.get("Outside_call") == "yes":
             c = pc.get(gene)
-            seen = "PharmCAT reports it as an outside call" if c is not None and c.source == "OUTSIDE" \
+            seen = "PharmCAT reports it as an outside call" \
+                if c is not None and c.source == "OUTSIDE" and c.called \
                 else "PharmCAT's report does not list it as an outside call: rerun step 07"
             lines.append(f"  {gene:<8} {result:<24} passed to PharmCAT from {r.get('Reason', '')}; {seen}.")
             lines.append(f"           {r.get('Evidence', '')}")
@@ -472,6 +503,7 @@ def cpic_report(args):
             print(f"WARNING: could not read the consensus table {args.consensus} ({consensus_error})",
                   file=sys.stderr)
     held_back = {r["Gene"] for r in consensus if r.get("Outside_call") != "yes"}
+    stale = unconfirm_outside(calls, consensus) if args.consensus else []
     pypgx = {}
     pypgx_error = None
     if args.pypgx:
@@ -529,6 +561,7 @@ def cpic_report(args):
                       "  Run step 36 again, then steps 07 and 27."]
         else:
             lines += consensus_lines(consensus, calls, guidance, related) or ["  The table lists no gene."]
+        lines += stale_lines(stale, guidance, related)
         lines.append("")
 
     lines += ["Uncallable Genes:", "-" * 72, ""]
