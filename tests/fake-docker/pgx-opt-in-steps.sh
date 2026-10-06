@@ -52,7 +52,8 @@ case "$args" in
   *"-m cyrius"*)
     # bash -c SCRIPT _ INSTALL BAM PREFIX OUTDIR
     if [ -e "${CASE_WORK}/interrupt" ]; then
-      put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\t*1/*2\tPASS\n'
+      called='*1/*2'
+      put "${@: -1}${@: -2:1}.tsv" "Sample\\tGenotype\\tFilter\\nsample1\\t${called}\\tPASS\\n"
       exit 1
     fi
     put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\tNone\tNot_assigned_to_haplotypes\n' ;;
