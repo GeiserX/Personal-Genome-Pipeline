@@ -143,7 +143,9 @@ process PRS {
 
     script:
     def release  = task.ext.pipeline_version
-    def pipeline = params.pgsc_calc ? "${params.pgsc_calc}/main.nf" : 'pgsc_calc-src/main.nf'
+    // Absolute: the task runs in its own work folder, where a relative
+    // --pgsc_calc would name nothing.
+    def pipeline = params.pgsc_calc ? "${file(params.pgsc_calc).toAbsolutePath()}/main.nf" : 'pgsc_calc-src/main.nf'
     def ancestry = panel ? "--run_ancestry \$(readlink -f ${panel})" : ''
     def labels = task.ext.pipeline_images.tokenize(';').collect { kv ->
         def i = kv.indexOf('=')
@@ -183,7 +185,7 @@ process PRS {
         echo "pgsc_calc not run: no score position in the input" > pgsc_calc.log
         touch pgsc_calc.nextflow.log
     else
-    nextflow -log pgsc_calc.nextflow.log run ${pipeline} \\
+    nextflow -log pgsc_calc.nextflow.log run "${pipeline}" \\
         -profile ${engine} -c images.config -work-dir work -ansi-log false \\
         --input samplesheet.csv --target_build GRCh38 \\
         --scorefile "\$(readlink -f pgs)/*.txt.gz" \\
