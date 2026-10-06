@@ -2,8 +2,9 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     CLINICAL — Clinical Screening & Population Genetics Workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Runs cancer predisposition (CPSR), runs of homozygosity, polygenic risk scores,
-    ancestry PCA, and mitochondrial haplogroup classification in parallel from a
+    Runs cancer predisposition (CPSR), runs of homozygosity, polygenic scores
+    (pgsc_calc; with an ancestry panel also the sample's projection onto it,
+    step 26), and mitochondrial haplogroup classification in parallel from a
     single input VCF.
 
     Each module is gated on params.tools containing the tool name.
@@ -12,9 +13,10 @@
 
 include { CPSR               } from '../modules/local/cpsr/main'
 include { ROH                } from '../modules/local/roh/main'
+include { PRS_PREPARE        } from '../modules/local/prs/main'
 include { PRS_SCORE_SITES    } from '../modules/local/prs/main'
 include { PRS                } from '../modules/local/prs/main'
-include { ANCESTRY           } from '../modules/local/ancestry/main'
+include { PRS_SUMMARY        } from '../modules/local/prs/main'
 include { MITO_EXTRACT_CHRM  } from '../modules/local/mito_haplogroup/main'
 include { MITO_HAPLOGROUP    } from '../modules/local/mito_haplogroup/main'
 
@@ -25,7 +27,9 @@ workflow CLINICAL {
     ch_pcgr_data        // channel: path — PCGR 2.x reference data bundle
     ch_vep_cache_cpsr   // channel: path — VEP cache for CPSR (PCGR_VEP_CACHE_RELEASE, 115)
     ch_pgs_scoring      // channel: path — PGS Catalog scoring files directory
-    ch_ancestry_ref     // channel: path — ancestry reference panel
+    ch_ancestry_ref     // channel: path — pgsc_calc's ancestry panel (.tar.zst), or []
+    ch_ancestry_sites   // channel: path — the panel's GRCh38 SNVs setup.sh writes beside it, or []
+    ch_pgs_labels       // channel: path — assets/pgs_scores.tsv (the catalog's trait of each id)
     ch_gvcf             // channel: [meta, gvcf, gvcf_index] — DEEPVARIANT's, for the samples it called
     ch_reference        // channel: val(path) — reference FASTA (gVCF expansion)
     ch_reference_fai    // channel: val(path) — reference .fai
@@ -59,16 +63,25 @@ workflow CLINICAL {
     }
 
     //
-    // MODULE 3: PRS — Polygenic risk scores
+    // MODULE 3: PRS — Polygenic scores (pgsc_calc), and with --ancestry_ref
+    // the sample's projection onto the panel (step 26's ancestry table)
     //
-    // Runs only with --pgs_scoring: without scoring files it converts the
-    // whole VCF and then scores nothing.
-    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('prs')) {
+    // Runs only with --pgs_scoring: without scoring files there is nothing
+    // to score.
+    def tools_here = params.tools ? params.tools.split(',').collect{it.trim()} : []
+    if (tools_here.contains('ancestry') && !params.ancestry_ref) {
+        log.warn "ancestry skipped: --ancestry_ref (pgsc_calc's panel, setup.sh --ancestry-panel) is not set."
+    } else if (tools_here.contains('ancestry') && !(tools_here.contains('prs') && params.pgs_scoring)) {
+        log.warn "ancestry skipped: it is computed by pgsc_calc in prs; add prs to --tools and set --pgs_scoring."
+    }
+    if (tools_here.contains('prs')) {
         if (!params.pgs_scoring) {
             log.warn "prs skipped: --pgs_scoring is not set."
         } else {
-            // With a gVCF the score positions are genotyped from it, so a
-            // site where the sample matches the reference counts as 0/0.
+            def panel_name = params.ancestry_ref ? file(params.ancestry_ref).name.replaceFirst(/\.tar\.zst$/, '') : ''
+            PRS_PREPARE(ch_pgs_scoring, ch_pgs_labels)
+            // With a gVCF the score (and panel) positions are genotyped from
+            // it, so a site where the sample matches the reference counts as 0/0.
             ch_prs_input = ch_vcf
                 .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
                 .join(ch_gvcf.map { meta, gvcf, gidx -> [meta.id, gvcf, gidx] }, remainder: true)
@@ -79,27 +92,23 @@ workflow CLINICAL {
                 }
             PRS_SCORE_SITES(
                 ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5]] },
-                ch_pgs_scoring,
+                PRS_PREPARE.out.alleles,
+                ch_ancestry_sites,
                 ch_reference,
                 ch_reference_fai
             )
             PRS(
-                PRS_SCORE_SITES.out.vcf.map { meta, sites -> [meta, sites, [], 'gvcf'] }
-                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] }),
-                ch_pgs_scoring
+                PRS_SCORE_SITES.out.vcf.map { meta, sites -> [meta, sites, 'gvcf'] }
+                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], 'vcf'] }),
+                PRS_PREPARE.out.scores,
+                ch_ancestry_ref
             )
-            ch_prs_scores = PRS.out.scores
-            ch_versions   = ch_versions.mix(PRS_SCORE_SITES.out.versions, PRS.out.versions)
+            PRS_SUMMARY(PRS.out.results, PRS_PREPARE.out.scores, panel_name)
+            ch_prs_scores       = PRS_SUMMARY.out.summary
+            ch_ancestry_results = PRS_SUMMARY.out.ancestry
+            ch_versions = ch_versions.mix(PRS_PREPARE.out.versions, PRS_SCORE_SITES.out.versions,
+                                          PRS.out.versions, PRS_SUMMARY.out.versions)
         }
-    }
-
-    //
-    // MODULE 4: ANCESTRY — Population PCA
-    //
-    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('ancestry')) {
-        ANCESTRY(ch_vcf, ch_ancestry_ref)
-        ch_ancestry_results = ANCESTRY.out.ancestry_tsv
-        ch_versions         = ch_versions.mix(ANCESTRY.out.versions)
     }
 
     //

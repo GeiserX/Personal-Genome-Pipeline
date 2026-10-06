@@ -403,6 +403,19 @@ workflow {
     // PGS scoring & ancestry reference
     ch_pgs_scoring  = Channel.value(params.pgs_scoring  ? file(params.pgs_scoring, checkIfExists: true)  : [])
     ch_ancestry_ref = Channel.value(params.ancestry_ref ? file(params.ancestry_ref, checkIfExists: true) : [])
+    // The panel's GRCh38 SNVs, which setup.sh --ancestry-panel writes beside
+    // it: PRS_SCORE_SITES genotypes them from the gVCF, so the projection
+    // sees the sites where the sample matches the reference too.
+    def ancestry_sites = params.ancestry_ref ? file(params.ancestry_ref.toString().replaceFirst(/\.tar\.zst$/, '') + '_GRCh38_sites.tsv') : null
+    if (ancestry_sites && !ancestry_sites.exists() && !workflow.stubRun) {
+        error "ERROR: --ancestry_ref ${params.ancestry_ref} has no site list beside it (${ancestry_sites}); run scripts/setup.sh --ancestry-panel <genome_dir> again."
+    }
+    ch_ancestry_sites = Channel.value(ancestry_sites && ancestry_sites.exists() ? ancestry_sites : [])
+    // The catalog's trait label of each PGS id (scripts/ci/check-pgs-labels.sh checks them).
+    ch_pgs_labels = Channel.value(file("${projectDir}/assets/pgs_scores.tsv", checkIfExists: true))
+    if (params.pgsc_calc && !file("${params.pgsc_calc}/main.nf").exists()) {
+        error "ERROR: --pgsc_calc ${params.pgsc_calc} holds no main.nf; it is the pgsc_calc checkout setup.sh makes (tools/pgsc_calc-<release>)."
+    }
 
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
@@ -499,7 +512,7 @@ workflow {
     )
 
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS, ancestry, mito haplogroup
+    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS and ancestry (pgsc_calc), mito haplogroup
     // ═══════════════════════════════════════════════════════════════════
     CLINICAL(
         ch_vcf,
@@ -507,6 +520,8 @@ workflow {
         ch_vep_cache_cpsr,
         ch_pgs_scoring,
         ch_ancestry_ref,
+        ch_ancestry_sites,
+        ch_pgs_labels,
         ch_gvcf,
         ch_reference,
         ch_reference_fai
@@ -555,6 +570,8 @@ workflow {
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
