@@ -339,16 +339,18 @@ install_ancestry_panel() {
   prefix=${prefix%.pgen}
   # One chromosome at a time: plink2 then loads a 22nd of the panel's variant
   # table (the whole table, 61.6 million variants, did not fit a 16 GB runner).
+  # --allow-extra-chr: the panel names contigs plink2 does not know, as
+  # pgsc_calc's own plink2 calls on it allow.
   local c ok=true
   [ -n "$prefix" ] || ok=false
   for c in $(seq 1 22); do
     $ok || break
     # A panel without a common SNV on a chromosome ("No variants remaining") is not an error.
     if ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs --chr "$c" \
-          --snps-only just-acgt --max-alleles 2 --maf 0.05 \
+          --allow-extra-chr --snps-only just-acgt --max-alleles 2 --maf 0.05 \
           --make-just-pvar --threads "$THREADS" --memory 4000 --out "$(cpath "${tmp}/common_${c}")" > "${tmp}/plink2.log" 2>&1 \
        && ! grep -q 'No variants remaining' "${tmp}/plink2.log"; then
-      tail -n 5 "${tmp}/plink2.log"
+      head -n 40 "${tmp}/plink2.log"
       ok=false
     fi
   done

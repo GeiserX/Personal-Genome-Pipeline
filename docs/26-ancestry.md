@@ -20,7 +20,7 @@ A principal component analysis of one genome alone cannot work, since the axes c
 ## Tool
 
 - **pgsc_calc** (`PGSC_CALC_VERSION` in `versions.env`), run by step 25: FRAPOSA's online augmentation, decomposition and Procrustes projection (`--projection_method oadp`), then a random forest on the first principal components to assign the most similar population.
-- **Reference panel**: pgsc_calc's 1000 Genomes database `pgsc_1000G_v1` (`PGSC_PANEL` in `versions.env`), samples of the five 1000 Genomes super-populations (AFR, AMR, EAS, EUR, SAS), published by the PGS Catalog.
+- **Reference panel**: pgsc_calc's 1000 Genomes database `pgsc_1000G_v1` (`PGSC_PANEL` in `versions.env`), 3,202 samples (2,583 founders) of the five 1000 Genomes super-populations (AFR, AMR, EAS, EUR, SAS), published by the PGS Catalog.
 
 ## Docker Images
 
