@@ -325,7 +325,7 @@ install_ancestry_panel() {
   # or more (its maf_ref). The whole GRCh38 table holds about 62 million
   # SNVs; genotyping all of them from a gVCF would take step 25 hours.
   echo "  Listing the panel's common GRCh38 SNVs (plink2 on the panel's genotypes)..."
-  local tmp="${dir}/.${name}.sites.tmp" prefix
+  local tmp="${dir}/.${name}.sites.tmp" prefix mem_mb
   rm -rf "$tmp"
   mkdir -p "$tmp"
   # shellcheck disable=SC2016  # $1 and $2 belong to the inner sh
@@ -335,11 +335,18 @@ install_ancestry_panel() {
     echo "[WARN] Could not unpack the GRCh38 genotypes of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
     return 1
   fi
+  # plink2 holds the panel's variant table in memory (4 GB was too little for
+  # the 1000 Genomes panel on a 16 GB runner): three quarters of the RAM.
+  if [ -r /proc/meminfo ]; then
+    mem_mb=$(awk '/^MemTotal:/ {print int($2 * 3 / 4 / 1024)}' /proc/meminfo)
+  else
+    mem_mb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 17179869184) * 3 / 4 / 1048576 ))
+  fi
   prefix=$(find "$tmp" -maxdepth 1 -name 'GRCh38_*_ALL.pgen' | head -1)
   prefix=${prefix%.pgen}
   if [ -z "$prefix" ] || ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs \
         --autosome --snps-only just-acgt --max-alleles 2 --rm-dup exclude-all --maf 0.05 \
-        --make-just-pvar --threads "$THREADS" --memory 4000 --out "$(cpath "${tmp}/common")" >/dev/null \
+        --make-just-pvar --threads "$THREADS" --memory "$mem_mb" --out "$(cpath "${tmp}/common")" >/dev/null \
      || ! awk -F'\t' -v OFS='\t' '
           /^##/ { next }
           /^#/ { for (i = 1; i <= NF; i++) c[$i] = i; next }
