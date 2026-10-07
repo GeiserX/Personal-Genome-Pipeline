@@ -83,9 +83,13 @@ if [ -n "$GIAB" ]; then
     [ -f "$REGIONS_BED" ] || { echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2; exit 1; }
     CUT="${GENOME_DIR}/${SAMPLE}/benchmark/giab_${GIAB}_regions.bed"
     mkdir -p "$(dirname "$CUT")"
+    # gzip -cdf reads a .bed.gz and passes a plain BED through; a truncated
+    # file stops the step here instead of giving part of the regions.
+    gzip -cdf -- "$REGIONS_BED" > "${CUT}.in" || { echo "ERROR: could not read ${REGIONS_BED}" >&2; rm -f "${CUT}.in"; exit 1; }
     awk 'BEGIN {OFS = "\t"} FNR == NR { if ($0 !~ /^(#|track|browser)/ && NF >= 3) { n[$1]++; s[$1, n[$1]] = $2 + 0; e[$1, n[$1]] = $3 + 0 }; next }
       { for (i = 1; i <= n[$1]; i++) { a = ($2 + 0 > s[$1, i] ? $2 + 0 : s[$1, i]); b = ($3 + 0 < e[$1, i] ? $3 + 0 : e[$1, i]); if (a < b) print $1, a, b } }' \
-      <(gzip -cdf -- "$REGIONS_BED") "$SET_BED" | sort -k1,1 -k2,2n > "$CUT"
+      "${CUT}.in" "$SET_BED" | sort -k1,1 -k2,2n > "$CUT"
+    rm -f "${CUT}.in"
     if [ ! -s "$CUT" ]; then
       echo "ERROR: no ${GIAB} benchmark region lies inside ${REGIONS_BED}." >&2
       exit 1
