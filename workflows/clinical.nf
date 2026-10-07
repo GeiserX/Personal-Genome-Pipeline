@@ -4,8 +4,9 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs cancer predisposition (CPSR), runs of homozygosity, polygenic scores
     (pgsc_calc; with an ancestry panel also the sample's projection onto it,
-    step 26), and mitochondrial haplogroup classification in parallel from a
-    single input VCF.
+    step 26), and the mitochondrial haplogroup (from MITO_VARIANTS' Mutect2
+    calls when they exist, with the haplocheck contamination check) in
+    parallel from a single input VCF.
 
     Each module is gated on params.tools containing the tool name.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -19,6 +20,8 @@ include { PRS                } from '../modules/local/prs/main'
 include { PRS_SUMMARY        } from '../modules/local/prs/main'
 include { MITO_EXTRACT_CHRM  } from '../modules/local/mito_haplogroup/main'
 include { MITO_HAPLOGROUP    } from '../modules/local/mito_haplogroup/main'
+include { MITO_PASS_CHRM     } from '../modules/local/mito_haplogroup/main'
+include { HAPLOCHECK         } from '../modules/local/mito_haplogroup/main'
 
 workflow CLINICAL {
 
@@ -33,6 +36,7 @@ workflow CLINICAL {
     ch_gvcf             // channel: [meta, gvcf, gvcf_index] — DEEPVARIANT's, for the samples it called
     ch_reference        // channel: val(path) — reference FASTA (gVCF expansion)
     ch_reference_fai    // channel: val(path) — reference .fai
+    ch_mito_vcf         // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
 
     main:
     ch_versions = Channel.empty()
@@ -43,6 +47,7 @@ workflow CLINICAL {
     ch_prs_scores         = Channel.empty()
     ch_ancestry_results   = Channel.empty()
     ch_haplogroup         = Channel.empty()
+    ch_haplocheck         = Channel.empty()
 
     //
     // MODULE 1: CPSR — Cancer predisposition screening
@@ -114,15 +119,30 @@ workflow CLINICAL {
     }
 
     //
-    // MODULES 5+6: MITO — chrM extraction then haplogroup classification (sequential chain)
+    // MITO: haplogroup from the Mutect2 chrM calls when MITO_VARIANTS ran for
+    // the sample (then also the haplocheck contamination check), else from
+    // the chrM records of its VCF
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mito_haplogroup')) {
-        MITO_EXTRACT_CHRM(ch_vcf)
-        MITO_HAPLOGROUP(MITO_EXTRACT_CHRM.out.chrm_vcf)
+        ch_mito_in = ch_vcf
+            .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+            .join(ch_mito_vcf.map { meta, m -> [meta.id, m] }, remainder: true)
+            .filter { row -> row[1] != null }
+            .branch { row ->
+                mutect2: row[4] != null
+                vcf:     true
+            }
+        MITO_PASS_CHRM(ch_mito_in.mutect2.map { row -> [row[1], row[4]] })
+        MITO_EXTRACT_CHRM(ch_mito_in.vcf.map { row -> [row[1], row[2], row[3]] })
+        MITO_HAPLOGROUP(MITO_PASS_CHRM.out.chrm_vcf.mix(MITO_EXTRACT_CHRM.out.chrm_vcf))
+        HAPLOCHECK(MITO_PASS_CHRM.out.chrm_vcf)
         ch_haplogroup = MITO_HAPLOGROUP.out.haplogroup
+        ch_haplocheck = HAPLOCHECK.out.report
         ch_versions   = ch_versions.mix(
+            MITO_PASS_CHRM.out.versions,
             MITO_EXTRACT_CHRM.out.versions,
-            MITO_HAPLOGROUP.out.versions
+            MITO_HAPLOGROUP.out.versions,
+            HAPLOCHECK.out.versions
         )
     }
 
@@ -132,5 +152,6 @@ workflow CLINICAL {
     prs_scores        = ch_prs_scores
     ancestry_results  = ch_ancestry_results
     haplogroup        = ch_haplogroup
+    haplocheck        = ch_haplocheck     // [meta, <id>_haplocheck.txt]
     versions          = ch_versions
 }

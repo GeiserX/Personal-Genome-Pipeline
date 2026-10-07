@@ -2,9 +2,12 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Mitochondrial Haplogroup — Determine maternal lineage from mtDNA variants
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Two-step process:
-    1. Extract chrM variants from full-genome VCF (bcftools)
-    2. Classify haplogroup with haplogrep3
+    The chrM calls haplogrep3 reads are MITO_VARIANTS' Mutect2 calls when
+    mito_variants ran for the sample (MITO_PASS_CHRM keeps their PASS
+    records, one allele per record), else the chrM records of the sample's
+    VCF (MITO_EXTRACT_CHRM). MITO_HAPLOGROUP classifies them with haplogrep3;
+    HAPLOCHECK looks for a second haplogroup in the Mutect2 allele fractions
+    (contamination).
 
     Equivalent to: scripts/12-mito-haplogroup.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -94,6 +97,81 @@ process MITO_HAPLOGROUP {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process MITO_PASS_CHRM {
+    tag "$meta.id"
+    label 'process_single'
+
+    input:
+    tuple val(meta), path(mutect2_vcf)
+
+    output:
+    tuple val(meta), path("*_chrM.vcf.gz"), path("*_chrM.vcf.gz.tbi"), emit: chrm_vcf
+    path "versions.yml",                                                emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    bcftools view -f PASS ${mutect2_vcf} | bcftools norm -m-any -Oz -o ${meta.id}_chrM.vcf.gz
+    bcftools index -t ${meta.id}_chrM.vcf.gz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_chrM.vcf.gz
+    touch ${meta.id}_chrM.vcf.gz.tbi
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process HAPLOCHECK {
+    tag "$meta.id"
+    label 'process_single'
+
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
+
+    input:
+    tuple val(meta), path(chrm_vcf), path(chrm_vcf_index)
+
+    output:
+    tuple val(meta), path("${meta.id}_haplocheck.txt"), emit: report
+    path "versions.yml",                                emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    haplocheck --out ${meta.id}_haplocheck.txt ${chrm_vcf}
+    [ -s ${meta.id}_haplocheck.txt ] || { echo "ERROR: haplocheck wrote no report" >&2; exit 1; }
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        haplocheck: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_haplocheck.txt
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        haplocheck: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
