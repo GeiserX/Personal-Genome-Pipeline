@@ -425,3 +425,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### Yleaf downloads the whole hg38 FASTA unless its config names one
 - **Failed:** Yleaf 3.2.1 checks for a full reference before anything else and downloads hg38 when its config file (inside the image, read-only) names none, also for a BAM, whose pileup never needs the sequence. Under `--network none` that fails.
 - **Fix:** step 37 and `Y_HAPLOGROUP` set Yleaf's reference constant to the pipeline's FASTA in a one-line Python launcher before calling Yleaf's `main()`.
+
+### Yleaf hangs forever when a samtools call fails
+- **Failed:** the image test of Yleaf on a BAM without chrY ran into its one-hour limit instead of failing. Yleaf runs each BAM in a `multiprocessing.Pool` worker and stops on a failed command with `SystemExit`; that kills the worker, and `Pool.map` waits for the result that never comes.
+- **Fix:** the same launcher replaces `multiprocessing.Pool` with a serial map (one BAM per run anyway), so Yleaf stops with its error message and a non-zero exit.

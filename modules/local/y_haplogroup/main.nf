@@ -13,7 +13,7 @@
 
 process Y_HAPLOGROUP {
     tag "$meta.id"
-    label 'process_low'
+    label 'process_single'
 
     publishDir { "${params.outdir}/${meta.id}/y_haplogroup" }, mode: params.publish_dir_mode
 
@@ -31,9 +31,11 @@ process Y_HAPLOGROUP {
     script:
     // Yleaf downloads the whole hg38 FASTA on its first run unless its config
     // names one, and the image's config is read-only: its constant is pointed
-    // at the reference before it starts, as scripts/37-y-haplogroup.sh does.
+    // at the reference before it starts, and its pools are replaced by a
+    // serial map (a failing pool worker would hang it), as
+    // scripts/37-y-haplogroup.sh does.
     """
-    python3 -c 'import sys; from pathlib import Path; from yleaf import yleaf_constants; yleaf_constants.HG38_FULL_GENOME = Path(sys.argv[1]); from yleaf import Yleaf; sys.argv = ["Yleaf"] + sys.argv[2:]; Yleaf.main()' "\$(readlink -f ${reference})" -bam ${bam} -o yleaf -rg hg38 -force -t ${task.cpus}
+    python3 -c 'import sys, multiprocessing; from pathlib import Path; multiprocessing.Pool = type("SerialPool", (), {"__init__": lambda s, *a, **k: None, "__enter__": lambda s: s, "__exit__": lambda s, *a: False, "map": lambda s, f, xs: list(map(f, xs))}); from yleaf import yleaf_constants; yleaf_constants.HG38_FULL_GENOME = Path(sys.argv[1]); from yleaf import Yleaf; sys.argv = ["Yleaf"] + sys.argv[2:]; Yleaf.main()' "\$(readlink -f ${reference})" -bam ${bam} -o yleaf -rg hg38 -force -t 1
     [ "\$(grep -c . yleaf/hg_prediction.hg)" -ge 2 ] || { echo "ERROR: Yleaf wrote no prediction" >&2; exit 1; }
     cp yleaf/hg_prediction.hg ${meta.id}_y_haplogroup.txt
 
