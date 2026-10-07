@@ -2,7 +2,7 @@
 """render_pictures.py: the three docs pictures from DEMO-001's reports.
 
   render_pictures.py --genome-dir DIR --out OUTDIR [--font FILE]
-                     [--html-stop-before TITLES] [--cpic-head N]
+                     [--html-stop-before TITLES] [--cpic-head N | --cpic-full]
 
 reads DIR/DEMO-001 after steps 24, 27 and 28 ran on it and writes
   demo-html-report.png     the step 24 report in a 1180-pixel-wide browser,
@@ -10,11 +10,13 @@ reads DIR/DEMO-001 after steps 24, 27 and 28 ran on it and writes
                            starts with one of TITLES (comma-separated); by
                            default the first table that lists genes or
                            variants, so no gene of the invented sample shows
-  demo-cpic-report.png     the step 27 text report as `cat` prints it in a
-                           900-pixel-wide dark terminal, drawn from the file
-                           with Pillow and a monospace font (the same file and
-                           font give the same picture); --cpic-head N draws
-                           `head -n N` instead
+  demo-cpic-report.png     the top of the step 27 text report as `head -n N`
+                           prints it in a 900-pixel-wide dark terminal, N
+                           ending on the last row of the Gene Results table;
+                           drawn from the file with Pillow and a monospace
+                           font (the same file and font give the same
+                           picture); --cpic-head N sets N, --cpic-full draws
+                           the whole file as `cat` prints it
   demo-multiqc-report.png  the top 1600 x 1118 pixels of the step 28 report
 
 Every PNG is written again from its pixels alone, so it holds no text, time
@@ -88,12 +90,22 @@ def html_pictures(sample_dir, out, stop_titles):
         browser.close()
 
 
-def cpic_picture(sample_dir, out, font_path, head):
+def gene_table_end(lines):
+    """The number of lines up to the last row of the Gene Results table."""
+    start = next((i for i, l in enumerate(lines) if l.startswith("Gene Results:")), None)
+    if start is None:
+        raise SystemExit("ERROR: the CPIC report has no 'Gene Results:' section")
+    end = next((i for i in range(start + 1, len(lines)) if not lines[i].strip()), len(lines))
+    return end
+
+
+def cpic_picture(sample_dir, out, font_path, head, full):
     rel = f"{SAMPLE}/cpic/{SAMPLE}_cpic_recommendations.txt"
     with open(os.path.join(os.path.dirname(sample_dir), rel)) as f:
         lines = f.read().splitlines()
     command = f"cat {rel}"
-    if head:
+    if not full:
+        head = head or gene_table_end(lines)
         lines, command = lines[:head], f"head -n {head} {rel}"
     font = ImageFont.truetype(font_path, 14)
     width, pad, bar, step = 900, 22, 30, 20
@@ -132,7 +144,9 @@ def main(argv=None):
     ap.add_argument("--font", help="monospace TrueType font for the CPIC picture (default: Menlo, else DejaVu Sans Mono)")
     ap.add_argument("--html-stop-before", default=",".join(STOP_BEFORE),
                     help="comma-separated card titles (prefixes); the HTML picture stops above the first one")
-    ap.add_argument("--cpic-head", type=int, default=0, help="draw only the first N lines (head -n N)")
+    ap.add_argument("--cpic-head", type=int, default=0,
+                    help="draw the first N lines (default: up to the last row of the Gene Results table)")
+    ap.add_argument("--cpic-full", action="store_true", help="draw the whole report, as cat prints it")
     ap.add_argument("--only", choices=["html", "cpic"], help="draw only these pictures (html: the step 24 and MultiQC ones)")
     a = ap.parse_args(argv)
     font = a.font or next((f for f in FONTS if os.path.isfile(f)), None)
@@ -141,7 +155,7 @@ def main(argv=None):
     sample_dir = os.path.join(a.genome_dir, SAMPLE)
     os.makedirs(a.out, exist_ok=True)
     if a.only != "html":
-        cpic_picture(sample_dir, a.out, font, a.cpic_head)
+        cpic_picture(sample_dir, a.out, font, a.cpic_head, a.cpic_full)
     if a.only != "cpic":
         html_pictures(sample_dir, a.out, [t.strip() for t in a.html_stop_before.split(",") if t.strip()])
     return 0
