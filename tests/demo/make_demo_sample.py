@@ -35,6 +35,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -80,6 +81,16 @@ def vcf_header(extra=(), sample=True):
     cols = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO"
     lines.append(cols + ("\tFORMAT\t" + SAMPLE if sample else ""))
     return "\n".join(lines) + "\n"
+
+
+def hla_release():
+    """HLA_DB_RELEASE's default in scripts/lib/common.sh (3.65.0 -> '3.65.0')."""
+    with open(os.path.join(REPO, "scripts", "lib", "common.sh")) as f:
+        for line in f:
+            m = re.match(r'HLA_DB_RELEASE=\$\{HLA_DB_RELEASE:-([0-9.]+)\}', line.strip())
+            if m:
+                return m.group(1)
+    raise SystemExit("HLA_DB_RELEASE is not in scripts/lib/common.sh")
 
 
 def image_tag(var):
@@ -169,9 +180,10 @@ def pgx(d, genome_dir, rng):
     depth = os.path.join(d, "pypgx", f"{SAMPLE}_cyp2d6_depth_check.tsv")
     os.makedirs(os.path.dirname(depth), exist_ok=True)
     shutil.copy(os.path.join(PGX_FIXTURES, "depth_check_ok.tsv"), depth)
-    # The HLA database release the manifest prints: one header line of hla.dat.
+    # The HLA database release the manifest prints: one header line of hla.dat,
+    # naming the release setup.sh installs (HLA_DB_RELEASE in scripts/lib/common.sh).
     put(os.path.join(genome_dir, "t1k_idx", "hlaidx", "hla.dat"),
-        "ID   HLA00001; standard; DNA; HUM; 3503 BP.\nDT   15/07/2025 (Rel. 3.61.0, Created)\n")
+        f"ID   HLA00001; standard; DNA; HUM; 3503 BP.\nDT   15/07/2025 (Rel. {hla_release()}, Created)\n")
 
     # pypgx (step 32) and Cyrius (step 21) agree with PharmCAT's example calls,
     # CYP2D6 included, so the three CYP2D6 callers agree.
@@ -366,13 +378,19 @@ def coverage(d, rng):
 
 
 def sample_qc(d):
-    """somalier and VerifyBamID2 files, then step 33's own table writer."""
+    """somalier and VerifyBamID2 files, then step 33's own table writer.
+
+    MultiQC's somalier "Sex" column is original_pedigree_sex, the sex of a
+    pedigree file. Step 33 gives somalier none, so a real run leaves it -9
+    (unknown) while the HTML report shows the inferred sex. Here it is the
+    declared sex, so the MultiQC picture and the report card agree."""
     q = os.path.join(d, "qc")
+    sex = 1 if SEX == "male" else 2
     put(os.path.join(q, "somalier", f"{SAMPLE}.samples.tsv"),
         "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\tgt_depth_mean\t"
         "gt_depth_sd\tdepth_mean\tdepth_sd\tab_mean\tab_std\tn_hom_ref\tn_het\tn_hom_alt\tn_unknown\tp_middling_ab\t"
         "X_depth_mean\tX_n\tX_hom_ref\tX_het\tX_hom_alt\tY_depth_mean\tY_n\n"
-        f"{SAMPLE}\t{SAMPLE}\t-9\t-9\t1\t-9\t-9\t31.4\t7.2\t31.4\t7.2\t0.41\t0.08\t9817\t6904\t4383\t196\t0.01\t"
+        f"{SAMPLE}\t{SAMPLE}\t-9\t-9\t{sex}\t-9\t{sex}\t31.4\t7.2\t31.4\t7.2\t0.41\t0.08\t9817\t6904\t4383\t196\t0.01\t"
         "15.6\t612\t352\t4\t256\t14.9\t41\n")
     put(os.path.join(q, "somalier", f"{SAMPLE}.pairs.tsv"),
         "#sample_a\tsample_b\trelatedness\tibs0\tibs2\thom_concordance\thets_a\thets_b\thets_ab\tshared_hets\t"
