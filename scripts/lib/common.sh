@@ -523,15 +523,27 @@ scatter_beds() {
       for r in $intervals; do printf 'R\t%s\n' "$r"; done
     fi
   } | awk -F'\t' -v d="$dir" -v all="${SCATTER:-true}" -v given="${intervals:+1}" '
-    FNR == NR { len[$1] = $2; order[++n] = $1; next }
+    FNR == NR { len[$1] = $2; order[++n] = $1; rank[$1] = n; next }
     function unit(name) { if (all == "false") return sprintf("%s/001.bed", d); return sprintf("%s/%03d.bed", d, ++u) }
     { r = $2; gsub(/,/, "", r); c = r; s = 0; e = ""
       if (match(r, /:[0-9]+-[0-9]+$/)) { c = substr(r, 1, RSTART - 1); split(substr(r, RSTART + 1), p, "-"); s = p[1] - 1; e = p[2] }
       if (!(c in len)) { print "ERROR: contig " c " (INTERVALS) is not in the reference" > "/dev/stderr"; bad = 1; exit 1 }
       if (e == "") e = len[c]
-      f = unit(); print c "\t" s "\t" e >> f; close(f) }
+      k++; rk[k] = rank[c]; st[k] = s + 0; reg[k] = c "\t" s "\t" e }
     END {
-      if (bad || given) exit bad
+      if (bad) exit 1
+      if (given) {
+        # Reference order, then start, whatever the order of INTERVALS: the
+        # units are joined in this order.
+        for (i = 2; i <= k; i++)
+          for (j = i; j > 1 && (rk[j - 1] > rk[j] || (rk[j - 1] == rk[j] && st[j - 1] > st[j])); j--) {
+            t = rk[j]; rk[j] = rk[j - 1]; rk[j - 1] = t
+            t = st[j]; st[j] = st[j - 1]; st[j - 1] = t
+            t = reg[j]; reg[j] = reg[j - 1]; reg[j - 1] = t
+          }
+        for (i = 1; i <= k; i++) { f = unit(); print reg[i] >> f; close(f) }
+        exit 0
+      }
       for (i = 1; i <= n; i++) if (order[i] ~ /^chr([0-9]+|X|Y|M)$/) { f = unit(); print order[i] "\t0\t" len[order[i]] >> f; close(f) }
       rest = (all == "false") ? sprintf("%s/001.bed", d) : sprintf("%s/%03d.bed", d, u + 1)
       for (i = 1; i <= n; i++) if (order[i] !~ /^chr([0-9]+|X|Y|M)$/) print order[i] "\t0\t" len[order[i]] >> rest

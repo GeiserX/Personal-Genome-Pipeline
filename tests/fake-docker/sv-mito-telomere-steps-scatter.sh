@@ -54,6 +54,10 @@ run_expect 0 freebayes "${SCRIPTS}/03b-freebayes.sh" sample1
 docker_log_has 'bcftools sort .*vcf_freebayes/sample1_raw\.vcf' "03b did not sort the joined raw VCF"
 INTERVALS="chr2 chr1:1-100" run_expect 0 freebayes-regions "${SCRIPTS}/03b-freebayes.sh" sample1
 output_has freebayes-regions '2 unit\(s\), 2 at a time'
+# The units, and so the joined VCF, follow the reference, not INTERVALS.
+ORDER=$(GENOME_DIR="$GENOME_DIR" bash -c '. "$1/scripts/lib/common.sh"; for f in $(scatter_beds "$2" "chr2 chr1:1-100"); do cut -f1,2 "$f"; done' \
+  _ "$REPO_ROOT" "${CASE_WORK}/units" | tr '\t\n' ': ')
+[ "$ORDER" = "chr1:0 chr2:0 " ] || fail "scatter_beds did not put INTERVALS in reference order (${ORDER})"
 
 # --- 29 Mutect2, INTERVALS=genome ----------------------------------------------------------
 : > "$FAKE_DOCKER_LOG"
