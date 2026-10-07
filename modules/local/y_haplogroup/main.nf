@@ -118,7 +118,7 @@ process Y_HAPLOGROUP {
 
     stub:
     """
-    printf 'Sample_name\\tHg\\tHg_marker\\tTotal_reads\\tValid_markers\\tQC-score\\tQC-1\\tQC-2\\tQC-3\\n' > ${meta.id}_y_haplogroup.txt
+    printf 'Sample_name\\tHg\\tHg_marker\\tTotal_reads\\tValid_markers\\tQC-score\\tQC-1\\tQC-2\\tQC-3\\n${meta.id}\\tNA\\t\\t0\\t0\\t0\\t0\\t0\\t0\\n' > ${meta.id}_y_haplogroup.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -319,7 +319,7 @@ Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunt
 
 ### SV consensus merge
 
-`survivor_merge` runs `SURVIVOR merge` (step 22's parameters: breakpoints within 1 kb, same type and strands, at least 50 bp, two or more callers) over the callers this run selected among `manta`, `delly` and `cnvpytor`, each cut to its PASS records first (`SURVIVOR_PREP`, `SURVIVOR_MERGE`, `SURVIVOR_SORT`). CNVpytor's depth-only calls count as one caller like the others; their coarse breakpoints often lie more than 1 kb from the paired-end callers'. GRIDSS, TIDDIT and Sniffles2 have no module, so the consensus of the script (step 22) can hold more callers. See [step 22](22-survivor-merge.md).
+`survivor_merge` runs `SURVIVOR merge` (step 22's parameters: breakpoints within 1 kb, same type and strands, at least 50 bp, two or more callers) over the callers this run selected among `manta`, `delly` and `cnvpytor`, each cut to its PASS records first (`SURVIVOR_PREP`, `SURVIVOR_MERGE`, `SURVIVOR_SORT`). CNVpytor's depth-only calls count as one caller like the others; their coarse breakpoints often lie more than 1 kb from the paired-end callers'. TIDDIT and Sniffles2 have no module, so the consensus of the script (step 22) can hold those two callers as well. GRIDSS is in neither: its breakend (BND) records never match the DEL, DUP and INV records of the other callers. See [step 22](22-survivor-merge.md).
 
 ### FILTER=PASS required
 

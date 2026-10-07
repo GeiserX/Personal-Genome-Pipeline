@@ -39,7 +39,7 @@ The images of step 25, all pinned in `versions.env`: `PGSC_UTILS_IMAGE`, `PLINK2
 ./scripts/26-ancestry.sh your_name
 ```
 
-`run-all.sh` runs it inside the pipeline's PRS run (step 25) whenever the panel is installed, so a plain run includes it:
+`run-all.sh` runs it inside the pipeline's PRS run (step 25) whenever the panel and a PRS scoring file (`prs_scores/`, step 25) are installed, so a plain run includes it; without a scoring file, PRS is skipped and step 26 is listed as `skipped (needs PRS)`:
 
 ```bash
 ./scripts/run-all.sh your_name <male|female>

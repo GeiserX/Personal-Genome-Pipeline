@@ -75,7 +75,7 @@ This takes ~1 hour and produces 5 index files (~5 GB total). Only needed once.
 
 ### BND notation
 
-GRIDSS reports all variants as **BND** (breakend) records, not DEL/DUP/INV/INS. Each structural variant produces two VCF records (one for each breakpoint). The SV consensus merge step (22) handles conversion to standard SV types.
+GRIDSS reports all variants as **BND** (breakend) records, not DEL/DUP/INV/INS. Each structural variant produces two VCF records (one for each breakpoint). Nothing here converts them to DEL, DUP or INV, so step 22 leaves GRIDSS out of the SV consensus (see Notes).
 
 ### Quality filtering
 

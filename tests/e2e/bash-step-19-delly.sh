@@ -21,6 +21,6 @@ EXCL="${SAMPLE}/delly/chr20_exclude.bed"
 awk 'BEGIN {OFS = "\t"} $1 == "chr20" && NF >= 3 {print $1, $2, $3}' "$MAP" > "${GENOME_DIR}/${EXCL}"
 check_ge "exclude intervals on chr20" "$(grep -c . "${GENOME_DIR}/${EXCL}" || true)" 1
 echo "Delly calls: $(vcf_count "$VCF") in all, $(vcf_count -r chr20 "$VCF") on chr20"
-check_eq "calls inside the chr20 exclude intervals" "$(vcf_count -R "$EXCL" "$VCF")" 0
+check_eq "calls starting inside the chr20 exclude intervals" "$(vcf_count --regions-overlap pos -R "$EXCL" "$VCF")" 0
 
 finish

@@ -126,7 +126,9 @@ workflow SV {
                 ch_cnvpytor_vcf.map { meta, vcf -> [meta, 'cnvpytor', vcf] }
             )
         )
-        SURVIVOR_MERGE(SURVIVOR_PREP.out.vcf.groupTuple())
+        // Each sample goes on once every selected caller has given its VCF
+        def sv_callers = ['manta', 'delly', 'cnvpytor'].findAll { c -> params.tools.split(',').collect { it.trim() }.contains(c) }
+        SURVIVOR_MERGE(SURVIVOR_PREP.out.vcf.groupTuple(size: sv_callers.size()))
         SURVIVOR_SORT(SURVIVOR_MERGE.out.vcf)
         ch_merged_sv = SURVIVOR_SORT.out.merged_vcf
         ch_versions  = ch_versions.mix(SURVIVOR_PREP.out.versions, SURVIVOR_MERGE.out.versions,
