@@ -217,7 +217,6 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | **6** | ClinVar screen | Checks your variants against known pathogenic entries | You'll only find pathogenic variants that happen to be on the chip. Most clinically significant rare variants will be missed. |
 | **7** | PharmCAT | Pharmacogenomic star alleles from SNP genotypes | Calls many genes (CYP2B6, CYP4F2, DPYD, NUDT15, TPMT, SLCO1B1, UGT1A1) but **misses key genes** like CYP2C19 and VKORC1 on some chip versions due to missing positions. Expect 888+ missing PGx positions. Always compare with WGS results if available. |
 | **11** | ROH analysis | Runs of homozygosity from SNP genotypes | Works, but requires the `-G30` flag (chip VCFs lack PL tags). Large ROH (>1 MB) are detectable. |
-| **25** | PRS | Polygenic risk scores from common variants | Works with `no-mean-imputation` flag (single sample lacks allele frequencies). Matches ~12% of large scoring files (vs ~28% from WGS). Scores are not directly comparable to WGS scores. |
 | **27** | CPIC lookup | Drug-gene recommendations | Works if step 7 (PharmCAT) succeeds. |
 
 ### Works with Limitations
@@ -226,6 +225,8 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 |---|---|---|
 | **13** | VEP annotation | Runs, but annotating 600K variants is much less useful than annotating 5M. The rare, potentially significant variants are the ones arrays miss. |
 | **17** | CPSR | Runs, but cancer predisposition screening on chip data has very low sensitivity. Most pathogenic variants in cancer genes are rare and not on the chip. A negative CPSR result from chip data does NOT rule out cancer predisposition. |
+| **25** | PRS | pgsc_calc gives a score a sum only when at least 75% of its variants are in your genotypes. A chip holds about 12% of the variants of the large scores (millions of variants), so those get no sum; the small ones (a few hundred variants or fewer, such as PGS000004, PGS000334 and PGS000055) can pass. Imputation (step 14) first gives the large scores a chance. A chip VCF already has your reference calls, so no gVCF is needed. |
+| **26** | Ancestry | Works with the panel installed (`setup.sh --ancestry-panel`): a chip types common SNPs, reference calls included, which is what the projection onto the 1000 Genomes panel uses. Only five continental groups; for anything finer use the provider's own ancestry tools. A third-party service such as [DNA Painter](https://dnapainter.com/) means sending your genotypes out of your machine; read its terms first. |
 
 ### Does Not Work
 
@@ -244,7 +245,6 @@ Imputation can expand your 600K chip variants to ~40M by predicting untyped geno
 | **21** | CYP2D6 (Cyrius) | Needs BAM |
 | **22** | SV consensus merge | No SV calls |
 | **23** | Clinical filter | Requires VEP-annotated VCF with gnomAD. Limited value on chip data. |
-| **26** | Ancestry PCA | The current step 26 implementation requires >=2 samples for PCA and produces no output for a single sample. For ancestry from chip data, use the provider's built-in ancestry tools. A third-party service such as [DNA Painter](https://dnapainter.com/) means sending your genotypes out of your machine; read its terms first. |
 
 ---
 

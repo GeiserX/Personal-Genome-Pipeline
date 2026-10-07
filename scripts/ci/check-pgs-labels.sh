@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # check-pgs-labels.sh: compare the disease label of every PGS ID in
-# scripts/25-prs.sh with the trait the PGS Catalog reports for that ID.
+# assets/pgs_scores.tsv (the list step 25 and the PRS process score) with the
+# trait the PGS Catalog reports for that ID.
 #
 # Two scores once carried the wrong disease for months (PGS000020 was printed
 # as inflammatory bowel disease and is type 2 diabetes; PGS000738 was printed
@@ -14,11 +15,12 @@
 # "inflammatory_bowel_disease" does not match "Type 2 diabetes (T2D)".
 #
 # Usage:
-#   scripts/ci/check-pgs-labels.sh [FILE]   check FILE (default scripts/25-prs.sh)
+#   scripts/ci/check-pgs-labels.sh [FILE]   check FILE (default assets/pgs_scores.tsv)
 #   scripts/ci/check-pgs-labels.sh --self-test
 #
-# Reads both map formats the script has used: "PGS000018|Coronary artery
-# disease" entries and the older ["coronary_artery_disease"]="PGS000018".
+# Reads the score list (a "PGS000018<TAB>Coronary artery disease" line per
+# score) and the two map formats step 25 used before it: "PGS000018|Coronary
+# artery disease" entries and the older ["coronary_artery_disease"]="PGS000018".
 # Prints a Markdown table on stdout. Exit 0 when every label matches, 1 when a
 # label is wrong, an ID is unknown, the API answers empty or not at all, or the
 # file holds no PGS ID (an empty check is a failure, never a pass).
@@ -30,7 +32,9 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 read_map() {
   local f=$1
   {
-    # Current format: "PGS000018|Coronary artery disease"
+    # Current format, assets/pgs_scores.tsv: "PGS000018<TAB>Coronary artery disease"
+    awk -F'\t' '$1 ~ /^PGS[0-9]{6}$/ && NF >= 2 && $2 != "" { print $1 "\t" $2 }' "$f"
+    # Step 25's older map: "PGS000018|Coronary artery disease"
     sed -nE 's/^[[:space:]]*"(PGS[0-9]{6})\|([^"]*)".*/\1\t\2/p' "$f"
     # Older format: ["coronary_artery_disease"]="PGS000018"
     sed -nE 's/^[[:space:]]*\["([^"]+)"\]="(PGS[0-9]{6})".*/\2\t\1/p' "$f"
@@ -115,6 +119,14 @@ self_test() {
     echo "SELF-TEST FAIL: a wrong label was not caught, or a right one was not passed:"; echo "$out"; fail=1
   fi
 
+  # Control 1b: the same in the score list format (assets/pgs_scores.tsv).
+  printf 'pgs_id\ttrait_reported\nPGS000018\tCoronary artery disease\nPGS000020\tInflammatory bowel disease\n' > "${d}/list.tsv"
+  rc=0; out=$(check_file "${d}/list.tsv" 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q '| PGS000020 .*| MISMATCH |' <<<"$out" \
+     || ! grep -q '| PGS000018 .*| ok |' <<<"$out"; then
+    echo "SELF-TEST FAIL: the score list format was not read or not judged:"; echo "$out"; fail=1
+  fi
+
   # Control 2: the older associative-array format is read too.
   printf '%s\n' 'PGS_IDS=(' '  ["schizophrenia"]="PGS000738"' ')' > "${d}/old.sh"
   rc=0; out=$(check_file "${d}/old.sh" 2>&1) || rc=$?
@@ -146,7 +158,7 @@ self_test() {
   fi
 
   if [ "$fail" -eq 0 ]; then
-    echo "SELF-TEST OK: wrong label, old format, empty answer, no answer and empty map are all caught."
+    echo "SELF-TEST OK: wrong label (list and map formats), old format, empty answer, no answer and empty map are all caught."
   fi
   return "$fail"
 }
@@ -154,5 +166,5 @@ self_test() {
 case "${1:-}" in
   --self-test) self_test ;;
   -h|--help) sed -n '2,25p' "$0" ;;
-  *) check_file "${1:-${ROOT}/scripts/25-prs.sh}" ;;
+  *) check_file "${1:-${ROOT}/assets/pgs_scores.tsv}" ;;
 esac

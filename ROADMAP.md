@@ -92,10 +92,10 @@ Released on 2026-07-01. These releases went to hardening and upgrades instead of
 
 Every step currently runs on a single sample in isolation. This work would make the pipeline useful for families and cohorts; no release is assigned to it yet.
 
-- [ ] **Joint PCA with 1000 Genomes reference panel** — project sample PCs onto a reference PCA, replacing the current single-sample ancestry stub (step 26) with real population placement
+- [x] **Projection onto the 1000 Genomes reference panel** — step 26 projects the sample onto pgsc_calc's panel and names the most similar population, replacing the single-sample PCA
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
 - [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
-- [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
+- [x] **PRS percentile estimation** — step 25 runs pgsc_calc, which with the ancestry panel reports each score as a percentile among the most similar reference group
 - [x] **Somalier sample identity QC** — step 33 (`sample_qc` in Nextflow): somalier's sex from the reads checked against the declared sex, the relatedness of every pair of samples in a run, and VerifyBamID2's contamination estimate
 - [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
 - [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with slivar inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)

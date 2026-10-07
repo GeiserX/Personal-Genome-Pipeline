@@ -491,6 +491,31 @@ else
     info "IPD-KIR ${KIR_DB_RELEASE} not installed (KIR=true in step 08): ./scripts/setup.sh --kir-data ${GENOME_DIR}"
   fi
 
+  # --- Step 25 (pgsc_calc, its scores) and its ancestry panel (step 26) ---
+  n_pgs=0 missing_pgs=""
+  while read -r id; do
+    n_pgs=$((n_pgs + 1))
+    [ -s "${GENOME_DIR}/prs_scores/${id}.txt.gz" ] || missing_pgs="${missing_pgs} ${id}"
+  done < <(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${PGP_ROOT}/assets/pgs_scores.tsv")
+  if [ -z "$missing_pgs" ]; then
+    pass "PGS Catalog scores (step 25): all ${n_pgs} of assets/pgs_scores.tsv present"
+  else
+    warn "PGS Catalog scores missing (step 25 downloads them, run-all.sh skips PRS until then):${missing_pgs}"
+  fi
+  if [ -f "${GENOME_DIR}/tools/pgsc_calc-${PGSC_CALC_VERSION}/main.nf" ]; then
+    pass "pgsc_calc ${PGSC_CALC_VERSION} (step 25): present"
+  else
+    warn "pgsc_calc ${PGSC_CALC_VERSION} not installed (step 25 fetches it): ./scripts/setup.sh ${GENOME_DIR}"
+  fi
+  PANEL="${GENOME_DIR}/reference/pgsc_calc/${PGSC_PANEL}.tar.zst"
+  if [ -s "$PANEL" ] && [ -s "${PANEL%.tar.zst}_GRCh38_sites.tsv" ]; then
+    pass "Ancestry panel ${PGSC_PANEL} (step 26, percentiles in step 25): present"
+  elif [ -s "$PANEL" ]; then
+    fail "Ancestry panel ${PANEL} has no site list beside it: ./scripts/setup.sh --ancestry-panel ${GENOME_DIR}"
+  else
+    info "Ancestry panel not installed (step 26; step 25 reports raw scores only): ./scripts/setup.sh --ancestry-panel ${GENOME_DIR}"
+  fi
+
   # --- GATK sequence dictionary (optional) ---
   DICT="$REF_DICT"
   if [ -f "$DICT" ]; then

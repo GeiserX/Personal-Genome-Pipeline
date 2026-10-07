@@ -56,6 +56,8 @@ process HTML_REPORT {
             ${id}_haplogroup.txt)                         place mito "\$f" ;;
             ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
+            ${id}_prs_summary.tsv)                        place prs "\$f" ;;
+            ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
     done

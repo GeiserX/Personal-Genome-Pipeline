@@ -29,6 +29,18 @@ Nextflow SAMPLE_QC process): the sex somalier infers from the reads, the
 declared sex, VerifyBamID2's FREEMIX against a warning threshold, and the
 other samples somalier finds to be the same person. Both callers stop on the
 sex_check value this writes, so the rule lives here once.
+
+  collect_summary.py prs-format --scores DIR --labels assets/pgs_scores.tsv --out DIR --alleles F
+  collect_summary.py prs-table --sample S --results DIR --sampleset NAME --scores DIR --input-kind gvcf --out F
+
+are the two ends of step 25 (and of the Nextflow PRS_PREPARE and PRS_SUMMARY
+processes) around pgsc_calc: prs-format writes each GRCh38-harmonised PGS
+Catalog file as the custom GRCh38 scoring file pgsc_calc reads, labelled with
+the catalog's trait, and lists every effect and other allele so the score
+positions can be genotyped from the gVCF; prs-table reads pgsc_calc's match
+summary and scores into <sample>_prs_summary.tsv, with the ancestry-adjusted
+percentile and the reference group when pgsc_calc ran with an ancestry panel,
+and then writes the principal components and population of step 26.
 """
 import argparse
 import csv
@@ -36,6 +48,7 @@ import glob
 import gzip
 import json
 import os
+import re
 import sys
 import zlib
 from datetime import datetime, timezone
@@ -66,9 +79,11 @@ NOT_ASSESSED = [
     "Methylation and imprinting",
     "Repeat expansions outside the ExpansionHunter catalog",
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
-    "Polygenic scores against an ancestry-matched reference (raw scores only)",
     "Variants of uncertain significance (not interpreted)",
 ]
+
+# Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
+PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
 
 EH_LOCI = ["HTT", "FMR1", "C9ORF72", "ATXN1", "DMPK"]
 
@@ -266,10 +281,310 @@ def sec_prs(d, s):
         return None, {}
     rows = []
     for r in read_tsv(p):
+        pct = r.get("Percentile", "") or ""
         rows.append({"condition": r.get("Condition", ""), "pgs_id": r.get("PGS_ID", ""),
                      "score": r.get("Score_SUM", ""), "matched": r.get("Variants_Matched", ""),
-                     "total": r.get("Variants_Total", "")})
-    return p, {"scores": rows}
+                     "total": r.get("Variants_Total", ""),
+                     "percentile": "" if pct == "NA" else pct,
+                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
+    data = {"scores": rows,
+            # Percentiles exist only when step 25 ran pgsc_calc with an ancestry panel.
+            "adjusted": any(r["percentile"] for r in rows)}
+    a = first_existing(d, [f"ancestry/{s}_ancestry.tsv", f"prs/{s}_ancestry.tsv"])
+    if a:
+        kv = {r.get("key"): r.get("value", "") for r in read_tsv(a) if r.get("key")}
+        data["ancestry"] = {"population": kv.get("population", ""), "panel": kv.get("reference_panel", ""),
+                            "low_confidence": kv.get("population_low_confidence", "")}
+    return p, data
+
+
+# --- PRS with pgsc_calc (steps 25 and 26, and the PRS processes) ------------------
+# The PGS Catalog's pgsc_calc scores the sample. Step 25 and the Nextflow
+# PRS_PREPARE and PRS_SUMMARY processes run the two commands below, so the
+# score files pgsc_calc reads and the table the reports read are made once.
+
+PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
+               "Matched_Pct", "Percentile", "Ancestry_Group", "Input"]
+# Columns of a scoring file that make a score non-additive: pgsc_calc scores
+# them, but this pipeline's custom file keeps effect_weight only.
+NON_ADDITIVE = ("dosage_0_weight", "dosage_1_weight", "dosage_2_weight")
+AUTOSOMES = frozenset(str(i) for i in range(1, 23))
+
+
+def pgs_id_of(path):
+    """PGS000018 for PGS000018.txt.gz, PGS000018_hmPOS_GRCh38.txt.gz and the like."""
+    name = os.path.basename(path)
+    for suffix in (".gz", ".txt", ".tsv"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name.split("_hmPOS_")[0]
+
+
+def read_labels(path):
+    """ID -> trait label of assets/pgs_scores.tsv (columns pgs_id, trait_reported)."""
+    out = {}
+    if not path:
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((line for line in f if not line.startswith("#")), delimiter="\t"):
+            if r.get("pgs_id"):
+                out[r["pgs_id"].strip()] = (r.get("trait_reported") or "").strip()
+    return out
+
+
+def single_allele(a):
+    a = (a or "").strip().upper()
+    return a if a and "/" not in a and a != "." else ""
+
+
+def format_pgs(path, out_dir, label=None):
+    """Write the GRCh38-harmonised scoring file PATH as a custom GRCh38 file
+    pgsc_calc reads (chr_name and chr_position from hm_chr and hm_pos), and
+    return (pgs_id, rows written, rows dropped off the autosomes,
+    [(chrom, pos, allele), ...]) with the effect and other alleles of every
+    row. Only chromosomes 1 to 22 are kept: pgsc_calc converts the sample with
+    plink2, which stops on a chrX record when no sex is given. Raises
+    Unreadable for a file that is not harmonised to GRCh38, lacks a column, is
+    not additive or has no row."""
+    header, cols, rows, alleles = {}, None, [], []
+    with open_text(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith("#"):
+                k, _, v = line[1:].partition("=")
+                header[k.strip()] = v.strip()
+                continue
+            if cols is None:
+                cols = line.split("\t")
+                continue
+            if line:
+                rows.append(line.split("\t"))
+    name = os.path.basename(path)
+    if header.get("HmPOS_build") != "GRCh38":
+        raise Unreadable(f"{name} has #HmPOS_build='{header.get('HmPOS_build', '')}', expected GRCh38 "
+                         "(use the PGS Catalog's Harmonized/<id>_hmPOS_GRCh38 file)")
+    c = {k: i for i, k in enumerate(cols or [])}
+    missing = [k for k in ("hm_chr", "hm_pos", "effect_allele", "effect_weight") if k not in c]
+    if missing:
+        raise Unreadable(f"{name} has no {', '.join(missing)} column")
+    if any(k in c for k in NON_ADDITIVE):
+        raise Unreadable(f"{name} has dosage weights (a non-additive score); only additive scores are supported")
+
+    def get(r, k):
+        return r[c[k]].strip() if k in c and c[k] < len(r) else ""
+
+    for k in ("is_dominant", "is_recessive"):
+        if k in c and any(get(r, k) == "True" for r in rows):
+            raise Unreadable(f"{name} has {k}=True rows (a non-additive score); only additive scores are supported")
+    pid = header.get("pgs_id") or pgs_id_of(path)
+    trait = (label or header.get("trait_reported") or pid).replace("=", "-").replace("\n", " ")
+    out = os.path.join(out_dir, f"{pid}.txt.gz")
+    n = off = 0
+    with gzip.open(out + ".tmp", "wt", encoding="utf-8") as w:
+        w.write(f"#pgs_id={pid}\n#pgs_name={pid}\n#trait_reported={trait}\n#genome_build=GRCh38\n")
+        w.write("chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n")
+        for r in rows:
+            chrom, pos, ea, ew = get(r, "hm_chr"), get(r, "hm_pos"), get(r, "effect_allele").upper(), get(r, "effect_weight")
+            if not (chrom and pos and ea and ew):
+                continue   # a row the catalog could not place on GRCh38
+            chrom = chrom[3:] if chrom.startswith("chr") else chrom
+            if chrom not in AUTOSOMES:
+                off += 1   # chrX, chrY, MT: plink2 refuses chrX without the sample's sex
+                continue
+            oa = single_allele(get(r, "other_allele")) or single_allele(get(r, "hm_inferOtherAllele"))
+            w.write(f"{chrom}\t{pos}\t{ea}\t{oa}\t{ew}\n")
+            n += 1
+            alleles.append((f"chr{chrom}", pos, ea))
+            if oa:
+                alleles.append((f"chr{chrom}", pos, oa))
+    if n == 0:
+        os.remove(out + ".tmp")
+        raise Unreadable(f"{name} has no autosomal row with hm_chr, hm_pos, effect_allele and effect_weight")
+    os.replace(out + ".tmp", out)
+    return pid, n, off, alleles
+
+
+def prs_format_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py prs-format",
+                                 description="Write the scoring files as the custom GRCh38 files pgsc_calc reads.")
+    ap.add_argument("--scores", required=True, help="folder of GRCh38-harmonised PGS Catalog scoring files")
+    ap.add_argument("--ids", default="", help="comma-separated PGS ids to use (default: every file in --scores)")
+    ap.add_argument("--labels", help="assets/pgs_scores.tsv: the trait label of each id")
+    ap.add_argument("--out", required=True, help="folder for the files pgsc_calc reads")
+    ap.add_argument("--alleles", required=True,
+                    help="written: CHROM POS ALLELE of every effect and other allele, sorted and unique")
+    a = ap.parse_args(argv)
+    labels = read_labels(a.labels)
+    files = sorted(glob.glob(os.path.join(a.scores, "*.txt.gz")) + glob.glob(os.path.join(a.scores, "*.txt")))
+    if a.ids:
+        want = [x.strip() for x in a.ids.split(",") if x.strip()]
+        by_id = {pgs_id_of(p): p for p in files}
+        missing = [x for x in want if x not in by_id]
+        if missing:
+            print(f"ERROR: no scoring file for {', '.join(missing)} in {a.scores}", file=sys.stderr)
+            return 1
+        files = [by_id[x] for x in want]
+    if not files:
+        print(f"ERROR: no scoring file (*.txt.gz or *.txt) in {a.scores}", file=sys.stderr)
+        return 1
+    os.makedirs(a.out, exist_ok=True)
+    allele_set = set()
+    try:
+        for p in files:
+            pid, n, off, al = format_pgs(p, a.out, labels.get(pgs_id_of(p)))
+            allele_set.update(al)
+            dropped = f", {off} off the autosomes dropped" if off else ""
+            print(f"  {pid}: {n} GRCh38 rows{dropped} ({labels.get(pid) or 'label from the file'})")
+    except (Unreadable, OSError, EOFError, zlib.error) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+    def key(t):
+        return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
+    with open(a.alleles + ".tmp", "w") as w:
+        for t in sorted(allele_set, key=key):
+            w.write("\t".join(t) + "\n")
+    os.replace(a.alleles + ".tmp", a.alleles)
+    return 0
+
+
+def fmt_num(x):
+    """A number as pgsc_calc wrote it, without a trailing .0: 62.0 -> 62."""
+    try:
+        return f"{float(x):.10g}"
+    except (TypeError, ValueError):
+        return "NA"
+
+
+def read_gz_tsv(path):
+    with open_text(path) as f:
+        return list(csv.DictReader(f, delimiter="\t"))
+
+
+# pgscatalog-match's log line for a score under the minimum overlap.
+BELOW_RE = re.compile(r"Score (\S+) fails minimum matching threshold \(([0-9.]+)% variants match\)")
+
+
+def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, below_log=None):
+    """Rows of the summary table (PRS_COLUMNS) and the ancestry rows (key,
+    value), from pgsc_calc's output folder RESULTS for SAMPLESET. Totals and
+    labels come from the files prs-format wrote in SCORES_DIR. With
+    zero_matches (pgsc_calc stopped because no score variant is in the
+    sample's genotypes) every score is reported unmatched. With below_log
+    (pgsc_calc stopped because every score matched under its minimum
+    overlap, so it published no match summary) no score has a sum, the
+    matched count is unknown (NA), and the match rate is read from that log
+    when pgscatalog-match printed it."""
+    totals, labels = {}, {}
+    for p in sorted(glob.glob(os.path.join(scores_dir, "*.txt.gz"))):
+        pid, n = pgs_id_of(p), 0
+        with open_text(p) as f:
+            for line in f:
+                if line.startswith("#trait_reported="):
+                    labels[pid] = line.rstrip("\n").split("=", 1)[1]
+                elif not line.startswith("#"):
+                    n += 1
+        totals[pid] = n - 1   # minus the column header
+    if not totals:
+        raise Unreadable(f"no formatted scoring file in {scores_dir}")
+    matched, sums, pct, group = {}, {}, {}, {}
+    pops, rate = {}, {}
+    if below_log:
+        with open(below_log, errors="replace") as f:
+            for m in BELOW_RE.finditer(f.read()):
+                rate[pgs_id_of(m.group(1))] = f"{float(m.group(2)):.1f}"
+    elif not zero_matches:
+        summ = os.path.join(results, sampleset, "match", f"{sampleset}_summary.csv")
+        if not os.path.isfile(summ):
+            raise Unreadable(f"pgsc_calc wrote no match summary ({summ})")
+        with open(summ, newline="") as f:
+            for r in csv.DictReader(f):
+                pid = pgs_id_of(r.get("accession", ""))
+                if r.get("match_status") == "matched":
+                    matched[pid] = matched.get(pid, 0) + int(float(r.get("count") or 0))
+        score_dir = os.path.join(results, sampleset, "score")
+        adjusted = os.path.join(score_dir, f"{sampleset}_pgs.txt.gz")
+        plain = os.path.join(score_dir, "aggregated_scores.txt.gz")
+        src = adjusted if os.path.isfile(adjusted) else plain
+        if not os.path.isfile(src):
+            raise Unreadable(f"pgsc_calc wrote no scores ({plain})")
+        for r in read_gz_tsv(src):
+            if r.get("sampleset") != sampleset:
+                continue   # the reference panel's own samples
+            pid = pgs_id_of(r.get("PGS", ""))
+            sums[pid] = fmt_num(r.get("SUM"))
+            if r.get("percentile_MostSimilarPop") not in (None, ""):
+                v = fmt_num(r["percentile_MostSimilarPop"])
+                pct[pid] = "NA" if v == "NA" else f"{float(v):.1f}"
+        popsim = os.path.join(score_dir, f"{sampleset}_popsimilarity.txt.gz")
+        if os.path.isfile(popsim):
+            target = [r for r in read_gz_tsv(popsim)
+                      if r.get("sampleset") == sampleset and r.get("REFERENCE", "False") != "True"]
+            if len(target) != 1:
+                raise Unreadable(f"{os.path.basename(popsim)} has {len(target)} rows for {sampleset}, expected 1")
+            pops = target[0]
+            for pid in sums:
+                group[pid] = pops.get("MostSimilarPop") or "NA"
+    rows = []
+    for pid in sorted(totals):
+        m, t = matched.get(pid, 0), totals[pid]
+        if below_log:
+            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA", input_kind])
+            continue
+        rows.append([labels.get(pid, pid), pid, sums.get(pid, "NA"), str(m), str(t),
+                     f"{100 * m / t:.1f}" if t else "0.0", pct.get(pid, "NA"), group.get(pid, "NA"), input_kind])
+    ancestry = []
+    if pops:
+        pcs = sorted((k for k in pops if k.startswith("PC") and k[2:].isdigit()), key=lambda k: int(k[2:]))
+        ancestry.append(("population", pops.get("MostSimilarPop", "")))
+        ancestry.append(("population_low_confidence", pops.get("MostSimilarPop_LowConfidence", "")))
+        for k in sorted(k for k in pops if k.startswith("RF_P_")):
+            ancestry.append((f"probability_{k[5:]}", fmt_num(pops[k])))
+        for k in pcs:
+            ancestry.append((k, fmt_num(pops[k])))
+    return rows, ancestry
+
+
+def prs_table_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py prs-table",
+                                 description="Write step 25's summary (and step 26's ancestry) table from pgsc_calc's output.")
+    ap.add_argument("--sample", required=True)
+    ap.add_argument("--results", required=True, help="pgsc_calc's --outdir")
+    ap.add_argument("--sampleset", required=True, help="the sampleset name given to pgsc_calc")
+    ap.add_argument("--scores", required=True, help="the folder prs-format wrote")
+    ap.add_argument("--input-kind", required=True, choices=["gvcf", "vcf"],
+                    help="gvcf: the score positions were genotyped from the gVCF; vcf: variant sites only")
+    ap.add_argument("--panel", default="", help="name of the ancestry reference panel, when one was used")
+    ap.add_argument("--zero-matches", action="store_true",
+                    help="pgsc_calc stopped because no score variant is in the sample's genotypes")
+    ap.add_argument("--below-threshold", metavar="LOG",
+                    help="pgsc_calc stopped because every score matched under its minimum overlap; LOG is its console output")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--ancestry-out", help="written when pgsc_calc ran with the panel: PCs and population")
+    a = ap.parse_args(argv)
+    try:
+        rows, ancestry = prs_table(a.results, a.sampleset, a.scores, a.input_kind, a.zero_matches, a.below_threshold)
+    except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    with open(a.out + ".tmp", "w", encoding="utf-8") as f:
+        f.write("\t".join(PRS_COLUMNS) + "\n")
+        for r in rows:
+            f.write("\t".join(r) + "\n")
+    os.replace(a.out + ".tmp", a.out)
+    if a.ancestry_out and ancestry:
+        with open(a.ancestry_out + ".tmp", "w") as f:
+            f.write("key\tvalue\n")
+            for k, v in [("sample", a.sample), ("reference_panel", a.panel)] + ancestry:
+                f.write(f"{k}\t{v}\n")
+        os.replace(a.ancestry_out + ".tmp", a.ancestry_out)
+    for r in rows:
+        extra = f", percentile {r[6]} among {r[7]}" if r[6] != "NA" else ""
+        if r[3] == "NA":
+            print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
+        else:
+            print(f"  {r[0]} ({r[1]}): sum {r[2]}, {r[3]} of {r[4]} variants matched ({r[5]}%){extra}")
+    return 0
 
 
 def count_vcf(p):
@@ -741,7 +1056,7 @@ def collect(sample, sample_dir, declared_sex=None):
         "sections": sections,
         "cyp2d6": cyp2d6,
         "not_run": [sections[k]["title"] for k, *_ in SECTIONS if sections[k]["state"] == "missing"],
-        "not_assessed": NOT_ASSESSED,
+        "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
     }
     return summary
 
@@ -781,6 +1096,10 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["sample-qc"]:
         return sample_qc_main(argv[1:])
+    if argv[:1] == ["prs-format"]:
+        return prs_format_main(argv[1:])
+    if argv[:1] == ["prs-table"]:
+        return prs_table_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--sample-dir", required=True)

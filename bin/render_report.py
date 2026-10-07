@@ -48,6 +48,20 @@ def freemix_text(q):
     return f"{q['freemix']} (warning above {warn}{few})"
 
 
+def prs_note(d):
+    """The line under the PRS scores, in both reports: what the numbers can be compared with."""
+    if d.get("adjusted"):
+        anc = d.get("ancestry") or {}
+        group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
+        panel = f" of the {anc['panel']} reference panel" if anc.get("panel") else " of the reference panel"
+        low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
+        return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
+                f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
+                "A percentile is not a risk. See docs/25-prs.md.")
+    return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
+            "cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). See docs/25-prs.md.")
+
+
 # --- text ------------------------------------------------------------------------
 
 def text_report(s):
@@ -170,10 +184,12 @@ def text_report(s):
         w("")
 
     if head("prs", "Polygenic Risk Scores"):
-        for r in S["prs"]["data"]["scores"]:
-            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}")
-        w("  NOTE: Raw PRS scores are NOT interpretable without an ancestry-matched")
-        w("  reference panel; hom-ref sites are absent from the VCF. See docs/25-prs.md.")
+        d = S["prs"]["data"]
+        for r in d["scores"]:
+            pct = (f"  percentile {r['percentile']} ({r.get('group') or 'group unknown'})"
+                   if r.get("percentile") else "")
+            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
+        w("  " + prs_note(d))
         w("")
 
     if head("manta", "Structural Variants (Manta)"):
@@ -483,11 +499,14 @@ def html_report(s):
     a(card(S["slivar"], "Variant Prioritization (slivar)", sl_body))
 
     if S["prs"]["state"] in ("ok", "stale"):
+        d = S["prs"]["data"]
         rows = "".join(f"<tr><td>{E(x['condition'])}</td><td>{E(x['pgs_id'])}</td><td>{E(x['score'])}</td>"
-                       f"<td>{E(x['matched'])}/{E(x['total'])}</td></tr>\n" for x in S["prs"]["data"]["scores"])
-        a(card(S["prs"], "Polygenic Risk Scores (raw, not percentiles)",
-               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th></tr>",
-                rows.rstrip("\n"), "    </table>"], full=True))
+                       f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
+                       f"<td>{E(x['percentile'] + ' (' + (x.get('group') or 'group unknown') + ')') if x.get('percentile') else 'raw score only'}</td></tr>\n"
+                       for x in d["scores"])
+        a(card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
+               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
+                rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"

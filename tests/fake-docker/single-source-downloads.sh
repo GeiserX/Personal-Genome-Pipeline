@@ -5,7 +5,6 @@
 #     downloads the file;
 #   - a file whose checksum does not match is removed and the script fails;
 #   - the data directory and what setup.sh writes into it are private;
-#   - a lock left by a killed run does not block step 26;
 #   - step 13 installs the cache of the release versions.env names even when
 #     another release is present, and refuses a tarball with a wrong checksum;
 #   - step 32 refuses a pypgx bundle that is not the tag versions.env names.
@@ -56,20 +55,10 @@ REF_FASTA_MD5=00000000000000000000000000000000 run_rc setup-bad-ref "${SCRIPTS}/
 [ "$RC" -ne 0 ] || fail "setup.sh exited 0 although the reference did not match its recorded md5"
 [ ! -e "${G3}/reference/GRCh38_no_alt_analysis_set.fasta" ] || fail "a reference with a wrong md5 was kept"
 
-# --- 4. a lock left by a killed run -------------------------------------------------
+# --- 4. (step 26's stale-lock check moved out: step 26 no longer downloads;
+# tests/fake-docker/prs-step26.sh checks what it does now) ---------------------------
 export GENOME_DIR="$G"
 seed_sample "$G" sample1
-( : ) &
-dead=$!
-wait "$dead"
-mkdir -p "${G}/ancestry_ref/.download.lock"
-echo "$dead" > "${G}/ancestry_ref/.download.lock/pid"
-run_rc ancestry "${SCRIPTS}/26-ancestry.sh" sample1
-output_has ancestry 'Removing stale lock'
-[ -s "${G}/ancestry_ref/1kg_common_snps.vcf.gz" ] || fail "step 26 did not prepare the panel after taking over the stale lock"
-[ -f "${G}/ancestry_ref/1kg_common_snps.vcf.gz.tbi" ] || fail "step 26 left the panel without its index"
-[ ! -e "${G}/ancestry_ref/.download.lock" ] || fail "step 26 left its lock behind"
-[ ! -e "${G}/ancestry_ref/1kg_common_snps.part.vcf.gz" ] || fail "step 26 left the .part panel behind"
 
 # --- 5. VEP cache of the right release --------------------------------------------------
 # Only the CPSR cache is present; step 13 must still install its own release.

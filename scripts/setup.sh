@@ -8,10 +8,13 @@
 #        ./scripts/setup.sh --cyrius <genome_dir>
 #        ./scripts/setup.sh --parascopy-data <genome_dir>
 #        ./scripts/setup.sh --kir-data <genome_dir>
+#        ./scripts/setup.sh --ancestry-panel <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models (step 35),
-#                                            IPD-KIR (step 08 with KIR=true)
+#                                            IPD-KIR (step 08 with KIR=true),
+#                                            pgsc_calc's ancestry panel (step 26,
+#                                            and percentiles in step 25)
 #
 # This script downloads everything needed to run the pipeline:
 #   1. GRCh38 reference genome + index: NCBI's GRCh38 no-ALT analysis set
@@ -23,6 +26,9 @@
 #      GENCODE gene coordinates T1K needs (~350 MB), and somalier's sites and
 #      VerifyBamID2's marker panel for step 33 (~10 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
+#   6. Step 25: the PGS Catalog scores of assets/pgs_scores.tsv (~400 MB), a
+#      checkout of pgsc_calc and the Nextflow plugin it needs, so step 25 and
+#      the PRS process run without the network
 #
 # VEP cache (~26 GB) and PCGR ref data (~7 GB) are downloaded separately
 # because they are only needed for specific steps and take a long time.
@@ -44,7 +50,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -69,7 +75,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -84,6 +90,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --parascopy-data"
   echo "                Install Parascopy's GRCh38 homology table and models (step 35, ~50 MB) and exit."
   echo "  --kir-data    Install the IPD-KIR ${KIR_DB_RELEASE:-} database (KIR=true in step 08, ~40 MB) and exit."
+  echo "  --ancestry-panel"
+  echo "                Install pgsc_calc's ancestry reference panel ${PGSC_PANEL:-} (~7 GB download): step 26, and"
+  echo "                percentiles instead of raw scores in step 25; then exit."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -234,7 +243,145 @@ install_kir_data() {
   echo "[OK] IPD-KIR ${KIR_DB_RELEASE} (step 08, KIR=true): ${dest}"
 }
 
+# --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------
+PGS_BASE_URL=${PGS_BASE_URL:-https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores}
+PGSC_RESOURCES=https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources
+
+# install_pgsc_calc DIR: GitHub's archive of pgsc_calc PGSC_CALC_VERSION,
+# checked against PGSC_CALC_SHA256, unpacked into DIR. Step 25 holds the same.
+install_pgsc_calc() {
+  local dir=$1 tgz="${1}.tar.gz"
+  fetch "https://github.com/PGScatalog/pgsc_calc/archive/refs/tags/${PGSC_CALC_VERSION}.tar.gz" "$tgz" \
+      sha256 "$PGSC_CALC_SHA256" || return 1
+  rm -rf "${dir}.part"
+  mkdir -p "${dir}.part"
+  tar -xzf "$tgz" -C "${dir}.part" --strip-components 1 || { rm -rf "${dir}.part"; return 1; }
+  rm -f "$tgz"
+  # An incomplete folder left by an earlier run would receive the new one inside it.
+  rm -rf "$dir"
+  mv "${dir}.part" "$dir"
+}
+
+# install_prs: the GRCh38-harmonised file of every score in
+# assets/pgs_scores.tsv (each checked against the md5 the PGS Catalog
+# publishes beside it), pgsc_calc PGSC_CALC_VERSION in tools/, and the
+# nf-schema plugin its nextflow.config names. With them
+# step 25 and the PRS process need no network. A failure is a warning: step
+# 25 fetches what is missing the first time it runs.
+install_prs() {
+  local id url dest rc=0 calc="${GENOME_DIR}/tools/pgsc_calc-${PGSC_CALC_VERSION}"
+  while read -r id; do
+    dest="${GENOME_DIR}/prs_scores/${id}.txt.gz"
+    [ -s "$dest" ] && continue
+    url="${PGS_BASE_URL}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
+    if ! fetch "$url" "$dest" md5 "${url}.md5"; then
+      echo "[WARN] Could not download ${id} (step 25 tries again when it runs): ${url}"
+      rc=1
+    fi
+  done < <(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${PGP_ROOT}/assets/pgs_scores.tsv")
+  [ "$rc" -eq 0 ] && echo "[OK] PGS Catalog scores (step 25): ${GENOME_DIR}/prs_scores/"
+  if [ -f "${calc}/main.nf" ]; then
+    echo "[OK] pgsc_calc ${PGSC_CALC_VERSION} (step 25) already present."
+  elif install_pgsc_calc "$calc"; then
+    echo "[OK] pgsc_calc ${PGSC_CALC_VERSION} (step 25): ${calc}"
+  else
+    echo "[WARN] Could not fetch pgsc_calc ${PGSC_CALC_VERSION}; step 25 tries again when it runs."
+  fi
+  if ! command -v nextflow >/dev/null 2>&1; then
+    echo "[WARN] Nextflow is not installed: run-all.sh and step 25 need it (docs/nextflow.md)."
+  elif [ -d "${NXF_HOME:-${HOME}/.nextflow}/plugins/nf-schema-${PGSC_CALC_NF_SCHEMA}" ]; then
+    echo "[OK] Nextflow plugin nf-schema ${PGSC_CALC_NF_SCHEMA} (pgsc_calc) already present."
+  elif nextflow plugin install "nf-schema@${PGSC_CALC_NF_SCHEMA}" >/dev/null; then
+    echo "[OK] Nextflow plugin nf-schema ${PGSC_CALC_NF_SCHEMA} (pgsc_calc)."
+  else
+    echo "[WARN] Could not install the nf-schema ${PGSC_CALC_NF_SCHEMA} plugin; step 25 tries again when it runs."
+  fi
+  return 0
+}
+
+# install_ancestry_panel: pgsc_calc's reference panel (PGSC_PANEL, the 1000
+# Genomes database; ANCESTRY_PANEL_NAME picks another file of the PGS
+# Catalog's resources folder, the tests use its small synthetic one), checked
+# against the md5 that folder lists, and beside it the panel's common GRCh38
+# biallelic SNVs (chrN, position, REF, ALT), from the panel's own genotypes:
+# step 25 genotypes them from the gVCF, so the projection counts the sites
+# where the sample matches the reference.
+install_ancestry_panel() {
+  local name=${ANCESTRY_PANEL_NAME:-$PGSC_PANEL} dir="${GENOME_DIR}/reference/pgsc_calc" panel sites
+  panel="${dir}/${name}.tar.zst"
+  sites="${dir}/${name}_GRCh38_sites.tsv"
+  if [ -s "$panel" ] && [ -s "$sites" ]; then
+    echo "[OK] ancestry panel ${name} (steps 25 and 26) already present."
+    return 0
+  fi
+  [ -s "$panel" ] || echo "Downloading pgsc_calc's ancestry panel ${name} (the 1000 Genomes panel is about 7 GB; an interrupted download resumes)..."
+  # fetch stores a download only once its md5 matches, so a panel that is there is whole.
+  if [ ! -s "$panel" ] && ! fetch "${PGSC_RESOURCES}/${name}.tar.zst" "$panel" md5 "${PGSC_RESOURCES}/md5s.txt"; then
+    echo "[WARN] Could not download the ancestry panel; run: $0 --ancestry-panel ${GENOME_DIR}"
+    return 1
+  fi
+  # Only the SNVs pgsc_calc can use for the projection: its FILTER_VARIANTS
+  # keeps biallelic ACGT SNVs on the autosomes with a panel frequency of 5%
+  # or more (its maf_ref). The whole GRCh38 table holds about 62 million
+  # SNVs; genotyping all of them from a gVCF would take step 25 hours.
+  echo "  Listing the panel's common GRCh38 SNVs (plink2 on the panel's genotypes)..."
+  local tmp="${dir}/.${name}.sites.tmp" prefix
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+  # shellcheck disable=SC2016  # $1 and $2 belong to the inner sh
+  if ! run_in --rw "$dir" "$PGSC_ZSTD_IMAGE" sh -c 'cd "$2" && tar -xf "$1" --wildcards "GRCh38_*_ALL.pgen" "GRCh38_*_ALL.psam" "GRCh38_*_ALL.pvar.zst"' \
+      _ "$(cpath "$panel")" "$(cpath "$tmp")"; then
+    rm -rf "$tmp"
+    echo "[WARN] Could not unpack the GRCh38 genotypes of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
+    return 1
+  fi
+  prefix=$(find "$tmp" -maxdepth 1 -name 'GRCh38_*_ALL.pgen' | head -1)
+  prefix=${prefix%.pgen}
+  # One chromosome at a time: plink2 then loads a 22nd of the panel's variant
+  # table (the whole table, 61.6 million variants, did not fit a 16 GB runner).
+  # --allow-extra-chr: the panel names contigs plink2 does not know, as
+  # pgsc_calc's own plink2 calls on it allow.
+  # plink2 still indexes the whole table: 4 GB of workspace ran out of memory
+  # even for chromosome 1. 8 GB, the most pgsc_calc's own call on the panel
+  # gets here, or three quarters of a smaller machine's RAM.
+  local c ok=true mem_mb
+  if [ -r /proc/meminfo ]; then
+    mem_mb=$(awk '/^MemTotal:/ {print int($2 * 3 / 4 / 1024)}' /proc/meminfo)
+  else
+    mem_mb=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 17179869184) * 3 / 4 / 1048576 ))
+  fi
+  [ "$mem_mb" -le 8000 ] || mem_mb=8000
+  [ -n "$prefix" ] || ok=false
+  for c in $(seq 1 22); do
+    $ok || break
+    # A panel without a common SNV on a chromosome ("No variants remaining") is not an error.
+    if ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --pfile "$(cpath "$prefix")" vzs --chr "$c" \
+          --allow-extra-chr --snps-only just-acgt --max-alleles 2 --maf 0.05 \
+          --make-just-pvar --threads "$THREADS" --memory "$mem_mb" --out "$(cpath "${tmp}/common_${c}")" > "${tmp}/plink2.log" 2>&1 \
+       && ! grep -q 'No variants remaining' "${tmp}/plink2.log"; then
+      head -n 40 "${tmp}/plink2.log"
+      ok=false
+    fi
+  done
+  if ! $ok || ! awk -F'\t' -v OFS='\t' '
+          /^##/ { next }
+          /^#/ { for (i = 1; i <= NF; i++) c[$i] = i; next }
+          {
+            chr = $c["#CHROM"]; sub(/^chr/, "", chr)
+            r = $c["REF"]; a = $c["ALT"]
+            if (r ~ /^[ACGT]$/ && a ~ /^[ACGT]$/) print "chr" chr, $c["POS"], r, a
+          }' "${tmp}"/common_*.pvar | LC_ALL=C sort -u -k1,1 -k2,2n -k3,3 -k4,4 > "${sites}.part" || [ ! -s "${sites}.part" ]; then
+    rm -rf "$tmp" "${sites}.part"
+    echo "[WARN] Could not list the common GRCh38 SNVs of ${panel}; run: $0 --ancestry-panel ${GENOME_DIR}"
+    return 1
+  fi
+  rm -rf "$tmp"
+  mv "${sites}.part" "$sites"
+  echo "[OK] ancestry panel ${name} (steps 25 and 26): ${panel} ($(wc -l < "$sites" | tr -d ' ') common GRCh38 SNVs in ${sites##*/})"
+}
+
 case "$OPT_IN" in
+  ancestry-panel) install_ancestry_panel; exit $? ;;
   cyrius) install_cyrius; exit $? ;;
   parascopy-data) install_parascopy_data; exit $? ;;
   kir-data) install_kir_data; exit $? ;;
@@ -558,6 +705,8 @@ for name in $DATA_FILES; do
 done
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
+# Step 25: its scores, pgsc_calc and its plugin (warnings only).
+install_prs
 
 ###############################################################################
 # Phase 5: AnnotSV annotation data (step 5, a default step)

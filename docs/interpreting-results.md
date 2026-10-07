@@ -629,9 +629,11 @@ One SMN1 copy suggests SMA carrier status; two do not rule it out (two copies on
 
 ## Polygenic Risk Scores (Step 25)
 
-**Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one raw score per condition.
+**Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one row per condition, and the PRS section of the report.
 
-These raw sums are not percentiles, probabilities or comparable between conditions, and the pipeline ships no reference population to turn them into percentiles. They are also biased low or high because the VCF leaves out the sites where you match the reference ([step 25](25-prs.md#interpreting-results) explains why). Treat them as exploratory. The Alzheimer's score includes APOE: read [Before you look](#before-you-look-what-the-pipeline-can-tell-you) first.
+With the ancestry panel installed (`scripts/setup.sh --ancestry-panel`), each score has a **Percentile** and an **Ancestry_Group**: the 80th percentile means your score is higher than 80% of the reference samples whose genetic ancestry is most similar to yours (step 26 names that group). A percentile is still not a probability: most people at a high percentile never get the condition, and lifestyle and family history often weigh more. Percentiles of different conditions are not comparable either.
+
+Without the panel the report says "Raw score only": the sum cannot be compared with anyone, so read nothing into its size. A score with `NA` as its sum matched under 75% of its variants and was not scored; `Matched_Pct` says how many. When `Input` is `vcf` (no gVCF), the sums leave out the sites where you match the reference ([step 25](25-prs.md#interpreting-results) explains why). The Alzheimer's score includes APOE: read [Before you look](#before-you-look-what-the-pipeline-can-tell-you) first.
 
 ## Reports (Steps 24 and 28)
 
