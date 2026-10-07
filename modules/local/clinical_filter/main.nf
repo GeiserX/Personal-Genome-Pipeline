@@ -4,7 +4,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Produces a small VCF of PASS variants that are:
       - Rare (MAX_AF < 1%, else gnomADe_AF and gnomADg_AF) AND HIGH/MODERATE VEP impact
-      - OR ClinVar pathogenic/likely pathogenic (VEP's CLIN_SIG; any frequency)
+      - OR ClinVar pathogenic/likely pathogenic, any frequency: ClinVar_CLNSIG
+        (the --clinvar file through VEP --custom), else the cache's CLIN_SIG
       - OR rare with a high CADD score (>= 20) outside HIGH/MODERATE
       - OR rare with a high SpliceAI delta score (>= 0.2), any gene of the value
       - OR rare with REVEL >= 0.644 or AlphaMissense >= 0.564
@@ -87,8 +88,19 @@ process CLINICAL_FILTER {
     MERGE_FILES="${meta.id}_high_impact.vcf.gz ${meta.id}_rare_moderate.vcf.gz"
 
     # --- Filter 3: ClinVar pathogenic/likely pathogenic, any frequency ---
-    # VEP's CLIN_SIG comes from its cache release, not from --clinvar.
-    if grep -qx CLIN_SIG csq_fields.txt; then
+    # ClinVar_CLNSIG is the --clinvar file VEP annotated with --custom, so it
+    # follows a ClinVar refresh; CLIN_SIG comes from the cache release and is
+    # the fallback.
+    if grep -qx ClinVar_CLNSIG csq_fields.txt; then
+        echo "ClinVar tier: ClinVar_CLNSIG (the --clinvar file, through VEP --custom)" >&2
+        bcftools view -f PASS ${vcf} | \\
+            bcftools +split-vep - -c ClinVar_CLNSIG \\
+                -i 'ClinVar_CLNSIG~"athogenic" && ClinVar_CLNSIG!~"onflicting"' \\
+                -Oz -o ${meta.id}_clinvar_pathogenic.vcf.gz
+        bcftools index -t ${meta.id}_clinvar_pathogenic.vcf.gz
+        MERGE_FILES="\${MERGE_FILES} ${meta.id}_clinvar_pathogenic.vcf.gz"
+    elif grep -qx CLIN_SIG csq_fields.txt; then
+        echo "ClinVar tier: VEP's cached CLIN_SIG (add clinvar with --clinvar for the current file)" >&2
         bcftools view -f PASS ${vcf} | \\
             bcftools +split-vep - -c CLIN_SIG \\
                 -i 'CLIN_SIG~"pathogenic" && CLIN_SIG!~"conflicting"' \\

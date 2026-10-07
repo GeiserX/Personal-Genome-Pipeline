@@ -38,6 +38,8 @@ workflow ANNOTATION {
     ch_alphamissense      // channel: path — AlphaMissense file or []
     ch_alphamissense_index // channel: path — AlphaMissense index or []
     ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or []
+    ch_clinvar            // channel: path — the ClinVar VCF the screen reads (--clinvar) or []
+    ch_clinvar_index      // channel: path — its index or []
 
     main:
     ch_versions = Channel.empty()
@@ -48,7 +50,9 @@ workflow ANNOTATION {
 
     //
     // STEP 1: VEP — Ensembl Variant Effect Predictor
-    // Adds consequence, SIFT, PolyPhen, gnomAD AF, ClinVar, regulatory annotations
+    // Adds consequence, SIFT, PolyPhen, gnomAD AF, ClinVar, regulatory annotations;
+    // with --clinvar also that file's CLNSIG as ClinVar_CLNSIG (VEP --custom),
+    // which CLINICAL_FILTER's ClinVar tier reads before the cache's CLIN_SIG
     //
     ch_vep_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vep')) {
@@ -56,7 +60,9 @@ workflow ANNOTATION {
             ch_current_vcf,
             ch_reference,
             ch_reference_fai,
-            ch_vep_cache
+            ch_vep_cache,
+            ch_clinvar,
+            ch_clinvar_index
         )
         ch_versions = ch_versions.mix(VEP.out.versions)
         ch_vep_vcf  = VEP.out.vcf
