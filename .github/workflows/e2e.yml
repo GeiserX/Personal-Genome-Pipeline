@@ -162,9 +162,12 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Three dots: what the branch changed since it left main, as a paths
+        # filter sees it, whatever main did meanwhile.
         run: |
           if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          git diff --name-only "$BASE" HEAD > "${RUNNER_TEMP}/changed.txt"
+          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
           cat "${RUNNER_TEMP}/changed.txt"
           if grep -qE '^(scripts|modules|workflows|bin|conf|assets|tests/e2e)/|^(tests/fixtures/VERSION|main\.nf|nextflow\.config|versions\.env|\.github/workflows/e2e\.yml)$' "${RUNNER_TEMP}/changed.txt"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
