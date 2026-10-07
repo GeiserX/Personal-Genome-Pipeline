@@ -262,9 +262,10 @@ _get() {
 # `gzip -t` for a .gz file, else non-empty. A failed check deletes DEST.part
 # and returns 1, so the next run downloads it again.
 #
-# A failed download is tried FETCH_TRIES times (default 3), FETCH_WAIT seconds
-# apart (default 5, then 10, ...). A larger FETCH_TRIES and FETCH_WAIT wait out
-# a server that answers 404 for minutes at a time and then comes back.
+# A failed download, of the file or of its CHECKSUM_URL, is tried FETCH_TRIES
+# times (default 3), FETCH_WAIT seconds apart (default 5, then 10, ...). A
+# larger FETCH_TRIES and FETCH_WAIT wait out a server that answers 404 for
+# minutes at a time and then comes back.
 fetch() {
   local url=$1 dest=$2 kind=${3:-} want=${4:-} part="${2}.part" name got line i ok=false
   local tries=${FETCH_TRIES:-3} wait=${FETCH_WAIT:-}
@@ -275,11 +276,17 @@ fetch() {
   if [ -n "$kind" ]; then
     case "$want" in
       http://*|https://*|ftp://*|file://*)
-        if ! line=$(_get "$want" - | awk -v n="$name" '
-              NF { lines++; first = $1; f = $NF; sub(/.*\//, "", f); if (f == n) hit = $1 }
-              END { if (lines == 1) print first; else if (hit != "") print hit }'); then
+        # A read that worked but names no checksum is not retried.
+        for ((i = 1; i <= tries; i++)); do
+          if line=$(_get "$want" - | awk -v n="$name" '
+                NF { lines++; first = $1; f = $NF; sub(/.*\//, "", f); if (f == n) hit = $1 }
+                END { if (lines == 1) print first; else if (hit != "") print hit }'); then
+            break
+          fi
           line=""
-        fi
+          echo "  Checksum download attempt ${i}/${tries} failed: ${want}" >&2
+          [ "$i" -lt "$tries" ] && sleep "${wait:-$((i * 5))}"
+        done
         if [ -z "$line" ]; then
           echo "ERROR: could not read the checksum of ${name} from ${want}" >&2
           return 1
