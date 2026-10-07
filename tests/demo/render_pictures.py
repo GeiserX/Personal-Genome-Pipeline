@@ -74,6 +74,12 @@ def html_pictures(sample_dir, out, stop_titles):
         page = browser.new_page(viewport={"width": 1600, "height": 1118}, device_scale_factor=1)
         page.goto("file://" + os.path.abspath(multiqc))
         page.wait_for_load_state("networkidle")
+        # A browser that never opened a MultiQC report gets a "Welcome!" bar
+        # over the top of it: close it, as a returning reader would see it.
+        try:
+            page.get_by_text("don't show again").click(timeout=3000)
+        except Exception:   # no bar in this MultiQC version
+            pass
         page.wait_for_timeout(3000)   # the plots draw after load
         path = os.path.join(out, "demo-multiqc-report.png")
         page.screenshot(path=path)
