@@ -112,7 +112,7 @@ User's FASTQ/BAM/VCF
 - Opt out at the call, with the reason in a comment: `--rw DIR` (shared index or database), `--net` (the step downloads), `--root` (the image cannot run unprivileged)
 - Images come from `versions.env` as quoted variables; a script never spells an image name or tag
 - Reference: `${REF_FASTA}` on the host, `${REF_FASTA_C}` inside a container; never spell the reference file name in a step script
-- Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`
+- Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`; it tries 3 times, or `FETCH_TRIES` times `FETCH_WAIT` seconds apart
 - Validate all input files exist before running Docker commands
 - Print clear status messages: step name, input files, output location
 

@@ -4,6 +4,10 @@
 # with the chr20 slice keeps each set's benchmark regions inside the slice.
 . "$(dirname "$0")/lib.sh"
 
+# NCBI's GIAB folder has answered 404 for several minutes at a time and then
+# come back (2026-10-07); fetch waits out up to 14 minutes per file.
+export FETCH_TRIES=15 FETCH_WAIT=60
+
 SLICE="${GENOME_DIR}/giab-slice-chr20.bed"
 printf 'chr20\t10000000\t10500000\n' > "$SLICE"
 for set in v4.2.1 v5.0q; do

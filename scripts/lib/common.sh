@@ -261,8 +261,16 @@ _get() {
 # the file at CHECKSUM_URL: its only line, or the line naming URL's file), else
 # `gzip -t` for a .gz file, else non-empty. A failed check deletes DEST.part
 # and returns 1, so the next run downloads it again.
+#
+# A failed download is tried FETCH_TRIES times (default 3), FETCH_WAIT seconds
+# apart (default 5, then 10, ...). A larger FETCH_TRIES and FETCH_WAIT wait out
+# a server that answers 404 for minutes at a time and then comes back.
 fetch() {
   local url=$1 dest=$2 kind=${3:-} want=${4:-} part="${2}.part" name got line i ok=false
+  local tries=${FETCH_TRIES:-3} wait=${FETCH_WAIT:-}
+  case "$tries" in ''|*[!0-9]*) tries=0 ;; *) tries=$((10#$tries)) ;; esac
+  [ "$tries" -gt 0 ] || { echo "ERROR: FETCH_TRIES must be a whole number above 0, got '${FETCH_TRIES}'" >&2; return 1; }
+  case "$wait" in *[!0-9]*) echo "ERROR: FETCH_WAIT must be a whole number of seconds, got '${wait}'" >&2; return 1 ;; esac
   name=$(basename "$url")
   if [ -n "$kind" ]; then
     case "$want" in
@@ -280,10 +288,10 @@ fetch() {
     esac
   fi
   mkdir -p "$(dirname "$dest")"
-  for i in 1 2 3; do
+  for ((i = 1; i <= tries; i++)); do
     if _get "$url" "$part"; then ok=true; break; fi
-    echo "  Download attempt ${i}/3 failed: ${url}" >&2
-    [ "$i" -lt 3 ] && sleep $((i * 5))
+    echo "  Download attempt ${i}/${tries} failed: ${url}" >&2
+    [ "$i" -lt "$tries" ] && sleep "${wait:-$((i * 5))}"
   done
   if ! $ok; then
     echo "ERROR: could not download ${url} (the partial file ${part} is kept and resumed next time)" >&2
