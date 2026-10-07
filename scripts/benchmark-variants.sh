@@ -306,23 +306,27 @@ if [ -n "$TRUTH_VCF" ]; then
     fi
 
     # Extract SNP and INDEL metrics from summary.csv
-    # Columns: Type,Filter,TRUTH.TOTAL,TRUTH.TP,TRUTH.FN,QUERY.TOTAL,QUERY.FP,QUERY.UNK,FP.gt,METRIC.Recall,METRIC.Precision,METRIC.Frac_NA,METRIC.F1_Score
-    SNP_LINE=$(awk -F',' '$1=="SNP" && $2=="PASS"' "$HAPPY_CSV" || true)
-    INDEL_LINE=$(awk -F',' '$1=="INDEL" && $2=="PASS"' "$HAPPY_CSV" || true)
+    # The columns are read by their header names: hap.py 0.3.12 writes FP.al
+    # after FP.gt, so fixed positions (an older layout) read FP.al as the
+    # recall and the recall as the precision.
+    # happy_metric TYPE COLUMN: COLUMN of the PASS row of TYPE (SNP or INDEL).
+    happy_metric() {
+      awk -F',' -v t="$1" -v c="$2" 'NR == 1 {for (i = 1; i <= NF; i++) if ($i == c) k = i; next}
+        k && $1 == t && $2 == "PASS" {print $k; exit}' "$HAPPY_CSV"
+    }
+    SNP_TP=$(happy_metric SNP TRUTH.TP)
+    SNP_FP=$(happy_metric SNP QUERY.FP)
+    SNP_FN=$(happy_metric SNP TRUTH.FN)
+    SNP_PREC=$(happy_metric SNP METRIC.Precision)
+    SNP_RECALL=$(happy_metric SNP METRIC.Recall)
+    SNP_F1=$(happy_metric SNP METRIC.F1_Score)
 
-    SNP_TP=$(echo "$SNP_LINE" | awk -F',' '{print $4}')
-    SNP_FP=$(echo "$SNP_LINE" | awk -F',' '{print $7}')
-    SNP_FN=$(echo "$SNP_LINE" | awk -F',' '{print $5}')
-    SNP_PREC=$(echo "$SNP_LINE" | awk -F',' '{print $11}')
-    SNP_RECALL=$(echo "$SNP_LINE" | awk -F',' '{print $10}')
-    SNP_F1=$(echo "$SNP_LINE" | awk -F',' '{print $13}')
-
-    INDEL_TP=$(echo "$INDEL_LINE" | awk -F',' '{print $4}')
-    INDEL_FP=$(echo "$INDEL_LINE" | awk -F',' '{print $7}')
-    INDEL_FN=$(echo "$INDEL_LINE" | awk -F',' '{print $5}')
-    INDEL_PREC=$(echo "$INDEL_LINE" | awk -F',' '{print $11}')
-    INDEL_RECALL=$(echo "$INDEL_LINE" | awk -F',' '{print $10}')
-    INDEL_F1=$(echo "$INDEL_LINE" | awk -F',' '{print $13}')
+    INDEL_TP=$(happy_metric INDEL TRUTH.TP)
+    INDEL_FP=$(happy_metric INDEL QUERY.FP)
+    INDEL_FN=$(happy_metric INDEL TRUTH.FN)
+    INDEL_PREC=$(happy_metric INDEL METRIC.Precision)
+    INDEL_RECALL=$(happy_metric INDEL METRIC.Recall)
+    INDEL_F1=$(happy_metric INDEL METRIC.F1_Score)
 
     # Default empty fields to N/A
     for var in SNP_TP SNP_FP SNP_FN SNP_PREC SNP_RECALL SNP_F1 \
