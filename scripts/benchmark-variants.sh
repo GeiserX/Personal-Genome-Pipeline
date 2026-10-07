@@ -85,7 +85,7 @@ if [ -n "$GIAB" ]; then
     mkdir -p "$(dirname "$CUT")"
     awk 'BEGIN {OFS = "\t"} FNR == NR { if ($0 !~ /^(#|track|browser)/ && NF >= 3) { n[$1]++; s[$1, n[$1]] = $2 + 0; e[$1, n[$1]] = $3 + 0 }; next }
       { for (i = 1; i <= n[$1]; i++) { a = ($2 + 0 > s[$1, i] ? $2 + 0 : s[$1, i]); b = ($3 + 0 < e[$1, i] ? $3 + 0 : e[$1, i]); if (a < b) print $1, a, b } }' \
-      "$REGIONS_BED" "$SET_BED" | sort -k1,1 -k2,2n > "$CUT"
+      <(gzip -cdf -- "$REGIONS_BED") "$SET_BED" | sort -k1,1 -k2,2n > "$CUT"
     if [ ! -s "$CUT" ]; then
       echo "ERROR: no ${GIAB} benchmark region lies inside ${REGIONS_BED}." >&2
       exit 1
@@ -271,7 +271,8 @@ if [ -n "$TRUTH_VCF" ]; then
     REGIONS_FLAG="-f ${REGIONS_CONTAINER_PATH}"
     # hap.py compares chr1-22, chrX and chrY unless told otherwise, and stops
     # on one the reference lacks: give it the contigs of the regions BED.
-    LOCATIONS=$(awk '$0 !~ /^(#|track|browser)/ && NF >= 3 {print $1}' "$REGIONS_BED" | awk '!seen[$0]++' | paste -sd, -)
+    # gzip -cdf reads a .bed.gz and passes a plain BED through.
+    LOCATIONS=$(gzip -cdf -- "$REGIONS_BED" | awk '$0 !~ /^(#|track|browser)/ && NF >= 3 {print $1}' | awk '!seen[$0]++' | paste -sd, -)
     [ -z "$LOCATIONS" ] || REGIONS_FLAG="${REGIONS_FLAG} -l ${LOCATIONS}"
   fi
 
