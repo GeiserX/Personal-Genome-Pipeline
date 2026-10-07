@@ -83,6 +83,22 @@ def predict(argv):
     multiprocessing.Pool = SerialPool
     yleaf_constants = use_data(a.data)
     yleaf_constants.HG38_FULL_GENOME = Path(a.reference)
+    if Path(a.pileup).stat().st_size == 0:
+        # No read at any marker: Yleaf's pandas read of an empty pileup fails
+        # before it predicts, so write the prediction it gives for too few
+        # markers (Hg NA) here, with the BAM's mapped reads from idxstats.
+        reads = 0
+        with open(a.idxstats) as f:
+            for line in f:
+                cols = line.split("\t")
+                if len(cols) > 2 and cols[2].strip().isdigit():
+                    reads += int(cols[2])
+        Path(a.out).mkdir(parents=True, exist_ok=True)
+        (Path(a.out) / "hg_prediction.hg").write_text(
+            "Sample_name\tHg\tHg_marker\tTotal_reads\tValid_markers\tQC-score\tQC-1\tQC-2\tQC-3\n"
+            f"{Path(a.bam).name.rsplit('.', 1)[0]}\tNA\t\t{reads}\t0\tNA\tNA\tNA\tNA\n")
+        print("No read at any Y marker: Hg NA (insufficient markers)")
+        return
     from yleaf import Yleaf
 
     def serve(cmd, stdout_location=None):

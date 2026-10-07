@@ -269,6 +269,10 @@ if [ -n "$TRUTH_VCF" ]; then
   if [ -n "$REGIONS_BED" ]; then
     REGIONS_CONTAINER_PATH="${REGIONS_BED/#$GENOME_DIR//genome}"
     REGIONS_FLAG="-f ${REGIONS_CONTAINER_PATH}"
+    # hap.py compares chr1-22, chrX and chrY unless told otherwise, and stops
+    # on one the reference lacks: give it the contigs of the regions BED.
+    LOCATIONS=$(awk '$0 !~ /^(#|track|browser)/ && NF >= 3 {print $1}' "$REGIONS_BED" | awk '!seen[$0]++' | paste -sd, -)
+    [ -z "$LOCATIONS" ] || REGIONS_FLAG="${REGIONS_FLAG} -l ${LOCATIONS}"
   fi
 
   for i in $(seq 0 $((NUM_CALLERS - 1))); do

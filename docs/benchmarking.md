@@ -125,6 +125,8 @@ printf 'chr20\t0\t64444167\n' > "${GENOME_DIR}/chr20.bed"
 ./scripts/benchmark-variants.sh HG002 --giab v5.0q --regions "${GENOME_DIR}/chr20.bed"
 ```
 
+With a regions BED (`--regions`, or the set's own), hap.py compares only the contigs that BED names (`-l`); without it hap.py takes chr1-22, chrX and chrY and stops on a contig the reference lacks.
+
 v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture.
 
 ### Download HG002 Truth Set by hand

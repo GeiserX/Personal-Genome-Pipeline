@@ -50,5 +50,9 @@ run_step 22-survivor-merge.sh "$T"
 check_step_exit 22-survivor-merge.sh
 check "the log says GRIDSS is left out" has 'gridss: left out' "$(cat "$STEP_LOG")"
 check_eq "consensus records with a GRIDSS VCF beside the others" "$(vcf_count "$VCF")" 1
+# The GRIDSS copy matches the Manta call, so had it been merged the support would change.
+WITH=$(bcf query -f '%POS\t%INFO/SUPP\t%INFO/SUPP_VEC\n' "$VCF" 2>/dev/null | awk -F'\t' '$1 >= 10100999 && $1 <= 10101001')
+check_eq "support with a GRIDSS VCF beside the others" "$(cut -f2 <<<"$WITH")" 2
+check_eq "callers with a GRIDSS VCF beside the others" "$(cut -f3 <<<"$WITH")" 110
 
 finish
