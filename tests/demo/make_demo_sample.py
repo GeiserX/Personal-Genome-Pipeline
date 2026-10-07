@@ -380,17 +380,16 @@ def coverage(d, rng):
 def sample_qc(d):
     """somalier and VerifyBamID2 files, then step 33's own table writer.
 
-    MultiQC's somalier "Sex" column is original_pedigree_sex, the sex of a
-    pedigree file. Step 33 gives somalier none, so a real run leaves it -9
-    (unknown) while the HTML report shows the inferred sex. Here it is the
-    declared sex, so the MultiQC picture and the report card agree."""
+    sex is the sex somalier infers from the reads. original_pedigree_sex
+    stays -9 (unknown), as in a real run: step 33 gives somalier no pedigree
+    file, so MultiQC's somalier "Sex" column (that pedigree sex) reads -9."""
     q = os.path.join(d, "qc")
     sex = 1 if SEX == "male" else 2
     put(os.path.join(q, "somalier", f"{SAMPLE}.samples.tsv"),
         "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\tgt_depth_mean\t"
         "gt_depth_sd\tdepth_mean\tdepth_sd\tab_mean\tab_std\tn_hom_ref\tn_het\tn_hom_alt\tn_unknown\tp_middling_ab\t"
         "X_depth_mean\tX_n\tX_hom_ref\tX_het\tX_hom_alt\tY_depth_mean\tY_n\n"
-        f"{SAMPLE}\t{SAMPLE}\t-9\t-9\t{sex}\t-9\t{sex}\t31.4\t7.2\t31.4\t7.2\t0.41\t0.08\t9817\t6904\t4383\t196\t0.01\t"
+        f"{SAMPLE}\t{SAMPLE}\t-9\t-9\t{sex}\t-9\t-9\t31.4\t7.2\t31.4\t7.2\t0.41\t0.08\t9817\t6904\t4383\t196\t0.01\t"
         "15.6\t612\t352\t4\t256\t14.9\t41\n")
     put(os.path.join(q, "somalier", f"{SAMPLE}.pairs.tsv"),
         "#sample_a\tsample_b\trelatedness\tibs0\tibs2\thom_concordance\thets_a\thets_b\thets_ab\tshared_hets\t"
