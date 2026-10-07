@@ -161,7 +161,7 @@ If you ran multiple SV callers:
 
 ### SV Consensus (Step 22)
 
-`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, GRIDSS, Sniffles2 and TIDDIT), grouped by chromosome, SV type and the 1 kb window their start position falls in. The end breakpoint is not compared, and two calls a few bases apart on either side of a window edge are not grouped. Expect a few hundred records. It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
+`${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz` keeps the SVs that two or more callers found (Manta, Delly, CNVpytor and, when they ran, Sniffles2 and TIDDIT): SURVIVOR pairs two calls when both breakpoints lie within 1 kb of each other and their type and strands agree. `SUPP` says how many callers found each one and `SUPP_VEC` which. GRIDSS is left out (its breakend records never match). It is the short list to read first, but it drops real SVs that only one caller found; see [step 22](22-survivor-merge.md#limitations).
 
 ### AnnotSV Output
 

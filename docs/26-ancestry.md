@@ -39,10 +39,10 @@ The images of step 25, all pinned in `versions.env`: `PGSC_UTILS_IMAGE`, `PLINK2
 ./scripts/26-ancestry.sh your_name
 ```
 
-`run-all.sh` runs it after the pipeline when asked:
+`run-all.sh` runs it inside the pipeline's PRS run (step 25) whenever the panel is installed, so a plain run includes it:
 
 ```bash
-ANCESTRY=true ./scripts/run-all.sh your_name <male|female>
+./scripts/run-all.sh your_name <male|female>
 ```
 
 `ANCESTRY_PANEL=/path/to/panel.tar.zst` points at another pgsc_calc panel (its `_GRCh38_sites.tsv` must be beside it); `ANCESTRY_PANEL=none` skips the step.
