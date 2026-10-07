@@ -14,7 +14,11 @@ name: E2E
 #                  parity check: the bash single steps and the Nextflow
 #                  pipeline, both from the fixture's FASTQ, must agree
 #                  (scripts/ci/parity-diff.sh). Runs on pull requests that
-#                  touch the pipeline, monthly, on dispatch.
+#                  touch the pipeline, monthly, on dispatch. Every pull
+#                  request starts this workflow, so main can require the e2e
+#                  check: e2e-scope decides, and on a pull request that
+#                  touches none of the pipeline paths e2e is skipped, which
+#                  GitHub counts as passed.
 #   settle-doubts  answers questions a code review could not answer without
 #                  running the tools. Not a gate: it prints a table.
 #
@@ -32,19 +36,6 @@ on:
       - '.github/workflows/e2e.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'scripts/**'
-      - 'modules/**'
-      - 'workflows/**'
-      - 'bin/**'
-      - 'conf/**'
-      - 'tests/e2e/**'
-      - 'tests/fixtures/VERSION'
-      - 'main.nf'
-      - 'nextflow.config'
-      - 'assets/**'
-      - 'versions.env'
-      - '.github/workflows/e2e.yml'
   schedule:
     # Monthly: catches upstream images, databases or URLs that changed under us.
     - cron: '0 5 2 * *'
@@ -151,11 +142,47 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The pull request paths the e2e cases exercise. Outside a pull request the
+  # answer is always run=true. A failed or missing answer runs e2e anyway (the
+  # test below is != 'false'), so a broken scope job can never skip the gate.
+  e2e-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Does this pull request touch the pipeline
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Three dots: what the branch changed since it left main, as a paths
+        # filter sees it, whatever main did meanwhile.
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
+          cat "${RUNNER_TEMP}/changed.txt"
+          if grep -qE '^(scripts|modules|workflows|bin|conf|assets|tests/e2e)/|^(tests/fixtures/VERSION|main\.nf|nextflow\.config|versions\.env|\.github/workflows/e2e\.yml)$' "${RUNNER_TEMP}/changed.txt"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the e2e cases exercise changed: e2e is skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
+    needs: e2e-scope
     if: >-
-      github.event_name == 'pull_request' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')
+      ${{ !cancelled() && needs.e2e-scope.outputs.run != 'false' && (
+        github.event_name == 'pull_request' ||
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
     # About 75 minutes (73 on the run that added the parity cases, which call
     # the fixture twice more from FASTQ); the margin covers a run that waits
