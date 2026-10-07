@@ -1,27 +1,112 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    SURVIVOR_MERGE — Merge SV calls from multiple callers (bcftools heuristic)
+    SURVIVOR_MERGE — SV consensus: the calls two or more callers agree on
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Finds structural variants called by 2+ callers at overlapping positions
-    using a simplified bcftools-based approach with 1kb position binning.
-
-    EXPERIMENTAL: This uses a heuristic position-binning approach.
-    For production use, consider SURVIVOR or Jasmine with proper multi-sample
-    VCF merging.
+    SURVIVOR_PREP   each caller's PASS (or unfiltered) records as plain VCF,
+                    one sample column named after the caller (bcftools)
+    SURVIVOR_MERGE  `SURVIVOR merge LIST 1000 2 1 1 0 50`: both breakpoints
+                    within 1,000 bp, same type and strands, >= 50 bp, kept
+                    when 2+ callers support it; SUPP and SUPP_VEC say which
+    SURVIVOR_SORT   sorted, bgzipped and indexed (bcftools)
 
     Equivalent to: scripts/22-survivor-merge.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+process SURVIVOR_PREP {
+    tag "$meta.id:$caller"
+    label 'process_single'
+
+    input:
+    tuple val(meta), val(caller), path(vcf)
+
+    output:
+    tuple val(meta), val(caller), path("${caller}.vcf"), emit: vcf
+    path "versions.yml",                                 emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    // SURVIVOR names its output columns after the input samples: three
+    // columns all named after the sample would be one name three times.
+    """
+    bcftools view -f PASS,. ${vcf} | awk -v s=${caller} 'BEGIN { FS = OFS = "\\t" }
+        /^##/ { print; next }
+        /^#CHROM/ {
+            if (NF < 10) { print "##FORMAT=<ID=GT,Number=1,Type=String,Description=\\"Genotype\\">"; sites = 1; print \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, "FORMAT", s }
+            else print \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, s
+            next
+        }
+        { if (sites) print \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, "GT", "./."; else print \$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10 }' > ${caller}.vcf
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${caller}.vcf
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
 process SURVIVOR_MERGE {
     tag "$meta.id"
-    label 'process_low'
+    label 'process_single'
+
+    input:
+    tuple val(meta), val(callers), path(vcfs)
+
+    output:
+    tuple val(meta), path("${meta.id}_sv_merged.vcf"), emit: vcf
+    path "versions.yml",                               emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    // The list in a fixed caller order, so SUPP_VEC reads the same on every run.
+    def order = ['manta', 'delly', 'cnvpytor']
+    def listed = callers.sort(false) { c -> order.indexOf(c) }.collect { c -> "${c}.vcf" }.join(' ')
+    """
+    printf '%s\\n' ${listed} > sv_files.txt
+    SURVIVOR merge sv_files.txt 1000 2 1 1 0 50 ${meta.id}_sv_merged.vcf
+    # SURVIVOR exits 0 when it cannot open an input, so its output is the check.
+    head -n 1 ${meta.id}_sv_merged.vcf | grep -q '^##fileformat=VCF' \\
+        || { echo "ERROR: SURVIVOR wrote no VCF" >&2; exit 1; }
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        survivor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_sv_merged.vcf
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        survivor: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process SURVIVOR_SORT {
+    tag "$meta.id"
+    label 'process_single'
 
     publishDir { "${params.outdir}/${meta.id}/sv_merged" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(sv_vcfs)
-    path(reference_fai)
+    tuple val(meta), path(merged)
 
     output:
     tuple val(meta), path("${meta.id}_sv_consensus.vcf.gz"),     emit: merged_vcf
@@ -33,58 +118,7 @@ process SURVIVOR_MERGE {
 
     script:
     """
-    # Tag each VCF with a caller index, extract SV positions
-    CALLER_IDX=0
-    for VCF_FILE in ${sv_vcfs}; do
-        CALLER_IDX=\$((CALLER_IDX + 1))
-        # -H: no header to grep away. No `|| true` and no 2>/dev/null: a VCF
-        # bcftools cannot read fails the task instead of adding no calls.
-        bcftools view -H -f PASS,. "\$VCF_FILE" | \\
-            awk -F'\\t' -v caller=\$CALLER_IDX '{
-                chrom=\$1; pos=\$2; info=\$8;
-                end=pos;
-                if(match(info, /END=[0-9]+/)) end=substr(info, RSTART+4, RLENGTH-4);
-                svtype="UNK";
-                if(match(info, /SVTYPE=[A-Z]+/)) svtype=substr(info, RSTART+7, RLENGTH-7);
-                bin=int(pos/1000);
-                printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t.\\tN\\t<%s>\\t.\\tPASS\\tSVTYPE=%s;END=%s\\n",
-                    chrom, bin, svtype, caller, pos, chrom, pos, svtype, svtype, end;
-            }'
-    done > all_sv_tagged.tsv
-
-    # Find bins seen by 2+ distinct callers
-    awk -F'\\t' '{
-        key=\$1"_"\$2"_"\$3;
-        caller=\$4;
-        if(!(key in seen)) {
-            seen[key]=caller;
-            line[key]=\$6"\\t"\$7"\\t.\\tN\\t"\$10"\\t.\\tPASS\\t"\$13;
-        } else if(index(seen[key], caller) == 0) {
-            seen[key]=seen[key]"|"caller;
-        }
-    } END {
-        for(k in seen) {
-            n=split(seen[k], a, "|");
-            if(n >= 2) print line[k];
-        }
-    }' all_sv_tagged.tsv | \\
-        sort -k1,1V -k2,2n > consensus_raw.txt
-
-    # Build a valid VCF with contig headers from reference FAI
-    {
-        echo '##fileformat=VCFv4.2'
-        echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="SV type">'
-        echo '##INFO=<ID=END,Number=1,Type=Integer,Description="End position">'
-        if [ -f "${reference_fai}" ]; then
-            awk -F'\\t' '{printf "##contig=<ID=%s,length=%s>\\n", \$1, \$2}' "${reference_fai}"
-        fi
-        printf '#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\n'
-        cat consensus_raw.txt
-    } > ${meta.id}_sv_consensus_unsorted.vcf
-
-    # Sort, compress, and index
-    bcftools sort ${meta.id}_sv_consensus_unsorted.vcf -Oz \\
-        -o ${meta.id}_sv_consensus.vcf.gz
+    bcftools sort ${merged} -Oz -o ${meta.id}_sv_consensus.vcf.gz
     bcftools index -t ${meta.id}_sv_consensus.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
