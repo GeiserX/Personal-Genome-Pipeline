@@ -100,7 +100,7 @@ process CLINICAL_FILTER {
         bcftools index -t ${meta.id}_clinvar_pathogenic.vcf.gz
         MERGE_FILES="\${MERGE_FILES} ${meta.id}_clinvar_pathogenic.vcf.gz"
     elif grep -qx CLIN_SIG csq_fields.txt; then
-        echo "ClinVar tier: VEP's cached CLIN_SIG (add clinvar with --clinvar for the current file)" >&2
+        echo "ClinVar tier: VEP's cached CLIN_SIG (set --clinvar for the current ClinVar file)" >&2
         bcftools view -f PASS ${vcf} | \\
             bcftools +split-vep - -c CLIN_SIG \\
                 -i 'CLIN_SIG~"pathogenic" && CLIN_SIG!~"conflicting"' \\

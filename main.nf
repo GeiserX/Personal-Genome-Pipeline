@@ -70,7 +70,7 @@ workflow {
         'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
-        'sample_qc', 'cram_archive', 'parascopy', 'html_report', 'multiqc',
+        'sample_qc', 'cram_archive', 'parascopy', 'y_haplogroup', 'html_report', 'multiqc',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -453,7 +453,7 @@ workflow {
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
-    // mito, SMN1/SMN2, sample QC. First, because PGX reads the HLA types.
+    // mito, SMN1/SMN2, sample QC, Y haplogroup. First, because PGX reads the HLA types.
     // ═══════════════════════════════════════════════════════════════════
     BAM_ANALYSIS(
         ch_bam,
@@ -508,11 +508,14 @@ workflow {
         ch_revel_index,
         ch_alphamissense,
         ch_alphamissense_index,
-        ch_gnomad_constraint
+        ch_gnomad_constraint,
+        ch_clinvar,
+        ch_clinvar_index
     )
 
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS and ancestry (pgsc_calc), mito haplogroup
+    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS and ancestry (pgsc_calc), mito
+    // haplogroup (from the Mutect2 chrM calls of BAM_ANALYSIS when they exist)
     // ═══════════════════════════════════════════════════════════════════
     CLINICAL(
         ch_vcf,
@@ -524,7 +527,8 @@ workflow {
         ch_pgs_labels,
         ch_gvcf,
         ch_reference,
-        ch_reference_fai
+        ch_reference_fai,
+        BAM_ANALYSIS.out.mito_vcf
     )
 
     // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
@@ -570,6 +574,8 @@ workflow {
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)

@@ -14,6 +14,13 @@ check "the log names the exclude map" has "Exclude map: ${MAP}" "$(cat "$STEP_LO
 VCF="${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz"
 check "Delly's VCF is readable" vcf_ok "$VCF"
 check "Delly's VCF is indexed" nonempty "${VCF}.tbi"
-check_eq "calls on excluded contigs" "$(vcf_count -r chr22_KI270879v1_alt "$VCF")" 0
+# The map's chr20 intervals as a BED under GENOME_DIR (bcftools reads it in
+# its container): no call may start inside them. Lines that name a whole
+# contig have no coordinates and are left out.
+EXCL="${SAMPLE}/delly/chr20_exclude.bed"
+awk 'BEGIN {OFS = "\t"} $1 == "chr20" && NF >= 3 {print $1, $2, $3}' "$MAP" > "${GENOME_DIR}/${EXCL}"
+check_ge "exclude intervals on chr20" "$(grep -c . "${GENOME_DIR}/${EXCL}" || true)" 1
+echo "Delly calls: $(vcf_count "$VCF") in all, $(vcf_count -r chr20 "$VCF") on chr20"
+check_eq "calls inside the chr20 exclude intervals" "$(vcf_count -R "$EXCL" "$VCF")" 0
 
 finish

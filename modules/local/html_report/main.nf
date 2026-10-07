@@ -53,7 +53,8 @@ process HTML_REPORT {
             ${id}.cpsr.grch38.html)                       place cpsr "\$f" ;;
             ${id}_prioritized.vcf.gz)                     place slivar "\$f" ;;
             ${id}_roh.txt)                                place roh "\$f" ;;
-            ${id}_haplogroup.txt)                         place mito "\$f" ;;
+            ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
+            ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
             ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
