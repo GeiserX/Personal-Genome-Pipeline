@@ -27,7 +27,7 @@ include { SOMALIER         } from '../modules/local/somalier/main'
 include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
 include { VERIFYBAMID2     } from '../modules/local/verifybamid2/main'
-include { Y_HAPLOGROUP     } from '../modules/local/y_haplogroup/main'
+include { Y_POSITIONS; Y_PILEUP; Y_HAPLOGROUP } from '../modules/local/y_haplogroup/main'
 
 workflow BAM_ANALYSIS {
 
@@ -227,9 +227,11 @@ workflow BAM_ANALYSIS {
                      "and a Y haplogroup needs a male sample."
             return false
         }
-        Y_HAPLOGROUP(ch_y_bam, ch_reference)
+        Y_POSITIONS()
+        Y_PILEUP(ch_y_bam, Y_POSITIONS.out.positions.first())
+        Y_HAPLOGROUP(Y_PILEUP.out.pileup, ch_reference)
         ch_y_haplogroup = Y_HAPLOGROUP.out.haplogroup
-        ch_versions     = ch_versions.mix(Y_HAPLOGROUP.out.versions)
+        ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions, Y_HAPLOGROUP.out.versions)
     }
 
     emit:

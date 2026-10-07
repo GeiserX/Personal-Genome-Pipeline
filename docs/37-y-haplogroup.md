@@ -16,7 +16,9 @@ Upstream Yleaf is at 4.x; Bioconda has 3.2.1 only, and that build is the image h
 
 ## Docker Image
 
-- `YLEAF_IMAGE`
+- `YLEAF_IMAGE`, and `SAMTOOLS_IMAGE` for the pileup
+
+The Yleaf image has no samtools, which Yleaf calls for a BAM. So the step runs in three parts (`bin/yleaf_run.py`): Yleaf's marker positions from its image, `samtools idxstats` and `samtools mpileup -l <positions> -AQ20q1` (Yleaf's own flags at its default quality 20) in `SAMTOOLS_IMAGE`, then Yleaf on that pileup.
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
@@ -35,14 +37,15 @@ In the Nextflow pipeline (`y_haplogroup` in `--tools`) the process runs for the 
 
 With `run-all.sh`: `TOOLS=...,y_haplogroup` (it is opt-in, so a default run lists it as skipped).
 
-Yleaf downloads the whole hg38 FASTA on its first run unless its config file names one, and the image's config is read-only. The step points Yleaf at the pipeline's reference before it starts (a BAM never needs the sequence itself), so nothing is downloaded and the container runs without a network.
+Yleaf downloads the whole hg38 FASTA on its first run unless its config file names one, and the image's config is read-only. The launcher points Yleaf at the pipeline's reference before it starts (a BAM never needs the sequence itself), so nothing is downloaded and every container runs without a network.
 
 ## Output
 
 | File | Contents |
 |---|---|
 | `y_haplogroup/${SAMPLE}_y_haplogroup.txt` | Yleaf's prediction: `Hg` (the haplogroup), `Hg_marker`, `Total_reads`, `Valid_markers` (Y markers with haplogroup information and enough reads), `QC-score` |
-| `y_haplogroup/yleaf/` | Yleaf's working files: the marker table it read and its log |
+| `y_haplogroup/yleaf/` | Yleaf's working files: the markers it read with their alleles and its log |
+| `y_haplogroup/positions.txt` | the marker positions the pileup was made at |
 
 `Hg` is `NA` when too few markers had reads for a call; the step then prints `Y haplogroup: insufficient markers` with the marker count, and both reports say "insufficient markers".
 
