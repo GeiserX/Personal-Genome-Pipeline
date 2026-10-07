@@ -4,8 +4,9 @@
 #
 # Opt-in. Yleaf (YLEAF_IMAGE, 3.2.1: the only biocontainer; upstream is 4.x)
 # reads the BAM's pileup at its Y-chromosome markers and predicts the
-# haplogroup they support. The image lacks the samtools Yleaf calls, so the
-# pileup is made in SAMTOOLS_IMAGE and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
+# haplogroup they support. The image lacks the samtools Yleaf calls and its
+# marker tables (setup.sh --yleaf-data installs them), so the pileup is made
+# in SAMTOOLS_IMAGE and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
 # the reads: the sex comes from indexcov/indexcov-indexcov.ped, not from an
 # argument. A female sample, or one with no Y to read, is skipped with one line.
 #
@@ -26,8 +27,13 @@ BAM="${S}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
 PED="${S}/indexcov/indexcov-indexcov.ped"
 OUTDIR="${S}/y_haplogroup"
 OUT="${OUTDIR}/${SAMPLE}_y_haplogroup.txt"
+YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 
 echo "=== Y haplogroup (Yleaf): ${SAMPLE} ==="
+if [ ! -s "${YDATA}/hg38/new_positions.txt" ]; then
+  echo "ERROR: Yleaf's marker tables are not installed (${YDATA}): run scripts/setup.sh --yleaf-data ${GENOME_DIR}" >&2
+  exit 1
+fi
 for f in "$BAM" "${BAM}.bai" "$REF_FASTA"; do
   [ -f "$f" ] || { echo "ERROR: File not found: ${f}" >&2; exit 1; }
 done
@@ -52,7 +58,7 @@ rm -rf "${OUTDIR}/yleaf" "$OUT"
 O=$(cpath "$OUTDIR")
 echo "[1/3] Yleaf's Y marker positions..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
-  python3 /pgp-bin/yleaf_run.py positions "${O}/positions.txt"
+  python3 /pgp-bin/yleaf_run.py positions --data "$(cpath "$YDATA")" "${O}/positions.txt"
 echo "[2/3] Pileup at those positions (samtools)..."
 run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
   'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"' \
@@ -60,7 +66,7 @@ run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
 echo "[3/3] Yleaf..."
 echo "Reference: ${REF_FASTA}"
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$YLEAF_IMAGE" \
-  python3 /pgp-bin/yleaf_run.py predict --bam "$(cpath "$BAM")" --reference "$REF_FASTA_C" \
+  python3 /pgp-bin/yleaf_run.py predict --data "$(cpath "$YDATA")" --bam "$(cpath "$BAM")" --reference "$REF_FASTA_C" \
     --idxstats "${O}/idxstats.txt" --pileup "${O}/pileup.txt" --out "${O}/yleaf"
 rm -f "${OUTDIR}/idxstats.txt" "${OUTDIR}/pileup.txt"
 

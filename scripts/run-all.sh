@@ -113,7 +113,8 @@ plan "25 PRS" prs "$(need "$(compgen -G "${G}/prs_scores/*.txt.gz" | head -n 1 |
 PANEL=${ANCESTRY_PANEL:-${G}/reference/pgsc_calc/${PGSC_PANEL}.tar.zst}
 plan "26 Ancestry (pgsc_calc)" ancestry "$(if [[ " ${SEL[*]} " != *" prs "* ]]; then echo 'needs PRS'; elif [ "$PANEL" = none ]; then echo 'ANCESTRY_PANEL=none'
   else need "$PANEL" "${PANEL%.tar.zst}_GRCh38_sites.tsv"; fi)" && NF+=(--ancestry_ref "$PANEL")
-plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup)" || true
+YD="${G}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
+plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup || need "${YD}/hg38/new_positions.txt")" && NF+=(--yleaf_data "$YD")
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")

@@ -32,10 +32,13 @@ In the Nextflow pipeline (`y_haplogroup` in `--tools`) the process runs for the 
 ## Command
 
 ```bash
+./scripts/setup.sh --yleaf-data /path/to/genome_dir   # once: Yleaf's marker tables and tree (~15 MB)
 ./scripts/37-y-haplogroup.sh your_name
 ```
 
-With `run-all.sh`: `TOOLS=...,y_haplogroup` (it is opt-in, so a default run lists it as skipped).
+The Yleaf image installs Yleaf's code but not its data folder (the GRCh38 marker positions and the haplogroup tree). `setup.sh --yleaf-data` takes that folder from GitHub's archive of the same release, checked against `YLEAF_DATA_SHA256` in `versions.env`, into `reference/yleaf-<version>/data`; the pipeline takes it as `--yleaf_data`.
+
+With `run-all.sh`: `TOOLS=...,y_haplogroup` (it is opt-in, so a default run lists it as skipped; without the data it is skipped with the reason).
 
 Yleaf downloads the whole hg38 FASTA on its first run unless its config file names one, and the image's config is read-only. The launcher points Yleaf at the pipeline's reference before it starts (a BAM never needs the sequence itself), so nothing is downloaded and every container runs without a network.
 

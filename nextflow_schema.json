@@ -284,6 +284,12 @@
                     "description": "Parascopy's GRCh38 homology table and 1000 Genomes models, which `scripts/setup.sh --parascopy-data` installs as reference/parascopy-<version>. Required with parascopy.",
                     "fa_icon": "fas fa-folder"
                 },
+                "yleaf_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Yleaf's data folder (GRCh38 marker positions and haplogroup tree), which `scripts/setup.sh --yleaf-data` installs as reference/yleaf-<version>/data: the Yleaf image ships the code only. Required with y_haplogroup.",
+                    "fa_icon": "fas fa-folder"
+                },
                 "parascopy_population": {
                     "type": "string",
                     "default": "EUR",

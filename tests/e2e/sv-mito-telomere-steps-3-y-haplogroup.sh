@@ -7,6 +7,11 @@
 # markers"; the female one is skipped.
 . "$(dirname "$0")/lib.sh"
 
+# Yleaf's marker tables, which the image does not ship (setup.sh --yleaf-data).
+check "Yleaf's marker tables install" "${REPO}/scripts/setup.sh" --yleaf-data "$GENOME_DIR"
+check_ge "Yleaf GRCh38 marker positions" \
+  "$(grep -c . "${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data/hg38/new_positions.txt" 2>/dev/null || true)" 100000
+
 run_step 37-y-haplogroup.sh "$SAMPLE"
 check_step_exit 37-y-haplogroup.sh
 check "HG002 is skipped on the sex indexcov infers from the slices" \

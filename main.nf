@@ -96,6 +96,7 @@ workflow {
         ['sample_qc',        'verifybamid2_panel', '--verifybamid2_panel'],
         ['cyrius',           'cyrius_install',     '--cyrius_install'],
         ['parascopy',        'parascopy_data',     '--parascopy_data'],
+        ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -450,6 +451,7 @@ workflow {
     ch_kir_dat        = Channel.value(params.kir_dat ? file(params.kir_dat, checkIfExists: true) : [])
     ch_parascopy_data = Channel.value(params.parascopy_data ? file(params.parascopy_data, checkIfExists: true) : [])
     ch_parascopy_bed  = Channel.value(params.parascopy_depth_bed ? file(params.parascopy_depth_bed, checkIfExists: true) : [])
+    ch_yleaf_data     = Channel.value(params.yleaf_data ? file(params.yleaf_data, checkIfExists: true) : [])
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
@@ -468,7 +470,8 @@ workflow {
         ch_verifybamid2_panel,
         ch_kir_dat,
         ch_parascopy_data,
-        ch_parascopy_bed
+        ch_parascopy_bed,
+        ch_yleaf_data
     )
 
     // ═══════════════════════════════════════════════════════════════════

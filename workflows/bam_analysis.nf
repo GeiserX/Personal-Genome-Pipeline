@@ -45,6 +45,7 @@ workflow BAM_ANALYSIS {
     ch_kir_dat           // channel: val(path) — IPD-KIR kir.dat (--kir) or []
     ch_parascopy_data    // channel: val(path) — Parascopy's homology table and models or []
     ch_parascopy_bed     // channel: val(path) — Parascopy background windows or []
+    ch_yleaf_data        // channel: val(path) — Yleaf's data folder (--yleaf_data) or []
 
     main:
     ch_versions = Channel.empty()
@@ -227,9 +228,9 @@ workflow BAM_ANALYSIS {
                      "and a Y haplogroup needs a male sample."
             return false
         }
-        Y_POSITIONS()
+        Y_POSITIONS(ch_yleaf_data)
         Y_PILEUP(ch_y_bam, Y_POSITIONS.out.positions.first())
-        Y_HAPLOGROUP(Y_PILEUP.out.pileup, ch_reference)
+        Y_HAPLOGROUP(Y_PILEUP.out.pileup, ch_reference, ch_yleaf_data)
         ch_y_haplogroup = Y_HAPLOGROUP.out.haplogroup
         ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions, Y_HAPLOGROUP.out.versions)
     }

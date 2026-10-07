@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """yleaf_run.py: run Yleaf 3.2.1 (YLEAF_IMAGE) offline, on a pileup made beside it.
 
-The Bioconda image of Yleaf ships no samtools, which Yleaf calls for its BAM
-input (`samtools idxstats`, `samtools mpileup`), and Yleaf downloads the whole
-hg38 FASTA unless its read-only config names one. So step 37 and the
-Y_HAPLOGROUP process run it in three parts:
+The Bioconda image of Yleaf installs its code only: no samtools, which Yleaf
+calls for its BAM input (`samtools idxstats`, `samtools mpileup`), and none of
+its data folder (marker positions, haplogroup tree), which `setup.sh
+--yleaf-data` installs from the release archive as reference/yleaf-<version>/data.
+Yleaf also downloads the whole hg38 FASTA unless its read-only config names
+one. So step 37 and the Y_HAPLOGROUP processes run it in three parts:
 
-  yleaf_run.py positions OUT
+  yleaf_run.py positions --data DATA OUT
       (YLEAF_IMAGE) write Yleaf's GRCh38 marker positions as the "chrY<TAB>pos"
       list `samtools mpileup -l` reads
   samtools idxstats BAM > IDXSTATS; samtools mpileup -l OUT -AQ20q1 BAM > PILEUP
       (SAMTOOLS_IMAGE) the two commands Yleaf would run, with its default
       quality threshold of 20
-  yleaf_run.py predict --bam BAM --reference FASTA --idxstats IDXSTATS --pileup PILEUP --out DIR
-      (YLEAF_IMAGE) Yleaf's own flow, with its reference constant set to FASTA
+  yleaf_run.py predict --data DATA --bam BAM --reference FASTA --idxstats IDXSTATS --pileup PILEUP --out DIR
+      (YLEAF_IMAGE) Yleaf's own flow, with its data folder set to DATA, its
+      reference constant set to FASTA
       (a BAM never needs the sequence), each samtools call served from those
       two files, and its multiprocessing pools replaced by a serial map: a
       failed call raises SystemExit in a pool worker, which kills it and
@@ -44,8 +47,20 @@ class SerialPool:
         return list(map(fn, items))
 
 
-def positions(out):
+def use_data(data):
+    """Point Yleaf's constants at DATA (the yleaf/data folder of its release)."""
     from yleaf import yleaf_constants as c
+    data = Path(data)
+    for need in (data / c.HG38 / c.NEW_POSITION_FILE, data / "hg_prediction_tables" / c.TREE_FILE):
+        if not need.is_file():
+            sys.exit(f"ERROR: {need} not found: install Yleaf's data with scripts/setup.sh --yleaf-data <genome_dir>")
+    c.DATA_FOLDER = data
+    c.HG_PREDICTION_FOLDER = data / "hg_prediction_tables"
+    return c
+
+
+def positions(data, out):
+    c = use_data(data)
     src = c.DATA_FOLDER / c.HG38 / c.NEW_POSITION_FILE
     seen = set()
     with open(src) as f, open(out, "w") as o:
@@ -62,11 +77,11 @@ def positions(out):
 def predict(argv):
     import argparse
     ap = argparse.ArgumentParser(prog="yleaf_run.py predict")
-    for a in ("--bam", "--reference", "--idxstats", "--pileup", "--out"):
+    for a in ("--data", "--bam", "--reference", "--idxstats", "--pileup", "--out"):
         ap.add_argument(a, required=True)
     a = ap.parse_args(argv)
     multiprocessing.Pool = SerialPool
-    from yleaf import yleaf_constants
+    yleaf_constants = use_data(a.data)
     yleaf_constants.HG38_FULL_GENOME = Path(a.reference)
     from yleaf import Yleaf
 
@@ -91,8 +106,8 @@ def predict(argv):
 
 
 def main(argv):
-    if argv[:1] == ["positions"] and len(argv) == 2:
-        positions(argv[1])
+    if argv[:2] == ["positions", "--data"] and len(argv) == 4:
+        positions(argv[2], argv[3])
     elif argv[:1] == ["predict"]:
         predict(argv[1:])
     else:
