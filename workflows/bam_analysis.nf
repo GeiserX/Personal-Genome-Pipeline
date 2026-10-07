@@ -5,7 +5,8 @@
     Runs HLA typing (with an opt-in KIR pass), repeat expansion detection,
     telomere length estimation, coverage statistics, mitochondrial variant
     calling, SMN1/SMN2 copy number (opt-in) and the sample identity and
-    contamination check ALL in parallel from a single BAM input. The CYP2D6
+    contamination check, and the Y haplogroup (opt-in) ALL in parallel
+    from a single BAM input. The CYP2D6
     callers run in the PGX workflow, which also reads the HLA types.
 
     Each module is gated on params.tools containing the tool name.
@@ -26,6 +27,7 @@ include { SOMALIER         } from '../modules/local/somalier/main'
 include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
 include { VERIFYBAMID2     } from '../modules/local/verifybamid2/main'
+include { Y_HAPLOGROUP     } from '../modules/local/y_haplogroup/main'
 
 workflow BAM_ANALYSIS {
 
@@ -57,6 +59,7 @@ workflow BAM_ANALYSIS {
     ch_kir_genotype     = Channel.empty()
     ch_smn_copy_number  = Channel.empty()
     ch_sample_qc        = Channel.empty()
+    ch_y_haplogroup     = Channel.empty()
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -209,6 +212,26 @@ workflow BAM_ANALYSIS {
                                       VERIFYBAMID2.out.versions, SAMPLE_QC.out.versions)
     }
 
+    //
+    // MODULE 8: Y haplogroup (Yleaf), opt-in: 'y_haplogroup' in --tools
+    // Male samples only. The sex is the samplesheet's, which INDEXCOV has
+    // checked against the reads before any BAM reaches this workflow (a
+    // mismatch stops the run unless --sex_check warn).
+    //
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('y_haplogroup')) {
+        ch_y_bam = ch_bam.filter { meta, bam, bai ->
+            if (meta.sex == 'male') {
+                return true
+            }
+            log.info "Sample '${meta.id}': y_haplogroup skipped: the sample is ${meta.sex ?: 'of no declared sex'}, " +
+                     "and a Y haplogroup needs a male sample."
+            return false
+        }
+        Y_HAPLOGROUP(ch_y_bam, ch_reference)
+        ch_y_haplogroup = Y_HAPLOGROUP.out.haplogroup
+        ch_versions     = ch_versions.mix(Y_HAPLOGROUP.out.versions)
+    }
+
     emit:
     hla_alleles      = ch_hla_alleles
     expansion_vcf    = ch_expansion_vcf
@@ -219,5 +242,6 @@ workflow BAM_ANALYSIS {
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
+    y_haplogroup     = ch_y_haplogroup    // [meta, <id>_y_haplogroup.txt]
     versions         = ch_versions
 }
