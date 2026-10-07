@@ -20,7 +20,6 @@ include { PRS                } from '../modules/local/prs/main'
 include { PRS_SUMMARY        } from '../modules/local/prs/main'
 include { MITO_EXTRACT_CHRM  } from '../modules/local/mito_haplogroup/main'
 include { MITO_HAPLOGROUP    } from '../modules/local/mito_haplogroup/main'
-include { MITO_PASS_CHRM     } from '../modules/local/mito_haplogroup/main'
 include { HAPLOCHECK         } from '../modules/local/mito_haplogroup/main'
 
 workflow CLINICAL {
@@ -132,14 +131,21 @@ workflow CLINICAL {
                 mutect2: row[4] != null
                 vcf:     true
             }
-        MITO_PASS_CHRM(ch_mito_in.mutect2.map { row -> [row[1], row[4]] })
-        MITO_EXTRACT_CHRM(ch_mito_in.vcf.map { row -> [row[1], row[2], row[3]] })
-        MITO_HAPLOGROUP(MITO_PASS_CHRM.out.chrm_vcf.mix(MITO_EXTRACT_CHRM.out.chrm_vcf))
-        HAPLOCHECK(MITO_PASS_CHRM.out.chrm_vcf)
+        MITO_EXTRACT_CHRM(
+            ch_mito_in.mutect2.map { row -> [row[1], row[4], [], 'mutect2'] }
+                .mix(ch_mito_in.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] })
+        )
+        MITO_HAPLOGROUP(MITO_EXTRACT_CHRM.out.chrm_vcf)
+        // haplocheck needs Mutect2's allele fractions: the samples it called only
+        HAPLOCHECK(
+            MITO_EXTRACT_CHRM.out.chrm_vcf
+                .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+                .join(ch_mito_vcf.map { meta, m -> [meta.id, true] })
+                .map { _id, meta, vcf, idx, _m -> [meta, vcf, idx] }
+        )
         ch_haplogroup = MITO_HAPLOGROUP.out.haplogroup
         ch_haplocheck = HAPLOCHECK.out.report
         ch_versions   = ch_versions.mix(
-            MITO_PASS_CHRM.out.versions,
             MITO_EXTRACT_CHRM.out.versions,
             MITO_HAPLOGROUP.out.versions,
             HAPLOCHECK.out.versions
