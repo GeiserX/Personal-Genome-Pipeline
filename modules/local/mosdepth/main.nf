@@ -13,8 +13,6 @@ process MOSDEPTH {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0'
-
     publishDir { "${params.outdir}/${meta.id}/coverage" }, mode: params.publish_dir_mode
 
     input:
@@ -44,7 +42,7 @@ process MOSDEPTH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: \$(mosdepth --version 2>&1 | sed 's/mosdepth //')
+        mosdepth: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -56,7 +54,7 @@ process MOSDEPTH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: 0.3.13
+        mosdepth: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

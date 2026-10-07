@@ -6,6 +6,19 @@
     1. Preprocess VCF (normalize, filter to PGx positions)
     2. Run PharmCAT (star allele calling + drug recommendation reports)
 
+    PharmCAT reads a PGx position missing from its input as "not covered",
+    and a variants-only VCF lists only where the sample differs from the
+    reference. When the sample has a gVCF (DEEPVARIANT wrote one), step 1
+    first expands its reference blocks over PharmCAT's gene regions into a
+    plain VCF, as scripts/07-pharmacogenomics.sh does: a covered position
+    becomes a 0/0 call, an uncovered one (./.) stays missing. The expanded
+    file is named without .g.vcf, which PharmCAT refuses.
+
+    PharmCAT types neither HLA nor CYP2D6 from a VCF. When PGX_CONSENSUS
+    wrote outside calls for the sample (HLA-A and HLA-B from T1K, a CYP2D6
+    call pypgx and Cyrius agree on), step 2 reads them with -po; an empty
+    file is not passed.
+
     Equivalent to: scripts/07-pharmacogenomics.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -14,30 +27,49 @@ process PHARMCAT_PREPROCESS {
     tag "$meta.id"
     label 'process_low'
 
-    container 'pgkb/pharmcat:3.2.0'
-
     input:
-    tuple val(meta), path(vcf), path(vcf_index)
+    tuple val(meta), path(vcf), path(vcf_index), path(gvcf), path(gvcf_index)  // gVCF pair or []
     path(reference)
+    path(reference_fai)  // staged beside the FASTA, so no task builds its own
 
     output:
     tuple val(meta), path("*.preprocessed.vcf.bgz"), emit: preprocessed_vcf
+    path "versions.yml",                             emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
+    def pgx_input = gvcf ? "${meta.id}.pgx_regions.vcf.gz" : "${vcf}"
+    def expand = gvcf ? """
+    echo "Input: ${gvcf} (reference blocks expanded over PharmCAT's gene regions)"
+    bcftools convert --gvcf2vcf -f ${reference} -R /pharmcat/pharmcat_regions.bed -Ou ${gvcf} \\
+        | bcftools view --trim-alt-alleles -i 'GT!="mis"' -Oz -o ${meta.id}.pgx_regions.vcf.gz --write-index=tbi
+    """ : """
+    echo "Input: ${vcf} (no gVCF: PGx positions where the sample matches the reference read as missing)"
     """
+    """
+    ${expand}
     python3 /pharmcat/pharmcat_vcf_preprocessor \\
-        -vcf ${vcf} \\
+        -vcf ${pgx_input} \\
         -refFna ${reference} \\
         -o ./ \\
         -bf ${meta.id}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 
     stub:
     """
     touch ${meta.id}.preprocessed.vcf.bgz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
     """
 }
 
@@ -45,12 +77,11 @@ process PHARMCAT {
     tag "$meta.id"
     label 'process_low'
 
-    container 'pgkb/pharmcat:3.2.0'
-
     publishDir { "${params.outdir}/${meta.id}/pharmcat" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(preprocessed_vcf)
+    // outside_calls is [] when PGX_CONSENSUS did not run for the sample
+    tuple val(meta), path(preprocessed_vcf), path(outside_calls)
 
     output:
     tuple val(meta), path("*.report.html"),  emit: html_report
@@ -63,9 +94,30 @@ process PHARMCAT {
     task.ext.when == null || task.ext.when
 
     script:
+    // PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error
+    // parsing metadata: character to be escaped is missing" on a backslash in
+    // a ## header line. Such lines are valid VCF: bcftools writes one for a
+    // soft filter with a quoted string (-s LowDP -e 'GT!="0/0"'). The awk
+    // below rewrites PharmCAT's own copy only, on ## lines: \" becomes ' and
+    // any other \ becomes /. Remove it once a PharmCAT release bundles
+    // vcf-parser newer than 0.3.1 (scripts/07-pharmacogenomics.sh does the same).
+    def outside = outside_calls ? "${outside_calls}" : ''
     """
+    gzip -dc ${preprocessed_vcf} \\
+        | awk '/^##/ { gsub(/\\\\"/, "\\047"); gsub(/\\\\/, "/") } { print }' \\
+        > ${meta.id}.pharmcat_input.vcf
+
+    PO=()
+    if [ -n "${outside}" ] && [ -s "${outside}" ]; then
+        echo "Outside calls (PGX_CONSENSUS):"
+        cat "${outside}"
+        PO=(-po "${outside}")
+    else
+        echo "No outside calls: HLA and CYP2D6 stay uncalled."
+    fi
     java -jar /pharmcat/pharmcat.jar \\
-        -vcf ${preprocessed_vcf} \\
+        -vcf ${meta.id}.pharmcat_input.vcf \\
+        \${PO[@]+"\${PO[@]}"} \\
         -o ./ \\
         -bf ${meta.id} \\
         -reporterJson \\
@@ -73,7 +125,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: \$(java -jar /pharmcat/pharmcat.jar -version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '3.2.0')
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -84,7 +136,7 @@ process PHARMCAT {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pharmcat: 3.2.0
+        pharmcat: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

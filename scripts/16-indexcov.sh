@@ -14,6 +14,9 @@ SAMPLE=${1:?Usage: $0 <sample_name> [declared_sex: male|female]}
 DECLARED_SEX=${2:-}
 SEX_CHECK=${SEX_CHECK:-fail}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/indexcov"
@@ -40,10 +43,9 @@ PED="${OUTPUT_DIR}/indexcov-indexcov.ped"
 # Never read a .ped left by an earlier run
 rm -f "$PED"
 
-docker run --rm \
+run_in \
   --cpus 1 --memory 1g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/goleft:0.2.6--he881be0_1 \
+  "${GOLEFT_IMAGE}" \
   goleft indexcov \
     --directory "/genome/${SAMPLE}/indexcov" \
     "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"

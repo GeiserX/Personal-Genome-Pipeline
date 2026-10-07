@@ -345,17 +345,23 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 
 ## Nextflow version compatibility (2026-06)
 
-### The pipeline runs cleanly on Nextflow 25.10.4; 24.x and 26.x currently fail at parse time
-- **Observed:** A full run requires **Nextflow 25.10.4** (the validated version). Other versions fail before any process executes:
+### The pipeline runs on Nextflow 25.10.x and 26.04.x; 24.x fails at parse time
+- **Observed:** A full run requires **Nextflow 25.10.8** (the validated version, `NEXTFLOW_VERSION` in `versions.env`; 25.10.4 when this was found). Other versions fail before any process executes:
   - **26.04.4** — the strict config parser rejects top-level `def`/variable declarations in `nextflow.config` ("Variable declarations cannot be mixed with config statements"), and then the `def check_max(...)` function in `conf/base.config` ("Unexpected input: '('").
   - **24.04.4** — the DSL2 module parser flags the optional annotation inputs in `modules/local/vcfanno/main.nf` as "Variable already defined in the process scope" (`cadd_snv`/`cadd_indel`/`spliceai_*`/`revel`/`alphamissense`, referenced inside the `def has_nochr`/`def has_chr` expressions). 25.10.4 tolerates this; 24.04.4 does not.
-- **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. Full NF-26 support is still pending: migrating `conf/base.config`'s `check_max()` → `process.resourceLimits` and refactoring the vcfanno input scope (tracked in [the SOTA update note](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/research/sota-update-2026-06.md)). Pin `NXF_VER=25.10.4` to run.
-- **Tip:** `NXF_VER=25.10.4 nextflow run main.nf ...`. The `manifest.nextflowVersion` floor is raised to `25.10.0` so the known-broken 24.x is rejected up front; 26.x is gated by comment until the migration lands.
+- **Fix status:** `nextflow.config` is strict-parser-clean — the execution-report timestamp is inlined into each report path (no top-level `def`; see #30/#31), which also preserves per-run report history. `conf/base.config` has since replaced `check_max()` with `process.resourceLimits`, which clears the second 26.x parse error above. The last 26.x error was `VCF_PRECHECK` setting `FILTER_STATUS` and `FILTER_COUNTS` without declaring them as `env()` outputs; it declares them now. CI (`nextflow.yml`) runs `nextflow lint` and the all-tools stub run on both the pinned 25.10.8 and the newest 26.04.x release; the real-data runs (`e2e.yml`) use 25.10.8. The vcfanno input scope is not refactored, so 24.x still fails.
+- **Tip:** `NXF_VER=25.10.8 nextflow run main.nf ...` runs the release the real-data tests use; `run-all.sh` sets `NXF_VER` from `versions.env` unless you set it yourself. The `manifest.nextflowVersion` floor is `!>=25.10.4`, so 24.x is rejected up front; there is no cap, and 26.04.x passes the lint and stub checks.
 
 ### CYP2D6 copy number: no single caller settles it (withdrawn lesson)
 - **Withdrawn:** an earlier version of this entry told readers to trust pypgx on the BAM over Cyrius and PharmCAT for CYP2D6 deletion and duplication alleles, because pypgx made a deletion call where Cyrius returned `None/None` and PharmCAT `No Result`. That conclusion does not hold.
 - **Why:** pypgx calls copy number from read depth. On a reference with ALT contigs and an aligner that is not run ALT-aware, reads from the CYP2D locus can split between the primary copy and an ALT copy, depth on the primary drops, and a depth-based caller can report a whole-gene deletion that is not there.
 - **Rule:** on a reference with ALT contigs, compare CYP2D6 depth with its flanks before trusting any copy-number call from pypgx or Cyrius, and report CYP2D6 only when two callers agree. A Cyrius `None/None` means "no call", not "no deletion" and not "deletion". If you have a clinical lab result for CYP2D6, it outranks all of these.
+
+### A reference with ALT contigs and an aligner that is not run ALT-aware thin the depth at paralogous loci
+- **Failed:** `setup.sh` installed the Broad `Homo_sapiens_assembly38.fasta` (3,366 sequences, with ALT, HLA and decoy contigs), and step 02 aligned with plain `minimap2 -x sr`. A read that matches a primary locus and its ALT copy equally well got MAPQ 0, and callers skip MAPQ 0 reads, so depth thinned at CYP2D6, the MHC and KIR. Measured on the HG002 fixture (`ALT depth A/B` workflow): depth at MAPQ >= 1 was 0.0x at CYP2D6 and HLA-A where the no-ALT analysis set gives 16.8x and 26.9x, and 85% of the MHC reads were aligned to ALT or HLA contigs. See [realignment](realignment.md#how-much-depth-alt-contigs-cost).
+- **Root cause:** ALT contigs only help an aligner that is run ALT-aware (BWA-MEM with the `.alt` file and its post-processing, or DRAGEN's graph reference); the pipeline runs none. The extra contigs also forced per-contig workarounds in CNVpytor and Delly.
+- **Fix:** the default reference is NCBI's GRCh38 no-ALT analysis set, `reference/GRCh38_no_alt_analysis_set.fasta` (195 sequences), under a new name so an old file is never read by accident. `validate-setup.sh` fails on a reference with `_alt` or `HLA-` contigs (unless `ALLOW_ALT_REFERENCE=true`) and on a BAM whose `@SQ` names and lengths differ from the `.fai`, naming the first difference.
+- **Rule:** a change of reference means realigning every sample, from FASTQ or from the old BAM ([realignment](realignment.md)). Never run a step on a BAM whose header does not match the reference; `validate-setup.sh` checks it.
 
 ## CNVpytor migration (2026-07)
 
@@ -385,3 +391,21 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### Stranger over-flags RFC1 (CANVAS) from short reads — do not read it as a diagnosis
 - **Observed:** Stranger can report RFC1 `STR_STATUS=full_mutation` for a modest expansion (e.g. 51/73 of the degenerate `AARRG` motif). CANVAS requires the **AAGGG** motif specifically, **biallelic**, at **~400–2000+** repeats — short-read ExpansionHunter cannot resolve AAGGG vs the benign AAAAG, and the catalog's `STR_PATHOLOGIC_MIN=12` is not the clinical threshold.
 - **Interpretation:** Treat an RFC1 flag as **uninterpretable from short-read WGS** — confirm with motif-aware/flanking-PCR testing only if clinically indicated. (Documented in `docs/09b-stranger.md`.)
+
+## Vendor VCF intake (2026-10)
+
+### PharmCAT's Java step stops on a backslash in a valid header line
+- **Failed:** `pharmcat.jar` exits with `Error parsing metadata: character to be escaped is missing` when a `##FILTER` or `##INFO` line holds a backslash. bcftools writes such a line itself for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`), and the VCF 4.3 spec asks for the escape. The preprocessor copies the line through; the bundled vcf-parser 0.3.1 refuses it. PharmCAT 3.4.0 bundles the same parser.
+- **Fix:** step 07 and the PHARMCAT module rewrite the header of PharmCAT's own copy (`\"` to `'`, any other `\` to `/`, on `##` lines) before the Java step. The calls are the same as without the line. Remove the rewrite once a PharmCAT release bundles a newer vcf-parser; bumping PharmCAT is not the fix.
+
+### Ensembl contig names fail silently
+- **Failed:** with contigs named `1`, `MT`, `bcftools view -r chrM` returns no record with exit 0, so haplogrep3 writes a header-only file, and the ROH summary's `chrX|chrY` filter lets `X` through. Only the ClinVar screen failed loudly, and only when selected.
+- **Fix:** `VCF_PRECHECK` stops the run before any analysis when no contig holding records is chr-named, and prints the `bcftools annotate --rename-chrs` command. Lesson: a step that selects a region by name must not read zero records as a clean result.
+
+### `bcftools norm -f` stops at the first contig the reference lacks
+- **Failed:** exit 255 (`The sequence "NT_113889.1" was not found`) on the full chr-renamed ClinVar file, and on a sample record on a scaffold the reference lacks (a half-done rename, or the no-alt reference).
+- **Fix:** the ClinVar screen reads both files only on the contigs they share with each other and the reference, with a targets file whose end is a constant (`chrom 1 2147483647`): a header without contig lengths would otherwise give an empty region and zero records.
+
+### `workflow.onComplete` saw `workflow` as null
+- **Failed:** `Cannot get property 'success' on null object` on every run under Nextflow 25.10: the handler runs with the script binding's variable map as its delegate, and a map answers null for a name it lacks.
+- **Fix:** the handler reads local variables (`run_info`, `run_log`, `outdir`) set in the workflow body; closures resolve those where they are written.

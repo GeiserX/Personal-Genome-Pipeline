@@ -1,77 +1,153 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "schedule": ["before 6am on the first day of the month"],
-  "labels": ["dependencies", "automated"],
-  "prConcurrentLimit": 10,
-
-  "packageRules": [
-    {
-      "description": "Group all GitHub Actions updates",
-      "matchManagers": ["github-actions"],
-      "groupName": "github-actions",
-      "commitMessagePrefix": "ci",
-      "labels": ["ci", "automated"]
-    },
-    {
-      "description": "Group biocontainer image updates",
-      "matchDatasources": ["docker"],
-      "matchPackagePatterns": ["^quay\\.io/biocontainers/"],
-      "groupName": "biocontainers"
-    },
-    {
-      "description": "Group core tool image updates",
-      "matchDatasources": ["docker"],
-      "matchPackagePatterns": ["^staphb/", "^broadinstitute/", "^google/"],
-      "groupName": "core-tools"
-    },
-    {
-      "description": "Prefix Docker image commits",
-      "matchDatasources": ["docker"],
-      "commitMessagePrefix": "deps"
-    },
-    {
-      "description": "Skip major version bumps",
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
-      "description": "Images pinned to :latest — no versioned tags from publisher",
-      "matchPackageNames": ["lgalarno/telomerehunter", "jtb114/haplogrep3"],
-      "enabled": false
-    }
+  "description": [
+    "Renovate proposes container image, Nextflow and CI tool updates; Dependabot keeps the GitHub Actions and the docs pip file (.github/dependabot.yml).",
+    "One PR per tool: no group rules. How a PR is checked and what to revalidate by hand: docs/updating.md.",
+    "The images live in versions.env. conf/containers.config and docs/versions.md are generated from it and hold the same strings, so the same dependency is matched in all of them and one PR updates every copy. If a PR touches only versions.env, the generated-file checks fail and name the command to run."
   ],
+  "extends": ["config:recommended"],
+  "enabledManagers": ["custom.regex"],
+  "schedule": ["* 0-5 1 * *"],
+  "labels": ["dependencies", "automated"],
+  "commitMessagePrefix": "deps",
+  "prConcurrentLimit": 10,
+  "major": {
+    "dependencyDashboardApproval": true
+  },
 
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Docker images in versions.env (single source of truth)",
-      "fileMatch": ["^versions\\.env$"],
-      "matchStrings": ["_IMAGE=\"(?<depName>[^:]+):(?<currentValue>[^\"]+)\""],
-      "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Hardcoded Docker images in shell scripts",
-      "fileMatch": ["^scripts/.*\\.sh$"],
+      "description": [
+        "Container images. The strings match the same image in three files:",
+        "versions.env (NAME_IMAGE=\"image:tag\"), conf/containers.config (container = 'image:tag')",
+        "and docs/versions.md (the Variable, Image and Pinned version cells).",
+        "Each file has a tag form (an optional @sha256 after the tag is kept) and a digest-only form (image@sha256:...).",
+        "The image name stops at ':' and '@', so a digest line never becomes a package named '...@sha256'."
+      ],
+      "managerFilePatterns": [
+        "/^versions\\.env$/",
+        "/^conf/containers\\.config$/",
+        "/^docs/versions\\.md$/"
+      ],
       "matchStrings": [
-        "(?<depName>(?:quay\\.io/biocontainers|staphb|broadinstitute|google|ensemblorg|sigven|pgkb|brentp|getwilds|lgalarno|genepi|dancooke|hkubal|pgscatalog)/[a-z][a-z0-9._-]+):(?<currentValue>[^\\s\\\\\"']+)"
+        "_IMAGE=\"(?<depName>[^:@\"\\s]+):(?<currentValue>[^:@\"\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"",
+        "_IMAGE=\"(?<depName>[^:@\"\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\"",
+        "container = '(?<depName>[^:@'\\s]+):(?<currentValue>[^:@'\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?'",
+        "container = '(?<depName>[^:@'\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})'",
+        "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+)` \\| `(?<currentValue>[^:@`\\s]+)` \\|",
+        "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+)` \\| `(?<currentDigest>sha256:[a-f0-9]{64})` \\|",
+        "\\| `[A-Z0-9_]+_IMAGE` \\| `(?<depName>[^:@`\\s]+):(?<currentValue>[^:@`\\s]+)` \\| `(?<currentDigest>sha256:[a-f0-9]{64})` \\|"
       ],
       "datasourceTemplate": "docker"
     },
     {
       "customType": "regex",
-      "description": "Docker images in docs (docker pull commands)",
-      "fileMatch": ["\\.md$"],
-      "matchStrings": ["docker pull (?<depName>[a-z][a-z0-9./_-]+):(?<currentValue>[^\\s`\"]+)"],
-      "datasourceTemplate": "docker"
+      "description": "Nextflow: NEXTFLOW_VERSION in versions.env, the setup-nextflow pins in the workflows and the NXF_VER install lines in the docs, all in one PR.",
+      "managerFilePatterns": [
+        "/^versions\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^docs/[^/]+\\.md$/"
+      ],
+      "matchStrings": [
+        "NEXTFLOW_VERSION=\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "uses: nf-core/setup-nextflow@\\S+(?: #[^\\n]*)?\\n\\s+with:\\n\\s+version: \"(?<currentValue>[^\"]+)\"",
+        "NXF_VER=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "nextflow-io/nextflow",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     },
     {
       "customType": "regex",
-      "description": "Docker images in docs (backtick-wrapped references)",
-      "fileMatch": ["\\.md$"],
-      "matchStrings": ["`(?<depName>(?:quay\\.io/biocontainers|staphb|broadinstitute|google|ensemblorg|sigven|pgkb|brentp|getwilds|lgalarno|genepi|dancooke|hkubal|pgscatalog)/[a-z][a-z0-9._-]+):(?<currentValue>[^`]+)`"],
-      "datasourceTemplate": "docker"
+      "description": "actionlint, downloaded by version in the lint workflow.",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["ACTIONLINT_VERSION[=:]\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "rhysd/actionlint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "gitleaks, downloaded by version in the lint workflow.",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["GITLEAKS_VERSION[=:]\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "gitleaks/gitleaks",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+
+  "packageRules": [
+    {
+      "description": [
+        "Biocontainer tags are <version>--<conda build hash>_<build number>. Docker versioning reads the part after '--' as a suffix that must stay the same, and the hash changes between versions, so most of these pins would never see a newer tag.",
+        "This versioning ignores the hash and orders by version, then build number. A tag in any other shape (an unsuffixed tag, a four-part version) is not a version here and is never proposed.",
+        "A Python build prefix (py312 in 3.9.5--py312h6e8b409_0) is kept: only tags for the same Python are proposed. A noarch tag (pyhdfd78af) has no such prefix."
+      ],
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^quay\\.io/biocontainers//"],
+      "versioning": "regex:^(?<major>\\d+)(?:\\.(?<minor>\\d+))?(?:\\.(?<patch>\\d+))?--(?<compatibility>py\\d+)?[a-z0-9]+_(?<build>\\d+)$"
+    },
+    {
+      "description": "Ensembl VEP tags are release_<major>.<minor>, which docker versioning cannot read. A major (a new Ensembl release) waits for approval on the dependency dashboard: it needs the matching cache (VEP_CACHE_RELEASE in versions.env, about 26 GB) moved in the same PR.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ensemblorg/ensembl-vep"],
+      "versioning": "regex:^release_(?<major>\\d+)\\.(?<minor>\\d+)$"
+    },
+    {
+      "description": "PCGR/CPSR: every update waits for approval on the dependency dashboard, because each release reads its own reference bundle and VEP cache (PCGR_DATA_BUNDLE and PCGR_VEP_CACHE_RELEASE in versions.env). The image comes from ghcr.io/sigven/pcgr (Docker Hub's sigven/pcgr stops at 2.2.5); the image matcher reads ghcr.io like any other registry. allowedVersions keeps the release tags (x.y.z): ghcr also carries development builds (2.3.2.9006) and .singularity tags.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/sigven/pcgr"],
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with the versions pip resolved on Python 3.11 (scripts/cyrius-constraints.txt); a new minor or major needs them resolved again in the same PR. A patch (3.11.x) is safe to approve: the image test runs Cyrius on it.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["python"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Hold: pypgx stays at 0.26.0. 0.27.0 pulled pandas 3.0 and broke every gene while its smoke test still passed. Lift the hold when upstream releases the pandas fix (expected in 0.28.0) and a pypgx-bundle tag of the same version exists; PYPGX_BUNDLE_VERSION moves with it.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/biocontainers/pypgx"],
+      "allowedVersions": "/^0\\.26\\.0--/"
+    },
+    {
+      "description": "Hold: plink2 stays at 2.00a5.10, the only versioned tag pgscatalog/plink2 ships and the build pgsc_calc uses.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["pgscatalog/plink2"],
+      "enabled": false
+    },
+    {
+      "description": "Hold: the pgsc_calc images (ghcr.io/pgscatalog/...) are the ones pgsc_calc's conf/modules.config names at PGSC_CALC_VERSION; they move only with that release, by hand, after reading that file again (docs/25-prs.md, Maintenance).",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^ghcr\\.io/pgscatalog//"],
+      "enabled": false
+    },
+    {
+      "description": "Legacy tools, no automated bumps: Manta, Strelka2, duphold, Octopus and GRIDSS are archived or quiet upstream. Bump one by hand after running it on the fixture.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "quay.io/biocontainers/manta",
+        "quay.io/biocontainers/strelka",
+        "brentp/duphold",
+        "dancooke/octopus",
+        "quay.io/biocontainers/gridss"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Nextflow: every update waits for approval on the dependency dashboard. A new release can change what the strict config parser accepts, and the validated version is also written in nextflow.config and the Nextflow docs, which need reading by hand.",
+      "matchDepNames": ["nextflow-io/nextflow"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "CI tools take the ci prefix.",
+      "matchDepNames": ["rhysd/actionlint", "gitleaks/gitleaks"],
+      "commitMessagePrefix": "ci"
     }
   ]
 }

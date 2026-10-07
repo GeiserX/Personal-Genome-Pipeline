@@ -1,2 +1,5 @@
-sample,vcf,vcf_index,bam,bam_index
-stub_sample,assets/stub/sample.vcf.gz,assets/stub/sample.vcf.gz.tbi,assets/stub/sample.bam,assets/stub/sample.bam.bai
+sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex,cram,crai
+stub_sample,,,assets/stub/sample.bam,assets/stub/sample.bam.bai,assets/stub/sample.vcf.gz,assets/stub/sample.vcf.gz.tbi,female,,
+stub_fastq,assets/stub/sample_R1.fastq.gz,assets/stub/sample_R2.fastq.gz,,,,,male,,
+stub_bam,,,assets/stub/sample.bam,assets/stub/sample.bam.bai,,,male,,
+stub_cram,,,,,assets/stub/sample.vcf.gz,assets/stub/sample.vcf.gz.tbi,male,assets/stub/sample.cram,assets/stub/sample.cram.crai

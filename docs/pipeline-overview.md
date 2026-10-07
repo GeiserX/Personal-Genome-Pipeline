@@ -5,17 +5,18 @@
 | Category | What It Finds | Steps |
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
-| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels) | 6, 17 |
-| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.) | 7, 21, 27, 32 |
+| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels), SMN1/SMN2 copy number (opt-in) | 6, 17, 35 |
+| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.), with HLA-A/B from T1K and CYP2D6 only when two callers agree | 7, 21, 27, 32, 36 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
-| **Repeat Expansions** | Huntington's, Fragile X, ALS, and 50+ other repeat expansion disorders | 9 |
-| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, ancestry SNP intersection | 11, 12, 26 |
+| **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at the 31 loci of ExpansionHunter's bundled catalog | 9, 9b |
+| **Ancestry & Haplogroups** | Mitochondrial haplogroup, consanguinity check, projection onto a 1000 Genomes reference panel | 11, 12, 26 |
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
-| **Polygenic Risk** | Risk scores for 10 common conditions (CAD, T2D, cancers, etc.) | 25 |
-| **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, SV filtering | 1b, 15, 16, 16b, 28 |
+| **Polygenic Risk** | Scores for 9 common conditions (CAD, T2D, cancers, etc.) with pgsc_calc; a percentile among the most similar ancestry group with the panel installed | 25 |
+| **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, sample identity and contamination, SV filtering | 1b, 15, 16, 16b, 28, 33 |
+| **Storage** | Alignments kept as a checked CRAM, about half the size of the BAM | 34 |
 
 ## Pipeline Overview
 
@@ -38,7 +39,7 @@ graph LR
     VCF --> cpsr["CPSR<br/><small>Cancer predisposition</small>"]
     VCF --> roh["ROH Analysis"]
     VCF --> prs["PRS<br/><small>Polygenic risk</small>"]
-    VCF --> ancestry["Ancestry SNPs"]
+    VCF --> ancestry["Ancestry<br/><small>panel projection</small>"]
 
     %% BAM-based analyses
     BAM --> manta["Manta<br/><small>SVs</small>"]
@@ -52,11 +53,19 @@ graph LR
 
     BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
-    BAM --> cyrius["Cyrius<br/><small>CYP2D6</small>"]
+    BAM --> cyrius["Cyrius<br/><small>CYP2D6, opt-in</small>"]
+    BAM --> hla["T1K<br/><small>HLA (+ KIR, opt-in)</small>"]
+    BAM --> paralogs["Parascopy<br/><small>SMN1/SMN2, opt-in</small>"]
+    hla --> consensus36["PGx consensus<br/><small>outside calls</small>"]
+    pypgx --> consensus36
+    cyrius --> consensus36
+    consensus36 --> pharmcat
     BAM --> telomere["TelomereHunter"]
     BAM --> coverage["mosdepth<br/>+ indexcov"]
     BAM --> mito["Mutect2<br/><small>Mitochondrial</small>"]
     BAM --> haplo["Haplogrep3<br/><small>mtDNA haplogroup</small>"]
+    BAM --> sampleqc["somalier + VerifyBamID2<br/><small>Identity + contamination</small>"]
+    BAM --> cram["CRAM archive"]
 
     %% Reporting
     clinical --> report["HTML Report<br/>+ MultiQC"]
@@ -64,6 +73,7 @@ graph LR
     clinvar --> report
     pharmcat --> report
     cpsr --> report
+    sampleqc --> report
 
     %% Styling
     classDef input fill:#0ea5e9,stroke:#0284c7,color:#fff
@@ -75,7 +85,7 @@ graph LR
 
     class FASTQ,BAM,VCF input
     class fastp,align,DV core
-    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,telomere,coverage,mito,haplo analysis
+    class clinvar,pharmcat,cpic,cpsr,eh,roh,prs,ancestry,pypgx,cyrius,hla,paralogs,consensus36,telomere,coverage,mito,haplo,sampleqc,cram analysis
     class manta,delly,cnvpytor,consensus,duphold,annotsv sv
     class vep,vcfanno,slivar,clinical annotation
     class report report
@@ -83,53 +93,64 @@ graph LR
 
 ### All Steps
 
-| # | Step | Tool | Docker Image | Runtime | Required? |
-|---|---|---|---|---|---|
-| 1 | [ORA to FASTQ](01-ora-to-fastq.md) | orad | `orad` binary | ~30 min | Only for Illumina ORA files |
-| 1b | [QC & Trimming](01b-fastp-qc.md) | fastp | `quay.io/biocontainers/fastp:1.3.6` | ~15-30 min | Recommended |
-| 2 | [Alignment](02-alignment.md) | minimap2 + samtools | `quay.io/biocontainers/minimap2:2.31` + `staphb/samtools:1.20` | ~1-2 hr | Yes (if starting from FASTQ) |
-| 3 | [Variant Calling](03-variant-calling.md) | DeepVariant | `google/deepvariant:1.10.0` | ~2-4 hr | Yes |
-| 4 | [Structural Variants](04-structural-variants.md) | Manta | `quay.io/biocontainers/manta:1.6.0` | ~20 min | Recommended |
-| 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `quay.io/biocontainers/annotsv:3.5.10` | ~10 min | If step 4 run |
-| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec | `staphb/bcftools:1.21` | ~5 min | Yes |
-| 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `pgkb/pharmcat:3.2.0` | ~10 min | Yes |
-| 8 | [HLA Typing](08-hla-typing.md) | T1K | `quay.io/biocontainers/t1k:1.0.9` | ~30 min | Optional |
-| 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `quay.io/biocontainers/expansionhunter:5.0.0` | ~15 min | Recommended |
-| 9b | [STR Annotation](09b-stranger.md) | Stranger | `quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0` | ~1 min | If step 9 run |
-| 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `lgalarno/telomerehunter` (digest-pinned) | ~1 hr | Optional |
-| 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `staphb/bcftools:1.21` | ~5 min | Recommended |
-| 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 | `jtb114/haplogrep3` (digest-pinned) | ~1 min | Optional |
-| 13 | [VEP Annotation](13-vep-annotation.md) | VEP | `ensemblorg/ensembl-vep:release_116.0` | ~2-4 hr | Recommended |
-| 14 | [Imputation Prep](14-imputation-prep.md) | bcftools | `staphb/bcftools:1.21` | ~10 min | Optional |
-| 15 | [SV Quality](15-duphold.md) | duphold | `brentp/duphold:v0.2.3` | ~20 min | If step 4 run |
-| 16 | [Coverage QC](16-indexcov.md) | indexcov | `quay.io/biocontainers/goleft:0.2.6` | ~5 sec | Recommended |
-| 16b | [Coverage Stats](16b-mosdepth.md) | mosdepth | `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` | ~10 min | Recommended |
-| 17 | [Cancer Predisposition](17-cpsr.md) | CPSR | `sigven/pcgr:2.2.5` | ~30-60 min | Recommended |
-| 18 | [CNV Calling](18-cnvpytor.md) | CNVpytor | `quay.io/biocontainers/cnvpytor:1.3.2--pyhdfd78af_0` | ~1-3 hr | Optional |
-| 19 | [SV Calling (Delly)](19-delly.md) | Delly | `quay.io/biocontainers/delly:2.1.0` | ~2-4 hr | Optional |
-| 20 | [Mitochondrial](20-mtoolbox.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~15-30 min | Optional |
+| # | Step | Tool | Image variable | Required? |
+|---|---|---|---|---|
+| 1 | [ORA to FASTQ](01-ora-to-fastq.md) | orad | `orad` binary | Only for Illumina ORA files |
+| 1b | [QC & Trimming](01b-fastp-qc.md) | fastp | `FASTP_IMAGE` | Recommended |
+| 2 | [Alignment](02-alignment.md) | minimap2 + samtools | `MINIMAP2_IMAGE` + `SAMTOOLS_IMAGE` | Yes (if starting from FASTQ) |
+| 3 | [Variant Calling](03-variant-calling.md) | DeepVariant | `DEEPVARIANT_IMAGE` | Yes |
+| 4 | [Structural Variants](04-structural-variants.md) | Manta | `MANTA_IMAGE` | Recommended |
+| 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `ANNOTSV_IMAGE` | If step 4 run |
+| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec | `BCFTOOLS_IMAGE` | Yes |
+| 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `PHARMCAT_IMAGE` | Yes |
+| 8 | [HLA Typing](08-hla-typing.md) | T1K | `T1K_IMAGE` | Optional |
+| 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | Recommended |
+| 9b | [STR Annotation](09b-stranger.md) | Stranger | `STRANGER_IMAGE` | If step 9 run |
+| 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `TELOMEREHUNTER_IMAGE` | Optional |
+| 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `BCFTOOLS_IMAGE` | Recommended |
+| 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 | `HAPLOGREP3_IMAGE` | Optional |
+| 13 | [VEP Annotation](13-vep-annotation.md) | VEP | `VEP_IMAGE` | Recommended |
+| 14 | [Imputation Prep](14-imputation-prep.md) | bcftools | `BCFTOOLS_IMAGE` | Optional, opt-in (`IMPUTATION=true`) |
+| 15 | [SV Quality](15-duphold.md) | duphold | `DUPHOLD_IMAGE` | If step 4 run |
+| 16 | [Coverage QC](16-indexcov.md) | indexcov | `GOLEFT_IMAGE` | Recommended |
+| 16b | [Coverage Stats](16b-mosdepth.md) | mosdepth | `MOSDEPTH_IMAGE` | Recommended |
+| 17 | [Cancer Predisposition](17-cpsr.md) | CPSR | `PCGR_IMAGE` | Recommended |
+| 18 | [CNV Calling](18-cnvpytor.md) | CNVpytor | `CNVPYTOR_IMAGE` | Optional |
+| 19 | [SV Calling (Delly)](19-delly.md) | Delly | `DELLY_IMAGE` | Optional |
+| 20 | [Mitochondrial](20-mtoolbox.md) | GATK Mutect2 | `GATK_IMAGE` | Optional |
 
 #### Post-Processing Steps
 
 These run after the core pipeline completes and combine outputs from earlier steps.
 
-| # | Step | Tool | Docker Image | Runtime | Required? |
-|---|---|---|---|---|---|
-| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `python:3.11-slim` | ~10 min | Experimental |
-| 22 | [SV Consensus Merge](22-survivor-merge.md) | bcftools | `staphb/bcftools:1.21` | ~5 min | Experimental |
-| 23 | [Clinical Filter](23-clinical-filter.md) | bcftools +split-vep | `staphb/bcftools:1.21` | ~5-10 min | If step 13 run |
-| 24 | [HTML Report](24-html-report.md) | bash + bcftools | `staphb/bcftools:1.21` | ~1-3 min | Recommended |
-| 25 | [Polygenic Risk Scores](25-prs.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30 min | Exploratory |
-| 26 | [Ancestry SNPs](26-ancestry.md) | plink2 | `pgscatalog/plink2:2.00a5.10` | ~30-60 min | Experimental |
-| 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `python:3.11-slim` | ~5 min | If step 7 run |
-| 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `quay.io/biocontainers/multiqc:1.35` | ~1 min | Recommended |
-| 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `broadinstitute/gatk:4.6.2.0` | ~2-6 hr | Experimental |
-| 30 | [Annotation Enrichment](30-vcfanno.md) | vcfanno | `quay.io/biocontainers/vcfanno:0.3.9` | ~5-15 min | If step 13 run |
-| 31 | [Variant Prioritization](31-slivar.md) | slivar | `quay.io/biocontainers/slivar:0.3.4` | ~5-10 min | If step 13 run |
-| 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `quay.io/biocontainers/pypgx:0.26.0` | ~20-40 min | Recommended |
+| # | Step | Tool | Image variable | Required? |
+|---|---|---|---|---|
+| 21 | [CYP2D6 Star Alleles](21-cyrius.md) | Cyrius | `PYTHON_IMAGE` | Opt-in (`TOOLS=...,cyrius`; non-commercial licence) |
+| 22 | [SV Consensus Merge](22-survivor-merge.md) | bcftools | `BCFTOOLS_IMAGE` | Experimental |
+| 23 | [Clinical Filter](23-clinical-filter.md) | bcftools +split-vep | `BCFTOOLS_IMAGE` | If step 13 run |
+| 24 | [HTML Report](24-html-report.md) | bash + bcftools | `BCFTOOLS_IMAGE` | Recommended |
+| 25 | [Polygenic Risk Scores](25-prs.md) | pgsc_calc | `PGSC_UTILS_IMAGE`, `PLINK2_IMAGE` | Exploratory; percentiles need the ancestry panel |
+| 26 | [Ancestry](26-ancestry.md) | pgsc_calc | `PGSC_FRAPOSA_IMAGE`, `PGSC_UTILS_IMAGE` | Opt-in (`ANCESTRY=true`, after `setup.sh --ancestry-panel`) |
+| 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `PYTHON_IMAGE` | If step 7 run |
+| 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `MULTIQC_IMAGE` | Recommended |
+| 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `GATK_IMAGE` | Experimental, opt-in (`SOMATIC=true`) |
+| 30 | [Annotation Enrichment](30-vcfanno.md) | vcfanno | `VCFANNO_IMAGE` | If step 13 run |
+| 31 | [Variant Prioritization](31-slivar.md) | slivar | `SLIVAR_IMAGE` | If step 13 run |
+| 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `PYPGX_IMAGE` | Recommended |
+| 33 | [Sample Identity and Contamination](33-sample-qc.md) | somalier + VerifyBamID2 | `SOMALIER_IMAGE` + `VERIFYBAMID2_IMAGE` | Recommended |
+| 34 | [CRAM Archive](34-cram-archive.md) | samtools | `SAMTOOLS_IMAGE` | Optional, when the analysis is done |
+| 35 | [Paralog Genes: SMN1/SMN2](35-paralogs.md) | Parascopy | `PARASCOPY_IMAGE` | Opt-in (`TOOLS=...,parascopy`) |
+| 36 | [PGx Consensus](36-pgx-consensus.md) | Python | `PYTHON_IMAGE` | Runs with step 7 when step 8, 21 or 32 ran |
 
-**Minimum useful run:** Steps 2, 3, 6, 7 (alignment + variant calling + ClinVar + PharmCAT) = ~4-6 hours.
-**Full analysis:** All 34 default steps = ~12-20 hours (step 29 somatic calling is opt-in via `SOMATIC=true`). Steps 4/18/19 and 10/12/20 can run in parallel.
+### What a default run covers
+
+A default `./scripts/run-all.sh <sample> <sex>` runs **31 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 22, 23, 24, 25, 27, 28, 30, 31, 32 and 36. Steps 5, 8, 13, 17, 18 and 32 are reported as skipped when their data is not installed, 23, 30 and 31 when step 13 did not run, and 36 (inside the PharmCAT stage) runs when step 8 or 32 did. It ends with the summary report (`generate-report.sh`).
+
+Off unless you ask for them: 21 (`TOOLS=...,cyrius`, after `setup.sh --cyrius`), 35 (`TOOLS=...,parascopy`, after `setup.sh --parascopy-data`), KIR typing in step 8 (`KIR=true`, after `setup.sh --kir-data`), 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 26 (`ANCESTRY=true`, after `setup.sh --ancestry-panel`), 29 (`SOMATIC=true`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
+
+The [Nextflow pipeline](nextflow.md) runs the same chain from a samplesheet, from FASTQ (steps 1b, 2, 16 and 3) to the report, with the steps above that have a module.
+
+The minimum useful run is steps 2, 3, 6 and 7 (alignment, variant calling, ClinVar, PharmCAT). Runtimes per step and for a whole run are on [Hardware and storage requirements](hardware-requirements.md#runtime-per-step).
 
 #### Alternative Tools (Benchmarking)
 

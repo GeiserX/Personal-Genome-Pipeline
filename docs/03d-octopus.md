@@ -24,9 +24,9 @@ Octopus jointly calls SNPs and indels using a haplotype-based model that conside
 
 ## Docker Image
 
-```
-dancooke/octopus:0.7.4
-```
+- `OCTOPUS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 

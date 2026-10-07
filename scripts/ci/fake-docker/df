@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake `df` for scripts/ci/run-fake-docker-suite.sh. The CI runner has far
+# less than the 500 GB the scripts ask for, so the suite reports 2 TiB free
+# on every path. Supports the forms the scripts use: -Pk, -k and -BG.
+set -uo pipefail
+
+case " $* " in
+  *" -BG "*)
+    echo "Filesystem 1G-blocks Used Available Use% Mounted on"
+    echo "fakefs 2048G 0G 2048G 0% /"
+    ;;
+  *)
+    echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+    echo "fakefs 2147483648 0 2147483648 0% /"
+    ;;
+esac

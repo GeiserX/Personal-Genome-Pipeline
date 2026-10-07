@@ -1,107 +1,91 @@
-# Step 26: Ancestry SNP Intersection [EXPERIMENTAL]
+# Step 26: Ancestry (projection onto a reference panel)
 
 ## What This Does
 
-Intersects your sample's common SNPs with the 1000 Genomes Project reference panel and runs LD pruning. The script attempts single-sample PCA with plink2, but **single-sample PCA is mathematically degenerate** — PCA defines axes from variance across a cohort (Price et al. 2006), so one sample cannot produce interpretable principal components. The output is best understood as a prepared SNP set for users who want to extend it with joint multi-sample PCA against a reference panel.
+Places your genome among the samples of a reference panel whose populations are known, and names the panel population your genetic ancestry is most similar to. It uses pgsc_calc's ancestry projection: the panel's principal components are computed from the panel's own samples, and your genotypes are projected onto them, so one sample is enough. The same pgsc_calc run gives step 25 its percentiles.
+
+Without the panel the step prints one line and exits 0:
+
+```
+Step 26 skipped: no ancestry reference panel at <genome_dir>/reference/pgsc_calc/pgsc_1000G_v1.tar.zst; install it with scripts/setup.sh --ancestry-panel <genome_dir>
+```
 
 ## Why
 
-The intermediate outputs (shared SNPs, LD-pruned variant set) are useful for two reasons:
+1. **PRS interpretation**: a polygenic score (step 25) only means something next to people of similar genetic ancestry. The population found here is the group step 25 compares your score with.
+2. **Context for other results**: population frequencies and some risk estimates differ between ancestries.
 
-1. **PRS interpretation**: Polygenic risk scores (step 25) are ancestry-dependent. The ancestry SNP set helps identify which population reference to use.
-2. **Variant filtering**: Population-specific variant frequencies help distinguish benign variants from truly rare findings.
-
-**This step does NOT produce a usable ancestry estimate.** For ancestry analysis from WGS, you need joint PCA or admixture analysis against a multi-population reference panel (not implemented here). For a quick ancestry check, consumer services (23andMe, AncestryDNA) or tools like [Gnomix](https://github.com/AI-sandbox/gnomix) with a reference cohort are more appropriate.
+A principal component analysis of one genome alone cannot work, since the axes come from the variation between many people. Projection onto axes that a reference panel defines is the method that works on one sample.
 
 ## Tool
 
-- **plink2** for PCA computation and LD pruning
-- **bcftools** for variant intersection and filtering
-- **1000 Genomes Project** Phase 3 as the reference panel
+- **pgsc_calc** (`PGSC_CALC_VERSION` in `versions.env`), run by step 25: FRAPOSA's online augmentation, decomposition and Procrustes projection (`--projection_method oadp`), then a random forest on the first principal components to assign the most similar population.
+- **Reference panel**: pgsc_calc's 1000 Genomes database `pgsc_1000G_v1` (`PGSC_PANEL` in `versions.env`), 3,202 samples (2,583 founders) of the five 1000 Genomes super-populations (AFR, AMR, EAS, EUR, SAS), published by the PGS Catalog.
 
 ## Docker Images
 
-```
-pgscatalog/plink2:2.00a5.10
-staphb/bcftools:1.21
-```
+The images of step 25, all pinned in `versions.env`: `PGSC_UTILS_IMAGE`, `PLINK2_IMAGE`, `PGSC_FRAPOSA_IMAGE`, `PGSC_ZSTD_IMAGE`, `PGSC_PYYAML_IMAGE`, `PGSC_REPORT_IMAGE`, with `PYTHON_IMAGE` and `BCFTOOLS_IMAGE`. [Image versions](versions.md) lists the tags.
 
 ## Input
 
-- VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
+- VCF from DeepVariant (step 3), and its gVCF beside it: the panel's SNVs are genotyped from the gVCF, so the sites where you match the reference count in the projection. Without a gVCF only your variant sites are projected, which weakens it.
+- The panel and its site list, installed once (7.4 GB, and about 23 GB of disk while pgsc_calc runs): `./scripts/setup.sh --ancestry-panel <genome_dir>`. It is opt-in for that reason; see the measured numbers in [step 25](25-prs.md#the-reference-panel-on-a-github-hosted-runner).
+- Java 17+ and Nextflow, as for step 25.
 
 ## Command
 
 ```bash
+./scripts/setup.sh --ancestry-panel /path/to/genome_dir   # once
 ./scripts/26-ancestry.sh your_name
 ```
 
-`run-all.sh` does not run this step unless you ask for it, because on one sample it downloads about 900 MB to produce a count:
+`run-all.sh` runs it after the pipeline when asked:
 
 ```bash
 ANCESTRY=true ./scripts/run-all.sh your_name <male|female>
 ```
 
+`ANCESTRY_PANEL=/path/to/panel.tar.zst` points at another pgsc_calc panel (its `_GRCh38_sites.tsv` must be beside it); `ANCESTRY_PANEL=none` skips the step.
+
 ## What the Script Does Internally
 
-1. **Downloads 1000 Genomes reference SNPs** (one-time, ~900 MB): fetches the GRCh38 biallelic SNV sites file and filters to common autosomal SNPs (MAF 5-95%)
-2. **Downloads population labels**: maps each 1000G sample to its super-population (AFR, AMR, EAS, EUR, SAS)
-3. **Intersects your VCF with the reference**: finds SNPs present in both your sample and the 1000G panel using `bcftools isec`, and prints how many there are
-4. **Tries LD pruning** (window 50, step 5, r-squared threshold 0.2). plink2 needs at least 50 samples for this, so on one sample it fails and the script carries on with all shared SNPs.
-5. **Tries PCA**. plink2 needs at least 2 samples, so on one sample it fails too and the script says so.
+1. Without the panel: prints the one line above and exits 0.
+2. Runs step 25, which uses the panel when it is installed: the score and panel positions are genotyped from the gVCF, and pgsc_calc runs with `--run_ancestry`. pgsc_calc intersects your genotypes with the panel, keeps unrelated panel samples and common, LD-thinned SNVs, computes the panel's principal components, projects you onto them, and assigns the population with a random forest trained on the panel's labels.
+3. Prints the population and checks that the ancestry table was written.
 
-On a single sample the only result is the shared SNP set and its count.
+In the Nextflow pipeline the same happens inside `prs` when `--ancestry_ref` is set; `ancestry` in `--tools` needs `prs` and `--ancestry_ref`.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_shared.vcf.gz` (+ `.tbi`) | SNPs shared between your sample and 1000G |
+| `${SAMPLE}_ancestry.tsv` | `key` and `value` rows: `sample`, `reference_panel`, `population` (the most similar panel population), `population_low_confidence`, `probability_<POP>` for each panel population, and `PC1` to `PC10` |
 
-The `${SAMPLE}_ld.prune.in`/`.prune.out` and `${SAMPLE}_pca.eigenvec`/`.eigenval` files are only written when plink2 gets enough samples, which never happens with one sample.
-
-All output is written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. Reference data is cached in `${GENOME_DIR}/ancestry_ref/`.
+Written to `${GENOME_DIR}/${SAMPLE}/ancestry/`. pgsc_calc's own files, including the principal components of every panel sample, are in `${GENOME_DIR}/${SAMPLE}/prs/pgsc_calc/results/sample/score/` (`sample_popsimilarity.txt.gz`).
 
 ## Runtime
 
-~15-30 minutes (dominated by the initial 1000G download on first run; subsequent runs are faster).
+The panel's extraction, QC and PCA come on top of step 25's run; see the measured numbers in [step 25](25-prs.md#the-reference-panel-on-a-github-hosted-runner).
 
 ## Interpreting Results
 
-The step reports how many of your SNPs are also common SNPs in the 1000G panel. A count below 1,000 usually means a different genome build or a VCF with few variants. It does not tell you anything about your ancestry by itself.
-
-### Single-sample limitation
-
-This script can only attempt PCA on **your sample alone**, not jointly with the 1000G reference panel, and plink2 refuses it. Even if it ran, this is a fundamental limitation: in population-structure PCA (Price et al. 2006), the PC axes are defined by the variance across many individuals. With a single sample, the axes instead capture internal genotype variance (e.g., heterozygosity patterns), which does not map onto population-level structure.
-
-Single-sample PC values would **not be comparable** to published 1000G PCA plots, where PC1 separates African from non-African ancestry and PC2 separates European from East Asian. Those axis interpretations require joint PCA across a multi-population cohort.
-
-To properly place yourself on a population map, you would need to:
-
-1. Download the full 1000G genotype data (~30-50 GB)
-2. Merge your sample with the 1000G samples
-3. Run joint PCA on the combined dataset
-4. Plot your sample against the 1000G population clusters
-
-This pipeline does not perform joint PCA. The single-sample output is included as a starting point for users who want to extend it with their own reference panel.
+- **population** is the reference group whose genetic ancestry is most similar to yours. It is a statement about similarity to five continental groups of the 1000 Genomes Project, not about identity, nationality or ethnicity.
+- **probability_<POP>** are the random forest's probabilities. A low top probability (`population_low_confidence` is `True`) means you sit between groups or far from all of them; the step 25 percentile is then less reliable.
+- **PC1 to PC10** are your coordinates on the panel's principal components. They can be plotted against the panel samples in `sample_popsimilarity.txt.gz`.
 
 ## Limitations
 
-- Single-sample PCA cannot produce population percentages (e.g., "85% European, 15% other"). That requires admixture analysis tools like ADMIXTURE or RFMix with a reference panel.
-- The 1000G panel does not represent all global populations equally. Fine-grained ancestry (e.g., distinguishing Spanish from Italian) requires specialized reference panels.
-- Low variant overlap between your VCF and the reference panel weakens results. The script warns if fewer than 1,000 shared SNPs are found.
-- The reference sites download URL from the 1000 Genomes FTP may occasionally be unavailable.
+- Five continental groups only. Mixed ancestry is shown as the single most similar group, with its probabilities; this step does not estimate admixture fractions or local ancestry.
+- Groups the 1000 Genomes Project does not sample well are placed less reliably.
+- Fine-grained ancestry (for example Spanish versus Italian) needs other panels and tools.
 
 ## Notes
 
-- Reference data (1000G SNPs and population labels) is downloaded once and cached in `${GENOME_DIR}/ancestry_ref/`. Delete this directory to force re-download.
-- LD pruning parameters (window=50, step=5, r2=0.2) are standard for ancestry PCA.
-- The script asks plink2 for 10 PCs. With one sample plink2 computes none; with a reference cohort merged in, 10 is the usual number.
-- For a more complete ancestry analysis, consider uploading your VCF to tools like [Gnomix](https://github.com/AI-sandbox/gnomix) or using the PLINK `--admixture` approach.
+- The panel is one file kept as downloaded; pgsc_calc unpacks the GRCh38 part into its work folder on each run. The site list beside it (`pgsc_1000G_v1_GRCh38_sites.tsv`) is made by `setup.sh` with plink2 from the panel's own genotypes: the biallelic autosomal SNVs with a panel frequency of 5% or more, the threshold pgsc_calc's projection applies (`maf_ref`): 6,966,553 of the 1000 Genomes panel's 61.6 million.
+- pgsc_calc's synthetic HAPNEST panel (`GRCh38_HAPNEST_reference`, 268 MB) is what the pull-request tests project onto; `ANCESTRY_PANEL_NAME=GRCh38_HAPNEST_reference ./scripts/setup.sh --ancestry-panel <genome_dir>` installs it, but its populations are simulated and say nothing about you.
 
 ## Links
 
+- [pgsc_calc ancestry documentation](https://pgsc-calc.readthedocs.io/en/latest/explanation/geneticancestry.html)
 - [1000 Genomes Project](https://www.internationalgenome.org/)
-- [plink2 PCA documentation](https://www.cog-genomics.org/plink/2.0/strat)
-- [1000G data portal (GRCh38)](https://www.internationalgenome.org/data-portal/data-collection/30x-grch38)
-- [Price et al. 2006 (PCA for population structure)](https://doi.org/10.1038/ng1847)
+- [FRAPOSA](https://github.com/daviddaiweizhang/fraposa) and the [fork pgsc_calc runs](https://github.com/PGScatalog/fraposa_pgsc)

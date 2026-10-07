@@ -13,8 +13,6 @@
 process MULTIQC {
     label 'process_low'
 
-    container 'quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1'
-
     publishDir "${params.outdir}/multiqc", mode: params.publish_dir_mode
 
     input:
@@ -33,13 +31,15 @@ process MULTIQC {
     multiqc \\
         . \\
         -f \\
+        --no-version-check \\
+        --no-ai \\
         -o . \\
         -n "multiqc_report.html" \\
         --title "Personal Genome Pipeline QC"
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        multiqc: \$(multiqc --version 2>&1 | sed 's/.*version //')
+        multiqc: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -50,7 +50,7 @@ process MULTIQC {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        multiqc: \$(multiqc --version 2>&1 | sed 's/.*version //')
+        multiqc: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

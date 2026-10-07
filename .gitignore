@@ -21,6 +21,32 @@ __pycache__/
 *.fq
 *.fq.gz
 *.ora
+*.gvcf
+*.gvcf.gz
+*.tbi
+*.csi
+
+# Genotype files: plink sets, scores and chip exports
+*.pgen
+*.pvar
+*.psam
+*.bed
+*.bim
+*.fam
+*.sscore
+*_raw.txt
+*_raw_dna_data.csv
+genome_*_Full_*.txt
+AncestryDNA*.txt
+
+# Reports and summaries the steps write about a sample
+*_report.html
+*.report.json
+*.cpsr.*
+*_prs_summary.tsv
+
+# A data directory at the top of the checkout
+/data/
 
 # Reference files
 *.fasta
@@ -32,6 +58,12 @@ __pycache__/
 
 # Stub test data (override genomics ignores above)
 !assets/stub/**
+# BED is also the interval format the pipeline ships and tests with: only a
+# plink .bed outside assets/ and tests/ stays ignored
+!assets/**/*.bed
+!tests/**/*.bed
+# Test fixtures are public, invented or trimmed data, kept in git on purpose
+!tests/fixtures/**
 
 # Archives
 *.tar.gz
@@ -66,3 +98,6 @@ site/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Beads: the tracker lives in a private Dolt remote, bead text never enters git
+.beads/*.jsonl

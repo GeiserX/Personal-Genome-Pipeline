@@ -6,8 +6,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/telomere/${SAMPLE}"
 
 echo "=== TelomereHunter: ${SAMPLE} ==="
@@ -24,16 +29,35 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-source "$(dirname "$0")/../versions.env" 2>/dev/null || TELOMEREHUNTER_IMAGE="lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714"
-docker run --rm \
-  --cpus 4 --memory 4g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  ${TELOMEREHUNTER_IMAGE} \
+# TelomereHunter sorts reads into intratelomeric, subtelomeric and junction
+# classes by chromosome band, and without -b it uses its own hg19 bands
+# (`telomerehunter --help`: "If no banding file is specified, the banding
+# information of hg19 will be used"). The BAM is GRCh38, so UCSC's GRCh38
+# bands (installed by setup.sh) are passed.
+BAND_ARGS=()
+if BANDS=$(data_file cytoband); then
+  echo "Chromosome bands: ${BANDS}"
+  BAND_ARGS=(-b "$(cpath "$BANDS")")
+else
+  echo "WARNING: the GRCh38 chromosome bands are not installed (${BANDS})."
+  echo "  TelomereHunter falls back to its hg19 bands, so the subtelomeric and"
+  echo "  junction read classes use hg19 band ends on GRCh38 positions."
+  echo "  Install the bands with: ./scripts/setup.sh ${GENOME_DIR}"
+fi
+
+# TelomereHunter has no thread option; THREADS caps the container.
+# --plotNone: the Bioconda build's plots fail (its R has no dplyr, and its
+# PyPDF2 is written for Python 3, which stops the run after the summary is
+# written). The summary and the TVR tables do not need them.
+run_in \
+  --cpus "$THREADS" --memory 4g \
+  "${TELOMEREHUNTER_IMAGE}" \
   telomerehunter \
-    -ibt "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
+    -ibt "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/telomere/${SAMPLE}" \
-    -p "$SAMPLE"
+    -p "$SAMPLE" \
+    --plotNone \
+    ${BAND_ARGS[@]+"${BAND_ARGS[@]}"}
 
 echo "=== TelomereHunter complete ==="
 SUMMARY="${OUTPUT_DIR}/${SAMPLE}/${SAMPLE}_summary.tsv"

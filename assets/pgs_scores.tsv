@@ -1,0 +1,15 @@
+# The PGS Catalog scores step 25 and the PRS process run, one per line.
+# trait_reported is the trait exactly as https://www.pgscatalog.org/rest/score/<pgs_id>
+# reports it; scripts/ci/check-pgs-labels.sh compares the two, so an id
+# cannot be printed under the wrong disease. setup.sh downloads each score's
+# GRCh38-harmonised file into <genome_dir>/prs_scores/.
+pgs_id	trait_reported
+PGS000018	Coronary artery disease
+PGS000014	Type 2 diabetes (T2D)
+PGS000004	Breast cancer
+PGS000662	Prostate cancer
+PGS000016	Atrial fibrillation
+PGS000334	Late-onset Alzheimer’s disease
+PGS000027	Body mass index (BMI)
+PGS000017	Inflammatory bowel disease
+PGS000055	Colorectal cancer

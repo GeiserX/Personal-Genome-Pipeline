@@ -29,6 +29,8 @@ workflow SV {
     ch_reference_fai  // channel: val(path) -- reference FASTA index
     ch_delly_exclude  // channel: val(path) -- Delly exclude map (-x) or []
     ch_annotsv_annotations // channel: val(path) -- AnnotSV annotations directory or []
+    ch_manta_call_regions  // channel: val(path) -- bgzipped BED for Manta --callRegions or []
+    ch_manta_call_regions_index // channel: val(path) -- its .tbi or []
 
     main:
     ch_versions = Channel.empty()
@@ -40,7 +42,7 @@ workflow SV {
     //
     ch_manta_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('manta')) {
-        MANTA(ch_bam, ch_reference, ch_reference_fai)
+        MANTA(ch_bam, ch_reference, ch_reference_fai, ch_manta_call_regions, ch_manta_call_regions_index)
         ch_manta_vcf = MANTA.out.diploid_sv
         ch_versions  = ch_versions.mix(MANTA.out.versions)
     }

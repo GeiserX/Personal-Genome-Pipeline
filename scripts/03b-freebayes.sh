@@ -9,10 +9,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_freebayes"
 INTERVALS=${INTERVALS:-""}
 
@@ -36,37 +39,44 @@ mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Run FreeBayes (single-threaded, outputs unsorted VCF)
 echo "Running FreeBayes (single-threaded, this may take several hours for 30X WGS)..."
-FREEBAYES_ARGS=(-f /genome/reference/Homo_sapiens_assembly38.fasta)
+FREEBAYES_ARGS=(-f "${REF_FASTA_C}")
 if [ -n "$INTERVALS" ]; then
   FREEBAYES_ARGS+=(--region "$INTERVALS")
 fi
 FREEBAYES_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
-docker run --rm \
+# Through a temporary name: a FreeBayes that fails leaves no raw VCF behind.
+atomic_out "${OUTPUT_DIR}/${SAMPLE}_raw.vcf" run_in \
   --cpus 4 --memory 32g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/freebayes:1.3.6--hbfe0e7f_2 \
-  freebayes "${FREEBAYES_ARGS[@]}" \
-  > "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
+  "${FREEBAYES_IMAGE}" \
+  freebayes "${FREEBAYES_ARGS[@]}"
 
-# Step 2: Sort, compress, and index with bcftools
+# Step 2: Sort and compress in one bcftools call (no pipe whose first half can
+# fail unseen), with its temporary files in the output directory, then index.
+# The sorted VCF is written under a .tmp name and renamed when the sort
+# succeeded, so a sort that dies half way leaves no truncated ${SAMPLE}.vcf.gz.
+# The raw VCF is removed only after both succeeded.
 echo "Sorting and compressing VCF..."
-docker run --rm \
+SORTED="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
+if ! run_in \
   --cpus 4 --memory 4g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
-  bash -c "bcftools sort /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf \
-    | bcftools view -Oz -o /genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
+  "${BCFTOOLS_IMAGE}" \
+  bcftools sort -Oz -o "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz.tmp" \
+    -T "/genome/${SAMPLE}/vcf_freebayes/sort-tmp" \
+    "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}_raw.vcf"; then
+  rm -f "${SORTED}.tmp"
+  echo "ERROR: bcftools sort failed; the raw VCF is kept: ${OUTPUT_DIR}/${SAMPLE}_raw.vcf" >&2
+  exit 1
+fi
+# The index of an older VCF goes first: it must never sit beside the new one.
+rm -f "${SORTED}.tbi"
+mv -f "${SORTED}.tmp" "$SORTED"
 
 echo "Indexing VCF..."
-docker run --rm \
+run_in \
   --cpus 1 --memory 1g \
-  --user root \
-  -v "${GENOME_DIR}:/genome" \
-  staphb/bcftools:1.21 \
-  bcftools index -t "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
+  "${BCFTOOLS_IMAGE}" \
+  bcftools index -f -t "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz"
 
 # Clean up raw unsorted VCF
 rm -f "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
@@ -75,7 +85,7 @@ echo "=== FreeBayes complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 echo ""
 echo "Quick stats:"
-echo "  Total variants: $(docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 bcftools stats "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"
+echo "  Total variants: $(run_in "${BCFTOOLS_IMAGE}" bcftools stats "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" | grep '^SN' | grep 'number of records' | awk '{print $NF}' 2>/dev/null || echo 'run bcftools stats manually')"
 echo ""
 echo "NOTE: FreeBayes tends to call more variants than DeepVariant (higher sensitivity, more false positives)."
 echo "Consider running bcftools filter or vcffilter for quality filtering."

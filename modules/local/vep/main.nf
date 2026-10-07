@@ -13,13 +13,12 @@ process VEP {
     tag "$meta.id"
     label 'process_high'
 
-    container 'ensemblorg/ensembl-vep:release_116.0'
-
     publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(reference)
+    path(reference_fai)  // staged beside the FASTA, so no task builds its own
     path(vep_cache)
 
     output:
@@ -55,7 +54,7 @@ process VEP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        ensemblvep: \$(vep --help 2>&1 | grep 'ensembl-vep' | sed 's/.*: //' || echo 'release_116.0')
+        ensemblvep: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -67,7 +66,7 @@ process VEP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        ensemblvep: release_116.0
+        ensemblvep: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

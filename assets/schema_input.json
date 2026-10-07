@@ -12,9 +12,19 @@
                 "description": "Sample identifier (used as output prefix)",
                 "pattern": "^[a-zA-Z0-9._-]+$"
             },
+            "fastq_1": {
+                "type": "string",
+                "description": "Read 1 FASTQ (gzipped). With fastq_2, the row is trimmed, aligned and called; it takes no bam or vcf.",
+                "pattern": "^\\S+\\.f(ast)?q\\.gz$"
+            },
+            "fastq_2": {
+                "type": "string",
+                "description": "Read 2 FASTQ (gzipped)",
+                "pattern": "^\\S+\\.f(ast)?q\\.gz$"
+            },
             "vcf": {
                 "type": "string",
-                "description": "Path to sample VCF file (bgzipped)",
+                "description": "Path to sample VCF file (bgzipped). Without it, a BAM row is called by DeepVariant.",
                 "pattern": "^\\S+\\.vcf\\.gz$"
             },
             "vcf_index": {
@@ -22,9 +32,19 @@
                 "description": "Path to VCF tabix index (.tbi)",
                 "pattern": "^\\S+\\.vcf\\.gz\\.tbi$"
             },
+            "gvcf": {
+                "type": "string",
+                "description": "The gVCF of the row's VCF (step 03 writes one beside it), optional. PharmCAT and PRS then read a position where the sample matches the reference as 0/0 instead of missing; DEEPVARIANT does not run for the row. Needs vcf on the same row.",
+                "pattern": "^\\S+\\.vcf\\.gz$"
+            },
+            "gvcf_index": {
+                "type": "string",
+                "description": "Path to the gVCF's tabix index (.tbi)",
+                "pattern": "^\\S+\\.vcf\\.gz\\.tbi$"
+            },
             "bam": {
                 "type": "string",
-                "description": "Path to aligned BAM file (optional, needed for BAM-based steps)",
+                "description": "Path to aligned BAM file: called when the row has no VCF, used by the BAM-based steps either way",
                 "pattern": "^\\S+\\.bam$"
             },
             "bam_index": {
@@ -32,12 +52,28 @@
                 "description": "Path to BAM index (.bai)",
                 "pattern": "^\\S+\\.bam\\.bai$"
             },
+            "cram": {
+                "type": "string",
+                "description": "Path to a CRAM instead of the BAM (no bam on the same row). It is read with --reference, which must be the FASTA the CRAM was written with.",
+                "pattern": "^\\S+\\.cram$"
+            },
+            "crai": {
+                "type": "string",
+                "description": "Path to the CRAM index (.crai)",
+                "pattern": "^\\S+\\.crai$"
+            },
             "sex": {
                 "type": "string",
-                "description": "Sample sex (male or female). Required when expansion_hunter is in --tools: it sets the chrX ploidy.",
+                "description": "Sample sex (male or female). Required on every row that is called (FASTQ, or a BAM or CRAM without a VCF), where it sets DeepVariant's chrX/chrY ploidy, and when expansion_hunter is in --tools. INDEXCOV checks it against the BAM, and somalier against the reads with sample_qc.",
                 "enum": ["male", "female"]
             }
         },
-        "required": ["sample", "vcf", "vcf_index"]
+        "required": ["sample"],
+        "anyOf": [
+            { "required": ["fastq_1", "fastq_2"] },
+            { "required": ["bam", "bam_index"] },
+            { "required": ["cram", "crai"] },
+            { "required": ["vcf", "vcf_index"] }
+        ]
     }
 }

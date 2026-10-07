@@ -14,8 +14,6 @@ process MITO_EXTRACT_CHRM {
     tag "$meta.id"
     label 'process_single'
 
-    container 'staphb/bcftools:1.21'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
 
@@ -33,7 +31,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -44,7 +42,7 @@ process MITO_EXTRACT_CHRM {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -52,8 +50,6 @@ process MITO_EXTRACT_CHRM {
 process MITO_HAPLOGROUP {
     tag "$meta.id"
     label 'process_single'
-
-    container 'jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de'
 
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
@@ -69,15 +65,25 @@ process MITO_HAPLOGROUP {
 
     script:
     """
+    # haplogrep3 reads haplogrep3.yaml and its trees from the working
+    # directory. In the task directory it finds neither and fetches the
+    # config from GitHub, which fails without network (and was an unpinned
+    # download before). So it runs in the directory of its binary, where the
+    # image keeps them, as tests/smoke/haplogrep3.sh does.
+    WD=\$PWD
+    cd "\$(dirname "\$(readlink -f "\$(command -v haplogrep3)")")"
     haplogrep3 classify \\
         --tree phylotree-fu-rcrs@1.2 \\
-        --input ${chrm_vcf} \\
-        --output ${meta.id}_haplogroup.txt \\
+        --input "\$WD/${chrm_vcf}" \\
+        --output "\$WD/${meta.id}_haplogroup.txt" \\
         --extend-report
+    REPORTED=\$( { haplogrep3 --version 2>&1 || true; } | awk '!v && match(\$0, /[0-9]+\\.[0-9]+(\\.[0-9]+)*/) { v = substr(\$0, RSTART, RLENGTH) } END { print (v != "" ? v : "unknown") }')
+    cd "\$WD"
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: \$(haplogrep3 --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo 'latest')
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+        haplogrep3_reported: \${REPORTED}
     END_VERSIONS
     """
 
@@ -87,7 +93,7 @@ process MITO_HAPLOGROUP {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        haplogrep3: latest
+        haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

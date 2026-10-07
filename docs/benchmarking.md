@@ -21,12 +21,14 @@ For background on caller performance differences, see:
 
 The pipeline ships with four variant callers. Each writes output to a separate directory so they can run in parallel without conflicts.
 
+The image each script runs is on [Image versions](versions.md).
+
 | Script | Caller | Output Directory | Description |
 |---|---|---|---|
-| `scripts/03-deepvariant.sh` | DeepVariant 1.6.0 | `vcf/` | Default caller. Deep learning model, highest precision and F1. |
-| `scripts/03a-gatk-haplotypecaller.sh` | GATK HaplotypeCaller 4.6.1 | `vcf_gatk/` | Gold standard in clinical labs. Good precision/recall balance, GVCF support. |
-| `scripts/03b-freebayes.sh` | FreeBayes 1.3.6 | `vcf_freebayes/` | Bayesian caller. Highest sensitivity, most false positives, single-threaded. |
-| `scripts/03c-strelka2-germline.sh` | Strelka2 2.9.10 | `vcf_strelka2/` | Fast heuristic caller (SNVs + indels). Best with BWA-MEM2 alignments. |
+| `scripts/03-deepvariant.sh` | DeepVariant (`DEEPVARIANT_IMAGE`) | `vcf/` | Default caller. Deep learning model, highest precision and F1. |
+| `scripts/03a-gatk-haplotypecaller.sh` | GATK HaplotypeCaller (`GATK_IMAGE`) | `vcf_gatk/` | Gold standard in clinical labs. Good precision/recall balance, GVCF support. |
+| `scripts/03b-freebayes.sh` | FreeBayes (image set in the script) | `vcf_freebayes/` | Bayesian caller. Highest sensitivity, most false positives, single-threaded. |
+| `scripts/03c-strelka2-germline.sh` | Strelka2 (image set in the script) | `vcf_strelka2/` | Fast heuristic caller (SNVs + indels). Best with BWA-MEM2 alignments. |
 
 All four scripts accept the same arguments:
 
@@ -44,8 +46,8 @@ An alternative aligner is also available:
 
 | Script | Aligner | Output Directory | Description |
 |---|---|---|---|
-| `scripts/02-alignment.sh` | minimap2 2.28 | `aligned/` | Default. Faster, good for germline WGS. |
-| `scripts/02a-alignment-bwamem2.sh` | BWA-MEM2 2.2.1 | `aligned_bwamem2/` | Produces XS tags needed by Strelka2. Slightly more accurate for somatic calling. |
+| `scripts/02-alignment.sh` | minimap2 (`MINIMAP2_IMAGE`) | `aligned/` | Default. Faster, good for germline WGS. |
+| `scripts/02a-alignment-bwamem2.sh` | BWA-MEM2 (image set in the script) | `aligned_bwamem2/` | Produces XS tags needed by Strelka2. Slightly more accurate for somatic calling. |
 
 ---
 
@@ -60,9 +62,9 @@ Compare two or more caller VCFs against each other to measure agreement. This te
 Use `bcftools isec` to compute the intersection and unique calls:
 
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
 
 # Compare DeepVariant vs GATK (PASS variants only)
 mkdir -p "${GENOME_DIR}/${SAMPLE}/benchmark"
@@ -112,19 +114,22 @@ The Genome in a Bottle (GIAB) consortium publishes validated truth sets for seve
 GENOME_DIR=/path/to/your/data
 mkdir -p "${GENOME_DIR}/giab"
 
-# HG002 truth VCF (GRCh38, v4.2.1)
+# HG002 truth VCF (GRCh38, v4.2.1). Pinned to the NISTv4.2.1 directory: GIAB's
+# latest/ directory moves to each new release, so latest/ URLs stop working.
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi"
 
 # HG002 high-confidence regions BED
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/latest/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
 ```
 
 The BED file defines the regions where the truth set is confident. Variants outside these regions are excluded from benchmarking because the truth status is unknown.
+
+GIAB defines the v4.2.1 benchmark on the GRCh38 no-ALT analysis set, the reference this pipeline uses (GIAB hosts the same file under `release/references/GRCh38`), so the truth set and your calls share one coordinate system and one contig list. Calls from a BAM aligned to a reference with ALT contigs lose depth, and so recall, at CYP2D6, the MHC and the other loci those contigs copy, which a benchmark then counts as caller errors.
 
 ### Alternative: NA12878 (HG001)
 
@@ -132,7 +137,7 @@ The pipeline's [quick-test.md](quick-test.md) uses NA12878 (HG001), which is als
 
 ```bash
 wget -c -P "${GENOME_DIR}/giab" \
-  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/latest/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+  "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/NA12878_HG001/NISTv4.2.1/GRCh38/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 ```
 
 HG002 is preferred for benchmarking because its truth set covers more difficult genomic regions.
@@ -152,20 +157,24 @@ ${GENOME_DIR}/giab/
 
 [hap.py](https://github.com/Illumina/hap.py) (Illumina) is the standard benchmarking tool for SNP and indel callers. It decomposes complex variants, performs genotype matching, and reports precision/recall/F1 stratified by variant type.
 
+`HAPPY_IMAGE` is a community build of hap.py 0.3.12 with RTG Tools, which `--engine=vcfeval` needs. The Bioconda image (hap.py 0.3.15) has no RTG Tools, so it stops on `--engine=vcfeval` with `rtg: command not found`. With hap.py's own engine (xcmp) the two images give the same counts on a GIAB chr20 truth slice, but the comparison engine is what decides how two spellings of one variant are matched, so the benchmark keeps vcfeval and this image.
+
 ```bash
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # IMPORTANT: SAMPLE must be the GIAB sample that matches the truth set.
 # If using HG002 truth, you must have sequenced and called variants on HG002.
 SAMPLE=HG002
 GENOME_DIR=/path/to/your/data
 TRUTH_VCF="/genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 CONF_BED="/genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
-REF="/genome/reference/Homo_sapiens_assembly38.fasta"
+REF="/genome/${REF_FASTA}"
 
 # Benchmark DeepVariant against truth set
 docker run --rm \
   --cpus 4 --memory 16g \
   -v "${GENOME_DIR}:/genome" \
-  jmcdani20/hap.py:v0.3.12 \
+  "${HAPPY_IMAGE}" \
   /opt/hap.py/bin/hap.py \
     "$TRUTH_VCF" \
     "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
@@ -178,7 +187,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 16g \
   -v "${GENOME_DIR}:/genome" \
-  jmcdani20/hap.py:v0.3.12 \
+  "${HAPPY_IMAGE}" \
   /opt/hap.py/bin/hap.py \
     "$TRUTH_VCF" \
     "/genome/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz" \
@@ -191,7 +200,7 @@ docker run --rm \
 docker run --rm \
   --cpus 4 --memory 16g \
   -v "${GENOME_DIR}:/genome" \
-  jmcdani20/hap.py:v0.3.12 \
+  "${HAPPY_IMAGE}" \
   /opt/hap.py/bin/hap.py \
     "$TRUTH_VCF" \
     "/genome/${SAMPLE}/vcf_freebayes/${SAMPLE}.vcf.gz" \
@@ -286,12 +295,13 @@ INTERVALS=chr22 ./scripts/03b-freebayes.sh "$SAMPLE"
 For pairwise comparison (Step 2), extract chr22 from the DeepVariant full-genome VCF so both inputs cover the same region:
 
 ```bash
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+source versions.env   # from the repository root
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools view -r chr22 \
     "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     -Oz -o "/genome/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz"
 
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/vcf/${SAMPLE}_chr22.vcf.gz"
 ```
 
@@ -300,7 +310,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 ### Step 2: Pairwise Concordance
 
 ```bash
-BCFTOOLS_IMAGE="staphb/bcftools:1.21"
+source versions.env   # from the repository root
 
 # DeepVariant vs GATK on chr22
 docker run --rm -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
@@ -320,17 +330,19 @@ docker run --rm -v "${GENOME_DIR}:/genome" "$BCFTOOLS_IMAGE" \
 ### Step 3: Truth Set Benchmark (if Using HG002)
 
 ```bash
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+source versions.env   # from the repository root: HAPPY_IMAGE, the hap.py image the script uses
 # Benchmark each caller's chr22 output against GIAB truth set
 for CALLER_DIR in vcf vcf_gatk vcf_freebayes; do
   LABEL=$(basename "$CALLER_DIR")
   docker run --rm \
     --cpus 4 --memory 16g \
     -v "${GENOME_DIR}:/genome" \
-    jmcdani20/hap.py:v0.3.12 \
+    "${HAPPY_IMAGE}" \
     /opt/hap.py/bin/hap.py \
       /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz \
       "/genome/${SAMPLE}/${CALLER_DIR}/${SAMPLE}.vcf.gz" \
-      -r /genome/reference/Homo_sapiens_assembly38.fasta \
+      -r "/genome/${REF_FASTA}" \
       -f /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed \
       -o "/genome/${SAMPLE}/benchmark/${LABEL}_vs_truth_chr22" \
       --threads 4 \
@@ -341,11 +353,11 @@ done
 docker run --rm \
   --cpus 4 --memory 16g \
   -v "${GENOME_DIR}:/genome" \
-  jmcdani20/hap.py:v0.3.12 \
+  "${HAPPY_IMAGE}" \
   /opt/hap.py/bin/hap.py \
     /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz \
     "/genome/${SAMPLE}/vcf_strelka2/results/variants/variants.vcf.gz" \
-    -r /genome/reference/Homo_sapiens_assembly38.fasta \
+    -r "/genome/${REF_FASTA}" \
     -f /genome/giab/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed \
     -o "/genome/${SAMPLE}/benchmark/vcf_strelka2_vs_truth_chr22" \
     --threads 4 \
@@ -419,7 +431,7 @@ benchmark/
 
 ## Real-World Full-Genome Benchmark Results
 
-These are actual results from a 30X WGS sample (Intel i5-14500, 64GB RAM).
+These are actual results from a 30X WGS sample (Intel i5-14500, 64GB RAM). They are a historical measurement: the run used DeepVariant 1.6.0 and GATK 4.6.1, the pins of that time, not the versions pinned today, and has not been repeated since.
 
 ### Variant Counts (Full Genome)
 

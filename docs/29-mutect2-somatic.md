@@ -24,7 +24,7 @@ The gnomAD resource and Panel of Normals help reduce false positives significant
 
 ## When Is This Useful?
 
-- **CHIP screening**: Looking for age-related clonal hematopoiesis variants (DNMT3A, TET2, ASXL1, TP53, etc.) from blood-derived WGS
+- **CHIP screening**: Looking for large age-related clonal hematopoiesis clones (DNMT3A, TET2, ASXL1, TP53, etc.). Only clones of roughly 10% allele fraction or more are visible at 30X; see [Allele Fraction](#allele-fraction-af-interpretation)
 - **Mosaicism**: Detecting mosaic variants that germline callers miss because they expect 50%/100% allele fractions
 - **Research**: Exploring somatic mutation burden, mutational signatures, or clonal dynamics
 - **Complement to germline**: Some pathogenic variants in cancer genes may be somatic rather than germline
@@ -35,9 +35,9 @@ The gnomAD resource and Panel of Normals help reduce false positives significant
 
 ## Docker Image
 
-```
-broadinstitute/gatk:4.6.2.0
-```
+- `GATK_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Already used in step 20 (mitochondrial analysis). No additional download needed.
 
@@ -90,6 +90,17 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz.tbi
 ```
 
+#### Common-sites VCF (contamination estimate, ~1 MB)
+
+Common biallelic SNPs from ExAC. With it, the script runs GetPileupSummaries and CalculateContamination and passes the contamination and segmentation tables to FilterMutectCalls; without it, that part is skipped and the log says so.
+
+```bash
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/small_exac_common_3.hg38.vcf.gz \
+  -O ${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz
+wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/small_exac_common_3.hg38.vcf.gz.tbi \
+  -O ${GENOME_DIR}/somatic/small_exac_common_3.hg38.vcf.gz.tbi
+```
+
 > **Note:** `gsutil` is part of the Google Cloud SDK. If you do not have it installed, use the `wget` alternative URLs above (same files, just accessed over HTTPS instead of the gs:// protocol).
 
 ## Command
@@ -105,16 +116,23 @@ export GENOME_DIR=/path/to/your/data
 |---|---|---|
 | `GENOME_DIR` | (required) | Path to your data directory |
 | `THREADS` | 4 | CPU threads for Mutect2 |
-| `INTERVALS` | (empty = full genome) | Restrict to a region, e.g. `chr22` or `chr17:7500000-7700000` (TP53 locus) |
+| `INTERVALS` | `chip` | `chip`: the CHIP driver genes in `assets/chip_genes_grch38.bed` (minutes). `genome`: the whole genome (2-6 hours). Anything else is passed to Mutect2 as it is: a region such as `chr22` or `chr17:7500000-7700000`, or a BED under `/genome` |
 | `ALIGN_DIR` | `aligned` | Use `aligned_bwamem2` for BWA-MEM2 alignments |
 
-### Quick Test on a Single Chromosome
+### What the script runs
 
-Running on the full genome takes 2-6 hours. To test quickly:
+1. Mutect2 in tumor-only mode on the intervals, with `--f1r2-tar-gz` (read orientation counts), the gnomAD germline resource and the Panel of Normals when present.
+2. LearnReadOrientationModel, which turns the orientation counts into priors (`--ob-priors`) for FilterMutectCalls.
+3. GetPileupSummaries and CalculateContamination, when the common-sites VCF is present, limited to the same intervals.
+4. FilterMutectCalls with all of the above.
+
+### The whole genome
+
+The default covers the CHIP genes only. For everything:
 
 ```bash
-INTERVALS=chr22 ./scripts/29-mutect2-somatic.sh your_name
-# ~15-30 minutes
+INTERVALS=genome ./scripts/29-mutect2-somatic.sh your_name
+# 2-6 hours
 ```
 
 ## Output
@@ -127,6 +145,10 @@ All files are written to `${GENOME_DIR}/${SAMPLE}/somatic/`:
 | `${SAMPLE}_somatic_unfiltered.vcf.gz.stats` | Mutect2 internal statistics (used by FilterMutectCalls) |
 | `${SAMPLE}_somatic_filtered.vcf.gz` | Filtered calls with PASS/FAIL annotations |
 | `${SAMPLE}_somatic_filtered.vcf.gz.tbi` | Tabix index for the filtered VCF |
+| `${SAMPLE}_somatic_filtered.run` | How the filtered VCF was called: the `INTERVALS` value and which optional resources (gnomAD, Panel of Normals, common sites) were present. Written last |
+| `chip_genes_grch38.bed` | The CHIP gene intervals used (a copy of `assets/chip_genes_grch38.bed`), with the default `INTERVALS` |
+| `${SAMPLE}_f1r2.tar.gz`, `${SAMPLE}_read-orientation-model.tar.gz` | Read orientation counts and the model learned from them |
+| `${SAMPLE}_pileups.table`, `${SAMPLE}_contamination.table`, `${SAMPLE}_segments.table` | Pileups at common sites and the contamination estimate (only with the common-sites VCF) |
 
 ## Interpreting Results
 
@@ -142,30 +164,35 @@ After FilterMutectCalls, each variant gets a FILTER status:
 | `weak_evidence` | Low quality scores / insufficient reads supporting the variant |
 | `strand_bias` | Variant reads come overwhelmingly from one strand (artifact signal) |
 | `contamination` | Possible sample contamination |
-| `orientation` | Orientation bias artifact (common in FFPE samples, rare in blood WGS) |
+| `orientation` | Orientation bias artifact (common in FFPE samples, rare in saliva or blood WGS) |
 
 ### Allele Fraction (AF) Interpretation
 
-In tumor-only mode from blood WGS:
+In tumor-only mode from 30X WGS:
 
 | AF Range | Likely Source |
 |---|---|
 | 0.45-0.55 | Heterozygous germline (false positive) |
 | ~1.0 | Homozygous germline (false positive) |
-| 0.01-0.10 | Possible low-frequency somatic (CHIP candidate) |
-| 0.10-0.40 | Could be somatic, mosaic, or germline with noise |
+| 0.10-0.40 | Could be a large somatic clone, mosaic, or germline with noise |
+| below 0.10 | One to three supporting reads at 30X: mostly noise |
 
-**Key insight**: In a healthy individual's blood WGS, the vast majority of PASS calls will be germline variants that escaped filtering. True somatic variants are rare events -- a healthy 40-year-old might have 0-20 genuine CHIP mutations detectable at 30X coverage.
+**Detection floor**: at 30X, a variant carried by 2% of the reads (the usual CHIP threshold) has 0.6 supporting reads on average, one at 5% has 1.5 and one at 10% about 3. Mutect2 cannot separate one or two reads from sequencing errors, so only clones of roughly **10% allele fraction or more** are detectable. Most CHIP is smaller than that and is invisible to this step; a clean result does not rule it out. A consumer saliva or cheek-swab sample dilutes blood clones further, because part of its DNA comes from cheek cells.
+
+**Key insight**: In a healthy individual's WGS, the vast majority of PASS calls will be germline variants that escaped filtering. True somatic variants large enough to see at 30X are rare.
 
 ### Finding CHIP Candidates
 
-Clonal hematopoiesis variants are found in specific genes. After running, check for PASS variants in known CHIP genes:
+Clonal hematopoiesis variants are found in specific genes. `assets/chip_genes_grch38.bed` lists 33 of them (DNMT3A, TET2, ASXL1, TP53, JAK2, SF3B1, SRSF2, U2AF1, ZRSR2, PPM1D, CBL, GNB1, IDH1, IDH2 and others): each gene body from GENCODE 50's basic annotation, with 100 bp either side. With the default `INTERVALS=chip` every call is already inside those genes. The somatic VCF has no gene names in it, so after a whole-genome run filter by position with the same file:
 
 ```bash
-# Extract PASS variants and look for known CHIP genes using VEP output (step 13)
-bcftools view -f PASS ${GENOME_DIR}/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz \
-  | grep -E "DNMT3A|TET2|ASXL1|TP53|JAK2|SF3B1|SRSF2|PPM1D|CBL|GNB1|IDH1|IDH2"
+source versions.env   # from the repository root
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
+  bcftools view -f PASS -R /genome/${SAMPLE}/somatic/chip_genes_grch38.bed \
+    "/genome/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered.vcf.gz"
 ```
+
+(Copy `assets/chip_genes_grch38.bed` into `${GENOME_DIR}/${SAMPLE}/somatic/` first if that run did not.)
 
 ### Cross-Referencing with Other Steps
 
@@ -180,7 +207,8 @@ bcftools view -f PASS ${GENOME_DIR}/${SAMPLE}/somatic/${SAMPLE}_somatic_filtered
 
 | Scope | Approximate Time | Memory |
 |---|---|---|
-| Full genome (no intervals) | 2-6 hours | 8 GB |
+| CHIP genes (default) | minutes | 8 GB |
+| Full genome (`INTERVALS=genome`) | 2-6 hours | 8 GB |
 | Single chromosome (`INTERVALS=chr22`) | 15-30 minutes | 8 GB |
 | Targeted region (e.g., TP53 locus) | <5 minutes | 8 GB |
 
@@ -211,9 +239,9 @@ gatk Mutect2 \
 
 ## Notes
 
-- The script is **idempotent**: if the filtered output VCF already exists, it skips execution. Delete the output file to force re-run.
+- The script is **idempotent**: it skips execution when the filtered VCF is complete and `${SAMPLE}_somatic_filtered.run` matches this run: the same `INTERVALS` value and the same optional resources present. A CHIP result is never returned for `INTERVALS=genome`, or the other way round, and installing gnomAD, the Panel of Normals or the common-sites VCF after a run makes the next run call again. Delete the output file to force a re-run.
 - `--max-mnp-distance 0` prevents merging adjacent SNPs into multi-nucleotide polymorphisms (consistent with step 20).
 - The `.stats` file generated by Mutect2 is automatically consumed by FilterMutectCalls. Do not delete it before filtering completes.
 - The `ALIGN_DIR` variable lets you use BWA-MEM2 alignments (`ALIGN_DIR=aligned_bwamem2`) if available.
 - GATK Docker image is ~2.2 GB but is shared with step 20 (mitochondrial analysis) -- no extra download if you already have it.
-- For WGS data from consumer vendors (Nebula, Dante, etc.), the sequencing is from blood, so CHIP is the primary type of somatic variant you can detect. Tissue-specific somatic variants require sequencing the relevant tissue.
+- Consumer vendors (Nebula, Dante, etc.) sequence DNA from saliva or a cheek swab, a mix of cheek cells and white blood cells. CHIP lives in the blood cells, so its allele fraction is diluted by the cheek cells. Tissue-specific somatic variants require sequencing the relevant tissue.

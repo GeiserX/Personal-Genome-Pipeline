@@ -1,0 +1,68 @@
+name: ALT depth A/B
+
+# Measures what a reference with ALT contigs costs this pipeline: maps the
+# fixture's CYP2D6 and MHC reads to NCBI's no-ALT analysis set (the default)
+# and to the Broad hg38 FASTA (ALT, HLA and decoy contigs), with step 02's
+# aligner, and writes the depth over CYP2D6, CYP2D7, their flanks, HLA-A and
+# HLA-B, for all reads and for MAPQ >= 1, to the job summary. See
+# scripts/ci/alt-depth-ab.sh and docs/realignment.md. Not a gate.
+#
+# A dispatch-only workflow cannot run before it is on main, so a push that
+# changes the script or this file runs it too (not on main itself, where a
+# dispatch reruns it). Public repo: the GitHub-hosted runner is free here.
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'scripts/ci/alt-depth-ab.sh'
+      - '.github/workflows/alt-depth-ab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  alt-depth-ab:
+    runs-on: ubuntu-latest
+    # Two whole-genome index builds and four mappings; the fixture may still
+    # be building when this starts (the script waits up to 90 minutes).
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The references and the index go to whichever of / and /mnt has more room.
+      - name: Free disk space and pick the work area
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / /mnt
+          free -g
+          work="${RUNNER_TEMP}/ab"
+          if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            work=/mnt/ab
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+          fi
+          echo "AB_WORK=${work}" >> "$GITHUB_ENV"
+
+      - name: Measure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/alt-depth-ab.sh "$AB_WORK"
+
+      - name: Upload the tables
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: alt-depth-ab
+          path: |
+            ${{ env.AB_WORK }}/ab.md
+            ${{ env.AB_WORK }}/ab.tsv
+            ${{ env.AB_WORK }}/placement.tsv
+            ${{ env.AB_WORK }}/sources.txt
+          if-no-files-found: ignore

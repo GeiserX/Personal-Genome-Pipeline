@@ -7,12 +7,11 @@
 # Supported tools in this pipeline: fastp (JSON), mosdepth, samtools flagstat/stats.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTPUT_DIR="${SAMPLE_DIR}/multiqc"
 
@@ -24,26 +23,22 @@ if [ ! -d "$SAMPLE_DIR" ]; then
   exit 1
 fi
 
-# Skip if output already exists
-if [ -f "${OUTPUT_DIR}/multiqc_report.html" ]; then
-  echo "MultiQC report already exists, skipping."
-  echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
-  exit 0
-fi
-
+# No skip: the report takes seconds and reads every QC file, so it is rebuilt
+# on every run and never shows an older state of the sample.
 mkdir -p "$OUTPUT_DIR"
 
 # Generate samtools flagstat if BAM exists and flagstat doesn't
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 FLAGSTAT="${SAMPLE_DIR}/aligned/${SAMPLE}_flagstat.txt"
-if [ -f "$BAM" ] && [ ! -f "$FLAGSTAT" ]; then
+# Written through a temporary name: a failed flagstat leaves no empty file
+# that every later run would take as done, and does not stop the report.
+if [ -f "$BAM" ] && [ ! -s "$FLAGSTAT" ]; then
   echo "Generating samtools flagstat for MultiQC..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
-    "${SAMTOOLS_IMAGE}" \
-    samtools flagstat "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    > "$FLAGSTAT" 2>/dev/null || true
+  if ! atomic_out "$FLAGSTAT" run_in --cpus 2 --memory 2g \
+      "${SAMTOOLS_IMAGE}" \
+      samtools flagstat "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"; then
+    echo "WARNING: samtools flagstat failed; the report has no flagstat section."
+  fi
 fi
 
 # Run MultiQC
@@ -52,15 +47,16 @@ fi
 #   -o            Output directory
 #   -n            Report filename
 #   --title       Report title shown in HTML
-#   --no-data-dir Skip creating multiqc_data/ directory (just the HTML)
+#   --no-version-check  Do not ask the MultiQC server for a newer release
+#   --no-ai       No AI summary (it would send report data to an outside service)
 echo "Running MultiQC..."
-docker run --rm --user root \
-  --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
+run_in --cpus 2 --memory 2g \
   "${MULTIQC_IMAGE}" \
   multiqc \
     "/genome/${SAMPLE}" \
     -f \
+    --no-version-check \
+    --no-ai \
     -o "/genome/${SAMPLE}/multiqc" \
     -n "multiqc_report.html" \
     --title "${SAMPLE} — Personal Genome Pipeline QC"

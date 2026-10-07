@@ -4,7 +4,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Annotates an ExpansionHunter VCF with STR_STATUS (normal / pre_mutation /
     full_mutation), disease name, OMIM number, and repeat-size thresholds from
-    the bundled ClinGen/OMIM catalog.
+    Stranger's bundled GRCh38 catalog.
 
     Equivalent to: scripts/09b-stranger.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -13,8 +13,6 @@
 process STRANGER {
     tag "$meta.id"
     label 'process_single'
-
-    container 'quay.io/biocontainers/stranger:0.10.2--pyhdfd78af_0'
 
     publishDir { "${params.outdir}/${meta.id}/expansion_hunter" }, mode: params.publish_dir_mode
 
@@ -31,11 +29,18 @@ process STRANGER {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    stranger ${vcf} > ${prefix}_eh_stranger.vcf
+    # Stranger's default catalog is its bundled GRCh37 one; the loci come from
+    # ExpansionHunter's GRCh38 catalog, so pass the bundled GRCh38 catalog.
+    CATALOG=\$(python -c 'import os, stranger; print(os.path.join(os.path.dirname(stranger.__file__), "resources", "variant_catalog_grch38.json"))')
+    if [ ! -f "\$CATALOG" ]; then
+        echo "ERROR: no GRCh38 catalog in the Stranger image (\${CATALOG:-not found})" >&2
+        exit 1
+    fi
+    stranger --repeats-file "\$CATALOG" ${vcf} > ${prefix}_eh_stranger.vcf
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: \$(stranger --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.10.2')
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -46,7 +51,7 @@ process STRANGER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        stranger: 0.10.2
+        stranger: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

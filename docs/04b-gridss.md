@@ -28,9 +28,9 @@ GRIDSS complements Manta and Delly in the SV consensus pipeline (step 22):
 
 ## Docker Image
 
-```
-quay.io/biocontainers/gridss:2.13.2--h96c455f_6
-```
+- `GRIDSS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 Image size: ~1.5 GB (includes Java 11, R, bwa, samtools, all dependencies).
 
@@ -49,14 +49,18 @@ GRIDSS=true ./scripts/run-all.sh <sample_name> <male|female>
 
 With `GRIDSS=true` and no classic BWA index, the step fails and the run's final table lists it as failed.
 
+Before it starts, the step reads Docker's memory limit (`docker info`). Below 32 GB it prints `SKIPPED` with the amount and exits without running GRIDSS, which otherwise fails late without a clear message. `GRIDSS_MIN_MEM_GB` changes the threshold if you want to try with less. `THREADS` (default 8) sets GRIDSS's `-t` and the container's CPUs.
+
 ## Prerequisites
 
 GRIDSS requires a **classic BWA index** (`.amb`, `.ann`, `.bwt`, `.pac`, `.sa`) alongside the reference FASTA. **BWA-MEM2 index files (`.bwt.2bit.64`) are NOT compatible** — GRIDSS bundles classic `bwa` internally for its read realignment step. Generate the classic index if you don't have one:
 
 ```bash
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+source versions.env   # from the repository root: BWA_IMAGE, the image step 04b uses for this
 docker run --rm -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/bwa:0.7.18--he4a0461_1 \
-  bwa index /genome/reference/Homo_sapiens_assembly38.fasta
+  "${BWA_IMAGE}" \
+  bwa index "/genome/${REF_FASTA}"
 ```
 
 This takes ~1 hour and produces 5 index files (~5 GB total). Only needed once.
@@ -67,6 +71,7 @@ This takes ~1 hour and produces 5 index files (~5 GB total). Only needed once.
 |---|---|
 | `sv_gridss/<sample>_gridss.vcf.gz` | SV calls in BND notation |
 | `sv_gridss/<sample>_assembly.bam` | Assembly contigs (intermediate, can be deleted) |
+| `sv_gridss/work/` | GRIDSS's working directory (`--workingdir`), about 50 GB during the run; removed once the VCF is written, kept when GRIDSS fails so you can look at it |
 
 ### BND notation
 
@@ -87,7 +92,7 @@ Note: GRIDSS QUAL scores are uncorrected for multiple testing and tend to be ove
 |---|---|
 | Memory | 32 GB (28 GB JVM heap + OS overhead) |
 | CPU | 8 threads |
-| Disk | ~50 GB intermediate files (cleaned up automatically) |
+| Disk | ~50 GB intermediate files in `sv_gridss/work/`, removed after a successful run |
 | Runtime | 4-8 hours for 30X WGS |
 
 GRIDSS is the heaviest tool in the pipeline. With `GRIDSS=true` it runs in parallel with the other heavy steps (VEP, CNVpytor, Delly).

@@ -24,9 +24,9 @@ Without MultiQC, you need to open separate reports from each tool (fastp HTML, m
 
 ## Docker Image
 
-```
-quay.io/biocontainers/multiqc:1.35--pyhdfd78af_1
-```
+- `MULTIQC_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Command
 
@@ -47,6 +47,8 @@ MultiQC scans the entire sample directory and auto-detects outputs from these pi
 
 The script generates `samtools flagstat` output automatically if a BAM exists but no flagstat file is present.
 
+In the Nextflow pipeline, `multiqc` reads the mosdepth summaries only. A run with no BAM, or without `mosdepth` in `--tools`, has none, so MultiQC is skipped and the log says so in one line (`multiqc skipped: ...`).
+
 ## Output
 
 | File | Location | Description |
@@ -64,7 +66,7 @@ The script generates `samtools flagstat` output automatically if a BAM exists bu
 
 ## Notes
 
-- MultiQC runs after all other steps to capture the most outputs. In `run-all.sh`, it runs alongside the HTML summary report at the end
+- MultiQC runs after all other steps to capture the most outputs. Through `run-all.sh` it is the pipeline's `MULTIQC` task: it reads the mosdepth summaries (above) and writes `${GENOME_DIR}/multiqc/multiqc_report.html`, beside the sample folders rather than inside one. Run `./scripts/28-multiqc.sh <sample_name>` for the script's report of every QC file in the sample folder
 - The report title includes the sample name for easy identification
 - If you add new tools to the pipeline that MultiQC supports, their outputs are picked up automatically on the next run
 - To re-generate the report (e.g., after running additional steps), delete the `multiqc/` directory and re-run

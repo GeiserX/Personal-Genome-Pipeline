@@ -10,24 +10,49 @@ Telomere length correlates with cellular aging at a population level. Comparing 
 - **TelomereHunter** (German Cancer Research Center)
 
 ## Docker Image
-```
-lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714
-```
-> Pinned by immutable digest — the publisher offers no versioned tags. Canonical value lives in `versions.env`.
+- `TELOMEREHUNTER_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
+
+> The image is the Bioconda build of TelomereHunter 1.1.0. It runs as you, not as root, and with `--plotNone`: its plots fail (its R has no `dplyr`, and its PyPDF2 is written for Python 3), and nothing in the pipeline reads them. It replaced a patched, digest-pinned build from a personal Docker Hub account.
+
+### Which TelomereHunter, and what changed
+
+Step 10 runs TelomereHunter 1 (1.1.0). On the image test's input, the HG002 fixture BAM plus 1,100 planted unmapped telomeric reads (600 `TTAGGG`, 400 `CCCTAA`, 100 with one `TCAGGG`), three images were run side by side:
+
+| Image | intratel_reads | tel_content | TCAGGG per intratelomeric read |
+|---|---|---|---|
+| the earlier digest-pinned build | 1100 | 5594.234887 | 0.0909 |
+| Bioconda TelomereHunter 1.1.0 (this step) | 1100 | 5594.234887 | 0.0909 |
+| Bioconda TelomereHunter2 1.0.12 | 1100 | 5594.234887 | 0.0909 |
+
+So a value from an earlier run of this step stays comparable. TelomereHunter2 (GPL-3.0, Python 3, maintained) gives the same numbers on this input, but it is not switched in yet: without `-b` it skips the band classes instead of using hg19 bands, which the Nextflow warning and parameter help describe, and its summary has other columns in another order. Moving to it is a separate change.
 
 ## Command
 ```bash
+export GENOME_DIR=/path/to/your/data
+./scripts/10-telomere-hunter.sh your_sample
+```
+
+`ALIGN_DIR` (default `aligned`) picks the BAM, for example `ALIGN_DIR=aligned_bwamem2`. `THREADS` (default 4) caps the container's CPUs; TelomereHunter has no thread option of its own.
+
+TelomereHunter sorts telomeric reads into intratelomeric, subtelomeric and junction classes by chromosome band. Without `-b` it uses its own hg19 bands (`telomerehunter --help`: "If no banding file is specified, the banding information of hg19 will be used"), which put the band ends at hg19 positions on a GRCh38 BAM. The script passes UCSC's GRCh38 bands, which `setup.sh` installs as `reference/cytoBand.hg38.txt` (chr1-22, X and Y; see [reference setup](00-reference-setup.md#small-pinned-data-files)). When they are not installed it runs without `-b` and says so. What the script runs:
+
+```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
-docker run --rm --user root \
+docker run --rm --network none --user "$(id -u):$(id -g)" \
   --cpus 4 --memory 4g \
   -v ${GENOME_DIR}:/genome \
-  lgalarno/telomerehunter@sha256:6d53ac63c3ae50aa036652136c60043fb1e9abfcbbdc7ccd7fdae1fdb3541714 \
+  "${TELOMEREHUNTER_IMAGE}" \
   telomerehunter \
     -ibt /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     -o /genome/${SAMPLE}/telomere/${SAMPLE} \
-    -p ${SAMPLE}
+    -p ${SAMPLE} \
+    --plotNone \
+    -b /genome/reference/cytoBand.hg38.txt
 
 # Output: telomere content report in ${GENOME_DIR}/${SAMPLE}/telomere/${SAMPLE}/
 ```
@@ -40,7 +65,7 @@ TelomereHunter uses `-ibt` (input BAM tumor) for a single-sample analysis. No `-
 - Compare between samples of known age for relative ranking
 
 ## Important Notes
-- `--user root` is REQUIRED — Docker container cannot write output files without root permissions
+- The container runs as you (`--user "$(id -u):$(id -g)"`), so the outputs are yours. A telomere directory an older version wrote as root has to be taken back first: `sudo chown -R "$(id -u):$(id -g)" "${GENOME_DIR}/${SAMPLE}/telomere"`.
 - Short-read WGS (150bp reads) systematically underestimates true telomere length because reads cannot span long repetitive regions
 - Results are useful as a **relative comparison** between samples, NOT as an absolute telomere length measurement
 - Long-read sequencing (PacBio/ONT) provides more accurate telomere length if absolute values are needed

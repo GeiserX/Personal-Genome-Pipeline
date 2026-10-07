@@ -7,6 +7,10 @@
     2. Call BAM-based genes (CYP2D6, CYP2A6, GSTM1, GSTT1) with SV detection
     3. Call VCF-based genes (~19 additional pharmacogenes)
 
+    CYP2D6 copy number comes from read depth: the depth CYP2D6_DEPTH measured
+    is judged first (bin/cyp2d6_depth_check.py), and when the reads there are
+    multi-mapped the summary's CYP2D6 row says Indeterminate.
+
     Equivalent to: scripts/32-pypgx.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -15,12 +19,10 @@ process PYPGX {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0'
-
     publishDir { "${params.outdir}/${meta.id}/pypgx" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index)
+    tuple val(meta), path(bam), path(bai), path(vcf), path(vcf_index), path(depth_q0), path(depth_q1)
     path(reference)
     path(reference_fai)
     path(pypgx_bundle)
@@ -28,6 +30,7 @@ process PYPGX {
     output:
     tuple val(meta), path("${meta.id}_pypgx_results"), emit: results
     tuple val(meta), path("${meta.id}_pypgx_summary.tsv"), emit: summary
+    tuple val(meta), path("${meta.id}_cyp2d6_depth_check.tsv"), emit: depth_check
     path "versions.yml",                                emit: versions
 
     when:
@@ -40,23 +43,42 @@ process PYPGX {
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
 
-    # Link pypgx bundle to expected location (bash script mounts at /root/pypgx-bundle)
-    if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "EMPTY" ]; then
-        ln -sf "\$(pwd)/${pypgx_bundle}" /root/pypgx-bundle
+    # CYP2D6 depth check (CYP2D6_DEPTH measured it)
+    cyp2d6_depth_check.py check --all ${depth_q0} --mapq1 ${depth_q1} --out ${meta.id}_cyp2d6_depth_check.tsv
+    DEPTH_STATUS=\$(awk -F'\\t' '\$1 == "status" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)
+
+    # pypgx reads its bundle from ~/pypgx-bundle. HOME is the task directory,
+    # so nothing is written inside the image (a read-only Singularity image
+    # works) and the bundle is linked there unless it is already staged
+    # under that name.
+    export HOME="\$PWD"
+    if [ -d "${pypgx_bundle}" ] && [ "${pypgx_bundle}" != "pypgx-bundle" ]; then
+        ln -sfn "\$PWD/${pypgx_bundle}" "\$HOME/pypgx-bundle"
     fi
 
     DOC="\$OUTBASE/depth_of_coverage.zip"
     CTRL="\$OUTBASE/control_statistics.zip"
     FAILED=""
     SUCCEEDED=0
+    BAM_GENES="${bam_genes}"
+
+    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a
+    # reference without ALT contigs (the default) has no such contig, and
+    # depth preparation then fails for every SV gene. Leave GSTT1 out in that
+    # case and say so, as scripts/32-pypgx.sh does.
+    if ! python3 -c "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 1)" ${bam}; then
+      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
+      BAM_GENES=\$(echo "\$BAM_GENES" | tr " " "\\n" | grep -vx GSTT1 | tr "\\n" " ")
+      FAILED="\${FAILED} GSTT1"
+    fi
 
     # Phase 1: Prepare depth of coverage for SV genes
-    echo "--- Preparing depth of coverage for SV genes ---"
+    echo "--- Preparing depth of coverage for SV genes: \${BAM_GENES} ---"
     DOC_OK=true
     if ! pypgx prepare-depth-of-coverage \\
-      "\$DOC" ${bam} --assembly GRCh38 2>&1; then
+      "\$DOC" ${bam} --assembly GRCh38 --genes \$BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed"
-      for GENE in ${bam_genes}; do FAILED="\${FAILED} \${GENE}"; done
+      for GENE in \$BAM_GENES; do FAILED="\${FAILED} \${GENE}"; done
       DOC_OK=false
     fi
 
@@ -72,7 +94,7 @@ process PYPGX {
 
     # Phase 3a: BAM-based genes with SV detection
     if [ "\$DOC_OK" = true ]; then
-      for GENE in ${bam_genes}; do
+      for GENE in \$BAM_GENES; do
         echo "--- Calling \${GENE} (BAM + VCF) ---"
         EXTRA=""
         [ -f "\$CTRL" ] && EXTRA="--control-statistics \$CTRL"
@@ -159,20 +181,30 @@ called = sum(1 for r in rows if r[1] != 'FAILED')
 print(f'Summary: {called}/{len(rows)} genes called')
 "
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        pypgx: \$(pypgx -v 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '0.26.0')
-    END_VERSIONS
+    # A CYP2D6 call from multi-mapped depth is not a call: the row says so
+    # (the call stays in CYP2D6/results.zip), as scripts/32-pypgx.sh does.
+    if [ "\$DEPTH_STATUS" != ok ]; then
+        awk -F'\\t' -v OFS='\\t' '\$1 == "CYP2D6" {\$2 = "Indeterminate"; \$3 = "Indeterminate (CYP2D6 depth check)"} {print}' \\
+            ${meta.id}_pypgx_summary.tsv > summary.tmp
+        mv summary.tmp ${meta.id}_pypgx_summary.tsv
+        echo "WARNING: \$(awk -F'\\t' '\$1 == "message" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)"
+    fi
+
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    pypgx: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
     mkdir -p ${meta.id}_pypgx_results
     printf 'Gene\\tDiplotype\\tPhenotype\\tSV_detected\\tSource\\n' > ${meta.id}_pypgx_summary.tsv
+    printf 'metric\\tvalue\\nstatus\\tok\\nmessage\\tstub\\n' > ${meta.id}_cyp2d6_depth_check.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        pypgx: 0.26.0
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

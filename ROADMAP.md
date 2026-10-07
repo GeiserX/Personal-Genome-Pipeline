@@ -14,7 +14,7 @@ Alternative callers, benchmarking infrastructure, and tool rationale documentati
 - [x] **Alternative SV caller: TIDDIT** (`scripts/04a-tiddit.sh` → `sv_tiddit/`) — excels at large inversions and translocations; auto-detects BWA index for assembly mode
 - [x] **Documented tool rationale** (`docs/tool-rationale.md`) — per-step rationale with references to benchmarking data and decision matrices
 
-## v0.3.0 — Tool upgrades, QC, & expanded coverage
+## v0.3.0 — Tool upgrades, QC, & expanded coverage ✅
 
 Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Personal-Genome-Pipeline/issues/14)), fill coverage gaps, and add new sequencing platform support. Thanks to [@madmolecularman](https://github.com/madmolecularman) for driving the QC discussion.
 
@@ -27,8 +27,8 @@ Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Per
 - [x] **Octopus variant caller** (`scripts/03d-octopus.sh` → `vcf_octopus/`) — haplotype-aware Bayesian caller as a 5th benchmarking alternative. Auto-discovered by `benchmark-variants.sh`
 - [x] **GRIDSS structural variant caller** (`scripts/04b-gridss.sh` → `sv_gridss/`) — assembly-based SV caller for complex rearrangements; strengthens SV consensus alongside Manta/Delly. Requires BWA index and 32GB RAM
 - [x] **CYP2D6 star allele calling** — evaluated Aldy v4.8.3 (best CYP2D6 SV caller per Twesigomwe 2020), StellarPGx (broken Docker), and BCyrius (no public repo). Aldy documented as recommended optional replacement for Cyrius in `docs/21-cyrius.md`. Note: Aldy uses an academic-only license (IURTC) incompatible with GPL-3.0, so it cannot be a required dependency. pypgx (step 32) is the GPL-compatible alternative included in the pipeline
-- [x] **Long-read support** (`scripts/02b-alignment-longread.sh`, `scripts/03e-clair3.sh`, `scripts/04c-sniffles2.sh`) — ONT and PacBio HiFi alignment (minimap2 `map-ont`/`map-hifi`), Clair3 v2.0.0 variant calling, Sniffles2 SV calling. Comprehensive guide in `docs/long-read-guide.md`
-- [x] **Whole exome sequencing (WES) entry path** — comprehensive guide in `docs/wes-guide.md` covering per-step compatibility, capture BED files, `DATA_TYPE=WES` env var, coverage QC metrics, and limitations. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
+- [x] **Long-read support** (`scripts/02b-alignment-longread.sh`, `scripts/03e-clair3.sh`, `scripts/04c-sniffles2.sh`) — ONT and PacBio HiFi alignment (minimap2 `map-ont`/`map-hifi`), Clair3 variant calling, Sniffles2 SV calling. Comprehensive guide in `docs/long-read-guide.md`
+- [x] **Whole exome sequencing (WES) guide** — `docs/wes-guide.md` covers per-step compatibility, capture BED files, coverage QC metrics and limitations. WES data runs step by step; no script has a WES mode. Thanks to [@madmolecularman](https://github.com/madmolecularman) for domain expertise here
 - [x] **Somatic variant calling** (`scripts/29-mutect2-somatic.sh`) — [EXPERIMENTAL] tumor-only Mutect2 mode with gnomAD germline resource and Panel of Normals filtering. Marked experimental due to high false positive rate without matched normal
 
 ## v0.4.0 — Expanded annotation & clinical interpretation ✅
@@ -36,15 +36,15 @@ Upgrade pinned tools, add pre-alignment QC ([#14](https://github.com/GeiserX/Per
 Deep pathogenicity scoring, structured variant querying, and broader pharmacogenomics. All new annotation tracks are optional — scripts detect which databases are present and degrade gracefully.
 
 - [x] **CADD scores** — Combined Annotation Dependent Depletion scores for all variants via vcfanno. Pre-scored whole-genome SNVs (~81.5 GB) + gnomAD indels (~1.2 GB). PHRED >= 20 flagged as clinically interesting
-- [x] **SpliceAI** — deep learning splice-site variant predictions via vcfanno. Pre-scored files (~20 GB). Delta score >= 0.2 flagged for cryptic splice variants
-- [x] **REVEL scores** — ensemble missense pathogenicity scoring via vcfanno (~526 MB). ClinGen-recommended thresholds: >= 0.644 (PP3_Moderate), >= 0.932 (PP3_Very Strong)
-- [x] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier via vcfanno (~613 MB). Thresholds: < 0.34 benign, > 0.564 pathogenic
+- [x] **SpliceAI** — deep learning splice-site variant predictions via vcfanno. Pre-scored masked files (~91 GB). Delta score >= 0.2 flagged for cryptic splice variants
+- [x] **REVEL scores** — ensemble missense pathogenicity scoring via vcfanno (~0.6 GB). ClinGen-calibrated thresholds: >= 0.644 (PP3_Supporting), >= 0.773 (PP3_Moderate), >= 0.932 (PP3_Strong)
+- [x] **AlphaMissense** — DeepMind's protein-structure-informed missense classifier via vcfanno (~613 MB). Class boundaries (AlphaMissense's own, not ACMG levels): < 0.34 likely benign, > 0.564 likely pathogenic
 - [x] **gnomAD v4 constraint metrics** — per-gene pLI, LOEUF, and missense Z-scores (~91 MB). Integrated into clinical filter summary TSV and slivar output
 - [x] **vcfanno annotation engine** (`scripts/30-vcfanno.sh`) — adds CADD, SpliceAI, REVEL, AlphaMissense to VEP VCFs via TOML config in a single pass. Handles CADD chr prefix mismatch with two-pass approach
 - [x] **Variant prioritization with inheritance queries** (`scripts/31-slivar.sh`) — slivar (GEMINI successor) for streaming VCF filtering with JS expressions. Rare HIGH/MODERATE variants, ClinVar pathogenic, compound het detection, gene constraint enrichment
 - [x] **pypgx alongside PharmCAT** (`scripts/32-pypgx.sh`) — 23-gene curated star allele calling including CYP2D6 structural variation from BAM read depth. Cross-validates with PharmCAT on shared genes
 
-## v0.5.0 — Nextflow workflow engine
+## v0.5.0 — Nextflow workflow engine ✅
 
 The bash scripts work but lack built-in parallelism, resume-on-failure, and HPC portability. v0.5.0 adds a [Nextflow](https://www.nextflow.io/) DSL2 execution path alongside the existing bash scripts (which remain first-class).
 
@@ -60,9 +60,9 @@ Both are mature workflow engines. We chose Nextflow because:
 
 Snakemake's Python DSL and HPC scheduler integration are genuine strengths, but the nf-core ecosystem size and sarek compatibility are decisive.
 
-### Scope: Post-processing focus
+### Scope
 
-Steps 1-6 (alignment, variant calling) are already covered by nf-core/sarek. Rather than duplicate that work, this pipeline focuses on what sarek does NOT cover: pharmacogenomics, PRS, ancestry, telomere, repeat expansions, clinical interpretation, and reporting. The Nextflow pipeline accepts sarek output (VCF + BAM) as its primary input.
+v0.5.0 started as post-processing: alignment and variant calling were left to nf-core/sarek, and the Nextflow pipeline took sarek's VCF and BAM. That is no longer the scope. The Nextflow pipeline now starts from FASTQ as well (fastp, minimap2 with read groups and duplicate marking, the indexcov sex check, DeepVariant with a gVCF), and a samplesheet row can also start from a BAM, a CRAM or a VCF, sarek's included. Nextflow is the pipeline; the numbered scripts are single steps that share its images and helpers ([docs/nextflow.md](docs/nextflow.md)).
 
 ### Delivery
 
@@ -76,27 +76,37 @@ PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](htt
 
 ### Bash scripts
 
-The bash scripts remain in `scripts/` as a maintained, simpler alternative for users who do not need workflow orchestration. After PR 3 validates the Nextflow path end-to-end, new features will be Nextflow-first. Bash scripts will continue to receive bug fixes and tool version bumps but not new analysis steps.
+The bash scripts remain in `scripts/` as a maintained, simpler alternative for users who do not need workflow orchestration. Once the Nextflow path is validated end to end, new features will be Nextflow-first. Bash scripts will continue to receive bug fixes and tool version bumps but not new analysis steps.
 
-## v0.6.0 — Multi-sample & joint analysis
+## v0.6.0 to v0.8.2 — Hardening and tool upgrades ✅
 
-Every step currently runs on a single sample in isolation. v0.6.0 focuses on making the pipeline useful for families and cohorts.
+Released on 2026-07-01. These releases went to hardening and upgrades instead of the multi-sample and reporting work first planned for v0.6.0 and v0.7.0, which moved to the planned sections below.
 
-- [ ] **Joint PCA with 1000 Genomes reference panel** — project sample PCs onto a reference PCA, replacing the current single-sample ancestry stub (step 26) with real population placement
+- [x] **v0.6.0** — Stranger STR annotation (step 9b), a CPIC step that fails loudly instead of silently, safe tool bumps, Nextflow 25.10 support, GitHub-hosted CI runners
+- [x] **v0.7.0** — DeepVariant 1.10, VEP 116, Delly 2.1, and ACMG secondary findings in CPSR (step 17)
+- [x] **v0.7.1** — the last two floating `:latest` images pinned by digest
+- [x] **v0.8.0** — CNV calling moved from CNVnator to CNVpytor 1.3.2 (step 18)
+- [x] **v0.8.1, v0.8.2** — CNVpytor restricted to the main chromosomes; the pypgx image pinned to 0.26.0 to match its bundle
+
+## Planned — Multi-sample & joint analysis
+
+Every step currently runs on a single sample in isolation. This work would make the pipeline useful for families and cohorts; no release is assigned to it yet.
+
+- [x] **Projection onto the 1000 Genomes reference panel** — step 26 projects the sample onto pgsc_calc's panel and names the most similar population, replacing the single-sample PCA
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
 - [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
-- [ ] **PRS percentile estimation** — use a public reference cohort (e.g., UK Biobank summary stats) to convert raw PRS scores into approximate percentiles
-- [ ] **Somalier sample identity QC** — ultra-fast relatedness and sample-swap detection from BAM/VCF; replaces ad-hoc sex-check with proper identity QC for multi-sample runs
+- [x] **PRS percentile estimation** — step 25 runs pgsc_calc, which with the ancestry panel reports each score as a percentile among the most similar reference group
+- [x] **Somalier sample identity QC** — step 33 (`sample_qc` in Nextflow): somalier's sex from the reads checked against the declared sex, the relatedness of every pair of samples in a run, and VerifyBamID2's contamination estimate
 - [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
 - [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with slivar inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
-## v0.7.0 — Reporting & user experience
+## Planned — Reporting & user experience
 
 Make results more accessible to non-bioinformaticians.
 
 - [ ] **Interactive HTML dashboard** — single-page HTML report combining all step outputs with collapsible sections, variant tables, PRS charts, and pharmacogenomics summaries
 - [ ] **PDF clinical summary** — one-page printable summary designed to hand to a healthcare provider (PharmCAT results, ClinVar pathogenic hits, key carrier findings)
-- [ ] **Automated database update script** — `scripts/update-databases.sh` that downloads the latest ClinVar, VEP cache, and PGS Catalog scoring files, with version tracking
+- [ ] **Database refresh** — `setup.sh --refresh clinvar` to fetch the latest ClinVar in place, and a monthly issue that lists which databases and images have a newer release
 - [ ] **Progress dashboard** — real-time terminal UI showing step status, elapsed time, and resource usage during `run-all.sh` execution
 - [ ] **Conda/Bioconda alternative** — offer a non-Docker installation path for HPC environments where Docker is not available
 
@@ -116,7 +126,7 @@ The long-term vision: a self-hostable, open-source health data platform — the 
 These are not versioned milestones but continuous responsibilities.
 
 - **ClinVar monthly refresh** — re-download on the first Thursday of each month; re-run step 6 on at least one sample to verify
-- **VEP cache refresh** — upgrade with each Ensembl release (~every 6 months; release 116 expected Apr 2026)
+- **VEP cache refresh** — upgrade with each Ensembl release (~every 6 months); release 116 is the one pinned now
 - **PGS Catalog quarterly check** — verify scoring file versions haven't changed; treat any change as a result-changing event
 - **CPIC guideline monitoring** — recheck when PharmCAT bumps versions or when a drug-gene pair used in step 27 gets updated upstream
 - **CI health** — keep ShellCheck, markdown-links, and contract-validation passing; add new contract checks as steps are added
@@ -127,7 +137,6 @@ These are out of scope for this pipeline and unlikely to be added.
 
 - **Cloud-only execution** — the pipeline is local-first by design. v1.0.0 envisions optional cloud portability via workflow engines, but the default path will always be local consumer hardware.
 - **Clinical validation / CLIA compliance** — this pipeline is for personal exploration, not clinical diagnostics. It will never carry a clinical validation stamp.
-- **Somatic-only (tumor without normal)** — requires a panel of normals and is methodologically fraught without matched germline.
 
 ---
 

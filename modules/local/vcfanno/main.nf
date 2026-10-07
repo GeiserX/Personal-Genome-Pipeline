@@ -26,8 +26,6 @@ process VCFANNO {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'quay.io/biocontainers/vcfanno:0.3.9--h1079eea_0'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(cadd_snv)
@@ -116,11 +114,10 @@ TOML_END
 
     vcfanno -p ${task.cpus} vcfanno.toml ${vcf} > ${meta.id}_vcfanno.vcf
 
-    VCFANNO_VERSION=\$(vcfanno 2>&1 | sed -n 's/.*version \\([0-9][0-9.]*\\).*/\\1/p' | head -1)
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        vcfanno: \${VCFANNO_VERSION:-unknown}
-    END_VERSIONS
+    # printf, not a here-document: the column-0 lines above stop Nextflow
+    # from stripping this script's indent, and an indented END_VERSIONS
+    # would not end a <<- here-document.
+    printf '"%s":\\n    vcfanno: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
@@ -129,7 +126,7 @@ TOML_END
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        vcfanno: 0.3.9
+        vcfanno: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -137,8 +134,6 @@ TOML_END
 process VCFANNO_INDEX {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/vep" }, mode: params.publish_dir_mode
 
@@ -160,7 +155,7 @@ process VCFANNO_INDEX {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -171,7 +166,7 @@ process VCFANNO_INDEX {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -6,6 +6,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 # Allow SV_VCF env var override (e.g., for Sniffles2 long-read SVs)
 if [ -n "${SV_VCF:-}" ]; then
@@ -41,10 +44,10 @@ mkdir -p "$OUTPUT_DIR"
 # Determine relative path of Manta VCF within SAMPLE_DIR
 MANTA_REL=$(echo "$MANTA_VCF" | sed "s|${GENOME_DIR}/||")
 
-docker run --rm --user root \
-  --cpus 4 --memory 8g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/annotsv:3.5.10--hdfd78af_0 \
+# AnnotSV builds sorted copies of its annotation files inside the annotations
+# directory the first time it runs, so that directory is writable here.
+run_in --rw "$ANNOTATIONS_DIR" --cpus 4 --memory 8g \
+  "${ANNOTSV_IMAGE}" \
   AnnotSV \
     -SVinputFile "/genome/${MANTA_REL}" \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \

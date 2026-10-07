@@ -12,8 +12,8 @@ Your genomics data can come from many different providers. This guide explains w
 | Novogene / BGI | 30X WGS | FASTQ | GRCh38 | Path A | $200-400 |
 | Illumina DRAGEN (clinical) | 30X WGS | ORA / BAM + VCF | GRCh38 | Path D / B / C | $300-1000 |
 | Full Genomes Corporation | 30X WGS | BAM + VCF | GRCh38 | Path B or C | ~$1000 |
-| Oxford Nanopore | Long-read WGS | POD5 + BAM | GRCh38 | Not supported | $1000-3000 |
-| PacBio HiFi | Long-read WGS | HiFi BAM | GRCh38 | Not supported | $1000-2000 |
+| Oxford Nanopore | Long-read WGS | POD5 + BAM | GRCh38 | [Long-read guide](long-read-guide.md) | $1000-3000 |
+| PacBio HiFi | Long-read WGS | HiFi BAM | GRCh38 | [Long-read guide](long-read-guide.md) | $1000-2000 |
 | 23andMe | Genotyping array | TSV (~640K SNPs) | GRCh37 | Partial | $79-229 |
 | AncestryDNA | Genotyping array | TSV (~700K SNPs) | GRCh37 | Partial | $99-199 |
 | MyHeritage | Genotyping array | CSV (~643K SNPs) | GRCh37 | Partial | $79-199 |
@@ -33,8 +33,10 @@ Most consumer WGS vendors use Illumina sequencing platforms (NovaSeq 6000, NovaS
 ### Getting Started
 
 1. **If you have FASTQ:** Copy R1 and R2 files to `${GENOME_DIR}/${SAMPLE}/fastq/`. Start with step 2 (alignment).
-2. **If you have BAM:** Copy to `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`. Make sure the BAM index (`.bai`) is present. Start with step 3 (variant calling).
+2. **If you have BAM:** Copy to `${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam`. Make sure the BAM index (`.bai`) is present. A vendor BAM is usually aligned to another GRCh38 file (with ALT contigs, decoys or a different contig list), and `validate-setup.sh` then stops with "this BAM was aligned to a different reference". Turn it back into FASTQ and start with step 2, as [Realigning after a reference change](realignment.md#from-an-existing-bam) shows. Only a BAM aligned to the GRCh38 no-ALT analysis set starts at step 3 (variant calling).
 3. **If you have VCF:** Copy to `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`. Make sure the index (`.tbi`) is present. Start with step 6 (ClinVar screen).
+
+A provider's VCF often needs fixing before the pipeline can read it: contigs named the Ensembl way (`1`, `MT` instead of `chr1`, `chrM`), gVCF reference blocks (PharmCAT refuses a gVCF, and any file named `.g.vcf`), and header lines that name you. The Nextflow pipeline checks the first two before any analysis and stops with the fix; the bash steps do not check. A gVCF is the better PharmCAT input, but the pipeline does not expand its blocks yet, and a variants-only VCF leaves about half of PharmCAT's genes Unknown. [Starting from a Vendor VCF](vcf-first.md) has the commands for all three.
 
 ---
 
@@ -46,7 +48,7 @@ Nebula was acquired by ProPhase Labs and rebranded as DNA Complete. They use **M
 
 - **Read names** follow BGI format instead of Illumina format. This is purely cosmetic -- all alignment tools handle it correctly.
 - **Quality scores** are the same encoding (Phred+33). No conversion needed.
-- **Adapter sequences** differ from Illumina. If you're trimming adapters (not required for this pipeline), use the MGI adapter sequences.
+- **Adapter sequences** differ from Illumina, and adapter contamination is more common in BGI/MGI libraries. Run [step 1b (fastp)](01b-fastp-qc.md) before alignment: it detects and trims MGI adapters automatically, and step 2 then uses the trimmed reads.
 
 ### Data Access
 
@@ -131,14 +133,23 @@ If your WGS was done through a clinical lab or hospital, they likely used Illumi
 
 ### ORA Format
 
-Some labs deliver FASTQ files compressed in Illumina's proprietary **ORA format** (~5x smaller than gzipped FASTQ). You need the `orad` decompressor:
+Some labs deliver FASTQ files compressed in Illumina's proprietary **ORA format** (~5x smaller than gzipped FASTQ). You need the `orad` decompressor and the ORA reference directory your lab provides. Step 1 decompresses one ORA file per call, so run it once for R1 and once for R2, then give the outputs the names step 1b and step 2 read:
 
 ```bash
-# Step 1 in this pipeline handles ORA decompression
-./scripts/01-ora-to-fastq.sh $SAMPLE
+export GENOME_DIR=/path/to/your/data
+export SAMPLE=your_name
+
+# Arguments: <sample> <ora_reference_dir> <ora_file>
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R1_001.fastq.ora
+./scripts/01-ora-to-fastq.sh $SAMPLE /path/to/oradata /path/to/${SAMPLE}_S1_L001_R2_001.fastq.ora
+
+# orad keeps the original file name; steps 1b and 2 read ${SAMPLE}_R1/_R2.fastq.gz
+cd ${GENOME_DIR}/${SAMPLE}/fastq
+mv ${SAMPLE}_S1_L001_R1_001.fastq.gz ${SAMPLE}_R1.fastq.gz
+mv ${SAMPLE}_S1_L001_R2_001.fastq.gz ${SAMPLE}_R2.fastq.gz
 ```
 
-See [docs/01-ora-to-fastq.md](01-ora-to-fastq.md) for details on obtaining the `orad` binary.
+See [docs/01-ora-to-fastq.md](01-ora-to-fastq.md) for details on obtaining the `orad` binary and for samples split across several lanes.
 
 ### DRAGEN VCF Notes
 
@@ -149,7 +160,7 @@ If your lab provided a DRAGEN-called VCF, you can skip steps 2-3 and go directly
 ### Entry Point
 
 - **ORA files:** Path D (decompress first)
-- **BAM:** Path B (variant calling + analysis)
+- **BAM:** Path B (variant calling + analysis) when it was aligned to the no-ALT analysis set; otherwise back to FASTQ and Path A ([realignment](realignment.md#from-an-existing-bam))
 - **VCF:** Path C (analysis only)
 
 ---
@@ -159,45 +170,37 @@ If your lab provided a DRAGEN-called VCF, you can skip steps 2-3 and go directly
 Some providers deliver CRAM instead of BAM (40-60% smaller). Convert to BAM first:
 
 ```bash
+source versions.env   # from the repository root
+REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools view -b \
-    -T /genome/reference/Homo_sapiens_assembly38.fasta \
+    -T "/genome/${REF_FASTA}" \
     -o /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
     /genome/${SAMPLE}/aligned/${SAMPLE}.cram
 
 # Index the BAM
 docker run --rm \
   -v ${GENOME_DIR}:/genome \
-  staphb/samtools:1.20 \
+  "${SAMTOOLS_IMAGE}" \
   samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
 ```
 
-**Important:** CRAM decoding requires the same reference genome used for encoding. This pipeline uses `Homo_sapiens_assembly38.fasta` (GRCh38). If your CRAM was encoded against a different reference, you'll get errors.
+**Important:** CRAM decoding needs the reference the CRAM was encoded against, sequence for sequence. The pipeline's own reference (the GRCh38 no-ALT analysis set) decodes reads on chr1-22, X, Y and M of any GRCh38 CRAM, because those sequences are the same in every GRCh38 file, but not reads on ALT, HLA or decoy contigs. For a CRAM from another GRCh38 file, decode it with the provider's reference (point `-T` at it) and then realign: the BAM keeps the provider's contig list, which `validate-setup.sh` refuses ([realignment](realignment.md#from-an-existing-bam)).
 
 ---
 
-## Long-Read Sequencing (Not Supported)
+## Long-Read Sequencing
 
-### Oxford Nanopore (MinION / PromethION)
+Oxford Nanopore and PacBio HiFi data run on a separate long-read path. The short-read steps (step 2 alignment, step 3 DeepVariant with the WGS model, step 4 Manta) are tuned for 150 bp Illumina reads and give wrong results on long reads, so do not feed long reads into them.
 
-Nanopore produces long reads (10-50 kb average) with different error profiles than Illumina. This pipeline's tools are optimized for short reads and will produce incorrect results with nanopore data.
+The long-read path has three scripts:
+- `scripts/02b-alignment-longread.sh`: minimap2 with the `map-ont` or `map-hifi` preset
+- `scripts/03e-clair3.sh`: Clair3 small-variant calling
+- `scripts/04c-sniffles2.sh`: Sniffles2 structural-variant calling
 
-**What you'd need instead:**
-- Alignment: `minimap2 -ax map-ont` (not the default short-read preset)
-- Variant calling: **Clair3** (not DeepVariant, though DeepVariant has an ONT model)
-- SV calling: **Sniffles2** or **cuteSV** (not Manta)
-- Basecalling: **Dorado** from raw POD5/FAST5 signal
-
-### PacBio HiFi
-
-PacBio HiFi reads are highly accurate (>Q20) and 10-20 kb long. Different tools required:
-- Alignment: `pbmm2` or `minimap2 -ax map-hifi`
-- Variant calling: **DeepVariant** (PacBio model) or **PEPPER-Margin-DeepVariant**
-- SV calling: `pbsv` or Sniffles2
-
-> A long-read pipeline branch may be added in the future. For now, these are the recommended tools.
+Basecalling from raw POD5/FAST5 signal (Dorado) happens before the pipeline. See the **[long-read guide](long-read-guide.md)** for the commands, the input formats each script accepts, and which downstream steps work on the resulting VCF.
 
 ---
 
@@ -231,8 +234,9 @@ samtools view -H your_file.bam | grep "^@SQ" | head -3
 
 **Best approach (recommended):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
+source versions.env   # from the repository root
 # Extract paired-end FASTQ from BAM
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   bash -c "samtools sort -n /genome/${SAMPLE}/old_hg19.bam | \
            samtools fastq -1 /genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
                           -2 /genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz -"
@@ -266,17 +270,18 @@ Even if you only plan to use VCF, download FASTQ and BAM too. Storage is cheap; 
 Large files can be silently truncated during download:
 
 ```bash
+source versions.env   # from the repository root
 # Check FASTQ integrity
 gzip -t ${SAMPLE}_R1.fastq.gz && echo "R1 OK" || echo "R1 CORRUPT"
 gzip -t ${SAMPLE}_R2.fastq.gz && echo "R2 OK" || echo "R2 CORRUPT"
 
 # Check BAM integrity
-docker run --rm -v ${GENOME_DIR}:/genome staphb/samtools:1.20 \
+docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
   samtools quickcheck /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam \
   && echo "BAM OK" || echo "BAM CORRUPT"
 
 # Check VCF integrity
-docker run --rm -v ${GENOME_DIR}:/genome staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -h /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz > /dev/null \
   && echo "VCF OK" || echo "VCF CORRUPT"
 ```
@@ -306,7 +311,7 @@ Know what to expect before downloading:
 | File Type | Typical Size (30X WGS) | Notes |
 |---|---|---|
 | FASTQ (gzipped, paired) | 60-90 GB | Two files: R1 + R2 |
-| ORA (Illumina compressed) | 15-20 GB | Same data as FASTQ, ~5x smaller |
+| ORA (Illumina compressed) | 15-20 GB | Same data as gzipped FASTQ, ~5x smaller |
 | BAM (aligned) | 80-120 GB | Largest single file |
 | CRAM (compressed aligned) | 40-60 GB | 40-60% smaller than BAM |
 | VCF (variants) | 80-200 MB | Relatively small |

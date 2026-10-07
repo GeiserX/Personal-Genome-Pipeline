@@ -1,13 +1,14 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    VCF_PRECHECK — Count FILTER values once per sample before any analysis
+    VCF_PRECHECK — Look at each input VCF once, before any analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    ClinVar screen, clinical filter and slivar keep only FILTER=PASS records.
-    A VCF from a caller that leaves FILTER as '.' (unfiltered GATK
-    HaplotypeCaller, FreeBayes) would give zero records everywhere and a
-    report with zero hits.
+    Reports three facts per sample; main.nf decides what to do with them,
+    so every stop names the sample and says how to fix the file.
 
-    Status emitted per sample:
+    FILTER values. ClinVar screen, clinical filter and slivar keep only
+    FILTER=PASS records. A VCF from a caller that leaves FILTER as '.'
+    (unfiltered GATK HaplotypeCaller, FreeBayes) would give zero records
+    everywhere and a report with zero hits. FILTER_STATUS:
       pass        — at least one PASS record; the VCF is used as given
       no_pass     — no PASS record; main.nf stops the run naming the sample
                     (also with --allow_unfiltered when no record has FILTER '.',
@@ -17,9 +18,22 @@
                     FILTER '.' rewritten to PASS is emitted, which is what
                     `bcftools view -f .,PASS` would select (records with any
                     other FILTER value stay excluded)
-
     The fallback applies only when the file has no PASS record at all, and
     the log says so. A file with some PASS records is never relaxed.
+
+    Contig names. The steps expect GRCh38 names with chr (chr1, chrM). With
+    Ensembl names (1, MT) the mito haplogroup file comes out empty and chrX
+    segments leak into the autosomal ROH summary, both with exit 0.
+    CONTIG_STYLE is chr when any contig holding records starts with chr,
+    other when none does, unknown when the index lists none; CONTIGS_SEEN
+    holds the first five, for the message.
+
+    gVCF. PharmCAT refuses a gVCF, and it decides by the file name too
+    (.g.vcf, .genomic.vcf). GVCF:
+      blocks  — a ##GVCFBlock header line, or a reference-only record (ALT
+                <*>, <NON_REF> or '.') that carries INFO/END
+      name    — no blocks, but the file name contains .g.vcf or .genomic.vcf
+      none    — neither
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -27,13 +41,12 @@ process VCF_PRECHECK {
     tag "$meta.id"
     label 'process_single'
 
-    container 'staphb/bcftools:1.21'
-
     input:
     tuple val(meta), path(vcf), path(vcf_index)
 
     output:
-    tuple val(meta), env(FILTER_STATUS), env(FILTER_COUNTS),          emit: status
+    tuple val(meta), env('FILTER_STATUS'), env('FILTER_COUNTS'),
+                     env('CONTIG_STYLE'), env('CONTIGS_SEEN'), env('GVCF'),  emit: status
     tuple val(meta), path("${meta.id}.unfiltered_as_pass.vcf.gz"),
                      path("${meta.id}.unfiltered_as_pass.vcf.gz.tbi"), emit: relaxed, optional: true
     path "versions.yml",                                              emit: versions
@@ -44,12 +57,45 @@ process VCF_PRECHECK {
     script:
     def allow_unfiltered = params.allow_unfiltered ? 'true' : 'false'
     """
-    bcftools query -f '%FILTER\\n' ${vcf} \\
-        | awk '{ if (\$1 == "PASS") p++; else if (\$1 == ".") d++; else o++ } END { printf "%d %d %d\\n", p, d, o }' \\
+    # Contigs that hold records, from the index (no pass over the file)
+    bcftools index -s ${vcf} | awk '\$3 > 0 { print \$1 }' > contigs.txt || true
+    CONTIGS_SEEN=\$(awk 'NR <= 5' contigs.txt | paste -sd, -)
+    if grep -q '^chr' contigs.txt; then
+        CONTIG_STYLE=chr
+    elif [ -s contigs.txt ]; then
+        CONTIG_STYLE=other
+    else
+        CONTIG_STYLE=unknown
+    fi
+
+    # gVCF: by name (PharmCAT's own rule), by header, or by reference blocks
+    GVCF=none
+    case "${vcf.name}" in
+        *.g.vcf*|*.genomic.vcf*) GVCF=name ;;
+    esac
+    bcftools view -h ${vcf} > header.txt
+    if grep -q '^##GVCFBlock' header.txt; then
+        GVCF=blocks
+    fi
+    # INFO/END can be read only when the header defines it
+    QUERY='%FILTER\\n'
+    if grep -q '^##INFO=<ID=END,' header.txt; then
+        QUERY='%FILTER\\t%ALT\\t%INFO/END\\n'
+    fi
+
+    # One pass: FILTER counts, and reference-only records that carry END
+    bcftools query -f "\${QUERY}" ${vcf} \\
+        | awk -F'\\t' '{ if (\$1 == "PASS") p++; else if (\$1 == ".") d++; else o++ }
+                      NF >= 3 && \$3 != "." && (\$2 == "<*>" || \$2 == "<NON_REF>" || \$2 == ".") { b++ }
+                      END { printf "%d %d %d %d\\n", p, d, o, b }' \\
         > filter_counts.txt
-    read -r N_PASS N_DOT N_OTHER < filter_counts.txt
+    read -r N_PASS N_DOT N_OTHER N_BLOCKS < filter_counts.txt
     FILTER_COUNTS="PASS=\${N_PASS} .=\${N_DOT} other=\${N_OTHER}"
     echo "${meta.id}: FILTER counts \${FILTER_COUNTS}"
+    if [ "\${N_BLOCKS}" -gt 0 ]; then
+        GVCF=blocks
+    fi
+    echo "${meta.id}: contigs \${CONTIG_STYLE} (\${CONTIGS_SEEN}), gVCF \${GVCF}, reference-block records \${N_BLOCKS}"
 
     if [ "\${N_PASS}" -gt 0 ]; then
         FILTER_STATUS=pass
@@ -66,7 +112,7 @@ process VCF_PRECHECK {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -74,10 +120,13 @@ process VCF_PRECHECK {
     """
     FILTER_STATUS=pass
     FILTER_COUNTS="stub"
+    CONTIG_STYLE=chr
+    CONTIGS_SEEN=stub
+    GVCF=none
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

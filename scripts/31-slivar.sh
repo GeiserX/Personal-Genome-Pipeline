@@ -11,18 +11,12 @@
 # Requires: VEP-annotated VCF. Step 30 (vcfanno) recommended for full filtering.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 
-# Validate sample name to prevent shell injection in bash -c / python3 -c strings
-if [[ "$SAMPLE" =~ [^a-zA-Z0-9._-] ]]; then
-  echo "ERROR: Sample name contains invalid characters. Use only a-z, A-Z, 0-9, ., _, -" >&2
-  exit 1
-fi
 
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 OUTDIR="${SAMPLE_DIR}/slivar"
@@ -35,15 +29,25 @@ VEP_VCF="${SAMPLE_DIR}/vep/${SAMPLE}_vep.vcf"
 # Optional gene constraint data
 CONSTRAINT_TSV="${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv"
 
+# A derived file is used only when it is newer than what it was built from,
+# so a re-run of step 13 is never hidden behind an older _vep.vcf.gz or an
+# older step 30 output. An empty file (an interrupted write) never counts.
+VEP_SRC=""
+if [ -s "$VEP_VCF" ] && { [ ! -s "$VEP_VCF_GZ" ] || [ "$VEP_VCF" -nt "$VEP_VCF_GZ" ]; }; then
+  VEP_SRC="$VEP_VCF"
+elif [ -s "$VEP_VCF_GZ" ]; then
+  VEP_SRC="$VEP_VCF_GZ"
+fi
 INPUT=""
 HAS_VCFANNO=0
-if [ -f "$ANNOTATED_VCF" ]; then
+if [ -s "$ANNOTATED_VCF" ] && { [ -z "$VEP_SRC" ] || [ "$ANNOTATED_VCF" -nt "$VEP_SRC" ]; }; then
   INPUT="$ANNOTATED_VCF"
   HAS_VCFANNO=1
-elif [ -f "$VEP_VCF_GZ" ]; then
-  INPUT="$VEP_VCF_GZ"
-elif [ -f "$VEP_VCF" ]; then
-  INPUT="$VEP_VCF"
+elif [ -n "$VEP_SRC" ]; then
+  INPUT="$VEP_SRC"
+  if [ -f "$ANNOTATED_VCF" ]; then
+    echo "NOTICE: ${ANNOTATED_VCF} is older than ${VEP_SRC}; ignoring it. Run step 30 again for the score filters."
+  fi
 else
   echo "ERROR: No annotated VCF found. Run step 13 (VEP) first."
   echo "  Expected: ${ANNOTATED_VCF} or ${VEP_VCF_GZ} or ${VEP_VCF}"
@@ -67,24 +71,23 @@ rm -f "${OUTDIR}/${SAMPLE}_slivar_summary.tsv"
 
 # ── Step 1: Ensure VCF is bgzipped and indexed ────────────────────────
 echo "[1/5] Preparing input VCF..."
-if [[ "$INPUT" == *.vcf ]] && [ ! -f "$VEP_VCF_GZ" ]; then
+if [ "$INPUT" = "$VEP_VCF" ]; then
   echo "  Compressing VEP VCF..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  rm -f "${VEP_VCF_GZ:?}" "${VEP_VCF_GZ:?}.tbi"
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -c "bcftools view /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf -Oz \
-      -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+      -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp && \
+      mv /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz.tmp /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz && \
+      bcftools index -f -t /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
+  INPUT="$VEP_VCF_GZ"
   CONTAINER_INPUT="/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
   echo "  Done."
-elif [[ "$INPUT" == *.vcf.gz ]] && [ ! -f "${INPUT}.tbi" ]; then
+elif [ ! -f "${INPUT}.tbi" ] || [ "$INPUT" -nt "${INPUT}.tbi" ]; then
   echo "  Indexing VCF..."
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
-    bcftools index -t "$CONTAINER_INPUT"
+    bcftools index -f -t "$CONTAINER_INPUT"
   echo "  Done."
 else
   echo "  VCF already compressed and indexed."
@@ -94,9 +97,8 @@ fi
 echo ""
 echo "[2/5] Detecting annotation fields..."
 
-VEP_FIELDS=$(docker run --rm \
+VEP_FIELDS=$(run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bcftools +split-vep -l "$CONTAINER_INPUT" 2>/dev/null || echo "")
 
@@ -105,10 +107,28 @@ if [ -z "$VEP_FIELDS" ]; then
   exit 1
 fi
 
-HAS_GNOMAD=0
 HAS_CLINVAR=0
-echo "$VEP_FIELDS" | grep -q 'gnomADe_AF' && HAS_GNOMAD=1
-echo "$VEP_FIELDS" | grep -q 'CLIN_SIG' && HAS_CLINVAR=1
+printf '%s\n' "$VEP_FIELDS" | awk -F'\t' '$2 == "CLIN_SIG" {f = 1} END {exit !f}' && HAS_CLINVAR=1
+
+# Rarity: VEP's MAX_AF (highest frequency in any 1000 Genomes or gnomAD
+# exome/genome population), or gnomADe_AF and gnomADg_AF when MAX_AF is
+# absent. Exome frequency alone would call a variant common in genomes but
+# absent from exomes rare. The same rule as step 23.
+FREQ_COLS=""
+FREQ_EXPR=""
+FREQ_NAME=""
+if printf '%s\n' "$VEP_FIELDS" | awk -F'\t' '$2 == "MAX_AF" {f = 1} END {exit !f}'; then
+  FREQ_COLS="MAX_AF:Float"
+  FREQ_EXPR='(MAX_AF<0.01 || MAX_AF=".")'
+  FREQ_NAME="MAX_AF"
+else
+  for f in gnomADe_AF gnomADg_AF; do
+    printf '%s\n' "$VEP_FIELDS" | awk -F'\t' -v f="$f" '$2 == f {x = 1} END {exit !x}' || continue
+    FREQ_COLS="${FREQ_COLS:+${FREQ_COLS},}${f}:Float"
+    FREQ_EXPR="${FREQ_EXPR:+${FREQ_EXPR} && }(${f}<0.01 || ${f}=\".\")"
+    FREQ_NAME="${FREQ_NAME:+${FREQ_NAME} and }${f}"
+  done
+fi
 
 # Check for vcfanno INFO fields
 HAS_CADD=0
@@ -118,20 +138,22 @@ HAS_AM=0
 HAS_SPLICEAI=0
 HAS_SPLICEAI_INDEL=0
 if [ "$HAS_VCFANNO" -eq 1 ]; then
-  INFO_HEADER=$(docker run --rm \
+  INFO_HEADER=$(run_in \
     --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -h "$CONTAINER_INPUT" 2>/dev/null | grep '^##INFO' || echo "")
-  echo "$INFO_HEADER" | grep -q 'ID=CADD_PHRED,' && HAS_CADD=1
-  echo "$INFO_HEADER" | grep -q 'ID=CADD_PHRED_indel,' && HAS_CADD_INDEL=1
-  echo "$INFO_HEADER" | grep -q 'ID=REVEL' && HAS_REVEL=1
-  echo "$INFO_HEADER" | grep -q 'ID=AM_class' && HAS_AM=1
-  echo "$INFO_HEADER" | grep -q 'ID=SpliceAI,' && HAS_SPLICEAI=1
-  echo "$INFO_HEADER" | grep -q 'ID=SpliceAI_indel,' && HAS_SPLICEAI_INDEL=1
+  grep -q 'ID=CADD_PHRED,' <<< "$INFO_HEADER" && HAS_CADD=1
+  grep -q 'ID=CADD_PHRED_indel,' <<< "$INFO_HEADER" && HAS_CADD_INDEL=1
+  grep -q 'ID=REVEL' <<< "$INFO_HEADER" && HAS_REVEL=1
+  grep -q 'ID=AM_class' <<< "$INFO_HEADER" && HAS_AM=1
+  grep -q 'ID=SpliceAI,' <<< "$INFO_HEADER" && HAS_SPLICEAI=1
+  grep -q 'ID=SpliceAI_indel,' <<< "$INFO_HEADER" && HAS_SPLICEAI_INDEL=1
 fi
 
-echo "  VEP CSQ fields: gnomAD=$([ "$HAS_GNOMAD" -eq 1 ] && echo 'yes' || echo 'no'), ClinVar=$([ "$HAS_CLINVAR" -eq 1 ] && echo 'yes' || echo 'no')"
+echo "  VEP CSQ fields: frequency=${FREQ_NAME:-none}, ClinVar=$([ "$HAS_CLINVAR" -eq 1 ] && echo 'yes' || echo 'no')"
+if [ -z "$FREQ_EXPR" ]; then
+  echo "  NOTICE: no MAX_AF, gnomADe_AF or gnomADg_AF in the VEP output: the rare tiers are not filtered by frequency."
+fi
 echo "  vcfanno INFO fields: CADD=$([ "$HAS_CADD" -eq 1 ] && echo 'yes' || echo 'no'), REVEL=$([ "$HAS_REVEL" -eq 1 ] && echo 'yes' || echo 'no'), AlphaMissense=$([ "$HAS_AM" -eq 1 ] && echo 'yes' || echo 'no'), SpliceAI=$([ "$HAS_SPLICEAI" -eq 1 ] && echo 'yes' || echo 'no')"
 echo ""
 
@@ -141,33 +163,20 @@ echo ""
 echo "[3/5] Prioritizing variants..."
 
 # --- Filter 1: rare_high ---
-# PASS + HIGH VEP impact + gnomAD AF < 0.01 (or missing)
-echo "  [a] rare_high: PASS + HIGH impact + gnomAD AF < 1%..."
-if [ "$HAS_GNOMAD" -eq 1 ]; then
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c IMPACT,gnomADe_AF -s worst \
-        -i 'IMPACT=\"HIGH\" && (gnomADe_AF<0.01 || gnomADe_AF=\".\")' \
-        -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz"
-else
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c IMPACT -s worst \
-        -i 'IMPACT=\"HIGH\"' \
-        -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz && \
-      bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz"
-fi
+# PASS + HIGH VEP impact + rare (see FREQ_EXPR above)
+RARE_COLS="IMPACT${FREQ_COLS:+,${FREQ_COLS}}"
+RARE_AND="${FREQ_EXPR:+ && ${FREQ_EXPR}}"
+echo "  [a] rare_high: PASS + HIGH impact + ${FREQ_NAME:-no frequency filter}..."
+run_in --cpus 2 --memory 4g \
+  "${BCFTOOLS_IMAGE}" \
+  bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
+    bcftools +split-vep - -c '${RARE_COLS}' -s worst \
+      -i 'IMPACT=\"HIGH\"${RARE_AND}' \
+      -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz && \
+    bcftools index -f -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz"
 
-RARE_HIGH_COUNT=$(docker run --rm \
+RARE_HIGH_COUNT=$(run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "      Found: ${RARE_HIGH_COUNT} variants"
@@ -177,16 +186,12 @@ echo "      Found: ${RARE_HIGH_COUNT} variants"
 echo "  [b] rare_moderate_deleterious: PASS + MODERATE + rare + deleterious predictors..."
 
 # Build the filter expression depending on available annotations
-MODERATE_FILTER='IMPACT="MODERATE" && (gnomADe_AF<0.01 || gnomADe_AF=".")'
-if [ "$HAS_GNOMAD" -eq 0 ]; then
-  MODERATE_FILTER='IMPACT="MODERATE"'
-fi
+MODERATE_FILTER="IMPACT=\"MODERATE\"${RARE_AND}"
+VEP_COLUMNS="$RARE_COLS"
 
 # If vcfanno annotations are available, add predictor thresholds as a second pass
 if [ "$HAS_VCFANNO" -eq 1 ]; then
   # First pass: extract rare MODERATE via split-vep, then second pass: filter on INFO fields
-  VEP_COLUMNS="IMPACT"
-  [ "$HAS_GNOMAD" -eq 1 ] && VEP_COLUMNS="IMPACT,gnomADe_AF"
 
   # Build INFO-level predictor filter — only reference tags that exist in the header
   PREDICTOR_PARTS=()
@@ -214,49 +219,40 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
     PREDICTOR_EXPR=$(printf ' || %s' "${PREDICTOR_PARTS[@]}")
     PREDICTOR_EXPR="${PREDICTOR_EXPR:4}"  # strip leading ' || '
 
-    docker run --rm --user root \
-      --cpus 2 --memory 4g \
-      -v "${GENOME_DIR}:/genome" \
+    run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
       bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-        bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
+        bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
           -i '${MODERATE_FILTER}' | \
         bcftools view -i '${PREDICTOR_EXPR}' \
           -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
         bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
   else
     # No predictors available despite vcfanno — fall back to all rare MODERATE
-    docker run --rm --user root \
-      --cpus 2 --memory 4g \
-      -v "${GENOME_DIR}:/genome" \
+    run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
       bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-        bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
+        bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
           -i '${MODERATE_FILTER}' \
           -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
         bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
   fi
 else
   # No vcfanno — include all rare MODERATE (same as step 23 behavior)
-  VEP_COLUMNS="IMPACT"
-  [ "$HAS_GNOMAD" -eq 1 ] && VEP_COLUMNS="IMPACT,gnomADe_AF"
   echo "    WARNING: No vcfanno annotations — including all rare MODERATE variants."
   echo "    Run step 30 (vcfanno) for CADD/REVEL/AlphaMissense/SpliceAI filtering."
 
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c ${VEP_COLUMNS} -s worst \
+      bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
         -i '${MODERATE_FILTER}' \
         -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
 fi
 
-MODERATE_DEL_COUNT=$(docker run --rm \
+MODERATE_DEL_COUNT=$(run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "      Found: ${MODERATE_DEL_COUNT} variants"
@@ -266,9 +262,7 @@ CLINVAR_COUNT=0
 CLINVAR_FILE=""
 if [ "$HAS_CLINVAR" -eq 1 ]; then
   echo "  [c] clinvar_pathogenic: ClinVar pathogenic/likely_pathogenic..."
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
@@ -276,9 +270,8 @@ if [ "$HAS_CLINVAR" -eq 1 ]; then
         -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz"
 
-  CLINVAR_COUNT=$(docker run --rm \
+  CLINVAR_COUNT=$(run_in \
     --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz" 2>/dev/null | wc -l || echo 0)
   echo "      Found: ${CLINVAR_COUNT} variants"
@@ -293,18 +286,15 @@ echo "  Merging filter tiers into prioritized VCF..."
 MERGE_FILES="/genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
 [ -n "$CLINVAR_FILE" ] && MERGE_FILES="${MERGE_FILES} ${CLINVAR_FILE}"
 
-docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools concat -a -D \
     ${MERGE_FILES} | \
     bcftools sort -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz && \
     bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz"
 
-PRIORITIZED_COUNT=$(docker run --rm \
+PRIORITIZED_COUNT=$(run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Total prioritized variants: ${PRIORITIZED_COUNT}"
@@ -334,18 +324,14 @@ rm -f "$COMPHET_VCF" "$COMPHET_TSV"
 
 # A failure here (wrong image, slivar crash, broken input) stops the step with
 # slivar's own error. It must never be reported as "no candidates found".
-if ! docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+if ! run_in --cpus 2 --memory 4g \
   "${SLIVAR_IMAGE}" \
   slivar compound-hets \
     --allow-non-trios \
     --vcf "/genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz" \
     --ped "/genome/${SAMPLE}/slivar/${SAMPLE}.ped" \
   2>"$COMPHET_LOG" | \
-  docker run --rm -i --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in -i    --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bcftools view -Oz -o "/genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz"; then
   echo "ERROR: slivar compound-hets failed (image: ${SLIVAR_IMAGE})." >&2
@@ -362,15 +348,13 @@ fi
 # A gene with N variants produces C(N,2) pairs but only N VCF records.
 COMPHET_PAIRS=0
 COMPHET_GENES=0
-COMPHET_RECORDS=$(docker run --rm \
+COMPHET_RECORDS=$(run_in \
   --cpus 2 --memory 2g \
-  -v "${GENOME_DIR}:/genome" \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz" | wc -l | tr -d ' ')
 if [ "$COMPHET_RECORDS" -gt 0 ]; then
-  COMPHET_STATS=$(docker run --rm \
+  COMPHET_STATS=$(run_in \
     --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools query -f '%INFO/slivar_comphet\n' \
       /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
@@ -380,9 +364,7 @@ if [ "$COMPHET_RECORDS" -gt 0 ]; then
   COMPHET_GENES=$(echo "$COMPHET_STATS" | awk '{print $2}')
 
   # Export to TSV sorted by gene for human review
-  docker run --rm --user root \
-    --cpus 2 --memory 2g \
-    -v "${GENOME_DIR}:/genome" \
+  run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools +split-vep \
         /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
@@ -412,9 +394,7 @@ echo "[5/5] Generating summary with gene constraint annotations..."
 SUMMARY_TSV="${OUTDIR}/${SAMPLE}_slivar_summary.tsv"
 
 # Extract variant info from prioritized VCF into a TSV
-if ! docker run --rm --user root \
-  --cpus 2 --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
+if ! run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools +split-vep \
     /genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz \
@@ -426,67 +406,25 @@ if ! docker run --rm --user root \
   exit 1
 fi
 
-# Add header and optional gene constraint columns
+# Add header and optional gene constraint columns (bin/constraint_join.awk,
+# the loader step 23 and the Nextflow slivar module use: canonical rows,
+# mis.z_score, the Ensembl row over the RefSeq one; it exits non-zero when rows
+# carry genes and not one matches the file).
+{
+  printf 'CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\n'
+  cat "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
+} > "${SUMMARY_TSV}.raw"
 if [ -f "$CONSTRAINT_TSV" ]; then
   echo "  Joining with gnomAD gene constraint metrics..."
-  docker run --rm --user root \
-    --cpus 2 --memory 4g \
-    -v "${GENOME_DIR}:/genome" \
-    "${PYTHON_IMAGE}" \
-    python3 -c "
-import csv, sys
-
-# Load gene constraint data
-constraint = {}
-try:
-    with open('/genome/annotations/gnomad_v4.1_constraint.tsv') as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            gene = row.get('gene', row.get('gene_symbol', row.get('symbol', '')))
-            if not gene:
-                continue
-            loeuf = row.get('oe_lof_upper', row.get('lof.oe_ci.upper', '.'))
-            pli = row.get('pLI', row.get('lof.pLI', '.'))
-            mis_z = row.get('mis_z', row.get('missense.z_score', '.'))
-            constraint[gene] = (loeuf, pli, mis_z)
-except Exception as e:
-    print(f'WARNING: Could not load constraint file: {e}', file=sys.stderr)
-
-# Process variants
-header = 'CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\tLOEUF\tpLI\tmis_z\tCONSTRAINED'
-print(header)
-
-with open('/genome/${SAMPLE}/slivar/${SAMPLE}_variants_raw.tsv') as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        fields = line.split('\t')
-        if len(fields) < 6:
-            continue
-        gene = fields[5]
-        loeuf, pli, mis_z = constraint.get(gene, ('.', '.', '.'))
-        # Mark as constrained if LOEUF < 0.35 or pLI > 0.9
-        constrained = 'NO'
-        try:
-            if loeuf != '.' and float(loeuf) < 0.35:
-                constrained = 'YES'
-            elif pli != '.' and float(pli) > 0.9:
-                constrained = 'YES'
-        except ValueError:
-            pass
-        print(f'{line}\t{loeuf}\t{pli}\t{mis_z}\t{constrained}')
-" > "${SUMMARY_TSV}.tmp"
-  mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
+  awk -f "${PGP_ROOT}/bin/constraint_join.awk" gene_col=SYMBOL constrained=1 \
+    "$CONSTRAINT_TSV" "${SUMMARY_TSV}.raw" > "${SUMMARY_TSV}.tmp"
+  rm -f "${SUMMARY_TSV:?}.raw"
 else
   echo "  Gene constraint file not found (optional): ${CONSTRAINT_TSV}"
   echo "  Generating summary without constraint annotations."
-  {
-    echo -e "CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT"
-    cat "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
-  } > "${SUMMARY_TSV}.tmp"
-  mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
+  mv "${SUMMARY_TSV}.raw" "${SUMMARY_TSV}.tmp"
 fi
+mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
 
 # Clean up intermediate file
 rm -f "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
@@ -497,7 +435,7 @@ echo "============================================"
 echo "  Step 31 complete: ${SAMPLE}"
 echo ""
 echo "  Filter results:"
-echo "    rare_high (HIGH + AF<1%):          ${RARE_HIGH_COUNT}"
+echo "    rare_high (HIGH, rare):            ${RARE_HIGH_COUNT}"
 echo "    rare_moderate_deleterious:          ${MODERATE_DEL_COUNT}"
 if [ "$HAS_CLINVAR" -eq 1 ]; then
 echo "    clinvar_pathogenic:                 ${CLINVAR_COUNT}"

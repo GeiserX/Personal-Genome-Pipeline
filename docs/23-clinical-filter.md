@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Extracts the small subset of clinically interesting variants from your VEP-annotated VCF. Instead of manually searching through 4-5 million variants, this step produces a focused list of ~200-500 variants that are rare AND functionally impactful.
+Extracts the small subset of clinically interesting variants from your VEP-annotated VCF. Instead of manually searching through 4-5 million variants, this step produces a focused list of a few hundred variants that are rare and functionally impactful, plus the known ClinVar pathogenic ones.
 
 ## Why
 
@@ -14,11 +14,14 @@ bcftools + `bcftools +split-vep` plugin (parses VEP CSQ fields structurally — 
 
 ## Docker Image
 
-`staphb/bcftools:1.21`
+- `BCFTOOLS_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
-- VEP-annotated VCF from step 13: `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf` (or `.vcf.gz`)
+- The step 30 output `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz` when it is newer than the VEP output, else the VEP output of step 13 (`${SAMPLE}_vep.vcf.gz`, or `${SAMPLE}_vep.vcf`, which is compressed first). A derived file older than its source is ignored with a notice, so a re-run of step 13 is never hidden behind an old copy.
+- Optional: the step 6 hits `${GENOME_DIR}/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf` and the gnomAD v4.1 constraint table `${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv`.
 
 ## Command
 
@@ -28,38 +31,47 @@ bcftools + `bcftools +split-vep` plugin (parses VEP CSQ fields structurally — 
 
 ## What Gets Filtered
 
-The script produces up to three variant sets (depending on VEP annotations available) that are merged:
+Every tier starts from the PASS records. "Rare" means VEP's `MAX_AF` (the highest allele frequency in any 1000 Genomes, gnomAD exome or gnomAD genome population) is below 1% or missing. Without `MAX_AF` the step uses `gnomADe_AF` and `gnomADg_AF`, both below 1% or missing. A variant common in gnomAD genomes but absent from the exomes is therefore not rare. When the VEP output has none of these fields (VEP run without `--everything`, `--max_af` or `--af_gnomadg`), no tier is filtered by frequency, every MODERATE variant is kept, and the step prints a notice saying so.
 
-### HIGH Impact Variants
-- Stop-gained (premature stop codon — breaks the protein)
-- Frameshift insertions/deletions (shifts reading frame — breaks the protein)
-- Splice donor/acceptor (disrupts splicing — breaks the protein)
-- Start-lost (no translation initiation)
+The gene, impact and consequence of a variant are those of its most severe consequence (`bcftools +split-vep -s worst`).
 
-Expected count: 100-200 per genome. Uses `bcftools +split-vep -s worst` to select the most severe consequence per variant.
+### Rare HIGH impact
+Stop-gained, frameshift, splice donor/acceptor, start-lost.
 
-### Rare MODERATE Impact Variants
-- Missense variants (amino acid change) with gnomAD allele frequency < 1%
-- In-frame insertions/deletions with gnomAD AF < 1%
+### Rare MODERATE impact
+Missense variants and in-frame insertions/deletions.
 
-Expected count: 200-400 per genome after frequency filtering. If VEP output lacks gnomAD frequencies (`--af_gnomade`), all MODERATE variants are included.
+### ClinVar pathogenic/likely pathogenic, at any frequency
+- Preferred source: the step 6 hits file, built from the ClinVar file in `clinvar/` that `setup.sh` refreshes. The tier holds the records at those positions.
+- Step 6 matches on a split, left-aligned copy of the sample, and this tier selects the VEP records at the same CHROM and POS. An SNV always matches. An indel matches only when the caller already wrote it left-aligned, as DeepVariant does; an indel whose position moves on left-alignment is missing from this tier, though it stays in the step 6 hits and in both reports' ClinVar section.
+- Fallback when step 6 has not run: VEP's `CLIN_SIG` (pathogenic or likely pathogenic, not conflicting). That value comes from the VEP cache release, so a ClinVar refresh never reaches it; the step says which source it used.
+- A common pathogenic allele (for example HFE p.C282Y) stays: this tier has no frequency filter.
 
-### ClinVar Pathogenic/Likely Pathogenic (Conditional)
-- Variants with `CLIN_SIG` containing "pathogenic" (covers both pathogenic and likely_pathogenic)
-- Only runs if VEP was run with `--everything` or `--check_existing` (which populates the CLIN_SIG field)
-- Does not use `-s worst` — a variant is included if ANY transcript annotation has a pathogenic ClinVar entry
+### Rare high CADD (step 30)
+CADD PHRED >= 20 for variants that are not HIGH or MODERATE.
 
-Expected count: 10-50 per genome (depends on ClinVar version).
+### Rare cryptic splice (step 30)
+A SpliceAI delta score >= 0.2 for any gene of the value. SpliceAI writes one entry per gene, joined by commas; every entry is tested.
+
+### Rare deleterious missense (step 30)
+REVEL >= 0.644 (ClinGen's PP3 Supporting threshold) or AlphaMissense >= 0.564 (AlphaMissense's own likely_pathogenic class boundary, not an ACMG evidence level).
 
 ## Output
 
-| File | Contents | Size |
-|---|---|---|
-| `${SAMPLE}_clinical.vcf.gz` | Combined clinically interesting VCF | < 5 MB |
-| `${SAMPLE}_clinical_summary.tsv` | Human-readable tab-delimited table | < 1 MB |
-| `${SAMPLE}_high_impact.vcf.gz` | HIGH impact variants only | < 2 MB |
-| `${SAMPLE}_rare_moderate.vcf.gz` | Rare MODERATE variants only | < 3 MB |
-| `${SAMPLE}_clinvar_pathogenic.vcf.gz` | ClinVar P/LP only (if CLIN_SIG available) | < 1 MB |
+| File | Contents |
+|---|---|
+| `${SAMPLE}_clinical.vcf.gz` | All tiers merged |
+| `${SAMPLE}_clinical_summary.tsv` | One row per variant: `CHROM`, `POS`, `REF`, `ALT`, `GT`, `IMPACT`, `GENE`, `Consequence`, `MAX_AF`, `CADD_PHRED`, `REVEL`, `AM_CLASS`, and with the constraint table `LOEUF`, `pLI`, `mis_z` |
+| `${SAMPLE}_high_impact.vcf.gz` | Rare HIGH impact |
+| `${SAMPLE}_rare_moderate.vcf.gz` | Rare MODERATE impact |
+| `${SAMPLE}_clinvar_pathogenic.vcf.gz` | ClinVar P/LP (when step 6 hits or `CLIN_SIG` exist) |
+| `${SAMPLE}_cadd_high.vcf.gz`, `${SAMPLE}_spliceai_high.vcf.gz`, `${SAMPLE}_missense_deleterious.vcf.gz` | The step 30 tiers, when their scores exist |
+
+`GENE` is the `SYMBOL` of the worst consequence, `.` for an intergenic one. A score or frequency the input does not carry is written as `.`.
+
+The constraint columns come from `bin/constraint_join.awk`, the loader step 31 and the Nextflow slivar module run too: only canonical transcripts count, the Ensembl row wins over the RefSeq one, and `mis_z` is gnomAD v4.1's `mis.z_score`. When the table is present and rows carry gene symbols but not one matches it, the step fails instead of writing `.` everywhere.
+
+The Nextflow `CLINICAL_FILTER` module applies the same tiers. It takes the ClinVar tier from VEP's `CLIN_SIG` only and adds no constraint columns.
 
 ## Runtime
 
@@ -77,8 +89,9 @@ column -t ${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv | head
 ### Cross-reference with ClinVar
 
 ```bash
+source versions.env   # from the repository root
 # Find which clinical variants are also in ClinVar
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools isec -n=2 -w1 \
     /genome/${SAMPLE}/clinical/${SAMPLE}_clinical.vcf.gz \
     /genome/clinvar/clinvar.vcf.gz \
@@ -93,7 +106,7 @@ The `_clinical.vcf.gz` file is small enough to load in [IGV Web](https://igv.org
 
 - This is a **computational filter**, not a clinical interpretation
 - Some pathogenic variants are LOW impact (e.g., synonymous variants affecting splicing, regulatory variants) and will be missed by this filter
-- gnomAD frequency filtering depends on VEP having annotated the gnomAD fields correctly
+- Frequency filtering depends on VEP having written `MAX_AF` or the gnomAD fields
 - Always cross-reference findings with ClinVar and consult a professional for clinical decisions
 
 ## Notes
@@ -102,4 +115,4 @@ The `_clinical.vcf.gz` file is small enough to load in [IGV Web](https://igv.org
 - Uses `bcftools +split-vep` to parse VEP's pipe-delimited CSQ annotation structurally (not grep)
 - The VEP VCF is compressed and indexed automatically if needed
 - PASS filter is applied to exclude low-quality variant calls
-- Available CSQ subfields are auto-detected — ClinVar and gnomAD filters are skipped gracefully if not present
+- Available CSQ subfields and INFO scores are detected from the header; a tier whose data is missing is skipped and the step says so

@@ -2,7 +2,7 @@
     "$schema": "http://json-schema.org/draft-07/schema",
     "$id": "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/nextflow_schema.json",
     "title": "Personal Genome Pipeline Parameters",
-    "description": "Post-processing & clinical interpretation for whole genome sequencing",
+    "description": "Whole genome sequencing from FASTQ, BAM or VCF to clinical interpretation",
     "type": "object",
     "definitions": {
         "input_output_options": {
@@ -15,7 +15,7 @@
                     "type": "string",
                     "format": "file-path",
                     "mimetype": "text/csv",
-                    "description": "Path to comma-separated samplesheet (sample,vcf,vcf_index,bam,bam_index, plus sex when expansion_hunter is enabled).",
+                    "description": "Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled.",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
@@ -40,6 +40,37 @@
                 }
             }
         },
+        "reads_to_vcf_options": {
+            "title": "Reads to VCF",
+            "type": "object",
+            "description": "Alignment and variant calling of the samplesheet rows that start from FASTQ or from a BAM without a VCF.",
+            "properties": {
+                "skip_trim": {
+                    "type": "boolean",
+                    "description": "Align the raw reads, without fastp trimming (SKIP_TRIM=true in scripts/01b-fastp-qc.sh).",
+                    "default": false,
+                    "fa_icon": "fas fa-cut"
+                },
+                "minimap2_index": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "minimap2 index built with -x sr. Default: <reference base>.sr.mmi beside the FASTA, the file scripts/02-alignment.sh builds; when neither exists the run builds one.",
+                    "fa_icon": "fas fa-database"
+                },
+                "intervals": {
+                    "type": "string",
+                    "description": "Space-separated regions DeepVariant calls (its --regions, INTERVALS in scripts/03-deepvariant.sh). Unset calls the whole genome.",
+                    "fa_icon": "fas fa-map"
+                },
+                "sex_check": {
+                    "type": "string",
+                    "description": "What to do when the sex inferred from a BAM differs from the samplesheet's, by indexcov (every BAM, before any BAM step) or by somalier (with sample_qc): fail stops the run; warn logs it and goes on with the declared sex.",
+                    "default": "fail",
+                    "enum": ["fail", "warn"],
+                    "fa_icon": "fas fa-venus-mars"
+                }
+            }
+        },
         "reference_data": {
             "title": "Reference data",
             "type": "object",
@@ -49,7 +80,7 @@
                 "reference": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Path to GRCh38 reference FASTA file.",
+                    "description": "Path to the GRCh38 reference FASTA the BAMs were aligned to: the no-ALT analysis set that scripts/setup.sh installs as reference/GRCh38_no_alt_analysis_set.fasta.",
                     "fa_icon": "fas fa-dna"
                 },
                 "clinvar": {
@@ -73,8 +104,8 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter) and extras (stranger, ancestry, pypgx, SV callers) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set.",
-                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,cyrius,html_report,multiqc",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), pypgx, SV callers, cram_archive, cyrius, parascopy) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
             }
@@ -93,7 +124,7 @@
                 "vep_cache_cpsr": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "VEP cache for CPSR (release 113, separate from the VEP step's release 116 cache).",
+                    "description": "VEP cache for CPSR (release 115, PCGR_VEP_CACHE_RELEASE in versions.env; separate from the VEP step's release 116 cache).",
                     "fa_icon": "fas fa-database"
                 },
                 "pcgr_data": {
@@ -196,14 +227,20 @@
                 "pgs_scoring": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "PGS Catalog scoring files directory.",
+                    "description": "Folder of GRCh38-harmonised PGS Catalog scoring files (setup.sh downloads the scores of assets/pgs_scores.tsv into <genome_dir>/prs_scores). prs scores each with pgsc_calc.",
                     "fa_icon": "fas fa-chart-bar"
                 },
                 "ancestry_ref": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Ancestry reference panel VCF for PCA projection.",
+                    "description": "pgsc_calc's ancestry reference panel (pgsc_1000G_v1.tar.zst, installed by setup.sh --ancestry-panel with its _GRCh38_sites.tsv beside it). With it prs projects the sample onto the panel, reports each score as a percentile among the most similar population, and writes the ancestry table of step 26; without it the scores are raw sums.",
                     "fa_icon": "fas fa-globe"
+                },
+                "pgsc_calc": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The pgsc_calc checkout setup.sh makes (<genome_dir>/tools/pgsc_calc-<release>). With it prs runs pgsc_calc offline; without, the PRS task fetches GitHub's archive of the release versions.env pins, checked against its sha256.",
+                    "fa_icon": "fas fa-folder"
                 },
                 "expansion_catalog": {
                     "type": "string",
@@ -217,10 +254,53 @@
                     "description": "Pre-downloaded IPD-IMGT/HLA hla.dat file for T1K HLA typing.",
                     "fa_icon": "fas fa-file"
                 },
+                "hla_genes": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Gene annotation (GTF) T1K takes each HLA gene's GRCh38 coordinates from: the gene lines of GENCODE's basic annotation that scripts/setup.sh installs as reference/gencode.v<release>.basic.genes.gtf. Required with hla_typing.",
+                    "fa_icon": "fas fa-file"
+                },
+                "kir": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "With hla_typing: also type the KIR genes, in a second T1K pass with its kir-wgs preset. Needs --kir_dat.",
+                    "fa_icon": "fas fa-dna"
+                },
+                "kir_dat": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "IPD-KIR's kir.dat of release KIR_DB_RELEASE (versions.env), which `scripts/setup.sh --kir-data` installs as kir/IPD-KIR_<release>/kir.dat. Required with --kir.",
+                    "fa_icon": "fas fa-file"
+                },
+                "cyrius_install": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The Cyrius install `scripts/setup.sh --cyrius` makes (tools/cyrius-<version>), hash-locked by scripts/cyrius-constraints.txt. Required with cyrius. Cyrius is under the PolyForm Strict licence 1.0.0: non-commercial use only.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "parascopy_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Parascopy's GRCh38 homology table and 1000 Genomes models, which `scripts/setup.sh --parascopy-data` installs as reference/parascopy-<version>. Required with parascopy.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "parascopy_population": {
+                    "type": "string",
+                    "default": "EUR",
+                    "enum": ["AFR", "AMR", "EAS", "EUR", "SAS"],
+                    "description": "parascopy: the 1000 Genomes population whose model parameters are used.",
+                    "fa_icon": "fas fa-users"
+                },
+                "parascopy_depth_bed": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "parascopy: background windows (BED, all of one size) for a BAM that covers only part of the genome; default Parascopy's own GRCh38 windows.",
+                    "fa_icon": "fas fa-file"
+                },
                 "slivar_bin": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Pre-built slivar static binary (v0.3.x linux-amd64).",
+                    "description": "Deprecated and ignored: slivar now runs from the pinned image (SLIVAR_IMAGE in versions.env). Accepted with a warning for this release only.",
                     "fa_icon": "fas fa-file"
                 },
                 "cnvpytor_resources": {
@@ -238,8 +318,40 @@
                 "delly_exclude": {
                     "type": "string",
                     "format": "file-path",
-                    "description": "Optional Delly exclude map, passed as `delly call -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
+                    "description": "Optional Delly exclude map, passed as `delly sr -x` (for example Delly's excludeTemplates/human.hg38.excl.tsv).",
                     "fa_icon": "fas fa-file"
+                },
+                "manta_call_regions": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional bgzipped BED of the regions Manta calls on, passed as `configManta.py --callRegions`; its .tbi must sit beside it. For example chr1-22, X and Y, which keeps Manta off the ALT, decoy and unplaced contigs.",
+                    "fa_icon": "fas fa-file"
+                },
+                "cytoband": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Optional UCSC GRCh38 chromosome bands (cytoBand.hg38.txt, chr1-22, X and Y; scripts/setup.sh installs it), passed as `telomerehunter -b`. Without it TelomereHunter uses its own hg19 bands.",
+                    "fa_icon": "fas fa-file"
+                },
+                "somalier_sites": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "somalier's GRCh38 sites VCF (sites.hg38.vcf.gz; scripts/setup.sh installs it under reference/somalier/). Required by sample_qc.",
+                    "fa_icon": "fas fa-file"
+                },
+                "verifybamid2_panel": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Folder holding VerifyBamID2's marker panel, the .UD, .mu and .bed files of one prefix (scripts/setup.sh installs the 1000 Genomes 100k GRCh38 panel under reference/verifybamid2/). Required by sample_qc.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "freemix_warn": {
+                    "type": "number",
+                    "description": "VerifyBamID2's FREEMIX (estimated share of reads from another person) above which sample_qc reports possible contamination. A warning only; it never stops the run.",
+                    "default": 0.03,
+                    "minimum": 0,
+                    "exclusiveMaximum": 1,
+                    "fa_icon": "fas fa-vial"
                 }
             }
         },
@@ -271,6 +383,7 @@
     },
     "allOf": [
         { "$ref": "#/definitions/input_output_options" },
+        { "$ref": "#/definitions/reads_to_vcf_options" },
         { "$ref": "#/definitions/reference_data" },
         { "$ref": "#/definitions/tool_selection" },
         { "$ref": "#/definitions/annotation_databases" },

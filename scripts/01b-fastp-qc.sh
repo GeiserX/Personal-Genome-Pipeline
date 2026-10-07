@@ -13,7 +13,9 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 R1="${SAMPLE_DIR}/fastq/${SAMPLE}_R1.fastq.gz"
 R2="${SAMPLE_DIR}/fastq/${SAMPLE}_R2.fastq.gz"
@@ -38,14 +40,19 @@ for f in "$R1" "$R2"; do
   fi
 done
 
-# Skip if trimmed output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz" ] && [ -f "${OUTPUT_DIR}/${SAMPLE}_R2.fastq.gz" ]; then
+# Skip if trimmed output already exists. fastp writes into fastq_trimmed.part/,
+# renamed to fastq_trimmed/ only when it finished, so a run that was killed
+# leaves no half-written FASTQ for step 02 to align.
+if [ -s "${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz" ] && [ -s "${OUTPUT_DIR}/${SAMPLE}_R2.fastq.gz" ] \
+   && [ -s "${OUTPUT_DIR}/${SAMPLE}_fastp.json" ]; then
   echo "Trimmed FASTQs already exist in ${OUTPUT_DIR}/, skipping."
   echo "Delete them to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0
 fi
 
-mkdir -p "$OUTPUT_DIR"
+PART_DIR="${OUTPUT_DIR}.part"
+rm -rf "$PART_DIR"
+mkdir -p "$PART_DIR"
 
 # fastp: adapter trimming + QC
 # Flags:
@@ -58,15 +65,13 @@ mkdir -p "$OUTPUT_DIR"
 #   -R                       Report title (used by MultiQC for sample naming)
 #   -w                       Worker threads (default 3, max 16 effective for I/O-bound work)
 echo "Running fastp (adapter trimming + quality filtering)..."
-docker run --rm --user root \
-  --cpus "${THREADS}" --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/fastp:1.3.6--h43da1c4_0 \
+run_in --cpus "${THREADS}" --memory 4g \
+  "${FASTP_IMAGE}" \
   fastp \
     -i "/genome/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" \
     -I "/genome/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz" \
-    -o "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_R1.fastq.gz" \
-    -O "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_R2.fastq.gz" \
+    -o "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_R1.fastq.gz" \
+    -O "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_R2.fastq.gz" \
     --detect_adapter_for_pe \
     --qualified_quality_phred 20 \
     --cut_front \
@@ -75,9 +80,12 @@ docker run --rm --user root \
     --length_required 36 \
     -g \
     -R "${SAMPLE}" \
-    -j "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.json" \
-    -h "/genome/${SAMPLE}/fastq_trimmed/${SAMPLE}_fastp.html" \
+    -j "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_fastp.json" \
+    -h "/genome/${SAMPLE}/fastq_trimmed.part/${SAMPLE}_fastp.html" \
     -w "${THREADS}"
+
+rm -rf "$OUTPUT_DIR"
+mv "$PART_DIR" "$OUTPUT_DIR"
 
 echo "=== fastp QC complete ==="
 echo "Trimmed R1:   ${OUTPUT_DIR}/${SAMPLE}_R1.fastq.gz"

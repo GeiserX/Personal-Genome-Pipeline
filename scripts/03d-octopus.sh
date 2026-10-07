@@ -10,11 +10,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/vcf_octopus"
 
 echo "=== Octopus: ${SAMPLE} ==="
@@ -28,8 +30,9 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
   fi
 done
 
-# Skip if output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}.vcf.gz" ]; then
+# Skip only a finished VCF (complete BGZF file with a VCF header); a file cut
+# short by a killed run is called again.
+if have_output "${OUTPUT_DIR}/${SAMPLE}.vcf.gz"; then
   echo "Octopus output already exists, skipping."
   echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0
@@ -37,7 +40,9 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Restrict to specific regions if INTERVALS is set (e.g., INTERVALS=chr22 for testing)
+# Restrict to specific regions if INTERVALS is set (e.g., INTERVALS=chr22 for testing).
+# Expanded as ${REGION_ARGS[@]+...}: bash before 4.4 calls an empty array
+# unbound under set -u.
 REGION_ARGS=()
 if [ -n "${INTERVALS:-}" ]; then
   echo "Restricting to region: ${INTERVALS}"
@@ -52,16 +57,16 @@ fi
 #   --threads    Worker threads
 #   --regions    Restrict to regions (optional, for testing)
 echo "Running Octopus (this takes 2-4 hours for 30X WGS)..."
-docker run --rm --user root \
-  --cpus "${THREADS}" --memory 16g \
-  -v "${GENOME_DIR}:/genome" \
-  dancooke/octopus:0.7.4 \
+# -w: Octopus makes its octopus-temp directory in the working directory, and
+# the image sets none, so it would try / as an unprivileged user.
+run_in -w "/genome/${SAMPLE}/vcf_octopus" --cpus "${THREADS}" --memory 16g \
+  "${OCTOPUS_IMAGE}" \
   octopus \
-    -R /genome/reference/Homo_sapiens_assembly38.fasta \
+    -R "${REF_FASTA_C}" \
     -I "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
     -o "/genome/${SAMPLE}/vcf_octopus/${SAMPLE}.vcf.gz" \
     --threads "${THREADS}" \
-    "${REGION_ARGS[@]}"
+    ${REGION_ARGS[@]+"${REGION_ARGS[@]}"}
 
 echo "=== Octopus complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"

@@ -1,0 +1,167 @@
+name: Guard
+
+# Checks that run the pipeline's own code, on every pull request with no
+# path filter, so a change anywhere cannot skip them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image-vars:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a planted undefined variable must be caught)
+        run: scripts/ci/check-image-vars.sh --self-test
+
+      - name: Every *_IMAGE a script uses is defined
+        run: scripts/ci/check-image-vars.sh
+
+  # The one image check: no file names an image outside versions.env, and the
+  # two files generated from it (conf/containers.config, docs/versions.md)
+  # are up to date. Each script's self-test plants its faults first.
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a literal image in a script, module, workflow or doc, a process with no selector and a stale generated file must be caught)
+        run: scripts/ci/check-images.sh --self-test
+
+      - name: Self-test of the containers.config generator (a stale tag, a missing or stray selector, a module's own container and a wrong version must be caught)
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
+        run: scripts/ci/gen-containers-config.sh --self-test
+
+      - name: No file names an image outside versions.env; generated files are up to date
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
+        run: scripts/ci/check-images.sh
+
+  coupled-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a VEP cache, pypgx bundle or AnnotSV data version that left its image, and a lone PCGR variable, must be caught)
+        run: scripts/ci/check-coupled-versions.sh --self-test
+
+      - name: Each data version in versions.env matches the image it belongs to
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
+        run: scripts/ci/check-coupled-versions.sh
+
+  fake-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (a swallowed empty image, an unknown option and a failing case must be caught)
+        run: scripts/ci/run-fake-docker-suite.sh --self-test
+
+      - name: setup.sh, validate-setup.sh and run-all.sh against a fake docker
+        run: scripts/ci/run-fake-docker-suite.sh
+
+  helper-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-test (planted bgzip/tabix calls behind if !, time and VAR=, and an orad option orad does not list, must be caught)
+        run: scripts/ci/check-container-helpers.sh --self-test
+
+      - name: Table of helper calls derived from scripts and modules
+        run: scripts/ci/check-container-helpers.sh --list
+
+      - name: Each helper binary exists in the image that calls it
+        run: scripts/ci/check-container-helpers.sh
+
+      - name: Every option step 01 passes to orad is in the pinned orad's --help
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
+        run: scripts/ci/check-container-helpers.sh --orad
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Every tests/test_*.py runs with python3 and every tests/test_*.sh with
+      # bash, found by glob, so a new test file needs no workflow edit. The
+      # two planted failures prove the loop reports a failing test.
+      - name: Run every tests/test_*.py and tests/test_*.sh
+        run: |
+          run_tests() {
+            local dir=$1 t rc n=0 fail=0
+            shopt -s nullglob
+            for t in "$dir"/test_*.py "$dir"/test_*.sh; do
+              n=$((n + 1))
+              rc=0
+              echo "::group::${t}"
+              case "$t" in
+                *.py) python3 "$t" || rc=$? ;;
+                *.sh) bash "$t" || rc=$? ;;
+              esac
+              echo "::endgroup::"
+              if [ "$rc" -eq 0 ]; then echo "PASS ${t}"; else echo "FAIL ${t} (exit ${rc})"; fail=1; fi
+            done
+            if [ "$n" -eq 0 ]; then echo "ERROR: no test files in ${dir}"; return 1; fi
+            return "$fail"
+          }
+
+          ctl=$(mktemp -d)
+          mkdir "${ctl}/py" "${ctl}/sh"
+          echo 'assert False, "planted failure"' > "${ctl}/py/test_planted.py"
+          echo 'exit 1' > "${ctl}/sh/test_planted.sh"
+          for d in "${ctl}/py" "${ctl}/sh"; do
+            if run_tests "$d"; then
+              echo "ERROR: a planted failing test in ${d} was reported as passing"
+              exit 1
+            fi
+          done
+          echo "Control: both planted failures were reported."
+
+          run_tests tests
+
+  # The one check the ruleset requires for this workflow: it runs even when a
+  # job above failed or was skipped, and fails unless every one succeeded.
+  ci-ok:
+    if: always()
+    needs: [image-vars, images, coupled-versions, fake-docker, helper-binaries, unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Every Guard job succeeded, and every job is listed in needs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")')
+          if [ -n "$bad" ]; then
+            echo "FAIL: not successful: ${bad}"
+            exit 1
+          fi
+          # A job added above but not to needs would never block a merge.
+          jobs=$(sed -n '/^jobs:/,$ s/^  \([A-Za-z0-9_-]*\):$/\1/p' .github/workflows/guard.yml | grep -vx ci-ok | sort)
+          listed=$(echo "$RESULTS" | jq -r 'keys[]' | sort)
+          if [ "$jobs" != "$listed" ]; then
+            echo "FAIL: ci-ok needs must list every job in guard.yml"
+            diff <(echo "$jobs") <(echo "$listed") || true
+            exit 1
+          fi
+          echo "OK: all $(echo "$RESULTS" | jq length) Guard jobs succeeded"

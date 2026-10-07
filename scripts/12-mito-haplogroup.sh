@@ -4,12 +4,11 @@
 # Output: haplogroup classification with quality score
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=../versions.env
-. "${SCRIPT_DIR}/../versions.env"
-
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 VCF="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/mito"
 
@@ -25,14 +24,14 @@ mkdir -p "$OUTPUT_DIR"
 
 # Step 1: Extract chrM variants
 echo "Extracting chrM variants..."
-docker run --rm \
+run_in \
   --cpus 1 --memory 1g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf" \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -r chrM "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
     -Oz -o "/genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz"
 
-docker run --rm \
+run_in \
   --cpus 1 --memory 1g \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf" \
   "${BCFTOOLS_IMAGE}" \
@@ -41,7 +40,7 @@ docker run --rm \
 # Step 2: Run haplogrep3
 # The image has no entrypoint; haplogrep3 is on PATH.
 echo "Classifying haplogroup..."
-docker run --rm \
+run_in \
   --cpus 2 --memory 2g \
   -v "${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE}" \
   "${HAPLOGREP3_IMAGE}" \

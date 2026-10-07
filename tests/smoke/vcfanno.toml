@@ -1,0 +1,7 @@
+# VCFANNO_IMAGE row: the REVEL track as step 30 writes it, on the fixture's
+# synthetic score file.
+[[annotation]]
+file="/in/revel_synthetic.tsv.gz"
+columns=[5]
+names=["REVEL"]
+ops=["max"]

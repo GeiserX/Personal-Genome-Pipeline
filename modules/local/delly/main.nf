@@ -5,7 +5,8 @@
     Calls structural variants (DEL, DUP, INV, BND, INS) into a BCF.
 
     Two processes, because the delly image carries htslib but not bcftools:
-      1. DELLY          — delly call (optionally with an exclude map, -x)
+      1. DELLY          — delly sr (optionally with an exclude map, -x); Delly 2.3.0
+                          renamed the short-read caller from `delly call` to `delly sr`
       2. DELLY_BCF2VCF  — bcftools image, BCF -> bgzipped VCF + tabix index
 
     Equivalent to: scripts/19-delly.sh
@@ -15,8 +16,6 @@
 process DELLY {
     tag "$meta.id"
     label 'process_medium'
-
-    container 'quay.io/biocontainers/delly:2.1.0--h3752d28_0'
 
     input:
     tuple val(meta), path(bam), path(bai)
@@ -34,16 +33,15 @@ process DELLY {
     script:
     def exclude_arg = exclude ? "-x ${exclude}" : ""
     """
-    delly call \\
+    delly sr \\
         -g ${reference} \\
         ${exclude_arg} \\
         -o ${meta.id}_sv.bcf \\
         ${bam}
 
-    DELLY_VERSION=\$(delly --version 2>&1 | sed -n 's/.*Delly version: v\\{0,1\\}\\([0-9][0-9.]*\\).*/\\1/p' | head -1)
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: \${DELLY_VERSION:-unknown}
+        delly: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -53,7 +51,7 @@ process DELLY {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        delly: 2.1.0
+        delly: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
@@ -61,8 +59,6 @@ process DELLY {
 process DELLY_BCF2VCF {
     tag "$meta.id"
     label 'process_single'
-
-    container 'staphb/bcftools:1.21'
 
     publishDir { "${params.outdir}/${meta.id}/delly" }, mode: params.publish_dir_mode
 
@@ -84,7 +80,7 @@ process DELLY_BCF2VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -95,7 +91,7 @@ process DELLY_BCF2VCF {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

@@ -3,7 +3,6 @@
 # Skip branding and naming checks that only apply to nf-core organization pipelines.
 
 repository_type: pipeline
-nf_core_version: '3.2.0'
 
 lint:
   # Skip checks that require nf-core organization membership
@@ -14,5 +13,5 @@ lint:
   actions_awsfulltest: false
   # Skip nf-core branding requirements
   readme: false
-  # Skip multiqc (will be added in PR 3)
+  # The MultiQC module runs with its defaults; there is no assets/multiqc_config.yml
   multiqc_config: false

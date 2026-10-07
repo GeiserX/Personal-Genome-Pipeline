@@ -17,8 +17,6 @@ process SURVIVOR_MERGE {
     tag "$meta.id"
     label 'process_low'
 
-    container 'staphb/bcftools:1.21'
-
     publishDir { "${params.outdir}/${meta.id}/sv_merged" }, mode: params.publish_dir_mode
 
     input:
@@ -39,8 +37,9 @@ process SURVIVOR_MERGE {
     CALLER_IDX=0
     for VCF_FILE in ${sv_vcfs}; do
         CALLER_IDX=\$((CALLER_IDX + 1))
-        bcftools view -f PASS,. "\$VCF_FILE" 2>/dev/null | \\
-            grep -v '^#' | \\
+        # -H: no header to grep away. No `|| true` and no 2>/dev/null: a VCF
+        # bcftools cannot read fails the task instead of adding no calls.
+        bcftools view -H -f PASS,. "\$VCF_FILE" | \\
             awk -F'\\t' -v caller=\$CALLER_IDX '{
                 chrom=\$1; pos=\$2; info=\$8;
                 end=pos;
@@ -50,7 +49,7 @@ process SURVIVOR_MERGE {
                 bin=int(pos/1000);
                 printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t.\\tN\\t<%s>\\t.\\tPASS\\tSVTYPE=%s;END=%s\\n",
                     chrom, bin, svtype, caller, pos, chrom, pos, svtype, svtype, end;
-            }' || true
+            }'
     done > all_sv_tagged.tsv
 
     # Find bins seen by 2+ distinct callers
@@ -90,7 +89,7 @@ process SURVIVOR_MERGE {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -101,7 +100,7 @@ process SURVIVOR_MERGE {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

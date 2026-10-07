@@ -11,12 +11,13 @@ The most immediately useful multi-sample analysis: checking whether both partner
 ### Quick Cross-Check
 
 ```bash
+source versions.env   # from the repository root
 PARTNER_A="sample_a"
 PARTNER_B="sample_b"
 
 # Gene symbols of each partner's ClinVar hits (step 6 writes them with ClinVar's GENEINFO)
 for SAMPLE in $PARTNER_A $PARTNER_B; do
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/GENEINFO\t%INFO/CLNSIG\t[%GT]\n' \
       /genome/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf \
     > /tmp/${SAMPLE}_clinvar_genes.txt
@@ -57,13 +58,20 @@ These genes frequently show up in ClinVar carrier screens. Being a carrier is ve
 | MUTYH | Colorectal cancer risk | 1 in 50 |
 | HEXA | Tay-Sachs disease | 1 in 30 (Ashkenazi), 1 in 300 (general) |
 
-Spinal muscular atrophy is not in this table on purpose. Most SMA carriers have one copy of SMN1 instead of two: a copy-number loss, not a small variant. ClinVar screening of a VCF cannot see it, so this check says nothing about SMA carrier status. That needs a copy-number test of SMN1 (a clinical carrier test, or a dedicated SMN1/SMN2 caller).
+Spinal muscular atrophy is not in this table on purpose. Most SMA carriers have one copy of SMN1 instead of two: a copy-number loss, not a small variant. ClinVar screening of a VCF cannot see it, so this check says nothing about SMA carrier status.
+
+The opt-in [step 35](35-paralogs.md) (Parascopy) estimates SMN1 and SMN2 copy number from each partner's BAM. What it can and cannot say for a couple:
+
+- **Assessed:** each partner's SMN1 copy number, with a quality. One partner with one SMN1 copy (quality 20 or more, filter `PASS`) is a likely carrier; both partners with one copy is the pattern that gives a 1 in 4 chance of an affected child.
+- **Not assessed:** a "2+0" carrier, two SMN1 copies on one chromosome and none on the other, reads as two copies like a non-carrier; small variants inside SMN1; the other paralog genes (GBA, CYP21A2, HBA1/HBA2 and so on).
+
+A result that matters for family planning needs a clinical SMN1 carrier test; ask for one that reports the 2+0 risk.
 
 ---
 
 ## Comparing Pharmacogenomics
 
-PharmCAT results can differ dramatically between partners. Compare the HTML reports side by side for genes that affect commonly prescribed medications:
+PharmCAT results can differ dramatically between partners. Compare the HTML reports side by side for genes that affect commonly prescribed medications. HLA-A, HLA-B and CYP2D6 come from the BAM-based callers through step 36; CYP2D6 has a result only when pypgx and Cyrius (opt-in) agree, so a partner whose CYP2D6 reads `indeterminate` has no comparable result, not a normal one:
 
 | Gene | One Partner is Rapid, Other is Poor? | Clinical Impact |
 |---|---|---|
@@ -83,11 +91,12 @@ If you have WGS data for a parent and child, you can investigate:
 A de novo variant is one that appeared for the first time in the child (not present in either parent). These are rare (~50-100 per genome) and occasionally clinically significant.
 
 ```bash
+source versions.env   # from the repository root
 PARENT="parent_name"
 CHILD="child_name"
 
 # Find variants in the child that are NOT in the parent
-docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
   bcftools isec -C \
     /genome/${CHILD}/vcf/${CHILD}.vcf.gz \
     /genome/${PARENT}/vcf/${PARENT}.vcf.gz \
@@ -101,11 +110,12 @@ docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
 If the child is a carrier for a recessive condition, you can check which parent contributed the variant:
 
 ```bash
+source versions.env   # from the repository root
 GENE_REGION="chr13:20189473-20189473"  # Example: GJB2 position
 
 for SAMPLE in $PARENT $CHILD; do
   echo "--- ${SAMPLE} ---"
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools view -r "$GENE_REGION" /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
 done
 ```
@@ -117,10 +127,11 @@ done
 SVs called by multiple callers in one person have lower false-positive rates. SVs shared between family members add further confidence:
 
 ```bash
+source versions.env   # from the repository root
 # Compare Manta SVs between two samples
 # (Simple overlap check using bedtools-style comparison)
 for SAMPLE in $PARTNER_A $PARTNER_B; do
-  docker run --rm -v "${GENOME_DIR}:/genome" staphb/bcftools:1.21 \
+  docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     bcftools query -f '%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n' \
       /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
     > /tmp/${SAMPLE}_svs.bed

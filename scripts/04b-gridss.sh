@@ -12,11 +12,13 @@ set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-8}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/sv_gridss"
 
 echo "=== GRIDSS: ${SAMPLE} ==="
@@ -44,26 +46,44 @@ if [ -n "$BWA_MISSING" ]; then
   echo "ERROR: Classic BWA index files missing:${BWA_MISSING}" >&2
   echo "GRIDSS requires classic bwa index files (NOT BWA-MEM2's .bwt.2bit.64)." >&2
   echo "Generate them (~1 hour) with:" >&2
-  echo "  docker run --rm -v \"\${GENOME_DIR}:/genome\" quay.io/biocontainers/bwa:0.7.18--he4a0461_1 \\" >&2
-  echo "    bwa index /genome/reference/Homo_sapiens_assembly38.fasta" >&2
+  echo "  docker run --rm -v \"${GENOME_DIR}:/genome\" ${BWA_IMAGE} \\" >&2
+  echo "    bwa index ${REF_FASTA_C}" >&2
   exit 1
 fi
 
-# Skip if output already exists
-if [ -f "${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz" ]; then
+# Skip only a finished VCF (complete BGZF file with a VCF header); a file cut
+# short by a killed run is called again.
+if have_output "${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz"; then
   echo "GRIDSS output already exists, skipping."
   echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
   exit 0
 fi
 
+# GRIDSS fails without a clear message when its JVM cannot get the memory
+# (docs/lessons-learned.md). Docker's own limit is what counts, so the step is
+# skipped, with the reason, when Docker has less than GRIDSS_MIN_MEM_GB (32).
+GRIDSS_MIN_MEM_GB=${GRIDSS_MIN_MEM_GB:-32}
+DOCKER_MEM=$("$CONTAINER_ENGINE" info --format '{{.MemTotal}}' 2>/dev/null || true)
+if [[ "$DOCKER_MEM" =~ ^[0-9]+$ ]]; then
+  if [ $((DOCKER_MEM / 1000000000)) -lt "$GRIDSS_MIN_MEM_GB" ]; then
+    echo "SKIPPED: Docker has $((DOCKER_MEM / 1000000000)) GB of memory; GRIDSS needs ${GRIDSS_MIN_MEM_GB} GB."
+    echo "  Give Docker more memory, or set GRIDSS_MIN_MEM_GB to try with less."
+    exit 0
+  fi
+else
+  echo "WARNING: could not read Docker's memory limit; GRIDSS needs ${GRIDSS_MIN_MEM_GB} GB."
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
-# Download ENCODE blacklist for hg38 if not present
+# Download the ENCODE blacklist for hg38 if not present, from the commit of
+# the GRIDSS repository pinned in versions.env. An empty file left by an
+# earlier version of this script is fetched again.
 BLACKLIST="${GENOME_DIR}/reference/ENCFF356LFX.bed"
-if [ ! -f "$BLACKLIST" ]; then
+if [ ! -s "$BLACKLIST" ]; then
   echo "Downloading ENCODE blacklist for GRCh38..."
-  wget -q -O "$BLACKLIST" \
-    "https://raw.githubusercontent.com/PapenfussLab/gridss/master/example/ENCFF356LFX.bed" || {
+  rm -f "$BLACKLIST"
+  fetch "https://raw.githubusercontent.com/PapenfussLab/gridss/${GRIDSS_BLACKLIST_COMMIT}/example/ENCFF356LFX.bed" "$BLACKLIST" || {
     echo "WARNING: Failed to download blacklist. GRIDSS will run without it."
     BLACKLIST=""
   }
@@ -72,11 +92,12 @@ fi
 # Build GRIDSS command
 GRIDSS_ARGS=(
   gridss
-  -r /genome/reference/Homo_sapiens_assembly38.fasta
+  -r "${REF_FASTA_C}"
   -o "/genome/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz"
   -a "/genome/${SAMPLE}/sv_gridss/${SAMPLE}_assembly.bam"
   -t "${THREADS}"
   --jvmheap 28g
+  --workingdir "/genome/${SAMPLE}/sv_gridss/work"
 )
 
 if [ -n "${BLACKLIST}" ] && [ -f "${BLACKLIST}" ]; then
@@ -87,12 +108,22 @@ GRIDSS_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
 
 # GRIDSS via Docker Hub image (1.4 GB, includes all dependencies: Java 11, R, bwa, samtools)
 echo "Running GRIDSS (this takes 4-8 hours for 30X WGS)..."
-docker run --rm --user root \
+# --rw reference/: on its first run GRIDSS writes <reference>.gridsscache,
+# <reference>.img and <reference>.dict next to the FASTA (and a lock directory
+# while it does). --workingdir: its ~50 GB of intermediate files go to
+# sv_gridss/work/, removed once the VCF is written; -w puts its log in sv_gridss/.
+run_in --rw "$(dirname "$REF_FASTA")" -w "/genome/${SAMPLE}/sv_gridss" \
   --cpus "${THREADS}" --memory 32g \
-  -v "${GENOME_DIR}:/genome" \
   -e JAVA_TOOL_OPTIONS="-Xmx28g" \
-  quay.io/biocontainers/gridss:2.13.2--h96c455f_6 \
+  "${GRIDSS_IMAGE}" \
   "${GRIDSS_ARGS[@]}"
+
+if ! wrote_vcf "${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz"; then
+  echo "ERROR: GRIDSS exited without a ${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz." >&2
+  echo "  Its intermediate files are kept in ${OUTPUT_DIR}/work/ for a look." >&2
+  exit 1
+fi
+rm -rf "${OUTPUT_DIR}/work"
 
 echo "=== GRIDSS complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}_gridss.vcf.gz"

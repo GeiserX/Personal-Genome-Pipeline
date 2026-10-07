@@ -1,9 +1,11 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CPSR — Cancer Predisposition Sequencing Reporter (ACMG SF v3.2)
+    CPSR — Cancer Predisposition Sequencing Reporter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Screens germline VCF for cancer predisposition variants using PCGR 2.x.
-    Requires the VEP 113 cache (separate from the VEP step's release 116 cache).
+    Requires the VEP cache of PCGR_VEP_CACHE_RELEASE in versions.env (115 for
+    PCGR 2.3.2), separate from the VEP step's VEP_CACHE_RELEASE cache. CPSR 2.3
+    has no --classify_all: it classifies every panel variant by itself.
 
     Equivalent to: scripts/17-cpsr.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -12,8 +14,6 @@
 process CPSR {
     tag "$meta.id"
     label 'process_medium'
-
-    container 'sigven/pcgr:2.2.5'
 
     publishDir { "${params.outdir}/${meta.id}/cpsr" }, mode: params.publish_dir_mode
 
@@ -40,13 +40,12 @@ process CPSR {
         --genome_assembly grch38 \\
         --sample_id ${meta.id} \\
         --panel_id 0 \\
-        --classify_all \\
         --secondary_findings \\
         --force_overwrite
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cpsr: \$(cpsr --version 2>&1 | grep -oP '[\\d.]+' | head -1 || echo '2.2.5')
+        cpsr: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -57,7 +56,7 @@ process CPSR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        cpsr: 2.2.5
+        cpsr: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

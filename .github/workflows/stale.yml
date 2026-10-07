@@ -2,23 +2,70 @@ name: Close stale issues
 on:
   schedule:
     - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      debug_only:
+        description: 'Dry run: log what would happen, change nothing'
+        type: boolean
+        default: true
 
 permissions:
   actions: write
   issues: write
-  pull-requests: write
 
 jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v11
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
         with:
           stale-issue-message: 'This issue has been automatically marked as stale because it has not had recent activity. It will be closed in 14 days if no further activity occurs.'
           close-issue-message: 'This issue was closed because it has been stale for 14 days with no activity.'
-          days-before-issue-stale: 14
+          days-before-issue-stale: 60
           days-before-issue-close: 14
           stale-issue-label: 'stale'
-          exempt-issue-labels: 'pinned'
+          exempt-issue-labels: 'pinned,dependencies,freshness,keep-open'
           days-before-pr-stale: -1
           days-before-pr-close: -1
+          # PRs are off, and the token has no pull-requests: write; without
+          # this a stale label on an updated PR is still removed and fails.
+          remove-pr-stale-when-updated: false
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_only }}
+
+  # actions/stale logs a permission error ("Resource not accessible by
+  # integration") and still ends green. Read the finished job's log and fail
+  # the run on that line, so a token problem cannot hide behind a green tick.
+  check-log:
+    needs: stale
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Fail on a permission error in the stale job's log
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          # All attempts: after "Re-run failed jobs" the stale job that ran
+          # belongs to an earlier attempt. Take the latest one up to this one.
+          job_id=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?filter=all&per_page=100" \
+            --jq "[.jobs[] | select(.name == \"stale\" and .run_attempt <= ${ATTEMPT})]
+                  | max_by(.run_attempt) | .id // empty")
+          if [ -z "$job_id" ]; then
+            echo "ERROR: could not find the stale job of this run"
+            exit 1
+          fi
+          gh api --allow-escape-sequences "repos/${REPO}/actions/jobs/${job_id}/logs" > stale.log
+          if [ ! -s stale.log ]; then
+            echo "ERROR: the stale job's log is empty"
+            exit 1
+          fi
+          echo "Read $(wc -l < stale.log) log lines from job ${job_id}."
+          if grep -n 'Resource not accessible' stale.log; then
+            echo "ERROR: actions/stale hit a permission error (lines above)."
+            exit 1
+          fi
+          echo "OK: no permission error in the stale job's log."

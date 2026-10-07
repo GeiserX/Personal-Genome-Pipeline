@@ -9,15 +9,22 @@
 #   - --vcf/--json/--log → --output-prefix (auto-generates .vcf, .json)
 #   - Multithreading support (--threads)
 #   - Bundled GRCh38 variant catalog (31 pathogenic loci) inside the container
+# EH_CATALOG: another catalog (a JSON file under GENOME_DIR) instead of the
+# bundled one. ExpansionHunter stops when a catalog locus is on a contig the
+# reference lacks, so a reduced reference needs a reduced catalog.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <male|female>}
 SEX=${2:?Usage: $0 <sample_name> <male|female>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
-THREADS=${THREADS:-4}
+THREADS=${THREADS:-4}   # common.sh defaults to 8
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
+ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
-BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
-REF="${GENOME_DIR}/reference/Homo_sapiens_assembly38.fasta"
+BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
+REF="$REF_FASTA"
 OUTPUT_DIR="${SAMPLE_DIR}/expansion_hunter"
 
 echo "=== ExpansionHunter v5: ${SAMPLE} (${SEX}) ==="
@@ -34,14 +41,19 @@ mkdir -p "$OUTPUT_DIR"
 # ExpansionHunter v5.0.0 via biocontainer
 # The variant catalog (31 pathogenic GRCh38 loci) is bundled inside the container
 # at /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json
-docker run --rm \
+CATALOG_C=/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json
+if [ -n "${EH_CATALOG:-}" ]; then
+  [ -f "$EH_CATALOG" ] || { echo "ERROR: EH_CATALOG not found: ${EH_CATALOG}" >&2; exit 1; }
+  CATALOG_C=$(cpath "$EH_CATALOG") || exit 2
+  echo "Variant catalog: ${EH_CATALOG} (EH_CATALOG)"
+fi
+run_in \
   --cpus "${THREADS}" --memory 4g \
-  -v "${GENOME_DIR}:/genome" \
-  quay.io/biocontainers/expansionhunter:5.0.0--hc26b3af_5 \
+  "${EXPANSIONHUNTER_IMAGE}" \
   ExpansionHunter \
-    --reads "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    --reference /genome/reference/Homo_sapiens_assembly38.fasta \
-    --variant-catalog /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
+    --reads "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" \
+    --reference "${REF_FASTA_C}" \
+    --variant-catalog "$CATALOG_C" \
     --output-prefix "/genome/${SAMPLE}/expansion_hunter/${SAMPLE}_eh" \
     --threads "${THREADS}" \
     --sex "$SEX"

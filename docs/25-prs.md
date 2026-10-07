@@ -2,36 +2,42 @@
 
 ## What This Does
 
-Calculates polygenic risk scores for 9 common conditions using validated scoring files from the PGS Catalog and plink2. Each PRS aggregates the tiny effects of hundreds to millions of genetic variants into a single number representing your relative genetic predisposition for a trait or disease.
+Scores you for 9 common conditions with the PGS Catalog's own calculator, [pgsc_calc](https://github.com/PGScatalog/pgsc_calc). Each polygenic score adds up the small effects of hundreds to millions of variants into one number. With the ancestry reference panel installed, each score is also given as a **percentile**: where your score falls among the reference samples whose genetic ancestry is most similar to yours. Without the panel the step reports the raw sum and says "raw score only", because a raw sum from one person cannot be compared with anyone.
 
 ## Why
 
-Most common diseases (heart disease, diabetes, cancer) are not caused by a single gene. They result from the combined effect of many variants, each contributing a small amount of risk. A PRS sums these contributions using weights derived from large genome-wide association studies (GWAS). While no single variant is predictive on its own, the aggregate score can be informative.
+Most common diseases (heart disease, diabetes, cancer) are not caused by a single gene. They come from the combined effect of many variants, each adding a small amount of risk. A score sums those contributions with weights from large genome-wide association studies (GWAS). The sum only means something next to the sums of other people scored the same way, and the distribution of sums differs between ancestries. That is why the percentile is taken among the most similar reference group, and why pgsc_calc is used: it matches variants the way the PGS Catalog intends, and with a reference panel it reports ancestry-adjusted percentiles.
 
 ## Tool
 
-- **plink2** (Chang et al., GigaScience 2015) -- the standard tool for large-scale genomic computation
-- **PGS Catalog** -- curated repository of published polygenic scoring files
+- **pgsc_calc** (Lambert et al., Nat Genet 2024), the PGS Catalog Calculator, release `PGSC_CALC_VERSION` in `versions.env`, Apache-2.0. It is a Nextflow pipeline of its own; step 25 starts it.
+- **PGS Catalog**: curated repository of published polygenic scoring files.
 
 ## Docker Image
 
-```
-pgscatalog/plink2:2.00a5.10
-```
+pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UTILS_IMAGE` (matching and ancestry adjustment), `PLINK2_IMAGE` (scoring), `PGSC_FRAPOSA_IMAGE` (projection onto the panel), `PGSC_ZSTD_IMAGE`, `PGSC_PYYAML_IMAGE` and `PGSC_REPORT_IMAGE` (its HTML report). Step 25 also uses `PYTHON_IMAGE` and `BCFTOOLS_IMAGE`. [Image versions](versions.md) lists the tags.
 
 ## Input
 
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
+- gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
+- The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
+- Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 23 GB of disk while pgsc_calc uses it (measured below).
+- Java 17+ and Nextflow on the host, as for `run-all.sh`.
 
 ## Command
 
 ```bash
+./scripts/setup.sh /path/to/genome_dir                     # the scores, pgsc_calc and its plugin (once)
+./scripts/setup.sh --ancestry-panel /path/to/genome_dir    # optional: percentiles (about 7 GB)
 ./scripts/25-prs.sh your_name
 ```
 
+`ANCESTRY_PANEL=none` scores without the panel even when it is installed. `PGSC_MAX_MEMORY` (for example `12.GB`) caps the memory pgsc_calc may use; the default is three quarters of the machine's RAM.
+
 ## Conditions Scored
 
-Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score, and the script prints the same label.
+The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv). Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score; `scripts/ci/check-pgs-labels.sh` compares the two, so an ID cannot be printed under the wrong disease.
 
 | Condition (PGS Catalog trait) | PGS ID | Variants | Publication |
 |---|---|---|---|
@@ -47,97 +53,112 @@ Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.
 
 There is no schizophrenia score yet. An earlier version listed PGS000738 as schizophrenia, but that score is for vitiligo; a schizophrenia row comes back only once a score is chosen from the catalog and checked against the API.
 
-To check a label before adding a score:
+To add a score, add a line to `assets/pgs_scores.tsv` with the label the API gives:
 
 ```bash
 curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
 ```
 
+Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant` or `is_recessive` rows); step 25 stops on any other.
+
 ## What the Script Does Internally
 
-1. Downloads the GRCh38-harmonized scoring file of each score from the PGS Catalog FTP (one-time, cached in `${GENOME_DIR}/prs_scores/`). The download goes to a `.part` file first, and the file is kept only if its `#HmPOS_build` header says `GRCh38`. If the download fails or the build is anything else, the step stops with an error. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
-2. Converts your VCF to plink2 binary format (pgen/pvar/psam), restricting to autosomes (chr1-22) and assigning variant IDs in `chr:pos` format (matching PGS Catalog convention)
-3. For each scoring file, reformats the harmonized PGS Catalog columns (`hm_chr`, `hm_pos`, effect allele, weight) into plink2's `--score` input format, deduplicating entries with the same variant ID and allele. Rows the catalog could not map to GRCh38 have no `hm_pos` and are dropped
-4. Deletes any `.sscore` left by an earlier run, then runs `plink2 --score ... cols=+scoresums` for each condition. A plink2 failure stops the step. The one exception is a score with no variant at all in your VCF, which is reported as `NA` with 0 matched
-5. Collects all results into a summary TSV
+1. **Scoring files.** Downloads the GRCh38-harmonised file of each score from the PGS Catalog FTP when it is not in `${GENOME_DIR}/prs_scores/` yet, checked against the md5 the catalog publishes beside it. A file whose `#HmPOS_build` header is not `GRCh38` is refused. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
+2. **Scores as pgsc_calc reads them.** `bin/collect_summary.py prs-format` writes each file as a custom GRCh38 scoring file: `chr_name` and `chr_position` from the harmonised `hm_chr` and `hm_pos`, the effect allele, the other allele (from `other_allele`, else `hm_inferOtherAllele` when it names one allele), the weight, and the catalog's trait as its label. Rows the catalog could not place on GRCh38 are dropped, and so are rows on chrX, chrY or the mitochondrial genome (the step prints how many): pgsc_calc converts your genotypes with plink2, which stops on a chrX record when it has no sex. PGS000662 (prostate cancer) loses 8 of its 269 rows this way. pgsc_calc then needs no network and no liftover.
+3. **Genotypes.**
+   - **With step 3's gVCF** (the default since step 3 writes one): every score position, and with the panel every common panel SNV (the site list `setup.sh` writes), is genotyped from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a position into a 0/0 call with the reference base; a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets as its ALT the position's first allele (a score's effect or other allele, the panel's ALT) that is not the reference, so pgsc_calc can match it. These genotypes are kept as `prs/pgsc_calc/target.vcf.gz`.
+   - **Without a gVCF** (an older run): the variant-only VCF is cut to the same positions, so every site where you match the reference is missing (see below). When not one position is left, pgsc_calc is not started and every score is reported unmatched.
+
+   Either way pgsc_calc gets only those positions: autosomes only (plink2 would refuse chrX without the sample's sex), and a small file to convert.
+4. **pgsc_calc.** Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum.
+5. **Summary.** `bin/collect_summary.py prs-table` reads pgsc_calc's match summary and scores into `${SAMPLE}_prs_summary.tsv`, and with the panel writes step 26's ancestry table. pgsc_calc's work folder and its run reports (`pipeline_info/`, named after the time of the run) are deleted; its results (its own HTML report, the match log) are kept.
+
+The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline; without it the `PRS` task fetches the release's archive, checked against `PGSC_CALC_SHA256`.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | Tab-delimited summary: `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total` |
-| `${PGS_ID}.sscore` | Raw plink2 score output per condition |
-| `${PGS_ID}_formatted.tsv` | Reformatted scoring file used for each calculation |
-| `${SAMPLE}.pgen/.pvar/.psam` | plink2 binary genotype files (intermediate) |
+| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `Input` |
+| `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored: the score (and panel) positions, from the gVCF or the VCF |
+| `pgsc_calc/results/sample/score/` | pgsc_calc's scores, its HTML report `report.html`, and with the panel the ancestry-adjusted scores and the principal components |
+| `pgsc_calc/results/sample/match/` | pgsc_calc's match log and summary |
+| `pgsc_calc/pgsc_calc.log` | pgsc_calc's console output |
+| `../ancestry/${SAMPLE}_ancestry.tsv` | With the panel: step 26's table (population, its probability, principal components) |
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 ## Runtime
 
-~20-40 minutes total (dominated by VCF-to-plink conversion and scoring across all 9 conditions).
+Without the panel, about 20-40 minutes: most of it is the gVCF pass over every score position (the large scores reach most of the genome) and pgsc_calc's conversion of those genotypes. The panel adds its extraction, the intersection with your genotypes, the panel's PCA and the projection; see the measured numbers below.
+
+## The reference panel on a GitHub-hosted runner
+
+The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_PANEL` in `versions.env`), published by the PGS Catalog at https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources/. Measured by the E2E case `tests/e2e/prs-3-panel-measure.sh` on `ubuntu-latest` (4 CPUs, 16 GB RAM), with pgsc_calc projecting the PGS Catalog's synthetic genome-wide test target (600 samples) onto the panel and scoring PGS000018 (1.7 million variants):
+
+| What | Measured (six dispatched runs) |
+|---|---|
+| Download | 7.43 GB (7,434,464,202 bytes). EBI served one connection at about 1.2 MB/s, about 100 minutes for the file; 8 byte ranges at once took 8 to 19 minutes |
+| Site list | 61.6 million biallelic SNVs on the autosomes in the panel's GRCh38 table; `setup.sh` keeps the 6,966,553 with a panel frequency of 5% or more, the ones pgsc_calc's projection can use, in 2.7 minutes (plink2 one chromosome at a time, 8 GB; the whole table at once did not fit in 16 GB) |
+| Disk while pgsc_calc runs | 14.9 to 16.1 GB on top of the panel (its work folder held 12.5 GB at the end): about 23 GB with the panel |
+| Memory | 7.3 to 7.6 GB at the peak for the whole machine; the largest task, 6.9 to 7.1 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
+| Time | 20 to 30 minutes for the run, on 4 CPUs |
+
+The run fits a 16 GB machine. It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on an E2E run dispatched on a branch other than main (or with `PGSC_MEASURE=1`): it adds about 40 minutes, which a dispatched run of main keeps for its other cases.
 
 ## Interpreting Results
 
-The summary TSV contains a raw score for each condition. Here is what the columns mean:
+- **Score_SUM**: weighted sum of the effect alleles you carry. Higher = more genetic predisposition, but only relative to other people scored the same way.
+- **Variants_Matched**: score variants pgsc_calc matched in your genotypes. `NA` when every score fell under pgsc_calc's 75% match rate: pgsc_calc then stops and publishes no match counts, and `Matched_Pct` is the rate its log gave.
+- **Variants_Total**: autosomal variants of the scoring file with a GRCh38 position.
+- **Matched_Pct**: `Variants_Matched / Variants_Total` as a percentage; the step warns below 50%, and pgsc_calc gives no sum below 75%.
+- **Percentile**: with the panel, where your score falls among the reference samples of `Ancestry_Group` (pgsc_calc's empirical percentile, `percentile_MostSimilarPop`). `NA` without the panel.
+- **Ancestry_Group**: the panel population whose genetic ancestry is most similar to yours (for the 1000 Genomes panel: AFR, AMR, EAS, EUR or SAS). `NA` without the panel.
+- **Input**: `gvcf` when the positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-- **Score_SUM**: Weighted sum of the effect alleles you carry (plink2's `SCORE1_SUM` column). Higher = more genetic predisposition.
-- **Variants_Matched**: How many scoring variants were found in your VCF (plink2's `ALLELE_CT` divided by 2).
-- **Variants_Total**: Variants in the scoring file with a GRCh38 position.
+Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used.
 
-### The score is biased until the pipeline keeps hom-ref sites
+### Hom-ref sites come from the gVCF
 
-The VCF from step 3 lists only sites where you differ from the reference. A scoring variant whose effect allele is the reference allele is therefore missing from the VCF when you carry two copies of it, and it adds nothing to your sum. So the sum misses the weight of every reference-allele effect allele you carry on two copies, and `Variants_Matched` counts only the sites present in the VCF. The step prints this line under every score:
+The VCF from step 3 lists only sites where you differ from the reference. A scoring variant whose effect allele is the reference allele is missing from that VCF when you carry two copies of it, and adds nothing to your sum. Step 3 also writes a gVCF, which records where you match the reference, and step 25 reads those sites from it as 0/0. With the gVCF, a site is missing only when it was not covered.
+
+Without a gVCF (`Input` is `vcf`, a sample called by an older version), the sum misses the weight of every reference-allele effect allele you carry on two copies, and few scores reach pgsc_calc's 75% match rate. The step then prints:
 
 ```
-hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions
+NOTE: hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions
 ```
 
-Scoring from a gVCF, which records hom-ref sites, removes the bias.
+Call the sample again with step 3 to get the gVCF.
 
 ### What these scores are NOT
 
-- They are NOT percentiles. A raw score of 0.5 does not mean 50th percentile.
-- They are NOT probabilities. A high score does not mean you will develop the condition.
-- They are NOT comparable across conditions. A score of 10 for CAD and 10 for T2D mean entirely different things.
-- They are NOT stable across arbitrary pipeline changes. If you change the PGS file version, genome build harmonization, or variant matching rules, you need to recompute and reinterpret the score.
-
-### How to make them meaningful
-
-Raw PRS become useful only when compared against a population distribution. To convert your score into a percentile, you need a reference panel of thousands of individuals with scores computed using the same scoring file. The PGS Catalog provides some population-level statistics, but full percentile calculation requires a reference cohort (not included in this pipeline).
-
-Comparing two people is only defensible when both were scored with the same PGS ID, the same scoring file version, the same genome build conventions, and the same preprocessing. Even then, treat the comparison as directional rather than clinically calibrated unless you also have a matched reference distribution.
-
-**Do not convert raw scores to percentiles using generic SD thresholds.** The mapping between a raw score and a population percentile depends on the score distribution in a matched reference cohort (same ancestry, same scoring file, same preprocessing). Without that cohort, statements like "top 16%" or "top 2.5%" are not grounded. See the [PGS Catalog Calculator interpretation guide](https://pgsc-calc.readthedocs.io/) and the ACMG points-to-consider for PRS reporting.
-
-### Variant matching
-
-Check the `Variants_Matched / Variants_Total` ratio. If fewer than 50% of scoring variants matched, the score is less reliable. Low matching rates usually indicate:
-- The scoring file was built on array data with different variant coverage than WGS
-- Variant ID format mismatches between your VCF and the scoring file
+- A raw sum is NOT a percentile. Without the panel there is no percentile at all.
+- A percentile is NOT a probability. Being at the 90th percentile does not mean a 90% chance of the condition.
+- They are NOT comparable across conditions.
+- The percentile compares you with the reference samples most similar to you, not with your own family or community. For a group the panel represents poorly, the percentile is less reliable; the ancestry table says when the population match is low-confidence.
+- They are NOT stable across scoring file versions. A new harmonised file is a new baseline.
 
 ## Limitations
 
-- PRS were predominantly developed in European-ancestry populations. They are less accurate for other ancestries.
-- A PRS captures only the genetic component. Lifestyle, environment, and family history are often more predictive.
+- Most scores were developed in European-ancestry populations and predict less well for other ancestries, even with an ancestry-adjusted percentile.
+- A score captures only the genetic component. Lifestyle, environment, and family history are often more predictive.
 - Sex-specific conditions (breast cancer, prostate cancer) should be interpreted accordingly.
-- Scoring file availability and quality vary. If the PGS Catalog FTP is unavailable the step stops; rerun it later (files already downloaded stay cached).
-- No mean imputation is used (`no-mean-imputation` flag), so missing variants reduce the score proportionally rather than being imputed to population averages.
+- Chip data matches far fewer score variants than a genome; most scores then fall under pgsc_calc's 75% match rate and get no sum (see [Using chip data](chip-data-guide.md)).
 
 ## Notes
 
-- Scoring files are downloaded once and cached in `${GENOME_DIR}/prs_scores/`. Delete this directory to force re-download.
-- The script uses only GRCh38-harmonized scoring files. A cached file without a `#HmPOS_build=GRCh38` header (for example one written by an older version of this script) is deleted and downloaded again.
-- You can add more scores by adding a `"<PGS ID>|<trait_reported>"` line to the `PGS_SCORES` list in the script, with the label copied from the API. Browse available scores at [pgscatalog.org](https://www.pgscatalog.org/).
+- Scoring files are cached in `${GENOME_DIR}/prs_scores/`. Delete a file to download it again. A cached file without a `#HmPOS_build=GRCh38` header is deleted and downloaded again.
+- pgsc_calc starts with a fresh work folder each run: it keeps converted genotypes between runs, and an old run's would be scored instead of the current VCF.
 
 ## Maintenance
 
-- Recheck the PGS Catalog against its latest release page at least quarterly before treating this step as "current."
-- A scoring file update is a **result-changing event**. If the harmonized file version/date changes, rerun step 25 and treat the output as a new baseline.
-- If you publish or compare PRS results over time, keep the `PGS ID`, the harmonized scoring file version/date, and the pipeline commit together so score changes remain auditable.
+- Recheck the PGS Catalog and pgsc_calc releases at least quarterly. A pgsc_calc bump means reading its `conf/modules.config` at the new release and moving the `PGSC_*_IMAGE` lines of `versions.env` with it, plus `PGSC_CALC_SHA256` and `PGSC_CALC_NF_SCHEMA`.
+- A scoring file update is a **result-changing event**: rerun step 25 and treat the output as a new baseline.
+- Keep the `PGS ID`, the harmonised file version, the pgsc_calc release and the pipeline commit together so score changes stay auditable.
 
 ## Links
 
+- [pgsc_calc](https://github.com/PGScatalog/pgsc_calc) and its [documentation](https://pgsc-calc.readthedocs.io/)
 - [PGS Catalog](https://www.pgscatalog.org/)
-- [plink2 documentation](https://www.cog-genomics.org/plink/2.0/)
 - [PGS Catalog scoring file format](https://www.pgscatalog.org/downloads/#scoring_files)
 - [Khera et al. 2018 (multi-trait PRS)](https://doi.org/10.1038/s41588-018-0183-z)

@@ -20,9 +20,9 @@ pypgx also calls genes absent from PharmCAT entirely: COMT, MTHFR, ABCB1, GSTM1,
 
 ## Docker Image
 
-```
-quay.io/biocontainers/pypgx:0.26.0--pyh7e72e81_0
-```
+- `PYPGX_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 
@@ -101,6 +101,17 @@ pypgx detects these by analyzing read depth across the CYP2D6/CYP2D7 locus. A dr
 
 The BAM-based calling uses both `--variants` and `--depth-of-coverage` per the upstream pypgx WGS workflow, combining SNV/haplotype information with read-depth SV detection for the most complete genotype call.
 
+## CYP2D6 depth check
+
+A copy-number call from depth is only as good as the depth. Before pypgx runs, the step measures, with mosdepth (`${MOSDEPTH_IMAGE}`), the mean depth over CYP2D6 (chr22:42,123,193-42,132,032, the region Cyrius uses) and over two 50 kb flanks outside the CYP2D6-CYP2D8 cluster (chr22:42.05-42.10 Mb and 42.20-42.25 Mb), once for all reads and once for reads with MAPQ >= 1 (callers ignore MAPQ 0 reads). `bin/cyp2d6_depth_check.py` then judges it:
+
+- **unreliable** when more than 40% of the reads at CYP2D6 (if it has at least 15% of the flank depth) or in the flanks have MAPQ 0: the aligner placed them on more than one sequence. The step writes `CYP2D6 copy number unreliable: reads are multi-mapped (was this BAM aligned to a reference with ALT contigs?)` to its log and to `${SAMPLE}_cyp2d6_depth_check.tsv`, and the summary's CYP2D6 row says `Indeterminate` (pypgx's own call stays in `CYP2D6/results.zip`).
+- **ok** otherwise. A real deletion leaves few reads at CYP2D6, but those map uniquely and the flanks keep their depth, so it passes.
+
+Why the share of uniquely mapped reads, not the ratio of CYP2D6 to flank depth: on the e2e fixture's CYP2D slice mapped to the default no-ALT reference, CYP2D6 has 0.62 of the flank depth with all reads and 0.57 at MAPQ >= 1, its normal value; mapped to the Broad hg38 FASTA with ALT contigs, a third of the reads go to `chr22_KI270879v1_alt` and CYP2D6 keeps 0.28 of the flank depth with all reads. A ratio cut at 0.6 flags the clean BAM and passes the broken one. The share of MAPQ >= 1 reads at CYP2D6 is 0.91 without ALT contigs and 0.005 with them. The ALT depth A/B workflow (`scripts/ci/alt-depth-ab.sh`) runs the check on both mappings and fails unless it passes the first and flags the second.
+
+[Step 36](36-pgx-consensus.md) reads the check: with `unreliable`, no CYP2D6 call reaches PharmCAT, whatever the callers say. The summary is written as `${SAMPLE}_pypgx_summary.tsv.partial` and renamed only after the check's verdict is applied, so a run that stops in between leaves no unchecked CYP2D6 call.
+
 ## Output
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
@@ -109,14 +120,16 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 |---|---|
 | `<gene>/results.zip` | Per-gene pypgx archive with genotype data |
 | `${SAMPLE}_pypgx_summary.tsv` | Consolidated: gene, diplotype, phenotype, pypgx's copy-number call, source |
-| `${SAMPLE}_pharmcat_comparison.tsv` | Side-by-side comparison with PharmCAT (if step 7 was run) |
+| `${SAMPLE}_cyp2d6_depth_check.tsv` | The CYP2D6 depth check: status (`ok` or `unreliable`), its message and the four depths |
+| `cyp2d6_depth/` | mosdepth's region files the check read |
+| `${SAMPLE}_pharmcat_comparison.tsv` | Side-by-side comparison with PharmCAT. Step 27 (CPIC lookup) writes it here when steps 7 and 32 have both run; rerunning step 32 alone keeps it |
 
 ### Summary TSV columns
 
 | Column | Description |
 |---|---|
 | Gene | Gene symbol |
-| Diplotype | Star allele call (e.g., \*1/\*4) |
+| Diplotype | Star allele call (e.g., \*1/\*4); `Indeterminate` for CYP2D6 when the depth check found multi-mapped reads |
 | Phenotype | Metabolizer status (e.g., Intermediate Metabolizer) |
 | CNV_call | The copy-number call pypgx itself made from read depth (its `CNV` field, for example `Normal` or `WholeDel1`). BAM-based genes only; `N/A` for VCF-based genes. Earlier versions guessed a Yes/No flag from the allele names, which flagged any name containing `*5` and missed the GSTM1/GSTT1/CYP2A6 whole-gene deletions |
 | Source | BAM (SV genes) or VCF (variant-based genes) |
@@ -168,10 +181,10 @@ The two tools are complementary. PharmCAT provides drug recommendations for the 
 - pypgx gene coverage (88 total) is broader than the 23 curated here. The curated list focuses on CPIC Level A/B genes and key PharmCAT gaps. Edit the `BAM_GENES` and `VCF_GENES` variables in the script to add more.
 - Star allele definitions evolve. pypgx 0.26.0 uses a specific PharmVar database snapshot that may not include the latest allele definitions.
 - SV detection accuracy depends on sequencing depth. 30X WGS is adequate; lower depths produce less reliable copy number calls.
-- pypgx does not produce drug recommendations directly. Consult [CPIC guidelines](https://cpicpgx.org/guidelines/) to translate diplotypes into clinical actions. Note: step 27 (CPIC lookup) currently parses PharmCAT output only and cannot read pypgx results.
+- pypgx does not produce drug recommendations directly. Its CYP2D6 call reaches PharmCAT, and so the CPIC recommendations of step 27, only through [step 36](36-pgx-consensus.md), when Cyrius (step 21, opt-in) gives the same diplotype and the depth check passed. Step 27 also lists the genes PharmCAT could not call but pypgx did; for the other genes consult [CPIC guidelines](https://cpicpgx.org/guidelines/).
 - **The image and the bundle must be the same release.** The pinned pair is image `pypgx:0.26.0--pyh7e72e81_0` with the `0.26.0` branch of pypgx-bundle; with that pair all 23 genes, including the four BAM-based ones, were called on a real 30x genome (see [lessons learned](lessons-learned.md)). The 0.27.0 image against the 0.26.0 bundle failed every gene. Bump both together and rerun a known sample before trusting the new calls.
-- **GSTT1 needs an ALT contig.** In GRCh38, GSTT1 lies on `chr22_KI270879v1_alt`. A BAM aligned to a reference without ALT contigs has no such contig; the step then prints a notice, leaves GSTT1 out of depth preparation (otherwise it fails for all four SV genes) and reports GSTT1 as `FAILED`.
-- **A copy-number call is only as good as the depth it reads.** On a reference with ALT contigs and an aligner that is not run ALT-aware, reads at CYP2D6 split between the primary and ALT copies, depth on the primary drops, and pypgx can report a deletion that is not there. Compare CYP2D6 depth with its flanks before trusting a `WholeDel` call, and report CYP2D6 only when two callers agree.
+- **GSTT1 needs an ALT contig, which the default reference does not have.** In GRCh38, GSTT1 lies on `chr22_KI270879v1_alt`. The pipeline's reference, the no-ALT analysis set, has no such contig (it leaves ALT contigs out so CYP2D6 and the other BAM genes keep their depth, see [realignment](realignment.md)). The step then prints a notice, leaves GSTT1 out of depth preparation (otherwise it fails for all four SV genes) and reports GSTT1 as `FAILED`; the other 22 genes are called.
+- **A copy-number call is only as good as the depth it reads.** On a reference with ALT contigs and an aligner that is not run ALT-aware, reads at CYP2D6 split between the primary and ALT copies, depth on the primary drops, and pypgx can report a deletion that is not there. The [CYP2D6 depth check](#cyp2d6-depth-check) marks such a call `Indeterminate`, and step 36 reports CYP2D6 to PharmCAT only when two callers agree.
 - Individual gene failures do not stop the pipeline. However, if **all** genes fail, the script exits with status 1 before generating the summary TSV — this signals a systemic problem (e.g., wrong BAM path, corrupted index, missing pypgx-bundle). Rerun with verbose output to identify the root cause. For partial failures, check the summary TSV for "FAILED" entries.
 
 ## Maintenance

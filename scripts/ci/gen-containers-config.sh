@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+# gen-containers-config.sh: write conf/containers.config, the file Nextflow
+# takes every process image from, out of versions.env.
+#
+# versions.env is the one list of image tags. The bash steps source it; the
+# Nextflow modules carry no `container` line and get their image from a
+# withName selector in conf/containers.config, which this script writes from
+# the PROCESS -> VARIABLE table below. A tag changed in versions.env reaches
+# Nextflow when this script runs again, and CI fails until it has.
+#
+# A plain generated file is used on purpose: config-time Groovy that parses
+# versions.env may not survive Nextflow's strict config parser.
+#
+# Usage:
+#   scripts/ci/gen-containers-config.sh              rewrite conf/containers.config
+#   scripts/ci/gen-containers-config.sh --check      fail when the committed file is stale,
+#                                                    a process has no selector, a selector
+#                                                    names no process, or a module sets its
+#                                                    own container
+#   scripts/ci/gen-containers-config.sh --check-versions FILE [PROCESS...]
+#                                                    fail unless FILE, a run's
+#                                                    pipeline_info/software_versions.yml,
+#                                                    states for each PROCESS (default: every
+#                                                    process) the tag of its image
+#   scripts/ci/gen-containers-config.sh --self-test  prove --check and --check-versions can fail
+#   --root DIR                                       work on another tree
+set -euo pipefail
+export LC_ALL=C   # one sort order for the table, the file and comm
+
+# One row per Nextflow process: its name and the versions.env variable that
+# holds its image. A new process needs a row here.
+TABLE='
+ALIGN_MARKDUP        SAMTOOLS_IMAGE
+ALIGN_MINIMAP2       MINIMAP2_IMAGE
+ANNOTSV              ANNOTSV_IMAGE
+CLINICAL_FILTER      BCFTOOLS_IMAGE
+CLINVAR_SCREEN       BCFTOOLS_IMAGE
+CNVPYTOR             CNVPYTOR_IMAGE
+CNVPYTOR_VCF         BCFTOOLS_IMAGE
+CPIC_LOOKUP          PYTHON_IMAGE
+CPSR                 PCGR_IMAGE
+CRAM_ARCHIVE         SAMTOOLS_IMAGE
+CRAM_TO_BAM          SAMTOOLS_IMAGE
+CYP2D6_DEPTH         MOSDEPTH_IMAGE
+CYRIUS               PYTHON_IMAGE
+DEEPVARIANT          DEEPVARIANT_IMAGE
+DELLY                DELLY_IMAGE
+DELLY_BCF2VCF        BCFTOOLS_IMAGE
+DUPHOLD              DUPHOLD_IMAGE
+DUPHOLD_FILTER       BCFTOOLS_IMAGE
+EXPANSION_HUNTER     EXPANSIONHUNTER_IMAGE
+FASTP                FASTP_IMAGE
+HLA_TYPING           T1K_IMAGE
+HTML_REPORT          PYTHON_IMAGE
+INDEXCOV             GOLEFT_IMAGE
+KIR_BUILD            T1K_IMAGE
+KIR_TYPING           T1K_IMAGE
+MANTA                MANTA_IMAGE
+MINIMAP2_INDEX       MINIMAP2_IMAGE
+MITO_EXTRACT_CHRM    BCFTOOLS_IMAGE
+MITO_HAPLOGROUP      HAPLOGREP3_IMAGE
+MITO_VARIANTS        GATK_IMAGE
+MOSDEPTH             MOSDEPTH_IMAGE
+MULTIQC              MULTIQC_IMAGE
+PARASCOPY            PARASCOPY_IMAGE
+PGX_CONSENSUS        PYTHON_IMAGE
+PHARMCAT             PHARMCAT_IMAGE
+PHARMCAT_PREPROCESS  PHARMCAT_IMAGE
+PRS_PREPARE          PYTHON_IMAGE
+PRS_SCORE_SITES      BCFTOOLS_IMAGE
+PRS_SUMMARY          PYTHON_IMAGE
+PYPGX                PYPGX_IMAGE
+ROH                  BCFTOOLS_IMAGE
+SAMPLE_QC            PYTHON_IMAGE
+SLIVAR               SLIVAR_IMAGE
+SLIVAR_PRIORITIZE    BCFTOOLS_IMAGE
+SOMALIER             SOMALIER_IMAGE
+SOMALIER_RELATE      SOMALIER_IMAGE
+STRANGER             STRANGER_IMAGE
+SURVIVOR_MERGE       BCFTOOLS_IMAGE
+T1K_BUILD            T1K_IMAGE
+TELOMERE_HUNTER      TELOMEREHUNTER_IMAGE
+VCF_PRECHECK         BCFTOOLS_IMAGE
+VCFANNO              VCFANNO_IMAGE
+VCFANNO_INDEX        BCFTOOLS_IMAGE
+VEP                  VEP_IMAGE
+VERIFYBAMID2         VERIFYBAMID2_IMAGE
+'
+
+# Processes that run on the host, because they start a pinned pipeline of
+# their own, which starts its own containers: the process, the versions.env
+# variable of that pipeline's release, and the images handed to it, as
+# LABEL=VARIABLE (LABEL is the pipeline's own process label), and
+# sha256=VARIABLE, the checksum of the release's archive. The generated line
+# gives the process ext.pipeline_version, ext.pipeline_sha256 and
+# ext.pipeline_images, and the process writes the release as the first line
+# of its versions.yml.
+NATIVE='
+PRS  PGSC_CALC_VERSION  sha256=PGSC_CALC_SHA256 pgscatalog_utils=PGSC_UTILS_IMAGE plink2=PLINK2_IMAGE zstd=PGSC_ZSTD_IMAGE report=PGSC_REPORT_IMAGE pyyaml=PGSC_PYYAML_IMAGE fraposa=PGSC_FRAPOSA_IMAGE
+'
+
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+MODE="write"
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) MODE=check ;;
+    --check-versions) MODE=check-versions ;;
+    --self-test) MODE=self-test ;;
+    --root) ROOT=$2; shift ;;
+    -*) echo "usage: $0 [--check | --check-versions FILE [PROCESS...] | --self-test] [--root DIR]" >&2; exit 2 ;;
+    *) ARGS+=("$1") ;;
+  esac
+  shift
+done
+CONFIG="${ROOT}/conf/containers.config"
+
+# render: print conf/containers.config for the tree in $ROOT. versions.env is
+# sourced in a clean shell under `set -u`, so a variable exported by the
+# caller cannot stand in for a missing line.
+render() {
+  local values
+  # shellcheck disable=SC2016,SC2046  # $1 and ${!v} expand in the inner shell; the names split on purpose
+  values=$(env -i bash --noprofile --norc -c \
+    'set -euo pipefail; . "$1"; shift; for v; do printf "%s\t%s\n" "$v" "${!v-}"; done' \
+    _ "${ROOT}/versions.env" $( { awk 'NF == 2 { print $2 }' <<<"$TABLE"
+      awk 'NF >= 2 { print $2; for (i = 3; i <= NF; i++) { sub(/^[^=]*=/, "", $i); print $i } }' <<<"$NATIVE"; } | sort -u))
+  printf '%s\n' \
+    '// Generated by scripts/ci/gen-containers-config.sh from versions.env. Do not edit:' \
+    '// change the tag in versions.env, then run that script again.' \
+    'process {'
+  awk -F'\t' -v q="'" '
+    NR == FNR { val[$1] = $2; next }
+    NF == 0 { next }
+    {
+      split($0, f, /[ \t]+/)
+      if (val[f[2]] == "") { printf "ERROR: %s (process %s) is not set in versions.env\n", f[2], f[1] > "/dev/stderr"; bad = 1; next }
+      printf "    withName: %s%s%s { container = %s%s%s }\n", q, f[1], q, q, val[f[2]], q
+    }
+    END { exit bad }
+  ' <(printf '%s\n' "$values") <(awk 'NF == 2' <<<"$TABLE" | sort)
+  awk -v q="'" '
+    NR == FNR { val[$1] = $2; next }
+    NF < 2 { next }
+    {
+      if (val[$2] == "") { printf "ERROR: %s (process %s) is not set in versions.env\n", $2, $1 > "/dev/stderr"; bad = 1; next }
+      imgs = ""; sha = ""
+      for (i = 3; i <= NF; i++) {
+        split($i, kv, "=")
+        if (val[kv[2]] == "") { printf "ERROR: %s (process %s) is not set in versions.env\n", kv[2], $1 > "/dev/stderr"; bad = 1; next }
+        if (kv[1] == "sha256") { sha = val[kv[2]]; continue }
+        imgs = imgs (imgs == "" ? "" : ";") kv[1] "=" val[kv[2]]
+      }
+      printf "    withName: %s%s%s { ext.pipeline_version = %s%s%s; ext.pipeline_sha256 = %s%s%s; ext.pipeline_images = %s%s%s }\n", q, $1, q, q, val[$2], q, q, sha, q, q, imgs, q
+    }
+    END { exit bad }
+  ' <(printf '%s\n' "$values") <(awk 'NF >= 2' <<<"$NATIVE" | sort)
+  echo '}'
+}
+
+# check: print every problem with the tree in $ROOT, exit 1 if there is one.
+check() {
+  local fail=0 want procs sels p
+  want=$(mktemp)
+  if ! render > "$want"; then
+    fail=1
+  elif ! diff -u "$CONFIG" "$want"; then
+    echo "FAIL: conf/containers.config does not match versions.env and the table in this script; run scripts/ci/gen-containers-config.sh and commit the result."
+    fail=1
+  fi
+  rm -f "$want"
+  procs=$(cat "${ROOT}"/modules/local/*/main.nf | sed -nE 's/^process[[:space:]]+([A-Za-z0-9_]+).*/\1/p' | sort -u)
+  [ -n "$procs" ] || { echo "FAIL: found no process in modules/local/*/main.nf"; return 1; }
+  sels=$(sed -nE -e "s/^[[:space:]]*withName:[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\{[[:space:]]*container[[:space:]]*=[[:space:]]*'[^']+'[[:space:]]*\}.*/\1/p" \
+    -e "s/^[[:space:]]*withName:[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\{[[:space:]]*ext\.pipeline_version[[:space:]]*=[[:space:]]*'[^']+'.*/\1/p" \
+    "$CONFIG" 2>/dev/null | sort -u)
+  for p in $(comm -23 <(printf '%s\n' "$procs") <(printf '%s\n' "$sels")); do
+    echo "FAIL: process ${p} has no container: add a row for it to the table in scripts/ci/gen-containers-config.sh."
+    fail=1
+  done
+  for p in $(comm -13 <(printf '%s\n' "$procs") <(printf '%s\n' "$sels")); do
+    echo "FAIL: conf/containers.config has a selector for ${p}, but no process in modules/ has that name."
+    fail=1
+  done
+  if grep -nE '^[[:space:]]*container[[:space:]]' "${ROOT}"/modules/local/*/main.nf; then
+    echo "FAIL: the module lines above set their own container; images come from conf/containers.config only."
+    fail=1
+  fi
+  [ "$fail" -eq 0 ] && echo "OK: conf/containers.config matches versions.env and gives all $(wc -l <<<"$procs" | tr -d ' ') processes an image."
+  return "$fail"
+}
+
+# check_versions FILE [PROCESS...]: each module writes, as the first line of
+# its versions.yml block, the tag of the image it ran in (task.container).
+# Compare that line with the image conf/containers.config gives the process.
+check_versions() {
+  python3 - "$CONFIG" "$@" <<'PY'
+import re, sys
+config, yml, expect = sys.argv[1], sys.argv[2], sys.argv[3:]
+text = open(config).read()
+images = dict(re.findall(r"withName: '(\w+)' \{ container = '([^']+)' \}", text))
+# A process that runs on the host states the release of the pipeline it starts.
+images.update(re.findall(r"withName: '(\w+)' \{ ext\.pipeline_version = '([^']+)';", text))
+def tag(image):
+    return re.sub(r"^[^:@]+[:@]", "", image, count=1)
+first, proc = {}, None
+for line in open(yml):
+    m = re.match(r'^"([^"]+)":\s*$', line)
+    if m:
+        proc = m.group(1).split(":")[-1]
+        continue
+    m = re.match(r"^\s+([\w.-]+):\s*(.*?)\s*$", line)
+    if m and proc and proc not in first:
+        first[proc] = (m.group(1), m.group(2))
+fail = 0
+if not first:
+    print("FAIL: %s has no process block" % yml)
+    fail = 1
+for p in sorted(set(expect or images) | set(first)):
+    if p not in images:
+        print("FAIL %-20s has no selector in conf/containers.config" % p)
+        fail = 1
+    elif p not in first:
+        if p in (expect or images):
+            print("FAIL %-20s missing from %s" % (p, yml))
+            fail = 1
+    elif first[p][1] != tag(images[p]):
+        print("FAIL %-20s %s: %s, want %s (%s)" % (p, first[p][0], first[p][1], tag(images[p]), images[p]))
+        fail = 1
+    else:
+        print("OK   %-20s %s: %s" % (p, first[p][0], first[p][1]))
+sys.exit(fail)
+PY
+}
+
+# self_test: plant each kind of fault in a copy of this tree and require
+# --check to name it; the unchanged copy must pass.
+self_test() {
+  local tmp fail=0 rc out
+  tmp=$(mktemp -d)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" EXIT
+  copy() {
+    mkdir -p "${tmp}/$1/conf"
+    cp "${ROOT}/versions.env" "${tmp}/$1/"
+    cp -R "${ROOT}/modules" "${tmp}/$1/"
+    # Start from a fresh file, so the self-test checks the checker, not this tree.
+    "$0" --root "${tmp}/$1" >/dev/null
+  }
+  # expect NAME PATTERN: --check on the planted tree NAME exits 1 and prints PATTERN.
+  expect() {
+    rc=0; out=$("$0" --check --root "${tmp}/$1" 2>&1) || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -qE -- "$2" <<<"$out"; then
+      echo "self-test: '$1' exited ${rc} and did not report /$2/:"; printf '%s\n' "$out"; fail=1
+    else
+      echo "self-test: '$1' caught: $(grep -E -- "$2" <<<"$out" | head -1)"
+    fi
+  }
+
+  # tag_of PROCESS CONFIG: the tag (or digest) of PROCESS's image in CONFIG.
+  tag_of() {
+    sed -nE "s/^[[:space:]]*withName: '$1' \\{ container = '[^:@']+[:@]([^']+)' \\}.*/\\1/p" "$2"
+  }
+
+  copy clean
+  rc=0; out=$("$0" --check --root "${tmp}/clean" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || { echo "self-test: the unchanged copy failed:"; printf '%s\n' "$out"; fail=1; }
+
+  # A tag bumped in versions.env without running the generator.
+  copy stale
+  sed -i.bak -E 's|^(BCFTOOLS_IMAGE="[^"]*:)[^"]*"|\19.99"|' "${tmp}/stale/versions.env"
+  expect stale "^\+    withName: 'ROH' \{ container = '[^']*:9\.99' \}"
+
+  # A withName block removed by hand.
+  copy no-selector
+  sed -i.bak "/withName: 'VEP'/d" "${tmp}/no-selector/conf/containers.config"
+  expect no-selector '^FAIL: process VEP has no container'
+
+  # A process added to a module without a table row.
+  copy new-process
+  printf '%s\n' 'process NEW_TOOL {' '    script:' '    """' '    true' '    """' '}' \
+    >> "${tmp}/new-process/modules/local/roh/main.nf"
+  expect new-process '^FAIL: process NEW_TOOL has no container'
+
+  # A selector left behind for a process that no longer exists.
+  copy stray
+  sed -i.bak "s/^process VEP /process VEP_RENAMED /" "${tmp}/stray/modules/local/vep/main.nf"
+  expect stray '^FAIL: conf/containers.config has a selector for VEP,'
+
+  # A module that sets its own image again.
+  copy literal
+  awk -v q="'" '{ print } /^process ROH \{/ { print "    container " q "example/bcftools:1.0" q }' \
+    "${ROOT}/modules/local/roh/main.nf" > "${tmp}/literal/modules/local/roh/main.nf"
+  expect literal 'main\.nf:[0-9]+: +container .example/bcftools:1\.0.'
+
+  # The release of a pipeline a host process starts, bumped without running
+  # the generator, and one of the images handed to it.
+  copy stale-native
+  sed -i.bak -E 's|^(PGSC_CALC_VERSION=")[^"]*"|\1v9.9.9"|' "${tmp}/stale-native/versions.env"
+  expect stale-native "^\+    withName: 'PRS' \{ ext\.pipeline_version = 'v9\.9\.9';"
+  copy stale-native-image
+  sed -i.bak -E 's|^(PGSC_FRAPOSA_IMAGE="[^"]*:)[^"]*"|\1v9.9.9"|' "${tmp}/stale-native-image/versions.env"
+  expect stale-native-image "^\+    withName: 'PRS' .*fraposa=[^;']*:v9\.9\.9"
+
+  # A host process whose release a run's versions.yml misstates.
+  local rel
+  rel=$(sed -nE "s/^[[:space:]]*withName: 'PRS' \\{ ext\\.pipeline_version = '([^']+)';.*/\\1/p" "${tmp}/clean/conf/containers.config")
+  [ -n "$rel" ] || { echo "self-test: found no release for PRS in the clean copy's conf/containers.config"; fail=1; }
+  printf '%s\n' '"CLINICAL:PRS":' "    pgsc_calc: ${rel}" > "${tmp}/versions-native-good.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-native-good.yml" PRS 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || { echo "self-test: --check-versions failed a correct host process:"; printf '%s\n' "$out"; fail=1; }
+  printf '%s\n' '"CLINICAL:PRS":' '    pgsc_calc: v0.0.0-planted' > "${tmp}/versions-native-bad.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-native-bad.yml" PRS 2>&1) || rc=$?
+  if [ "$rc" -ne 1 ] || ! grep -qE '^FAIL PRS +pgsc_calc: v0\.0\.0-planted, want ' <<<"$out"; then
+    echo "self-test: --check-versions exited ${rc} and did not report the misstated PRS release:"; printf '%s\n' "$out"; fail=1
+  else
+    echo "self-test: --check-versions caught: $(grep -E '^FAIL PRS' <<<"$out")"
+  fi
+
+  # --check-versions: a wrong tag, a missing process and an unknown process.
+  # The right tags are read from the clean copy, which was generated from this
+  # tree's versions.env, so a bump of either image does not break this test.
+  local roh vep roh_re
+  roh=$(tag_of ROH "${tmp}/clean/conf/containers.config")
+  vep=$(tag_of VEP "${tmp}/clean/conf/containers.config")
+  if [ -z "$roh" ] || [ -z "$vep" ]; then
+    echo "self-test: found no tag for ROH ('${roh}') or VEP ('${vep}') in the clean copy's conf/containers.config"; fail=1
+  fi
+  roh_re=$(sed 's/[][\.*^$+?(){}|/]/\\&/g' <<<"$roh")
+  printf '%s\n' '"PGX:ROH":' "    bcftools: ${roh}" '"VEP":' "    ensemblvep: ${vep}" \
+    > "${tmp}/versions-good.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-good.yml" ROH VEP 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || { echo "self-test: --check-versions failed a correct file:"; printf '%s\n' "$out"; fail=1; }
+  printf '%s\n' '"PGX:ROH":' '    bcftools: 0.0.0-planted' '"NEW_TOOL":' '    tool: 1.0' > "${tmp}/versions-bad.yml"
+  rc=0; out=$("$0" --check-versions --root "${tmp}/clean" "${tmp}/versions-bad.yml" ROH VEP 2>&1) || rc=$?
+  for want in "^FAIL ROH +bcftools: 0\\.0\\.0-planted, want ${roh_re} " '^FAIL NEW_TOOL +has no selector' '^FAIL VEP +missing from'; do
+    if [ "$rc" -ne 1 ] || ! grep -qE -- "$want" <<<"$out"; then
+      echo "self-test: --check-versions exited ${rc} and did not report /${want}/:"; printf '%s\n' "$out"; fail=1
+    else
+      echo "self-test: --check-versions caught: $(grep -E -- "$want" <<<"$out")"
+    fi
+  done
+
+  [ "$fail" -eq 0 ] && echo "self-test: OK"
+  return "$fail"
+}
+
+case "$MODE" in
+  write)
+    tmp=$(mktemp)
+    render > "$tmp"
+    cat "$tmp" > "$CONFIG"
+    rm -f "$tmp"
+    echo "wrote ${CONFIG#"${ROOT}/"}"
+    ;;
+  check) check ;;
+  check-versions)
+    [ "${#ARGS[@]}" -ge 1 ] || { echo "usage: $0 --check-versions FILE [PROCESS...]" >&2; exit 2; }
+    check_versions "${ARGS[@]}"
+    ;;
+  self-test) self_test ;;
+esac

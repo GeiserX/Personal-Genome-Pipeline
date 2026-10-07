@@ -9,6 +9,9 @@ SAMPLE=${1:?Usage: $0 <sample_name> <ora_reference_dir> <ora_file>}
 ORA_REF=${2:?Usage: $0 <sample_name> <ora_reference_dir> <ora_file>}
 ORA_FILE=${3:?Usage: $0 <sample_name> <ora_reference_dir> <ora_file>}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
+# shellcheck source=lib/common.sh
+. "$(dirname "$0")/lib/common.sh"
+validate_sample "$SAMPLE"
 ORAD=${ORAD:-/opt/orad/bin/orad}
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/fastq"
 
@@ -38,7 +41,7 @@ mkdir -p "$OUTPUT_DIR"
 
 "$ORAD" \
   --ora-reference "$ORA_REF" \
-  --output-directory "$OUTPUT_DIR" \
+  --path "$OUTPUT_DIR" \
   "$ORA_FILE"
 
 echo "=== ORA to FASTQ complete ==="

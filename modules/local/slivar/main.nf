@@ -7,27 +7,29 @@
     compound heterozygote candidates. Optionally annotates results with gnomAD
     gene constraint metrics (LOEUF, pLI).
 
+    Two processes, each in its own pinned image:
+      SLIVAR_PRIORITIZE  bcftools image: tiers, prioritized VCF, PED, summary TSV
+      SLIVAR             slivar image:   compound-hets on the prioritized VCF
+
     Equivalent to: scripts/31-slivar.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-process SLIVAR {
+process SLIVAR_PRIORITIZE {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'staphb/bcftools:1.21'
-
-    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_{prioritized.vcf.gz,prioritized.vcf.gz.tbi,slivar_summary.tsv}"
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
     path(gnomad_constraint)
-    path(slivar_bin)
 
     output:
     tuple val(meta), path("*_prioritized.vcf.gz"),     emit: vcf
     tuple val(meta), path("*_prioritized.vcf.gz.tbi"), emit: vcf_index
-    tuple val(meta), path("*_compound_hets.vcf.gz"),   emit: compound_het_vcf
+    tuple val(meta), path("${meta.id}.ped"),           emit: ped
     tuple val(meta), path("*_slivar_summary.tsv"),     emit: summary_tsv
     path "versions.yml",                               emit: versions
 
@@ -37,31 +39,37 @@ process SLIVAR {
     script:
     def has_constraint = gnomad_constraint ? true : false
     """
-    # --- Make the staged slivar binary executable ---
-    chmod +x ${slivar_bin}
-
-    # --- Generate PED file for single sample ---
-    SAMPLE_NAME=\$(bcftools query -l ${vcf} | head -1)
+    # --- Generate PED file for single sample (SLIVAR reads it) ---
+    SAMPLE_NAME=\$(bcftools query -l ${vcf} | awk 'NR == 1')
     echo -e "\${SAMPLE_NAME}\\t\${SAMPLE_NAME}\\t0\\t0\\t0\\t-9" > ${meta.id}.ped
 
     # --- Which CSQ fields does the input carry? ---
     # Tested explicitly (as CLINICAL_FILTER does) instead of falling back with
     # `A | B || C | D`, which hid real failures behind the fallback branch.
     bcftools +split-vep -l ${vcf} > csq_fields.txt
-    HAS_GNOMAD=0
     HAS_CLINSIG=0
-    awk '\$2 == "gnomADe_AF" { f = 1 } END { exit !f }' csq_fields.txt && HAS_GNOMAD=1
     awk '\$2 == "CLIN_SIG" { f = 1 } END { exit !f }' csq_fields.txt && HAS_CLINSIG=1
-    if [ "\${HAS_GNOMAD}" -eq 1 ]; then
-        RARE_COLS="IMPACT,gnomADe_AF"
-        RARE_AND=' && (gnomADe_AF<0.01 || gnomADe_AF=".")'
+    # Rarity, as scripts/31-slivar.sh: VEP's MAX_AF (highest frequency in any
+    # 1000 Genomes or gnomAD exome/genome population), else gnomADe_AF and
+    # gnomADg_AF. Exome frequency alone calls a variant common in genomes but
+    # absent from exomes rare.
+    RARE_COLS="IMPACT"
+    RARE_AND=""
+    if awk '\$2 == "MAX_AF" { f = 1 } END { exit !f }' csq_fields.txt; then
+        RARE_COLS="IMPACT,MAX_AF:Float"
+        RARE_AND=' && (MAX_AF<0.01 || MAX_AF=".")'
     else
-        echo "WARNING: gnomADe_AF not in the CSQ fields; rare tiers are not filtered by frequency." >&2
-        RARE_COLS="IMPACT"
-        RARE_AND=""
+        for f in gnomADe_AF gnomADg_AF; do
+            awk -v f="\${f}" '\$2 == f { x = 1 } END { exit !x }' csq_fields.txt || continue
+            RARE_COLS="\${RARE_COLS},\${f}:Float"
+            RARE_AND="\${RARE_AND} && (\${f}<0.01 || \${f}=\\".\\")"
+        done
+    fi
+    if [ -z "\${RARE_AND}" ]; then
+        echo "WARNING: no MAX_AF, gnomADe_AF or gnomADg_AF in the CSQ fields; rare tiers are not filtered by frequency." >&2
     fi
 
-    # --- Filter 1: rare_high (PASS + HIGH impact + gnomAD AF < 1%) ---
+    # --- Filter 1: rare_high (PASS + HIGH impact + rare) ---
     bcftools view -f PASS ${vcf} | \\
         bcftools +split-vep - -c "\${RARE_COLS}" -s worst \\
             -i "IMPACT=\\"HIGH\\"\${RARE_AND}" \\
@@ -81,17 +89,17 @@ process SLIVAR {
     PREDICTOR_PARTS=""
     INFO_HEADER=\$(bcftools view -h ${meta.id}_rare_moderate_all.vcf.gz | grep '^##INFO' || true)
 
-    echo "\$INFO_HEADER" | grep -q 'ID=CADD_PHRED,' && \\
+    grep -q 'ID=CADD_PHRED,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/CADD_PHRED>=20"
-    echo "\$INFO_HEADER" | grep -q 'ID=CADD_PHRED_indel,' && \\
+    grep -q 'ID=CADD_PHRED_indel,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/CADD_PHRED_indel>=20"
-    echo "\$INFO_HEADER" | grep -q 'ID=REVEL' && \\
+    grep -q 'ID=REVEL' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/REVEL>=0.5"
-    echo "\$INFO_HEADER" | grep -q 'ID=AM_class' && \\
+    grep -q 'ID=AM_class' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/AM_class=\\"likely_pathogenic\\""
-    echo "\$INFO_HEADER" | grep -q 'ID=SpliceAI,' && \\
+    grep -q 'ID=SpliceAI,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/SpliceAI!=\\".\\""
-    echo "\$INFO_HEADER" | grep -q 'ID=SpliceAI_indel,' && \\
+    grep -q 'ID=SpliceAI_indel,' <<< "\$INFO_HEADER" && \\
         PREDICTOR_PARTS="\${PREDICTOR_PARTS:+\${PREDICTOR_PARTS} || }INFO/SpliceAI_indel!=\\".\\""
 
     if [ -n "\${PREDICTOR_PARTS}" ]; then
@@ -124,85 +132,24 @@ process SLIVAR {
         bcftools sort -Oz -o ${meta.id}_prioritized.vcf.gz
     bcftools index -t ${meta.id}_prioritized.vcf.gz
 
-    # --- Compound heterozygote detection ---
-    # slivar writes to a file first so its own exit status fails the task: a
-    # crash must not read as "no compound hets". Its stderr stays in the task log.
-    ./${slivar_bin} compound-hets \\
-        --allow-non-trios \\
-        --vcf ${meta.id}_prioritized.vcf.gz \\
-        --ped ${meta.id}.ped \\
-        > ${meta.id}_compound_hets.vcf
-    bcftools view ${meta.id}_compound_hets.vcf -Oz -o ${meta.id}_compound_hets.vcf.gz
-    rm -f ${meta.id}_compound_hets.vcf
-
     # --- Generate summary TSV with optional gnomAD constraint enrichment ---
-    bcftools +split-vep \\
-        ${meta.id}_prioritized.vcf.gz \\
-        -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t%Existing_variation[\\t%GT]\\n' \\
-        -s worst -d > ${meta.id}_variants_raw.tsv
+    {
+        printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n'
+        bcftools +split-vep \\
+            ${meta.id}_prioritized.vcf.gz \\
+            -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t%Existing_variation[\\t%GT]\\n' \\
+            -s worst -d
+    } > ${meta.id}_variants_raw.tsv
 
     if [ "${has_constraint}" = "true" ]; then
-        # Join with gnomAD v4.1 constraint metrics, keyed on gene symbol. Only
-        # canonical transcripts count; v4.1 lists an Ensembl and a RefSeq
-        # canonical row per gene, and the Ensembl (ENST) one wins.
-        awk -F'\\t' -v OFS='\\t' '
-            function print_header() {
-                print "CHROM", "POS", "REF", "ALT", "IMPACT", "SYMBOL", "Consequence", "Existing_variation", "GT", "LOEUF", "pLI", "mis_z", "CONSTRAINED"
-            }
-            NR == FNR {
-                if (FNR == 1) {
-                    for (i = 1; i <= NF; i++) col[\$i] = i
-                    split("gene canonical transcript lof.oe_ci.upper lof.pLI mis.z_score", need, " ")
-                    for (k in need) if (!(need[k] in col)) {
-                        print "ERROR: column " need[k] " missing from the constraint table" > "/dev/stderr"
-                        bad = 1; exit 3
-                    }
-                    next
-                }
-                if (\$col["canonical"] != "true") next
-                g = \$col["gene"]
-                ens = (\$col["transcript"] ~ /^ENST/)
-                if ((g in val) && (src[g] || !ens)) next
-                l = \$col["lof.oe_ci.upper"]; p = \$col["lof.pLI"]; m = \$col["mis.z_score"]
-                if (l == "NA" || l == "") l = "."
-                if (p == "NA" || p == "") p = "."
-                if (m == "NA" || m == "") m = "."
-                val[g] = l OFS p OFS m
-                loeuf[g] = l; pli[g] = p; src[g] = ens
-                next
-            }
-            !hdr { print_header(); hdr = 1 }
-            /^#/ || NF < 6 { next }
-            {
-                rows++
-                g = \$6
-                if (g != "." && g != "") with_gene++
-                if (g in val) {
-                    matched[g] = 1
-                    c = "NO"
-                    if ((loeuf[g] != "." && loeuf[g] + 0 < 0.35) || (pli[g] != "." && pli[g] + 0 > 0.9)) c = "YES"
-                    print \$0, val[g], c
-                } else {
-                    print \$0, ".", ".", ".", "NO"
-                }
-            }
-            END {
-                if (bad) exit 3
-                if (!hdr) print_header()
-                n = 0
-                for (g in matched) n++
-                printf "gnomAD constraint: %d of %d variant rows carry a gene symbol; %d distinct genes matched\\n", with_gene, rows, n > "/dev/stderr"
-                if (with_gene > 0 && n == 0) {
-                    print "ERROR: --gnomad_constraint is set but no gene in the variants matched it; check that the file is the gnomAD v4.1 constraint table" > "/dev/stderr"
-                    exit 4
-                }
-            }
-        ' ${gnomad_constraint} ${meta.id}_variants_raw.tsv > ${meta.id}_slivar_summary.tsv
+        # bin/constraint_join.awk (on the task PATH), the loader scripts/23 and
+        # scripts/31 run: canonical rows only, the Ensembl row over the RefSeq
+        # one, mis.z_score; it exits non-zero when rows carry gene symbols and
+        # not one matches the table.
+        awk -f "\$(command -v constraint_join.awk)" gene_col=SYMBOL constrained=1 \\
+            ${gnomad_constraint} ${meta.id}_variants_raw.tsv > ${meta.id}_slivar_summary.tsv
     else
-        {
-            echo -e "CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT"
-            cat ${meta.id}_variants_raw.tsv
-        } > ${meta.id}_slivar_summary.tsv
+        mv ${meta.id}_variants_raw.tsv ${meta.id}_slivar_summary.tsv
     fi
 
     # Clean up intermediate files
@@ -211,8 +158,7 @@ process SLIVAR {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: \$(./${slivar_bin} 2>&1 | grep -oP '[0-9]+\\.[0-9.]+' | head -1)
-        bcftools: \$(bcftools --version | head -1 | sed 's/bcftools //')
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 
@@ -220,13 +166,57 @@ process SLIVAR {
     """
     touch ${meta.id}_prioritized.vcf.gz
     touch ${meta.id}_prioritized.vcf.gz.tbi
-    touch ${meta.id}_compound_hets.vcf.gz
+    touch ${meta.id}.ped
     printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n' > ${meta.id}_slivar_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        slivar: 0.3.4
-        bcftools: 1.21
+        bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process SLIVAR {
+    tag "$meta.id"
+    label 'process_low'
+
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_compound_hets.vcf.gz"
+
+    input:
+    tuple val(meta), path(vcf), path(ped)
+
+    output:
+    tuple val(meta), path("*_compound_hets.vcf.gz"), emit: compound_het_vcf
+    path "versions.yml",                             emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    # slivar writes the bgzipped VCF itself (the .gz name selects it), so its
+    # own exit status fails the task: a crash must not read as "no compound
+    # hets". Its stderr stays in the task log.
+    slivar compound-hets \\
+        --allow-non-trios \\
+        --vcf ${vcf} \\
+        --ped ${ped} \\
+        --out-vcf ${meta.id}_compound_hets.vcf.gz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        slivar: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_compound_hets.vcf.gz
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        slivar: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

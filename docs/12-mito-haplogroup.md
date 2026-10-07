@@ -10,23 +10,25 @@ Mitochondrial haplogroup reveals deep maternal ancestry and can identify mtDNA d
 - **haplogrep3** (Medical University of Innsbruck)
 
 ## Docker Image
-```
-jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de
-```
-> Pinned by immutable digest — the publisher offers no versioned tags (`genepi/haplogrep3` was removed from Docker Hub). Canonical value lives in `versions.env`.
+- `HAPLOGREP3_IMAGE`
+
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
+
+> The image is the Bioconda build of haplogrep3 3.2.2. It classifies without a network: the image test runs it with `--network none`. It replaced a digest-pinned build of 3.2.1 from a personal Docker Hub account; on the image test's chrM calls of the HG002 fixture both give H5a7 with quality 1.0000 and the same found and remaining polymorphisms.
 
 ## Command
 ```bash
+source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 
 # Step 1: Extract chrM variants from VCF
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf staphb/bcftools:1.21 \
+docker run --rm -v ${GENOME_DIR}/${SAMPLE}/vcf:/genome/${SAMPLE}/vcf "${BCFTOOLS_IMAGE}" \
   bcftools view -r chrM /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz
 
 # Step 2: Run haplogrep3
-docker run --rm -v ${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE} jtb114/haplogrep3@sha256:7b28d98a0ffb801977bcc0597941259cf2c4dbe4e89756a9a2c4809c3c9c78de \
-  classify \
+docker run --rm --network none -v ${GENOME_DIR}/${SAMPLE}:/genome/${SAMPLE} "${HAPLOGREP3_IMAGE}" \
+  haplogrep3 classify \
     --tree phylotree-fu-rcrs@1.2 \
     --input /genome/${SAMPLE}/vcf/${SAMPLE}_chrM.vcf.gz \
     --output /genome/${SAMPLE}/mito/${SAMPLE}_haplogroup.txt \

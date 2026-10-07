@@ -1,0 +1,15 @@
+#AncestryDNA raw data download
+#Synthetic test fixture for tests/test_chip_to_vcf.sh: made-up positions and
+#genotypes on a made-up reference, in the layout of an AncestryDNA export.
+#Chromosome codes: 1-22, 23 = X, 24 = Y, 25 = X pseudoautosomal, 26 = MT.
+rsid	chromosome	position	allele1	allele2
+rs9000001	1	101	A	G
+rs9000002	1	202	C	C
+rs9000003	1	303	G	T
+rs9000004	1	404	0	0
+rs9000005	1	1010	T	T
+rs9000006	23	505	A	A
+rs9000007	23	606	C	T
+rs9000008	24	707	G	G
+rs9000009	25	808	T	T
+rs9000010	26	909	A	G
