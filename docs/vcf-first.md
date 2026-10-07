@@ -24,7 +24,7 @@ What the check cannot catch:
 - **The genome build.** It reads names, not coordinates. A GRCh37 (hg19) file named `chr1` passes and gives wrong results everywhere. Check the build before anything else: [Genome Build](vendor-guide.md#genome-build-grch37-hg19-vs-grch38-hg38).
 - **Unplaced scaffolds.** Records on contigs outside the 25 main ones (`GL000195.1`, `KI270706.1`) keep their names after the rename. The ClinVar screen leaves out records on contigs that ClinVar or the reference lacks and says how many. Nothing else reads them.
 
-The bash steps (`run-all.sh` and the numbered scripts) need the same chr-named, variants-only file, and they do not run this check. Fix the file first.
+`run-all.sh` starts this pipeline, so it runs the check too. The numbered scripts need the same chr-named, variants-only file and do not run it: fix the file first.
 
 ## Setup
 

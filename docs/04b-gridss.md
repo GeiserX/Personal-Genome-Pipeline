@@ -113,7 +113,7 @@ GRIDSS is the heaviest tool in the pipeline. With `GRIDSS=true` it runs in paral
 
 ## Notes
 
-- GRIDSS output feeds into the SV consensus merge (step 22) alongside Manta, Delly, and TIDDIT
+- GRIDSS output is not part of the SV consensus (step 22): GRIDSS reports every event as a pair of breakends (`SVTYPE=BND`), which never match the DEL, DUP and INV records of the other callers
 - The assembly BAM (`_assembly.bam`) can be deleted after the VCF is generated to save disk space
 - Supports `ALIGN_DIR` variable: `ALIGN_DIR=aligned_bwamem2 ./scripts/04b-gridss.sh sample`
 - GRIDSS does not have ARM64 support — runs under emulation on Apple Silicon (very slow)

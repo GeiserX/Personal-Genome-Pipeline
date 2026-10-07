@@ -108,7 +108,26 @@ The Genome in a Bottle (GIAB) consortium publishes validated truth sets for seve
 
 ## GIAB Truth Set Setup
 
-### Download HG002 Truth Set
+### The two HG002 truth sets, by name
+
+`benchmark-variants.sh --giab <set>` downloads one of GIAB's two HG002 GRCh38 small-variant benchmarks into `${GENOME_DIR}/giab/` on first use, checks each file by md5, and runs hap.py against it with `--gender male`:
+
+| Set | What it is | Files |
+|---|---|---|
+| `v4.2.1` | NISTv4.2.1, chr1-22, from mapping-based calls; the long-standing benchmark | `HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz` (+ `.tbi`), `HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed` |
+| `v5.0q` | the assembly-based draft from the T2T HG002 Q100 assembly (v1.1), with chrX, chrY and harder regions v4.2.1 leaves out; GIAB asks for curation of putative errors while it is a draft | `HG002_GRCh38_v5.0q_smvar.vcf.gz` (+ `.tbi`), `HG002_GRCh38_v5.0q_smvar.benchmark.bed` |
+
+```bash
+./scripts/benchmark-variants.sh HG002 --giab v4.2.1
+./scripts/benchmark-variants.sh HG002 --giab v5.0q
+# only the set's benchmark regions inside a BED (a chromosome, a slice):
+printf 'chr20\t0\t64444167\n' > "${GENOME_DIR}/chr20.bed"
+./scripts/benchmark-variants.sh HG002 --giab v5.0q --regions "${GENOME_DIR}/chr20.bed"
+```
+
+v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture.
+
+### Download HG002 Truth Set by hand
 
 ```bash
 GENOME_DIR=/path/to/your/data

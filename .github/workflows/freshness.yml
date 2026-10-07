@@ -16,9 +16,10 @@ name: Freshness
 # error, never "current"), a download link does not answer 200, or a PGS ID's
 # label names another trait. The issue is written first, so it says why.
 #
-# Pull requests that touch scripts/ or docs/ get the parts that fail fast: the
-# download URLs the change adds, the PGS labels when scripts/25-prs.sh changes,
-# and a dry run of the report when its own code or versions.env changes. The
+# Pull requests that touch scripts/, docs/ or assets/pgs_scores.tsv get the
+# parts that fail fast: the download URLs the change adds, the PGS labels when
+# assets/pgs_scores.tsv or scripts/25-prs.sh changes, and a dry run of the
+# report when its own code or versions.env changes. The
 # whole-tree link check runs monthly, so a link that dies upstream shows in the
 # issue instead of failing an unrelated pull request.
 #
@@ -45,6 +46,7 @@ on:
       - 'scripts/**'
       - 'docs/**'
       - 'versions.env'
+      - 'assets/pgs_scores.tsv'
       - '.github/workflows/freshness.yml'
 
 permissions:
@@ -98,7 +100,7 @@ jobs:
           cat "${RUNNER_TEMP}/changed.txt"
           has() { grep -qxE "$1" "${RUNNER_TEMP}/changed.txt" && echo true || echo false; }
           {
-            echo "prs=$(has 'scripts/25-prs\.sh|scripts/ci/check-pgs-labels\.sh|\.github/workflows/freshness\.yml')"
+            echo "prs=$(has 'scripts/25-prs\.sh|assets/pgs_scores\.tsv|scripts/ci/check-pgs-labels\.sh|\.github/workflows/freshness\.yml')"
             echo "report=$(has 'scripts/ci/freshness\.py|versions\.env|\.github/workflows/freshness\.yml')"
           } >> "$GITHUB_OUTPUT"
 
@@ -168,7 +170,7 @@ jobs:
             echo ""
             part "${out}/links.md" "$l"
             echo ""
-            echo "## PGS IDs in scripts/25-prs.sh"
+            echo "## PGS IDs in assets/pgs_scores.tsv"
             echo ""
             part "${out}/pgs.md" "$p"
           } > "${out}/body.md"

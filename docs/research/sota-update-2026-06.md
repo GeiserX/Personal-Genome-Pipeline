@@ -60,12 +60,12 @@ A point-in-time review of every tool/container/database against its latest upstr
 1. **Cyrius** CYP2D6 star-allele caller (CNV/hybrid alleles PharmCAT misses) — already wired into the default tool set; feed its diplotype into PharmCAT as an outside-call. *(No single caller settles CYP2D6 copy number. On a reference with ALT contigs, depth at CYP2D6 drops and a depth-based caller (pypgx or Cyrius) can report a deletion that is not there: compare CYP2D6 depth with its flanks first, and report CYP2D6 only when two callers agree. See lessons-learned.)*
 2. *(Applied through vcfanno at step 30, not the VEP plugin.)* **AlphaMissense** via VEP plugin — easy, high value.
 3. **pgsc_calc** (Nextflow, NF-26 compatible) — SOTA polygenic scoring.
-4. **ACMG SF v3.3** (2025, 84 genes) via CPSR secondary-findings mode (PCGR 2.3.0).
+4. **ACMG SF v3.3** (2025, 84 genes) via CPSR secondary-findings mode (PCGR 2.3.0). *Done as well:* the reports list the ClinVar hits and rare HIGH-impact clinical-filter records in the 84 genes (step 23).
 5. Consolidate missense annotation on **dbNSFP 5.3.1**.
 6. **stranger** for repeat-expansion annotation (with ExpansionHunter).
 7. **mtDNA heteroplasmy** (mutserve or GATK Mutect2 mito-mode) + VEP gnomADMT.
 
-Long-read-only (skip for short-read Illumina WGS — no methylation signal in the data): modkit. *Corrected:* vg-giraffe and pangenome-aware DeepVariant are short-read methods, not long-read-only: DeepVariant 1.10's pangenome-aware case study runs on Illumina HG003 reads. Open, not planned yet.
+Long-read-only (skip for short-read Illumina WGS — no methylation signal in the data): modkit. *Corrected:* vg-giraffe and pangenome-aware DeepVariant are short-read methods, not long-read-only: DeepVariant 1.10's pangenome-aware case study runs on Illumina HG003 reads (SNP F1 0.9977 and INDEL F1 0.9972 on chr20), and DeepVariant publishes an image for it. No opt-in script is added until its memory need on a whole genome, with the HPRC graph loaded, has been measured on a real machine.
 
 ## Drop / replace
 - CNVnator → **CNVpytor**.
