@@ -22,7 +22,8 @@
 #   CONTAINER_ENGINE  docker by default.
 # and the helpers validate_sample, require_image, cpath, run_in, have_output,
 # wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
-# lock_acquire / lock_release and pipeline_images, described where they are
+# lock_acquire / lock_release, pipeline_images, scatter_beds and run_parallel,
+# described where they are
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
 PGP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -119,8 +120,9 @@ run_in() {
   done
   local -a args=(run --rm)
   if $isolate; then args+=(--network none); fi
-  # --root is explicit: an image whose default user is not root (the
-  # TelomereHunter image) could not write into the sample directory otherwise.
+  # --root is explicit: the container runs as root (--user 0:0) even when
+  # the image names another user. It is for an image that has not been shown
+  # to run unprivileged, for example PCGR in scripts/17-cpsr.sh.
   if $root; then
     args+=(--user 0:0)
   else
@@ -487,4 +489,58 @@ pipeline_images() {
       printf '%s\n' "${!name}"
     fi
   done < "${PGP_ROOT}/versions.env"
+}
+
+# scatter_beds DIR [INTERVALS]: split the calling of a single-process caller
+# into units, one BED file each (DIR/001.bed, ...), and print their paths in
+# reference order. Without INTERVALS: chr1-22, chrX, chrY and chrM of
+# REF_FASTA's .fai one unit each, and every other contig in one last unit.
+# With INTERVALS (space-separated contigs or contig:start-end regions, 1-based
+# inclusive): one unit per region. SCATTER=false puts every region in one unit,
+# so the caller runs once over all of them.
+scatter_beds() {
+  local dir=$1 intervals=${2:-} fai="${REF_FASTA}.fai" r
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  [ -s "$fai" ] || { echo "ERROR: ${fai} not found" >&2; return 1; }
+  {
+    if [ -n "$intervals" ]; then
+      for r in $intervals; do printf 'R\t%s\n' "$r"; done
+    fi
+  } | awk -F'\t' -v d="$dir" -v all="${SCATTER:-true}" -v given="${intervals:+1}" '
+    FNR == NR { len[$1] = $2; order[++n] = $1; next }
+    function unit(name) { if (all == "false") return sprintf("%s/001.bed", d); return sprintf("%s/%03d.bed", d, ++u) }
+    { r = $2; gsub(/,/, "", r); c = r; s = 0; e = ""
+      if (match(r, /:[0-9]+-[0-9]+$/)) { c = substr(r, 1, RSTART - 1); split(substr(r, RSTART + 1), p, "-"); s = p[1] - 1; e = p[2] }
+      if (!(c in len)) { print "ERROR: contig " c " (INTERVALS) is not in the reference" > "/dev/stderr"; bad = 1; exit 1 }
+      if (e == "") e = len[c]
+      f = unit(); print c "\t" s "\t" e >> f; close(f) }
+    END {
+      if (bad || given) exit bad
+      for (i = 1; i <= n; i++) if (order[i] ~ /^chr([0-9]+|X|Y|M)$/) { f = unit(); print order[i] "\t0\t" len[order[i]] >> f; close(f) }
+      rest = (all == "false") ? sprintf("%s/001.bed", d) : sprintf("%s/%03d.bed", d, u + 1)
+      for (i = 1; i <= n; i++) if (order[i] !~ /^chr([0-9]+|X|Y|M)$/) print order[i] "\t0\t" len[order[i]] >> rest
+    }' "$fai" - || return 1
+  ls "$dir"/*.bed
+}
+
+# run_parallel MAX FUNC ARG...: run `FUNC ARG` for every ARG in the
+# background, at most MAX at a time, and return 1 when any of them failed,
+# after all have ended. Needs bash 4.3 (wait -n); the step scripts need 4.4.
+run_parallel() {
+  local max=$1 fn=$2 a running=0 rc=0
+  shift 2
+  for a in "$@"; do
+    "$fn" "$a" &
+    running=$((running + 1))
+    if [ "$running" -ge "$max" ]; then
+      wait -n || rc=1
+      running=$((running - 1))
+    fi
+  done
+  while [ "$running" -gt 0 ]; do
+    wait -n || rc=1
+    running=$((running - 1))
+  done
+  return "$rc"
 }

@@ -12,6 +12,11 @@
 # to Mutect2 as it is. The read orientation model (LearnReadOrientationModel)
 # always runs; the contamination estimate (GetPileupSummaries,
 # CalculateContamination) runs when the common-sites VCF is in somatic/.
+# INTERVALS=genome is scattered: Mutect2 runs once per unit (chr1-22, X, Y
+# and M one each, the other contigs together), SCATTER_JOBS at a time
+# (default THREADS/2, 2 CPUs and 8 GB each), and MergeVcfs and
+# MergeMutectStats join the calls and their statistics; the orientation model
+# learns from every unit's counts. SCATTER=false calls the genome in one process.
 #
 # WARNING: Tumor-only mode (no matched normal) has a HIGH false positive rate.
 # Many germline variants will be called as somatic. Use gnomAD and PoN resources
@@ -137,19 +142,57 @@ fi
 
 MUTECT2_CMD+=(${INTERVAL_ARGS[@]+"${INTERVAL_ARGS[@]}"})
 
+UNITS=()
+if [ "$INTERVALS" = genome ]; then
+  mapfile -t UNITS < <(scatter_beds "${OUTPUT_DIR}/scatter")
+  [ "${#UNITS[@]}" -gt 0 ] || { echo "ERROR: no calling units for INTERVALS=genome" >&2; exit 1; }
+fi
+F1R2=(-I "${S}_f1r2.tar.gz")
+
 echo "=== [1/4] Running Mutect2 in tumor-only mode ==="
 echo "  The slowest step: minutes on the CHIP genes, ~2-6 hours with INTERVALS=genome."
 echo ""
-run_in --cpus "$THREADS" --memory 8g \
-  "$GATK_IMAGE" \
-  "${MUTECT2_CMD[@]}"
+if [ "${#UNITS[@]}" -le 1 ]; then
+  run_in --cpus "$THREADS" --memory 8g \
+    "$GATK_IMAGE" \
+    "${MUTECT2_CMD[@]}"
+else
+  SCATTER_JOBS=${SCATTER_JOBS:-$(( THREADS / 2 > 1 ? THREADS / 2 : 1 ))}
+  echo "  Scattered: ${#UNITS[@]} units, ${SCATTER_JOBS} at a time"
+  # call_unit BED: the same command over one unit, into scatter/<unit>.*
+  call_unit() {
+    local bed=$1 u
+    u=$(cpath "${1%.bed}")
+    local -a cmd=()
+    local i
+    for ((i = 0; i < ${#MUTECT2_CMD[@]}; i++)); do
+      case "${MUTECT2_CMD[$i]}" in
+        -O) cmd+=(-O "${u}.vcf.gz"); i=$((i + 1)) ;;
+        --f1r2-tar-gz) cmd+=(--f1r2-tar-gz "${u}_f1r2.tar.gz"); i=$((i + 1)) ;;
+        --native-pair-hmm-threads) cmd+=(--native-pair-hmm-threads 2); i=$((i + 1)) ;;
+        *) cmd+=("${MUTECT2_CMD[$i]}") ;;
+      esac
+    done
+    run_in --cpus 2 --memory 8g "$GATK_IMAGE" "${cmd[@]}" -L "$(cpath "$bed")" > "${bed%.bed}.log" 2>&1 \
+      || { echo "ERROR: Mutect2 failed on ${bed##*/}; its log:" >&2; tail -n 20 "${bed%.bed}.log" >&2; return 1; }
+  }
+  run_parallel "$SCATTER_JOBS" call_unit "${UNITS[@]}"
+  MERGE=() STATS=() F1R2=()
+  for b in "${UNITS[@]}"; do
+    u=$(cpath "${b%.bed}")
+    MERGE+=(-I "${u}.vcf.gz") STATS+=(--stats "${u}.vcf.gz.stats") F1R2+=(-I "${u}_f1r2.tar.gz")
+  done
+  echo "  Joining the units (MergeVcfs, MergeMutectStats)..."
+  run_in --cpus 2 --memory 4g "$GATK_IMAGE" gatk MergeVcfs "${MERGE[@]}" -O "${S}_somatic_unfiltered.vcf.gz"
+  run_in --cpus 2 --memory 4g "$GATK_IMAGE" gatk MergeMutectStats "${STATS[@]}" -O "${S}_somatic_unfiltered.vcf.gz.stats"
+fi
 
 echo ""
 echo "=== [2/4] Read orientation model (LearnReadOrientationModel) ==="
 run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   gatk LearnReadOrientationModel \
-    -I "${S}_f1r2.tar.gz" \
+    "${F1R2[@]}" \
     -O "${S}_read-orientation-model.tar.gz"
 
 FILTER_CMD=(
@@ -192,6 +235,7 @@ run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   "${FILTER_CMD[@]}"
 printf '%s\n' "$RUN_KEY" > "$RUN_FILE"
+rm -rf "${OUTPUT_DIR}/scatter"
 
 echo ""
 echo "=== Somatic variant statistics ==="
