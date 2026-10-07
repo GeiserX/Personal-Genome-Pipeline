@@ -52,7 +52,7 @@ SEED=42
 SAMPLE=HG002
 MAX_TOTAL_BYTES=$((1500 * 1024 * 1024))
 
-GIAB=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab
+GIAB=https://giab.s3.amazonaws.com
 BAM_URL="${GIAB}/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.60x.1.bam"
 TRUTH_BASE="${GIAB}/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark"
 REF_BASE=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids

@@ -140,7 +140,7 @@ check_step_exit 33-sample-qc.sh
 # chr19) and sampled to about a ninth of HG002's depth, so about 10% of the
 # mixed reads are HG001's. Its read groups are dropped, so the mix reads as
 # the one sample of HG002's header.
-HG001_BAM=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/NA12878/NIST_NA12878_HG001_HiSeq_300x/NHGRI_Illumina300X_novoalign_bams/HG001.GRCh38_full_plus_hs38d1_analysis_set_minus_alts.300x.bam
+HG001_BAM=https://giab.s3.amazonaws.com/data/NA12878/NIST_NA12878_HG001_HiSeq_300x/NHGRI_Illumina300X_novoalign_bams/HG001.GRCh38_full_plus_hs38d1_analysis_set_minus_alts.300x.bam
 REGIONS="chr6:29900000-33100000 chr20:10000000-10500000 chr2:233600000-233800000 chr12:47800000-47950000 chr1:109600000-109800000 chr19:40800000-41050000"
 M="${SAMPLE}mix"
 mkdir -p "${G}/${M}/aligned" "${G}/contam"
