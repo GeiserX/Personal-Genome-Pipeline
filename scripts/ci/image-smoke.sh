@@ -7,6 +7,9 @@
 #                                              for these *_IMAGE variables of versions.env
 #   scripts/ci/image-smoke.sh --manifest       `docker manifest inspect` every image in
 #                                              versions.env and print its platforms
+#   scripts/ci/image-smoke.sh --manifest-self-test
+#                                              prove --manifest passes a tag rebuilt in
+#                                              place and fails a digest that does not exist
 #   scripts/ci/image-smoke.sh --check          parse the whole table (fields, options, input
 #                                              names) and check that every *_IMAGE of
 #                                              versions.env has a row (no docker)
@@ -158,18 +161,29 @@ self_test() {
 has_opt() { [[ ",${1}," == *",${2},"* ]]; }
 
 # --------------------------------------------------------------- manifest
+# manifest_ref IMAGE: the reference the manifest check resolves for a
+# versions.env image.
+manifest_ref() { printf '%s\n' "$1"; }
+
+# inspect_ref REF: `docker manifest inspect -v`, three tries; the JSON on
+# stdout, or "FAILED: <docker's message>" and exit 1.
+inspect_ref() {
+  local out tries
+  for tries in 1 2 3; do
+    if out=$(docker manifest inspect -v "$1" 2>&1); then printf '%s\n' "$out"; return 0; fi
+    [ "$tries" -lt 3 ] && sleep 10
+  done
+  printf 'FAILED: %s\n' "$out"
+  return 1
+}
+
 manifest() {
-  local var img out plats fail=0 tries rows=()
+  local var img ref out plats fail=0 rows=()
   while read -r var; do
     img=${!var}
-    out=""
-    for tries in 1 2 3; do
-      if out=$(docker manifest inspect -v "$img" 2>&1); then break; fi
-      out="FAILED: ${out}"
-      [ "$tries" -lt 3 ] && sleep 10
-    done
-    if [[ "$out" == FAILED:* ]]; then
-      echo "FAIL ${var}: ${img} cannot be resolved: $(head -c 300 <<< "${out#FAILED: }")"
+    ref=$(manifest_ref "$img")
+    if ! out=$(inspect_ref "$ref"); then
+      echo "FAIL ${var}: ${ref} cannot be resolved: $(head -c 300 <<< "${out#FAILED: }")"
       rows+=("| ${var} | \`${img}\` | **missing** |")
       fail=1
       continue
@@ -179,7 +193,7 @@ manifest() {
               <<< "$out" 2>/dev/null | sort -u | paste -sd ' ' -)
     echo "OK   ${var}: ${img} (${plats:-platform not stated})"
     rows+=("| ${var} | \`${img}\` | ${plats:-not stated} |")
-  done < <(grep -oE '^[A-Z0-9_]+_IMAGE=' "${REPO}/versions.env" | tr -d =)
+  done < <(grep -oE '^[A-Z0-9_]+_IMAGE=' "$VERSIONS" | tr -d =)
   {
     echo "### Pinned images in versions.env"
     echo
@@ -192,6 +206,35 @@ manifest() {
     return 1
   fi
   echo "All ${#rows[@]} pinned images exist."
+}
+
+# manifest_self_test: the manifest check against the real registry. A tag the
+# publisher rebuilt in place must still pass when its old digest is pinned,
+# and a digest that does not exist must fail. The old digest is the build of
+# PYTHON_IMAGE's 3.11.17 tag that main pinned until the publisher rebuilt the
+# tag in place (October 2026); a later bump of PYTHON_IMAGE's tag keeps the
+# case a moved tag.
+manifest_self_test() {
+  local fails=0 got img want moved wrong
+  local old=sha256:27e044f7e01fea05c1760324d58fc5360a0767b9ef098e74ddaf8c70b8f46d26
+  while IFS='|' read -r img want; do
+    got=$(manifest_ref "$img")
+    if [ "$got" = "$want" ]; then echo "[PASS] manifest_ref ${img} -> ${got}"
+    else echo "[FAIL] manifest_ref ${img}: got ${got}, want ${want}"; fails=$((fails + 1)); fi
+  done <<'CASES'
+example/tool:1.0--h1@sha256:abc|example/tool@sha256:abc
+localhost:5000/example/tool:2@sha256:abc|localhost:5000/example/tool@sha256:abc
+localhost:5000/example/tool@sha256:abc|localhost:5000/example/tool@sha256:abc
+example/tool:1.0|example/tool:1.0
+CASES
+  moved="$(manifest_ref "${PYTHON_IMAGE%@*}@${old}")"
+  if inspect_ref "$moved" >/dev/null; then echo "[PASS] a tag rebuilt in place resolves by its pinned digest (${moved})"
+  else echo "[FAIL] a tag rebuilt in place resolves by its pinned digest (${moved})"; fails=$((fails + 1)); fi
+  wrong="$(manifest_ref "${PYTHON_IMAGE%@*}@sha256:$(printf '0%.0s' $(seq 64))")"
+  if inspect_ref "$wrong" >/dev/null; then echo "[FAIL] a digest that does not exist fails (${wrong})"; fails=$((fails + 1))
+  else echo "[PASS] a digest that does not exist fails (${wrong})"; fi
+  if [ "$fails" -gt 0 ]; then echo "manifest self-test: ${fails} case(s) failed" >&2; return 1; fi
+  echo "manifest self-test: all cases passed"
 }
 
 # ----------------------------------------------------------- docker helpers
@@ -687,6 +730,9 @@ smoke() {
 case "${1:-}" in
   --manifest)
     manifest
+    ;;
+  --manifest-self-test)
+    manifest_self_test
     ;;
   --check)
     load_table

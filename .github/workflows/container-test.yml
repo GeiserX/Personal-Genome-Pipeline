@@ -12,8 +12,11 @@ name: Container Test
 #                 It also fails when an image has no row, so a new image cannot
 #                 be added untested.
 #   manifest      `docker manifest inspect` on every pinned image: metadata
-#                 only, seconds per image, and it catches a tag or digest the
-#                 publisher removed. It prints the platforms each image ships.
+#                 only, seconds per image, and it catches a digest the
+#                 publisher removed. It resolves the pinned digest alone, so a
+#                 tag rebuilt in place stays green (Renovate repins it). It
+#                 prints the platforms each image ships. A self-test first
+#                 proves a moved tag passes and a missing digest fails.
 #                 Skipped when plan picked no image.
 #   smoke         one job per picked image: free disk, prepare the inputs its
 #                 rows need, pull it, run the rows, check the outputs.
@@ -124,7 +127,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Self-test (a tag rebuilt in place passes, a missing digest fails)
+        run: scripts/ci/image-smoke.sh --manifest-self-test
+
       - name: Every pinned image still exists
+        if: ${{ !cancelled() }}
         run: scripts/ci/image-smoke.sh --manifest
 
   smoke:
