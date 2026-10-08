@@ -142,6 +142,20 @@ sam_https() {
     -v "${OUT}:/w" -w /w "$SAMTOOLS_IMAGE" samtools "$@"
 }
 bcf() { in_image "$BCFTOOLS_IMAGE" bcftools "$@"; }
+# retry CMD...: up to four tries, 15, 30 then 45 seconds apart. A stream from
+# GIAB's S3 mirror sometimes dies half way ("Failed to read BGZF header"
+# after a dropped connection); the same call then succeeds. samtools -o
+# rewrites its output on each try.
+retry() {
+  local i
+  for i in 1 2 3 4; do
+    "$@" && return 0
+    [ "$i" -lt 4 ] || break
+    echo "  try ${i} of 4 failed; again in $((i * 15)) s" >&2
+    sleep $((i * 15))
+  done
+  return 1
+}
 fetch() { curl -fsSL --retry 5 --retry-delay 10 -o "$2" "$1"; }
 
 echo "=== Fixture ${VERSION}: ${OUT} ==="
@@ -173,7 +187,7 @@ echo "[2/8] Streaming ${#REGIONS[@]} regions from the GIAB HG002 60x BAM"
 fetch "${BAM_URL}.bai" "${WORK}/source.bam.bai"
 # -M: one pass over the regions in file order, so the output is sorted and a
 # read that overlaps two regions is written once.
-sam_https view -@ "$THREADS" -M -b -X -o /w/.work/slice_full.bam "$BAM_URL" /w/.work/source.bam.bai "${REGIONS[@]}"
+retry sam_https view -@ "$THREADS" -M -b -X -o /w/.work/slice_full.bam "$BAM_URL" /w/.work/source.bam.bai "${REGIONS[@]}"
 sam index /w/.work/slice_full.bam
 FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
@@ -223,7 +237,7 @@ for g in $(seq 0 $((CYRIUS_GROUPS - 1))); do
   awk -v g="$g" -v n="$CYRIUS_GROUPS" 'BEGIN {OFS = "\t"}
     {c = $1; sub(/^chr/, "", c)} c % n == g {print $1, $2, $3}' \
     "${WORK}/cyrius_regions.bed" > "${WORK}/cyrius_${g}.bed"
-  sam_https view -M -b -X -L "/w/.work/cyrius_${g}.bed" -o "/w/.work/cyrius_${g}.bam" \
+  retry sam_https view -M -b -X -L "/w/.work/cyrius_${g}.bed" -o "/w/.work/cyrius_${g}.bam" \
     "$BAM_URL" /w/.work/source.bam.bai &
   pids+=("$!")
 done
