@@ -10,9 +10,12 @@ Checks:
      and never read as its first diplotype; a report that parses to zero genes
      makes `pgx_parse.py cpic-report` exit 1 with a PARSING FAILED report,
      never an all-clear;
-  2. on PharmCAT's own example report (pharmcat-docs-example.json, 10 genes
-     with a non-normal phenotype) every such gene gets a drug list, with the
-     recommendation for its own diplotype; synthetic genes check the fallbacks:
+  2. on PharmCAT's own example report (pharmcat-docs-example.json) exactly 3
+     genes count as non-normal (CYP2D6, HLA-B, NAT2); the 7 whose phenotype is
+     n/a, 'no phenotype assigned', a genotype or 'Uncertain Susceptibility' are
+     'unclassified', listed on their own and given no drug list; every
+     non-normal gene gets a drug list, with the recommendation for its own
+     diplotype; synthetic genes check the fallbacks:
      the report's `drugs` section first, then `relatedDrugs`, then the static
      table, and otherwise a line saying it is not in the drug table;
   3. the flat (3.x), nested (2.x) and list layouts all parse;
@@ -138,9 +141,45 @@ def main():
             example = json.load(f)
         _, ecalls = pgx_parse.parse_genes(example)
         nonnormal = [c for c in ecalls if c.status == "non-normal"]
-        check("example report: 10 genes with a non-normal phenotype", len(nonnormal) == 10, [c.gene for c in nonnormal])
-        rc, rec, _, _ = run_report(work, "EXAMPLE", example)
+        check("example report: 3 genes with a non-normal phenotype (CYP2D6, HLA-B, NAT2)",
+              sorted(c.gene for c in nonnormal) == ["CYP2D6", "HLA-B", "NAT2"], [c.gene for c in nonnormal])
+        unclassified = ["CACNA1S", "CFTR", "CYP4F2", "IFNL3", "MT-RNR1", "RYR1", "VKORC1"]
+        check("example report: n/a, 'no phenotype assigned', a genotype and 'Uncertain Susceptibility' are unclassified",
+              sorted(c.gene for c in ecalls if c.status == "unclassified") == unclassified,
+              [(c.gene, c.phenotype, c.status) for c in ecalls])
+        rc, rec, erows, _ = run_report(work, "EXAMPLE", example)
         check("cpic-report on the example report exits 0", rc == 0, rc)
+        meds = rec.split("Affected Medications:")[1].split("\n\n", 1)[1].split("Called Genes Without")[0]
+        check("example: the medications section lists only the 3 non-normal genes",
+              sorted(l.split(" -- ")[0].strip() for l in meds.splitlines() if l.startswith("  ") and " -- " in l
+                     and not l.startswith("   ")) == ["CYP2D6", "HLA-B", "NAT2"], meds[:1500])
+        own = rec.split("Called Genes Without a Function Phenotype:")[-1].split("Uncallable Genes:")[0]
+        check("example: the unclassified genes are listed in their own section, VKORC1 with its genotype",
+              all(f"  {g} -- " in own for g in unclassified) and "  VKORC1 -- -1639 GG (" in own, own)
+        check("example: the phenotypes table says unclassified for them",
+              sorted(r[0] for r in erows if r[3] == "unclassified") == unclassified, erows)
+        for phen, want in (("Likely Poor Metabolizer", True), ("Possible Intermediate Metabolizer", True),
+                           ("Ultrarapid Metabolizer", True), ("Possible Decreased Function", True),
+                           ("Increased Function", True), ("Deficient", True), ("Deficient with CNSHA", True),
+                           ("Malignant Hyperthermia Susceptibility", True), ("*57:01 positive", True),
+                           ("increased risk of aminoglycoside-induced hearing loss", True),
+                           ("ivacaftor responsive in CF patients", True),
+                           ("ivacaftor non-responsive in CF patients", False), ("Indeterminate", False),
+                           ("n/a", False), ("no phenotype assigned", False), ("-1639 GA", True),
+                           ("-1639 AA", True), ("-1639 GG", False),
+                           ("Uncertain Susceptibility", False), ("*58:01 negative", False)):
+            check(f"is_non_normal({phen!r}) is {want}", pgx_parse.is_non_normal(phen) is want)
+        ga = json.loads(json.dumps(example))
+        ga["genes"]["VKORC1"]["sourceDiplotypes"][0].update(
+            label="rs9923231 reference (C)/rs9923231 variant (T)", phenotypes=["-1639 GA"])
+        _, gcalls = pgx_parse.parse_genes(ga)
+        check("example with VKORC1 -1639 GA: VKORC1 counts as non-normal",
+              [c.status for c in gcalls if c.gene == "VKORC1"] == ["non-normal"],
+              [(c.gene, c.phenotype, c.status) for c in gcalls if c.gene == "VKORC1"])
+        rc, grec, _, _ = run_report(work, "EXAMPLE_GA", ga)
+        check("example with VKORC1 -1639 GA: its drug list names warfarin",
+              rc == 0 and "    Drugs" in block(grec, "VKORC1") and "warfarin" in block(grec, "VKORC1"),
+              block(grec, "VKORC1"))
         for c in nonnormal:
             b = block(rec, c.gene)
             check(f"example {c.gene} ({c.phenotype}): a drug list", "    Drugs" in b and "not in the drug table" not in b, b)

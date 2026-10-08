@@ -135,7 +135,9 @@ run_in() {
   fi
   "$CONTAINER_ENGINE" "${args[@]}" ${extra[@]+"${extra[@]}"} "$@" || rc=$?
   if [ "$rc" -ne 0 ] && ! $root && [ -n "${SAMPLE:-}" ]; then
-    other=$(find "${GENOME_DIR}/${SAMPLE}" ! -user "$(id -u)" -print 2>/dev/null | head -n 1)
+    # A root-owned *.lock (left by a Nextflow CRAM_ARCHIVE task under
+    # --user root) is opened read-only and blocks nothing: not worth the hint.
+    other=$(find "${GENOME_DIR}/${SAMPLE}" ! -user "$(id -u)" ! -name '*.lock' -print 2>/dev/null | head -n 1)
     if [ -n "$other" ]; then
       echo "NOTE: ${other} is not yours. Older versions of this pipeline ran every container as root;" >&2
       echo "  steps now run as you and cannot write over such files. If the error above is" >&2
