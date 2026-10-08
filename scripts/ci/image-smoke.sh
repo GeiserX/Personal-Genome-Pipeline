@@ -162,8 +162,22 @@ has_opt() { [[ ",${1}," == *",${2},"* ]]; }
 
 # --------------------------------------------------------------- manifest
 # manifest_ref IMAGE: the reference the manifest check resolves for a
-# versions.env image.
-manifest_ref() { printf '%s\n' "$1"; }
+# versions.env image. A name:tag@digest pin resolves as name@digest: with the
+# tag in the reference Docker fetches the tag and fails with "manifest
+# verification failed" as soon as the publisher rebuilds it in place, though
+# the pinned digest still exists and is what every step pulls. Tag drift is
+# Renovate's to report, as a digest update. An image without a digest is
+# resolved as written.
+manifest_ref() {
+  local img=$1 name last
+  case "$img" in *@*) ;; *) printf '%s\n' "$img"; return ;; esac
+  name=${img%@*}
+  last=${name##*/}
+  # A colon in the last path component is the tag; one before a slash is a
+  # registry port.
+  [[ "$last" == *:* ]] && name=${name%:*}
+  printf '%s@%s\n' "$name" "${img##*@}"
+}
 
 # inspect_ref REF: `docker manifest inspect -v`, three tries; the JSON on
 # stdout, or "FAILED: <docker's message>" and exit 1.
