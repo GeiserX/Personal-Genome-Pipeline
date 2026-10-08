@@ -73,7 +73,7 @@ CYP2D6       *x/*y                          <phenotype>
 
 ### Affected Medications
 
-Only genes where your phenotype is not normal appear here, each with the drugs and the CPIC recommendation PharmCAT matched to your result. A phenotype PharmCAT leaves unassigned (`n/a`, `no phenotype assigned`) is listed too: the drug guidance for such genes depends on the diplotype, and the report shows it. Genes that could not be called are listed separately at the end. Their absence from the medications section does NOT mean normal function.
+Only genes with a non-normal phenotype (point 3 above) appear here, each with the drugs and the CPIC recommendation PharmCAT matched to your result. A called gene whose phenotype names no changed function (`n/a`, `no phenotype assigned`, the reference VKORC1 genotype `-1639 GG`, `Uncertain Susceptibility`) is `unclassified`: it gets no drug list and is listed under "Called Genes Without a Function Phenotype". A variant allele in such a gene can still matter, so check PharmCAT's HTML report for it. Genes that could not be called are listed separately at the end. Their absence from the medications section does NOT mean normal function.
 
 ### Calls From Other Tools
 
