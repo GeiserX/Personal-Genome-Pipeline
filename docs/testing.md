@@ -130,3 +130,15 @@ E2E_WORK=/path/with/space scripts/ci/e2e-run.sh '3*'     # only cases whose file
 ```
 
 A partial run is for debugging: later cases read what earlier cases wrote.
+
+## Retaking the report pictures
+
+The pictures of the HTML report (step 24), the CPIC report (step 27) and the MultiQC report (step 28) in these docs show DEMO-001, an invented sample. [`tests/demo/retake-screenshots.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/demo/retake-screenshots.sh) makes them again after a change to a report:
+
+```bash
+DEMO_TERMS_FILE=~/private-terms.txt tests/demo/retake-screenshots.sh /path/to/work
+```
+
+It writes DEMO-001 from a fixed seed (`tests/demo/make_demo_sample.py`; no real sample is read), runs steps 36, 27, 24 and 28 on it with the pinned images, and stops if a section of the report has no value, so no card says "Not run". It then draws the three pictures into `/path/to/work/pictures` with a pinned Chromium and Pillow, and checks them: only image data in each PNG, and on macOS the OCR finds DEMO-001 and none of the terms in `DEMO_TERMS_FILE` (your names and host names, one regular expression per line; keep that file outside the repository). The check runs a self-test first, on planted bad pictures. Docker must see the work folder and the checkout: with Colima, keep both under the home folder or `/private/tmp`.
+
+Look at the pictures, copy them into `docs/images/`, and update the alt text where the cards changed. A new report card that the generator does not feed yet stops the script with its name; add its input file to `make_demo_sample.py`.
