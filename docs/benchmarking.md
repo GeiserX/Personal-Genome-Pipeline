@@ -127,7 +127,7 @@ printf 'chr20\t0\t64444167\n' > "${GENOME_DIR}/chr20.bed"
 
 With a regions BED (`--regions`, or the set's own), hap.py compares only the contigs that BED names (`-l`); without it hap.py takes chr1-22, chrX and chrY and stops on a contig the reference lacks.
 
-v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture. When every try of a v5.0q download gets HTTP 404, that case prints `SKIPPED v5.0q: GIAB truth set unavailable upstream (HTTP 404 after N tries)`, writes the same line to the run's summary and does not fail; a wrong md5, a hap.py error or a low recall still fails it, and so does any v4.2.1 failure.
+v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture. The fixture carries both sets' files as GIAB publishes them, so the case copies them into `${GENOME_DIR}/giab/` and the step checks them by md5 there; every download is pointed at a host that never resolves, so the case fails if the step tries one. An NCBI outage cannot block it.
 
 ### Download HG002 Truth Set by hand
 
