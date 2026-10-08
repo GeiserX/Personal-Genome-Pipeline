@@ -91,7 +91,8 @@ def bash_folder(d, s="S"):
     put(f"{d}/slivar/{s}_slivar_summary.tsv", "CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\nchr1\t1\tA\tG\tHIGH\tX\n")
     put(f"{d}/hla_t1k/{s}_hla_genotype.tsv", "HLA-A\t2\tA*01:01:01\t30\t60\tA*02:01:01\t20\t55\t\n")
     put(f"{d}/cpic/{s}_phenotypes.tsv", "Gene\tDiplotype\tPhenotype\tStatus\n"
-        "CYP2D6\t*1/*4\tIntermediate Metabolizer\tnon-normal\nCYP2C19\t*1/*1\tNormal Metabolizer\tnormal\n")
+        "CYP2D6\t*1/*4\tIntermediate Metabolizer\tnon-normal\nCYP2C19\t*1/*1\tNormal Metabolizer\tnormal\n"
+        "VKORC1\trs9923231 reference (C)/rs9923231 reference (C)\t-1639 GG\tunclassified\n")
     put(f"{d}/cpic/{s}_cpic_recommendations.txt", "Pharmacogenomic Drug Recommendations\n")
     put(f"{d}/pypgx/{s}_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\nCYP2D6\t*4/*1\tIM\t.\tbam\n")
     put(f"{d}/cyrius/{s}_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\t*1/*4\tPASS\n")
@@ -113,6 +114,8 @@ def main():
         errs = validate.validate(schema, json.loads(json.dumps(summ)))
         check("bash folder: the summary validates against the schema", not errs, errs)
         sec = summ["sections"]
+        check("CPIC: an unclassified gene (VKORC1 -1639 GG) is not counted as non-normal",
+              sec["cpic"]["data"]["non_normal"] == 1, sec["cpic"]["data"])
         check("ClinVar: 3 hits, best-reviewed first", sec["clinvar"]["data"]["count"] == 3
               and [h["gene"] for h in sec["clinvar"]["data"]["hits"]] == ["GENEB", "GENEA", "GENEC"],
               sec["clinvar"]["data"])

@@ -70,6 +70,23 @@ SOURCES = [
 
 NO_CALL_NAMES = {"", "unknown", "none", "?", "n/a"}
 NORMAL_WORDS = {"normal", "typical", "extensive"}
+# The phenotypes that count as non-normal: a changed metabolism or function, a
+# positive HLA test, a G6PD deficiency, malignant hyperthermia susceptibility,
+# an increased risk (MT-RNR1) or an ivacaftor-responsive CFTR. Each is matched
+# against one ';'-separated part of PharmCAT's phenotype, lower-cased. Anything
+# else PharmCAT writes for a called gene (n/a, 'no phenotype assigned', a
+# genotype such as VKORC1 '-1639 GG', 'Uncertain Susceptibility',
+# 'Indeterminate') names no changed function: the gene is 'unclassified',
+# not counted and given no drug guidance.
+NON_NORMAL_PATTERNS = [re.compile(p) for p in (
+    r"((likely|possible) )?(poor|intermediate|rapid|ultra ?rapid) metabolizer",
+    r"((likely|possible) )?(decreased|increased|poor|no) function",
+    r".+ positive",
+    r"deficient( with cnsha)?|variable",
+    r"malignant hyperthermia susceptib(le|ility)",
+    r"increased risk of .+",
+    r"ivacaftor responsive( in cf patients)?",
+)]
 
 
 class GeneCall:
@@ -95,14 +112,18 @@ class GeneCall:
 
     @property
     def status(self):
-        """'not called', 'ambiguous', 'normal' or 'non-normal' (listed with its drugs)."""
+        """'not called', 'ambiguous', 'normal', 'non-normal' (listed with its
+        drugs) or 'unclassified' (called, with no phenotype that says normal
+        or changed function)."""
         if not self.called:
             return "not called"
         if self.ambiguous:
             return "ambiguous"
         if is_normal(self.phenotype):
             return "normal"
-        return "non-normal"
+        if is_non_normal(self.phenotype):
+            return "non-normal"
+        return "unclassified"
 
     def row(self):
         return (self.gene, self.diplotype, self.phenotype, self.status)
@@ -116,6 +137,12 @@ def is_normal(phenotype):
     if all(p.endswith(" negative") for p in parts):
         return True
     return all(NORMAL_WORDS & set(p.replace("-", " ").split()) for p in parts)
+
+
+def is_non_normal(phenotype):
+    """A phenotype with at least one part in NON_NORMAL_PATTERNS."""
+    parts = [" ".join(p.lower().replace("-", " ").split()) for p in phenotype.split(";")]
+    return any(r.fullmatch(p) for p in parts if p for r in NON_NORMAL_PATTERNS)
 
 
 def _one_diplotype(dip):
@@ -554,6 +581,16 @@ def cpic_report(args):
         lines += ["  The data cannot tell them apart (often positions missing from the VCF), so no",
                   "  drug guidance is given for them here. See the PharmCAT HTML report.", ""]
 
+    unclassified = [c for c in calls if c.status == "unclassified"]
+    if unclassified:
+        lines += ["Called Genes Without a Function Phenotype:", "-" * 72, ""]
+        for c in unclassified:
+            lines.append(f"  {c.gene} -- {c.phenotype} ({c.diplotype})")
+        lines += ["  PharmCAT called these genes but its phenotype (n/a, a genotype, 'no phenotype",
+                  "  assigned', an uncertain result) names no changed function, so they are not",
+                  "  counted as non-normal and get no drug list here. A variant allele among them",
+                  "  can still matter: see the PharmCAT HTML report.", ""]
+
     if args.consensus:
         lines += ["Calls From Other Tools (outside calls, step 36):", "-" * 72, ""]
         if consensus_error:
@@ -612,7 +649,7 @@ def cpic_report(args):
         print(f"Comparison written: {args.comparison} (concordant {same}, other {len(rows) - same})")
 
     print(f"Genes parsed: {len(calls)}; non-normal: {len(listed)}; ambiguous: {len(ambiguous)}; "
-          f"not called: {len(uncalled)}")
+          f"unclassified: {len(unclassified)}; not called: {len(uncalled)}")
     return 0
 
 
