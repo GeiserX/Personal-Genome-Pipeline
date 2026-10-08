@@ -50,6 +50,11 @@ The comparison used to be written by step 32. It moved here because `run-all.sh`
 | `cpic/${SAMPLE}_phenotypes.tsv` | One row per gene: `Gene`, `Diplotype`, `Phenotype`, `Status` (`normal`, `non-normal`, `unclassified`, `ambiguous` or `not called`) |
 | `pypgx/${SAMPLE}_pharmcat_comparison.tsv` | PharmCAT and pypgx diplotypes side by side (only when step 32 ran) |
 
+<figure markdown="span">
+  ![The top of the step 27 text report: the sample, the PharmCAT version and the gene results table with each gene's diplotype and phenotype](images/demo-cpic-report.png){ loading=lazy }
+  <figcaption>The top of the report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. HLA-A, HLA-B and CYP2D6 are marked as outside calls: step 36 passed them to PharmCAT from the BAM-based callers. Below this table the report lists the medications for each gene that is not normal, the outside calls and the genes that could not be called.</figcaption>
+</figure>
+
 ## Runtime
 
 About a minute, mostly container start-up.
