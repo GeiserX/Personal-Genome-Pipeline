@@ -9,11 +9,15 @@ Checks:
      GRCh38 position dropped, rows off the autosomes (chrX, chrY) dropped
      from both the score and the allele list, the label from
      assets/pgs_scores.tsv; and it
-     refuses a GRCh37 file and a non-additive one;
+     refuses a GRCh37 file and a non-additive one; with --keep-x (the
+     sample's sex is known) the chrX rows stay in both and chrY still goes;
+     chrx_rows.tsv records per score how many chrX rows it has and whether
+     they were scored or left out;
   2. prs-table without a panel: the sum from aggregated_scores.txt.gz as
      pgsc_calc wrote it but without ".0", matched and total counts from the
-     match summary, Percentile and Ancestry_Group NA, Input last; a score
-     pgsc_calc dropped (below its minimum overlap) has no sum;
+     match summary, Percentile and Ancestry_Group NA, ChrX from
+     chrx_rows.tsv, Input last; a score pgsc_calc dropped (below its minimum
+     overlap) has no sum;
   3. prs-table with a panel: the percentile and group of the target sample
      only (not the reference samples in the same file), and the ancestry table
      with the population and the principal components;
@@ -21,7 +25,8 @@ Checks:
      sum, the matched count unknown and the rate from pgscatalog-match's log;
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
-     percentiles only then.
+     percentiles only then; a score whose chrX rows were left out is named,
+     one whose chrX rows were scored is not.
 
 Run: python3 tests/test_render_report.py
 """
@@ -112,6 +117,26 @@ def main():
             al = f.read().splitlines()
         check("prs-format: every effect and other allele of the autosomes, chr-prefixed and sorted",
               al == ["chr1\t1100\tA", "chr1\t1100\tG", "chr2\t2200\tC", "chr2\t2200\tT", "chr3\t3300\tG"], al)
+        with open(f"{work}/pgs/chrx_rows.tsv") as f:
+            cx = f.read().splitlines()
+        check("prs-format: chrx_rows.tsv says the score's one chrX row was left out",
+              cx == ["pgs_id\tchrx_rows\tchrx", "PGS000001\t1\tleft out"], cx)
+        # --keep-x: the sample's sex is known
+        rc = collect_summary.main(["prs-format", "--scores", f"{work}/in", "--labels", f"{work}/labels.tsv",
+                                   "--out", f"{work}/pgsx", "--alleles", f"{work}/allelesx.tsv", "--keep-x"])
+        check("prs-format --keep-x exits 0", rc == 0, rc)
+        with gzip.open(f"{work}/pgsx/PGS000001.txt.gz", "rt") as f:
+            lx = f.read().splitlines()
+        check("prs-format --keep-x: the chrX row stays, the chrY row still goes",
+              lx[5:] == ["1\t1100\tA\tG\t0.5", "2\t2200\tC\tT\t-0.25", "3\t3300\tG\t\t1", "X\t51000000\tA\tG\t1"], lx[5:])
+        with open(f"{work}/allelesx.tsv") as f:
+            alx = f.read().splitlines()
+        check("prs-format --keep-x: the chrX alleles are in the allele list, after the autosomes",
+              alx[-2:] == ["chrX\t51000000\tA", "chrX\t51000000\tG"] and not any(a.startswith("chrY") for a in alx), alx)
+        with open(f"{work}/pgsx/chrx_rows.tsv") as f:
+            cxx = f.read().splitlines()
+        check("prs-format --keep-x: chrx_rows.tsv says the chrX row was scored",
+              cxx == ["pgs_id\tchrx_rows\tchrx", "PGS000001\t1\tscored"], cxx)
         put(f"{work}/bad37/PGS000009.txt.gz", HM.replace("HmPOS_build=GRCh38", "HmPOS_build=GRCh37"), gz=True)
         rc = collect_summary.main(["prs-format", "--scores", f"{work}/bad37", "--out", f"{work}/o37", "--alleles", f"{work}/a37"])
         check("prs-format refuses a file harmonised to GRCh37", rc == 1, rc)
@@ -135,10 +160,10 @@ def main():
         hdr, rows = read_rows(out)
         check("prs-table exits 0", rc == 0, rc)
         check("prs-table: the columns, Input last", hdr == collect_summary.PRS_COLUMNS and hdr[-1] == "Input", hdr)
-        check("prs-table: sum 62 (not 62.0), 2 of 3 matched, no percentile",
-              rows[0] == ["Coronary artery disease", "PGS000001", "62", "2", "3", "66.7", "NA", "NA", "gvcf"], rows[0])
-        check("prs-table: a score pgsc_calc dropped has no sum and its counts",
-              rows[1] == ["Trait two", "PGS000002", "NA", "0", "5", "0.0", "NA", "NA", "gvcf"], rows[1])
+        check("prs-table: sum 62 (not 62.0), 2 of 3 matched, no percentile, its chrX row left out",
+              rows[0] == ["Coronary artery disease", "PGS000001", "62", "2", "3", "66.7", "NA", "NA", "1 left out", "gvcf"], rows[0])
+        check("prs-table: a score pgsc_calc dropped has no sum and its counts; no chrX entry for a score prs-format did not write",
+              rows[1] == ["Trait two", "PGS000002", "NA", "0", "5", "0.0", "NA", "NA", "", "gvcf"], rows[1])
 
         # 3. prs-table with a panel
         pgsc_results(f"{work}/adj", adjusted=True)
@@ -161,7 +186,7 @@ def main():
                                    "--scores", f"{work}/pgs", "--input-kind", "vcf", "--zero-matches", "--out", out])
         hdr, rows = read_rows(out)
         check("prs-table --zero-matches: every score unmatched, Input vcf",
-              rc == 0 and [r[2:6] + r[8:] for r in rows] == [["NA", "0", "3", "0.0", "vcf"], ["NA", "0", "5", "0.0", "vcf"]], rows)
+              rc == 0 and [r[2:6] + r[9:] for r in rows] == [["NA", "0", "3", "0.0", "vcf"], ["NA", "0", "5", "0.0", "vcf"]], rows)
         rc = collect_summary.main(["prs-table", "--sample", "S", "--results", f"{work}/none", "--sampleset", "sample",
                                    "--scores", f"{work}/pgs", "--input-kind", "vcf", "--out", out])
         check("prs-table: no pgsc_calc output and no --zero-matches is an error", rc == 1, rc)
@@ -179,24 +204,29 @@ def main():
         # 5. the reports
         d = f"{work}/sample_raw/S"
         put(f"{d}/prs/S_prs_summary.tsv", "\t".join(collect_summary.PRS_COLUMNS) + "\n"
-            "Coronary artery disease\tPGS000001\t62\t2\t3\t66.7\tNA\tNA\tgvcf\n")
+            "Coronary artery disease\tPGS000001\t62\t2\t3\t66.7\tNA\tNA\t8 left out\tgvcf\n"
+            "Trait two\tPGS000002\t1\t5\t5\t100.0\tNA\tNA\t3 scored\tgvcf\n")
         summ = collect_summary.collect("S", d)
         txt, html = render_report.text_report(summ), render_report.html_report(summ)
         check("no panel: the raw-score line in both reports", "Raw score only" in txt and "Raw score only" in html)
+        check("chrX left out: both reports name the score and its row count, not the scored one",
+              "Rows on chrX were left out, because the sample's sex was not given: PGS000001 (8)." in txt
+              and "Rows on chrX were left out, because the sample&#x27;s sex was not given: PGS000001 (8)." in html
+              and "PGS000002 (3)" not in txt, txt)
         check("no panel: the HTML row says raw score only", "<td>raw score only</td>" in html)
         check("no panel: not-assessed names the missing percentiles",
               collect_summary.PRS_NOT_ADJUSTED in summ["not_assessed"])
         d = f"{work}/sample_adj/S"
         put(f"{d}/prs/S_prs_summary.tsv", "\t".join(collect_summary.PRS_COLUMNS) + "\n"
-            "Coronary artery disease\tPGS000001\t1.25\t2\t3\t66.7\t94.4\tEUR\tgvcf\n")
+            "Coronary artery disease\tPGS000001\t1.25\t2\t3\t66.7\t94.4\tEUR\t0\tgvcf\n")
         put(f"{d}/ancestry/S_ancestry.tsv", "key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\npopulation\tEUR\n")
         summ = collect_summary.collect("S", d)
         txt, html = render_report.text_report(summ), render_report.html_report(summ)
         check("panel: the percentile with its group in the text report", "percentile 94.4 (EUR)" in txt, txt)
         check("panel: the percentile with its group in the HTML report", "<td>94.4 (EUR)</td>" in html)
-        check("panel: the note names the group and the panel, no raw-score line",
+        check("panel: the note names the group and the panel, no raw-score line, no chrX line",
               "among the EUR samples of the pgsc_1000G_v1 reference panel" in txt and "Raw score only" not in txt
-              and "Raw score only" not in html, txt)
+              and "Raw score only" not in html and "Rows on chrX" not in txt, txt)
         check("panel: no not-assessed line about percentiles", collect_summary.PRS_NOT_ADJUSTED not in summ["not_assessed"])
     finally:
         shutil.rmtree(work)
