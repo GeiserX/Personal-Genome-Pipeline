@@ -57,7 +57,7 @@ hide:
 - **Everything else the reads hold:** HLA type, repeat expansions at the 31 loci of ExpansionHunter's catalog (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
-  ![The step 24 HTML report: cards for variant calling, ClinVar, pharmacogenomics, structural variants, cancer predisposition, repeat expansions, ancestry, mitochondria and the clinical filter](images/demo-html-report.png){ loading=lazy }
+  ![The step 24 HTML report: cards for quality control, variant calling, ClinVar, pharmacogenomics, CPIC, CYP2D6 across callers, HLA typing, structural variants, cancer predisposition, repeat expansions, runs of homozygosity, the mitochondrial and Y haplogroups, telomere length, mitochondrial variants, the clinical filter and slivar, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }
   <figcaption markdown>The HTML report from [step 24](24-html-report.md), run on DEMO-001, an invented sample. Every number in it is made up.</figcaption>
 </figure>
 

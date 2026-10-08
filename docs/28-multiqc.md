@@ -56,7 +56,7 @@ In the Nextflow pipeline, `multiqc` reads the mosdepth summaries only. A run wit
 | HTML report | `multiqc/multiqc_report.html` | Interactive QC dashboard (open in browser) |
 
 <figure markdown="span">
-  ![The MultiQC report: the General Statistics table, then the mosdepth cumulative coverage plot](images/demo-multiqc-report.png){ loading=lazy }
+  ![The MultiQC report: the General Statistics table, then the haplocheck and somalier tables](images/demo-multiqc-report.png){ loading=lazy }
   <figcaption>The top of the MultiQC report for DEMO-001, an invented sample. The read counts and the coverage are made up. The samtools numbers sit in a second row, DEMO-001_flagstat, because MultiQC names that sample after the file.</figcaption>
 </figure>
 

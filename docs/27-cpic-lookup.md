@@ -51,8 +51,8 @@ The comparison used to be written by step 32. It moved here because `run-all.sh`
 | `pypgx/${SAMPLE}_pharmcat_comparison.tsv` | PharmCAT and pypgx diplotypes side by side (only when step 32 ran) |
 
 <figure markdown="span">
-  ![The step 27 text report: a gene results table, the affected medications for each gene that is not normal, and the genes that could not be called](images/demo-cpic-report.png){ loading=lazy }
-  <figcaption>The report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. CYP2D6 has no call here, so the report lists it under Uncallable Genes instead of leaving it out.</figcaption>
+  ![The top of the step 27 text report: the sample, the PharmCAT version and the gene results table with each gene's diplotype and phenotype](images/demo-cpic-report.png){ loading=lazy }
+  <figcaption>The top of the report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. HLA-A, HLA-B and CYP2D6 are marked as outside calls: step 36 passed them to PharmCAT from the BAM-based callers. Below this table the report lists the medications for each gene that is not normal, the outside calls and the genes that could not be called.</figcaption>
 </figure>
 
 ## Runtime
