@@ -5,11 +5,14 @@
 #     reads (both planted by a docker wrapper around the real samtools call):
 #     the step refuses each, keeps the BAM and leaves no CRAM;
 #   - the real CRAM: quickcheck passes, the read count equals the BAM's, it is
-#     smaller; --delete-bam then removes the BAM;
+#     smaller; a second archive started while the first runs stops on the
+#     sample's lock and the first ends with a checked CRAM; --delete-bam then
+#     removes the BAM;
 #   - --restore writes the BAM back, flagstat equal to the original, and step
 #     16b on it reports the depth it reports on the original;
-#   - Nextflow: a cram,crai row runs mosdepth through CRAM_TO_BAM with the
-#     depth of the BAM row beside it, whose CRAM_ARCHIVE writes a checked CRAM.
+#   - Nextflow: CRAM_ARCHIVE fails while the BAM's lock is held; then a
+#     cram,crai row runs mosdepth through CRAM_TO_BAM with the depth of the
+#     BAM row beside it, whose CRAM_ARCHIVE writes a checked CRAM.
 . "$(dirname "$0")/lib.sh"
 
 G="$GENOME_DIR"
@@ -93,6 +96,32 @@ echo "BAM ${BAM_B} bytes, CRAM ${CRAM_B} bytes" | tee -a "$E2E_NOTES"
 check "the CRAM is smaller than the BAM" test "$CRAM_B" -gt 0 -a "$CRAM_B" -lt "$BAM_B"
 check "the BAM is kept without --delete-bam" test -s "${A}/${C}_sorted.bam"
 
+# --- 2b. a second run while the first holds the lock -------------------------------------
+# The first archive runs in the background. Once it is writing its CRAM (the
+# .part.cram is there), a second archive with --delete-bam starts: it must stop
+# on the sample's lock, leave the BAM, and the first must end with a checked
+# CRAM.
+"${REPO}/scripts/34-cram-archive.sh" "$C" > "${CASE_TMP}/first.log" 2>&1 &
+FIRST=$!
+for _ in $(seq 1 600); do
+  [ -e "${A}/${C}_sorted.part.cram" ] && break
+  kill -0 "$FIRST" 2>/dev/null || break
+  sleep 0.1
+done
+check "the first archive is writing its CRAM when the second starts" test -e "${A}/${C}_sorted.part.cram"
+run_step 34-cram-archive.sh "$C" --delete-bam
+check "the second archive refuses (exit ${STEP_RC})" test "$STEP_RC" -ne 0
+check "it says another run holds the sample's lock" \
+  has "another archive or restore of ${C} is running: it holds ${A}/${C}_sorted.lock" "$(cat "$STEP_LOG")"
+check "the BAM is kept, unchanged" test "$(md5sum < "${A}/${C}_sorted.bam" 2>/dev/null)" = "$BAM_SUM"
+FIRST_RC=0
+wait "$FIRST" || FIRST_RC=$?
+cat "${CASE_TMP}/first.log"
+check_eq "the first archive finishes" "$FIRST_RC" 0
+check "its CRAM passes quickcheck" sam quickcheck "${C}/aligned/${C}_sorted.cram"
+check_eq "its CRAM holds every read of the BAM" \
+  "$(reads -T reference/GRCh38_no_alt_analysis_set.fasta "${C}/aligned/${C}_sorted.cram")" "$N_BAM"
+
 run_step 34-cram-archive.sh "$C" --delete-bam
 check_step_exit 34-cram-archive.sh
 check "--delete-bam removed the BAM and its index" test ! -e "${A}/${C}_sorted.bam" -a ! -e "${A}/${C}_sorted.bam.bai"
@@ -124,6 +153,27 @@ if command -v nextflow >/dev/null; then
     echo "${SAMPLE},${V},${V}.tbi,${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam,${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai,,,female"
   } > "${D}/samplesheet.csv"
   cat "${D}/samplesheet.csv"
+  # CRAM_ARCHIVE takes the lock step 34 takes, beside the BAM the row names:
+  # with the lock held here, a run of it alone on the BAM row must fail.
+  BL="${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.lock"
+  : >> "$BL"
+  ( exec 8<"$BL"; flock -n 8 && exec sleep 600 ) &
+  HOLDER=$!
+  for _ in $(seq 1 50); do flock -n "$BL" true || break; sleep 0.1; done
+  head -n 1 "${D}/samplesheet.csv" > "${D}/locked.csv"
+  tail -n 1 "${D}/samplesheet.csv" >> "${D}/locked.csv"
+  ( cd "$D" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -work-dir "${D}/work-locked" \
+      --input "${D}/locked.csv" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
+      --tools cram_archive --outdir "${D}/out-locked" --max_cpus 4 --max_memory 14.GB ) > "${D}/locked.log" 2>&1
+  RC=$?
+  kill "$HOLDER" 2>/dev/null
+  wait "$HOLDER" 2>/dev/null
+  grep -vE 'Pulling|Waiting|Verifying|Download complete|Pull complete|Already exists' "${D}/locked.log"
+  check "CRAM_ARCHIVE with the lock held fails the run (exit ${RC})" test "$RC" -ne 0
+  check "it says another run holds the lock" \
+    has "another archive or restore of ${SAMPLE} is running: it holds ${BL}" "$(cat "${D}/locked.log")"
+  check "it wrote no CRAM" test ! -e "${D}/out-locked/${SAMPLE}/aligned/${SAMPLE}_sorted.cram"
+
   ( cd "$D" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -work-dir "${D}/work" \
       --input "${D}/samplesheet.csv" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
       --tools mosdepth,cram_archive --outdir "${D}/out" --max_cpus 4 --max_memory 14.GB ) > "${D}/run.log" 2>&1
@@ -149,6 +199,8 @@ if command -v nextflow >/dev/null; then
          samtools view -c -T /genome/reference/GRCh38_no_alt_analysis_set.fasta "/out/${SAMPLE}/aligned/${SAMPLE}_sorted.cram" 2>/dev/null)" \
     "$N_BAM"
   check "no CRAM was written for the CRAM row" test ! -e "${D}/out/${C}/aligned/${C}_sorted.cram"
+  check "CRAM_ARCHIVE took the lock once it was free (no task warned it could not)" \
+    test -z "$(grep -rl 'could not take the lock' "${D}/work" 2>/dev/null)"
 else
   fail "nextflow is not on PATH"
 fi
