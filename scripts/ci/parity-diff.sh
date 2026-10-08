@@ -12,11 +12,18 @@
 #   roh           the RG segments of bcftools roh, and the >= 5 Mb summary
 #   pharmcat      the diplotype PharmCAT reports for each gene
 #   prs           each score's sum, matched count and input (gvcf or vcf)
+#   sv_merged     each SV consensus record (CHROM POS END SVTYPE SVLEN SUPP
+#                 SUPP_VEC and the callers' GT)
+#   y_haplogroup  Yleaf's prediction table
+#
+# PARITY_ITEMS (space separated) picks the items; the default is the first
+# seven, which the E2E workflow compares on the run from FASTQ (docs/nextflow.md
+# has their table). It compares sv_merged and y_haplogroup on the Nextflow
+# hardening run (docs/testing.md).
 #
 # A difference listed in KNOWN below (or in PARITY_KNOWN, same format) is
 # reported with its reason and does not fail the check; a listed difference
-# that is no longer seen fails it, so the list stays true. docs/nextflow.md
-# has the same table.
+# that is no longer seen fails it, so the list stays true.
 #
 # Usage:
 #   scripts/ci/parity-diff.sh BASH_DIR NF_DIR SAMPLE
@@ -25,7 +32,8 @@
 #   scripts/ci/parity-diff.sh --self-test BASH_DIR SAMPLE
 #       copies the bash outputs into the Nextflow layout, requires that copy
 #       to compare equal, then plants one difference per item and requires
-#       each to be reported (and a known one to pass, a stale one to fail).
+#       each to be reported (and a known one to pass, a stale one to fail,
+#       a missing file to fail), on the items PARITY_ITEMS picks.
 # Needs docker (bcftools and samtools from versions.env) and python3. Writes
 # a markdown table to stdout and to $GITHUB_STEP_SUMMARY when it is set.
 set -euo pipefail
@@ -38,7 +46,14 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 # Differences that stay, one per line: ITEM<TAB>reason.
 KNOWN=''
 
-ITEMS="alignment variants gvcf clinvar roh pharmcat prs"
+ALL_ITEMS="alignment variants gvcf clinvar roh pharmcat prs sv_merged y_haplogroup"
+ITEMS=${PARITY_ITEMS:-alignment variants gvcf clinvar roh pharmcat prs}
+for item in $ITEMS; do
+  case " ${ALL_ITEMS} " in
+    *" ${item} "*) ;;
+    *) echo "parity-diff: unknown item '${item}' in PARITY_ITEMS (known: ${ALL_ITEMS})" >&2; exit 2 ;;
+  esac
+done
 
 # path SIDE ITEM SAMPLE: where a side keeps an item's file(s), relative to its
 # sample directory (roh lists two files).
@@ -54,6 +69,8 @@ path() {
     bash:pharmcat) echo "vcf/${s}.report.json" ;;
     nf:pharmcat)   echo "pharmcat/${s}.report.json" ;;
     *:prs)       echo "prs/${s}_prs_summary.tsv" ;;
+    *:sv_merged) echo "sv_merged/${s}_sv_consensus.vcf.gz" ;;
+    *:y_haplogroup) echo "y_haplogroup/${s}_y_haplogroup.txt" ;;
   esac
 }
 
@@ -105,6 +122,12 @@ PY
     prs)
       awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
         {print $c["PGS_ID"] "\t" $c["Score_SUM"] "\t" $c["Variants_Matched"] "\t" (("Input" in c) ? $c["Input"] : "none")}' "$f" | sort ;;
+    sv_merged)
+      docker run --rm -u "$(id -u):$(id -g)" -v "$(dirname "$f"):/d:ro" "$BCFTOOLS_IMAGE" \
+        bcftools query -f '%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\t%INFO/SVLEN\t%INFO/SUPP\t%INFO/SUPP_VEC[\t%GT]\n' \
+        "/d/$(basename "$f")" | sort ;;
+    y_haplogroup)
+      cat "$f" ;;
   esac
 }
 
@@ -232,43 +255,68 @@ self_test() {
   # The control: the same files on both sides compare equal.
   fresh
   rc=0; out=$(compare "$a" "${t}/nf" "$s" 2>&1) || rc=$?
-  if [ "$rc" -ne 0 ] || [ "$(grep -cE '^\| [a-z]+ \| equal \|' <<<"$out" || true)" -ne "$(wc -w <<<"$ITEMS")" ]; then
+  if [ "$rc" -ne 0 ] || [ "$(grep -cE '^\| [a-z_]+ \| equal \|' <<<"$out" || true)" -ne "$(wc -w <<<"$ITEMS")" ]; then
     echo "self-test: the bash outputs against a copy of themselves did not compare equal:"; printf '%s\n' "$out"; fail=1
   else
     echo "self-test: a copy compares equal on every item"
   fi
 
-  fresh; in_t --sam "samtools view -b -F 1024 -o /n/x.bam /n/$(path nf alignment "$s"); mv /n/x.bam /n/$(path nf alignment "$s"); samtools index /n/$(path nf alignment "$s")"
-  expect "duplicates dropped from the BAM" '^\| alignment \| FAIL: differs'
-  fresh; drop_first "$(path nf variants "$s")"
-  expect "a VCF record dropped" '^\| variants \| FAIL: differs \| bash only 1, '
-  fresh; in_t "f=/n/$(path nf variants "$s")
-               bcftools view \$f | awk -F'\t' -v OFS='\t' '/^#/ {print; next} !d && \$10 ~ /^0\/1/ {sub(/^0\/1/, \"1/1\", \$10); d=1} {print}' \
-                 | bcftools view -Oz -o /n/x.vcf.gz
-               mv /n/x.vcf.gz \$f; bcftools index -f -t \$f"
-  expect "a genotype changed" '^\| variants \| FAIL: differs \| bash only 0, Nextflow only 0, shared [0-9]+, shared with another FILTER or GT [1-9]'
-  fresh; drop_first "$(path nf gvcf "$s")"
-  expect "a gVCF record dropped" '^\| gvcf \| FAIL: differs'
-  fresh; printf 'chr1\t1\tA\tT\t0/1\t1\tGENE:1\tPathogenic\tplanted\n' >> "${t}/nf/$(path nf clinvar "$s")"
-  expect "a ClinVar hit added" '^\| clinvar \| FAIL: differs'
-  fresh; printf 'RG\t%s\tchr1\t1\t6000000\t6000000\t1\t99.0\n' "$s" >> "${t}/nf/$(path nf roh "$s" | awk '{print $1}')"
-  expect "a ROH segment added" '^\| roh \| FAIL: differs'
-  fresh; python3 - "${t}/nf/$(path nf pharmcat "$s")" <<'PY'
+  # plant ITEM: one difference in the Nextflow copy of ITEM
+  plant() {
+    case "$1" in
+      alignment)
+        in_t --sam "samtools view -b -F 1024 -o /n/x.bam /n/$(path nf alignment "$s"); mv /n/x.bam /n/$(path nf alignment "$s"); samtools index /n/$(path nf alignment "$s")" ;;
+      variants) drop_first "$(path nf variants "$s")" ;;
+      variants-gt)
+        in_t "f=/n/$(path nf variants "$s")
+              bcftools view \$f | awk -F'\t' -v OFS='\t' '/^#/ {print; next} !d && \$10 ~ /^0\/1/ {sub(/^0\/1/, \"1/1\", \$10); d=1} {print}' \
+                | bcftools view -Oz -o /n/x.vcf.gz
+              mv /n/x.vcf.gz \$f; bcftools index -f -t \$f" ;;
+      gvcf) drop_first "$(path nf gvcf "$s")" ;;
+      clinvar) printf 'chr1\t1\tA\tT\t0/1\t1\tGENE:1\tPathogenic\tplanted\n' >> "${t}/nf/$(path nf clinvar "$s")" ;;
+      roh) printf 'RG\t%s\tchr1\t1\t6000000\t6000000\t1\t99.0\n' "$s" >> "${t}/nf/$(path nf roh "$s" | awk '{print $1}')" ;;
+      pharmcat)
+        python3 - "${t}/nf/$(path nf pharmcat "$s")" <<'PY'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d["genes"] = {}
 json.dump(d, open(p, "w"))
 PY
-  expect "PharmCAT's genes emptied" '^\| pharmcat \| FAIL: differs'
-  fresh; awk -F'\t' -v OFS='\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; print; next}
-      NR == 2 {$c["Score_SUM"] = $c["Score_SUM"] + 1} {print}' "${a}/$(path bash prs "$s")" > "${t}/nf/$(path nf prs "$s")"
-  expect "a PRS sum changed" '^\| prs \| FAIL: differs'
-  expect "the same PRS difference, listed as known" '^\| prs \| differs \(known: planted\)' $'prs\tplanted' pass
+        ;;
+      prs)
+        awk -F'\t' -v OFS='\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; print; next}
+            NR == 2 {$c["Score_SUM"] = $c["Score_SUM"] + 1} {print}' "${a}/$(path bash prs "$s")" > "${t}/nf/$(path nf prs "$s")" ;;
+      sv_merged) drop_first "$(path nf sv_merged "$s")" ;;
+      y_haplogroup)
+        awk -F'\t' -v OFS='\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; print; next}
+            NR == 2 {$c["Hg"] = "PLANTED"} {print}' "${a}/$(path bash y_haplogroup "$s")" > "${t}/nf/$(path nf y_haplogroup "$s")" ;;
+    esac
+  }
+  # The name of each item's planted difference.
+  declare -A what=(
+    [alignment]="duplicates dropped from the BAM" [variants]="a VCF record dropped" [gvcf]="a gVCF record dropped"
+    [clinvar]="a ClinVar hit added" [roh]="a ROH segment added" [pharmcat]="PharmCAT's genes emptied"
+    [prs]="a PRS sum changed" [sv_merged]="an SV consensus record dropped" [y_haplogroup]="the Y haplogroup changed"
+  )
+  for item in $ITEMS; do
+    fresh; plant "$item"
+    if [ "$item" = variants ]; then
+      expect "${what[$item]}" '^\| variants \| FAIL: differs \| bash only 1, '
+      fresh; plant variants-gt
+      expect "a genotype changed" '^\| variants \| FAIL: differs \| bash only 0, Nextflow only 0, shared [0-9]+, shared with another FILTER or GT [1-9]'
+    else
+      expect "${what[$item]}" "^\\| ${item} \\| FAIL: differs"
+    fi
+  done
+  # The list of known differences, and a missing file, on the last item.
+  local k=${ITEMS##* }
+  fresh; plant "$k"
+  expect "the same difference, listed as known" "^\\| ${k} \\| differs \\(known: planted\\)" "${k}"$'\tplanted' pass
   fresh
-  expect "a known difference that is not seen" '^\| prs \| FAIL: listed as a known difference but equal' $'prs\tplanted'
-  fresh; rm -f "${t}/nf/$(path nf clinvar "$s")"
-  expect "a missing file" '^\| clinvar \| FAIL: MISSING'
+  expect "a known difference that is not seen" "^\\| ${k} \\| FAIL: listed as a known difference but equal" "${k}"$'\tplanted'
+  fresh; rm -f "${t}/nf/$(path nf "$k" "$s" | awk '{print $1}')"
+  expect "a missing file" "^\\| ${k} \\| FAIL: MISSING"
 
   [ "$fail" -eq 0 ] && echo "self-test: OK"
   return "$fail"
