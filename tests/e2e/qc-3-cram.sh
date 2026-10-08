@@ -199,8 +199,11 @@ if command -v nextflow >/dev/null; then
          samtools view -c -T /genome/reference/GRCh38_no_alt_analysis_set.fasta "/out/${SAMPLE}/aligned/${SAMPLE}_sorted.cram" 2>/dev/null)" \
     "$N_BAM"
   check "no CRAM was written for the CRAM row" test ! -e "${D}/out/${C}/aligned/${C}_sorted.cram"
+  # The task's stderr, not its script: .command.sh holds the warning's text too.
+  ERRS=$(find "${D}/work" -name .command.err 2>/dev/null)
+  check "the run left task stderr files to read" test -n "$ERRS"
   check "CRAM_ARCHIVE took the lock once it was free (no task warned it could not)" \
-    test -z "$(grep -rl 'could not take the lock' "${D}/work" 2>/dev/null)"
+    test -z "$(xargs grep -l 'could not take the lock' <<< "$ERRS" 2>/dev/null)"
 else
   fail "nextflow is not on PATH"
 fi
