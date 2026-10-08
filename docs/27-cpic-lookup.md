@@ -52,7 +52,7 @@ The comparison used to be written by step 32. It moved here because `run-all.sh`
 
 <figure markdown="span">
   ![The top of the step 27 text report: the sample, the PharmCAT version and the gene results table with each gene's diplotype and phenotype](images/demo-cpic-report.png){ loading=lazy }
-  <figcaption>The top of the report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. HLA-A, HLA-B and CYP2D6 are marked as outside calls: step 36 passed them to PharmCAT from the BAM-based callers. Below this table the report lists the medications for each gene that is not normal, the outside calls and the genes that could not be called.</figcaption>
+  <figcaption>The top of the report for DEMO-001, an invented sample. The diplotypes and phenotypes are made up and are not anyone's result. HLA-A, HLA-B and CYP2D6 are marked as outside calls: step 36 passed them to PharmCAT from the BAM-based callers. Below this table the report lists the medications for each gene with a non-normal phenotype, the called genes without a function phenotype, the outside calls and the genes that could not be called.</figcaption>
 </figure>
 
 ## Runtime
