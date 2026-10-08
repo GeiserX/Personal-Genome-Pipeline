@@ -83,7 +83,6 @@ workflow CLINICAL {
             log.warn "prs skipped: --pgs_scoring is not set."
         } else {
             def panel_name = params.ancestry_ref ? file(params.ancestry_ref).name.replaceFirst(/\.tar\.zst$/, '') : ''
-            PRS_PREPARE(ch_pgs_scoring, ch_pgs_labels)
             // With a gVCF the score (and panel) positions are genotyped from
             // it, so a site where the sample matches the reference counts as 0/0.
             ch_prs_input = ch_vcf
@@ -94,22 +93,38 @@ workflow CLINICAL {
                     gvcf: row[4] != null
                     vcf:  true
                 }
-            // Both are cut to the score (and panel) positions: autosomes only,
-            // and a small file for pgsc_calc to convert.
+            // A sample whose samplesheet gives the sex is scored on chrX too
+            // (pgsc_calc's plink2 needs the sex to read chrX); one without
+            // keeps the scores' autosomal rows only. PRS_PREPARE formats the
+            // scores once per set the run needs.
+            ch_prs_rows = ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5], 'gvcf'] }
+                .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] })
+                .map { meta, f, idx, kind -> [meta.sex ? 'with_x' : 'autosomes', meta, f, idx, kind] }
+            PRS_PREPARE(ch_prs_rows.map { row -> row[0] }.unique(), ch_pgs_scoring, ch_pgs_labels)
+            ch_prs_sets = ch_prs_rows.combine(PRS_PREPARE.out.scores, by: 0)
+            ch_sample_pgs = ch_prs_sets.map { _set, meta, _f, _idx, _kind, pgs, _alleles -> [meta.id, pgs] }
+            // Both are cut to the score (and panel) positions: a small file
+            // for pgsc_calc to convert.
             PRS_SCORE_SITES(
-                ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5], 'gvcf'] }
-                    .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] }),
-                PRS_PREPARE.out.alleles,
+                ch_prs_sets.map { _set, meta, f, idx, kind, _pgs, alleles -> [meta, f, idx, kind, alleles] },
                 ch_ancestry_sites,
                 ch_reference,
                 ch_reference_fai
             )
             PRS(
-                PRS_SCORE_SITES.out.vcf,
-                PRS_PREPARE.out.scores,
+                PRS_SCORE_SITES.out.vcf
+                    .map { meta, vcf, kind -> [meta.id, meta, vcf, kind] }
+                    .join(ch_sample_pgs)
+                    .map { _id, meta, vcf, kind, pgs -> [meta, vcf, kind, pgs] },
                 ch_ancestry_ref
             )
-            PRS_SUMMARY(PRS.out.results, PRS_PREPARE.out.scores, panel_name)
+            PRS_SUMMARY(
+                PRS.out.results
+                    .map { meta, res, kind -> [meta.id, meta, res, kind] }
+                    .join(ch_sample_pgs)
+                    .map { _id, meta, res, kind, pgs -> [meta, res, kind, pgs] },
+                panel_name
+            )
             ch_prs_scores       = PRS_SUMMARY.out.summary
             ch_ancestry_results = PRS_SUMMARY.out.ancestry
             ch_versions = ch_versions.mix(PRS_PREPARE.out.versions, PRS_SCORE_SITES.out.versions,

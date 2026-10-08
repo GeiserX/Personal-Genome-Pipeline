@@ -48,8 +48,19 @@ def freemix_text(q):
     return f"{q['freemix']} (warning above {warn}{few})"
 
 
+def prs_chrx_note(d):
+    """A sentence when chrX rows of a score were left out (no sex given), else ''."""
+    left = [f"{r['pgs_id']} ({r['chrx'].split()[0]})" for r in d.get("scores", [])
+            if (r.get("chrx") or "").endswith("left out")]
+    if not left:
+        return ""
+    return (f" Rows on chrX were left out, because the sample's sex was not given: {', '.join(left)}. "
+            "Give the sex to score them (docs/25-prs.md).")
+
+
 def prs_note(d):
     """The line under the PRS scores, in both reports: what the numbers can be compared with."""
+    x = prs_chrx_note(d)
     if d.get("adjusted"):
         anc = d.get("ancestry") or {}
         group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
@@ -57,9 +68,9 @@ def prs_note(d):
         low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
         return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
                 f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
-                "A percentile is not a risk. See docs/25-prs.md.")
+                "A percentile is not a risk. See docs/25-prs.md." + x)
     return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
-            "cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). See docs/25-prs.md.")
+            "cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). See docs/25-prs.md." + x)
 
 
 # --- text ------------------------------------------------------------------------
