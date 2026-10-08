@@ -2,9 +2,12 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Mitochondrial Haplogroup — Determine maternal lineage from mtDNA variants
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Two-step process:
-    1. Extract chrM variants from full-genome VCF (bcftools)
-    2. Classify haplogroup with haplogrep3
+    The chrM calls haplogrep3 reads are MITO_VARIANTS' Mutect2 calls when
+    mito_variants ran for the sample (their PASS records, one allele per
+    record), else the chrM records of the sample's
+    VCF; MITO_EXTRACT_CHRM writes either. MITO_HAPLOGROUP classifies them with haplogrep3;
+    HAPLOCHECK looks for a second haplogroup in the Mutect2 allele fractions
+    (contamination).
 
     Equivalent to: scripts/12-mito-haplogroup.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -15,7 +18,9 @@ process MITO_EXTRACT_CHRM {
     label 'process_single'
 
     input:
-    tuple val(meta), path(vcf), path(vcf_index)
+    // source: 'mutect2' (MITO_VARIANTS' chrM calls, index not needed) or
+    // 'vcf' (the sample's VCF with its index)
+    tuple val(meta), path(vcf), path(vcf_index), val(source)
 
     output:
     tuple val(meta), path("*_chrM.vcf.gz"), path("*_chrM.vcf.gz.tbi"), emit: chrm_vcf
@@ -25,8 +30,11 @@ process MITO_EXTRACT_CHRM {
     task.ext.when == null || task.ext.when
 
     script:
+    def extract = source == 'mutect2'
+        ? "bcftools view -f PASS ${vcf} | bcftools norm -m-any -Oz -o ${meta.id}_chrM.vcf.gz"
+        : "bcftools view -r chrM ${vcf} -Oz -o ${meta.id}_chrM.vcf.gz"
     """
-    bcftools view -r chrM ${vcf} -Oz -o ${meta.id}_chrM.vcf.gz
+    ${extract}
     bcftools index -t ${meta.id}_chrM.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
@@ -94,6 +102,45 @@ process MITO_HAPLOGROUP {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         haplogrep3: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+
+process HAPLOCHECK {
+    tag "$meta.id"
+    label 'process_single'
+
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
+
+    input:
+    tuple val(meta), path(chrm_vcf), path(chrm_vcf_index)
+
+    output:
+    tuple val(meta), path("${meta.id}_haplocheck.txt"), emit: report
+    path "versions.yml",                                emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    haplocheck --out ${meta.id}_haplocheck.txt ${chrm_vcf}
+    [ -s ${meta.id}_haplocheck.txt ] || { echo "ERROR: haplocheck wrote no report" >&2; exit 1; }
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        haplocheck: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_haplocheck.txt
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        haplocheck: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

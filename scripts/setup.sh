@@ -9,12 +9,14 @@
 #        ./scripts/setup.sh --parascopy-data <genome_dir>
 #        ./scripts/setup.sh --kir-data <genome_dir>
 #        ./scripts/setup.sh --ancestry-panel <genome_dir>
+#        ./scripts/setup.sh --yleaf-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models (step 35),
 #                                            IPD-KIR (step 08 with KIR=true),
 #                                            pgsc_calc's ancestry panel (step 26,
-#                                            and percentiles in step 25)
+#                                            and percentiles in step 25), Yleaf's
+#                                            marker tables (step 37)
 #
 # This script downloads everything needed to run the pipeline:
 #   1. GRCh38 reference genome + index: NCBI's GRCh38 no-ALT analysis set
@@ -50,7 +52,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -75,7 +77,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -93,6 +95,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --ancestry-panel"
   echo "                Install pgsc_calc's ancestry reference panel ${PGSC_PANEL:-} (~7 GB download): step 26, and"
   echo "                percentiles instead of raw scores in step 25; then exit."
+  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB) and exit."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -243,6 +246,35 @@ install_kir_data() {
   echo "[OK] IPD-KIR ${KIR_DB_RELEASE} (step 08, KIR=true): ${dest}"
 }
 
+# install_yleaf_data: the yleaf/data folder of Yleaf YLEAF_DATA_VERSION (step
+# 37): its GRCh38 marker positions and haplogroup tree. The biocontainer of
+# YLEAF_IMAGE installs the code only. GitHub's archive of the tag, checked
+# against YLEAF_DATA_SHA256.
+install_yleaf_data() {
+  local dest="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}" tgz
+  if [ -s "${dest}/data/hg38/new_positions.txt" ] && [ -s "${dest}/data/hg_prediction_tables/tree.json" ]; then
+    echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables (step 37) already present."
+    return 0
+  fi
+  tgz="${dest}.tar.gz"
+  if ! fetch "https://github.com/genid/Yleaf/archive/refs/tags/${YLEAF_DATA_VERSION}.tar.gz" "$tgz" sha256 "$YLEAF_DATA_SHA256"; then
+    echo "[WARN] Could not download Yleaf ${YLEAF_DATA_VERSION}."
+    return 1
+  fi
+  rm -rf "${dest}.part"
+  mkdir -p "${dest}.part"
+  tar -xzf "$tgz" -C "${dest}.part" --strip-components 2 "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data"
+  rm -f "$tgz"
+  if [ ! -s "${dest}.part/data/hg38/new_positions.txt" ]; then
+    echo "[WARN] The Yleaf ${YLEAF_DATA_VERSION} archive has no yleaf/data/hg38/new_positions.txt."
+    rm -rf "${dest}.part"
+    return 1
+  fi
+  rm -rf "$dest"
+  mv "${dest}.part" "$dest"
+  echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+}
+
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------
 PGS_BASE_URL=${PGS_BASE_URL:-https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores}
 PGSC_RESOURCES=https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources
@@ -385,6 +417,7 @@ case "$OPT_IN" in
   cyrius) install_cyrius; exit $? ;;
   parascopy-data) install_parascopy_data; exit $? ;;
   kir-data) install_kir_data; exit $? ;;
+  yleaf-data) install_yleaf_data; exit $? ;;
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the

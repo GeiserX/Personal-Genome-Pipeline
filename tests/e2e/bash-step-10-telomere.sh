@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Step 10 (TelomereHunter) with the GRCh38 chromosome bands setup.sh installs.
-# TelomereHunter runs as root (run_in --root), so it runs on a copy of the
-# sample under another name, removed at the end, and the ownership case that
-# follows still sees only the caller's files under the sample directory.
+# TelomereHunter runs as the caller (no run_in --root). It runs on a
+# copy of the sample under another name (the BAM hard-linked), removed at the
+# end, so the cases after it see the sample directory as before.
 . "$(dirname "$0")/lib.sh"
 
 check "the GRCh38 bands install" bash -c '. "$1/scripts/lib/common.sh" && install_data_file cytoband' _ "$REPO"

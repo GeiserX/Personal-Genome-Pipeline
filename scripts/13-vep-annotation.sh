@@ -9,6 +9,12 @@
 # later steps build from an older _vep output (vcfanno's _annotated.vcf.gz,
 # the uncompressed _vep.vcf of earlier versions), so steps 30, 23 and 31
 # rebuild from this one instead of reading the old annotation.
+#
+# ClinVar: when clinvar/clinvar_pathogenic_chr.vcf.gz is installed (setup.sh,
+# the file step 06 screens against), VEP also annotates it with --custom: its
+# CLNSIG, CLNREVSTAT and CLNDN become the CSQ fields ClinVar_CLNSIG,
+# ClinVar_CLNREVSTAT and ClinVar_CLNDN. Step 23's ClinVar tier then follows a
+# refresh of that file, not the ClinVar of the cache release (CLIN_SIG).
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -43,6 +49,14 @@ if [ ! -f "${CACHE_DIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; th
 fi
 
 OUT="${OUTPUT_DIR}/${SAMPLE}_vep.vcf.gz"
+CLINVAR="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
+CUSTOM=()
+if [ -f "$CLINVAR" ] && [ -f "${CLINVAR}.tbi" ]; then
+  CUSTOM=(--custom "file=$(cpath "$CLINVAR"),short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN")
+  echo "ClinVar: ${CLINVAR} (as ClinVar_CLNSIG; the file step 06 screens against)"
+else
+  echo "ClinVar: ${CLINVAR} is not installed; only the cache's CLIN_SIG (run setup.sh for the current file)"
+fi
 OUT_C="/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 
 # Run VEP into a temporary name, so a run that fails or is killed leaves the
@@ -72,7 +86,8 @@ run_in \
     --force_overwrite \
     --stats_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep_summary.html" \
     --warning_file "/genome/${SAMPLE}/vep/${SAMPLE}_vep_warnings.txt" \
-    --fork "${THREADS}"
+    --fork "${THREADS}" \
+    ${CUSTOM[@]+"${CUSTOM[@]}"}
 
 if ! wrote_vcf "${OUT}.tmp.vcf.gz"; then
   rm -f "${OUT}.tmp.vcf.gz"

@@ -52,4 +52,5 @@ The second argument (`male`/`female`) is **required** — it affects X-linked lo
 - Uses ExpansionHunter **v5.0.0** (`EXPANSIONHUNTER_IMAGE`)
 - v5 CLI: `--reads`, `--reference`, `--variant-catalog` (JSON file), `--output-prefix` (auto-generates .vcf, .json)
 - The 31-locus GRCh38 variant catalog is bundled inside the container at `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json`
+- **Why the bundled catalog, not a larger one.** Illumina has published no newer catalog for ExpansionHunter 5.0.0 (its last release, 2021). The larger candidate is Stranger's own GRCh38 catalog, 51 loci with their normal and pathologic thresholds, which would keep step 9b's thresholds in step by construction. It is not used yet: it lacks two of the bundled loci (NIPA1 and NOTCH2NL), and ExpansionHunter has not been run on it here. Switching means passing it with `EH_CATALOG` (the script) and `--expansion_catalog` (the pipeline) after a real run; until then Stranger has thresholds for 29 of the 31 bundled loci, none for NIPA1 and NOTCH2NL.
 - Short-read WGS can reliably detect expansions up to ~150 repeats; very large expansions (>1000) are less accurate

@@ -15,7 +15,11 @@ Checks:
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
      same number of stars;
   7. a corrupt file (not gzip, or gzip with damaged data) makes its section
-     'unreadable' instead of stopping the report.
+     'unreadable' instead of stopping the report;
+  8. the secondary-findings tier lists the ClinVar hits and the rare
+     HIGH-impact clinical records in ACMG SF v3.3 genes, and nothing else;
+  9. haplocheck's contamination status and Yleaf's Y haplogroup (or
+     'insufficient markers') reach both reports.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -209,6 +213,57 @@ def main():
             state_z, txt_z = f"raised {type(e).__name__}: {e}", ""
         check("damaged gzip data: section unreadable, the report still renders",
               isinstance(state_z, dict) and state_z["state"] == "unreadable" and "hits: 3" in txt_z, state_z)
+
+        # 8. ACMG SF tier: BRCA2 (on the list) and GENEA (not) in ClinVar; TTN
+        # (on the list) and GENEX (not) with HIGH impact; MYH7 on the list
+        # but MODERATE only
+        a = os.path.join(work, "acmg", "S")
+        put(f"{a}/clinvar/S_clinvar_hits.vcf", VCF_HEAD + (
+            "chr13\t32340300\t1\tG\tA\t50\tPASS\tGENEINFO=BRCA2:675;CLNSIG=Pathogenic;"
+            "CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n"
+            "chr1\t10\t2\tC\tT\t50\tPASS\tGENEINFO=GENEA:11;CLNSIG=Pathogenic;"
+            "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"))
+        csq = ('##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '
+               'Format: Allele|Consequence|IMPACT|SYMBOL">\n')
+        put(f"{a}/clinical/S_clinical.vcf.gz", "##fileformat=VCFv4.2\n" + csq + VCF_HEAD.split("\n", 1)[1] + (
+            "chr2\t178500000\t.\tC\tT\t50\tPASS\tCSQ=T|stop_gained|HIGH|TTN,T|intron_variant|MODIFIER|TTN-AS1\tGT\t0/1\n"
+            "chr3\t100\t.\tA\tG\t50\tPASS\tCSQ=G|frameshift_variant|HIGH|GENEX\tGT\t1/1\n"
+            "chr14\t23400000\t.\tG\tA\t50\tPASS\tCSQ=A|missense_variant|MODERATE|MYH7\tGT\t0/1\n"), gz=True)
+        summ_a, txt_a, html_a = render(a)
+        sf = summ_a["sections"]["clinical"]["data"].get("acmg_sf") or {}
+        check("ACMG SF: v3.3, 84 genes", sf.get("version") == "ACMG SF v3.3" and sf.get("genes_on_list") == 84, sf)
+        check("ACMG SF: the ClinVar hit in BRCA2 only", [x["gene"] for x in sf.get("clinvar_hits", [])] == ["BRCA2"], sf)
+        check("ACMG SF: the HIGH-impact TTN record only (not GENEX, not MODERATE MYH7)",
+              [(x["gene"], x["consequence"]) for x in sf.get("high_impact", [])] == [("TTN", "stop_gained")], sf)
+        check("ACMG SF: the text report lists BRCA2 and TTN",
+              "1 ClinVar P/LP, 1 rare HIGH impact" in txt_a and "    BRCA2" in txt_a and "    TTN" in txt_a, txt_a)
+        check("ACMG SF: the HTML report has the card", "Secondary-Findings Genes (ACMG SF v3.3)" in html_a
+              and "<td>TTN</td>" in html_a and "<td>GENEX</td>" not in html_a)
+
+        # 9. haplocheck and Yleaf
+        h = os.path.join(work, "mito", "S")
+        put(f"{h}/mito/S_haplogroup.txt", '"SampleID"\t"Haplogroup"\t"Rank"\n"S"\t"H1a"\t"0.95"\n')
+        put(f"{h}/mito/S_haplocheck.txt", '"Sample"\t"Contamination Status"\t"Contamination Level"\t"Distance"\n'
+            '"S"\t"YES"\t"0.12"\t"5"\n')
+        put(f"{h}/y_haplogroup/S_y_haplogroup.txt", "Sample_name\tHg\tHg_marker\tTotal_reads\tValid_markers\t"
+            "QC-score\tQC-1\tQC-2\tQC-3\nS_sorted\tR-M269\tM269\t100\t42\t0.97\t1\t1\t0.97\n")
+        summ_h, txt_h, html_h = render(h)
+        hd = summ_h["sections"]["haplogroup"]["data"]
+        check("haplocheck: status and level read", hd.get("contamination_status") == "YES"
+              and hd.get("contamination_level") == "0.12", hd)
+        check("haplocheck: the line in both reports", "Contamination (haplocheck): YES, two mtDNA haplogroups" in txt_h
+              and "YES, two mtDNA haplogroups" in html_h, txt_h)
+        check("Yleaf: the Y haplogroup in both reports", "R-M269 (42 markers, QC-score 0.97)" in txt_h
+              and "Y-Chromosome Haplogroup" in html_h and "R-M269" in html_h, txt_h)
+        put(f"{h}/y_haplogroup/S_y_haplogroup.txt", "Sample_name\tHg\tHg_marker\tTotal_reads\tValid_markers\t"
+            "QC-score\tQC-1\tQC-2\tQC-3\nS_sorted\tNA\t\t100\t3\t0\t0\t0\t0\n")
+        summ_n, txt_n, _ = render(h)
+        check("Yleaf: Hg NA reads as insufficient markers",
+              summ_n["sections"]["y_haplogroup"]["data"].get("haplogroup") == "insufficient markers"
+              and "Haplogroup: insufficient markers (3 markers" in txt_n, summ_n["sections"]["y_haplogroup"])
+        os.remove(f"{h}/mito/S_haplocheck.txt")
+        check("no haplocheck file: the report says it was not checked",
+              "Contamination (haplocheck): not checked" in render(h)[1])
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

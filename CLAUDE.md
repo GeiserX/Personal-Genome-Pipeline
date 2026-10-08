@@ -1,12 +1,12 @@
 # CLAUDE.md — Personal Genome Pipeline
 
 ## Overview
-Whole genome sequencing (WGS) analysis pipeline for consumer hardware. Takes raw FASTQ/BAM/VCF data and runs 34 analysis steps locally in Docker containers: variant calling, pharmacogenomics, structural variants, cancer predisposition, polygenic risk scores, ancestry, telomere length, and more. Designed for non-bioinformaticians analyzing their own genome data.
+Whole genome sequencing (WGS) analysis pipeline for consumer hardware. Takes raw FASTQ/BAM/VCF data and runs the numbered steps 1 to 37 (with 1b, 9b and 16b, plus alternative aligners and callers) locally in Docker containers: variant calling, pharmacogenomics, structural variants, cancer predisposition, polygenic risk scores, ancestry, mitochondrial and Y haplogroups, telomere length, and more. The step list and what a default run covers live in `docs/pipeline-overview.md`. Designed for non-bioinformaticians analyzing their own genome data.
 
 ## Tech Stack
 - Bash (pipeline scripts, `set -euo pipefail`)
 - Docker (all bioinformatics tools containerized)
-- Key tools: DeepVariant, minimap2, BWA-MEM2, VEP, PharmCAT, GATK, FreeBayes, Strelka2, TIDDIT, Manta, PCGR/CPSR, plink2
+- Key tools: DeepVariant, minimap2, BWA-MEM2, VEP, PharmCAT, GATK, FreeBayes, Strelka2, TIDDIT, Manta, SURVIVOR, PCGR/CPSR, pgsc_calc, haplogrep3, Yleaf
 
 ## Development
 
@@ -87,8 +87,9 @@ personal-genome-pipeline/
 User's FASTQ/BAM/VCF
   ├─ Step 2: minimap2 alignment (FASTQ -> BAM)
   ├─ Step 3: DeepVariant variant calling (BAM -> VCF)
-  ├─ VCF-dependent steps: 6, 7, 9, 11, 12, 13, 14, 17, 25, 26
-  ├─ BAM-dependent steps: 4, 10, 15, 16, 18, 19, 20, 21
+  ├─ VCF-dependent steps: 6, 7, 11, 13, 14, 17, 25, 26
+  ├─ BAM-dependent steps: 4, 8, 9, 10, 15, 16, 18, 19, 20, 21, 35, 37 (37 reads step 16's sex)
+  ├─ Step 12: step 20's Mutect2 chrM calls, else the VCF's chrM records
   ├─ Post-VCF-analysis: 22 (SV merge), 23 (clinical filter), 24 (report), 27 (CPIC)
   └─ Both: 5 (needs Manta VCF from step 4)
 ```
@@ -111,7 +112,7 @@ User's FASTQ/BAM/VCF
 - Opt out at the call, with the reason in a comment: `--rw DIR` (shared index or database), `--net` (the step downloads), `--root` (the image cannot run unprivileged)
 - Images come from `versions.env` as quoted variables; a script never spells an image name or tag
 - Reference: `${REF_FASTA}` on the host, `${REF_FASTA_C}` inside a container; never spell the reference file name in a step script
-- Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`
+- Downloads: `fetch URL DEST [md5|sha256|sum VALUE-or-URL]`; it tries 3 times, or `FETCH_TRIES` times `FETCH_WAIT` seconds apart
 - Validate all input files exist before running Docker commands
 - Print clear status messages: step name, input files, output location
 
@@ -155,14 +156,13 @@ Change its line in `versions.env`, plus the coupled data variable its comment na
 - **3.x JSON changes vs 2.15.x**: `wildtypeAllele` → `referenceAllele`; the HTML report is **no longer emitted unless `-reporterHtml` is passed explicitly**. The `genes` map may be flat (`{gene -> data}`) or nested (`{source -> {gene -> data}}`). `sourceDiplotypes` (or `recommendationDiplotypes`) carry `allele1`/`allele2` objects with a `.name`. Both CPIC consumers (`scripts/27-cpic-lookup.sh` and `modules/local/cpic_lookup`) run one parser, `bin/pgx_parse.py`: it **auto-detects both shapes**, gives each gene a status (`normal`, `non-normal`, `ambiguous` when the possible diplotypes have different phenotypes, `not called`) and **fails loud**: a recognized report yielding zero genes is reported as a parse failure, never "all genes were successfully called". Guarded by `tests/test_cpic_parser.py` on real 3.2.0 and 3.4.0 reports of the HG002 fixture, `tests/fixtures/pharmcat/report-<version>.json`.
 - Pipeline pinned to **3.4.0** (3.4.0 still bundles vcf-parser 0.3.1, so the `##` header rewrite in step 7 and the module stays). Before bumping, revalidate steps 7 and 27 end-to-end against a known sample — JSON structure and preprocessor flags change between major versions — and capture the new version's `report.json` as a parser fixture beside the others (a row in the test's `REAL_REPORTS`).
 
-### plink2 (PRS / Ancestry)
-- **chrX requires sex info**: Use `--chr 1-22 --allow-extra-chr` for PRS/PCA (autosomal only).
-- **`--output-chr chrM`** preserves `chr` prefix. Without it, prefix is stripped.
-- **`--set-all-var-ids '@:#'`**: `@` includes full contig name. Do NOT use `chr@:#`.
-- **Scoring file duplicates**: Large PGS files contain duplicate variant:allele pairs. Deduplicate before `--score`.
-- **LD pruning requires >=50 samples**. PCA requires >=2. Single-sample ancestry is fundamentally limited.
-- **PRS guardrail**: Raw scores are NOT percentiles or portable labels. Require ancestry-matched reference cohort.
-- **Ancestry guardrail**: Single-sample step is a starting point, not a population-placement tool.
+### pgsc_calc (PRS and ancestry, steps 25 and 26)
+- **pgsc_calc runs as its own Nextflow pipeline** (`PGSC_CALC_VERSION` in versions.env; the `PGSC_*_IMAGE` lines move with it). `setup.sh` unpacks the release into `tools/pgsc_calc-<release>`; with `--pgsc_calc` pointing there the pipeline runs it offline (without it the PRS task fetches the release), and `run-all.sh` passes it when it exists.
+- **Score positions are genotyped from the gVCF**, so a site where the sample matches the reference counts as 0/0. Without a gVCF those sites are missing.
+- **Autosomes only**: rows on chrX, chrY and chrM are dropped from the scoring files, because pgsc_calc's plink2 stops on chrX without the sample's sex.
+- **Percentiles need the ancestry panel** (`setup.sh --ancestry-panel`, `--ancestry_ref`, its `_GRCh38_sites.tsv` beside it). Without it the reports say "raw score only": a raw sum from one person cannot be compared with anyone.
+- **Step 26 is pgsc_calc's projection onto that panel**, inside the PRS run; there is no single-sample PCA any more. It is a placement among reference groups, not a population label.
+- **Labels**: `assets/pgs_scores.tsv` holds each PGS ID with the catalog's trait; `scripts/ci/check-pgs-labels.sh` checks them against the PGS Catalog.
 
 ### Chip Data Conversion
 - **NEVER use plink 1.9 for single-sample chip-to-VCF.** plink's `.bim` format encodes monomorphic sites with one allele. For single-sample data, ALL homozygous positions are monomorphic. `--ref-from-fa` cannot fix these. Result: all hom-ALT genotypes silently become hom-REF.
@@ -175,9 +175,10 @@ Change its line in `versions.env`, plus the coupled data variable its comment na
 
 ### Alternative Callers & Benchmarking
 - **Output isolation**: Alternative tools write to separate directories to never overwrite defaults.
-- **INTERVALS env var**: GATK and FreeBayes support `INTERVALS=chr22`. Strelka2 and TIDDIT do not.
+- **INTERVALS env var**: GATK and FreeBayes take space-separated contigs or regions (`INTERVALS="chr20 chr22"`). Strelka2 and TIDDIT do not.
+- **Scatter**: 03a, 03b and 29 (with `INTERVALS=genome`) run one container per primary chromosome, plus one for the other contigs, `SCATTER_JOBS` at a time (default THREADS/2), and join the parts; `SCATTER=false` runs one process. The helpers are `scatter_beds` and `run_parallel` in `scripts/lib/common.sh`.
 - **Strelka2 is a small-variant caller** (SNVs + indels <=49bp), not an SV caller. Scoring model trained on BWA-MEM data; SNP precision drops with minimap2.
-- **FreeBayes is single-threaded**: Full WGS ~9 hours. Needs `--memory 32g`.
+- **FreeBayes is single-threaded**: Full WGS ~9 hours in one process, about that divided by `SCATTER_JOBS` scattered. 32 GB for one process, 8 GB per scattered unit.
 - **GATK full-genome**: ~8.6 hours on i5-14500. Requires `.dict` file alongside FASTA.
 - **BWA-MEM2 index files**: Created alongside FASTA. Check for `.bwt.2bit.64`.
 - **ALIGN_DIR env var**: All alternative scripts accept `ALIGN_DIR=aligned_bwamem2`.

@@ -1,47 +1,49 @@
 # Step 22: Structural Variant Consensus Merge
 
-> **EXPERIMENTAL:** This step uses a heuristic position-binning approach that may over-count calls from the same caller. Results should be treated as a rough intersection, not a true consensus merge. For production use, consider SURVIVOR or Jasmine with proper multi-sample VCF merging.
-
 ## What This Does
 
-Performs a rough intersection of structural variant (SV) calls from multiple independent callers: Manta (step 4), Delly (step 19) and CNVpytor (step 18) in a default run, plus GRIDSS (step 4b), TIDDIT (script 4a) and Sniffles2 (script 4c) when their output exists. SVs are binned by chromosome, position (1 kb windows), and SV type; bins with calls from two or more callers are retained. This is an approximation, not a true breakpoint-aware merge like SURVIVOR or Jasmine would produce.
+Keeps the structural variants (SVs) that two or more independent callers agree on. SURVIVOR merge pairs two calls when both of their breakpoints lie within 1,000 bp of each other, their SV type and strands agree, and the event is at least 50 bp long. Each consensus record says how many callers support it and which.
 
 ## Why
 
 Individual SV callers each have distinct biases and false-positive profiles:
 
-- **Manta**: Fast, sensitive for smaller SVs and indels (paired-end + split-read)
-- **Delly**: Strongest for inversions and balanced translocations (paired-end + split-read + depth)
-- **CNVpytor**: Best for large CNVs (read-depth only)
+- **Manta**: fast, sensitive for smaller SVs (paired-end and split reads)
+- **Delly**: strongest for inversions and balanced translocations (paired-end, split reads and depth)
+- **CNVpytor**: best for large CNVs (read depth only)
 
-Taking the intersection across callers reduces false positives. An SV seen by two independent algorithms using different signal types is more likely to be real. Note that dedicated SV comparison tools (SURVIVOR, Jasmine) use breakpoint distance, size similarity, and strand matching for more accurate merging than the position-binning heuristic used here.
+An SV seen by two callers that use different signals is more likely to be real.
+
+The step used to bin calls by chromosome, `int(POS/1000)` and SV type. That split one deletion called at positions 999 and 1001 over two bins, and counted two deletions of very different size that start in one bin as agreement. SURVIVOR compares both breakpoints, so neither happens: the e2e case `tests/e2e/sv-mito-telomere-steps-1-sv-merge.sh` runs both situations on the synthetic three-caller set in `tests/fixtures/sv/`.
 
 ## Tool
 
-- **bcftools** (for merging and overlap detection)
+- **SURVIVOR** 1.0.7 (Jeffares et al., Nat Commun 2017), `SURVIVOR merge`
+- **bcftools** for the PASS filter before the merge and the sorted, indexed output
 
-The script uses a breakpoint-binning approach with bcftools rather than SURVIVOR, since SURVIVOR Docker image availability is unreliable. SVs are grouped by chromosome, binned position (1 kb windows), and SV type. Bins with calls from 2+ callers are kept.
+Not chosen: `truvari collapse`, which also compares sequence similarity. It would need a comparison run against SURVIVOR on real calls first.
 
 ## Docker Image
 
-- `BCFTOOLS_IMAGE`
+- `SURVIVOR_IMAGE` (the merge), `BCFTOOLS_IMAGE` (filter, sort, index)
 
-Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
+Pinned in `versions.env`; [Image versions](versions.md) lists the current tags.
 
 ## Input
 
-At least two of the following (the script auto-detects which are available):
+At least two of the following (the script uses every one it finds):
 
 | Caller | Expected path |
 |---|---|
 | Manta (step 4) | `${GENOME_DIR}/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz` |
 | Delly (step 19) | `${GENOME_DIR}/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz` |
-| CNVpytor (step 18) | `${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz` or `_cnvs.txt` |
-| GRIDSS (step 4b, opt-in) | `${GENOME_DIR}/${SAMPLE}/sv_gridss/${SAMPLE}_gridss.vcf.gz` |
-| Sniffles2 (script 4c, long reads) | `${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz` |
+| CNVpytor (step 18) | `${GENOME_DIR}/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz`, or `_cnvs.txt`, which the script turns into that VCF first |
 | TIDDIT (script 4a) | `${GENOME_DIR}/${SAMPLE}/sv_tiddit/${SAMPLE}_sv.vcf.gz` |
+| Sniffles2 (script 4c, long reads) | `${GENOME_DIR}/${SAMPLE}/sv_sniffles/${SAMPLE}_sv.vcf.gz` |
 
-If CNVpytor output is in TXT format (its native output), the script automatically converts it to VCF before merging.
+GRIDSS (step 4b) is left out, and the script says so when its VCF exists. GRIDSS reports every event as a pair of breakends (`SVTYPE=BND`), which never match the DEL, DUP and INV records of the other callers.
+
+The Nextflow pipeline (`survivor_merge` in `--tools`, with at least two of `manta`, `delly`, `cnvpytor`) merges the callers it ran.
 
 ## Command
 
@@ -51,28 +53,27 @@ If CNVpytor output is in TXT format (its native output), the script automaticall
 
 ## What the Script Does Internally
 
-1. Scans for available SV VCFs from Manta, Delly, GRIDSS, Sniffles2, TIDDIT and CNVpytor
-2. If CNVpytor output is only in TXT format, converts it to VCF (adding proper headers, SV type, and END coordinates)
-3. Requires at least 2 callers to proceed (exits with an error otherwise)
-4. Extracts PASS variants from each caller and bins them by `chromosome + position/1000 + SVTYPE`
-5. Keeps bins where 2+ callers contributed a call (consensus SVs)
-6. Writes a sorted, compressed, and indexed consensus VCF
-7. Reports the total count of consensus SVs
+1. Turns CNVpytor's table into a VCF when step 18 left no VCF
+2. Writes each caller's PASS (or unfiltered) records as plain VCF under `sv_merged/inputs/`, with one sample column named after the caller. SURVIVOR names its output columns after the input samples, so three inputs that all name the sample would give one name three times
+3. Runs `SURVIVOR merge inputs/sv_files.txt 1000 2 1 1 0 50`: maximum breakpoint distance 1,000 bp, support from 2 callers, same type, same strands, no size-scaled distance, minimum size 50 bp
+4. Checks that SURVIVOR wrote a VCF (it exits 0 when it cannot open an input), then sorts, compresses and indexes it
+5. Prints the count, and the count per type and caller combination
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_sv_consensus.vcf.gz` | Consensus SVs called by 2+ callers |
+| `${SAMPLE}_sv_consensus.vcf.gz` | Consensus SVs supported by 2+ callers, with `SUPP` and `SUPP_VEC` in INFO |
 | `${SAMPLE}_sv_consensus.vcf.gz.tbi` | Tabix index |
-| `sv_files.txt` | List of input VCFs used |
-| `consensus_raw.txt` | Intermediate merged records |
+| `inputs/sv_files.txt`, `inputs/<caller>.vcf` | The PASS records SURVIVOR read, in `SUPP_VEC` order |
 
 All output is written to `${GENOME_DIR}/${SAMPLE}/sv_merged/`.
 
+`SUPP_VEC` has one digit per caller, in the order of `sv_files.txt` (manta, delly, cnvpytor, tiddit, sniffles2, for the ones found): `110` is Manta and Delly. Each sample column holds that caller's genotype and its original record ID.
+
 ## Runtime
 
-~5-15 minutes (mostly I/O reading the input VCFs).
+A few minutes (mostly reading the input VCFs).
 
 ## Interpreting Results
 
@@ -82,42 +83,35 @@ A typical 30X WGS genome produces:
 - **Delly**: 5,000-15,000 SVs
 - **CNVpytor**: 3,000-4,000 CNVs, 1,500-2,000 of them with e-value < 0.01 (see [interpreting results](interpreting-results.md#cnvpytor-results-step-18))
 
-After consensus filtering, expect **200-1,000 multi-caller SVs**. These have lower false-positive rates than single-caller calls, though the 1 kb binning heuristic is less precise than dedicated tools like SURVIVOR or Jasmine.
+Multi-caller SVs have lower false-positive rates than single-caller calls. The count after the merge has not been measured on a real genome with this version of the step.
 
-SV types in the output:
-- **DEL** -- Deletion (missing segment)
-- **DUP** -- Duplication (extra copy of a segment)
-- **INV** -- Inversion (segment flipped in orientation)
-- **BND** -- Breakend / Translocation (segment moved to another chromosome)
-- **INS** -- Insertion
+SV types in the output: **DEL** (deletion), **DUP** (duplication), **INV** (inversion), **INS** (insertion), **TRA** (a translocation, SURVIVOR's name for a breakend pair between two chromosomes).
 
 ### Quick inspection
 
 ```bash
 source versions.env   # from the repository root
-# Count consensus SVs by type
+# Consensus SVs by type and by which callers support them
 docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
-  bcftools query -f '%INFO/SVTYPE\n' \
+  bcftools query -f '%INFO/SVTYPE\t%INFO/SUPP_VEC\n' \
     /genome/${SAMPLE}/sv_merged/${SAMPLE}_sv_consensus.vcf.gz | sort | uniq -c | sort -rn
 ```
 
 ## Limitations
 
-- The 1 kb breakpoint-binning approach is an approximation. True SURVIVOR merge uses more sophisticated overlap criteria (breakpoint distance, SV type matching, strand, size similarity). Some near-boundary SVs may be missed or incorrectly grouped.
-- CNVpytor-to-VCF conversion produces minimal VCF records (no genotype, no quality scores). These SVs carry less metadata than Manta/Delly calls.
 - Single-caller SVs are discarded even if they are real. If you suspect a specific SV, check the individual caller outputs directly.
-- BND (translocation) breakpoints from different callers may not bin together well due to how breakends are represented.
+- CNVpytor's calls are depth-only and their breakpoints are coarse (its bin size), so a CNVpytor call often lies more than 1 kb from the Manta or Delly breakpoint of the same event and does not pair with it.
+- The CNVpytor VCF made from its table carries no genotype and no quality.
+- Breakend (BND) records pair only with breakends of another caller.
 
 ## Notes
 
 - Run this step only after completing at least two of: step 4 (Manta), step 19 (Delly), step 18 (CNVpytor).
-- All three callers are independent of each other and can run in parallel after alignment.
-- The consensus VCF can be annotated with VEP or loaded into IGV for visual inspection.
-- For more thorough SV analysis, consider also running AnnotSV on the consensus set.
+- The consensus VCF can be annotated or loaded into IGV for visual inspection.
 
 ## Links
 
-- [SURVIVOR (original tool)](https://github.com/fritzsedlazeck/SURVIVOR) -- the gold-standard SV merge tool, used as conceptual basis
+- [SURVIVOR](https://github.com/fritzsedlazeck/SURVIVOR)
 - [Manta](https://github.com/Illumina/manta)
 - [Delly](https://github.com/dellytools/delly)
 - [CNVpytor](https://github.com/abyzovlab/CNVpytor)

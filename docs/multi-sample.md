@@ -2,6 +2,8 @@
 
 Ran the pipeline on two or more people? This guide explains how to compare their results for carrier screening, family planning, and inherited disease investigation.
 
+> **Privacy between the samples of one data directory.** The container of every step script gets the whole `GENOME_DIR` read-only at `/genome` (the references, the databases, and every sample's folder), and only its own sample's folder writable. So a container is not a confidentiality boundary between the samples of one data directory: any tool run for one person can read the other people's files. To keep two people's data apart, give each their own `GENOME_DIR`.
+
 ---
 
 ## Carrier Screening for Partners
@@ -159,6 +161,8 @@ echo "Shared SVs (exact match)"
 | Father-child | Different haplogroups (mtDNA is maternal only) |
 
 If siblings have different mitochondrial haplogroups, it may indicate different biological mothers (adoption, etc.) or a very rare paternal mtDNA inheritance event.
+
+The Y-chromosome haplogroup ([step 37](37-y-haplogroup.md), male samples) is the paternal counterpart: a father and his sons, and brothers, share it.
 
 ---
 

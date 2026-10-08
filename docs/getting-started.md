@@ -140,11 +140,12 @@ When the run starts from an existing VCF, the pipeline does not read a gVCF besi
 | `REF_FASTA=path` | another reference inside `GENOME_DIR` (see [Realigning](realignment.md)) | `--reference` |
 | `EH_CATALOG=file` | another ExpansionHunter catalog; by default the one inside the ExpansionHunter image, copied once to `reference/expansionhunter_variant_catalog.json` | `--expansion_catalog` |
 | `MANTA_CALL_REGIONS=file` | a bgzipped BED of the regions Manta calls | `--manta_call_regions` |
-| `GRIDSS=true`, `IMPUTATION=true`, `ANCESTRY=true`, `SOMATIC=true` | run steps 4b, 14, 26 and 29 as scripts after the pipeline | |
+| `ANCESTRY_PANEL=file`, `PGSC_CALC_DIR=dir` | another ancestry panel (step 26 and the percentiles of step 25), another pgsc_calc checkout; both are passed when `setup.sh` installed them, and `ANCESTRY_PANEL=none` scores without the panel | `--ancestry_ref`, `--pgsc_calc` |
+| `GRIDSS=true`, `IMPUTATION=true`, `SOMATIC=true` | run steps 4b, 14 and 29 as scripts after the pipeline | |
 | `EXTRA_CALLERS=gatk,freebayes,strelka2,octopus` | run the alternative callers 3a to 3d after the pipeline | |
 | `BENCHMARK=true` | runs `benchmark-variants.sh` after them; it needs `EXTRA_CALLERS` or a second caller's VCF from an earlier 3a-3d run, and is skipped without one | |
 
-GRIDSS runs after the pipeline's SV consensus (step 22), so that consensus holds Manta, Delly and CNVpytor only. After `GRIDSS=true`, run `./scripts/22-survivor-merge.sh your_name` to rebuild it with the GRIDSS calls.
+GRIDSS is not part of the SV consensus (step 22): it reports every event as a pair of breakends, which never match the DEL, DUP and INV records of Manta, Delly and CNVpytor.
 
 Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 30.GB` to leave 2 GB to the rest of a 32 GB machine, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit, and `--max_cpus` and `--max_memory` cap each task.
 

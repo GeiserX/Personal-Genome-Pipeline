@@ -101,7 +101,7 @@ These steps require genome-wide data and produce incorrect or meaningless result
 | **18** | CNVpytor | Detects CNVs from read-depth signal across the genome. WES has coverage in ~2% of the genome, making genome-wide read-depth analysis impossible. For exome CNV calling, dedicated tools like ExomeDepth or XHMM are needed (not currently in this pipeline). |
 | **19** | Delly | Relies on discordant read pairs and split reads across the genome. WES read pairs that span capture boundaries look like structural variant evidence to Delly, causing massive false positive rates. |
 | **20** | Mito analysis (GATK Mutect2) | Mutect2 mitochondrial mode expects reads covering the full mtDNA circle. Most exome kits capture few or no mitochondrial regions, so heteroplasmy detection fails. If your kit does capture mtDNA, step 12 (haplogrep3) still works. |
-| **26** | Ancestry PCA | PCA requires hundreds of thousands of evenly-distributed common variants across the genome. WES captures only coding variants, which are biased toward conserved regions and not representative of population-level genetic variation. Results will be unreliable. |
+| **26** | Ancestry projection | pgsc_calc places the sample on a reference panel's principal components from common SNVs spread over the whole genome. An exome covers few of them, and its coding variants are biased toward conserved regions, so the placement is unreliable. |
 
 ---
 
@@ -182,7 +182,7 @@ CAPTURE_BED=${GENOME_DIR}/reference/your_capture.bed ./scripts/16b-mosdepth.sh $
 
 ### 7. Skip These Steps
 
-Do **not** run: TelomereHunter (10), indexcov (16), CNVpytor (18), Delly (19), GRIDSS (4b), Mito analysis (20), Ancestry PCA (26).
+Do **not** run: TelomereHunter (10), indexcov (16), CNVpytor (18), Delly (19), GRIDSS (4b), Mito analysis (20), Ancestry projection (26).
 
 ---
 
@@ -229,7 +229,7 @@ Most clinical and research WES providers use one of a few standard capture kits.
 
 4. **ROH detection is less precise.** Runs of homozygosity analysis on WES data detects large ROH segments (>5 Mb) reasonably well because exome targets are spread across all chromosomes. Smaller ROH segments may be missed due to gaps between captured regions.
 
-5. **Ancestry estimation does not work.** PCA-based ancestry requires uniformly-distributed variants across the genome, which exome data cannot provide.
+5. **Ancestry estimation does not work.** The projection onto a reference panel (step 26) needs common variants spread across the genome, which exome data cannot provide.
 
 6. **Deep intronic and regulatory variants are invisible.** Some clinically significant variants are in deep intronic regions (e.g., splicing regulators) or promoters/enhancers. WES will not detect these. If you have a clinical suspicion that WES missed, WGS is the appropriate follow-up.
 

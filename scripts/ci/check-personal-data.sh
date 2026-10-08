@@ -60,7 +60,6 @@ scripts/ci/check-personal-data.sh             (17/19 on a line with REPCN
 CONTRIBUTING.md                               /mnt/user\|internal-host\|/home/
 CONTRIBUTING.md                               (`/mnt/user/`, `/home/username/`, etc.)
 modules/local/cyrius/main.nf                  ${prefix}\\t*1/*1\\tPASS
-tests/fake-docker/base-run-all-default.sh     sample1\t*1/*1\tPASS
 tests/fake-docker/reports-stale-step.sh       sample1\t*1/*1\tPASS
 tests/test_collect_summary.py                 S\t*1/*4\tPASS
 tests/smoke/commands.tsv                      HTT at 19/45 repeats

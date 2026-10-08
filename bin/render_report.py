@@ -78,7 +78,7 @@ def text_report(s):
     w("")
 
     def head(key, title=None):
-        sec = S[key]
+        sec = S.get(key, MISSING)
         if sec["state"] == "missing":
             return False
         w(f"## {title or sec['title']}")
@@ -230,7 +230,14 @@ def text_report(s):
         w("")
 
     if head("haplogroup", "Mitochondrial Haplogroup"):
-        w(f"  Haplogroup: {S['haplogroup']['data']['haplogroup']}")
+        d = S["haplogroup"]["data"]
+        w(f"  Haplogroup: {d['haplogroup']}")
+        w(f"  Contamination (haplocheck): {contamination_text(d)}")
+        w("")
+
+    if head("y_haplogroup", "Y-Chromosome Haplogroup (Yleaf)"):
+        d = S["y_haplogroup"]["data"]
+        w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
         w("")
 
     if head("mito", "Mitochondrial Variants (Mutect2)"):
@@ -256,6 +263,15 @@ def text_report(s):
         w(f"  Clinical variants: {d['variants']}" + (f" in {d['genes']} genes" if "genes" in d else ""))
         if d.get("by_impact"):
             w("  By impact: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_impact"].items())))
+        sf = d.get("acmg_sf")
+        if sf:
+            w(f"  Secondary-findings genes ({sf['version']}, {sf['genes_on_list']} genes): "
+              f"{len(sf['clinvar_hits'])} ClinVar P/LP, {len(sf['high_impact'])} rare HIGH impact")
+            for x in sf["clinvar_hits"]:
+                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  ClinVar {x['significance']}")
+            for x in sf["high_impact"]:
+                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  {x['consequence']}")
+            w(f"    {ACMG_NOTE}")
         w("")
 
     if head("slivar", "Variant Prioritization (slivar)"):
@@ -330,6 +346,19 @@ CSS = """
   .footer table { font-size: 12px; color: #666; margin-top: 8px; }
   @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 """
+
+
+ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
+             "homozygous C282Y only, BTD and CYP27A1 two variants) are not applied here.")
+
+
+def contamination_text(d):
+    if "contamination_status" not in d:
+        return "not checked (needs step 20's Mutect2 chrM calls)"
+    s = d["contamination_status"]
+    word = {"YES": "YES, two mtDNA haplogroups in the reads (another person's DNA?)", "NO": "no",
+            "ND": "not determined"}.get(s, s)
+    return f"{word} (level {d.get('contamination_level', '.')})"
 
 
 def stat(label, value):
@@ -479,7 +508,13 @@ def html_report(s):
             stat("Segments", r.get("segments", 0)),
             stat("Autosomal ROH > 5 MB", len(r.get("autosomal_over_5mb", [])))]))
     a(card(S["haplogroup"], "Mitochondrial Haplogroup",
-           [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", ".")))]))
+           [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
+            stat("Contamination (haplocheck)", E(contamination_text(hg)))]))
+    if S.get("y_haplogroup", MISSING)["state"] != "missing":
+        yh = S["y_haplogroup"]["data"]
+        a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
+               [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
+                stat("QC-score", E(str(yh.get("qc_score", "."))))]))
     a(card(S["telomere"], "Telomere Length", [stat("Telomere content", E(str(tl.get("tel_content", "."))))]))
 
     mi = S["mito"]["data"]
@@ -491,6 +526,15 @@ def html_report(s):
            [stat("Total interesting variants", cl.get("variants"))]
            + ([stat("Genes", cl["genes"])] if "genes" in cl else [])
            + [stat(f"{k} impact", v) for k, v in sorted((cl.get("by_impact") or {}).items())]))
+    sf = cl.get("acmg_sf")
+    if sf and (sf["clinvar_hits"] or sf["high_impact"]):
+        rows = "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
+                       f"<td>{E('ClinVar ' + x['significance'])}</td></tr>\n" for x in sf["clinvar_hits"])
+        rows += "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
+                        f"<td>{E(x['consequence'])}</td></tr>\n" for x in sf["high_impact"])
+        a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
+               ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
+                rows.rstrip("\n"), "    </table>", f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
     sl_body = [stat("Prioritized variants", sl.get("prioritized"))]

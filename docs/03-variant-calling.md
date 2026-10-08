@@ -88,6 +88,10 @@ A male sample has one X and one Y. Outside the pseudoautosomal regions (PARs, th
 
 The alternative callers (03a GATK, 03b FreeBayes, 03d Octopus) call every contig diploid, chrX and chrY of a male sample too. Clair3 (03e, long reads) takes the same `male` or `female` argument (`--gender`).
 
+## Alternative callers: scatter
+
+GATK HaplotypeCaller (03a) multithreads only its PairHMM and FreeBayes (03b) runs on one thread, so each would leave most of the CPUs idle for a whole genome. Both split the work into units: chr1-22, chrX, chrY and chrM one each and every other contig together, or each region of `INTERVALS` (space-separated, for example `INTERVALS="chr20 chr22"`). `SCATTER_JOBS` units (default THREADS/2) run at once, GATK with 2 CPUs and 8 GB each, FreeBayes with 1 CPU and 8 GB, and the parts are joined in reference order. `SCATTER=false` runs one process over everything (32 GB). On chr20 and chr22 of the e2e fixture the scattered and the single run of each caller give the same records (`tests/e2e/sv-mito-telomere-steps-6-scatter.sh`).
+
 ## Resource Requirements
 - CPU: `THREADS` (default 8) sets `--cpus` and `--num_shards`; more shards scale well on more cores
 - RAM: 32GB recommended (`DV_MEM`)

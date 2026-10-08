@@ -4,7 +4,7 @@
 Calls mitochondrial DNA variants with heteroplasmy fractions — detecting variants present in only a fraction of your mitochondrial copies. Uses GATK Mutect2 in mitochondrial mode.
 
 ## Why
-Step 12 (haplogrep3) assigns your mitochondrial haplogroup from chrM variants already in the main VCF. This step goes deeper:
+The main VCF (step 03) calls chrM as if it were a diploid nuclear contig. This step goes deeper, and step 12 then reads its calls for the haplogroup and the contamination check (run this step first):
 - **Heteroplasmy detection**: Identifies variants present in only a fraction of mtDNA copies (clinically important for mitochondrial diseases)
 - **Dedicated mitochondrial calling**: Mutect2's mitochondrial mode handles the unique properties of mtDNA (high copy number, circular genome, no recombination)
 - **Somatic-grade sensitivity**: Detects variants at allele fractions as low as 1-3%
@@ -58,7 +58,7 @@ NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map
 ## Output
 - `${SAMPLE}_chrM_mutect2.vcf.gz` — Raw mitochondrial variant calls
 - `${SAMPLE}_chrM_mutect2_filtered.vcf.gz` — after FilterMutectCalls
-- `${SAMPLE}_chrM_filtered.vcf.gz` — after FilterMutectCalls and NuMTFilterTool, with PASS or the reasons a call failed (`possible_numt` among them); the file the reports read
+- `${SAMPLE}_chrM_filtered.vcf.gz` — after FilterMutectCalls and NuMTFilterTool, with PASS or the reasons a call failed (`possible_numt` among them); the file the reports and step 12 (haplogroup, haplocheck) read
 - Each variant includes an `AF` (allele fraction) field indicating heteroplasmy level
 
 ## Interpreting Heteroplasmy
@@ -80,3 +80,9 @@ Count only PASS calls: a call marked `possible_numt` or with another filter is n
 - The GATK Docker image is large (~2.2 GB) but well-maintained and versioned.
 - For disease annotation of mitochondrial variants, cross-reference with [MitoMap](https://www.mitomap.org/) or the Ensembl VEP output from step 13.
 - Some mitochondrial diseases require heteroplasmy above a tissue-specific threshold (e.g., m.3243A>G MELAS requires >60% in blood).
+
+## What is not done, and why
+
+- **The shifted-reference pass for the control region.** Broad's mitochondria pipeline calls the region around the chrM start a second time on a reference rotated by 8 kb, so reads that span the circle's end align well. Here those calls stay less reliable (see above).
+- **mtDNA-Server 2 (or mutserve) in place of this step.** Both were last released in December 2024 (mtDNA-Server 2.1.16, mutserve 2.0.3). The cheaper fix for the main source of false heteroplasmy, NuMT reads, is in place (NuMTFilterTool above), and haplocheck, the contamination check of the mtDNA-Server tools, runs in step 12 on these calls.
+
