@@ -110,7 +110,7 @@ The Genome in a Bottle (GIAB) consortium publishes validated truth sets for seve
 
 ### The two HG002 truth sets, by name
 
-`benchmark-variants.sh --giab <set>` downloads one of GIAB's two HG002 GRCh38 small-variant benchmarks into `${GENOME_DIR}/giab/` on first use, checks each file by md5, and runs hap.py against it with `--gender male`. v4.2.1 comes from GIAB's S3 mirror (`https://giab.s3.amazonaws.com/`, the same paths as NCBI's `ReferenceSamples/giab` tree). v5.0q has no mirror: the S3 bucket does not hold it and we know of no other public copy, so it comes from NCBI only, whose GIAB tree answered 404 for more than a day in October 2026. Each download is tried `FETCH_TRIES` times, `FETCH_WAIT` seconds apart (by default 3 tries, 5 then 10 seconds apart), then the step stops. `GIAB_V421_URL` or `GIAB_V5Q_URL` points a set at another copy of its folder; the md5s still decide what is accepted.
+`benchmark-variants.sh --giab <set>` downloads one of GIAB's two HG002 GRCh38 small-variant benchmarks into `${GENOME_DIR}/giab/` on first use, checks each file by md5, and runs hap.py against it with `--gender male`. v4.2.1 comes from GIAB's S3 mirror (`https://giab.s3.amazonaws.com/`, the same paths as NCBI's `ReferenceSamples/giab` tree). v5.0q has no mirror: the S3 bucket does not hold it and we know of no other public copy, so it comes from NCBI only, by the tree's `giab/ftp/` path (`https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/`). NCBI's other path to the same tree, `ReferenceSamples/giab/`, has answered 404 since 2026-10-07. Each download is tried `FETCH_TRIES` times, `FETCH_WAIT` seconds apart (by default 3 tries, 5 then 10 seconds apart), then the step stops. `GIAB_V421_URL` or `GIAB_V5Q_URL` points a set at another copy of its folder; the md5s still decide what is accepted.
 
 | Set | What it is | Files |
 |---|---|---|
@@ -127,7 +127,7 @@ printf 'chr20\t0\t64444167\n' > "${GENOME_DIR}/chr20.bed"
 
 With a regions BED (`--regions`, or the set's own), hap.py compares only the contigs that BED names (`-l`); without it hap.py takes chr1-22, chrX and chrY and stops on a contig the reference lacks.
 
-v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture. When every try of a v5.0q download gets HTTP 404 from NCBI, that case prints `SKIPPED v5.0q: GIAB truth set unavailable upstream (HTTP 404 after N tries)`, writes the same line to the run's summary and does not fail; a wrong md5, a hap.py error or a low recall still fails it, and so does any v4.2.1 failure.
+v5.0q's md5s are those of GIAB's `checksum.md5`; v4.2.1 has no checksum file, so its md5s are the ones the files had when the step was written (2026-10-07). A file that changes upstream then fails its check instead of changing the benchmark silently. The e2e case `tests/e2e/sv-mito-telomere-steps-5-giab.sh` runs both sets on the chr20 slice of the test fixture. When every try of a v5.0q download gets HTTP 404, that case prints `SKIPPED v5.0q: GIAB truth set unavailable upstream (HTTP 404 after N tries)`, writes the same line to the run's summary and does not fail; a wrong md5, a hap.py error or a low recall still fails it, and so does any v4.2.1 failure.
 
 ### Download HG002 Truth Set by hand
 

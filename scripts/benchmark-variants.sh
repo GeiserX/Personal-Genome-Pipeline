@@ -7,7 +7,7 @@
 # Truth sets: --truth VCF (with --regions BED) for any truth set, or
 # --giab v4.2.1|v5.0q for one of GIAB's two HG002 GRCh38 small-variant
 # benchmarks, downloaded into GENOME_DIR/giab/ on first use (v4.2.1 from GIAB's
-# S3 mirror, v5.0q from NCBI, which has the only copy) and checked by md5:
+# S3 mirror, v5.0q from NCBI, which holds the only copy) and checked by md5:
 #   v4.2.1  NISTv4.2.1, chr1-22, mapping-based (the long-standing benchmark)
 #   v5.0q   the draft assembly-based set from the T2T HG002 Q100 assembly,
 #           with chrX, chrY and harder regions; hap.py gets --gender male
@@ -56,34 +56,36 @@ done
 HAPPY_EXTRA=()
 if [ -n "$GIAB" ]; then
   [ -z "$TRUTH_VCF" ] || { echo "ERROR: use --giab or --truth, not both." >&2; exit 1; }
-  # v4.2.1 comes from GIAB's S3 mirror (the same paths as NCBI's tree);
-  # v5.0q has no mirror and comes from NCBI only. GIAB_V421_URL and
-  # GIAB_V5Q_URL point a set at another copy of its folder; the md5s below
-  # still decide what is accepted.
-  GIAB_S3=https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son
-  GIAB_NCBI=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son
+  # v4.2.1 comes from GIAB's S3 mirror (the same paths as NCBI's tree). v5.0q
+  # has no mirror and comes from NCBI's giab/ftp/ path; NCBI's
+  # ReferenceSamples/giab/ path to the same tree has answered 404 since
+  # 2026-10-07. Each file is named by its full URL, so the link check requests
+  # the files themselves. GIAB_V421_URL or GIAB_V5Q_URL points a set at another
+  # copy of its folder; the md5s still decide what is accepted.
   case "$GIAB" in
     v4.2.1)
-      GIAB_URL="${GIAB_V421_URL:-${GIAB_S3}/NISTv4.2.1/GRCh38}"
-      GIAB_FILES=("HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz dc750b3807d4af1f7ffec852e9c2f771"
-                  "HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi 121e2975fb3ff0317ae6a684d0ce6f2f"
-                  "HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed 97265e922a97c69a0391cf3f92a89b8b") ;;
+      GIAB_DIR=${GIAB_V421_URL:-}
+      GIAB_FILES=("https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz dc750b3807d4af1f7ffec852e9c2f771"
+                  "https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi 121e2975fb3ff0317ae6a684d0ce6f2f"
+                  "https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed 97265e922a97c69a0391cf3f92a89b8b") ;;
     v5.0q)
-      GIAB_URL="${GIAB_V5Q_URL:-${GIAB_NCBI}/v5.0q}"
-      GIAB_FILES=("HG002_GRCh38_v5.0q_smvar.vcf.gz c71acc71069bf7cd7f51eb8fb0c1a1ab"
-                  "HG002_GRCh38_v5.0q_smvar.vcf.gz.tbi 58cab2a06e29b74a5bdc190ead079083"
-                  "HG002_GRCh38_v5.0q_smvar.benchmark.bed 3366858af85875cbb3c579412ffa4c56") ;;
+      GIAB_DIR=${GIAB_V5Q_URL:-}
+      GIAB_FILES=("https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.vcf.gz c71acc71069bf7cd7f51eb8fb0c1a1ab"
+                  "https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.vcf.gz.tbi 58cab2a06e29b74a5bdc190ead079083"
+                  "https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.benchmark.bed 3366858af85875cbb3c579412ffa4c56") ;;
     *) echo "ERROR: --giab must be v4.2.1 or v5.0q, got '${GIAB}'" >&2; exit 1 ;;
   esac
   for entry in "${GIAB_FILES[@]}"; do
-    f=${entry% *}
+    url=${entry% *}
+    f=${url##*/}
+    [ -z "$GIAB_DIR" ] || url="${GIAB_DIR%/}/${f}"
     if [ ! -s "${GENOME_DIR}/giab/${f}" ]; then
-      echo "Downloading GIAB HG002 ${GIAB}: ${GIAB_URL}/${f}"
-      fetch "${GIAB_URL}/${f}" "${GENOME_DIR}/giab/${f}" md5 "${entry#* }"
+      echo "Downloading GIAB HG002 ${GIAB}: ${url}"
+      fetch "$url" "${GENOME_DIR}/giab/${f}" md5 "${entry#* }"
     fi
   done
-  TRUTH_VCF="${GENOME_DIR}/giab/${GIAB_FILES[0]% *}"
-  SET_BED="${GENOME_DIR}/giab/${GIAB_FILES[2]% *}"
+  TRUTH_VCF="${GENOME_DIR}/giab/$(basename "${GIAB_FILES[0]% *}")"
+  SET_BED="${GENOME_DIR}/giab/$(basename "${GIAB_FILES[2]% *}")"
   if [ -n "$REGIONS_BED" ]; then
     # --regions with --giab: the set's benchmark regions inside that BED only.
     [ -f "$REGIONS_BED" ] || { echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2; exit 1; }

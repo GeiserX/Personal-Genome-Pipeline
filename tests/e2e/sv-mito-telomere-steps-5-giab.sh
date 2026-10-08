@@ -4,7 +4,8 @@
 # with the chr20 slice keeps each set's benchmark regions inside the slice.
 #
 # v4.2.1 comes from GIAB's S3 mirror and must pass. v5.0q has no mirror, only
-# NCBI: when every try of one of its downloads gets HTTP 404, the leg prints
+# NCBI, one of whose two paths to its GIAB tree answers 404 since 2026-10-07:
+# when every try of one of its downloads gets HTTP 404, the leg prints
 # one SKIPPED line (also written to the run's summary) and does not fail the
 # case. Any other failure of either leg (a wrong md5, a network error, hap.py,
 # the recall or the precision) fails it. E2E_GIAB_SETS runs only the sets it
