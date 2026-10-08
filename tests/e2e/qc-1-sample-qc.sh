@@ -147,17 +147,17 @@ SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" male
 check_step_exit 33-sample-qc.sh
 check_eq "declared male: the check passes" "$(tval "$T" sex_check)" ok
 check_eq "somalier's table: the declared male as the pedigree's sex" "$(scol original_pedigree_sex)" male
+check "the log says so" has 'Sex check: OK' "$(cat "$STEP_LOG")"
 # MultiQC reads that column as its somalier "Sex"; -9 before somalier had a pedigree.
 FLAGSTAT="${G}/${SAMPLE}/aligned/${SAMPLE}_flagstat.txt"
 HAD_FLAGSTAT=false; [ -f "$FLAGSTAT" ] && HAD_FLAGSTAT=true
 run_step 28-multiqc.sh "$SAMPLE"
 check_step_exit 28-multiqc.sh
-MQC="${G}/${SAMPLE}/multiqc/multiqc_data/multiqc_somalier.txt"
+MQC="${G}/${SAMPLE}/multiqc/multiqc_report_data/multiqc_somalier.txt"
 check_eq "MultiQC's somalier table: Sex male" \
   "$(awk -F'\t' -v s="$SAMPLE" 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $1 == s {print $c["original_pedigree_sex"]}' "$MQC" 2>/dev/null)" male
 in_genome "$BCFTOOLS_IMAGE" rm -rf "${SAMPLE}/multiqc"
 $HAD_FLAGSTAT || rm -f "$FLAGSTAT"
-check "the log says so" has 'Sex check: OK' "$(cat "$STEP_LOG")"
 
 SEX_CHECK=warn SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" female
 check_step_exit 33-sample-qc.sh

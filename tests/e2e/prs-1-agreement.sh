@@ -84,11 +84,10 @@ cat "$SITES"
 check_eq "score sites (5 hom-ref, 1 hom-ref with another effect allele, 3 truth SNVs)" "$(wc -l < "$SITES" | tr -d ' ')" 9
 
 # Three chrX rows outside the PARs: the middle of reference blocks (0/0) of
-# 400 bp or more in the gVCF, 200 bp or more from any call with an ALT.
+# 50 bp or more in the gVCF, more than 100 bp from any call with an ALT.
 XR=chrX:73700001-74000000
-bcf query -r "$XR" -i 'GT="0/0" && INFO/END>0' -f '%POS\t%INFO/END\n' "${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz" \
-  > "${CASE_TMP}/x_blocks.tsv" 2>/dev/null
-bcf query -r "$XR" -i 'GT="alt"' -f '%POS\n' "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" > "${CASE_TMP}/x_vars.tsv" 2>/dev/null
+bcf query -r "$XR" -f '%POS\t%INFO/END\t[%GT]\n' "${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz" > "${CASE_TMP}/x_blocks.tsv"
+bcf query -r "$XR" -i 'GT="alt"' -f '%POS\n' "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" > "${CASE_TMP}/x_vars.tsv"
 X_SITES="${CASE_TMP}/x_sites.tsv"
 python3 - "${CASE_TMP}/x_blocks.tsv" "${CASE_TMP}/x_vars.tsv" "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta" \
   > "$X_SITES" <<'PY2'
@@ -102,11 +101,13 @@ def base(pos):
     with open(fasta, "rb") as fh:
         fh.seek(offset + (i // bases) * width + i % bases)
         return fh.read(1).decode().upper()
+rows = [l.rstrip("\n").split("\t") for l in open(blocks) if l.strip()]
+refs = [(int(r[0]), int(r[1])) for r in rows if len(r) == 3 and r[1] not in ("", ".") and r[2] in ("0/0", "0|0")]
+print(f"{len(rows)} gVCF records on the chrX slice, {len(refs)} 0/0 blocks, {len(var)} calls with an ALT", file=sys.stderr)
 out, last = [], 0
-for l in open(blocks):
-    start, end = (int(x) for x in l.split())
+for start, end in refs:
     p = (start + end) // 2
-    if end - start >= 400 and p - last > 5000 and all(abs(v - p) > 200 for v in var) and base(p) in "ACGT":
+    if end - start >= 50 and p - last > 2000 and all(abs(v - p) > 100 for v in var) and base(p) in "ACGT":
         out.append((p, base(p)))
         last = p
 for (p, b), w in zip(out[:3], (32, 64, 128)):
