@@ -15,7 +15,9 @@
 # somalier's sex, from heterozygosity at chrX sites and from chrY depth,
 # differs; SEX_CHECK=warn prints the mismatch and exits 0, as in step 16.
 # When somalier cannot tell (too few chrX sites with reads, as on a sliced or
-# targeted BAM), it says so and does not stop. FREEMIX above FREEMIX_WARN
+# targeted BAM), it says so and does not stop. somalier gets the declared sex
+# as a one-line pedigree (--ped), so its own table and MultiQC show it beside
+# the sex from the reads; the verdict is still the sex from the reads alone. FREEMIX above FREEMIX_WARN
 # (default 0.03) is a warning only: contamination makes calls less reliable,
 # it does not make them someone else's.
 #
@@ -101,9 +103,17 @@ fi
 SOMALIER_ID=$(basename "${EXTRACTED[0]}" .somalier)
 echo "somalier reads the sample as '${SOMALIER_ID}' (the BAM's @RG SM)"
 
+# The declared sex as somalier's pedigree: its samples.tsv then reports it as
+# original_pedigree_sex (-9 without), and somalier logs "setting sex to ..."
+# when the reads say the other sex.
+PED_SEX=-9
+case "$DECLARED_SEX" in male) PED_SEX=1 ;; female) PED_SEX=2 ;; esac
+printf '%s\t%s\t-9\t-9\t%s\t-9\n' "$SOMALIER_ID" "$SOMALIER_ID" "$PED_SEX" > "${OUT}/somalier/${SAMPLE}.declared.ped"
+
 echo "--- somalier relate"
 run_in --cpus 1 --memory 2g "$SOMALIER_IMAGE" \
   somalier relate --infer \
+    --ped "/genome/${SAMPLE}/qc/somalier/${SAMPLE}.declared.ped" \
     --sites "$SITES_C" \
     -o "/genome/${SAMPLE}/qc/somalier/${SAMPLE}" \
     "/genome/${SAMPLE}/qc/somalier/${SOMALIER_ID}.somalier"

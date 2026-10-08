@@ -44,6 +44,9 @@ MultiQC scans the entire sample directory and auto-detects outputs from these pi
 | fastp | `*_fastp.json` | Step 1b (QC + trimming) |
 | samtools flagstat | `*_flagstat.txt` | Generated automatically |
 | mosdepth | `*.mosdepth.summary.txt`, `*.mosdepth.global.dist.txt` | Step 16b |
+| somalier | `qc/somalier/*.samples.tsv`, `*.pairs.tsv` | Step 33 |
+
+In the somalier table, **Sex** is the sex you declared to step 33 (somalier's `original_pedigree_sex`, `unknown` when you declared none) and **Inferred sex** is somalier's `sex` column: the declared sex's code, changed when the reads say otherwise. Step 33's own table (`qc/<sample>_sample_qc.tsv`) holds the verdict.
 
 The script generates `samtools flagstat` output automatically if a BAM exists but no flagstat file is present.
 

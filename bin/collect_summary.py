@@ -941,6 +941,22 @@ def num(x):
     return v if v == v else None   # NaN is no value
 
 
+def somalier_x_sex(row):
+    """male or female when somalier's own rule calls the sex from chrX, else
+    None. The rule of relate --infer (relate.nim, add_parents_and_check_sex):
+    more than 10 chrX sites with depth, heterozygous / homozygous-ALT sites
+    below 0.05 for male or above 0.4 for female, and fewer than 6% of all
+    sites with an allele balance outside 0.1 to 0.9."""
+    n, het, hom = num(row.get("X_n")), num(row.get("X_het")), num(row.get("X_hom_alt"))
+    mid = num(row.get("p_middling_ab"))
+    if n is None or het is None or hom is None or n <= 10 or (mid is not None and mid >= 0.06):
+        return None
+    if hom == 0:
+        return "female" if het > 0 else None
+    ratio = het / hom
+    return "male" if ratio < 0.05 else "female" if ratio > 0.4 else None
+
+
 def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_sex=None,
                     freemix_warn=FREEMIX_WARN, somalier_id=None, marker_check=""):
     """The step 33 verdict for one sample, as ordered (key, value) pairs."""
@@ -952,8 +968,18 @@ def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_s
                          f"(it has: {', '.join(r.get('sample_id', '?') for r in rows) or 'none'})")
     inferred = SOMALIER_SEX.get(row.get("sex", ""), "unknown")
     declared = (declared_sex or "").lower() or None
+    # With the declared sex as its pedigree (--ped), somalier starts its sex
+    # column from that sex and overwrites it only when the reads tell, so the
+    # pedigree's sex left standing is not a call: unknown, as without a
+    # pedigree. -2 from a pedigree female with chrY reads is not one either
+    # unless chrX looks female too.
+    ped = {"male": "male", "female": "female"}.get(row.get("original_pedigree_sex", "").lower())
+    x_says = somalier_x_sex(row) if ped else None
+    if ped and inferred == ped and x_says != ped:
+        inferred = "unknown"
+    x_and_y = row.get("sex", "") == "-2" and (not ped or x_says == "female")
     # -2 first: it is worth saying even when no sex was declared
-    if row.get("sex", "") == "-2":
+    if x_and_y:
         sex_check = "not_checked"
         why = ("chrX is heterozygous like a female sample but chrY has reads: "
                "a sex-chromosome aneuploidy or a mixed sample")
