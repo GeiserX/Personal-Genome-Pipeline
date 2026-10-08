@@ -36,7 +36,9 @@ The check is that the CRAM passes `samtools quickcheck` (a CRAM cut short has no
 
 `--restore` does the same in reverse: the BAM is written under a `.part` name, checked against the CRAM, and moved into place. It refuses to write over a BAM that exists.
 
-In Nextflow, `cram_archive` in `--tools` runs the same conversion and check (`CRAM_ARCHIVE`) for every BAM of the run, except the rows given as CRAM, which have one already, and publishes `<outdir>/<sample>/aligned/<sample>_sorted.cram`. It never deletes anything: delete the BAM yourself once the CRAM is there, or run this script on it.
+One archive or restore of a sample runs at a time. Archive, `--delete-bam` and `--restore` all take the same lock, `aligned/${SAMPLE}_sorted.lock`, with `flock` before they read or write any of the sample's files. A second run on the same sample, in another terminal or as a Nextflow `CRAM_ARCHIVE` task on that BAM, stops at once with `ERROR: another archive or restore of <sample> is running` and changes nothing; run it again when the first has finished. Without the lock, two runs would delete or overwrite the `.part` files the other is writing and checking, and `--delete-bam` could remove a BAM the other run is still reading. The lock goes when the run that holds it ends, however it ends (an error, Ctrl-C or `kill -9`), so it is never left behind; the empty `.lock` file stays and means nothing on its own. `flock` comes with util-linux on Linux; on macOS install it with `brew install flock`, or the step warns and runs without the lock.
+
+In Nextflow, `cram_archive` in `--tools` runs the same conversion and check (`CRAM_ARCHIVE`) for every BAM of the run, except the rows given as CRAM, which have one already, and publishes `<outdir>/<sample>/aligned/<sample>_sorted.cram`. It never deletes anything: delete the BAM yourself once the CRAM is there, or run this script on it. It takes the same lock, next to the BAM the samplesheet row names (`<BAM name without .bam>.lock`), and fails the task while this script holds it. When it cannot write the lock file there, it warns and reads the BAM without the lock.
 
 ## Output Files
 | File | Description |
@@ -44,6 +46,7 @@ In Nextflow, `cram_archive` in `--tools` runs the same conversion and check (`CR
 | `aligned/${SAMPLE}_sorted.cram` | The alignments |
 | `aligned/${SAMPLE}_sorted.cram.crai` | Its index |
 | `aligned/${SAMPLE}_sorted.cram.flagstat`, `aligned/${SAMPLE}_sorted.bam.flagstat` | The two `flagstat` outputs the check compared |
+| `aligned/${SAMPLE}_sorted.lock` | The empty file the lock is taken on |
 
 ## Rerunning steps from a CRAM
 

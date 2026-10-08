@@ -17,6 +17,8 @@
 # this run, and never when it failed. --restore writes the BAM back the same
 # way, checked against the CRAM, for the bash steps, which read the BAM (the
 # Nextflow pipeline reads a CRAM row itself; see docs/34-cram-archive.md).
+# Archive and restore take the sample's lock, aligned/<sample>_sorted.lock:
+# while one runs, a second one stops with an error instead of racing it.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> [--delete-bam | --restore]}
@@ -42,6 +44,27 @@ echo "Reference: ${REF_FASTA}"
 for f in "$REF_FASTA" "${REF_FASTA}.fai"; do
   [ -f "$f" ] || { echo "ERROR: File not found: ${f}" >&2; exit 1; }
 done
+
+# One archive or restore of a sample at a time. A second run on the same
+# sample (another terminal, or a Nextflow CRAM_ARCHIVE task that reads this
+# BAM, which takes the same lock) would delete or overwrite the files this one
+# writes and checks, so it stops here. flock holds the lock on fd 9 until this
+# script and the containers it started are gone, however they end (kill -9
+# too), so a lock is never left behind; the empty file stays and means nothing
+# on its own. It is opened read-only: a Nextflow task running as root may have
+# made it.
+LOCK="${ALN}/${SAMPLE}_sorted.lock"
+[ -d "$ALN" ] || { echo "ERROR: Directory not found: ${ALN}" >&2; exit 1; }
+if command -v flock >/dev/null 2>&1; then
+  [ -e "$LOCK" ] || : >> "$LOCK"
+  exec 9<"$LOCK"
+  if ! flock -n 9; then
+    echo "ERROR: another archive or restore of ${SAMPLE} is running: it holds ${LOCK}. Let it finish, then run this again." >&2
+    exit 1
+  fi
+else
+  echo "WARNING: flock is not installed (on macOS: brew install flock), so nothing stops a second archive or restore of ${SAMPLE} from running beside this one." >&2
+fi
 
 # flagstat FILE_IN_CONTAINER OUT: samtools flagstat of a BAM or CRAM, to OUT.
 # flagstat takes no --reference; a CRAM gets the reference as an input option.
