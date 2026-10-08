@@ -165,9 +165,21 @@ def main():
                            ("increased risk of aminoglycoside-induced hearing loss", True),
                            ("ivacaftor responsive in CF patients", True),
                            ("ivacaftor non-responsive in CF patients", False), ("Indeterminate", False),
-                           ("n/a", False), ("no phenotype assigned", False), ("-1639 GA", False),
+                           ("n/a", False), ("no phenotype assigned", False), ("-1639 GA", True),
+                           ("-1639 AA", True), ("-1639 GG", False),
                            ("Uncertain Susceptibility", False), ("*58:01 negative", False)):
             check(f"is_non_normal({phen!r}) is {want}", pgx_parse.is_non_normal(phen) is want)
+        ga = json.loads(json.dumps(example))
+        ga["genes"]["VKORC1"]["sourceDiplotypes"][0].update(
+            label="rs9923231 reference (C)/rs9923231 variant (T)", phenotypes=["-1639 GA"])
+        _, gcalls = pgx_parse.parse_genes(ga)
+        check("example with VKORC1 -1639 GA: VKORC1 counts as non-normal",
+              [c.status for c in gcalls if c.gene == "VKORC1"] == ["non-normal"],
+              [(c.gene, c.phenotype, c.status) for c in gcalls if c.gene == "VKORC1"])
+        rc, grec, _, _ = run_report(work, "EXAMPLE_GA", ga)
+        check("example with VKORC1 -1639 GA: its drug list names warfarin",
+              rc == 0 and "    Drugs" in block(grec, "VKORC1") and "warfarin" in block(grec, "VKORC1"),
+              block(grec, "VKORC1"))
         for c in nonnormal:
             b = block(rec, c.gene)
             check(f"example {c.gene} ({c.phenotype}): a drug list", "    Drugs" in b and "not in the drug table" not in b, b)

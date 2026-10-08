@@ -72,12 +72,14 @@ NO_CALL_NAMES = {"", "unknown", "none", "?", "n/a"}
 NORMAL_WORDS = {"normal", "typical", "extensive"}
 # The phenotypes that count as non-normal: a changed metabolism or function, a
 # positive HLA test, a G6PD deficiency, malignant hyperthermia susceptibility,
-# an increased risk (MT-RNR1) or an ivacaftor-responsive CFTR. Each is matched
-# against one ';'-separated part of PharmCAT's phenotype, lower-cased. Anything
-# else PharmCAT writes for a called gene (n/a, 'no phenotype assigned', a
-# genotype such as VKORC1 '-1639 GG', 'Uncertain Susceptibility',
-# 'Indeterminate') names no changed function: the gene is 'unclassified',
-# not counted and given no drug guidance.
+# an increased risk (MT-RNR1), an ivacaftor-responsive CFTR or a VKORC1 -1639
+# genotype with the A allele (GA or AA, the warfarin dose-reduction case;
+# PharmCAT writes VKORC1's phenotype as that genotype). Each is matched against
+# one ';'-separated part of PharmCAT's phenotype, lower-cased, hyphens turned
+# to spaces. Anything else PharmCAT writes for a called gene (n/a, 'no
+# phenotype assigned', the reference genotype VKORC1 '-1639 GG', 'Uncertain
+# Susceptibility', 'Indeterminate') names no changed function: the gene is
+# 'unclassified', not counted and given no drug guidance.
 NON_NORMAL_PATTERNS = [re.compile(p) for p in (
     r"((likely|possible) )?(poor|intermediate|rapid|ultra ?rapid) metabolizer",
     r"((likely|possible) )?(decreased|increased|poor|no) function",
@@ -86,6 +88,7 @@ NON_NORMAL_PATTERNS = [re.compile(p) for p in (
     r"malignant hyperthermia susceptib(le|ility)",
     r"increased risk of .+",
     r"ivacaftor responsive( in cf patients)?",
+    r"1639 (ga|aa)",
 )]
 
 
@@ -586,10 +589,10 @@ def cpic_report(args):
         lines += ["Called Genes Without a Function Phenotype:", "-" * 72, ""]
         for c in unclassified:
             lines.append(f"  {c.gene} -- {c.phenotype} ({c.diplotype})")
-        lines += ["  PharmCAT called these genes but its phenotype (n/a, a genotype, 'no phenotype",
-                  "  assigned', an uncertain result) names no changed function, so they are not",
-                  "  counted as non-normal and get no drug list here. A variant allele among them",
-                  "  can still matter: see the PharmCAT HTML report.", ""]
+        lines += ["  PharmCAT called these genes but its phenotype (n/a, a reference genotype,",
+                  "  'no phenotype assigned', an uncertain result) names no changed function, so",
+                  "  they are not counted as non-normal and get no drug list here. A variant allele",
+                  "  among them can still matter: see the PharmCAT HTML report.", ""]
 
     if args.consensus:
         lines += ["Calls From Other Tools (outside calls, step 36):", "-" * 72, ""]
