@@ -29,6 +29,7 @@ feed yet is caught before a picture shows "Not run".
 Standard library only. tests/demo/retake-screenshots.sh runs both forms.
 """
 import argparse
+import calendar
 import copy
 import gzip
 import json
@@ -64,6 +65,9 @@ AUTOSOMES = [c for c in CHROMS if c[0] not in ("chrX", "chrY")]
 # Variants per base of each chromosome, relative to an autosome (one X, one Y).
 DENSITY = {"chrX": 0.45, "chrY": 0.04}
 MEAN_DEPTH = 31.3
+# When the invented run started: 2026-10-01 09:00 UTC, the time of the demo's
+# PharmCAT report too (logs/run_status.tsv, the report's "Latest run" line).
+RUN_STARTED = calendar.timegm((2026, 10, 1, 9, 0, 0, 0, 0, 0))
 
 
 def put(path, text, gz=False):
@@ -637,7 +641,9 @@ def run_status(d, started):
 # --- the two commands ----------------------------------------------------------------
 
 def make(a):
-    started = time.time() - 1
+    # A fixed start, so the report's "Latest run" line is the same on every
+    # retake; the files written now are newer, so none is marked stale.
+    started = RUN_STARTED
     d = os.path.join(a.genome_dir, SAMPLE)
     if os.path.exists(d):
         raise SystemExit(f"{d} exists: give an empty --genome-dir")

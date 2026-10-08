@@ -84,6 +84,8 @@ def ocr_text(path):
 
 
 def load_terms(path):
+    """The built-in patterns plus every active line of PATH. A PATH with no
+    active line is refused: a check that reads it would pass on nothing."""
     terms = list(BUILT_IN)
     if path:
         with open(path) as f:
@@ -91,6 +93,8 @@ def load_terms(path):
                 line = line.strip()
                 if line and not line.startswith("#"):
                     terms.append(("private term", re.compile(line, re.I)))
+        if len(terms) == len(BUILT_IN):
+            raise SystemExit(f"ERROR: the terms file {path} has no active pattern (only blank or # lines)")
     return terms
 
 
@@ -157,8 +161,8 @@ def self_test(ocr, terms_file):
                 ("a private address is caught", plant(tmp, "ip.png", f"Sample: DEMO-001\nhost {addr}"), False),
                 ("a picture without DEMO-001 is caught", plant(tmp, "noid.png", "Sample: OTHER-002"), False),
             ]
-            if terms_file:
-                first = next(t[1].pattern for t in terms if t[0] == "private term")
+            first = next((t[1].pattern for t in terms if t[0] == "private term"), None)
+            if terms_file and first:
                 word = re.sub(r"[^A-Za-z0-9 ]", "", first) or "x"
                 cases.append(("the first line of the terms file is caught",
                               plant(tmp, "term.png", f"Sample: DEMO-001\nRun by {word}"), False))
