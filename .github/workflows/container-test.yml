@@ -127,7 +127,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Self-test (a tag rebuilt in place passes, a missing digest fails)
+      - name: Self-test (a moved tag passes, a missing digest fails)
         run: scripts/ci/image-smoke.sh --manifest-self-test
 
       - name: Every pinned image still exists

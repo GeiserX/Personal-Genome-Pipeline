@@ -222,15 +222,14 @@ manifest() {
   echo "All ${#rows[@]} pinned images exist."
 }
 
-# manifest_self_test: the manifest check against the real registry. A tag the
-# publisher rebuilt in place must still pass when its old digest is pinned,
-# and a digest that does not exist must fail. The old digest is the build of
-# PYTHON_IMAGE's 3.11.17 tag that main pinned until the publisher rebuilt the
-# tag in place (October 2026); a later bump of PYTHON_IMAGE's tag keeps the
-# case a moved tag.
+# manifest_self_test: the manifest check against the real registry. A pin
+# whose tag no longer serves its digest must still pass, and a digest that
+# does not exist must fail. The moved case pairs PYTHON_IMAGE's own digest with
+# a tag that does not exist, so it needs nothing from the registry that the
+# manifest check does not need anyway. With the tag kept in the reference,
+# Docker fetches the tag and the case fails.
 manifest_self_test() {
-  local fails=0 got img want moved wrong
-  local old=sha256:27e044f7e01fea05c1760324d58fc5360a0767b9ef098e74ddaf8c70b8f46d26
+  local fails=0 got img want moved wrong name
   while IFS='|' read -r img want; do
     got=$(manifest_ref "$img")
     if [ "$got" = "$want" ]; then echo "[PASS] manifest_ref ${img} -> ${got}"
@@ -241,10 +240,12 @@ localhost:5000/example/tool:2@sha256:abc|localhost:5000/example/tool@sha256:abc
 localhost:5000/example/tool@sha256:abc|localhost:5000/example/tool@sha256:abc
 example/tool:1.0|example/tool:1.0
 CASES
-  moved="$(manifest_ref "${PYTHON_IMAGE%@*}@${old}")"
-  if inspect_ref "$moved" >/dev/null; then echo "[PASS] a tag rebuilt in place resolves by its pinned digest (${moved})"
-  else echo "[FAIL] a tag rebuilt in place resolves by its pinned digest (${moved})"; fails=$((fails + 1)); fi
-  wrong="$(manifest_ref "${PYTHON_IMAGE%@*}@sha256:$(printf '0%.0s' $(seq 64))")"
+  name=${PYTHON_IMAGE%@*}
+  name=${name%:*}
+  moved="$(manifest_ref "${name}:no-such-tag@${PYTHON_IMAGE##*@}")"
+  if inspect_ref "$moved" >/dev/null; then echo "[PASS] a pin whose tag moved resolves by its digest (${name}:no-such-tag -> ${moved})"
+  else echo "[FAIL] a pin whose tag moved resolves by its digest (${name}:no-such-tag -> ${moved})"; fails=$((fails + 1)); fi
+  wrong="$(manifest_ref "${name}@sha256:$(printf '0%.0s' $(seq 64))")"
   if inspect_ref "$wrong" >/dev/null; then echo "[FAIL] a digest that does not exist fails (${wrong})"; fails=$((fails + 1))
   else echo "[PASS] a digest that does not exist fails (${wrong})"; fi
   if [ "$fails" -gt 0 ]; then echo "manifest self-test: ${fails} case(s) failed" >&2; return 1; fi
