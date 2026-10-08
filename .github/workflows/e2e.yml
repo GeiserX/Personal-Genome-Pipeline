@@ -12,8 +12,9 @@ name: E2E
 #                  already exists and was built by the same script.
 #   e2e            runs every case in tests/e2e/ on that data set, then the
 #                  parity check: the bash single steps and the Nextflow
-#                  pipeline, both from the fixture's FASTQ, must agree
-#                  (scripts/ci/parity-diff.sh). Runs on pull requests that
+#                  pipeline, both from the fixture's FASTQ, must agree, and
+#                  so must the SV consensus and the Y haplogroup of the
+#                  hardening run (scripts/ci/parity-diff.sh). Runs on pull requests that
 #                  touch the pipeline, monthly, on dispatch. Every pull
 #                  request starts this workflow, so main can require the e2e
 #                  check: e2e-scope decides, and on a pull request that
@@ -250,6 +251,21 @@ jobs:
       - name: Parity of the bash scripts and the Nextflow pipeline
         if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
         run: scripts/ci/parity-diff.sh "${E2E_WORK}/genome/HG002P" "${E2E_WORK}/genome/nf-fastq/HG002P" HG002P
+
+      # The case nextflow-hardening-2-nf ran the bash steps 22 (SURVIVOR) and 37
+      # (Yleaf) beside the pipeline's SURVIVOR and Y haplogroup processes, on
+      # the calls of steps 04 and 19 and on the same BAM.
+      - name: Parity self-test, SV consensus and Y haplogroup
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        env:
+          PARITY_ITEMS: sv_merged y_haplogroup
+        run: scripts/ci/parity-diff.sh --self-test "${E2E_WORK}/genome-hardening/HG002" HG002
+
+      - name: Parity of the SV consensus and the Y haplogroup
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        env:
+          PARITY_ITEMS: sv_merged y_haplogroup
+        run: scripts/ci/parity-diff.sh "${E2E_WORK}/genome-hardening/HG002" "${E2E_WORK}/genome/nf-hardening/HG002" HG002
 
       - name: Upload case logs
         if: always()
