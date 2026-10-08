@@ -82,6 +82,12 @@ if [ -n "$GIAB" ]; then
     if [ ! -s "${GENOME_DIR}/giab/${f}" ]; then
       echo "Downloading GIAB HG002 ${GIAB}: ${url}"
       fetch "$url" "${GENOME_DIR}/giab/${f}" md5 "${entry#* }"
+    elif [ "$(_digest md5 "${GENOME_DIR}/giab/${f}")" != "${entry#* }" ]; then
+      # A file put there by hand (an interrupted wget -c leaves part of one)
+      # is not the benchmark: stop rather than compare against it.
+      echo "ERROR: ${GENOME_DIR}/giab/${f} does not match the md5 of GIAB's ${GIAB} file (${entry#* })." >&2
+      echo "Delete it and run again to download it: rm '${GENOME_DIR}/giab/${f}'" >&2
+      exit 1
     fi
   done
   TRUTH_VCF="${GENOME_DIR}/giab/$(basename "${GIAB_FILES[0]% *}")"
