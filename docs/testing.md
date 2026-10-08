@@ -63,7 +63,7 @@ To change the data:
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
 
-You can build it yourself on Linux with Docker, `bgzip` and `tabix` and about 10 GB of free disk: `scripts/ci/build-fixture.sh /path/to/out`.
+You can build it yourself on Linux with Docker, `bgzip`, `tabix` and `python3` and about 10 GB of free disk: `scripts/ci/build-fixture.sh /path/to/out`.
 
 ## The e2e job
 
