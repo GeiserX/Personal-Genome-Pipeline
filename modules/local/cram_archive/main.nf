@@ -7,7 +7,8 @@
     `samtools flagstat` equals the BAM's line for line. It never deletes the
     BAM: delete it yourself once the CRAM is there, or use
     scripts/34-cram-archive.sh --delete-bam. A CRAM can only be read with the
-    reference it was written with: keep that FASTA.
+    reference it was written with: keep that FASTA. It takes the same lock as
+    that script, beside the BAM, so the two never work on one BAM at once.
 
     CRAM_TO_BAM reads a samplesheet row given as cram,crai: it writes the BAM
     every BAM step of this pipeline reads, in the work directory only, and
@@ -38,6 +39,23 @@ process CRAM_ARCHIVE {
 
     script:
     """
+    # The lock scripts/34-cram-archive.sh takes: <BAM without .bam>.lock beside
+    # the BAM this row names (the staged input links to it). While a bash
+    # archive, --delete-bam or --restore of that BAM runs, this task stops
+    # instead of reading a BAM that may be deleted under it, and while this
+    # task runs, they stop. A BAM in a directory this task cannot write to
+    # (or an image without flock) is read without the lock, with a warning.
+    bam_src=\$(readlink ${bam} || echo ${bam})
+    lock="\${bam_src%.bam}.lock"
+    if command -v flock >/dev/null && { [ -e "\$lock" ] || touch "\$lock" 2>/dev/null; } && [ -r "\$lock" ]; then
+        exec 9<"\$lock"
+        if ! flock -n 9; then
+            echo "ERROR: another archive or restore of ${meta.id} is running: it holds \$lock. Let it finish, then run this again." >&2
+            exit 1
+        fi
+    else
+        echo "WARNING: could not take the lock \$lock; nothing stops scripts/34-cram-archive.sh from changing ${bam} during this task." >&2
+    fi
     samtools view -@ ${task.cpus} -C --reference ${reference} -o ${meta.id}_sorted.cram ${bam}
     samtools index -@ ${task.cpus} ${meta.id}_sorted.cram
     samtools quickcheck -v ${meta.id}_sorted.cram
