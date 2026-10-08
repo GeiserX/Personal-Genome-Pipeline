@@ -64,7 +64,7 @@ A step that is skipped or fails leaves the previous run's output on disk. When `
 
 <figure markdown="span">
   ![The step 24 HTML report: a header with the sample name, seventeen cards of counts and statuses, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }
-  <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops above the CPIC gene table, so the tables that list genes (the CPIC genes and the ClinVar hits) and the disclaimer are not shown.</figcaption>
+  <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops above the CPIC gene table, so the tables that list genes (the CPIC genes and the ClinVar hits) and the disclaimer are not shown. The picture is older than the current CPIC count: its CPIC card says 8 genes with a non-normal phenotype, where the parser now counts 2 for DEMO-001 (CYP2D6 and NAT2) and lists the other 6 as called genes without a function phenotype.</figcaption>
 </figure>
 
 ## Runtime
