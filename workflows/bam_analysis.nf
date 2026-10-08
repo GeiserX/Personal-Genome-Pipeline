@@ -178,6 +178,7 @@ workflow BAM_ANALYSIS {
                 "${meta.id}\t${meta.id}\t-9\t-9\t${code}\t-9".toString()
             }
             .collectFile(name: 'samples.ped', newLine: true, sort: true)
+            .first()   // a value channel, so every SAMPLE_QC task gets the tables
         SOMALIER_RELATE(SOMALIER.out.extract.map { meta, f, id_file -> f }.collect(), ch_somalier_sites, ch_somalier_ped)
         VERIFYBAMID2(ch_bam, ch_reference, ch_reference_fai, ch_verifybamid2_panel)
         ch_qc_in = SOMALIER.out.extract
