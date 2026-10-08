@@ -4,7 +4,9 @@
 #
 # Produces a small VCF of PASS variants that are:
 #   - rare (MAX_AF < 1%, or no frequency) AND HIGH or MODERATE VEP impact
-#   - OR in the ClinVar screen of step 6 (P/LP alleles; any frequency)
+#   - OR in the ClinVar screen of step 6 (P/LP alleles; any frequency), else
+#     P/LP in ClinVar_CLNSIG (step 13's --custom annotation with the same
+#     ClinVar file), else in the cache's CLIN_SIG
 #   - OR rare with a high CADD score (>= 20) outside HIGH/MODERATE
 #   - OR rare with a high SpliceAI delta score (>= 0.2), any gene of the value
 #   - OR rare with REVEL >= 0.644 or AlphaMissense >= 0.564
@@ -118,6 +120,7 @@ else
   done
 fi
 HAS_CLINSIG=0; has_field CLIN_SIG && HAS_CLINSIG=1
+HAS_CUSTOM=0; has_field ClinVar_CLNSIG && HAS_CUSTOM=1
 HAS_CADD=0; has_info CADD_PHRED && HAS_CADD=1
 HAS_CADD_INDEL=0; has_info CADD_PHRED_indel && HAS_CADD_INDEL=1
 HAS_SPLICEAI=0; has_info SpliceAI && HAS_SPLICEAI=1
@@ -129,6 +132,8 @@ HAS_HITS=0; [ -f "$CLINVAR_HITS" ] && HAS_HITS=1
 
 if [ "$HAS_HITS" -eq 1 ]; then
   CLINVAR_PLAN="step 6 hits (${CLINVAR_HITS})"
+elif [ "$HAS_CUSTOM" -eq 1 ]; then
+  CLINVAR_PLAN="ClinVar_CLNSIG from step 13's --custom ClinVar file"
 elif [ "$HAS_CLINSIG" -eq 1 ]; then
   CLINVAR_PLAN="VEP's cached CLIN_SIG (run step 6 to use the current ClinVar file)"
 else
@@ -210,6 +215,15 @@ if [ "$HAS_HITS" -eq 1 ]; then
     echo "  Step 6 found no ClinVar hit."
   fi
   rm -f "${TARGETS:?}"
+elif [ "$HAS_CUSTOM" -eq 1 ]; then
+  echo "[5] Extracting ClinVar_CLNSIG pathogenic/likely pathogenic (step 13's --custom ClinVar file)..."
+  CLINVAR_SOURCE="ClinVar_CLNSIG (step 13 --custom)"
+  run_in --cpus 4 --memory 4g "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
+      bcftools +split-vep - -c ClinVar_CLNSIG \
+        -i 'ClinVar_CLNSIG~\"athogenic\" && ClinVar_CLNSIG!~\"onflicting\"' \
+        -Oz -o ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
+      bcftools index -f -t ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
 elif [ "$HAS_CLINSIG" -eq 1 ]; then
   echo "[5] Extracting VEP CLIN_SIG pathogenic/likely pathogenic (VEP's cached ClinVar; run step 6 for the current file)..."
   CLINVAR_SOURCE="VEP CLIN_SIG (cache release)"
@@ -220,7 +234,7 @@ elif [ "$HAS_CLINSIG" -eq 1 ]; then
         -Oz -o ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz && \
       bcftools index -f -t ${C}/${SAMPLE}_clinvar_pathogenic.vcf.gz"
 else
-  echo "[5] Skipping the ClinVar tier (no step 6 hits and no CLIN_SIG in the VEP output)."
+  echo "[5] Skipping the ClinVar tier (no step 6 hits, no ClinVar_CLNSIG and no CLIN_SIG in the VEP output)."
 fi
 if [ -f "$CLINVAR_TIER" ]; then
   CLINVAR_COUNT=$(count "${SAMPLE}_clinvar_pathogenic.vcf.gz")

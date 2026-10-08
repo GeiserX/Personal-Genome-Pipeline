@@ -6,9 +6,9 @@ The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`.
 - **a BAM or a CRAM** without a VCF: it is called;
 - **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM or CRAM.
 
-Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 55 processes in 39 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 62 processes in 39 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
-> **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` still chains them on one machine. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
+> **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` is a launcher: it writes a one-row samplesheet and starts this pipeline with `-resume`, then runs the few script-only steps you ask for and the reports. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
 ---
 
@@ -178,7 +178,8 @@ results/
 │   ├── roh/                # Runs of homozygosity
 │   ├── prs/                # Polygenic risk scores
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
-│   ├── mito/               # Mitochondrial haplogroup and mitochondrial variant calls
+│   ├── mito/               # Mitochondrial variant calls, the haplogroup from them and haplocheck's contamination check
+│   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls
 │   ├── telomere/           # Telomere length estimation
@@ -194,10 +195,11 @@ results/
 │   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs (optional)
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
-│   ├── sv_merged/          # SV consensus of two or more callers (optional)
+│   ├── sv_merged/          # SV consensus of two or more callers, SURVIVOR merge (optional)
 │   ├── summary.json        # The numbers the report is rendered from (html_report)
 │   └── *_report.html       # Summary HTML report (published to sample root): QC, ClinVar, PharmCAT, CPIC,
-│                           #   CPSR, clinical filter, slivar, ROH, mito haplogroup; "Not run" for a tool not selected
+│                           #   CPSR, clinical filter (with its ACMG SF tier), slivar, ROH, mito haplogroup and haplocheck,
+│                           #   Y haplogroup; "Not run" for a tool not selected
 ├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
@@ -271,7 +273,9 @@ Where a module and its script differ on purpose:
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
 | PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
-| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mito haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
+| Mito haplogroup (12) | reads step 20's calls, which NuMTFilterTool has marked (`possible_numt` is not PASS) | reads `MITO_VARIANTS`' calls, which have no NuMT pass: a possible NuMT allele that passed FilterMutectCalls reaches haplogrep3 and haplocheck |
+| Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |
+| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH, mito haplogroup, haplocheck and Y haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
 | Cyrius (21) | runs Cyrius from the install `setup.sh --cyrius` made | the same install, given as `--cyrius_install` (see [Cyrius, opt-in](#cyrius-opt-in)) |
 
@@ -313,9 +317,9 @@ Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunt
 
 `--ancestry_ref` is pgsc_calc's panel, `<genome_dir>/reference/pgsc_calc/pgsc_1000G_v1.tar.zst`, with the `pgsc_1000G_v1_GRCh38_sites.tsv` that `setup.sh --ancestry-panel` writes beside it (the run stops when the list is missing). With it, `prs` genotypes the panel's SNVs from the gVCF too, pgsc_calc projects the sample onto the panel, each score gets a percentile among the most similar population, and `PRS_SUMMARY` publishes step 26's table in `ancestry/`. `ancestry` in `--tools` needs `prs` and `--ancestry_ref`; without them it is skipped with a warning. See [step 26](26-ancestry.md).
 
-### SV consensus merge (experimental)
+### SV consensus merge
 
-The `survivor_merge` module uses a simplified bcftools-based heuristic (1kb position binning) rather than the full SURVIVOR or Jasmine algorithm. CNVpytor calls (depth-based, no PASS/FAIL marking) are treated equally with paired-end callers in the "2+ callers" consensus. For production SV analysis, consider running SURVIVOR or Jasmine externally.
+`survivor_merge` runs `SURVIVOR merge` (step 22's parameters: breakpoints within 1 kb, same type and strands, at least 50 bp, two or more callers) over the callers this run selected among `manta`, `delly` and `cnvpytor`, each cut to its PASS records first (`SURVIVOR_PREP`, `SURVIVOR_MERGE`, `SURVIVOR_SORT`). CNVpytor's depth-only calls count as one caller like the others; their coarse breakpoints often lie more than 1 kb from the paired-end callers'. TIDDIT and Sniffles2 have no module, so the consensus of the script (step 22) can hold those two callers as well. GRIDSS is in neither: its breakend (BND) records never match the DEL, DUP and INV records of the other callers. See [step 22](22-survivor-merge.md).
 
 ### FILTER=PASS required
 

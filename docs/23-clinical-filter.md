@@ -44,7 +44,8 @@ Missense variants and in-frame insertions/deletions.
 ### ClinVar pathogenic/likely pathogenic, at any frequency
 - Preferred source: the step 6 hits file, built from the ClinVar file in `clinvar/` that `setup.sh` refreshes. The tier holds the records at those positions.
 - Step 6 matches on a split, left-aligned copy of the sample, and this tier selects the VEP records at the same CHROM and POS. An SNV always matches. An indel matches only when the caller already wrote it left-aligned, as DeepVariant does; an indel whose position moves on left-alignment is missing from this tier, though it stays in the step 6 hits and in both reports' ClinVar section.
-- Fallback when step 6 has not run: VEP's `CLIN_SIG` (pathogenic or likely pathogenic, not conflicting). That value comes from the VEP cache release, so a ClinVar refresh never reaches it; the step says which source it used.
+- Next, when step 6 has not run: `ClinVar_CLNSIG`, the same ClinVar file step 13 annotated with `--custom` (pathogenic or likely pathogenic, not conflicting). It follows a ClinVar refresh once step 13 runs again.
+- Last: VEP's `CLIN_SIG`, from the VEP cache release, so a ClinVar refresh never reaches it. The step says which source it used.
 - A common pathogenic allele (for example HFE p.C282Y) stays: this tier has no frequency filter.
 
 ### Rare high CADD (step 30)
@@ -64,14 +65,18 @@ REVEL >= 0.644 (ClinGen's PP3 Supporting threshold) or AlphaMissense >= 0.564 (A
 | `${SAMPLE}_clinical_summary.tsv` | One row per variant: `CHROM`, `POS`, `REF`, `ALT`, `GT`, `IMPACT`, `GENE`, `Consequence`, `MAX_AF`, `CADD_PHRED`, `REVEL`, `AM_CLASS`, and with the constraint table `LOEUF`, `pLI`, `mis_z` |
 | `${SAMPLE}_high_impact.vcf.gz` | Rare HIGH impact |
 | `${SAMPLE}_rare_moderate.vcf.gz` | Rare MODERATE impact |
-| `${SAMPLE}_clinvar_pathogenic.vcf.gz` | ClinVar P/LP (when step 6 hits or `CLIN_SIG` exist) |
+| `${SAMPLE}_clinvar_pathogenic.vcf.gz` | ClinVar P/LP (when step 6 hits, `ClinVar_CLNSIG` or `CLIN_SIG` exist) |
 | `${SAMPLE}_cadd_high.vcf.gz`, `${SAMPLE}_spliceai_high.vcf.gz`, `${SAMPLE}_missense_deleterious.vcf.gz` | The step 30 tiers, when their scores exist |
 
 `GENE` is the `SYMBOL` of the worst consequence, `.` for an intergenic one. A score or frequency the input does not carry is written as `.`.
 
 The constraint columns come from `bin/constraint_join.awk`, the loader step 31 and the Nextflow slivar module run too: only canonical transcripts count, the Ensembl row wins over the RefSeq one, and `mis_z` is gnomAD v4.1's `mis.z_score`. When the table is present and rows carry gene symbols but not one matches it, the step fails instead of writing `.` everywhere.
 
-The Nextflow `CLINICAL_FILTER` module applies the same tiers. It takes the ClinVar tier from VEP's `CLIN_SIG` only and adds no constraint columns.
+The Nextflow `CLINICAL_FILTER` module applies the same tiers. It takes the ClinVar tier from `ClinVar_CLNSIG` (the `--clinvar` file, which the VEP module adds with `--custom`), else from VEP's `CLIN_SIG`, and adds no constraint columns.
+
+### Secondary-findings genes (ACMG SF v3.3)
+
+Both reports list, beside the clinical filter's counts, the variants in the 84 genes of the ACMG SF v3.3 list (Lee et al., Genet Med 2025; the genes in which the ACMG recommends reporting pathogenic variants found by chance, such as BRCA1, LDLR, MYBPC3 or TTN): the step 6 ClinVar hits in those genes, and the clinical filter's records with a HIGH-impact consequence in them. The list is versioned in `bin/collect_summary.py` (`ACMG_SF_VERSION`). It is a list to review with a clinician, not a set of findings: the list's own per-gene rules (HFE homozygous p.C282Y only; BTD, CYP27A1 and others only with two variants) are not applied, and a rare HIGH-impact variant is not a ClinVar classification. Step 17 (CPSR) reports the ACMG secondary findings with its own classification.
 
 ## Runtime
 

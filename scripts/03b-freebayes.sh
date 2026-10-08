@@ -3,8 +3,15 @@
 # Alternative to step 03 (DeepVariant). Outputs to vcf_freebayes/ to avoid conflicts.
 # Input: sorted BAM + GRCh38 reference (.fasta + .fai)
 # Output: VCF.gz in $GENOME_DIR/<sample>/vcf_freebayes/
-# Runtime: ~9 hours single-threaded for 30X WGS
+# Runtime: ~9 hours single-threaded for 30X WGS in one process; scattered
+#   (below) about that divided by SCATTER_JOBS
 # Memory: peaks at ~13 GB for full genome; needs 32 GB allocation for safety margin
+#
+# Scatter: FreeBayes runs on one thread, so the genome is split into units
+# (chr1-22, X, Y and M one each, the other contigs together; or each region of
+# INTERVALS="chr20 chr22") and SCATTER_JOBS of them (default THREADS/2) run at
+# once, 1 CPU and 8 GB each. Their records are joined into the raw VCF and
+# sorted as before. SCATTER=false runs one process over everything.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -37,19 +44,33 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
-# Step 1: Run FreeBayes (single-threaded, outputs unsorted VCF)
-echo "Running FreeBayes (single-threaded, this may take several hours for 30X WGS)..."
-FREEBAYES_ARGS=(-f "${REF_FASTA_C}")
-if [ -n "$INTERVALS" ]; then
-  FREEBAYES_ARGS+=(--region "$INTERVALS")
-fi
-FREEBAYES_ARGS+=("/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam")
+# Step 1: Run FreeBayes over each unit (one thread each, unsorted VCF)
+UNITS_DIR="${OUTPUT_DIR}/scatter"
+mapfile -t UNITS < <(scatter_beds "$UNITS_DIR" "$INTERVALS")
+[ "${#UNITS[@]}" -gt 0 ] || { echo "ERROR: no calling units (INTERVALS='${INTERVALS}')" >&2; exit 1; }
+SCATTER_JOBS=${SCATTER_JOBS:-$(( THREADS / 2 > 1 ? THREADS / 2 : 1 ))}
+[ "${#UNITS[@]}" -gt 1 ] || SCATTER_JOBS=1
+echo "Running FreeBayes: ${#UNITS[@]} unit(s), ${SCATTER_JOBS} at a time (this may take several hours for 30X WGS)..."
 
-# Through a temporary name: a FreeBayes that fails leaves no raw VCF behind.
-atomic_out "${OUTPUT_DIR}/${SAMPLE}_raw.vcf" run_in \
-  --cpus 4 --memory 32g \
-  "${FREEBAYES_IMAGE}" \
-  freebayes "${FREEBAYES_ARGS[@]}"
+# call_unit BED: FreeBayes over one unit, into scatter/<unit>.vcf. Through a
+# temporary name: a FreeBayes that fails leaves no partial VCF behind.
+call_unit() {
+  local bed=$1 mem=8g
+  [ "${#UNITS[@]}" -gt 1 ] || mem=32g
+  atomic_out "${bed%.bed}.vcf" run_in \
+    --cpus 1 --memory "$mem" \
+    "${FREEBAYES_IMAGE}" \
+    freebayes -f "${REF_FASTA_C}" --targets "$(cpath "$bed")" \
+      "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
+}
+run_parallel "$SCATTER_JOBS" call_unit "${UNITS[@]}"
+# The raw VCF: the first unit's header, then every unit's records.
+{
+  grep '^#' "${UNITS[0]%.bed}.vcf"
+  for u in "${UNITS[@]}"; do grep -v '^#' "${u%.bed}.vcf" || true; done
+} > "${OUTPUT_DIR}/${SAMPLE}_raw.vcf.tmp"
+mv -f "${OUTPUT_DIR}/${SAMPLE}_raw.vcf.tmp" "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
+rm -rf "$UNITS_DIR"
 
 # Step 2: Sort and compress in one bcftools call (no pipe whose first half can
 # fail unseen), with its temporary files in the output directory, then index.

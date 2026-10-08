@@ -1,0 +1,12 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr20,length=64444167>
+##FILTER=<ID=PASS,Description="All filters passed">
+##ALT=<ID=DEL,Description="Deletion">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">
+##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=CT,Number=1,Type=String,Description="Paired-end signature induced connection type">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	HG002
+chr20	10101001	delly_1	N	<DEL>	60	PASS	SVTYPE=DEL;END=10103001;SVLEN=-2000;CT=3to5	GT	0/1
+chr20	10200300	delly_2	N	<DEL>	60	PASS	SVTYPE=DEL;END=10205300;SVLEN=-5000;CT=3to5	GT	0/1

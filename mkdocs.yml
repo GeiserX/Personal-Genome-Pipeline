@@ -185,7 +185,8 @@ nav:
           - "Step 14: Imputation Preparation": 14-imputation-prep.md
           - "Step 20: Mitochondrial Variant Calling and Heteroplasmy Detection": 20-mtoolbox.md
           - "Step 25: Polygenic Risk Scores (PRS)": 25-prs.md
-          - "Step 26: Ancestry SNP Intersection [EXPERIMENTAL]": 26-ancestry.md
+          - "Step 26: Ancestry (projection onto a reference panel)": 26-ancestry.md
+          - "Step 37: Y-Chromosome Haplogroup": 37-y-haplogroup.md
       - Quality control and reports:
           - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
           - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md

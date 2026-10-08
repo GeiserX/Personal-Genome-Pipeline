@@ -409,3 +409,24 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### `workflow.onComplete` saw `workflow` as null
 - **Failed:** `Cannot get property 'success' on null object` on every run under Nextflow 25.10: the handler runs with the script binding's variable map as its delegate, and a map answers null for a name it lacks.
 - **Fix:** the handler reads local variables (`run_info`, `run_log`, `outdir`) set in the workflow body; closures resolve those where they are written.
+
+## PGx consensus and the step backlog (2026-10)
+
+### The planned CYP2D6 depth rule passed the broken BAM and flagged the clean one
+- **Failed:** the plan for step 32's CYP2D6 depth check was a ratio rule: unreliable when CYP2D6 has less than 0.6 of the depth of its flanks. On the e2e fixture's CYP2D slice, mapped to the no-ALT reference, CYP2D6 has 0.62 of the flank depth with all reads and 0.57 at MAPQ >= 1, its normal value; mapped to the Broad hg38 FASTA with ALT contigs, CYP2D6 keeps 0.28 of the flank depth with all reads. On those measured depths the ratio cut at 0.6 flagged the clean BAM and passed the broken one ([CYP2D6 depth check](32-pypgx.md#cyp2d6-depth-check)).
+- **Why:** CYP2D6 sits beside CYP2D7 and CYP2D8, so its depth is below the flanks on a correct alignment too. What an ALT contig changes is where the reads go: a third of them move to `chr22_KI270879v1_alt`, and the ones left get MAPQ 0.
+- **Fix:** the shipped rule (`bin/cyp2d6_depth_check.py`) is the share of reads with MAPQ >= 1: unreliable when more than 40% of the reads at CYP2D6 (when it has at least 15% of the flank depth) or in the flanks have MAPQ 0. The share is 0.91 without ALT contigs and 0.005 with them. The ALT depth A/B workflow runs the check on both mappings and fails unless it passes the first and flags the second.
+- **Rule:** measure a threshold on both the good and the broken input before writing it down; a ratio that sounds right can sit on the wrong side of the normal value.
+
+### SURVIVOR names its columns after the input samples and exits 0 on a missing file
+- **Failed (found while replacing step 22's position binning):** SURVIVOR merge takes each output column's name from the input VCF's sample. Three callers of one sample give three columns with one name, which bcftools then refuses. And when it cannot open an input it prints a message and exits 0.
+- **Fix:** step 22 and `SURVIVOR_PREP` rename each input's sample to the caller's name, and the step checks that SURVIVOR wrote a VCF instead of trusting the exit code.
+
+### Yleaf downloads the whole hg38 FASTA unless its config names one
+- **Failed:** Yleaf 3.2.1 checks for a full reference before anything else and downloads hg38 when its config file (inside the image, read-only) names none, also for a BAM, whose pileup never needs the sequence. Under `--network none` that fails.
+- **Fix:** step 37 and `Y_HAPLOGROUP` set Yleaf's reference constant to the pipeline's FASTA in a one-line Python launcher before calling Yleaf's `main()`.
+
+### The Yleaf image has no samtools, and Yleaf then hangs instead of failing
+- **Failed:** the image tests of Yleaf ran into their one-hour limit. The Bioconda recipe of Yleaf 3.2.1 lists no samtools, which Yleaf calls for a BAM (`samtools idxstats`, `samtools mpileup`). Yleaf runs each BAM in a `multiprocessing.Pool` worker and stops on the failed call with `SystemExit`; that kills the worker, and `Pool.map` waits for a result that never comes. With a serial pool the same run stops at once with `samtools: command not found`.
+- **Also missing:** the package installs Yleaf's Python code only, without its data folder (marker positions, haplogroup tree): `setup.py` lists no package data. `setup.sh --yleaf-data` installs that folder from the release archive, checked by sha256, and the launcher points Yleaf at it.
+- **Fix:** `bin/yleaf_run.py`: step 37 and the pipeline make the idxstats and the pileup at Yleaf's marker positions in `SAMTOOLS_IMAGE` (with Yleaf's own flags), and run Yleaf on them with its samtools calls served from those files, its reference constant set and its pools replaced by a serial map. The image test checks that the functions and calls the launcher replaces are still in the image.

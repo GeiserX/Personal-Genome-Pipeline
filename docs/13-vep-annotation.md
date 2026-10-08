@@ -51,8 +51,11 @@ docker run --rm \
     --fasta /genome/${REF_FASTA} \
     --everything \
     --force_overwrite \
-    --fork 8
+    --fork 8 \
+    --custom file=/genome/clinvar/clinvar_pathogenic_chr.vcf.gz,short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN
 ```
+
+The last line is added when `clinvar/clinvar_pathogenic_chr.vcf.gz` is installed (`setup.sh`): it is the ClinVar file step 6 screens against, and VEP copies its `CLNSIG`, `CLNREVSTAT` and `CLNDN` for each exact match into the CSQ fields `ClinVar_CLNSIG`, `ClinVar_CLNREVSTAT` and `ClinVar_CLNDN`. Step 23's ClinVar tier reads `ClinVar_CLNSIG` before VEP's own `CLIN_SIG`, which comes from the cache release, so a ClinVar refresh reaches the tier after this step runs again. The Nextflow VEP module adds the same `--custom` file when `--clinvar` is set.
 
 The script writes VEP's output under a temporary name, renames it to `${SAMPLE}_vep.vcf.gz` only when VEP succeeded, and indexes it.
 

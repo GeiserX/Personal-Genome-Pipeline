@@ -125,7 +125,7 @@ echo $(( $(gzip -dc "${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz" | wc -
 
 A read whose mate is not in the BAM at all is left out (`-s /dev/null`), so a vendor BAM that was filtered can give a slightly smaller second number. The reads keep any trimming done before the old alignment; `SKIP_TRIM=true` in the next step skips fastp's second pass over them.
 
-**4. Run the pipeline** as for a new sample. Step 02 builds the new minimap2 index on its first run:
+**4. Run the pipeline** as for a new sample. `run-all.sh` finds no BAM in `${SAMPLE}/aligned/` and starts from the FASTQ written in step 3 above: the pipeline trims, aligns and calls again, then runs the other steps. When `reference/GRCh38_no_alt_analysis_set.sr.mmi` is not there yet, its `MINIMAP2_INDEX` task builds the index in the run's work folder (`scripts/02-alignment.sh` writes it beside the FASTA, so later runs reuse it):
 
 ```bash
 ./scripts/run-all.sh ${SAMPLE} <male|female>

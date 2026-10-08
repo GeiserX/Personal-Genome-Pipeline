@@ -4,13 +4,13 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs three SV callers in parallel (Manta, Delly, CNVpytor), annotates
     Manta output with duphold depth metrics, classifies SVs via AnnotSV,
-    and merges consensus calls from all callers.
+    and keeps the calls two or more callers agree on (SURVIVOR merge).
 
     DAG:
       BAM ──┬── MANTA ──── DUPHOLD ──── DUPHOLD_FILTER ──── ANNOTSV
             ├── DELLY
             └── CNVPYTOR
-                         └── SURVIVOR_MERGE (collects all SV VCFs)
+                         └── SURVIVOR_PREP ── SURVIVOR_MERGE ── SURVIVOR_SORT
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -19,7 +19,7 @@ include { DELLY; DELLY_BCF2VCF } from '../modules/local/delly/main'
 include { CNVPYTOR; CNVPYTOR_VCF } from '../modules/local/cnvpytor/main'
 include { DUPHOLD; DUPHOLD_FILTER } from '../modules/local/duphold/main'
 include { ANNOTSV        } from '../modules/local/annotsv/main'
-include { SURVIVOR_MERGE } from '../modules/local/survivor_merge/main'
+include { SURVIVOR_PREP; SURVIVOR_MERGE; SURVIVOR_SORT } from '../modules/local/survivor_merge/main'
 
 workflow SV {
 
@@ -111,28 +111,28 @@ workflow SV {
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
     }
 
-    // ── Consensus merge (all SV VCFs -> SURVIVOR_MERGE) ─────────────────
+    // ── Consensus merge (all SV VCFs -> SURVIVOR) ───────────────────────
 
     //
-    // SURVIVOR_MERGE: bcftools-based heuristic merge of 2+ callers
+    // SURVIVOR_PREP -> SURVIVOR_MERGE -> SURVIVOR_SORT: the calls 2+ callers
+    // agree on (breakpoints within 1 kb, same type and strands)
     //
     ch_merged_sv = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('survivor_merge')) {
-        // Collect all available SV VCFs by meta.id
-        ch_all_sv_vcfs = Channel.empty()
-            .mix(
-                ch_manta_vcf,
-                ch_delly_vcf,
-                ch_cnvpytor_vcf
+        SURVIVOR_PREP(
+            Channel.empty().mix(
+                ch_manta_vcf.map    { meta, vcf -> [meta, 'manta', vcf] },
+                ch_delly_vcf.map    { meta, vcf -> [meta, 'delly', vcf] },
+                ch_cnvpytor_vcf.map { meta, vcf -> [meta, 'cnvpytor', vcf] }
             )
-            .groupTuple()
-            .map { meta, vcfs ->
-                [meta, vcfs.flatten()]
-            }
-
-        SURVIVOR_MERGE(ch_all_sv_vcfs, ch_reference_fai)
-        ch_merged_sv = SURVIVOR_MERGE.out.merged_vcf
-        ch_versions  = ch_versions.mix(SURVIVOR_MERGE.out.versions)
+        )
+        // Each sample goes on once every selected caller has given its VCF
+        def sv_callers = ['manta', 'delly', 'cnvpytor'].findAll { c -> params.tools.split(',').collect { it.trim() }.contains(c) }
+        SURVIVOR_MERGE(SURVIVOR_PREP.out.vcf.groupTuple(size: sv_callers.size()))
+        SURVIVOR_SORT(SURVIVOR_MERGE.out.vcf)
+        ch_merged_sv = SURVIVOR_SORT.out.merged_vcf
+        ch_versions  = ch_versions.mix(SURVIVOR_PREP.out.versions, SURVIVOR_MERGE.out.versions,
+                                       SURVIVOR_SORT.out.versions)
     }
 
     emit:

@@ -71,7 +71,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "04b"}
+                 "27", "29", "30", "31", "32", "37", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -86,6 +86,22 @@ NOT_ASSESSED = [
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
 
 EH_LOCI = ["HTT", "FMR1", "C9ORF72", "ATXN1", "DMPK"]
+
+# ACMG SF v3.3 (Lee et al., Genet Med 2025;27(8)): the 84 genes in which the
+# ACMG recommends reporting pathogenic and likely pathogenic variants found
+# by chance, as ClinGen lists them (search.clinicalgenome.org/kb/genes/acmgsf).
+# A new list version means a new set here and a new ACMG_SF_VERSION.
+ACMG_SF_VERSION = "ACMG SF v3.3"
+ACMG_SF_GENES = frozenset([
+    "ABCD1", "ACTA2", "ACTC1", "ACVRL1", "APC", "APOB", "ATP7B", "BAG3", "BMPR1A", "BRCA1", "BRCA2",
+    "BTD", "CACNA1S", "CALM1", "CALM2", "CALM3", "CASQ2", "COL3A1", "CYP27A1", "DES", "DSC2",
+    "DSG2", "DSP", "ENG", "FBN1", "FLNC", "GAA", "GLA", "HFE", "HNF1A", "KCNH2", "KCNQ1", "LDLR",
+    "LMNA", "MAX", "MEN1", "MLH1", "MSH2", "MSH6", "MUTYH", "MYBPC3", "MYH11", "MYH7", "MYL2",
+    "MYL3", "NF2", "OTC", "PALB2", "PCSK9", "PKP2", "PLN", "PMS2", "PRKAG2", "PTEN", "RB1", "RBM20",
+    "RET", "RPE65", "RYR1", "RYR2", "SCN5A", "SDHAF2", "SDHB", "SDHC", "SDHD", "SMAD3", "SMAD4",
+    "STK11", "TGFBR1", "TGFBR2", "TMEM127", "TMEM43", "TNNC1", "TNNI3", "TNNT2", "TP53", "TPM1",
+    "TRDN", "TSC1", "TSC2", "TTN", "TTR", "VHL", "WT1",
+])
 
 
 class Unreadable(Exception):
@@ -708,7 +724,30 @@ def sec_haplogroup(d, s):
     rows = read_tsv(p)
     r = rows[0] if rows else {}
     hg = (r.get("Haplogroup") or (list(r.values())[1] if len(r) > 1 else "") or "").strip('"')
-    return p, {"haplogroup": hg or "."}
+    out = {"haplogroup": hg or "."}
+    # haplocheck (step 12 with step 20's Mutect2 calls): a second haplogroup
+    # in the allele fractions is another person's DNA in the sample.
+    hc = first_existing(d, [f"mito/{s}_haplocheck.txt"])
+    if hc:
+        rows = [{k.strip('"'): (v or "").strip('"') for k, v in row.items() if k} for row in read_tsv(hc)]
+        if not rows or "Contamination Status" not in rows[0]:
+            raise Unreadable(f"{os.path.basename(hc)} has no Contamination Status column")
+        out["contamination_status"] = rows[0]["Contamination Status"] or "."
+        out["contamination_level"] = rows[0].get("Contamination Level") or "."
+    return p, out
+
+
+def sec_y_haplogroup(d, s):
+    p = first_existing(d, [f"y_haplogroup/{s}_y_haplogroup.txt"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if not rows or "Hg" not in rows[0]:
+        raise Unreadable(f"{os.path.basename(p)} has no Hg column or no sample row")
+    r = rows[0]
+    hg = (r.get("Hg") or "").strip()
+    return p, {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
+               "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
 def sec_mito(d, s):
@@ -760,21 +799,78 @@ def sec_cpsr(d, s):
     return p, out
 
 
+def csq_high_impact_genes(path):
+    """{(chrom, pos, ref, alt): (genotype, {gene: consequence})} of the records
+    with a HIGH-impact VEP consequence (any transcript), from the CSQ field."""
+    fmt, out = None, {}
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if line.startswith("##INFO=<ID=CSQ"):
+                    m = re.search(r"Format: ([^\"]+)", line)
+                    fmt = m.group(1).split("|") if m else None
+                    continue
+                if line.startswith("#") or not fmt or "IMPACT" not in fmt or "SYMBOL" not in fmt:
+                    continue
+                r = line.rstrip("\n").split("\t")
+                if len(r) < 8:
+                    continue
+                csq = info_map(r[7]).get("CSQ", "")
+                genes = {}
+                for tr in csq.split(","):
+                    v = tr.split("|")
+                    if len(v) != len(fmt) or v[fmt.index("IMPACT")] != "HIGH":
+                        continue
+                    cons = v[fmt.index("Consequence")] if "Consequence" in fmt else ""
+                    genes.setdefault(v[fmt.index("SYMBOL")], cons.replace("&", ","))
+                if genes:
+                    gt = r[9].split(":")[0] if len(r) > 9 else ""
+                    out[(r[0], int(r[1]), r[3], r[4])] = (gt, genes)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(path)}: {e}") from e
+    return out
+
+
+def acmg_sf_tier(d, s, clinical_vcf):
+    """The variants in ACMG SF genes: the ClinVar P/LP hits of step 6, and the
+    clinical filter's rare HIGH-impact records."""
+    clinvar, high = [], []
+    hits = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
+    if hits:
+        for r in vcf_records(hits):
+            if len(r) < 8:
+                continue
+            row = clinvar_row(r)
+            on = [g for g in row["gene"].split(",") if g in ACMG_SF_GENES]
+            if on:
+                clinvar.append({"gene": ",".join(on), "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
+                                "genotype": row["genotype"], "significance": row["significance"], "stars": row["stars"]})
+    if clinical_vcf:
+        for (c, pos, ref, alt), (gt, genes) in sorted(csq_high_impact_genes(clinical_vcf).items()):
+            for g, cons in sorted(genes.items()):
+                if g in ACMG_SF_GENES:
+                    zyg = {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
+                    high.append({"gene": g, "variant": f"{c}:{pos} {ref}>{alt}", "genotype": zyg, "consequence": cons})
+    return {"version": ACMG_SF_VERSION, "genes_on_list": len(ACMG_SF_GENES),
+            "clinvar_hits": clinvar, "clinvar_checked": bool(hits),
+            "high_impact": high, "high_impact_checked": bool(clinical_vcf)}
+
+
 def sec_clinical(d, s):
     p = first_existing(d, [f"clinical/{s}_clinical_summary.tsv"])
+    v = first_existing(d, [f"clinical/{s}_clinical.vcf.gz"])
     if not p:
         # The Nextflow report gets the clinical VCF, not the summary table:
         # the count only (one record per variant, as in the table).
-        v = first_existing(d, [f"clinical/{s}_clinical.vcf.gz"])
         if not v:
             return None, {}
-        return v, {"variants": sum(1 for _ in vcf_records(v))}
+        return v, {"variants": sum(1 for _ in vcf_records(v)), "acmg_sf": acmg_sf_tier(d, s, v)}
     rows = read_tsv(p)
     by = {}
     for r in rows:
         by[r.get("IMPACT") or "."] = by.get(r.get("IMPACT") or ".", 0) + 1
     genes = sorted({r.get("GENE") for r in rows if r.get("GENE") not in (None, "", ".")})
-    return p, {"variants": len(rows), "by_impact": by, "genes": len(genes)}
+    return p, {"variants": len(rows), "by_impact": by, "genes": len(genes), "acmg_sf": acmg_sf_tier(d, s, v)}
 
 
 def sec_slivar(d, s):
@@ -942,6 +1038,7 @@ SECTIONS = [
     ("telomere", "Telomere content (TelomereHunter)", "10", sec_telomere),
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
+    ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),

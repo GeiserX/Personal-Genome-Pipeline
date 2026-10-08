@@ -3,9 +3,20 @@
 # Supports pairwise concordance (bcftools isec) and truth set benchmarking (hap.py)
 # Input: VCFs from vcf/, vcf_gatk/, vcf_freebayes/ directories
 # Output: comparison tables in $GENOME_DIR/<sample>/benchmark/
+#
+# Truth sets: --truth VCF (with --regions BED) for any truth set, or
+# --giab v4.2.1|v5.0q for one of GIAB's two HG002 GRCh38 small-variant
+# benchmarks, downloaded into GENOME_DIR/giab/ on first use (v4.2.1 from GIAB's
+# S3 mirror, v5.0q from NCBI, which holds the only copy) and checked by md5:
+#   v4.2.1  NISTv4.2.1, chr1-22, mapping-based (the long-standing benchmark)
+#   v5.0q   the draft assembly-based set from the T2T HG002 Q100 assembly,
+#           with chrX, chrY and harder regions; hap.py gets --gender male
+# With --giab, --regions keeps only the set's benchmark regions inside that BED
+# (one chromosome, or a slice). Only an HG002 sequencing run gives meaningful
+# numbers against either set.
 set -euo pipefail
 
-SAMPLE=${1:?Usage: $0 <sample_name> [--truth <vcf> --regions <bed>]}
+SAMPLE=${1:?Usage: $0 <sample_name> [--truth <vcf> --regions <bed> | --giab v4.2.1|v5.0q [--regions <bed>]]}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
@@ -15,6 +26,7 @@ shift
 # --- Parse optional flags ---
 TRUTH_VCF=""
 REGIONS_BED=""
+GIAB=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --truth)
@@ -25,13 +37,86 @@ while [ $# -gt 0 ]; do
       REGIONS_BED="${2:?--regions requires a BED path}"
       shift 2
       ;;
+    --giab)
+      GIAB="${2:?--giab requires v4.2.1 or v5.0q}"
+      shift 2
+      ;;
     *)
       echo "ERROR: Unknown argument: $1" >&2
-      echo "Usage: $0 <sample_name> [--truth <vcf> --regions <bed>]" >&2
+      echo "Usage: $0 <sample_name> [--truth <vcf> --regions <bed> | --giab v4.2.1|v5.0q [--regions <bed>]]" >&2
       exit 1
       ;;
   esac
 done
+
+# --- GIAB HG002 truth sets (--giab) ---
+# Each set's VCF, its index and its benchmark-regions BED, with their md5:
+# v5.0q's from GIAB's checksum.md5, v4.2.1's (no checksum file) as downloaded
+# on 2026-10-07. An explicit --truth or --regions wins over the set's file.
+HAPPY_EXTRA=()
+if [ -n "$GIAB" ]; then
+  [ -z "$TRUTH_VCF" ] || { echo "ERROR: use --giab or --truth, not both." >&2; exit 1; }
+  # v4.2.1 comes from GIAB's S3 mirror (the same paths as NCBI's tree). v5.0q
+  # has no mirror and comes from NCBI's giab/ftp/ path; NCBI's
+  # ReferenceSamples/giab/ path to the same tree has answered 404 since
+  # 2026-10-07. Each file is named by its full URL, so the link check requests
+  # the files themselves. GIAB_V421_URL or GIAB_V5Q_URL points a set at another
+  # copy of its folder; the md5s still decide what is accepted.
+  case "$GIAB" in
+    v4.2.1)
+      GIAB_DIR=${GIAB_V421_URL:-}
+      GIAB_FILES=("https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz dc750b3807d4af1f7ffec852e9c2f771"
+                  "https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz.tbi 121e2975fb3ff0317ae6a684d0ce6f2f"
+                  "https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed 97265e922a97c69a0391cf3f92a89b8b") ;;
+    v5.0q)
+      GIAB_DIR=${GIAB_V5Q_URL:-}
+      GIAB_FILES=("https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.vcf.gz c71acc71069bf7cd7f51eb8fb0c1a1ab"
+                  "https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.vcf.gz.tbi 58cab2a06e29b74a5bdc190ead079083"
+                  "https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar.benchmark.bed 3366858af85875cbb3c579412ffa4c56") ;;
+    *) echo "ERROR: --giab must be v4.2.1 or v5.0q, got '${GIAB}'" >&2; exit 1 ;;
+  esac
+  for entry in "${GIAB_FILES[@]}"; do
+    url=${entry% *}
+    f=${url##*/}
+    [ -z "$GIAB_DIR" ] || url="${GIAB_DIR%/}/${f}"
+    if [ ! -s "${GENOME_DIR}/giab/${f}" ]; then
+      echo "Downloading GIAB HG002 ${GIAB}: ${url}"
+      fetch "$url" "${GENOME_DIR}/giab/${f}" md5 "${entry#* }"
+    elif [ "$(_digest md5 "${GENOME_DIR}/giab/${f}")" != "${entry#* }" ]; then
+      # A file put there by hand (an interrupted wget -c leaves part of one)
+      # is not the benchmark: stop rather than compare against it.
+      echo "ERROR: ${GENOME_DIR}/giab/${f} does not match the md5 of GIAB's ${GIAB} file (${entry#* })." >&2
+      echo "Delete it and run again to download it: rm '${GENOME_DIR}/giab/${f}'" >&2
+      exit 1
+    fi
+  done
+  TRUTH_VCF="${GENOME_DIR}/giab/$(basename "${GIAB_FILES[0]% *}")"
+  SET_BED="${GENOME_DIR}/giab/$(basename "${GIAB_FILES[2]% *}")"
+  if [ -n "$REGIONS_BED" ]; then
+    # --regions with --giab: the set's benchmark regions inside that BED only.
+    [ -f "$REGIONS_BED" ] || { echo "ERROR: Regions BED not found: ${REGIONS_BED}" >&2; exit 1; }
+    CUT="${GENOME_DIR}/${SAMPLE}/benchmark/giab_${GIAB}_regions.bed"
+    mkdir -p "$(dirname "$CUT")"
+    # gzip -cdf reads a .bed.gz and passes a plain BED through; a truncated
+    # file stops the step here instead of giving part of the regions.
+    gzip -cdf -- "$REGIONS_BED" > "${CUT}.in" || { echo "ERROR: could not read ${REGIONS_BED}" >&2; rm -f "${CUT}.in"; exit 1; }
+    awk 'BEGIN {OFS = "\t"} FNR == NR { if ($0 !~ /^(#|track|browser)/ && NF >= 3) { n[$1]++; s[$1, n[$1]] = $2 + 0; e[$1, n[$1]] = $3 + 0 }; next }
+      { for (i = 1; i <= n[$1]; i++) { a = ($2 + 0 > s[$1, i] ? $2 + 0 : s[$1, i]); b = ($3 + 0 < e[$1, i] ? $3 + 0 : e[$1, i]); if (a < b) print $1, a, b } }' \
+      "${CUT}.in" "$SET_BED" | sort -k1,1 -k2,2n > "$CUT"
+    rm -f "${CUT}.in"
+    if [ ! -s "$CUT" ]; then
+      echo "ERROR: no ${GIAB} benchmark region lies inside ${REGIONS_BED}." >&2
+      exit 1
+    fi
+    echo "Benchmark regions of ${GIAB} inside ${REGIONS_BED}: $(wc -l < "$CUT" | tr -d ' ') intervals"
+    REGIONS_BED=$CUT
+  else
+    REGIONS_BED=$SET_BED
+  fi
+  # HG002 is male; hap.py does not infer the sex, and v5.0q has chrX and chrY.
+  HAPPY_EXTRA=(--gender male)
+  echo "Truth set: GIAB HG002 ${GIAB} (${TRUTH_VCF}), regions ${REGIONS_BED}"
+fi
 
 BENCHMARK_DIR="${GENOME_DIR}/${SAMPLE}/benchmark"
 SUMMARY="${BENCHMARK_DIR}/summary.txt"
@@ -191,7 +276,7 @@ if [ -n "$TRUTH_VCF" ]; then
     echo "================================================================================"
     echo "  VARIANT CALLER TRUTH SET BENCHMARK"
     echo "  Sample: ${SAMPLE}"
-    echo "  Truth:  $(basename "$TRUTH_VCF")"
+    echo "  Truth:  $(basename "$TRUTH_VCF")${GIAB:+ (GIAB HG002 ${GIAB})}"
     echo "  Generated: $(date -u '+%Y-%m-%d %H:%M UTC')"
     echo "================================================================================"
     echo ""
@@ -202,6 +287,11 @@ if [ -n "$TRUTH_VCF" ]; then
   if [ -n "$REGIONS_BED" ]; then
     REGIONS_CONTAINER_PATH="${REGIONS_BED/#$GENOME_DIR//genome}"
     REGIONS_FLAG="-f ${REGIONS_CONTAINER_PATH}"
+    # hap.py compares chr1-22, chrX and chrY unless told otherwise, and stops
+    # on one the reference lacks: give it the contigs of the regions BED.
+    # gzip -cdf reads a .bed.gz and passes a plain BED through.
+    LOCATIONS=$(gzip -cdf -- "$REGIONS_BED" | awk '$0 !~ /^(#|track|browser)/ && NF >= 3 {print $1}' | awk '!seen[$0]++' | paste -sd, -)
+    [ -z "$LOCATIONS" ] || REGIONS_FLAG="${REGIONS_FLAG} -l ${LOCATIONS}"
   fi
 
   for i in $(seq 0 $((NUM_CALLERS - 1))); do
@@ -223,6 +313,7 @@ if [ -n "$TRUTH_VCF" ]; then
         "${VCF_CONTAINER}" \
         -r "${REF_FASTA_C}" \
         ${REGIONS_FLAG} \
+        ${HAPPY_EXTRA[@]+"${HAPPY_EXTRA[@]}"} \
         -o "${PREFIX}" \
         --engine=vcfeval
 
@@ -234,23 +325,27 @@ if [ -n "$TRUTH_VCF" ]; then
     fi
 
     # Extract SNP and INDEL metrics from summary.csv
-    # Columns: Type,Filter,TRUTH.TOTAL,TRUTH.TP,TRUTH.FN,QUERY.TOTAL,QUERY.FP,QUERY.UNK,FP.gt,METRIC.Recall,METRIC.Precision,METRIC.Frac_NA,METRIC.F1_Score
-    SNP_LINE=$(awk -F',' '$1=="SNP" && $2=="PASS"' "$HAPPY_CSV" || true)
-    INDEL_LINE=$(awk -F',' '$1=="INDEL" && $2=="PASS"' "$HAPPY_CSV" || true)
+    # The columns are read by their header names: hap.py 0.3.12 writes FP.al
+    # after FP.gt, so fixed positions (an older layout) read FP.al as the
+    # recall and the recall as the precision.
+    # happy_metric TYPE COLUMN: COLUMN of the PASS row of TYPE (SNP or INDEL).
+    happy_metric() {
+      awk -F',' -v t="$1" -v c="$2" 'NR == 1 {for (i = 1; i <= NF; i++) if ($i == c) k = i; next}
+        k && $1 == t && $2 == "PASS" {print $k; exit}' "$HAPPY_CSV"
+    }
+    SNP_TP=$(happy_metric SNP TRUTH.TP)
+    SNP_FP=$(happy_metric SNP QUERY.FP)
+    SNP_FN=$(happy_metric SNP TRUTH.FN)
+    SNP_PREC=$(happy_metric SNP METRIC.Precision)
+    SNP_RECALL=$(happy_metric SNP METRIC.Recall)
+    SNP_F1=$(happy_metric SNP METRIC.F1_Score)
 
-    SNP_TP=$(echo "$SNP_LINE" | awk -F',' '{print $4}')
-    SNP_FP=$(echo "$SNP_LINE" | awk -F',' '{print $7}')
-    SNP_FN=$(echo "$SNP_LINE" | awk -F',' '{print $5}')
-    SNP_PREC=$(echo "$SNP_LINE" | awk -F',' '{print $11}')
-    SNP_RECALL=$(echo "$SNP_LINE" | awk -F',' '{print $10}')
-    SNP_F1=$(echo "$SNP_LINE" | awk -F',' '{print $13}')
-
-    INDEL_TP=$(echo "$INDEL_LINE" | awk -F',' '{print $4}')
-    INDEL_FP=$(echo "$INDEL_LINE" | awk -F',' '{print $7}')
-    INDEL_FN=$(echo "$INDEL_LINE" | awk -F',' '{print $5}')
-    INDEL_PREC=$(echo "$INDEL_LINE" | awk -F',' '{print $11}')
-    INDEL_RECALL=$(echo "$INDEL_LINE" | awk -F',' '{print $10}')
-    INDEL_F1=$(echo "$INDEL_LINE" | awk -F',' '{print $13}')
+    INDEL_TP=$(happy_metric INDEL TRUTH.TP)
+    INDEL_FP=$(happy_metric INDEL QUERY.FP)
+    INDEL_FN=$(happy_metric INDEL TRUTH.FN)
+    INDEL_PREC=$(happy_metric INDEL METRIC.Precision)
+    INDEL_RECALL=$(happy_metric INDEL METRIC.Recall)
+    INDEL_F1=$(happy_metric INDEL METRIC.F1_Score)
 
     # Default empty fields to N/A
     for var in SNP_TP SNP_FP SNP_FN SNP_PREC SNP_RECALL SNP_F1 \
