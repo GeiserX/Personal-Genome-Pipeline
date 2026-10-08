@@ -50,7 +50,10 @@ class SerialPool:
 def use_data(data):
     """Point Yleaf's constants at DATA (the yleaf/data folder of its release)."""
     from yleaf import yleaf_constants as c
-    data = Path(data)
+    # Absolute: Yleaf opens DATA_FOLDER / HG_PREDICTION_FOLDER / tree.json.
+    # An absolute HG_PREDICTION_FOLDER replaces DATA_FOLDER in that join; a
+    # relative one gives data/data/... (a Nextflow task stages it as "data").
+    data = Path(data).absolute()
     for need in (data / c.HG38 / c.NEW_POSITION_FILE, data / "hg_prediction_tables" / c.TREE_FILE):
         if not need.is_file():
             sys.exit(f"ERROR: {need} not found: install Yleaf's data with scripts/setup.sh --yleaf-data <genome_dir>")
