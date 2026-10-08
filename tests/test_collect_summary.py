@@ -297,6 +297,9 @@ def main():
         t = qc("1", "male", 39, 0, 39, "male", mid="0.080")
         check("pedigree male kept on a sample somalier calls low quality (8% middling allele balance): not checked",
               t["sex_check"] == "not_checked", t)
+        t = qc("1", "male", 39, 0, 39, "male", mid="nan")
+        check("pedigree male kept, middling allele balance nan (no autosomal call): not checked",
+              t["sex_check"] == "not_checked", t)
         t = qc("-2", "female", 4, 0, 4, "female", y_depth="14.0")
         check("pedigree female with chrY reads, chrX cannot tell: unknown, not the aneuploidy line",
               t["sex_check"] == "not_checked" and "could not tell" in t["sex_check_reason"], t)

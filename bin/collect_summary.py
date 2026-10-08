@@ -972,8 +972,13 @@ def somalier_x_sex(row):
     below 0.05 for male or above 0.4 for female, and fewer than 6% of all
     sites with an allele balance outside 0.1 to 0.9."""
     n, het, hom = num(row.get("X_n")), num(row.get("X_het")), num(row.get("X_hom_alt"))
-    mid = num(row.get("p_middling_ab"))
-    if n is None or het is None or hom is None or n <= 10 or (mid is not None and mid >= 0.06):
+    # A missing column passes (older somalier, test stubs); a present value
+    # that is not a number (nan from 0/0 when no autosomal site has a call)
+    # fails, as somalier's own `< 0.06` does.
+    raw_mid = row.get("p_middling_ab")
+    mid = num(raw_mid)
+    if n is None or het is None or hom is None or n <= 10 or (
+            raw_mid is not None and (mid is None or mid >= 0.06)):
         return None
     if hom == 0:
         return "female" if het > 0 else None
