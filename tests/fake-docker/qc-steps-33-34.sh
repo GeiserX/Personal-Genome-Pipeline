@@ -14,7 +14,8 @@
 # Step 34: a CRAM whose flagstat differs from the BAM's, or that fails
 # quickcheck, is removed and the BAM kept, also with --delete-bam; the BAM is
 # deleted only after the check passed; --restore refuses to write over a BAM
-# and leaves no partial BAM when it fails.
+# and leaves no partial BAM when it fails; archive and restore both stop
+# while another run holds the sample's lock, and the lock goes with its run.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 # shellcheck source=../../versions.env
@@ -175,6 +176,31 @@ output_has cram-truncated 'fails samtools quickcheck'
 run_expect 0 cram-keep "${SCRIPTS}/34-cram-archive.sh" sample1
 [ -s "${A}/sample1_sorted.cram" ] && [ -e "${A}/sample1_sorted.cram.crai" ] || fail "no checked CRAM"
 [ -s "${A}/sample1_sorted.bam" ] || fail "the BAM was deleted without --delete-bam"
+
+# A second archive or restore while another run holds the sample's lock
+# (aligned/sample1_sorted.lock) stops before it touches a file: no samtools
+# call, the BAM and the CRAM as they were. This shell holds the lock on fd 8.
+LOCK="${A}/sample1_sorted.lock"
+command -v flock >/dev/null || fail "flock is not on PATH; the lock cases need it"
+: >> "$LOCK"
+exec 8<"$LOCK"
+flock -n 8 || fail "the test could not take ${LOCK}"
+CRAM_SUM=$(cksum < "${A}/sample1_sorted.cram")
+: > "$FAKE_DOCKER_LOG"
+run_expect 1 cram-locked "${SCRIPTS}/34-cram-archive.sh" sample1 --delete-bam
+output_has cram-locked 'another archive or restore of sample1 is running'
+# --restore checks the lock before it looks at the BAM, so a held lock is
+# what it reports here, not the BAM that exists.
+run_expect 1 cram-restore-locked "${SCRIPTS}/34-cram-archive.sh" sample1 --restore
+output_has cram-restore-locked 'another archive or restore of sample1 is running'
+output_lacks cram-restore-locked 'exists already'
+if grep -q 'samtools' "$FAKE_DOCKER_LOG"; then fail "a run that found the lock held called samtools"; fi
+[ -s "${A}/sample1_sorted.bam" ] && [ -e "${A}/sample1_sorted.bam.bai" ] || fail "a run that found the lock held deleted the BAM"
+[ "$(cksum < "${A}/sample1_sorted.cram")" = "$CRAM_SUM" ] || fail "a run that found the lock held changed the CRAM"
+exec 8<&-
+# The lock goes with the run that holds it: once this shell lets go, the
+# step runs. (The failed runs above, cram-fewer and cram-truncated, let go
+# too: cram-keep after them took the lock.)
 
 run_expect 0 cram-delete "${SCRIPTS}/34-cram-archive.sh" sample1 --delete-bam
 [ ! -e "${A}/sample1_sorted.bam" ] && [ ! -e "${A}/sample1_sorted.bam.bai" ] || fail "--delete-bam left the BAM"
