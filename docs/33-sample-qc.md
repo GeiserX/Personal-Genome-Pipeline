@@ -52,7 +52,7 @@ verifybamid2 --SVDPrefix "${VERIFYBAMID2_PANEL}" --Reference "${REF_FASTA}" \
 python3 bin/collect_summary.py sample-qc --sample ${SAMPLE} ...   # the verdict table
 ```
 
-The pedigree is one line: the sample, itself as its family, no parents (`-9`), the declared sex (`1` male, `2` female, `-9` none) and no phenotype. With it somalier starts its `sex` column from the declared sex and changes it only when the reads tell; it then logs `setting sex to male for <sample>` (or female). The step's verdict does not read the declared sex back as a call: when chrX cannot tell (11 or fewer chrX sites, a chrX het/hom-ALT ratio between 0.05 and 0.4, or 6% or more sites with an allele balance outside 0.1 to 0.9, somalier's own rule), the sex from the reads is `unknown` and the check is `not_checked`, as without a pedigree.
+The pedigree is one line: the sample, itself as its family, no parents (`-9`), the declared sex (`1` male, `2` female, `-9` none) and no phenotype. With it somalier starts its `sex` column from the declared sex and changes it only when the reads tell; it then logs `setting sex to male for <sample>` (or female). The step's verdict does not read the declared sex back as a call: when chrX cannot tell (10 or fewer chrX sites, a chrX het/hom-ALT ratio between 0.05 and 0.4, or 6% or more sites with an allele balance outside 0.1 to 0.9, somalier's own rule), the sex from the reads is `unknown` and the check is `not_checked`, as without a pedigree.
 
 The bash step lets somalier name the sample after the BAM's `@RG SM` tag; every BAM step 02 writes has one. In Nextflow, somalier names each sample by its samplesheet id instead, so two rows whose BAMs share an `SM` stay two samples, and a BAM with no read group works.
 
