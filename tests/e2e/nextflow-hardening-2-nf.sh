@@ -87,6 +87,15 @@ check_eq "tasks that did not complete" "$(grep -c . <<< "$FAILED" || true)" 0
 if [ -n "$FAILED" ]; then
   grep -E 'Error executing process|Command exit status|Command error' -A 6 "${CASE_TMP}/.nextflow.log" \
     | grep -vE 'Pulling|Waiting|Verifying|Download complete|Pull complete|Already exists' | head -80
+  # errorStrategy 'ignore' keeps a task's error out of .nextflow.log, so
+  # print what each failed task wrote itself.
+  awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["status"] == "FAILED" {print $c["hash"]}' "$TRACE" \
+    | while read -r h; do
+        for f in "$WORK"/"$h"*/.command.sh "$WORK"/"$h"*/.command.out "$WORK"/"$h"*/.command.err; do
+          echo "--- ${f#"$WORK"/} (last 40 lines)"
+          tail -n 40 "$f"
+        done
+      done
 fi
 
 # --- No network ----------------------------------------------------------------------
