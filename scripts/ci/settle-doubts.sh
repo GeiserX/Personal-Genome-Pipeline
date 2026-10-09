@@ -22,7 +22,6 @@ TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SLICE=chr20:10000000-10500000
 HAPPY_IMAGE="jmcdani20/hap.py:v0.3.12"            # the image benchmark-variants.sh uses
 BWAMEM2_IMAGE="quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5"   # as in 02a-alignment-bwamem2.sh
-CLAIR3_IMAGE="hkubal/clair3:v2.0.2"                 # as in 03e-clair3.sh
 
 export PATH="${REPO}/tests/e2e/bin:${PATH}"   # clamps --cpus to this machine
 export THREADS=4
