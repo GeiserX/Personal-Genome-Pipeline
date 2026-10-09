@@ -215,7 +215,7 @@ jobs:
 
       - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
         with:
-          version: "25.10.8"
+          version: "26.04.7"
 
       # Images are cached as one compressed tar, keyed on the pinned versions,
       # so a run does not pull ~10 GB from Docker Hub and quay every time.
