@@ -8,7 +8,7 @@ The stub runs in `nextflow.yml` check that the Nextflow wiring holds together, a
 
 The test data is a slice of **HG002**, the Genome in a Bottle (GIAB) son of the Ashkenazi trio. HG002 is a public, consented reference sample, so nothing in the fixture is personal data.
 
-[`scripts/ci/build-fixture.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/build-fixture.sh) builds it. It reads only the regions below from GIAB's 60x GRCh38 BAM over HTTPS (samtools fetches byte ranges through the `.bai`, so the 126 GB file is never downloaded) and samples them down to about 30x.
+[`scripts/ci/build-fixture.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/build-fixture.sh) builds it. It reads only the regions below from GIAB's 60x GRCh38 BAM on GIAB's S3 mirror (`https://giab.s3.amazonaws.com/`) over HTTPS (samtools fetches byte ranges through the `.bai`, so the 126 GB file is never downloaded) and samples them down to about 30x.
 
 | Region (GRCh38) | Why it is there |
 |---|---|
@@ -36,7 +36,7 @@ What the release holds:
 |---|---|
 | `HG002_R1.fastq.gz`, `HG002_R2.fastq.gz` | the sliced reads as name-sorted pairs, input for step 02 |
 | `HG002_slice.bam` (+ `.bai`) | the same reads as GIAB aligned them |
-| `HG002_cyrius.bam` (+ `.bai`) | GIAB's alignment of the regions Cyrius (step 21) reads, sampled the same way: CYP2D6, CYP2D7 and its 3,000 depth-normalisation bins on chr1 to chr22. Cyrius stops on the first bin whose contig the BAM lacks, so it cannot run on the BAM step 02 writes against the fixture reference |
+| `HG002_cyrius.bam` (+ `.bai`) | GIAB's alignment of the regions Cyrius (step 21) reads, sampled the same way: CYP2D6, CYP2D7 and its 3,000 depth-normalisation bins on chr1 to chr22, plus the two 50 kb flanks (chr22:42.05-42.10 and 42.20-42.25 Mb) step 21's depth check compares CYP2D6 with. Cyrius stops on the first bin whose contig the BAM lacks, so it cannot run on the BAM step 02 writes against the fixture reference |
 | `fixture_ref.fa.gz` (+ `.fai`, `.gzi`, `.dict`) | whole chr1, chr2, chr4, chr5, chr6, chr10, chr12, chr16, chr19, chr20, chr22, chrX, chrY and chrM from the NCBI GRCh38 no-ALT analysis set, the pipeline's default reference, so every coordinate and contig name is real |
 | `clinvar.vcf.gz`, `clinvar_chr.vcf.gz`, `clinvar_pathogenic_chr.vcf.gz` (+ `.tbi`) | ClinVar records inside the regions, built the way `setup.sh` builds the full files |
 | `planted.tsv` | one synthetic ClinVar record (CLNSIG Pathogenic, gene SNAP25, ID 900000001) at a SNV HG002 is homozygous for, so step 06 always has a hit with a known gene |
@@ -44,25 +44,26 @@ What the release holds:
 | `revel_synthetic.tsv.gz` (+ `.tbi`) | a score file in REVEL's layout for the SNVs of the VEP subset. The scores are made up; they only show that a score track is applied |
 | `HG002_sv_manta_style.vcf.gz` (+ `.tbi`) | ten Manta-style SV records, input for AnnotSV and the SV readers |
 | `HG002_truth_chr20.vcf.gz` (+ `.tbi`), `HG002_truth_chr20.bed` | GIAB v4.2.1 truth for the chr20 slice |
+| `HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz` (+ `.tbi`), `HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed`, `HG002_GRCh38_v5.0q_smvar.vcf.gz` (+ `.tbi`), `HG002_GRCh38_v5.0q_smvar.benchmark.bed` | GIAB's two HG002 truth sets, whole and byte for byte as GIAB publishes them, for `benchmark-variants.sh --giab` (its md5 check accepts nothing else). The GIAB e2e case reads them from here, so it needs no download. About 214 MB of the release. The build checks each file against the md5 the step accepts; MANIFEST.txt lists the md5s and sources |
 | `regions.bed`, `MANIFEST.txt`, `SHA256SUMS` | the slices, how this build was made (sources, depth, ClinVar date, build-script checksum), checksums |
 
 Why chr2, chr4 and chr16: pypgx (step 32) reads depth over the region of every gene it can call copy number for before it calls any of them, and samtools refuses a region on a contig the BAM does not have. One missing contig and step 32 calls no BAM-based gene at all, CYP2D6 included. Its GRCh38 region for GSTT1 is on an ALT contig, `chr22_KI270879v1_alt`, which the default reference does not have; step 32 leaves GSTT1 out on the fixture as it does on a real sample. Up to `fixture-v4` the fixture carried that contig; `fixture-v5` dropped it, so the e2e job runs on the contigs a default setup has.
 
-The whole release stays under 1.5 GB. The build checks that both BAMs pass `samtools quickcheck`, that every `.gz` file passes `gzip -t`, that `samtools idxstats` shows reads on every primary contig of the reference, that the reference has no ALT or HLA contig, and that the Cyrius BAM has reads on chr1 to chr22. The e2e job repeats those checks after download.
+The whole release stays under 1.5 GB. The build checks that both BAMs pass `samtools quickcheck`, that every `.gz` file passes `gzip -t`, that `samtools idxstats` shows reads on every primary contig of the reference, that the reference has no ALT or HLA contig, that the Cyrius BAM has reads on chr1 to chr22 and reads with MAPQ >= 1 in both CYP2D6 flanks, and that each GIAB truth file has the md5 `benchmark-variants.sh` accepts. After download the e2e job repeats the BAM, `gzip -t`, contig and size checks (`tests/e2e/01-fixture.sh`); the GIAB case checks the truth files by md5 and `pgx-1-depth-check.sh` checks the flank depth.
 
 ### Where it lives and how to change it
 
-The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v5`). The e2e job reads the same file, so the workflow never changes when the data does.
+The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v6`). The e2e job reads the same file, so the workflow never changes when the data does.
 
 To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
-2. Bump `tests/fixtures/VERSION` (for example from `fixture-v5` to `fixture-v6`).
+2. Bump `tests/fixtures/VERSION` (for example from `fixture-v6` to `fixture-v7`).
 3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (30 to 70 minutes, most of it VEP querying Ensembl's public database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it.
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
 
-You can build it yourself on Linux with Docker, `bgzip` and `tabix` and about 10 GB of free disk: `scripts/ci/build-fixture.sh /path/to/out`.
+You can build it yourself on Linux with Docker, `bgzip`, `tabix` and `python3` and about 10 GB of free disk: `scripts/ci/build-fixture.sh /path/to/out`.
 
 ## The e2e job
 

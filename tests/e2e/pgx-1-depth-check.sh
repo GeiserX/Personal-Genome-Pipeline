@@ -16,18 +16,18 @@ check "the flanks have reads (MAPQ >= 1)" awk -v d="$(val flank_depth_mapq1)" 'B
 CYP2D6=$(awk -F'\t' '$1 == "CYP2D6" {print $2; exit}' "${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv" 2>/dev/null)
 check "pypgx's CYP2D6 row keeps its call (${CYP2D6:-none})" lacks '^(Indeterminate|)$' "${CYP2D6:-}"
 
-# Step 21 (case 37) runs on the fixture's HG002_cyrius.bam, which holds only
-# the regions Cyrius reads: the two 50 kb flanks have no reads, so its check
-# must say so and step 21 must mark the Cyrius call. When the fixture gains
-# the flanks, these become status ok and a Filter other than
-# CYP2D6_depth_unreliable.
+# Step 21 (case 37) runs on the fixture's HG002_cyrius.bam: GIAB's alignment
+# of the regions Cyrius reads plus the two 50 kb flanks the check compares
+# CYP2D6 with (since fixture-v6). GIAB aligned it to a reference without ALT
+# contigs, so the check passes and step 21 keeps the Cyrius call unmarked.
 CY="${SAMPLE}cyrius"
 CHECK21="${GENOME_DIR}/${CY}/cyrius/${CY}_cyp2d6_depth_check.tsv"
 cat "$CHECK21" 2>/dev/null
 val21() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "$CHECK21" 2>/dev/null; }
-check_eq "step 21's depth check on the flankless Cyrius BAM" "$(val21 status)" unreliable
-check "step 21's check says the flanks have no reads" has 'no reads in the flanks' "$(val21 message)"
+check_eq "step 21's CYP2D6 depth check on the Cyrius BAM" "$(val21 status)" ok
+check "the Cyrius BAM's flanks have reads (MAPQ >= 1)" awk -v d="$(val21 flank_depth_mapq1)" 'BEGIN {exit !(d + 0 > 1)}'
 FILTER21=$(awk -F'\t' 'NR > 1 {print $3; exit}' "${GENOME_DIR}/${CY}/cyrius/${CY}_cyp2d6.tsv" 2>/dev/null)
-check_eq "step 21 marked the Cyrius call" "${FILTER21:-}" CYP2D6_depth_unreliable
+check "step 21 has a Cyrius row (Filter ${FILTER21:-none})" test -n "${FILTER21:-}"
+check "step 21 did not mark the Cyrius call (Filter ${FILTER21:-none})" lacks 'CYP2D6_depth_unreliable' "${FILTER21:-}"
 
 finish

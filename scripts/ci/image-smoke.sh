@@ -7,6 +7,9 @@
 #                                              for these *_IMAGE variables of versions.env
 #   scripts/ci/image-smoke.sh --manifest       `docker manifest inspect` every image in
 #                                              versions.env and print its platforms
+#   scripts/ci/image-smoke.sh --manifest-self-test
+#                                              prove --manifest passes a tag rebuilt in
+#                                              place and fails a digest that does not exist
 #   scripts/ci/image-smoke.sh --check          parse the whole table (fields, options, input
 #                                              names) and check that every *_IMAGE of
 #                                              versions.env has a row (no docker)
@@ -158,18 +161,43 @@ self_test() {
 has_opt() { [[ ",${1}," == *",${2},"* ]]; }
 
 # --------------------------------------------------------------- manifest
+# manifest_ref IMAGE: the reference the manifest check resolves for a
+# versions.env image. A name:tag@digest pin resolves as name@digest: with the
+# tag in the reference Docker fetches the tag and fails with "manifest
+# verification failed" as soon as the publisher rebuilds it in place, though
+# the pinned digest still exists and is what every step pulls. Tag drift is
+# Renovate's to report, as a digest update. An image without a digest is
+# resolved as written.
+manifest_ref() {
+  local img=$1 name last
+  case "$img" in *@*) ;; *) printf '%s\n' "$img"; return ;; esac
+  name=${img%@*}
+  last=${name##*/}
+  # A colon in the last path component is the tag; one before a slash is a
+  # registry port.
+  [[ "$last" == *:* ]] && name=${name%:*}
+  printf '%s@%s\n' "$name" "${img##*@}"
+}
+
+# inspect_ref REF: `docker manifest inspect -v`, three tries; the JSON on
+# stdout, or "FAILED: <docker's message>" and exit 1.
+inspect_ref() {
+  local out tries
+  for tries in 1 2 3; do
+    if out=$(docker manifest inspect -v "$1" 2>&1); then printf '%s\n' "$out"; return 0; fi
+    [ "$tries" -lt 3 ] && sleep 10
+  done
+  printf 'FAILED: %s\n' "$out"
+  return 1
+}
+
 manifest() {
-  local var img out plats fail=0 tries rows=()
+  local var img ref out plats fail=0 rows=()
   while read -r var; do
     img=${!var}
-    out=""
-    for tries in 1 2 3; do
-      if out=$(docker manifest inspect -v "$img" 2>&1); then break; fi
-      out="FAILED: ${out}"
-      [ "$tries" -lt 3 ] && sleep 10
-    done
-    if [[ "$out" == FAILED:* ]]; then
-      echo "FAIL ${var}: ${img} cannot be resolved: $(head -c 300 <<< "${out#FAILED: }")"
+    ref=$(manifest_ref "$img")
+    if ! out=$(inspect_ref "$ref"); then
+      echo "FAIL ${var}: ${ref} cannot be resolved: $(head -c 300 <<< "${out#FAILED: }")"
       rows+=("| ${var} | \`${img}\` | **missing** |")
       fail=1
       continue
@@ -179,7 +207,7 @@ manifest() {
               <<< "$out" 2>/dev/null | sort -u | paste -sd ' ' -)
     echo "OK   ${var}: ${img} (${plats:-platform not stated})"
     rows+=("| ${var} | \`${img}\` | ${plats:-not stated} |")
-  done < <(grep -oE '^[A-Z0-9_]+_IMAGE=' "${REPO}/versions.env" | tr -d =)
+  done < <(grep -oE '^[A-Z0-9_]+_IMAGE=' "$VERSIONS" | tr -d =)
   {
     echo "### Pinned images in versions.env"
     echo
@@ -192,6 +220,36 @@ manifest() {
     return 1
   fi
   echo "All ${#rows[@]} pinned images exist."
+}
+
+# manifest_self_test: the manifest check against the real registry. A pin
+# whose tag no longer serves its digest must still pass, and a digest that
+# does not exist must fail. The moved case pairs PYTHON_IMAGE's own digest with
+# a tag that does not exist, so it needs nothing from the registry that the
+# manifest check does not need anyway. With the tag kept in the reference,
+# Docker fetches the tag and the case fails.
+manifest_self_test() {
+  local fails=0 got img want moved wrong name
+  while IFS='|' read -r img want; do
+    got=$(manifest_ref "$img")
+    if [ "$got" = "$want" ]; then echo "[PASS] manifest_ref ${img} -> ${got}"
+    else echo "[FAIL] manifest_ref ${img}: got ${got}, want ${want}"; fails=$((fails + 1)); fi
+  done <<'CASES'
+example/tool:1.0--h1@sha256:abc|example/tool@sha256:abc
+localhost:5000/example/tool:2@sha256:abc|localhost:5000/example/tool@sha256:abc
+localhost:5000/example/tool@sha256:abc|localhost:5000/example/tool@sha256:abc
+example/tool:1.0|example/tool:1.0
+CASES
+  name=${PYTHON_IMAGE%@*}
+  name=${name%:*}
+  moved="$(manifest_ref "${name}:no-such-tag@${PYTHON_IMAGE##*@}")"
+  if inspect_ref "$moved" >/dev/null; then echo "[PASS] a pin whose tag moved resolves by its digest (${name}:no-such-tag -> ${moved})"
+  else echo "[FAIL] a pin whose tag moved resolves by its digest (${name}:no-such-tag -> ${moved})"; fails=$((fails + 1)); fi
+  wrong="$(manifest_ref "${name}@sha256:$(printf '0%.0s' $(seq 64))")"
+  if inspect_ref "$wrong" >/dev/null; then echo "[FAIL] a digest that does not exist fails (${wrong})"; fails=$((fails + 1))
+  else echo "[PASS] a digest that does not exist fails (${wrong})"; fi
+  if [ "$fails" -gt 0 ]; then echo "manifest self-test: ${fails} case(s) failed" >&2; return 1; fi
+  echo "manifest self-test: all cases passed"
 }
 
 # ----------------------------------------------------------- docker helpers
@@ -687,6 +745,9 @@ smoke() {
 case "${1:-}" in
   --manifest)
     manifest
+    ;;
+  --manifest-self-test)
+    manifest_self_test
     ;;
   --check)
     load_table
