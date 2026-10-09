@@ -18,9 +18,7 @@ Renovate runs only its regex managers ([`renovate.json`](https://github.com/Geis
 
 ## Turning Renovate on
 
-The Renovate GitHub App is installed on the repository in Silent mode: it reads the config and opens nothing. The one owner step is to switch the repository to Interactive on [developer.mend.io](https://developer.mend.io/). From then on Renovate opens a dependency dashboard issue and its PRs.
-
-Until that switch, the Renovate dry run workflow below is the only evidence that the config finds the pins and the updates.
+The Renovate GitHub App is installed on this repository only and runs in Interactive mode: it keeps a dependency dashboard issue and opens PRs on the schedule below. Majors (Python, Nextflow, VEP, PCGR) wait for a tick on the dashboard; ticking a box under "Awaiting Schedule" opens that PR at once. The mode and the app's repository list are set on [developer.mend.io](https://developer.mend.io/) and in the GitHub app settings; the dry run workflow below checks the config before Renovate reads it.
 
 ## What a Renovate PR looks like
 

@@ -88,6 +88,8 @@ nextflow run main.nf -resume [same params as before]
 
 Only the failed and downstream steps re-run.
 
+One exception, once: Nextflow 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, so the first `-resume` of a work directory written by 25.10 reruns every process that takes the `meta` map, which is every process here. Start a fresh work directory for the first run after the upgrade instead of waiting on a resume that caches nothing.
+
 ---
 
 ## Samplesheet Format

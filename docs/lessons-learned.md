@@ -430,3 +430,13 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** the image tests of Yleaf ran into their one-hour limit. The Bioconda recipe of Yleaf 3.2.1 lists no samtools, which Yleaf calls for a BAM (`samtools idxstats`, `samtools mpileup`). Yleaf runs each BAM in a `multiprocessing.Pool` worker and stops on the failed call with `SystemExit`; that kills the worker, and `Pool.map` waits for a result that never comes. With a serial pool the same run stops at once with `samtools: command not found`.
 - **Also missing:** the package installs Yleaf's Python code only, without its data folder (marker positions, haplogroup tree): `setup.py` lists no package data. `setup.sh --yleaf-data` installs that folder from the release archive, checked by sha256, and the launcher points Yleaf at it.
 - **Fix:** `bin/yleaf_run.py`: step 37 and the pipeline make the idxstats and the pileup at Yleaf's marker positions in `SAMTOOLS_IMAGE` (with Yleaf's own flags), and run Yleaf on them with its samtools calls served from those files, its reference constant set and its pools replaced by a serial map. The image test checks that the functions and calls the launcher replaces are still in the image.
+
+## Dependency bumps (2026-10)
+
+### The first `-resume` on Nextflow 26.04 caches nothing from a 25.10 work directory
+- **Failed:** after the Nextflow 26.04.7 bump, a `-resume` over a work directory written by 25.10 reran every process. 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, and every process here takes the `meta` map, so every task hash changed.
+- **Fix:** none needed in the code; the first run after the upgrade starts a fresh work directory, and later resumes behave as before. A BAM that an earlier run already produced goes in through the BAM entry of the samplesheet instead of a resume.
+
+### Renovate's `commitMessagePrefix` is used as written
+- **Failed:** `"commitMessagePrefix": "deps"` gave PR titles like `deps Update python Docker tag to v3.14.8`: no colon, so not a conventional commit, while this page and `updating.md` said `deps:`.
+- **Fix:** `semanticCommits` enabled with `semanticCommitType` `deps` and an empty scope (`ci` for the lint tools), which writes `deps: update ...` itself. The five PRs of 2026-10-09 were retitled by hand before the squash.
