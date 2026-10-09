@@ -12,7 +12,9 @@
 #   HG002_cyrius.bam (+.bai)               the downsampled GIAB alignments of the
 #                                          regions Cyrius (step 21) reads: CYP2D6,
 #                                          CYP2D7 and 3,000 depth-normalisation
-#                                          bins on chr1-chr22
+#                                          bins on chr1-chr22; plus the two 50 kb
+#                                          flanks step 21's depth check compares
+#                                          CYP2D6 with (bin/cyp2d6_depth_check.py)
 #   fixture_ref.fa.gz (+.fai .gzi .dict)   whole chr1 chr2 chr4 chr5 chr6 chr10
 #                                          chr12 chr16 chr19 chr20 chr22 chrX chrY
 #                                          chrM of the NCBI GRCh38 no-ALT analysis
@@ -26,10 +28,19 @@
 #   HG002_sv_manta_style.vcf.gz (+.tbi)    ten Manta-style SV records
 #   HG002_truth_chr20.vcf.gz (+.tbi), HG002_truth_chr20.bed
 #                                          GIAB v4.2.1 truth for the chr20 slice
+#   HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz (+.tbi),
+#   HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed,
+#   HG002_GRCh38_v5.0q_smvar.vcf.gz (+.tbi),
+#   HG002_GRCh38_v5.0q_smvar.benchmark.bed GIAB's two HG002 truth sets, the
+#                                          files benchmark-variants.sh --giab
+#                                          reads, byte for byte as GIAB
+#                                          publishes them (its md5 check accepts
+#                                          nothing else), so the e2e GIAB case
+#                                          needs no download
 #   regions.bed, planted.tsv, MANIFEST.txt, SHA256SUMS
 #
 # HG002 is a public, consented Genome in a Bottle sample, so nothing here is
-# personal data. Needs Docker, curl, bgzip and tabix (htslib), about 10 GB of
+# personal data. Needs Docker, curl, bgzip and tabix (htslib), python3, about 10 GB of
 # free disk and a network connection (VEP queries Ensembl's public database).
 # The release tag the e2e job downloads is tests/fixtures/VERSION; see
 # docs/testing.md for how to rebuild and publish a new version.
@@ -52,9 +63,14 @@ SEED=42
 SAMPLE=HG002
 MAX_TOTAL_BYTES=$((1500 * 1024 * 1024))
 
-GIAB=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab
+# GIAB's S3 mirror holds the BAM and v4.2.1 (NCBI's ReferenceSamples/giab
+# path to the same tree answers 404 since 2026-10-07). v5.0q has no mirror:
+# it comes from NCBI's giab/ftp path, its only home.
+GIAB=https://giab.s3.amazonaws.com
+GIAB_NCBI=https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp
 BAM_URL="${GIAB}/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.60x.1.bam"
 TRUTH_BASE="${GIAB}/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark"
+V5Q_BASE="${GIAB_NCBI}/release/AshkenazimTrio/HG002_NA24385_son/v5.0q/HG002_GRCh38_v5.0q_smvar"
 REF_BASE=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids
 REF_NAME=GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
 CLINVAR_URL=https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz
@@ -108,7 +124,7 @@ PLANT_WINDOW="chr20:10230000-10300000"   # inside SNAP25
 PLANT_GENE="SNAP25:6616"
 PLANT_ID=900000001
 
-for tool in docker curl bgzip tabix md5sum sha256sum awk sort; do
+for tool in docker curl bgzip tabix md5sum sha256sum awk sort python3; do
   command -v "$tool" >/dev/null || { echo "ERROR: ${tool} is required" >&2; exit 1; }
 done
 
@@ -126,6 +142,20 @@ sam_https() {
     -v "${OUT}:/w" -w /w "$SAMTOOLS_IMAGE" samtools "$@"
 }
 bcf() { in_image "$BCFTOOLS_IMAGE" bcftools "$@"; }
+# retry CMD...: up to four tries, 15, 30 then 45 seconds apart. A stream from
+# GIAB's S3 mirror sometimes dies half way ("Failed to read BGZF header"
+# after a dropped connection); the same call then succeeds. samtools -o
+# rewrites its output on each try.
+retry() {
+  local i
+  for i in 1 2 3 4; do
+    "$@" && return 0
+    [ "$i" -lt 4 ] || break
+    echo "  try ${i} of 4 failed; again in $((i * 15)) s" >&2
+    sleep $((i * 15))
+  done
+  return 1
+}
 fetch() { curl -fsSL --retry 5 --retry-delay 10 -o "$2" "$1"; }
 
 echo "=== Fixture ${VERSION}: ${OUT} ==="
@@ -157,7 +187,7 @@ echo "[2/8] Streaming ${#REGIONS[@]} regions from the GIAB HG002 60x BAM"
 fetch "${BAM_URL}.bai" "${WORK}/source.bam.bai"
 # -M: one pass over the regions in file order, so the output is sorted and a
 # read that overlaps two regions is written once.
-sam_https view -@ "$THREADS" -M -b -X -o /w/.work/slice_full.bam "$BAM_URL" /w/.work/source.bam.bai "${REGIONS[@]}"
+retry sam_https view -@ "$THREADS" -M -b -X -o /w/.work/slice_full.bam "$BAM_URL" /w/.work/source.bam.bai "${REGIONS[@]}"
 sam index /w/.work/slice_full.bam
 FULL_DEPTH=$(sam coverage -r chr20:10000000-10500000 /w/.work/slice_full.bam | awk 'NR == 2 {print $7}')
 # samtools -s takes SEED.FRACTION; mates share a read name, so pairs stay whole.
@@ -191,12 +221,23 @@ if [ "$CYRIUS_BINS" -lt 1000 ] || [ "$CYRIUS_CONTIGS" -ne 22 ]; then
   exit 1
 fi
 echo "  ${CYRIUS_BINS} normalisation bins on ${CYRIUS_CONTIGS} contigs"
+# Step 21's depth check compares CYP2D6 with two 50 kb flanks; without reads
+# there it can only say "no reads in the flanks". The flanks come from the
+# check itself, so the two cannot drift apart.
+python3 "${REPO}/bin/cyp2d6_depth_check.py" bed | awk -F'\t' '$4 == "flank"' > "${WORK}/cyp2d6_flanks.bed"
+if [ "$(wc -l < "${WORK}/cyp2d6_flanks.bed" | tr -d ' ')" -ne 2 ]; then
+  echo "ERROR: bin/cyp2d6_depth_check.py bed did not print two flank regions" >&2
+  exit 1
+fi
+CYRIUS_FLANKS=$(awk '{printf "%s%s:%d-%d", (NR > 1 ? " " : ""), $1, $2 + 1, $3}' "${WORK}/cyp2d6_flanks.bed")
+cat "${WORK}/cyp2d6_flanks.bed" >> "${WORK}/cyrius_regions.bed"
+echo "  plus the CYP2D6 depth check's flanks: ${CYRIUS_FLANKS}"
 pids=()
 for g in $(seq 0 $((CYRIUS_GROUPS - 1))); do
   awk -v g="$g" -v n="$CYRIUS_GROUPS" 'BEGIN {OFS = "\t"}
     {c = $1; sub(/^chr/, "", c)} c % n == g {print $1, $2, $3}' \
     "${WORK}/cyrius_regions.bed" > "${WORK}/cyrius_${g}.bed"
-  sam_https view -M -b -X -L "/w/.work/cyrius_${g}.bed" -o "/w/.work/cyrius_${g}.bam" \
+  retry sam_https view -M -b -X -L "/w/.work/cyrius_${g}.bed" -o "/w/.work/cyrius_${g}.bam" \
     "$BAM_URL" /w/.work/source.bam.bai &
   pids+=("$!")
 done
@@ -220,20 +261,33 @@ if [ "$R1_READS" -ne "$R2_READS" ] || [ "$R1_READS" -eq 0 ]; then
 fi
 
 # --- GIAB truth: chr20 slice, the planted variant, the VEP input -------------
-echo "[4/8] GIAB v4.2.1 truth"
-fetch "${TRUTH_BASE}.vcf.gz" "${WORK}/truth.vcf.gz"
-fetch "${TRUTH_BASE}.vcf.gz.tbi" "${WORK}/truth.vcf.gz.tbi"
-fetch "${TRUTH_BASE}_noinconsistent.bed" "${WORK}/truth.bed"
-bcf view -r chr20:10000000-10500000 -Oz -o "/w/${SAMPLE}_truth_chr20.vcf.gz" /w/.work/truth.vcf.gz
+echo "[4/8] GIAB truth sets v4.2.1 and v5.0q"
+# Each file must have the md5 benchmark-variants.sh --giab accepts, read from
+# that script, so the fixture holds exactly what the step checks.
+TRUTH_FILES=()
+for url in "${TRUTH_BASE}.vcf.gz" "${TRUTH_BASE}.vcf.gz.tbi" "${TRUTH_BASE}_noinconsistent.bed" \
+           "${V5Q_BASE}.vcf.gz" "${V5Q_BASE}.vcf.gz.tbi" "${V5Q_BASE}.benchmark.bed"; do
+  f=${url##*/}
+  want=$(grep -oE "/${f//./\\.} [0-9a-f]{32}\"" "${REPO}/scripts/benchmark-variants.sh" | awk '{print substr($2, 1, 32)}')
+  fetch "$url" "${OUT}/${f}"
+  got=$(md5sum "${OUT}/${f}" | awk '{print $1}')
+  if [ -z "$want" ] || [ "$got" != "$want" ]; then
+    echo "ERROR: ${url} has md5 ${got}; benchmark-variants.sh accepts '${want}'" >&2
+    exit 1
+  fi
+  TRUTH_FILES+=("${f} md5 ${got} from ${url}")
+done
+TRUTH="/w/${TRUTH_BASE##*/}.vcf.gz"
+bcf view -r chr20:10000000-10500000 -Oz -o "/w/${SAMPLE}_truth_chr20.vcf.gz" "$TRUTH"
 bcf index -t "/w/${SAMPLE}_truth_chr20.vcf.gz"
 awk 'BEGIN {OFS = "\t"} $1 == "chr20" && $3 > 9999999 && $2 < 10500000 {
        if ($2 < 9999999) $2 = 9999999; if ($3 > 10500000) $3 = 10500000; print }' \
-  "${WORK}/truth.bed" > "${OUT}/${SAMPLE}_truth_chr20.bed"
+  "${OUT}/${TRUTH_BASE##*/}_noinconsistent.bed" > "${OUT}/${SAMPLE}_truth_chr20.bed"
 
 # The planted ClinVar record: a homozygous-alt truth SNV inside SNAP25, so the
 # sample carries it at any depth and step 06 has a hit with a known gene.
 read -r PLANT_CHROM PLANT_POS PLANT_REF PLANT_ALT < <(
-  bcf view -H -v snps -i 'GT="AA"' -r "$PLANT_WINDOW" /w/.work/truth.vcf.gz \
+  bcf view -H -v snps -i 'GT="AA"' -r "$PLANT_WINDOW" "$TRUTH" \
     | awk 'NR == 1 {print $1, $2, $4, $5}')
 if [ -z "${PLANT_POS:-}" ]; then
   echo "ERROR: no homozygous-alt truth SNV in ${PLANT_WINDOW}" >&2
@@ -279,10 +333,10 @@ bcf index -t /w/clinvar_pathogenic_chr.vcf.gz
 # --- VEP-annotated subset (the offline cache does not fit a runner) ----------
 echo "[6/8] VEP --database on at most 200 truth variants"
 {
-  bcf view -h /w/.work/truth.vcf.gz | awk -v s="$SAMPLE" 'BEGIN {OFS = "\t"} /^#CHROM/ {$10 = s} {print}'
+  bcf view -h "$TRUTH" | awk -v s="$SAMPLE" 'BEGIN {OFS = "\t"} /^#CHROM/ {$10 = s} {print}'
   for w in "${VEP_WINDOWS[@]}"; do
     read -r region cap <<< "$w"
-    bcf view -H -r "$region" /w/.work/truth.vcf.gz | awk -v n="$cap" 'NR <= n'
+    bcf view -H -r "$region" "$TRUTH" | awk -v n="$cap" 'NR <= n'
   done | sort -t$'\t' -k1,1V -k2,2n -u | awk 'BEGIN {OFS = "\t"} {$7 = "PASS"; print}'
 } > "${WORK}/vep_input.vcf"
 VEP_INPUT_RECORDS=$(grep -vc '^#' "${WORK}/vep_input.vcf" || true)
@@ -391,6 +445,13 @@ for i in $(seq 1 22); do
   fi
 done
 CYRIUS_READS=$(awk '{s += $3} END {print s}' <<< "$CYRIUS_IDX")
+for r in $CYRIUS_FLANKS; do
+  n=$(sam view -c -q 1 "/w/${SAMPLE}_cyrius.bam" "$r")
+  if [ "${n:-0}" -le 0 ]; then
+    echo "ERROR: no reads with MAPQ >= 1 in the CYP2D6 flank ${r} of ${SAMPLE}_cyrius.bam" >&2
+    exit 1
+  fi
+done
 if [ "$VEP_RECORDS" -lt 20 ] || [ "$VEP_RECORDS" -gt 200 ] || ! grep -q '^##INFO=<ID=CSQ' "${OUT}/${SAMPLE}_vep.vcf"; then
   echo "ERROR: ${SAMPLE}_vep.vcf has ${VEP_RECORDS} records (want 20-200) or no CSQ header" >&2
   exit 1
@@ -410,8 +471,10 @@ fi
   echo "chr20_slice_depth_after: ${SLICE_DEPTH}"
   echo "chrM_depth_before: ${FULL_CHRM}; kept fraction ${CHRM_FRACTION}"
   echo "read_pairs: ${R1_READS}"
-  echo "cyrius_regions: ${CYRIUS_BED_URL} (sha256 ${CYRIUS_BED_SHA}); ${CYRIUS_BINS} norm bins; ${CYRIUS_READS} reads in ${SAMPLE}_cyrius.bam"
+  echo "cyrius_regions: ${CYRIUS_BED_URL} (sha256 ${CYRIUS_BED_SHA}); ${CYRIUS_BINS} norm bins; flanks ${CYRIUS_FLANKS}; ${CYRIUS_READS} reads in ${SAMPLE}_cyrius.bam"
   echo "truth_source: ${TRUTH_BASE}.vcf.gz"
+  echo "giab_truth_files (benchmark-variants.sh --giab, whole files):"
+  printf '  %s\n' "${TRUTH_FILES[@]}"
   echo "clinvar_source: ${CLINVAR_URL} (fileDate ${CLINVAR_DATE})"
   echo "planted_clinvar_record: ${PLANT_CHROM}:${PLANT_POS} ${PLANT_REF}>${PLANT_ALT} ID ${PLANT_ID} GENEINFO=${PLANT_GENE} CLNSIG=Pathogenic (synthetic)"
   echo "vep: ${VEP_IMAGE} --database --everything; ${VEP_INPUT_RECORDS} records in, ${VEP_RECORDS} out"
