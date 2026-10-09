@@ -104,7 +104,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with the versions pip resolved on Python 3.11 (scripts/cyrius-constraints.txt); a new minor or major needs them resolved again in the same PR. A patch (3.11.x) is safe to approve: the image test runs Cyrius on it.",
+      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with wheels hash-locked for Python 3.14 (scripts/cyrius-constraints.txt); a new minor or major needs them resolved again in the same PR. A patch (3.14.x) is safe to approve: the image test runs Cyrius on it.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["python"],
       "dependencyDashboardApproval": true
