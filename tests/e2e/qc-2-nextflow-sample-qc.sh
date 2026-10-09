@@ -5,7 +5,8 @@
 # calls) and the panel qc-1 cut to those contigs:
 #   - declared female: INDEXCOV reads the slices as female (case 34) and lets
 #     the row through, but somalier finds HG002 male from the reads and stops
-#     the run, naming both sexes; the report is never written;
+#     the run, naming both sexes; the report is never written; somalier's own
+#     table holds the samplesheet's female as the pedigree's sex;
 #   - declared male with --sex_check warn (for INDEXCOV's reading): the run
 #     ends, and the report, rendered by bin/render_report.py, shows somalier's
 #     sex, FREEMIX and the ROH and haplogroup cards, with the numbers of the
@@ -66,6 +67,13 @@ check "INDEXCOV let the row through first" has "Sample '${SAMPLE}': indexcov inf
 check "the message says how to go on" has 'rerun with --sex_check warn' "$(cat "$LOG")"
 check_eq "declared female: SAMPLE_QC tasks" "$(ran SAMPLE_QC)" 1
 check_eq "declared female: no HTML_REPORT task" "$(ran HTML_REPORT)" 0
+# pcol COLUMN SAMPLE: COLUMN of the run's somalier.samples.tsv for SAMPLE.
+pcol() {
+  awk -F'\t' -v k="$1" -v s="$2" 'NR == 1 {sub(/^#/, ""); for (i = 1; i <= NF; i++) c[$i] = i; next}
+    $c["sample_id"] == s {print $c[k]}' "${OUT}/somalier/somalier.samples.tsv" 2>/dev/null
+}
+check_eq "declared female: somalier's table has it as the pedigree's sex" "$(pcol original_pedigree_sex "$SAMPLE")" female
+check_eq "and somalier set the sex to male (1) from the reads" "$(pcol sex "$SAMPLE")" 1
 
 D="${SAMPLE}dup"
 DUP_ID="$D" nf_run male male --sex_check warn
@@ -87,6 +95,8 @@ check "the first row is the same person as the second" has "^${D} \\([0-9.]+\\)$
 check "the second row is the same person as the first" has "^${SAMPLE} \\([0-9.]+\\)$" "$(tv "$TD" same_person_as)"
 check "VERIFYBAMID2 published its selfSM" test -s "${R}/qc/verifybamid2/${SAMPLE}.selfSM"
 check "SOMALIER_RELATE published its tables" test -s "${OUT}/somalier/somalier.samples.tsv"
+check_eq "somalier's table: the samplesheet's male as the pedigree's sex, both rows" \
+  "$(pcol original_pedigree_sex "$SAMPLE") $(pcol original_pedigree_sex "$D")" "male male"
 
 HTML="${R}/${SAMPLE}_report.html"
 JSON="${R}/summary.json"

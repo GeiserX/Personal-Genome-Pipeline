@@ -30,7 +30,8 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 ```bash
 ./scripts/setup.sh /path/to/genome_dir                     # the scores, pgsc_calc and its plugin (once)
 ./scripts/setup.sh --ancestry-panel /path/to/genome_dir    # optional: percentiles (about 7 GB)
-./scripts/25-prs.sh your_name
+./scripts/25-prs.sh your_name male    # or female: the scores' chrX rows are scored too
+./scripts/25-prs.sh your_name         # no sex: chrX rows are left out
 ```
 
 `ANCESTRY_PANEL=none` scores without the panel even when it is installed. `PGSC_MAX_MEMORY` (for example `12.GB`) caps the memory pgsc_calc may use; the default is three quarters of the machine's RAM.
@@ -64,22 +65,22 @@ Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant
 ## What the Script Does Internally
 
 1. **Scoring files.** Downloads the GRCh38-harmonised file of each score from the PGS Catalog FTP when it is not in `${GENOME_DIR}/prs_scores/` yet, checked against the md5 the catalog publishes beside it. A file whose `#HmPOS_build` header is not `GRCh38` is refused. There is no fallback to the author-reported file, which is often GRCh37 or rsID-only and would score the wrong positions without any visible sign.
-2. **Scores as pgsc_calc reads them.** `bin/collect_summary.py prs-format` writes each file as a custom GRCh38 scoring file: `chr_name` and `chr_position` from the harmonised `hm_chr` and `hm_pos`, the effect allele, the other allele (from `other_allele`, else `hm_inferOtherAllele` when it names one allele), the weight, and the catalog's trait as its label. Rows the catalog could not place on GRCh38 are dropped, and so are rows on chrX, chrY or the mitochondrial genome (the step prints how many): pgsc_calc converts your genotypes with plink2, which stops on a chrX record when it has no sex. PGS000662 (prostate cancer) loses 8 of its 269 rows this way. pgsc_calc then needs no network and no liftover.
+2. **Scores as pgsc_calc reads them.** `bin/collect_summary.py prs-format` writes each file as a custom GRCh38 scoring file: `chr_name` and `chr_position` from the harmonised `hm_chr` and `hm_pos`, the effect allele, the other allele (from `other_allele`, else `hm_inferOtherAllele` when it names one allele), the weight, and the catalog's trait as its label. Rows the catalog could not place on GRCh38 are dropped, and so are rows on chrY or the mitochondrial genome. Rows on chrX are kept when you give the sex and dropped when you do not (the step prints how many of each): pgsc_calc converts your genotypes with plink2, which stops on a chrX record when it has no sex. Without the sex, PGS000662 (prostate cancer) loses 8 of its 269 rows this way; see [chrX and the sex](#chrx-and-the-sex). pgsc_calc then needs no network and no liftover.
 3. **Genotypes.**
    - **With step 3's gVCF** (the default since step 3 writes one): every score position, and with the panel every common panel SNV (the site list `setup.sh` writes), is genotyped from the gVCF. `bcftools convert --gvcf2vcf` turns each reference block over a position into a 0/0 call with the reference base; a position with no coverage (`./.`) or outside every block stays missing. A 0/0 record gets as its ALT the position's first allele (a score's effect or other allele, the panel's ALT) that is not the reference, so pgsc_calc can match it. These genotypes are kept as `prs/pgsc_calc/target.vcf.gz`.
    - **Without a gVCF** (an older run): the variant-only VCF is cut to the same positions, so every site where you match the reference is missing (see below). When not one position is left, pgsc_calc is not started and every score is reported unmatched.
 
-   Either way pgsc_calc gets only those positions: autosomes only (plink2 would refuse chrX without the sample's sex), and a small file to convert.
-4. **pgsc_calc.** Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum.
+   Either way pgsc_calc gets only those positions, a small file to convert: the autosomes, and chrX when you gave the sex.
+4. **pgsc_calc.** With the sex, the step writes it for plink2 (`pgsc_calc/sex/sex.tsv`: the VCF's sample name, 1 for male, 2 for female) and hands it to pgsc_calc's `PLINK2_VCF` conversion as `--update-sex`, beside the arguments pgsc_calc gives that process itself. Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum.
 5. **Summary.** `bin/collect_summary.py prs-table` reads pgsc_calc's match summary and scores into `${SAMPLE}_prs_summary.tsv`, and with the panel writes step 26's ancestry table. pgsc_calc's work folder and its run reports (`pipeline_info/`, named after the time of the run) are deleted; its results (its own HTML report, the match log) are kept.
 
-The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline; without it the `PRS` task fetches the release's archive, checked against `PGSC_CALC_SHA256`.
+The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. The sex is the samplesheet's `sex` column: a row with it is scored on chrX, a row without it on the autosomes, and `PRS_PREPARE` formats the scores once for each of the two that the run needs. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline; without it the `PRS` task fetches the release's archive, checked against `PGSC_CALC_SHA256`.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `Input` |
+| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `ChrX`, `Input` |
 | `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored: the score (and panel) positions, from the gVCF or the VCF |
 | `pgsc_calc/results/sample/score/` | pgsc_calc's scores, its HTML report `report.html`, and with the panel the ancestry-adjusted scores and the principal components |
 | `pgsc_calc/results/sample/match/` | pgsc_calc's match log and summary |
@@ -110,13 +111,20 @@ The run fits a 16 GB machine. It does not fit the 14 GB of disk a GitHub-hosted 
 
 - **Score_SUM**: weighted sum of the effect alleles you carry. Higher = more genetic predisposition, but only relative to other people scored the same way.
 - **Variants_Matched**: score variants pgsc_calc matched in your genotypes. `NA` when every score fell under pgsc_calc's 75% match rate: pgsc_calc then stops and publishes no match counts, and `Matched_Pct` is the rate its log gave.
-- **Variants_Total**: autosomal variants of the scoring file with a GRCh38 position.
+- **Variants_Total**: variants of the scoring file with a GRCh38 position on the autosomes, plus chrX when the sex was given.
 - **Matched_Pct**: `Variants_Matched / Variants_Total` as a percentage; the step warns below 50%, and pgsc_calc gives no sum below 75%.
 - **Percentile**: with the panel, where your score falls among the reference samples of `Ancestry_Group` (pgsc_calc's empirical percentile, `percentile_MostSimilarPop`). `NA` without the panel.
 - **Ancestry_Group**: the panel population whose genetic ancestry is most similar to yours (for the 1000 Genomes panel: AFR, AMR, EAS, EUR or SAS). `NA` without the panel.
+- **ChrX**: the score's rows on chrX: `8 scored` with the sex, `8 left out` without it, `0` when it has none.
 - **Input**: `gvcf` when the positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used.
+Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out, the same line names the score and how many rows.
+
+### chrX and the sex
+
+pgsc_calc converts your genotypes with plink2, and plink2 refuses chrX without the sample's sex. So a score's chrX rows are scored only when you give the sex (`./scripts/25-prs.sh your_name male`, or the samplesheet's `sex` column in Nextflow). Without it they are left out of the score: `Variants_Total` does not count them and the sum is the autosomes' alone. Of the nine scores in the list, PGS000662 (prostate cancer) has 8 chrX rows of 269.
+
+The two runs of the same score are therefore not comparable: with the sex the sum includes the chrX rows' weights, without it they are absent. Compare a sum only with sums made the same way. pgsc_calc's import does not split the pseudoautosomal regions out of chrX (no `--split-par`), so a row there is read with chrX's ploidy for the declared sex. The step does not take the sex from step 16's indexcov call: on a slice or a targeted BAM that call is not reliable (the test fixture reads a male sample as female), and a wrong sex would change the score silently.
 
 ### Hom-ref sites come from the gVCF
 

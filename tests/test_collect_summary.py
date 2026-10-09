@@ -19,7 +19,14 @@ Checks:
   8. the secondary-findings tier lists the ClinVar hits and the rare
      HIGH-impact clinical records in ACMG SF v3.3 genes, and nothing else;
   9. haplocheck's contamination status and Yleaf's Y haplogroup (or
-     'insufficient markers') reach both reports.
+     'insufficient markers') reach both reports;
+ 10. the step 33 verdict with the declared sex as somalier's pedigree:
+     somalier keeps the pedigree's sex when the reads cannot tell, which is
+     read as unknown (not checked), not as a call that agrees; a sex somalier
+     changed from the pedigree's is a mismatch; a call that agrees with
+     enough chrX sites is ok; a pedigree female with chrY reads but chrX that
+     cannot tell is unknown, not an aneuploidy; without a pedigree the rows
+     read as before.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -267,6 +274,41 @@ def main():
         os.remove(f"{h}/mito/S_haplocheck.txt")
         check("no haplocheck file: the report says it was not checked",
               "Contamination (haplocheck): not checked" in render(h)[1])
+
+        # 10. step 33 with the declared sex as somalier's pedigree
+        head = ("#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\t"
+                "gt_depth_mean\tn_hom_ref\tn_het\tn_hom_alt\tp_middling_ab\tX_depth_mean\tX_n\tX_hom_ref\t"
+                "X_het\tX_hom_alt\tY_depth_mean\tY_n\n")
+
+        def qc(sex, ped, x_n, x_het, x_hom_alt, declared, y_depth="0.0", mid="0.010"):
+            path = os.path.join(work, "somalier.samples.tsv")
+            put(path, head + f"S\tS\t-9\t-9\t{sex}\t-9\t{ped}\t30.0\t60\t40\t20\t{mid}\t15.0\t{x_n}\t0\t"
+                f"{x_het}\t{x_hom_alt}\t{y_depth}\t5\n")
+            return dict(collect_summary.sample_qc_table("S", path, declared_sex=declared))
+
+        t = qc("1", "male", 2, 0, 2, "male")
+        check("pedigree male kept on 2 chrX sites: unknown, not checked (not ok)",
+              t["inferred_sex"] == "unknown" and t["sex_check"] == "not_checked", t)
+        t = qc("1", "female", 39, 0, 39, "female")
+        check("pedigree female, somalier set male from 39 chrX sites: mismatch",
+              t["inferred_sex"] == "male" and t["sex_check"] == "mismatch", t)
+        t = qc("1", "male", 39, 0, 39, "male")
+        check("pedigree male, 39 homozygous chrX sites agree: ok", t["sex_check"] == "ok", t)
+        t = qc("1", "male", 39, 0, 39, "male", mid="0.080")
+        check("pedigree male kept on a sample somalier calls low quality (8% middling allele balance): not checked",
+              t["sex_check"] == "not_checked", t)
+        t = qc("1", "male", 39, 0, 39, "male", mid="nan")
+        check("pedigree male kept, middling allele balance nan (no autosomal call): not checked",
+              t["sex_check"] == "not_checked", t)
+        t = qc("-2", "female", 4, 0, 4, "female", y_depth="14.0")
+        check("pedigree female with chrY reads, chrX cannot tell: unknown, not the aneuploidy line",
+              t["sex_check"] == "not_checked" and "could not tell" in t["sex_check_reason"], t)
+        t = qc("-2", "female", 40, 20, 20, "female", y_depth="14.0")
+        check("pedigree female, chrX heterozygous and chrY reads: the aneuploidy line",
+              t["sex_check"] == "not_checked" and "chrY has reads" in t["sex_check_reason"], t)
+        t = qc("1", "-9", 2, 0, 2, "male")
+        check("no pedigree (-9): somalier's sex column is read as before",
+              t["inferred_sex"] == "male" and t["sex_check"] == "ok", t)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

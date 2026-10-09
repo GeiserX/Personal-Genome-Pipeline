@@ -10,7 +10,9 @@
 
     SOMALIER_RELATE runs once over every sample of the run: per sample, the
     sex somalier infers from heterozygosity at chrX sites and chrY depth; per
-    pair, relatedness, so two rows that are the same person show up.
+    pair, relatedness, so two rows that are the same person show up. Its
+    pedigree (--ped) holds each sample's samplesheet sex, so somalier.samples.tsv
+    (and MultiQC) report the declared sex beside the one from the reads.
 
     SAMPLE_QC writes <id>_sample_qc.tsv with bin/collect_summary.py's
     sample-qc command (the rule scripts/33-sample-qc.sh runs too): somalier's
@@ -83,6 +85,7 @@ process SOMALIER_RELATE {
     input:
     path(extracted, stageAs: 'extract/*')
     path(sites)
+    path(ped)            // one line per sample: id, id, -9, -9, sex (1, 2 or -9), -9
 
     output:
     path "somalier.samples.tsv", emit: samples
@@ -95,8 +98,10 @@ process SOMALIER_RELATE {
 
     script:
     """
-    # --infer: without it somalier leaves the sex column as the pedigree's (-9)
-    somalier relate --infer --sites ${sites} -o somalier extract/*.somalier
+    # --infer: without it somalier leaves the sex column as the pedigree's.
+    # With the pedigree, that column starts as the declared sex and changes
+    # only when the reads tell; SAMPLE_QC reads the call, not the pedigree.
+    somalier relate --infer --ped ${ped} --sites ${sites} -o somalier extract/*.somalier
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

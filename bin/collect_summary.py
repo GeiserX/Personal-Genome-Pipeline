@@ -301,6 +301,7 @@ def sec_prs(d, s):
         rows.append({"condition": r.get("Condition", ""), "pgs_id": r.get("PGS_ID", ""),
                      "score": r.get("Score_SUM", ""), "matched": r.get("Variants_Matched", ""),
                      "total": r.get("Variants_Total", ""),
+                     "chrx": r.get("ChrX", ""),
                      "percentile": "" if pct == "NA" else pct,
                      "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
     data = {"scores": rows,
@@ -320,7 +321,10 @@ def sec_prs(d, s):
 # score files pgsc_calc reads and the table the reports read are made once.
 
 PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
-               "Matched_Pct", "Percentile", "Ancestry_Group", "Input"]
+               "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Input"]
+# prs-format writes it beside the scores: per score, its chrX rows and
+# whether they were kept (scored) or left out (no sex given).
+CHRX_FILE = "chrx_rows.tsv"
 # Columns of a scoring file that make a score non-additive: pgsc_calc scores
 # them, but this pipeline's custom file keeps effect_weight only.
 NON_ADDITIVE = ("dosage_0_weight", "dosage_1_weight", "dosage_2_weight")
@@ -353,15 +357,16 @@ def single_allele(a):
     return a if a and "/" not in a and a != "." else ""
 
 
-def format_pgs(path, out_dir, label=None):
+def format_pgs(path, out_dir, label=None, keep_x=False):
     """Write the GRCh38-harmonised scoring file PATH as a custom GRCh38 file
     pgsc_calc reads (chr_name and chr_position from hm_chr and hm_pos), and
     return (pgs_id, rows written, rows dropped off the autosomes,
-    [(chrom, pos, allele), ...]) with the effect and other alleles of every
-    row. Only chromosomes 1 to 22 are kept: pgsc_calc converts the sample with
-    plink2, which stops on a chrX record when no sex is given. Raises
-    Unreadable for a file that is not harmonised to GRCh38, lacks a column, is
-    not additive or has no row."""
+    [(chrom, pos, allele), ...], chrX rows) with the effect and other alleles
+    of every row written. Chromosomes 1 to 22 are kept, and chrX with keep_x
+    (the sample's sex is known): pgsc_calc converts the sample with plink2,
+    which stops on a chrX record when no sex is given. chrY and MT rows are
+    always dropped. Raises Unreadable for a file that is not harmonised to
+    GRCh38, lacks a column, is not additive or has no row."""
     header, cols, rows, alleles = {}, None, [], []
     with open_text(path) as f:
         for line in f:
@@ -395,7 +400,7 @@ def format_pgs(path, out_dir, label=None):
     pid = header.get("pgs_id") or pgs_id_of(path)
     trait = (label or header.get("trait_reported") or pid).replace("=", "-").replace("\n", " ")
     out = os.path.join(out_dir, f"{pid}.txt.gz")
-    n = off = 0
+    n = off = nx = 0
     with gzip.open(out + ".tmp", "wt", encoding="utf-8") as w:
         w.write(f"#pgs_id={pid}\n#pgs_name={pid}\n#trait_reported={trait}\n#genome_build=GRCh38\n")
         w.write("chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n")
@@ -404,8 +409,10 @@ def format_pgs(path, out_dir, label=None):
             if not (chrom and pos and ea and ew):
                 continue   # a row the catalog could not place on GRCh38
             chrom = chrom[3:] if chrom.startswith("chr") else chrom
-            if chrom not in AUTOSOMES:
-                off += 1   # chrX, chrY, MT: plink2 refuses chrX without the sample's sex
+            if chrom == "X":
+                nx += 1
+            if chrom not in AUTOSOMES and not (keep_x and chrom == "X"):
+                off += 1   # chrY, MT, and chrX unless the sex is known: plink2 refuses chrX without it
                 continue
             oa = single_allele(get(r, "other_allele")) or single_allele(get(r, "hm_inferOtherAllele"))
             w.write(f"{chrom}\t{pos}\t{ea}\t{oa}\t{ew}\n")
@@ -417,7 +424,7 @@ def format_pgs(path, out_dir, label=None):
         os.remove(out + ".tmp")
         raise Unreadable(f"{name} has no autosomal row with hm_chr, hm_pos, effect_allele and effect_weight")
     os.replace(out + ".tmp", out)
-    return pid, n, off, alleles
+    return pid, n, off, alleles, nx
 
 
 def prs_format_main(argv):
@@ -429,6 +436,9 @@ def prs_format_main(argv):
     ap.add_argument("--out", required=True, help="folder for the files pgsc_calc reads")
     ap.add_argument("--alleles", required=True,
                     help="written: CHROM POS ALLELE of every effect and other allele, sorted and unique")
+    ap.add_argument("--keep-x", action="store_true",
+                    help="keep the chrX rows (the sample's sex is known and reaches pgsc_calc's plink2); "
+                         "without it they are dropped with chrY and MT")
     a = ap.parse_args(argv)
     labels = read_labels(a.labels)
     files = sorted(glob.glob(os.path.join(a.scores, "*.txt.gz")) + glob.glob(os.path.join(a.scores, "*.txt")))
@@ -444,16 +454,22 @@ def prs_format_main(argv):
         print(f"ERROR: no scoring file (*.txt.gz or *.txt) in {a.scores}", file=sys.stderr)
         return 1
     os.makedirs(a.out, exist_ok=True)
-    allele_set = set()
+    allele_set, chrx = set(), []
     try:
         for p in files:
-            pid, n, off, al = format_pgs(p, a.out, labels.get(pgs_id_of(p)))
+            pid, n, off, al, nx = format_pgs(p, a.out, labels.get(pgs_id_of(p)), a.keep_x)
             allele_set.update(al)
+            chrx.append((pid, nx))
+            kept = f", {nx} on chrX scored" if a.keep_x and nx else ""
             dropped = f", {off} off the autosomes dropped" if off else ""
-            print(f"  {pid}: {n} GRCh38 rows{dropped} ({labels.get(pid) or 'label from the file'})")
+            print(f"  {pid}: {n} GRCh38 rows{kept}{dropped} ({labels.get(pid) or 'label from the file'})")
     except (Unreadable, OSError, EOFError, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    with open(os.path.join(a.out, CHRX_FILE), "w") as w:
+        w.write("pgs_id\tchrx_rows\tchrx\n")
+        for pid, nx in chrx:
+            w.write(f"{pid}\t{nx}\t{'scored' if a.keep_x else 'left out'}\n")
 
     def key(t):
         return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
@@ -503,6 +519,12 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
         totals[pid] = n - 1   # minus the column header
     if not totals:
         raise Unreadable(f"no formatted scoring file in {scores_dir}")
+    # "8 scored", "8 left out" or "0"; empty for scores formatted before the file existed
+    chrx = {}
+    if os.path.isfile(os.path.join(scores_dir, CHRX_FILE)):
+        for r in read_tsv(os.path.join(scores_dir, CHRX_FILE)):
+            n = r.get("chrx_rows", "")
+            chrx[r.get("pgs_id", "")] = f"{n} {r.get('chrx', '')}" if n not in ("", "0") else n
     matched, sums, pct, group = {}, {}, {}, {}
     pops, rate = {}, {}
     if below_log:
@@ -545,10 +567,12 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
     for pid in sorted(totals):
         m, t = matched.get(pid, 0), totals[pid]
         if below_log:
-            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA", input_kind])
+            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA",
+                         chrx.get(pid, ""), input_kind])
             continue
         rows.append([labels.get(pid, pid), pid, sums.get(pid, "NA"), str(m), str(t),
-                     f"{100 * m / t:.1f}" if t else "0.0", pct.get(pid, "NA"), group.get(pid, "NA"), input_kind])
+                     f"{100 * m / t:.1f}" if t else "0.0", pct.get(pid, "NA"), group.get(pid, "NA"),
+                     chrx.get(pid, ""), input_kind])
     ancestry = []
     if pops:
         pcs = sorted((k for k in pops if k.startswith("PC") and k[2:].isdigit()), key=lambda k: int(k[2:]))
@@ -941,6 +965,27 @@ def num(x):
     return v if v == v else None   # NaN is no value
 
 
+def somalier_x_sex(row):
+    """male or female when somalier's own rule calls the sex from chrX, else
+    None. The rule of relate --infer (relate.nim, add_parents_and_check_sex):
+    more than 10 chrX sites with depth, heterozygous / homozygous-ALT sites
+    below 0.05 for male or above 0.4 for female, and fewer than 6% of all
+    sites with an allele balance outside 0.1 to 0.9."""
+    n, het, hom = num(row.get("X_n")), num(row.get("X_het")), num(row.get("X_hom_alt"))
+    # A missing column passes (older somalier, test stubs); a present value
+    # that is not a number (nan from 0/0 when no autosomal site has a call)
+    # fails, as somalier's own `< 0.06` does.
+    raw_mid = row.get("p_middling_ab")
+    mid = num(raw_mid)
+    if n is None or het is None or hom is None or n <= 10 or (
+            raw_mid is not None and (mid is None or mid >= 0.06)):
+        return None
+    if hom == 0:
+        return "female" if het > 0 else None
+    ratio = het / hom
+    return "male" if ratio < 0.05 else "female" if ratio > 0.4 else None
+
+
 def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_sex=None,
                     freemix_warn=FREEMIX_WARN, somalier_id=None, marker_check=""):
     """The step 33 verdict for one sample, as ordered (key, value) pairs."""
@@ -952,8 +997,18 @@ def sample_qc_table(sample, samples_tsv, selfsm=None, pairs_tsv=None, declared_s
                          f"(it has: {', '.join(r.get('sample_id', '?') for r in rows) or 'none'})")
     inferred = SOMALIER_SEX.get(row.get("sex", ""), "unknown")
     declared = (declared_sex or "").lower() or None
+    # With the declared sex as its pedigree (--ped), somalier starts its sex
+    # column from that sex and overwrites it only when the reads tell, so the
+    # pedigree's sex left standing is not a call: unknown, as without a
+    # pedigree. -2 from a pedigree female with chrY reads is not one either
+    # unless chrX looks female too.
+    ped = {"male": "male", "female": "female"}.get(row.get("original_pedigree_sex", "").lower())
+    x_says = somalier_x_sex(row) if ped else None
+    if ped and inferred == ped and x_says != ped:
+        inferred = "unknown"
+    x_and_y = row.get("sex", "") == "-2" and (not ped or x_says == "female")
     # -2 first: it is worth saying even when no sex was declared
-    if row.get("sex", "") == "-2":
+    if x_and_y:
         sex_check = "not_checked"
         why = ("chrX is heterozygous like a female sample but chrY has reads: "
                "a sex-chromosome aneuploidy or a mixed sample")

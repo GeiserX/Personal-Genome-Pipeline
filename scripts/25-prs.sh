@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 25-prs.sh — Polygenic scores with pgsc_calc, the PGS Catalog's calculator
-# Usage: ./scripts/25-prs.sh <sample_name>
+# Usage: ./scripts/25-prs.sh <sample_name> [sex: male|female]
 #
 # Scores the sample with every score in assets/pgs_scores.tsv. pgsc_calc
 # (PGSC_CALC_VERSION in versions.env, a Nextflow pipeline of the PGS Catalog
@@ -17,6 +17,10 @@
 # 0/0 instead of a missing site. Without it, only your variant sites are
 # scored and the summary's Input column says vcf.
 #
+# With the sample's sex, a score's chrX rows are scored too: pgsc_calc's
+# plink2 gets the sex with the genotypes. Without it they are left out (plink2
+# refuses chrX without a sex), and the summary's ChrX column says so.
+#
 # Env: ANCESTRY_PANEL  the panel (default reference/pgsc_calc/${PGSC_PANEL}.tar.zst;
 #                      "none" scores without it even when it is installed)
 #      PGSC_MAX_MEMORY memory pgsc_calc may use, e.g. 12.GB (default: 3/4 of the RAM)
@@ -24,11 +28,16 @@
 #                      which setup.sh or this step installs)
 set -euo pipefail
 
-SAMPLE=${1:?Usage: $0 <sample_name>}
+SAMPLE=${1:?Usage: $0 <sample_name> [sex: male|female]}
+SEX=${2:-}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
+case "$SEX" in
+  ""|male|female) ;;
+  *) echo "ERROR: sex must be 'male' or 'female', got '${SEX}'" >&2; exit 1 ;;
+esac
 require_image PYTHON_IMAGE BCFTOOLS_IMAGE PLINK2_IMAGE PGSC_UTILS_IMAGE PGSC_FRAPOSA_IMAGE \
   PGSC_PYYAML_IMAGE PGSC_ZSTD_IMAGE PGSC_REPORT_IMAGE
 
@@ -73,6 +82,7 @@ echo "  Step 25: Polygenic scores"
 echo "  Tool: pgsc_calc ${PGSC_CALC_VERSION}"
 echo "  Sample: ${SAMPLE}"
 echo "  Input:  ${VCF}"
+echo "  Sex:    ${SEX:-not given (chrX rows of the scores are left out)}"
 if $USE_PANEL; then
   echo "  Ancestry panel: ${PANEL}"
 else
@@ -122,23 +132,27 @@ done
 # same) writes each file as a custom GRCh38 file: chr_name and chr_position
 # from the harmonised hm_chr and hm_pos, labelled with the catalog's trait,
 # so pgsc_calc never needs the network or a liftover. It refuses a file that
-# is not harmonised to GRCh38 or not additive.
+# is not harmonised to GRCh38 or not additive. With the sex it keeps the
+# chrX rows (--keep-x); chrY and MT rows are always dropped.
 echo ""
 echo "[2/5] Writing the scores as pgsc_calc reads them..."
 rm -rf "$WORK"
 mkdir -p "${WORK}/scores"
 IDS=$(IFS=,; echo "${PGS_IDS[*]}")
+KEEP_X=()
+if [ -n "$SEX" ]; then KEEP_X=(--keep-x); fi
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${SCORE_LIST}:/pgs_scores.tsv:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/collect_summary.py prs-format \
     --scores "$(cpath "$SCORING_DIR")" --ids "$IDS" --labels /pgs_scores.tsv \
-    --out "$(cpath "${WORK}/scores")" --alleles "$(cpath "${WORK}/score_alleles.tsv")"
+    --out "$(cpath "${WORK}/scores")" --alleles "$(cpath "${WORK}/score_alleles.tsv")" \
+    ${KEEP_X[@]+"${KEEP_X[@]}"}
 
 # --- 3. The genotypes pgsc_calc scores ---------------------------------------------
 # Both inputs end as target.vcf.gz: the score positions (and with the panel the
-# panel's SNVs) only. Both lists are autosomal (prs-format drops a score's
-# chrX, chrY and MT rows; the panel list is chromosomes 1 to 22), which keeps
-# chrX out (plink2 refuses it without the sample's sex) and gives pgsc_calc a
-# small file to convert.
+# panel's SNVs) only, a small file for pgsc_calc to convert. Without the sex
+# both lists are autosomal (prs-format drops a score's chrX, chrY and MT rows;
+# the panel list is chromosomes 1 to 22), which keeps chrX out: plink2 refuses
+# it without the sample's sex. With the sex the score's chrX positions are in.
 echo ""
 TARGET="${WORK}/target.vcf.gz"
 # ALLELES: every candidate ALT of each position (score effect and other
@@ -231,6 +245,19 @@ docker_ref() {
     *) printf 'docker.io/%s' "$1" ;;
   esac
 }
+# The sex for plink2, as --update-sex reads it: the VCF's sample name and 1
+# (male) or 2 (female). pgsc_calc's PLINK2_VCF converts the genotypes with
+# its own ext.args, which this keeps (conf/modules.config at
+# PGSC_CALC_VERSION) and adds --update-sex to; the folder is mounted into its
+# containers.
+SEX_DIR="${WORK}/sex"
+MOUNT=""
+if [ -n "$SEX" ]; then
+  mkdir -p "$SEX_DIR"
+  VCF_ID=$(gzip -dc "$TARGET" | awk -F'\t' '/^#CHROM/ {id = $10} END {print id}')
+  printf '#IID\tSEX\n%s\t%s\n' "$VCF_ID" "$([ "$SEX" = male ] && echo 1 || echo 2)" > "${SEX_DIR}/sex.tsv"
+  MOUNT=" -v \"${SEX_DIR}:${SEX_DIR}:ro\""
+fi
 # The images of versions.env for pgsc_calc's process labels (the same table
 # as scripts/ci/gen-containers-config.sh's NATIVE row), and no network for its
 # containers: the scores, the genotypes and the panel are all local.
@@ -241,9 +268,12 @@ docker_ref() {
     v=${pair#*=}
     printf "    withLabel: '%s' { ext.docker = '%s'; ext.docker_version = '' }\n" "${pair%%=*}" "$(docker_ref "${!v}")"
   done
+  if [ -n "$SEX" ]; then
+    printf "    withName: 'PLINK2_VCF' { ext.args = '--new-id-max-allele-len 100 missing --update-sex \"%s\"' }\n" "${SEX_DIR}/sex.tsv"
+  fi
   echo '}'
   # shellcheck disable=SC2016  # $(id -u) is expanded by the task's shell
-  echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"'"
+  echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"${MOUNT}'"
 } > "${WORK}/images.config"
 printf 'sampleset,path_prefix,chrom,format\n%s,%s,,vcf\n' "$SAMPLESET" "${WORK}/target" > "${WORK}/samplesheet.csv"
 PANEL_ARGS=()

@@ -12,7 +12,7 @@ A swapped sample gives a perfectly normal-looking report about someone else. Ste
 Contamination only warns. A contaminated sample is still your sample; its calls are less reliable, above all the heterozygous ones, and you decide whether to resequence. A sex mismatch stops the step, because the steps that use the declared sex (DeepVariant's chrX and chrY ploidy, ExpansionHunter) would otherwise run with the wrong value.
 
 ## Tool
-- **somalier** (Brent Pedersen): `extract` reads the sites, `relate --infer` infers the sex and the relatedness of every pair
+- **somalier** (Brent Pedersen): `extract` reads the sites, `relate --infer` infers the sex and the relatedness of every pair. It gets the declared sex as a one-line pedigree (`--ped`), so its own table, and MultiQC's somalier section, show the sex you declared beside the one from the reads
 - **VerifyBamID2** (Fan Zhang and Hyun Min Kang): FREEMIX with ancestry-aware allele frequencies
 
 ## Docker Image
@@ -46,23 +46,26 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags.
 The script runs, in its containers:
 ```bash
 somalier extract -d qc/somalier --sites "${SOMALIER_SITES}" -f "${REF_FASTA}" aligned/${SAMPLE}_sorted.bam
-somalier relate --infer --sites "${SOMALIER_SITES}" -o qc/somalier/${SAMPLE} qc/somalier/<SM>.somalier
+somalier relate --infer --ped qc/somalier/${SAMPLE}.declared.ped --sites "${SOMALIER_SITES}" -o qc/somalier/${SAMPLE} qc/somalier/<SM>.somalier
 verifybamid2 --SVDPrefix "${VERIFYBAMID2_PANEL}" --Reference "${REF_FASTA}" \
   --BamFile aligned/${SAMPLE}_sorted.bam --Output qc/verifybamid2/${SAMPLE}
 python3 bin/collect_summary.py sample-qc --sample ${SAMPLE} ...   # the verdict table
 ```
 
+The pedigree is one line: the sample, itself as its family, no parents (`-9`), the declared sex (`1` male, `2` female, `-9` none) and no phenotype. With it somalier starts its `sex` column from the declared sex and changes it only when the reads tell; it then logs `setting sex to male for <sample>` (or female). The step's verdict does not read the declared sex back as a call: when chrX cannot tell (10 or fewer chrX sites, a chrX het/hom-ALT ratio between 0.05 and 0.4, or 6% or more sites with an allele balance outside 0.1 to 0.9, somalier's own rule), the sex from the reads is `unknown` and the check is `not_checked`, as without a pedigree.
+
 The bash step lets somalier name the sample after the BAM's `@RG SM` tag; every BAM step 02 writes has one. In Nextflow, somalier names each sample by its samplesheet id instead, so two rows whose BAMs share an `SM` stay two samples, and a BAM with no read group works.
 
 VerifyBamID2 refuses to estimate when fewer than 1,000 panel markers have reads ("Insufficient Available markers"), as on a targeted (WES) or sliced BAM. The step then runs it again with `--DisableSanityCheck` and records `verifybamid2_marker_check skipped`, so the report says FREEMIX rests on fewer than 1,000 markers. On the CI fixture, with about 320 markers that have reads, FREEMIX still read 0.0004 for the clean HG002 and 0.093 for HG002 with 9.3% of its reads from HG001.
 
-In Nextflow, add `sample_qc` to `--tools` with `--somalier_sites` and `--verifybamid2_panel` (the folder that holds the `.UD`, `.mu` and `.bed` files); `--freemix_warn` and `--sex_check` work as above. `SOMALIER_RELATE` runs once over every sample of the run. A sex mismatch stops the run, after `INDEXCOV` made the same check from the index.
+In Nextflow, add `sample_qc` to `--tools` with `--somalier_sites` and `--verifybamid2_panel` (the folder that holds the `.UD`, `.mu` and `.bed` files); `--freemix_warn` and `--sex_check` work as above. `SOMALIER_RELATE` runs once over every sample of the run, with a pedigree of every sample's samplesheet sex. A sex mismatch stops the run, after `INDEXCOV` made the same check from the index.
 
 ## Output Files
 | File | Description |
 |---|---|
 | `qc/${SAMPLE}_sample_qc.tsv` | The verdict, one `key` and `value` per line: `inferred_sex`, `sex_check` (`ok`, `mismatch` or `not_checked` with `sex_check_reason`), the chrX and chrY numbers it rests on, `freemix`, `contamination` (`ok` or `warn`), `panel_markers`, `verifybamid2_marker_check` (`passed`, or `skipped` when fewer than 1,000 markers had reads), `same_person_as` |
-| `qc/somalier/${SAMPLE}.samples.tsv` | somalier's per-sample table: depth, genotype counts, chrX and chrY counts, inferred `sex` (1 male, 2 female, -9 unknown, -2 when chrX looks female but chrY has reads) |
+| `qc/somalier/${SAMPLE}.samples.tsv` | somalier's per-sample table: depth, genotype counts, chrX and chrY counts, `original_pedigree_sex` (the declared sex: `male`, `female`, or `unknown` when none was declared), `sex` (the pedigree's code, changed when the reads tell: 1 male, 2 female, -9 unknown, -2 when it is female but chrY has reads) |
+| `qc/somalier/${SAMPLE}.declared.ped` | The pedigree somalier got: the declared sex |
 | `qc/somalier/${SAMPLE}.pairs.tsv`, `.html` | Relatedness of every pair (one sample here; every sample of the run in Nextflow, under `somalier/`) |
 | `qc/verifybamid2/${SAMPLE}.selfSM` | VerifyBamID2's result: `#SNPS` the size of the panel, `AVG_DP`, `FREEMIX` |
 
@@ -80,7 +83,7 @@ The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in i
 | `same_person_as` set | Two samples of the run share their genome (relatedness 0.9 or more) | A duplicate row, a resequenced sample, an identical twin, or a swap |
 
 ## Runtime
-Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for VerifyBamID2), not the whole file. On CI's fixture slices one run of the step takes a few seconds (the e2e case runs it six times, and streams HG001's reads, in 58 seconds); a whole genome has not been timed here.
+Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for VerifyBamID2), not the whole file. On CI's fixture slices one run of the step takes a few seconds (six runs of it and the HG001 stream took 58 seconds on one e2e run); a whole genome has not been timed here.
 
 ## Notes
 - The CI fixture holds only small slices of HG002, with 2 of somalier's chrX sites and 320 of VerifyBamID2's markers: somalier reports `unknown` there, and VerifyBamID2 runs without its marker check. The end-to-end case adds sites at the slice's own chrX calls to show the sex check stop a female-declared HG002, and mixes about 10% of HG001's reads into HG002 to show FREEMIX rise above 0.03.

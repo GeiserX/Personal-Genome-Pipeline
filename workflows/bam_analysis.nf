@@ -170,7 +170,16 @@ workflow BAM_ANALYSIS {
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('sample_qc')) {
         SOMALIER(ch_bam, ch_reference, ch_reference_fai, ch_somalier_sites)
-        SOMALIER_RELATE(SOMALIER.out.extract.map { meta, f, id_file -> f }.collect(), ch_somalier_sites)
+        // Each sample's samplesheet sex as somalier's pedigree (-9 where it
+        // gives none), so somalier's own table shows the declared sex too.
+        ch_somalier_ped = SOMALIER.out.extract
+            .map { meta, f, id_file ->
+                def code = meta.sex == 'male' ? '1' : (meta.sex == 'female' ? '2' : '-9')
+                "${meta.id}\t${meta.id}\t-9\t-9\t${code}\t-9".toString()
+            }
+            .collectFile(name: 'samples.ped', newLine: true, sort: true)
+            .first()   // a value channel, so every SAMPLE_QC task gets the tables
+        SOMALIER_RELATE(SOMALIER.out.extract.map { meta, f, id_file -> f }.collect(), ch_somalier_sites, ch_somalier_ped)
         VERIFYBAMID2(ch_bam, ch_reference, ch_reference_fai, ch_verifybamid2_panel)
         ch_qc_in = SOMALIER.out.extract
             .map { meta, f, id_file -> [meta.id, meta, id_file] }

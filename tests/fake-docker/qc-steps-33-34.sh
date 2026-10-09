@@ -5,7 +5,9 @@
 #
 # Step 33: a sex somalier infers that differs from the declared one stops the
 # step; SEX_CHECK=warn goes on; a sex somalier cannot tell, or reads as X and Y
-# disagreeing (-2), is not checked;
+# disagreeing (-2), is not checked; somalier gets the declared sex as a
+# one-line pedigree (--ped), and the pedigree's sex it keeps when chrX cannot
+# tell is not checked either;
 # FREEMIX above 0.03 warns and exits 0; "Insufficient Available markers"
 # reruns VerifyBamID2 with --DisableSanityCheck and records it; any other
 # VerifyBamID2 failure, or missing data, stops the step.
@@ -44,8 +46,16 @@ case "$*" in
     printf 'fake' > "${h}/${FAKE_SM:-sample1}.somalier" ;;
   "somalier relate"*)
     FLAG=-o; o=$(host_path "$(arg "$@")")
-    printf '#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\tgt_depth_mean\tn_hom_ref\tn_het\tn_hom_alt\tX_depth_mean\tX_n\tX_hom_ref\tX_het\tX_hom_alt\tY_depth_mean\tY_n\n%s\t%s\t-9\t-9\t%s\t-9\t-9\t30.0\t5000\t6000\t4000\t15.0\t300\t40\t0\t260\t14.0\t17\n' \
-      "${FAKE_SM:-sample1}" "${FAKE_SM:-sample1}" "${FAKE_SOMALIER_SEX:--9}" > "${o}.samples.tsv"
+    # As somalier: the pedigree's sex is original_pedigree_sex, and the sex
+    # column starts from it (FAKE_SOMALIER_SEX plays what the reads change it to).
+    FLAG=--ped; ped=$(arg "$@"); ped_code=-9; ped_sex=-9
+    if [ -n "$ped" ]; then
+      ped_code=$(awk -F'\t' '{print $5; exit}' "$(host_path "$ped")")
+      case "$ped_code" in 1) ped_sex=male ;; 2) ped_sex=female ;; *) ped_sex=unknown ;; esac
+    fi
+    printf '#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\tgt_depth_mean\tn_hom_ref\tn_het\tn_hom_alt\tX_depth_mean\tX_n\tX_hom_ref\tX_het\tX_hom_alt\tY_depth_mean\tY_n\n%s\t%s\t-9\t-9\t%s\t-9\t%s\t30.0\t5000\t6000\t4000\t15.0\t%s\t40\t%s\t260\t14.0\t17\n' \
+      "${FAKE_SM:-sample1}" "${FAKE_SM:-sample1}" "${FAKE_SOMALIER_SEX:-$ped_code}" "$ped_sex" \
+      "${FAKE_X_N:-300}" "${FAKE_X_HET:-0}" > "${o}.samples.tsv"
     printf '#sample_a\tsample_b\trelatedness\n' > "${o}.pairs.tsv" ;;
   "verifybamid2 "*)
     FLAG=--Output; o=$(host_path "$(arg "$@")")
@@ -99,16 +109,29 @@ output_has qc-mismatch-warn 'SEX_CHECK=warn: continuing'
 
 FAKE_SOMALIER_SEX=1 run_expect 0 qc-match "${SCRIPTS}/33-sample-qc.sh" sample1 male
 output_has qc-match 'Sex check: OK'
+docker_log_has 'somalier relate --infer --ped /genome/sample1/qc/somalier/sample1\.declared\.ped ' "somalier relate got no pedigree"
+[ "$(cat "${GENOME_DIR}/sample1/qc/somalier/sample1.declared.ped")" = "$(printf 'sample1\tsample1\t-9\t-9\t1\t-9')" ] \
+  || fail "the pedigree does not hold the declared male: $(cat "${GENOME_DIR}/sample1/qc/somalier/sample1.declared.ped")"
 [ "$(tval contamination)" = ok ] || fail "FREEMIX 0.004 was not reported ok"
 [ "$(tval verifybamid2_marker_check)" = passed ] || fail "the marker check was not recorded as passed"
 
 FAKE_SOMALIER_SEX=-9 run_expect 0 qc-unknown "${SCRIPTS}/33-sample-qc.sh" sample1 female
 output_has qc-unknown 'Sex check: not done \(somalier could not tell the sex'
 
+# 2 chrX sites: somalier keeps the pedigree's male, which is no call from the reads
+FAKE_X_N=2 run_expect 0 qc-ped-kept "${SCRIPTS}/33-sample-qc.sh" sample1 male
+output_has qc-ped-kept 'Sex check: not done \(somalier could not tell the sex from 2 chrX sites'
+[ "$(tval inferred_sex)" = unknown ] || fail "the pedigree's sex somalier kept was read as its call: $(tval inferred_sex)"
+
+# No declared sex: the pedigree says -9
+run_expect 0 qc-ped-none "${SCRIPTS}/33-sample-qc.sh" sample1
+[ "$(awk -F'\t' '{print $5}' "${GENOME_DIR}/sample1/qc/somalier/sample1.declared.ped")" = -9 ] \
+  || fail "the pedigree of an undeclared sample is not -9"
+
 # somalier's -2: chrX heterozygous like a female, yet chrY has reads
-FAKE_SOMALIER_SEX=-2 run_expect 0 qc-x-and-y "${SCRIPTS}/33-sample-qc.sh" sample1 female
+FAKE_SOMALIER_SEX=-2 FAKE_X_HET=150 run_expect 0 qc-x-and-y "${SCRIPTS}/33-sample-qc.sh" sample1 female
 output_has qc-x-and-y 'Sex check: not done \(chrX is heterozygous like a female sample but chrY has reads'
-FAKE_SOMALIER_SEX=-2 run_expect 0 qc-x-and-y-undeclared "${SCRIPTS}/33-sample-qc.sh" sample1
+FAKE_SOMALIER_SEX=-2 FAKE_X_HET=150 run_expect 0 qc-x-and-y-undeclared "${SCRIPTS}/33-sample-qc.sh" sample1
 output_has qc-x-and-y-undeclared 'Sex check: not done \(chrX is heterozygous like a female sample but chrY has reads'
 
 FAKE_SOMALIER_SEX=2 FAKE_FREEMIX=0.12 run_expect 0 qc-contaminated "${SCRIPTS}/33-sample-qc.sh" sample1 female

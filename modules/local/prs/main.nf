@@ -4,7 +4,10 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     PRS_PREPARE      writes every file of --pgs_scoring as the custom GRCh38
                      scoring file pgsc_calc reads (bin/collect_summary.py
-                     prs-format), labelled from assets/pgs_scores.tsv
+                     prs-format), labelled from assets/pgs_scores.tsv: once
+                     with the chrX rows (set with_x, for samples whose sex the
+                     samplesheet gives) and once without (set autosomes), as
+                     the samples of the run need
     PRS_SCORE_SITES  genotypes the score positions (and, with a panel, the
                      panel's) from the gVCF, so a site where the sample
                      matches the reference is a real 0/0; without a gVCF it
@@ -13,7 +16,9 @@
                      Nextflow pipeline of its own and starts its own
                      containers, with the images versions.env pins and no
                      network; with --ancestry_ref it projects the sample onto
-                     the panel and adjusts each score for ancestry
+                     the panel and adjusts each score for ancestry. With the
+                     samplesheet's sex its plink2 gets the sex (--update-sex),
+                     which it needs to read chrX
     PRS_SUMMARY      <id>_prs_summary.tsv (bin/collect_summary.py prs-table),
                      and with the panel the ancestry table of step 26
 
@@ -22,23 +27,25 @@
 */
 
 process PRS_PREPARE {
+    tag "$score_set"
     label 'process_single'
 
     input:
+    val(score_set)       // with_x: keep the chrX rows; autosomes: drop them
     path(scoring_dir)
     path(labels)
 
     output:
-    path("pgs"),               emit: scores
-    path("score_alleles.tsv"), emit: alleles
-    path "versions.yml",       emit: versions
+    tuple val(score_set), path("pgs"), path("score_alleles.tsv"), emit: scores
+    path "versions.yml",                                     emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
+    def keep_x = score_set == 'with_x' ? '--keep-x' : ''
     """
-    collect_summary.py prs-format --scores ${scoring_dir} --labels ${labels} --out pgs --alleles score_alleles.tsv
+    collect_summary.py prs-format --scores ${scoring_dir} --labels ${labels} --out pgs --alleles score_alleles.tsv ${keep_x}
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
@@ -64,8 +71,8 @@ process PRS_SCORE_SITES {
     input:
     // kind gvcf: the sample's gVCF, its reference blocks expanded at the
     // positions; kind vcf: its variant-only VCF, cut to the positions.
-    tuple val(meta), path(gvcf), path(gvcf_index), val(input_kind)
-    path(score_alleles)
+    // score_alleles: PRS_PREPARE's, of the sample's set.
+    tuple val(meta), path(gvcf), path(gvcf_index), val(input_kind), path(score_alleles)
     path(panel_sites)    // [] without an ancestry panel
     path(reference)
     path(reference_fai)  // staged beside the FASTA
@@ -129,9 +136,8 @@ process PRS {
 
     input:
     // input_kind: gvcf when vcf is PRS_SCORE_SITES' output, vcf for the
-    // sample's variants-only VCF.
-    tuple val(meta), path(vcf, stageAs: 'target/*'), val(input_kind)
-    path(scores, stageAs: 'pgs')
+    // sample's variants-only VCF. scores: PRS_PREPARE's, of the sample's set.
+    tuple val(meta), path(vcf, stageAs: 'target/*'), val(input_kind), path(scores, stageAs: 'pgs')
     path(panel)          // [] without an ancestry panel
 
     output:
@@ -156,6 +162,10 @@ process PRS {
         "\"    withLabel: '${kv.substring(0, i)}' { ext.docker = '${image}'; ext.docker_version = '' }\""
     }.join(' ')
     def engine  = workflow.containerEngine ?: 'docker'
+    // The sex for pgsc_calc's plink2 (--update-sex: the VCF's sample name, 1
+    // male or 2 female), added to the ext.args its conf/modules.config gives
+    // PLINK2_VCF at this release; the folder is mounted into its containers.
+    def sex_code = meta.sex == 'male' ? '1' : (meta.sex == 'female' ? '2' : '')
     // With the copy setup.sh makes (it installs the nf-schema plugin pgsc_calc
     // needs too) nothing is fetched. Without, the task fetches GitHub's
     // archive of the release (checked against PGSC_CALC_SHA256, as setup.sh
@@ -173,8 +183,17 @@ process PRS {
         *) echo "ERROR: PRS needs a .vcf.gz, got \$VCF" >&2; exit 1 ;;
     esac
     printf 'sampleset,path_prefix,chrom,format\\nsample,%s,,vcf\\n' "\$PREFIX" > samplesheet.csv
+    SEX_LINE=''
+    MOUNT=''
+    if [ -n "${sex_code}" ]; then
+        mkdir -p sex
+        VCF_ID=\$(gzip -dc "\$VCF" | awk -F'\\t' '/^#CHROM/ {id = \$10} END {print id}')
+        printf '#IID\\tSEX\\n%s\\t%s\\n' "\$VCF_ID" ${sex_code} > sex/sex.tsv
+        SEX_LINE="    withName: 'PLINK2_VCF' { ext.args = '--new-id-max-allele-len 100 missing --update-sex \\"\$PWD/sex/sex.tsv\\"' }"
+        MOUNT=" -v \\"\$PWD/sex:\$PWD/sex:ro\\""
+    fi
     # The images of versions.env for pgsc_calc's process labels, and no network for its containers.
-    printf '%s\\n' 'process {' ${labels} '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none'" > images.config
+    printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none\$MOUNT'" > images.config
     cat images.config
     ${offline}
     rc=0
@@ -227,8 +246,7 @@ process PRS_SUMMARY {
     publishDir { "${params.outdir}/${meta.id}/ancestry" }, mode: params.publish_dir_mode, pattern: '*_ancestry.tsv'
 
     input:
-    tuple val(meta), path(results), val(input_kind)
-    path(scores, stageAs: 'pgs')
+    tuple val(meta), path(results), val(input_kind), path(scores, stageAs: 'pgs')
     val(panel_name)      // '' without an ancestry panel
 
     output:
@@ -253,7 +271,7 @@ process PRS_SUMMARY {
 
     stub:
     """
-    printf 'Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total\\tMatched_Pct\\tPercentile\\tAncestry_Group\\tInput\\n' > ${meta.id}_prs_summary.tsv
+    printf 'Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total\\tMatched_Pct\\tPercentile\\tAncestry_Group\\tChrX\\tInput\\n' > ${meta.id}_prs_summary.tsv
     if [ -n "${panel_name}" ]; then printf 'key\\tvalue\\nsample\\t%s\\n' ${meta.id} > ${meta.id}_ancestry.tsv; fi
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """

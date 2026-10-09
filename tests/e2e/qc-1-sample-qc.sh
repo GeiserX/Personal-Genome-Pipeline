@@ -4,10 +4,14 @@
 #     panel, each checked against its pinned sha256;
 #   - the clean HG002 BAM of case 20: FREEMIX stays below 0.03. Only 2 of
 #     somalier's chrX sites fall inside the slices, too few for a sex call, so
-#     the step says it could not check the sex and goes on;
+#     the step says it could not check the sex and goes on, also when male is
+#     declared: somalier's table then carries male as the pedigree's sex,
+#     which the verdict does not take for a call;
 #   - sex: with sites at the slice's own chrX calls (case 21; HG002 is male,
 #     so somalier sees them homozygous), declared female stops the step,
-#     declared male passes, and SEX_CHECK=warn goes on;
+#     somalier's own table shows the pedigree's female next to the male it
+#     set from the reads, declared male passes (and MultiQC, step 28, shows
+#     male in its somalier Sex column), and SEX_CHECK=warn goes on;
 #   - contamination: reads of HG001, an unrelated GIAB sample streamed from
 #     GIAB's GRCh38 BAM, added to HG002's until they are about 10% of the mix:
 #     FREEMIX rises above 0.03, which warns and never stops the step.
@@ -23,6 +27,11 @@ REF="${G}/reference/GRCh38_no_alt_analysis_set.fasta"
 QC="${G}/${SAMPLE}/qc"
 # tval FILE KEY: the value of KEY in a step 33 table.
 tval() { awk -F'\t' -v k="$2" '$1 == k { print $2; exit }' "$1" 2>/dev/null; }
+# scol COLUMN: COLUMN of somalier's samples.tsv for the sample.
+scol() {
+  awk -F'\t' -v k="$1" 'NR == 1 {sub(/^#/, ""); for (i = 1; i <= NF; i++) c[$i] = i; next} {print $c[k]; exit}' \
+    "${QC}/somalier/${SAMPLE}.samples.tsv" 2>/dev/null
+}
 # below A B / above A B: numeric comparisons that fail on an empty value.
 below() { [ -n "$1" ] && awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }'; }
 above() { [ -n "$1" ] && awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 > b + 0) }'; }
@@ -77,6 +86,16 @@ check_eq "contamination verdict" "$(tval "$T" contamination)" ok
 check_eq "VerifyBamID2's marker check was skipped (the slices hold fewer than 1,000 markers)" \
   "$(tval "$T" verifybamid2_marker_check)" skipped
 check "the log says why it ran again" has 'Fewer than 1,000 panel markers have reads' "$(cat "$STEP_LOG")"
+check_eq "no declared sex: somalier's pedigree sex is unknown" "$(scol original_pedigree_sex)" unknown
+
+# Declared male on the same 2 chrX sites: somalier starts its sex column from
+# the pedigree's male and keeps it, as the reads cannot tell.
+run_step 33-sample-qc.sh "$SAMPLE" male
+check_step_exit 33-sample-qc.sh
+check_eq "declared male: somalier's table has it as the pedigree's sex (MultiQC's Sex column)" \
+  "$(scol original_pedigree_sex)" male
+check_eq "declared male on 2 chrX sites: no sex call from the reads" "$(tval "$T" inferred_sex)" unknown
+check_eq "so the sex is still not checked" "$(tval "$T" sex_check)" not_checked
 
 # --- 3. sex, from sites at the slice's own chrX calls ----------------------------------------
 # HG002 is male: case 21 calls chrX outside the pseudoautosomal regions
@@ -120,11 +139,25 @@ cat "$T" 2>/dev/null
 check_ge "chrX sites somalier genotyped" "$(tval "$T" x_sites)" 11
 check_ge "homozygous ALT among them" "$(tval "$T" x_hom_alt)" 10
 check_eq "the table records the mismatch" "$(tval "$T" sex_check)" mismatch
+check_eq "somalier's table: the declared female as the pedigree's sex" "$(scol original_pedigree_sex)" female
+check_eq "somalier's own check: it set the sex to male (1) from the reads" "$(scol sex)" 1
+check "somalier's log says it changed the pedigree's sex" has "setting sex to male for ${SAMPLE}" "$(cat "$STEP_LOG")"
 
 SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" male
 check_step_exit 33-sample-qc.sh
 check_eq "declared male: the check passes" "$(tval "$T" sex_check)" ok
+check_eq "somalier's table: the declared male as the pedigree's sex" "$(scol original_pedigree_sex)" male
 check "the log says so" has 'Sex check: OK' "$(cat "$STEP_LOG")"
+# MultiQC reads that column as its somalier "Sex"; -9 before somalier had a pedigree.
+FLAGSTAT="${G}/${SAMPLE}/aligned/${SAMPLE}_flagstat.txt"
+HAD_FLAGSTAT=false; [ -f "$FLAGSTAT" ] && HAD_FLAGSTAT=true
+run_step 28-multiqc.sh "$SAMPLE"
+check_step_exit 28-multiqc.sh
+MQC="${G}/${SAMPLE}/multiqc/multiqc_report_data/multiqc_somalier.txt"
+check_eq "MultiQC's somalier table: Sex male" \
+  "$(awk -F'\t' -v s="$SAMPLE" 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $1 == s {print $c["original_pedigree_sex"]}' "$MQC" 2>/dev/null)" male
+in_genome "$BCFTOOLS_IMAGE" rm -rf "${SAMPLE}/multiqc"
+$HAD_FLAGSTAT || rm -f "$FLAGSTAT"
 
 SEX_CHECK=warn SOMALIER_SITES="$XS" run_step 33-sample-qc.sh "$SAMPLE" female
 check_step_exit 33-sample-qc.sh
