@@ -723,6 +723,26 @@ if [ -n "$SAMPLE" ]; then
           echo "       This pipeline requires GRCh38 with 'chr' prefix."
         fi
       fi
+
+      # One sample per run: a joint-called VCF holds one column per person,
+      # and the steps would mix their genotypes.
+      VCF_SAMPLES=$(run_in "${BCFTOOLS_IMAGE}" \
+        bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | vcf_header_samples || true)
+      VCF_N_SAMPLES=$(grep -c . <<< "$VCF_SAMPLES" || true)
+      if [ "$VCF_N_SAMPLES" -gt 1 ]; then
+        VCF_NAMES=$(head -n 5 <<< "$VCF_SAMPLES" | paste -sd, - | sed 's/,/, /g')
+        if [ "$VCF_N_SAMPLES" -gt 5 ]; then VCF_NAMES="${VCF_NAMES}, ..."; fi
+        fail "VCF holds ${VCF_N_SAMPLES} samples (${VCF_NAMES}); the pipeline analyses one sample per run"
+        echo "       Give each sample its own folder with its column only, for example:"
+        echo "       mkdir -p \"${GENOME_DIR}/<name>/vcf\""
+        echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
+        echo "         bcftools view -s <name> -a -c 1 -Oz -o /genome/<name>/vcf/<name>.vcf.gz /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+        echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
+        echo "         bcftools index -t /genome/<name>/vcf/<name>.vcf.gz"
+        echo "       (-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none)"
+      elif [ "$VCF_N_SAMPLES" -eq 1 ]; then
+        pass "VCF holds one sample (${VCF_SAMPLES})"
+      fi
     fi
 
     # Suggest pipeline entry path

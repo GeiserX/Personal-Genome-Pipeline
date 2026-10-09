@@ -187,6 +187,13 @@ wrote_vcf() {
   [[ "$first" == "##fileformat=VCF"* ]]
 }
 
+# vcf_header_samples: the sample names of the VCF header on stdin, one per
+# line: the #CHROM columns after FORMAT. Nothing for a sites-only VCF. The
+# pipeline analyses one sample per run (VCF_PRECHECK applies the same rule).
+vcf_header_samples() {
+  awk -F'\t' '/^#CHROM/ { for (i = 10; i <= NF; i++) print $i }'
+}
+
 # _bgzf_complete FILE: true when FILE ends with the 28-byte BGZF EOF block.
 _bgzf_complete() {
   local last

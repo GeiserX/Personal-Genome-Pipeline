@@ -34,6 +34,13 @@
                 <*>, <NON_REF> or '.') that carries INFO/END
       name    — no blocks, but the file name contains .g.vcf or .genomic.vcf
       none    — neither
+
+    Samples. One samplesheet row is one person. A joint-called VCF holds
+    one genotype column per person: slivar keeps the first column's name
+    and the other steps read every column, so the results would mix people
+    or cover one of them without saying so. A VCF with more than one
+    sample stops here, with the sample count, the first five names and the
+    bcftools command that keeps one of them.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -74,6 +81,24 @@ process VCF_PRECHECK {
         *.g.vcf*|*.genomic.vcf*) GVCF=name ;;
     esac
     bcftools view -h ${vcf} > header.txt
+
+    # One sample per row: the #CHROM columns after FORMAT are the samples
+    awk -F'\\t' '/^#CHROM/ { for (i = 10; i <= NF; i++) print \$i }' header.txt > samples.txt
+    N_SAMPLES=\$(wc -l < samples.txt | tr -d ' ')
+    if [ "\${N_SAMPLES}" -gt 1 ]; then
+        NAMES=\$(awk 'NR <= 5' samples.txt | paste -sd, - | sed 's/,/, /g')
+        if [ "\${N_SAMPLES}" -gt 5 ]; then NAMES="\${NAMES}, ..."; fi
+        FIRST=\$(awk 'NR == 1' samples.txt)
+        {
+            echo "ERROR: Sample '${meta.id}': ${vcf.name} holds \${N_SAMPLES} samples (\${NAMES})."
+            echo "One samplesheet row is one sample, and the steps would mix their genotypes. Keep one"
+            echo "sample's column, index the new file, and give each sample its own row, for example:"
+            echo "    bcftools view -s \${FIRST} -a -c 1 -Oz -o \${FIRST}.vcf.gz ${vcf.name}"
+            echo "    bcftools index -t \${FIRST}.vcf.gz"
+            echo "(-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none)"
+        } >&2
+        exit 1
+    fi
     if grep -q '^##GVCFBlock' header.txt; then
         GVCF=blocks
     fi
