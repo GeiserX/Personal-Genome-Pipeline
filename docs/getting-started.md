@@ -258,7 +258,7 @@ mv ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_S1_L001_R2_001.fastq.gz ${GENOME_DIR}
 
 ### Nextflow directly
 
-`run-all.sh` writes the samplesheet and the parameters for one sample in `GENOME_DIR`. To run several samples at once, or with your own folders, call the pipeline yourself. A samplesheet row starts from FASTQ, a BAM, or a VCF with an optional BAM.
+`run-all.sh` writes the samplesheet and the parameters for one sample in `GENOME_DIR`. To run several samples at once, or with your own folders, call the pipeline yourself. A samplesheet row starts from FASTQ, a BAM, or a VCF with an optional BAM. A row is one sample: a VCF that holds several samples stops the run ([One sample per VCF](nextflow.md#one-sample-per-vcf)).
 
 ```bash
 # Default tools only (prs and vcfanno are skipped, with a warning, until their files are set)
