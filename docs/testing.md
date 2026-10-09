@@ -122,7 +122,7 @@ These need data or hardware a GitHub runner does not have, so no CI job runs the
 
 ## Running the e2e job yourself
 
-The e2e run needs Linux, Docker, Nextflow 25.10.8 with Java 17, the `gh` CLI and about 25 GB of disk, and takes over an hour. Run it on a machine you do not need for anything else:
+The e2e run needs Linux, Docker, Nextflow 26.04.7 with Java 17, the `gh` CLI and about 25 GB of disk, and takes over an hour. Run it on a machine you do not need for anything else:
 
 ```bash
 E2E_WORK=/path/with/space scripts/ci/e2e-run.sh          # every case

@@ -7,5 +7,5 @@
 # case reads the line to check the flags run-all.sh built.
 set -uo pipefail
 printf 'nextflow :: cwd=%s :: NXF_VER=%s :: %s\n' "$PWD" "${NXF_VER:-}" "$(printf '%q ' "$@")" >> "${FAKE_DOCKER_LOG:-/dev/null}"
-[ "${1:-}" != -version ] || { echo "nextflow version ${NXF_VER:-25.10.8}"; exit 0; }
+[ "${1:-}" != -version ] || { echo "nextflow version ${NXF_VER:-26.04.7}"; exit 0; }
 exit "${FAKE_NEXTFLOW_RC:-0}"
