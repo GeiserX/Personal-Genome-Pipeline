@@ -53,11 +53,20 @@ rm -rf "$GENOME_DIR"
 mkdir -p "$GENOME_DIR"
 : > "${GENOME_DIR}/.demo-genome"
 
-# Pulled first, so a registry error is not reported as a mount problem below.
-if ! "$ENGINE" image inspect "$PYTHON_IMAGE" >/dev/null 2>&1 && ! "$ENGINE" pull -q "$PYTHON_IMAGE"; then
-  echo "ERROR: cannot pull ${PYTHON_IMAGE}: check the network and the registry, then run again." >&2
-  exit 1
-fi
+# The two images the steps run, pulled first: a registry error is reported as
+# one, not as a mount problem below. Up to four tries, 30, 60 then 90 seconds
+# apart: a shared runner address can hit Docker Hub's anonymous pull limit.
+for img in "$PYTHON_IMAGE" "$MULTIQC_IMAGE"; do
+  "$ENGINE" image inspect "$img" >/dev/null 2>&1 && continue
+  for try in 1 2 3 4; do
+    "$ENGINE" pull -q "$img" && break
+    if [ "$try" = 4 ]; then
+      echo "ERROR: cannot pull ${img}: check the network and the registry, then run again." >&2
+      exit 1
+    fi
+    sleep $((try * 30))
+  done
+done
 
 echo "=== Docker sees ${GENOME_DIR} and ${REPO}/bin?"
 if ! "$ENGINE" run --rm --network none -v "${GENOME_DIR}:/probe:ro" -v "${REPO}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
