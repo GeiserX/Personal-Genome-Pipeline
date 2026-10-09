@@ -9,7 +9,9 @@
   "enabledManagers": ["custom.regex"],
   "schedule": ["* 0-5 1 * *"],
   "labels": ["dependencies", "automated"],
-  "commitMessagePrefix": "deps",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "deps",
+  "semanticCommitScope": "",
   "prConcurrentLimit": 10,
   "major": {
     "dependencyDashboardApproval": true
@@ -147,7 +149,7 @@
     {
       "description": "CI tools take the ci prefix.",
       "matchDepNames": ["rhysd/actionlint", "gitleaks/gitleaks"],
-      "commitMessagePrefix": "ci"
+      "semanticCommitType": "ci"
     }
   ]
 }
