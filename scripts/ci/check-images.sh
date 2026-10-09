@@ -53,7 +53,6 @@ tests/fixtures/                       provenance notes name the image that wrote
 # one occurrence: a change to the image or one more copy of it in the same
 # file is reported again.
 EXEMPT_PAIRS='
-docs/quick-test.md                quay.io/biocontainers/samtools:1.20--h50ea8bc_0   needs CA certificates, which SAMTOOLS_IMAGE lacks
 docs/08-hla-typing.md             jiachenzdocker/hla-la@sha256:ecca23de6635aa85e60b4ee39dd4e15341b5febb514e5478f2b2a086f05a447c   HLA-LA is not a pipeline step
 docs/stylesheets/theme.css        quay.io/biocontainers/expansionhunter:5.0.0   example in a CSS comment
 scripts/cyrius-constraints.txt    python:3.11   the image pip resolved these constraints in
@@ -191,11 +190,11 @@ self_test() {
   echo 'Run docker pull quay.io/biocontainers/mosdepth:0.3.13--h05c3d44_0 first.' >> "${tmp}/doc-literal/docs/quick-test.md"
   expect doc-literal '^FAIL: docs/quick-test\.md:[0-9]+ names the image quay\.io/biocontainers/mosdepth:0\.3\.13--h05c3d44_0;'
   copy exempt-changed
-  sed -i.bak 's|samtools:1.20--h50ea8bc_0|samtools:1.21--h50ea8bc_0|' "${tmp}/exempt-changed/docs/quick-test.md"
-  expect exempt-changed '^FAIL: docs/quick-test\.md:[0-9]+ names the image quay\.io/biocontainers/samtools:1\.21--h50ea8bc_0;'
+  sed -i.bak 's|expansionhunter:5.0.0|expansionhunter:5.0.1|' "${tmp}/exempt-changed/docs/stylesheets/theme.css"
+  expect exempt-changed '^FAIL: docs/stylesheets/theme\.css:[0-9]+ names the image quay\.io/biocontainers/expansionhunter:5\.0\.1;'
   copy exempt-twice
-  echo 'Then docker pull quay.io/biocontainers/samtools:1.20--h50ea8bc_0 again.' >> "${tmp}/exempt-twice/docs/quick-test.md"
-  expect exempt-twice '^FAIL: docs/quick-test\.md:[0-9]+ names the image quay\.io/biocontainers/samtools:1\.20--h50ea8bc_0;'
+  echo '/* Then quay.io/biocontainers/expansionhunter:5.0.0 again. */' >> "${tmp}/exempt-twice/docs/stylesheets/theme.css"
+  expect exempt-twice '^FAIL: docs/stylesheets/theme\.css:[0-9]+ names the image quay\.io/biocontainers/expansionhunter:5\.0\.0;'
 
   # A module process with no selector in conf/containers.config.
   copy no-selector
