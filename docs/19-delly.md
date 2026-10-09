@@ -27,7 +27,7 @@ export GENOME_DIR=/path/to/your/data
 
 The script passes Delly's GRCh38 exclude map (`-x`): telomeres, centromeres and every contig beyond chr1-22, X, Y and M (on the default no-ALT reference, the unplaced scaffolds and `chrEBV`; the map also names the ALT and decoy contigs of a full reference). `setup.sh` installs it from a pinned commit of the Delly repository as `reference/delly_human.hg38.excl.tsv` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without it Delly spends hours in those regions and calls artefacts there; the script then runs without `-x` and says so.
 
-What the script runs. Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`; the pinned 2.6.0 answers `Unrecognized command` to `delly call`.
+What the script runs. Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`; the pinned 2.7.0 answers `Unrecognized command` to `delly call`.
 
 ```bash
 source versions.env   # from the repository root
