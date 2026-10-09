@@ -42,7 +42,7 @@ export GENOME_DIR=/path/to/your/data SAMPLE=your_name
 ./scripts/run-all.sh $SAMPLE male       # or female
 ```
 
-`run-all.sh` starts the Nextflow pipeline, so it needs Java 17 or later and Nextflow 25.10.8 beside Docker and bash 4.4; a rerun reuses every finished step. [Full run](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/#full-run) has the install line and the switches, and each step also runs on its own as a script. Optional databases are in [reference setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/). Try a small public dataset with the [quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/).
+`run-all.sh` starts the Nextflow pipeline, so it needs Java 17 or later and Nextflow 26.04.7 beside Docker and bash 4.4; a rerun reuses every finished step. [Full run](https://geiserx.github.io/Personal-Genome-Pipeline/getting-started/#full-run) has the install line and the switches, and each step also runs on its own as a script. Optional databases are in [reference setup](https://geiserx.github.io/Personal-Genome-Pipeline/00-reference-setup/). Try a small public dataset with the [quick test](https://geiserx.github.io/Personal-Genome-Pipeline/quick-test/).
 
 ## Documentation
 

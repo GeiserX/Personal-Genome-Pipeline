@@ -30,7 +30,7 @@
 | Docker | 20.10+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | bash | 4.4+ | Pre-installed on Linux; macOS ships 3.2, install a newer one with `brew install bash` |
 | Java *(for a full run)* | 17+ | Any OpenJDK build, e.g. `apt install openjdk-17-jre-headless` or [Adoptium Temurin](https://adoptium.net/) |
-| Nextflow *(for a full run)* | 25.10.8 | `curl -s https://get.nextflow.io \| NXF_VER=25.10.8 bash`, see [Full run](#full-run) |
+| Nextflow *(for a full run)* | 26.04.7 | `curl -s https://get.nextflow.io \| NXF_VER=26.04.7 bash`, see [Full run](#full-run) |
 | wget or curl | Any | For downloading references |
 | python3 *(optional)* | 3.6+ | Used by long-read alignment (02b) for symlink resolution. Falls back to `readlink -f` on GNU/Linux if absent |
 
@@ -99,10 +99,10 @@ This checks Docker, disk space, reference data, Docker images, and sample files.
 
 One command runs every step of a default run for one sample. `run-all.sh` checks the setup, writes a one-row samplesheet and starts the [Nextflow pipeline](nextflow.md) (`main.nf`). Nextflow runs the steps in parallel as far as CPUs and memory allow, keeps a log for each task, and on a second run reuses every task whose inputs did not change (`-resume`), so a run that stopped half way continues where it stopped.
 
-It needs Docker, bash 4.4 or later, Java 17 or later and Nextflow 25.10.8, the release CI validates (`NEXTFLOW_VERSION` in `versions.env`). Pin the version when you install, because the plain installer fetches the newest release:
+It needs Docker, bash 4.4 or later, Java 17 or later and Nextflow 26.04.7, the release CI validates (`NEXTFLOW_VERSION` in `versions.env`). Pin the version when you install, because the plain installer fetches the newest release:
 
 ```bash
-curl -s https://get.nextflow.io | NXF_VER=25.10.8 bash
+curl -s https://get.nextflow.io | NXF_VER=26.04.7 bash
 sudo mv nextflow /usr/local/bin/
 ```
 
