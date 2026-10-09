@@ -20,6 +20,8 @@
 #      DEMO_TERMS_FILE  your private terms for the OCR check, one regular
 #                       expression per line; keep it outside the repository
 #      VENV             the venv to use (created when missing)
+#      PLAYWRIGHT_WITH_DEPS  set (Linux) to let Playwright install the
+#                       libraries Chromium needs, with apt through sudo
 #
 # Docker must see <work_dir> and this checkout. With Colima on macOS both
 # must sit in a folder Colima mounts (the home folder and /private/tmp by
@@ -78,7 +80,13 @@ PKGS=(playwright==1.63.0 pillow==12.3.0)
 [ "$(uname -s)" != Darwin ] || PKGS+=(pyobjc-framework-Vision==12.2.2)
 "${VENV}/bin/python" -m pip install -q "${PKGS[@]}"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${VENV}/browsers}
-"${VENV}/bin/python" -m playwright install chromium
+# On a fresh Linux box Chromium also needs system libraries: --with-deps
+# installs them with apt (through sudo).
+if [ -n "${PLAYWRIGHT_WITH_DEPS:-}" ]; then
+  "${VENV}/bin/python" -m playwright install --with-deps chromium
+else
+  "${VENV}/bin/python" -m playwright install chromium
+fi
 "${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT"
 
 echo "=== 5. Checks"
