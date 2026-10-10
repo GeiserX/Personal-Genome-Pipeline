@@ -125,7 +125,7 @@ Without Java or Nextflow, `run-all.sh` stops with exit 2 and prints the install 
 
 It writes the choice to `<sample>/nextflow/samplesheet.csv` and uses that file again on the next run while every file it names exists and its BAM is the one this call names (`ALIGN_DIR` below), so a rerun finds its tasks in the cache even after the pipeline wrote a BAM and a VCF next to the FASTQ. Delete the samplesheet to choose again.
 
-When the run starts from an existing VCF, the pipeline does not read a gVCF beside it: `vcf/<sample>.g.vcf.gz` from an earlier `03-deepvariant.sh` run stays on disk but unused, so PharmCAT and PRS read only the VCF's variant sites. Run `./scripts/07-pharmacogenomics.sh <sample>` and `./scripts/25-prs.sh <sample>` by hand to get the calls that read the gVCF. When the sample also has its indexed BAM, deleting the VCF and its index is the other way: the BAM is called again, with a gVCF the pipeline reads. With the VCF alone (no BAM, no FASTQ) that would leave no input; such a run lists the steps that read a BAM as `skipped (no BAM)`.
+When the run starts from an existing VCF, the pipeline does not read a gVCF beside it: `vcf/<sample>.g.vcf.gz` from an earlier `03-deepvariant.sh` run stays on disk but unused, so PharmCAT and PRS read only the VCF's variant sites. Run `./scripts/07-pharmacogenomics.sh <sample>` and `./scripts/25-prs.sh <sample> <male|female>` by hand to get the calls that read the gVCF. Give `25-prs.sh` the sex: without it, a score's chrX rows are left out and its sum covers the autosomes only ([chrX and the sex](25-prs.md#chrx-and-the-sex)). When the sample also has its indexed BAM, deleting the VCF and its index is the other way: the BAM is called again, with a gVCF the pipeline reads. With the VCF alone (no BAM, no FASTQ) that would leave no input; such a run lists the steps that read a BAM as `skipped (no BAM)`.
 
 **Switches.** Environment variables, set before the command:
 
@@ -162,7 +162,7 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 | 18 CNVpytor | `reference/cnvpytor/gc_hg38.pytor` | `--cnvpytor_resources` |
 | 5 AnnotSV | `annotsv_annotations/Annotations_Human/` | `--annotsv_annotations` |
 | 32 pypgx | `reference/pypgx-bundle/` | `--pypgx_bundle` |
-| 25 PRS | `prs_scores/*.txt.gz` (run `./scripts/25-prs.sh <sample>` once to download the scoring files) | `--pgs_scoring` |
+| 25 PRS | `prs_scores/*.txt.gz` (run `./scripts/25-prs.sh <sample> <sex>` once to download the scoring files) | `--pgs_scoring` |
 | 10 TelomereHunter, 19 Delly | `reference/cytoBand.hg38.txt`, `reference/delly_human.hg38.excl.tsv` (optional) | `--cytoband`, `--delly_exclude` |
 
 **Where things land.** Results go to `${GENOME_DIR}/<sample>/`, in the folders of the pipeline's [output structure](nextflow.md#output-structure). Most match the single scripts' folders; the pipeline writes PharmCAT to `pharmcat/`, ROH to `roh/`, depth to `coverage/` and HLA types to `hla/`, where the scripts use `vcf/`, `vcf/`, `mosdepth/` and `hla_t1k/`. The reports read both. At the end `run-all.sh` renders the full HTML report (`<sample>_report.html`, step 24), the text report (`<sample>_report.txt`) and the `summary.json` both are made from.

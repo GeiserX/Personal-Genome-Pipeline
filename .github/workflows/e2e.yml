@@ -185,9 +185,9 @@ jobs:
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
-    # About 75 minutes (73 on the run that added the parity cases, which call
-    # the fixture twice more from FASTQ); the margin covers a run that waits
-    # for build-fixture and a DeepVariant step that walks the whole reference.
+    # 79 to 137 minutes on the pull-request runs of 2026-10-08 and 2026-10-09
+    # (the cases step alone 67 to 124), so the slowest left 13 minutes before
+    # the timeout.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
