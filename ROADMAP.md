@@ -66,7 +66,9 @@ v0.5.0 started as post-processing: alignment and variant calling were left to nf
 
 ### Delivery
 
-All 27 modules across 6 workflows are implemented. The stub-testable subset (tools that do not require external databases) is CI-validated; database-dependent tools (vep, cpsr, clinvar, expansion_hunter) are validated manually. The Nextflow path is usable for post-calling interpretation and produces biologically equivalent results to the bash scripts. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+v0.5.0 shipped 27 modules in 6 workflows, for interpretation after calling. CI ran their stub-testable subset; the tools that need a database were checked by hand.
+
+Today the Nextflow path has 39 modules in 7 workflows and runs from FASTQ to the report. The e2e job runs the real tools of most steps on a slice of HG002 and compares the pipeline with the bash steps on the same reads ([docs/testing.md](docs/testing.md)). The Nextflow ExpansionHunter module is only stub-run. VEP, CPSR and AnnotSV need databases CI does not download, and GRIDSS needs a 31 GB Java heap, so CI does not run them. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
 
 - [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 27 modules, `--tools` gating, stub CI, Docker + Singularity profiles
 
@@ -76,7 +78,7 @@ PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](htt
 
 ### Bash scripts
 
-The bash scripts remain in `scripts/` as a maintained, simpler alternative for users who do not need workflow orchestration. Once the Nextflow path is validated end to end, new features will be Nextflow-first. Bash scripts will continue to receive bug fixes and tool version bumps but not new analysis steps.
+`run-all.sh` now launches the Nextflow pipeline, and new analysis steps are Nextflow-first. The numbered scripts in `scripts/` stay as documented single-step commands that share the pipeline's images and helpers, and get bug fixes and tool version bumps. The steps that stay bash-only are listed with their reasons in [docs/nextflow.md](docs/nextflow.md#bash-vs-nextflow-parity).
 
 ## v0.6.0 to v0.8.2 — Hardening and tool upgrades ✅
 
