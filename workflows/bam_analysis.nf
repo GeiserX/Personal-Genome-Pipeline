@@ -61,6 +61,7 @@ workflow BAM_ANALYSIS {
     ch_smn_copy_number  = Channel.empty()
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
+    ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -130,17 +131,24 @@ workflow BAM_ANALYSIS {
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mosdepth')) {
         MOSDEPTH(ch_bam)
-        ch_coverage = MOSDEPTH.out.summary
-        ch_versions = ch_versions.mix(MOSDEPTH.out.versions)
+        ch_coverage       = MOSDEPTH.out.summary
+        ch_mosdepth_depth = MOSDEPTH.out.summary.join(MOSDEPTH.out.global_dist)
+        ch_versions       = ch_versions.mix(MOSDEPTH.out.versions)
     }
 
     //
-    // MODULE 5: Mitochondrial variant calling (GATK Mutect2)
+    // MODULE 5: Mitochondrial variant calling (GATK Mutect2, then NuMTFilterTool)
     // Gates on: params.tools contains 'mito_variants'
+    // With mosdepth, each BAM waits for its mosdepth summary and distribution:
+    // NuMTFilterTool needs the median autosomal depth, as step 20 reads it from
+    // step 16b. Without mosdepth the filter runs at depth 0, as step 20 does.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mito_variants')) {
+        ch_mito_in = params.tools.split(',').collect{it.trim()}.contains('mosdepth')
+            ? ch_bam.join(ch_mosdepth_depth)
+            : ch_bam.map { meta, bam, bai -> [meta, bam, bai, [], []] }
         MITO_VARIANTS(
-            ch_bam,
+            ch_mito_in,
             ch_reference,
             ch_reference_fai,
             ch_reference_dict        )
