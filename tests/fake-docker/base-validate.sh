@@ -83,6 +83,16 @@ vcf_header '##contig=<ID=chr1,length=249250621>'
 run_expect 1 build-37 "${SCRIPTS}/validate-setup.sh" sample1
 output_has build-37 '\[FAIL\].*VCF genome build: GRCh37/hg19'
 
+# Ensembl names: the length still tells the build, and the names fail on their own.
+vcf_header '##contig=<ID=1,length=248956422>'
+run_expect 1 build-ensembl-38 "${SCRIPTS}/validate-setup.sh" sample1
+output_has build-ensembl-38 "\[FAIL\].*VCF uses chromosome names without the 'chr' prefix"
+output_has build-ensembl-38 '\[OK\].*VCF genome build: GRCh38'
+output_lacks build-ensembl-38 'likely GRCh37'
+vcf_header '##contig=<ID=1,length=249250621>'
+run_expect 1 build-ensembl-37 "${SCRIPTS}/validate-setup.sh" sample1
+output_has build-ensembl-37 '\[FAIL\].*VCF genome build: GRCh37/hg19'
+
 # An unknown chr1 length: WARN, then the spot-check decides. All REF bases match: OK.
 vcf_header '##contig=<ID=chr1,length=12345>'
 echo "1000 1000" > "${CASE_WORK}/spot.txt"

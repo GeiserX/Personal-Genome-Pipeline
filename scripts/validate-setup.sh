@@ -779,14 +779,16 @@ if [ -n "$SAMPLE" ]; then
     # Genome build from the header: chr1's ##contig length. When the header
     # cannot tell, compare the REF bases of the first records with the reference.
     if $HAS_VCF && ${VCF_HEADER_OK:-false}; then
-      VCF_CHR1_LEN=$(grep -m1 "^##contig=<ID=chr1," <<< "$VCF_HEADER" | grep -oE '[<,]length=[0-9]+' | cut -d= -f2 || true)
+      # chr1 or, in Ensembl naming, 1: the length tells the build, the name is a separate problem.
+      VCF_CHR1_LEN=$(grep -m1 -E "^##contig=<ID=(chr)?1," <<< "$VCF_HEADER" | grep -oE '[<,]length=[0-9]+' | cut -d= -f2 || true)
+      if grep -q "^##contig=<ID=1," <<< "$VCF_HEADER"; then
+        fail "VCF uses chromosome names without the 'chr' prefix (1, 2, MT); the pipeline needs chr1, chr2, chrM"
+        echo "       Rename them with bcftools annotate --rename-chrs: docs/vcf-first.md shows the commands."
+      fi
       if [ "$VCF_CHR1_LEN" = "248956422" ]; then
         pass "VCF genome build: GRCh38"
       elif [ "$VCF_CHR1_LEN" = "249250621" ]; then
         fail "VCF genome build: GRCh37/hg19 — not compatible with this pipeline"
-      elif grep -q "^##contig=<ID=1," <<< "$VCF_HEADER"; then
-        fail "VCF uses chromosome names WITHOUT 'chr' prefix (likely GRCh37)"
-        echo "       This pipeline requires GRCh38 with 'chr' prefix."
       else
         if [ -n "$VCF_CHR1_LEN" ]; then
           warn "VCF chr1 length (${VCF_CHR1_LEN}) is neither GRCh38's (248956422) nor GRCh37's (249250621)"
