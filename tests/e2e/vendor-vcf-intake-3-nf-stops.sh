@@ -174,7 +174,9 @@ in_genome "$BCFTOOLS_IMAGE" sh -c "set -e
     | bcftools view -Oz -o intake/shifted.vcf.gz -
   bcftools reheader -h intake/nocontig_header.txt -o nocontig_shift/vcf/nocontig_shift.vcf.gz intake/shifted.vcf.gz
   bcftools index -f -t nocontig_shift/vcf/nocontig_shift.vcf.gz"
-check "nocontig38 has no ##contig line" lacks '^##contig' "$(bcf view -h nocontig38/vcf/nocontig38.vcf.gz 2>/dev/null)"
+# Read the file itself: with a .tbi beside it, bcftools adds ID-only ##contig
+# lines (no length) from the index, which validate-setup.sh then sees.
+check "nocontig38 has no ##contig line in the file" lacks '^##contig' "$(gzip -dc "${G}/nocontig38/vcf/nocontig38.vcf.gz" | grep '^#')"
 check_ge "nocontig38 has records" "$(vcf_count nocontig38/vcf/nocontig38.vcf.gz)" 100
 
 for s in nocontig38 nocontig_shift; do
@@ -185,7 +187,7 @@ done
 V38=$(cat "${CASE_TMP}/validate-nocontig38.log")
 VSH=$(cat "${CASE_TMP}/validate-nocontig_shift.log")
 check "no ##contig lines: validate-setup says the header does not show the build" \
-  has '\[WARN\].*VCF header has no ##contig lines' "$V38"
+  has '\[WARN\].*VCF header has no (chr1 length|##contig lines), so it does not show the genome build' "$V38"
 check "no ##contig lines, GRCh38 records: the REF spot-check passes (real bcftools norm)" \
   has '\[OK\].*VCF REF bases match the reference in all of the first [0-9]+ records' "$V38"
 check "no ##contig lines, shifted records: the REF spot-check fails" \
