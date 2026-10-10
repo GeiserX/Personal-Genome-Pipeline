@@ -7,7 +7,7 @@
 | Container exits silently | Out of memory (OOM killed) | Increase Docker memory or reduce `--memory` flag. Check `docker logs <container>`. |
 | "Permission denied" writing output | Container runs as non-root | Add `--user root` to `docker run` (already done in all scripts) |
 | VEP cache download fails/times out | 26 GB download over unreliable connection | Use `wget -c` (supports resume). See [docs/13-vep-annotation.md](13-vep-annotation.md) |
-| DeepVariant crashes on Mac | amd64 emulation + memory pressure | Reduce `--cpus` to 2 and `--memory` to 8g. Will be slow. |
+| DeepVariant crashes on Mac | amd64 emulation + memory pressure | `THREADS=2 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> <sex>`, the sex being `male` or `female`. Will be slow. See [troubleshooting](troubleshooting.md#step-3-deepvariant-crashes-on-mac-amd64-emulation). |
 | Wrong number of variants (too few) | Genome build mismatch | Ensure your BAM is aligned to GRCh38 (hg38), not hg19/GRCh37. Check with `samtools view -H your.bam \| grep SN:chr1` |
 | 0-byte output files | Missing input or wrong path | Check that all input files exist. Run the script with `bash -x` for debug output. |
 | "No such image" on `docker pull` | Image name/tag changed | Check the exact image name in the step's documentation. Biocontainer tags change frequently. |
@@ -28,7 +28,7 @@ $200-$1,000 depending on the vendor. Nebula/DNA Complete: $495 for 30X. Dante La
 Yes, partially. You can convert chip data to VCF and run pharmacogenomics (step 7), PRS (step 25), ClinVar screening (step 6), and ROH analysis (step 11). You cannot run alignment, variant calling, structural variants, repeat expansions, or ancestry analysis. See the **[chip data guide](chip-data-guide.md)** for conversion instructions, which steps work, and what to expect.
 
 **Q: How long does the full pipeline take?**
-On a 16-core/32GB desktop a default `run-all.sh` takes about 6-12 hours per sample, because the Nextflow pipeline it starts runs independent steps in parallel. Run it again after a failure or an interruption and it reuses every step that finished, so only the rest runs. [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) has the time of each step, and the [pipeline overview](pipeline-overview.md#what-a-default-run-covers) lists which steps a default run includes and which are opt-in.
+Plan for more than a day per sample from a BAM on 8 CPUs, and longer from FASTQ. DeepVariant is most of it: about 13.5 hours on 8 CPUs in one observed ~30x run. The Nextflow pipeline `run-all.sh` starts runs independent steps in parallel as far as the CPUs and memory allow. Run it again after a failure or an interruption and it reuses every step that finished; the step that was running starts over. [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) has the time of each step, and the [pipeline overview](pipeline-overview.md#what-a-default-run-covers) lists which steps a default run includes and which are opt-in.
 
 **Q: Do I need Java and Nextflow?**
 For `run-all.sh`, yes: it starts the Nextflow pipeline, which needs Java 17 or later and Nextflow (26.04.7 is the release CI validates); without them it stops and prints the install line. Each step also runs as a script with Docker alone. [Full run](getting-started.md#full-run) has both.
