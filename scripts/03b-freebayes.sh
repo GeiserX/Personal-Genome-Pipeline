@@ -12,6 +12,10 @@
 # INTERVALS="chr20 chr22") and SCATTER_JOBS of them (default THREADS/2) run at
 # once, 1 CPU and 8 GB each. Their records are joined into the raw VCF and
 # sorted as before. SCATTER=false runs one process over everything.
+#
+# Rerun: a finished VCF called with the same INTERVALS, BAM, reference and
+# image is kept (run-all.sh runs this step on every invocation with
+# EXTRA_CALLERS=freebayes); delete it to call again.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -43,6 +47,24 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
 done
 
 mkdir -p "$OUTPUT_DIR"
+
+# A finished VCF is reused only when it was called the way this run would
+# call it: RUN_FILE, written last, holds INTERVALS, the BAM (path, size and
+# modification time, so a realigned BAM is called again), the reference and
+# the image. A subset VCF never stands in for a whole-genome request.
+OUT="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
+RUN_FILE="${OUTPUT_DIR}/${SAMPLE}.run"
+BAM_ID=$(stat -c '%s %Y' "$BAM" 2>/dev/null || stat -f '%z %m' "$BAM")
+RUN_KEY="INTERVALS=${INTERVALS} bam=${BAM} bam_size_mtime=${BAM_ID} reference=${REF_FASTA} image=${FREEBAYES_IMAGE}"
+if have_output "$OUT" "${OUT}.tbi" && [ -f "$RUN_FILE" ] && [ "$(cat "$RUN_FILE")" = "$RUN_KEY" ]; then
+  echo "Output already exists: ${OUT} (${RUN_KEY})"
+  echo "Skipping. Delete the file to re-run."
+  exit 0
+fi
+if [ -e "$OUT" ]; then
+  echo "Calling again: ${OUT} is unfinished or was not called with ${RUN_KEY}."
+fi
+rm -f "$RUN_FILE"
 
 # Step 1: Run FreeBayes over each unit (one thread each, unsorted VCF)
 UNITS_DIR="${OUTPUT_DIR}/scatter"
@@ -78,7 +100,7 @@ rm -rf "$UNITS_DIR"
 # succeeded, so a sort that dies half way leaves no truncated ${SAMPLE}.vcf.gz.
 # The raw VCF is removed only after both succeeded.
 echo "Sorting and compressing VCF..."
-SORTED="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
+SORTED="$OUT"
 if ! run_in \
   --cpus 4 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
@@ -101,6 +123,7 @@ run_in \
 
 # Clean up raw unsorted VCF
 rm -f "${OUTPUT_DIR}/${SAMPLE}_raw.vcf"
+printf '%s\n' "$RUN_KEY" > "$RUN_FILE"
 
 echo "=== FreeBayes complete ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"

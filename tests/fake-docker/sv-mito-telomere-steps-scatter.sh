@@ -6,6 +6,9 @@
 # raw VCF for FreeBayes, MergeVcfs, MergeMutectStats and every unit's
 # orientation counts for Mutect2. SCATTER=false runs one process. A contig in
 # INTERVALS that the reference lacks stops the step before any container.
+# A rerun of 03a or 03b keeps a finished VCF called with the same INTERVALS,
+# BAM, reference and image, and starts no caller; another INTERVALS, a
+# realigned BAM or a missing record calls again.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -19,11 +22,24 @@ use_output_hook
 cat > "${CASE_WORK}/scatter-hook" <<'HOOK'
 #!/usr/bin/env bash
 set -euo pipefail
+. "${CASE_WORK:?}/host-path.sh"
+# bgzf HOST_PATH: a finished bgzipped VCF (ends with the BGZF end-of-file block)
+bgzf() {
+  mkdir -p "$(dirname "$1")"
+  { printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n' | gzip -c
+    printf '\x1f\x8b\x08\x04\x00\x00\x00\x00\x00\xff\x06\x00\x42\x43\x02\x00\x1b\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00'; } > "$1"
+}
 case " ${*:2} " in
   *" freebayes "*)
     t=$(sed -n 's/.* --targets \([^ ]*\) .*/\1/p' <<<" ${*:2} ")
     printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1\n'
     printf 'chr1\t%s\t.\tA\tG\t50\t.\t.\tGT\t0/1\n' "${#t}" ;;
+  *" bcftools concat "*|*" bcftools sort "*)
+    bgzf "$(host_path "$(sed -n 's/.* -o \([^ ]*\) .*/\1/p' <<<" ${*:2} ")")"
+    exit 0 ;;
+  *" bcftools index "*)
+    printf 'TBI\001' > "$(host_path "${*: -1}").tbi"
+    exit 0 ;;
 esac
 exec "${CASE_WORK}/hook-outputs" "$@"
 HOOK
@@ -38,6 +54,27 @@ output_has gatk '3 unit\(s\), 2 at a time'
 [ "$(count ' HaplotypeCaller .*-L /genome/sample1/vcf_gatk/scatter/00[123]\.bed ')" -eq 3 ] || fail "03a did not run HaplotypeCaller once per unit"
 docker_log_has 'bcftools concat -a -D .*scatter/001\.vcf\.gz .*scatter/002\.vcf\.gz .*scatter/003\.vcf\.gz' "03a did not join the three units in order"
 [ ! -e "${GENOME_DIR}/sample1/vcf_gatk/scatter" ] || fail "03a kept its scatter folder"
+G="${GENOME_DIR}/sample1/vcf_gatk"
+grep -q '^INTERVALS= bam=.* reference=.* image=' "${G}/sample1.run" 2>/dev/null || fail "03a wrote no run record beside its VCF"
+# A rerun of the same call keeps the VCF and starts no container for GATK.
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 gatk-again "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
+output_has gatk-again 'Output already exists'
+[ "$(count ' HaplotypeCaller ')" -eq 0 ] || fail "a rerun of 03a called again a VCF it had finished"
+# Another INTERVALS calls again.
+: > "$FAKE_DOCKER_LOG"
+INTERVALS=chr1 run_expect 0 gatk-intervals "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
+output_lacks gatk-intervals 'Output already exists'
+[ "$(count ' HaplotypeCaller ')" -eq 1 ] || fail "03a reused a whole-genome VCF for INTERVALS=chr1"
+grep -q '^INTERVALS=chr1 ' "${G}/sample1.run" || fail "03a did not record INTERVALS=chr1"
+# A realigned BAM (another modification time) calls again.
+touch -t 209901010000 "${GENOME_DIR}/sample1/aligned/sample1_sorted.bam"
+: > "$FAKE_DOCKER_LOG"
+INTERVALS=chr1 run_expect 0 gatk-new-bam "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
+[ "$(count ' HaplotypeCaller ')" -eq 1 ] || fail "03a reused a VCF called from an older BAM"
+# SCATTER=false calls the same records, so it is not part of the record:
+# remove the VCF to see it run.
+rm -f "${G}/sample1.vcf.gz"
 : > "$FAKE_DOCKER_LOG"
 SCATTER=false run_expect 0 gatk-one "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
 [ "$(count ' HaplotypeCaller ')" -eq 1 ] || fail "SCATTER=false did not run one HaplotypeCaller"
@@ -52,6 +89,16 @@ output_has gatk-bad-contig 'contig chr9 \(INTERVALS\) is not in the reference'
 run_expect 0 freebayes "${SCRIPTS}/03b-freebayes.sh" sample1
 [ "$(count ' freebayes .*--targets /genome/sample1/vcf_freebayes/scatter/00[123]\.bed ')" -eq 3 ] || fail "03b did not run FreeBayes once per unit"
 docker_log_has 'bcftools sort .*vcf_freebayes/sample1_raw\.vcf' "03b did not sort the joined raw VCF"
+grep -q '^INTERVALS= bam=.* image=' "${GENOME_DIR}/sample1/vcf_freebayes/sample1.run" 2>/dev/null || fail "03b wrote no run record beside its VCF"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 freebayes-again "${SCRIPTS}/03b-freebayes.sh" sample1
+output_has freebayes-again 'Output already exists'
+[ "$(count ' freebayes ')" -eq 0 ] || fail "a rerun of 03b called again a VCF it had finished"
+# A VCF without its record (an older version of this step) is called again.
+rm -f "${GENOME_DIR}/sample1/vcf_freebayes/sample1.run"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 freebayes-no-record "${SCRIPTS}/03b-freebayes.sh" sample1
+[ "$(count ' freebayes ')" -eq 3 ] || fail "03b reused a VCF without knowing how it was called"
 INTERVALS="chr2 chr1:1-100" run_expect 0 freebayes-regions "${SCRIPTS}/03b-freebayes.sh" sample1
 output_has freebayes-regions '2 unit\(s\), 2 at a time'
 # The units, and so the joined VCF, follow the reference, not INTERVALS.
