@@ -68,6 +68,9 @@ at the planted deletion), `vcf_field`, `tsv_cell`, `tsv_count`, `csv_cell`,
 
 ## What the runner cannot test
 
+- `SAMTOOLS_HTTPS_IMAGE` reads the header of the public 1000 Genomes CRAM
+  over https instead of a fixture file, because its only job is fetching over
+  https. That row depends on `ftp.sra.ebi.ac.uk` being up.
 - VEP runs with `--database` on 50 variants. The offline cache (about 26 GB)
   does not fit a runner.
 - PCGR: the CPSR report needs the PCGR data bundle and the VEP cache of

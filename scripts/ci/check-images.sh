@@ -56,7 +56,6 @@ EXEMPT_PAIRS='
 docs/08-hla-typing.md             jiachenzdocker/hla-la@sha256:ecca23de6635aa85e60b4ee39dd4e15341b5febb514e5478f2b2a086f05a447c   HLA-LA is not a pipeline step
 docs/stylesheets/theme.css        quay.io/biocontainers/expansionhunter:5.0.0   example in a CSS comment
 scripts/cyrius-constraints.txt    python:3.11   the image pip resolved these constraints in
-scripts/ci/settle-doubts.sh       jmcdani20/hap.py:v0.3.12   repeats versions.env, to be removed
 scripts/ci/settle-doubts.sh       quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5   repeats versions.env, to be removed
 docs/troubleshooting.md           quay.io/biocontainers/toolname:tag   a placeholder, not an image
 '
