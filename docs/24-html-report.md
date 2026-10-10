@@ -39,19 +39,19 @@ Two more files, when present:
 The report contains:
 - **Quality Control** — mean depth (mosdepth), sex inferred from X/Y coverage (indexcov) against the declared sex, and from step 33: the sex somalier infers from the reads, FREEMIX (VerifyBamID2's estimate of reads from another person) against its warning threshold, and any other sample that is the same person
 - **Variant Calling** — total variants, PASS count, SNPs, indels (one pass over the VCF)
-- **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column
+- **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column. The count's badge is yellow when there is a hit and gray when there is none, never green: the screen does not check population frequency, so look up a homozygous P/LP hit in gnomAD before reading much into it
 - **Pharmacogenomics** — PharmCAT version and PharmCAT/pypgx conflicts
-- **CPIC Drug Recommendations** — genes with a non-normal phenotype, with more than one possible result, not called, and a table of the non-normal genes
-- **CYP2D6 Across Callers** — PharmCAT, pypgx and Cyrius side by side, with whether they agree
-- **HLA Typing** — T1K alleles per locus and the IPD-IMGT/HLA release
-- **Polygenic Risk Scores** — each score with its percentile among the most similar reference group, or "raw score only" without the ancestry panel
+- **CPIC Drug Recommendations** — genes with a non-normal phenotype, with more than one possible result, not called, called without a function phenotype (`unclassified`, no drug guidance), and a table of the non-normal genes
+- **CYP2D6 Across Callers** — pypgx and Cyrius side by side, judged by step 36's rule: a no-call such as `Indeterminate` is not a call, and a Cyrius genotype counts only with Filter `PASS` (otherwise it is shown as not usable, with its Filter). The card says whether the two agree and, with [step 36](36-pgx-consensus.md)'s table, its verdict and reason. The PharmCAT row is the call step 36 passed to PharmCAT, not a third caller: PharmCAT calls no CYP2D6 from a VCF
+- **HLA Typing** — T1K alleles per locus, each with its own quality, and the IPD-IMGT/HLA release. A quality of 0 or below is marked low confidence; on HLA-A and HLA-B the card adds that the gene is not passed to PharmCAT. HLA typing from short-read WGS is approximate
+- **Polygenic Risk Scores** — each score with its percentile among the most similar reference group, or "raw score only" without the ancestry panel. The caption says that most PRS scores were developed in European-ancestry populations and predict less well for other ancestries, even with an ancestry-adjusted percentile
 - **Structural Variants** — Manta, Delly, CNVpytor and the SURVIVOR consensus (2+ callers) counts
 - **Cancer Predisposition** — CPSR status and the classification breakdown (read by column name from `${SAMPLE}.cpsr.grch38.classification.tsv.gz`)
-- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK)
+- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK) and, when step 9b (Stranger) ran, every locus whose `STR_STATUS` is `pre_mutation` or `full_mutation`, whichever locus it is. A locus outside Stranger's catalog has no status and is counted apart. Without step 9b the card says Stranger did not run. Repeat-expansion calls from short reads can be wrong at some loci
 - **Runs of Homozygosity** — total, largest segment, segments, autosomal runs over 5 MB
 - **Mitochondrial Haplogroup** — haplogrep3's call, and haplocheck's contamination status ("not checked" when step 12 read the step 03 VCF instead of step 20's calls)
 - **Y-Chromosome Haplogroup** — Yleaf's call, its marker count and QC-score, or "insufficient markers" (step 37, when it ran)
-- **Telomere Length** — TelomereHunter's telomere content
+- **Telomere content (relative)** — TelomereHunter's `tel_content`: intratelomeric reads per million reads with 48-52% GC. It is a relative measure, not a telomere length
 - **Mitochondrial** — chrM PASS variants and heteroplasmic calls (allele fraction 0.05 to 0.95; below 5% NUMT reads and noise dominate)
 - **Clinical Filter** and **slivar** — variant counts from steps 23 and 31
 - **Secondary-Findings Genes (ACMG SF v3.3)** — the step 06 ClinVar hits and the clinical filter's rare HIGH-impact records in the 84 genes of the ACMG list, as a list to review with a clinician: the list's per-gene reporting rules (for example HFE homozygous C282Y only) are not applied
@@ -61,6 +61,8 @@ The report contains:
 ## Results from an earlier run
 
 A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished: after a failed run every section from before it is marked stale until the same command, with `-resume`, completes. A step you re-ran by hand after that run writes a newer file and is shown as current.
+
+A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports, and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 
 <figure markdown="span">
   ![The step 24 HTML report: a header with the sample name, seventeen cards of counts and statuses, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }
@@ -89,7 +91,7 @@ start ${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html
 - The report is completely self-contained — all CSS is inline, no external dependencies
 - Works offline in any modern browser
 - Responsive layout (works on mobile/tablet)
-- Steps that were not run show "Not run" and are listed under Steps Not Run — this is expected
+- Steps that were not run show "Not run" and are listed under Steps Not Run — this is expected. A step recorded as failed shows "Failed" instead
 - The report contains health findings: the ClinVar table lists your pathogenic and likely pathogenic variants, and other sections summarise pharmacogenomics, CPSR and the other steps. It holds no raw reads or full VCF, but share it only as you would share a medical record
 - Re-run this script anytime to update the report after running additional steps
 - The Nextflow `HTML_REPORT` module runs the same `bin/render_report.py` on the outputs of its run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH and mitochondrial haplogroup steps, so both reports print the same numbers for the same file. Its clinical filter and slivar cards show counts only. For every section on a Nextflow run, run this script with `GENOME_DIR` set to the `--outdir`
