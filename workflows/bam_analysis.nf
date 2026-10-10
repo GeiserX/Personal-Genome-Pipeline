@@ -142,10 +142,12 @@ workflow BAM_ANALYSIS {
     // With mosdepth, each BAM waits for its mosdepth summary and distribution:
     // NuMTFilterTool needs the median autosomal depth, as step 20 reads it from
     // step 16b. Without mosdepth the filter runs at depth 0, as step 20 does.
+    // failOnMismatch: a BAM with no mosdepth row stops the run instead of
+    // dropping the sample from MITO_VARIANTS.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mito_variants')) {
         ch_mito_in = params.tools.split(',').collect{it.trim()}.contains('mosdepth')
-            ? ch_bam.join(ch_mosdepth_depth)
+            ? ch_bam.join(ch_mosdepth_depth, failOnMismatch: true)
             : ch_bam.map { meta, bam, bai -> [meta, bam, bai, [], []] }
         MITO_VARIANTS(
             ch_mito_in,
