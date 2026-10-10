@@ -1076,7 +1076,7 @@ ls -la ${GENOME_DIR}/${SAMPLE}/cpsr/${SAMPLE}.cpsr.grch38.html
 # Should be > 100 KB
 
 # VEP: check annotated VCF exists and has annotations
-gzip -dc ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz | grep -v '^#' | head -5 | grep -c "CSQ="
+gzip -dc ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz | awk '!/^#/ && /CSQ=/ {n++} END {print n+0}'
 # Should print a number above 0: records carry consequence annotations
 ```
 

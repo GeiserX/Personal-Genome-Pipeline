@@ -15,7 +15,7 @@
 
 | Resource | Minimum | Recommended | Notes |
 |---|---|---|---|
-| **CPU** | 4 cores | 8-16 cores | `run-all.sh` runs DeepVariant with 8 shards on any machine; more cores run other steps beside it ([CPU](hardware-requirements.md#cpu-requirements)) |
+| **CPU** | 4 cores | 8-16 cores | `run-all.sh` runs DeepVariant with at most 8 shards, fewer when `--max_cpus` is lower; more cores run other steps beside it ([CPU](hardware-requirements.md#cpu-requirements)) |
 | **RAM** | 16 GB | 32 GB | Every container has a hard memory limit; the 8-CPU steps ask for 32 GB, capped at the machine's RAM |
 | **Disk** | 500 GB free from a BAM, about 700 GB from FASTQ | 1 TB+ | See [detailed breakdown](hardware-requirements.md#disk-space-breakdown) |
 | **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~175 GB optional annotation databases |

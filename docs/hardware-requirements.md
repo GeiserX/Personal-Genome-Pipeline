@@ -135,7 +135,7 @@ These are limits, not measured peaks. minimap2 peaked at 10 GB on the test refer
 
 Each pipeline task asks for the CPUs of its label in `conf/base.config`: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (index and alignment), DeepVariant, Manta, CNVpytor and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
 
-**DeepVariant's shards.** `run-all.sh` runs DeepVariant with 8 shards whatever the core count. More cores help the steps that run beside it. To give DeepVariant more, run `scripts/03-deepvariant.sh` with `THREADS=N` (its `--cpus` and `--num_shards`), or pass `-c` with a `withName: 'DEEPVARIANT'` block:
+**DeepVariant's shards.** `run-all.sh` runs DeepVariant with at most 8 shards, however many cores the machine has, and fewer when `--max_cpus` (`THREADS`) is lower. More cores help the steps that run beside it. To give DeepVariant more, run `scripts/03-deepvariant.sh` with `THREADS=N` (its `--cpus` and `--num_shards`), or pass `-c` with a `withName: 'DEEPVARIANT'` block:
 
 ```groovy
 // dv16.config, used as: ./scripts/run-all.sh <sample> <sex> -c dv16.config
