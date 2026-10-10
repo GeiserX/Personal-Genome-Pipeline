@@ -117,12 +117,14 @@ run_in \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
 # Step 3: Check, then rename. The old index goes first, so an index never
-# sits next to a BAM it was not built from.
+# sits next to a BAM it was not built from. markdup finishes the index just
+# before the BAM's last block, so the touch makes the index the newer file.
 echo "Checking BAM..."
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
+touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"

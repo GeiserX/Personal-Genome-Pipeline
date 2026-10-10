@@ -119,12 +119,14 @@ run_in \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
 # Step 3: Check, then rename (the old index goes first). markdup wrote the
-# index with the BAM (--write-index, as in step 02).
+# index with the BAM (--write-index, as in step 02); the touch makes it the
+# newer file.
 echo "=== Checking BAM ==="
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
+touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"
