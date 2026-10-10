@@ -152,10 +152,11 @@ grep -q ' FilterMutectCalls .*-O sample1_chrM_mutect2_filtered\.vcf\.gz' "${NFW}
 run_mito_module ""
 grep -q -- '--autosomal-coverage 0 ' <<<"${NUMT} " || fail "MITO_VARIANTS without mosdepth files did not run the filter at depth 0: ${NUMT:-no call}"
 grep -q 'mosdepth is not in --tools' "${NFW}/out.txt" || fail "MITO_VARIANTS without mosdepth files does not say why the depth is 0"
-# The workflow joins MOSDEPTH's summary and distribution in, and the module
-# refuses to go on without them when mosdepth ran.
-grep -q 'ch_bam.join(ch_mosdepth_depth)' "${REPO_ROOT}/workflows/bam_analysis.nf" \
-  || fail "workflows/bam_analysis.nf does not join MOSDEPTH's output into MITO_VARIANTS"
+# The workflow joins MOSDEPTH's summary and distribution in, failing on a BAM
+# with no mosdepth row (a plain join drops that sample from MITO_VARIANTS), and
+# the module refuses to go on without them when mosdepth ran.
+grep -qF 'ch_bam.join(ch_mosdepth_depth, failOnMismatch: true)' "${REPO_ROOT}/workflows/bam_analysis.nf" \
+  || fail "workflows/bam_analysis.nf does not join MOSDEPTH's output into MITO_VARIANTS with failOnMismatch"
 [ "$(grep -c "contains('mosdepth') && !mosdepth_summary" "$MOD")" -eq 2 ] \
   || fail "MITO_VARIANTS' script and stub do not both stop when mosdepth ran and its output is missing"
 echo "MITO_VARIANTS marks possible NuMTs at the depth step 20 uses."
