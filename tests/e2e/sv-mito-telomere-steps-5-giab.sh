@@ -11,6 +11,11 @@
 # the only home of v5.0q, has been 404 for a day at a time, and this keeps
 # the case independent of it. E2E_GIAB_SETS runs only the sets it names, for
 # a check of one leg by hand.
+#
+# The step benchmarks every caller VCF it finds under the sample, and case
+# 22 leaves GATK's there too. The case asserts only DeepVariant's row, so it
+# runs on a copy sample that holds DeepVariant's VCF alone (hard links) and
+# hap.py runs once per set instead of twice.
 . "$(dirname "$0")/lib.sh"
 
 # .invalid never resolves (RFC 2606): any fetch fails on its first try.
@@ -29,16 +34,23 @@ giab_files() {
 SLICE="${GENOME_DIR}/giab-slice-chr20.bed"
 printf 'chr20\t10000000\t10500000\n' > "$SLICE"
 mkdir -p "${GENOME_DIR}/giab"
+C="${SAMPLE}gb"
+mkdir -p "${GENOME_DIR}/${C}/vcf"
+for ext in vcf.gz vcf.gz.tbi; do
+  check "DeepVariant's ${ext} is linked into copy sample ${C}" \
+    ln -f "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.${ext}" "${GENOME_DIR}/${C}/vcf/${C}.${ext}"
+done
 for set in ${E2E_GIAB_SETS:-v4.2.1 v5.0q}; do
   for f in $(giab_files "$set"); do
     check "the fixture holds GIAB ${set}'s ${f}" cp "${FIXTURE_DIR}/${f}" "${GENOME_DIR}/giab/${f}"
   done
-  run_step benchmark-variants.sh "$SAMPLE" --giab "$set" --regions "$SLICE"
+  run_step benchmark-variants.sh "$C" --giab "$set" --regions "$SLICE"
   check_step_exit "benchmark-variants.sh --giab ${set}"
+  check "the step found DeepVariant's VCF only" has "Found 1 caller VCF" "$(cat "$STEP_LOG")"
   check "the step downloaded nothing for ${set}" lacks "Downloading GIAB" "$(cat "$STEP_LOG")"
   check "the log names the ${set} truth set" has "Truth set: GIAB HG002 ${set} " "$(cat "$STEP_LOG")"
   check "the ${set} regions are cut to the slice" has "Benchmark regions of ${set} inside .*: [0-9]+ intervals" "$(cat "$STEP_LOG")"
-  TSV="${GENOME_DIR}/${SAMPLE}/benchmark/comparison.tsv"
+  TSV="${GENOME_DIR}/${C}/benchmark/comparison.tsv"
   cat "$TSV" 2>/dev/null
   ROW=$(awk -F'\t' '$1 == "DeepVariant"' "$TSV" 2>/dev/null)
   TP=$(cut -f2 <<<"$ROW") PREC=$(cut -f5 <<<"$ROW") REC=$(cut -f6 <<<"$ROW")

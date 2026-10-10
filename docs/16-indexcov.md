@@ -37,7 +37,7 @@ docker run --rm \
 goleft writes the inferred sex to `indexcov-indexcov.ped`, whose columns are `#family_id sample_id paternal_id maternal_id sex phenotype CNchrX CNchrY ...`. The `sex` column uses PED coding: `1` male, `2` female, anything else unknown. The `phenotype` column is always `-9`. The script finds the columns by header name, prints the raw row, CNchrX, CNchrY and the inferred sex, and then compares it with the sex you declared:
 
 - **Match:** prints `Sex check: OK`.
-- **Mismatch:** prints both values and exits non-zero. A mismatch means a sample swap, a wrong declared sex, or a sex-chromosome aneuploidy. Steps that take the declared sex (ExpansionHunter, step 9) would otherwise use a wrong value without warning.
+- **Mismatch:** prints both values and exits non-zero. A mismatch means a sample swap, a wrong declared sex, or a sex-chromosome aneuploidy. Steps that take the declared sex (DeepVariant's chrX and chrY ploidy, step 3; ExpansionHunter, step 9; Delly, step 19) would otherwise use a wrong value without warning.
 - `SEX_CHECK=warn ./scripts/16-indexcov.sh your_name female` prints the mismatch and exits 0, for when you know why they differ (for example 47,XXY).
 
 ## Output Files

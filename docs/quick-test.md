@@ -6,9 +6,21 @@ The project's own scripted check is wider: CI runs most of the steps on a small 
 
 ---
 
+## Option 0: Check Java, Nextflow and Docker with a stub run
+
+A full run goes through `run-all.sh`, which needs Java 17 or later and Nextflow 26.04.7 beside Docker ([Getting started](getting-started.md)). A stub run checks that the three work together with the pipeline before you spend a day on a real genome. From the root of the checkout:
+
+```bash
+nextflow run main.nf -profile test,docker -stub
+```
+
+It reads the small test samplesheet in `assets/`, starts each task of the steps the test profile selects (`conf/test.config`) in its pinned container with `--network none`, and runs the task's stub instead of the tool, so it checks no result and downloads no reference: the test profile points at the small bundled `assets/stub/reference.fasta`. It took about 4 minutes on a GitHub runner, image pulls included (CI run 38028845387). Git ignores the `work/`, `.nextflow/` and `results_test/` folders it leaves; delete them afterwards. To test the real tools on a small genome slice, see [Running the e2e job yourself](testing.md#running-the-e2e-job-yourself).
+
+---
+
 ## Option A: Chromosome 22 Only (Recommended)
 
-Chromosome 22 is the smallest autosome (~51 MB), so a chr22 extract runs in minutes instead of hours.
+Chromosome 22 is the second-smallest autosome (~51 Mb; only chr21, ~47 Mb, is shorter), so a chr22 extract runs in minutes instead of hours.
 
 Option A runs three VCF-only steps: the ClinVar screen (6), PharmCAT (7) and ROH analysis (11). It shows that Docker, the reference data and the scripts work together. It does not exercise alignment, variant calling or any BAM-dependent step; Option B adds two of those.
 

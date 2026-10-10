@@ -20,7 +20,6 @@ SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
 TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SLICE=chr20:10000000-10500000
-BWAMEM2_IMAGE="quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5"   # as in 02a-alignment-bwamem2.sh
 
 export PATH="${REPO}/tests/e2e/bin:${PATH}"   # clamps --cpus to this machine
 export THREADS=4
@@ -109,6 +108,7 @@ row 3 "Do the two model directories hardcoded in scripts/03e-clair3.sh exist in 
   "$(grep -E 'present|MISSING|models in' "${LOGS}/q3.log" | cut -c1-700)"
 
 # --- 4. TIDDIT with only a BWA-MEM2 index ---------------------------------------
+# The index step 02a writes, so the same BWAMEM2_IMAGE (versions.env).
 in_g "$BWAMEM2_IMAGE" bwa-mem2 index reference/GRCh38_no_alt_analysis_set.fasta > "${LOGS}/q4_index.log" 2>&1
 IDX_FILES=$(cd "${G}/reference" && ls GRCh38_no_alt_analysis_set.fasta.* | tr '\n' ' ')
 "${REPO}/scripts/04a-tiddit.sh" "$SAMPLE" > "${LOGS}/q4.log" 2>&1; RC=$?
