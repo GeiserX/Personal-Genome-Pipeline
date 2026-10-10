@@ -52,7 +52,7 @@ export PATH="${REPO}/tests/e2e/bin:${PATH}"
 # images are pulled before the cases, and a pull that fails with a registry
 # 5xx is tried again, up to PULL_TRIES tries in all. Any other error (a wrong
 # tag, a rate limit) fails at once. The tools' own `docker run` is never retried.
-PULL_TRIES=${PULL_TRIES:-1}
+PULL_TRIES=${PULL_TRIES:-4}
 PULL_WAIT=${PULL_WAIT:-20}   # seconds before the second try; doubles after each
 REGISTRY_5XX='(HTTP status|status code):? 5[0-9][0-9]|50[0-4] (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)'
 # pull_image IMAGE: docker pull with the retry above.
