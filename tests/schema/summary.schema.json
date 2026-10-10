@@ -26,7 +26,8 @@
       "ok",
       "missing",
       "stale",
-      "unreadable"
+      "unreadable",
+      "failed"
      ]
     },
     "source": {
@@ -69,7 +70,7 @@
  "properties": {
   "schema_version": {
    "enum": [
-    1
+    2
    ]
   },
   "sample": {
@@ -329,6 +330,10 @@
           "ambiguous": {
            "type": "integer",
            "minimum": 0
+          },
+          "unclassified": {
+           "type": "integer",
+           "minimum": 0
           }
          }
         }
@@ -465,6 +470,169 @@
        }
       }
      ]
+    },
+    "pypgx": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "genes_total": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "genes_called": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "cyp2d6": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "cyrius": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "genotype": {
+           "type": "string"
+          },
+          "filter": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "hla": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "loci": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "gene",
+             "alleles",
+             "quality",
+             "low_confidence",
+             "withheld_from_pharmcat"
+            ],
+            "properties": {
+             "gene": {
+              "type": "string"
+             },
+             "alleles": {
+              "type": "array",
+              "items": {
+               "type": "string"
+              }
+             },
+             "quality": {
+              "type": "array",
+              "items": {
+               "type": "string"
+              }
+             },
+             "low_confidence": {
+              "type": "boolean"
+             },
+             "withheld_from_pharmcat": {
+              "type": "boolean"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "expansions": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "records": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "key_loci": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "locus",
+             "repeat_count"
+            ]
+           }
+          },
+          "stranger": {
+           "type": "boolean"
+          },
+          "stranger_outdated": {
+           "type": "boolean"
+          },
+          "flagged": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "locus",
+             "repeat_count",
+             "status"
+            ],
+            "properties": {
+             "locus": {
+              "type": "string"
+             },
+             "repeat_count": {
+              "type": "string"
+             },
+             "status": {
+              "type": "string"
+             }
+            }
+           }
+          },
+          "no_status": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        }
+       }
+      }
+     ]
     }
    }
   },
@@ -472,7 +640,8 @@
    "type": "object",
    "required": [
     "calls",
-    "agree"
+    "agree",
+    "consensus"
    ],
    "properties": {
     "calls": {
@@ -489,6 +658,35 @@
       "boolean",
       "null"
      ]
+    },
+    "consensus": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "required": [
+      "result",
+      "passed_to_pharmcat",
+      "reason",
+      "source"
+     ],
+     "properties": {
+      "result": {
+       "type": "string"
+      },
+      "passed_to_pharmcat": {
+       "type": "boolean"
+      },
+      "reason": {
+       "type": "string"
+      },
+      "source": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
     }
    }
   },

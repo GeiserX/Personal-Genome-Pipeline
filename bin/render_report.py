@@ -9,7 +9,8 @@
 With --sample-dir it first collects the summary (bin/collect_summary.py) and
 writes it to --json (default DIR/summary.json). Every number in both reports
 comes from that summary, so the two cannot disagree. A section whose result is
-from an earlier run (state "stale") is shown with that date and a STALE mark.
+from an earlier run (state "stale") is shown with that date and a STALE mark,
+and one whose step failed in the latest run (state "failed") says Failed.
 Standard library only.
 """
 import argparse
@@ -29,7 +30,49 @@ def stale_note(sec):
         return f"STALE: {sec['note']}"
     if sec["state"] == "unreadable":
         return f"could not be read: {sec['note']}"
+    if sec["state"] == "failed":
+        return f"FAILED: {sec['note']}"
     return ""
+
+
+# Sentences both reports print, kept to what the pipeline can back.
+CLINVAR_FREQ_NOTE = ("Population frequency is not checked here. Look up a homozygous P/LP hit in gnomAD "
+                     "before reading much into it.")
+HLA_NOTE = ("HLA typing from short-read WGS is approximate. If either HLA-A or HLA-B allele has a T1K quality "
+            "of 0 or less, that gene is not passed to PharmCAT (step 36).")
+EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, and a long expansion "
+           "cannot be sized. Disease thresholds: docs/interpreting-results.md.")
+TELOMERE_UNIT = "intratelomeric reads per million reads with 48-52% GC"
+TELOMERE_NOTE = (f"Relative telomere content ({TELOMERE_UNIT}), not a telomere length: compare it only with "
+                 "samples of a similar age sequenced on the same platform (docs/10-telomere-analysis.md).")
+PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry populations and predict less well for "
+                     "other ancestries, even with an ancestry-adjusted percentile.")
+
+
+def hla_text(locus):
+    """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
+    q = locus.get("quality") or []
+    parts = [a + (f" (quality {q[i]})" if i < len(q) and q[i] != "" else "") for i, a in enumerate(locus["alleles"])]
+    txt = " / ".join(parts) or "no call"
+    if locus.get("low_confidence"):
+        txt += "; low confidence (T1K quality 0 or below)"
+        if locus.get("withheld_from_pharmcat"):
+            txt += ", not passed to PharmCAT"
+    return txt
+
+
+def cyp2d6_verdict(c):
+    """Step 36's CYP2D6 verdict as one line, or '' without its table."""
+    v = c.get("consensus")
+    if not v:
+        return ""
+    where = "passed to PharmCAT" if v.get("passed_to_pharmcat") else "not passed to PharmCAT"
+    return f"{v.get('result') or '?'}, {where} ({v.get('reason') or 'no reason given'})"
+
+
+# The PharmCAT column is not a third caller: PharmCAT calls no CYP2D6 from a
+# VCF, it shows the call step 36 passed to it.
+CYP2D6_LABELS = {"PharmCAT": "PharmCAT (step 36's call)"}
 
 
 # A section the summary lacks (one written before the section existed).
@@ -68,9 +111,10 @@ def prs_note(d):
         low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
         return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
                 f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
-                "A percentile is not a risk. See docs/25-prs.md." + x)
+                f"A percentile is not a risk. {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
     return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
-            "cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). See docs/25-prs.md." + x)
+            f"cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). {PRS_ANCESTRY_NOTE} "
+            "See docs/25-prs.md." + x)
 
 
 # --- text ------------------------------------------------------------------------
@@ -97,6 +141,8 @@ def text_report(s):
         note = stale_note(sec)
         if note:
             w(f"  [{note}]")
+        if sec["state"] == "failed":
+            w("")
         return sec["state"] in ("ok", "stale")
 
     # QC
@@ -144,6 +190,7 @@ def text_report(s):
             for h in d["hits"][:50]:
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
                   f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+        w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
     if head("pharmcat", "Pharmacogenomics (PharmCAT)"):
@@ -158,7 +205,8 @@ def text_report(s):
         if d["parse_failed"]:
             w("  The PharmCAT report could not be parsed: see the CPIC report.")
         w(f"  Genes with a non-normal phenotype: {d['non_normal']}  More than one possible result: "
-          f"{d.get('ambiguous', 0)}  Not called: {d['not_called']}")
+          f"{d.get('ambiguous', 0)}  Not called: {d['not_called']}  "
+          f"Called without a function phenotype (no drug guidance): {d.get('unclassified', 0)}")
         for g in d["genes"]:
             if g["status"] in ("non-normal", "ambiguous"):
                 w(f"    {g['gene']:<10} {g['diplotype']:<28} {g['phenotype']}")
@@ -178,20 +226,24 @@ def text_report(s):
         w("")
 
     calls = s["cyp2d6"]["calls"]
-    if any(calls.values()):
+    verdict = cyp2d6_verdict(s["cyp2d6"])
+    if any(calls.values()) or verdict:
         w("## CYP2D6 across callers")
         w("---")
         for k, v in calls.items():
-            w(f"  {k:<9} {v or 'not run'}")
+            w(f"  {CYP2D6_LABELS.get(k, k):<26} {v or 'not run'}")
         agree = s["cyp2d6"]["agree"]
-        w("  Agreement: " + ("yes" if agree else "NO, review before acting on CYP2D6" if agree is False
-                              else "fewer than two callers have a call"))
+        w("  pypgx and Cyrius agree: " + ("yes" if agree else "NO, review before acting on CYP2D6" if agree is False
+                                          else "fewer than two usable calls"))
+        if verdict:
+            w(f"  Step 36: {verdict}")
         w("")
 
     if head("hla", "HLA Typing (T1K)"):
         for l in S["hla"]["data"]["loci"]:
-            w(f"    {l['gene']:<8} {' / '.join(l['alleles']) or 'no call'}")
+            w(f"    {l['gene']:<8} {hla_text(l)}")
         w(f"  HLA database: {s['databases']['hla_database'] or 'unknown'}")
+        w(f"  {HLA_NOTE}")
         w("")
 
     if head("prs", "Polygenic Risk Scores"):
@@ -225,11 +277,24 @@ def text_report(s):
         w(f"  Loci in output: {d['records']}")
         for l in d["key_loci"]:
             w(f"    {l['locus']:<8} {l['repeat_count']}")
-        w("  (See docs/interpreting-results.md for disease thresholds)")
+        if d.get("stranger_outdated"):
+            w("  Stranger's result is older than ExpansionHunter's: rerun step 9b. No locus is marked as normal or expanded.")
+        elif not d.get("stranger"):
+            w("  Stranger (step 9b) did not run: no locus is marked as normal or expanded.")
+        elif d.get("flagged"):
+            w(f"  Outside the normal range (Stranger): {len(d['flagged'])}")
+            for l in d["flagged"]:
+                w(f"    {l['locus']:<8} {l['repeat_count']}  {l['status']}")
+        else:
+            w("  Outside the normal range (Stranger): none")
+        if d.get("stranger") and d.get("no_status"):
+            w(f"  Loci without a Stranger status (not in its catalog): {d['no_status']}")
+        w(f"  {EH_NOTE}")
         w("")
 
-    if head("telomere", "Telomere Length (TelomereHunter)"):
-        w(f"  Telomere content: {S['telomere']['data']['tel_content']}")
+    if head("telomere", "Telomere content (relative, TelomereHunter)"):
+        w(f"  Telomere content: {S['telomere']['data']['tel_content']} {TELOMERE_UNIT}")
+        w(f"  {TELOMERE_NOTE}")
         w("")
 
     if head("roh", "Runs of Homozygosity"):
@@ -376,6 +441,11 @@ def stat(label, value):
     return f'    <div class="stat"><span class="label">{E(str(label))}</span><span class="value">{value}</span></div>'
 
 
+def small_note(text):
+    """A sentence under a card's numbers."""
+    return f'    <p style="font-size:13px;color:#555;margin-top:8px">{E(text)}</p>'
+
+
 def badge(text, colour):
     return f'<span class="badge badge-{colour}">{E(str(text))}</span>'
 
@@ -386,12 +456,14 @@ def done_badge(sec):
 
 
 def card(sec, title, body, full=False):
-    """A card for one section; a missing one shows 'Not run', a stale one its note."""
+    """A card for one section; a missing one shows 'Not run', a failed one
+    'Failed', a stale one its note."""
     lines = [f'  <div class="card{" full-width" if full else ""}">', f"    <h2>{E(title)}</h2>"]
-    if sec is not None and sec["state"] in ("stale", "unreadable"):
+    if sec is not None and sec["state"] in ("stale", "unreadable", "failed"):
         lines.append(f'    <div class="stale">{E(stale_note(sec))}</div>')
-    if sec is not None and sec["state"] in ("missing", "unreadable"):
-        lines.append(stat("Status", badge("Not run" if sec["state"] == "missing" else "Unreadable", "gray")))
+    if sec is not None and sec["state"] in ("missing", "unreadable", "failed"):
+        lines.append(stat("Status", {"missing": badge("Not run", "gray"), "failed": badge("Failed", "red")}
+                          .get(sec["state"], badge("Unreadable", "gray"))))
     else:
         lines += body
     lines.append("  </div>")
@@ -448,9 +520,12 @@ def html_report(s):
     c = S["clinvar"]["data"]
     n = c.get("count", 0)
     by = c.get("by_stars", {})
-    cv_body = [stat("ClinVar matches", badge(n, "yellow" if n > 5 else "green")),
+    # Never green: no hit is not an all-clear, and a hit is something to look
+    # at whatever its count, its genotype or its stars.
+    cv_body = [stat("ClinVar matches", badge(n, "yellow" if n else "gray")),
                stat("By stars (4/3/2/1/0)", E(" / ".join(str(by.get(k, 0)) for k in ("4", "3", "2", "1", "0")))),
-               stat("ClinVar file date", E(s["databases"]["clinvar_release"] or "unknown"))]
+               stat("ClinVar file date", E(s["databases"]["clinvar_release"] or "unknown")),
+               small_note(CLINVAR_FREQ_NOTE)]
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
 
     pg = S["pharmcat"]["data"]
@@ -467,7 +542,8 @@ def html_report(s):
     if not cp.get("parse_failed"):
         cpic_body += [stat("Genes with a non-normal phenotype", cp.get("non_normal", 0)),
                       stat("Genes with more than one possible result", cp.get("ambiguous", 0)),
-                      stat("Genes not called", cp.get("not_called", 0))]
+                      stat("Genes not called", cp.get("not_called", 0)),
+                      stat("Genes called without a function phenotype (no drug guidance)", cp.get("unclassified", 0))]
     else:
         cpic_body.append(stat("PharmCAT report", badge("could not be parsed", "red")))
     cpic_body.append(stat("Tip", '<span style="font-weight:normal;font-size:13px">Recommendations per gene: '
@@ -476,17 +552,23 @@ def html_report(s):
 
     calls = s["cyp2d6"]["calls"]
     agree = s["cyp2d6"]["agree"]
-    cy_body = [stat(k, E(v or "not run")) for k, v in calls.items()]
-    cy_body.append(stat("Agreement", badge("yes", "green") if agree else badge("no", "red") if agree is False
-                        else badge("fewer than two calls", "gray")))
+    cy_body = [stat(CYP2D6_LABELS.get(k, k), E(v or "not run")) for k, v in calls.items()]
+    cy_body.append(stat("pypgx and Cyrius agree", badge("yes", "green") if agree else badge("no", "red")
+                        if agree is False else badge("fewer than two usable calls", "gray")))
+    cons = s["cyp2d6"].get("consensus")
+    if cons:
+        cy_body.append(stat("Step 36", badge(cons.get("result") or "?", "green" if cons.get("passed_to_pharmcat")
+                                             else "yellow")))
+        cy_body.append(small_note(("Passed to PharmCAT: " if cons.get("passed_to_pharmcat") else "Not passed to PharmCAT: ")
+                                  + (cons.get("reason") or "no reason given")))
     a(["  <div class=\"card\">", "    <h2>CYP2D6 Across Callers</h2>"]
       + [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
-         for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] == "stale"]
+         for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] in ("stale", "failed")]
       + cy_body + ["  </div>"])
 
     hla = S["hla"]["data"]
-    a(card(S["hla"], "HLA Typing", [stat(l["gene"], E(" / ".join(l["alleles"]) or "no call")) for l in hla.get("loci", [])]
-           + [stat("HLA database", E(s["databases"]["hla_database"] or "unknown"))]))
+    a(card(S["hla"], "HLA Typing", [stat(l["gene"], E(hla_text(l))) for l in hla.get("loci", [])]
+           + [stat("HLA database", E(s["databases"]["hla_database"] or "unknown")), small_note(HLA_NOTE)]))
 
     m, dl, cn, sv = (S[k]["data"] for k in ("manta", "delly", "cnvpytor", "sv_consensus"))
     sv_body = [stat("Manta SVs (total / PASS)", f"{m.get('total', 'N/A')} / {m.get('pass', 'N/A')}"),
@@ -504,11 +586,26 @@ def html_report(s):
     a(card(S["cpsr"], "Cancer Predisposition", cpsr_body))
 
     eh = S["expansions"]["data"]
-    eh_body = [stat("ExpansionHunter", badge("Complete", "green"))]
-    if eh.get("key_loci"):
-        eh_body.append("    <table><tr><th>Locus</th><th>Repeat Count</th></tr>"
-                       + "".join(f"<tr><td>{E(l['locus'])}</td><td>{E(str(l['repeat_count']))}</td></tr>"
-                                 for l in eh["key_loci"]) + "</table>")
+    eh_body = [stat("Status", done_badge(S["expansions"]))]
+    if eh.get("stranger_outdated"):
+        eh_body.append(stat("Outside the normal range (Stranger)",
+                            badge("older than ExpansionHunter's result: rerun step 9b", "yellow")))
+    elif not eh.get("stranger"):
+        eh_body.append(stat("Outside the normal range (Stranger)", badge("not run", "gray")))
+    else:
+        fl = eh.get("flagged") or []
+        eh_body.append(stat("Outside the normal range (Stranger)", badge(len(fl), "yellow" if fl else "gray")))
+    rows = [(l["locus"], l["repeat_count"], l["status"]) for l in eh.get("flagged") or []]
+    rows += [(l["locus"], l["repeat_count"], "") for l in eh.get("key_loci") or []
+             if l["locus"] not in {r[0] for r in rows}]
+    if rows:
+        # The Stranger column only when it flagged a locus: an empty cell is a locus it did not flag.
+        st_col = bool(eh.get("flagged"))
+        eh_body.append("    <table><tr><th>Locus</th><th>Repeat Count</th>" + ("<th>Stranger</th>" if st_col else "")
+                       + "</tr>" + "".join(f"<tr><td>{E(x)}</td><td>{E(str(y))}</td>"
+                                         + (f"<td>{E(z)}</td>" if st_col else "") + "</tr>" for x, y, z in rows)
+                       + "</table>")
+    eh_body.append(small_note(EH_NOTE))
     a(card(S["expansions"], "Repeat Expansions", eh_body))
 
     r, hg, tl = S["roh"]["data"], S["haplogroup"]["data"], S["telomere"]["data"]
@@ -526,7 +623,8 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))]))
-    a(card(S["telomere"], "Telomere Length", [stat("Telomere content", E(str(tl.get("tel_content", "."))))]))
+    a(card(S["telomere"], "Telomere content (relative)",
+           [stat("Telomere content", E(str(tl.get("tel_content", ".")))), small_note(TELOMERE_NOTE)]))
 
     mi = S["mito"]["data"]
     a(card(S["mito"], "Mitochondrial Analysis", [stat("chrM variants (PASS)", mi.get("pass")),

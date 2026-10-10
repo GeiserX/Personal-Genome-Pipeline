@@ -73,6 +73,7 @@ This step screens against **Pathogenic and Likely_pathogenic variants only** —
 - The reports show ClinVar's review status (`CLNREVSTAT`), but a status such as "criteria provided, single submitter" still rests on one lab. Always check the full ClinVar entry before acting on any result.
 - Matching is by allele after both files are split and left-aligned, in the bash script and in the Nextflow module alike. A complex variant that the caller writes differently from ClinVar (for example an MNP against two SNVs) can still be missed.
 - The screen sees only small variants in the VCF. Copy-number losses and gene deletions (for example SMN1 in spinal muscular atrophy) are invisible to it.
+- Population frequency is not checked. A common allele with a P/LP record is often low-penetrance or misclassified, so look up a homozygous P/LP hit in gnomAD before reading much into it. The report's hit-count badge is never green for this reason.
 - Results are **research-grade**, not clinical diagnoses. Do not make medical decisions based solely on this output.
 
 ## Important Notes
