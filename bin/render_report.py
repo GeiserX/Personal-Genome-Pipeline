@@ -594,8 +594,11 @@ def html_report(s):
     rows += [(l["locus"], l["repeat_count"], "") for l in eh.get("key_loci") or []
              if l["locus"] not in {r[0] for r in rows}]
     if rows:
-        eh_body.append("    <table><tr><th>Locus</th><th>Repeat Count</th><th>Stranger</th></tr>"
-                       + "".join(f"<tr><td>{E(x)}</td><td>{E(str(y))}</td><td>{E(z)}</td></tr>" for x, y, z in rows)
+        # The Stranger column only when it flagged a locus: an empty cell is a locus it did not flag.
+        st_col = bool(eh.get("flagged"))
+        eh_body.append("    <table><tr><th>Locus</th><th>Repeat Count</th>" + ("<th>Stranger</th>" if st_col else "")
+                       + "</tr>" + "".join(f"<tr><td>{E(x)}</td><td>{E(str(y))}</td>"
+                                         + (f"<td>{E(z)}</td>" if st_col else "") + "</tr>" for x, y, z in rows)
                        + "</table>")
     eh_body.append(small_note(EH_NOTE))
     a(card(S["expansions"], "Repeat Expansions", eh_body))
