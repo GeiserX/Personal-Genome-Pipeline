@@ -139,6 +139,8 @@ PLATFORM=hifi ./scripts/02b-alignment-longread.sh your_sample
 
 Output: `${GENOME_DIR}/your_sample/aligned_longread/your_sample_sorted.bam`
 
+The script writes the BAM under a temporary name, indexes it, checks it with `samtools quickcheck` and only then renames it, so a killed run leaves no `your_sample_sorted.bam` behind for Clair3 or Sniffles2 to read. `samtools sort` uses `THREADS` threads (default 8) with 1 GB each, and spills to `aligned_longread/your_sample.sort_tmp/`, which is removed at the end.
+
 The script auto-detects input files in this order:
 1. `fastq/your_sample.fastq.gz`
 2. `fastq/your_sample_lr.fastq.gz`

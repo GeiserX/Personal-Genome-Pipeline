@@ -6,9 +6,9 @@
 # Reads go minimap2 -> samtools fixmate -m -> sort -> markdup, so PCR and
 # optical duplicates carry the 0x400 flag: GATK, FreeBayes, Octopus and the SV
 # and depth steps would otherwise count them as independent reads.
-# The BAM is written under a temporary name, indexed and checked with
-# samtools quickcheck, and only then renamed: a killed run leaves no
-# <sample>_sorted.bam behind for the next run to trust.
+# markdup writes the BAM and its index together under a temporary name; the
+# BAM is checked with samtools quickcheck and only then renamed: a killed run
+# leaves no <sample>_sorted.bam behind for the next run to trust.
 # THREADS (default 8) sets the CPUs of the aligner and of samtools.
 set -euo pipefail
 
@@ -87,6 +87,10 @@ fi
 # and callers take the sample name from its SM field.
 # samtools sort spills to SORT_TMP in the sample directory, not to the
 # container's own disk; -m is per thread, so the container gets THREADS + 4 GB.
+# fixmate -@ decodes the SAM stream on THREADS threads; the records it writes
+# are the same, in the same order. markdup --write-index builds the index
+# while it writes the BAM, so nothing reads the finished BAM again; the
+# ##idx##<name>.bai suffix makes it a .bai (without it samtools writes a .csi).
 # The sr index holds about three times the distinct minimizers of the default
 # one: on the test reference (1.8 Gb, 57% of GRCh38) minimap2 peaked at 10 GB
 # with it against 5.5 GB before, so the aligner's cap is 32 GB, not 16.
@@ -107,22 +111,21 @@ run_in \
   "${SAMTOOLS_IMAGE}" \
   bash -euo pipefail -c '
     threads=$1 tmp=$2 out=$3
-    samtools fixmate -u -m - - \
+    samtools fixmate -@ "$threads" -u -m - - \
       | samtools sort -u -@ "$threads" -m 1G -T "${tmp}/sort" - \
-      | samtools markdup -@ "$threads" -T "${tmp}/markdup" - "$out"' \
+      | samtools markdup -@ "$threads" --write-index -T "${tmp}/markdup" - "${out}##idx##${out}.bai"' \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
-# Step 3: Index and check, then rename. The old index goes first, so an index
-# never sits next to a BAM it was not built from.
-echo "Indexing and checking BAM..."
-run_in \
-  --cpus "${THREADS}" --memory 2g \
-  "${SAMTOOLS_IMAGE}" \
-  samtools index -@ "${THREADS}" "$(cpath "$TMP_BAM")"
+# Step 3: Check, then rename. The old index goes first, so an index never
+# sits next to a BAM it was not built from. markdup finishes the index just
+# before the BAM's last block, so the touch makes the index the newer file.
+echo "Checking BAM..."
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
+[ -s "${TMP_BAM}.bai" ] || { echo "ERROR: samtools markdup wrote no index" >&2; exit 1; }
+touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"
