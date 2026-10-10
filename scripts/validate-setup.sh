@@ -105,6 +105,41 @@ check_bam_quickcheck() {
   fi
 }
 
+# check_vcf_ref_bases: the sample VCF's header does not show its build, so
+# compare the REF bases of its first 1000 records with REF_FASTA. bcftools norm
+# -c x drops a record whose REF differs from the reference, so the records it
+# keeps give the count. On GRCh38 none or almost none differ; on another build
+# most do. Over 5% fails (a line drawn here, not measured). Only this script
+# runs this check: VCF_PRECHECK in the Nextflow pipeline reads the header only.
+check_vcf_ref_bases() {
+  local counts n kept bad v="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
+  counts=$(run_in "${BCFTOOLS_IMAGE}" sh -c "set -e
+    bcftools view -h '${v}' > /tmp/in.vcf
+    bcftools view -H '${v}' | head -n 1000 >> /tmp/in.vcf
+    bcftools norm -c x -f '${REF_FASTA_C}' -o /tmp/kept.vcf /tmp/in.vcf 2>/dev/null
+    echo \"\$(grep -vc '^#' /tmp/in.vcf) \$(grep -vc '^#' /tmp/kept.vcf)\"" 2>/dev/null) || counts=""
+  read -r n kept <<< "$counts" || true
+  if ! [[ "${n:-}" =~ ^[0-9]+$ && "${kept:-}" =~ ^[0-9]+$ ]]; then
+    warn "Could not compare the VCF's REF bases with the reference (bcftools norm failed). Check the build yourself:"
+    echo "       docs/vendor-guide.md, Genome Build."
+    return 0
+  fi
+  if [ "$n" -eq 0 ]; then
+    info "VCF has no records to compare with the reference"
+    return 0
+  fi
+  bad=$((n - kept))
+  if [ "$bad" -eq 0 ]; then
+    pass "VCF REF bases match the reference in all of the first ${n} records"
+  elif [ $((bad * 20)) -gt "$n" ]; then
+    fail "VCF REF bases differ from the reference in ${bad} of the first ${n} records: the VCF is not on GRCh38"
+    echo "       The pipeline needs GRCh38, and every position would be read on the wrong build. Get a GRCh38"
+    echo "       VCF from your provider, or start from the FASTQ (docs/vendor-guide.md, Genome Build)."
+  else
+    warn "VCF REF bases differ from the reference in ${bad} of the first ${n} records"
+  fi
+}
+
 ###############################################################################
 # 1. System Requirements
 ###############################################################################
@@ -206,6 +241,13 @@ fi
 # --- Disk space ---
 # Check free space in GENOME_DIR if set, otherwise CWD
 CHECK_DIR="${GENOME_DIR:-$(pwd)}"
+FREE_GB=""
+# A run that stopped keeps its Nextflow work directory, and -resume needs it:
+# the space it holds is not lost, so under 200 GB a resume is a warning.
+RESUME_WORK=""
+if [ -n "$SAMPLE" ] && [ -n "${GENOME_DIR:-}" ] && [ -d "${GENOME_DIR}/${SAMPLE}/nextflow/work" ]; then
+  RESUME_WORK="${GENOME_DIR}/${SAMPLE}/nextflow/work"
+fi
 if command -v df &>/dev/null; then
   # Use 1K blocks for portability (works on Linux and macOS)
   FREE_KB=$(df -Pk "$CHECK_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -215,8 +257,14 @@ if command -v df &>/dev/null; then
       pass "Free disk space: ${FREE_GB} GB in $(df -Pk "$CHECK_DIR" | awk 'NR==2 {print $6}')"
     elif [ "$FREE_GB" -ge 200 ]; then
       warn "Free disk space: ${FREE_GB} GB — 500 GB+ recommended for full pipeline per sample"
+    elif [ -n "$RESUME_WORK" ]; then
+      warn "Free disk space: ${FREE_GB} GB, under the 200 GB minimum, but ${RESUME_WORK} exists: a resume of an earlier run."
+      echo "       -resume reuses every task that finished, so it writes only what the unfinished tasks"
+      echo "       write. A task that must start over needs its full space again: a redone alignment"
+      echo "       writes the BAM (80-120 GB) into work/ and a copy into aligned/. Deleting work/ frees"
+      echo "       its space but makes the next run start from the beginning."
     else
-      fail "Free disk space: ${FREE_GB} GB — critically low. Need 500 GB+ per sample."
+      fail "Free disk space: ${FREE_GB} GB, under the 200 GB minimum (500 GB+ recommended per sample)."
     fi
   fi
 fi
@@ -564,6 +612,22 @@ else
     echo "       Pull all missing images at once:"
     echo "         $(printf 'docker pull %s && ' "${MISSING_IMAGES[@]}" | sed 's/ && $//')  "
   fi
+
+  # An opt-in step's image (`# optional` in versions.env) matters once its
+  # data is installed: setup.sh --parascopy-data and --yleaf-data pull it.
+  if [ -n "${GENOME_DIR:-}" ]; then
+    for opt in "PARASCOPY_IMAGE|35|reference/parascopy-${PARASCOPY_DATA_VERSION}/homology_table/GRCh38.bed.gz|parascopy-data" \
+               "YLEAF_IMAGE|37|reference/yleaf-${YLEAF_DATA_VERSION}/data/hg38/new_positions.txt|yleaf-data"; do
+      IFS='|' read -r var step data flag <<< "$opt"
+      [ -s "${GENOME_DIR}/${data}" ] || continue
+      if "$CONTAINER_ENGINE" image inspect "${!var}" &>/dev/null; then
+        pass "Opt-in step ${step}: its data and image ${!var} are present"
+      else
+        warn "Opt-in step ${step}: its data is installed but its image is not pulled; the step would pull it mid-run"
+        echo "         ./scripts/setup.sh --${flag} ${GENOME_DIR}   (or: docker pull ${!var})"
+      fi
+    done
+  fi
 fi
 
 ###############################################################################
@@ -703,37 +767,41 @@ if [ -n "$SAMPLE" ]; then
     fi
 
     if $HAS_VCF && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
-      VCF_CONTIG=$(run_in "${BCFTOOLS_IMAGE}" \
-        bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
-        grep "^##contig=<ID=chr1," | head -1 || echo "")
-      if [ -n "$VCF_CONTIG" ]; then
-        VCF_CHR1_LEN=$(echo "$VCF_CONTIG" | sed 's/.*length=//' | tr -d '>' || echo "0")
-        if [ "$VCF_CHR1_LEN" = "248956422" ]; then
-          pass "VCF genome build: GRCh38"
-        elif [ "$VCF_CHR1_LEN" = "249250621" ]; then
-          fail "VCF genome build: GRCh37/hg19 — not compatible with this pipeline"
-        fi
+      VCF_HEADER_OK=false
+      if VCF_HEADER=$(run_in "${BCFTOOLS_IMAGE}" \
+          bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null); then
+        VCF_HEADER_OK=true
       else
-        # Check for non-chr prefix
-        VCF_NO_CHR=$(run_in "${BCFTOOLS_IMAGE}" \
-          bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | \
-          grep "^##contig=<ID=1," | head -1 || echo "")
-        if [ -n "$VCF_NO_CHR" ]; then
-          fail "VCF uses chromosome names WITHOUT 'chr' prefix (likely GRCh37)"
-          echo "       This pipeline requires GRCh38 with 'chr' prefix."
+        fail "Could not read the VCF header (bcftools view -h failed): the VCF is unreadable or not a VCF"
+      fi
+    fi
+
+    # Genome build from the header: chr1's ##contig length. When the header
+    # cannot tell, compare the REF bases of the first records with the reference.
+    if $HAS_VCF && ${VCF_HEADER_OK:-false}; then
+      VCF_CHR1_LEN=$(grep -m1 "^##contig=<ID=chr1," <<< "$VCF_HEADER" | grep -oE '[<,]length=[0-9]+' | cut -d= -f2 || true)
+      if [ "$VCF_CHR1_LEN" = "248956422" ]; then
+        pass "VCF genome build: GRCh38"
+      elif [ "$VCF_CHR1_LEN" = "249250621" ]; then
+        fail "VCF genome build: GRCh37/hg19 — not compatible with this pipeline"
+      elif grep -q "^##contig=<ID=1," <<< "$VCF_HEADER"; then
+        fail "VCF uses chromosome names WITHOUT 'chr' prefix (likely GRCh37)"
+        echo "       This pipeline requires GRCh38 with 'chr' prefix."
+      else
+        if [ -n "$VCF_CHR1_LEN" ]; then
+          warn "VCF chr1 length (${VCF_CHR1_LEN}) is neither GRCh38's (248956422) nor GRCh37's (249250621)"
+        elif grep -q '^##contig=' <<< "$VCF_HEADER"; then
+          warn "VCF header has no chr1 length, so it does not show the genome build"
+        else
+          warn "VCF header has no ##contig lines, so it does not show the genome build"
         fi
+        check_vcf_ref_bases
       fi
 
       # One sample per run: a joint-called VCF holds one column per person,
       # and the steps would mix their genotypes.
-      VCF_N_SAMPLES=0
-      if VCF_HEADER=$(run_in "${BCFTOOLS_IMAGE}" \
-          bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null); then
-        VCF_SAMPLES=$(vcf_header_samples <<< "$VCF_HEADER")
-        VCF_N_SAMPLES=$(grep -c . <<< "$VCF_SAMPLES" || true)
-      else
-        fail "Could not read the VCF header (bcftools view -h failed): the VCF is unreadable or not a VCF"
-      fi
+      VCF_SAMPLES=$(vcf_header_samples <<< "$VCF_HEADER")
+      VCF_N_SAMPLES=$(grep -c . <<< "$VCF_SAMPLES" || true)
       if [ "$VCF_N_SAMPLES" -gt 1 ]; then
         VCF_NAMES=$(head -n 5 <<< "$VCF_SAMPLES" | paste -sd, - | sed 's/,/, /g')
         if [ "$VCF_N_SAMPLES" -gt 5 ]; then VCF_NAMES="${VCF_NAMES}, ..."; fi
@@ -751,20 +819,37 @@ if [ -n "$SAMPLE" ]; then
       fi
     fi
 
-    # Suggest pipeline entry path
+    # A FASTQ start writes far more than a BAM or VCF start. Until
+    # <sample>/nextflow/work is deleted it holds the trimmed reads (60-90 GB),
+    # the alignment intermediate (119 GB in one observed 30x run) and the BAM
+    # (80-120 GB), and aligned/ holds the BAM's published copy: up to about
+    # 450 GB with the upper figures (docs/hardware-requirements.md, 01b-fastp-qc.md).
+    if $HAS_FASTQ && ! $HAS_BAM && ! $HAS_VCF && [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt 450 ]; then
+      warn "FASTQ start with ${FREE_GB} GB free: alignment alone can write about 450 GB before you delete work/"
+      echo "       Trimmed reads 60-90 GB, alignment intermediate 119 GB in one observed 30x run, the BAM"
+      echo "       80-120 GB in ${SAMPLE}/nextflow/work and its copy in ${SAMPLE}/aligned. Free more space,"
+      echo "       or put GENOME_DIR on a larger disk."
+    fi
+
+    # Suggest pipeline entry path: the whole pipeline first, then the first single step
     echo ""
+    RUN_ALL_HINT="       Whole pipeline:  ./scripts/run-all.sh ${SAMPLE} <male|female>"
     if $HAS_ORA && ! $HAS_FASTQ && ! $HAS_BAM && ! $HAS_VCF; then
       info "Suggested: Path D (ORA -> FASTQ -> BAM -> VCF)"
-      echo "       Start with:  ./scripts/01-ora-to-fastq.sh ${SAMPLE}"
+      echo "       First:  ./scripts/01-ora-to-fastq.sh ${SAMPLE}   (run-all.sh does not read ORA)"
+      echo "       Then:   ./scripts/run-all.sh ${SAMPLE} <male|female>"
     elif $HAS_FASTQ && ! $HAS_BAM && ! $HAS_VCF; then
       info "Suggested: Path A (FASTQ -> BAM -> VCF)"
-      echo "       Start with:  ./scripts/02-alignment.sh ${SAMPLE}"
+      echo "$RUN_ALL_HINT"
+      echo "       or step by step, starting with:  ./scripts/02-alignment.sh ${SAMPLE}"
     elif $HAS_BAM && ! $HAS_VCF; then
       info "Suggested: Path B (BAM -> VCF)"
-      echo "       Start with:  ./scripts/03-deepvariant.sh ${SAMPLE}"
+      echo "$RUN_ALL_HINT"
+      echo "       or step by step, starting with:  ./scripts/03-deepvariant.sh ${SAMPLE}"
     elif $HAS_VCF; then
       info "Suggested: Path C (VCF already available)"
-      echo "       Start with:  ./scripts/06-clinvar-screen.sh ${SAMPLE}"
+      echo "$RUN_ALL_HINT"
+      echo "       or step by step, starting with:  ./scripts/06-clinvar-screen.sh ${SAMPLE}"
       if $HAS_BAM; then
         echo "       BAM also available — all pipeline steps can run."
       else
