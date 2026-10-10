@@ -107,7 +107,7 @@ run_in \
   "${SAMTOOLS_IMAGE}" \
   bash -euo pipefail -c '
     threads=$1 tmp=$2 out=$3
-    samtools fixmate -u -m - - \
+    samtools fixmate -@ "$threads" -u -m - - \
       | samtools sort -u -@ "$threads" -m 1G -T "${tmp}/sort" - \
       | samtools markdup -@ "$threads" -T "${tmp}/markdup" - "$out"' \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"

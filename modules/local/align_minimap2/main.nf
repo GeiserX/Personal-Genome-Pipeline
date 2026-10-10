@@ -126,7 +126,7 @@ process ALIGN_MARKDUP {
     """
     mkdir -p sort_tmp
     gzip -dc ${sam} \\
-        | samtools fixmate -u -m - - \\
+        | samtools fixmate -@ ${task.cpus} -u -m - - \\
         | samtools sort -u -@ ${task.cpus} -m 1G -T sort_tmp/sort - \\
         | samtools markdup -@ ${task.cpus} -T sort_tmp/markdup - ${meta.id}_sorted.bam
     rm -rf sort_tmp

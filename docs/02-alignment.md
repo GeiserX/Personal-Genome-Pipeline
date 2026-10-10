@@ -51,7 +51,7 @@ minimap2 -a -x sr -t 16 \
   "$MMI" \
   ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
   ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
-| samtools fixmate -u -m - - \
+| samtools fixmate -@ 16 -u -m - - \
 | samtools sort -u -@ 16 -m 1G - \
 | samtools markdup -@ 16 - "${OUT%.bam}.tmp.bam"
 
