@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # run-all.sh: the whole pipeline for one sample: validate-setup.sh, then main.nf with -resume (a rerun redoes only what changed).
 # Usage: GENOME_DIR=/data ./scripts/run-all.sh <sample> <male|female> [nextflow options]
-#   Options after the sex go to `nextflow run` as given (--sex_check warn); --max_cpus (THREADS) and --max_memory default to the host's.
+#   Options after the sex go to `nextflow run` as given (--sex_check warn), except -bg. --max_cpus (THREADS) and --max_memory
+#   cap each task (default: the host's); they do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM.
+#   A full run on 8 CPUs can take more than a day: start it inside tmux or screen, or with nohup. A closed terminal stops
+#   it, and -resume then restarts the task that was running (DeepVariant is one task).
 # Needs Docker, bash 4.4+, Java 17+ and Nextflow (NEXTFLOW_VERSION in versions.env). Results: GENOME_DIR/<sample>/.
 # Input, first match: aligned/<sample>_sorted.bam with .bai (plus vcf/<sample>.vcf.gz with .tbi: not called
 #   again, and the gVCF beside it, vcf/<sample>.g.vcf.gz with .tbi, goes to PharmCAT and PRS); fastq/<sample>_R1.fastq.gz
@@ -13,7 +16,11 @@
 #   scores) and PGSC_CALC_DIR (--pgsc_calc) as for the single steps; the panel and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
-#   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report. A step without its data or BAM is skipped.
+#   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report, also after a failed pipeline.
+#   A step without its data or BAM is skipped. A report-only tool whose task fails is skipped, and its step is marked
+#   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem,
+#   you passed no -w, -c or --publish_dir_mode, and you run as root or Linux's fs.protected_hardlinks is 0 (then a user
+#   may link the tasks' root-owned files).
 set -euo pipefail
 case "${1:-}" in -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;; esac
 SAMPLE=${1:-} SEX=${2:-}
@@ -21,6 +28,8 @@ SAMPLE=${1:-} SEX=${2:-}
   [ -z "$SEX" ] || echo "ERROR: sex must be 'male' or 'female', got '${SEX}'."; } >&2; exit 2; }
 ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404)) || { echo "ERROR: run-all.sh needs bash 4.4 or later (this is ${BASH_VERSION}); on macOS: brew install bash" >&2; exit 2; }
 shift 2; SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) USER_THREADS=${THREADS:-}
+# With -bg nextflow returns at once, and the steps would be recorded and the reports written before the run ends.
+for a in "$@"; do [ "$a" != -bg ] || { echo "ERROR: run-all.sh does not take -bg: it waits for the pipeline to record each step and write the reports. Run it inside tmux or screen, or with nohup." >&2; exit 2; }; done
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "${SCRIPT_DIR}/lib/common.sh"
@@ -40,13 +49,14 @@ STATUS="${LOG_DIR}/run_status.tsv"  # bin/collect_summary.py marks results older
 printf '# run-all.sh: when this run started and how each step ended\nmeta\tstarted_epoch\t%s\nmeta\tstarted_utc\t%s\nmeta\tdeclared_sex\t%s\n' \
   "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" > "$STATUS"
 NF=() SEL=() RUNS=() KNOWN="" OPTIN=()  # every step of a default run: it runs, or it is skipped with the reason
+declare -A TOOL_OF=()                   # step number -> its --tools name, for the steps that run
 need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: ${f#"$G"/}"; return; }; done; }
 optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 35 37 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 35 37 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
-  if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}"); printf '  %-28s runs\n' "$1"; return 0; fi
+  if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}") TOOL_OF[${1%% *}]=$2; printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
 }
 arg() { [ ! -e "$2" ] || NF+=("$1" "$2"); }  # arg --param FILE: pass FILE when it exists
@@ -120,23 +130,55 @@ arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")
 M=$(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo 2>/dev/null || echo $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 )))
 [[ " $* " == *" --max_memory"* ]] || [ "${M:-0}" -lt 1 ] || NF+=(--max_memory "${M}.GB")
+# Publish by hard link when it is sure to work: the BAM and every other output are then stored once, not twice.
+# Nextflow does not fall back to a copy when a link fails; the run stops. The tasks run as root (the docker profile)
+# and their files can stay root's, and Linux lets another user link a file it does not own only when
+# fs.protected_hardlinks is 0. So: root or protected_hardlinks 0, and a probe link from work/ to GENOME_DIR that works.
+# The probe only sees the default work/: with -w, -work-dir, NXF_WORK, or a -c/-config that may set workDir, keep the copy.
+if [[ " $* " != *" --publish_dir_mode"* && " $* " != *" -w "* && " $* " != *" -work-dir"* && " $* " != *" -c "* \
+   && " $* " != *" -config "* ]] && [ -z "${NXF_WORK:-}" ] \
+   && { [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 0 ]; }; then
+  LP="${S}/nextflow/work/.pgp-link-probe.$$"
+  mkdir -p "${S}/nextflow/work" && : > "$LP" && ln "$LP" "${S}/.pgp-link-probe.$$" 2>/dev/null && ln "$LP" "${G}/.pgp-link-probe.$$" 2>/dev/null \
+    && NF+=(--publish_dir_mode link)
+  rm -f "$LP" "${S}/.pgp-link-probe.$$" "${G}/.pgp-link-probe.$$"
+fi
 if on SKIP_TRIM; then NF+=(--skip_trim true); fi
 for v in GRIDSS:04b-gridss IMPUTATION:14-imputation-prep SOMATIC:29-mutect2-somatic; do if on "${v%%:*}"; then OPTIN+=("${v#*:}.sh"); fi; done
 for c in ${C//,/ }; do OPTIN+=("$(cd "$SCRIPT_DIR" && compgen -G "03[a-d]-${c}*.sh")") || { echo "ERROR: unknown caller '${c}' in EXTRA_CALLERS (gatk, freebayes, strelka2, octopus)" >&2; exit 2; }; done
 if ! on BENCHMARK; then :; elif [ -n "$C" ] || compgen -G "${S}/vcf_*/${SAMPLE}.vcf.gz" >/dev/null || [ -f "${S}/vcf_strelka2/results/variants/variants.vcf.gz" ]; then OPTIN+=(benchmark-variants.sh)
 else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS, or run a 03a-03d script first)"; fi
-[ -z "${MAX_JOBS:-}" ] || echo "NOTE: MAX_JOBS is no longer read: Nextflow schedules by --max_cpus (THREADS) and --max_memory."
+[ -z "${MAX_JOBS:-}" ] || echo "NOTE: MAX_JOBS is no longer read. --max_cpus (THREADS) and --max_memory cap each task; Nextflow fills the machine's CPUs and RAM."
 [ -z "${ANCESTRY:-}" ] || echo "NOTE: ANCESTRY is no longer read: step 26 runs in the pipeline whenever the ancestry panel is installed (setup.sh --ancestry-panel)."
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
+FT="${S}/nextflow/failed_tasks.tsv"; rm -f "$FT"  # main.nf writes it when a task failed
 rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker -resume --input "$SHEET" --reference "$REF_FASTA" \
   --outdir "$G" --tools "$(IFS=,; echo "${SEL[*]}")" "${NF[@]}" "$@") || rc=$?
-[ "$rc" -eq 0 ] || { echo "ERROR: the pipeline failed (exit ${rc}): see above and ${S}/nextflow/.nextflow.log. Fix the cause and run the same command; -resume reruns only what did not finish." >&2; exit "$rc"; }
-failed=0; for t in "${RUNS[@]}"; do printf 'step\t%s\tok\n' "$t" >> "$STATUS"; done
+# Each failed task's step is 'failed'. A report-only tool's failure is ignored by the pipeline (nextflow.config), which then
+# goes on; any other failure stops it, and then every step it started that is not failed is 'not finished' (a report
+# section whose file this run wrote still shows as current). Stranger reads ExpansionHunter's calls, so it does not run
+# when ExpansionHunter failed.
+declare -A BAD=(); failed=0
+while IFS=$'\t' read -r p st; do
+  [ "$p" != process ] && [ -n "$p" ] || continue
+  p=${p##*:}; case "$p" in Y_*) t=y_haplogroup ;; *) t=${p,,} ;; esac
+  [[ " ${SEL[*]} " == *" ${t} "* ]] || { echo "  ${p}: ${st}" >&2; continue; }
+  BAD[$t]=1 failed=1 rest=$(IFS=,; echo "${SEL[*]}"); rest=",${rest},"; rest=${rest/,${t},/,}; rest=${rest#,}
+  echo "  ${t} (${p}) failed$([ "$st" != ignored ] || echo ', skipped'): see ${S}/nextflow/.nextflow.log. To run without it: TOOLS=${rest%,}" >&2
+done < <(cat "$FT" 2>/dev/null)
+for t in "${RUNS[@]}"; do
+  r=ok; [ "$rc" -eq 0 ] || r="not finished"; [ -z "${BAD[${TOOL_OF[$t]:-none}]:-}" ] || r=failed
+  [ "${TOOL_OF[$t]:-}" != stranger ] || [ -z "${BAD[expansion_hunter]:-}" ] || r="skipped (expansion_hunter failed)"
+  printf 'step\t%s\t%s\n' "$t" "$r" >> "$STATUS"
+done
+# The reports are written after a failed pipeline too: they show what finished and mark older results stale.
+[ "$rc" -eq 0 ] || { echo "ERROR: the pipeline failed (exit ${rc}): see above and ${S}/nextflow/.nextflow.log. Fix the cause and run the same command; -resume reruns only what did not finish. Writing the reports of what finished." >&2; OPTIN=(); }
 for sc in "${OPTIN[@]}" 24-html-report.sh generate-report.sh; do
   [ "$sc" != 24-html-report.sh ] || GENOME_DIR="$G" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" || true
   r=ok; echo "[${sc%.sh}] log: ${LOG_DIR}/${sc%.sh}.log"; bash "${SCRIPT_DIR}/${sc}" "$SAMPLE" > "${LOG_DIR}/${sc%.sh}.log" 2>&1 || { r=failed failed=1; echo "  FAILED"; }
   if [[ "$sc" == [0-9]*-*.sh && "$sc" != 24-* ]]; then printf 'step\t%s\t%s\n' "${sc%%-*}" "$r" >> "$STATUS"; fi
 done
+[ "$rc" -eq 0 ] || exit "$rc"
 echo "Done: results in ${S}/, the HTML report ${S}/${SAMPLE}_report.html, the text report ${S}/${SAMPLE}_report.txt"
 exit "$failed"

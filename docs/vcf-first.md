@@ -15,6 +15,7 @@ Everything that reads the aligned reads has nothing to work on, so it does not r
 
 Before any analysis, `VCF_PRECHECK` reads each VCF once. It stops the run, naming the sample and the fix, when:
 
+- **the file holds more than one sample.** One samplesheet row is one person, and a joint-called family VCF has a genotype column per person, so the steps would mix them. The message gives the sample count, the first five names and the command that keeps one person's column: `bcftools view -s <name> -a -c 1 -Oz -o <name>.vcf.gz <file>`, then `bcftools index -t <name>.vcf.gz`. Give each person their own row.
 - **no contig is named the chr way.** The pipeline needs GRCh38 names: `chr1` to `chr22`, `chrX`, `chrY`, `chrM`. A file named `1`, `2`, `MT` (Ensembl style) would give an empty mitochondrial haplogroup and a wrong ROH summary, both without an error. Step 2 below renames them.
 - **the file is a gVCF and `pharmcat` is selected.** PharmCAT refuses a gVCF. A gVCF also lists the stretches where you match the reference ("reference blocks": ALT `<*>`, `<NON_REF>` or `.` with an `END`). PharmCAT also refuses any file whose name contains `.g.vcf` or `.genomic.vcf`, even a plain one, so the check stops on the name too. Step 3 below removes the blocks.
 - **no record has FILTER=PASS.** See [FILTER=PASS required](nextflow.md#filterpass-required).

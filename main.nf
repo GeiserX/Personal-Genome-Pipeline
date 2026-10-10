@@ -176,6 +176,12 @@ workflow {
         if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
             error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
         }
+        // CPSR, bin/pgx_parse.py and bin/collect_summary.py take the id as an
+        // argument value, and argparse reads '-x' as an option. (CPSR's 3 to
+        // 40 characters are handled by bin/cpsr_sample_id.)
+        if (row.sample.startsWith('-')) {
+            error "Sample name '${row.sample}' starts with '-', which tools read as an option. Start it with a letter or digit."
+        }
         // Sample ids name the output directory and key every per-sample join
         if (!seen_samples.add(row.sample)) {
             error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
@@ -281,8 +287,12 @@ workflow {
     ch_gvcf      = ch_gvcf_given.mix(UPSTREAM.out.gvcf)
 
     // ─── Input check ────────────────────────────────────────────────────
-    // VCF_PRECHECK reads each VCF once before any analysis. Two problems stop
-    // the run here, with the fix in the message:
+    // VCF_PRECHECK reads each VCF once before any analysis. Three problems
+    // stop the run, with the fix in the message:
+    //   - more than one sample column (a joint-called family VCF): the steps
+    //     would mix people. VCF_PRECHECK itself stops on it, with the sample
+    //     count, the first names and the `bcftools view -s` command that keeps
+    //     one sample;
     //   - no contig is chr-named (1, MT): the mito haplogroup comes out empty
     //     and chrX leaks into the ROH summary, both with exit 0;
     //   - a gVCF (or a file named like one) with pharmcat selected: PharmCAT
@@ -563,8 +573,9 @@ workflow {
     // Per-sample report inputs: the sample's VCF, and the output files of the
     // steps that ran for it, as one list (HTML_REPORT links each where
     // bin/collect_summary.py reads it). remainder: true keeps a sample a step
-    // did not run for; that step's slot is null and drops out of the list. The
-    // join also makes the report wait for every selected step it shows.
+    // did not run for, or whose task failed and was ignored; that step's slot
+    // is null and drops out of the list. The join also makes the report wait
+    // for every selected step it shows, the SV consensus merge included.
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -583,6 +594,18 @@ workflow {
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.hla_alleles.map    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.expansion_vcf.map  { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.stranger_vcf.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.manta_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.delly_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.cnvpytor_calls.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.merged_sv.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pypgx_summary.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cyrius_results.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 
@@ -621,17 +644,35 @@ workflow {
     // every run under 25.10), so the completion message never printed. Local
     // variables are resolved where the closure is written, so the handler
     // reads only these.
-    def run_info = workflow
-    def run_log  = log
-    def outdir   = params.outdir
+    //
+    // A process with a failed task is named, at the end and in
+    // failed_tasks.tsv in the launch directory (process, then 'ignored' for a
+    // report-only tool nextflow.config lets fail, or 'failed'): run-all.sh
+    // marks that step failed. A run with an ignored task still exits 0, so it
+    // does not say "completed successfully".
+    def run_info   = workflow
+    def run_log    = log
+    def outdir     = params.outdir
+    def tasks_file = file("${workflow.launchDir}/failed_tasks.tsv")
     run_info.onComplete {
-        if (run_info.success) {
+        def ignored = run_info.stats.processes.findAll { r -> r.ignored > 0 }.collect { r -> r.name }
+        def failed  = run_info.stats.processes.findAll { r -> r.failed - r.ignored - r.retries > 0 }.collect { r -> r.name }
+        if (ignored || failed) {
+            tasks_file.text = 'process\tstatus\n' +
+                ignored.collect { n -> "${n}\tignored\n" }.join('') + failed.collect { n -> "${n}\tfailed\n" }.join('')
+        } else if (tasks_file.exists()) {
+            tasks_file.delete()   // an earlier run's
+        }
+        if (run_info.success && !ignored) {
             run_log.info ""
             run_log.info "Pipeline completed successfully!"
             run_log.info "Results: ${outdir}"
             run_log.info ""
+        } else if (run_info.success) {
+            run_log.warn "Pipeline completed, but report-only tools failed and were skipped: ${ignored.join(', ')}. " +
+                         "Their results are missing; see .nextflow.log. Results: ${outdir}"
         } else {
-            run_log.error "Pipeline failed. Check .nextflow.log for details."
+            run_log.error "Pipeline failed${failed ? ' in ' + failed.join(', ') : ''}. Check .nextflow.log for details."
         }
     }
 }

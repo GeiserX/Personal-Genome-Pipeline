@@ -54,6 +54,13 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+# CPSR stops on a --sample_id outside 3 to 40 characters (PCGR 2.3.2): it gets
+# bin/cpsr_sample_id's id, and its files are renamed back to ${SAMPLE}.cpsr.*
+# after the run. CPSR's own HTML title then shows that id.
+CPSR_ID=$(sh "${PGP_ROOT}/bin/cpsr_sample_id" "$SAMPLE")
+[ "$CPSR_ID" = "$SAMPLE" ] \
+  || echo "CPSR takes a sample id of 3 to 40 characters: it runs as '${CPSR_ID}', and its files are renamed to ${SAMPLE}.cpsr.*"
+
 # CPSR 2.3 gives every variant in the panel genes its own class
 # (CPSR_CLASSIFICATION), so 2.2's --classify_all is gone (2.3 refuses it).
 # The final class (CLASSIFICATION, source in ASSERTION_AUTHORITY) is
@@ -85,10 +92,11 @@ run_in --root --cpus 4 --memory 8g \
     --refdata_dir /mnt/bundle \
     --output_dir /mnt/outputs \
     --genome_assembly grch38 \
-    --sample_id "${SAMPLE}" \
+    --sample_id "${CPSR_ID}" \
     --panel_id 0 \
     ${CPSR_EXTRA[@]+"${CPSR_EXTRA[@]}"} \
     --force_overwrite
+sh "${PGP_ROOT}/bin/cpsr_sample_id" --rename "$OUTPUT_DIR" "$SAMPLE"
 
 echo "=== CPSR complete ==="
 echo "HTML report: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.html"
