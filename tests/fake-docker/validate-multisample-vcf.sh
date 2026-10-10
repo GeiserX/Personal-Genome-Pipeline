@@ -3,7 +3,8 @@
 #   - two samples (a joint-called file) fail, naming the count and the
 #     samples, with the bcftools command that keeps one;
 #   - more than five samples list the first five, then "...";
-#   - one sample passes and is named.
+#   - one sample passes and is named;
+#   - a header bcftools cannot read fails, never reads as zero samples.
 # The VCFs are the synthetic ones in tests/fixtures/vcf/. The fake docker
 # answers `bcftools view -h` with the header of the sample's VCF through a
 # run hook.
@@ -21,6 +22,7 @@ cat > "${CASE_WORK}/vcf-hook" <<'HOOK'
 #!/usr/bin/env bash
 shift   # the image
 if [ "${1:-}" = bcftools ] && [ "${2:-}" = view ] && [ "${3:-}" = -h ]; then
+  if [ -f "${CASE_WORK}/view.rc" ]; then exit "$(cat "${CASE_WORK}/view.rc")"; fi
   gzip -dc "${GENOME_DIR}${4#/genome}" | grep '^#'
 fi
 exit 0
@@ -49,4 +51,10 @@ run_expect 0 one "${SCRIPTS}/validate-setup.sh" sample1
 output_has one '\[OK\].*VCF holds one sample \(SAMPLE_A\)'
 output_lacks one 'samples \('
 
-echo "validate-multisample-vcf: a VCF with two or seven samples fails with the count and the names; one sample passes"
+# --- a header bcftools cannot read: a [FAIL], not a silent zero ------------------------
+echo 1 > "${CASE_WORK}/view.rc"
+run_expect 1 unreadable "${SCRIPTS}/validate-setup.sh" sample1
+output_has unreadable '\[FAIL\].*Could not read the VCF header \(bcftools view -h failed\)'
+rm "${CASE_WORK}/view.rc"
+
+echo "validate-multisample-vcf: a VCF with two or seven samples fails with the count and the names; one sample passes; an unreadable header fails"

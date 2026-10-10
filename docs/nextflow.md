@@ -329,7 +329,7 @@ ClinVar screen, clinical filter and slivar keep only records with FILTER=PASS. B
 
 ### One sample per VCF
 
-One samplesheet row is one sample, so a VCF given on a row must hold one sample column. `VCF_PRECHECK` stops the run, before any analysis, on a VCF with more than one (a joint-called family file, for example): the message names the sample count and the first five sample names, and prints the `bcftools view -s <name> -a -c 1` command that keeps one sample's column. `validate-setup.sh <sample>` applies the same rule to `vcf/<sample>.vcf.gz`.
+One samplesheet row is one sample, so a VCF given on a row must hold one sample column. `VCF_PRECHECK` stops the run, before any analysis, on a VCF with more than one (a joint-called family file, for example): the message names the sample count and the first five sample names, and prints the `bcftools view -s <name> -a -c 1` command that keeps one sample's column. That command writes a variant-only VCF, which is what the `vcf` column takes. A `gvcf` for the same row is split with `-s <name>` alone, so its reference blocks stay. `validate-setup.sh <sample>` applies the same rule to `vcf/<sample>.vcf.gz`, and fails when it cannot read that file's header.
 
 ### Contig names and gVCF input
 

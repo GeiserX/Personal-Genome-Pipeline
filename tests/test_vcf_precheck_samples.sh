@@ -112,6 +112,19 @@ else
   fail "VCF_PRECHECK on a seven-sample VCF: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
 
+# A sample name is free text: the printed command quotes it, so copying it
+# cannot run what the name holds.
+# shellcheck disable=SC2016  # the $(...) is the literal sample name under test
+awk -F'\t' -v OFS='\t' '/^#CHROM/ { $10 = "x$(touch pwned) y" } { print }' \
+  "${FIX}/two_samples.vcf" > "${WORK}/odd.vcf"
+run_precheck "${WORK}/odd.vcf"
+# shellcheck disable=SC2016
+if [ "$RC" -ne 0 ] && grep -qF 'bcftools view -s x\$\(touch\ pwned\)\ y -a -c 1 -Oz -o x\$\(touch\ pwned\)\ y.vcf.gz input.vcf.gz' <<<"$OUT"; then
+  pass "VCF_PRECHECK shell-quotes the sample name in the command it prints"
+else
+  fail "VCF_PRECHECK on an odd sample name: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
 run_precheck "${FIX}/one_sample.vcf"
 if [ "$RC" -eq 0 ] && ! grep -q 'samples (' <<<"$OUT" && grep -q 'FILTER counts PASS=3' <<<"$OUT"; then
   pass "VCF_PRECHECK accepts a one-sample VCF and goes on to count FILTER values"

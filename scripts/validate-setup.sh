@@ -726,9 +726,14 @@ if [ -n "$SAMPLE" ]; then
 
       # One sample per run: a joint-called VCF holds one column per person,
       # and the steps would mix their genotypes.
-      VCF_SAMPLES=$(run_in "${BCFTOOLS_IMAGE}" \
-        bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null | vcf_header_samples || true)
-      VCF_N_SAMPLES=$(grep -c . <<< "$VCF_SAMPLES" || true)
+      VCF_N_SAMPLES=0
+      if VCF_HEADER=$(run_in "${BCFTOOLS_IMAGE}" \
+          bcftools view -h "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null); then
+        VCF_SAMPLES=$(vcf_header_samples <<< "$VCF_HEADER")
+        VCF_N_SAMPLES=$(grep -c . <<< "$VCF_SAMPLES" || true)
+      else
+        fail "Could not read the VCF header (bcftools view -h failed): the VCF is unreadable or not a VCF"
+      fi
       if [ "$VCF_N_SAMPLES" -gt 1 ]; then
         VCF_NAMES=$(head -n 5 <<< "$VCF_SAMPLES" | paste -sd, - | sed 's/,/, /g')
         if [ "$VCF_N_SAMPLES" -gt 5 ]; then VCF_NAMES="${VCF_NAMES}, ..."; fi
@@ -739,7 +744,8 @@ if [ -n "$SAMPLE" ]; then
         echo "         bcftools view -s <name> -a -c 1 -Oz -o /genome/<name>/vcf/<name>.vcf.gz /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
         echo "       docker run --rm -v \"${GENOME_DIR}:/genome\" ${BCFTOOLS_IMAGE} \\"
         echo "         bcftools index -t /genome/<name>/vcf/<name>.vcf.gz"
-        echo "       (-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none)"
+        echo "       (-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none:"
+        echo "       the result is a variant-only VCF)"
       elif [ "$VCF_N_SAMPLES" -eq 1 ]; then
         pass "VCF holds one sample (${VCF_SAMPLES})"
       fi

@@ -89,14 +89,19 @@ process VCF_PRECHECK {
     if [ "\${N_SAMPLES}" -gt 1 ]; then
         NAMES=\$(awk 'NR <= 5' samples.txt | paste -sd, - | sed 's/,/, /g')
         if [ "\${N_SAMPLES}" -gt 5 ]; then NAMES="\${NAMES}, ..."; fi
+        # Shell-quoted: a sample name is free text, and the command is for copying
         FIRST=\$(awk 'NR == 1' samples.txt)
+        FIRST_Q=\$(printf '%q' "\${FIRST}")
+        VCF_Q=\$(printf '%q' "${vcf.name}")
         {
             echo "ERROR: Sample '${meta.id}': ${vcf.name} holds \${N_SAMPLES} samples (\${NAMES})."
             echo "One samplesheet row is one sample, and the steps would mix their genotypes. Keep one"
             echo "sample's column, index the new file, and give each sample its own row, for example:"
-            echo "    bcftools view -s \${FIRST} -a -c 1 -Oz -o \${FIRST}.vcf.gz ${vcf.name}"
-            echo "    bcftools index -t \${FIRST}.vcf.gz"
-            echo "(-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none)"
+            echo "    bcftools view -s \${FIRST_Q} -a -c 1 -Oz -o \${FIRST_Q}.vcf.gz \${VCF_Q}"
+            echo "    bcftools index -t \${FIRST_Q}.vcf.gz"
+            echo "(-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none:"
+            echo "the result is a variant-only VCF. Split a gvcf for that row with -s alone, so its reference"
+            echo "blocks stay.)"
         } >&2
         exit 1
     fi
