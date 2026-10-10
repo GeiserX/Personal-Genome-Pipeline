@@ -10,7 +10,10 @@
 #     than GRIDSS_MIN_MEM_GB (default 32; the fake Docker reports 16 GiB).
 #   Delly (19): gets -x with the exclude map setup.sh installs; without it,
 #     runs as before and warns.
-#   duphold (15): its filter hints test the FORMAT value.
+#   duphold (15): writes duphold/<sample>_sv_filtered.vcf.gz with the filter
+#     expression of the Nextflow DUPHOLD_FILTER, and its index.
+#   AnnotSV (05): annotates that file, the input of the Nextflow ANNOTSV;
+#     without it, or when Manta's calls are newer, Manta's calls with a note.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -39,6 +42,9 @@ case "$args" in
     if [ -n "$w" ]; then mkdir -p "$(host_path "$w")"; : > "$(host_path "$w")/intermediate.bam"; fi ;;
   *" bcftools stats "*)
     printf 'SN\t0\tnumber of records:\t1\n' ;;
+  *" bcftools view -e "*)
+    # The expression and the files of a filter call, one per line
+    printf '%s\n' "${5}" "${*: -1}" > "${CASE_WORK}/bcftools-filter" ;;
 esac
 exec "${CASE_WORK}/hook-outputs" "$@"
 HOOK
@@ -88,5 +94,42 @@ docker_log_has '^run image=[^ ]*delly.* delly sr .*-x /genome/reference/delly_hu
 mkdir -p "${GENOME_DIR}/sample1/manta/results/variants"
 printf 'placeholder\n' > "${GENOME_DIR}/sample1/manta/results/variants/diploidSV.vcf.gz"
 run_expect 0 duphold "${SCRIPTS}/15-duphold.sh" sample1
-output_has duphold "bcftools view -i 'INFO/SVTYPE=\"DEL\" && FMT/DHFFC<0\.7'"
-output_has duphold "FMT/DHBFC>1\.3"
+D="${GENOME_DIR}/sample1/duphold"
+[ -f "${D}/sample1_sv_filtered.vcf.gz" ] && [ -f "${D}/sample1_sv_filtered.vcf.gz.tbi" ] \
+  || fail "step 15 did not write duphold/sample1_sv_filtered.vcf.gz with its index"
+# The same expression as DUPHOLD_FILTER, on the annotated VCF
+WANT=$(awk -F"'" '/^ *-e .*SVTYPE/ {print $2; exit}' "${REPO_ROOT}/modules/local/duphold/main.nf")
+[ -n "$WANT" ] || fail "no filter expression found in modules/local/duphold/main.nf"
+[ "$(sed -n 1p "${CASE_WORK}/bcftools-filter" 2>/dev/null)" = "$WANT" ] \
+  || fail "step 15 did not filter with DUPHOLD_FILTER's expression (${WANT}): $(sed -n 1p "${CASE_WORK}/bcftools-filter" 2>/dev/null)"
+[ "$(sed -n 2p "${CASE_WORK}/bcftools-filter" 2>/dev/null)" = /genome/sample1/duphold/sample1_sv_duphold.vcf ] \
+  || fail "step 15 did not filter duphold's annotated VCF"
+output_has duphold 'Filtered: .*sample1_sv_filtered\.vcf\.gz'
+
+# --- AnnotSV --------------------------------------------------------------------------
+mkdir -p "${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes/GRCh38"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 annotsv "${SCRIPTS}/05-annotsv.sh" sample1
+docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/duphold/sample1_sv_filtered\.vcf\.gz ' \
+  "step 05 did not annotate step 15's filtered calls"
+output_lacks annotsv 'NOTE:'
+# Manta's calls newer than the filtered ones: Manta's, with a note.
+touch -t 209901010000 "${GENOME_DIR}/sample1/manta/results/variants/diploidSV.vcf.gz"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 annotsv-stale "${SCRIPTS}/05-annotsv.sh" sample1
+docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
+  "step 05 annotated filtered calls older than Manta's"
+output_has annotsv-stale 'NOTE: .*older than Manta'
+# No filtered calls at all: Manta's, with a note.
+rm -f "${D}/sample1_sv_filtered.vcf.gz" "${D}/sample1_sv_filtered.vcf.gz.tbi"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 annotsv-no-duphold "${SCRIPTS}/05-annotsv.sh" sample1
+docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
+  "step 05 did not fall back to Manta's calls without step 15"
+output_has annotsv-no-duphold 'NOTE: no duphold-filtered calls'
+# SV_VCF still wins.
+mkdir -p "${GENOME_DIR}/sample1/sniffles"
+printf 'placeholder\n' > "${GENOME_DIR}/sample1/sniffles/sv.vcf.gz"
+: > "$FAKE_DOCKER_LOG"
+SV_VCF="${GENOME_DIR}/sample1/sniffles/sv.vcf.gz" run_expect 0 annotsv-sv-vcf "${SCRIPTS}/05-annotsv.sh" sample1
+docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/sniffles/sv\.vcf\.gz ' "SV_VCF did not pick step 05's input"

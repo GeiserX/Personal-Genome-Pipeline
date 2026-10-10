@@ -1,7 +1,7 @@
 # Step 5: Structural Variant Annotation (AnnotSV)
 
 ## What This Does
-Classifies every structural variant from Manta using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
+Classifies every structural variant from Manta that passes duphold's depth filter (step 15) using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
 
 ## Why
 Raw Manta output contains thousands of SVs with no clinical interpretation. AnnotSV tells you which ones matter by cross-referencing known pathogenic SVs, gene databases, and population data.
@@ -35,12 +35,14 @@ What the script runs:
 
 ```bash
 source versions.env   # from the repository root
-docker run --rm --user root \
+# The input is step 15's filtered calls; without them, Manta's
+# /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz
+docker run --rm --user "$(id -u):$(id -g)" \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
   "${ANNOTSV_IMAGE}" \
   AnnotSV \
-    -SVinputFile /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz \
+    -SVinputFile /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz \
     -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv \
     -genomeBuild GRCh38 \
     -annotationMode both \
@@ -66,5 +68,5 @@ To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its h
 - **Class 4-5 = pathogenic/likely pathogenic** — these require manual review
 - SVs >5MB in short-read WGS are usually artifacts from segmental duplications — do not trust large calls blindly
 - Most SVs will be class 2-3 (benign/VUS) — this is normal for a healthy genome
-- Input must be from Manta step 4 (`diploidSV.vcf.gz`), not the unfiltered candidates
+- Input: step 15's `duphold/<sample>_sv_filtered.vcf.gz`, Manta's calls after duphold's depth filter, the file the Nextflow `ANNOTSV` reads. Without it (or when Manta's `diploidSV.vcf.gz` is newer), the script annotates Manta's calls and says so. `SV_VCF=<path>` picks another file, for example Sniffles2's. Never Manta's unfiltered candidates
 - The annotation databases are not in the Docker image: they live in `${GENOME_DIR}/annotsv_annotations/` (see Annotation Data above)

@@ -10,6 +10,12 @@
 # the uncompressed _vep.vcf of earlier versions), so steps 30, 23 and 31
 # rebuild from this one instead of reading the old annotation.
 #
+# PASS only: VEP reads the records with FILTER PASS or '.' (a caller that
+# writes no FILTER), from a temporary copy made with bcftools. Steps 23 and
+# 31, which read this output directly or through vcfanno (30), keep PASS
+# records alone, so the others were annotated for nothing; the Nextflow VEP
+# module selects the same records.
+#
 # ClinVar: when clinvar/clinvar_pathogenic_chr.vcf.gz is installed (setup.sh,
 # the file step 06 screens against), VEP also annotates it with --custom: its
 # CLNSIG, CLNREVSTAT and CLNDN become the CSQ fields ClinVar_CLNSIG,
@@ -65,6 +71,10 @@ OUT_C="/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 # writes. --compress_output bgzip: the whole-genome output is written
 # compressed, ready for tabix.
 rm -f "${OUT}.tmp.vcf.gz"
+PASS_VCF="${OUTPUT_DIR}/${SAMPLE}.pass.tmp.vcf.gz"
+trap 'rm -f "$PASS_VCF"' EXIT
+run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+  bcftools view -f PASS,. -Oz -o "$(cpath "$PASS_VCF")" "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
 # Each VEP fork holds its own copy of the cache index: 2 GB per thread, 8 GB at least.
 VEP_MEM=$(( THREADS * 2 > 8 ? THREADS * 2 : 8 ))
 run_in \
@@ -72,7 +82,7 @@ run_in \
   -v "${CACHE_DIR}:/opt/vep/.vep" \
   "${VEP_IMAGE}" \
   vep \
-    --input_file "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
+    --input_file "$(cpath "$PASS_VCF")" \
     -o "${OUT_C}.tmp.vcf.gz" \
     --vcf \
     --compress_output bgzip \
