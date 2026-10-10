@@ -3,7 +3,7 @@
 # after the reference; reads go through fixmate and markdup; THREADS reaches
 # the aligner, fixmate and samtools; markdup writes the .bai with the BAM, so
 # steps 02 and 02a run no separate samtools index, and the .bai ends up no
-# older than the BAM; the BAM, the minimap2 index and the BWA-MEM2 index reach
+# older than the BAM; a markdup that writes no index fails the step; the BAM, the minimap2 index and the BWA-MEM2 index reach
 # their final names only when complete. An aligner that dies (exit 137), a BAM
 # that fails quickcheck and an index build that dies each leave no file under
 # the final name, and step 02a says how much memory the BWA-MEM2 index needs
@@ -52,8 +52,9 @@ case "$args" in
     out=$(host_path "$last")
     # --write-index: markdup finishes the index just before the BAM's last
     # block, so the real .bai can be a little older than the BAM.
-    if [[ "$args" == *--write-index* ]]; then
-      : > "${out}.bai"
+    # FAKE_NOINDEX=1: markdup exits 0 but writes no index.
+    if [[ "$args" == *--write-index* ]] && [ -z "${FAKE_NOINDEX:-}" ]; then
+      printf 'BAI\001\n' > "${out}.bai"
       touch -d "@$(( $(date +%s) - 60 ))" "${out}.bai"
     fi
     printf 'BAM\001 run %s\n' "${FAKE_TAG:-1}" > "$out" ;;
@@ -100,6 +101,14 @@ fi
 [ -f "$BAM" ] && [ -f "${BAM}.bai" ] || fail "no BAM and index after a successful run"
 [ ! "${BAM}.bai" -ot "$BAM" ] || fail "step 02 left a .bai older than its BAM"
 [ -z "$(leftovers)" ] || fail "temporary files left after a successful run: $(leftovers)"
+
+# --- markdup exits 0 but writes no index: no BAM, no empty .bai --------------
+rm -f "$BAM" "${BAM}.bai"
+run_rc align-no-index env FAKE_NOINDEX=1 "${SCRIPTS}/02-alignment.sh" sample1
+[ "$RC" -ne 0 ] || fail "step 02 exited 0 when markdup wrote no index"
+[ ! -e "$BAM" ] || fail "markdup wrote no index and ${BAM} exists"
+[ ! -e "${BAM}.bai" ] || fail "markdup wrote no index and ${BAM}.bai exists"
+[ -z "$(leftovers)" ] || fail "temporary files left after markdup wrote no index: $(leftovers)"
 
 # --- the aligner dies: no BAM -------------------------------------------------
 rm -f "$BAM" "${BAM}.bai"
@@ -152,6 +161,13 @@ for e in 0123 amb ann pac bwt.2bit.64; do [ -f "${IDX}.${e}" ] || fail "no ${IDX
 [ -f "$BAM" ] && [ -f "${BAM}.bai" ] || fail "no BAM and index from step 02a"
 [ ! "${BAM}.bai" -ot "$BAM" ] || fail "step 02a left a .bai older than its BAM"
 [ -z "$(leftovers)" ] || fail "temporary files left after step 02a: $(leftovers)"
+
+rm -f "$BAM" "${BAM}.bai"
+run_rc bwamem2-no-index env FAKE_NOINDEX=1 "${SCRIPTS}/02a-alignment-bwamem2.sh" sample1
+[ "$RC" -ne 0 ] || fail "step 02a exited 0 when markdup wrote no index"
+[ ! -e "$BAM" ] || fail "markdup wrote no index and ${BAM} exists (step 02a)"
+[ ! -e "${BAM}.bai" ] || fail "markdup wrote no index and ${BAM}.bai exists (step 02a)"
+[ -z "$(leftovers)" ] || fail "temporary files left after markdup wrote no index in step 02a: $(leftovers)"
 
 for e in 0123 amb ann pac bwt.2bit.64; do rm -f "${IDX}.${e}"; done
 run_rc bwamem2-oom env FAKE_INDEX=fail "${SCRIPTS}/02a-alignment-bwamem2.sh" sample1
