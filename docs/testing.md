@@ -59,7 +59,7 @@ To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
 2. Bump `tests/fixtures/VERSION` (for example from `fixture-v6` to `fixture-v7`).
-3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (30 to 70 minutes, most of it VEP querying Ensembl's public database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it.
+3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (30 to 70 minutes, most of it VEP querying Ensembl's public database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it, and that wait counts against the job's 150-minute limit.
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
 
@@ -69,7 +69,11 @@ You can build it yourself on Linux with Docker, `bgzip`, `tabix` and `python3` a
 
 [`scripts/ci/e2e-run.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/e2e-run.sh) downloads the fixture, checks `SHA256SUMS`, lays out a `GENOME_DIR` the way `setup.sh` and step 13 would leave it, and runs every case file in [`tests/e2e/`](https://github.com/GeiserX/Personal-Genome-Pipeline/tree/main/tests/e2e). It runs all of them even when one fails, so one run lists every broken step. The job summary shows a table of case, result, time and log, plus the failed checks of each failed case; the full logs are in the `e2e-logs` artifact.
 
-It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `assets/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand (`job: e2e`). Every pull request starts the workflow, and its `e2e-scope` job checks those paths: on a pull request that touches none of them the e2e job is skipped, which GitHub counts as passed, so main can require the e2e check without blocking a docs-only change. It takes about 75 minutes (76 on the run that added `run-all-launcher.sh`, the third run from FASTQ after the bash steps and the pipeline, about 12 minutes of it); the job's limit is 150 minutes. The DeepVariant case passes the fixture slices as `INTERVALS`, so DeepVariant calls only those slices instead of walking all 1.8 Gb of the reference, which alone took 27 to 48 minutes. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
+It runs on pull requests that touch `scripts/`, `modules/`, `workflows/`, `bin/`, `conf/`, `assets/`, `tests/e2e/`, `tests/fixtures/VERSION`, `main.nf`, `nextflow.config`, `versions.env` or the workflow itself; once a month; and by hand (`job: e2e`). Every pull request starts the workflow, and its `e2e-scope` job checks those paths: on a pull request that touches none of them the e2e job is skipped, which GitHub counts as passed, so main can require the e2e check without blocking a docs-only change. The DeepVariant case passes the fixture slices as `INTERVALS`, so DeepVariant calls only those slices instead of walking all 1.8 Gb of the reference, which alone took 27 to 48 minutes. It uses a standard GitHub-hosted runner (4 CPUs, 16 GB of RAM) after deleting preinstalled toolchains it does not use (Android, .NET, Haskell, CodeQL, Boost) to make disk room. Pulled images are cached as one compressed tar keyed on `versions.env` and the module files.
+
+How long it takes: a passing e2e job takes about 80 to 140 minutes. The 39 passing jobs from 2026-10-07 to 2026-10-10 took 79 to 137 minutes, median about 115 (the extremes are runs 37785594200 and 37963629742). The job's limit is 150 minutes. Three jobs on deliberately broken test branches ran into it (runs 37574186079, 37754488905 and 37756039583); we have not checked whether the planted failure or a slow runner caused it. The times fall into two groups, 79 to 87 and 98 to 137 minutes, and the DeepVariant case took 177 s in run 37994270523 and 408 s in run 38014231293 on the same runner image. The job's first steps print the runner's CPU model and CPU count to the log and the job summary, so a later timing can name the hardware.
+
+Before the first case, `e2e-run.sh` pulls every image the cases use that is not on the machine yet: the `NAME_IMAGE` lines of `versions.env` and of the case files, less a list of images no case runs. A pull that fails with a registry 5xx is tried again, up to four tries in all, 20, 40 and 80 seconds apart. Any other error, such as a missing tag or a rate limit, fails the job at once, and the tools' own `docker run` is never retried. A Docker Hub 500 on one image's manifest is what failed main's run 37980248545 the first time. `scripts/ci/e2e-run.sh --self-test-pull` checks the retry against a fake docker, and the job runs it first.
 
 What it covers:
 
@@ -104,17 +108,24 @@ Cases run in name order in the C locale: the numbered base cases first, then fil
 
 A new check has to be seen failing once before it is trusted: run it against the code before your fix, or against a deliberately broken input, and link that red run in the pull request.
 
-### What it cannot cover
+### What no e2e case runs
 
-These need data or hardware a GitHub runner does not have, so no CI job runs them:
+The first five rows need data or hardware a GitHub runner does not have. The others could run, but no case runs them yet. The last column says what checks each one instead. An image's smoke test is a row of `tests/smoke/commands.tsv` that `container-test.yml` runs on the fixture when the image changes and once a month; it runs the tool, not the step's script.
 
-| Step | Why not |
-|---|---|
-| 13 (VEP, offline) | the cache is 26 GB; the fixture's VEP subset was annotated once with `--database` instead |
-| 17 (CPSR) | the PCGR bundle (about 8 GB) plus a second VEP cache |
-| 05 (AnnotSV) | the annotation data is 5.3 GB; not part of the default e2e run |
-| 04b (GRIDSS) | needs a 31 GB Java heap |
-| 02a (BWA-MEM2 index build) | about 90 GB of RAM for GRCh38 |
+| Step | Why no e2e case runs it | What checks it instead |
+|---|---|---|
+| 13 (VEP, offline) | the cache is 26 GB; the fixture's VEP subset was annotated once with `--database` instead | the image's smoke test, which annotates 50 records with `--database` |
+| 17 (CPSR) | the PCGR bundle (about 8 GB) plus a second VEP cache. CI never runs real CPSR | the image's smoke test, and the fake-docker cases for the command line |
+| 05 (AnnotSV) | the annotation data is 5.3 GB | the image's smoke test; the row that annotates the fixture's SV records with the full data runs monthly and on dispatch only |
+| 04b (GRIDSS) | needs a 31 GB Java heap | the image's smoke test |
+| 02a on GRCh38 (BWA-MEM2 index build) | about 90 GB of RAM | case `alignment-markdup-gvcf-sex-4-bwamem2` runs step 02a on a 7 Mb reference cut from the fixture's regions |
+| 15 (duphold) | no case yet | the image's smoke test on a planted deletion; `tests/fake-docker/bash-step-sv.sh` runs the script; the Nextflow module is stub-run |
+| 18 (CNVpytor) | no case yet; it needs its own resource files | the image's smoke test; the SV merge case reads a planted CNVpytor VCF, not one CNVpytor wrote |
+| 29 (somatic Mutect2) | no case yet | `tests/fake-docker/bash-step-somatic-mito.sh` checks the Mutect2 command line |
+| 03c (Strelka2) | no case yet | the image's smoke test, with a recall check against the truth slice |
+| 01 (ORA to FASTQ) | needs Illumina's `orad` binary, which runs outside Docker | nothing |
+
+The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` in `nextflow.yml`); the bash step 09 runs in case `bash-step-09-str`.
 
 ## The settle-doubts job
 
@@ -122,7 +133,7 @@ These need data or hardware a GitHub runner does not have, so no CI job runs the
 
 ## Running the e2e job yourself
 
-The e2e run needs Linux, Docker, Nextflow 26.04.7 with Java 17, the `gh` CLI and about 25 GB of disk, and takes over an hour. Run it on a machine you do not need for anything else:
+The e2e run needs Linux, Docker, Nextflow 26.04.7 with Java 17, the `gh` CLI and about 25 GB of disk, and takes about 80 to 140 minutes on a 4-CPU GitHub runner. Run it on a machine you do not need for anything else:
 
 ```bash
 E2E_WORK=/path/with/space scripts/ci/e2e-run.sh          # every case
@@ -140,5 +151,7 @@ DEMO_TERMS_FILE=~/private-terms.txt tests/demo/retake-screenshots.sh /path/to/wo
 ```
 
 It writes DEMO-001 from a fixed seed (`tests/demo/make_demo_sample.py`; no real sample is read), runs steps 36, 27, 24 and 28 on it with the pinned images, and stops if a section of the report has no value, so no card says "Not run". It then draws the three pictures into `/path/to/work/pictures` with a pinned Chromium and Pillow, and checks them: only image data in each PNG, and on macOS the OCR finds DEMO-001 and none of the terms in `DEMO_TERMS_FILE` (your names and host names, one regular expression per line; keep that file outside the repository). The check runs a self-test first, on planted bad pictures. Docker must see the work folder and the checkout: with Colima, keep both under the home folder or `/private/tmp`.
+
+The **Demo pictures** workflow ([`.github/workflows/demo-pictures.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/demo-pictures.yml)) retakes them on `ubuntu-latest`, by hand or on a pull request that changes `tests/demo/` or the workflow. It sets `PLAYWRIGHT_WITH_DEPS=1`, so Playwright installs Chromium's system libraries itself, and returns the pictures as the `demo-pictures` artifact. On Linux the check reads the PNG chunks only, because the OCR half needs macOS: run `tests/demo/check_pictures.py --ocr` on a Mac before you commit pictures from the artifact. The workflow writes nothing to the repository.
 
 Look at the pictures, copy them into `docs/images/`, and update the alt text where the cards changed. A new report card that the generator does not feed yet stops the script with its name; add its input file to `make_demo_sample.py`.
