@@ -14,7 +14,7 @@ A full run goes through `run-all.sh`, which needs Java 17 or later and Nextflow 
 nextflow run main.nf -profile test,docker -stub
 ```
 
-It reads the small test samplesheet in `assets/`, starts each task of the steps the test profile selects (`conf/test.config`) in its pinned container with `--network none`, and runs the task's stub instead of the tool, so it needs no reference data and checks no result. It took about 4 minutes on a GitHub runner, image pulls included (CI run 38028845387). Git ignores the `work/`, `.nextflow/` and `results_test/` folders it leaves; delete them afterwards. To test the real tools on a small genome slice, see [Running the e2e job yourself](testing.md#running-the-e2e-job-yourself).
+It reads the small test samplesheet in `assets/`, starts each task of the steps the test profile selects (`conf/test.config`) in its pinned container with `--network none`, and runs the task's stub instead of the tool, so it checks no result and downloads no reference: the test profile points at the small bundled `assets/stub/reference.fasta`. It took about 4 minutes on a GitHub runner, image pulls included (CI run 38028845387). Git ignores the `work/`, `.nextflow/` and `results_test/` folders it leaves; delete them afterwards. To test the real tools on a small genome slice, see [Running the e2e job yourself](testing.md#running-the-e2e-job-yourself).
 
 ---
 

@@ -196,16 +196,23 @@ cp "${FIXTURE_DIR}/${SAMPLE}_vep.vcf" "${GENOME_DIR}/${SAMPLE}/vep/"
 df -h "$E2E_WORK"
 
 # --- 3. Images ----------------------------------------------------------------
-echo "=== Pulling the images the cases use ==="
-mapfile -t IMAGES < <(case_images)
-[ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; exit 1; }
-pulled=0
-for image in "${IMAGES[@]}"; do
-  docker image inspect "$image" > /dev/null 2>&1 && continue
-  pull_image "$image" || exit 1
-  pulled=$((pulled + 1))
-done
-echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+# Only a full run pre-pulls. A case reaches most images through the steps it
+# runs, so the images of a few cases cannot be told apart from the rest; a
+# partial run lets its cases pull their own, without the retry.
+if [ "$PATTERN" = "*" ]; then
+  echo "=== Pulling the images the cases use ==="
+  mapfile -t IMAGES < <(case_images)
+  [ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; exit 1; }
+  pulled=0
+  for image in "${IMAGES[@]}"; do
+    docker image inspect "$image" > /dev/null 2>&1 && continue
+    pull_image "$image" || exit 1
+    pulled=$((pulled + 1))
+  done
+  echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+else
+  echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
+fi
 
 # --- 4. Cases -----------------------------------------------------------------
 mapfile -t CASES < <(cd "${REPO}/tests/e2e" && find . -maxdepth 1 -type f -name '*.sh' ! -name lib.sh -printf '%f\n' | LC_ALL=C sort)
