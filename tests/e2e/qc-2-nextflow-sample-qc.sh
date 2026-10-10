@@ -12,7 +12,14 @@
 #     sex, FREEMIX and the ROH and haplogroup cards, with the numbers of the
 #     summary it was rendered from. The same BAM is given a second time under
 #     another id (BAMs with the same @RG SM): somalier keeps the two rows
-#     apart and SAMPLE_QC names each one as the other's same person.
+#     apart and SAMPLE_QC names each one as the other's same person. pypgx
+#     runs too (the bundle case nextflow-hardening-2-nf cloned), and the
+#     report fills its section.
+# The Nextflow report receives every output the bash report reads: the report
+# of case nextflow-from-fastq-2-nextflow, whose run had telomere_hunter,
+# mito_variants and hla_typing, fills the Telomere Length, Mitochondrial
+# Analysis and HLA Typing cards instead of saying "Not run" (the CPSR card,
+# never run in CI, is the control that the check can see "Not run").
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -24,7 +31,8 @@ PANEL_DIR="${G}/reference/verifybamid2_fixture"
 check "case qc-1 wrote the sites with the slice's chrX calls" test -s "$XS"
 
 # nf_run NAME SEX [ARGS...]: one run on a VCF+BAM row declaring SEX, plus the
-# same files under the id DUP_ID when it is set. Sets RC, LOG, OUT and TRACE.
+# same files under the id DUP_ID when it is set, with the tools in EXTRA_TOOLS
+# added. Sets RC, LOG, OUT and TRACE.
 nf_run() {
   local name=$1 sex=$2 dir="${CASE_TMP}/$1" id
   shift 2
@@ -43,7 +51,7 @@ nf_run() {
       -work-dir "${dir}/work" \
       --input "${dir}/samplesheet.csv" \
       --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
-      --tools sample_qc,roh,mito_haplogroup,mosdepth,html_report \
+      --tools "sample_qc,roh,mito_haplogroup,mosdepth,html_report${EXTRA_TOOLS:+,${EXTRA_TOOLS}}" \
       --somalier_sites "$XS" --verifybamid2_panel "$PANEL_DIR" \
       --outdir "$OUT" --max_cpus 4 --max_memory 14.GB "$@" ) > "${dir}/run.log" 2>&1
   RC=$?
@@ -76,7 +84,12 @@ check_eq "declared female: somalier's table has it as the pedigree's sex" "$(pco
 check_eq "and somalier set the sex to male (1) from the reads" "$(pcol sex "$SAMPLE")" 1
 
 D="${SAMPLE}dup"
-DUP_ID="$D" nf_run male male --sex_check warn
+BUNDLE="${G}/reference/pypgx-bundle"
+if [ ! -d "$BUNDLE" ]; then
+  V="${PYPGX_IMAGE##*:}"
+  git clone -q --branch "${V%%--*}" --depth 1 https://github.com/sbslee/pypgx-bundle.git "$BUNDLE"
+fi
+DUP_ID="$D" EXTRA_TOOLS=pypgx nf_run male male --sex_check warn --pypgx_bundle "$BUNDLE"
 check_eq "declared male, --sex_check warn: the run exits 0" "$RC" 0
 check_eq "SOMALIER_RELATE tasks" "$(ran SOMALIER_RELATE)" 1
 for p in SOMALIER VERIFYBAMID2 SAMPLE_QC HTML_REPORT; do
@@ -114,5 +127,33 @@ check "the QC card shows mosdepth's depth" has 'Mean depth</span><span class="va
 check "the ROH card is filled" has '<h2>Runs of Homozygosity</h2>' "$(cat "$HTML" 2>/dev/null)"
 check "the haplogroup card is filled" has '<h2>Mitochondrial Haplogroup</h2>' "$(cat "$HTML" 2>/dev/null)"
 check "the Variant Calling card counts the VCF" has 'Total variants</span><span class="value">[1-9][0-9]*<' "$(cat "$HTML" 2>/dev/null)"
+
+# section JSON KEY: the state of a section of a summary.json (ok, stale, missing, ...)
+section() { python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['sections'][sys.argv[2]]['state'])" "$1" "$2" 2>/dev/null; }
+# card HTML TITLE: "Not run" when the card titled TITLE says so, "filled" when it
+# is there and does not, "absent" when the report has no such card
+card() {
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || echo absent
+import sys
+html, title = open(sys.argv[1]).read(), sys.argv[2]
+i = html.find(f"<h2>{title}</h2>")
+if i < 0:
+    print("absent")
+else:
+    j = html.find('<div class="card', i)
+    print("Not run" if ">Not run<" in html[i:j if j > 0 else len(html)] else "filled")
+PY
+}
+check_eq "pypgx ran: its section is filled" "$(section "$JSON" pypgx)" ok
+check "the Steps Not Run list does not name pypgx" lacks '<li>pypgx</li>' "$(cat "$HTML" 2>/dev/null)"
+
+FQ="${G}/nf-fastq/HG002P"
+check "case nextflow-from-fastq-2-nextflow wrote its report" test -s "${FQ}/HG002P_report.html"
+for c in "Telomere Length:telomere" "Mitochondrial Analysis:mito" "HLA Typing:hla"; do
+  check_eq "the Nextflow report's ${c%%:*} card is filled" "$(card "${FQ}/HG002P_report.html" "${c%%:*}")" filled
+  check_eq "and its summary.json section ${c##*:} is ok" "$(section "${FQ}/summary.json" "${c##*:}")" ok
+done
+check_eq "control: the check sees the CPSR card, which never runs here, as Not run" \
+  "$(card "${FQ}/HG002P_report.html" "Cancer Predisposition")" "Not run"
 
 finish

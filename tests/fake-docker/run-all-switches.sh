@@ -8,6 +8,12 @@
 #                  BENCHMARK=true with one caller VCF is skipped, not failed
 #   ALIGN_DIR run  its BAM replaces the plain run's samplesheet row
 #   plain again    back to aligned/: a kept row names this call's BAM only
+#   publish mode   --publish_dir_mode link when a hard link from the work
+#                  directory to GENOME_DIR works; copy (no flag) when ln
+#                  fails, when -w names another work directory, or when the
+#                  user gave --publish_dir_mode (passed once, as given)
+#   -bg            refused with exit 2 before nextflow: run-all.sh would go on
+#                  at once and write the step results before the run ended
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -28,7 +34,7 @@ A="${G}/sample1/aligned/sample1_sorted.bam" B="${G}/sample1/aligned_bwamem2/samp
 
 # A plain run: the host's caps, none of the switch flags
 run_expect 0 plain env BENCHMARK=true "${SCRIPTS}/run-all.sh" sample1 male
-has_args --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB"
+has_args --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB" --publish_dir_mode link
 for f in --skip_trim --intervals; do lacks_arg "$f" "without its switch"; done
 [ "$(row)" = "sample1,,,${A},${A}.bai,,,male" ] || fail "plain run row: $(row)"
 output_has plain '^  benchmark-variants skipped \(only one caller VCF'
@@ -58,7 +64,24 @@ grep -qE $'^step\t04b\t(ok|failed)$' "${G}/sample1/logs/run_status.tsv" || fail 
 run_expect 0 plain2 env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male
 [ "$(row)" = "sample1,,,${A},${A}.bai,,,male" ] || fail "the ALIGN_DIR run's row was kept without ALIGN_DIR: $(row)"
 
+# The publish mode: copy when no hard link can be made, or when the user chose
+mkdir -p "${CASE_WORK}/noln"
+printf '#!/bin/sh\necho "ln: failed to create hard link: Invalid cross-device link" >&2\nexit 1\n' > "${CASE_WORK}/noln/ln"
+chmod +x "${CASE_WORK}/noln/ln"
+run_expect 0 crossdev env TOOLS=pharmcat PATH="${CASE_WORK}/noln:${PATH}" "${SCRIPTS}/run-all.sh" sample1 male
+lacks_arg --publish_dir_mode "when ln fails"
+run_expect 0 otherwork env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male -w "${CASE_WORK}/elsewhere"
+lacks_arg --publish_dir_mode "with -w"
+run_expect 0 usermode env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male --publish_dir_mode copy
+has_args --publish_dir_mode copy
+[ "$(grep -o ' --publish_dir_mode ' <<<"$(last)" | wc -l)" -eq 1 ] || fail "--publish_dir_mode passed twice: $(last)"
+if compgen -G "${G}/.pgp-link-probe*" > /dev/null || compgen -G "${G}/sample1/nextflow/work/.pgp-link-probe*" > /dev/null; then
+  fail "the link probe left files behind"
+fi
+
 n=$(grep -c '^nextflow :: ' "$FAKE_DOCKER_LOG")
+run_expect 2 bg env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male -bg
+output_has bg "ERROR: run-all.sh does not take -bg"
 run_expect 2 badtool env TOOLS=pharmcat,clinvar_screen "${SCRIPTS}/run-all.sh" sample1 male
 output_has badtool "unknown step 'clinvar_screen' in TOOLS"
 run_expect 2 badcaller env EXTRA_CALLERS=gatk,bogus "${SCRIPTS}/run-all.sh" sample1 male
