@@ -99,14 +99,14 @@ c="${FAKE_DIR}/${img//[\/:]/_}.count"
 echo x >> "$c"
 n=$(wc -l < "$c")
 case "$img" in
-  flaky/once:1)
+  flaky500)
     [ "$n" -ge 2 ] && exit 0
-    echo 'Error response from daemon: Head "https://registry-1.docker.io/v2/flaky/once/manifests/1": received unexpected HTTP status: 500 Internal Server Error' >&2 ;;
-  down/always:1)
-    echo 'Error response from daemon: Head "https://quay.io/v2/down/always/manifests/1": received unexpected HTTP status: 503 Service Unavailable' >&2 ;;
-  gone/tag:1)
-    echo 'Error response from daemon: manifest for gone/tag:1 not found: manifest unknown: manifest unknown' >&2 ;;
-  limit/hit:1)
+    echo 'Error response from daemon: Head "https://registry-1.docker.io/v2/library/flaky500/manifests/latest": received unexpected HTTP status: 500 Internal Server Error' >&2 ;;
+  down503)
+    echo 'Error response from daemon: Head "https://registry-1.docker.io/v2/library/down503/manifests/latest": received unexpected HTTP status: 503 Service Unavailable' >&2 ;;
+  notag)
+    echo 'Error response from daemon: manifest for notag not found: manifest unknown: manifest unknown' >&2 ;;
+  ratelimit)
     echo 'Error response from daemon: toomanyrequests: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit' >&2 ;;
 esac
 exit 1
@@ -129,10 +129,10 @@ FAKE
       st_failed=1
     fi
   }
-  expect "a registry 500 on the first pull is tried again and passes" pass 2 flaky/once:1
-  expect "a registry 503 on every pull gives up after ${PULL_TRIES} tries" fail "$PULL_TRIES" down/always:1
-  expect "a missing tag fails at once" fail 1 gone/tag:1
-  expect "a rate limit (429) fails at once" fail 1 limit/hit:1
+  expect "a registry 500 on the first pull is tried again and passes" pass 2 flaky500
+  expect "a registry 503 on every pull gives up after ${PULL_TRIES} tries" fail "$PULL_TRIES" down503
+  expect "a missing tag fails at once" fail 1 notag
+  expect "a rate limit (429) fails at once" fail 1 ratelimit
   LIST=$(case_images)
   # shellcheck source=../../versions.env
   HAPPY=$(. "${REPO}/versions.env" && echo "$HAPPY_IMAGE") VEP=$(. "${REPO}/versions.env" && echo "$VEP_IMAGE")
