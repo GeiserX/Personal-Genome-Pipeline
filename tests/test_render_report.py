@@ -26,10 +26,17 @@ Checks:
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
      percentiles only then; a score whose chrX rows were left out is named,
-     one whose chrX rows were scored is not.
+     one whose chrX rows were scored is not; both captions, with a panel
+     and without, carry the ancestry-transfer caveat of docs/25-prs.md;
+  6. the ClinVar card: a homozygous 3-star P/LP hit gets no green badge,
+     no hit gets a gray one, and both reports say population frequency is
+     not checked;
+  7. the telomere card says relative telomere content with its unit, and
+     no report in bin/ says "Telomere Length".
 
 Run: python3 tests/test_render_report.py
 """
+import glob
 import gzip
 import os
 import shutil
@@ -228,6 +235,43 @@ def main():
               "among the EUR samples of the pgsc_1000G_v1 reference panel" in txt and "Raw score only" not in txt
               and "Raw score only" not in html and "Rows on chrX" not in txt, txt)
         check("panel: no not-assessed line about percentiles", collect_summary.PRS_NOT_ADJUSTED not in summ["not_assessed"])
+        caveat = ("Most PRS scores were developed in European-ancestry populations and predict less well for "
+                  "other ancestries, even with an ancestry-adjusted percentile.")
+        check("panel: the ancestry-transfer caveat in both reports", caveat in txt and caveat in html, txt)
+        raw = collect_summary.collect("S", f"{work}/sample_raw/S")
+        check("no panel: the ancestry-transfer caveat in both reports",
+              caveat in render_report.text_report(raw) and caveat in render_report.html_report(raw))
+
+        # 6. ClinVar badge: one homozygous 3-star Pathogenic hit
+        d = f"{work}/clinvar_hom/S"
+        put(f"{d}/clinvar/S_clinvar_hits.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+            "chr1\t20\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Pathogenic;"
+            "CLNREVSTAT=reviewed_by_expert_panel\tGT\t1/1\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        badge_line = next((l for l in html.splitlines() if "ClinVar matches" in l), "")
+        check("ClinVar: a homozygous 3-star P/LP hit gets no green badge", "badge-green" not in badge_line
+              and 'badge-yellow">1<' in badge_line, badge_line)
+        freq = "Population frequency is not checked here. Look up a homozygous P/LP hit in gnomAD"
+        check("ClinVar: both reports say population frequency is not checked", freq in txt and freq in html, txt)
+        put(f"{d}/clinvar/S_clinvar_hits.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
+        html0 = render_report.html_report(collect_summary.collect("S", d))
+        check("ClinVar: no hit gets a gray badge, not a green all-clear",
+              'ClinVar matches</span><span class="value"><span class="badge badge-gray">0<' in html0)
+
+        # 7. telomere card
+        d = f"{work}/telomere/S"
+        put(f"{d}/telomere/S/S_summary.tsv", "PID\tsample\tintratelomeric_reads\ttotal_reads_with_tel_gc\ttel_content\n"
+            "S\ttumor\t61873\t185204533\t334.08\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("telomere: the text heading and the value with its unit",
+              "## Telomere content (relative, TelomereHunter)" in txt
+              and "Telomere content: 334.08 intratelomeric reads per million reads with 48-52% GC" in txt, txt)
+        check("telomere: the HTML card title and the unit", "<h2>Telomere content (relative)</h2>" in html
+              and "intratelomeric reads per million reads with 48-52% GC" in html and "not a telomere length" in html)
+        said = [p_ for p_ in glob.glob(os.path.join(REPO, "bin", "*.py")) if "Telomere Length" in open(p_).read()]
+        check("no file in bin/ says 'Telomere Length'", not said, said)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

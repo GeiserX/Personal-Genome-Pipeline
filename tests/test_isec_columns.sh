@@ -282,7 +282,7 @@ if grep -q 'Count: 0 pathogenic hits' "${GD}/step06.log" && ! grep -qx '0' "${GD
 else
   fail "step 06 count line is not a single 0: $(grep -A1 'Count:' "${GD}/step06.log" | tr '\n' '|')"
 fi
-if grep -q 'class="badge badge-green">0</span>' "${GD}/S1/S1_report.html" 2>/dev/null; then
+if grep -q 'class="badge badge-gray">0</span>' "${GD}/S1/S1_report.html" 2>/dev/null; then
   pass "HTML badge shows a single 0"
 else
   fail "HTML badge is not a single 0: $(grep -A1 'ClinVar matches' "${GD}/S1/S1_report.html" 2>/dev/null | tr '\n' ' ')"
