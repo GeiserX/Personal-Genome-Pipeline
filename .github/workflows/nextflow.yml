@@ -233,6 +233,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           cat > "${RUNNER_TEMP}/resources.config" <<'CICONF'
+          params.kir = false
           executor.cpus = 16
           executor.memory = '64.GB'
           process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
@@ -249,7 +250,7 @@ jobs:
           dag.enabled = false
           CICONF
           nextflow run main.nf -profile test_all -stub -ansi-log false -c "${RUNNER_TEMP}/resources.config" \
-            --tools vep,manta,cnvpytor --kir false --max_cpus 16 --max_memory 64.GB --max_time 48.h \
+            --tools vep,manta,cnvpytor --max_cpus 16 --max_memory 64.GB --max_time 48.h \
             --outdir "${RUNNER_TEMP}/resources" -work-dir "${RUNNER_TEMP}/resources-work"
           python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt <<'PY'
           import csv, sys
