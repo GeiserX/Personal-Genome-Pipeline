@@ -287,8 +287,12 @@ workflow {
     ch_gvcf      = ch_gvcf_given.mix(UPSTREAM.out.gvcf)
 
     // ─── Input check ────────────────────────────────────────────────────
-    // VCF_PRECHECK reads each VCF once before any analysis. Two problems stop
-    // the run here, with the fix in the message:
+    // VCF_PRECHECK reads each VCF once before any analysis. Three problems
+    // stop the run, with the fix in the message:
+    //   - more than one sample column (a joint-called family VCF): the steps
+    //     would mix people. VCF_PRECHECK itself stops on it, with the sample
+    //     count, the first names and the `bcftools view -s` command that keeps
+    //     one sample;
     //   - no contig is chr-named (1, MT): the mito haplogroup comes out empty
     //     and chrX leaks into the ROH summary, both with exit 0;
     //   - a gVCF (or a file named like one) with pharmcat selected: PharmCAT
