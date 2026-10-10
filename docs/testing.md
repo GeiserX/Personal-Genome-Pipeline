@@ -110,7 +110,7 @@ A new check has to be seen failing once before it is trusted: run it against the
 
 ### What no e2e case runs
 
-The first five rows need data or hardware a GitHub runner does not have. The others could run, but no case runs them yet. The last column says what checks each one instead. An image's smoke test is a row of `tests/smoke/commands.tsv` that `container-test.yml` runs on the fixture when the image changes and once a month; it runs the tool, not the step's script.
+This is every step script that no e2e case runs, plus the full-size index build of step 02a. The first six rows need data, hardware or a binary a GitHub runner does not have. The three long-read rows need long reads, and the e2e fixture has short reads only. The others could run, but no case runs them yet. The last column says what checks each one instead. An image's smoke test is a row of `tests/smoke/commands.tsv` that `container-test.yml` runs on the fixture when the image changes and once a month; it runs the tool, not the step's script.
 
 | Step | Why no e2e case runs it | What checks it instead |
 |---|---|---|
@@ -119,11 +119,17 @@ The first five rows need data or hardware a GitHub runner does not have. The oth
 | 05 (AnnotSV) | the annotation data is 5.3 GB | the image's smoke test; the row that annotates the fixture's SV records with the full data runs monthly and on dispatch only |
 | 04b (GRIDSS) | needs a 31 GB Java heap | the image's smoke test |
 | 02a on GRCh38 (BWA-MEM2 index build) | about 90 GB of RAM | case `alignment-markdup-gvcf-sex-4-bwamem2` runs step 02a on a 7 Mb reference cut from the fixture's regions |
+| 01 (ORA to FASTQ) | needs Illumina's `orad` binary, which runs outside Docker | nothing |
+| 02b (long-read alignment) | long reads; the e2e fixture has none | the minimap2 image's smoke test, which maps synthetic HiFi reads with `-x map-hifi`; nothing runs the script |
+| 03e (Clair3) | long reads; the e2e fixture has none | the image's smoke test, with a recall check on synthetic HiFi reads and a check that the two model directories the script names exist; the fake-docker suite runs the script |
+| 04c (Sniffles2) | long reads; the e2e fixture has none | the image's smoke test on the synthetic HiFi alignment; `tests/fake-docker/bash-step-partial-outputs.sh` runs the script |
 | 15 (duphold) | no case yet | the image's smoke test on a planted deletion; `tests/fake-docker/bash-step-sv.sh` runs the script; the Nextflow module is stub-run |
 | 18 (CNVpytor) | no case yet; it needs its own resource files | the image's smoke test; the SV merge case reads a planted CNVpytor VCF, not one CNVpytor wrote |
 | 29 (somatic Mutect2) | no case yet | `tests/fake-docker/bash-step-somatic-mito.sh` checks the Mutect2 command line |
 | 03c (Strelka2) | no case yet | the image's smoke test, with a recall check against the truth slice |
-| 01 (ORA to FASTQ) | needs Illumina's `orad` binary, which runs outside Docker | nothing |
+| 03d (Octopus) | no case yet | the image's smoke test, with a recall check against the truth slice; case `bash-step-bash42` runs the script under bash 4.2 against the fake docker |
+| 04a (TIDDIT) | no case yet | the image's smoke test; settle-doubts question 4 runs the script with only a BWA-MEM2 index; case `bash-step-bash42` and `tests/fake-docker/bash-step-sv.sh` run it against the fake docker |
+| chip-to-vcf (array data to VCF) | no case yet | `tests/test_chip_to_vcf.sh` in the unit-tests job runs the script with the real bcftools and Picard images on two ten-row vendor files |
 
 The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` in `nextflow.yml`); the bash step 09 runs in case `bash-step-09-str`.
 

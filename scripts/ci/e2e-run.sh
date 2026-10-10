@@ -74,7 +74,9 @@ pull_image() {
     try=$((try + 1)) wait=$((wait * 2))
   done
 }
-# Images no case runs (docs/testing.md, "What no e2e case runs"): pulling them
+# Images no case uses: those of the steps in docs/testing.md, "What no e2e case
+# runs", plus BWA_IMAGE (the classic index GRIDSS needs, step 04b), PICARD_IMAGE
+# (chip-to-vcf) and SAMTOOLS_HTTPS_IMAGE (docs/quick-test.md). Pulling them
 # would only cost time and cache space.
 UNUSED_IMAGES=" SAMTOOLS_HTTPS_IMAGE BWA_IMAGE STRELKA_IMAGE OCTOPUS_IMAGE CLAIR3_IMAGE TIDDIT_IMAGE SNIFFLES_IMAGE GRIDSS_IMAGE DUPHOLD_IMAGE CNVPYTOR_IMAGE ANNOTSV_IMAGE VEP_IMAGE PCGR_IMAGE PICARD_IMAGE "
 # case_images: the NAME_IMAGE="ref" lines of versions.env and of the cases,

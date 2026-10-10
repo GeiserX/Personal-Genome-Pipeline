@@ -68,7 +68,7 @@ v0.5.0 started as post-processing: alignment and variant calling were left to nf
 
 v0.5.0 shipped 27 modules in 6 workflows, for interpretation after calling. CI ran their stub-testable subset; the tools that need a database were checked by hand.
 
-Today the Nextflow path has 39 modules in 7 workflows and runs from FASTQ to the report. The e2e job runs the real tools of most steps on a slice of HG002 and compares the pipeline with the bash steps on the same reads ([docs/testing.md](docs/testing.md)). The Nextflow ExpansionHunter module is only stub-run. VEP, CPSR and AnnotSV need databases CI does not download, and GRIDSS needs a 31 GB Java heap, so CI does not run them. See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+Today the Nextflow path has 39 modules in 7 workflows and runs from FASTQ to the report. The e2e job runs the real tools of most steps on a slice of HG002 and compares the pipeline with the bash steps on the same reads ([docs/testing.md](docs/testing.md)). The Nextflow ExpansionHunter module is only stub-run. VEP, CPSR and AnnotSV need databases the e2e job does not download, and GRIDSS needs a 31 GB Java heap, so no e2e case runs them; CI runs their images' smoke tests instead ([docs/testing.md](docs/testing.md)). See [docs/nextflow.md](docs/nextflow.md) for known limitations.
 
 - [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 27 modules, `--tools` gating, stub CI, Docker + Singularity profiles
 
