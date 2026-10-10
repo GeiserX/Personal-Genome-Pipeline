@@ -1,0 +1,65 @@
+name: Demo pictures
+
+# Retakes the three docs pictures of DEMO-001, the invented sample
+# (docs/testing.md, "Retaking the report pictures"), with
+# tests/demo/retake-screenshots.sh: it writes the sample from a fixed seed,
+# runs steps 36, 27, 24 and 28 on it with the pinned images, draws the
+# pictures and checks them. The pictures come back as the artifact
+# `demo-pictures`; look at them and commit them into docs/images/ by hand.
+# Nothing here writes to the repository.
+#
+# The OCR half of tests/demo/check_pictures.py needs macOS, so this run checks
+# the PNG chunks only; run `check_pictures.py --ocr` on a Mac before you
+# commit the pictures.
+#
+# On pull requests it runs only when the picture tooling changes, so a change
+# that breaks the script turns that pull request red. It is not a required
+# check, so the paths filter cannot leave a pull request waiting.
+#
+# Public repo: GitHub-hosted runners are free here, and this runs on pull
+# requests, so nothing in this file may use a self-hosted runner.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/demo/**'
+      - '.github/workflows/demo-pictures.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # render_pictures.py and the self-test of check_pictures.py draw text
+      # with DejaVu Sans Mono on Linux.
+      - name: Font
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q fonts-dejavu-core
+
+      # PLAYWRIGHT_WITH_DEPS: the script lets Playwright install Chromium's
+      # system libraries, so the Playwright pin lives in the script alone.
+      - name: Retake the pictures
+        env:
+          PLAYWRIGHT_WITH_DEPS: '1'
+        run: tests/demo/retake-screenshots.sh "$RUNNER_TEMP/demo" "$RUNNER_TEMP/pictures"
+
+      - name: Upload the pictures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: demo-pictures
+          path: ${{ runner.temp }}/pictures/demo-*.png
+          if-no-files-found: error
+          retention-days: 7
