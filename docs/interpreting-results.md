@@ -211,7 +211,7 @@ Step 9b adds a `STR_STATUS` field to each locus in the VCF so you do not need to
 The `Disease`, `InheritanceMode`, `SourceDisplay`, `STR_NORMAL_MAX`, and `STR_PATHOLOGIC_MIN` INFO fields give the clinical context for each locus (a field the catalog has no value for prints as `.`). Use a VCF viewer or `bcftools query` to extract them:
 
 ```bash
-bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/InheritanceMode\t%INFO/STR_NORMAL_MAX\t%INFO/STR_PATHOLOGIC_MIN\n' \
+bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/InheritanceMode\t%INFO/SourceDisplay\t%INFO/STR_NORMAL_MAX\t%INFO/STR_PATHOLOGIC_MIN\n' \
     expansion_hunter/<sample>_eh_stranger.vcf
 ```
 
