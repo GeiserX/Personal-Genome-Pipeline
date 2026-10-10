@@ -339,7 +339,8 @@ def main():
         put(f"{y}/pypgx/S_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\n"
             "CYP2D6\tIndeterminate\tIndeterminate\t.\tbam\nCYP2C19\t*1/*2\tIM\t.\tbam\nCYP2C9\tindeterminate\t.\t.\tbam\n",
             age_days=2)
-        put(f"{y}/cyrius/S_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\t*5/*5\tCYP2D6_depth_unreliable\n", age_days=2)
+        cy_head = "Sample\tGenotype\tFilter\n"
+        put(f"{y}/cyrius/S_cyp2d6.tsv", cy_head + "S\t*5/*5\tCYP2D6_depth_unreliable\n", age_days=2)
         summ_y, txt_y, html_y = render(y)
         cy = summ_y["cyp2d6"]
         check("pypgx: Indeterminate (any case) is not counted as called",
@@ -369,11 +370,13 @@ def main():
         check("CYP2D6: a step 36 table older than the callers' results is not read",
               render(y)[0]["cyp2d6"].get("consensus") is None)
 
-        # 12. repeat expansions with Stranger
+        # 12. repeat expansions with Stranger: invented loci, none of the five
+        # key loci, so a flagged one can only come from STR_STATUS
         x = os.path.join(work, "str", "S")
-        eh_rec = ("chr4\t3074877\t.\tC\t<STR20>\t.\tPASS\tEND=1;REPID=HTT;VARID=HTT{st}\tGT:REPCN\t0/1:17/20\n"
-                  "chr14\t92071011\t.\tG\t<STR75>\t.\tPASS\tEND=1;REPID=ATXN3;VARID=ATXN3{st2}\tGT:REPCN\t0/1:20/75\n"
-                  "chr9\t100\t.\tA\t<STR9>\t.\tPASS\tEND=1;REPID=NOTINCAT;VARID=NOTINCAT\tGT:REPCN\t0/1:5/9\n")
+        fmt = "GT:REPCN"
+        eh_rec = ("chr4\t1000\t.\tC\t<STR20>\t.\tPASS\tEND=1;REPID=LOCUS_A;VARID=LOCUS_A{st}\t" + fmt + "\t0/1:7/20\n"
+                  "chr14\t2000\t.\tG\t<STR75>\t.\tPASS\tEND=1;REPID=LOCUS_B;VARID=LOCUS_B{st2}\t" + fmt + "\t0/1:20/75\n"
+                  "chr9\t100\t.\tA\t<STR9>\t.\tPASS\tEND=1;REPID=NOTINCAT;VARID=NOTINCAT\t" + fmt + "\t0/1:5/9\n")
         put(f"{x}/expansion_hunter/S_eh.vcf", VCF_HEAD + eh_rec.format(st="", st2=""), age_days=1)
         put(f"{x}/expansion_hunter/S_eh_stranger.vcf",
             VCF_HEAD + eh_rec.format(st=";STR_STATUS=normal", st2=";STR_STATUS=full_mutation"))
@@ -382,11 +385,11 @@ def main():
         check("Stranger: read when it is there", summ_x["sections"]["expansions"]["source"]
               == "expansion_hunter/S_eh_stranger.vcf" and ed.get("stranger") is True, summ_x["sections"]["expansions"])
         check("Stranger: the full_mutation outside the five key loci is listed, the normal one is not",
-              ed.get("flagged") == [{"locus": "ATXN3", "repeat_count": "20/75", "status": "full_mutation"}], ed)
+              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation"}], ed)
         check("Stranger: a record without STR_STATUS is counted apart, not flagged", ed.get("no_status") == 1, ed)
-        check("Stranger: the key loci stay", ed["key_loci"][0] == {"locus": "HTT", "repeat_count": "17/20"}, ed)
-        check("Stranger: both reports list ATXN3 full_mutation and the short-read caveat",
-              "ATXN3    20/75  full_mutation" in txt_x and "<td>ATXN3</td><td>20/75</td><td>full_mutation</td>" in html_x
+        check("Stranger: the five key loci stay listed", [k["locus"] for k in ed["key_loci"]] == collect_summary.EH_LOCI, ed)
+        check("Stranger: both reports list LOCUS_B full_mutation and the short-read caveat",
+              "LOCUS_B  20/75  full_mutation" in txt_x and "<td>LOCUS_B</td><td>20/75</td><td>full_mutation</td>" in html_x
               and "can be wrong at some loci" in txt_x and "can be wrong at some loci" in html_x, txt_x)
         check("Stranger summary validates", not validate.validate(schema, json.loads(json.dumps(summ_x))))
         put(f"{x}/expansion_hunter/S_eh_stranger.vcf", open(f"{x}/expansion_hunter/S_eh_stranger.vcf").read(), age_days=3)
