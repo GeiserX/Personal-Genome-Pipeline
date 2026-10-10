@@ -3,7 +3,8 @@
     VCF_PRECHECK — Look at each input VCF once, before any analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Reports three facts per sample; main.nf decides what to do with them,
-    so every stop names the sample and says how to fix the file.
+    so every stop names the sample and says how to fix the file. The
+    sample count is the exception: more than one sample stops here.
 
     FILTER values. ClinVar screen, clinical filter and slivar keep only
     FILTER=PASS records. A VCF from a caller that leaves FILTER as '.'
