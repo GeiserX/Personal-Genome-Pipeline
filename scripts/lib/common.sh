@@ -37,11 +37,17 @@ THREADS=${THREADS:-8}
 # validate_sample NAME: exit 2 unless NAME is a plain sample name. Scripts put
 # it into container paths and `bash -c` bodies, so only letters, digits, '.',
 # '_' and '-' are allowed (the same rule as main.nf), and '.' and '..' are not
-# names at all.
+# names at all. Nor is a name that starts with '-': CPSR, bin/pgx_parse.py and
+# bin/collect_summary.py take it as an argument value, and argparse reads '-x'
+# as an option. CPSR's 3 to 40 characters are bin/cpsr_sample_id's job.
 validate_sample() {
   local s=${1:-}
   if [[ ! "$s" =~ ^[A-Za-z0-9._-]+$ ]] || [ "$s" = "." ] || [ "$s" = ".." ]; then
     echo "ERROR: invalid sample name '${s}'. Use only letters, digits, '.', '_' and '-' (and not '.' or '..')." >&2
+    exit 2
+  fi
+  if [[ "$s" == -* ]]; then
+    echo "ERROR: invalid sample name '${s}': it starts with '-', which tools read as an option. Start it with a letter or digit." >&2
     exit 2
   fi
 }
