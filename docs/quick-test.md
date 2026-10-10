@@ -103,7 +103,7 @@ If all three steps produce output, your Docker setup, reference data, and pipeli
 
 If you want to test BAM-dependent steps, you need an indexed BAM at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` (plus `.bai`), which is where the scripts read it. A chr22-only BAM of a 30x genome is about 560 MB.
 
-The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The first container uses the biocontainers samtools image because it ships CA certificates and can fetch over `https://`; the `staphb/samtools` image used elsewhere has none and fails with "Libcurl reported error 60". chr22 is the same sequence in every GRCh38 file, so the pipeline's reference decodes it.
+The command below reads only the chr22 reads of the 1000 Genomes 30x NA12878 alignment, the same person as the Option A VCF. The alignment is a CRAM file with an index, so samtools fetches just the chr22 part (a few hundred MB) instead of the 16 GB file. The first container uses `SAMTOOLS_HTTPS_IMAGE`, the biocontainers samtools image, because it ships CA certificates and can fetch over `https://`; `SAMTOOLS_IMAGE`, the `staphb/samtools` image used elsewhere, has none and fails with "Libcurl reported error 60". chr22 is the same sequence in every GRCh38 file, so the pipeline's reference decodes it.
 
 The 1000 Genomes CRAM was aligned to a GRCh38 file with ALT, HLA and decoy contigs (3,366 sequences), and its header lists all of them, which Manta and `validate-setup.sh` refuse against the pipeline's 195-sequence reference. So the `awk` between the two containers replaces the header's sequence lines with the reference's own (from its `.dict`) and drops the few reads whose mate sits on a contig the reference does not have. That is enough for this mechanics test; a real sample from another reference is realigned instead ([realignment](realignment.md)).
 
@@ -117,7 +117,7 @@ docker run --rm --user root \
   --cpus 4 --memory 4g \
   -v "${GENOME_DIR}:/genome" \
   -w /tmp \
-  quay.io/biocontainers/samtools:1.20--h50ea8bc_0 \
+  "${SAMTOOLS_HTTPS_IMAGE}" \
   samtools view -h -@ 4 -T "/genome/${REF_FASTA}" \
     https://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239334/NA12878.final.cram chr22 \
 | awk -v dict="${GENOME_DIR}/${REF_FASTA%.fasta}.dict" '
