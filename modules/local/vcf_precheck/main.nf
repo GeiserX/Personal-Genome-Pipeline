@@ -42,6 +42,15 @@
     or cover one of them without saying so. A VCF with more than one
     sample stops here, with the sample count, the first five names and the
     bcftools command that keeps one of them.
+
+    Build. The pipeline is GRCh38 only. A ##contig line for chr1-22, chrX or
+    chrY (or 1-22, X, Y) whose length is not GRCh38's stops here, naming the
+    contigs: a GRCh37 (hg19) file named the chr way would otherwise run to
+    the end with every coordinate wrong. The lengths are those of the
+    reference setup.sh installs (NCBI's no-ALT analysis set), the same for
+    every GRCh38 build. A file without ##contig lines, or without lengths in
+    them, is not checked here; validate-setup.sh spot-checks its REF bases
+    against the reference, and a direct `nextflow run` does not.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -102,6 +111,32 @@ process VCF_PRECHECK {
             echo "(-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none:"
             echo "the result is a variant-only VCF. Split a gvcf for that row with -s alone, so its reference"
             echo "blocks stay.)"
+        } >&2
+        exit 1
+    fi
+
+    # Build: every ##contig length of chr1-22, X and Y must be GRCh38's
+    awk -v grch38='1:248956422 2:242193529 3:198295559 4:190214555 5:181538259 6:170805979 7:159345973 8:145138636 9:138394717 10:133797422 11:135086622 12:133275309 13:114364328 14:107043718 15:101991189 16:90338345 17:83257441 18:80373285 19:58617616 20:64444167 21:46709983 22:50818468 X:156040895 Y:57227415' '
+        BEGIN { n = split(grch38, a, " "); for (i = 1; i <= n; i++) { split(a[i], kv, ":"); want[kv[1]] = kv[2] } }
+        /^##contig=</ {
+            id = ""; len = ""
+            if (match(\$0, /[<,]ID=[^,>]+/)) id = substr(\$0, RSTART + 4, RLENGTH - 4)
+            if (match(\$0, /[<,]length=[0-9]+/)) len = substr(\$0, RSTART + 8, RLENGTH - 8)
+            key = id; sub(/^chr/, "", key)
+            if ((key in want) && len != "" && len != want[key]) print id " " len " " want[key]
+        }' header.txt > build_mismatch.txt
+    if [ -s build_mismatch.txt ]; then
+        N_WRONG=\$(wc -l < build_mismatch.txt | tr -d ' ')
+        {
+            echo "ERROR: Sample '${meta.id}': ${vcf.name} is not on GRCh38. Its header gives \${N_WRONG} contig length(s) that"
+            echo "GRCh38 does not have:"
+            awk 'NR <= 5 { printf "    %s length %s (GRCh38: %s)\\n", \$1, \$2, \$3 }' build_mismatch.txt
+            if grep -Eq '^(chr)?1 249250621 ' build_mismatch.txt; then
+                echo "A chr1 length of 249250621 is GRCh37 (hg19)."
+            fi
+            echo "The pipeline needs GRCh38: every position would be read on the wrong build. Renaming the"
+            echo "contigs does not fix that. Get a GRCh38 VCF from your provider, or start from the FASTQ"
+            echo "so the pipeline aligns and calls the reads on GRCh38 (docs/vendor-guide.md, Genome Build)."
         } >&2
         exit 1
     fi
