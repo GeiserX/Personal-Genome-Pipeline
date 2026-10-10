@@ -627,17 +627,35 @@ workflow {
     // every run under 25.10), so the completion message never printed. Local
     // variables are resolved where the closure is written, so the handler
     // reads only these.
-    def run_info = workflow
-    def run_log  = log
-    def outdir   = params.outdir
+    //
+    // A process with a failed task is named, at the end and in
+    // failed_tasks.tsv in the launch directory (process, then 'ignored' for a
+    // report-only tool nextflow.config lets fail, or 'failed'): run-all.sh
+    // marks that step failed. A run with an ignored task still exits 0, so it
+    // does not say "completed successfully".
+    def run_info   = workflow
+    def run_log    = log
+    def outdir     = params.outdir
+    def tasks_file = file("${workflow.launchDir}/failed_tasks.tsv")
     run_info.onComplete {
-        if (run_info.success) {
+        def ignored = run_info.stats.processes.findAll { r -> r.ignored > 0 }.collect { r -> r.name }
+        def failed  = run_info.stats.processes.findAll { r -> r.failed - r.ignored - r.retries > 0 }.collect { r -> r.name }
+        if (ignored || failed) {
+            tasks_file.text = 'process\tstatus\n' +
+                ignored.collect { n -> "${n}\tignored\n" }.join('') + failed.collect { n -> "${n}\tfailed\n" }.join('')
+        } else if (tasks_file.exists()) {
+            tasks_file.delete()   // an earlier run's
+        }
+        if (run_info.success && !ignored) {
             run_log.info ""
             run_log.info "Pipeline completed successfully!"
             run_log.info "Results: ${outdir}"
             run_log.info ""
+        } else if (run_info.success) {
+            run_log.warn "Pipeline completed, but report-only tools failed and were skipped: ${ignored.join(', ')}. " +
+                         "Their results are missing; see .nextflow.log. Results: ${outdir}"
         } else {
-            run_log.error "Pipeline failed. Check .nextflow.log for details."
+            run_log.error "Pipeline failed${failed ? ' in ' + failed.join(', ') : ''}. Check .nextflow.log for details."
         }
     }
 }
