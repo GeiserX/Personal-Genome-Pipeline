@@ -18,7 +18,8 @@
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
 #   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report, also after a failed pipeline.
 #   A step without its data or BAM is skipped. A report-only tool whose task fails is skipped, and its step is marked
-#   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem.
+#   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem and
+#   you run as root, or Linux's fs.protected_hardlinks is 0 (then a user may link the tasks' root-owned files).
 set -euo pipefail
 case "${1:-}" in -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;; esac
 SAMPLE=${1:-} SEX=${2:-}
@@ -128,9 +129,12 @@ arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")
 M=$(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo 2>/dev/null || echo $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 )))
 [[ " $* " == *" --max_memory"* ]] || [ "${M:-0}" -lt 1 ] || NF+=(--max_memory "${M}.GB")
-# Publish by hard link when Nextflow's work directory and GENOME_DIR share a filesystem: the BAM and every other
-# output are then stored once, not twice. Nextflow does not fall back to a copy when a link fails, so a probe decides.
-if [[ " $* " != *" --publish_dir_mode"* && " $* " != *" -w "* && " $* " != *" -work-dir"* ]] && [ -z "${NXF_WORK:-}" ]; then
+# Publish by hard link when it is sure to work: the BAM and every other output are then stored once, not twice.
+# Nextflow does not fall back to a copy when a link fails; the run stops. The tasks run as root (the docker profile)
+# and their files can stay root's, and Linux lets another user link a file it does not own only when
+# fs.protected_hardlinks is 0. So: root or protected_hardlinks 0, and a probe link from work/ to GENOME_DIR that works.
+if [[ " $* " != *" --publish_dir_mode"* && " $* " != *" -w "* && " $* " != *" -work-dir"* ]] && [ -z "${NXF_WORK:-}" ] \
+   && { [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 0 ]; }; then
   LP="${S}/nextflow/work/.pgp-link-probe.$$"
   mkdir -p "${S}/nextflow/work" && : > "$LP" && ln "$LP" "${S}/.pgp-link-probe.$$" 2>/dev/null && ln "$LP" "${G}/.pgp-link-probe.$$" 2>/dev/null \
     && NF+=(--publish_dir_mode link)
