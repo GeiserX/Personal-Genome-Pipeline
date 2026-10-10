@@ -487,10 +487,12 @@ Key observations:
 
 | Caller | Runtime | Threads | Peak Memory |
 |---|---|---|---|
-| DeepVariant 1.6.0 | ~3-5 hours | 8 | 32 GB |
+| DeepVariant 1.6.0 | not recorded (no log in the repo) | 8 | 32 GB container limit, peak not recorded |
 | GATK HC 4.6.1 | 8.6 hours (518 min) | 8 | 4.3 GB |
 | FreeBayes 1.3.6 | 9.3 hours | 1 (single-threaded) | 12.8 GB |
 | Strelka2 2.9.10 | 72 min | 8 | 1 GB |
 | TIDDIT 3.9.5 | 7 min | 4 | <1 GB |
+
+For the pinned DeepVariant 1.10: about 13.5 hours on 8 CPUs in one observed ~30x run, and 1 h 9 min on 96 vCPUs upstream ([runtime](hardware-requirements.md#runtime-per-step)).
 
 FreeBayes is the bottleneck — single-threaded with no parallelism flag. It also requires **32 GB memory** for full-genome runs (peaked at 12.8 GB but grows unpredictably through complex regions). Plan accordingly when running all callers.

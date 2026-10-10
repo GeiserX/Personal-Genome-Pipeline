@@ -15,9 +15,9 @@
 
 | Resource | Minimum | Recommended | Notes |
 |---|---|---|---|
-| **CPU** | 4 cores | 16+ cores | DeepVariant scales linearly with cores |
-| **RAM** | 16 GB | 32 GB | Some steps need 8-16 GB; pipeline limits each container |
-| **Disk** | 500 GB free | 1 TB+ | See [detailed breakdown](hardware-requirements.md) |
+| **CPU** | 4 cores | 8-16 cores | `run-all.sh` runs DeepVariant with at most 8 shards, fewer when `--max_cpus` is lower; more cores run other steps beside it ([CPU](hardware-requirements.md#cpu-requirements)) |
+| **RAM** | 16 GB | 32 GB | Every container has a hard memory limit; the 8-CPU steps ask for 32 GB, capped at the machine's RAM |
+| **Disk** | 500 GB free from a BAM, about 700 GB from FASTQ | 1 TB+ | See [detailed breakdown](hardware-requirements.md#disk-space-breakdown) |
 | **Internet** | Broadband | 100+ Mbps | ~70-75 GB core downloads + ~175 GB optional annotation databases |
 | **OS** | Linux (amd64) | Ubuntu 22.04+ | macOS/ARM works but slower (see below) |
 
@@ -71,7 +71,7 @@ swap=8GB
 ```
 
 ### Unraid / NAS Servers
-Works great for long-running analyses. Use `--cpus` and `--memory` Docker flags (already set in all scripts) to avoid starving other services. Consider running in detached mode (`-d` flag) for multi-hour steps.
+Works for long-running analyses. Each step has a hard memory limit. On the `run-all.sh` path, CPU is a Docker share (1024 per requested CPU), not a cap: an idle machine lends a task every core, and on a busy one the pipeline's tasks outweigh a default container. Only the single-step scripts use hard `--cpus` caps, and the repo sets no low-priority option. [A shared host](hardware-requirements.md#a-shared-host) has a config that gives the pipeline fewer shares.
 
 ## Quick Start
 
@@ -97,7 +97,7 @@ This checks Docker, disk space, reference data, Docker images, and sample files.
 
 ## Full run
 
-One command runs every step of a default run for one sample. `run-all.sh` checks the setup, writes a one-row samplesheet and starts the [Nextflow pipeline](nextflow.md) (`main.nf`). Nextflow runs the steps in parallel as far as CPUs and memory allow, keeps a log for each task, and on a second run reuses every task whose inputs did not change (`-resume`), so a run that stopped half way continues where it stopped.
+One command runs every step of a default run for one sample. `run-all.sh` checks the setup, writes a one-row samplesheet and starts the [Nextflow pipeline](nextflow.md) (`main.nf`). Nextflow runs the steps in parallel as far as CPUs and memory allow, keeps a log for each task, and on a second run reuses every task that finished and whose inputs did not change (`-resume`). A task that was running when the run stopped starts over, and DeepVariant is a single task: about 13.5 h on 8 CPUs in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)).
 
 It needs Docker, bash 4.4 or later, Java 17 or later and Nextflow 26.04.7, the release CI validates (`NEXTFLOW_VERSION` in `versions.env`). Pin the version when you install, because the plain installer fetches the newest release:
 
@@ -114,6 +114,15 @@ export GENOME_DIR=/path/to/your/data
 ./scripts/validate-setup.sh your_name      # what is installed and what is missing
 ./scripts/run-all.sh your_name male        # or female: sets the chrX/chrY ploidy and the sex check
 ```
+
+**Plan for more than a day.** Run `run-all.sh` inside `tmux` or `screen`, or with `nohup`, so a closed terminal or a dropped SSH session does not stop it:
+
+```bash
+tmux new -s genome      # run the command inside; Ctrl-b d detaches, `tmux attach -t genome` comes back
+nohup ./scripts/run-all.sh your_name male > run-all.log 2>&1 &   # the same without tmux
+```
+
+Do not pass `-bg` to `run-all.sh`: Nextflow would return at once and `run-all.sh` would go on to the reports before the pipeline finished.
 
 Without Java or Nextflow, `run-all.sh` stops with exit 2 and prints the install line; the [paths below](#path-a-i-have-fastq-files-raw-reads) run the steps one by one instead. `./scripts/run-all.sh --help` prints the switches.
 
@@ -147,7 +156,7 @@ When the run starts from an existing VCF, the pipeline does not read a gVCF besi
 
 GRIDSS is not part of the SV consensus (step 22): it reports every event as a pair of breakends, which never match the DEL, DUP and INV records of Manta, Delly and CNVpytor.
 
-Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 30.GB` to leave 2 GB to the rest of a 32 GB machine, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit, and `--max_cpus` and `--max_memory` cap each task.
+Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 24.GB` to cap each task at 24 GB, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit in what is left of the machine's, and `--max_cpus` and `--max_memory` cap each task, not the total; [a shared host](hardware-requirements.md#a-shared-host) shows how to bound the total.
 
 **Data.** `run-all.sh` passes each database it finds under `GENOME_DIR`; a step without its data is listed as `skipped (data not installed: ...)`, and the run goes on:
 
@@ -162,7 +171,7 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 | 18 CNVpytor | `reference/cnvpytor/gc_hg38.pytor` | `--cnvpytor_resources` |
 | 5 AnnotSV | `annotsv_annotations/Annotations_Human/` | `--annotsv_annotations` |
 | 32 pypgx | `reference/pypgx-bundle/` | `--pypgx_bundle` |
-| 25 PRS | `prs_scores/*.txt.gz` (run `./scripts/25-prs.sh <sample> <sex>` once to download the scoring files) | `--pgs_scoring` |
+| 25 PRS | `prs_scores/*.txt.gz` (`setup.sh` installs the scoring files) | `--pgs_scoring` |
 | 10 TelomereHunter, 19 Delly | `reference/cytoBand.hg38.txt`, `reference/delly_human.hg38.excl.tsv` (optional) | `--cytoband`, `--delly_exclude` |
 
 **Where things land.** Results go to `${GENOME_DIR}/<sample>/`, in the folders of the pipeline's [output structure](nextflow.md#output-structure). Most match the single scripts' folders; the pipeline writes PharmCAT to `pharmcat/`, ROH to `roh/`, depth to `coverage/` and HLA types to `hla/`, where the scripts use `vcf/`, `vcf/`, `mosdepth/` and `hla_t1k/`. The reports read both. At the end `run-all.sh` renders the full HTML report (`<sample>_report.html`, step 24), the text report (`<sample>_report.txt`) and the `summary.json` both are made from.
@@ -170,13 +179,15 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 | Log | Where |
 |---|---|
 | Nextflow's own log | `<sample>/nextflow/.nextflow.log` |
-| Each task's command, output and exit code | `<sample>/nextflow/work/<hash>/` (`.command.sh`, `.command.log`, `.exitcode`); the trace in `${GENOME_DIR}/pipeline_info/` gives each task's hash, the start of its folder's name |
+| Each task's command, output and exit code | `<sample>/nextflow/work/<hash>/` (`.command.sh`, `.command.log`, `.exitcode`); the trace in `${GENOME_DIR}/pipeline_info/` lists a task once it finished, with its hash, the start of its folder's name |
 | The script steps and the reports | `<sample>/logs/<script>.log` |
 | How each step ended in this run | `<sample>/logs/run_status.tsv` (the reports mark an older result of a skipped step as stale) |
 
-The `work/` folder holds a copy of every intermediate file. Once the run succeeded and the results look right, delete `<sample>/nextflow/work` to free the space; the next run then starts from scratch.
+**Watching a long step.** Nextflow's console shows each process as `[ab/123456] ... | 0 of 1`. `ab/123456` is the start of that task's folder, so `tail -f <sample>/nextflow/work/ab/123456*/.command.log` shows the tool's own output while it runs; DeepVariant's `make_examples` logs there how many candidates each shard has done.
 
-**After a failure** run the same command again: `-resume` reruns only the tasks that did not finish. **To rerun one step by hand**, run its script, for example `./scripts/06-clinvar-screen.sh your_name` after a ClinVar update, then `./scripts/24-html-report.sh your_name` and `./scripts/generate-report.sh your_name` to refresh the reports. A script reads the folders the scripts write; where the pipeline's folder differs (above), a script that reads another step's output may need that step run by hand first.
+The `work/` folder holds a copy of every intermediate file (from FASTQ, several hundred GB: [disk](hardware-requirements.md#per-sample-storage)). Once the run succeeded and the results look right, delete `<sample>/nextflow/work` to free the space; the next run then starts from scratch.
+
+**After a failure** run the same command again: `-resume` reuses every task that finished and runs the rest, including from the start the one that was running when the run stopped. **To rerun one step by hand**, run its script, for example `./scripts/06-clinvar-screen.sh your_name` after a ClinVar update, then `./scripts/24-html-report.sh your_name` and `./scripts/generate-report.sh your_name` to refresh the reports. A script reads the folders the scripts write; where the pipeline's folder differs (above), a script that reads another step's output may need that step run by hand first.
 
 ### Path A: I Have FASTQ Files (Raw Reads)
 
@@ -194,7 +205,7 @@ export SAMPLE=your_name
 # 3. Run the pipeline
 ./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~10-20 min)
 ./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (~1-2 hr)
-./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF (~3-5 hr)
+./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF, the longest step (see hardware-requirements.md)
 ./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (~5 min)
 ./scripts/07-pharmacogenomics.sh $SAMPLE # Drug-gene interactions (~10 min)
 

@@ -16,9 +16,9 @@
   <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github" alt="GitHub Stars"></a>
 </p>
 
-This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs the [analysis steps of a default run](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/#what-a-default-run-covers) to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers with resource limits so it won't crash your machine.
+This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs the [analysis steps of a default run](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/#what-a-default-run-covers) to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers, each with a hard memory limit.
 
-**Time:** 6-12 hours per sample on a 16-core desktop | **Disk:** 500 GB minimum per sample | **Cost:** Free (you just need your data)
+**Time:** plan for more than a day per sample on 8 CPUs ([runtime](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/#runtime-per-step)) | **Disk:** 500 GB per sample from a BAM, about 700 GB from FASTQ | **Cost:** Free (you just need your data)
 
 ## Features
 
@@ -27,7 +27,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 - Screens ClinVar and runs CPSR cancer predisposition panels, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritization.
 - Pharmacogenomics with PharmCAT, pypgx (23 genes, CYP2D6 SVs) and CPIC drug recommendations. PharmCAT gets T1K's HLA types, and a CYP2D6 call only when pypgx and Cyrius (opt-in, non-commercial licence) agree.
 - Repeat expansions, HLA typing (KIR opt-in), SMN1/SMN2 copy number (opt-in), telomere length, mitochondrial haplogroup, heteroplasmy and an mtDNA contamination check, Y-chromosome haplogroup (opt-in), ROH, ancestry and polygenic risk scores.
-- Every tool runs in a Docker container with CPU and memory limits and no network, pinned by tag or digest in `versions.env`. The opt-in Cyrius is installed once by `setup.sh --cyrius` from PyPI, every file checked against its hash, and then runs offline too. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
+- Every tool runs in a Docker container with a hard memory limit and no network; CPU is a hard cap in the single-step scripts and a Docker share in the pipeline ([a shared host](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/#a-shared-host)). Each image is pinned by tag or digest in `versions.env`. The opt-in Cyrius is installed once by `setup.sh --cyrius` from PyPI, every file checked against its hash, and then runs offline too. No script uploads your data; [a few steps download public files](https://geiserx.github.io/Personal-Genome-Pipeline/why-local/#network-calls-during-a-run) during a run.
 - One Nextflow DSL2 pipeline from FASTQ, BAM or VCF to the report, and every step also as a bash script you can run on its own.
 - Ends in an HTML report and a MultiQC summary. Alternative callers (GATK, FreeBayes, Strelka2, Octopus, BWA-MEM2, TIDDIT, GRIDSS) are there for benchmarking.
 
@@ -71,7 +71,7 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 
 This pipeline is for **educational and research purposes only**. It is not a medical device and has not been clinically validated. Genomic findings should always be discussed with a qualified healthcare professional before making any medical decisions. The authors are not responsible for any actions taken based on pipeline output.
 
-Your genome data is sensitive personal information. This pipeline runs locally and no script uploads it. The only exception is your choice: step 14 prepares files for an imputation server, and sending them there is up to you. Keep your data secure.
+Your genome data is sensitive personal information. This pipeline runs locally and no script uploads it. The only exception is your choice: step 14 prepares files for an imputation server, and sending them there is up to you. Keep your data secure. A neutral sample name removes the metadata that names you; it does not anonymise the data, because genotype files (VCF, gVCF, BAM, CRAM) can identify you and your relatives through genealogy databases. [Before you share outputs](https://geiserx.github.io/Personal-Genome-Pipeline/nextflow/#before-you-share-outputs) lists what the outputs carry.
 
 ## License
 
