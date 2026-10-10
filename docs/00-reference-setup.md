@@ -126,7 +126,7 @@ Ensembl Variant Effect Predictor annotation database. Required for step 13 and t
 ./scripts/setup.sh --vep-cache ${GENOME_DIR}
 ```
 
-It downloads the release-116 cache, checks it against Ensembl's `CHECKSUMS` file, unpacks it into a temporary folder and moves it to `${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/` only when it is complete. The tarball (~26 GB) and the unpacked cache (~30 GB) are both on disk until the install ends, then the tarball is deleted. An interrupted download resumes when you run the command again.
+It downloads the release-116 cache, checks it against Ensembl's `CHECKSUMS` file, unpacks it into a temporary folder and moves it to `${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/` only when it is complete. The tarball (~26 GB) and the unpacked cache (~30 GB) are both on disk until the install ends, then the tarball is deleted. An interrupted download resumes when you run the command again. It runs on the host (curl or wget, then tar), not in a container. Most of its time is the download: 26 GB at 100 Mbit/s is about 35 minutes, plus the unpacking.
 
 By hand, the same steps:
 
