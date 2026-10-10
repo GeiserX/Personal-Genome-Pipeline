@@ -569,8 +569,9 @@ workflow {
     // Per-sample report inputs: the sample's VCF, and the output files of the
     // steps that ran for it, as one list (HTML_REPORT links each where
     // bin/collect_summary.py reads it). remainder: true keeps a sample a step
-    // did not run for; that step's slot is null and drops out of the list. The
-    // join also makes the report wait for every selected step it shows.
+    // did not run for, or whose task failed and was ignored; that step's slot
+    // is null and drops out of the list. The join also makes the report wait
+    // for every selected step it shows, the SV consensus merge included.
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -589,6 +590,18 @@ workflow {
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.hla_alleles.map    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.expansion_vcf.map  { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.stranger_vcf.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.manta_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.delly_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.cnvpytor_calls.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.merged_sv.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pypgx_summary.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cyrius_results.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 
