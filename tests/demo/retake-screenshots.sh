@@ -20,6 +20,8 @@
 #      DEMO_TERMS_FILE  your private terms for the OCR check, one regular
 #                       expression per line; keep it outside the repository
 #      VENV             the venv to use (created when missing)
+#      PLAYWRIGHT_WITH_DEPS  set (Linux) to let Playwright install the
+#                       libraries Chromium needs, with apt through sudo
 #
 # Docker must see <work_dir> and this checkout. With Colima on macOS both
 # must sit in a folder Colima mounts (the home folder and /private/tmp by
@@ -51,6 +53,21 @@ rm -rf "$GENOME_DIR"
 mkdir -p "$GENOME_DIR"
 : > "${GENOME_DIR}/.demo-genome"
 
+# The two images the steps run, pulled first: a registry error is reported as
+# one, not as a mount problem below. Up to four tries, 30, 60 then 90 seconds
+# apart: a shared runner address can hit Docker Hub's anonymous pull limit.
+for img in "$PYTHON_IMAGE" "$MULTIQC_IMAGE"; do
+  "$ENGINE" image inspect "$img" >/dev/null 2>&1 && continue
+  for try in 1 2 3 4; do
+    "$ENGINE" pull -q "$img" && break
+    if [ "$try" = 4 ]; then
+      echo "ERROR: cannot pull ${img}: check the network and the registry, then run again." >&2
+      exit 1
+    fi
+    sleep $((try * 30))
+  done
+done
+
 echo "=== Docker sees ${GENOME_DIR} and ${REPO}/bin?"
 if ! "$ENGINE" run --rm --network none -v "${GENOME_DIR}:/probe:ro" -v "${REPO}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
     test -f /probe/.demo-genome -a -f /pgp-bin/collect_summary.py; then
@@ -78,7 +95,13 @@ PKGS=(playwright==1.63.0 pillow==12.3.0)
 [ "$(uname -s)" != Darwin ] || PKGS+=(pyobjc-framework-Vision==12.2.2)
 "${VENV}/bin/python" -m pip install -q "${PKGS[@]}"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${VENV}/browsers}
-"${VENV}/bin/python" -m playwright install chromium
+# On a fresh Linux box Chromium also needs system libraries: --with-deps
+# installs them with apt (through sudo).
+if [ -n "${PLAYWRIGHT_WITH_DEPS:-}" ]; then
+  "${VENV}/bin/python" -m playwright install --with-deps chromium
+else
+  "${VENV}/bin/python" -m playwright install chromium
+fi
 "${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT"
 
 echo "=== 5. Checks"
