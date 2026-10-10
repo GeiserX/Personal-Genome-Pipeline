@@ -11,7 +11,7 @@
 #   publish mode   --publish_dir_mode link for root (a fake `id`) when a
 #                  hard link from the work directory to GENOME_DIR works;
 #                  copy (no flag) when ln fails, when -w names another work
-#                  directory, for a user who is not root where
+#                  directory or -c/-config a config that may, for a user who is not root where
 #                  fs.protected_hardlinks is 1 (the tasks' files are root's),
 #                  and as given when the user passed --publish_dir_mode
 #   -bg            refused with exit 2 before nextflow: run-all.sh would go on
@@ -79,6 +79,12 @@ run_expect 0 crossdev env TOOLS=pharmcat PATH="${CASE_WORK}/noln:${ROOTPATH}" "$
 lacks_arg --publish_dir_mode "when ln fails"
 run_expect 0 otherwork env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male -w "${CASE_WORK}/elsewhere"
 lacks_arg --publish_dir_mode "with -w"
+# A config given with -c can set workDir elsewhere, where the probe cannot look
+printf 'workDir = "%s"\n' "${CASE_WORK}/elsewhere" > "${CASE_WORK}/user.config"
+for c in -c -config; do
+  run_expect 0 "otherconfig${c}" env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male "$c" "${CASE_WORK}/user.config"
+  lacks_arg --publish_dir_mode "with ${c}"
+done
 run_expect 0 usermode env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male --publish_dir_mode copy
 has_args --publish_dir_mode copy
 [ "$(grep -o ' --publish_dir_mode ' <<<"$(last)" | wc -l)" -eq 1 ] || fail "--publish_dir_mode passed twice: $(last)"
