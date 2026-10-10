@@ -164,6 +164,14 @@ output_has bwamem2-oom 'about 90 GB'
 # --- step 02b: long reads -------------------------------------------------------
 A="${GENOME_DIR}/sample1/aligned_longread"
 BAM="${A}/sample1_sorted.bam"
+
+# The sort is killed half way: no BAM under the final name, no spill files.
+run_rc longread-sort-dies env PLATFORM=ont FAKE_SORT=fail "${SCRIPTS}/02b-alignment-longread.sh" sample1
+[ "$RC" -ne 0 ] || fail "step 02b exited 0 after the sort was killed"
+[ ! -e "$BAM" ] || fail "the sort was killed and ${BAM} exists"
+[ ! -e "${BAM}.bai" ] || fail "the sort was killed and ${BAM}.bai exists"
+[ -z "$(leftovers)" ] || fail "temporary files left after the sort was killed: $(leftovers)"
+
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 longread env THREADS=2 PLATFORM=ont "${SCRIPTS}/02b-alignment-longread.sh" sample1
 docker_log_has 'samtools sort -@ 2 -m 1G -T /genome/sample1/aligned_longread/sample1\.sort_tmp/sort -o /genome/sample1/aligned_longread/sample1_sorted\.tmp\.bam' \
@@ -172,14 +180,6 @@ docker_log_has 'samtools quickcheck -v /genome/sample1/aligned_longread/sample1_
   "step 02b did not check the BAM with samtools quickcheck before renaming it"
 [ -f "$BAM" ] && [ -f "${BAM}.bai" ] || fail "no BAM and index from step 02b"
 [ -z "$(leftovers)" ] || fail "temporary files left after step 02b: $(leftovers)"
-
-# The sort is killed half way: no BAM under the final name, no spill files.
-rm -f "$BAM" "${BAM}.bai"
-run_rc longread-sort-dies env PLATFORM=ont FAKE_SORT=fail "${SCRIPTS}/02b-alignment-longread.sh" sample1
-[ "$RC" -ne 0 ] || fail "step 02b exited 0 after the sort was killed"
-[ ! -e "$BAM" ] || fail "the sort was killed and ${BAM} exists"
-[ ! -e "${BAM}.bai" ] || fail "the sort was killed and ${BAM}.bai exists"
-[ -z "$(leftovers)" ] || fail "temporary files left after the sort was killed: $(leftovers)"
 
 # A BAM that fails quickcheck does not replace the earlier one.
 run_expect 0 longread-again env PLATFORM=ont FAKE_TAG=first "${SCRIPTS}/02b-alignment-longread.sh" sample1
