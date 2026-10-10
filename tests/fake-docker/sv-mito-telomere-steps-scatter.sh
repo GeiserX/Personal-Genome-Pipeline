@@ -7,8 +7,8 @@
 # orientation counts for Mutect2. SCATTER=false runs one process. A contig in
 # INTERVALS that the reference lacks stops the step before any container.
 # A rerun of 03a or 03b keeps a finished VCF called with the same INTERVALS,
-# BAM, reference and image, and starts no caller; another INTERVALS, a
-# realigned BAM or a missing record calls again.
+# SCATTER, BAM, reference and image, and starts no caller; another
+# INTERVALS or SCATTER, a realigned BAM or a missing record calls again.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -55,7 +55,7 @@ output_has gatk '3 unit\(s\), 2 at a time'
 docker_log_has 'bcftools concat -a -D .*scatter/001\.vcf\.gz .*scatter/002\.vcf\.gz .*scatter/003\.vcf\.gz' "03a did not join the three units in order"
 [ ! -e "${GENOME_DIR}/sample1/vcf_gatk/scatter" ] || fail "03a kept its scatter folder"
 G="${GENOME_DIR}/sample1/vcf_gatk"
-grep -q '^INTERVALS= bam=.* reference=.* image=' "${G}/sample1.run" 2>/dev/null || fail "03a wrote no run record beside its VCF"
+grep -q '^INTERVALS= scatter=true bam=.* reference=.* image=' "${G}/sample1.run" 2>/dev/null || fail "03a wrote no run record beside its VCF"
 # A rerun of the same call keeps the VCF and starts no container for GATK.
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 gatk-again "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
@@ -72,9 +72,7 @@ touch -t 209901010000 "${GENOME_DIR}/sample1/aligned/sample1_sorted.bam"
 : > "$FAKE_DOCKER_LOG"
 INTERVALS=chr1 run_expect 0 gatk-new-bam "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
 [ "$(count ' HaplotypeCaller ')" -eq 1 ] || fail "03a reused a VCF called from an older BAM"
-# SCATTER=false calls the same records, so it is not part of the record:
-# remove the VCF to see it run.
-rm -f "${G}/sample1.vcf.gz"
+# SCATTER=false after a scattered run calls again, in one process.
 : > "$FAKE_DOCKER_LOG"
 SCATTER=false run_expect 0 gatk-one "${SCRIPTS}/03a-gatk-haplotypecaller.sh" sample1
 [ "$(count ' HaplotypeCaller ')" -eq 1 ] || fail "SCATTER=false did not run one HaplotypeCaller"
@@ -89,7 +87,7 @@ output_has gatk-bad-contig 'contig chr9 \(INTERVALS\) is not in the reference'
 run_expect 0 freebayes "${SCRIPTS}/03b-freebayes.sh" sample1
 [ "$(count ' freebayes .*--targets /genome/sample1/vcf_freebayes/scatter/00[123]\.bed ')" -eq 3 ] || fail "03b did not run FreeBayes once per unit"
 docker_log_has 'bcftools sort .*vcf_freebayes/sample1_raw\.vcf' "03b did not sort the joined raw VCF"
-grep -q '^INTERVALS= bam=.* image=' "${GENOME_DIR}/sample1/vcf_freebayes/sample1.run" 2>/dev/null || fail "03b wrote no run record beside its VCF"
+grep -q '^INTERVALS= scatter=true bam=.* image=' "${GENOME_DIR}/sample1/vcf_freebayes/sample1.run" 2>/dev/null || fail "03b wrote no run record beside its VCF"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 freebayes-again "${SCRIPTS}/03b-freebayes.sh" sample1
 output_has freebayes-again 'Output already exists'

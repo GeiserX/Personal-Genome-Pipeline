@@ -15,8 +15,8 @@
 # them in reference order. SCATTER=false runs one process over everything,
 # with the same calls.
 #
-# Rerun: a finished VCF called with the same INTERVALS, BAM, reference and
-# image is kept (run-all.sh runs this step on every invocation with
+# Rerun: a finished VCF called with the same INTERVALS, SCATTER, BAM,
+# reference and image is kept (run-all.sh runs this step on every invocation with
 # EXTRA_CALLERS=gatk); delete it to call again.
 set -euo pipefail
 
@@ -54,13 +54,14 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 # A finished VCF is reused only when it was called the way this run would
-# call it: RUN_FILE, written last, holds INTERVALS, the BAM (path, size and
-# modification time, so a realigned BAM is called again), the reference and
-# the image. A subset VCF never stands in for a whole-genome request.
+# call it: RUN_FILE, written last, holds INTERVALS, SCATTER, the BAM (path,
+# size and modification time, so a realigned BAM is called again), the
+# reference and the image. A subset VCF never stands in for a whole-genome
+# request, and SCATTER=false after a scattered run calls again in one process.
 OUT="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 RUN_FILE="${OUTPUT_DIR}/${SAMPLE}.run"
 BAM_ID=$(stat -c '%s %Y' "$BAM" 2>/dev/null || stat -f '%z %m' "$BAM")
-RUN_KEY="INTERVALS=${INTERVALS} bam=${BAM} bam_size_mtime=${BAM_ID} reference=${REF_FASTA} image=${GATK_IMAGE}"
+RUN_KEY="INTERVALS=${INTERVALS} scatter=${SCATTER:-true} bam=${BAM} bam_size_mtime=${BAM_ID} reference=${REF_FASTA} image=${GATK_IMAGE}"
 if have_output "$OUT" "${OUT}.tbi" && [ -f "$RUN_FILE" ] && [ "$(cat "$RUN_FILE")" = "$RUN_KEY" ]; then
   echo "Output already exists: ${OUT} (${RUN_KEY})"
   echo "Skipping. Delete the file to re-run."
