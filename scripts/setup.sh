@@ -54,6 +54,10 @@
 # existing samples.
 set -euo pipefail
 
+# The usage text below names data releases, so read them before it prints.
+# shellcheck source=../versions.env
+. "$(dirname "$0")/../versions.env"
+
 PULL_ONLY=false
 REFRESH=""
 SAMPLE_QC_ONLY=false
