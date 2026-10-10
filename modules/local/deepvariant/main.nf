@@ -35,7 +35,6 @@ process DEEPVARIANT {
     output:
     tuple val(meta), path("${meta.id}.vcf.gz"), path("${meta.id}.vcf.gz.tbi"),     emit: vcf
     tuple val(meta), path("${meta.id}.g.vcf.gz"), path("${meta.id}.g.vcf.gz.tbi"), emit: gvcf
-    tuple val(meta), path("${meta.id}.visual_report.html"),                       emit: report, optional: true
     path "versions.yml",                                                          emit: versions
 
     when:
