@@ -39,10 +39,10 @@ dmesg | grep -i "oom\|killed" | tail -10
 ```
 
 **Fix:**
-1. Increase the `--memory` flag in the script that failed. With `run-all.sh` you do not edit a script: the pipeline gives each task a memory request and doubles it on the one retry after an out-of-memory exit, up to `--max_memory`
-2. Reduce parallelism (run fewer steps simultaneously). With `run-all.sh`, set `--max_memory` to what Docker may use, e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB` (without it, the machine's RAM), and `THREADS=N` to cap the CPUs of each task (`--max_cpus`, by default the machine's CPU count); a rerun reuses the steps that finished
+1. Increase the `--memory` flag in the script that failed (for step 3, `DV_MEM`). With `run-all.sh` you do not edit a script: the pipeline gives each task a memory request and doubles it on the one retry after an out-of-memory exit, up to `--max_memory`
+2. Bound what runs at once. With `run-all.sh`, `--max_memory` (e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB`; without it, the machine's RAM) and `THREADS=N` (`--max_cpus`, by default the machine's CPU count) cap each task, not the total: Nextflow starts tasks until their requests fill the machine's CPUs and RAM, and on a Mac with Docker Desktop that is the Mac's, not the VM's. To bound the total, pass a config with an `executor` block ([a shared host](hardware-requirements.md#a-shared-host)); on a Mac, also pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ... --max_memory 14.GB`); a rerun reuses the steps that finished
 3. Increase Docker Desktop memory allocation (see [Docker Desktop not enough memory](#docker-desktop-not-enough-memory-macwindows))
-4. For DeepVariant, reduce `--num_shards` (each shard needs ~2-4 GB)
+4. For DeepVariant run as a script, lower `THREADS` (its shard count) and `DV_MEM` together, e.g. `THREADS=4 DV_MEM=16g ./scripts/03-deepvariant.sh <sample> <sex>`
 
 ---
 
@@ -216,6 +216,7 @@ docker image prune
 # Delete intermediate files from completed steps
 rm -f ${GENOME_DIR}/${SAMPLE}/cnvpytor/*.pytor      # a few GB each
 rm -f ${GENOME_DIR}/${SAMPLE}/delly/*.bcf            # After VCF conversion
+rm -rf ${GENOME_DIR}/${SAMPLE}/nextflow/work         # After a good run-all.sh run; the next run starts from scratch
 ```
 
 **Space requirements per sample:**
@@ -227,7 +228,13 @@ rm -f ${GENOME_DIR}/${SAMPLE}/delly/*.bcf            # After VCF conversion
 | VCF + analyses | 10-30 GB | 240 GB |
 | VEP output | 2-5 GB | 245 GB |
 | CNVpytor .pytor file | 2-5 GB | 250 GB |
-| **Recommended free** | | **500 GB** |
+| **Recommended free, from a BAM** | | **500 GB** |
+| `run-all.sh` from FASTQ, in `<sample>/nextflow/work`: trimmed reads | 60-90 GB | 340 GB |
+| ... the alignment intermediate (`.sam.gz`) | 119 GB in one 30x run | 459 GB |
+| ... a second copy of the BAM | 80-120 GB | 579 GB |
+| **Recommended free, from FASTQ** | | **700 GB** |
+
+The `work/` rows stay until you delete `<sample>/nextflow/work`; [Hardware and storage requirements](hardware-requirements.md#per-sample-storage) explains them.
 
 ---
 
@@ -431,25 +438,25 @@ The script looks for `${SAMPLE}_R1.fastq.gz` and `${SAMPLE}_R2.fastq.gz`. See [P
 Usually means minimap2 failed silently. Run with `bash -x` to see the actual error. Common causes:
 - Wrong reference genome path
 - FASTQ files are corrupt (run `gzip -t` on both)
-- Docker `--memory` too low (minimap2 needs ~6-10 GB for the GRCh38 index)
+- Docker `--memory` too low (minimap2 with the sr index needs about 20 GB on GRCh38, see [step 2](02-alignment.md))
 
 **Problem: minimap2 index build takes forever**
 The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, check that the reference FASTA is not corrupt and the output path is writable.
 
 ---
 
-### Step 3: DeepVariant GPU acceleration (not worth it)
+### Step 3: DeepVariant and a GPU
 
-**Symptom:** You want to use GPU acceleration for DeepVariant to speed it up.
+**Symptom:** You want to use a GPU to speed DeepVariant up.
 
-**Reality:** DeepVariant's GPU Docker image is built against one specific CUDA version, so it needs an NVIDIA driver that supports that version. Check the release notes of the DeepVariant version you run before trying it.
+**What the pipeline does.** Neither entry point has a GPU option. `run-all.sh` and `scripts/03-deepvariant.sh` both run the CPU image, `DEEPVARIANT_IMAGE`.
 
-**Why it's not worth the hassle:**
-1. The GPU image (the same tag as `DEEPVARIANT_IMAGE` with `-gpu` appended) requires the NVIDIA container runtime and a driver that matches its CUDA version
-2. Only `call_variants` uses the GPU. In the [DeepVariant 1.10 runtime metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md) for a 30x WGS on 96 CPU cores, `make_examples` takes 46 min, `call_variants` 16 min and `postprocess_variants` 7 min, so a GPU speeds up about a quarter of the run
-3. On a 16-core CPU, DeepVariant finishes in 2-4 hours — GPU saves maybe 30-60 minutes
+**What a GPU could save:**
+1. Only `call_variants` can use a GPU; `make_examples` and `postprocess_variants` always run on the CPU. In one observed ~30x run on 8 CPUs, `call_variants` took about 3 of the 13.5 hours, so that is the most a GPU could save there.
+2. Upstream measured a 2.5x speed-up of `call_variants` with one P100 GPU and 8 CPUs, against its 96-core case study ([DeepVariant details](https://github.com/google/deepvariant/blob/r1.10/docs/deepvariant-details.md#call_variants)). On those 96 cores, `call_variants` is 16 of 69 minutes ([DeepVariant 1.10 metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md)).
+3. We have not measured a GPU run.
 
-**Recommendation:** Use the CPU image (`DEEPVARIANT_IMAGE`) with `--num_shards` set to your core count. If you need it faster, run on a cloud instance with more CPU cores rather than fighting CUDA compatibility.
+**Running it yourself.** The GPU image is the same tag as `DEEPVARIANT_IMAGE` with `-gpu` appended. It needs the NVIDIA container runtime and a driver that supports the CUDA version that image was built against; check the release notes of the DeepVariant version you run.
 
 ---
 
@@ -459,25 +466,12 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 
 **Cause:** DeepVariant is an amd64-only image. On Apple Silicon Macs, Docker runs it through Rosetta 2 emulation, which adds ~2x memory overhead and 3-5x CPU overhead. The default `--memory 32g` and `--cpus 8` settings are too aggressive for emulation.
 
-**Fix:**
+**Fix:** run step 3 by its script with fewer shards and less memory. `THREADS` sets the container's CPUs and DeepVariant's `--num_shards`, and `DV_MEM` its memory; the script still writes the gVCF and, for a male sample, calls chrX and chrY haploid outside the PARs:
 ```bash
-source versions.env   # from the repository root
-REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
-# scripts/03-deepvariant.sh has fixed limits (--cpus 8 --memory 32g), so run step 3
-# manually with reduced resources:
-docker run --rm \
-  --cpus 2 --memory 12g \
-  -v "${GENOME_DIR}:/genome" \
-  "${DEEPVARIANT_IMAGE}" \
-  /opt/deepvariant/bin/run_deepvariant \
-    --model_type=WGS \
-    --ref="/genome/${REF_FASTA}" \
-    --reads="/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" \
-    --output_vcf="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
-    --num_shards=2
+THREADS=2 DV_MEM=12g ./scripts/03-deepvariant.sh your_sample male   # or female
 ```
 
-**Expected runtime on Mac:** 8-16 hours (vs 2-4 hours on native Linux amd64).
+**Expected runtime on Mac:** not measured. On 8 native CPUs DeepVariant took about 13.5 hours in one observed ~30x run; 2 emulated CPUs take much longer.
 
 **Alternative:** If DeepVariant repeatedly crashes on your Mac, run ONLY step 3 on a cloud Linux instance (e.g., Hetzner CCX33 for ~$0.18/hr) and download the VCF. All other steps can proceed on Mac.
 
@@ -841,20 +835,13 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 
 **Expected slowdown by step:**
 
-| Step | Native Linux | Mac (Rosetta 2) | Slowdown |
-|---|---|---|---|
-| DeepVariant | 3-5 hr | 9-25 hr | 3-5x |
-| minimap2 alignment | 1-2 hr | 3-6 hr | 3x |
-| VEP annotation | 2-4 hr | 4-8 hr | 2x |
-| Manta | 20 min | 1-2 hr | 3-4x |
-| CNVpytor | 1-3 hr | 3-8 hr | 3x |
-| bcftools steps | 1-5 min | 2-10 min | 2x |
+We have not measured a run on Apple Silicon. Natively on 8 CPUs, DeepVariant alone took about 13.5 hours in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)); under emulation every step takes longer.
 
 **Mitigation strategies:**
-1. **Reduce parallelism.** Run one heavy step at a time instead of many in parallel.
-2. **Reduce resource limits.** Use `--cpus 2 --memory 8g` instead of `--cpus 8 --memory 32g` to avoid emulation thrashing.
+1. **Run fewer heavy steps at once.** With `run-all.sh`, bound the total with an `executor` block set to Docker Desktop's CPUs and memory ([a shared host](hardware-requirements.md#a-shared-host)), and pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ... --max_memory 14.GB`); `--max_cpus` and `--max_memory` alone cap each task, not the total.
+2. **Lower the step scripts' limits.** For step 3, `THREADS=2 DV_MEM=12g` instead of the default 8 CPUs and 32 GB ([DeepVariant crashes on Mac](#step-3-deepvariant-crashes-on-mac-amd64-emulation)).
 3. **Offload the heaviest steps.** Run steps 2, 3, 18, 19 on a remote Linux machine and bring back the outputs. Everything after step 3 needs only the VCF or BAM.
-4. **Use a cloud instance.** A Hetzner CCX33 (8 vCPU, 32 GB, ~$0.18/hr) will run the full pipeline in 6-10 hours for about $1-2.
+4. **Use a cloud instance.** A Hetzner CCX33 has 8 vCPUs and 32 GB at ~$0.18/hr; plan for more than a day of run time on 8 vCPUs.
 
 ---
 
@@ -902,7 +889,7 @@ docker stats --no-stream
 
 ### When to reduce `--cpus` or `--memory`
 
-With `run-all.sh` you do not edit the scripts' flags: `THREADS=N` caps every task's CPUs (`--max_cpus`), and `--max_memory 24.GB` after the sex caps every task's memory. Nextflow starts a task only when its CPUs and memory fit in what the machine has free.
+With `run-all.sh` you do not edit the scripts' flags: `THREADS=N` caps every task's CPUs (`--max_cpus`), and `--max_memory 24.GB` after the sex caps every task's memory. They cap each task, not the run. Nextflow starts a task when its request fits in what is left of the machine's CPUs and RAM after the tasks it already started; it does not look at what other programs use. To bound the total, see [a shared host](hardware-requirements.md#a-shared-host).
 
 **Reduce `--cpus` when:**
 - Running multiple steps in parallel on a machine with limited cores
@@ -919,7 +906,7 @@ With `run-all.sh` you do not edit the scripts' flags: `THREADS=N` caps every tas
 | Step | Min --cpus | Min --memory | Notes |
 |---|---|---|---|
 | 2 (minimap2) | 2 | 8g | Slower but works |
-| 3 (DeepVariant) | 2 | 8g | Set `--num_shards=2` to match |
+| 3 (DeepVariant) | 2 | 8g | `THREADS=2 DV_MEM=8g`; `THREADS` also sets the shards |
 | 4 (Manta) | 2 | 4g | |
 | 6 (ClinVar) | 1 | 1g | Very light |
 | 7 (PharmCAT) | 1 | 2g | |
@@ -939,7 +926,7 @@ SEQUENTIAL (must run in order):
   Step 4 (Manta) ──> Step 5 (AnnotSV)
   Step 4 (Manta) ──> Step 15 (duphold)
 
-PARALLEL after Step 3 completes (all independent):
+PARALLEL once their input exists (the BAM after step 2, the VCF after step 3):
   ┌─ Step 4 (Manta)         ← needs BAM
   ├─ Step 6 (ClinVar)       ← needs VCF
   ├─ Step 7 (PharmCAT)      ← needs VCF
@@ -1089,8 +1076,8 @@ ls -la ${GENOME_DIR}/${SAMPLE}/cpsr/${SAMPLE}.cpsr.grch38.html
 # Should be > 100 KB
 
 # VEP: check annotated VCF exists and has annotations
-head -50 ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf | grep "CSQ="
-# Should see consequence annotations
+gzip -dc ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz | awk '!/^#/ && /CSQ=/ {n++} END {print n+0}'
+# Should print a number above 0: records carry consequence annotations
 ```
 
 ---
@@ -1109,7 +1096,7 @@ head -50 ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf | grep "CSQ="
 | 10 | `*_summary.tsv` + plots | 50-200 MB total |
 | 11 | `*_roh.txt` | 1-5 MB |
 | 12 | `*_haplogroup.txt` | < 1 KB |
-| 13 | `*_vep.vcf` (uncompressed) | 2-5 GB |
+| 13 | `*_vep.vcf.gz` + `.tbi` | less than its 2-5 GB uncompressed size (the bgzipped size is not measured here) |
 | 17 | `*.cpsr.grch38.html` + TSV | 50-200 MB total |
 | 18 | `*_cnvs.txt` + `.root` | Text: < 1 MB, ROOT: 5-15 GB |
 | 19 | `*_sv.vcf.gz` | 5-20 MB |

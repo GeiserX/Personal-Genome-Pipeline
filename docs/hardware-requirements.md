@@ -4,10 +4,10 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 
 ## TL;DR
 
-- **1 sample:** 500 GB free disk, 16 GB RAM (steps run a few at a time, see [RAM](#ram-requirements)), 4+ CPU cores
+- **1 sample:** 500 GB free disk from a BAM, about 700 GB from FASTQ ([disk](#total-disk-requirements)), 16 GB RAM ([RAM](#ram-requirements)), 4+ CPU cores
 - **2 samples:** 1 TB free disk, 32 GB RAM, 8+ CPU cores (recommended)
 - **First-time setup downloads:** ~73 GB for the default run, ~248 GB with the optional annotation databases ([table](#shared-reference-data-one-time))
-- **Total time per sample:** 6-12 hours for a default `run-all.sh` on a 16-core desktop ([per step](#runtime-per-step))
+- **Time per sample:** plan for more than a day for a default `run-all.sh` from a BAM on 8 CPUs, and longer from FASTQ. DeepVariant is most of it: about 13.5 h in one observed ~30x run on 8 CPUs ([runtime](#runtime-per-step))
 - **GRIDSS (step 4b, opt-in):** needs a 32 GB container on its own, so 32 GB of RAM or more
 
 ---
@@ -27,12 +27,18 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | PharmCAT report | 1-5 MB | Step 7 | Keep |
 | ExpansionHunter output | <1 MB | Step 9 | Keep |
 | TelomereHunter output | 50-200 MB | Step 10 | Keep |
-| VEP annotated VCF | 2-5 GB | Step 13 | Keep (comprehensive annotation) |
+| VEP annotated VCF (`.vcf.gz`) | less than its 2-5 GB uncompressed size (the bgzipped size is not measured here) | Step 13 | Keep (comprehensive annotation) |
 | CPSR report + data | 50-200 MB | Step 17 | Keep |
 | CNVpytor .pytor file + calls | 5-15 GB | Step 18 | .pytor file can be deleted |
 | Delly BCF + VCF | 5-20 MB | Step 19 | Keep VCF, delete BCF |
 | Mito analysis output | 50-200 MB | Step 20 | Keep |
 | **Subtotal per sample** | **150-250 GB** | | |
+| Trimmed FASTQ pair, in `<sample>/nextflow/work` | 60-90 GB | `run-all.sh` from FASTQ: fastp | After a good run |
+| Alignment intermediate (`.sam.gz`), in `work/` | 119 GB in one 30x run | `run-all.sh` from FASTQ: minimap2 | After a good run |
+| Second copy of the BAM, in `work/` | 80-120 GB | `run-all.sh` from FASTQ: duplicate marking | After a good run |
+| **Peak per sample from FASTQ, until `work/` is deleted** | **~410-580 GB** | | |
+
+A run from FASTQ needs more space than a run from a BAM. Until you delete `<sample>/nextflow/work`, it holds the trimmed reads (60-90 GB, [step 1b](01b-fastp-qc.md)), the alignment intermediate (119 GB in one 30x run, larger than the gzipped FASTQ) and a second copy of the BAM (80-120 GB), because the pipeline publishes the BAM by copying it (`publish_dir_mode = 'copy'` in `nextflow.config`). Once the run succeeded and the results look right, delete `<sample>/nextflow/work`; the next run then starts from scratch.
 
 ### Shared Reference Data (One-Time)
 
@@ -51,6 +57,8 @@ One row per download, in GB as `wget` and `du -h` count them (1 GB = 2^30 bytes)
 | Docker images | ~10-15 GB | ~10-15 GB | every step |
 | **Total, default run** | **~73-78 GB** | **~98-103 GB** | |
 | Of which `setup.sh` downloads (first three rows + Docker images) | ~16-21 GB | ~33-38 GB | |
+
+While a VEP cache installs, the tarball and the unpacked tree are on disk together until the tarball is deleted (`install_vep_cache` in `scripts/lib/common.sh`): about 56 GB free for release 116 and 52 GB for release 115.
 
 **Optional** (only for the step named):
 
@@ -87,74 +95,100 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 
 | Scenario | Minimum Free Space |
 |---|---|
-| 1 sample, core steps only (2-3-6-7) | 200 GB |
-| 1 sample, full pipeline | 500 GB |
-| 2 samples, full pipeline | 1 TB |
+| 1 sample, core steps only (2-3-6-7) with the step scripts | 200 GB |
+| 1 sample from a BAM, full pipeline | 500 GB |
+| 1 sample from FASTQ with `run-all.sh`, until `<sample>/nextflow/work` is deleted | 700 GB (the peak above plus ~100 GB of default reference data) |
+| 2 samples, full pipeline, `work/` deleted after each FASTQ run | 1 TB |
 | 2 samples + keeping intermediates | 1.5 TB |
 
-> **Tip:** After the pipeline completes, the single largest file is the BAM (80-120 GB per sample, the figure every page uses). If you're done with all BAM-dependent steps (4, 9, 10, 15, 16, 18, 19, 20), you can convert to CRAM to save 40-60% space, or delete the BAM entirely if you keep the FASTQ (you can always re-align).
+> **Tip:** After the pipeline completes, the single largest file is the BAM (80-120 GB per sample, the figure every page uses). If you're done with all BAM-dependent steps (4, 9, 10, 15, 16, 18, 19, 20), you can keep it as a CRAM with [step 34](34-cram-archive.md) (about half the size), or delete the BAM entirely if you keep the FASTQ (you can always re-align).
 
 ---
 
 ## RAM Requirements
 
-Each pipeline step runs in a Docker container with a `--memory` limit. Here's what each step actually needs:
+Every step runs in a Docker container with a hard `--memory` limit. The two entry points set it differently. A step script passes its own `--cpus` and `--memory`. The pipeline gives each task the CPUs and memory of its label in `conf/base.config`, doubles the memory on the one retry after an out-of-memory exit, and caps both at `--max_cpus` and `--max_memory`.
 
-| Step | Memory Limit | Peak Usage | Notes |
-|---|---|---|---|
-| 2 (minimap2 alignment) | 16 GB | 6-10 GB | minimap2 is RAM-efficient |
-| 3 (DeepVariant) | 32 GB | 8-20 GB | Scales with `--cpus` |
-| 4 (Manta) | 8 GB | 4-6 GB | Moderate |
-| 6 (ClinVar screen) | 4 GB | 1-2 GB | Light |
-| 7 (PharmCAT) | 4 GB | 2-3 GB | Light |
-| 9 (ExpansionHunter) | 8 GB | 4-6 GB | Moderate |
-| 10 (TelomereHunter) | 8 GB | 4-6 GB | Moderate |
-| 13 (VEP) | 16 GB | 4-8 GB | Cache loaded into memory |
-| 17 (CPSR) | 8 GB | 4-6 GB | Moderate |
-| 18 (CNVpytor) | 8 GB | 4-6 GB | .pytor (HDF5) file can be large |
-| 19 (Delly) | 8 GB | 4-6 GB | Moderate |
+| Step | Script: CPUs / memory | Pipeline: CPUs / memory |
+|---|---|---|
+| 2 (minimap2 alignment) | `THREADS` (8) / 32 GB | 8 / 32 GB; duplicate marking 4 / 8 GB |
+| 3 (DeepVariant) | `THREADS` (8) / `DV_MEM` (32 GB) | 8 / 32 GB |
+| 4 (Manta) | `THREADS` (8) / 16 GB | 8 / 32 GB |
+| 6 (ClinVar screen) | 2 / 2 GB | 2 / 4 GB |
+| 7 (PharmCAT) | up to 2 / 4 GB | 2 / 4 GB |
+| 9 (ExpansionHunter) | `THREADS` (4) / 4 GB | 4 / 8 GB |
+| 10 (TelomereHunter) | `THREADS` (4) / 4 GB | 4 / 8 GB |
+| 13 (VEP) | `THREADS` (8) / 2 GB per thread, at least 8 GB | 8 / 32 GB |
+| 17 (CPSR) | 4 / 8 GB | 4 / 8 GB |
+| 18 (CNVpytor) | 4 / 8 GB | 8 / 32 GB |
+| 19 (Delly) | 4 / 8 GB | 4 / 8 GB |
 
-**Minimum system RAM:** 16 GB. Every default step fits in it except possibly DeepVariant, whose peak at its 8 shards can pass 16 GB (its container may use up to 32 GB); on a 16 GB machine it can be killed for lack of memory, and lowering `--num_shards` in `scripts/03-deepvariant.sh` lowers the peak. Also, `run-all.sh` starts several containers at once (up to `MAX_JOBS`, half the CPU count with a minimum of 4) and counts CPUs, not memory. On a 16 GB machine run it with `MAX_JOBS=2`.
-**Recommended:** 32 GB (run multiple steps in parallel)
-**Ideal:** 64 GB (run everything in parallel)
+These are limits, not measured peaks. minimap2 peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38; `scripts/02-alignment.sh`), so [step 2](02-alignment.md) plans for about 20 GB on GRCh38; the full-genome peak has not been measured.
+
+**Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it.
+**Recommended:** 32 GB or more, so the 8-CPU tasks get close to the 32 GB they ask for.
 **GRIDSS (step 4b, opt-in):** its container takes 32 GB (a 28 GB Java heap plus overhead), so it needs a machine with 32 GB or more even when nothing else runs.
-
-> **Reducing memory limits:** If you have less RAM, edit the `--memory` flag in each script. Most steps will work with less -- they'll just be slower or may fail on edge cases. DeepVariant is the most memory-hungry.
 
 ---
 
 ## CPU Requirements
 
-All scripts use `--cpus` to limit Docker container CPU usage. More cores = faster, but with diminishing returns above 16 cores for most tools.
+Each pipeline task asks for the CPUs of its label in `conf/base.config`: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (index and alignment), DeepVariant, Manta, CNVpytor and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
 
-| Step | Default --cpus | Scales Linearly? | Notes |
-|---|---|---|---|
-| 2 (minimap2) | 8 | Yes, up to ~16 | I/O bound above 16 cores |
-| 3 (DeepVariant) | 8 | Yes, up to ~32 | Most CPU-intensive step |
-| 4 (Manta) | 8 | Yes | Already very fast |
-| 13 (VEP) | 8 | Yes (--fork) | Can use all available cores |
-| 18 (CNVpytor) | 4 | Yes (-j flag) | Multi-threaded via -j |
-| 19 (Delly) | 4 | Limited | Per-chromosome parallelism |
+**DeepVariant's shards.** `run-all.sh` runs DeepVariant with at most 8 shards, however many cores the machine has, and fewer when `--max_cpus` (`THREADS`) is lower. More cores help the steps that run beside it. To give DeepVariant more, run `scripts/03-deepvariant.sh` with `THREADS=N` (its `--cpus` and `--num_shards`), or pass `-c` with a `withName: 'DEEPVARIANT'` block:
 
-**Minimum:** 4 cores (very slow but works)
-**Recommended:** 16 cores (good balance of speed and availability)
-**No benefit beyond:** ~32 cores for any single step
+```groovy
+// dv16.config, used as: ./scripts/run-all.sh <sample> <sex> -c dv16.config
+process {
+    withName: 'DEEPVARIANT' {
+        cpus = 16
+    }
+}
+```
+
+`--max_cpus` still caps it. Its memory at 16 shards has not been measured; the request stays at 32 GB. The shard count is part of DeepVariant's command, so changing it makes `-resume` run DeepVariant again. `make_examples` runs one process per shard; upstream says `call_variants` on CPU scales sub-linearly ([DeepVariant details](https://github.com/google/deepvariant/blob/r1.10/docs/deepvariant-details.md#call_variants)).
+
+- **Minimum:** 4 cores. DeepVariant then runs 4 shards and, extrapolated from the 8-CPU run, likely takes more than a day on its own (not measured).
+- **Recommended:** 8 to 16 cores. On 8, each 8-CPU task runs alone ([what runs at once](#what-runs-at-once)); on 16, the BAM steps run beside DeepVariant. A 16-core run has not been measured end to end.
+
+### A shared host
+
+Each step has a hard memory limit. On the `run-all.sh` path, CPU is a Docker share (Nextflow passes `--cpu-shares`, 1024 per requested CPU), not a cap. An idle machine lends a task every core, and on a busy one the pipeline's tasks outweigh a default container (1024). Only the single-step scripts use hard `--cpus` caps. The repo sets no low-priority option.
+
+To let the other services on the machine win, give the pipeline fewer shares and a smaller total in a config file:
+
+```groovy
+// shared-host.config, used as:
+//   THREADS=6 ./scripts/run-all.sh <sample> <sex> --max_memory 24.GB -c shared-host.config
+// This value replaces the docker profile's container options, so it repeats --network none.
+process.containerOptions = '--network none --cpu-shares 256'
+// Everything running at once stays within this. Keep it at least --max_cpus and
+// --max_memory, or Nextflow refuses the tasks that ask for more.
+executor {
+    cpus   = 6
+    memory = 24.GB
+}
+```
+
+Check the shares on a running task: `docker ps` lists the pipeline's containers as `nxf-...`, and `docker inspect -f '{{.HostConfig.CpuShares}}' <container>` should print 256. The same `executor` block is the way to keep Docker Desktop's VM from being overbooked: set it to the CPUs and memory the VM has, and pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ./scripts/run-all.sh <sample> <sex> --max_memory 14.GB`). On a Mac, `run-all.sh` otherwise passes the Mac's own CPU count and RAM, and Nextflow refuses a task that asks for more than the `executor` block allows.
 
 ### Runtime per step
 
-On a 16-core / 32 GB desktop, with each script's default CPU limit. These are estimates from the step pages, except the rows marked measured. Step pages link here instead of giving their own figure.
+In one observed ~30x run on an 8-CPU, 24 GB budget, DeepVariant 1.10 took about 13.5 hours: `make_examples` about 10.5 h for 5.8 million candidates, `call_variants` about 3 h, `postprocess_variants` under an hour. On a busy host `make_examples` ran at about half that speed. Upstream reports 1 h 9 min on a 96-vCPU cloud machine ([DeepVariant r1.10 metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md)), about 110 vCPU-hours, which agrees. Plan for more than a day for a full run from a BAM on 8 CPUs, and longer from FASTQ. We have not measured a 16-core run end to end.
+
+The other rows are estimates from the step pages for a 16-core / 32 GB desktop with each script's default CPU limit, not measurements. Step pages link here instead of giving their own figure.
 
 | Step | Runtime | Notes |
 |---|---|---|
 | 1 ORA to FASTQ | ~30 min | only for Illumina ORA input |
 | 1b fastp | ~10-20 min | |
 | 2 Alignment (minimap2) | ~1-2 h | plus ~30 min once to build the `.mmi` index |
-| 3 DeepVariant | ~3-5 h | measured with DeepVariant 1.6.0 on 8 threads ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)) |
+| 3 DeepVariant | ~13.5 h on 8 CPUs | observed once, ~30x, DeepVariant 1.10; 1 h 9 min on 96 vCPUs upstream |
 | 4 Manta | ~20 min | |
 | 5 AnnotSV | ~10 min | |
 | 6 ClinVar screen | ~5 min | |
 | 7 PharmCAT | ~10 min | |
-| 8 HLA typing (T1K) | ~30 min | plus ~35 min once to build the index |
+| 8 HLA typing (T1K) | ~30 min | plus well under a minute once to build the index (17 s in [CI run 37980248545](https://github.com/GeiserX/Personal-Genome-Pipeline/actions/runs/37980248545)) |
 | 9 ExpansionHunter | ~15 min | |
 | 9b Stranger | < 1 min | |
 | 10 TelomereHunter | ~1 h | |
@@ -186,23 +220,33 @@ On a 16-core / 32 GB desktop, with each script's default CPU limit. These are es
 
 | Run | Runtime |
 |---|---|
-| Minimum useful run (steps 2, 3, 6, 7) | ~4-7 h |
-| Default `run-all.sh`, steps in parallel | ~6-12 h |
+| DeepVariant alone, 8 CPUs | about 13.5 h (one observed ~30x run) |
+| DeepVariant alone, 96 vCPUs | 1 h 9 min (upstream r1.10 metrics) |
+| DeepVariant alone, 4 CPUs | likely more than a day (extrapolated, not measured) |
+| Default `run-all.sh` from a BAM, 8 CPUs | plan for more than a day |
+| Default `run-all.sh` from FASTQ, 8 CPUs | longer than from a BAM |
+| Default `run-all.sh`, 16 CPUs | not measured end to end |
 
-### Parallelization Strategy
+### What runs at once
 
-After step 3 (variant calling) completes, many steps can run simultaneously:
+From FASTQ, the pipeline trims, aligns and marks duplicates first. indexcov then checks the sex from the BAM index, and from that moment DeepVariant and every step that reads only the BAM are ready together. The steps that read the VCF, pypgx included, wait for DeepVariant.
 
 ```
-Step 3 done ──┬──> Steps 4, 6, 7, 9, 11, 12, 16 (quick, ~1 hr total)
-              ├──> Step 13 (VEP, ~2-4 hr) ──> Step 30 (vcfanno, ~15 min) ──> Step 31 (slivar)
-              ├──> Step 17 (CPSR, ~30-60 min)
-              ├──> Step 18 (CNVpytor, ~1-3 hr)    ← These 3 use BAM, need RAM
-              ├──> Step 19 (Delly, ~2-4 hr)        ← Run 1-2 at a time
-              ├──> Step 32 (pypgx, ~20-40 min)     ← Uses BAM, parallel with above
-              ├──> Step 10 (TelomereHunter, ~1 hr)
-              └──> Step 20 (GATK Mutect2 mito, ~15-30 min)
+FASTQ ──> fastp ──> minimap2 ──> duplicate marking ──> BAM ──> indexcov (sex check)
+                                                                   │
+        ┌──────────────────────────────────────────────────────────┤
+        ▼                                                          ▼
+DeepVariant (8 CPUs)                      BAM steps: Manta, Delly, CNVpytor, ExpansionHunter,
+        │                                 TelomereHunter, HLA, mito variants, mosdepth
+        ▼                                                          │
+VCF steps: ClinVar, PharmCAT, pypgx (also                          ▼
+reads the BAM), VEP, CPSR, ROH, PRS,      SV chain: duphold, AnnotSV, SURVIVOR merge
+vcfanno, slivar
+        │                                                          │
+        └─────────────────> HTML report, MultiQC <─────────────────┘
 ```
+
+Nextflow starts a task only when its CPUs and memory fit in what is left of the machine's. On a host with 8 CPUs, every 8-CPU task (minimap2, DeepVariant, Manta, CNVpytor, VEP) runs alone, and the light SV chain steps wait for it: about 18 h behind DeepVariant in the observed run, after which they finished in seconds. On 16 CPUs, DeepVariant leaves 8 free for the BAM steps.
 
 ---
 
@@ -225,22 +269,14 @@ About 73 GB for a default run and 248 GB with the annotation databases; the [tab
 
 ### Save Disk Space
 
-1. **Convert BAM to CRAM** after all BAM-dependent steps complete:
-   ```bash
-   samtools view -C -T reference.fasta input.bam > output.cram
-   ```
-   Saves 40-60% (30-50 GB per sample).
+1. **Keep the BAM as a CRAM** after all BAM-dependent steps complete: `./scripts/34-cram-archive.sh <sample>` writes the CRAM, checks it against the BAM, and with `--delete-bam` then deletes the BAM ([step 34](34-cram-archive.md)). The CRAM is about half the size of the BAM, and it can only be read with the same reference FASTA, so keep that file.
 
 2. **Delete intermediate files:**
+   - `<sample>/nextflow/work` once a `run-all.sh` run succeeded and the results look right (the next run then starts from scratch)
    - CNVpytor `.pytor` files (5-15 GB each)
    - Delly `.bcf` files (after converting to VCF)
 
-3. **Compress VEP output:**
-   ```bash
-   bgzip sample_vep.vcf  # Compresses from ~3.5 GB to ~400 MB
-   ```
-
-4. **Delete FASTQ** if you have the BAM and don't plan to re-align. You can always re-extract FASTQ from BAM if needed.
+3. **Keep your original FASTQ or ORA files.** A BAM from a default, trimmed run does not hold your original reads: fastp cut bases and dropped reads before alignment, so FASTQ extracted from that BAM is only what fastp kept. Delete the BAM rather than the FASTQ if you need the space; you can re-align.
 
 ### Storage Medium Recommendations
 
@@ -258,13 +294,13 @@ About 73 GB for a default run and 248 GB with the annotation databases; the [tab
 
 If you don't have suitable hardware, cloud instances work well:
 
-| Provider | Instance | vCPUs | RAM | Cost/hr | ~Cost per Sample |
-|---|---|---|---|---|---|
-| AWS | c5.4xlarge | 16 | 32 GB | ~$0.68 | ~$5-8 |
-| GCP | n2-standard-16 | 16 | 64 GB | ~$0.78 | ~$6-10 |
-| Azure | Standard_D16s_v5 | 16 | 64 GB | ~$0.77 | ~$6-10 |
-| Hetzner | CCX33 | 8 | 32 GB | ~$0.18 | ~$2-3 |
+| Provider | Instance | vCPUs | RAM | Cost/hr |
+|---|---|---|---|---|
+| AWS | c5.4xlarge | 16 | 32 GB | ~$0.68 |
+| GCP | n2-standard-16 | 16 | 64 GB | ~$0.78 |
+| Azure | Standard_D16s_v5 | 16 | 64 GB | ~$0.77 |
+| Hetzner | CCX33 | 8 | 32 GB | ~$0.18 |
 
-Add ~$0.10/GB/month for persistent disk storage. A 500 GB disk costs ~$50/month.
+Multiply the hourly price by the run time: plan for more than a day on 8 vCPUs ([runtime](#runtime-per-step)). On 16 vCPUs `run-all.sh` still gives DeepVariant 8 shards, and a 16-vCPU run has not been measured end to end. Add ~$0.10/GB/month for persistent disk storage. A 500 GB disk costs ~$50/month.
 
-> **Tip:** Use spot/preemptible instances for 60-80% savings. The pipeline is restartable -- if your instance gets preempted, just re-run the interrupted step.
+> **Tip:** Spot or preemptible instances cost less, but a preemption stops the run. `-resume` reuses every task that finished and starts the running one over, and DeepVariant is a single task of about 13.5 h on 8 CPUs (one observed run).

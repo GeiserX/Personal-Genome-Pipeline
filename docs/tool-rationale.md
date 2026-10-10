@@ -54,8 +54,8 @@ The alignment step is the single longest step in the pipeline when starting from
 | **Algorithm** | Deep learning (CNN) | Local haplotype assembly + PairHMM | Bayesian haplotype-based |
 | **SNP F1 (30X)** | ~0.999 | ~0.998 | ~0.994 |
 | **Indel F1 (30X)** | ~0.994 | ~0.983 | ~0.960 |
-| **Runtime (30X, 8 cores)** | 2-4 hours (CPU) | 4-8 hours | 8-20+ hours |
-| **GPU support** | Yes (significant speedup) | No | No |
+| **Runtime (30X)** | ~13.5 h on 8 CPUs (1.10, one observed run) | 8.6 h on 8 threads (4.6.1, one historical run) | 9.3 h single-threaded (1.3.6, one historical run) |
+| **GPU support** | `call_variants` only, in DeepVariant's `-gpu` image; neither entry point here uses it | No | No |
 | **Multi-threading** | Yes (`--num_shards`) | Yes (`--native-pair-hmm-threads`) | No (single-threaded) |
 | **GVCF output** | Yes | Yes (script uses normal VCF; switch to `-ERC GVCF` for cohort workflows) | No |
 | **Region restriction** | No (`INTERVALS` not supported) | Yes (`INTERVALS` env var) | Yes (`INTERVALS` env var) |
@@ -77,8 +77,9 @@ DeepVariant is the default because:
 
 1. **Highest accuracy.** It leads all callers in precision, recall, and F1 for both SNPs and indels on 30X Illumina WGS, consistently winning the PrecisionFDA Truth Challenges and GIAB benchmarks.
 2. **Low false positive rate.** Its deep learning model was trained on real sequencing data and recognizes systematic artifacts (strand bias, mapping artifacts) that rule-based callers miss.
-3. **Reasonable runtime.** 2-4 hours on 8 CPU cores, 1-2 hours with GPU acceleration. Faster than GATK, far faster than FreeBayes.
-4. **No extra reference files.** Only needs the FASTA and FAI -- no sequence dictionary (.dict) required.
+3. **No extra reference files.** Only needs the FASTA and FAI -- no sequence dictionary (.dict) required.
+
+The cost is time. In one observed ~30x run on 8 CPUs, DeepVariant 1.10 took about 13.5 hours, most of a default run ([runtime](hardware-requirements.md#runtime-per-step)). The GATK and FreeBayes figures in the table come from one historical run on other versions and hardware ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)), so they do not compare directly.
 
 ### GATK HaplotypeCaller: when to use it
 
@@ -105,7 +106,7 @@ DeepVariant is the default because:
 | Highest accuracy (single sample) | DeepVariant |
 | Clinical lab compatibility | GATK HaplotypeCaller |
 | Maximum sensitivity (research) | FreeBayes (with quality filtering) |
-| Fastest runtime | DeepVariant (especially with GPU) |
+| Fastest runtime | Strelka2 (72 min on 8 threads in one historical run; align with BWA-MEM2 for it) |
 | Cohort / family joint calling | GATK HaplotypeCaller (GVCF mode) |
 | Consensus approach (2+ callers agree) | DeepVariant + GATK (or all three) |
 
@@ -184,7 +185,7 @@ Run all available callers and compare. This gives you the broadest view of your 
 - SNP/indel: DeepVariant + GATK HaplotypeCaller + FreeBayes
 - SV: Manta + Delly + CNVpytor with consensus merge (step 22)
 
-**Time estimate:** ~12-24 hours total (callers can run in parallel after alignment).
+**Time estimate:** longer than a default run, which takes more than a day on 8 CPUs; each extra caller adds its own time ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)).
 
 ### High-confidence analysis
 
@@ -195,7 +196,7 @@ Use a consensus of two or more callers. Variants called by multiple independent 
 - SNP/indel: DeepVariant + GATK HaplotypeCaller (keep intersection)
 - SV: Manta + Delly with consensus merge
 
-**Time estimate:** ~10-16 hours total.
+**Time estimate:** more than a day on 8 CPUs; DeepVariant alone took about 13.5 hours in one observed ~30x run.
 
 ### Quick personal analysis
 
@@ -206,7 +207,7 @@ Stick with the defaults. The default tools were chosen for the best single-tool 
 - SNP/indel: DeepVariant
 - SV: Manta
 
-**Time estimate:** ~4-8 hours total.
+**Time estimate:** most of a day on 8 CPUs from FASTQ; DeepVariant alone took about 13.5 hours in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ### Decision matrix
 
@@ -216,7 +217,7 @@ Stick with the defaults. The default tools were chosen for the best single-tool 
 | Do I want maximum accuracy for a specific variant? | Yes | Run DeepVariant + GATK, keep shared calls |
 | Am I exploring broadly and can tolerate false positives? | Yes | Run all three SNP callers |
 | Do I plan to use Strelka2? | Yes | Align with BWA-MEM2 (XS tag required) |
-| Do I have a GPU? | Yes | Run DeepVariant with GPU for ~3x speedup |
+| Do I have a GPU? | Yes | Neither entry point uses it; only `call_variants` could ([DeepVariant and a GPU](troubleshooting.md#step-3-deepvariant-and-a-gpu)) |
 | Am I analyzing a family/cohort? | Yes | Use GATK HC in GVCF mode for joint genotyping |
 | Am I only looking at structural variants? | Yes | Manta + Delly + CNVpytor with consensus merge |
 | Do I want results as fast as possible? | Yes | minimap2 + DeepVariant + Manta (defaults) |
