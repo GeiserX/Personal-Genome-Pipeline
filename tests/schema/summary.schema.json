@@ -599,6 +599,9 @@
           "stranger": {
            "type": "boolean"
           },
+          "stranger_outdated": {
+           "type": "boolean"
+          },
           "flagged": {
            "type": "array",
            "items": {

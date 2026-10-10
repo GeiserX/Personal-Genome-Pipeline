@@ -47,7 +47,7 @@ The report contains:
 - **Polygenic Risk Scores** — each score with its percentile among the most similar reference group, or "raw score only" without the ancestry panel. The caption says that most PRS scores were developed in European-ancestry populations and predict less well for other ancestries, even with an ancestry-adjusted percentile
 - **Structural Variants** — Manta, Delly, CNVpytor and the SURVIVOR consensus (2+ callers) counts
 - **Cancer Predisposition** — CPSR status and the classification breakdown (read by column name from `${SAMPLE}.cpsr.grch38.classification.tsv.gz`)
-- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK) and, when step 9b (Stranger) ran, every locus whose `STR_STATUS` is `pre_mutation` or `full_mutation`, whichever locus it is. A locus outside Stranger's catalog has no status and is counted apart. Without step 9b the card says Stranger did not run. Repeat-expansion calls from short reads can be wrong at some loci
+- **Repeat Expansions** — key loci repeat counts (HTT, FMR1, C9orf72, ATXN1, DMPK) and, when step 9b (Stranger) ran, every locus whose `STR_STATUS` is `pre_mutation` or `full_mutation`, whichever locus it is. A locus outside Stranger's catalog has no status and is counted apart. Without step 9b the card says Stranger did not run; a Stranger file older than the ExpansionHunter result it came from is not read, and the card says to rerun step 9b. Repeat-expansion calls from short reads can be wrong at some loci
 - **Runs of Homozygosity** — total, largest segment, segments, autosomal runs over 5 MB
 - **Mitochondrial Haplogroup** — haplogrep3's call, and haplocheck's contamination status ("not checked" when step 12 read the step 03 VCF instead of step 20's calls)
 - **Y-Chromosome Haplogroup** — Yleaf's call, its marker count and QC-score, or "insufficient markers" (step 37, when it ran)
@@ -62,7 +62,7 @@ The report contains:
 
 A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished: after a failed run every section from before it is marked stale until the same command, with `-resume`, completes. A step you re-ran by hand after that run writes a newer file and is shown as current.
 
-A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports, and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
+A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports (the CYP2D6 rows too), and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 
 <figure markdown="span">
   ![The step 24 HTML report: a header with the sample name, seventeen cards of counts and statuses, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }

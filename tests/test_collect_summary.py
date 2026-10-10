@@ -35,13 +35,13 @@ Checks:
  12. repeat expansions: Stranger's STR_STATUS is read, every locus that is
      not normal is listed (also outside the five key loci), a record
      without a status is counted apart, not flagged; a Stranger file older
-     than ExpansionHunter's is not read; a stale card says Stale, not
-     Complete;
+     than ExpansionHunter's is not read and both reports say to rerun step
+     9b; a stale card says Stale, not Complete;
  13. HLA: each allele keeps its own T1K quality; a one-allele row
      ('.', 0, -1) is not low confidence; a quality of 0 or below is, and on
      HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
  14. a section whose step failed in the latest run says Failed, not Not
-     run, in the summary and both reports;
+     run, in the summary and both reports, also in the CYP2D6 rows;
  15. the CPIC card counts the genes called without a function phenotype.
 
 Run: python3 tests/test_collect_summary.py
@@ -393,11 +393,17 @@ def main():
               and "can be wrong at some loci" in txt_x and "can be wrong at some loci" in html_x, txt_x)
         check("Stranger summary validates", not validate.validate(schema, json.loads(json.dumps(summ_x))))
         put(f"{x}/expansion_hunter/S_eh_stranger.vcf", open(f"{x}/expansion_hunter/S_eh_stranger.vcf").read(), age_days=3)
-        summ_x2, txt_x2, _ = render(x)
-        check("Stranger: a file older than ExpansionHunter's is not read, and the report says Stranger did not run",
+        summ_x2, txt_x2, html_x2 = render(x)
+        check("Stranger: a file older than ExpansionHunter's is not read",
               summ_x2["sections"]["expansions"]["source"] == "expansion_hunter/S_eh.vcf"
               and not summ_x2["sections"]["expansions"]["data"].get("stranger")
-              and "Stranger (step 9b) did not run" in txt_x2, summ_x2["sections"]["expansions"])
+              and summ_x2["sections"]["expansions"]["data"].get("stranger_outdated") is True,
+              summ_x2["sections"]["expansions"])
+        check("Stranger: an outdated file makes both reports say to rerun step 9b, not that it did not run",
+              "rerun step 9b" in txt_x2 and "did not run" not in txt_x2
+              and "rerun step 9b" in html_x2 and "not run" not in html_x2.split("<h2>Repeat Expansions</h2>", 1)[-1]
+              .split("<h2>", 1)[0], txt_x2)
+        check("Stranger outdated summary validates", not validate.validate(schema, json.loads(json.dumps(summ_x2))))
         put(f"{x}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - 0.5 * DAY}\nstep\t09\tskipped\n")
         _, _, html_x3 = render(x)
         card_eh = html_x3.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
@@ -433,7 +439,8 @@ def main():
         # 14. a step that failed in the latest run
         f_ = os.path.join(work, "failed", "S")
         put(f"{f_}/clinvar/S_clinvar_hits.vcf", HITS)
-        put(f"{f_}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - DAY}\nstep\t10\tfailed\nstep\t11\tok\n")
+        put(f"{f_}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - DAY}\nstep\t10\tfailed\nstep\t11\tok\n"
+                                          "step\t32\tfailed\n")
         summ_f, txt_f, html_f = render(f_)
         tel = summ_f["sections"]["telomere"]
         check("failed: no telomere file and step 10 failed -> state failed with a note",
@@ -444,6 +451,10 @@ def main():
               card_t)
         check("failed: the text report says FAILED and lists it under Steps Not Run",
               "[FAILED: step 10 failed" in txt_f and "  - Telomere content (TelomereHunter) (step 10 failed)" in txt_f, txt_f)
+        card_c = html_f.split("<h2>CYP2D6 Across Callers</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("failed: a failed pypgx step shows as failed in the CYP2D6 rows of both reports, with the FAILED note",
+              summ_f["cyp2d6"]["calls"]["pypgx"] == "failed (step 32)" and "failed (step 32)" in txt_f
+              and "failed (step 32)" in card_c and "FAILED: step 32 failed" in card_c, card_c)
         check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
               validate.validate(schema, json.loads(json.dumps(summ_f))))
     finally:

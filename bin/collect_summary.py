@@ -715,8 +715,9 @@ def sec_expansions(d, s):
     st = first_existing(d, [f"expansion_hunter/{s}_eh_stranger.vcf", "expansion_hunter/*_eh_stranger.vcf"])
     # Stranger (step 9b) copies ExpansionHunter's records and adds STR_STATUS.
     # Its file is read unless it is older than the ExpansionHunter file it
-    # would have been made from.
-    if st and eh and os.path.getmtime(st) < os.path.getmtime(eh):
+    # would have been made from; then the report says to rerun step 9b.
+    outdated = bool(st and eh and os.path.getmtime(st) < os.path.getmtime(eh))
+    if outdated:
         st = None
     p = st or eh
     if not p:
@@ -744,7 +745,7 @@ def sec_expansions(d, s):
                                 "status": ",".join(status)})
     out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": loci.get(k, "not in output")}
                                            for k in EH_LOCI],
-           "stranger": bool(st)}
+           "stranger": bool(st), "stranger_outdated": outdated}
     if st:
         out.update(flagged=flagged, no_status=no_status)
     return p, out
@@ -1222,6 +1223,9 @@ def cyp2d6_block(sample, sample_dir, sections):
     pc = next((g for g in sections["cpic"]["data"].get("genes", []) if g["gene"] == "CYP2D6"), None)
     pg = sections["pypgx"]["data"].get("cyp2d6") if sections["pypgx"]["state"] == "ok" else None
     cy = sections["cyrius"]["data"] if sections["cyrius"]["state"] == "ok" else None
+    # A caller whose step failed says so, not 'not run'.
+    failed = {k: f"failed (step {sections[k]['step']})" for k in ("cpic", "pypgx", "cyrius")
+              if sections[k]["state"] == "failed"}
     pg_ok = pg is not None and pgx_outside_calls.is_call(pg)
     cy_ok = cy is not None and pgx_outside_calls.is_call(cy.get("genotype")) and cy.get("filter") == "PASS"
     cy_txt = None
@@ -1230,9 +1234,10 @@ def cyp2d6_block(sample, sample_dir, sections):
         if pgx_outside_calls.is_call(cy_txt) and not cy_ok:
             cy_txt += f" (not usable: Filter {cy.get('filter') or 'missing'})"
     calls = {
-        "PharmCAT": (pc["diplotype"] if pc["status"] not in ("not called", "ambiguous") else pc["status"]) if pc else None,
-        "pypgx": pg,
-        "Cyrius": cy_txt,
+        "PharmCAT": (pc["diplotype"] if pc["status"] not in ("not called", "ambiguous") else pc["status"]) if pc
+        else failed.get("cpic"),
+        "pypgx": failed.get("pypgx", pg),
+        "Cyrius": failed.get("cyrius", cy_txt),
     }
     agree = pgx_outside_calls.same_diplotype(pg, cy["genotype"]) if pg_ok and cy_ok else None
     try:

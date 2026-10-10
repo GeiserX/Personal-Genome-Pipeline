@@ -277,7 +277,9 @@ def text_report(s):
         w(f"  Loci in output: {d['records']}")
         for l in d["key_loci"]:
             w(f"    {l['locus']:<8} {l['repeat_count']}")
-        if not d.get("stranger"):
+        if d.get("stranger_outdated"):
+            w("  Stranger's result is older than ExpansionHunter's: rerun step 9b. No locus is marked as normal or expanded.")
+        elif not d.get("stranger"):
             w("  Stranger (step 9b) did not run: no locus is marked as normal or expanded.")
         elif d.get("flagged"):
             w(f"  Outside the normal range (Stranger): {len(d['flagged'])}")
@@ -561,7 +563,7 @@ def html_report(s):
                                   + (cons.get("reason") or "no reason given")))
     a(["  <div class=\"card\">", "    <h2>CYP2D6 Across Callers</h2>"]
       + [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
-         for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] == "stale"]
+         for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] in ("stale", "failed")]
       + cy_body + ["  </div>"])
 
     hla = S["hla"]["data"]
@@ -585,7 +587,10 @@ def html_report(s):
 
     eh = S["expansions"]["data"]
     eh_body = [stat("Status", done_badge(S["expansions"]))]
-    if not eh.get("stranger"):
+    if eh.get("stranger_outdated"):
+        eh_body.append(stat("Outside the normal range (Stranger)",
+                            badge("older than ExpansionHunter's result: rerun step 9b", "yellow")))
+    elif not eh.get("stranger"):
         eh_body.append(stat("Outside the normal range (Stranger)", badge("not run", "gray")))
     else:
         fl = eh.get("flagged") or []
