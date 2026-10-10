@@ -40,7 +40,7 @@ dmesg | grep -i "oom\|killed" | tail -10
 
 **Fix:**
 1. Increase the `--memory` flag in the script that failed (for step 3, `DV_MEM`). With `run-all.sh` you do not edit a script: the pipeline gives each task a memory request and doubles it on the one retry after an out-of-memory exit, up to `--max_memory`
-2. Bound what runs at once. With `run-all.sh`, `--max_memory` (e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB`; without it, the machine's RAM) and `THREADS=N` (`--max_cpus`, by default the machine's CPU count) cap each task, not the total: Nextflow starts tasks until their requests fill the machine's CPUs and RAM, and on a Mac with Docker Desktop that is the Mac's, not the VM's. To bound the total, pass a config with an `executor` block ([a shared host](hardware-requirements.md#a-shared-host)); a rerun reuses the steps that finished
+2. Bound what runs at once. With `run-all.sh`, `--max_memory` (e.g. `./scripts/run-all.sh <sample> <sex> --max_memory 24.GB`; without it, the machine's RAM) and `THREADS=N` (`--max_cpus`, by default the machine's CPU count) cap each task, not the total: Nextflow starts tasks until their requests fill the machine's CPUs and RAM, and on a Mac with Docker Desktop that is the Mac's, not the VM's. To bound the total, pass a config with an `executor` block ([a shared host](hardware-requirements.md#a-shared-host)); on a Mac, also pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ... --max_memory 14.GB`); a rerun reuses the steps that finished
 3. Increase Docker Desktop memory allocation (see [Docker Desktop not enough memory](#docker-desktop-not-enough-memory-macwindows))
 4. For DeepVariant run as a script, lower `THREADS` (its shard count) and `DV_MEM` together, e.g. `THREADS=4 DV_MEM=16g ./scripts/03-deepvariant.sh <sample> <sex>`
 
@@ -838,7 +838,7 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 We have not measured a run on Apple Silicon. Natively on 8 CPUs, DeepVariant alone took about 13.5 hours in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)); under emulation every step takes longer.
 
 **Mitigation strategies:**
-1. **Run fewer heavy steps at once.** With `run-all.sh`, bound the total with an `executor` block set to Docker Desktop's CPUs and memory ([a shared host](hardware-requirements.md#a-shared-host)); `--max_cpus` and `--max_memory` alone cap each task, not the total.
+1. **Run fewer heavy steps at once.** With `run-all.sh`, bound the total with an `executor` block set to Docker Desktop's CPUs and memory ([a shared host](hardware-requirements.md#a-shared-host)), and pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ... --max_memory 14.GB`); `--max_cpus` and `--max_memory` alone cap each task, not the total.
 2. **Lower the step scripts' limits.** For step 3, `THREADS=2 DV_MEM=12g` instead of the default 8 CPUs and 32 GB ([DeepVariant crashes on Mac](#step-3-deepvariant-crashes-on-mac-amd64-emulation)).
 3. **Offload the heaviest steps.** Run steps 2, 3, 18, 19 on a remote Linux machine and bring back the outputs. Everything after step 3 needs only the VCF or BAM.
 4. **Use a cloud instance.** A Hetzner CCX33 has 8 vCPUs and 32 GB at ~$0.18/hr; plan for more than a day of run time on 8 vCPUs.

@@ -84,8 +84,9 @@ graph LR
     align --> BAM["Sorted BAM"]
     BAM --> DV["DeepVariant"]
     DV --> VCF["VCF"]
-    VCF --> vcfsteps["ClinVar, PharmCAT, VEP, CPSR,<br/>ROH, PRS, ancestry, haplogroup"]
-    BAM --> bamsteps["Manta, Delly, CNVpytor, ExpansionHunter,<br/>HLA, telomeres, pypgx, Cyrius, mosdepth"]
+    VCF --> vcfsteps["ClinVar, PharmCAT, pypgx, VEP, CPSR,<br/>ROH, PRS, ancestry, haplogroup"]
+    BAM -.-> vcfsteps
+    BAM --> bamsteps["Manta, Delly, CNVpytor, ExpansionHunter,<br/>HLA, telomeres, Cyrius, mosdepth"]
     vcfsteps --> report["HTML report + MultiQC"]
     bamsteps --> report
 ```

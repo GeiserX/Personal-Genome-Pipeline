@@ -170,7 +170,7 @@ executor {
 }
 ```
 
-Check the shares on a running task: `docker ps` lists the pipeline's containers as `nxf-...`, and `docker inspect -f '{{.HostConfig.CpuShares}}' <container>` should print 256. The same `executor` block is the way to keep Docker Desktop's VM from being overbooked: set it to the CPUs and memory the VM has.
+Check the shares on a running task: `docker ps` lists the pipeline's containers as `nxf-...`, and `docker inspect -f '{{.HostConfig.CpuShares}}' <container>` should print 256. The same `executor` block is the way to keep Docker Desktop's VM from being overbooked: set it to the CPUs and memory the VM has, and pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ./scripts/run-all.sh <sample> <sex> --max_memory 14.GB`). On a Mac, `run-all.sh` otherwise passes the Mac's own CPU count and RAM, and Nextflow refuses a task that asks for more than the `executor` block allows.
 
 ### Runtime per step
 
@@ -229,7 +229,7 @@ The other rows are estimates from the step pages for a 16-core / 32 GB desktop w
 
 ### What runs at once
 
-From FASTQ, the pipeline trims, aligns and marks duplicates first. indexcov then checks the sex from the BAM index, and from that moment DeepVariant and every step that reads the BAM are ready together. The steps that read the VCF wait for DeepVariant.
+From FASTQ, the pipeline trims, aligns and marks duplicates first. indexcov then checks the sex from the BAM index, and from that moment DeepVariant and every step that reads only the BAM are ready together. The steps that read the VCF, pypgx included, wait for DeepVariant.
 
 ```
 FASTQ ──> fastp ──> minimap2 ──> duplicate marking ──> BAM ──> indexcov (sex check)
@@ -237,10 +237,11 @@ FASTQ ──> fastp ──> minimap2 ──> duplicate marking ──> BAM ─�
         ┌──────────────────────────────────────────────────────────┤
         ▼                                                          ▼
 DeepVariant (8 CPUs)                      BAM steps: Manta, Delly, CNVpytor, ExpansionHunter,
-        │                                 TelomereHunter, HLA, mito variants, mosdepth, pypgx
+        │                                 TelomereHunter, HLA, mito variants, mosdepth
         ▼                                                          │
-VCF steps: ClinVar, PharmCAT, VEP, CPSR,                           ▼
-ROH, PRS, vcfanno, slivar                 SV chain: duphold, AnnotSV, SURVIVOR merge
+VCF steps: ClinVar, PharmCAT, pypgx (also                          ▼
+reads the BAM), VEP, CPSR, ROH, PRS,      SV chain: duphold, AnnotSV, SURVIVOR merge
+vcfanno, slivar
         │                                                          │
         └─────────────────> HTML report, MultiQC <─────────────────┘
 ```
