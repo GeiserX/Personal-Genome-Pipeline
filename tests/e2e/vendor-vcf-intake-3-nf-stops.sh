@@ -8,7 +8,14 @@
 #   - a gVCF (reference blocks, ALT <*> or <NON_REF> with INFO/END) with
 #     pharmcat selected: it used to die inside PHARMCAT_PREPROCESS;
 #   - a plain VCF named *.g.vcf.gz with pharmcat selected: PharmCAT refuses the
-#     name, so the message says to rename the file.
+#     name, so the message says to rename the file;
+#   - two samples in one VCF, merged with real bcftools: the steps would mix
+#     their genotypes;
+#   - a ##contig chr1 length that is GRCh37's: every position would be read on
+#     the wrong build.
+# And validate-setup.sh, on a VCF whose header has no ##contig lines: its REF
+# spot-check runs real bcftools norm against the reference, passes the
+# fixture VCF and fails a copy whose positions are shifted off its REF bases.
 . "$(dirname "$0")/lib.sh"
 . "$(dirname "$0")/vendor-vcf-intake.inc"
 
@@ -109,5 +116,81 @@ check "gVCF name only: the run fails" test "$NF_RC" -ne 0
 check "gVCF name only: the message says to rename the file" \
   has "${SAMPLE}.g.vcf.gz has no reference blocks, but its name contains .g.vcf.*Rename the file" "$LOG"
 check "gVCF name only: stopped in the precheck" only_precheck
+
+# --- Two samples in one VCF ---------------------------------------------------------
+# The fixture call plus a copy of it under another sample name, merged.
+mkdir -p "${INTAKE}/joint"
+FIRST=$(bcf query -l "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" | head -n 1)
+in_genome "$BCFTOOLS_IMAGE" sh -c "set -e
+  echo '${SAMPLE}_B' > intake/joint/rename.txt
+  bcftools reheader -s intake/joint/rename.txt -o intake/joint/b.vcf.gz ${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+  bcftools index -f -t intake/joint/b.vcf.gz
+  bcftools merge -Oz -o intake/joint/${SAMPLE}.vcf.gz ${SAMPLE}/vcf/${SAMPLE}.vcf.gz intake/joint/b.vcf.gz
+  bcftools index -f -t intake/joint/${SAMPLE}.vcf.gz"
+check_eq "the merged VCF holds two samples" \
+  "$(bcf query -l "intake/joint/${SAMPLE}.vcf.gz" | paste -sd, -)" "${FIRST},${SAMPLE}_B"
+
+sheet "${CASE_TMP}/joint.csv" "${INTAKE}/joint/${SAMPLE}.vcf.gz"
+nf_run joint "${CASE_TMP}/joint.csv" roh,mito_haplogroup
+LOG=$(cat "$NF_LOG")
+check "two samples: the run fails" test "$NF_RC" -ne 0
+check "two samples: the message names the sample, the count and both names" \
+  has "Sample '${SAMPLE}': ${SAMPLE}\.vcf\.gz holds 2 samples \(${FIRST}, ${SAMPLE}_B\)" "$LOG"
+check "two samples: the message prints the bcftools command that keeps one" \
+  has "bcftools view -s ${FIRST} -a -c 1 -Oz -o ${FIRST}\.vcf\.gz ${SAMPLE}\.vcf\.gz" "$LOG"
+check "two samples: no analysis task started" only_precheck
+
+# --- A GRCh37 chr1 length in the header ------------------------------------------------
+# The fixture call with only its chr1 ##contig line changed to GRCh37's length.
+mkdir -p "${INTAKE}/grch37"
+in_genome "$BCFTOOLS_IMAGE" sh -c "set -e
+  bcftools view -h ${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
+    | sed 's/^##contig=<ID=chr1,length=248956422/##contig=<ID=chr1,length=249250621/' > intake/grch37/header.txt
+  bcftools reheader -h intake/grch37/header.txt -o intake/grch37/${SAMPLE}.vcf.gz ${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+  bcftools index -f -t intake/grch37/${SAMPLE}.vcf.gz"
+check "the copy's header gives GRCh37's chr1 length" \
+  has '^##contig=<ID=chr1,length=249250621' "$(bcf view -h "intake/grch37/${SAMPLE}.vcf.gz")"
+
+sheet "${CASE_TMP}/grch37.csv" "${INTAKE}/grch37/${SAMPLE}.vcf.gz"
+nf_run grch37 "${CASE_TMP}/grch37.csv" roh,mito_haplogroup
+LOG=$(cat "$NF_LOG")
+check "GRCh37 length: the run fails" test "$NF_RC" -ne 0
+check "GRCh37 length: the message names the sample and the build" \
+  has "Sample '${SAMPLE}': ${SAMPLE}\.vcf\.gz is not on GRCh38" "$LOG"
+check "GRCh37 length: the message gives both chr1 lengths" has 'chr1 length 249250621 \(GRCh38: 248956422\)' "$LOG"
+check "GRCh37 length: no analysis task started" only_precheck
+check "GRCh37 length: no ROH file published" test ! -e "${NF_OUT}/${SAMPLE}/roh"
+
+# --- validate-setup.sh on VCFs without ##contig lines ----------------------------------
+# nocontig38: the fixture call with its ##contig lines removed (same records).
+# nocontig_shift: the same, every position moved 7 bases, so most REF bases
+# no longer match the reference, as on another build.
+for s in nocontig38 nocontig_shift; do mkdir -p "${G}/${s}/vcf"; done
+in_genome "$BCFTOOLS_IMAGE" sh -c "set -e
+  bcftools view -h ${SAMPLE}/vcf/${SAMPLE}.vcf.gz | grep -v '^##contig=' > intake/nocontig_header.txt
+  bcftools reheader -h intake/nocontig_header.txt -o nocontig38/vcf/nocontig38.vcf.gz ${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+  bcftools index -f -t nocontig38/vcf/nocontig38.vcf.gz
+  bcftools view ${SAMPLE}/vcf/${SAMPLE}.vcf.gz | awk -F'\t' -v OFS='\t' '/^#/ { print; next } { \$2 = \$2 + 7; print }' \
+    | bcftools view -Oz -o intake/shifted.vcf.gz -
+  bcftools reheader -h intake/nocontig_header.txt -o nocontig_shift/vcf/nocontig_shift.vcf.gz intake/shifted.vcf.gz
+  bcftools index -f -t nocontig_shift/vcf/nocontig_shift.vcf.gz"
+check "nocontig38 has no ##contig line" lacks '^##contig' "$(bcf view -h nocontig38/vcf/nocontig38.vcf.gz 2>/dev/null)"
+check_ge "nocontig38 has records" "$(vcf_count nocontig38/vcf/nocontig38.vcf.gz)" 100
+
+for s in nocontig38 nocontig_shift; do
+  echo "+ scripts/validate-setup.sh ${s}"
+  "${REPO}/scripts/validate-setup.sh" "$s" > "${CASE_TMP}/validate-${s}.log" 2>&1
+  grep -E 'VCF|##contig' "${CASE_TMP}/validate-${s}.log" | sed 's/^/    | /'
+done
+V38=$(cat "${CASE_TMP}/validate-nocontig38.log")
+VSH=$(cat "${CASE_TMP}/validate-nocontig_shift.log")
+check "no ##contig lines: validate-setup says the header does not show the build" \
+  has '\[WARN\].*VCF header has no ##contig lines' "$V38"
+check "no ##contig lines, GRCh38 records: the REF spot-check passes (real bcftools norm)" \
+  has '\[OK\].*VCF REF bases match the reference in all of the first [0-9]+ records' "$V38"
+check "no ##contig lines, shifted records: the REF spot-check fails" \
+  has '\[FAIL\].*VCF REF bases differ from the reference in [0-9]+ of the first [0-9]+ records: the VCF is not on GRCh38' "$VSH"
+check "the spot-check ran on both (never a 'could not compare')" \
+  lacks 'Could not compare the VCF' "${V38}${VSH}"
 
 finish
