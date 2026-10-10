@@ -10,11 +10,11 @@ Duplicates are copies of one DNA fragment (PCR or optical copies). They are not 
 
 ## Tools
 - **minimap2**: fast aligner (preferred for WGS)
-- **samtools**: fixmate, sort, markdup and index
+- **samtools**: fixmate, sort and markdup (markdup also writes the index)
 
 ## Docker Images
 - `MINIMAP2_IMAGE` (minimap2 aligner)
-- `SAMTOOLS_IMAGE` (samtools fixmate, sort, markdup + index)
+- `SAMTOOLS_IMAGE` (samtools fixmate, sort, markdup with its index)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
@@ -46,6 +46,8 @@ minimap2 -x sr -d "$MMI" "$REF"
 # Step 2: Align, mark duplicates and sort (1-2 hours for 30X WGS).
 # fixmate -m adds the mate tags markdup needs; it reads the pairs minimap2
 # writes next to each other, then sort orders by position for markdup.
+# markdup --write-index builds the index while it writes the BAM; the
+# ##idx##<name>.bai suffix makes it a .bai (without it samtools writes a .csi).
 minimap2 -a -x sr -t 16 \
   -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA\tLB:${SAMPLE}" \
   "$MMI" \
@@ -53,17 +55,18 @@ minimap2 -a -x sr -t 16 \
   ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz \
 | samtools fixmate -@ 16 -u -m - - \
 | samtools sort -u -@ 16 -m 1G - \
-| samtools markdup -@ 16 - "${OUT%.bam}.tmp.bam"
+| samtools markdup -@ 16 --write-index - "${OUT%.bam}.tmp.bam##idx##${OUT%.bam}.tmp.bam.bai"
 
-# Step 3: Index, check, then rename into place
-samtools index "${OUT%.bam}.tmp.bam"
+# Step 3: Check, then rename into place. markdup finishes the index just
+# before the BAM's last block, so touch makes the index the newer file.
 samtools quickcheck "${OUT%.bam}.tmp.bam"
+touch "${OUT%.bam}.tmp.bam.bai"
 mv "${OUT%.bam}.tmp.bam" "$OUT" && mv "${OUT%.bam}.tmp.bam.bai" "${OUT}.bai"
 
 # Output: ~80-120 GB BAM + ~9 MB BAI index
 ```
 
-The script writes the BAM and the index under temporary names and renames them only after `samtools quickcheck` passes, so a run that is killed leaves no `${SAMPLE}_sorted.bam` behind. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
+The script writes the BAM and the index under temporary names, both in the one pass of `samtools markdup`, and renames them only after `samtools quickcheck` passes, so a run that is killed leaves no `${SAMPLE}_sorted.bam` behind. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
 
 ## Resource Requirements
 - CPU: 16+ cores recommended (`THREADS`)
