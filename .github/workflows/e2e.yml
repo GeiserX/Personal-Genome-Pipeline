@@ -194,6 +194,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The same cases take about a third longer on some runners than on
+      # others; the CPU line lets a timing claim name the hardware.
+      - name: Runner CPU
+        run: |
+          cpu="$(lscpu | awk -F': *' '/^Model name/ && !n++ {print $2}'), $(nproc) CPUs"
+          echo "$cpu"
+          echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
+
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk.
       - name: Free disk space and pick the work area
@@ -234,6 +242,11 @@ jobs:
             zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
             rm -f "${RUNNER_TEMP}/images.tar.zst"
           fi
+
+      # Seconds, no network: a planted registry 500 must be tried again, and a
+      # missing tag or a rate limit must not.
+      - name: Pull retry self-test
+        run: scripts/ci/e2e-run.sh --self-test-pull
 
       - name: Run the e2e cases
         id: cases

@@ -2,9 +2,12 @@
 # e2e-run.sh — run every end-to-end case in tests/e2e/ on the HG002 fixture.
 #
 # Usage: scripts/ci/e2e-run.sh [pattern]
+#        scripts/ci/e2e-run.sh --self-test-pull
 #   pattern  optional shell glob; runs only the cases whose file name matches
 #            (e.g. '2*' or '*cyrius*'). Later cases read earlier cases' outputs,
 #            so a partial run is for debugging only.
+#   --self-test-pull  checks the pull retry of step 3 against a fake docker
+#            (seconds, no network) and exits.
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -14,10 +17,12 @@
 #      SHA256SUMS; when a pull request bumps VERSION, waits up to 75 minutes
 #      for the build-fixture job to publish it;
 #   2. lays out GENOME_DIR the way setup.sh and step 13 would leave it;
-#   3. runs tests/e2e/*.sh in name order (C locale: numbered cases first, then
+#   3. pulls every image the cases use that is not on the machine yet,
+#      trying a pull again only when the registry answered with a 5xx;
+#   4. runs tests/e2e/*.sh in name order (C locale: numbered cases first, then
 #      the <package-key>-*.sh cases later packages add) and keeps going after a
 #      failure, so one run lists every broken step;
-#   4. prints a case / result / time / log table to the job summary and exits
+#   5. prints a case / result / time / log table to the job summary and exits
 #      1 if any case failed.
 set -euo pipefail
 
@@ -39,6 +44,102 @@ SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 
 # The docker shim clamps --cpus to this machine's CPU count.
 export PATH="${REPO}/tests/e2e/bin:${PATH}"
+
+# --- Image pulls ----------------------------------------------------------------
+# A `docker run` whose image is missing pulls it with one manifest request, and
+# a registry 5xx on that request ends the step: in run 37980248545 Docker Hub
+# answered 500 for hap.py and the GIAB case failed; the rerun passed. So the
+# images are pulled before the cases, and a pull that fails with a registry
+# 5xx is tried again, up to PULL_TRIES tries in all. Any other error (a wrong
+# tag, a rate limit) fails at once. The tools' own `docker run` is never retried.
+PULL_TRIES=${PULL_TRIES:-1}
+PULL_WAIT=${PULL_WAIT:-20}   # seconds before the second try; doubles after each
+REGISTRY_5XX='(HTTP status|status code):? 5[0-9][0-9]|50[0-4] (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)'
+# pull_image IMAGE: docker pull with the retry above.
+pull_image() {
+  local image=$1 try=1 wait=$PULL_WAIT out
+  while :; do
+    if out=$(docker pull -q "$image" 2>&1); then echo "pulled ${image}"; return 0; fi
+    echo "$out" >&2
+    if ! grep -qE "$REGISTRY_5XX" <<< "$out"; then
+      echo "ERROR: pulling ${image} failed, and not with a registry 5xx: not tried again." >&2
+      return 1
+    fi
+    if [ "$try" -ge "$PULL_TRIES" ]; then
+      echo "ERROR: pulling ${image}: a registry 5xx on each of ${try} tries." >&2
+      return 1
+    fi
+    echo "Registry 5xx pulling ${image} (try ${try} of ${PULL_TRIES}); trying again in ${wait}s." >&2
+    sleep "$wait"
+    try=$((try + 1)) wait=$((wait * 2))
+  done
+}
+# Images no case runs (docs/testing.md, "What no e2e case runs"): pulling them
+# would only cost time and cache space.
+UNUSED_IMAGES=" SAMTOOLS_HTTPS_IMAGE BWA_IMAGE STRELKA_IMAGE OCTOPUS_IMAGE CLAIR3_IMAGE TIDDIT_IMAGE SNIFFLES_IMAGE GRIDSS_IMAGE DUPHOLD_IMAGE CNVPYTOR_IMAGE ANNOTSV_IMAGE VEP_IMAGE PCGR_IMAGE PICARD_IMAGE "
+# case_images: the NAME_IMAGE="ref" lines of versions.env and of the cases,
+# without the images above, once each.
+case_images() {
+  grep -hoE '^[A-Z0-9_]+_IMAGE="[^"]+"' "${REPO}/versions.env" "${REPO}"/tests/e2e/*.sh \
+    | while IFS='=' read -r name ref; do
+        [[ "$UNUSED_IMAGES" == *" ${name} "* ]] || echo "${ref//\"/}"
+      done | awk '!seen[$0]++'
+}
+
+if [ "${1:-}" = --self-test-pull ]; then
+  T=$(mktemp -d)
+  trap 'rm -rf "$T"' EXIT
+  # A fake docker that only pulls: each image name has one behaviour, and every
+  # pull is counted in $T/<image>.count.
+  cat > "${T}/docker" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1" = pull ] || { echo "fake docker: only pull is expected, got: $*" >&2; exit 2; }
+img=${*: -1}
+c="${FAKE_DIR}/${img//[\/:]/_}.count"
+echo x >> "$c"
+n=$(wc -l < "$c")
+case "$img" in
+  flaky/once:1)
+    [ "$n" -ge 2 ] && exit 0
+    echo 'Error response from daemon: Head "https://registry-1.docker.io/v2/flaky/once/manifests/1": received unexpected HTTP status: 500 Internal Server Error' >&2 ;;
+  down/always:1)
+    echo 'Error response from daemon: Head "https://quay.io/v2/down/always/manifests/1": received unexpected HTTP status: 503 Service Unavailable' >&2 ;;
+  gone/tag:1)
+    echo 'Error response from daemon: manifest for gone/tag:1 not found: manifest unknown: manifest unknown' >&2 ;;
+  limit/hit:1)
+    echo 'Error response from daemon: toomanyrequests: You have reached your unauthenticated pull rate limit. https://www.docker.com/increase-rate-limit' >&2 ;;
+esac
+exit 1
+FAKE
+  chmod +x "${T}/docker"
+  export FAKE_DIR="$T"
+  PATH="${T}:${PATH}" PULL_WAIT=0
+  st_failed=0
+  # expect DESC pass|fail PULLS IMAGE
+  expect() {
+    local rc=0 got n
+    pull_image "$4" > /dev/null 2> "${T}/err" || rc=$?
+    got=$([ "$rc" -eq 0 ] && echo pass || echo fail)
+    n=$({ cat "${T}/${4//[\/:]/_}.count" 2> /dev/null || true; } | wc -l | tr -d ' ')
+    if [ "$got" = "$2" ] && [ "$n" = "$3" ]; then
+      echo "ok: $1"
+    else
+      echo "FAIL: $1 (${got} after ${n} pulls; want ${2} after ${3})"
+      sed 's/^/  /' "${T}/err"
+      st_failed=1
+    fi
+  }
+  expect "a registry 500 on the first pull is tried again and passes" pass 2 flaky/once:1
+  expect "a registry 503 on every pull gives up after ${PULL_TRIES} tries" fail "$PULL_TRIES" down/always:1
+  expect "a missing tag fails at once" fail 1 gone/tag:1
+  expect "a rate limit (429) fails at once" fail 1 limit/hit:1
+  LIST=$(case_images)
+  # shellcheck source=../../versions.env
+  HAPPY=$(. "${REPO}/versions.env" && echo "$HAPPY_IMAGE") VEP=$(. "${REPO}/versions.env" && echo "$VEP_IMAGE")
+  if grep -qxF "$HAPPY" <<< "$LIST"; then echo "ok: the pull list holds hap.py's image"; else echo "FAIL: the pull list lacks ${HAPPY}"; st_failed=1; fi
+  if grep -qxF "$VEP" <<< "$LIST"; then echo "FAIL: the pull list holds ${VEP}, which no case runs"; st_failed=1; else echo "ok: the pull list leaves VEP out"; fi
+  exit "$st_failed"
+fi
 
 mkdir -p "$E2E_WORK" "$FIXTURE_DIR" "$LOG_DIR"
 : > "$E2E_NOTES"
@@ -92,7 +193,19 @@ cp "${FIXTURE_DIR}/${SAMPLE}_R1.fastq.gz" "${FIXTURE_DIR}/${SAMPLE}_R2.fastq.gz"
 cp "${FIXTURE_DIR}/${SAMPLE}_vep.vcf" "${GENOME_DIR}/${SAMPLE}/vep/"
 df -h "$E2E_WORK"
 
-# --- 3. Cases -----------------------------------------------------------------
+# --- 3. Images ----------------------------------------------------------------
+echo "=== Pulling the images the cases use ==="
+mapfile -t IMAGES < <(case_images)
+[ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; exit 1; }
+pulled=0
+for image in "${IMAGES[@]}"; do
+  docker image inspect "$image" > /dev/null 2>&1 && continue
+  pull_image "$image" || exit 1
+  pulled=$((pulled + 1))
+done
+echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+
+# --- 4. Cases -----------------------------------------------------------------
 mapfile -t CASES < <(cd "${REPO}/tests/e2e" && find . -maxdepth 1 -type f -name '*.sh' ! -name lib.sh -printf '%f\n' | LC_ALL=C sort)
 names=() results=() times=()
 failed=0
@@ -123,7 +236,7 @@ fi
 # Tells the workflow every case ran, so the pulled images are complete enough to cache.
 [ "$PATTERN" = "*" ] && touch "${E2E_WORK}/all-cases-ran"
 
-# --- 4. Report ----------------------------------------------------------------
+# --- 5. Report ----------------------------------------------------------------
 {
   echo "### E2E on fixture ${TAG}: ${failed} of ${#names[@]} cases failed"
   echo
