@@ -9,7 +9,7 @@ Checks two things about a sample before you read any result from it:
 ## Why
 A swapped sample gives a perfectly normal-looking report about someone else. Step 16 compares the declared sex with the X and Y copy numbers in the BAM index; this step checks again from the reads at known sites, and on a multi-sample run catches a duplicate or a swap between two people of the same sex, which a sex check cannot. Contamination is quieter: a few percent of foreign reads turn real homozygous sites into false heterozygous calls, so PharmCAT, ClinVar and the ROH steps all read a slightly wrong genotype. FREEMIX tells you how much to trust them.
 
-Contamination only warns. A contaminated sample is still your sample; its calls are less reliable, above all the heterozygous ones, and you decide whether to resequence. A sex mismatch stops the step, because the steps that use the declared sex (DeepVariant's chrX and chrY ploidy, ExpansionHunter) would otherwise run with the wrong value.
+Contamination only warns. A contaminated sample is still your sample; its calls are less reliable, above all the heterozygous ones, and you decide whether to resequence. A sex mismatch stops the step, because the steps that use the declared sex (DeepVariant's chrX and chrY ploidy, ExpansionHunter, Delly) would otherwise run with the wrong value.
 
 ## Tool
 - **somalier** (Brent Pedersen): `extract` reads the sites, `relate --infer` infers the sex and the relatedness of every pair. It gets the declared sex as a one-line pedigree (`--ped`), so its own table, and MultiQC's somalier section, show the sex you declared beside the one from the reads

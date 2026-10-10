@@ -185,14 +185,30 @@ jobs:
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
-    # 79 to 137 minutes on the pull-request runs of 2026-10-08 and 2026-10-09
-    # (the cases step alone 67 to 124), so the slowest left 13 minutes before
-    # the timeout.
+    # The 39 passing e2e jobs of 2026-10-07 to 2026-10-10 took 79 to 137
+    # minutes (median about 115), so the slowest left 13 minutes before the
+    # timeout. Three jobs on deliberately broken test branches ran into it
+    # (runs 37574186079, 37754488905, 37756039583); the cause is not checked.
+    # A pull request that bumps the fixture also waits for it inside this
+    # limit (scripts/ci/e2e-run.sh, up to 75 minutes).
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Seconds, no network: a planted registry 500 must be tried again, and a
+      # missing tag or a rate limit must not.
+      - name: Pull retry self-test
+        run: scripts/ci/e2e-run.sh --self-test-pull
+
+      # The same cases take about a third longer on some runners than on
+      # others; the CPU line lets a timing claim name the hardware.
+      - name: Runner CPU
+        run: |
+          cpu="$(lscpu | awk -F': *' '/^Model name/ && !n++ {print $2}'), $(nproc) CPUs"
+          echo "$cpu"
+          echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk.
