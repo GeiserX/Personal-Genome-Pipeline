@@ -12,11 +12,16 @@
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
-#                                            homology table and models (step 35),
-#                                            IPD-KIR (step 08 with KIR=true),
-#                                            pgsc_calc's ancestry panel (step 26,
-#                                            and percentiles in step 25), Yleaf's
-#                                            marker tables (step 37)
+#                                            homology table and models plus its
+#                                            image (step 35), IPD-KIR (step 08
+#                                            with KIR=true), pgsc_calc's ancestry
+#                                            panel (step 26, and percentiles in
+#                                            step 25), Yleaf's marker tables plus
+#                                            its image (step 37)
+#        ./scripts/setup.sh --vep-cache <genome_dir>
+#                                            the VEP cache of VEP_CACHE_RELEASE
+#                                            (VEP, vcfanno, clinical filter and
+#                                            slivar need it), before the first run
 #
 # This script downloads everything needed to run the pipeline:
 #   1. GRCh38 reference genome + index: NCBI's GRCh38 no-ALT analysis set
@@ -32,11 +37,13 @@
 #      checkout of pgsc_calc and the Nextflow plugin it needs, so step 25 and
 #      the PRS process run without the network
 #
-# VEP cache (~26 GB) and PCGR ref data (~7 GB) are downloaded separately
-# because they are only needed for specific steps and take a long time.
+# The VEP cache (~26 GB, --vep-cache) and PCGR ref data (~7 GB) are
+# downloaded separately because they take a long time.
 #
 # Every download goes through fetch (scripts/lib/common.sh): it is written to
 # <file>.part, checked, and only then renamed, so a file that exists is whole.
+# A failed image pull is tried FETCH_TRIES times too, FETCH_WAIT apart, and
+# Docker's own message (a rate limit, a missing tag) is printed as it comes.
 #
 # The reference can be replaced by another GRCh38 build: set REF_FASTA (where
 # it is stored), REF_FASTA_URL (a .gz URL is unpacked) and REF_FASTA_MD5 (an
@@ -52,7 +59,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data|--vep-cache)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -77,7 +84,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data | --vep-cache <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -90,12 +97,15 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --cyrius      Install Cyrius for the opt-in step 21 (PyPI, hash-locked) and exit."
   echo "                Cyrius is under the PolyForm Strict licence: non-commercial use only."
   echo "  --parascopy-data"
-  echo "                Install Parascopy's GRCh38 homology table and models (step 35, ~50 MB) and exit."
+  echo "                Install Parascopy's GRCh38 homology table and models (step 35, ~50 MB), pull its image and exit."
   echo "  --kir-data    Install the IPD-KIR ${KIR_DB_RELEASE:-} database (KIR=true in step 08, ~40 MB) and exit."
   echo "  --ancestry-panel"
   echo "                Install pgsc_calc's ancestry reference panel ${PGSC_PANEL:-} (~7 GB download): step 26, and"
   echo "                percentiles instead of raw scores in step 25; then exit."
-  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB) and exit."
+  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB), pull its image and exit."
+  echo "  --vep-cache   Install the VEP ${VEP_CACHE_RELEASE:-} cache (step 13 and the Nextflow VEP: ~26 GB download, ~30 GB"
+  echo "                unpacked, both on disk during the install) and exit. Without it a run skips VEP, vcfanno,"
+  echo "                the clinical filter and slivar."
   echo ""
   echo "Example:"
   echo "  ./scripts/setup.sh /data/genomics"
@@ -412,12 +422,64 @@ install_ancestry_panel() {
   echo "[OK] ancestry panel ${name} (steps 25 and 26): ${panel} ($(wc -l < "$sites" | tr -d ' ') common GRCh38 SNVs in ${sites##*/})"
 }
 
+# pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
+# FETCH_WAIT seconds apart (default 5, then 10, ...), the knobs fetch uses.
+# Docker's own message goes to the terminal: a rate limit (toomanyrequests)
+# or a registry error passes with a retry, a wrong tag (manifest unknown)
+# does not.
+pull_image() {
+  local img=$1 tries=${FETCH_TRIES:-3} wait=${FETCH_WAIT:-} i
+  case "$tries" in ''|*[!0-9]*) tries=0 ;; *) tries=$((10#$tries)) ;; esac
+  [ "$tries" -gt 0 ] || { echo "ERROR: FETCH_TRIES must be a whole number above 0, got '${FETCH_TRIES}'" >&2; return 1; }
+  case "$wait" in *[!0-9]*) echo "ERROR: FETCH_WAIT must be a whole number of seconds, got '${wait}'" >&2; return 1 ;; esac
+  for ((i = 1; i <= tries; i++)); do
+    "$CONTAINER_ENGINE" pull "$img" && return 0
+    echo "  Pull attempt ${i}/${tries} failed: ${img} (Docker's message is above)" >&2
+    [ "$i" -lt "$tries" ] && sleep "${wait:-$((i * 5))}"
+  done
+  return 1
+}
+
+# ensure_image VAR STEP: the image of an opt-in step (`# optional` in
+# versions.env, so the main setup leaves it out), pulled with its data, so
+# the run does not pull it in the middle.
+ensure_image() {
+  local img=${!1}
+  if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
+    echo "[OK] ${img} (step $2) already pulled."
+  elif pull_image "$img"; then
+    echo "[OK] ${img} (step $2) pulled."
+  else
+    echo "[WARN] Could not pull ${img}. Step $2 needs it; run this command again."
+    return 1
+  fi
+}
+
+# install_vep_cache_opt_in: the VEP cache step 13 and the Nextflow VEP read,
+# installed before the first run; without it run-all.sh skips VEP, vcfanno,
+# the clinical filter and slivar. The tarball (~26 GB) and the unpacked tree
+# (~30 GB) are both on disk until the install ends.
+install_vep_cache_opt_in() {
+  local dir="${GENOME_DIR}/vep_cache"
+  if [ -f "${dir}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
+    echo "[OK] VEP ${VEP_CACHE_RELEASE} cache already present: ${dir}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38"
+    return 0
+  fi
+  echo "Installing the VEP ${VEP_CACHE_RELEASE} cache: ~26 GB download, ~30 GB unpacked, both on disk until it ends."
+  if ! install_vep_cache "$dir" "$VEP_CACHE_RELEASE"; then
+    echo "[WARN] Could not install the VEP ${VEP_CACHE_RELEASE} cache. Run this command again: the download resumes."
+    return 1
+  fi
+  echo "[OK] VEP ${VEP_CACHE_RELEASE} cache: ${dir}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38"
+}
+
 case "$OPT_IN" in
   ancestry-panel) install_ancestry_panel; exit $? ;;
   cyrius) install_cyrius; exit $? ;;
-  parascopy-data) install_parascopy_data; exit $? ;;
+  parascopy-data) install_parascopy_data && ensure_image PARASCOPY_IMAGE 35; exit $? ;;
   kir-data) install_kir_data; exit $? ;;
-  yleaf-data) install_yleaf_data; exit $? ;;
+  yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
+  vep-cache) install_vep_cache_opt_in; exit $? ;;
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
@@ -432,10 +494,10 @@ pull_images() {
       SKIPPED=$((SKIPPED + 1))
     else
       echo "  Pulling: ${img}..."
-      if "$CONTAINER_ENGINE" pull "$img" 2>/dev/null; then
+      if pull_image "$img"; then
         PULLED=$((PULLED + 1))
       else
-        echo "  WARNING: Failed to pull ${img}. Check the image name/tag."
+        echo "  WARNING: Failed to pull ${img}; Docker's message is above."
         FAILED=$((FAILED + 1))
       fi
     fi
@@ -794,9 +856,9 @@ VEPDIR="${GENOME_DIR}/vep_cache"
 if [ -f "${VEPDIR}/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt" ]; then
   echo "[OK] VEP ${VEP_CACHE_RELEASE} cache already present."
 else
-  echo "[SKIP] VEP ${VEP_CACHE_RELEASE} cache (~26 GB) — needed for step 13 (VEP annotation)"
-  echo "  Step 13 downloads, checks and unpacks it the first time it runs:"
-  echo "    ./scripts/13-vep-annotation.sh <sample_name>"
+  echo "[SKIP] VEP ${VEP_CACHE_RELEASE} cache (~26 GB) — without it a run skips VEP, vcfanno, the clinical filter and slivar"
+  echo "  Install it before the first run (downloads, checks and unpacks it; ~30 GB unpacked):"
+  echo "    ./scripts/setup.sh --vep-cache ${GENOME_DIR}"
 fi
 echo ""
 

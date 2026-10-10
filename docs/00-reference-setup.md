@@ -120,7 +120,15 @@ Required for step 5. `setup.sh` downloads them (about 5 GB, about 20 GB unpacked
 
 ## VEP Cache (~26 GB)
 
-Ensembl Variant Effect Predictor annotation database. Required for step 13.
+Ensembl Variant Effect Predictor annotation database. Required for step 13 and the pipeline's VEP. Without it, a run skips VEP, vcfanno, the clinical filter and slivar. Install it before the first run:
+
+```bash
+./scripts/setup.sh --vep-cache ${GENOME_DIR}
+```
+
+It downloads the release-116 cache, checks it against Ensembl's `CHECKSUMS` file, unpacks it into a temporary folder and moves it to `${GENOME_DIR}/vep_cache/homo_sapiens/116_GRCh38/` only when it is complete. The tarball (~26 GB) and the unpacked cache (~30 GB) are both on disk until the install ends, then the tarball is deleted. An interrupted download resumes when you run the command again.
+
+By hand, the same steps:
 
 ```bash
 mkdir -p ${GENOME_DIR}/vep_cache/tmp
@@ -361,7 +369,7 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 ## Docker Images — Pre-Pull All
 
-`setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. To pull every image in advance, the optional ones included, from the repository root in bash:
+`setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. A failed pull is tried three times (`FETCH_TRIES` and `FETCH_WAIT` change that), and Docker's own message is printed: `toomanyrequests` is Docker Hub's rate limit, `manifest unknown` a tag that does not exist. `--parascopy-data` and `--yleaf-data` pull their step's optional image along with its data. To pull every image in advance, the optional ones included, from the repository root in bash:
 
 ```bash
 source versions.env
