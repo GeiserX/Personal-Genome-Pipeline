@@ -10,6 +10,11 @@
 #   PLATFORM=hifi  -> PacBio HiFi/CCS (minimap2 preset: map-hifi)
 #
 # Runtime: ~1-3 hours for 30X long-read WGS depending on read length and throughput.
+#
+# The BAM is written under a temporary name, indexed and checked with samtools
+# quickcheck, and only then renamed, as in step 02: a killed run leaves no
+# <sample>_sorted.bam behind for steps 03e and 04c to trust. THREADS (default
+# 8) sets the CPUs of minimap2 and of samtools sort.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -108,6 +113,12 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+BAM="${OUTPUT_DIR}/${SAMPLE}_sorted.bam"
+TMP_BAM="${OUTPUT_DIR}/${SAMPLE}_sorted.tmp.bam"
+SORT_TMP="${OUTPUT_DIR}/${SAMPLE}.sort_tmp"
+# Whatever this run leaves half written goes when it exits, finished or not.
+cleanup() { rm -rf "$TMP_BAM" "${TMP_BAM}.bai" "$SORT_TMP"; }
+trap cleanup EXIT
 
 # Compute container-relative input path from resolved paths.
 # Docker resolves symlinks on bind mounts, so /genome/ maps to REAL_GENOME.
@@ -119,6 +130,10 @@ INPUT_RELPATH="${REAL_INPUT#"${REAL_GENOME}/"}"
 # differs from the short-read one. minimap2 builds it on the fly from the FASTA.
 # $1 = reads path inside the container, or - to read FASTQ from stdin.
 # Any further arguments are extra minimap2 options.
+# samtools sort spills to SORT_TMP in the sample directory, not beside the
+# BAM or on the container's own disk; -m is per thread, so the container gets
+# THREADS + 4 GB.
+SORT_MEM_GB=$((THREADS + 4))
 _align_and_sort() {
   local reads="$1"
   shift
@@ -136,12 +151,13 @@ _align_and_sort() {
       "${REF_FASTA_C}" \
       "$reads" \
   | run_in -i \
-    --cpus "${THREADS}" --memory 8g \
+    --cpus "${THREADS}" --memory "${SORT_MEM_GB}g" \
     "$SAMTOOLS_IMAGE" \
-    samtools sort -@ 4 -m 1G \
-      -o "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
+    samtools sort -@ "${THREADS}" -m 1G -T "$(cpath "$SORT_TMP")/sort" \
+      -o "$(cpath "$TMP_BAM")"
 }
 
+mkdir -p "$SORT_TMP"
 echo "[1/2] Aligning long reads with minimap2 (preset: ${MM2_PRESET})..."
 echo "       This takes 1-3 hours for 30X long-read WGS."
 if [[ "$INPUT_RELPATH" == *.bam ]]; then
@@ -158,17 +174,25 @@ else
   _align_and_sort "/genome/${INPUT_RELPATH}"
 fi
 
-# Index BAM
-echo "[2/2] Indexing BAM..."
+# Index and check, then rename. The old index goes first, so an index never
+# sits next to a BAM it was not built from.
+echo "[2/2] Indexing and checking BAM..."
 run_in \
-  --cpus 2 --memory 2g \
+  --cpus "${THREADS}" --memory 2g \
   "$SAMTOOLS_IMAGE" \
-  samtools index "/genome/${SAMPLE}/aligned_longread/${SAMPLE}_sorted.bam"
+  samtools index -@ "${THREADS}" "$(cpath "$TMP_BAM")"
+run_in \
+  --cpus 1 --memory 1g \
+  "$SAMTOOLS_IMAGE" \
+  samtools quickcheck -v "$(cpath "$TMP_BAM")"
+rm -f "${BAM}.bai"
+mv -f "$TMP_BAM" "$BAM"
+mv -f "${TMP_BAM}.bai" "${BAM}.bai"
 
 echo "=== Long-read Alignment complete ==="
-echo "BAM: ${OUTPUT_DIR}/${SAMPLE}_sorted.bam"
-echo "Index: ${OUTPUT_DIR}/${SAMPLE}_sorted.bam.bai"
-ls -lh "${OUTPUT_DIR}/${SAMPLE}_sorted.bam" 2>/dev/null || true
+echo "BAM: ${BAM}"
+echo "Index: ${BAM}.bai"
+ls -lh "$BAM" 2>/dev/null || true
 echo ""
 echo "Next steps:"
 echo "  - Variant calling: PLATFORM=${PLATFORM} ./scripts/03e-clair3.sh ${SAMPLE} [male|female]"
