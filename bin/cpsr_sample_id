@@ -1,0 +1,32 @@
+#!/bin/sh
+# cpsr_sample_id ID                 print the --sample_id CPSR gets for sample ID
+# cpsr_sample_id --rename DIR ID    rename CPSR's files in DIR from that id to ID
+#
+# CPSR (PCGR 2.3.2) stops on a --sample_id shorter than 3 or longer than 40
+# characters (pcgr/pcgr_vars.py SAMPLE_ID_MIN_LENGTH and SAMPLE_ID_MAX_LENGTH,
+# checked in pcgr/arg_checker.py verify_required_args). An ID inside that
+# range is printed unchanged; a shorter one gets "_cpsr" added (S1 -> S1_cpsr);
+# a longer one is cut to its first 40 characters. CPSR names its files after
+# --sample_id, so both entry points (scripts/17-cpsr.sh and
+# modules/local/cpsr/main.nf) then rename <that id>.cpsr.* to <ID>.cpsr.*.
+set -eu
+cpsr_id() {
+  if [ "${#1}" -lt 3 ]; then
+    printf '%s_cpsr\n' "$1"
+  elif [ "${#1}" -gt 40 ]; then
+    printf '%s\n' "$1" | cut -c1-40
+  else
+    printf '%s\n' "$1"
+  fi
+}
+if [ "${1:-}" = --rename ]; then
+  dir=${2:?usage: cpsr_sample_id --rename DIR ID} id=${3:?usage: cpsr_sample_id --rename DIR ID}
+  cid=$(cpsr_id "$id")
+  [ "$cid" != "$id" ] || exit 0
+  for f in "${dir}/${cid}".cpsr.*; do
+    [ -e "$f" ] || continue
+    mv -f "$f" "${dir}/${id}${f#"${dir}/${cid}"}"
+  done
+  exit 0
+fi
+cpsr_id "${1:?usage: cpsr_sample_id ID}"

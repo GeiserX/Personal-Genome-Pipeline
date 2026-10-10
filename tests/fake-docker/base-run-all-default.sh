@@ -5,7 +5,9 @@
 # pipeline (a fake nextflow here, which logs its arguments) with -resume, the
 # --tools list of a default run minus the steps whose data is missing, and
 # the database parameters it found, and the host's CPU count and RAM as the
-# caps, since Nextflow refuses a task that asks for more. Then the two reports
+# caps, since Nextflow refuses a task that asks for more, and, where this user
+# may hard-link the tasks' root-owned files (root, or fs.protected_hardlinks 0),
+# --publish_dir_mode link (one BAM on disk instead of two). Then the two reports
 # run. prs_scores/ exists but holds no scoring file, as after a failed first
 # download: PRS is skipped, not started on nothing.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -43,6 +45,7 @@ want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=26.04.7 ::
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
   --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json" \
   --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
+if [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 0 ]; then want+="--publish_dir_mode link "; fi
 [ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
   got:  ${NFLOG}
   want: ${want}"

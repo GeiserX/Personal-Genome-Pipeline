@@ -13,6 +13,12 @@
 #   4. It runs as the guide documents it, without THREADS or --max_memory:
 #      the launcher passes the runner's CPU count and RAM, and Nextflow starts
 #      the 8-CPU and 32 GB tasks capped to them instead of refusing them.
+#   5. Hard-link publishing. The tasks' files are root's (the docker profile),
+#      and this runner's user may link them only while fs.protected_hardlinks
+#      is 0. The first run sets it to 0: run-all.sh then publishes by hard link,
+#      the BAM is one file with two names (work/ and aligned/), and no published
+#      file is a symbolic link the direct (copy) run lacks. The second run has
+#      the runner's own setting back (1): run-all.sh passes no link mode.
 # Both comparisons get a negative control in the same run: a planted missing
 # file must be reported, and the first run's trace (tasks COMPLETED) must fail
 # the all-cached check.
@@ -61,8 +67,13 @@ published() {
     | grep -vE "^(fastq|nextflow|logs|vep)/|^run_manifest\.tsv$|^summary\.json$|^${P}_report\.(html|txt)$"
 }
 
-# --- first run ------------------------------------------------------------------------
+# --- first run, with fs.protected_hardlinks 0 ---------------------------------------------
+PH=$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)
+restore_ph() { [ -z "$PH" ] || sudo -n sysctl -q -w "fs.protected_hardlinks=${PH}" > /dev/null 2>&1; }
+trap restore_ph EXIT
+check "fs.protected_hardlinks is set to 0 for the first run (it was ${PH:-unknown})" sudo -n sysctl -q -w fs.protected_hardlinks=0
 launch first
+restore_ph
 check_eq "run-all.sh exits 0" "$RC" 0
 FIRST_TRACE=$(latest_trace)
 check "the first run wrote a trace" test -s "${FIRST_TRACE:-/dev/null}"
@@ -75,6 +86,19 @@ NFCMD=$(grep -m1 -F '$> nextflow run' "${G2}/${P}/nextflow/.nextflow.log" 2>/dev
 echo "+ ${NFCMD#*\$> }"
 check "nextflow got --max_cpus with the runner's CPU count" has " --max_cpus $(getconf _NPROCESSORS_ONLN) " "${NFCMD} "
 check "nextflow got --max_memory with the runner's RAM" has " --max_memory $(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo)\.GB " "${NFCMD} "
+
+# --- 5. published by hard link ------------------------------------------------------------
+check "nextflow got --publish_dir_mode link" has " --publish_dir_mode link " "${NFCMD} "
+PBAM="${G2}/${P}/aligned/${P}_sorted.bam"
+check_eq "the published BAM has two links (work/ and aligned/)" "$(stat -c %h "$PBAM" 2>/dev/null)" 2
+cp "$PBAM" "${CASE_TMP}/copied.bam" 2>/dev/null
+check_eq "negative control: a copy of it has one link" "$(stat -c %h "${CASE_TMP}/copied.bam" 2>/dev/null)" 1
+rm -f "${CASE_TMP}/copied.bam"
+# symlinks DIR: the symbolic links under DIR (not its nextflow/ launch directory), relative
+symlinks() { (cd "$1" 2>/dev/null && find . -path ./nextflow -prune -o -type l -print | LC_ALL=C sort); }
+SYMLINKS=$(LC_ALL=C comm -13 <(symlinks "$DIRECT") <(symlinks "${G2}/${P}"))
+[ -z "$SYMLINKS" ] || printf 'symbolic links the direct (copy) run does not have:\n%s\n' "$SYMLINKS"
+check_eq "published symbolic links the direct run does not have" "$(grep -c . <<<"$SYMLINKS" || true)" 0
 
 # --- 1. the same published files as the direct run, and parity with the bash steps -------
 published "$DIRECT" > "${CASE_TMP}/direct.txt"
@@ -100,6 +124,10 @@ check "run_status.tsv records step 13 skipped" has $'^step\t13\tskipped ' "$STAT
 
 # --- 2. the second run finds every task cached ---------------------------------------------
 launch second
+NFCMD2=$(grep -m1 -F '$> nextflow run' "${G2}/${P}/nextflow/.nextflow.log" 2>/dev/null || true)
+if [ "$PH" = 1 ]; then
+  check "the second run, with fs.protected_hardlinks ${PH}, passes no link mode" lacks " --publish_dir_mode link " "${NFCMD2} "
+fi
 check_eq "the second run exits 0" "$RC" 0
 SECOND_TRACE=$(latest_trace)
 check "the second run wrote its own trace" test "${SECOND_TRACE:-}" != "${FIRST_TRACE:-}"

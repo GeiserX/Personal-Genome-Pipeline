@@ -8,6 +8,14 @@
 #                  BENCHMARK=true with one caller VCF is skipped, not failed
 #   ALIGN_DIR run  its BAM replaces the plain run's samplesheet row
 #   plain again    back to aligned/: a kept row names this call's BAM only
+#   publish mode   --publish_dir_mode link for root (a fake `id`) when a
+#                  hard link from the work directory to GENOME_DIR works;
+#                  copy (no flag) when ln fails, when -w names another work
+#                  directory or -c/-config a config that may, for a user who is not root where
+#                  fs.protected_hardlinks is 1 (the tasks' files are root's),
+#                  and as given when the user passed --publish_dir_mode
+#   -bg            refused with exit 2 before nextflow: run-all.sh would go on
+#                  at once and write the step results before the run ended
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -58,7 +66,42 @@ grep -qE $'^step\t04b\t(ok|failed)$' "${G}/sample1/logs/run_status.tsv" || fail 
 run_expect 0 plain2 env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male
 [ "$(row)" = "sample1,,,${A},${A}.bai,,,male" ] || fail "the ALIGN_DIR run's row was kept without ALIGN_DIR: $(row)"
 
+# The publish mode. A fake `id` makes run-all.sh run as root, who may link any
+# file; an ln that fails stands for work/ on another filesystem.
+mkdir -p "${CASE_WORK}/root" "${CASE_WORK}/noln"
+printf '#!/bin/sh\n[ "$1" != -u ] || { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n' > "${CASE_WORK}/root/id"
+printf '#!/bin/sh\necho "ln: failed to create hard link: Invalid cross-device link" >&2\nexit 1\n' > "${CASE_WORK}/noln/ln"
+chmod +x "${CASE_WORK}/root/id" "${CASE_WORK}/noln/ln"
+ROOTPATH="${CASE_WORK}/root:${PATH}"
+run_expect 0 linkroot env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male
+has_args --publish_dir_mode link
+run_expect 0 crossdev env TOOLS=pharmcat PATH="${CASE_WORK}/noln:${ROOTPATH}" "${SCRIPTS}/run-all.sh" sample1 male
+lacks_arg --publish_dir_mode "when ln fails"
+run_expect 0 otherwork env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male -w "${CASE_WORK}/elsewhere"
+lacks_arg --publish_dir_mode "with -w"
+# A config given with -c can set workDir elsewhere, where the probe cannot look
+printf 'workDir = "%s"\n' "${CASE_WORK}/elsewhere" > "${CASE_WORK}/user.config"
+for c in -c -config; do
+  run_expect 0 "otherconfig${c}" env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male "$c" "${CASE_WORK}/user.config"
+  lacks_arg --publish_dir_mode "with ${c}"
+done
+run_expect 0 usermode env TOOLS=pharmcat PATH="$ROOTPATH" "${SCRIPTS}/run-all.sh" sample1 male --publish_dir_mode copy
+has_args --publish_dir_mode copy
+[ "$(grep -o ' --publish_dir_mode ' <<<"$(last)" | wc -l)" -eq 1 ] || fail "--publish_dir_mode passed twice: $(last)"
+if [ "$(id -u)" -ne 0 ] && [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 1 ]; then
+  run_expect 0 protected env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male
+  lacks_arg --publish_dir_mode "for a user who is not root, with fs.protected_hardlinks 1"
+else
+  echo "(not checked here: this host is not a non-root user with fs.protected_hardlinks 1)"
+fi
+if compgen -G "${G}/.pgp-link-probe*" > /dev/null || compgen -G "${G}/sample1/.pgp-link-probe*" > /dev/null \
+   || compgen -G "${G}/sample1/nextflow/work/.pgp-link-probe*" > /dev/null; then
+  fail "the link probe left files behind"
+fi
+
 n=$(grep -c '^nextflow :: ' "$FAKE_DOCKER_LOG")
+run_expect 2 bg env TOOLS=pharmcat "${SCRIPTS}/run-all.sh" sample1 male -bg
+output_has bg "ERROR: run-all.sh does not take -bg"
 run_expect 2 badtool env TOOLS=pharmcat,clinvar_screen "${SCRIPTS}/run-all.sh" sample1 male
 output_has badtool "unknown step 'clinvar_screen' in TOOLS"
 run_expect 2 badcaller env EXTRA_CALLERS=gatk,bogus "${SCRIPTS}/run-all.sh" sample1 male
