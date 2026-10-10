@@ -8,7 +8,8 @@
     the annotation directory (built once with AnnotSV's INSTALL_annotations.sh,
     it contains Annotations_Human/) comes in through --annotsv_annotations.
 
-    Equivalent to: scripts/05-annotsv.sh
+    Equivalent to: scripts/05-annotsv.sh, which reads the same duphold-filtered
+    calls when step 15 wrote them, and Manta's calls (with a note) otherwise.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 

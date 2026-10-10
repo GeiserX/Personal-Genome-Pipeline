@@ -262,6 +262,8 @@ The pipeline and the scripts run the same commands from the same images, so on t
 | roh | the `bcftools roh` segments and the 5 Mb summary |
 | pharmcat | the diplotype of each gene |
 | prs | each score's sum, matched variant count and input (gVCF or VCF) |
+| sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
+| y_haplogroup | Yleaf's prediction table; on the same hardening run |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 
@@ -276,6 +278,7 @@ Where a module and its script differ on purpose:
 | PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
 | Mito variants (20) | extracts the chrM reads with `samtools view` | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`) |
+| AnnotSV (05) | annotates step 15's duphold-filtered calls; without them, or when Manta's calls are newer, Manta's calls, and says so | `ANNOTSV` always reads `DUPHOLD_FILTER`'s output: `annotsv` in `--tools` needs `duphold` and `manta` |
 | Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |
 | HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH, mito haplogroup, haplocheck and Y haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
