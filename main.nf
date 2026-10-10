@@ -176,6 +176,12 @@ workflow {
         if (!(row.sample ==~ /^[a-zA-Z0-9._-]+$/)) {
             error "Sample name '${row.sample}' contains invalid characters. Use only a-z, A-Z, 0-9, '.', '_', '-'"
         }
+        // CPSR, bin/pgx_parse.py and bin/collect_summary.py take the id as an
+        // argument value, and argparse reads '-x' as an option. (CPSR's 3 to
+        // 40 characters are handled by bin/cpsr_sample_id.)
+        if (row.sample.startsWith('-')) {
+            error "Sample name '${row.sample}' starts with '-', which tools read as an option. Start it with a letter or digit."
+        }
         // Sample ids name the output directory and key every per-sample join
         if (!seen_samples.add(row.sample)) {
             error "Sample '${row.sample}' appears more than once in ${params.input}. Each sample needs exactly one row."
