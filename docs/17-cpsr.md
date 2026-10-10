@@ -62,6 +62,8 @@ docker run --rm --user root \
     --force_overwrite
 ```
 
+Run by hand like this, `--sample_id` must be 3 to 40 characters long. The script and the Nextflow module handle that for you (see Notes).
+
 ## Panel Options
 `--panel_id` takes one or more of these ids, comma-separated. The list is the one PCGR 2.3.2 ships (`pcgr/pcgr_vars.py`); GEP means Genomics England PanelApp. 2.3 dropped 2.2.5's panel 38 (Rhabdoid tumour predisposition), so the ids from 38 up moved down by one.
 
@@ -122,6 +124,7 @@ docker run --rm --user root \
 ~30-60 minutes per genome (depends on variant count).
 
 ## Notes
+- **Sample id length:** CPSR accepts sample ids of 3 to 40 characters (PCGR 2.3.2, `SAMPLE_ID_MIN_LENGTH` and `SAMPLE_ID_MAX_LENGTH` in `pcgr/pcgr_vars.py`); any other length stops it before it reads the VCF. When your id is outside that range, the pipeline gives CPSR a padded or shortened id (`S1` becomes `S1_cpsr`, a longer id is cut to its first 40 characters, both by `bin/cpsr_sample_id`) and renames its files back to `${SAMPLE}.cpsr.*`, so CPSR's own report title shows that id.
 - The ref data bundle (~7 GB) and VEP cache only need to be downloaded once — shared across all samples.
 - **PCGR 2.x breaking changes:** The CLI changed completely from 1.x. The old `--pcgr_dir` flag (which internally appended `/data`) is replaced by `--refdata_dir` and `--vep_dir` as separate mount points. The single monolithic data bundle is split into a smaller ref data bundle + the standard Ensembl VEP cache. Docker volume mounts changed from a single `:/genome` to four separate mounts for VEP, bundle, inputs, and outputs.
 - **Data bundle freshness:** The `20260620` bundle dates from June 2026 (ClinVar 2026-06, GENCODE 49). Check the [PCGR releases page](https://github.com/sigven/pcgr/releases) periodically for updated bundles — newer bundles include more recent ClinVar classifications and gene-disease annotations.
