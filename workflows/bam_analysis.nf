@@ -197,7 +197,7 @@ workflow BAM_ANALYSIS {
                           "${qc.inferred_sex} from the reads (chrX sites ${qc.x_sites}: ${qc.x_het} heterozygous, " +
                           "${qc.x_hom_alt} homozygous ALT; chrY depth ratio ${qc.y_depth_ratio}). Either the sample " +
                           "is not the one you think, the declared sex is wrong, or the sample has a sex-chromosome " +
-                          "aneuploidy. DeepVariant's chrX/chrY ploidy and ExpansionHunter take the declared sex."
+                          "aneuploidy. DeepVariant's chrX/chrY ploidy, ExpansionHunter and Delly take the declared sex."
                 if (params.sex_check == 'warn') {
                     log.warn "${msg} --sex_check warn is set: going on with ${meta.sex}."
                 } else {

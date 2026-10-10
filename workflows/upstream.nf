@@ -82,8 +82,8 @@ workflow UPSTREAM {
         if (meta.sex && inferred != meta.sex) {
             def msg = "Sample '${meta.id}': the samplesheet says sex ${meta.sex}, but indexcov infers ${inferred} " +
                       "from the BAM index (${cn}). Either the sample is not the one you think, the declared sex " +
-                      "is wrong, or the sample has a sex-chromosome aneuploidy. DeepVariant's chrX/chrY ploidy " +
-                      "and ExpansionHunter take the declared sex."
+                      "is wrong, or the sample has a sex-chromosome aneuploidy. DeepVariant's chrX/chrY ploidy, " +
+                      "ExpansionHunter and Delly take the declared sex."
             if (params.sex_check == 'warn') {
                 log.warn "${msg} --sex_check warn is set: going on with ${meta.sex}."
             } else {

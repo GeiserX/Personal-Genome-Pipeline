@@ -6,7 +6,9 @@
 
     Two processes, because the delly image carries htslib but not bcftools:
       1. DELLY          — delly sr (optionally with an exclude map, -x); Delly 2.3.0
-                          renamed the short-read caller from `delly call` to `delly sr`
+                          renamed the short-read caller from `delly call` to `delly sr`.
+                          --sex is the samplesheet's sex, auto (Delly infers it from
+                          coverage) when the row gives none
       2. DELLY_BCF2VCF  — bcftools image, BCF -> bgzipped VCF + tabix index
 
     Equivalent to: scripts/19-delly.sh
@@ -32,9 +34,11 @@ process DELLY {
 
     script:
     def exclude_arg = exclude ? "-x ${exclude}" : ""
+    def sex_arg = "--sex ${meta.sex ?: 'auto'}"
     """
     delly sr \\
         -g ${reference} \\
+        ${sex_arg} \\
         ${exclude_arg} \\
         -o ${meta.id}_sv.bcf \\
         ${bam}

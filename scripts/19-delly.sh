@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
 # Delly — Structural variant caller (paired-end + split-read + read-depth)
-# Input: Sorted BAM + reference FASTA
+# Input: Sorted BAM + reference FASTA, and the sample's sex (male or female)
+#   when known. Delly genotypes chrX and chrY by sex; without a sex it infers
+#   one from coverage (--sex auto).
 # Output: SV VCF (DEL, DUP, INV, BND, INS)
 # Runtime: ~2-4 hours per 30X genome
 set -euo pipefail
 
-SAMPLE=${1:?Usage: $0 <sample_name>}
+SAMPLE=${1:?Usage: $0 <sample_name> [male|female]}
+SEX=${2:-}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
+case "$SEX" in
+  ''|male|female) ;;
+  *) echo "ERROR: sex must be 'male' or 'female' (or left out), got '${SEX}'." >&2; exit 2 ;;
+esac
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam"
 REF="$REF_FASTA"
@@ -18,6 +25,7 @@ OUTPUT_DIR="${SAMPLE_DIR}/delly"
 echo "=== Delly SV calling: ${SAMPLE} ==="
 echo "Input BAM: ${BAM}"
 echo "Output: ${OUTPUT_DIR}"
+echo "Sex: ${SEX:-not given (Delly infers it from coverage)}"
 
 # Validate inputs
 for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
@@ -45,10 +53,12 @@ fi
 
 echo "[1/3] Calling structural variants..."
 # Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`.
+# --sex: the declared sex, or auto (Delly's own default) when none is given.
 run_in --cpus 4 --memory 8g \
   "$DELLY_IMAGE" \
   delly sr \
     -g "${REF_FASTA_C}" \
+    --sex "${SEX:-auto}" \
     ${EXCL_ARGS[@]+"${EXCL_ARGS[@]}"} \
     -o "/genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf" \
     "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"

@@ -22,16 +22,17 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Command
 ```bash
 export GENOME_DIR=/path/to/your/data
-./scripts/19-delly.sh your_sample
+./scripts/19-delly.sh your_sample female   # or male; leave it out if the sex is not known
 ```
 
 The script passes Delly's GRCh38 exclude map (`-x`): telomeres, centromeres and every contig beyond chr1-22, X, Y and M (on the default no-ALT reference, the unplaced scaffolds and `chrEBV`; the map also names the ALT and decoy contigs of a full reference). `setup.sh` installs it from a pinned commit of the Delly repository as `reference/delly_human.hg38.excl.tsv` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without it Delly spends hours in those regions and calls artefacts there; the script then runs without `-x` and says so.
 
-What the script runs. Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`; the pinned 2.7.0 answers `Unrecognized command` to `delly call`. Since 2.7.0 Delly also infers the sample's sex from coverage (`--sex auto`, its default) and genotypes chrX and chrY calls as haploid in a male; the step lets it infer today and does not hand it the declared sex, so compare its verdict with the sex check in [step 16](16-indexcov.md) when a chrX or chrY call matters.
+What the script runs. Delly 2.3.0 renamed the short-read caller from `delly call` to `delly sr`; the pinned 2.7.0 answers `Unrecognized command` to `delly call`. Since 2.7.0 Delly genotypes chrX and chrY calls by sex (haploid in a male outside the pseudoautosomal regions) and takes the sex as `--sex`. The step hands it the declared sex: the second argument of the script, or the samplesheet's `sex` column in the Nextflow pipeline, the same sex DeepVariant gets. With no sex given it passes `--sex auto`, Delly's own default, and Delly infers the sex from coverage; compare that verdict with the sex check in [step 16](16-indexcov.md) when a chrX or chrY call matters. The step never passes `--sex none`, which turns the sex-aware genotyping off.
 
 ```bash
 source versions.env   # from the repository root
 REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
+SEX=female   # or male; empty lets Delly infer it (--sex auto)
 # SV calling (all SV types)
 docker run --rm \
   --cpus 4 --memory 8g \
@@ -39,6 +40,7 @@ docker run --rm \
   "${DELLY_IMAGE}" \
   delly sr \
     -g "/genome/${REF_FASTA}" \
+    --sex "${SEX:-auto}" \
     -x /genome/reference/delly_human.hg38.excl.tsv \
     -o /genome/${SAMPLE}/delly/${SAMPLE}_sv.bcf \
     /genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam
