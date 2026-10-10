@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One samplesheet row is one sample: a VCF with more than one sample column
 # is refused at intake, with the count and the names, and a single-sample VCF
-# goes on.
+# goes on. The same block refuses a VCF whose ##contig lengths are not
+# GRCh38's (a GRCh37 file named the chr way or the Ensembl way), and lets a
+# GRCh38 header, or one without ##contig lines, through.
 #
 # Two places apply the rule, and both are run here on the synthetic VCFs in
 # tests/fixtures/vcf/:
@@ -130,6 +132,65 @@ if [ "$RC" -eq 0 ] && ! grep -q 'samples (' <<<"$OUT" && grep -q 'FILTER counts 
   pass "VCF_PRECHECK accepts a one-sample VCF and goes on to count FILTER values"
 else
   fail "VCF_PRECHECK on a one-sample VCF: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# --- build: ##contig lengths that are not GRCh38's --------------------------------------
+# GRCh37's chr1 under the chr name: the stop names the contig, both lengths and GRCh37.
+sed 's/^##contig=<ID=chr1,length=248956422>/##contig=<ID=chr1,length=249250621>/' \
+  "${FIX}/one_sample.vcf" > "${WORK}/grch37.vcf"
+grep -q 'length=249250621' "${WORK}/grch37.vcf" || fail "the GRCh37 test input was not built"
+run_precheck "${WORK}/grch37.vcf"
+if [ "$RC" -ne 0 ] && grep -q "Sample 'S1': input.vcf.gz is not on GRCh38" <<<"$OUT" \
+   && grep -q 'chr1 length 249250621 (GRCh38: 248956422)' <<<"$OUT" \
+   && grep -q 'A chr1 length of 249250621 is GRCh37 (hg19)' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops a chr-named VCF with GRCh37's chr1 length, naming the build"
+else
+  fail "VCF_PRECHECK on a GRCh37 header: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# The same under Ensembl names: the build stop comes before the rename advice.
+awk -F'\t' -v OFS='\t' '/^##contig=<ID=chr1,/ { $0 = "##contig=<ID=1,length=249250621>" } $1 == "chr1" { $1 = "1" } { print }' \
+  "${FIX}/one_sample.vcf" > "${WORK}/grch37-ensembl.vcf"
+run_precheck "${WORK}/grch37-ensembl.vcf"
+if [ "$RC" -ne 0 ] && grep -q '    1 length 249250621 (GRCh38: 248956422)' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops an Ensembl-named VCF with GRCh37's chr1 length"
+else
+  fail "VCF_PRECHECK on an Ensembl GRCh37 header: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# One wrong length on another contig is enough, and the GRCh37 line is left out.
+awk '/^#CHROM/ { print "##contig=<ID=chr2,length=243199373,assembly=hg19>" } { print }' \
+  "${FIX}/one_sample.vcf" > "${WORK}/chr2.vcf"
+run_precheck "${WORK}/chr2.vcf"
+if [ "$RC" -ne 0 ] && grep -q 'chr2 length 243199373 (GRCh38: 242193529)' <<<"$OUT" \
+   && ! grep -q 'is GRCh37' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops on a wrong chr2 length and names it"
+else
+  fail "VCF_PRECHECK on a wrong chr2 length: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# Every GRCh38 length of chr1-22, X and Y, in any attribute order, goes on;
+# so does a header without ##contig lines (validate-setup.sh spot-checks those).
+{
+  grep '^##fileformat' "${FIX}/one_sample.vcf"
+  awk -F'[(", )]+' '/^    \("chr/ { for (i = 2; i < NF; i += 2) print $i, $(i + 1) }' \
+    "${REPO}/tests/demo/make_demo_sample.py" \
+    | awk '{ printf "##contig=<ID=%s,assembly=GRCh38,length=%s>\n", $1, $2 }'
+  grep -v '^##fileformat' "${FIX}/one_sample.vcf" | grep -v '^##contig'
+} > "${WORK}/grch38-all.vcf"
+[ "$(grep -c '^##contig' "${WORK}/grch38-all.vcf")" -eq 24 ] || fail "the GRCh38 test header does not have 24 contigs"
+run_precheck "${WORK}/grch38-all.vcf"
+if [ "$RC" -eq 0 ] && grep -q 'FILTER counts PASS=3' <<<"$OUT"; then
+  pass "VCF_PRECHECK accepts GRCh38's 24 lengths (the demo sample's NCBI table)"
+else
+  fail "VCF_PRECHECK on a full GRCh38 header: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+grep -v '^##contig' "${FIX}/one_sample.vcf" > "${WORK}/nocontig.vcf"
+run_precheck "${WORK}/nocontig.vcf"
+if [ "$RC" -eq 0 ] && ! grep -q 'not on GRCh38' <<<"$OUT"; then
+  pass "VCF_PRECHECK lets a header without ##contig lines through"
+else
+  fail "VCF_PRECHECK on a header without ##contig lines: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
 
 # --- vcf_header_samples in scripts/lib/common.sh ------------------------------------
