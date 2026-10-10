@@ -130,9 +130,9 @@ INPUT_RELPATH="${REAL_INPUT#"${REAL_GENOME}/"}"
 # differs from the short-read one. minimap2 builds it on the fly from the FASTA.
 # $1 = reads path inside the container, or - to read FASTQ from stdin.
 # Any further arguments are extra minimap2 options.
-# samtools sort spills to SORT_TMP in the sample directory, not beside the
-# BAM or on the container's own disk; -m is per thread, so the container gets
-# THREADS + 4 GB.
+# samtools sort spills to SORT_TMP (aligned_longread/<sample>.sort_tmp), a
+# directory of its own that the trap removes, not to the container's own disk;
+# -m is per thread, so the container gets THREADS + 4 GB.
 SORT_MEM_GB=$((THREADS + 4))
 _align_and_sort() {
   local reads="$1"

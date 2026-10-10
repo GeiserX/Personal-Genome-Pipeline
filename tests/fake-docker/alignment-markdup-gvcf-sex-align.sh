@@ -3,13 +3,14 @@
 # after the reference; reads go through fixmate and markdup; THREADS reaches
 # the aligner, fixmate and samtools; markdup writes the .bai with the BAM, so
 # steps 02 and 02a run no separate samtools index, and the .bai ends up no
-# older than the BAM; a markdup that writes no index fails the step; the BAM, the minimap2 index and the BWA-MEM2 index reach
-# their final names only when complete. An aligner that dies (exit 137), a BAM
-# that fails quickcheck and an index build that dies each leave no file under
-# the final name, and step 02a says how much memory the BWA-MEM2 index needs
-# when the build is killed. Step 02b sorts on THREADS threads into a temporary
-# BAM with its spill files in a directory of their own, and a killed sort or a
-# BAM that fails quickcheck leaves no <sample>_sorted.bam behind.
+# older than the BAM; a markdup that writes no index fails the step; the BAM,
+# the minimap2 index and the BWA-MEM2 index reach their final names only when
+# complete. An aligner that dies (exit 137), a BAM that fails quickcheck and
+# an index build that dies each leave no file under the final name, and step
+# 02a says how much memory the BWA-MEM2 index needs when the build is killed.
+# Step 02b sorts on THREADS threads into a temporary BAM with its spill files
+# in a directory of their own, and a killed sort or a BAM that fails
+# quickcheck leaves no <sample>_sorted.bam behind.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 

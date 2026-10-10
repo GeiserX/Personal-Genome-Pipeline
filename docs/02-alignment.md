@@ -57,9 +57,11 @@ minimap2 -a -x sr -t 16 \
 | samtools sort -u -@ 16 -m 1G - \
 | samtools markdup -@ 16 --write-index - "${OUT%.bam}.tmp.bam##idx##${OUT%.bam}.tmp.bam.bai"
 
-# Step 3: Check, then rename into place. markdup finishes the index just
-# before the BAM's last block, so touch makes the index the newer file.
+# Step 3: Check, then rename into place. test -s stops if markdup wrote no
+# index. markdup finishes the index just before the BAM's last block, so
+# touch makes the index the newer file.
 samtools quickcheck "${OUT%.bam}.tmp.bam"
+test -s "${OUT%.bam}.tmp.bam.bai"
 touch "${OUT%.bam}.tmp.bam.bai"
 mv "${OUT%.bam}.tmp.bam" "$OUT" && mv "${OUT%.bam}.tmp.bam.bai" "${OUT}.bai"
 

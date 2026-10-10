@@ -126,6 +126,7 @@ run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
+[ -s "${TMP_BAM}.bai" ] || { echo "ERROR: samtools markdup wrote no index" >&2; exit 1; }
 touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"

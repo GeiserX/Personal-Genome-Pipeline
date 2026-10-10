@@ -126,7 +126,8 @@ process ALIGN_MARKDUP {
     // samtools sort -m is per thread: the label's memory covers cpus x 1 GB.
     // The ##idx##<name>.bai suffix makes markdup's index a .bai, not a .csi.
     // markdup finishes the index just before the BAM's last block; the touch
-    // makes the index the newer file, as step 02 does.
+    // makes the index the newer file, as step 02 does. test -s fails the task
+    // if markdup wrote no index, so touch never creates an empty one.
     """
     mkdir -p sort_tmp
     gzip -dc ${sam} \\
@@ -135,6 +136,7 @@ process ALIGN_MARKDUP {
         | samtools markdup -@ ${task.cpus} --write-index -T sort_tmp/markdup - ${meta.id}_sorted.bam##idx##${meta.id}_sorted.bam.bai
     rm -rf sort_tmp
     samtools quickcheck -v ${meta.id}_sorted.bam
+    test -s ${meta.id}_sorted.bam.bai
     touch ${meta.id}_sorted.bam.bai
 
     cat <<-END_VERSIONS > versions.yml
