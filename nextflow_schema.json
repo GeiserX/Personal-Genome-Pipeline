@@ -15,7 +15,7 @@
                     "type": "string",
                     "format": "file-path",
                     "mimetype": "text/csv",
-                    "description": "Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled.",
+                    "description": "Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index (a VCF with one sample) with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled.",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {

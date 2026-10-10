@@ -3,7 +3,8 @@
     VCF_PRECHECK — Look at each input VCF once, before any analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Reports three facts per sample; main.nf decides what to do with them,
-    so every stop names the sample and says how to fix the file.
+    so every stop names the sample and says how to fix the file. The
+    sample count is the exception: more than one sample stops here.
 
     FILTER values. ClinVar screen, clinical filter and slivar keep only
     FILTER=PASS records. A VCF from a caller that leaves FILTER as '.'
@@ -34,6 +35,13 @@
                 <*>, <NON_REF> or '.') that carries INFO/END
       name    — no blocks, but the file name contains .g.vcf or .genomic.vcf
       none    — neither
+
+    Samples. One samplesheet row is one person. A joint-called VCF holds
+    one genotype column per person: slivar keeps the first column's name
+    and the other steps read every column, so the results would mix people
+    or cover one of them without saying so. A VCF with more than one
+    sample stops here, with the sample count, the first five names and the
+    bcftools command that keeps one of them.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -74,6 +82,29 @@ process VCF_PRECHECK {
         *.g.vcf*|*.genomic.vcf*) GVCF=name ;;
     esac
     bcftools view -h ${vcf} > header.txt
+
+    # One sample per row: the #CHROM columns after FORMAT are the samples
+    awk -F'\\t' '/^#CHROM/ { for (i = 10; i <= NF; i++) print \$i }' header.txt > samples.txt
+    N_SAMPLES=\$(wc -l < samples.txt | tr -d ' ')
+    if [ "\${N_SAMPLES}" -gt 1 ]; then
+        NAMES=\$(awk 'NR <= 5' samples.txt | paste -sd, - | sed 's/,/, /g')
+        if [ "\${N_SAMPLES}" -gt 5 ]; then NAMES="\${NAMES}, ..."; fi
+        # Shell-quoted: a sample name is free text, and the command is for copying
+        FIRST=\$(awk 'NR == 1' samples.txt)
+        FIRST_Q=\$(printf '%q' "\${FIRST}")
+        VCF_Q=\$(printf '%q' "${vcf.name}")
+        {
+            echo "ERROR: Sample '${meta.id}': ${vcf.name} holds \${N_SAMPLES} samples (\${NAMES})."
+            echo "One samplesheet row is one sample, and the steps would mix their genotypes. Keep one"
+            echo "sample's column, index the new file, and give each sample its own row, for example:"
+            echo "    bcftools view -s \${FIRST_Q} -a -c 1 -Oz -o \${FIRST_Q}.vcf.gz \${VCF_Q}"
+            echo "    bcftools index -t \${FIRST_Q}.vcf.gz"
+            echo "(-a drops the ALT alleles that sample does not carry, -c 1 the sites where it carries none:"
+            echo "the result is a variant-only VCF. Split a gvcf for that row with -s alone, so its reference"
+            echo "blocks stay.)"
+        } >&2
+        exit 1
+    fi
     if grep -q '^##GVCFBlock' header.txt; then
         GVCF=blocks
     fi

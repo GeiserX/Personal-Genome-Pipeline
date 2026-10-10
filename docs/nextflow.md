@@ -327,6 +327,10 @@ Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunt
 
 ClinVar screen, clinical filter and slivar keep only records with FILTER=PASS. Before any analysis, `VCF_PRECHECK` counts the FILTER values of each sample. A VCF with no PASS record at all (for example unfiltered GATK HaplotypeCaller or FreeBayes output, where FILTER is `.`) stops the run with a message naming the sample, because every PASS-only step would report zero hits. Filter it with your caller's recommended filters, or add `--allow_unfiltered` to treat FILTER `.` as PASS for that file. A VCF with any PASS record is used as given.
 
+### One sample per VCF
+
+One samplesheet row is one sample, so a VCF given on a row must hold one sample column. `VCF_PRECHECK` stops the run, before any analysis, on a VCF with more than one (a joint-called family file, for example): the message names the sample count and the first five sample names, and prints the `bcftools view -s <name> -a -c 1` command that keeps one sample's column. That command writes a variant-only VCF, which is what the `vcf` column takes. A `gvcf` for the same row is split with `-s <name>` alone, so its reference blocks stay. `validate-setup.sh <sample>` applies the same rule to `vcf/<sample>.vcf.gz`, and fails when it cannot read that file's header.
+
 ### Contig names and gVCF input
 
 `VCF_PRECHECK` also stops the run, before any analysis, in two cases, and the message names the sample and the fix:
