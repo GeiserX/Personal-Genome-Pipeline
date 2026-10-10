@@ -14,6 +14,8 @@ depth, hla_t1k/ or hla/ for HLA, vcf/ or pharmcat/ for PharmCAT).
 Each section has a state:
   ok          read from its file
   missing     no file: the step has not run
+  failed      no file, and its step failed in the latest run-all.sh run
+              (logs/run_status.tsv)
   stale       the file is older than the latest run-all.sh run and its step was
               not ok in that run (logs/run_status.tsv); the values are shown
               with the file's date
@@ -53,7 +55,13 @@ import sys
 import zlib
 from datetime import datetime, timezone
 
-SCHEMA_VERSION = 1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an HLA allele
+
+# 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
+# Stranger's status on the repeat loci, the CPIC unclassified count, and the
+# section state 'failed'.
+SCHEMA_VERSION = 2
 
 # ClinVar review status -> stars. bin/clinvar_hits.awk holds the same table
 # (tests/test_collect_summary.py checks that the two agree).
@@ -243,6 +251,7 @@ def sec_cpic(d, s):
                "non_normal": sum(1 for g in genes if g["status"] == "non-normal"),
                "ambiguous": sum(1 for g in genes if g["status"] == "ambiguous"),
                "not_called": sum(1 for g in genes if g["status"] == "not called"),
+               "unclassified": sum(1 for g in genes if g["status"] == "unclassified"),
                "parse_failed": failed or not genes,
                "warnings": warnings}
 
@@ -252,7 +261,8 @@ def sec_pypgx(d, s):
     if not p:
         return None, {}
     rows = read_tsv(p)
-    called = [r for r in rows if (r.get("Diplotype") or "") not in ("", "FAILED", "N/A")]
+    # A no-call by step 36's list (Indeterminate, FAILED, N/A...), in any case
+    called = [r for r in rows if (r.get("Diplotype") or "").strip().lower() not in pgx_outside_calls.NO_CALL]
     cyp = next((r.get("Diplotype", "") for r in rows if r.get("Gene") == "CYP2D6"), "")
     out = {"genes_total": len(rows), "genes_called": len(called), "cyp2d6": cyp or "not called"}
     comp = os.path.join(os.path.dirname(p), f"{s}_pharmcat_comparison.tsv")
@@ -285,10 +295,28 @@ def sec_hla(d, s):
             c = line.rstrip("\n").split("\t")
             if len(c) < 3 or c[0].startswith("#"):
                 continue
-            alleles = [a for a in (c[2] if len(c) > 2 else "", c[5] if len(c) > 5 else "") if a and a != "."]
-            quals = [q for q in (c[4] if len(c) > 4 else "", c[7] if len(c) > 7 else "") if q and q != "."]
-            loci.append({"gene": c[0], "alleles": alleles, "quality": quals})
+            # T1K: allele, abundance, quality, twice; '.', 0, -1 when there is no
+            # second allele. Each quality stays with its allele.
+            alleles, quals = [], []
+            for i in (2, 5):
+                a = c[i] if len(c) > i else ""
+                if a and a != ".":
+                    alleles.append(a)
+                    quals.append(c[i + 2] if len(c) > i + 2 else "")
+            # Step 36's rule (bin/pgx_outside_calls.py): an allele quality of 0 or
+            # below withholds the whole gene; only HLA-A and HLA-B reach PharmCAT.
+            low = any(hla_quality(q) <= 0 for q in quals)
+            loci.append({"gene": c[0], "alleles": alleles, "quality": quals, "low_confidence": low,
+                         "withheld_from_pharmcat": low and c[0] in pgx_outside_calls.HLA_GENES})
     return p, {"loci": loci}
+
+
+def hla_quality(q):
+    """T1K's quality as a number; one that is not a number counts as -1, as in step 36."""
+    try:
+        return float(q)
+    except ValueError:
+        return -1.0
 
 
 def sec_prs(d, s):
@@ -682,11 +710,18 @@ def sec_sv_consensus(d, s):
 
 
 def sec_expansions(d, s):
-    p = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
-                           "expansion_hunter/*_eh.vcf"])
+    eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
+                            "expansion_hunter/*_eh.vcf"])
+    st = first_existing(d, [f"expansion_hunter/{s}_eh_stranger.vcf", "expansion_hunter/*_eh_stranger.vcf"])
+    # Stranger (step 9b) copies ExpansionHunter's records and adds STR_STATUS.
+    # Its file is read unless it is older than the ExpansionHunter file it
+    # would have been made from.
+    if st and eh and os.path.getmtime(st) < os.path.getmtime(eh):
+        st = None
+    p = st or eh
     if not p:
         return None, {}
-    loci, tested = {}, 0
+    loci, tested, flagged, no_status = {}, 0, [], 0
     for r in vcf_records(p):
         if len(r) < 10:
             continue
@@ -698,8 +733,21 @@ def sec_expansions(d, s):
         repcn = val[fmt.index("REPCN")] if "REPCN" in fmt and fmt.index("REPCN") < len(val) else ""
         if rep in EH_LOCI and rep not in loci:
             loci[rep] = repcn or "."
-    return p, {"records": tested, "key_loci": [{"locus": k, "repeat_count": loci.get(k, "not in output")}
-                                                for k in EH_LOCI]}
+        if st:
+            # One value per record, the most severe of normal, pre_mutation and
+            # full_mutation; a locus outside Stranger's catalog has none.
+            status = [x for x in info.get("STR_STATUS", "").split(",") if x and x != "."]
+            if not status:
+                no_status += 1
+            elif any(x != "normal" for x in status):
+                flagged.append({"locus": rep or f"{r[0]}:{r[1]}", "repeat_count": repcn or ".",
+                                "status": ",".join(status)})
+    out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": loci.get(k, "not in output")}
+                                           for k in EH_LOCI],
+           "stranger": bool(st)}
+    if st:
+        out.update(flagged=flagged, no_status=no_status)
+    return p, out
 
 
 def sec_telomere(d, s):
@@ -1147,6 +1195,53 @@ def manifest_value(rows, section, key):
     return None
 
 
+def read_consensus(d, s, sections):
+    """Step 36's CYP2D6 row (pgx_consensus/<id>_pgx_consensus.tsv), or None
+    when the table is missing or older than a caller's result it was made from."""
+    p = first_existing(d, [f"pgx_consensus/{s}_pgx_consensus.tsv"])
+    if not p:
+        return None
+    for k in ("pypgx", "cyrius"):
+        src = sections[k]["source"]
+        if src and os.path.getmtime(os.path.join(d, src)) > os.path.getmtime(p):
+            return None
+    row = next((r for r in read_tsv(p) if (r.get("Gene") or "").strip() == "CYP2D6"), None)
+    if row is None:
+        return None
+    return {"result": row.get("Result") or "", "passed_to_pharmcat": row.get("Outside_call") == "yes",
+            "reason": row.get("Reason") or "", "source": os.path.relpath(p, d)}
+
+
+def cyp2d6_block(sample, sample_dir, sections):
+    """CYP2D6 from each caller, side by side, judged by step 36's rule
+    (bin/pgx_outside_calls.py): a no-call in any case (Indeterminate, None,
+    '.'...) is not a call, and Cyrius counts only with Filter PASS. PharmCAT
+    calls no CYP2D6 from a VCF: its column is what step 36 passed to it, so
+    agreement is between pypgx and Cyrius. With step 36's table its verdict
+    is kept as well."""
+    pc = next((g for g in sections["cpic"]["data"].get("genes", []) if g["gene"] == "CYP2D6"), None)
+    pg = sections["pypgx"]["data"].get("cyp2d6") if sections["pypgx"]["state"] == "ok" else None
+    cy = sections["cyrius"]["data"] if sections["cyrius"]["state"] == "ok" else None
+    pg_ok = pg is not None and pgx_outside_calls.is_call(pg)
+    cy_ok = cy is not None and pgx_outside_calls.is_call(cy.get("genotype")) and cy.get("filter") == "PASS"
+    cy_txt = None
+    if cy is not None:
+        cy_txt = cy.get("genotype") or "none"
+        if pgx_outside_calls.is_call(cy_txt) and not cy_ok:
+            cy_txt += f" (not usable: Filter {cy.get('filter') or 'missing'})"
+    calls = {
+        "PharmCAT": (pc["diplotype"] if pc["status"] not in ("not called", "ambiguous") else pc["status"]) if pc else None,
+        "pypgx": pg,
+        "Cyrius": cy_txt,
+    }
+    agree = pgx_outside_calls.same_diplotype(pg, cy["genotype"]) if pg_ok and cy_ok else None
+    try:
+        consensus = read_consensus(sample_dir, sample, sections)
+    except (OSError, csv.Error) as e:
+        consensus = {"result": "unreadable", "passed_to_pharmcat": False, "reason": str(e), "source": None}
+    return {"calls": calls, "agree": agree, "consensus": consensus}
+
+
 def collect(sample, sample_dir, declared_sex=None):
     status = read_run_status(sample_dir)
     manifest = read_manifest(sample_dir)
@@ -1164,6 +1259,11 @@ def collect(sample, sample_dir, declared_sex=None):
             sec["state"], sec["note"] = "unreadable", f"{type(e).__name__}: {e}"
             sections[key] = sec
             continue
+        if not path and status and (status["steps"].get(step) or "").startswith("failed"):
+            # run-all.sh records 'failed' for a step it ran that exited non-zero
+            sec["state"] = "failed"
+            sec["note"] = (f"step {step} failed in the run of {status['started_utc'] or 'unknown date'}; "
+                           "its log is in logs/")
         if path:
             mtime = os.path.getmtime(path)
             sec.update(state="ok", source=os.path.relpath(path, sample_dir), file_date=iso(mtime), data=data)
@@ -1175,18 +1275,7 @@ def collect(sample, sample_dir, declared_sex=None):
                                    f"{result or 'not run'} in the run of {status['started_utc']}")
         sections[key] = sec
 
-    # CYP2D6 from the three callers, side by side.
-    pc = next((g for g in sections["cpic"]["data"].get("genes", []) if g["gene"] == "CYP2D6"), None)
-    calls = {
-        "PharmCAT": (pc["diplotype"] if pc["status"] not in ("not called", "ambiguous") else pc["status"]) if pc else None,
-        "pypgx": sections["pypgx"]["data"].get("cyp2d6") if sections["pypgx"]["state"] == "ok" else None,
-        "Cyrius": sections["cyrius"]["data"].get("genotype") if sections["cyrius"]["state"] == "ok" else None,
-    }
-    called = {k: v for k, v in calls.items()
-              if v and v not in ("not called", "ambiguous", "none", "None/None", "FAILED", "N/A")}
-    norm = {k: "/".join(sorted(v.split("/"))) for k, v in called.items()}
-    cyp2d6 = {"calls": calls,
-              "agree": (len(set(norm.values())) == 1) if len(norm) >= 2 else None}
+    cyp2d6 = cyp2d6_block(sample, sample_dir, sections)
 
     clinvar_date = manifest_value(manifest, "data", "clinvar_file_date")
     summary = {
@@ -1207,7 +1296,8 @@ def collect(sample, sample_dir, declared_sex=None):
         "manifest": manifest or [],
         "sections": sections,
         "cyp2d6": cyp2d6,
-        "not_run": [sections[k]["title"] for k, *_ in SECTIONS if sections[k]["state"] == "missing"],
+        "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
+                    for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed")],
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
     }
     return summary
