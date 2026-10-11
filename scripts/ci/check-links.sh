@@ -14,8 +14,10 @@
 #
 # Each URL gets a HEAD request (redirects followed); when that is not 200, a GET
 # of one byte (Range: bytes=0-0), since some servers refuse HEAD. 200 and 206
-# pass. Anything else fails, and so does no answer at all: a timeout or a DNS
-# error is a failure, never a pass.
+# pass. A 5xx is asked again a few times (LINKS_5XX_TRIES, below). Anything
+# else fails, and so does no answer at all or a 5xx on every try: a timeout or
+# a DNS error is a failure, never a pass. The self-test's controls ask
+# github.com; when it still answers 5xx, the self-test fails naming the outage.
 #
 # Usage:
 #   scripts/ci/check-links.sh [ROOT]     check the tree at ROOT (default: repo)
@@ -105,15 +107,24 @@ unresolved() {
   return 1
 }
 
-# Prints "CODE<TAB>URL"; CODE is 000 when the server never answered.
+# Prints "CODE<TAB>URL"; CODE is 000 when the server never answered. A 5xx
+# answer (the host is failing, not the link) is asked again up to
+# LINKS_5XX_TRIES times in all (default 3), LINKS_5XX_DELAY seconds times the
+# try number apart (default 10: 10 s, then 20 s); the last answer is reported,
+# so a host that keeps answering 5xx still fails the check.
 probe() {
-  local url=$1 code retry=${LINKS_RETRY:-2}
+  local url=$1 code retry=${LINKS_RETRY:-2} tries=${LINKS_5XX_TRIES:-3} delay=${LINKS_5XX_DELAY:-10} i=1
   local common=(-s -o /dev/null -w '%{http_code}' -L --connect-timeout 15 --max-time 60
     --retry "$retry" --retry-delay 5 -A 'Personal-Genome-Pipeline link check (curl)')
-  code=$(curl "${common[@]}" -I "$url" 2>/dev/null) || true
-  if [ "$code" != 200 ]; then
-    code=$(curl "${common[@]}" -r 0-0 "$url" 2>/dev/null) || true
-  fi
+  while :; do
+    code=$(curl "${common[@]}" -I "$url" 2>/dev/null) || true
+    if [ "$code" != 200 ]; then
+      code=$(curl "${common[@]}" -r 0-0 "$url" 2>/dev/null) || true
+    fi
+    [[ "$code" == 5[0-9][0-9] ]] && [ "$i" -lt "$tries" ] || break
+    sleep $((delay * i))
+    i=$((i + 1))
+  done
   printf '%s\t%s\n' "${code:-000}" "$url"
 }
 
@@ -163,7 +174,7 @@ check_tree() {
   fi
 
   export -f probe
-  export LINKS_RETRY
+  export LINKS_RETRY LINKS_5XX_TRIES LINKS_5XX_DELAY
   # shellcheck disable=SC2016  # $1 expands in the child bash
   xargs -P "$JOBS" -I{} bash -c 'probe "$1"' _ {} < "${tmp}/check" > "${tmp}/codes"
 
@@ -210,6 +221,21 @@ check_tree() {
   [ "$nbad" -eq 0 ]
 }
 
+# outage OUTPUT: print a SELF-TEST FAIL line for each URL that answered 5xx on
+# every try, naming its host, and return 1 when there is one. The controls ask
+# github.com, so its outage fails the self-test with a reason, never a pass.
+outage() {
+  local code url host n=0
+  while IFS='|' read -r _ code url _; do
+    code=${code// /} url=${url// /}
+    [[ "$code" == 5[0-9][0-9] ]] || continue
+    host=${url#*://}; host=${host%%/*}
+    echo "SELF-TEST FAIL: ${host} answered ${code} to ${url} on all ${LINKS_5XX_TRIES:-3} tries: that is an outage at ${host}, not a fault in this check. Rerun the job once ${host} answers again."
+    n=$((n + 1))
+  done < <(grep -E '^\| 5[0-9]{2} \|' <<<"$1" || true)
+  [ "$n" -eq 0 ]
+}
+
 self_test() {
   local rc out fail=0
   d=$(mktemp -d)
@@ -237,6 +263,7 @@ wget ${good}/blob/main/LICENSE
 EOF
   rc=0; out=$(LINKS_RETRY=0 check_tree "$d" 2>&1) || rc=$?
   echo "$out"
+  outage "$out" || fail=1
   [ "$rc" -ne 0 ] || { echo "SELF-TEST FAIL: a tree with a dead URL passed"; fail=1; }
   grep -qF "| 404 | ${bad} | scripts/a.sh:4 |" <<<"$out" || { echo "SELF-TEST FAIL: the 404 URL was not reported"; fail=1; }
   grep -qF "| no answer | https://192.0.2.1/unreachable.tgz |" <<<"$out" || { echo "SELF-TEST FAIL: a URL with no answer was not a failure"; fail=1; }
@@ -259,12 +286,14 @@ EOF
   git -C "$g" add scripts
   git -C "$g" -c user.name=link-check -c user.email=link-check@example.invalid commit -q -m base
   rc=0; out=$(LINKS_RETRY=0 check_tree "$g" HEAD 2>&1) || rc=$?
+  outage "$out" || fail=1
   if [ "$rc" -ne 0 ] || ! grep -qF 'No new or changed download URL since HEAD (1 unchanged' <<<"$out"; then
     echo "$out"; echo "SELF-TEST FAIL: --since with no new URL did not pass"; fail=1
   fi
   echo "wget ${bad}/added-by-the-change" >> "${g}/scripts/b.sh"
   rc=0; out=$(LINKS_RETRY=0 check_tree "$g" HEAD 2>&1) || rc=$?
   echo "$out"
+  outage "$out" || fail=1
   if [ "$rc" -eq 0 ] || ! grep -qF "| 404 | ${bad}/added-by-the-change |" <<<"$out" \
      || ! grep -qF 'Checked 1 download URLs that are new since HEAD (1 unchanged' <<<"$out"; then
     echo "SELF-TEST FAIL: --since did not request exactly the added URL"; fail=1
@@ -285,6 +314,6 @@ case "${1:-}" in
   --self-test) self_test ;;
   --list) collect "${2:-$REPO_ROOT}" ;;
   --since) check_tree "${3:-$REPO_ROOT}" "${2:?--since needs a git ref}" ;;
-  -h|--help) sed -n '2,29p' "$0" ;;
+  -h|--help) sed -n '2,30p' "$0" ;;
   *) check_tree "${1:-$REPO_ROOT}" ;;
 esac
