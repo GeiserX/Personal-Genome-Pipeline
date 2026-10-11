@@ -108,7 +108,8 @@ process ALIGN_MINIMAP2 {
     // exits). The || block exits with the last signal status in the pipe
     // (above 128), else 1, so the retry with twice the memory still happens.
     // The last one, not the first: a killed markdup leaves the stages before
-    // it to die of SIGPIPE (141, not retried).
+    // it to die of SIGPIPE (141, not retried). A retry runs in a new work
+    // directory, so the block also removes the failed attempt's sort spills.
     """
     mkdir -p sort_tmp
     minimap2 -t ${task.cpus} -a -x sr \\
@@ -125,6 +126,7 @@ process ALIGN_MINIMAP2 {
             for s in "\${pipe_status[@]}"; do
                 if [ "\$s" -gt 128 ]; then rc=\$s; fi
             done
+            rm -rf sort_tmp
             echo "ERROR: the alignment pipe failed, exit statuses \${pipe_status[*]}" >&2
             exit "\$rc"
         }
