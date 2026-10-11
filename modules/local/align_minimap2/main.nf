@@ -11,9 +11,10 @@
     ALIGN_MINIMAP2  minimap2 -a -x sr with the read group step 02 writes
                     (ID, SM and LB the sample, PL ILLUMINA): GATK rejects reads
                     without one and callers take the sample name from SM.
-    ALIGN_MARKDUP   samtools fixmate -m | sort | markdup, then index and
-                    quickcheck, so PCR and optical duplicates carry the 0x400
-                    flag.
+    ALIGN_MARKDUP   samtools fixmate -m | sort | markdup, then quickcheck,
+                    so PCR and optical duplicates carry the 0x400 flag.
+                    markdup writes the .bai while it writes the BAM
+                    (--write-index), so no second pass reads the BAM.
 
     The script pipes minimap2 into samtools across two containers. A task
     runs in one image, and no image in versions.env holds both tools, so
@@ -123,15 +124,20 @@ process ALIGN_MARKDUP {
 
     script:
     // samtools sort -m is per thread: the label's memory covers cpus x 1 GB.
+    // The ##idx##<name>.bai suffix makes markdup's index a .bai, not a .csi.
+    // markdup finishes the index just before the BAM's last block; the touch
+    // makes the index the newer file, as step 02 does. test -s fails the task
+    // if markdup wrote no index, so touch never creates an empty one.
     """
     mkdir -p sort_tmp
     gzip -dc ${sam} \\
-        | samtools fixmate -u -m - - \\
+        | samtools fixmate -@ ${task.cpus} -u -m - - \\
         | samtools sort -u -@ ${task.cpus} -m 1G -T sort_tmp/sort - \\
-        | samtools markdup -@ ${task.cpus} -T sort_tmp/markdup - ${meta.id}_sorted.bam
+        | samtools markdup -@ ${task.cpus} --write-index -T sort_tmp/markdup - ${meta.id}_sorted.bam##idx##${meta.id}_sorted.bam.bai
     rm -rf sort_tmp
-    samtools index -@ ${task.cpus} ${meta.id}_sorted.bam
     samtools quickcheck -v ${meta.id}_sorted.bam
+    test -s ${meta.id}_sorted.bam.bai
+    touch ${meta.id}_sorted.bam.bai
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

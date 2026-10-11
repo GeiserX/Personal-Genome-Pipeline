@@ -10,8 +10,9 @@
 #   gets no memory cap; a host with less RAM kills the build (exit 137).
 #   Alignment itself needs about 16 GB.
 # Reads go bwa-mem2 -> samtools fixmate -m -> sort -> markdup in one pipe (no
-# SAM on disk), and the BAM is renamed into place only once it is indexed and
-# passes samtools quickcheck, as in step 02. THREADS (default 8) sets the CPUs.
+# SAM on disk); markdup writes the index with the BAM, and the BAM is renamed
+# into place only once it passes samtools quickcheck, as in step 02. THREADS
+# (default 8) sets the CPUs.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -112,21 +113,21 @@ run_in \
   "${SAMTOOLS_IMAGE}" \
   bash -euo pipefail -c '
     threads=$1 tmp=$2 out=$3
-    samtools fixmate -u -m - - \
+    samtools fixmate -@ "$threads" -u -m - - \
       | samtools sort -u -@ "$threads" -m 1G -T "${tmp}/sort" - \
-      | samtools markdup -@ "$threads" -T "${tmp}/markdup" - "$out"' \
+      | samtools markdup -@ "$threads" --write-index -T "${tmp}/markdup" - "${out}##idx##${out}.bai"' \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
-# Step 3: Index and check, then rename (the old index goes first).
-echo "=== Indexing and checking BAM ==="
-run_in \
-  --cpus "${THREADS}" --memory 2g \
-  "${SAMTOOLS_IMAGE}" \
-  samtools index -@ "${THREADS}" "$(cpath "$TMP_BAM")"
+# Step 3: Check, then rename (the old index goes first). markdup wrote the
+# index with the BAM (--write-index, as in step 02); the touch makes it the
+# newer file.
+echo "=== Checking BAM ==="
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
+[ -s "${TMP_BAM}.bai" ] || { echo "ERROR: samtools markdup wrote no index" >&2; exit 1; }
+touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"
