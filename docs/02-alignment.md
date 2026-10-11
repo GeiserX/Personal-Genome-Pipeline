@@ -68,7 +68,7 @@ mv "${OUT%.bam}.tmp.bam" "$OUT" && mv "${OUT%.bam}.tmp.bam.bai" "${OUT}.bai"
 # Output: ~80-120 GB BAM + ~9 MB BAI index
 ```
 
-The script writes the BAM and the index under temporary names, both in the one pass of `samtools markdup`, and renames them only after `samtools quickcheck` passes, so a run that is killed leaves no `${SAMPLE}_sorted.bam` behind. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
+The script writes the BAM and the index under temporary names, both in the one pass of `samtools markdup`, and renames them only after `samtools quickcheck` passes, so a run that is killed never puts a partial BAM under `${SAMPLE}_sorted.bam`. A BAM and index from an earlier complete run stay in place, and later steps still read them. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
 
 ## Resource Requirements
 - CPU: 16+ cores recommended (`THREADS`)
