@@ -76,7 +76,7 @@ nextflow run main.nf \
 | `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
 | `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex. With `sample_qc`, the same applies to the sex somalier infers from the reads |
 
-The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: minimap2 peaked near 10 GB on a 1.8 Gb reference ([step 02](02-alignment.md#resource-requirements)), and `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`). DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
+The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: minimap2 needs about 20 GB planned on GRCh38 (10 GB measured on the 1.8 Gb test reference, [step 02](02-alignment.md#resource-requirements)), and `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`), so the task runs close to its 32 GB. A kill for memory anywhere in the pipe ends the task with that exit status, so it is retried once with twice the memory. DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
 
 ### Resume After Failure
 
@@ -152,7 +152,7 @@ Each process asks for a fixed CPU count, a memory and a time limit, from its lab
 
 `--max_cpus` and `--max_memory` cap each task. They do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM with as many tasks as fit.
 
-Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, VEP and the other `process_high` steps) larger than the machine, and Nextflow refuses to start it:
+Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, the minimap2 index and `ALIGN_MINIMAP2`) larger than the machine, and Nextflow refuses to start it:
 
 ```bash
 nextflow run main.nf --max_cpus 8 --max_memory 30.GB [other params]

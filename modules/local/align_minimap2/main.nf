@@ -86,17 +86,29 @@ process ALIGN_MINIMAP2 {
     def rg = "@RG\\tID:${meta.id}\\tSM:${meta.id}\\tPL:ILLUMINA\\tLB:${meta.id}"
     // The memory is the process_high label's (conf/base.config: 32 GB, twice
     // that on the retry after an out-of-memory exit, capped by --max_memory).
-    // minimap2 and the samtools stages run at the same time in it, as step
-    // 02's two containers do. samtools sort -m is per thread, so sort gets a
+    // minimap2 and the samtools stages run at the same time in it, where step
+    // 02 gives them two containers (32 GB, and THREADS + 4 GB for samtools:
+    // 12 GB at 8 threads). samtools sort -m is per thread, so sort gets a
     // quarter of the task's memory: 1 GB per thread at 32 GB and 8 CPUs, the
-    // -m 1G of step 02. The rest is minimap2's (near 10 GB on a 1.8 Gb
-    // reference, docs/02-alignment.md) and markdup's.
+    // -m 1G of step 02. The rest is minimap2's (about
+    // 20 GB planned on GRCh38, 10 GB measured on the 1.8 Gb test reference,
+    // docs/02-alignment.md) and markdup's, so the first attempt runs near
+    // its 32 GB.
     def mem_mb  = task.memory ? task.memory.toMega() : 8192
     def sort_mb = Math.max(256, (mem_mb / 4 / task.cpus) as int)
     // The ##idx##<name>.bai suffix makes markdup's index a .bai, not a .csi.
     // markdup finishes the index just before the BAM's last block; the touch
     // makes the index the newer file, as step 02 does. test -s fails the task
     // if markdup wrote no index, so touch never creates an empty one.
+    //
+    // With pipefail the pipe's status is that of its last failing stage, so
+    // a kill for memory hides behind the stage after it: minimap2 killed
+    // mid-record exits 137, fixmate then exits 1 on the cut record, and exit
+    // 1 is not retried (conf/base.config retries 137 and the other signal
+    // exits). The || block exits with the last signal status in the pipe
+    // (above 128), else 1, so the retry with twice the memory still happens.
+    // The last one, not the first: a killed markdup leaves the stages before
+    // it to die of SIGPIPE (141, not retried).
     """
     mkdir -p sort_tmp
     minimap2 -t ${task.cpus} -a -x sr \\
@@ -106,7 +118,16 @@ process ALIGN_MINIMAP2 {
         ${fastq_2} \\
         | samtools fixmate -@ ${task.cpus} -u -m - - \\
         | samtools sort -u -@ ${task.cpus} -m ${sort_mb}M -T sort_tmp/sort - \\
-        | samtools markdup -@ ${task.cpus} --write-index -T sort_tmp/markdup - ${meta.id}_sorted.bam##idx##${meta.id}_sorted.bam.bai
+        | samtools markdup -@ ${task.cpus} --write-index -T sort_tmp/markdup - ${meta.id}_sorted.bam##idx##${meta.id}_sorted.bam.bai \\
+        || {
+            pipe_status=("\${PIPESTATUS[@]}")
+            rc=1
+            for s in "\${pipe_status[@]}"; do
+                if [ "\$s" -gt 128 ]; then rc=\$s; fi
+            done
+            echo "ERROR: the alignment pipe failed, exit statuses \${pipe_status[*]}" >&2
+            exit "\$rc"
+        }
     rm -rf sort_tmp
     samtools quickcheck -v ${meta.id}_sorted.bam
     test -s ${meta.id}_sorted.bam.bai
