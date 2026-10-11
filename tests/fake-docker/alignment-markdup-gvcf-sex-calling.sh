@@ -39,8 +39,7 @@ case "$args" in
     bgzf "$v"
     [ -d "$(host_path "$(eq intermediate_results_dir)")" ] || { echo "fake DeepVariant: no intermediate directory" >&2; exit 1; }
     : > "$(host_path "$(eq intermediate_results_dir)")/make_examples.tfrecord.gz"
-    [ "${FAKE_DV:-ok}" = nogvcf ] || bgzf "$(host_path "$(eq output_gvcf)")"
-    : > "${v%.vcf.gz}.visual_report.html" ;;
+    [ "${FAKE_DV:-ok}" = nogvcf ] || bgzf "$(host_path "$(eq output_gvcf)")" ;;
   *"/opt/bin/run_clair3.sh "*)
     bgzf "$(host_path "$(eq output)")/merge_output.vcf.gz" ;;
   *" bcftools stats "*)
@@ -68,7 +67,7 @@ for want in '--cpus 2 ' '--memory 20g ' '--num_shards=2 ' \
             '--intermediate_results_dir=/genome/sample1/vcf/deepvariant_tmp '; do
   grep -qF -- "$want" <<<"$L" || fail "DeepVariant call lacks '${want}': ${L}"
 done
-for f in sample1.vcf.gz sample1.vcf.gz.tbi sample1.g.vcf.gz sample1.g.vcf.gz.tbi sample1.visual_report.html; do
+for f in sample1.vcf.gz sample1.vcf.gz.tbi sample1.g.vcf.gz sample1.g.vcf.gz.tbi; do
   [ -f "${V}/${f}" ] || fail "no ${V}/${f} after step 03"
 done
 bgzf_complete() { [ "$(tail -c 28 "$1" | od -An -v -tx1 | tr -d ' \n')" = 1f8b08040000000000ff0600424302001b0003000000000000000000 ]; }

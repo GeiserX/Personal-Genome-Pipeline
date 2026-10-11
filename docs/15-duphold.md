@@ -28,7 +28,7 @@ duphold writes these as **FORMAT** fields (one value per sample), not INFO field
 source versions.env   # from the repository root
 REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see 00-reference-setup.md#the-reference-path-on-every-page
 docker run --rm \
-  --cpus 4 --memory 8g \
+  --cpus 4 --memory 4g \
   -v ${GENOME_DIR}:/genome \
   "${DUPHOLD_IMAGE}" \
   duphold \
@@ -38,22 +38,27 @@ docker run --rm \
   -o /genome/${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
 ```
 
-## Filtering Examples
-The tags are FORMAT fields, so the expressions use `FMT/<tag>[0]` (the first sample).
+## The Depth Filter
+The script then writes `duphold/${SAMPLE}_sv_filtered.vcf.gz` with its index: the same calls without the deletions and duplications the depth does not support. It is the filter of the Nextflow `DUPHOLD_FILTER`, and step 5 (AnnotSV) annotates this file. The tags are FORMAT fields, so the expression uses `FMT/<tag>[0]` (the first sample):
 
 ```bash
-# Keep only high-confidence deletions (DHFFC < 0.7)
-bcftools view -i 'SVTYPE="DEL" && FMT/DHFFC[0] < 0.7' ${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
-
-# Keep only high-confidence duplications (DHBFC > 1.3)
-bcftools view -i 'SVTYPE="DUP" && FMT/DHBFC[0] > 1.3' ${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
+# Drop deletions with DHFFC >= 0.7 and duplications with DHBFC <= 1.3;
+# other SV types, and records without a value, stay.
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
+  bcftools view \
+  -e '(INFO/SVTYPE="DEL" && FMT/DHFFC[0] >= 0.7) || (INFO/SVTYPE="DUP" && FMT/DHBFC[0] <= 1.3)' \
+  -Oz -o /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz \
+  /genome/${SAMPLE}/duphold/${SAMPLE}_sv_duphold.vcf
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
+  bcftools index -t /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz
 ```
+
+The script prints how many records it kept. How many SVs the filter removes from a real genome has not been measured here.
 
 ## Runtime
 ~20 minutes per genome.
 
 ## Notes
-- Run this AFTER Manta (step 4). Zero-cost quality improvement before AnnotSV (step 5).
+- Run this AFTER Manta (step 4) and before AnnotSV (step 5), which annotates the filtered file when it is there and Manta's calls otherwise.
 - Requires the original BAM and reference FASTA — it re-calculates depth around each SV.
-- Output (`duphold/${SAMPLE}_sv_duphold.vcf`, uncompressed) is the same VCF with three new FORMAT fields added. All downstream tools (AnnotSV, bcftools) work unchanged.
-- Consider piping the duphold output into AnnotSV instead of the raw Manta VCF for cleaner results.
+- Outputs: `duphold/${SAMPLE}_sv_duphold.vcf` (uncompressed), the same VCF with three new FORMAT fields, and `duphold/${SAMPLE}_sv_filtered.vcf.gz` with its `.tbi`, after the depth filter above.

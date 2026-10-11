@@ -1,7 +1,7 @@
 # Step 13: Variant Effect Predictor (VEP) Annotation
 
 ## What This Does
-Annotates every variant in the VCF with gene name, consequence type, predicted impact, pathogenicity scores (SIFT, PolyPhen), population allele frequencies (gnomAD), ClinVar significance, and more. This is the most comprehensive single annotation step in the pipeline.
+Annotates every PASS variant in the VCF with gene name, consequence type, predicted impact, pathogenicity scores (SIFT, PolyPhen), population allele frequencies (gnomAD), ClinVar significance, and more. This is the most comprehensive single annotation step in the pipeline.
 
 ## Why
 Raw VCF variants are just genomic coordinates and genotypes. VEP transforms them into biologically interpretable annotations — which gene is affected, what the functional consequence is, how rare the variant is in the population, and whether it is predicted damaging.
@@ -33,13 +33,18 @@ SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
 REF_FASTA=reference/GRCh38_no_alt_analysis_set.fasta   # see "The reference path on every page" in 00-reference-setup.md
 
+# The PASS records only ('.' too, for a caller that writes no FILTER)
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
+  bcftools view -f PASS,. -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz \
+    /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
+
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
   -v ${GENOME_DIR}/vep_cache:/opt/vep/.vep \
   "${VEP_IMAGE}" \
   vep \
-    --input_file /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz \
+    --input_file /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz \
     -o /genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz \
     --vcf \
     --compress_output bgzip \
@@ -56,6 +61,8 @@ docker run --rm \
 ```
 
 The last line is added when `clinvar/clinvar_pathogenic_chr.vcf.gz` is installed (`setup.sh`): it is the ClinVar file step 6 screens against, and VEP copies its `CLNSIG`, `CLNREVSTAT` and `CLNDN` for each exact match into the CSQ fields `ClinVar_CLNSIG`, `ClinVar_CLNREVSTAT` and `ClinVar_CLNDN`. Step 23's ClinVar tier reads `ClinVar_CLNSIG` before VEP's own `CLIN_SIG`, which comes from the cache release, so a ClinVar refresh reaches the tier after this step runs again. The Nextflow VEP module adds the same `--custom` file when `--clinvar` is set.
+
+VEP reads the PASS records only, from a temporary copy the script removes afterwards: the clinical filter (23) and slivar (31), which read VEP's output directly or through vcfanno (30), keep PASS records alone, so annotating DeepVariant's `RefCall` records and other non-PASS calls cost time and changed nothing downstream. `${SAMPLE}_vep.vcf.gz` and vcfanno's `${SAMPLE}_annotated.vcf.gz` built from it therefore hold no non-PASS record; look those up in the VCF of step 3. The Nextflow VEP module selects the same records.
 
 The script writes VEP's output under a temporary name, renames it to `${SAMPLE}_vep.vcf.gz` only when VEP succeeded, and indexes it.
 
@@ -78,7 +85,7 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 - ClinVar pathogenic/likely pathogenic hits
 
 ## Important Notes
-- Full WGS annotation takes **2-4 hours** depending on CPU and variant count (~5M variants)
+- Full WGS annotation takes **2-4 hours** depending on CPU and variant count (~5M variants). Reading PASS records only should take less; how much less depends on the sample's non-PASS share (`variants.total` minus `variants.pass` in `summary.json`) and has not been measured here
 - `--fork` follows `THREADS`; each fork loads its own copy of the cache index
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
 - `--dir_cache /opt/vep/.vep`: the cache is mounted there, not in the home directory VEP looks in by default

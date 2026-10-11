@@ -5,11 +5,16 @@
     Uses GATK Mutect2 in mitochondrial mode to call variants on chrM,
     including low-frequency heteroplasmic variants (AF < 0.95).
 
-    Four-step process:
-    1. Extract chrM reads from BAM
-    2. Ensure sequence dictionary exists
-    3. Run Mutect2 --mitochondria-mode
-    4. Filter variants with FilterMutectCalls --mitochondria-mode
+    Four steps:
+    1. Extract chrM reads from the BAM (GATK PrintReads; step 20 uses
+       samtools view for the same reads)
+    2. Run Mutect2 --mitochondria-mode
+    3. Filter variants with FilterMutectCalls --mitochondria-mode
+    4. Mark possible NuMTs (nuclear copies of chrM) with NuMTFilterTool at
+       the median autosomal depth, read from MOSDEPTH's summary and
+       global distribution with the awk of scripts/20-mtoolbox.sh. Without
+       mosdepth in --tools the depth is 0 and the filter marks nothing, as
+       step 20 does without step 16b's output.
 
     Equivalent to: scripts/20-mtoolbox.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -22,7 +27,7 @@ process MITO_VARIANTS {
     publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai), path(mosdepth_summary), path(mosdepth_dist)  // [] [] without mosdepth
     path(reference)
     path(reference_fai)
     path(reference_dict)
@@ -38,6 +43,12 @@ process MITO_VARIANTS {
 
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
+    // With mosdepth in --tools the workflow joins its output in; a join that
+    // lost it would run the NuMT filter at depth 0 and mark nothing, silently.
+    if ((params.tools ?: '').toString().split(',').collect { it.trim() }.contains('mosdepth') && !mosdepth_summary) {
+        error "MITO_VARIANTS got no mosdepth output for '${meta.id}' although mosdepth is in --tools: the NuMT filter would run at depth 0"
+    }
+    def depth_files = mosdepth_summary ? "${mosdepth_summary} ${mosdepth_dist}" : ''
     """
     # Step 1: Extract chrM reads
     gatk PrintReads \\
@@ -59,6 +70,31 @@ process MITO_VARIANTS {
         -R ${reference} \\
         -V ${prefix}_chrM_mutect2.vcf.gz \\
         --mitochondria-mode \\
+        -O ${prefix}_chrM_mutect2_filtered.vcf.gz
+
+    # Step 4: Mark possible NuMTs. The median autosomal depth is the depth at
+    # which half of the chr1-22 bases are covered at least that deep, from
+    # mosdepth's per-chromosome distribution (scripts/20-mtoolbox.sh, step 5).
+    DEPTH_FILES="${depth_files}"
+    if [ -n "\${DEPTH_FILES}" ]; then
+        AUTOSOMAL_COVERAGE=\$(awk -F'\\t' '
+            FNR == NR { if (\$1 ~ /^chr[0-9]+\$/) len[\$1] = \$2; next }
+            (\$1 in len) { at_least[\$2] += len[\$1] * \$3 }
+            END {
+              for (c in len) total += len[c]
+              best = 0
+              if (total > 0) for (k in at_least) if (at_least[k] / total >= 0.5 && k + 0 > best) best = k + 0
+              print best
+            }' \${DEPTH_FILES})
+        echo "Median autosomal coverage: \${AUTOSOMAL_COVERAGE} (from \${DEPTH_FILES})"
+    else
+        AUTOSOMAL_COVERAGE=0
+        echo "mosdepth is not in --tools: NuMTFilterTool runs at depth 0 and marks nothing"
+    fi
+    gatk NuMTFilterTool \\
+        -R ${reference} \\
+        -V ${prefix}_chrM_mutect2_filtered.vcf.gz \\
+        --autosomal-coverage \${AUTOSOMAL_COVERAGE} \\
         -O ${prefix}_chrM_filtered.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
@@ -69,6 +105,11 @@ process MITO_VARIANTS {
 
     stub:
     def prefix = task.ext.prefix ?: "${meta.id}"
+    // With mosdepth in --tools the workflow joins its output in; a join that
+    // lost it would run the NuMT filter at depth 0 and mark nothing, silently.
+    if ((params.tools ?: '').toString().split(',').collect { it.trim() }.contains('mosdepth') && !mosdepth_summary) {
+        error "MITO_VARIANTS got no mosdepth output for '${meta.id}' although mosdepth is in --tools: the NuMT filter would run at depth 0"
+    }
     """
     touch ${prefix}_chrM_filtered.vcf.gz
     touch ${prefix}_chrM_mutect2.vcf.gz.stats

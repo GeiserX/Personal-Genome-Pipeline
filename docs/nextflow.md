@@ -80,13 +80,13 @@ The trimmed reads stay in the work directory; the fastp reports are published. A
 
 ### Resume After Failure
 
-Nextflow caches completed steps using content hashes. If a step fails, fix the issue and resume:
+`-resume` reuses every task that finished. If a step fails, fix the issue and resume:
 
 ```bash
 nextflow run main.nf -resume [same params as before]
 ```
 
-Only the failed and downstream steps re-run.
+The failed tasks and the ones downstream of them run again. A task that was running when the run stopped starts over: DeepVariant is a single task, so a run stopped during it loses that task's progress. Run the pipeline inside tmux or screen, or with nohup, so closing the terminal does not stop it. Nextflow keys an input file by its path, size and modification time, not by its content: a file rewritten in place with the same size and time is not seen as changed.
 
 One exception, once: Nextflow 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, so the first `-resume` of a work directory written by 25.10 reruns every process that takes the `meta` map, which is every process here. Start a fresh work directory for the first run after the upgrade instead of waiting on a resume that caches nothing.
 
@@ -140,7 +140,7 @@ Combine profiles: `-profile docker,test`
 
 ## Resource Configuration
 
-Default resource limits (tuned for 16-core consumer desktop). Each process label asks for a fixed CPU count and a memory and time that double on the one retry after an out-of-memory or time-limit exit; these limits cap every request:
+Default resource limits (tuned for 16-core consumer desktop). Each process label asks for a fixed CPU count, a memory and a time limit; after an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with memory and time doubled. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -148,10 +148,12 @@ Default resource limits (tuned for 16-core consumer desktop). Each process label
 | `--max_memory` | 64.GB | Maximum memory per process |
 | `--max_time` | 48.h | Maximum wall time per process |
 
-Override for smaller machines:
+`--max_cpus` and `--max_memory` cap each task. They do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM with as many tasks as fit.
+
+Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, VEP and the other `process_high` steps) larger than the machine, and Nextflow refuses to start it:
 
 ```bash
-nextflow run main.nf --max_cpus 8 --max_memory 32.GB [other params]
+nextflow run main.nf --max_cpus 8 --max_memory 30.GB [other params]
 ```
 
 ---
@@ -224,7 +226,9 @@ The pipeline does not anonymise anything: the outputs carry whatever identified 
 - **`pipeline_info/`** (report, timeline, trace) holds absolute paths of your machine.
 - **The samplesheet's `sample` label** names every output folder and file.
 
-The fix is a neutral input. Use a label that does not name you, name the file after it, and keep only the header lines the tools read. The recipe below lists the lines to keep and renames the sample column. A list of keys to delete would miss lines, because callers name them differently.
+A neutral input removes the metadata that names you. Use a label that does not name you, name the file after it, and keep only the header lines the tools read. The recipe below lists the lines to keep and renames the sample column. A list of keys to delete would miss lines, because callers name them differently.
+
+It does not anonymise the data. Genotype files (VCF, gVCF, BAM, CRAM) can identify you and your relatives through genealogy databases: Erlich et al. 2018 (Science 362:690) projected a third-cousin-or-closer match for about 60% of searches for people of European descent, and Gymrek et al. 2013 (Science 339:321) recovered surnames from Y-chromosome STRs.
 
 ```bash
 bcftools view --no-version -h in.vcf.gz | grep -E '^(##(fileformat|FILTER|INFO|FORMAT|ALT|contig)=|#CHROM)' > h.txt
@@ -262,6 +266,8 @@ The pipeline and the scripts run the same commands from the same images, so on t
 | roh | the `bcftools roh` segments and the 5 Mb summary |
 | pharmcat | the diplotype of each gene |
 | prs | each score's sum, matched variant count and input (gVCF or VCF) |
+| sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
+| y_haplogroup | Yleaf's prediction table; on the same hardening run |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 
@@ -269,13 +275,14 @@ Where a module and its script differ on purpose:
 
 | Step | Script | Module |
 |---|---|---|
-| Alignment (02) | pipes minimap2 into samtools, each in its own image | `ALIGN_MINIMAP2` writes the SAM compressed with `gzip -1` and `ALIGN_MARKDUP` reads it: a task runs in one image, and no image in `versions.env` holds both tools. Same commands and the same BAM, plus a temporary file in the work directory, about as large as the gzipped FASTQ |
+| Alignment (02) | pipes minimap2 into samtools, each in its own image | `ALIGN_MINIMAP2` writes the SAM compressed with `gzip -1` and `ALIGN_MARKDUP` reads it: a task runs in one image, and no image in `versions.env` holds both tools. Same commands and the same BAM, plus a temporary file in the work directory, larger than the gzipped FASTQ: one 30x run wrote 119 GB |
 | Sex check (16) | runs beside the other steps and stops itself on a mismatch | `INDEXCOV` runs before every BAM step, and a mismatch stops the run before DeepVariant starts |
 | DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
 | PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
-| Mito haplogroup (12) | reads step 20's calls, which NuMTFilterTool has marked (`possible_numt` is not PASS) | reads `MITO_VARIANTS`' calls, which have no NuMT pass: a possible NuMT allele that passed FilterMutectCalls reaches haplogrep3 and haplocheck |
+| Mito variants (20) | extracts the chrM reads with `samtools view` | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`) |
+| AnnotSV (05) | annotates step 15's duphold-filtered calls; without them, or when Manta's calls are newer, Manta's calls, and says so | `ANNOTSV` always reads `DUPHOLD_FILTER`'s output: `annotsv` in `--tools` needs `duphold` and `manta` |
 | Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |
 | HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH, mito haplogroup, haplocheck and Y haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |

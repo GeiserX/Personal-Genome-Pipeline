@@ -53,7 +53,7 @@ The script runs these steps: `./scripts/20-mtoolbox.sh your_sample`.
 
 ### NuMTs
 
-NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map to chrM and look like low-level heteroplasmy. GATK's NuMTFilterTool marks an allele `possible_numt` when its depth is no more than such copies could give at the sample's autosomal depth. The script reads the median autosomal depth from step 16b's mosdepth output (`mosdepth/<sample>.mosdepth.summary.txt` and `.global.dist.txt`), so run step 16b first; `AUTOSOMAL_COVERAGE=30` sets it by hand. Without either, the filter runs at depth 0 and marks nothing, and the step says so.
+NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map to chrM and look like low-level heteroplasmy. GATK's NuMTFilterTool marks an allele `possible_numt` when its depth is no more than such copies could give at the sample's autosomal depth. The script reads the median autosomal depth from step 16b's mosdepth output (`mosdepth/<sample>.mosdepth.summary.txt` and `.global.dist.txt`), so run step 16b first; `AUTOSOMAL_COVERAGE=30` sets it by hand. Without either, the filter runs at depth 0 and marks nothing, and the step says so. The Nextflow `MITO_VARIANTS` runs the same filter with the same depth, read from `MOSDEPTH`'s output when `mosdepth` is in `--tools` (a default tool); without it, at depth 0.
 
 ## Output
 - `${SAMPLE}_chrM_mutect2.vcf.gz` — Raw mitochondrial variant calls

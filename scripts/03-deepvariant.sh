@@ -128,9 +128,6 @@ mv -f "${PART}.g.vcf.gz" "$GVCF"
 mv -f "${PART}.g.vcf.gz.tbi" "${GVCF}.tbi"
 mv -f "${PART}.vcf.gz" "$VCF"
 mv -f "${PART}.vcf.gz.tbi" "${VCF}.tbi"
-if [ -f "${PART}.visual_report.html" ]; then
-  mv -f "${PART}.visual_report.html" "${OUTPUT_DIR}/${SAMPLE}.visual_report.html"
-fi
 
 echo "=== DeepVariant complete ==="
 echo "VCF:  ${VCF}"

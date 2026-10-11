@@ -13,8 +13,8 @@
                            cut-offs); other types and records without a value
                            are kept                           -> sv_filtered/
 
-    Equivalent to: scripts/15-duphold.sh (which prints the filter commands
-    instead of applying them)
+    Equivalent to: scripts/15-duphold.sh, which writes both files under
+    duphold/ with the same filter expression
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 

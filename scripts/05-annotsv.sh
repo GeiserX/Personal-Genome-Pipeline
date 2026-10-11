@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # AnnotSV — Annotate structural variants with ACMG pathogenicity classification
-# Input: Manta diploidSV.vcf.gz
+# Input: step 15's duphold-filtered calls (duphold/<sample>_sv_filtered.vcf.gz),
+#   the input of the Nextflow ANNOTSV; without them, Manta's diploidSV.vcf.gz,
+#   with a note. SV_VCF overrides both.
 # Output: *_sv_annotated.tsv (ACMG class 1-5 for each SV)
 set -euo pipefail
 
@@ -17,6 +19,16 @@ else
   MANTA_VCF="${SAMPLE_DIR}/manta/results/variants/diploidSV.vcf.gz"
   # Fall back to manta2/ if a second Manta run was used
   [ ! -f "$MANTA_VCF" ] && MANTA_VCF="${SAMPLE_DIR}/manta2/results/variants/diploidSV.vcf.gz"
+  # Step 15's depth-filtered calls, unless Manta's calls are newer than them
+  FILTERED="${SAMPLE_DIR}/duphold/${SAMPLE}_sv_filtered.vcf.gz"
+  if [ -f "$FILTERED" ] && [ -f "${FILTERED}.tbi" ] && ! [ "$MANTA_VCF" -nt "$FILTERED" ]; then
+    MANTA_VCF="$FILTERED"
+  elif [ -f "$FILTERED" ]; then
+    echo "NOTE: ${FILTERED} is unfinished or older than Manta's calls; annotating Manta's calls."
+    echo "  Run scripts/15-duphold.sh ${SAMPLE} first for the depth-filtered list the pipeline annotates."
+  else
+    echo "NOTE: no duphold-filtered calls (scripts/15-duphold.sh); annotating Manta's calls without the depth filter."
+  fi
 fi
 OUTPUT_DIR="${SAMPLE_DIR}/annotsv"
 # The AnnotSV image holds code only; its annotation data is a separate
@@ -35,7 +47,7 @@ if [ ! -d "${ANNOTATIONS_DIR}/Annotations_Human/Genes/GRCh38" ]; then
 fi
 
 if [ ! -f "$MANTA_VCF" ]; then
-  echo "ERROR: Manta VCF not found: ${MANTA_VCF}" >&2
+  echo "ERROR: SV VCF not found: ${MANTA_VCF}" >&2
   exit 1
 fi
 

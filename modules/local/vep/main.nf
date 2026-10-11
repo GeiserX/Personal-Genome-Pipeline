@@ -9,6 +9,11 @@
     ClinVar_CLNDN, so the clinical filter's ClinVar tier follows a refresh of
     that file instead of the cache release.
 
+    VEP reads the PASS records only ('.' too, for a caller that writes no
+    FILTER): the clinical filter and slivar, after it, keep PASS records alone. The VEP image has
+    no bcftools, so awk selects them on the FILTER column, the records
+    `bcftools view -f PASS,.` keeps in scripts/13-vep-annotation.sh.
+
     Equivalent to: scripts/13-vep-annotation.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -40,8 +45,10 @@ process VEP {
     def args = task.ext.args ?: ''
     def custom = clinvar ? "--custom file=${clinvar},short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN" : ''
     """
+    bgzip -dc ${vcf} | awk -F '\\t' '/^#/ || \$7 == "." || (";" \$7 ";") ~ /;PASS;/' | bgzip -c > ${meta.id}.pass.vcf.gz
+
     vep \\
-        --input_file ${vcf} \\
+        --input_file ${meta.id}.pass.vcf.gz \\
         --output_file ${meta.id}_vep.vcf \\
         --vcf \\
         --cache \\
@@ -58,7 +65,7 @@ process VEP {
 
     bgzip -c ${meta.id}_vep.vcf > ${meta.id}_vep.vcf.gz
     tabix -p vcf ${meta.id}_vep.vcf.gz
-    rm -f ${meta.id}_vep.vcf
+    rm -f ${meta.id}_vep.vcf ${meta.id}.pass.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

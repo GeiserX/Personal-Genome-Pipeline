@@ -14,6 +14,10 @@
 # THREADS/2) run at once, 2 CPUs and 8 GB each, then bcftools concat joins
 # them in reference order. SCATTER=false runs one process over everything,
 # with the same calls.
+#
+# Rerun: a finished VCF called with the same INTERVALS, SCATTER, BAM,
+# reference and image is kept (run-all.sh runs this step on every invocation with
+# EXTRA_CALLERS=gatk); delete it to call again.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -49,6 +53,25 @@ done
 
 mkdir -p "$OUTPUT_DIR"
 
+# A finished VCF is reused only when it was called the way this run would
+# call it: RUN_FILE, written last, holds INTERVALS, SCATTER, the BAM (path,
+# size and modification time, so a realigned BAM is called again), the
+# reference and the image. A subset VCF never stands in for a whole-genome
+# request, and SCATTER=false after a scattered run calls again in one process.
+OUT="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
+RUN_FILE="${OUTPUT_DIR}/${SAMPLE}.run"
+BAM_ID=$(stat -c '%s %Y' "$BAM" 2>/dev/null || stat -f '%z %m' "$BAM")
+RUN_KEY="INTERVALS=${INTERVALS} scatter=${SCATTER:-true} bam=${BAM} bam_size_mtime=${BAM_ID} reference=${REF_FASTA} image=${GATK_IMAGE}"
+if have_output "$OUT" "${OUT}.tbi" && [ -f "$RUN_FILE" ] && [ "$(cat "$RUN_FILE")" = "$RUN_KEY" ]; then
+  echo "Output already exists: ${OUT} (${RUN_KEY})"
+  echo "Skipping. Delete the file to re-run."
+  exit 0
+fi
+if [ -e "$OUT" ]; then
+  echo "Calling again: ${OUT} is unfinished or was not called with ${RUN_KEY}."
+fi
+rm -f "$RUN_FILE"
+
 UNITS_DIR="${OUTPUT_DIR}/scatter"
 mapfile -t UNITS < <(scatter_beds "$UNITS_DIR" "$INTERVALS")
 [ "${#UNITS[@]}" -gt 0 ] || { echo "ERROR: no calling units (INTERVALS='${INTERVALS}')" >&2; exit 1; }
@@ -75,7 +98,6 @@ echo "=== [1/3] Running GATK HaplotypeCaller: ${#UNITS[@]} unit(s), ${SCATTER_JO
 run_parallel "$SCATTER_JOBS" call_unit "${UNITS[@]}"
 PARTS=()
 for u in "${UNITS[@]}"; do PARTS+=("$(cpath "${u%.bed}.vcf.gz")"); done
-OUT="${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
 rm -f "${OUT}.tbi"
 if [ "${#PARTS[@]}" -eq 1 ]; then
   mv -f "${UNITS[0]%.bed}.vcf.gz" "$OUT"
@@ -91,6 +113,7 @@ echo "=== [2/3] Indexing VCF with bcftools ==="
 run_in --cpus 2 --memory 2g \
   "$BCFTOOLS_IMAGE" \
   bcftools index -ft "/genome/${SAMPLE}/vcf_gatk/${SAMPLE}.vcf.gz"
+printf '%s\n' "$RUN_KEY" > "$RUN_FILE"
 
 echo "=== [3/3] Variant statistics ==="
 echo "VCF: ${OUTPUT_DIR}/${SAMPLE}.vcf.gz"
