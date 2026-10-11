@@ -13,8 +13,10 @@
 #     summary it was rendered from. The same BAM is given a second time under
 #     another id (BAMs with the same @RG SM): somalier keeps the two rows
 #     apart and SAMPLE_QC names each one as the other's same person. pypgx
-#     runs too (the bundle case nextflow-hardening-2-nf cloned), and the
-#     report fills its section.
+#     runs too (the bundle case nextflow-hardening-2-nf cloned), with
+#     PharmCAT and the CPIC lookup, and the report fills the pypgx section,
+#     the PharmCAT vs pypgx comparison (CPIC_LOOKUP's table) and the indexcov
+#     sex check (INDEXCOV's folder), with the sex INDEXCOV's own table holds.
 # The Nextflow report receives every output the bash report reads: the report
 # of case nextflow-from-fastq-2-nextflow, whose run had telomere_hunter,
 # mito_variants and hla_typing, fills the Telomere content (relative), Mitochondrial
@@ -89,7 +91,7 @@ if [ ! -d "$BUNDLE" ]; then
   V="${PYPGX_IMAGE##*:}"
   git clone -q --branch "${V%%--*}" --depth 1 https://github.com/sbslee/pypgx-bundle.git "$BUNDLE"
 fi
-DUP_ID="$D" EXTRA_TOOLS=pypgx nf_run male male --sex_check warn --pypgx_bundle "$BUNDLE"
+DUP_ID="$D" EXTRA_TOOLS=pypgx,pharmcat,cpic nf_run male male --sex_check warn --pypgx_bundle "$BUNDLE"
 check_eq "declared male, --sex_check warn: the run exits 0" "$RC" 0
 check_eq "SOMALIER_RELATE tasks" "$(ran SOMALIER_RELATE)" 1
 for p in SOMALIER VERIFYBAMID2 SAMPLE_QC HTML_REPORT; do
@@ -146,6 +148,24 @@ PY
 }
 check_eq "pypgx ran: its section is filled" "$(section "$JSON" pypgx)" ok
 check "the Steps Not Run list does not name pypgx" lacks '<li>pypgx</li>' "$(cat "$HTML" 2>/dev/null)"
+
+# The indexcov sex check: HTML_REPORT gets INDEXCOV's folder from UPSTREAM.
+# The report must show the sex INDEXCOV's own table holds, not "not available".
+IXS=$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} {print $c["inferred_sex"]}' \
+  "${R}/${SAMPLE}_sex_check.tsv" 2>/dev/null)
+echo "INDEXCOV infers: ${IXS:-nothing}"
+check "INDEXCOV published its sex check" test -n "$IXS"
+check_eq "the summary.json section sex_check is ok" "$(section "$JSON" sex_check)" ok
+check "the QC card shows the sex INDEXCOV inferred (${IXS:-none})" \
+  has "Inferred sex \\(indexcov\\)</span><span class=\"value\"><span class=\"badge badge-(green|red)\">${IXS:-none}<" "$(cat "$HTML" 2>/dev/null)"
+
+# The PharmCAT vs pypgx comparison: HTML_REPORT gets CPIC_LOOKUP's table
+# from PGX and places it beside the pypgx summary.
+check "CPIC_LOOKUP published the comparison" test -s "${R}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
+COMP=$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['sections']['pypgx']['data']['comparison']['conflicts'])" "$JSON" 2>/dev/null)
+check "the summary's pypgx section has the comparison (conflicts: ${COMP:-none})" test -n "$COMP"
+check "the Pharmacogenomics card shows the comparison" \
+  has "PharmCAT vs pypgx conflicts</span><span class=\"value\">${COMP:-none}<" "$(cat "$HTML" 2>/dev/null)"
 
 FQ="${G}/nf-fastq/HG002P"
 check "case nextflow-from-fastq-2-nextflow wrote its report" test -s "${FQ}/HG002P_report.html"

@@ -375,7 +375,7 @@ ln -s ../vcf_clair3/${SAMPLE}.vcf.gz.tbi ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.v
 
 ## Expected Output Comparison
 
-Rough numbers for a 30X human genome:
+Rough numbers for a 30X human genome. Each runtime names its source or says it was not measured:
 
 | Metric | Short-Read (Illumina) | ONT (R10.4.1 SUP) | PacBio HiFi (Revio) |
 |---|---|---|---|
@@ -384,7 +384,7 @@ Rough numbers for a 30X human genome:
 | PASS rate | ~93% | ~85-90% | ~93% |
 | SVs (total) | ~7-9K (Manta) | ~20-25K (Sniffles2) | ~18-22K (Sniffles2) |
 | SV insertions | ~500 (poor) | ~8-10K (excellent) | ~7-9K (excellent) |
-| Alignment time | 1-2 hours | 1-3 hours | 1-2 hours |
-| Variant calling time | 2-4 hours (DV) | 2-4 hours (Clair3) | 2-4 hours (Clair3) |
+| Alignment time | ~1-2 h, an estimate ([runtime table](hardware-requirements.md#runtime-per-step)) | not measured here | not measured here |
+| Variant calling time | DeepVariant: about 13.5 h on 8 CPUs, one observed ~30x run ([runtime table](hardware-requirements.md#runtime-per-step)) | Clair3: not measured here | Clair3: not measured here |
 
 The biggest advantage of long reads is SV detection — especially insertions, which short reads systematically miss.

@@ -606,6 +606,8 @@ workflow {
         .join(PGX.out.pypgx_summary.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cyrius_results.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 

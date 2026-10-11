@@ -230,11 +230,10 @@ rm -rf ${GENOME_DIR}/${SAMPLE}/nextflow/work         # After a good run-all.sh r
 | CNVpytor .pytor file | 2-5 GB | 250 GB |
 | **Recommended free, from a BAM** | | **500 GB** |
 | `run-all.sh` from FASTQ, in `<sample>/nextflow/work`: trimmed reads | 60-90 GB | 340 GB |
-| ... the alignment intermediate (`.sam.gz`) | 119 GB in one 30x run | 459 GB |
-| ... a second copy of the BAM | 80-120 GB | 579 GB |
+| ... a second copy of the BAM | 80-120 GB | 460 GB (estimate) |
 | **Recommended free, from FASTQ** | | **700 GB** |
 
-The `work/` rows stay until you delete `<sample>/nextflow/work`; [Hardware and storage requirements](hardware-requirements.md#per-sample-storage) explains them.
+The `work/` rows stay until you delete `<sample>/nextflow/work`; [Hardware and storage requirements](hardware-requirements.md#per-sample-storage) explains them. The alignment writes no SAM file. The cumulative figures are sums of the rows, not measurements, and leave out the temporary files `samtools sort` writes during the alignment (not measured), which the 700 GB leaves room for.
 
 ---
 

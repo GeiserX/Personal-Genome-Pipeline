@@ -34,11 +34,10 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | Mito analysis output | 50-200 MB | Step 20 | Keep |
 | **Subtotal per sample** | **150-250 GB** | | |
 | Trimmed FASTQ pair, in `<sample>/nextflow/work` | 60-90 GB | `run-all.sh` from FASTQ: fastp | After a good run |
-| Alignment intermediate (`.sam.gz`), in `work/` | 119 GB in one 30x run | `run-all.sh` from FASTQ: minimap2 | After a good run |
-| Second copy of the BAM, in `work/` (none when published by hard link) | 80-120 GB | `run-all.sh` from FASTQ: duplicate marking | After a good run |
-| **Peak per sample from FASTQ, until `work/` is deleted** | **~410-580 GB** | | |
+| Second copy of the BAM, in `work/` (none when published by hard link) | 80-120 GB | `run-all.sh` from FASTQ: alignment | After a good run |
+| **Peak per sample from FASTQ, until `work/` is deleted (estimate)** | **~290-460 GB** | | |
 
-A run from FASTQ needs more space than a run from a BAM. Until you delete `<sample>/nextflow/work`, it holds the trimmed reads (60-90 GB, [step 1b](01b-fastp-qc.md)), the alignment intermediate (119 GB in one 30x run, larger than the gzipped FASTQ) and a second copy of the BAM (80-120 GB) when the BAM is published by copying (`publish_dir_mode = 'copy'`, the default in `nextflow.config`). `run-all.sh` passes `--publish_dir_mode link`, so the BAM is stored once, when a probe link from `work/` to the output directory works and it runs as root or Linux's `fs.protected_hardlinks` is 0. It chooses nothing when you pass `--publish_dir_mode` (your mode is used) or `-w`, `-work-dir`, `-c` or `-config`, or set `NXF_WORK` (the copy default stays, unless your config sets another mode). Once the run succeeded and the results look right, delete `<sample>/nextflow/work`; the next run then starts from scratch.
+A run from FASTQ needs more space than a run from a BAM. Until you delete `<sample>/nextflow/work`, it holds the trimmed reads (60-90 GB, [step 1b](01b-fastp-qc.md)) and a second copy of the BAM (80-120 GB) when the BAM is published by copying (`publish_dir_mode = 'copy'`, the default in `nextflow.config`). The alignment writes no SAM file: minimap2 is piped into `samtools fixmate`, `sort` and `markdup` in one task. The peak is an estimate summed from the rows above, not a measurement: the subtotal (150-250 GB) plus the trimmed reads (60-90 GB) plus the second BAM (80-120 GB) is 290-460 GB. It leaves out the temporary files `samtools sort` writes in the task's work directory while it aligns; they are removed when the task ends, and their size has not been measured here. `run-all.sh` passes `--publish_dir_mode link`, so the BAM is stored once, when a probe link from `work/` to the output directory works and it runs as root or Linux's `fs.protected_hardlinks` is 0. It chooses nothing when you pass `--publish_dir_mode` (your mode is used) or `-w`, `-work-dir`, `-c` or `-config`, or set `NXF_WORK` (the copy default stays, unless your config sets another mode). Once the run succeeded and the results look right, delete `<sample>/nextflow/work`; the next run then starts from scratch.
 
 ### Shared Reference Data (One-Time)
 
@@ -97,7 +96,7 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 |---|---|
 | 1 sample, core steps only (2-3-6-7) with the step scripts | 200 GB |
 | 1 sample from a BAM, full pipeline | 500 GB |
-| 1 sample from FASTQ with `run-all.sh`, until `<sample>/nextflow/work` is deleted | 700 GB (the peak above plus ~100 GB of default reference data) |
+| 1 sample from FASTQ with `run-all.sh`, until `<sample>/nextflow/work` is deleted | 700 GB (the estimated peak above plus ~100 GB of default reference data is ~560 GB; the rest is room for the sort's temporary files, not measured) |
 | 2 samples, full pipeline, `work/` deleted after each FASTQ run | 1 TB |
 | 2 samples + keeping intermediates | 1.5 TB |
 
@@ -111,7 +110,7 @@ Every step runs in a Docker container with a hard `--memory` limit. The two entr
 
 | Step | Script: CPUs / memory | Pipeline: CPUs / memory |
 |---|---|---|
-| 2 (minimap2 alignment) | `THREADS` (8) / 32 GB | 8 / 32 GB; duplicate marking 8 / 12 GB (CPUs + 4) |
+| 2 (minimap2 alignment) | `THREADS` (8) / 32 GB | 8 / 32 GB (minimap2 piped into samtools, one task) |
 | 3 (DeepVariant) | `THREADS` (8) / `DV_MEM` (32 GB) | 8 / 32 GB |
 | 4 (Manta) | `THREADS` (8) / 16 GB | 8 / 16 GB |
 | 6 (ClinVar screen) | 2 / 2 GB | 2 / 4 GB |
@@ -133,7 +132,7 @@ These are limits, not measured peaks. minimap2 peaked at 10 GB on the test refer
 
 ## CPU Requirements
 
-Each pipeline task asks for the CPUs that `conf/base.config` gives its label or its name: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (index and alignment), fastp, duplicate marking, DeepVariant, Manta and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
+Each pipeline task asks for the CPUs that `conf/base.config` gives its label or its name: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (the index, and the alignment with its duplicate marking in the same task), fastp, DeepVariant, Manta and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
 
 **DeepVariant's shards.** `run-all.sh` runs DeepVariant with at most 8 shards, however many cores the machine has, and fewer when `--max_cpus` (`THREADS`) is lower. More cores help the steps that run beside it. To give DeepVariant more, run `scripts/03-deepvariant.sh` with `THREADS=N` (its `--cpus` and `--num_shards`), or pass `-c` with a `withName: 'DEEPVARIANT'` block:
 
@@ -232,7 +231,7 @@ The other rows are estimates from the step pages for a 16-core / 32 GB desktop w
 From FASTQ, the pipeline trims, aligns and marks duplicates first. indexcov then checks the sex from the BAM index, and from that moment DeepVariant and every step that reads only the BAM are ready together. The steps that read the VCF, pypgx included, wait for DeepVariant.
 
 ```
-FASTQ ──> fastp ──> minimap2 ──> duplicate marking ──> BAM ──> indexcov (sex check)
+FASTQ ──> fastp ──> minimap2 + markdup (one task)  ──> BAM ──> indexcov (sex check)
                                                                    │
         ┌──────────────────────────────────────────────────────────┤
         ▼                                                          ▼
@@ -246,7 +245,7 @@ vcfanno, slivar
         └─────────────────> HTML report, MultiQC <─────────────────┘
 ```
 
-Nextflow starts a task only when its CPUs and memory fit in what is left of the machine's. On a host with 8 CPUs, every 8-CPU task (minimap2, fastp, duplicate marking, DeepVariant, Manta, VEP) runs alone, and the light SV chain steps wait for it: about 18 h behind DeepVariant in the observed run, after which they finished in seconds. On 16 CPUs, DeepVariant leaves 8 free for the BAM steps.
+Nextflow starts a task only when its CPUs and memory fit in what is left of the machine's. On a host with 8 CPUs, every 8-CPU task (fastp, the alignment with its duplicate marking, DeepVariant, Manta, VEP) runs alone, and the light SV chain steps wait for it: about 18 h behind DeepVariant in the observed run, after which they finished in seconds. On 16 CPUs, DeepVariant leaves 8 free for the BAM steps.
 
 ---
 
