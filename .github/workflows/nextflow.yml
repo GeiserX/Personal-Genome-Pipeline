@@ -309,3 +309,78 @@ jobs:
           print(f"{bad} failure(s)")
           sys.exit(1 if bad else 0)
           PY
+
+      # The step above fakes the kill with beforeScript, so it cannot see how
+      # ALIGN_MINIMAP2's own pipe reports one. This runs the module's real
+      # script (no -stub, no Docker) with stand-ins for minimap2 and samtools
+      # on PATH: on the first attempt minimap2 prints half a SAM record and
+      # kills itself with SIGKILL, as the kernel does on out-of-memory, and
+      # fixmate exits 1 on the cut record, as samtools 1.24 does. The task
+      # must exit 137 and be retried with twice the memory; under pipefail
+      # alone it exits 1 and the run stops.
+      - name: ALIGN_MINIMAP2 is retried when minimap2 is killed for memory inside the pipe
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          t="${RUNNER_TEMP}/oom"
+          mkdir -p "$t/bin"
+          cat > "$t/bin/minimap2" <<EOF
+          #!/bin/bash
+          [ "\${1:-}" = --version ] && { echo 2.31-r1302; exit 0; }
+          printf '@HD\tVN:1.6\n'
+          if [ ! -e "$t/killed-once" ]; then
+              touch "$t/killed-once"
+              printf 'r1\t77\t*\t0\t0\t*\t*\t0\t0\tACGT'
+              kill -9 \$\$
+          fi
+          printf 'r1\t77\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n'
+          EOF
+          cat > "$t/bin/samtools" <<'EOF'
+          #!/bin/bash
+          case "$1" in
+              version) echo 'samtools 1.24' ;;
+              fixmate) awk -F'\t' '!/^@/ && NF < 11 { bad = 1 } { print }
+                  END { if (bad) { print "[E::sam_parse1] SEQ and QUAL are of different length" > "/dev/stderr"; exit 1 } }' ;;
+              sort) cat ;;
+              markdup) out="${*: -1}"; cat > "${out%%##idx##*}"; echo index > "${out#*##idx##}" ;;
+              quickcheck) exit 0 ;;
+              *) echo "unexpected samtools $*" >&2; exit 2 ;;
+          esac
+          EOF
+          chmod +x "$t/bin/minimap2" "$t/bin/samtools"
+          touch "$t/r1.fastq.gz" "$t/r2.fastq.gz" "$t/ref.sr.mmi"
+          cat > "$t/main.nf" <<EOF
+          include { ALIGN_MINIMAP2 } from '${GITHUB_WORKSPACE}/modules/local/align_minimap2/main.nf'
+          workflow {
+              ALIGN_MINIMAP2(channel.of([[id: 'oom'], file('$t/r1.fastq.gz'), file('$t/r2.fastq.gz')]), file('$t/ref.sr.mmi'))
+          }
+          EOF
+          cat > "$t/oom.config" <<EOF
+          executor.cpus = 16
+          executor.memory = '64.GB'
+          trace.enabled = true
+          trace.raw = true
+          trace.file = '$t/trace.txt'
+          trace.fields = 'name,attempt,exit,memory'
+          timeline.enabled = false
+          report.enabled = false
+          dag.enabled = false
+          EOF
+          # Launched from the checkout, so its nextflow.config (shell,
+          # errorStrategy, labels) applies.
+          rc=0
+          PATH="$t/bin:$PATH" nextflow run "$t/main.nf" -ansi-log false -c "$t/oom.config" \
+            --max_cpus 16 --max_memory 64.GB --outdir "$t/out" -work-dir "$t/work" || rc=$?
+          echo "nextflow exited ${rc}"
+          cat "$t/trace.txt"
+          python3 - "$t/trace.txt" "$rc" <<'PY'
+          import csv, sys
+          GB = 1024 ** 3
+          rows = [r for r in csv.DictReader(open(sys.argv[1]), delimiter='\t') if 'ALIGN_MINIMAP2' in r['name']]
+          got = [(int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows]
+          want = [(1, '137', 32), (2, '0', 64)]
+          print(f"ALIGN_MINIMAP2 attempts (attempt, exit, GB): {got}; want {want}")
+          ok = sorted(got) == want and sys.argv[2] == '0'
+          print('OK' if ok else 'FAIL: a kill inside the pipe did not reach Nextflow as exit 137 and a retry')
+          sys.exit(0 if ok else 1)
+          PY
