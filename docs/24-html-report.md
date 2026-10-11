@@ -31,7 +31,7 @@ Two more files, when present:
     - `not finished`: the pipeline stopped on another step's failure.
     - `skipped (expansion_hunter failed)`: Stranger (step 9b), which reads ExpansionHunter's calls.
 
-    Each script it ran after the pipeline is `ok` or `failed`. After a failed pipeline `run-all.sh` skips the opt-in scripts and still writes this report and the text report.
+    Each opt-in step script it ran after the pipeline is `ok` or `failed`. The two reports get no line. After a failed pipeline `run-all.sh` skips the opt-in scripts and still writes this report and the text report.
 
 ## Command
 
@@ -67,7 +67,7 @@ The report contains:
 
 ## Results from an earlier run
 
-A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished. After a failed run they are `not finished` (the failed one `failed`), so every section from before that run is marked stale until the same command, with `-resume`, completes; a section whose file that run wrote is shown as current. A step you re-ran by hand after that run writes a newer file and is shown as current.
+A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished. After a failed run they are `not finished` (the failed one `failed`), so every section from before that run is marked stale until the same command, with `-resume`, completes; a section whose file that run wrote is shown as current. A step you re-ran by hand after that run writes a newer file and is shown as current. Variant calling (step 03) has no line in `logs/run_status.tsv`, so its section is never marked stale, even when its VCF is older than the run.
 
 A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports (the CYP2D6 rows too), and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 
