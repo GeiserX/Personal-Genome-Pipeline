@@ -57,7 +57,7 @@ docker run --rm \
 - Two alleles per locus (one per chromosome)
 - `${SAMPLE}/hla_t1k/database_release.txt` — the IPD-IMGT/HLA release the calls come from (read from `hla.dat`), the T1K version and the GENCODE release of the gene positions
 
-HLA-A and HLA-B go on to PharmCAT: [step 36](36-pgx-consensus.md) cuts them to two fields (`*57:01`) and writes them as PharmCAT's outside calls, so step 7 gives the drug guidance for them (abacavir, allopurinol, carbamazepine, oxcarbazepine, phenytoin and others) and step 27 lists it. An allele T1K gives a quality of 0 or below is not passed on.
+HLA-A and HLA-B go on to PharmCAT: [step 36](36-pgx-consensus.md) cuts them to two fields (`*57:01`) and writes them as PharmCAT's outside calls, so step 7 gives the drug guidance for them (abacavir, allopurinol, carbamazepine, oxcarbazepine, phenytoin and others) and step 27 lists it. When either allele of HLA-A or HLA-B has a T1K quality of 0 or below, step 36 passes neither allele of that gene: the whole gene is withheld from PharmCAT. The report shows each allele's quality, marks such a gene low confidence and says it was not passed to PharmCAT.
 
 ## KIR Genes (opt-in)
 

@@ -26,7 +26,23 @@ Checks:
      changed from the pedigree's is a mismatch; a call that agrees with
      enough chrX sites is ok; a pedigree female with chrY reads but chrX that
      cannot tell is unknown, not an aneuploidy; without a pedigree the rows
-     read as before.
+     read as before;
+ 11. CYP2D6 by step 36's rule: pypgx 'Indeterminate' is not a call and is
+     not counted in 'Genes called'; a Cyrius genotype with
+     Filter=CYP2D6_depth_unreliable is shown as not usable and is not a
+     call; step 36's verdict is shown when its table is there, and ignored
+     when the table is older than a caller's result;
+ 12. repeat expansions: Stranger's STR_STATUS is read, every locus that is
+     not normal is listed (also outside the five key loci), a record
+     without a status is counted apart, not flagged; a Stranger file older
+     than ExpansionHunter's is not read and both reports say to rerun step
+     9b; a stale card says Stale, not Complete;
+ 13. HLA: each allele keeps its own T1K quality; a one-allele row
+     ('.', 0, -1) is not low confidence; a quality of 0 or below is, and on
+     HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
+ 14. a section whose step failed in the latest run says Failed, not Not
+     run, in the summary and both reports, also in the CYP2D6 rows;
+ 15. the CPIC card counts the genes called without a function phenotype.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -129,7 +145,8 @@ def main():
         check("ClinVar: count by stars", sec["clinvar"]["data"]["by_stars"] == {"4": 0, "3": 1, "2": 0, "1": 1, "0": 1},
               sec["clinvar"]["data"]["by_stars"])
         check("text report: the ClinVar count line", "  Pathogenic/Likely Pathogenic hits: 3\n" in txt)
-        check("HTML report: the same ClinVar count in its badge", 'class="badge badge-green">3</span>' in html)
+        check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
+              'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
         check("HTML report: one row per hit, each with a Stars cell",
               len(rows) == 3 and rows[0].strip().endswith("<td>3</td></tr>"), rows)
@@ -140,7 +157,14 @@ def main():
         check("QC: inferred sex female", sec["sex_check"]["data"]["inferred_sex"] == "female")
         check("variants: 3 records, 2 PASS, 2 SNP lines, 1 indel",
               sec["variants"]["data"] == {"total": 3, "pass": 2, "snps": 2, "indels": 1}, sec["variants"]["data"])
-        check("CYP2D6: three callers agree (allele order ignored)", summ["cyp2d6"]["agree"] is True, summ["cyp2d6"])
+        check("CYP2D6: pypgx and Cyrius agree (allele order ignored)", summ["cyp2d6"]["agree"] is True, summ["cyp2d6"])
+        # 15. CPIC unclassified
+        check("CPIC: the unclassified gene is counted apart (VKORC1 -1639 GG)",
+              sec["cpic"]["data"].get("unclassified") == 1, sec["cpic"]["data"])
+        check("CPIC: both reports show the unclassified count",
+              "Called without a function phenotype (no drug guidance): 1" in txt
+              and 'Genes called without a function phenotype (no drug guidance)</span><span class="value">1<' in html,
+              [l for l in txt.splitlines() if "Not called" in l])
 
         # 3. heteroplasmy floor
         check("heteroplasmy: only AF 0.05 to 0.95 counts (0.30, 0.05, 0.949 of 5 PASS)",
@@ -309,6 +333,130 @@ def main():
         t = qc("1", "-9", 2, 0, 2, "male")
         check("no pedigree (-9): somalier's sex column is read as before",
               t["inferred_sex"] == "male" and t["sex_check"] == "ok", t)
+
+        # 11. CYP2D6 with a failed depth check: pypgx Indeterminate, Cyrius's genotype filtered
+        y = os.path.join(work, "cyp", "S")
+        put(f"{y}/pypgx/S_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\n"
+            "CYP2D6\tIndeterminate\tIndeterminate\t.\tbam\nCYP2C19\t*1/*2\tIM\t.\tbam\nCYP2C9\tindeterminate\t.\t.\tbam\n",
+            age_days=2)
+        cy_head = "Sample\tGenotype\tFilter\n"
+        put(f"{y}/cyrius/S_cyp2d6.tsv", cy_head + "S\t*5/*5\tCYP2D6_depth_unreliable\n", age_days=2)
+        summ_y, txt_y, html_y = render(y)
+        cy = summ_y["cyp2d6"]
+        check("pypgx: Indeterminate (any case) is not counted as called",
+              summ_y["sections"]["pypgx"]["data"]["genes_called"] == 1
+              and "Genes called: 1/3" in txt_y, summ_y["sections"]["pypgx"]["data"])
+        check("CYP2D6: a Cyrius genotype that failed its Filter is shown as not usable",
+              cy["calls"]["Cyrius"] == "*5/*5 (not usable: Filter CYP2D6_depth_unreliable)", cy["calls"])
+        check("CYP2D6: neither call is usable, so no agreement is claimed (not 'disagree')", cy["agree"] is None, cy)
+        check("CYP2D6: the text report says so", "not usable: Filter CYP2D6_depth_unreliable" in txt_y
+              and "pypgx and Cyrius agree: fewer than two usable calls" in txt_y, txt_y)
+        check("CYP2D6: the HTML card says so", "not usable: Filter CYP2D6_depth_unreliable" in html_y
+              and "fewer than two usable calls" in html_y)
+        check("CYP2D6: no step 36 table, no verdict", cy.get("consensus") is None and "Step 36" not in txt_y, cy)
+        put(f"{y}/pgx_consensus/S_pgx_consensus.tsv", "Gene\tResult\tOutside_call\tReason\tEvidence\n"
+            "HLA-A\tnot typed\tno\tHLA typing (step 08) did not run\t-\n"
+            "CYP2D6\tindeterminate\tno\tthe CYP2D6 depth check failed\tpypgx: no call (Indeterminate)\n")
+        summ_y, txt_y, html_y = render(y)
+        v36 = summ_y["cyp2d6"].get("consensus") or {}
+        check("CYP2D6: step 36's verdict from its table",
+              v36.get("result") == "indeterminate" and v36.get("passed_to_pharmcat") is False, summ_y["cyp2d6"])
+        check("CYP2D6: both reports print step 36's verdict and reason",
+              "Step 36: indeterminate, not passed to PharmCAT (the CYP2D6 depth check failed)" in txt_y
+              and "Not passed to PharmCAT: the CYP2D6 depth check failed" in html_y, txt_y)
+        check("CYP2D6 summary validates", not validate.validate(schema, json.loads(json.dumps(summ_y))),
+              validate.validate(schema, json.loads(json.dumps(summ_y))))
+        put(f"{y}/pgx_consensus/S_pgx_consensus.tsv", open(f"{y}/pgx_consensus/S_pgx_consensus.tsv").read(), age_days=5)
+        check("CYP2D6: a step 36 table older than the callers' results is not read",
+              render(y)[0]["cyp2d6"].get("consensus") is None)
+
+        # 12. repeat expansions with Stranger: invented loci, none of the five
+        # key loci, so a flagged one can only come from STR_STATUS
+        x = os.path.join(work, "str", "S")
+        fmt = "GT:REPCN"
+        eh_rec = ("chr4\t1000\t.\tC\t<STR20>\t.\tPASS\tEND=1;REPID=LOCUS_A;VARID=LOCUS_A{st}\t" + fmt + "\t0/1:7/20\n"
+                  "chr14\t2000\t.\tG\t<STR75>\t.\tPASS\tEND=1;REPID=LOCUS_B;VARID=LOCUS_B{st2}\t" + fmt + "\t0/1:20/75\n"
+                  "chr9\t100\t.\tA\t<STR9>\t.\tPASS\tEND=1;REPID=NOTINCAT;VARID=NOTINCAT\t" + fmt + "\t0/1:5/9\n")
+        put(f"{x}/expansion_hunter/S_eh.vcf", VCF_HEAD + eh_rec.format(st="", st2=""), age_days=1)
+        put(f"{x}/expansion_hunter/S_eh_stranger.vcf",
+            VCF_HEAD + eh_rec.format(st=";STR_STATUS=normal", st2=";STR_STATUS=full_mutation"))
+        summ_x, txt_x, html_x = render(x)
+        ed = summ_x["sections"]["expansions"]["data"]
+        check("Stranger: read when it is there", summ_x["sections"]["expansions"]["source"]
+              == "expansion_hunter/S_eh_stranger.vcf" and ed.get("stranger") is True, summ_x["sections"]["expansions"])
+        check("Stranger: the full_mutation outside the five key loci is listed, the normal one is not",
+              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation"}], ed)
+        check("Stranger: a record without STR_STATUS is counted apart, not flagged", ed.get("no_status") == 1, ed)
+        check("Stranger: the five key loci stay listed", [k["locus"] for k in ed["key_loci"]] == collect_summary.EH_LOCI, ed)
+        check("Stranger: both reports list LOCUS_B full_mutation and the short-read caveat",
+              "LOCUS_B  20/75  full_mutation" in txt_x and "<td>LOCUS_B</td><td>20/75</td><td>full_mutation</td>" in html_x
+              and "can be wrong at some loci" in txt_x and "can be wrong at some loci" in html_x, txt_x)
+        check("Stranger summary validates", not validate.validate(schema, json.loads(json.dumps(summ_x))))
+        put(f"{x}/expansion_hunter/S_eh_stranger.vcf", open(f"{x}/expansion_hunter/S_eh_stranger.vcf").read(), age_days=3)
+        summ_x2, txt_x2, html_x2 = render(x)
+        check("Stranger: a file older than ExpansionHunter's is not read",
+              summ_x2["sections"]["expansions"]["source"] == "expansion_hunter/S_eh.vcf"
+              and not summ_x2["sections"]["expansions"]["data"].get("stranger")
+              and summ_x2["sections"]["expansions"]["data"].get("stranger_outdated") is True,
+              summ_x2["sections"]["expansions"])
+        check("Stranger: an outdated file makes both reports say to rerun step 9b, not that it did not run",
+              "rerun step 9b" in txt_x2 and "did not run" not in txt_x2
+              and "rerun step 9b" in html_x2 and "not run" not in html_x2.split("<h2>Repeat Expansions</h2>", 1)[-1]
+              .split("<h2>", 1)[0], txt_x2)
+        check("Stranger outdated summary validates", not validate.validate(schema, json.loads(json.dumps(summ_x2))))
+        put(f"{x}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - 0.5 * DAY}\nstep\t09\tskipped\n")
+        _, _, html_x3 = render(x)
+        card_eh = html_x3.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("Repeat card of a stale result says Stale, not Complete",
+              "Stale" in card_eh and "Complete" not in card_eh, card_eh)
+
+        # 13. HLA quality per allele
+        q = os.path.join(work, "hla", "S")
+        put(f"{q}/hla_t1k/S_hla_genotype.tsv",
+            "HLA-A\t1\tA*01:01:01\t30\t60\t.\t0\t-1\n"
+            "HLA-B\t2\tB*57:01:01\t10\t0\tB*08:01:01\t20\t40\n"
+            "HLA-C\t2\tC*07:01:01\t5\t-1\tC*07:02:01\t5\t30\n")
+        summ_q, txt_q, html_q = render(q)
+        loci = {l["gene"]: l for l in summ_q["sections"]["hla"]["data"]["loci"]}
+        check("HLA: a one-allele row keeps the allele's quality only and is not low confidence",
+              loci["HLA-A"]["alleles"] == ["A*01:01:01"] and loci["HLA-A"]["quality"] == ["60"]
+              and loci["HLA-A"].get("low_confidence") is False, loci["HLA-A"])
+        check("HLA: HLA-B with a quality 0 allele is low confidence and withheld from PharmCAT",
+              loci["HLA-B"]["quality"] == ["0", "40"] and loci["HLA-B"].get("low_confidence") is True
+              and loci["HLA-B"].get("withheld_from_pharmcat") is True, loci["HLA-B"])
+        check("HLA: HLA-C with a quality -1 allele is low confidence, but PharmCAT never gets HLA-C",
+              loci["HLA-C"].get("low_confidence") is True and loci["HLA-C"].get("withheld_from_pharmcat") is False,
+              loci["HLA-C"])
+        check("HLA: the text report shows each quality and says only HLA-B is not passed to PharmCAT",
+              "A*01:01:01 (quality 60)\n" in txt_q and "B*57:01:01 (quality 0) / B*08:01:01 (quality 40); low confidence"
+              in txt_q and txt_q.count("low confidence (T1K quality 0 or below), not passed to PharmCAT") == 1
+              and "C*07:02:01 (quality 30); low confidence (T1K quality 0 or below)\n" in txt_q, txt_q)
+        check("HLA: the HTML card shows the same, and the short-read note",
+              "B*57:01:01 (quality 0)" in html_q and html_q.count("not passed to PharmCAT</span>") == 1
+              and "HLA typing from short-read WGS is approximate" in html_q)
+        check("HLA summary validates", not validate.validate(schema, json.loads(json.dumps(summ_q))))
+
+        # 14. a step that failed in the latest run
+        f_ = os.path.join(work, "failed", "S")
+        put(f"{f_}/clinvar/S_clinvar_hits.vcf", HITS)
+        put(f"{f_}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - DAY}\nstep\t10\tfailed\nstep\t11\tok\n"
+                                          "step\t32\tfailed\n")
+        summ_f, txt_f, html_f = render(f_)
+        tel = summ_f["sections"]["telomere"]
+        check("failed: no telomere file and step 10 failed -> state failed with a note",
+              tel["state"] == "failed" and "step 10 failed" in (tel["note"] or ""), tel)
+        check("failed: a step that never ran is still missing", summ_f["sections"]["roh"]["state"] == "missing")
+        card_t = html_f.split("<h2>Telomere content (relative)</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("failed: the HTML card says Failed, not Not run", 'badge-red">Failed<' in card_t and "Not run" not in card_t,
+              card_t)
+        check("failed: the text report says FAILED and lists it under Steps Not Run",
+              "[FAILED: step 10 failed" in txt_f and "  - Telomere content (TelomereHunter) (step 10 failed)" in txt_f, txt_f)
+        card_c = html_f.split("<h2>CYP2D6 Across Callers</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("failed: a failed pypgx step shows as failed in the CYP2D6 rows of both reports, with the FAILED note",
+              summ_f["cyp2d6"]["calls"]["pypgx"] == "failed (step 32)" and "failed (step 32)" in txt_f
+              and "failed (step 32)" in card_c and "FAILED: step 32 failed" in card_c, card_c)
+        check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
+              validate.validate(schema, json.loads(json.dumps(summ_f))))
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

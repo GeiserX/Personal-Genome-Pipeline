@@ -196,7 +196,7 @@ The output VCF lists each tested locus with the number of repeats found. Key loc
 
 **FMR1 intermediate zone (45-54 repeats):** Not affected, but repeats may expand in offspring. Carriers should receive genetic counseling. Premutation (55-200) carries risk of FXTAS (males >50) and FXPOI.
 
-**"ALL CLEAR"** means no locus exceeded its clearly pathogenic threshold. Intermediate-range results should be discussed with a genetic counselor.
+The report prints no all-clear verdict for these loci. It shows the counts of the five loci above and, when step 9b (Stranger) ran, lists every locus Stranger marks `pre_mutation` or `full_mutation`; without step 9b, compare the counts with the table yourself. A count under every threshold is not a guarantee: repeat-expansion calls from short reads can be wrong at some loci, and a long expansion cannot be sized. Intermediate-range results should be discussed with a genetic counselor.
 
 ### Stranger Annotation (Step 9b)
 
@@ -208,10 +208,10 @@ Step 9b adds a `STR_STATUS` field to each locus in the VCF so you do not need to
 | `pre_mutation` | Elevated repeat count; not currently disease-causing but carries risk of expansion in offspring or late-onset carrier effects (e.g. FXTAS, FXPOI for FMR1) |
 | `full_mutation` | Repeat count exceeds the pathogenic threshold for this locus |
 
-The `Disease`, `OMIM`, `Inheritance`, `NormalMax`, and `PathologicMin` INFO fields give the clinical context for each locus. Use a VCF viewer or `bcftools query` to extract them:
+The `Disease`, `InheritanceMode`, `SourceDisplay`, `STR_NORMAL_MAX`, and `STR_PATHOLOGIC_MIN` INFO fields give the clinical context for each locus (a field the catalog has no value for prints as `.`). Use a VCF viewer or `bcftools query` to extract them:
 
 ```bash
-bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/NormalMax\t%INFO/PathologicMin\n' \
+bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/InheritanceMode\t%INFO/SourceDisplay\t%INFO/STR_NORMAL_MAX\t%INFO/STR_PATHOLOGIC_MIN\n' \
     expansion_hunter/<sample>_eh_stranger.vcf
 ```
 
@@ -223,7 +223,7 @@ bcftools query -f '%INFO/STR_STATUS\t%INFO/Disease\t%INFO/NormalMax\t%INFO/Patho
 
 ### What It Means
 
-Telomeres are protective caps at the ends of chromosomes that shorten with cell division. TelomereHunter measures `tel_content` — the normalized telomere read count — as a proxy for relative telomere content.
+Telomeres are protective caps at the ends of chromosomes that shorten with cell division. TelomereHunter measures `tel_content`: intratelomeric reads per million reads with 48-52% GC. It is a relative telomere content, not a telomere length, and the report labels it "Telomere content (relative)".
 
 ### How to Interpret
 
@@ -416,13 +416,13 @@ These are per-gene metrics (not per-variant) added to the clinical filter summar
 
 ### Quick Variant Filtering Recipes
 
-Copy-paste these commands to extract the most clinically relevant variants. They read step 13's output, `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf`, with `bcftools +split-vep` from the pipeline's pinned bcftools image, which picks each value out of the `CSQ` field by name (the same way step 23 does). `-s worst` keeps the most severe consequence of each variant; `-d` keeps every transcript.
+Copy-paste these commands to extract the most clinically relevant variants. They read step 13's output, `${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz`, with `bcftools +split-vep` from the pipeline's pinned bcftools image, which picks each value out of the `CSQ` field by name (the same way step 23 does). `-s worst` keeps the most severe consequence of each variant; `-d` keeps every transcript.
 
 ```bash
 # Run from the repository root, with GENOME_DIR and SAMPLE set
 source versions.env
 bcf() { docker run --rm -i -v "${GENOME_DIR}:/genome" -w /genome "${BCFTOOLS_IMAGE}" bcftools "$@"; }
-VEP_VCF="${SAMPLE}/vep/${SAMPLE}_vep.vcf"   # relative to GENOME_DIR
+VEP_VCF="${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"   # relative to GENOME_DIR
 
 # Rare: below 0.1% in gnomAD exomes and genomes, or absent from them
 RARE='(gnomADe_AF="." || gnomADe_AF<0.001) && (gnomADg_AF="." || gnomADg_AF<0.001)'
@@ -740,7 +740,7 @@ Typically 18-21 of 23 genes will have confident calls. CYP2D6 may be "Inconclusi
 }
 ```
 
-Each number is the repeat count on one allele. Counts below every locus threshold = ALL CLEAR; step 9b (Stranger) marks the ones that are not.
+Each number is the repeat count on one allele. The report shows these counts and, with step 9b (Stranger), lists the loci it marks `pre_mutation` or `full_mutation`. It gives no all-clear verdict.
 
 ### CPSR (Step 17)
 

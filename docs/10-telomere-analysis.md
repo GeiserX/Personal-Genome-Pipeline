@@ -60,7 +60,7 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
 TelomereHunter uses `-ibt` (input BAM tumor) for a single-sample analysis. No `--tumor_only` flag is needed — when only `-ibt` is provided (without `-ibc` for a matched control BAM), TelomereHunter runs in single-sample mode automatically.
 
 ## Key Metric
-- **`tel_content`** — GC-corrected telomeric reads per million mapped reads
+- **`tel_content`** — intratelomeric reads per million reads with 48-52% GC, the GC content of telomeric repeats (TelomereHunter 1.1.0 divides the intratelomeric read count by `total_reads_with_tel_gc`). It is a relative telomere content, not a telomere length; the report labels it "Telomere content (relative)"
 - Higher values indicate longer/more abundant telomeres
 - Compare between samples of known age for relative ranking
 

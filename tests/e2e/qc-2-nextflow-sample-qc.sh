@@ -17,7 +17,7 @@
 #     report fills its section.
 # The Nextflow report receives every output the bash report reads: the report
 # of case nextflow-from-fastq-2-nextflow, whose run had telomere_hunter,
-# mito_variants and hla_typing, fills the Telomere Length, Mitochondrial
+# mito_variants and hla_typing, fills the Telomere content (relative), Mitochondrial
 # Analysis and HLA Typing cards instead of saying "Not run" (the CPSR card,
 # never run in CI, is the control that the check can see "Not run").
 . "$(dirname "$0")/lib.sh"
@@ -149,7 +149,7 @@ check "the Steps Not Run list does not name pypgx" lacks '<li>pypgx</li>' "$(cat
 
 FQ="${G}/nf-fastq/HG002P"
 check "case nextflow-from-fastq-2-nextflow wrote its report" test -s "${FQ}/HG002P_report.html"
-for c in "Telomere Length:telomere" "Mitochondrial Analysis:mito" "HLA Typing:hla"; do
+for c in "Telomere content (relative):telomere" "Mitochondrial Analysis:mito" "HLA Typing:hla"; do
   check_eq "the Nextflow report's ${c%%:*} card is filled" "$(card "${FQ}/HG002P_report.html" "${c%%:*}")" filled
   check_eq "and its summary.json section ${c##*:} is ok" "$(section "${FQ}/summary.json" "${c##*:}")" ok
 done
