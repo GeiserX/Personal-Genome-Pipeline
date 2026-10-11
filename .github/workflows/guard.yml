@@ -136,11 +136,58 @@ jobs:
 
           run_tests tests
 
+  # TEMPORARY (removed before merge): the scattered fake-docker case 300 times
+  # with main's run_parallel and 300 times with this branch's, and the unit
+  # test 50 times against main's run_parallel.
+  run-parallel-loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Main's common.sh
+        run: |
+          bash --version | head -1
+          git fetch --no-tags --depth=1 origin main
+          git show FETCH_HEAD:scripts/lib/common.sh > "$RUNNER_TEMP/main-common.sh"
+          sed -n '/^run_parallel() {/,/^}/p' "$RUNNER_TEMP/main-common.sh"
+      - name: tests/test_run_parallel.sh 50 times against main's run_parallel
+        run: |
+          n=0
+          for i in $(seq 50); do
+            RUN_PARALLEL_FROM="$RUNNER_TEMP/main-common.sh" bash tests/test_run_parallel.sh > "$RUNNER_TEMP/unit.log" 2>&1 \
+              || { n=$((n + 1)); echo "iteration ${i}:"; sed -n '/^run_parallel from/,$p' "$RUNNER_TEMP/unit.log"; }
+          done
+          echo "unit test on main's run_parallel: ${n} of 50 failed"
+      - name: the scatter case 300 times with main's run_parallel
+        run: |
+          cp scripts/lib/common.sh "$RUNNER_TEMP/branch-common.sh"
+          cp "$RUNNER_TEMP/main-common.sh" scripts/lib/common.sh
+          n=0
+          for i in $(seq 300); do
+            scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1 \
+              || { n=$((n + 1)); echo "iteration ${i}: $(grep -m1 'ASSERT FAIL' "$RUNNER_TEMP/case.log")"; }
+          done
+          cp "$RUNNER_TEMP/branch-common.sh" scripts/lib/common.sh
+          echo "main's run_parallel: ${n} of 300 failed"
+      - name: the scatter case 300 times with this branch's run_parallel
+        run: |
+          git diff --exit-code scripts/lib/common.sh
+          sed -n '/^run_parallel() {/,/^}/p' scripts/lib/common.sh
+          n=0
+          for i in $(seq 300); do
+            scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1 \
+              || { n=$((n + 1)); echo "iteration ${i}: $(grep -m1 'ASSERT FAIL' "$RUNNER_TEMP/case.log")"; }
+          done
+          echo "this branch's run_parallel: ${n} of 300 failed"
+          [ "$n" -eq 0 ]
+
   # The one check the ruleset requires for this workflow: it runs even when a
   # job above failed or was skipped, and fails unless every one succeeded.
   ci-ok:
     if: always()
-    needs: [image-vars, images, coupled-versions, fake-docker, helper-binaries, unit-tests]
+    needs: [image-vars, images, coupled-versions, fake-docker, helper-binaries, unit-tests, run-parallel-loop]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
