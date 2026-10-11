@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The Nextflow pipeline from the fixture's FASTQ pair, real containers: FASTP,
 # MINIMAP2_INDEX (the reference is given from a folder without the .sr.mmi
-# case 20 built, so the run builds its own), ALIGN_MINIMAP2, ALIGN_MARKDUP,
+# case 20 built, so the run builds its own), ALIGN_MINIMAP2 (minimap2 piped
+# into samtools fixmate, sort and markdup in one task, no SAM on disk),
 # INDEXCOV, DEEPVARIANT (male: haploid chrX/chrY outside the PARs), then the
 # default tools plus clinvar and hla_typing. Not cyrius: it normalises depth
 # over bins on every autosome and stops on the first contig the BAM lacks,
@@ -89,9 +90,27 @@ tasks() {
     $c["status"] == "COMPLETED" { n = $c["name"]; sub(/ \(.*/, "", n); sub(/.*:/, "", n); if (n == p) k++ }
     END {print k + 0}' "${TRACE:-/dev/null}" 2>/dev/null
 }
-for p in FASTP MINIMAP2_INDEX ALIGN_MINIMAP2 ALIGN_MARKDUP INDEXCOV DEEPVARIANT T1K_BUILD HLA_TYPING; do
+for p in FASTP MINIMAP2_INDEX ALIGN_MINIMAP2 INDEXCOV DEEPVARIANT T1K_BUILD HLA_TYPING; do
   check_eq "${p} tasks completed" "$(tasks "$p")" 1
 done
+# The alignment is one pipe: no task writes the SAM to disk (it was a
+# <sample>.sam.gz in the work directory, 119 GB in one observed 30x run).
+check_eq "SAM files in the work directory (.sam, .sam.gz)" \
+  "$(find "$WORK" -type f \( -name '*.sam' -o -name '*.sam.gz' \) 2>/dev/null | wc -l | tr -d ' ')" 0
+check_eq "process ALIGN_MARKDUP tasks (merged into ALIGN_MINIMAP2)" "$(tasks ALIGN_MARKDUP)" 0
+# The alignment task runs in MINIMAP2_SAMTOOLS_IMAGE and states the minimap2
+# and samtools it ran, which must be the releases of MINIMAP2_IMAGE and
+# SAMTOOLS_IMAGE, the images of step 02.
+VERS="${NF_OUT}/pipeline_info/software_versions.yml"
+align_version() {
+  awk -v k="$1" '/^"/ {inblock = ($0 ~ /[":]ALIGN_MINIMAP2":$/); next}
+    inblock && $1 == k ":" {print $2; exit}' "$VERS" 2>/dev/null
+}
+MM_WANT=${MINIMAP2_IMAGE##*:}; MM_WANT=${MM_WANT%%--*}
+ST_WANT=${SAMTOOLS_IMAGE##*:}; ST_WANT=${ST_WANT%%--*}
+MM_GOT=$(align_version minimap2)
+check "ALIGN_MINIMAP2 ran minimap2 ${MM_WANT} (got '${MM_GOT}')" has "^${MM_WANT//./\\.}(-r[0-9]+)?\$" "$MM_GOT"
+check_eq "ALIGN_MINIMAP2 ran samtools" "$(align_version samtools)" "$ST_WANT"
 
 R="nf-fastq/${P}"
 # --- alignment ---------------------------------------------------------------------

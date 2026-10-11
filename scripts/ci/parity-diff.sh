@@ -4,7 +4,10 @@
 # without a red check.
 #
 # Items, each read the same way on both sides:
-#   alignment     samtools flagstat of the BAM (reads, mapped, duplicates)
+#   alignment     the BAM record by record: the md5 of every record
+#                 (samtools view), the md5 of the header without its @PG
+#                 lines (they hold each side's command lines), samtools
+#                 flagstat, and samtools idxstats, read through the index
 #   variants      bcftools isec of the two VCFs: records only in one side, and
 #                 shared records whose FILTER or GT differ
 #   gvcf          every gVCF record (CHROM POS REF ALT FILTER END GT)
@@ -87,8 +90,18 @@ canon() {
   f="${dir}/$(path "$side" "$item" "$s" | awk '{print $1}')"
   case "$item" in
     alignment)
+      # shellcheck disable=SC2016  # $1 belongs to the inner bash
       docker run --rm -u "$(id -u):$(id -g)" -v "$(dirname "$f"):/d:ro" "$SAMTOOLS_IMAGE" \
-        samtools flagstat "/d/$(basename "$f")" ;;
+        bash -euo pipefail -c '
+          b=/d/$1
+          # Each value is assigned first, so a failed samtools stops the
+          # script (set -e does not see a failure inside an echo argument).
+          n=$(samtools view -c "$b")
+          rec=$(samtools view "$b" | md5sum | cut -d " " -f 1)
+          hdr=$(samtools view -H "$b" | { grep -v "^@PG" || true; } | md5sum | cut -d " " -f 1)
+          printf "records: %s\nrecords md5: %s\nheader without @PG md5: %s\n" "$n" "$rec" "$hdr"
+          samtools flagstat "$b"
+          samtools idxstats "$b"' _ "$(basename "$f")" ;;
     gvcf)
       docker run --rm -u "$(id -u):$(id -g)" -v "$(dirname "$f"):/d:ro" "$BCFTOOLS_IMAGE" \
         bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%FILTER\t%INFO/END\t[%GT]\n' "/d/$(basename "$f")" ;;
@@ -266,6 +279,13 @@ self_test() {
     case "$1" in
       alignment)
         in_t --sam "samtools view -b -F 1024 -o /n/x.bam /n/$(path nf alignment "$s"); mv /n/x.bam /n/$(path nf alignment "$s"); samtools index /n/$(path nf alignment "$s")" ;;
+      alignment-record)
+        # One tag added to the first record: the counts of flagstat and
+        # idxstats stay the same, only the records differ.
+        in_t --sam "f=/n/$(path nf alignment "$s")
+              samtools view -h \$f | awk -v OFS='\t' '/^@/ {print; next} !d {\$0 = \$0 \"\tXP:Z:planted\"; d=1} {print}' \
+                | samtools view -b -o /n/x.bam -
+              mv /n/x.bam \$f; samtools index \$f" ;;
       variants) drop_first "$(path nf variants "$s")" ;;
       variants-gt)
         in_t "f=/n/$(path nf variants "$s")
@@ -305,6 +325,11 @@ PY
       expect "${what[$item]}" '^\| variants \| FAIL: differs \| bash only 1, '
       fresh; plant variants-gt
       expect "a genotype changed" '^\| variants \| FAIL: differs \| bash only 0, Nextflow only 0, shared [0-9]+, shared with another FILTER or GT [1-9]'
+    elif [ "$item" = alignment ]; then
+      expect "${what[$item]}" '^\| alignment \| FAIL: differs'
+      # The records md5 line is the one that differs; flagstat counts the same.
+      fresh; plant alignment-record
+      expect "a tag added to one record (flagstat counts the same)" '^\| alignment \| FAIL: differs \| bash [0-9]+ lines, Nextflow [0-9]+; 2 lines differ'
     else
       expect "${what[$item]}" "^\\| ${item} \\| FAIL: differs"
     fi

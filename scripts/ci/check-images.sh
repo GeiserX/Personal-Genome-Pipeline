@@ -195,6 +195,12 @@ self_test() {
   echo '/* Then quay.io/biocontainers/expansionhunter:5.0.0 again. */' >> "${tmp}/exempt-twice/docs/stylesheets/theme.css"
   expect exempt-twice '^FAIL: docs/stylesheets/theme\.css:[0-9]+ names the image quay\.io/biocontainers/expansionhunter:5\.0\.0;'
 
+  # The bwa-mem2 tag scripts/ci/settle-doubts.sh once repeated: it reads
+  # BWAMEM2_IMAGE from versions.env now, so that literal must fail again.
+  copy settle-literal
+  echo '# quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5' >> "${tmp}/settle-literal/scripts/ci/settle-doubts.sh"
+  expect settle-literal '^FAIL: scripts/ci/settle-doubts\.sh:[0-9]+ names the image quay\.io/biocontainers/bwa-mem2:2\.2\.1--hd03093a_5;'
+
   # A module process with no selector in conf/containers.config.
   copy no-selector
   printf '%s\n' 'process NEW_TOOL {' '    script:' '    """' '    true' '    """' '}' \

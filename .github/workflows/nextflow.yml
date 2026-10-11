@@ -175,6 +175,23 @@ jobs:
           echo "samples with a BAM: ${bams}; T1K_BUILD tasks: ${build}; HLA_TYPING tasks: ${typing}; INDEXCOV tasks: ${indexcov}; DEEPVARIANT tasks: ${dv}"
           [ "$bams" -ge 2 ] && [ "$build" -eq 1 ] && [ "$typing" -eq "$bams" ] && [ "$indexcov" -eq "$bams" ] && [ "$dv" -eq 2 ]
 
+      # A FASTQ row is aligned by one task that pipes minimap2 into samtools
+      # fixmate, sort and markdup, as step 02 does: no task writes the SAM to
+      # disk (it was a <sample>.sam.gz in the work directory, 119 GB in one
+      # observed 30x run). The stub sheet has a FASTQ row, so ALIGN_MINIMAP2
+      # must have run: that count is the control for the empty find.
+      - name: The FASTQ row is aligned in one task, with no SAM file in the work directory
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          work="${RUNNER_TEMP}/all-tools-work"
+          count() { find "$work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+            | grep -cE "(^|:)$1( |\$)" || true; }
+          align=$(count ALIGN_MINIMAP2) markdup=$(count ALIGN_MARKDUP)
+          sams=$(find "$work" -type f \( -name '*.sam' -o -name '*.sam.gz' \) | wc -l)
+          find "$work" -type f \( -name '*.sam' -o -name '*.sam.gz' \) | awk 'NR <= 5'
+          echo "ALIGN_MINIMAP2 tasks: ${align}; ALIGN_MARKDUP tasks: ${markdup}; SAM files in the work directory: ${sams}"
+          [ "$align" -ge 1 ] && [ "$markdup" -eq 0 ] && [ "$sams" -eq 0 ]
+
       # The common path of an existing user: VCF+BAM rows only, and a
       # reference with no .sr.mmi beside it. The FASTQ channel is empty, so
       # MINIMAP2_INDEX and the alignment must not run, and the run must still
