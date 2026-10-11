@@ -361,3 +361,51 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/settle-doubts.sh "${RUNNER_TEMP}/settle"
+
+  # TEMPORARY (removed before review): reproduce the fake-docker flake.
+  flake-loop:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: bash version
+        run: bash --version | head -1
+      - name: run_parallel with instant jobs, 3000 times
+        run: |
+          eval "$(sed -n '/^run_parallel() {/,/^}/p' scripts/lib/common.sh)"
+          fast() { :; }
+          for units in 2 3 5; do
+            n=0; for i in $(seq 3000); do run_parallel 2 fast $(seq "$units") || n=$((n + 1)); done
+            echo "units=${units} max=2: ${n} of 3000 returned 1 although every job exited 0"
+          done
+      - name: what wait -n returns, instrumented
+        run: |
+          eval "$(sed -n '/^run_parallel() {/,/^}/p' scripts/lib/common.sh | sed 's/wait -n || rc=1/{ wait -n; r=$?; echo "wait -n -> $r" >> "$RUNNER_TEMP\/codes"; [ "$r" -eq 0 ] || rc=1; }/')"
+          declare -f run_parallel
+          fast() { :; }
+          : > "$RUNNER_TEMP/codes"
+          for i in $(seq 3000); do run_parallel 2 fast 1 2 3 || true; done
+          sort "$RUNNER_TEMP/codes" | uniq -c
+      - name: wait PID after wait -n still returns the status
+        run: |
+          f() { exit "$1"; }
+          f 3 & p1=$!; f 0 & p2=$!
+          wait -n; echo "wait -n -> $?"
+          wait -n; echo "wait -n -> $?"
+          wait "$p1"; echo "wait p1 (exit 3) -> $?"
+          wait "$p2"; echo "wait p2 (exit 0) -> $?"
+          f 4 & p3=$!; /bin/sleep 0.3; f 0 & p4=$!; /bin/sleep 0.3
+          wait "$p3"; echo "wait p3 (exit 4, already dead) -> $?"
+          wait "$p4"; echo "wait p4 (exit 0, already dead) -> $?"
+      - name: the fake-docker case 60 times
+        run: |
+          n=0
+          for i in $(seq 60); do
+            if ! scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1; then
+              n=$((n + 1)); grep -E 'ASSERT FAIL|exit [0-9]+$' "$RUNNER_TEMP/case.log" | grep -v 'exit 0$' | head -5
+            fi
+          done
+          echo "sv-mito-telomere-steps-scatter: ${n} of 60 failed"
