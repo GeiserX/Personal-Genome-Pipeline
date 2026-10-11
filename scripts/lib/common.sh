@@ -574,22 +574,26 @@ scatter_beds() {
 # Here `wait -n` only throttles and its status is not counted.
 # Needs bash 4.3 (wait -n); the step scripts need 4.4.
 run_parallel() {
-  local max=$1 fn=$2 a p n rc=0
-  local pids=()
+  local max=$1 fn=$2 a p rc=0
+  local pids=() live=() still=()
   shift 2
   for a in "$@"; do
-    # Start the next unit once fewer than MAX are alive. A 127 from `wait -n`
-    # ends the wait rather than looping on it.
+    # Start the next unit once fewer than MAX are alive. `live` drops a PID
+    # the first time `kill -0` fails, so a PID the kernel later reuses for
+    # another process never holds a slot. A 127 from `wait -n` ends the wait
+    # rather than looping on it.
     while :; do
-      n=0
-      for p in ${pids[@]+"${pids[@]}"}; do
-        if kill -0 "$p" 2>/dev/null; then n=$((n + 1)); fi
+      still=()
+      for p in ${live[@]+"${live[@]}"}; do
+        if kill -0 "$p" 2>/dev/null; then still+=("$p"); fi
       done
-      [ "$n" -ge "$max" ] || break
+      live=(${still[@]+"${still[@]}"})
+      [ "${#live[@]}" -ge "$max" ] || break
       wait -n || [ $? -ne 127 ] || break
     done
     "$fn" "$a" &
     pids+=("$!")
+    live+=("$!")
   done
   for p in ${pids[@]+"${pids[@]}"}; do
     wait "$p" || rc=1
