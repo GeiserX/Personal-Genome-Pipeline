@@ -76,7 +76,7 @@ nextflow run main.nf \
 | `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
 | `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex. With `sample_qc`, the same applies to the sex somalier infers from the reads |
 
-The trimmed reads stay in the work directory; the fastp reports are published. A run from FASTQ needs the same memory as step 02 for alignment (minimap2 peaks near 10 GB on a 1.8 Gb reference) and DeepVariant's (32 GB by default); `--max_memory` caps both.
+The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: minimap2 peaked near 10 GB on a 1.8 Gb reference ([step 02](02-alignment.md#resource-requirements)), and `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`). DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
 
 ### Resume After Failure
 
@@ -87,6 +87,8 @@ nextflow run main.nf -resume [same params as before]
 ```
 
 The failed tasks and the ones downstream of them run again. A task that was running when the run stopped starts over: DeepVariant is a single task, so a run stopped during it loses that task's progress. Run the pipeline inside tmux or screen, or with nohup, so closing the terminal does not stop it. Nextflow keys an input file by its path, size and modification time, not by its content: a file rewritten in place with the same size and time is not seen as changed.
+
+One change reruns the alignment once: since alignment and duplicate marking became one task (`ALIGN_MINIMAP2`, which no longer writes a `.sam.gz`), the first `-resume` of a run from FASTQ started with an earlier version reuses fastp (and the minimap2 index, when the run built one) but aligns again, and every task after the alignment runs again too.
 
 One exception, once: Nextflow 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, so the first `-resume` of a work directory written by 25.10 reruns every process that takes the `meta` map, which is every process here. Start a fresh work directory for the first run after the upgrade instead of waiting on a resume that caches nothing.
 
@@ -243,7 +245,7 @@ bcftools index -t SAMPLE.vcf.gz
 
 ## The pipeline and the single-step scripts
 
-Run the pipeline for a sample: it runs every step a default run selects, in parallel where the inputs allow, and `-resume` reruns only what changed. Run a numbered script to run or rerun one step by hand, on the layout `run-all.sh` and `setup.sh` use; the scripts and the modules run the same commands from the same images (see the parity section below). The pipeline needs Java 17 or later and Nextflow beside Docker; the scripts need Docker only. The HPC/Singularity profile exists but is untested.
+Run the pipeline for a sample: it runs every step a default run selects, in parallel where the inputs allow, and `-resume` reruns only what changed. Run a numbered script to run or rerun one step by hand, on the layout `run-all.sh` and `setup.sh` use; the scripts and the modules run the same commands at the same tool releases (see the parity section below). The pipeline needs Java 17 or later and Nextflow beside Docker; the scripts need Docker only. The HPC/Singularity profile exists but is untested.
 
 ---
 
@@ -255,11 +257,11 @@ The pipeline starts from paired short-read FASTQ, from a BAM or from a VCF. The 
 
 ### Bash vs Nextflow parity
 
-The pipeline and the scripts run the same commands from the same images, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
+The pipeline and the scripts run the same commands at the same tool releases, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
 
 | Item | Compared |
 |---|---|
-| alignment | `samtools flagstat` of the two BAMs |
+| alignment | the two BAMs record by record: the md5 of every record (`samtools view`), the md5 of the header without its `@PG` lines (each side's command lines), `samtools flagstat` and `samtools idxstats` (read through the index) |
 | variants | `bcftools isec` of the two VCFs: records in one only, and shared records with another FILTER or GT |
 | gvcf | every gVCF record |
 | clinvar | the rows of `<sample>_clinvar_hits.tsv` |
@@ -275,7 +277,7 @@ Where a module and its script differ on purpose:
 
 | Step | Script | Module |
 |---|---|---|
-| Alignment (02) | pipes minimap2 into samtools, each in its own image | `ALIGN_MINIMAP2` writes the SAM compressed with `gzip -1` and `ALIGN_MARKDUP` reads it: a task runs in one image, and no image in `versions.env` holds both tools. Same commands and the same BAM, plus a temporary file in the work directory, larger than the gzipped FASTQ: one 30x run wrote 119 GB |
+| Alignment (02) | pipes minimap2 into samtools, each in its own image (`MINIMAP2_IMAGE`, `SAMTOOLS_IMAGE`) | `ALIGN_MINIMAP2` runs the same pipe in one task, so in one image: `MINIMAP2_SAMTOOLS_IMAGE`, a BioContainers image with both tools at the releases of those two. `scripts/ci/check-images.sh` fails when the releases part, and the parity check above compares the BAMs record by record. The task writes no SAM file |
 | Sex check (16) | runs beside the other steps and stops itself on a mismatch | `INDEXCOV` runs before every BAM step, and a mismatch stops the run before DeepVariant starts |
 | DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |

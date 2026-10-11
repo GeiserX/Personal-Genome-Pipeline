@@ -2,7 +2,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     UPSTREAM — From reads to a checked BAM, a VCF and a gVCF
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    FASTQ rows:   FASTP (unless --skip_trim) -> ALIGN_MINIMAP2 -> ALIGN_MARKDUP
+    FASTQ rows:   FASTP (unless --skip_trim) -> ALIGN_MINIMAP2 (minimap2 piped
+                  into samtools fixmate, sort and markdup in one task)
     BAM rows without a VCF join them for calling.
 
     Every BAM, also the one of a VCF+BAM row, then goes through INDEXCOV,
@@ -18,7 +19,6 @@
 include { FASTP          } from '../modules/local/fastp/main'
 include { MINIMAP2_INDEX } from '../modules/local/align_minimap2/main'
 include { ALIGN_MINIMAP2 } from '../modules/local/align_minimap2/main'
-include { ALIGN_MARKDUP  } from '../modules/local/align_minimap2/main'
 include { INDEXCOV       } from '../modules/local/indexcov/main'
 include { DEEPVARIANT    } from '../modules/local/deepvariant/main'
 
@@ -60,13 +60,12 @@ workflow UPSTREAM {
     }
 
     //
-    // Alignment, duplicate marking
+    // Alignment and duplicate marking, one task
     //
     ALIGN_MINIMAP2(ch_reads, ch_index)
-    ALIGN_MARKDUP(ALIGN_MINIMAP2.out.sam)
-    ch_versions = ch_versions.mix(ALIGN_MINIMAP2.out.versions, ALIGN_MARKDUP.out.versions)
+    ch_versions = ch_versions.mix(ALIGN_MINIMAP2.out.versions)
 
-    ch_to_call = ALIGN_MARKDUP.out.bam.mix(ch_bam_call)
+    ch_to_call = ALIGN_MINIMAP2.out.bam.mix(ch_bam_call)
     ch_all_bam = ch_to_call.mix(ch_bam_given)
 
     //

@@ -15,6 +15,7 @@ Duplicates are copies of one DNA fragment (PCR or optical copies). They are not 
 ## Docker Images
 - `MINIMAP2_IMAGE` (minimap2 aligner)
 - `SAMTOOLS_IMAGE` (samtools fixmate, sort, markdup with its index)
+- `MINIMAP2_SAMTOOLS_IMAGE` (the Nextflow pipeline only: its task `ALIGN_MINIMAP2` runs the same pipe in one container, so it uses one BioContainers image that holds minimap2 and samtools at the releases of the two images above)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 

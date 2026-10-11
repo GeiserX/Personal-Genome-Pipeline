@@ -212,7 +212,7 @@ jobs:
           count() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
             | grep -cE "(^|:)$2( |\$)" || true; }
           bad=0
-          for p in MINIMAP2_INDEX ALIGN_MINIMAP2 ALIGN_MARKDUP; do
+          for p in MINIMAP2_INDEX ALIGN_MINIMAP2; do
             here=$(count "${RUNNER_TEMP}/vcf-bam-work" "$p") control=$(count "${RUNNER_TEMP}/all-tools-work" "$p")
             echo "${p}: ${here} tasks here, ${control} in the all-tools run"
             [ "$here" -eq 0 ] && [ "$control" -ge 1 ] || bad=1
@@ -243,9 +243,9 @@ jobs:
       # retry from doubling it. Expected: DEEPVARIANT gets --max_time on its
       # first attempt (Nextflow 26.04.7 can abort the whole run when a task
       # passes its time limit, nextflow-io/nextflow#7569; read in its source,
-      # not reproduced), FASTP and ALIGN_MARKDUP get the 8 CPUs of steps 01b
-      # and 02, ALIGN_MARKDUP THREADS + 4 GB, and MANTA, CNVPYTOR and VEP what
-      # steps 04, 18 and 13 give them.
+      # not reproduced), FASTP gets the 8 CPUs of step 01b, ALIGN_MINIMAP2
+      # (minimap2 piped into samtools) the process_high label's 8 CPUs and
+      # 32 GB, and MANTA, CNVPYTOR and VEP what steps 04, 18 and 13 give them.
       - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -255,7 +255,7 @@ jobs:
           executor.memory = '64.GB'
           process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
           process {
-              withName: 'DEEPVARIANT|FASTP|ALIGN_MARKDUP|MANTA|CNVPYTOR|VEP' {
+              withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP' {
                   beforeScript = { task.attempt == 1 ? 'exit 137' : 'true' }
               }
           }
@@ -276,7 +276,7 @@ jobs:
           want = {
               'DEEPVARIANT':   (8, 32 * GB, 48 * H),
               'FASTP':         (8, 8 * GB, 8 * H),
-              'ALIGN_MARKDUP': (8, 12 * GB, 8 * H),
+              'ALIGN_MINIMAP2': (8, 32 * GB, 24 * H),
               'MANTA':         (8, 16 * GB, 24 * H),
               'CNVPYTOR':      (4, 8 * GB, 24 * H),
               'VEP':           (8, 16 * GB, 24 * H),

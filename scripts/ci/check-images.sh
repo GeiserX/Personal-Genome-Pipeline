@@ -13,6 +13,11 @@
 #      process has a selector (scripts/ci/gen-containers-config.sh --check).
 #   3. docs/versions.md is what versions.env produces
 #      (scripts/ci/gen-versions-doc.sh --check).
+#   4. MINIMAP2_SAMTOOLS_IMAGE, the one image of the Nextflow alignment task,
+#      holds the releases of MINIMAP2_IMAGE and SAMTOOLS_IMAGE, the two
+#      images of step 02. Its tag is a hash, so its versions.env comment
+#      names them (minimap2=X,samtools=Y); the container test checks that
+#      comment against the binaries in the image.
 #
 # Usage:
 #   scripts/ci/check-images.sh               check this repository
@@ -125,9 +130,41 @@ sys.exit(bad)
 PY
 }
 
+# coupled: rule 4. Prints one line per tool, exit 1 if one disagrees.
+coupled() {
+  python3 - "${ROOT}/versions.env" <<'PY'
+import re, sys
+env = open(sys.argv[1]).read()
+def line(var):
+    m = re.search(r'^%s="([^"]*)"(.*)$' % var, env, re.M)
+    return (m.group(1), m.group(2)) if m else (None, "")
+def release(var):
+    value = line(var)[0] or ""
+    tag = value.rsplit("/", 1)[-1]
+    return tag.split(":", 1)[1].split("--")[0] if ":" in tag else None
+image, comment = line("MINIMAP2_SAMTOOLS_IMAGE")
+if image is None:
+    print("FAIL: MINIMAP2_SAMTOOLS_IMAGE is not set in versions.env")
+    sys.exit(1)
+held = {k: v.rstrip(".") for k, v in re.findall(r"\b(minimap2|samtools)=([0-9][0-9A-Za-z.]*)", comment)}
+bad = 0
+for tool, var in (("minimap2", "MINIMAP2_IMAGE"), ("samtools", "SAMTOOLS_IMAGE")):
+    want, got = release(var), held.get(tool)
+    if want and got == want:
+        print("OK: MINIMAP2_SAMTOOLS_IMAGE holds %s %s, the release of %s" % (tool, got, var))
+    else:
+        print("FAIL: MINIMAP2_SAMTOOLS_IMAGE says %s=%s in its versions.env comment, but %s is %s: pin a"
+              " BioContainers mulled image with %s %s and name it in that comment (docs/updating.md, Held pins)"
+              % (tool, got or "(nothing)", var, want or "(unset)", tool, want or "?"))
+        bad = 1
+sys.exit(bad)
+PY
+}
+
 check() {
   local fail=0
   if scan; then echo "OK: no file names an image outside versions.env and the files generated from it."; else fail=1; fi
+  coupled || fail=1
   "${ROOT}/scripts/ci/gen-containers-config.sh" --check || fail=1
   "${ROOT}/scripts/ci/gen-versions-doc.sh" --check || fail=1
   return "$fail"
@@ -199,6 +236,15 @@ self_test() {
   copy settle-literal
   echo '# quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5' >> "${tmp}/settle-literal/scripts/ci/settle-doubts.sh"
   expect settle-literal '^FAIL: scripts/ci/settle-doubts\.sh:[0-9]+ names the image quay\.io/biocontainers/bwa-mem2:2\.2\.1--hd03093a_5;'
+
+  # SAMTOOLS_IMAGE or MINIMAP2_IMAGE bumped (a Renovate PR) while the
+  # alignment task's image still holds the old release.
+  copy coupled-samtools
+  sed -i.bak -E 's|^(SAMTOOLS_IMAGE="[^"]*:)[^"]*"|\19.99"|' "${tmp}/coupled-samtools/versions.env"
+  expect coupled-samtools '^FAIL: MINIMAP2_SAMTOOLS_IMAGE says samtools=[0-9][^ ]* in its versions\.env comment, but SAMTOOLS_IMAGE is 9\.99:'
+  copy coupled-minimap2
+  sed -i.bak -E 's|^(MINIMAP2_IMAGE="[^"]*:)[^"]*"|\19.99--h0_0"|' "${tmp}/coupled-minimap2/versions.env"
+  expect coupled-minimap2 '^FAIL: MINIMAP2_SAMTOOLS_IMAGE says minimap2=[0-9][^ ]* in its versions\.env comment, but MINIMAP2_IMAGE is 9\.99:'
 
   # A module process with no selector in conf/containers.config.
   copy no-selector

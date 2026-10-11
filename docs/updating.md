@@ -52,6 +52,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 | pypgx 0.26.0 | only `0.26.0--` tags | 0.27.0 pulled pandas 3.0 and broke every gene while its smoke test still passed | upstream releases the pandas fix and a pypgx-bundle tag of the same version exists; move `PYPGX_BUNDLE_VERSION` with it |
 | plink2 2.00a5.10 | disabled | the only versioned tag `pgscatalog/plink2` ships, and the build pgsc_calc uses | a newer tag from that publisher |
 | Manta, Strelka2, duphold, Octopus, GRIDSS | disabled | legacy: archived or quiet upstream | bump by hand after a run on the fixture |
+| minimap2+samtools image (`MINIMAP2_SAMTOOLS_IMAGE`) | disabled | BioContainers tags it with a hash, not a version; the Nextflow alignment task needs both tools in one image | never by itself: it moves by hand with `MINIMAP2_IMAGE` and `SAMTOOLS_IMAGE`. `scripts/ci/check-images.sh` fails a bump of either until the versions comment of `MINIMAP2_SAMTOOLS_IMAGE` names the new release. Request the new pair in [BioContainers/multi-package-containers](https://github.com/BioContainers/multi-package-containers) (`combinations/hash.tsv`), pin the tag it publishes and update that comment; the container test runs both tools' version commands in it |
 | Sniffles 2.8.0 | none needed | 2.8.1 has no biocontainer tag in the normal shape yet | Renovate proposes it once the tag exists |
 
 ## What to check by hand
