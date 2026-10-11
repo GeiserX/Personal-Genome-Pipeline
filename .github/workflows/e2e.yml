@@ -362,7 +362,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/settle-doubts.sh "${RUNNER_TEMP}/settle"
 
-  # TEMPORARY (removed before review): reproduce the fake-docker flake.
+  # TEMPORARY (removed before review): the fake-docker flake, before and after
+  # a run_parallel that counts its own jobs and waits for each PID.
   flake-loop:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -371,41 +372,114 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: wait PID after wait -n still returns the status
+      - name: Two jobs dead before one wait -n (bash 5.2)
         shell: bash {0}
         run: |
+          bash --version | head -1
           f() { exit "$1"; }
-          f 3 & p1=$!; f 0 & p2=$!
-          wait -n; echo "wait -n -> $?"
-          wait -n; echo "wait -n -> $?"
-          wait -n; echo "third wait -n (nothing left) -> $?"
-          wait "$p1"; echo "wait p1 (exit 3) -> $?"
-          wait "$p2"; echo "wait p2 (exit 0) -> $?"
-          f 4 & p3=$!; /bin/sleep 0.3; f 0 & p4=$!; /bin/sleep 0.3
-          wait "$p3"; echo "wait p3 (exit 4, already dead) -> $?"
-          wait "$p4"; echo "wait p4 (exit 0, already dead) -> $?"
+          f 0 & f 5 & /bin/sleep 0.3
+          wait -n; echo "first wait -n -> $?"
+          wait -n; echo "second wait -n -> $? (127: the other dead job was dropped unreported)"
       - name: the fake-docker case 300 times as it is
         run: |
           n=0
           for i in $(seq 300); do
-            if ! scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1; then
-              n=$((n + 1)); echo "iteration ${i}:"; grep -E 'ASSERT FAIL' "$RUNNER_TEMP/case.log" | head -3
-            fi
+            scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1 \
+              || { n=$((n + 1)); echo "iteration ${i}: $(grep -m1 'ASSERT FAIL' "$RUNNER_TEMP/case.log")"; }
           done
-          echo "sv-mito-telomere-steps-scatter as it is: ${n} of 300 failed"
-      - name: the fake-docker case 300 times, instrumented
+          echo "as it is: ${n} of 300 failed"
+      - name: the fake-docker case 300 times with the run_parallel fix
         run: |
-          # Log every wait -n status, every unit's exit and the command that ends 03b.
-          sed -i 's/wait -n || rc=1/{ wait -n; r=$?; echo "wait -n -> $r (running=$running)" >> \/tmp\/flake.log; [ "$r" -eq 0 ] || rc=1; }/' scripts/lib/common.sh
-          sed -i 's/^  mv -f "${out}.tmp" "$out"$/  mv -f "${out}.tmp" "$out"; echo "unit done: ${out##*\/}" >> \/tmp\/flake.log/' scripts/lib/common.sh
-          sed -i '0,/^set -euo pipefail$/s//set -Eeuo pipefail; trap '"'"'echo "ERR rc=$? line=$LINENO: $BASH_COMMAND" >> \/tmp\/flake.log'"'"' ERR/' scripts/03b-freebayes.sh
-          git diff
+          python3 - scripts/lib/common.sh <<'PY'
+          import re, sys
+          p = sys.argv[1]; s = open(p).read()
+          fix = """run_parallel() {
+            local max=$1 fn=$2 a p n rc=0
+            local -a pids=()
+            shift 2
+            for a in "$@"; do
+              while :; do
+                n=0
+                for p in ${pids[@]+"${pids[@]}"}; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done
+                [ "$n" -ge "$max" ] || break
+                wait -n || [ $? -ne 127 ] || break
+              done
+              "$fn" "$a" &
+              pids+=("$!")
+            done
+            for p in ${pids[@]+"${pids[@]}"}; do wait "$p" || rc=1; done
+            return "$rc"
+          }
+          """
+          s2 = re.sub(r"(?ms)^run_parallel\(\) \{.*?^\}\n", fix.replace("\\", "\\\\"), s, count=1)
+          assert s2 != s
+          open(p, "w").write(s2)
+          PY
+          sed -n '/^run_parallel() {/,/^}/p' scripts/lib/common.sh
           n=0
           for i in $(seq 300); do
-            : > /tmp/flake.log
-            if ! scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1; then
-              n=$((n + 1)); echo "iteration ${i}:"; grep -E 'ASSERT FAIL' "$RUNNER_TEMP/case.log" | head -3; tail -15 /tmp/flake.log
-            fi
+            scripts/ci/run-fake-docker-suite.sh sv-mito-telomere-steps-scatter > "$RUNNER_TEMP/case.log" 2>&1 \
+              || { n=$((n + 1)); echo "iteration ${i}: $(grep -m1 'ASSERT FAIL' "$RUNNER_TEMP/case.log")"; }
           done
-          echo "instrumented: ${n} of 300 failed"
-          echo "last passing log:"; cat /tmp/flake.log
+          echo "with the fix: ${n} of 300 failed"
+          # The fix still reports a failing unit.
+          eval "$(sed -n '/^run_parallel() {/,/^}/p' scripts/lib/common.sh)"
+          g() { [ "$1" != b ]; }
+          if run_parallel 2 g a b c d; then echo "ERROR: a failing unit was not reported"; exit 1; fi
+          echo "a failing unit is still reported"
+          [ "$n" -eq 0 ]
+
+  # TEMPORARY (removed before review): the hardening case must go red when one
+  # HTML_REPORT arm's file name is wrong, and green again without the fault.
+  report-arm-control:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Free disk space and pick the work area
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          work="${RUNNER_TEMP}/e2e-work"
+          if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            work=/mnt/e2e-work
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+          fi
+          echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "26.04.7"
+      - name: Restore cached images
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images.tar.zst
+          key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
+      - name: Load cached images
+        run: |
+          if [ -f "${RUNNER_TEMP}/images.tar.zst" ]; then
+            zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
+            rm -f "${RUNNER_TEMP}/images.tar.zst"
+          fi
+      - name: Planted fault, then the same case without it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed -i 's/\${id}_sv\.vcf\.gz)/${id}_sv_planted.vcf.gz)/' modules/local/html_report/main.nf
+          git diff
+          rc=0
+          scripts/ci/e2e-run.sh '@(20-align-02|21-deepvariant-03|bash-step-19-delly|nextflow-hardening-*).sh' || rc=$?
+          echo "WITH the planted arm name: e2e-run.sh exited ${rc}"
+          grep -E '^\[FAIL\]' "${E2E_WORK}/logs/nextflow-hardening-2-nf.log" || true
+          git checkout modules/local/html_report/main.nf
+          rc2=0
+          scripts/ci/e2e-run.sh 'nextflow-hardening-2-nf.sh' || rc2=$?
+          echo "WITHOUT the planted arm name: e2e-run.sh exited ${rc2}"
+          grep -E '^\[FAIL\]' "${E2E_WORK}/logs/nextflow-hardening-2-nf.log" || true
+          [ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ]
