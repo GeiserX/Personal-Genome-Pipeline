@@ -35,10 +35,10 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 | **Subtotal per sample** | **150-250 GB** | | |
 | Trimmed FASTQ pair, in `<sample>/nextflow/work` | 60-90 GB | `run-all.sh` from FASTQ: fastp | After a good run |
 | Alignment intermediate (`.sam.gz`), in `work/` | 119 GB in one 30x run | `run-all.sh` from FASTQ: minimap2 | After a good run |
-| Second copy of the BAM, in `work/` | 80-120 GB | `run-all.sh` from FASTQ: duplicate marking | After a good run |
+| Second copy of the BAM, in `work/` (none when published by hard link) | 80-120 GB | `run-all.sh` from FASTQ: duplicate marking | After a good run |
 | **Peak per sample from FASTQ, until `work/` is deleted** | **~410-580 GB** | | |
 
-A run from FASTQ needs more space than a run from a BAM. Until you delete `<sample>/nextflow/work`, it holds the trimmed reads (60-90 GB, [step 1b](01b-fastp-qc.md)), the alignment intermediate (119 GB in one 30x run, larger than the gzipped FASTQ) and a second copy of the BAM (80-120 GB), because the pipeline publishes the BAM by copying it (`publish_dir_mode = 'copy'` in `nextflow.config`). Once the run succeeded and the results look right, delete `<sample>/nextflow/work`; the next run then starts from scratch.
+A run from FASTQ needs more space than a run from a BAM. Until you delete `<sample>/nextflow/work`, it holds the trimmed reads (60-90 GB, [step 1b](01b-fastp-qc.md)), the alignment intermediate (119 GB in one 30x run, larger than the gzipped FASTQ) and a second copy of the BAM (80-120 GB) when the pipeline publishes the BAM by copying it (`publish_dir_mode = 'copy'` in `nextflow.config`). `run-all.sh` publishes by hard link instead, so the BAM is stored once, when a probe link from `work/` to the output directory works and it runs as root or Linux's `fs.protected_hardlinks` is 0; it keeps the copy when you pass `--publish_dir_mode`, `-w`, `-work-dir`, `-c` or `-config`, or set `NXF_WORK`. Once the run succeeded and the results look right, delete `<sample>/nextflow/work`; the next run then starts from scratch.
 
 ### Shared Reference Data (One-Time)
 
