@@ -109,7 +109,7 @@ jobs:
       - name: freshness.py self-test (a bogus image, a missing tag and a bogus URL must exit non-zero)
         run: python3 scripts/ci/freshness.py --self-test
 
-      - name: check-links.sh self-test (a 404, no answer and an empty tree must fail)
+      - name: check-links.sh self-test (a 404, no answer and an empty tree must fail; a github.com 5xx is asked again, and one that lasts fails naming the outage)
         run: scripts/ci/check-links.sh --self-test
 
       - name: check-pgs-labels.sh self-test (a wrong label, an empty answer and no answer must fail)

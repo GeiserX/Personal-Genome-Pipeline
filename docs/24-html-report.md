@@ -23,8 +23,15 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 All output directories from previous pipeline steps. The script detects which steps have been run. It reads the bash layout (`${GENOME_DIR}/${SAMPLE}`) and the Nextflow one (`--outdir/${SAMPLE}`, for example `roh/`, `coverage/`, `hla/`, `pharmcat/`), so `GENOME_DIR=<outdir> ./scripts/24-html-report.sh <sample>` reports on a Nextflow run.
 
 Two more files, when present:
+
 - `${SAMPLE}/run_manifest.tsv` (`bin/write_manifest.sh`): the pipeline commit, `versions.env`, the digest of every image, the ClinVar file date, the VEP cache, the PCGR and pypgx bundles, the HLA database release and the header of each PGS scoring file. `run-all.sh` writes it when a run starts and again just before this step, so an image pulled during the run gets its digest; this step writes one when the sample has none.
-- `${SAMPLE}/logs/run_status.tsv`: when the latest `run-all.sh` run started, each step it skipped and why, and, once the pipeline has finished, `ok` for each step it ran and the result of each script it ran after the pipeline.
+- `${SAMPLE}/logs/run_status.tsv`: when the latest `run-all.sh` run started, then one line per step. A step it did not start is `skipped (<reason>)`, for example `skipped (no BAM)` or `skipped (not in TOOLS)`. Once the pipeline has ended, each step it started is one of:
+    - `ok`: the pipeline finished.
+    - `failed`: the step's task failed. A report-only tool's failure is ignored by the pipeline, which goes on without it.
+    - `not finished`: the pipeline stopped on another step's failure.
+    - `skipped (expansion_hunter failed)`: Stranger (step 9b), which reads ExpansionHunter's calls.
+
+    Each opt-in step script it ran after the pipeline is `ok` or `failed`. The two reports get no line. After a failed pipeline `run-all.sh` skips the opt-in scripts and still writes this report and the text report.
 
 ## Command
 
@@ -60,7 +67,7 @@ The report contains:
 
 ## Results from an earlier run
 
-A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished: after a failed run every section from before it is marked stale until the same command, with `-resume`, completes. A step you re-ran by hand after that run writes a newer file and is shown as current.
+A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished. After a failed run they are `not finished` (the failed one `failed`), so every section from before that run is marked stale until the same command, with `-resume`, completes; a section whose file that run wrote is shown as current. A step you re-ran by hand after that run writes a newer file and is shown as current. Variant calling (step 03) has no line in `logs/run_status.tsv`, so its section is never marked stale, even when its VCF is older than the run.
 
 A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports (the CYP2D6 rows too), and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 

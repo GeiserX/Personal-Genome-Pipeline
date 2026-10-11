@@ -4,6 +4,9 @@
 # pypgx (bundle linked under the task's HOME), telomere_hunter (--cytoband)
 # beside clinvar, pharmcat, mosdepth, delly, vcfanno and mito_haplogroup,
 # and survivor_merge and y_haplogroup, so their process bodies run for real.
+# html_report then runs the real HTML_REPORT on every output: each file it gets
+# must match one of its case arms (an unknown name stops it at '*) exit 1'),
+# land in the folder collect_summary.py reads, and fill its section.
 #   - every container ran with --network none (no task here needs the network);
 #   - no task built a .fai index of the reference in its work directory;
 #   - versions.yml has one line per tool, also for the version probes;
@@ -60,7 +63,7 @@ echo "+ nextflow run main.nf -profile docker (hardening)"
     -work-dir "$WORK" \
     --input "$SHEET" \
     --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
-    --tools clinvar,pharmcat,mosdepth,delly,manta,vcfanno,pypgx,telomere_hunter,mito_haplogroup,survivor_merge,y_haplogroup \
+    --tools clinvar,pharmcat,mosdepth,delly,manta,vcfanno,pypgx,telomere_hunter,mito_haplogroup,survivor_merge,y_haplogroup,html_report \
     --clinvar "${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" \
     --clinvar_index "${G}/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi" \
     --revel "${G}/annotations/revel_grch38.tsv.gz" \
@@ -161,6 +164,36 @@ check_eq "Yleaf's table has a header and one sample row" "$(grep -c . "$YT" 2>/d
 check_ge "Y markers Yleaf read (the stub writes 0)" \
   "$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} NR == 2 {print $c["Valid_markers"]}' "$YT" 2>/dev/null)" 1
 check "the declared sex goes on with a warning" has "indexcov infers .* --sex_check warn is set: going on with male" "$(cat "$STEP_LOG" "${CASE_TMP}/.nextflow.log" 2>/dev/null)"
+
+# --- HTML_REPORT on the outputs of this run ---------------------------------------------------
+# Each output goes through one case arm of modules/local/html_report/main.nf
+# to the folder bin/collect_summary.py reads; the task prints the layout it
+# built. A file whose name no arm matches fails the task (exit 1), so its
+# section stays missing and the layout line is absent.
+HR_DIR=$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["name"] ~ /:HTML_REPORT / {print $c["hash"]}' "${TRACE:-/dev/null}")
+HR_STATUS=$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["name"] ~ /:HTML_REPORT / {print $c["status"] " " $c["exit"]}' "${TRACE:-/dev/null}")
+check_eq "the HTML_REPORT task ran and exited 0" "${HR_STATUS:-not run}" "COMPLETED 0"
+LAYOUT=$(cat "$WORK"/"${HR_DIR:-none}"*/.command.out 2>/dev/null)
+echo "HTML_REPORT layout:"; echo "${LAYOUT:-none}"
+for a in clinvar/${SAMPLE}_clinvar_hits.vcf pharmcat/${SAMPLE}.report.json pharmcat/${SAMPLE}.report.html \
+         coverage/${SAMPLE}.mosdepth.summary.txt telomere/${SAMPLE} mito/${SAMPLE}_haplogroup.txt \
+         y_haplogroup/${SAMPLE}_y_haplogroup.txt manta/diploidSV.vcf.gz delly/${SAMPLE}_sv.vcf.gz \
+         sv_merged/${SAMPLE}_sv_consensus.vcf.gz pypgx/${SAMPLE}_pypgx_summary.tsv \
+         pgx_consensus/${SAMPLE}_pgx_consensus.tsv; do
+  check "HTML_REPORT placed ${a}" has "^layout/${SAMPLE}/${a}\$" "$LAYOUT"
+done
+JSON="${R}/summary.json"
+# section KEY: the state of a summary.json section (ok, missing, unreadable, ...)
+section() { python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['sections'][sys.argv[2]]['state'])" "$JSON" "$1" 2>/dev/null; }
+for k in clinvar pharmcat coverage telomere haplogroup y_haplogroup manta delly sv_consensus pypgx; do
+  check_eq "summary.json section ${k} is filled" "$(section "$k")" ok
+done
+CONS_RESULT=$(python3 -c "import json, sys; c = json.load(open(sys.argv[1]))['cyp2d6']['consensus']; print(c['result'] if c else '')" "$JSON" 2>/dev/null)
+check "the CYP2D6 card reads step 36's table (result: ${CONS_RESULT:-none})" test -n "${CONS_RESULT:-}"
+check "the Structural Variants card counts the consensus SVs" \
+  has 'Consensus SVs \(2\+ callers\)</span><span class="value">(<[^>]*>)?[1-9][0-9]*<' "$(cat "${R}/${SAMPLE}_report.html" 2>/dev/null)"
+check "the Steps Not Run list names none of the SV callers" \
+  lacks '<li>Structural variants \((Manta|Delly)\)</li>|<li>SV consensus merge</li>' "$(cat "${R}/${SAMPLE}_report.html" 2>/dev/null)"
 
 # --- The bash steps 22 and 37 on the same calls and BAM, for parity-diff --------------------
 # A GENOME_DIR of hard links: the reference, Yleaf's tables, step 04's Manta

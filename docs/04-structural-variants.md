@@ -61,7 +61,7 @@ docker run --rm \
 `scripts/04-manta.sh` runs the same three steps. It reads the CPU count from `THREADS` (default 8) and the BAM from `${SAMPLE}/${ALIGN_DIR}/` (default `aligned`). With `MANTA_CALL_REGIONS` set to a bgzipped BED under `GENOME_DIR` (its `.tbi` beside it), Manta calls only those regions (`configManta.py --callRegions`), for example chr1-22, X and Y without the unplaced scaffolds and `chrEBV`. When Manta reported no inversion, the script copies `diploidSV.raw.vcf.gz` to `diploidSV.vcf.gz` instead of starting a container, and says so. Run on a folder that holds Manta's results from before the inversion step, it converts them without calling again.
 
 ## Output
-- `results/variants/diploidSV.vcf.gz` — main output (all SV calls), with each inversion as one `SVTYPE=INV` record; steps 05, 15 and 22 read this file
+- `results/variants/diploidSV.vcf.gz` — main output (all SV calls), with each inversion as one `SVTYPE=INV` record; steps 15 and 22 read this file. Step 05 (AnnotSV) reads step 15's duphold-filtered calls (`duphold/<sample>_sv_filtered.vcf.gz`) first, and this file only when those are missing, have no `.tbi` or are older than it
 - `results/variants/diploidSV.raw.vcf.gz` — the same calls as Manta wrote them, where an inversion is a pair of breakend (`SVTYPE=BND`) records
 - `results/variants/candidateSV.vcf.gz` — unfiltered candidates
 - `results/variants/candidateSmallIndels.vcf.gz` — small indels

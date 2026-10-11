@@ -507,7 +507,7 @@ docker run --rm -v ${GENOME_DIR}:/genome "${SAMTOOLS_IMAGE}" \
 **Symptom:** AnnotSV runs but the output TSV is empty or missing.
 
 **Common causes:**
-1. **Input VCF path wrong:** AnnotSV expects the Manta `diploidSV.vcf.gz`. The script checks both `manta/` and `manta2/` directories.
+1. **Input VCF path wrong:** AnnotSV reads step 15's duphold-filtered calls (`duphold/${SAMPLE}_sv_filtered.vcf.gz`) first. When that file is missing, has no `.tbi` or is older than Manta's calls, it falls back to the Manta `diploidSV.vcf.gz` and prints a NOTE saying so. For that fallback the script checks both `manta/` and `manta2/` directories. `SV_VCF` overrides both.
 2. **No PASS variants:** If Manta flagged all SVs as filtered (no PASS), AnnotSV may produce empty output.
 3. **Image version mismatch:** Some AnnotSV versions require specific internal database versions.
 
