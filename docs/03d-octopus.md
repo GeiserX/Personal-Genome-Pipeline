@@ -46,10 +46,12 @@ INTERVALS=chr22 ./scripts/03d-octopus.sh <sample_name>
 
 ## Runtime
 
-| Dataset | Threads | Time | Memory |
-|---|---|---|---|
-| 30X WGS | 8 | 2-4 hours | ~8-12 GB |
-| chr22 only | 4 | ~5-10 min | < 4 GB |
+Not measured here, for the whole genome or for `INTERVALS=chr22`. The [runtime table](hardware-requirements.md#runtime-per-step) lists an estimate for Octopus (~2-4 h), not a measurement.
+
+| Dataset | Threads | Memory |
+|---|---|---|
+| 30X WGS | 8 | ~8-12 GB |
+| chr22 only | 4 | < 4 GB |
 
 ## Notes
 

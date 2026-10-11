@@ -53,6 +53,8 @@ graph LR
 
     BAM --> eh["ExpansionHunter<br/><small>STRs</small>"]
     BAM --> pypgx["pypgx<br/><small>23-gene PGx<br/>+ CYP2D6 SV</small>"]
+    %% pypgx reads the VCF too, so it waits for DeepVariant
+    VCF --> pypgx
     BAM --> cyrius["Cyrius<br/><small>CYP2D6, opt-in</small>"]
     BAM --> hla["T1K<br/><small>HLA (+ KIR, opt-in)</small>"]
     BAM --> paralogs["Parascopy<br/><small>SMN1/SMN2, opt-in</small>"]

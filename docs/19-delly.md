@@ -91,7 +91,7 @@ bcftools view -i 'INFO/SVTYPE="INV"' ${SAMPLE}_sv.vcf.gz
 ```
 
 ## Runtime
-~2-4 hours per 30X WGS genome.
+Not measured here for a 30X WGS genome. The [runtime table](hardware-requirements.md#runtime-per-step) lists an estimate (~2-4 h), not a measurement.
 
 ## Notes
 - Delly outputs BCF by default (not VCF). Convert with `bcftools view` for compatibility.
