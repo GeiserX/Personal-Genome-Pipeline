@@ -112,6 +112,7 @@ workflow UPSTREAM {
 
     emit:
     bam        = ch_bam                  // [meta, bam, bai]: every BAM, after the sex check
+    indexcov   = INDEXCOV.out.indexcov   // [meta, indexcov/]: goleft's folder, for the report's sex check
     vcf        = DEEPVARIANT.out.vcf     // [meta, vcf, tbi]
     gvcf       = DEEPVARIANT.out.gvcf    // [meta, g.vcf.gz, tbi]
     versions   = ch_versions

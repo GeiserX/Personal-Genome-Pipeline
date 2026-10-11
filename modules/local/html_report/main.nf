@@ -13,10 +13,10 @@
     cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
-    name is the user's. Not received yet: indexcov's folder (UPSTREAM does
-    not emit it) and CPIC_LOOKUP's PharmCAT comparison (PGX does not emit
-    it), so the indexcov sex check and the PharmCAT vs pypgx comparison
-    stay empty here.
+    name is the user's. indexcov's folder becomes indexcov/ itself (the
+    sex check reads indexcov/indexcov-indexcov.ped), and CPIC_LOOKUP's
+    PharmCAT comparison goes beside the pypgx summary, where
+    collect_summary.py looks for it.
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -71,7 +71,8 @@ process HTML_REPORT {
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
             ${id}_cnvs.txt)                               place cnvpytor "\$f" ;;
             ${id}_sv_consensus.vcf.gz)                    place sv_merged "\$f" ;;
-            ${id}_pypgx_summary.tsv)                      place pypgx "\$f" ;;
+            ${id}_pypgx_summary.tsv|${id}_pharmcat_comparison.tsv) place pypgx "\$f" ;;
+            indexcov)                                     ln -s "\$(readlink -f "\$f")" "\$S/indexcov" ;;
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;
             ${id}_pgx_consensus.tsv)                      place pgx_consensus "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;

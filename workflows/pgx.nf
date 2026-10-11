@@ -166,6 +166,7 @@ workflow PGX {
     //
     ch_cpic_recommendations = Channel.empty()
     ch_cpic_phenotypes      = Channel.empty()
+    ch_cpic_comparison      = Channel.empty()
     if (tools.contains('cpic') && tools.contains('pharmcat')) {
         // remainder: a sample whose PYPGX or PGX_CONSENSUS task failed still
         // gets its CPIC report
@@ -178,7 +179,9 @@ workflow PGX {
         CPIC_LOOKUP(ch_cpic_input)
         ch_cpic_recommendations = CPIC_LOOKUP.out.recommendations
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
-        ch_versions             = ch_versions.mix(CPIC_LOOKUP.out.versions)
+        // Only with a readable pypgx summary (the output is optional)
+        ch_cpic_comparison      = CPIC_LOOKUP.out.comparison
+        ch_versions            = ch_versions.mix(CPIC_LOOKUP.out.versions)
     }
 
     emit:
@@ -191,5 +194,6 @@ workflow PGX {
     pgx_consensus        = ch_consensus
     cpic_recommendations = ch_cpic_recommendations
     cpic_phenotypes      = ch_cpic_phenotypes
-    versions             = ch_versions
+    cpic_comparison      = ch_cpic_comparison     // [meta, <id>_pharmcat_comparison.tsv]
+    versions            = ch_versions
 }
