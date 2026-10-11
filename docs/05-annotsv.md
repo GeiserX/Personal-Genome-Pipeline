@@ -1,7 +1,7 @@
 # Step 5: Structural Variant Annotation (AnnotSV)
 
 ## What This Does
-Classifies every structural variant from Manta that passes duphold's depth filter (step 15) using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
+Classifies every structural variant from Manta that passes duphold's depth filter (step 15; when that file is missing or older than Manta's calls, the script annotates Manta's calls and says so) using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
 
 ## Why
 Raw Manta output contains thousands of SVs with no clinical interpretation. AnnotSV tells you which ones matter by cross-referencing known pathogenic SVs, gene databases, and population data.
@@ -68,5 +68,5 @@ To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its h
 - **Class 4-5 = pathogenic/likely pathogenic** — these require manual review
 - SVs >5MB in short-read WGS are usually artifacts from segmental duplications — do not trust large calls blindly
 - Most SVs will be class 2-3 (benign/VUS) — this is normal for a healthy genome
-- Input: step 15's `duphold/<sample>_sv_filtered.vcf.gz`, Manta's calls after duphold's depth filter, the file the Nextflow `ANNOTSV` reads. Without it (or when Manta's `diploidSV.vcf.gz` is newer), the script annotates Manta's calls and says so. `SV_VCF=<path>` picks another file, for example Sniffles2's. Never Manta's unfiltered candidates
+- Input: step 15's `duphold/<sample>_sv_filtered.vcf.gz`, Manta's calls after duphold's depth filter, the file the Nextflow `ANNOTSV` reads. Without it (or when Manta's `diploidSV.vcf.gz` is newer), the script annotates Manta's calls and says so. `SV_VCF=<path>` picks another file, for example Sniffles2's. Do not point it at Manta's `candidateSV.vcf.gz`: those are unfiltered candidates, not calls
 - The annotation databases are not in the Docker image: they live in `${GENOME_DIR}/annotsv_annotations/` (see Annotation Data above)
