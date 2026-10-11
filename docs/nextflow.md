@@ -142,7 +142,7 @@ Combine profiles: `-profile docker,test`
 
 ## Resource Configuration
 
-Default resource limits (tuned for 16-core consumer desktop). Each process label asks for a fixed CPU count, a memory and a time limit; after an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with memory and time doubled. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
+Each process asks for a fixed CPU count, a memory and a time limit, from its label or from its own block in `conf/base.config`. After an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with its memory doubled. Time doubles too, except DeepVariant's, which gets `--max_time` from its first attempt. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
