@@ -215,3 +215,80 @@ jobs:
         run: |
           cat "${RUNNER_TEMP}/all-tools/pipeline_info/software_versions.yml"
           scripts/ci/gen-containers-config.sh --check-versions "${RUNNER_TEMP}/all-tools/pipeline_info/software_versions.yml"
+
+      # What the heavy tasks ask for, read back from the trace of a stub run,
+      # so it is the value Nextflow resolved and not the config text. The caps
+      # sit above every request, so resourceLimits hides nothing, and the
+      # local executor is told it has 16 CPUs and 64 GB, so it accepts an
+      # 8-CPU stub on this 4-CPU runner. Each checked task exits 137 on its
+      # first attempt, as an out-of-memory kill would, and the second attempt
+      # must ask for twice the memory: a fixed memory value would stop the
+      # retry from doubling it. Expected: DEEPVARIANT gets --max_time on its
+      # first attempt (Nextflow 26.04.7 can abort the whole run when a task
+      # passes its time limit, nextflow-io/nextflow#7569; read in its source,
+      # not reproduced), FASTP and ALIGN_MARKDUP get the 8 CPUs of steps 01b
+      # and 02, ALIGN_MARKDUP THREADS + 4 GB, and MANTA, CNVPYTOR and VEP what
+      # steps 04, 18 and 13 give them.
+      - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          cat > "${RUNNER_TEMP}/resources.config" <<'CICONF'
+          params.kir = false
+          executor.cpus = 16
+          executor.memory = '64.GB'
+          process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
+          process {
+              withName: 'DEEPVARIANT|FASTP|ALIGN_MARKDUP|MANTA|CNVPYTOR|VEP' {
+                  beforeScript = { task.attempt == 1 ? 'exit 137' : 'true' }
+              }
+          }
+          trace.enabled = true
+          trace.raw = true
+          trace.fields = 'name,attempt,exit,cpus,memory,time'
+          timeline.enabled = false
+          report.enabled = false
+          dag.enabled = false
+          CICONF
+          nextflow run main.nf -profile test_all -stub -ansi-log false -c "${RUNNER_TEMP}/resources.config" \
+            --tools vep,manta,cnvpytor --max_cpus 16 --max_memory 64.GB --max_time 48.h \
+            --outdir "${RUNNER_TEMP}/resources" -work-dir "${RUNNER_TEMP}/resources-work"
+          python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt <<'PY'
+          import csv, sys
+          GB, H = 1024 ** 3, 3600 * 1000
+          # process: (cpus, memory, time) of the first attempt
+          want = {
+              'DEEPVARIANT':   (8, 32 * GB, 48 * H),
+              'FASTP':         (8, 8 * GB, 8 * H),
+              'ALIGN_MARKDUP': (8, 12 * GB, 8 * H),
+              'MANTA':         (8, 16 * GB, 24 * H),
+              'CNVPYTOR':      (4, 8 * GB, 24 * H),
+              'VEP':           (8, 16 * GB, 24 * H),
+          }
+          seen, bad = {p: {} for p in want}, 0
+          with open(sys.argv[1]) as fh:
+              for row in csv.DictReader(fh, delimiter='\t'):
+                  proc = row['name'].split(' (')[0].split(':')[-1]
+                  if proc not in want:
+                      continue
+                  got = (int(row['cpus']), int(row['memory']), int(row['time']))
+                  print(f"{row['name']}: attempt {row['attempt']}, exit {row['exit']}, "
+                        f"cpus {got[0]}, memory {got[1] / GB:g} GB, time {got[2] / H:g} h")
+                  seen[proc].setdefault(int(row['attempt']), []).append(got)
+          for proc, (cpus, mem, time) in want.items():
+              first, second = seen[proc].get(1, []), seen[proc].get(2, [])
+              if not first or len(second) != len(first):
+                  print(f"FAIL {proc}: {len(first)} first and {len(second)} second attempts in the trace")
+                  bad += 1
+                  continue
+              for got in first:
+                  if got != (cpus, mem, time):
+                      print(f"FAIL {proc}: first attempt asks for cpus {got[0]}, memory {got[1] / GB:g} GB, "
+                            f"time {got[2] / H:g} h; want {cpus}, {mem / GB:g} GB, {time / H:g} h")
+                      bad += 1
+              for got in second:
+                  if got[1] != 2 * mem:
+                      print(f"FAIL {proc}: the retry asks for {got[1] / GB:g} GB, want {2 * mem / GB:g} GB")
+                      bad += 1
+          print(f"{bad} failure(s)")
+          sys.exit(1 if bad else 0)
+          PY

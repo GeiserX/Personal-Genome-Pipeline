@@ -107,33 +107,33 @@ These databases enable deeper pathogenicity scoring via vcfanno (step 30) and va
 
 ## RAM Requirements
 
-Every step runs in a Docker container with a hard `--memory` limit. The two entry points set it differently. A step script passes its own `--cpus` and `--memory`. The pipeline gives each task the CPUs and memory of its label in `conf/base.config`, doubles the memory on the one retry after an out-of-memory exit, and caps both at `--max_cpus` and `--max_memory`.
+Every step runs in a Docker container with a hard `--memory` limit. The two entry points set it differently. A step script passes its own `--cpus` and `--memory`. The pipeline gives each task the CPUs and memory that `conf/base.config` gives its label, or its name where a step's request follows its script, doubles the memory on the one retry after an out-of-memory exit, and caps both at `--max_cpus` and `--max_memory`.
 
 | Step | Script: CPUs / memory | Pipeline: CPUs / memory |
 |---|---|---|
-| 2 (minimap2 alignment) | `THREADS` (8) / 32 GB | 8 / 32 GB; duplicate marking 4 / 8 GB |
+| 2 (minimap2 alignment) | `THREADS` (8) / 32 GB | 8 / 32 GB; duplicate marking 8 / 12 GB (CPUs + 4) |
 | 3 (DeepVariant) | `THREADS` (8) / `DV_MEM` (32 GB) | 8 / 32 GB |
-| 4 (Manta) | `THREADS` (8) / 16 GB | 8 / 32 GB |
+| 4 (Manta) | `THREADS` (8) / 16 GB | 8 / 16 GB |
 | 6 (ClinVar screen) | 2 / 2 GB | 2 / 4 GB |
 | 7 (PharmCAT) | up to 2 / 4 GB | 2 / 4 GB |
 | 9 (ExpansionHunter) | `THREADS` (4) / 4 GB | 4 / 8 GB |
 | 10 (TelomereHunter) | `THREADS` (4) / 4 GB | 4 / 8 GB |
-| 13 (VEP) | `THREADS` (8) / 2 GB per thread, at least 8 GB | 8 / 32 GB |
+| 13 (VEP) | `THREADS` (8) / 2 GB per thread, at least 8 GB | 8 / 16 GB |
 | 17 (CPSR) | 4 / 8 GB | 4 / 8 GB |
-| 18 (CNVpytor) | 4 / 8 GB | 8 / 32 GB |
+| 18 (CNVpytor) | 4 / 8 GB | 4 / 8 GB |
 | 19 (Delly) | 4 / 8 GB | 4 / 8 GB |
 
 These are limits, not measured peaks. minimap2 peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38; `scripts/02-alignment.sh`), so [step 2](02-alignment.md) plans for about 20 GB on GRCh38; the full-genome peak has not been measured.
 
 **Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it.
-**Recommended:** 32 GB or more, so the 8-CPU tasks get close to the 32 GB they ask for.
+**Recommended:** 32 GB or more, so minimap2 and DeepVariant get close to the 32 GB they ask for.
 **GRIDSS (step 4b, opt-in):** its container takes 32 GB (a 28 GB Java heap plus overhead), so it needs a machine with 32 GB or more even when nothing else runs.
 
 ---
 
 ## CPU Requirements
 
-Each pipeline task asks for the CPUs of its label in `conf/base.config`: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (index and alignment), DeepVariant, Manta, CNVpytor and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
+Each pipeline task asks for the CPUs that `conf/base.config` gives its label or its name: 1, 2, 4 or 8. The 8-CPU tasks are minimap2 (index and alignment), fastp, duplicate marking, DeepVariant, Manta and VEP. `--max_cpus` and `--max_memory` cap each task; `run-all.sh` passes the machine's CPU count (or `THREADS`) and its RAM. They do not limit how much runs at once: Nextflow starts tasks until their requests fill the machine's CPUs and RAM. On a Mac with Docker Desktop, that is the Mac's CPUs and RAM, not the Docker VM's. `MAX_JOBS` is no longer read.
 
 **DeepVariant's shards.** `run-all.sh` runs DeepVariant with at most 8 shards, however many cores the machine has, and fewer when `--max_cpus` (`THREADS`) is lower. More cores help the steps that run beside it. To give DeepVariant more, run `scripts/03-deepvariant.sh` with `THREADS=N` (its `--cpus` and `--num_shards`), or pass `-c` with a `withName: 'DEEPVARIANT'` block:
 
@@ -246,7 +246,7 @@ vcfanno, slivar
         └─────────────────> HTML report, MultiQC <─────────────────┘
 ```
 
-Nextflow starts a task only when its CPUs and memory fit in what is left of the machine's. On a host with 8 CPUs, every 8-CPU task (minimap2, DeepVariant, Manta, CNVpytor, VEP) runs alone, and the light SV chain steps wait for it: about 18 h behind DeepVariant in the observed run, after which they finished in seconds. On 16 CPUs, DeepVariant leaves 8 free for the BAM steps.
+Nextflow starts a task only when its CPUs and memory fit in what is left of the machine's. On a host with 8 CPUs, every 8-CPU task (minimap2, fastp, duplicate marking, DeepVariant, Manta, VEP) runs alone, and the light SV chain steps wait for it: about 18 h behind DeepVariant in the observed run, after which they finished in seconds. On 16 CPUs, DeepVariant leaves 8 free for the BAM steps.
 
 ---
 
