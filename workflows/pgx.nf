@@ -181,7 +181,7 @@ workflow PGX {
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
         // Only with a readable pypgx summary (the output is optional)
         ch_cpic_comparison      = CPIC_LOOKUP.out.comparison
-        ch_versions            = ch_versions.mix(CPIC_LOOKUP.out.versions)
+        ch_versions             = ch_versions.mix(CPIC_LOOKUP.out.versions)
     }
 
     emit:
@@ -195,5 +195,5 @@ workflow PGX {
     cpic_recommendations = ch_cpic_recommendations
     cpic_phenotypes      = ch_cpic_phenotypes
     cpic_comparison      = ch_cpic_comparison     // [meta, <id>_pharmcat_comparison.tsv]
-    versions            = ch_versions
+    versions             = ch_versions
 }
