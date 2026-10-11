@@ -130,6 +130,12 @@
       "enabled": false
     },
     {
+      "description": "Hold: the minimap2+samtools image of the Nextflow alignment task (MINIMAP2_SAMTOOLS_IMAGE in versions.env). BioContainers tags it with a hash, not a version, so there is nothing to compare. It moves by hand with MINIMAP2_IMAGE and SAMTOOLS_IMAGE: request the new pair in BioContainers/multi-package-containers (combinations/hash.tsv), then pin the new tag. scripts/ci/check-images.sh fails while its versions comment and those two tags disagree, so a Renovate bump of either names this image in its failing check.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/^quay\\.io/biocontainers/mulled-v2-/"],
+      "enabled": false
+    },
+    {
       "description": "Legacy tools, no automated bumps: Manta, Strelka2, duphold, Octopus and GRIDSS are archived or quiet upstream. Bump one by hand after running it on the fixture.",
       "matchDatasources": ["docker"],
       "matchPackageNames": [

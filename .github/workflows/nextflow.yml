@@ -175,6 +175,23 @@ jobs:
           echo "samples with a BAM: ${bams}; T1K_BUILD tasks: ${build}; HLA_TYPING tasks: ${typing}; INDEXCOV tasks: ${indexcov}; DEEPVARIANT tasks: ${dv}"
           [ "$bams" -ge 2 ] && [ "$build" -eq 1 ] && [ "$typing" -eq "$bams" ] && [ "$indexcov" -eq "$bams" ] && [ "$dv" -eq 2 ]
 
+      # A FASTQ row is aligned by one task that pipes minimap2 into samtools
+      # fixmate, sort and markdup, as step 02 does: no task writes the SAM to
+      # disk (it was a <sample>.sam.gz in the work directory, 119 GB in one
+      # observed 30x run). The stub sheet has a FASTQ row, so ALIGN_MINIMAP2
+      # must have run: that count is the control for the empty find.
+      - name: The FASTQ row is aligned in one task, with no SAM file in the work directory
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          work="${RUNNER_TEMP}/all-tools-work"
+          count() { find "$work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+            | grep -cE "(^|:)$1( |\$)" || true; }
+          align=$(count ALIGN_MINIMAP2) markdup=$(count ALIGN_MARKDUP)
+          sams=$(find "$work" -type f \( -name '*.sam' -o -name '*.sam.gz' \) | wc -l)
+          find "$work" -type f \( -name '*.sam' -o -name '*.sam.gz' \) | awk 'NR <= 5'
+          echo "ALIGN_MINIMAP2 tasks: ${align}; ALIGN_MARKDUP tasks: ${markdup}; SAM files in the work directory: ${sams}"
+          [ "$align" -ge 1 ] && [ "$markdup" -eq 0 ] && [ "$sams" -eq 0 ]
+
       # The common path of an existing user: VCF+BAM rows only, and a
       # reference with no .sr.mmi beside it. The FASTQ channel is empty, so
       # MINIMAP2_INDEX and the alignment must not run, and the run must still
@@ -195,7 +212,7 @@ jobs:
           count() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
             | grep -cE "(^|:)$2( |\$)" || true; }
           bad=0
-          for p in MINIMAP2_INDEX ALIGN_MINIMAP2 ALIGN_MARKDUP; do
+          for p in MINIMAP2_INDEX ALIGN_MINIMAP2; do
             here=$(count "${RUNNER_TEMP}/vcf-bam-work" "$p") control=$(count "${RUNNER_TEMP}/all-tools-work" "$p")
             echo "${p}: ${here} tasks here, ${control} in the all-tools run"
             [ "$here" -eq 0 ] && [ "$control" -ge 1 ] || bad=1
@@ -226,9 +243,9 @@ jobs:
       # retry from doubling it. Expected: DEEPVARIANT gets --max_time on its
       # first attempt (Nextflow 26.04.7 can abort the whole run when a task
       # passes its time limit, nextflow-io/nextflow#7569; read in its source,
-      # not reproduced), FASTP and ALIGN_MARKDUP get the 8 CPUs of steps 01b
-      # and 02, ALIGN_MARKDUP THREADS + 4 GB, and MANTA, CNVPYTOR and VEP what
-      # steps 04, 18 and 13 give them.
+      # not reproduced), FASTP gets the 8 CPUs of step 01b, ALIGN_MINIMAP2
+      # (minimap2 piped into samtools) the process_high label's 8 CPUs and
+      # 32 GB, and MANTA, CNVPYTOR and VEP what steps 04, 18 and 13 give them.
       - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -238,7 +255,7 @@ jobs:
           executor.memory = '64.GB'
           process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
           process {
-              withName: 'DEEPVARIANT|FASTP|ALIGN_MARKDUP|MANTA|CNVPYTOR|VEP' {
+              withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP' {
                   beforeScript = { task.attempt == 1 ? 'exit 137' : 'true' }
               }
           }
@@ -259,7 +276,7 @@ jobs:
           want = {
               'DEEPVARIANT':   (8, 32 * GB, 48 * H),
               'FASTP':         (8, 8 * GB, 8 * H),
-              'ALIGN_MARKDUP': (8, 12 * GB, 8 * H),
+              'ALIGN_MINIMAP2': (8, 32 * GB, 24 * H),
               'MANTA':         (8, 16 * GB, 24 * H),
               'CNVPYTOR':      (4, 8 * GB, 24 * H),
               'VEP':           (8, 16 * GB, 24 * H),
@@ -291,4 +308,79 @@ jobs:
                       bad += 1
           print(f"{bad} failure(s)")
           sys.exit(1 if bad else 0)
+          PY
+
+      # The step above fakes the kill with beforeScript, so it cannot see how
+      # ALIGN_MINIMAP2's own pipe reports one. This runs the module's real
+      # script (no -stub, no Docker) with stand-ins for minimap2 and samtools
+      # on PATH: on the first attempt minimap2 prints half a SAM record and
+      # kills itself with SIGKILL, as the kernel does on out-of-memory, and
+      # fixmate exits 1 on the cut record, as samtools 1.24 does. The task
+      # must exit 137 and be retried with twice the memory; under pipefail
+      # alone it exits 1 and the run stops.
+      - name: ALIGN_MINIMAP2 is retried when minimap2 is killed for memory inside the pipe
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          t="${RUNNER_TEMP}/oom"
+          mkdir -p "$t/bin"
+          cat > "$t/bin/minimap2" <<EOF
+          #!/bin/bash
+          [ "\${1:-}" = --version ] && { echo 2.31-r1302; exit 0; }
+          printf '@HD\tVN:1.6\n'
+          if [ ! -e "$t/killed-once" ]; then
+              touch "$t/killed-once"
+              printf 'r1\t77\t*\t0\t0\t*\t*\t0\t0\tACGT'
+              kill -9 \$\$
+          fi
+          printf 'r1\t77\t*\t0\t0\t*\t*\t0\t0\tACGT\tIIII\n'
+          EOF
+          cat > "$t/bin/samtools" <<'EOF'
+          #!/bin/bash
+          case "$1" in
+              version) echo 'samtools 1.24' ;;
+              fixmate) awk -F'\t' '!/^@/ && NF < 11 { bad = 1 } { print }
+                  END { if (bad) { print "[E::sam_parse1] SEQ and QUAL are of different length" > "/dev/stderr"; exit 1 } }' ;;
+              sort) cat ;;
+              markdup) out="${*: -1}"; cat > "${out%%##idx##*}"; echo index > "${out#*##idx##}" ;;
+              quickcheck) exit 0 ;;
+              *) echo "unexpected samtools $*" >&2; exit 2 ;;
+          esac
+          EOF
+          chmod +x "$t/bin/minimap2" "$t/bin/samtools"
+          touch "$t/r1.fastq.gz" "$t/r2.fastq.gz" "$t/ref.sr.mmi"
+          cat > "$t/main.nf" <<EOF
+          include { ALIGN_MINIMAP2 } from '${GITHUB_WORKSPACE}/modules/local/align_minimap2/main.nf'
+          workflow {
+              ALIGN_MINIMAP2(channel.of([[id: 'oom'], file('$t/r1.fastq.gz'), file('$t/r2.fastq.gz')]), file('$t/ref.sr.mmi'))
+          }
+          EOF
+          cat > "$t/oom.config" <<EOF
+          executor.cpus = 16
+          executor.memory = '64.GB'
+          trace.enabled = true
+          trace.raw = true
+          trace.file = '$t/trace.txt'
+          trace.fields = 'name,attempt,exit,memory'
+          timeline.enabled = false
+          report.enabled = false
+          dag.enabled = false
+          EOF
+          # Launched from the checkout, so its nextflow.config (shell,
+          # errorStrategy, labels) applies.
+          rc=0
+          PATH="$t/bin:$PATH" nextflow run "$t/main.nf" -ansi-log false -c "$t/oom.config" \
+            --max_cpus 16 --max_memory 64.GB --outdir "$t/out" -work-dir "$t/work" || rc=$?
+          echo "nextflow exited ${rc}"
+          cat "$t/trace.txt"
+          python3 - "$t/trace.txt" "$rc" <<'PY'
+          import csv, sys
+          GB = 1024 ** 3
+          rows = [r for r in csv.DictReader(open(sys.argv[1]), delimiter='\t') if 'ALIGN_MINIMAP2' in r['name']]
+          got = [(int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows]
+          want = [(1, '137', 32), (2, '0', 64)]
+          print(f"ALIGN_MINIMAP2 attempts (attempt, exit, GB): {got}; want {want}")
+          ok = sorted(got) == want and sys.argv[2] == '0'
+          print('OK' if ok else 'FAIL: a kill inside the pipe did not reach Nextflow as exit 137 and a retry')
+          sys.exit(0 if ok else 1)
           PY

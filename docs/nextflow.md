@@ -76,7 +76,7 @@ nextflow run main.nf \
 | `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
 | `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex. With `sample_qc`, the same applies to the sex somalier infers from the reads |
 
-The trimmed reads stay in the work directory; the fastp reports are published. A run from FASTQ needs the same memory as step 02 for alignment (minimap2 peaks near 10 GB on a 1.8 Gb reference) and DeepVariant's (32 GB by default); `--max_memory` caps both.
+The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: minimap2 needs about 20 GB planned on GRCh38 (10 GB measured on the 1.8 Gb test reference, [step 02](02-alignment.md#resource-requirements)), and `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`), so the task runs close to its 32 GB. A kill for memory anywhere in the pipe ends the task with that exit status, so it is retried once with twice the memory. DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
 
 ### Resume After Failure
 
@@ -87,6 +87,8 @@ nextflow run main.nf -resume [same params as before]
 ```
 
 The failed tasks and the ones downstream of them run again. A task that was running when the run stopped starts over: DeepVariant is a single task, so a run stopped during it loses that task's progress. Run the pipeline inside tmux or screen, or with nohup, so closing the terminal does not stop it. Nextflow keys an input file by its path, size and modification time, not by its content: a file rewritten in place with the same size and time is not seen as changed.
+
+One change reruns the alignment once: since alignment and duplicate marking became one task (`ALIGN_MINIMAP2`, which no longer writes a `.sam.gz`), the first `-resume` of a run from FASTQ started with an earlier version reuses fastp (and the minimap2 index, when the run built one) but aligns again, and every task after the alignment runs again too.
 
 One exception, once: Nextflow 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, so the first `-resume` of a work directory written by 25.10 reruns every process that takes the `meta` map, which is every process here. Start a fresh work directory for the first run after the upgrade instead of waiting on a resume that caches nothing.
 
@@ -140,7 +142,7 @@ Combine profiles: `-profile docker,test`
 
 ## Resource Configuration
 
-Default resource limits (tuned for 16-core consumer desktop). Each process label asks for a fixed CPU count, a memory and a time limit; after an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with memory and time doubled. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
+Each process asks for a fixed CPU count, a memory and a time limit, from its label or from its own block in `conf/base.config`. After an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with its memory doubled. Time doubles too, except DeepVariant's, which gets `--max_time` from its first attempt. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -150,7 +152,7 @@ Default resource limits (tuned for 16-core consumer desktop). Each process label
 
 `--max_cpus` and `--max_memory` cap each task. They do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM with as many tasks as fit.
 
-Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, VEP and the other `process_high` steps) larger than the machine, and Nextflow refuses to start it:
+Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, the minimap2 index and `ALIGN_MINIMAP2`) larger than the machine, and Nextflow refuses to start it:
 
 ```bash
 nextflow run main.nf --max_cpus 8 --max_memory 30.GB [other params]
@@ -243,7 +245,7 @@ bcftools index -t SAMPLE.vcf.gz
 
 ## The pipeline and the single-step scripts
 
-Run the pipeline for a sample: it runs every step a default run selects, in parallel where the inputs allow, and `-resume` reruns only what changed. Run a numbered script to run or rerun one step by hand, on the layout `run-all.sh` and `setup.sh` use; the scripts and the modules run the same commands from the same images (see the parity section below). The pipeline needs Java 17 or later and Nextflow beside Docker; the scripts need Docker only. The HPC/Singularity profile exists but is untested.
+Run the pipeline for a sample: it runs every step a default run selects, in parallel where the inputs allow, and `-resume` reruns only what changed. Run a numbered script to run or rerun one step by hand, on the layout `run-all.sh` and `setup.sh` use; the scripts and the modules run the same commands at the same tool releases (see the parity section below). The pipeline needs Java 17 or later and Nextflow beside Docker; the scripts need Docker only. The HPC/Singularity profile exists but is untested.
 
 ---
 
@@ -255,11 +257,11 @@ The pipeline starts from paired short-read FASTQ, from a BAM or from a VCF. The 
 
 ### Bash vs Nextflow parity
 
-The pipeline and the scripts run the same commands from the same images, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
+The pipeline and the scripts run the same commands at the same tool releases, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
 
 | Item | Compared |
 |---|---|
-| alignment | `samtools flagstat` of the two BAMs |
+| alignment | the two BAMs record by record: the md5 of every record (`samtools view`), the md5 of the header without its `@PG` lines (each side's command lines), `samtools flagstat` and `samtools idxstats` (read through the index) |
 | variants | `bcftools isec` of the two VCFs: records in one only, and shared records with another FILTER or GT |
 | gvcf | every gVCF record |
 | clinvar | the rows of `<sample>_clinvar_hits.tsv` |
@@ -275,7 +277,7 @@ Where a module and its script differ on purpose:
 
 | Step | Script | Module |
 |---|---|---|
-| Alignment (02) | pipes minimap2 into samtools, each in its own image | `ALIGN_MINIMAP2` writes the SAM compressed with `gzip -1` and `ALIGN_MARKDUP` reads it: a task runs in one image, and no image in `versions.env` holds both tools. Same commands and the same BAM, plus a temporary file in the work directory, larger than the gzipped FASTQ: one 30x run wrote 119 GB |
+| Alignment (02) | pipes minimap2 into samtools, each in its own image (`MINIMAP2_IMAGE`, `SAMTOOLS_IMAGE`) | `ALIGN_MINIMAP2` runs the same pipe in one task, so in one image: `MINIMAP2_SAMTOOLS_IMAGE`, a BioContainers image with both tools at the releases of those two. `scripts/ci/check-images.sh` fails when the releases part, and the parity check above compares the BAMs record by record. The task writes no SAM file |
 | Sex check (16) | runs beside the other steps and stops itself on a mismatch | `INDEXCOV` runs before every BAM step, and a mismatch stops the run before DeepVariant starts |
 | DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
@@ -340,12 +342,13 @@ One samplesheet row is one sample, so a VCF given on a row must hold one sample 
 
 ### Contig names and gVCF input
 
-`VCF_PRECHECK` also stops the run, before any analysis, in two cases, and the message names the sample and the fix:
+`VCF_PRECHECK` also stops the run, before any analysis, in three cases, and the message names the sample and the fix:
 
 - No contig that holds records is named the chr way (`1`, `MT` instead of `chr1`, `chrM`). Without this stop the mito haplogroup file comes out empty and chrX segments leak into the autosomal ROH summary, with exit 0. The message prints the `bcftools annotate --rename-chrs` command with its 25-line map.
 - `pharmcat` is selected and the VCF is a gVCF (a `##GVCFBlock` header line, or reference-block records: ALT `<*>`, `<NON_REF>` or `.` with `INFO/END`), or only its name says so (`.g.vcf`, `.genomic.vcf`). PharmCAT refuses both. Without `pharmcat`, a gVCF runs: ROH, the mito haplogroup and the ClinVar screen give the same results as on the matching variants-only file.
+- A `##contig` line for chr1-22, chrX or chrY (or 1-22, X, Y) gives a length GRCh38 does not have, for example `chr1 length 249250621 (GRCh38: 248956422)`, which is GRCh37 (hg19). The message lists up to five such contigs. Renaming the contigs does not fix this: get a GRCh38 VCF, or start from the FASTQ. A VCF without `##contig` lines, or without lengths in them, is not checked here; `validate-setup.sh` spot-checks its REF bases against the reference, and a direct `nextflow run` does not.
 
-[Starting from a Vendor VCF](vcf-first.md) has the commands that fix both.
+[Starting from a Vendor VCF](vcf-first.md) has the commands that fix the first two.
 
 ### Security model
 

@@ -30,8 +30,7 @@ export LC_ALL=C   # one sort order for the table, the file and comm
 # One row per Nextflow process: its name and the versions.env variable that
 # holds its image. A new process needs a row here.
 TABLE='
-ALIGN_MARKDUP        SAMTOOLS_IMAGE
-ALIGN_MINIMAP2       MINIMAP2_IMAGE
+ALIGN_MINIMAP2       MINIMAP2_SAMTOOLS_IMAGE
 ANNOTSV              ANNOTSV_IMAGE
 CLINICAL_FILTER      BCFTOOLS_IMAGE
 CLINVAR_SCREEN       BCFTOOLS_IMAGE
