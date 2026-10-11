@@ -568,21 +568,31 @@ scatter_beds() {
 
 # run_parallel MAX FUNC ARG...: run `FUNC ARG` for every ARG in the
 # background, at most MAX at a time, and return 1 when any of them failed,
-# after all have ended. Needs bash 4.3 (wait -n); the step scripts need 4.4.
+# after all have ended. Each unit's status comes from `wait PID`, never from
+# `wait -n`: in CI (bash 5.2) `wait -n` sometimes returned 127, "no job to
+# wait for", where a unit had ended, and that unit was counted as failed.
+# Here `wait -n` only throttles and its status is not counted.
+# Needs bash 4.3 (wait -n); the step scripts need 4.4.
 run_parallel() {
-  local max=$1 fn=$2 a running=0 rc=0
+  local max=$1 fn=$2 a p n rc=0
+  local pids=()
   shift 2
   for a in "$@"; do
+    # Start the next unit once fewer than MAX are alive. A 127 from `wait -n`
+    # ends the wait rather than looping on it.
+    while :; do
+      n=0
+      for p in ${pids[@]+"${pids[@]}"}; do
+        if kill -0 "$p" 2>/dev/null; then n=$((n + 1)); fi
+      done
+      [ "$n" -ge "$max" ] || break
+      wait -n || [ $? -ne 127 ] || break
+    done
     "$fn" "$a" &
-    running=$((running + 1))
-    if [ "$running" -ge "$max" ]; then
-      wait -n || rc=1
-      running=$((running - 1))
-    fi
+    pids+=("$!")
   done
-  while [ "$running" -gt 0 ]; do
-    wait -n || rc=1
-    running=$((running - 1))
+  for p in ${pids[@]+"${pids[@]}"}; do
+    wait "$p" || rc=1
   done
   return "$rc"
 }
