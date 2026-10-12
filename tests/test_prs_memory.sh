@@ -149,7 +149,8 @@ measured() {
 }
 
 # row TASK LIMIT_MB REQUEST_GB RECORDED_MB EXPECT: one line of the table, and
-# the checks on the run `measured` just made. EXPECT is pass or killed.
+# the checks on the run `measured` just made. EXPECT is pass, killed, or
+# finish (exit 0 is enough: a rerun that only makes the next task's input).
 row() {
   local verdict=ok need=$M_PEAK_MB killed=false
   [ "$M_USED_MB" -le "$need" ] || need=$M_USED_MB
@@ -158,6 +159,8 @@ row() {
     $killed || verdict="FAIL: not killed for memory under ${2} MB (exit ${M_RC}, peak ${need} MB)"
   elif [ "$M_RC" -ne 0 ] || $killed; then
     verdict="FAIL: exit ${M_RC}, killed for memory: ${M_KILLED}"
+  elif [ "$5" = finish ]; then
+    :
   elif [ "$need" -eq 0 ]; then
     verdict="FAIL: no memory sample"
   elif [ $(($3 * 1024 * 100)) -lt $((need * HEADROOM_PCT)) ]; then
@@ -221,7 +224,7 @@ row PRS_PREPARE "$LIMIT" "$GB" "$RECORDED_PREPARE_MB" "$EXPECT"
 if [ "$M_RC" -ne 0 ]; then
   echo "PRS_PREPARE failed under its limit; running it again with ${CAP_MB} MB for FORMAT_SCOREFILES' input."
   prepare "$CAP_MB"
-  row "PRS_PREPARE (again, for the input)" "$CAP_MB" "$((CAP_MB / 1024))" "$CAP_MB" pass
+  row "PRS_PREPARE (again, for the input)" "$CAP_MB" "$((CAP_MB / 1024))" "$CAP_MB" finish
   [ "$M_RC" -eq 0 ] || { echo "ERROR: PRS_PREPARE does not fit this machine" >&2; exit 1; }
 fi
 
