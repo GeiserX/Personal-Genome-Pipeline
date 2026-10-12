@@ -428,9 +428,10 @@ jobs:
         run: |
           log=.nextflow.log
           [ -f "$log" ] || { echo "No .nextflow.log: no Nextflow run had started."; exit 0; }
-          mkdir -p "${RUNNER_TEMP}/nextflow-logs"
-          for f in .nextflow.log*; do cp "$f" "${RUNNER_TEMP}/nextflow-logs/${f#.}"; done
-          # A report, not a check: no command here may stop the step.
+          # A report, not a check: no command here may stop the step, and a
+          # log that cannot be copied (a full disk) must not cost the report.
+          mkdir -p "${RUNNER_TEMP}/nextflow-logs" || true
+          for f in .nextflow.log*; do cp "$f" "${RUNNER_TEMP}/nextflow-logs/${f#.}" || echo "Could not keep $f for the artifact."; done
           names() { sed -n "$1" "$log" | sort; }
           echo "The newest run, $(grep -m1 -o '\$> .*' "$log" || echo 'command line not found')"
           echo "== Submitted and not completed (running when the log ends):"
