@@ -591,15 +591,17 @@ else
     IMAGES+=("$img")
   done < <(pipeline_images)
 
-  # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh):
-  # without it, a dangling-image cleanup deletes the image.
+  # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh)
+  # when that tag names the same image id: without it, a dangling-image
+  # cleanup deletes the image.
+  image_id() { "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null; }
   PULLED=0
   UNTAGGED=()
   for img in "${IMAGES[@]}"; do
     if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       PULLED=$((PULLED + 1))
       tag=$(pinned_tag "$img")
-      if [ -n "$tag" ] && ! "$CONTAINER_ENGINE" image inspect "$tag" &>/dev/null; then
+      if [ -n "$tag" ] && [ "$(image_id "$tag")" != "$(image_id "$img")" ]; then
         UNTAGGED+=("$img")
       fi
     else
