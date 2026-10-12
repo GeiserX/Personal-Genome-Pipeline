@@ -186,8 +186,10 @@ printf 'task\tlimit_mb\tswap_mb\texit\tkilled\tpeak_mb\tanon_plus_swap_mb\tsecon
 
 # Control: the kill must be seen. 2 GB touched under a 1 GB limit.
 MEASURE_SWAP_MB=0 measured 1024 "$PYTHON_IMAGE" python3 -c 'b = bytearray(2 << 30); print(len(b))'
-if [ "$M_RC" -eq 137 ] && [ "$M_KILLED" = true ]; then
-  echo "Control: a 2 GB allocation under a 1 GB limit was killed (exit ${M_RC}) and reported."
+# Docker's OOMKilled flag is not always set on cgroup v2 (one run had exit
+# 137 and false), so exit 137 counts as a kill here and in row.
+if [ "$M_RC" -eq 137 ]; then
+  echo "Control: a 2 GB allocation under a 1 GB limit was killed (exit ${M_RC}, OOMKilled ${M_KILLED}) and reported."
 else
   echo "ERROR: a 2 GB allocation under a 1 GB limit was not reported as killed (exit ${M_RC}, killed ${M_KILLED})" >&2
   exit 1
