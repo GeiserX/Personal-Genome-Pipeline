@@ -239,7 +239,9 @@ docker system df
 ```bash
 # Clean up Docker (removes unused containers, images, build cache)
 docker system prune -a
-# WARNING: This removes ALL unused images. Re-pull them with ./scripts/setup.sh --pull-only.
+# WARNING: This removes ALL unused images. Re-pull the default images with
+# ./scripts/setup.sh --pull-only; the opt-in images come back with
+# --parascopy-data or --yleaf-data.
 
 # Safer: only remove stopped containers and dangling images. Run
 # ./scripts/setup.sh --pull-only once first: it tags the digest-pinned
