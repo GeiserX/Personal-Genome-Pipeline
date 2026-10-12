@@ -202,7 +202,7 @@ validate
 if warned "$first"; then pass "an image with no tag at all gets the would-delete warning"; else fail "validate-setup.sh did not warn that a cleanup would delete ${first} (no tag at all): $(grep -A3 'Docker Images' "${WORK}/validate.log" | tr '\n' ' ')"; fi
 
 # Another tag on the same image id: not dangling, so no deletion claim.
-CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" tag "$1" localhost/pgp-test/foreign:keep' _ "$first"
+CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" tag "$1" example/foreign:keep' _ "$first"
 validate
 if warned "$first"; then
   fail "validate-setup.sh claims a cleanup would delete ${first}, but another local tag keeps it"

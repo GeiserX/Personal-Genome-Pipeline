@@ -328,7 +328,7 @@ jobs:
           # dangling: validate-setup.sh must not claim a cleanup would delete
           # it, and notes that the pinned tag is missing.
           tag0=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "${imgs[0]}" | grep '^localhost/pgp-pinned/')
-          docker tag "${imgs[0]}" localhost/pgp-ci/foreign:keep
+          docker tag "${imgs[0]}" example/foreign:keep
           docker rmi "$tag0"
           if is_dangling "${imgs[0]}"; then
             echo "::error::control: ${imgs[0]} with another tag is dangling; this case tests nothing"; exit 1
