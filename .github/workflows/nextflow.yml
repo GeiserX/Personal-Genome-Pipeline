@@ -120,6 +120,7 @@ jobs:
       # The default tools, each stub run inside its own image.
       - name: Stub run of the test profile with Docker
         if: steps.scope.outputs.run == 'true' && matrix.line == 'pinned'
+        timeout-minutes: 20
         run: |
           # Many bioinformatics images run as non-root, which cannot write the
           # Nextflow work directory on a GitHub-hosted runner.
@@ -158,6 +159,7 @@ jobs:
       # into its versions.yml.
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
         run: |
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
             -work-dir "${RUNNER_TEMP}/all-tools-work"
@@ -235,24 +237,38 @@ jobs:
 
       # What the heavy tasks ask for, read back from the trace of a stub run,
       # so it is the value Nextflow resolved and not the config text. The caps
-      # sit above every request, so resourceLimits hides nothing, and the
-      # local executor is told it has 16 CPUs and 64 GB, so it accepts an
-      # 8-CPU stub on this 4-CPU runner. Each checked task exits 137 on its
-      # first attempt, as an out-of-memory kill would, and the second attempt
-      # must ask for twice the memory: a fixed memory value would stop the
-      # retry from doubling it. Expected: DEEPVARIANT gets --max_time on its
-      # first attempt (Nextflow 26.04.7 can abort the whole run when a task
-      # passes its time limit, nextflow-io/nextflow#7569; read in its source,
-      # not reproduced), FASTP gets the 8 CPUs of step 01b, ALIGN_MINIMAP2
-      # (minimap2 piped into samtools) the process_high label's 8 CPUs and
-      # 32 GB, and MANTA, CNVPYTOR and VEP what steps 04, 18 and 13 give them.
+      # sit above every request, so resourceLimits hides nothing. Each checked
+      # task exits 137 on its first attempt, as an out-of-memory kill would,
+      # and the second attempt must ask for twice the memory: a fixed memory
+      # value would stop the retry from doubling it. Expected: DEEPVARIANT gets
+      # --max_time on its first attempt (Nextflow 26.04.7 can abort the whole
+      # run when a task passes its time limit, nextflow-io/nextflow#7569; read
+      # in its source, not reproduced), FASTP gets the 8 CPUs of step 01b,
+      # ALIGN_MINIMAP2 (minimap2 piped into samtools) the process_high label's
+      # 8 CPUs and 32 GB, and MANTA, CNVPYTOR and VEP what steps 04, 18 and 13
+      # give them.
+      #
+      # The local executor is told it has more CPUs and memory than every task
+      # attempt of this run asks for added together, and the check at the end
+      # fails when it does not. So it accepts an 8-CPU stub on this 4-CPU
+      # runner, and no task ever waits for room. The second part is why this
+      # step no longer hangs. Nextflow 26.04.7 keeps the local executor's free
+      # CPUs and memory in two plain fields that two threads change without a
+      # lock, so a release can be lost, and a task that asks for more than the
+      # executor then counts as free is never started. With executor.memory at
+      # 64 GB, the size of a doubled 32 GB request, this step stopped that way
+      # in 22 of 600 loop runs, and twice in this workflow's own runs, silent
+      # until the job timeout (docs/lessons-learned.md, "The local executor
+      # can lose track of free memory").
       - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
         if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
         run: |
-          cat > "${RUNNER_TEMP}/resources.config" <<'CICONF'
+          exec_cpus=512 exec_mem_gb=2048
+          cat > "${RUNNER_TEMP}/resources.config" <<CICONF
           params.kir = false
-          executor.cpus = 16
-          executor.memory = '64.GB'
+          executor.cpus = ${exec_cpus}
+          executor.memory = '${exec_mem_gb}.GB'
           process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
           process {
               withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP' {
@@ -269,9 +285,10 @@ jobs:
           nextflow run main.nf -profile test_all -stub -ansi-log false -c "${RUNNER_TEMP}/resources.config" \
             --tools vep,manta,cnvpytor --max_cpus 16 --max_memory 64.GB --max_time 48.h \
             --outdir "${RUNNER_TEMP}/resources" -work-dir "${RUNNER_TEMP}/resources-work"
-          python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt <<'PY'
+          python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt "$exec_cpus" "$exec_mem_gb" <<'PY'
           import csv, sys
           GB, H = 1024 ** 3, 3600 * 1000
+          exec_cpus, exec_mem = int(sys.argv[2]), int(sys.argv[3]) * GB
           # process: (cpus, memory, time) of the first attempt
           want = {
               'DEEPVARIANT':   (8, 32 * GB, 48 * H),
@@ -282,8 +299,12 @@ jobs:
               'VEP':           (8, 16 * GB, 24 * H),
           }
           seen, bad = {p: {} for p in want}, 0
+          attempts = all_cpus = all_mem = 0
           with open(sys.argv[1]) as fh:
               for row in csv.DictReader(fh, delimiter='\t'):
+                  attempts += 1
+                  all_cpus += int(row['cpus'])
+                  all_mem += int(row['memory'])
                   proc = row['name'].split(' (')[0].split(':')[-1]
                   if proc not in want:
                       continue
@@ -306,6 +327,14 @@ jobs:
                   if got[1] != 2 * mem:
                       print(f"FAIL {proc}: the retry asks for {got[1] / GB:g} GB, want {2 * mem / GB:g} GB")
                       bad += 1
+          # Every attempt takes its request once and gives it back once. If
+          # the executor has at least the sum, losing every release still
+          # leaves room for the next task.
+          print(f"{attempts} task attempts ask for {all_cpus} CPUs and {all_mem / GB:g} GB added together; "
+                f"the executor is told it has {exec_cpus} CPUs and {exec_mem / GB:g} GB")
+          if all_cpus > exec_cpus or all_mem > exec_mem:
+              print("FAIL: executor.cpus or executor.memory of this step is below that sum; raise exec_cpus / exec_mem_gb")
+              bad += 1
           print(f"{bad} failure(s)")
           sys.exit(1 if bad else 0)
           PY
@@ -355,9 +384,11 @@ jobs:
               ALIGN_MINIMAP2(channel.of([[id: 'oom'], file('$t/r1.fastq.gz'), file('$t/r2.fastq.gz')]), file('$t/ref.sr.mmi'))
           }
           EOF
+          # 16 CPUs and 128 GB: at least the two attempts added together (8 + 8
+          # CPUs, 32 + 64 GB), for the reason given at the step above.
           cat > "$t/oom.config" <<EOF
           executor.cpus = 16
-          executor.memory = '64.GB'
+          executor.memory = '128.GB'
           trace.enabled = true
           trace.raw = true
           trace.file = '$t/trace.txt'
@@ -384,3 +415,40 @@ jobs:
           print('OK' if ok else 'FAIL: a kill inside the pipe did not reach Nextflow as exit 137 and a retry')
           sys.exit(0 if ok else 1)
           PY
+
+      # A Nextflow run that fails, or that its step's timeout cuts, leaves its
+      # log in the checkout as .nextflow.log (older runs of the job as
+      # .nextflow.log.1 and up). The first two hangs of the retry step could
+      # not be explained because CI kept none. Nextflow writes its two queues
+      # to that log every five minutes, so a run cut after ten has them:
+      # "tasks in the submission queue" wait to start, "tasks to be completed"
+      # are running.
+      - name: Show what Nextflow was waiting for
+        if: failure() && steps.scope.outputs.run == 'true'
+        run: |
+          log=.nextflow.log
+          [ -f "$log" ] || { echo "No .nextflow.log: no Nextflow run had started."; exit 0; }
+          # A report, not a check: no command here may stop the step, and a
+          # log that cannot be copied (a full disk) must not cost the report.
+          mkdir -p "${RUNNER_TEMP}/nextflow-logs" || true
+          for f in .nextflow.log*; do cp "$f" "${RUNNER_TEMP}/nextflow-logs/${f#.}" || echo "Could not keep $f for the artifact."; done
+          names() { sed -n "$1" "$log" | sort; }
+          echo "The newest run, $(grep -m1 -o '\$> .*' "$log" || echo 'command line not found')"
+          echo "== Submitted and not completed (running when the log ends):"
+          comm -23 <(names 's/.*ubmitted process > \(.*\)$/\1/p') \
+                   <(names 's/.*Task completed > TaskHandler\[id: [0-9]*; name: \(.*\); status: .*/\1/p') || true
+          echo "== Retried and never re-submitted (waiting to start):"
+          comm -23 <(names 's/.*NOTE: Process .\(.*\). terminated.*Execution is retried.*/\1/p') \
+                   <(names 's/.*Re-submitted process > \(.*\)$/\1/p') || true
+          echo "== Nextflow's own queue dumps (one every five minutes; none in a shorter run):"
+          dumps=$(grep -E '(%%|!!) executor |^~> |^\.\. remaining' "$log" | tail -n 40 || true)
+          echo "${dumps:-none}"
+
+      - name: Keep the Nextflow logs of a failed job
+        if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextflow-logs-${{ matrix.line }}
+          path: ${{ runner.temp }}/nextflow-logs
+          if-no-files-found: ignore
+          retention-days: 14
