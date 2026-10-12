@@ -162,10 +162,12 @@ rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker 
 # unfinished. 'not finished': the pipeline stopped before that. Stranger reads ExpansionHunter's calls, so it does not
 # run when ExpansionHunter failed.
 # tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
-# (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*; indexcov is step 16.
+# (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
+# extraction and haplocheck are step 12's; indexcov is step 16.
 tool_of() {
   local p=${1##*:} t best=""; p=${p,,}
-  case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;; esac
+  case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
+    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; esac
   for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
   echo "${best:-$p}"
 }
@@ -177,9 +179,11 @@ while IFS=$'\t' read -r p st; do
   BAD[$t]=1 failed=1 rest=$(IFS=,; echo "${SEL[*]}"); rest=",${rest},"; rest=${rest/,${t},/,}; rest=${rest#,}
   echo "  ${t} (${p}) failed$([ "$st" != ignored ] || echo ', skipped'): see ${S}/nextflow/.nextflow.log. To run without it: TOOLS=${rest%,}" >&2
 done < <(cat "$FT" 2>/dev/null)
+# A process with no task had not started, except haplocheck without step 20's Mutect2 calls: it never gets one then.
 while IFS=$'\t' read -r p st; do
-  t=$(tool_of "$p"); case "$st" in bad) BAD[$t]=1 ;; fin) FIN[$t]=1 ;; *) OPEN[$t]=1 ;; esac
-done < <(awk -F'\t' 'NR > 1 && NF == 6 {print $1 "\t" ($4 + $5 > 0 ? "bad" : $2 + $3 > 0 && $6 == 0 ? "fin" : "open")}' "$PT" 2>/dev/null)
+  t=$(tool_of "$p"); case "$st" in bad) BAD[$t]=1 ;; fin) FIN[$t]=1 ;; open) OPEN[$t]=1 ;;
+    *) [[ "${p##*:}" == HAPLOCHECK && ( " ${SEL[*]} " != *" mito_variants "* || -n "${BAD[mito_variants]:-}" ) ]] || OPEN[$t]=1 ;; esac
+done < <(awk -F'\t' 'NR > 1 && NF == 6 {print $1 "\t" ($4 + $5 > 0 ? "bad" : $6 > 0 ? "open" : $2 + $3 > 0 ? "fin" : "none")}' "$PT" 2>/dev/null)
 for n in "${RUNS[@]}"; do
   t=${TOOL_OF[$n]:-indexcov}; [ "$t" != ancestry ] || t="prs"  # step 26 is computed inside the PRS run
   r="not finished"; if [ "$rc" -eq 0 ] || { [ -n "${FIN[$t]:-}" ] && [ -z "${OPEN[$t]:-}" ]; }; then r=ok; fi
