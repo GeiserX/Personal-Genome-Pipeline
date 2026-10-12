@@ -14,7 +14,11 @@
 #   3. the same failure on a first run (nothing cached): the same statuses;
 #   4. no process_status.tsv (the pipeline died before its handler ran): no
 #      step is 'ok';
-#   5. every tool run-all.sh can select has a process named after it in
+#   5. haplocheck and the chrM extraction count for step 12 (the mito
+#      haplogroup): left running or failed, they make it 'not finished' or
+#      'failed'; with no task it is 'ok' only when step 20's Mutect2 calls,
+#      which haplocheck reads, were not made;
+#   6. every tool run-all.sh can select has a process named after it in
 #      modules/local, which is how a row finds its step.
 # A fake nextflow stands in; a wrapper in front of it writes the two files the
 # completion handler would. The reports are the real ones: the hook runs
@@ -88,7 +92,7 @@ row() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$@"; }
   row CLINICAL:ROH 0 1 0 0 0
   row CLINICAL:MITO_EXTRACT_CHRM 1 0 0 0 0
   row CLINICAL:MITO_HAPLOGROUP 1 0 0 0 0
-  row CLINICAL:HAPLOCHECK 0 0 0 0 0
+  row CLINICAL:HAPLOCHECK 1 0 0 0 0
   row BAM_ANALYSIS:MOSDEPTH 1 0 0 0 0
   row BAM_ANALYSIS:TELOMERE_HUNTER 0 0 0 1 0
   row BAM_ANALYSIS:MITO_VARIANTS 0 1 0 0 0
@@ -163,7 +167,35 @@ want notable 25 failed
 want notable 11 'not finished'
 [ ! -e "${S}/nextflow/process_status.tsv" ] || miss "notable: run-all.sh kept an earlier run's process_status.tsv"
 
-# --- 5. every selectable tool has a process named after it --------------------------------
+# --- 5. haplocheck and the chrM extraction are step 12's ---------------------------------
+# setrow PROCESS COUNTS...: replace the process's row in case 1's table
+setrow() {
+  { grep -v "^${1}"$'\t' "${CASE_WORK}/resume.tsv"; row "$@"; } > "${CASE_WORK}/resume.new"
+  mv "${CASE_WORK}/resume.new" "${CASE_WORK}/resume.tsv"
+}
+# hc NAME WANT TOOLS COUNTS...: case 1's run with HAPLOCHECK's row set to COUNTS; step 12 must be WANT
+hc() {
+  local name=$1 want=$2 tools=$3; shift 3
+  setrow CLINICAL:HAPLOCHECK "$@"
+  rm -rf "${S}/logs"
+  run_expect 3 "$name" env PATH="$NFPATH" FAKE_NEXTFLOW_RC=3 PROCESS_STATUS="${CASE_WORK}/resume.tsv" \
+    FAILED_TASKS="${CASE_WORK}/failed.tsv" TOOLS="$tools" "${SCRIPTS}/run-all.sh" sample1 male
+  want "$name" 12 "$want"
+}
+hc hc-running 'not finished' '' 0 0 0 0 1
+hc hc-failed failed '' 0 0 1 0 0
+hc hc-notask 'not finished' '' 0 0 0 0 0         # step 20's calls were made: haplocheck had not started
+hc hc-nomutect2 ok roh,mito_haplogroup 0 0 0 0 0  # step 20 not selected: haplocheck never gets a task
+want hc-nomutect2 11 ok
+setrow BAM_ANALYSIS:MITO_VARIANTS 0 0 0 1 0
+printf 'BAM_ANALYSIS:MITO_VARIANTS\tignored\n' >> "${CASE_WORK}/failed.tsv"
+hc hc-mutect2-failed ok '' 0 0 0 0 0              # step 20 failed and was ignored: no calls to read
+want hc-mutect2-failed 20 failed
+setrow CLINICAL:MITO_EXTRACT_CHRM 0 0 0 0 1
+hc hc-extract-running 'not finished' '' 1 0 0 0 0
+[ "$(grep -c '^CLINICAL:\(HAPLOCHECK\|MITO_EXTRACT_CHRM\)'$'\t' "${CASE_WORK}/resume.tsv")" -eq 2 ] || fail "setrow left a duplicate or no row"
+
+# --- 6. every selectable tool has a process named after it --------------------------------
 run_expect 2 known env TOOLS=no_such_tool "${SCRIPTS}/run-all.sh" sample1 male
 KNOWN=$(sed -n "s/^ERROR: unknown step 'no_such_tool' in TOOLS\. Known: //p" "${CASE_WORK}/known.out")
 PROCS=$(sed -n 's/^process \([A-Z0-9_]*\).*/\1/p' "${REPO_ROOT}"/modules/local/*/main.nf)
