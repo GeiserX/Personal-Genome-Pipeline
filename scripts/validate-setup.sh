@@ -591,10 +591,17 @@ else
     IMAGES+=("$img")
   done < <(pipeline_images)
 
+  # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh):
+  # without it, a dangling-image cleanup deletes the image.
   PULLED=0
+  UNTAGGED=()
   for img in "${IMAGES[@]}"; do
     if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       PULLED=$((PULLED + 1))
+      tag=$(pinned_tag "$img")
+      if [ -n "$tag" ] && ! "$CONTAINER_ENGINE" image inspect "$tag" &>/dev/null; then
+        UNTAGGED+=("$img")
+      fi
     else
       MISSING_IMAGES+=("$img")
     fi
@@ -606,11 +613,17 @@ else
     pass "${PULLED}/${#IMAGES[@]} Docker images already pulled"
     fail "${#MISSING_IMAGES[@]} Docker image(s) not yet pulled:"
     for img in "${MISSING_IMAGES[@]}"; do
-      echo "         docker pull ${img}"
+      tag=$(pinned_tag "$img")
+      echo "         docker pull ${img}${tag:+ && docker tag ${img} ${tag}}"
     done
     echo ""
-    echo "       Pull all missing images at once:"
-    echo "         $(printf 'docker pull %s && ' "${MISSING_IMAGES[@]}" | sed 's/ && $//')  "
+    echo "       Pull all missing images at once (and tag the digest-pinned ones):"
+    echo "         ./scripts/setup.sh --pull-only"
+  fi
+  if [ ${#UNTAGGED[@]} -gt 0 ]; then
+    warn "${#UNTAGGED[@]} digest-pinned image(s) have no local tag, so a dangling-image cleanup (docker image prune) would delete them:"
+    printf '         %s\n' "${UNTAGGED[@]}"
+    echo "       Tag them with: ./scripts/setup.sh --pull-only"
   fi
 
   # An opt-in step's image (`# optional` in versions.env) matters once its
@@ -894,7 +907,7 @@ fi
 if [ ${#MISSING_IMAGES[@]} -gt 0 ]; then
   echo ""
   echo "  To pull all missing Docker images (~10-15 GB total):"
-  echo "    $(printf 'docker pull %s && ' "${MISSING_IMAGES[@]}" | sed 's/ && $//')"
+  echo "    ./scripts/setup.sh --pull-only"
 fi
 
 echo ""

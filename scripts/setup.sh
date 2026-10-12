@@ -444,6 +444,14 @@ pull_image() {
   return 1
 }
 
+# keep_image IMAGE: tag a digest-pinned image (tag_pinned_image in
+# scripts/lib/common.sh), so a dangling-image cleanup does not delete it.
+keep_image() {
+  tag_pinned_image "$1" && return 0
+  echo "  WARNING: Could not tag ${1} as $(pinned_tag "$1"); a dangling-image cleanup would delete it." >&2
+  return 1
+}
+
 # ensure_image VAR STEP: the image of an opt-in step (`# optional` in
 # versions.env, so the main setup leaves it out), pulled with its data, so
 # the run does not pull it in the middle.
@@ -457,6 +465,7 @@ ensure_image() {
     echo "[WARN] Could not pull ${img}. Step $2 needs it; run this command again."
     return 1
   fi
+  keep_image "$img"
 }
 
 # install_vep_cache_opt_in: the VEP cache step 13 and the Nextflow VEP read,
@@ -487,7 +496,8 @@ case "$OPT_IN" in
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
-# lines marked `# optional`). Sets PULLED, SKIPPED and FAILED.
+# lines marked `# optional`), and tag the digest-pinned ones, those already
+# present included. Sets PULLED, SKIPPED and FAILED.
 pull_images() {
   local img
   PULLED=0
@@ -503,13 +513,15 @@ pull_images() {
       else
         echo "  WARNING: Failed to pull ${img}; Docker's message is above."
         FAILED=$((FAILED + 1))
+        continue
       fi
     fi
+    keep_image "$img" || FAILED=$((FAILED + 1))
   done < <(pipeline_images)
   echo "[OK] Docker images: ${PULLED} pulled, ${SKIPPED} already present, ${FAILED} failed."
   if [ "$FAILED" -gt 0 ]; then
     echo ""
-    echo "ERROR: ${FAILED} Docker image(s) failed to pull. Fix the issues above and re-run setup."
+    echo "ERROR: ${FAILED} Docker image(s) failed to pull or tag. Fix the issues above and re-run setup."
     return 1
   fi
 }

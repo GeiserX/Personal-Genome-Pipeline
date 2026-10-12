@@ -65,24 +65,32 @@ done < <(grep -E '^[A-Z0-9_]+_IMAGE=' "${REPO}/versions.env" | sed -E 's/^[^=]+=
 [ "$pinned" -ge 1 ] || fail "found no digest-pinned image in versions.env; the test reads nothing"
 pass "${pinned} digest-pinned image(s) of versions.env get a localhost/pgp-pinned/ tag; tag-only images get none"
 
-# 2. The derivation itself.
+# 2. The derivation itself. Image names use the example/ placeholder
+# namespace, so scripts/ci/check-images.sh does not read them as pins.
+P=localhost/pgp-pinned
 check() {  # check IMAGE WANT
   local got
   got=$(pinned_tag "$1")
   if [ "$got" = "$2" ]; then pass "$1 -> ${2:-(no tag)}"; else fail "$1 -> '${got}', expected '${2}'"; fi
 }
-check "python:3.14@sha256:${D1}"                 "localhost/pgp-pinned/python:sha256-${D1}"
-check "python@sha256:${D1}"                      "localhost/pgp-pinned/python:sha256-${D1}"
-check "ghcr.io/org/tool:2-beta@sha256:${D2}"     "localhost/pgp-pinned/ghcr.io/org/tool:sha256-${D2}"
-check "registry.example:5000/org/tool@sha256:${D1}"     "localhost/pgp-pinned/registry.example-5000/org/tool:sha256-${D1}"
-check "registry.example:5000/org/tool:1.0@sha256:${D1}" "localhost/pgp-pinned/registry.example-5000/org/tool:sha256-${D1}"
-check "python:3.14"                              ""
-check "python:3.14@sha256:abc"                   ""
+check "example/tool:3.14@sha256:${D1}"           "${P}/example/tool:sha256-${D1}"
+check "example/tool@sha256:${D1}"                "${P}/example/tool:sha256-${D1}"
+check "ghcr.io/example/tool:2-beta@sha256:${D2}" "${P}/ghcr.io/example/tool:sha256-${D2}"
+check "registry.example:5000/example/tool@sha256:${D1}"     "${P}/registry.example-5000/example/tool:sha256-${D1}"
+check "registry.example:5000/example/tool:1.0@sha256:${D1}" "${P}/registry.example-5000/example/tool:sha256-${D1}"
+check "example/tool:3.14"                        ""
+check "example/tool:3.14@sha256:abc"             ""
 check ""                                         ""
-[ "$(pinned_tag "python@sha256:${D1}")" != "$(pinned_tag "python@sha256:${D2}")" ] \
-  && pass "two digests of one image get two tags" || fail "two digests of one image share a tag"
-[[ "$(pinned_tag "registry.example:5000/org/tool@sha256:${D1}")" =~ $REF_RE ]] \
-  && pass "a registry port leaves a valid reference" || fail "a registry port leaves an invalid reference"
+if [ "$(pinned_tag "example/tool@sha256:${D1}")" != "$(pinned_tag "example/tool@sha256:${D2}")" ]; then
+  pass "two digests of one image get two tags"
+else
+  fail "two digests of one image share a tag"
+fi
+if [[ "$(pinned_tag "registry.example:5000/example/tool@sha256:${D1}")" =~ $REF_RE ]]; then
+  pass "a registry port leaves a valid reference"
+else
+  fail "a registry port leaves an invalid reference"
+fi
 
 # 3. tag_pinned_image: one `tag` call per digest-pinned image, the same on a
 # second run; none for a tag-only image; a failed `docker tag` is reported.
@@ -95,19 +103,21 @@ for run in 1 2; do
 done
 want=$(pipeline_images | grep -c '@sha256:' || true)
 got=$(grep -c '^tag ' "${WORK}/run1.log" || true)
-[ "$got" -eq "$want" ] && [ "$want" -ge 1 ] \
-  && pass "setup's list: ${got} tag call(s) for ${want} digest-pinned image(s)" \
-  || fail "setup's list: ${got} tag call(s) for ${want} digest-pinned image(s)"
+if [ "$got" -eq "$want" ] && [ "$want" -ge 1 ]; then
+  pass "setup's list: ${got} tag call(s) for ${want} digest-pinned image(s)"
+else
+  fail "setup's list: ${got} tag call(s) for ${want} digest-pinned image(s)"
+fi
 if cmp -s "${WORK}/run1.log" "${WORK}/run2.log"; then pass "a second run makes the same calls"; else fail "a second run differs"; fi
 while read -r _ src dst; do
   [ "$dst" = "$(pinned_tag "$src")" ] || fail "tagged ${src} as ${dst}"
 done < "${WORK}/run1.log"
 
 : > "$ENGINE_LOG"
-tag_pinned_image "python:3.14" || fail "tag_pinned_image failed on a tag-only image"
-[ ! -s "$ENGINE_LOG" ] && pass "a tag-only image is left alone" || fail "a tag-only image was tagged: $(cat "$ENGINE_LOG")"
+tag_pinned_image "example/tool:3.14" || fail "tag_pinned_image failed on a tag-only image"
+if [ -s "$ENGINE_LOG" ]; then fail "a tag-only image was tagged: $(cat "$ENGINE_LOG")"; else pass "a tag-only image is left alone"; fi
 
-if TAG_FAILS=1 tag_pinned_image "python@sha256:${D1}"; then
+if TAG_FAILS=1 tag_pinned_image "example/tool@sha256:${D1}"; then
   fail "a failed docker tag was not reported"
 else
   pass "a failed docker tag is reported"

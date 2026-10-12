@@ -22,7 +22,8 @@
 #   CONTAINER_ENGINE  docker by default.
 # and the helpers validate_sample, require_image, cpath, run_in, have_output,
 # wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
-# lock_acquire / lock_release, pipeline_images, scatter_beds and run_parallel,
+# lock_acquire / lock_release, pipeline_images, pinned_tag / tag_pinned_image,
+# scatter_beds and run_parallel,
 # described where they are
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
@@ -519,6 +520,32 @@ pipeline_images() {
       printf '%s\n' "${!name}"
     fi
   done < "${PGP_ROOT}/versions.env"
+}
+
+# pinned_tag IMAGE: the local tag setup.sh gives an image versions.env pins by
+# digest (name[:tag]@sha256:HEX), printed as localhost/pgp-pinned/NAME:sha256-HEX;
+# nothing for an image pinned by tag alone. An image pulled by digest gets no
+# tag, so Docker lists it as dangling, and `docker image prune` or
+# `docker rmi $(docker images -qf dangling=true)` deletes it. This second name
+# keeps it out of that list. It does not stop `docker system prune -a` or an
+# explicit `docker rmi`. Every task still runs the digest reference: the tag
+# only names the same image id. `localhost` is a registry host no one else can
+# own, so the name can never be pulled from, or pushed to, a public registry.
+pinned_tag() {
+  local name hex last
+  [[ "$1" =~ ^([a-z0-9][^@]*)@sha256:([0-9a-f]{64})$ ]] || return 0
+  name=${BASH_REMATCH[1]} hex=${BASH_REMATCH[2]}
+  last=${name##*/}
+  [[ "$last" == *:* ]] && name=${name%:*}   # drop the tag, keep a registry port
+  printf 'localhost/pgp-pinned/%s:sha256-%s\n' "${name//:/-}" "$hex"
+}
+
+# tag_pinned_image IMAGE: give a pulled digest-pinned image its pinned_tag.
+# Safe to repeat: tagging an image with the name it already has changes nothing.
+tag_pinned_image() {
+  local tag
+  tag=$(pinned_tag "$1")
+  [ -z "$tag" ] || "$CONTAINER_ENGINE" tag "$1" "$tag"
 }
 
 # scatter_beds DIR [INTERVALS]: split the calling of a single-process caller
