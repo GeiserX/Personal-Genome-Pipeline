@@ -86,6 +86,10 @@ results_*/
 .nf-test/
 /nextflow
 ci.config
+# main.nf writes these into the launch directory as a run ends (a direct
+# `nextflow run main.nf` from the checkout leaves them here)
+/process_status.tsv
+/failed_tasks.tsv
 
 # OMC / local agent operational state — may contain local paths or notes; never commit
 .omc/
