@@ -454,7 +454,9 @@ jobs:
               esac
               if [ ${task.memory.toGiga()} -lt 32 ]; then
                   if [ ${mode} = sigkill ]; then kill -9 \$\$; fi
-                  echo 'concurrent.futures.process.BrokenProcessPool: A process in the process pool was terminated abruptly' >&2
+                  # Split in two: pgsc_calc prints a failed task's script, and
+                  # the whole word there would read as a kill in PRS's check.
+                  echo 'concurrent.futures.process.Broken''ProcessPool: A process in the process pool was terminated abruptly' >&2
                   exit 1
               fi
               echo "formatted with ${task.memory.toGiga()} GB"
