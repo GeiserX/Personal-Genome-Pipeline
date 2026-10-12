@@ -26,10 +26,12 @@ Two more files, when present:
 
 - `${SAMPLE}/run_manifest.tsv` (`bin/write_manifest.sh`): the pipeline commit, `versions.env`, the digest of every image, the ClinVar file date, the VEP cache, the PCGR and pypgx bundles, the HLA database release and the header of each PGS scoring file. `run-all.sh` writes it when a run starts and again just before this step, so an image pulled during the run gets its digest; this step writes one when the sample has none.
 - `${SAMPLE}/logs/run_status.tsv`: when the latest `run-all.sh` run started, then one line per step. A step it did not start is `skipped (<reason>)`, for example `skipped (no BAM)` or `skipped (not in TOOLS)`. Once the pipeline has ended, each step it started is one of:
-    - `ok`: the pipeline finished.
-    - `failed`: the step's task failed. A report-only tool's failure is ignored by the pipeline, which goes on without it.
-    - `not finished`: the pipeline stopped on another step's failure.
+    - `ok`: the pipeline finished. After a pipeline that another step stopped, a step is still `ok` when each of its processes has a task that completed in this run or came from Nextflow's cache (`-resume`), and none was left unfinished.
+    - `failed`: one of the step's tasks failed. A report-only tool's failure is ignored by the pipeline, which goes on without it. Ancestry (step 26) is computed inside the PRS run, so it is `failed` when PRS is.
+    - `not finished`: the pipeline stopped on another step's failure before this step's tasks ran or ended.
     - `skipped (expansion_hunter failed)`: Stranger (step 9b), which reads ExpansionHunter's calls.
+
+    After a stopped pipeline `run-all.sh` reads these results from `${SAMPLE}/nextflow/process_status.tsv`, which the pipeline writes as it ends: one row per process with its tasks that succeeded, came from the cache, failed, were ignored and were left unfinished. A process belongs to the step whose `--tools` name its own name starts with (`PRS_SUMMARY` belongs to `prs`); Yleaf's processes are named `Y_*`, the SV merge's `SURVIVOR_*`, and `INDEXCOV` is step 16. Without that file (Nextflow died before writing it) no step is `ok`.
 
     Each opt-in step script it ran after the pipeline is `ok` or `failed`. The two reports get no line. After a failed pipeline `run-all.sh` skips the opt-in scripts and still writes this report and the text report.
 
@@ -67,7 +69,7 @@ The report contains:
 
 ## Results from an earlier run
 
-A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. The pipeline's steps are recorded `ok` only once the whole pipeline has finished. After a failed run they are `not finished` (the failed one `failed`), so every section from before that run is marked stale until the same command, with `-resume`, completes; a section whose file that run wrote is shown as current. A step you re-ran by hand after that run writes a newer file and is shown as current. Variant calling (step 03) has no line in `logs/run_status.tsv`, so its section is never marked stale, even when its VCF is older than the run.
+A step that is skipped or fails leaves the previous run's output on disk. When `logs/run_status.tsv` exists, a section whose file is older than the latest `run-all.sh` run, and whose step was not `ok` in that run, is marked **STALE** with the file's date and the step's result, in both reports. One failed tool does not make the other results stale. After a run that a tool stopped, a step whose tasks completed, or came from Nextflow's cache because its inputs and code had not changed, is `ok`: its section is shown as current even when its file is older than the run. Only the steps the stop cut short are `not finished` (the failed one `failed`), and an older file of theirs is marked stale until the same command, with `-resume`, completes. A step you re-ran by hand after that run writes a newer file and is shown as current. Variant calling (step 03) has no line in `logs/run_status.tsv`, so its section is never marked stale, even when its VCF is older than the run.
 
 A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports (the CYP2D6 rows too), and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 
