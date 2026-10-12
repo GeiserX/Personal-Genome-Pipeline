@@ -430,16 +430,18 @@ jobs:
           [ -f "$log" ] || { echo "No .nextflow.log: no Nextflow run had started."; exit 0; }
           mkdir -p "${RUNNER_TEMP}/nextflow-logs"
           for f in .nextflow.log*; do cp "$f" "${RUNNER_TEMP}/nextflow-logs/${f#.}"; done
+          # A report, not a check: no command here may stop the step.
           names() { sed -n "$1" "$log" | sort; }
           echo "The newest run, $(grep -m1 -o '\$> .*' "$log" || echo 'command line not found')"
           echo "== Submitted and not completed (running when the log ends):"
           comm -23 <(names 's/.*ubmitted process > \(.*\)$/\1/p') \
-                   <(names 's/.*Task completed > TaskHandler\[id: [0-9]*; name: \(.*\); status: .*/\1/p')
+                   <(names 's/.*Task completed > TaskHandler\[id: [0-9]*; name: \(.*\); status: .*/\1/p') || true
           echo "== Retried and never re-submitted (waiting to start):"
           comm -23 <(names 's/.*NOTE: Process .\(.*\). terminated.*Execution is retried.*/\1/p') \
-                   <(names 's/.*Re-submitted process > \(.*\)$/\1/p')
+                   <(names 's/.*Re-submitted process > \(.*\)$/\1/p') || true
           echo "== Nextflow's own queue dumps (one every five minutes; none in a shorter run):"
-          grep -E '(%%|!!) executor |^~> |^\.\. remaining' "$log" | tail -n 40 || echo "none"
+          dumps=$(grep -E '(%%|!!) executor |^~> |^\.\. remaining' "$log" | tail -n 40 || true)
+          echo "${dumps:-none}"
 
       - name: Keep the Nextflow logs of a failed job
         if: failure() && steps.scope.outputs.run == 'true'
