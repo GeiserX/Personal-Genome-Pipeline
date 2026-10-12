@@ -100,17 +100,17 @@ Two tasks read nothing but the scoring files, so their memory follows the score 
 | Task | Measured | Pipeline gives it | Step 25 gives it |
 |---|---|---|---|
 | Scoring files written as pgsc_calc reads them (`collect_summary.py prs-format`, `PRS_PREPARE`) | 11.3 to 11.5 GB at the peak (memory.peak), about 5 minutes | 16 GB | no limit |
-| pgsc_calc's `FORMAT_SCOREFILES` (`pgscatalog-format`), one thread | killed under the 14.1 GB limit without swap; with swap it finished, at about 14.2 GB of memory plus swap (sampled each second), in 17 to 18 minutes | one thread and all of `PRS`'s 24 GB | one thread and all of `PGSC_MAX_MEMORY` |
+| pgsc_calc's `FORMAT_SCOREFILES` (`pgscatalog-format`), one thread | killed under the 14.1 GB limit without swap; with swap it finished, at about 14.2 GB of memory plus swap (sampled each second), in 17 to 21 minutes | one thread and all of `PRS`'s 24 GB | one thread and all of `PGSC_MAX_MEMORY` |
 | the same, two threads (pgsc_calc's own choice) | about 15.7 GB, 13.5 minutes, with swap | | |
 | the same, four threads (pgsc_calc's retry) | about 23.8 GB, 13 minutes, with swap | | |
 
 In one whole pgsc_calc run on the PGS Catalog's synthetic genome-wide target (300 samples), with `FORMAT_SCOREFILES` on one thread and 15 GB, Nextflow's trace gave `FORMAT_SCOREFILES` a `peak_rss` of 18.1 GB (the sum of its processes' peaks, an upper bound), its two matching tasks 13.3 and 12.5 GB, and the run took 36 minutes. A real genome has one sample and fewer positions; its peaks have not been measured here.
 
-pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under the same `--max_memory`, so its retry needs more memory, not less. Both entry points therefore give it one thread, the whole of pgsc_calc's memory, and no retry inside pgsc_calc at the same limit. One thread is the slowest of the three (about 4 minutes more) and the smallest.
+pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under the same `--max_memory`, so its retry needs more memory, not less. Both entry points therefore give it one thread, the whole of pgsc_calc's memory, and no retry inside pgsc_calc at the same limit. One thread is the slowest of the three (4 to 8 minutes more) and the smallest.
 
-- **Pipeline:** `PRS` asks for 24 GB (`conf/base.config`), capped at `--max_memory`. With `--max_memory 24.GB` or more nothing else is needed. When a pgsc_calc task is killed for memory, `PRS` exits 137, so Nextflow retries it once with twice the memory, again capped at `--max_memory`. `PRS_PREPARE` asks for 16 GB, about 1.4 times its peak; 24 GB is about 1.3 times the 18.1 GB upper bound of `FORMAT_SCOREFILES`. Before this, `PRS` had 8 GB and `PRS_PREPARE` 2 GB (4 GB on the retry); in one run on a ~30x sample both were killed.
+- **Pipeline:** `PRS` asks for 24 GB (`conf/base.config`), capped at `--max_memory`. With `--max_memory 24.GB` or more it gets all 24 GB. When a pgsc_calc task is killed for memory, `PRS` exits 137, so Nextflow retries it once with twice the memory, again capped at `--max_memory`. `PRS_PREPARE` asks for 16 GB, about 1.4 times its peak; 24 GB is about 1.3 times the 18.1 GB upper bound of `FORMAT_SCOREFILES`. The labels gave `PRS` 8 GB and `PRS_PREPARE` 2 GB, and each was killed in a run on a ~30x sample ([Lessons learned](lessons-learned.md#pgsc_calcs-own-retry-gives-its-first-task-more-threads-under-the-same-memory-cap)).
 - **Step 25:** pgsc_calc gets three quarters of the RAM, 24 GB on a 32 GB machine. When one of its tasks is killed for memory the step says so; run it again with a larger `PGSC_MAX_MEMORY`.
-- **A 16 GB machine** caps both at about 12 to 15 GB, under what `FORMAT_SCOREFILES` needs. Docker lets a container swap as much again as its memory limit when the host has swap, which is how the runner finished it; without swap it is killed.
+- **A 16 GB machine** caps both at about 12 to 15 GB, under what `FORMAT_SCOREFILES` needs. Docker lets a container swap as much again as its memory limit when the host has swap, which is how the whole pgsc_calc run above finished it with a 15 GB limit on a 16 GB runner; without swap it was killed.
 
 Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list.
 

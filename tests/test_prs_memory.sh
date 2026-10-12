@@ -46,7 +46,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 # 16 GB; docs/25-prs.md, Memory). PRS_PREPARE: memory.peak
 # of its container, 11,614 to 11,732 in five runs. FORMAT_SCOREFILES on one
 # thread: Nextflow's peak_rss in a whole pgsc_calc run (18.1 GB, the sum of
-# its processes' peaks); this script's own figure was 14,467 to 14,494 with swap.
+# its processes' peaks); this script's own figure was 14,467 to 14,544 with swap.
 RECORDED_PREPARE_MB=11732
 RECORDED_FORMAT_MB=18534
 HEADROOM_PCT=125
