@@ -75,7 +75,8 @@ check() {  # check IMAGE WANT
 }
 check "example/tool:3.14@sha256:${D1}"           "${P}/example/tool:sha256-${D1}"
 check "example/tool@sha256:${D1}"                "${P}/example/tool:sha256-${D1}"
-check "ghcr.io/example/tool:2-beta@sha256:${D2}" "${P}/ghcr.io/example/tool:sha256-${D2}"
+H=ghcr.io  # a registry host, kept apart so the line is not read as a pin
+check "${H}/example/tool:2-beta@sha256:${D2}"    "${P}/${H}/example/tool:sha256-${D2}"
 check "registry.example:5000/example/tool@sha256:${D1}"     "${P}/registry.example-5000/example/tool:sha256-${D1}"
 check "registry.example:5000/example/tool:1.0@sha256:${D1}" "${P}/registry.example-5000/example/tool:sha256-${D1}"
 check "example/tool:3.14"                        ""
