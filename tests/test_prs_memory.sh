@@ -27,8 +27,9 @@
 #       conf/base.config (capped below the runner's RAM), and reads its memory
 #       from the container's cgroup each second: the highest of memory.peak
 #       and anonymous memory plus swap. It fails when a task is killed, when
-#       that figure times the headroom is over the request, or when it is over
-#       the one recorded here (then RECORDED_* and the docs need the new
+#       that figure times the headroom is over the request, or when it is
+#       more than 5% over the one recorded here (memory.peak varies by about
+#       0.1 GB between runs; past that, RECORDED_* and the docs need the new
 #       figure). A container that allocates 2 GB under a 1 GB limit without
 #       swap must be reported as killed first.
 #       MEASURE_SWAP_MB lets each container swap that much on top of its
@@ -44,10 +45,10 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 
 # The highest figures any run has given, in MB, on ubuntu-latest (4 CPUs,
 # 16 GB; docs/25-prs.md, Memory). PRS_PREPARE: memory.peak
-# of its container, 11,614 to 11,732 in five runs. FORMAT_SCOREFILES on one
+# of its container, 11,614 to 11,734 in ten runs. FORMAT_SCOREFILES on one
 # thread: Nextflow's peak_rss in a whole pgsc_calc run (18.1 GB, the sum of
 # its processes' peaks); this script's own figure was 14,467 to 14,544 with swap.
-RECORDED_PREPARE_MB=11732
+RECORDED_PREPARE_MB=11734
 RECORDED_FORMAT_MB=18534
 HEADROOM_PCT=125
 
@@ -165,8 +166,8 @@ row() {
     verdict="FAIL: no memory sample"
   elif [ $(($3 * 1024 * 100)) -lt $((need * HEADROOM_PCT)) ]; then
     verdict="FAIL: ${HEADROOM_PCT}% of ${need} MB is over the ${3} GB request"
-  elif [ "$need" -gt "$4" ]; then
-    verdict="FAIL: over the recorded ${4} MB; record the new figure in tests/test_prs_memory.sh and the docs"
+  elif [ $((need * 100)) -gt $(($4 * 105)) ]; then
+    verdict="FAIL: over the recorded ${4} MB by more than 5%; record the new figure in tests/test_prs_memory.sh and the docs"
   fi
   case "$verdict" in FAIL*) FAILS=$((FAILS + 1)) ;; esac
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "${MEASURE_SWAP_MB:-0}" "$M_RC" "$M_KILLED" "$M_PEAK_MB" "$M_USED_MB" "$M_SECONDS" "$verdict" | tee -a "${DIR}/table.tsv"
