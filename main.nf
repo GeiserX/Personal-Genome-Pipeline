@@ -652,10 +652,21 @@ workflow {
     // report-only tool nextflow.config lets fail, or 'failed'): run-all.sh
     // marks that step failed. A run with an ignored task still exits 0, so it
     // does not say "completed successfully".
-    def run_info   = workflow
-    def run_log    = log
-    def outdir     = params.outdir
-    def tasks_file = file("${workflow.launchDir}/failed_tasks.tsv")
+    //
+    // process_status.tsv, beside it, has one row per process of this run,
+    // whatever the run's end: how many of its tasks succeeded, came from the
+    // cache (-resume, or storeDir), failed for good (not retried, not ignored),
+    // failed and were ignored, and were left unfinished (pending, submitted,
+    // running or aborted when the run stopped). A process that got no task has
+    // a row of zeros. run-all.sh reads it after a failed run, so a step whose
+    // tasks completed or were cached is recorded 'ok' and only a step the stop
+    // cut short is 'not finished'. It is written last: the lines above do not
+    // depend on it.
+    def run_info    = workflow
+    def run_log     = log
+    def outdir      = params.outdir
+    def tasks_file  = file("${workflow.launchDir}/failed_tasks.tsv")
+    def status_file = file("${workflow.launchDir}/process_status.tsv")
     run_info.onComplete {
         def ignored = run_info.stats.processes.findAll { r -> r.ignored > 0 }.collect { r -> r.name }
         def failed  = run_info.stats.processes.findAll { r -> r.failed - r.ignored - r.retries > 0 }.collect { r -> r.name }
@@ -676,5 +687,10 @@ workflow {
         } else {
             run_log.error "Pipeline failed${failed ? ' in ' + failed.join(', ') : ''}. Check .nextflow.log for details."
         }
+        status_file.text = 'process\tsucceeded\tcached\tfailed\tignored\tunfinished\n' +
+            run_info.stats.processes.collect { r ->
+                "${r.name}\t${r.succeeded}\t${r.cached + r.stored}\t${r.failed - r.ignored - r.retries}\t${r.ignored}\t" +
+                    "${r.pending + r.submitted + r.running + r.aborted}\n"
+            }.join('')
     }
 }
