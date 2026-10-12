@@ -7,8 +7,10 @@
 #     reports are written, the console names the tool and the TOOLS list
 #     without it, and run-all.sh exits 1;
 #   - a failed pipeline (exit 3): the exit code is passed on, the reports are
-#     still written, no step is recorded ok, the failed tool's step is
-#     'failed', and the error names the process and the TOOLS entry to drop;
+#     still written, no step is recorded ok (the fake leaves no
+#     process_status.tsv; run-all-partial-failure.sh has the runs with one), the
+#     failed tool's step is 'failed', and the error names the process and the
+#     TOOLS entry to drop;
 #   - a later clean run does not read the earlier run's file.
 # A fake nextflow (logs its arguments) stands in; a wrapper in front of it
 # writes the file the completion handler would.

@@ -181,7 +181,8 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 | Nextflow's own log | `<sample>/nextflow/.nextflow.log` |
 | Each task's command, output and exit code | `<sample>/nextflow/work/<hash>/` (`.command.sh`, `.command.log`, `.exitcode`); the trace in `${GENOME_DIR}/pipeline_info/` lists a task once it finished, with its hash, the start of its folder's name |
 | The script steps and the reports | `<sample>/logs/<script>.log` |
-| How each step ended in this run | `<sample>/logs/run_status.tsv` (the reports mark an older result of a skipped step as stale) |
+| How each step ended in this run | `<sample>/logs/run_status.tsv`: `ok`, `failed`, `not finished` or `skipped (<reason>)`. After a run that one tool stopped, the steps that completed or came from the cache are still `ok`; the reports mark as stale only an older result of a step that was skipped, failed or did not finish ([details](24-html-report.md#results-from-an-earlier-run)) |
+| What became of each process's tasks | `<sample>/nextflow/process_status.tsv` (succeeded, cached, failed, ignored, unfinished) and, when a task failed, `failed_tasks.tsv` beside it |
 
 **Watching a long step.** Nextflow's console shows each process as `[ab/123456] ... | 0 of 1`. `ab/123456` is the start of that task's folder, so `tail -f <sample>/nextflow/work/ab/123456*/.command.log` shows the tool's own output while it runs; DeepVariant's `make_examples` logs there how many candidates each shard has done.
 

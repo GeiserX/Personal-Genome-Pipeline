@@ -152,25 +152,44 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 [ -z "${ANCESTRY:-}" ] || echo "NOTE: ANCESTRY is no longer read: step 26 runs in the pipeline whenever the ancestry panel is installed (setup.sh --ancestry-panel)."
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
-FT="${S}/nextflow/failed_tasks.tsv"; rm -f "$FT"  # main.nf writes it when a task failed
+FT="${S}/nextflow/failed_tasks.tsv" PT="${S}/nextflow/process_status.tsv"; rm -f "$FT" "$PT"  # main.nf writes both as the run ends
 rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker -resume --input "$SHEET" --reference "$REF_FASTA" \
   --outdir "$G" --tools "$(IFS=,; echo "${SEL[*]}")" "${NF[@]}" "$@") || rc=$?
-# Each failed task's step is 'failed'. A report-only tool's failure is ignored by the pipeline (nextflow.config), which then
-# goes on; any other failure stops it, and then every step it started that is not failed is 'not finished' (a report
-# section whose file this run wrote still shows as current). Stranger reads ExpansionHunter's calls, so it does not run
-# when ExpansionHunter failed.
-declare -A BAD=(); failed=0
+# A step's result is what Nextflow says of its tool's processes in this run. 'failed': a task failed (a report-only
+# tool's failure is ignored by the pipeline, which goes on; any other stops it). 'ok': the pipeline ended well, or it
+# stopped and process_status.tsv shows every process of the tool with a task that completed or came from the cache
+# (-resume: the same inputs and code, so the result is this run's even when its file is older) and none left
+# unfinished. 'not finished': the pipeline stopped before that. Stranger reads ExpansionHunter's calls, so it does not
+# run when ExpansionHunter failed.
+# tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
+# (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
+# extraction and haplocheck are step 12's; indexcov is step 16.
+tool_of() {
+  local p=${1##*:} t best=""; p=${p,,}
+  case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
+    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; esac
+  for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
+  echo "${best:-$p}"
+}
+declare -A BAD=() FIN=() OPEN=(); failed=0
 while IFS=$'\t' read -r p st; do
   [ "$p" != process ] && [ -n "$p" ] || continue
-  p=${p##*:}; case "$p" in Y_*) t=y_haplogroup ;; *) t=${p,,} ;; esac
+  t=$(tool_of "$p") p=${p##*:}
   [[ " ${SEL[*]} " == *" ${t} "* ]] || { echo "  ${p}: ${st}" >&2; continue; }
   BAD[$t]=1 failed=1 rest=$(IFS=,; echo "${SEL[*]}"); rest=",${rest},"; rest=${rest/,${t},/,}; rest=${rest#,}
   echo "  ${t} (${p}) failed$([ "$st" != ignored ] || echo ', skipped'): see ${S}/nextflow/.nextflow.log. To run without it: TOOLS=${rest%,}" >&2
 done < <(cat "$FT" 2>/dev/null)
-for t in "${RUNS[@]}"; do
-  r=ok; [ "$rc" -eq 0 ] || r="not finished"; [ -z "${BAD[${TOOL_OF[$t]:-none}]:-}" ] || r=failed
-  [ "${TOOL_OF[$t]:-}" != stranger ] || [ -z "${BAD[expansion_hunter]:-}" ] || r="skipped (expansion_hunter failed)"
-  printf 'step\t%s\t%s\n' "$t" "$r" >> "$STATUS"
+# A process with no task had not started, except haplocheck without step 20's Mutect2 calls: it never gets one then.
+while IFS=$'\t' read -r p st; do
+  t=$(tool_of "$p"); case "$st" in bad) BAD[$t]=1 ;; fin) FIN[$t]=1 ;; open) OPEN[$t]=1 ;;
+    *) [[ "${p##*:}" == HAPLOCHECK && ( " ${SEL[*]} " != *" mito_variants "* || -n "${BAD[mito_variants]:-}" ) ]] || OPEN[$t]=1 ;; esac
+done < <(awk -F'\t' 'NR > 1 && NF == 6 {print $1 "\t" ($4 + $5 > 0 ? "bad" : $6 > 0 ? "open" : $2 + $3 > 0 ? "fin" : "none")}' "$PT" 2>/dev/null)
+for n in "${RUNS[@]}"; do
+  t=${TOOL_OF[$n]:-indexcov}; [ "$t" != ancestry ] || t="prs"  # step 26 is computed inside the PRS run
+  r="not finished"; if [ "$rc" -eq 0 ] || { [ -n "${FIN[$t]:-}" ] && [ -z "${OPEN[$t]:-}" ]; }; then r=ok; fi
+  [ -z "${BAD[$t]:-}" ] || r=failed
+  [ "$t" != stranger ] || [ -z "${BAD[expansion_hunter]:-}" ] || r="skipped (expansion_hunter failed)"
+  printf 'step\t%s\t%s\n' "$n" "$r" >> "$STATUS"
 done
 # The reports are written after a failed pipeline too: they show what finished and mark older results stale.
 [ "$rc" -eq 0 ] || { echo "ERROR: the pipeline failed (exit ${rc}): see above and ${S}/nextflow/.nextflow.log. Fix the cause and run the same command; -resume reruns only what did not finish. Writing the reports of what finished." >&2; OPTIN=(); }
