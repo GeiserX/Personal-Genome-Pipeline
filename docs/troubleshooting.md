@@ -184,6 +184,27 @@ docker kill <container_id>
 
 ---
 
+### The run is silent and no container is running
+
+**Symptom:** `run-all.sh` (or `nextflow run`) prints nothing new, `docker ps` lists no `nxf-...` container, the machine is idle, and the run does not end.
+
+**How to diagnose:** Nextflow writes its two task queues to `.nextflow.log`, in the directory the run was started from, every five minutes:
+
+```bash
+grep -E '(%%|!!) executor|^~> ' .nextflow.log | tail -n 20
+```
+
+`!! executor local > No more task to compute` next to `%% executor local > tasks in the submission queue: 2` (the number is how many wait), with the same tasks listed each time, means tasks are waiting to start while nothing is running. A line `tasks to be completed` means a task is still running. That is the entry above, not this one.
+
+**Cause:** Nextflow 26.04.7 can lose track of the CPUs and memory it has free ([Lessons learned](lessons-learned.md#the-local-executor-can-lose-track-of-free-memory-and-a-task-that-needs-all-of-it-then-never-starts)). After that it believes less is free than there is, and a task that asks for more than that never starts. The tasks most exposed ask for all, or nearly all, of what the machine has: `run-all.sh` caps a task at the machine's CPU count and RAM, so that is every 8-CPU task on a machine with 8 CPUs or fewer, and DeepVariant and the alignment (32 GB each) on a 32 GB machine. We have seen this in the CI stub runs only, never in a real run.
+
+**Fix:**
+
+1. Stop Nextflow with Ctrl-C and run the same command again. A new Nextflow process counts from the start, and `-resume` (which `run-all.sh` passes) reuses the tasks that finished. This follows from the cause; we have not had to do it on a real run.
+2. To make it less likely, keep each task below the whole machine: `THREADS` below the CPU count and `--max_memory` below the RAM (e.g. `THREADS=6 ./scripts/run-all.sh <sample> <sex> --max_memory 24.GB` on 8 CPUs and 32 GB). This leaves a margin for a lost count; it does not remove the cause.
+
+---
+
 ### "No space left on device" mid-analysis
 
 **Symptom:** Container crashes with "No space left on device", "ENOSPC", or "write failed: No space left".
