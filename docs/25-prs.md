@@ -34,7 +34,7 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 ./scripts/25-prs.sh your_name         # no sex: chrX rows are left out
 ```
 
-`ANCESTRY_PANEL=none` scores without the panel even when it is installed. `PGSC_MAX_MEMORY` (for example `12.GB`) caps the memory pgsc_calc may use; the default is three quarters of the machine's RAM.
+`ANCESTRY_PANEL=none` scores without the panel even when it is installed. `PGSC_MAX_MEMORY` (for example `24.GB`) caps the memory each pgsc_calc task may use; the default is three quarters of the machine's RAM. The default scores need about 14 to 18 GB of it, see [Memory](#memory).
 
 ## Conditions Scored
 
@@ -93,6 +93,27 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 Without the panel, about 20-40 minutes: most of it is the gVCF pass over every score position (the large scores reach most of the genome) and pgsc_calc's conversion of those genotypes. The panel adds its extraction, the intersection with your genotypes, the panel's PCA and the projection; see the measured numbers below.
 
+## Memory
+
+Two tasks read nothing but the scoring files, so their memory follows the score list, not the genome, and a GitHub runner can measure it. On the nine default scores (five of them have 1.7 to 6.9 million rows), `tests/test_prs_memory.sh --measure` (the E2E workflow's `prs-memory` job, on dispatch) measured on `ubuntu-latest` (4 CPUs, 16 GB RAM, containers limited to 14.1 GB):
+
+| Task | Measured | Pipeline gives it | Step 25 gives it |
+|---|---|---|---|
+| Scoring files written as pgsc_calc reads them (`collect_summary.py prs-format`, `PRS_PREPARE`) | 11.3 to 11.5 GB at the peak (memory.peak), about 5 minutes | 16 GB | no limit |
+| pgsc_calc's `FORMAT_SCOREFILES` (`pgscatalog-format`), one thread | killed under the 14.1 GB limit without swap; with swap it finished, at about 14.2 GB of memory plus swap (sampled each second), in 17 to 18 minutes | one thread and all of `PRS`'s 24 GB | one thread and all of `PGSC_MAX_MEMORY` |
+| the same, two threads (pgsc_calc's own choice) | about 15.7 GB, 13.5 minutes, with swap | | |
+| the same, four threads (pgsc_calc's retry) | about 23.8 GB, 13 minutes, with swap | | |
+
+In one whole pgsc_calc run on the PGS Catalog's synthetic genome-wide target (300 samples), with `FORMAT_SCOREFILES` on one thread and 15 GB, Nextflow's trace gave `FORMAT_SCOREFILES` a `peak_rss` of 18.1 GB (the sum of its processes' peaks, an upper bound), its two matching tasks 13.3 and 12.5 GB, and the run took 36 minutes. A real genome has one sample and fewer positions; its peaks have not been measured here.
+
+pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under the same `--max_memory`, so its retry needs more memory, not less. Both entry points therefore give it one thread, the whole of pgsc_calc's memory, and no retry inside pgsc_calc at the same limit. One thread is the slowest of the three (about 4 minutes more) and the smallest.
+
+- **Pipeline:** `PRS` asks for 24 GB (`conf/base.config`), capped at `--max_memory`. With `--max_memory 24.GB` or more nothing else is needed. When a pgsc_calc task is killed for memory, `PRS` exits 137, so Nextflow retries it once with twice the memory, again capped at `--max_memory`. `PRS_PREPARE` asks for 16 GB, about 1.4 times its peak; 24 GB is about 1.3 times the 18.1 GB upper bound of `FORMAT_SCOREFILES`. Before this, `PRS` had 8 GB and `PRS_PREPARE` 2 GB (4 GB on the retry); in one run on a ~30x sample both were killed.
+- **Step 25:** pgsc_calc gets three quarters of the RAM, 24 GB on a 32 GB machine. When one of its tasks is killed for memory the step says so; run it again with a larger `PGSC_MAX_MEMORY`.
+- **A 16 GB machine** caps both at about 12 to 15 GB, under what `FORMAT_SCOREFILES` needs. Docker lets a container swap as much again as its memory limit when the host has swap, which is how the runner finished it; without swap it is killed.
+
+Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list.
+
 ## The reference panel on a GitHub-hosted runner
 
 The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_PANEL` in `versions.env`), published by the PGS Catalog at https://ftp.ebi.ac.uk/pub/databases/spot/pgs/resources/. Measured by the E2E case `tests/e2e/prs-3-panel-measure.sh` on `ubuntu-latest` (4 CPUs, 16 GB RAM), with pgsc_calc projecting the PGS Catalog's synthetic genome-wide test target (600 samples) onto the panel and scoring PGS000018 (1.7 million variants):
@@ -105,7 +126,7 @@ The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_P
 | Memory | 7.3 to 7.6 GB at the peak for the whole machine; the largest task, 6.9 to 7.1 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
 | Time | 20 to 30 minutes for the run, on 4 CPUs |
 
-The run fits a 16 GB machine. It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on an E2E run dispatched on a branch other than main (or with `PGSC_MEASURE=1`): it adds about 40 minutes, which a dispatched run of main keeps for its other cases.
+That run scored PGS000018 alone and fits a 16 GB machine; the nine default scores need more ([Memory](#memory)). It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on an E2E run dispatched on a branch other than main (or with `PGSC_MEASURE=1`): it adds about 40 minutes, which a dispatched run of main keeps for its other cases.
 
 ## Interpreting Results
 

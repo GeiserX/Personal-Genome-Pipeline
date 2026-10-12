@@ -121,10 +121,13 @@ Every step runs in a Docker container with a hard `--memory` limit. The two entr
 | 17 (CPSR) | 4 / 8 GB | 4 / 8 GB |
 | 18 (CNVpytor) | 4 / 8 GB | 4 / 8 GB |
 | 19 (Delly) | 4 / 8 GB | 4 / 8 GB |
+| 25 (PRS): scoring files written as pgsc_calc reads them | no limit | `PRS_PREPARE` 1 / 16 GB |
+| 25 (PRS): score positions genotyped from the gVCF | 2 / 8 GB | `PRS_SCORE_SITES` 2 / 4 GB |
+| 25 (PRS): pgsc_calc, each of its tasks | `PGSC_MAX_MEMORY` (three quarters of the RAM) | `PRS` 4 / 24 GB, given to pgsc_calc as `--max_memory` |
 
-These are limits, not measured peaks. minimap2 peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38; `scripts/02-alignment.sh`), so [step 2](02-alignment.md) plans for about 20 GB on GRCh38; the full-genome peak has not been measured.
+These are limits, not measured peaks, except for step 25: on the nine default scores, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB, measured on a GitHub runner without a genome ([step 25, Memory](25-prs.md#memory)). minimap2 peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38; `scripts/02-alignment.sh`), so [step 2](02-alignment.md) plans for about 20 GB on GRCh38; the full-genome peak has not been measured.
 
-**Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it.
+**Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it. Step 25's pgsc_calc is the exception that does not fit: its first task needs about 14 to 18 GB on the default scores and was killed under a 14.1 GB limit when the host has no swap, so a 16 GB machine needs swap for it ([step 25, Memory](25-prs.md#memory)).
 **Recommended:** 32 GB or more, so minimap2 and DeepVariant get close to the 32 GB they ask for.
 **GRIDSS (step 4b, opt-in):** its container takes 32 GB (a 28 GB Java heap plus overhead), so it needs a machine with 32 GB or more even when nothing else runs.
 
