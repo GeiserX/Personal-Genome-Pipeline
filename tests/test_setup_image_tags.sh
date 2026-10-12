@@ -7,9 +7,13 @@
 #   - it starts with localhost/pgp-pinned/ (no public registry owns localhost)
 #     and is a valid Docker reference;
 #   - it is the same on every call and carries the digest: one tag per digest;
-#   - tag_pinned_image is safe to repeat, and a failed `docker tag` is reported.
-# No Docker: a fake engine on CONTAINER_ENGINE logs the calls. The real pull,
-# tag and `docker images --filter dangling=true` run in Container Test.
+#   - tag_pinned_image is safe to repeat, and a failed `docker tag` is reported;
+#   - setup.sh --pull-only says how many pinned tags it added (0 on a rerun);
+#   - validate-setup.sh says a cleanup would delete an image only when the
+#     image is dangling: another local tag on the same image id keeps it.
+# No Docker: a fake engine on CONTAINER_ENGINE logs the calls, and a second one
+# keeps a table of names and image ids. The real pull, tag and
+# `docker images --filter dangling=true` run in Container Test.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -123,6 +127,91 @@ if TAG_FAILS=1 tag_pinned_image "example/tool@sha256:${D1}"; then
 else
   pass "a failed docker tag is reported"
 fi
+
+# 4. setup.sh --pull-only and validate-setup.sh against an engine that keeps
+# state: one "NAME ID" line per local name in $ENGINE_STATE. A pull adds the
+# digest reference, `tag` adds a name, `rmi` removes one; an image id is
+# dangling when none of its names is a tag (every name has '@').
+cat > "${WORK}/stateful" <<'FAKE'
+#!/usr/bin/env bash
+S=$ENGINE_STATE
+id_of() { awk -v r="$1" '$1 == r { print $2; f = 1 } END { exit !f }' "$S"; }
+put() { awk -v r="$1" '$1 != r' "$S" > "${S}.new"; echo "$1 $2" >> "${S}.new"; mv "${S}.new" "$S"; }
+case "${1:-}" in
+  --version) echo "Docker version 0.0.0-stateful" ;;
+  info) case " $* " in *" --format "*) echo 17179869184 ;; *) echo ok ;; esac ;;
+  pull) put "$2" "sha256:$(printf '%s' "$2" | cksum | cut -d' ' -f1)" ;;
+  tag) id=$(id_of "$2") || exit 1; put "$3" "$id" ;;
+  rmi) awk -v r="$2" '$1 != r' "$S" > "${S}.new"; mv "${S}.new" "$S" ;;
+  image)
+    [ "${2:-}" = inspect ] || exit 0
+    shift 2
+    fmt=""; [ "${1:-}" = --format ] && { fmt=$2; shift 2; }
+    id=$(id_of "$1") || { echo "Error: No such image: $1" >&2; exit 1; }
+    [ "$fmt" = '{{.Id}}' ] && echo "$id"
+    exit 0 ;;
+  images)
+    case " $* " in
+      *" dangling=true "*)
+        awk '{ if (!($2 in t)) t[$2] = 0; if ($1 !~ /@/) t[$2] = 1 } END { for (i in t) if (!t[i]) print i }' "$S" ;;
+    esac ;;
+esac
+exit 0
+FAKE
+chmod +x "${WORK}/stateful"
+export ENGINE_STATE="${WORK}/state"
+: > "$ENGINE_STATE"
+STATEFUL="${WORK}/stateful"
+
+npinned=$(pipeline_images | grep -c '@sha256:' || true)
+first=$(pipeline_images | grep '@sha256:' | head -1)
+first_tag=$(pinned_tag "$first")
+
+pull_only() { CONTAINER_ENGINE=$STATEFUL bash "${REPO}/scripts/setup.sh" --pull-only > "${WORK}/setup.log" 2>&1; }
+summary_says() {  # summary_says N: the summary line reports N pinned tags added
+  if grep -qE "^\[OK\] Docker images: .*, $1 pgp-pinned tag\(s\) added\.$" "${WORK}/setup.log"; then
+    pass "setup.sh --pull-only reports $1 pgp-pinned tag(s) added ($2)"
+  else
+    fail "setup.sh --pull-only should report $1 pgp-pinned tag(s) added ($2); it printed: $(grep '^\[OK\] Docker images' "${WORK}/setup.log" || tail -3 "${WORK}/setup.log")"
+  fi
+}
+validate() { CONTAINER_ENGINE=$STATEFUL bash "${REPO}/scripts/validate-setup.sh" > "${WORK}/validate.log" 2>&1 || true; }
+# warned: validate-setup.sh lists IMAGE under the "would delete" warning.
+warned() {
+  awk -v i="$1" '/digest-pinned image\(s\) have no local tag/ { w = 1; next } /Tag them with/ { w = 0 }
+                 w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
+}
+# noted: validate-setup.sh lists IMAGE as missing its pinned tag only.
+noted() {
+  awk -v i="$1" '/lack their localhost\/pgp-pinned\/ tag/ { w = 1; next } /Add it with/ { w = 0 }
+                 w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
+}
+
+pull_only || fail "setup.sh --pull-only failed: $(tail -5 "${WORK}/setup.log")"
+summary_says "$npinned" "first run, every image pulled"
+[ "$(awk -v r="$first_tag" '$1 == r' "$ENGINE_STATE")" ] || fail "setup.sh did not tag ${first} as ${first_tag}"
+pull_only || fail "setup.sh --pull-only failed on a rerun"
+summary_says 0 "rerun, every tag already there"
+
+validate
+if warned "$first" || noted "$first"; then fail "validate-setup.sh reports ${first} although it has its pinned tag"; else pass "no report for an image with its pinned tag"; fi
+
+# The pinned tag removed: the image has no tag left, so it is dangling.
+CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" rmi "$1"' _ "$first_tag"
+validate
+if warned "$first"; then pass "an image with no tag at all gets the would-delete warning"; else fail "validate-setup.sh did not warn that a cleanup would delete ${first} (no tag at all): $(grep -A3 'Docker Images' "${WORK}/validate.log" | tr '\n' ' ')"; fi
+
+# Another tag on the same image id: not dangling, so no deletion claim.
+CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" tag "$1" localhost/pgp-test/foreign:keep' _ "$first"
+validate
+if warned "$first"; then
+  fail "validate-setup.sh claims a cleanup would delete ${first}, but another local tag keeps it"
+else
+  pass "an image kept by another tag gets no would-delete warning"
+fi
+if noted "$first"; then pass "an image kept by another tag is noted as missing its pinned tag"; else fail "validate-setup.sh did not note that ${first} lacks its pinned tag"; fi
+pull_only || fail "setup.sh --pull-only failed after the tag was removed"
+summary_says 1 "one pinned tag missing"
 
 [ "$FAILS" -eq 0 ] || { echo "${FAILS} check(s) failed"; exit 1; }
 echo "All pinned-tag checks passed."
