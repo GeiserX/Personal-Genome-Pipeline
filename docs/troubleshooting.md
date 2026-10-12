@@ -833,6 +833,19 @@ Possible causes:
 
 ---
 
+### Step 25: pgsc_calc killed for memory
+
+**Symptom:** the PRS step stops after pgsc_calc's first task, `FORMAT_SCOREFILES`, with exit 137, or with `concurrent.futures.process.BrokenProcessPool` in `pgsc_calc.log` (the kernel killed one of its worker processes).
+
+**Cause:** that task reads every scoring file whole. On the nine default scores it needs about 14 to 18 GB on one thread, more on more threads ([step 25, Memory](25-prs.md#memory)). Its container gets pgsc_calc's `--max_memory`.
+
+**Fix:**
+1. With `run-all.sh` or Nextflow, `PRS` asks for 24 GB and is retried once with twice that, both capped at `--max_memory`: pass `--max_memory 24.GB` or more when the machine has it.
+2. With `scripts/25-prs.sh`, pgsc_calc gets three quarters of the RAM; set `PGSC_MAX_MEMORY=24.GB` (or as much as the machine can spare) and run the step again.
+3. On a 16 GB machine, enable swap on the host: Docker then lets the container swap as much again as its limit, which is how a 16 GB GitHub runner finished it.
+
+---
+
 ### HLA Typing (Step 8): Known difficulties
 
 HLA typing from WGS data is unreliable in Docker. The two main tools have unresolved issues:

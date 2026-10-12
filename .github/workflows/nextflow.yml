@@ -245,8 +245,9 @@ jobs:
       # run when a task passes its time limit, nextflow-io/nextflow#7569; read
       # in its source, not reproduced), FASTP gets the 8 CPUs of step 01b,
       # ALIGN_MINIMAP2 (minimap2 piped into samtools) the process_high label's
-      # 8 CPUs and 32 GB, and MANTA, CNVPYTOR and VEP what steps 04, 18 and 13
-      # give them.
+      # 8 CPUs and 32 GB, MANTA, CNVPYTOR and VEP what steps 04, 18 and 13
+      # give them, PRS_PREPARE 16 GB and PRS 24 GB (pgsc_calc's --max_memory)
+      # for the nine default scores, and PRS_SCORE_SITES its label's 4 GB.
       #
       # The local executor is told it has more CPUs and memory than every task
       # attempt of this run asks for added together, and the check at the end
@@ -271,7 +272,7 @@ jobs:
           executor.memory = '${exec_mem_gb}.GB'
           process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
           process {
-              withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP' {
+              withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP|PRS_PREPARE|PRS_SCORE_SITES|PRS' {
                   beforeScript = { task.attempt == 1 ? 'exit 137' : 'true' }
               }
           }
@@ -283,7 +284,7 @@ jobs:
           dag.enabled = false
           CICONF
           nextflow run main.nf -profile test_all -stub -ansi-log false -c "${RUNNER_TEMP}/resources.config" \
-            --tools vep,manta,cnvpytor --max_cpus 16 --max_memory 64.GB --max_time 48.h \
+            --tools vep,manta,cnvpytor,prs --max_cpus 16 --max_memory 64.GB --max_time 48.h \
             --outdir "${RUNNER_TEMP}/resources" -work-dir "${RUNNER_TEMP}/resources-work"
           python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt "$exec_cpus" "$exec_mem_gb" <<'PY'
           import csv, sys
@@ -297,6 +298,9 @@ jobs:
               'MANTA':         (8, 16 * GB, 24 * H),
               'CNVPYTOR':      (4, 8 * GB, 24 * H),
               'VEP':           (8, 16 * GB, 24 * H),
+              'PRS_PREPARE':   (1, 16 * GB, 2 * H),
+              'PRS_SCORE_SITES': (2, 4 * GB, 4 * H),
+              'PRS':           (4, 24 * GB, 8 * H),
           }
           seen, bad = {p: {} for p in want}, 0
           attempts = all_cpus = all_mem = 0
@@ -413,6 +417,118 @@ jobs:
           print(f"ALIGN_MINIMAP2 attempts (attempt, exit, GB): {got}; want {want}")
           ok = sorted(got) == want and sys.argv[2] == '0'
           print('OK' if ok else 'FAIL: a kill inside the pipe did not reach Nextflow as exit 137 and a retry')
+          sys.exit(0 if ok else 1)
+          PY
+
+      # PRS runs pgsc_calc, a Nextflow pipeline of its own, and gives it the
+      # task's memory as --max_memory, the most one pgsc_calc task may have. A
+      # pgsc_calc task killed under that cap ends pgsc_calc with exit 1, which
+      # is not retried. This runs the module's real script (no -stub) on a
+      # stand-in for pgsc_calc whose FORMAT_SCOREFILES needs 32 GB and asks as
+      # pgsc_calc v2.3.0's does (2 CPUs and 16 GB times the attempt, up to two
+      # retries on a kill). Under 32 GB it ends in one of the two ways the
+      # real one did on the default score list: for the sample named sigkill
+      # it is killed with SIGKILL, for the sample named pool it prints
+      # Python's BrokenProcessPool and exits 1. Each PRS task must exit 137,
+      # be retried with twice the memory (24, then 48 GB) and pass: so PRS
+      # has to give FORMAT_SCOREFILES one CPU, all of its memory and no retry
+      # inside pgsc_calc, or the stand-in exits 2 (it checks all three).
+      - name: PRS is retried with twice the memory when a pgsc_calc task is killed for memory
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          t="${RUNNER_TEMP}/prs-oom"
+          mkdir -p "$t/pgsc_calc" "$t/pgs"
+          cat > "$t/pgsc_calc/main.nf" <<'EOF'
+          process FORMAT_SCOREFILES {
+              input:
+              val mode
+
+              script:
+              """
+              [ ${task.attempt} -eq 1 ] || { echo "FORMAT_SCOREFILES retried inside pgsc_calc" >&2; exit 2; }
+              [ ${task.cpus} -eq 1 ] || { echo "FORMAT_SCOREFILES has ${task.cpus} CPUs, want 1" >&2; exit 2; }
+              case ${task.memory.toGiga()} in
+                  24|48) ;;
+                  *) echo "FORMAT_SCOREFILES has ${task.memory.toGiga()} GB, want all of PRS's 24 or 48 GB" >&2; exit 2 ;;
+              esac
+              if [ ${task.memory.toGiga()} -lt 32 ]; then
+                  if [ ${mode} = sigkill ]; then kill -9 \$\$; fi
+                  # Split in two: pgsc_calc prints a failed task's script, and
+                  # the whole word there would read as a kill in PRS's check.
+                  echo 'concurrent.futures.process.Broken''ProcessPool: A process in the process pool was terminated abruptly' >&2
+                  exit 1
+              fi
+              echo "formatted with ${task.memory.toGiga()} GB"
+              """
+          }
+          workflow {
+              FORMAT_SCOREFILES(file(params.input).text.contains('sigkill') ? 'sigkill' : 'pool')
+          }
+          EOF
+          # The executor is told it has more than every attempt added
+          # together, for the reason given at the resources step above.
+          cat > "$t/pgsc_calc/nextflow.config" <<'EOF'
+          params {
+              input        = null
+              target_build = null
+              scorefile    = null
+              outdir       = null
+              max_cpus     = 16
+              max_memory   = '128.GB'
+          }
+          profiles { docker { docker.enabled = false } }
+          executor.cpus = 64
+          executor.memory = '512.GB'
+          process {
+              resourceLimits = [ memory: params.max_memory as nextflow.util.MemoryUnit ]
+              cpus   = 2
+              memory = { 16.GB * task.attempt }
+              errorStrategy = { task.exitStatus in ((130..145) + 104) ? 'retry' : 'finish' }
+              maxRetries = 2
+          }
+          EOF
+          for s in sigkill pool; do
+            printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t%s\nchr1\t1\t.\tA\tC\t.\t.\t.\tGT\t0/1\n' "$s" \
+              | gzip -c > "$t/${s}.vcf.gz"
+          done
+          touch "$t/pgs/PGS000000.txt.gz"
+          cat > "$t/main.nf" <<EOF
+          include { PRS } from '${GITHUB_WORKSPACE}/modules/local/prs/main.nf'
+          workflow {
+              PRS(channel.of('sigkill', 'pool').map { s -> [[id: s], file("$t/\${s}.vcf.gz"), 'gvcf', file('$t/pgs')] }, [])
+          }
+          EOF
+          # 32 CPUs and 256 GB: more than the four attempts added together
+          # (4 CPUs each, 24 + 48 GB per sample).
+          cat > "$t/oom.config" <<EOF
+          executor.cpus = 32
+          executor.memory = '256.GB'
+          trace.enabled = true
+          trace.raw = true
+          trace.file = '$t/trace.txt'
+          trace.fields = 'name,attempt,exit,memory'
+          timeline.enabled = false
+          report.enabled = false
+          dag.enabled = false
+          EOF
+          # Launched from the checkout, so its nextflow.config (errorStrategy,
+          # the PRS request, pgsc_calc's images) applies.
+          rc=0
+          nextflow run "$t/main.nf" -ansi-log false -c "$t/oom.config" --pgsc_calc "$t/pgsc_calc" \
+            --max_cpus 16 --max_memory 64.GB --outdir "$t/out" -work-dir "$t/work" || rc=$?
+          echo "nextflow exited ${rc}"
+          cat "$t/trace.txt"
+          python3 - "$t/trace.txt" "$rc" <<'PY'
+          import csv, sys
+          GB = 1024 ** 3
+          rows = list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
+          want, ok = [(1, '137', 24), (2, '0', 48)], sys.argv[2] == '0'
+          for sample in ('sigkill', 'pool'):
+              got = sorted((int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows if r['name'] == f'PRS ({sample})')
+              print(f"PRS ({sample}) attempts (attempt, exit, GB): {got}; want {want}")
+              ok = ok and got == want
+          print('OK' if ok else 'FAIL: a memory kill inside pgsc_calc did not reach Nextflow as exit 137 and a retry that passes')
           sys.exit(0 if ok else 1)
           PY
 

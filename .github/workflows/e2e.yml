@@ -2,7 +2,7 @@ name: E2E
 
 # Runs the real tools on a small slice of the public GIAB HG002 genome, so a
 # step that is broken in real use cannot pass CI behind a stub or a --version
-# call. Three jobs, see docs/testing.md:
+# call. Four jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
 #
 #   build-fixture  builds the data set and publishes it as release assets
 #                  under the tag in tests/fixtures/VERSION. Runs on a push that
@@ -22,6 +22,11 @@ name: E2E
 #                  GitHub counts as passed.
 #   settle-doubts  answers questions a code review could not answer without
 #                  running the tools. Not a gate: it prints a table.
+#   prs-memory     on dispatch only: the memory of PRS_PREPARE and pgsc_calc's
+#                  FORMAT_SCOREFILES on the default score list
+#                  (tests/test_prs_memory.sh --measure), under the requests of
+#                  conf/base.config, and killed under what the labels gave
+#                  before them.
 #
 # Public repo: GitHub-hosted runners are free here, and the e2e job runs on
 # pull requests, so nothing in this file may use a self-hosted runner.
@@ -45,7 +50,7 @@ on:
       job:
         description: 'Which job to run'
         type: choice
-        options: [e2e, build-fixture, settle-doubts]
+        options: [e2e, build-fixture, settle-doubts, prs-memory]
         default: e2e
       rebuild:
         description: 'build-fixture: replace the assets of an existing release'
@@ -361,3 +366,57 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/settle-doubts.sh "${RUNNER_TEMP}/settle"
+
+  # Two legs, about 30 minutes each. requests: each task under its request in
+  # conf/base.config, capped below the runner's 16 GB, with swap on top so
+  # the 24 GB of PRS can be honoured; it must finish, with the headroom the
+  # script checks. labels: the limits of the process labels before the
+  # requests (PRS_PREPARE 2 GB, FORMAT_SCOREFILES 8 GB on 2 threads, as
+  # pgsc_calc gave it), no swap; every task must be killed, which shows the
+  # first leg can fail.
+  prs-memory:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'prs-memory'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: requests
+            swap_gb: 28
+            format_limit_gb: ''
+            prepare_limit_gb: ''
+            threads: '1'
+            expect: pass
+          - leg: labels
+            swap_gb: 0
+            format_limit_gb: '8'
+            prepare_limit_gb: '2'
+            threads: '2'
+            expect: killed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Add swap
+        if: matrix.swap_gb != 0
+        env:
+          SWAP_GB: ${{ matrix.swap_gb }}
+        run: |
+          sudo fallocate -l "${SWAP_GB}G" /mnt/swap-prs
+          sudo chmod 600 /mnt/swap-prs
+          sudo mkswap /mnt/swap-prs
+          sudo swapon /mnt/swap-prs
+          free -m
+
+      - name: Measure (${{ matrix.leg }})
+        env:
+          SWAP_GB: ${{ matrix.swap_gb }}
+          FORMAT_LIMIT_GB: ${{ matrix.format_limit_gb }}
+          PREPARE_LIMIT_GB: ${{ matrix.prepare_limit_gb }}
+          FORMAT_THREADS: ${{ matrix.threads }}
+          EXPECT: ${{ matrix.expect }}
+        run: |
+          export MEASURE_SWAP_MB=$((SWAP_GB * 1024))
+          bash tests/test_prs_memory.sh --measure "${RUNNER_TEMP}/prs-memory"
