@@ -2,7 +2,7 @@ name: E2E
 
 # Runs the real tools on a small slice of the public GIAB HG002 genome, so a
 # step that is broken in real use cannot pass CI behind a stub or a --version
-# call. Four jobs, see docs/testing.md:
+# call. Four jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
 #
 #   build-fixture  builds the data set and publishes it as release assets
 #                  under the tag in tests/fixtures/VERSION. Runs on a push that
