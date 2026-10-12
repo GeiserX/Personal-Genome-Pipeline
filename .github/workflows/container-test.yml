@@ -210,22 +210,36 @@ jobs:
           id_of() { docker image inspect --format '{{.Id}}' "$1"; }
           is_dangling() { docker images --no-trunc --quiet --filter dangling=true | grep -qx "$(id_of "$1")"; }
 
-          # Control: pulled by digest the plain way, the first image is
-          # dangling, so the check below can fail.
-          docker pull --quiet "${imgs[0]}"
-          if ! is_dangling "${imgs[0]}"; then
-            echo "::error::control: ${imgs[0]} pulled by digest alone is not dangling; this check could not fail"; exit 1
-          fi
-          echo "Control: ${imgs[0]} pulled by digest alone is dangling."
-
-          # setup.sh on a copy whose list holds only the digest-pinned images:
-          # the first takes the "already present" path, the rest are pulled.
-          # Run twice: the second run must change nothing.
+          # A copy whose pull list holds only the digest-pinned images.
           copy="${RUNNER_TEMP}/repo"
           mkdir -p "$copy"
           cp -R scripts versions.env "$copy/"
           awk '/^[A-Z0-9_]+_IMAGE=/ && !/@sha256:/ && !/# optional/ { $0 = $0 "  # optional" } 1' \
             versions.env > "${copy}/versions.env"
+          # validate-setup.sh lists an unprotected image alone on a line
+          # under its warning. It exits 1 here (no reference data): ignored.
+          warned() {
+            "${copy}/scripts/validate-setup.sh" > "${RUNNER_TEMP}/validate.log" 2>&1 || true
+            grep -q 'digest-pinned image(s) have no local tag' "${RUNNER_TEMP}/validate.log" &&
+              awk -v i="$1" 'NF == 1 && $1 == i { f = 1 } END { exit !f }' "${RUNNER_TEMP}/validate.log"
+          }
+
+          # Control: pulled by digest the plain way, the first image is
+          # dangling, so the check below can fail, and validate-setup.sh
+          # warns about it.
+          docker pull --quiet "${imgs[0]}"
+          if ! is_dangling "${imgs[0]}"; then
+            echo "::error::control: ${imgs[0]} pulled by digest alone is not dangling; this check could not fail"; exit 1
+          fi
+          echo "Control: ${imgs[0]} pulled by digest alone is dangling."
+          if ! warned "${imgs[0]}"; then
+            cat "${RUNNER_TEMP}/validate.log"
+            echo "::error::validate-setup.sh did not warn that ${imgs[0]} has no local tag"; exit 1
+          fi
+          echo "validate-setup.sh warns that ${imgs[0]} has no local tag."
+
+          # setup.sh: the first image takes the "already present" path, the
+          # rest are pulled. Run twice: the second run must change nothing.
           for run in 1 2; do
             "${copy}/scripts/setup.sh" --pull-only
             for img in "${imgs[@]}"; do
@@ -235,6 +249,9 @@ jobs:
             done
           done
           echo "No digest-pinned image is dangling after setup.sh --pull-only."
+          if warned "${imgs[0]}"; then
+            echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh --pull-only"; exit 1
+          fi
 
           # One local tag per image, carrying its digest, on the same image id.
           for img in "${imgs[@]}"; do
@@ -252,6 +269,23 @@ jobs:
             docker image inspect "$img" > /dev/null || { echo "::error::docker image prune deleted ${img}"; exit 1; }
           done
           echo "docker image prune kept all ${#imgs[@]} digest-pinned images."
+
+          # A tag moved to another image does not protect the first one:
+          # validate-setup.sh compares image ids, and setup.sh moves it back.
+          if [ "${#imgs[@]}" -ge 2 ]; then
+            tag0=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "${imgs[0]}" | grep '^localhost/pgp-pinned/')
+            docker tag "${imgs[1]}" "$tag0"
+            if ! warned "${imgs[0]}"; then
+              cat "${RUNNER_TEMP}/validate.log"
+              echo "::error::validate-setup.sh missed that ${tag0} names another image"; exit 1
+            fi
+            "${copy}/scripts/setup.sh" --pull-only
+            [ "$(id_of "$tag0")" = "$(id_of "${imgs[0]}")" ] || { echo "::error::setup.sh did not move ${tag0} back"; exit 1; }
+            if warned "${imgs[0]}"; then
+              echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh moved its tag back"; exit 1
+            fi
+            echo "A moved tag is reported by validate-setup.sh and put back by setup.sh."
+          fi
 
   container-ok:
     needs: [plan, manifest, smoke, pinned-images]
