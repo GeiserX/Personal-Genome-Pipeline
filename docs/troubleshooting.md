@@ -188,10 +188,11 @@ docker kill <container_id>
 
 **Symptom:** `run-all.sh` (or `nextflow run`) prints nothing new, `docker ps` lists no `nxf-...` container, the machine is idle, and the run does not end.
 
-**How to diagnose:** Nextflow writes its two task queues to `.nextflow.log`, in the directory the run was started from, every five minutes:
+**How to diagnose:** Nextflow writes its two task queues to `.nextflow.log` every five minutes. `run-all.sh` keeps that log in `$GENOME_DIR/<sample>/nextflow/`; a direct `nextflow run` leaves it in the directory it was started from.
 
 ```bash
-grep -E '(%%|!!) executor|^~> ' .nextflow.log | tail -n 20
+# After run-all.sh. After a direct `nextflow run`, give the path of .nextflow.log in its launch directory instead.
+grep -E '(%%|!!) executor|^~> ' "$GENOME_DIR/<sample>/nextflow/.nextflow.log" | tail -n 20
 ```
 
 `!! executor local > No more task to compute` next to `%% executor local > tasks in the submission queue: 2` (the number is how many wait), with the same tasks listed each time, means tasks are waiting to start while nothing is running. A line `tasks to be completed` means a task is still running. That is the entry above, not this one.
