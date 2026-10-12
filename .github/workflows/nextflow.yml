@@ -431,8 +431,8 @@ jobs:
       # it is killed with SIGKILL, for the sample named pool it prints
       # Python's BrokenProcessPool and exits 1. Each PRS task must exit 137,
       # be retried with twice the memory (24, then 48 GB) and pass: so PRS
-      # has to give FORMAT_SCOREFILES one CPU and all of its memory, or the
-      # stand-in exits 2 (it checks both).
+      # has to give FORMAT_SCOREFILES one CPU, all of its memory and no retry
+      # inside pgsc_calc, or the stand-in exits 2 (it checks all three).
       - name: PRS is retried with twice the memory when a pgsc_calc task is killed for memory
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
@@ -446,6 +446,7 @@ jobs:
 
               script:
               """
+              [ ${task.attempt} -eq 1 ] || { echo "FORMAT_SCOREFILES retried inside pgsc_calc" >&2; exit 2; }
               [ ${task.cpus} -eq 1 ] || { echo "FORMAT_SCOREFILES has ${task.cpus} CPUs, want 1" >&2; exit 2; }
               case ${task.memory.toGiga()} in
                   24|48) ;;
