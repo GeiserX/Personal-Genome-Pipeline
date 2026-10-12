@@ -592,17 +592,17 @@ else
   done < <(pipeline_images)
 
   # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh)
-  # when that tag names the same image id: without it, a dangling-image
-  # cleanup deletes the image.
-  image_id() { "$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null; }
+  # when that tag names the same image id. Without it the image is dangling
+  # (UNTAGGED: a dangling-image cleanup deletes it) unless another local tag
+  # names the same id (NO_PINNED_TAG: kept for now, while that tag stays).
   PULLED=0
   UNTAGGED=()
+  NO_PINNED_TAG=()
   for img in "${IMAGES[@]}"; do
     if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       PULLED=$((PULLED + 1))
-      tag=$(pinned_tag "$img")
-      if [ -n "$tag" ] && [ "$(image_id "$tag")" != "$(image_id "$img")" ]; then
-        UNTAGGED+=("$img")
+      if ! pinned_tag_present "$img"; then
+        if image_is_dangling "$img"; then UNTAGGED+=("$img"); else NO_PINNED_TAG+=("$img"); fi
       fi
     else
       MISSING_IMAGES+=("$img")
@@ -626,6 +626,11 @@ else
     warn "${#UNTAGGED[@]} digest-pinned image(s) have no local tag, so a dangling-image cleanup (docker image prune) would delete them:"
     printf '         %s\n' "${UNTAGGED[@]}"
     echo "       Tag them with: ./scripts/setup.sh --pull-only"
+  fi
+  if [ ${#NO_PINNED_TAG[@]} -gt 0 ]; then
+    info "${#NO_PINNED_TAG[@]} digest-pinned image(s) lack their localhost/pgp-pinned/ tag; another local tag keeps them from a dangling-image cleanup while it stays:"
+    printf '         %s\n' "${NO_PINNED_TAG[@]}"
+    echo "       Add it with: ./scripts/setup.sh --pull-only"
   fi
 
   # An opt-in step's image (`# optional` in versions.env) matters once its

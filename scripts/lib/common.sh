@@ -22,7 +22,8 @@
 #   CONTAINER_ENGINE  docker by default.
 # and the helpers validate_sample, require_image, cpath, run_in, have_output,
 # wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
-# lock_acquire / lock_release, pipeline_images, pinned_tag / tag_pinned_image,
+# lock_acquire / lock_release, pipeline_images, pinned_tag / tag_pinned_image /
+# pinned_tag_present, image_is_dangling,
 # scatter_beds and run_parallel,
 # described where they are
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
@@ -546,6 +547,26 @@ tag_pinned_image() {
   local tag
   tag=$(pinned_tag "$1")
   [ -z "$tag" ] || "$CONTAINER_ENGINE" tag "$1" "$tag"
+}
+
+# pinned_tag_present IMAGE: true when IMAGE needs no pinned_tag (it is pinned
+# by tag alone) or its pinned_tag already names the same image id.
+pinned_tag_present() {
+  local tag
+  tag=$(pinned_tag "$1")
+  [ -z "$tag" ] ||
+    [ "$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$tag" 2>/dev/null)" = \
+      "$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null)" ]
+}
+
+# image_is_dangling IMAGE: true when Docker lists IMAGE's id as dangling (no
+# tag of any name), the images `docker image prune` deletes. Another local tag
+# on the same id keeps it, the pinned_tag or not.
+image_is_dangling() {
+  local id dangling
+  id=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null) && [ -n "$id" ] || return 1
+  dangling=$("$CONTAINER_ENGINE" images --no-trunc --quiet --filter dangling=true 2>/dev/null) || return 1
+  grep -qxF "$id" <<< "$dangling"
 }
 
 # scatter_beds DIR [INTERVALS]: split the calling of a single-process caller
