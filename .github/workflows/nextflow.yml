@@ -432,7 +432,7 @@ jobs:
       # Python's BrokenProcessPool and exits 1. Each PRS task must exit 137,
       # be retried with twice the memory (24, then 48 GB) and pass: so PRS
       # has to give FORMAT_SCOREFILES one CPU and all of its memory, or the
-      # stand-in stops again.
+      # stand-in exits 2 (it checks both).
       - name: PRS is retried with twice the memory when a pgsc_calc task is killed for memory
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
@@ -447,6 +447,10 @@ jobs:
               script:
               """
               [ ${task.cpus} -eq 1 ] || { echo "FORMAT_SCOREFILES has ${task.cpus} CPUs, want 1" >&2; exit 2; }
+              case ${task.memory.toGiga()} in
+                  24|48) ;;
+                  *) echo "FORMAT_SCOREFILES has ${task.memory.toGiga()} GB, want all of PRS's 24 or 48 GB" >&2; exit 2 ;;
+              esac
               if [ ${task.memory.toGiga()} -lt 32 ]; then
                   if [ ${mode} = sigkill ]; then kill -9 \$\$; fi
                   echo 'concurrent.futures.process.BrokenProcessPool: A process in the process pool was terminated abruptly' >&2
