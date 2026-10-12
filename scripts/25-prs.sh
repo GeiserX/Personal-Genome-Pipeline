@@ -271,6 +271,11 @@ fi
   if [ -n "$SEX" ]; then
     printf "    withName: 'PLINK2_VCF' { ext.args = '--new-id-max-allele-len 100 missing --update-sex \"%s\"' }\n" "${SEX_DIR}/sex.tsv"
   fi
+  # FORMAT_SCOREFILES runs pgscatalog-format with one thread per CPU, and its
+  # memory grows with the threads (docs/25-prs.md, Memory). pgsc_calc gives
+  # it 2 CPUs, and 4 on its own retry under the same --max_memory. One
+  # thread, all of PGSC_MAX_MEMORY, and no retry at the same limit.
+  printf "    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '%s'; maxRetries = 0 }\n" "$PGSC_MAX_MEMORY"
   echo '}'
   # shellcheck disable=SC2016  # $(id -u) is expanded by the task's shell
   echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"${MOUNT}'"
@@ -309,6 +314,13 @@ if [ "$rc" -ne 0 ]; then
     ZERO=(--zero-matches)
   else
     echo "ERROR: pgsc_calc failed (exit ${rc}); see ${LOG} and ${WORK}/nextflow.log" >&2
+    # A task killed by its container's memory limit: exit 137, or Python's
+    # BrokenProcessPool when the kernel killed a worker of pgscatalog-format.
+    # A retry pgsc_calc made itself is not the cause.
+    if awk '/Execution is retried/ { next } /terminated with an error exit status \(137\)|BrokenProcessPool/ { f = 1 } END { exit !f }' "$LOG"; then
+      echo "  One of its tasks was killed for memory under --max_memory ${PGSC_MAX_MEMORY}. Run the step again with more," >&2
+      echo "  for example PGSC_MAX_MEMORY=24.GB (docs/25-prs.md, Memory)." >&2
+    fi
     exit 1
   fi
 fi

@@ -193,7 +193,14 @@ process PRS {
         MOUNT=" -v \\"\$PWD/sex:\$PWD/sex:ro\\""
     fi
     # The images of versions.env for pgsc_calc's process labels, and no network for its containers.
-    printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none\$MOUNT'" > images.config
+    # FORMAT_SCOREFILES runs pgscatalog-format with one thread per CPU, and
+    # its memory grows with the threads (docs/25-prs.md, Memory). pgsc_calc
+    # gives it 2 CPUs, and 4 on its own retry under the same --max_memory.
+    # Here it gets one thread and all of this task's memory, and no retry
+    # inside pgsc_calc, which would repeat the same limit: a memory kill
+    # ends pgsc_calc, and this task's retry doubles the memory.
+    FORMAT_LINE="    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '${task.memory.toGiga()}.GB'; maxRetries = 0 }"
+    printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" "\$FORMAT_LINE" '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none\$MOUNT'" > images.config
     cat images.config
     ${offline}
     rc=0
@@ -220,6 +227,15 @@ process PRS {
             echo "Every score matched under pgsc_calc's minimum overlap; no score." > pgsc_calc/BELOW_THRESHOLD
         elif grep -qE 'ZeroMatchesError|No match candidates found for any scoring files' pgsc_calc/pgsc_calc*.log; then
             echo "None of the score variants is in this input; no score." > pgsc_calc/ZERO_MATCHES
+        elif awk '/Execution is retried/ { next } /terminated with an error exit status \\(137\\)|BrokenProcessPool/ { f = 1 } END { exit !f }' pgsc_calc/pgsc_calc.log; then
+            # One of pgsc_calc's tasks was killed for memory: its container
+            # is limited to --max_memory, and a killed worker of
+            # pgscatalog-format shows as Python's BrokenProcessPool. pgsc_calc
+            # then exits 1, which is not retried. Exit 137 is, with twice the
+            # memory (conf/base.config), so pgsc_calc gets twice the cap. A
+            # kill pgsc_calc retried itself is not the cause.
+            echo "ERROR: a pgsc_calc task was killed for memory under --max_memory ${task.memory.toGiga()}.GB; see pgsc_calc/pgsc_calc.log" >&2
+            exit 137
         else
             echo "ERROR: pgsc_calc failed (exit \$rc); see pgsc_calc/pgsc_calc.log" >&2
             exit 1
