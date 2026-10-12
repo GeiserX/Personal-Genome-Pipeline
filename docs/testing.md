@@ -139,6 +139,10 @@ The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` 
 
 [`scripts/ci/settle-doubts.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/settle-doubts.sh) answers questions a review could not settle by reading the code: whether GATK accepts a BAM without a read group, which Clair3 models the image ships, what TIDDIT does with only a BWA-MEM2 index, whether fastp trimming changes DeepVariant's accuracy against the GIAB truth, and so on. It prints one table row per question to the job summary, with the command and what was observed. It is not a gate. Run it by hand with `job: settle-doubts`; it also runs on a push that changes the script.
 
+## The prs-memory job
+
+It measures the memory of the two PRS tasks that read only the scoring files: `PRS_PREPARE` and pgsc_calc's `FORMAT_SCOREFILES` on the default score list (`tests/test_prs_memory.sh --measure`). One leg runs them under the memory `conf/base.config` gives them and must pass; the other runs them under what the labels gave before and must be killed. It runs only by hand (`job: prs-memory`) and is not a gate. What it measured is in [PRS: Memory](25-prs.md#memory).
+
 ## Running the e2e job yourself
 
 The e2e run needs Linux, Docker, Nextflow 26.04.7 with Java 17, the `gh` CLI and about 25 GB of disk, and takes about 80 to 140 minutes on a 4-CPU GitHub runner. Run it on a machine you do not need for anything else:

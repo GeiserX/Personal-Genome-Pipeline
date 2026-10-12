@@ -163,11 +163,11 @@ rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker 
 # run when ExpansionHunter failed.
 # tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
 # (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
-# extraction and haplocheck are step 12's; indexcov is step 16.
+# extraction and haplocheck are step 12's, T1K's index build and the KIR pass (KIR=true) are step 08's; indexcov is step 16.
 tool_of() {
   local p=${1##*:} t best=""; p=${p,,}
   case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
-    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; esac
+    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing) echo hla_typing; return ;; esac
   for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
   echo "${best:-$p}"
 }
