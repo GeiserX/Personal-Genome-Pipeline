@@ -198,8 +198,9 @@ process PRS {
     # gives it 2 CPUs, and 4 on its own retry under the same --max_memory.
     # Here it gets one thread and all of this task's memory, and no retry
     # inside pgsc_calc, which would repeat the same limit: a memory kill
-    # ends pgsc_calc, and this task's retry doubles the memory.
-    FORMAT_LINE="    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '${task.memory.toGiga()}.GB'; maxRetries = 0 }"
+    # ends pgsc_calc, and this task's retry doubles the memory. Not
+    # maxRetries = 0: Nextflow reads 0 as its default, one retry.
+    FORMAT_LINE="    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '${task.memory.toGiga()}.GB'; errorStrategy = 'finish' }"
     printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" "\$FORMAT_LINE" '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none\$MOUNT'" > images.config
     cat images.config
     ${offline}

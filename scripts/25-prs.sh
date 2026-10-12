@@ -274,8 +274,9 @@ fi
   # FORMAT_SCOREFILES runs pgscatalog-format with one thread per CPU, and its
   # memory grows with the threads (docs/25-prs.md, Memory). pgsc_calc gives
   # it 2 CPUs, and 4 on its own retry under the same --max_memory. One
-  # thread, all of PGSC_MAX_MEMORY, and no retry at the same limit.
-  printf "    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '%s'; maxRetries = 0 }\n" "$PGSC_MAX_MEMORY"
+  # thread, all of PGSC_MAX_MEMORY, and no retry at the same limit (not
+  # maxRetries = 0: Nextflow reads 0 as its default, one retry).
+  printf "    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '%s'; errorStrategy = 'finish' }\n" "$PGSC_MAX_MEMORY"
   echo '}'
   # shellcheck disable=SC2016  # $(id -u) is expanded by the task's shell
   echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"${MOUNT}'"
