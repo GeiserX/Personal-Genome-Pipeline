@@ -22,7 +22,10 @@ name: Container Test
 #                 rows need, pull it, run the rows, check the outputs.
 #   pinned-images runs setup.sh --pull-only on the images versions.env pins
 #                 by digest and checks that none is left dangling (no tag), so
-#                 `docker image prune` keeps them. Runs on every pull request.
+#                 `docker image prune` keeps them. On a pull request it pulls
+#                 only when versions.env, setup.sh, validate-setup.sh,
+#                 scripts/lib/common.sh or this file changed; otherwise the job
+#                 passes without pulling. Monthly and on dispatch it always runs.
 #   container-ok  one result for the whole run, so a branch rule can require
 #                 it: green only when plan, manifest and pinned-images passed
 #                 and every picked image passed. It runs on every pull request (no paths filter;
@@ -196,9 +199,30 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
+      # A pull request that changes none of these files cannot change the
+      # result, so it does not pull from the registries. A failed or missing
+      # answer runs the check (the test below is != 'false').
+      - name: Does this pull request touch the pinned images or setup
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
+          if grep -qxE 'versions\.env|scripts/setup\.sh|scripts/validate-setup\.sh|scripts/lib/common\.sh|\.github/workflows/container-test\.yml' "${RUNNER_TEMP}/changed.txt"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the pinned-image check exercises changed: it is skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: setup.sh --pull-only leaves no digest-pinned image dangling
+        if: steps.scope.outputs.run != 'false'
         run: |
           docker version --format 'Docker server {{.Server.Version}}'
           docker info --format 'Storage driver: {{.Driver}}'
