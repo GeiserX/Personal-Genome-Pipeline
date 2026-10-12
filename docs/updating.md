@@ -38,7 +38,7 @@ Every PR that changes `versions.env` runs:
 
 - **Guard**: `conf/containers.config` matches `versions.env` and every Nextflow process has an image.
 - **Renovate dry run**: every image is still found in every file it is copied to, and `docs/versions.md` is exactly what `scripts/ci/gen-versions-doc.sh` writes from `versions.env`. When it is not, the job prints the command to run.
-- **Container test** (`container-test.yml`): runs each image whose line changed on the fixture, with its row of `tests/smoke/commands.tsv`, and checks what the tool wrote. Every image has a row; `tests/smoke/README.md` names the few that cannot run their real job on a runner (VEP's offline cache, the CPSR data bundle).
+- **Container test** (`container-test.yml`): runs each image whose line changed on the fixture, with its row of `tests/smoke/commands.tsv`, and checks what the tool wrote. Every image has a row; `tests/smoke/README.md` names the few that cannot run their real job on a runner (VEP's offline cache, the CPSR data bundle). Its `pinned-images` job runs `setup.sh --pull-only` on the images pinned by digest and checks that none is left dangling, so `docker image prune` keeps them.
 - **E2E**: runs the real tools on a small slice of a public genome. [Testing](testing.md#the-e2e-job) lists the steps it covers and the ones no CI job can run (offline VEP, CPSR, AnnotSV, GRIDSS).
 
 A bump whose real job neither the container test nor the E2E job can run (offline VEP, CPSR) is not tested by CI. Run that step by hand on a sample before merging.
@@ -63,6 +63,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 - **Python**: resolve `scripts/cyrius-constraints.txt` again in the new image, as its header says, and rerun step 21 on a test BAM.
 - **Nextflow**: run the stub and E2E jobs on the new version, then update the validated version in `nextflow.config` and the prose in [Nextflow Execution](nextflow.md) and [Lessons Learned](lessons-learned.md).
 - **pypgx, when the hold ends**: check out the matching pypgx-bundle tag and compare the gene calls on the fixture.
+- **Images pinned by digest** (`name:tag@sha256:...`): after the bump, run `./scripts/setup.sh --pull-only`. Docker gives an image pulled by digest no tag, so it is dangling and `docker image prune` deletes it; `setup.sh` gives it a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`, and a pruned one is restored the same way. Tasks still run the digest reference. The old image keeps its own tag, so a prune no longer removes it: list the tags with `docker images --format '{{.Repository}}:{{.Tag}}' | grep '^localhost/pgp-pinned/'` and `docker rmi` the ones whose digest is no longer in `versions.env`.
 
 ## Checking a change to the Renovate config
 
