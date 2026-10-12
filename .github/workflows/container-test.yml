@@ -20,9 +20,15 @@ name: Container Test
 #                 Skipped when plan picked no image.
 #   smoke         one job per picked image: free disk, prepare the inputs its
 #                 rows need, pull it, run the rows, check the outputs.
+#   pinned-images runs setup.sh --pull-only on the images versions.env pins
+#                 by digest and checks that none is left dangling (no tag), so
+#                 `docker image prune` keeps them. On a pull request it pulls
+#                 only when versions.env, setup.sh, validate-setup.sh,
+#                 scripts/lib/common.sh or this file changed; otherwise the job
+#                 passes without pulling. Monthly and on dispatch it always runs.
 #   container-ok  one result for the whole run, so a branch rule can require
-#                 it: green only when plan and manifest passed and every picked
-#                 image passed. It runs on every pull request (no paths filter;
+#                 it: green only when plan, manifest and pinned-images passed
+#                 and every picked image passed. It runs on every pull request (no paths filter;
 #                 plan takes seconds and the other jobs are skipped when
 #                 nothing changed), so requiring it never leaves a pull request
 #                 waiting on a check that does not start.
@@ -183,8 +189,130 @@ jobs:
           path: ${{ env.SMOKE_WORK }}/logs/
           if-no-files-found: ignore
 
+  # An image pulled by digest alone has no tag: Docker lists it as dangling
+  # and a dangling-image cleanup (`docker image prune`) deletes it. setup.sh
+  # gives each digest-pinned image a second name (pinned_tag in
+  # scripts/lib/common.sh); tasks keep running the digest reference.
+  pinned-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A pull request that changes none of these files cannot change the
+      # result, so it does not pull from the registries. A failed or missing
+      # answer runs the check (the test below is != 'false').
+      - name: Does this pull request touch the pinned images or setup
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
+          if grep -qxE 'versions\.env|scripts/setup\.sh|scripts/validate-setup\.sh|scripts/lib/common\.sh|\.github/workflows/container-test\.yml' "${RUNNER_TEMP}/changed.txt"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing the pinned-image check exercises changed: it is skipped."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: setup.sh --pull-only leaves no digest-pinned image dangling
+        if: steps.scope.outputs.run != 'false'
+        run: |
+          docker version --format 'Docker server {{.Server.Version}}'
+          docker info --format 'Storage driver: {{.Driver}}'
+          mapfile -t imgs < <(bash -c '. scripts/lib/common.sh && pipeline_images' | grep '@sha256:')
+          if [ "${#imgs[@]}" -eq 0 ]; then
+            echo "::error::versions.env pins no image by digest that setup.sh pulls; nothing to check"; exit 1
+          fi
+          printf 'Digest-pinned: %s\n' "${imgs[@]}"
+          id_of() { docker image inspect --format '{{.Id}}' "$1"; }
+          is_dangling() { docker images --no-trunc --quiet --filter dangling=true | grep -qx "$(id_of "$1")"; }
+
+          # A copy whose pull list holds only the digest-pinned images.
+          copy="${RUNNER_TEMP}/repo"
+          mkdir -p "$copy"
+          cp -R scripts versions.env "$copy/"
+          awk '/^[A-Z0-9_]+_IMAGE=/ && !/@sha256:/ && !/# optional/ { $0 = $0 "  # optional" } 1' \
+            versions.env > "${copy}/versions.env"
+          # validate-setup.sh lists an unprotected image alone on a line
+          # under its warning. It exits 1 here (no reference data): ignored.
+          warned() {
+            "${copy}/scripts/validate-setup.sh" > "${RUNNER_TEMP}/validate.log" 2>&1 || true
+            grep -q 'digest-pinned image(s) have no local tag' "${RUNNER_TEMP}/validate.log" &&
+              awk -v i="$1" 'NF == 1 && $1 == i { f = 1 } END { exit !f }' "${RUNNER_TEMP}/validate.log"
+          }
+
+          # Control: pulled by digest the plain way, the first image is
+          # dangling, so the check below can fail, and validate-setup.sh
+          # warns about it.
+          docker pull --quiet "${imgs[0]}"
+          if ! is_dangling "${imgs[0]}"; then
+            echo "::error::control: ${imgs[0]} pulled by digest alone is not dangling; this check could not fail"; exit 1
+          fi
+          echo "Control: ${imgs[0]} pulled by digest alone is dangling."
+          if ! warned "${imgs[0]}"; then
+            cat "${RUNNER_TEMP}/validate.log"
+            echo "::error::validate-setup.sh did not warn that ${imgs[0]} has no local tag"; exit 1
+          fi
+          echo "validate-setup.sh warns that ${imgs[0]} has no local tag."
+
+          # setup.sh: the first image takes the "already present" path, the
+          # rest are pulled. Run twice: the second run must change nothing.
+          for run in 1 2; do
+            "${copy}/scripts/setup.sh" --pull-only
+            for img in "${imgs[@]}"; do
+              if is_dangling "$img"; then
+                echo "::error::run ${run}: ${img} is dangling after setup.sh --pull-only; docker image prune would delete it"; exit 1
+              fi
+            done
+          done
+          echo "No digest-pinned image is dangling after setup.sh --pull-only."
+          if warned "${imgs[0]}"; then
+            echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh --pull-only"; exit 1
+          fi
+
+          # One local tag per image, carrying its digest, on the same image id.
+          for img in "${imgs[@]}"; do
+            mapfile -t tags < <(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "$img" | grep '^localhost/pgp-pinned/')
+            if [ "${#tags[@]}" -ne 1 ] || [[ "${tags[0]}" != *":sha256-${img##*@sha256:}" ]]; then
+              echo "::error::${img} should have one localhost/pgp-pinned/ tag carrying its digest, has: ${tags[*]:-none}"; exit 1
+            fi
+            [ "$(id_of "${tags[0]}")" = "$(id_of "$img")" ] || { echo "::error::${tags[0]} is not the image ${img}"; exit 1; }
+            echo "${img} -> ${tags[0]}"
+          done
+
+          # The cleanup itself: every image is still there, by its digest reference.
+          docker image prune --force
+          for img in "${imgs[@]}"; do
+            docker image inspect "$img" > /dev/null || { echo "::error::docker image prune deleted ${img}"; exit 1; }
+          done
+          echo "docker image prune kept all ${#imgs[@]} digest-pinned images."
+
+          # A tag moved to another image does not protect the first one:
+          # validate-setup.sh compares image ids, and setup.sh moves it back.
+          if [ "${#imgs[@]}" -ge 2 ]; then
+            tag0=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "${imgs[0]}" | grep '^localhost/pgp-pinned/')
+            docker tag "${imgs[1]}" "$tag0"
+            if ! warned "${imgs[0]}"; then
+              cat "${RUNNER_TEMP}/validate.log"
+              echo "::error::validate-setup.sh missed that ${tag0} names another image"; exit 1
+            fi
+            "${copy}/scripts/setup.sh" --pull-only
+            [ "$(id_of "$tag0")" = "$(id_of "${imgs[0]}")" ] || { echo "::error::setup.sh did not move ${tag0} back"; exit 1; }
+            if warned "${imgs[0]}"; then
+              echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh moved its tag back"; exit 1
+            fi
+            echo "A moved tag is reported by validate-setup.sh and put back by setup.sh."
+          fi
+
   container-ok:
-    needs: [plan, manifest, smoke]
+    needs: [plan, manifest, smoke, pinned-images]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -194,11 +322,15 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           MANIFEST: ${{ needs.manifest.result }}
           SMOKE: ${{ needs.smoke.result }}
+          PINNED: ${{ needs.pinned-images.result }}
           IMAGES: ${{ needs.plan.outputs.images }}
         run: |
-          echo "plan=${PLAN} manifest=${MANIFEST} smoke=${SMOKE} images=${IMAGES:-<none>}"
+          echo "plan=${PLAN} manifest=${MANIFEST} smoke=${SMOKE} pinned-images=${PINNED} images=${IMAGES:-<none>}"
           if [ "$PLAN" != success ]; then
             echo "::error::plan did not succeed (${PLAN})"; exit 1
+          fi
+          if [ "$PINNED" != success ]; then
+            echo "::error::pinned-images did not succeed (${PINNED})"; exit 1
           fi
           if [ "$IMAGES" = "[]" ]; then
             # Nothing picked: manifest and smoke are skipped by design.
@@ -210,7 +342,7 @@ jobs:
           echo "Every picked image passed."
 
   freshness:
-    needs: [plan, manifest, smoke]
+    needs: [plan, manifest, smoke, pinned-images]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5

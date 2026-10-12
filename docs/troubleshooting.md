@@ -98,6 +98,16 @@ docker run --rm -it \
 
 ---
 
+### Images that were pulled are missing after a Docker cleanup
+
+**Symptom:** `setup.sh --pull-only` pulled every image, but later `validate-setup.sh` reports Docker images not yet pulled, or a task fails because its image is not there. The missing ones are pinned by digest in `versions.env` (`name:tag@sha256:...`).
+
+**Cause:** Docker gives an image pulled by digest no local tag, so it lists it as dangling (`docker images --filter dangling=true`). A dangling-image cleanup (`docker image prune`, or `docker rmi $(docker images -qf dangling=true)`) deletes it unless a container is using it. We saw this once, on a host whose own cleanup job removes dangling images.
+
+**Fix:** run `./scripts/setup.sh --pull-only`. It pulls what is missing and gives each digest-pinned image a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`. A tagged image is not dangling, so those cleanups keep it. The tag is only a second name for the same image: every task still runs the digest reference from `versions.env`. It does not protect against `docker system prune -a` or a `docker rmi` of the image. `validate-setup.sh` warns when a digest-pinned image is present without its tag; the same command fixes that.
+
+---
+
 ### "Permission denied" writing to mounted volumes
 
 **Symptom:** `OSError: [Errno 13] Permission denied: '/genome/sample/output'` or similar.
@@ -229,9 +239,13 @@ docker system df
 ```bash
 # Clean up Docker (removes unused containers, images, build cache)
 docker system prune -a
-# WARNING: This removes ALL unused images. You'll need to re-pull them.
+# WARNING: This removes ALL unused images. Re-pull the default images with
+# ./scripts/setup.sh --pull-only; the opt-in images come back with
+# --parascopy-data or --yleaf-data.
 
-# Safer: only remove stopped containers and dangling images
+# Safer: only remove stopped containers and dangling images. Run
+# ./scripts/setup.sh --pull-only once first: it tags the digest-pinned
+# images, which are dangling otherwise and would be deleted too.
 docker container prune
 docker image prune
 
