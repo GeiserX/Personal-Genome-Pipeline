@@ -559,13 +559,14 @@ pinned_tag_present() {
       "$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null)" ]
 }
 
-# image_is_dangling IMAGE: true when Docker lists IMAGE's id as dangling (no
-# tag of any name), the images `docker image prune` deletes. Another local tag
-# on the same id keeps it, the pinned_tag or not.
+# image_is_dangling IMAGE: 0 when Docker lists IMAGE's id as dangling (no tag
+# of any name), the images `docker image prune` deletes; 1 when it does not
+# (another local tag on the same id keeps it, the pinned_tag or not); 2 when
+# Docker gives no id or no dangling list, so the answer is unknown.
 image_is_dangling() {
   local id dangling
-  id=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null) && [ -n "$id" ] || return 1
-  dangling=$("$CONTAINER_ENGINE" images --no-trunc --quiet --filter dangling=true 2>/dev/null) || return 1
+  id=$("$CONTAINER_ENGINE" image inspect --format '{{.Id}}' "$1" 2>/dev/null) && [ -n "$id" ] || return 2
+  dangling=$("$CONTAINER_ENGINE" images --no-trunc --quiet --filter dangling=true 2>/dev/null) || return 2
   grep -qxF "$id" <<< "$dangling"
 }
 

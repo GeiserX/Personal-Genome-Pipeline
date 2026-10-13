@@ -151,6 +151,7 @@ case "${1:-}" in
     [ "$fmt" = '{{.Id}}' ] && echo "$id"
     exit 0 ;;
   images)
+    [ -n "${IMAGES_FAILS:-}" ] && exit 1
     case " $* " in
       *" dangling=true "*)
         awk '{ if (!($2 in t)) t[$2] = 0; if ($1 !~ /@/) t[$2] = 1 } END { for (i in t) if (!t[i]) print i }' "$S" ;;
@@ -179,6 +180,11 @@ validate() { CONTAINER_ENGINE=$STATEFUL bash "${REPO}/scripts/validate-setup.sh"
 # warned: validate-setup.sh lists IMAGE under the "would delete" warning.
 warned() {
   awk -v i="$1" '/digest-pinned image\(s\) have no local tag/ { w = 1; next } /Tag them with/ { w = 0 }
+                 w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
+}
+# unknown: validate-setup.sh lists IMAGE as missing its pinned tag, dangling or not unknown.
+unknown() {
+  awk -v i="$1" '/Docker did not list its dangling images/ { w = 1; next } /Tag them with/ { w = 0 }
                  w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
 }
 # noted: validate-setup.sh lists IMAGE as missing its pinned tag only.
@@ -210,6 +216,17 @@ else
   pass "an image kept by another tag gets no would-delete warning"
 fi
 if noted "$first"; then pass "an image kept by another tag is noted as missing its pinned tag"; else fail "validate-setup.sh did not note that ${first} lacks its pinned tag"; fi
+
+# Docker does not answer the dangling query: no claim either way, a warning
+# that it could not tell.
+IMAGES_FAILS=1 validate
+if noted "$first" || warned "$first"; then
+  fail "validate-setup.sh claims to know whether ${first} is dangling although Docker did not list its dangling images"
+elif unknown "$first"; then
+  pass "a failed dangling query gets the could-not-tell warning, no claim either way"
+else
+  fail "validate-setup.sh did not warn about ${first} when Docker did not list its dangling images"
+fi
 pull_only || fail "setup.sh --pull-only failed after the tag was removed"
 summary_says 1 "one pinned tag missing"
 
