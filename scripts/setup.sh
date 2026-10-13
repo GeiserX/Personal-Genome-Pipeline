@@ -497,12 +497,13 @@ esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
 # lines marked `# optional`), and tag the digest-pinned ones, those already
-# present included. Sets PULLED, SKIPPED and FAILED.
+# present included. Sets PULLED, SKIPPED, FAILED and TAGGED (pinned tags added).
 pull_images() {
   local img
   PULLED=0
   SKIPPED=0
   FAILED=0
+  TAGGED=0
   while IFS= read -r img; do
     if "$CONTAINER_ENGINE" image inspect "$img" &>/dev/null; then
       SKIPPED=$((SKIPPED + 1))
@@ -516,9 +517,10 @@ pull_images() {
         continue
       fi
     fi
-    keep_image "$img" || FAILED=$((FAILED + 1))
+    pinned_tag_present "$img" && continue
+    if keep_image "$img"; then TAGGED=$((TAGGED + 1)); else FAILED=$((FAILED + 1)); fi
   done < <(pipeline_images)
-  echo "[OK] Docker images: ${PULLED} pulled, ${SKIPPED} already present, ${FAILED} failed."
+  echo "[OK] Docker images: ${PULLED} pulled, ${SKIPPED} already present, ${FAILED} failed, ${TAGGED} pgp-pinned tag(s) added."
   if [ "$FAILED" -gt 0 ]; then
     echo ""
     echo "ERROR: ${FAILED} Docker image(s) failed to pull or tag. Fix the issues above and re-run setup."

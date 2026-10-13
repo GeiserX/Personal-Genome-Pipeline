@@ -240,12 +240,24 @@ jobs:
           cp -R scripts versions.env "$copy/"
           awk '/^[A-Z0-9_]+_IMAGE=/ && !/@sha256:/ && !/# optional/ { $0 = $0 "  # optional" } 1' \
             versions.env > "${copy}/versions.env"
-          # validate-setup.sh lists an unprotected image alone on a line
-          # under its warning. It exits 1 here (no reference data): ignored.
-          warned() {
+          # validate-setup.sh lists an image alone on a line under its
+          # warning (no tag at all: a cleanup would delete it) or under its
+          # note (kept by another tag, only the pinned one is missing). It
+          # exits 1 here (no reference data): ignored.
+          listed() {
             "${copy}/scripts/validate-setup.sh" > "${RUNNER_TEMP}/validate.log" 2>&1 || true
-            grep -q 'digest-pinned image(s) have no local tag' "${RUNNER_TEMP}/validate.log" &&
-              awk -v i="$1" 'NF == 1 && $1 == i { f = 1 } END { exit !f }' "${RUNNER_TEMP}/validate.log"
+            awk -v i="$1" -v start="$2" -v stop="$3" '$0 ~ start { w = 1; next } $0 ~ stop { w = 0 }
+              w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${RUNNER_TEMP}/validate.log"
+          }
+          warned() { listed "$1" 'digest-pinned image[(]s[)] have no local tag' 'Tag them with'; }
+          noted() { listed "$1" 'lack their localhost/pgp-pinned/ tag' 'Add it with'; }
+          # pull_only N: setup.sh --pull-only, whose summary must say it added N pinned tags.
+          pull_only() {
+            "${copy}/scripts/setup.sh" --pull-only > "${RUNNER_TEMP}/setup.log" 2>&1 || { cat "${RUNNER_TEMP}/setup.log"; exit 1; }
+            cat "${RUNNER_TEMP}/setup.log"
+            if ! grep -qE "^\[OK\] Docker images: .*, $1 pgp-pinned tag\(s\) added\.$" "${RUNNER_TEMP}/setup.log"; then
+              echo "::error::setup.sh --pull-only should report $1 pgp-pinned tag(s) added"; exit 1
+            fi
           }
 
           # Control: pulled by digest the plain way, the first image is
@@ -263,9 +275,10 @@ jobs:
           echo "validate-setup.sh warns that ${imgs[0]} has no local tag."
 
           # setup.sh: the first image takes the "already present" path, the
-          # rest are pulled. Run twice: the second run must change nothing.
+          # rest are pulled. Run twice: the first adds every pinned tag, the
+          # second must change nothing.
           for run in 1 2; do
-            "${copy}/scripts/setup.sh" --pull-only
+            if [ "$run" -eq 1 ]; then pull_only "${#imgs[@]}"; else pull_only 0; fi
             for img in "${imgs[@]}"; do
               if is_dangling "$img"; then
                 echo "::error::run ${run}: ${img} is dangling after setup.sh --pull-only; docker image prune would delete it"; exit 1
@@ -303,13 +316,33 @@ jobs:
               cat "${RUNNER_TEMP}/validate.log"
               echo "::error::validate-setup.sh missed that ${tag0} names another image"; exit 1
             fi
-            "${copy}/scripts/setup.sh" --pull-only
+            pull_only 1
             [ "$(id_of "$tag0")" = "$(id_of "${imgs[0]}")" ] || { echo "::error::setup.sh did not move ${tag0} back"; exit 1; }
             if warned "${imgs[0]}"; then
               echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh moved its tag back"; exit 1
             fi
             echo "A moved tag is reported by validate-setup.sh and put back by setup.sh."
           fi
+
+          # Another local tag on the same image id keeps it from being
+          # dangling: validate-setup.sh must not claim a cleanup would delete
+          # it, and notes that the pinned tag is missing.
+          tag0=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "${imgs[0]}" | grep '^localhost/pgp-pinned/')
+          docker tag "${imgs[0]}" example/foreign:keep
+          docker rmi "$tag0"
+          if is_dangling "${imgs[0]}"; then
+            echo "::error::control: ${imgs[0]} with another tag is dangling; this case tests nothing"; exit 1
+          fi
+          if warned "${imgs[0]}"; then
+            cat "${RUNNER_TEMP}/validate.log"
+            echo "::error::validate-setup.sh claims a cleanup would delete ${imgs[0]}, which another tag keeps"; exit 1
+          fi
+          if ! noted "${imgs[0]}"; then
+            cat "${RUNNER_TEMP}/validate.log"
+            echo "::error::validate-setup.sh did not note that ${imgs[0]} lacks its pinned tag"; exit 1
+          fi
+          pull_only 1
+          echo "An image kept by another tag is noted, not called deletable, and setup.sh adds its pinned tag."
 
   container-ok:
     needs: [plan, manifest, smoke, pinned-images]
