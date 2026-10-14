@@ -1,13 +1,15 @@
 # Step 21 (Cyrius, opt-in): every package `scripts/setup.sh --cyrius` installs,
 # pinned with the sha256 of each wheel PyPI publishes for it. setup.sh runs
 #   pip install --require-hashes --no-deps --only-binary :all: -r this file
-# in PYTHON_IMAGE (Python 3.14), so pip installs exactly these wheels and
-# nothing else. The hashes cover the pure-Python wheels and the CPython 3.14
+# in PYTHON_IMAGE (Python 3.15), so pip installs exactly these wheels and
+# nothing else. The hashes cover the pure-Python wheels and the CPython 3.15
 # manylinux wheels for x86_64 and aarch64 (Docker on an Apple Silicon Mac).
 # The versions are the ones pip resolved for `pip install cyrius==1.1.1` in
 # python:3.11 on 2026-10-01 (Cyrius declares its dependencies unpinned). On
 # the move to Python 3.14 on 2026-10-09 each of them had a CPython 3.14 wheel,
-# so the versions stayed and only the wheel hashes changed.
+# so the versions stayed and only the wheel hashes changed. On the move to
+# Python 3.15 on 2026-10-14 numpy (2.4.6 -> 2.5.4) and scipy (1.17.1 -> 1.18.1)
+# moved to their first releases with CPython 3.15 wheels; the rest stayed.
 # To refresh: resolve again in the PYTHON_IMAGE of versions.env, then take
 # each wheel's sha256 from https://pypi.org/pypi/<name>/<version>/json.
 cyrius==1.1.1 \
@@ -18,32 +20,42 @@ interface_meta==2.0.1 \
     --hash=sha256:f38016bef9a4429b6d0792d809be7b65e9781820c674bf7f463999086b6e6323
 narwhals==2.26.0 \
     --hash=sha256:29326d74f107c347fd1009bd58e38d9f7c7c5b51e6de97bc93dbc325d9038b54
-numpy==2.4.6 \
-    --hash=sha256:40fdc1ae7125e518ea98e53e69a4ebc27e1fd50510c47b7ea130cf21e5e1d42b \
-    --hash=sha256:a2c306dea656c12c68f51f4cea133cbe78ca7435eb28c735eac1d3ebe73be6e8
+numpy==2.5.4 \
+    --hash=sha256:325518d4245b9e331387702aa58c2ce1dc4cdcbb41dfb4ccd5dcbc7e08db1266 \
+    --hash=sha256:56733449d2544178beaa4545cee357370440cf056c197f9c7bfb19dbfdd0e86d \
+    --hash=sha256:6c109eac9cd439193678f69d70733c1108487546ca8eafc107b510ae10c1aecd \
+    --hash=sha256:80d6ef6e8620eb2c2b4c4caad50b5935d6db3cde2d51581b55dcc79e14016d1d
 packaging==26.3 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
 pandas==3.0.6 \
-    --hash=sha256:654aae059295dbba6ecd2328ca12712a2cf1676214c8699f1c29213f7ccf9c34 \
-    --hash=sha256:62f51d7f651c8054c5e82a69265c98082e795d1442df7ca6edc3a545d61214b1
+    --hash=sha256:4e25e2e1adee99ddfada6f7206a79ae8e9c8a8861b0e3eaaba165006d3eef18e \
+    --hash=sha256:4ff44b2cb51cbd691c91f92c4ea6c71e34003f239ebd67c2e857dc898466b49c \
+    --hash=sha256:a77a1a44e4d88f1c6a2a64d3eb12efec8420875722e14279800b173a7c7c2804 \
+    --hash=sha256:86fa853a12e0b70927e2b1ee00d56d2224ec9cbb4b9d58348b5ad52d2f21150e
 patsy==1.0.3 \
     --hash=sha256:d3dbebe8fd5f46e29912d030b63c6268647b59bf788a99e2af28a30234cf357c
 pysam==0.24.1 \
-    --hash=sha256:9598dd5a571c5c8b4383b4fe1a27823d72b3261c5299100cf3d88dfb09b45019 \
-    --hash=sha256:25ffcc2aca0a49358c02e666ddd789afe701c5cf320dcb894ac22ede7347049f
+    --hash=sha256:57d7921761ce2b902711e55857f861733b909155fb6299b5559da4a20a353eeb \
+    --hash=sha256:7a22778002a2a401374733dc5698bc3552ff0a6c43d27aeaf37976048bd3d867
 python-dateutil==2.9.0.post0 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
-scipy==1.17.1 \
-    --hash=sha256:adb2642e060a6549c343603a3851ba76ef0b74cc8c079a9a58121c7ec9fe2350 \
-    --hash=sha256:eee2cfda04c00a857206a4330f0c5e3e56535494e30ca445eb19ec624ae75118
+scipy==1.18.1 \
+    --hash=sha256:82f201b4c878551d48558337aab270d3c6cca5507b8737c8d8a608d234cccde0 \
+    --hash=sha256:0ac49ea97594532dd44b7136094d35f5440fa06e6d9c6384a74c01764df388c5 \
+    --hash=sha256:33a834464fdabc0f26a45508df31b3cc5d028e04dbf6c5ed398541418e0a12fe \
+    --hash=sha256:49023963c193dacee096301452f223ee24d86ec5807f8df93c0f7221d119e305
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
 statsmodels==0.15.0 \
-    --hash=sha256:a45026596c71afa18543ec2af40b895609c181fc3649433c1cded5ce23ec5cd4 \
-    --hash=sha256:edd803f4606061af8c7a83e2326ea294cbfa802a908dfbda4a88347301fb6820
+    --hash=sha256:333d0c70f269ff98b647f157d2ae7fbcf0617e6f9a5b1817fc6609766502292c \
+    --hash=sha256:80b946d7c922f46f045f25e50daf13439f79c05e403ba50081cad509892c8b26 \
+    --hash=sha256:5891ad077b36d6401e44967739df3d2cdd380a0e6e9e46dadec7e3d3a828af55 \
+    --hash=sha256:af80f9658c48792947fc754a026ffbebca61a8b483253781973f604a67cf1f8c
 typing_extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
 wrapt==2.5.0 \
-    --hash=sha256:b640460f0ffb346b192686bd6fac5589e35a6c6640501c59a9fb6e82b0dd6bd8 \
-    --hash=sha256:1f17c5a3836397bf59fd57b0e5b0dc42969b1daa70d31aa361c6e13cbf138b5a \
+    --hash=sha256:bc6491d3008ecabf685b0746f03ad8241a0950336939b14addb03af39b51a316 \
+    --hash=sha256:47abb2bb7f15b416e72fbe5e68e49a6f09331dae6af1ca6055f5aa2251d2bd2f \
+    --hash=sha256:88bb24b9fdccb1d805258d5648533206eb58c58b6554985c47db53a89c11be85 \
+    --hash=sha256:2e3d110d7f99644946f249927c346d9dba507a78815d1bcebdbf0d94c14c5649 \
     --hash=sha256:107eea1a511e98a3a5033b0c2cb403fbb37f05dee6ac1fb85c0460d311ec278c
