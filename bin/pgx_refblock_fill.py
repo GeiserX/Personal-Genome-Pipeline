@@ -3,11 +3,13 @@
 
 Step 07 and PHARMCAT_PREPROCESS expand the reference blocks of a gVCF over
 PharmCAT's gene regions with `bcftools convert --gvcf2vcf`, which writes one
-record per base, each with a one-base REF. PharmCAT does not read such a
-record as a call at a position whose REF or ALT is longer than one base (an
-insertion or deletion such as UGT1A1 *28, or a multi-base substitution), so
-it lists the position as missing and its alleles as uncallable, even when the
-gVCF has confident reference blocks over the whole REF span.
+record per base, each with a one-base REF. At a position whose REF or ALT is
+longer than one base (an insertion or deletion such as UGT1A1 *28, or a
+multi-base substitution) PharmCAT's preprocessor sets such a record aside and
+lists the position as missing; where PharmCAT's REF is longer than one base
+its matcher then discards the record, so the alleles defined there are
+uncallable, even when the gVCF has confident reference blocks over the whole
+REF span.
 
 This filter reads that expanded VCF on stdin and writes it to stdout with one
 change: for each such PharmCAT position where the gVCF shows the sample is
