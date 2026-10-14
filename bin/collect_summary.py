@@ -1121,11 +1121,37 @@ def sec_sample_qc(d, s):
     return p, data
 
 
+# --- mosaic loss of chrY or of one chrX (step 33, bin/mosaic_sex_loss.py) ----------
+
+MOSAIC_CALLS = ("detected", "not_detected", "gain", "not_estimated")
+MOSAIC_NUMBERS = ("depth_ratio", "depth_ratio_expected", "loss_depth", "loss_depth_low", "loss_depth_high",
+                  "loss_af", "loss_af_low", "loss_af_high", "floor")
+
+
+def sec_mosaic_sex_loss(d, s):
+    """The mosaic_* rows of the step 33 table, without the prefix; none in a
+    table written before the estimate existed."""
+    p = first_existing(d, [f"qc/{s}_sample_qc.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"][len("mosaic_"):]: r.get("value") or "" for r in read_tsv(p)
+            if (r.get("key") or "").startswith("mosaic_")}
+    if not data:
+        return None, {}
+    if data.get("call") not in MOSAIC_CALLS:
+        raise Unreadable(f"{os.path.basename(p)} has no mosaic_call row ({', '.join(MOSAIC_CALLS)})")
+    for k in MOSAIC_NUMBERS:
+        data[k] = num(data.get(k))
+    data["x_het_sites"] = int(data["x_het_sites"]) if (data.get("x_het_sites") or "").isdigit() else None
+    return p, data
+
+
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
+    ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),

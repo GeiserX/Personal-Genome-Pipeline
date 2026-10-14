@@ -91,6 +91,33 @@ def freemix_text(q):
     return f"{q['freemix']} (warning above {warn}{few})"
 
 
+MOSAIC_NOTE = ("Loss of chrY in a share of the blood cells of men, and of one chrX in women, becomes more common "
+               "with age. Population studies link loss of Y with smoking and with higher rates of heart disease "
+               "and some cancers; loss of X is less studied. That is a population-level association, not a "
+               "diagnosis for one person. Below about 10% of the cells nothing can be told at 30x "
+               "(docs/33-sample-qc.md).")
+MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detected (below 10%)", "gray"),
+               "gain": ("an extra copy, not a loss", "yellow"), "not_estimated": ("not estimated", "gray")}
+
+
+def pct(x):
+    return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
+
+
+def mosaic_lines(q):
+    """The estimate from depth and from chrX allele fractions, one line each, as both reports print them."""
+    what = "the Y" if q.get("chrom") == "chrY" else "one X"
+    out = []
+    if isinstance(q.get("loss_depth"), (int, float)):
+        out.append(f"From depth: {pct(q['loss_depth'])} of the cells lost {what} (95% range {pct(q.get('loss_depth_low'))}"
+                   f" to {pct(q.get('loss_depth_high'))}); {q.get('chrom')} to autosome depth ratio "
+                   f"{q.get('depth_ratio'):.3f}, {q.get('depth_ratio_expected')} expected")
+    if isinstance(q.get("loss_af"), (int, float)):
+        out.append(f"From chrX allele fractions at {q.get('x_het_sites')} heterozygous sites: {pct(q['loss_af'])} "
+                   f"(95% range {pct(q.get('loss_af_low'))} to {pct(q.get('loss_af_high'))})")
+    return out
+
+
 def prs_chrx_note(d):
     """A sentence when chrX rows of a score were left out (no sex given), else ''."""
     left = [f"{r['pgs_id']} ({r['chrx'].split()[0]})" for r in d.get("scores", [])
@@ -169,6 +196,15 @@ def text_report(s):
             w(f"  Contamination (VerifyBamID2 FREEMIX): {freemix_text(q)}")
             if q.get("same_person_as"):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
+        w("")
+
+    if head("mosaic_sex_loss"):
+        q = S["mosaic_sex_loss"]["data"]
+        w(f"  {q.get('chrom') or 'chrY or chrX'}: {MOSAIC_CALL.get(q.get('call'), (q.get('call'), ''))[0]}"
+          f" ({q.get('reason')})")
+        for line in mosaic_lines(q):
+            w(f"  {line}")
+        w(f"  {MOSAIC_NOTE}")
         w("")
 
     if head("variants", "Variant Calling (DeepVariant)"):
@@ -512,6 +548,14 @@ def html_report(s):
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
+
+    mo = S.get("mosaic_sex_loss", MISSING)
+    q = mo["data"]
+    label, colour = MOSAIC_CALL.get(q.get("call"), (q.get("call") or "?", "gray"))
+    mo_body = [stat(q.get("chrom") or "chrY or chrX", badge(label, colour)),
+               stat("Why", f'<span style="font-weight:normal;font-size:13px">{E(q.get("reason") or "")}</span>')]
+    mo_body += [small_note(line) for line in mosaic_lines(q)] + [small_note(MOSAIC_NOTE)]
+    a(card(mo, "Mosaic Loss of Chromosome Y or X", mo_body))
 
     v = S["variants"]["data"]
     a(card(S["variants"], "Variant Calling", [stat("Total variants", v.get("total")), stat("PASS variants", v.get("pass")),
