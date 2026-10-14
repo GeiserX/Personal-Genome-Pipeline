@@ -32,7 +32,9 @@ Checks:
      no hit gets a gray one, and both reports say population frequency is
      not checked;
   7. the telomere card says relative telomere content with its unit, and
-     no report in bin/ says "Telomere Length".
+     no report in bin/ says "Telomere Length";
+  8. the paralog card of step 35b is left out when the step did not run, and
+     a result older than a run in which step 35b failed is marked Stale.
 
 Run: python3 tests/test_render_report.py
 """
@@ -272,6 +274,22 @@ def main():
               and "intratelomeric reads per million reads with 48-52% GC" in html and "not a telomere length" in html)
         said = [p_ for p_ in glob.glob(os.path.join(REPO, "bin", "*.py")) if "Telomere Length" in open(p_).read()]
         check("no file in bin/ says 'Telomere Length'", not said, said)
+
+        # 8. paralog card (step 35b): hidden when the step did not run; a
+        # result older than a run in which step 35b failed is marked Stale
+        check("paralogs: no card when step 35b did not run", "Paralog Genes (Paraphase)" not in html)
+        d = f"{work}/paralogs/S"
+        put(f"{d}/paralogs/S_paraphase_copy_number.tsv",
+            "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+            "pms2\tPMS2\t2\tcalled\t.\t4\t60\t30\n")
+        os.utime(f"{d}/paralogs/S_paraphase_copy_number.tsv", (1, 1))
+        put(f"{d}/logs/run_status.tsv", "meta\tstarted_epoch\t1000\nstep\t35b\tfailed\n")
+        summ = collect_summary.collect("S", d)
+        html = render_report.html_report(summ)
+        card_p = html.split("<h2>Paralog Genes (Paraphase)</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("paralogs: a result older than a run where step 35b failed is stale, with its PMS2 row",
+              summ["sections"]["paralogs"]["state"] == "stale" and 'badge-yellow">Stale<' in card_p
+              and "<td>PMS2</td><td>2</td>" in card_p, card_p)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
