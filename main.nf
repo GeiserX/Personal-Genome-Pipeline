@@ -481,7 +481,8 @@ workflow {
         ch_kir_dat,
         ch_parascopy_data,
         ch_parascopy_bed,
-        ch_yleaf_data
+        ch_yleaf_data,
+        ch_vcf
     )
 
     // ═══════════════════════════════════════════════════════════════════
