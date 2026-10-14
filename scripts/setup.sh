@@ -503,11 +503,16 @@ install_ancestry_fine_panel() {
     echo "       The bucket replaced a file: read what changed before moving the pin in versions.env."
     return 1
   fi
-  if ! fetch "$ANCESTRY_FINE_META_URL" "${dir}/meta.tsv" sha256 "$ANCESTRY_FINE_META_SHA256" \
-     || ! fetch "$ANCESTRY_FINE_MAP_URL" "${dir}/maps/plink.GRCh38.map.zip" sha256 "$ANCESTRY_FINE_MAP_SHA256"; then
-    echo "[WARN] Could not download the panel's metadata or the genetic map; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
-    return 1
-  fi
+  # The metadata and the map, unless they are there with their pinned sha256.
+  for v in "${ANCESTRY_FINE_META_URL}|${dir}/meta.tsv|${ANCESTRY_FINE_META_SHA256}" \
+           "${ANCESTRY_FINE_MAP_URL}|${dir}/maps/plink.GRCh38.map.zip|${ANCESTRY_FINE_MAP_SHA256}"; do
+    IFS='|' read -r c e k <<< "$v"
+    [ -s "$e" ] && [ "$(_digest sha256 "$e")" = "$k" ] && continue
+    if ! fetch "$c" "$e" sha256 "$k"; then
+      echo "[WARN] Could not download ${c}; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+      return 1
+    fi
+  done
   if [ -n "$regions" ]; then
     [ -s "$regions" ] || { echo "[WARN] ANCESTRY_FINE_REGIONS=${regions} is not a file"; return 1; }
     cp "$regions" "${dir}/regions.bed"

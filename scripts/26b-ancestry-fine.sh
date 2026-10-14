@@ -9,11 +9,11 @@
 #   1. genotypes the panel's SNVs from the gVCF (so the sites where you match
 #      the reference count), or from a VCF that holds reference calls;
 #   2. ADMIXTURE projects you on the allele frequencies of the panel's groups
-#      at two levels (6 continental groups, 18 regional ones), with a
-#      bootstrap of the SNVs for the spread of each fraction (ADMIXTURE -P -B);
+#      at two levels (6 continental groups, 18 regional ones), and a block
+#      bootstrap of the SNVs gives the spread of each fraction;
 #   3. Beagle phases your genotypes against the panel;
-#   4. RFMix paints each chromosome segment of each haplotype with the
-#      continental group it is most similar to;
+#   4. RFMix paints each segment of each haplotype with the continental group
+#      it is most similar to;
 #   5. bin/ancestry_fine_report.py writes the fractions table, the painting
 #      (BED and PNG) and a plain-text summary.
 # A group name is ours: a set of reference populations, not a nationality.
@@ -22,8 +22,8 @@
 #
 # Without the panel the step says so in one line and exits 0.
 # Env: ANCESTRY_FINE_DIR (another panel folder inside GENOME_DIR, or none to
-# skip), THREADS, ANCESTRY_FINE_BOOTSTRAP (ADMIXTURE's bootstrap replicates,
-# default 100).
+# skip), THREADS (default 4), ANCESTRY_FINE_BOOTSTRAP (bootstrap replicates,
+# default 100; 0 for none).
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -70,7 +70,8 @@ W=$(cpath "$WORK")
 # --trim-alt-alleles drops the <*> allele and a no-call is dropped. The awk
 # keeps a record only when its REF is the panel's and its ALT is the panel's
 # (a 0/0 has none: it gets the panel's), so every record is a genotype of the
-# panel's two alleles, and counts the records per chromosome.
+# panel's two alleles, and counts them per chromosome with the first and the
+# last position.
 GENO="${WORK}/genotypes.vcf"
 if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
   INPUT_KIND=gvcf
@@ -97,10 +98,11 @@ run_in --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" "${CMD[@]}" \
         n = split($9, fmt, ":"); split($10, val, ":"); gt = "."
         for (i = 1; i <= n; i++) if (fmt[i] == "GT") gt = val[i]
         if (gt !~ /^[01][\/|][01]$/) next
-        seen[k] = 1; per[$1]++; if (gt ~ /^0[\/|]0$/) homref++
+        seen[k] = 1; if (!($1 in per)) first[$1] = $2
+        per[$1]++; last[$1] = $2; if (gt ~ /^0[\/|]0$/) homref++
         print $1, $2, ".", $4, $5, ".", ".", ".", "GT", gt
       }
-      END { for (c in per) print c "\t" per[c] > counts; print "homref\t" homref + 0 > counts }' > "$GENO"
+      END { for (c in per) print c "\t" per[c] "\t" first[c] "\t" last[c] > counts; print "homref\t" homref + 0 > counts }' > "$GENO"
 N_GENO=$(awk -F'\t' '$1 != "homref" {n += $2} END {print n + 0}' "${WORK}/counts.tsv")
 N_HOMREF=$(awk -F'\t' '$1 == "homref" {print $2}' "${WORK}/counts.tsv")
 N_SITES=$(wc -l < "${PANEL}/panel/sites.tsv" | tr -d ' ')
@@ -114,47 +116,54 @@ if [ "$INPUT_KIND" = vcf ] && [ "$(( N_HOMREF * 5 ))" -lt "$N_GENO" ]; then
   echo "  (chip-to-vcf.sh output does): from variant sites alone the fractions would be biased." >&2
   exit 1
 fi
+# shellcheck disable=SC2016  # $1 belongs to the inner bash
 run_in --cpus 1 --memory 2g "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
   'bcftools view -Oz -o "$1.gz" "$1" && bcftools index -t "$1.gz" && rm -f "$1"' _ "${W}/genotypes.vcf"
-# Chromosomes with enough SNVs to phase and paint.
-CHROMS=$(awk -F'\t' '$1 ~ /^chr([1-9]|1[0-9]|2[0-2])$/ && $2 >= 20 {print $1}' "${WORK}/counts.tsv" | sort -V | tr '\n' ' ')
+# The chromosomes to phase and paint: 100 genotyped SNVs or more spanning
+# 5 cM or more (bin/ancestry_fine_report.py chroms says why).
+CHROMS=$(run_in --cpus 1 --memory 1g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+  python3 /pgp-bin/ancestry_fine_report.py chroms --counts "${W}/counts.tsv" --maps "${P}/maps")
 
 # --- 2. ADMIXTURE: projection on the groups' frequencies ----------------------------
+# sample-bed writes the inputs and run_admixture.sh, which projects the sample
+# at each level and then runs the bootstrap replicates (ADMIXTURE's own -B
+# crashes with -P).
 echo "[2/5] ADMIXTURE projection, ${BOOT} bootstrap replicates..."
 LEVELS=()
 while IFS=$'\t' read -r level k _; do LEVELS+=("--level" "${level}:${k}:${P}/model/${level}.P"); done < "${PANEL}/model/levels.tsv"
 run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/ancestry_fine_report.py sample-bed --bim "${P}/model/ref.bim" --vcf "${W}/genotypes.vcf.gz" \
-    --sample "$SAMPLE" "${LEVELS[@]}" --out-dir "${W}/admixture"
-while IFS=$'\t' read -r level k _; do
-  # shellcheck disable=SC2016  # $1 to $6 belong to the inner sh
-  run_in --cpus "$THREADS" --memory 4g "$ADMIXTURE_IMAGE" sh -c \
-    'cd "$1" && b=""; [ "$4" -eq 0 ] || b="-B$4"; admixture -P $b -j"$5" "$2_$3.bed" "$6" > "$2_$3.log" 2>&1 || { tail -n 20 "$2_$3.log"; exit 1; }' \
-    _ "${W}/admixture" "$SAMPLE" "$level" "$BOOT" "$THREADS" "$k" < /dev/null \
-    || { echo "ERROR: ADMIXTURE failed on the ${level} level (log above)" >&2; exit 1; }
-done < "${PANEL}/model/levels.tsv"
+    --sample "$SAMPLE" "${LEVELS[@]}" --bootstrap "$BOOT" --out-dir "${W}/admixture"
+# shellcheck disable=SC2016  # $1 and $2 belong to the inner sh
+run_in --cpus "$THREADS" --memory 4g "$ADMIXTURE_IMAGE" sh -c 'cd "$1" && sh run_admixture.sh "$2"' _ "${W}/admixture" "$THREADS" \
+  || { echo "ERROR: ADMIXTURE failed (log above)" >&2; exit 1; }
 
-# --- 3. Beagle: phasing against the panel --------------------------------------------
-echo "[3/5] Phasing with Beagle against the panel (${CHROMS})..."
-# shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
-run_in --cpus "$THREADS" --memory 8g "$BEAGLE_IMAGE" bash -euo pipefail -c '
-    for c in $4; do
-      beagle -Xmx6g gt="$2/genotypes.vcf.gz" chrom="$c" ref="$1/panel/$c.vcf.gz" map="$1/maps/$c.map" \
-        out="$2/phase/$c" impute=false seed=1 nthreads="$3" > "$2/phase/$c.out" 2>&1 \
-        || { tail -n 20 "$2/phase/$c.out"; exit 1; }
-    done' _ "$P" "$W" "$THREADS" "$CHROMS" \
-  || { echo "ERROR: Beagle failed (log above)" >&2; exit 1; }
+if [ -z "$CHROMS" ]; then
+  echo "[3/5] No chromosome has 100 genotyped SNVs spanning 5 cM: no phasing and no painting."
+  echo "[4/5] Skipped."
+else
+  # --- 3. Beagle: phasing against the panel ------------------------------------------
+  echo "[3/5] Phasing with Beagle against the panel (${CHROMS})..."
+  # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+  run_in --cpus "$THREADS" --memory 8g "$BEAGLE_IMAGE" bash -euo pipefail -c '
+      for c in $4; do
+        beagle -Xmx6g gt="$2/genotypes.vcf.gz" chrom="$c" ref="$1/panel/$c.vcf.gz" map="$1/maps/$c.map" \
+          out="$2/phase/$c" impute=false seed=1 nthreads="$3" > "$2/phase/$c.out" 2>&1 \
+          || { tail -n 20 "$2/phase/$c.out"; exit 1; }
+      done' _ "$P" "$W" "$THREADS" "$CHROMS" \
+    || { echo "ERROR: Beagle failed (log above)" >&2; exit 1; }
 
-# --- 4. RFMix: the painting ----------------------------------------------------------
-echo "[4/5] Painting with RFMix ($(wc -l < "${PANEL}/model/paint_map.tsv" | tr -d ' ') reference individuals)..."
-# shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
-run_in --cpus "$THREADS" --memory 8g "$RFMIX_IMAGE" bash -euo pipefail -c '
-    for c in $4; do
-      rfmix -f "$2/phase/$c.vcf.gz" -r "$1/panel/$c.vcf.gz" -m "$1/model/paint_map.tsv" -g "$1/maps/$c.rfmix.map" \
-        -o "$2/paint/$c" --chromosome="$c" --n-threads="$3" --random-seed=1 > "$2/paint/$c.log" 2>&1 \
-        || { tail -n 20 "$2/paint/$c.log"; exit 1; }
-    done' _ "$P" "$W" "$THREADS" "$CHROMS" \
-  || { echo "ERROR: RFMix failed (log above)" >&2; exit 1; }
+  # --- 4. RFMix: the painting --------------------------------------------------------
+  echo "[4/5] Painting with RFMix ($(wc -l < "${PANEL}/model/paint_map.tsv" | tr -d ' ') reference individuals)..."
+  # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+  run_in --cpus "$THREADS" --memory 8g "$RFMIX_IMAGE" bash -euo pipefail -c '
+      for c in $4; do
+        rfmix -f "$2/phase/$c.vcf.gz" -r "$1/panel/$c.vcf.gz" -m "$1/model/paint_map.tsv" -g "$1/maps/$c.rfmix.map" \
+          -o "$2/paint/$c" --chromosome="$c" --n-threads="$3" --random-seed=1 > "$2/paint/$c.log" 2>&1 \
+          || { tail -n 20 "$2/paint/$c.log"; exit 1; }
+      done' _ "$P" "$W" "$THREADS" "$CHROMS" \
+    || { echo "ERROR: RFMix failed (log above)" >&2; exit 1; }
+fi
 
 # --- 5. The report ---------------------------------------------------------------------
 echo "[5/5] Writing the fractions, the painting and the summary..."
@@ -162,10 +171,11 @@ echo ""
 run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/ancestry_fine_report.py report --sample "$SAMPLE" --model "${P}/model" \
     --admixture "${W}/admixture" --paint "${W}/paint" --panel "$ANCESTRY_FINE_PANEL" --out "$(cpath "$OUT")"
-for f in "${OUT}/${SAMPLE}_ancestry_fine.tsv" "${OUT}/${SAMPLE}_painting.bed" "${OUT}/${SAMPLE}_painting.png"; do
+for f in "${OUT}/${SAMPLE}_ancestry_fine.tsv" "${OUT}/${SAMPLE}_painting.png"; do
   [ -s "$f" ] || { echo "ERROR: step 26b wrote no ${f}" >&2; exit 1; }
 done
 echo ""
+echo "  Input: the ${INPUT_KIND}"
 echo "  Fractions: ${OUT}/${SAMPLE}_ancestry_fine.tsv"
 echo "  Painting:  ${OUT}/${SAMPLE}_painting.bed and ${SAMPLE}_painting.png"
 echo "  Intermediate files (genotypes, phased haplotypes, ADMIXTURE and RFMix output): ${WORK}"

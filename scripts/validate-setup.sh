@@ -563,6 +563,15 @@ else
   else
     info "Ancestry panel not installed (step 26; step 25 reports raw scores only): ./scripts/setup.sh --ancestry-panel ${GENOME_DIR}"
   fi
+  # Step 26b's panel: model/DONE is the last file setup.sh --ancestry-fine-panel writes.
+  AF_PANEL="${GENOME_DIR}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}"
+  if [ -s "${AF_PANEL}/model/DONE" ]; then
+    pass "Fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b): present"
+  elif [ -d "$AF_PANEL" ]; then
+    warn "Fine-grained ancestry panel ${AF_PANEL} is not finished (no model/DONE): ./scripts/setup.sh --ancestry-fine-panel ${GENOME_DIR}"
+  else
+    info "Fine-grained ancestry panel not installed (step 26b, opt-in): ./scripts/setup.sh --ancestry-fine-panel ${GENOME_DIR}"
+  fi
 
   # --- GATK sequence dictionary (optional) ---
   DICT="$REF_DICT"
@@ -647,10 +656,14 @@ else
   fi
 
   # An opt-in step's image (`# optional` in versions.env) matters once its
-  # data is installed: setup.sh --parascopy-data and --yleaf-data pull it.
+  # data is installed: setup.sh --parascopy-data, --yleaf-data and
+  # --ancestry-fine-panel pull it.
   if [ -n "${GENOME_DIR:-}" ]; then
     for opt in "PARASCOPY_IMAGE|35|reference/parascopy-${PARASCOPY_DATA_VERSION}/homology_table/GRCh38.bed.gz|parascopy-data" \
-               "YLEAF_IMAGE|37|reference/yleaf-${YLEAF_DATA_VERSION}/data/hg38/new_positions.txt|yleaf-data"; do
+               "YLEAF_IMAGE|37|reference/yleaf-${YLEAF_DATA_VERSION}/data/hg38/new_positions.txt|yleaf-data" \
+               "ADMIXTURE_IMAGE|26b|reference/ancestry_fine/${ANCESTRY_FINE_PANEL}/model/DONE|ancestry-fine-panel" \
+               "BEAGLE_IMAGE|26b|reference/ancestry_fine/${ANCESTRY_FINE_PANEL}/model/DONE|ancestry-fine-panel" \
+               "RFMIX_IMAGE|26b|reference/ancestry_fine/${ANCESTRY_FINE_PANEL}/model/DONE|ancestry-fine-panel"; do
       IFS='|' read -r var step data flag <<< "$opt"
       [ -s "${GENOME_DIR}/${data}" ] || continue
       if "$CONTAINER_ENGINE" image inspect "${!var}" &>/dev/null; then

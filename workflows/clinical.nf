@@ -157,7 +157,13 @@ workflow CLINICAL {
         ANCESTRY_FINE_GENOTYPE(ch_af_input, ch_ancestry_fine_panel, ch_reference, ch_reference_fai)
         ANCESTRY_FINE_PREPARE(ANCESTRY_FINE_GENOTYPE.out.genotypes, ch_ancestry_fine_panel)
         ANCESTRY_FINE_ADMIXTURE(ANCESTRY_FINE_PREPARE.out.admixture_input)
-        ANCESTRY_FINE_PHASE(ANCESTRY_FINE_GENOTYPE.out.genotypes, ch_ancestry_fine_panel)
+        ANCESTRY_FINE_PHASE(
+            ANCESTRY_FINE_GENOTYPE.out.genotypes
+                .map { meta, g, gi, _counts -> [meta.id, meta, g, gi] }
+                .join(ANCESTRY_FINE_PREPARE.out.chroms.map { meta, c -> [meta.id, c] })
+                .map { _id, meta, g, gi, c -> [meta, g, gi, c] },
+            ch_ancestry_fine_panel
+        )
         ANCESTRY_FINE_PAINT(ANCESTRY_FINE_PHASE.out.phased, ch_ancestry_fine_panel)
         ANCESTRY_FINE_REPORT(
             ANCESTRY_FINE_ADMIXTURE.out.admixture

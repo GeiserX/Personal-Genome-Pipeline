@@ -1,35 +1,46 @@
 #!/usr/bin/env python3
 """ancestry_fine_report.py: the Python half of step 26b (fine-grained ancestry).
 
-Standard library only (it runs in the plain python image). Four commands:
+Standard library only (it runs in the plain python image). Five commands:
 
   panel-map --meta TSV --bcf-samples LIST [--exclude IDS] [--paint-per-group N] --out samples.tsv
       The panel's sample table, written once by setup.sh --ancestry-fine-panel:
-      each sample of the panel with its population, its continental and its
-      regional group (GROUPS below, '-' when it is in none), whether it is a
-      reference individual (unrelated and in a group) and whether it is one of
-      the reference individuals of the painting (at most N per continental
-      group, taken in turn from each population).
+      each person of the panel with population, continental and regional group
+      (GROUPS below, '-' when in none), whether it is a reference individual
+      (unrelated and in a group) and whether it is one of the painting
+      references (at most N per continental group, taken in turn from each
+      population).
 
   order --pop FILE --q FILE
-      Prints the group codes in the column order of an ADMIXTURE .Q (or .P)
-      file written by `admixture --supervised`: each column is the group whose
-      reference individuals have their largest share in it.
+      The group codes in the column order of the .Q (and .P) file
+      `admixture --supervised` wrote: each column is the group whose reference
+      individuals have their largest share in it.
 
-  sample-bed --bim ref.bim --vcf genotypes.vcf.gz --sample S --level LEVEL:K:P [...] --out-dir DIR
-      The sample as a one-person PLINK .bed/.bim/.fam on the SNVs of the
-      reference .bim, in its order and allele coding, and beside it the rows
-      of each level's ADMIXTURE frequencies (.P) for the same SNVs, the .P.in
-      `admixture -P` projects the sample on. ADMIXTURE stops on a SNV without
-      a genotype, so a site the VCF has no genotype for, or a genotype with an
-      allele the .bim does not have, is left out of both.
+  sample-bed --bim ref.bim --vcf genotypes.vcf.gz --sample S --level LEVEL:K:P [...]
+             [--bootstrap B] --out-dir DIR
+      ADMIXTURE's input for one person: a .bed/.bim/.fam of the reference
+      .bim's SNVs the sample has a genotype for, in the .bim's order and allele
+      coding, and each level's frequencies (.P) for the same SNVs (the .P.in
+      `admixture -P` reads). ADMIXTURE stops on a SNV without a genotype, so a
+      missing site, or a genotype with an allele the .bim does not have, is
+      left out. Also run_admixture.sh, which the ADMIXTURE image runs (it has
+      sh and awk, no python): the projection at each level, then B bootstrap
+      replicates of it. ADMIXTURE's own -B crashes with -P, so a replicate is
+      a draw, with replacement, of 100 blocks of neighbouring SNVs, written as
+      a PLINK .ped (allele 2 is the .bim's A1) and projected the same way.
+
+  chroms --counts counts.tsv --maps DIR [--min-sites N] [--min-cm X]
+      The chromosomes to phase and paint: those with N genotyped SNVs or more
+      (default 100) spanning X cM or more (default 5). RFMix stops with a
+      segmentation fault on a span of a few cM; on a whole genome every
+      autosome spans more than 40.
 
   report --sample S --model DIR --admixture DIR --paint DIR --panel NAME --out DIR
-      The step's outputs from ADMIXTURE's .Q and .Q_se of each level and
-      RFMix's .msp.tsv of each chromosome: <S>_ancestry_fine.tsv (the
-      fractions with their bootstrap spread, and the share of the painted
-      genome per group), <S>_painting.bed, <S>_painting.png and the plain
-      text block <S>_ancestry_fine.txt.
+      The step's outputs from ADMIXTURE's .Q and bootstrap replicates of each
+      level and RFMix's .msp.tsv of each chromosome: <S>_ancestry_fine.tsv
+      (each group's fraction with its bootstrap standard error and 2.5 to 97.5
+      percentile range, and each group's share of the painted genome),
+      <S>_painting.bed, <S>_painting.png and the plain text <S>_ancestry_fine.txt.
 
 A group name is ours: a set of reference populations we put together and
 named, not a nationality. docs/26b-ancestry-fine.md lists them.
@@ -63,7 +74,7 @@ GROUPS = {
     "Sardinian": ("WEA", "SAR"),
     "Adygei": ("WEA", "CAU"),
     "Druze": ("WEA", "LEV"), "Palestinian": ("WEA", "LEV"),
-    "Bedouin": ("WEA", "BED"),
+    "Bedouin": ("WEA", "BDN"),
     "Mozabite": ("WEA", "NAF"),
     # Central and South Asia
     "GIH": ("CSA", "CSA"), "PJL": ("CSA", "CSA"), "BEB": ("CSA", "CSA"), "STU": ("CSA", "CSA"),
@@ -96,7 +107,7 @@ LABELS = {
     "region": {
         "WAF": "West Africa", "EAF": "East Africa", "CAF": "Central African rainforest", "SAF": "Southern Africa",
         "NWE": "Northwestern Europe", "NEE": "Northeastern Europe", "IBE": "Iberia", "ITA": "Italy",
-        "SAR": "Sardinia", "CAU": "Caucasus", "LEV": "Levant", "BED": "Bedouin", "NAF": "North Africa",
+        "SAR": "Sardinia", "CAU": "Caucasus", "LEV": "Levant", "BDN": "Bedouin", "NAF": "North Africa",
         "CSA": "Central and South Asia", "EAS": "East Asia", "SIB": "Siberia",
         "AMR": "Americas (Native American)", "OCE": "Oceania",
     },
@@ -309,6 +320,44 @@ def sample_bed(bim, genotypes):
     return keep, bytes(out)
 
 
+# Allele pair of a .bed code in a PLINK "12" .ped: allele 2 is the .bim's A1.
+# (ADMIXTURE's projection of the .ped equals the .bed's only this way round.)
+PED_ALLELES = {0: "2 2", 2: "1 2", 3: "1 1"}
+
+# run_admixture.sh: the projection at each level, then the bootstrap. awk
+# draws the blocks; srand(r) makes replicate r the same on every run.
+BOOT_SH = r"""#!/bin/sh
+# Written by bin/ancestry_fine_report.py sample-bed. Usage: sh run_admixture.sh THREADS
+set -eu
+t=${1:-1}
+while read -r level k; do
+  admixture -P -j"$t" "@S@_${level}.bed" "$k" > "@S@_${level}.log" 2>&1 \
+    || { tail -n 20 "@S@_${level}.log"; exit 1; }
+  : > "@S@_${level}.boot.Q"
+  r=1
+  while [ "$r" -le @B@ ]; do
+    awk -v r="$r" -v nb=@NB@ -v k="$k" '
+      FNR == 1 { f++ }
+      f == 1 { g[n++] = $0; next }
+      f == 2 { m[n2++] = $0; next }
+      f == 3 { p[n3++] = $0; next }
+      END {
+        srand(r); bs = int((n + nb - 1) / nb); printf "S S 0 0 0 -9" > "rep.ped"
+        for (b = 0; b < nb; b++) {
+          s = int(rand() * nb) * bs
+          for (i = s; i < s + bs && i < n; i++) { printf " %s", g[i] > "rep.ped"; print m[i] > "rep.map"; print p[i] > ("rep." k ".P.in") }
+        }
+        printf "\n" > "rep.ped"
+      }' "@S@.geno" "@S@.map" "@S@_${level}.${k}.P.in"
+    admixture -P "rep.ped" "$k" > rep.log 2>&1 || { tail -n 20 rep.log; exit 1; }
+    cat "rep.${k}.Q" >> "@S@_${level}.boot.Q"
+    rm -f rep.ped rep.map "rep.${k}.P.in" "rep.${k}.P" "rep.${k}.Q"
+    r=$((r + 1))
+  done
+done < levels.txt
+"""
+
+
 def sample_bed_main(a):
     bim = read_bim(a.bim)
     if not bim:
@@ -317,9 +366,11 @@ def sample_bed_main(a):
     if len(keep) < a.min_sites:
         die(f"only {len(keep)} of the {len(bim)} reference SNVs have a genotype in {a.vcf} (at least {a.min_sites} needed)")
     os.makedirs(a.out_dir, exist_ok=True)
+    out = lambda name: os.path.join(a.out_dir, name)  # noqa: E731
+    levels = []
     for spec in a.level:
         level, k, p_path = spec.split(":", 2)
-        base = os.path.join(a.out_dir, f"{a.sample}_{level}")
+        base = out(f"{a.sample}_{level}")
         with open(p_path) as f:
             p_rows = f.readlines()
         if len(p_rows) != len(bim):
@@ -332,9 +383,80 @@ def sample_bed_main(a):
             f.write(f"{a.sample} {a.sample} 0 0 0 -9\n")
         with open(f"{base}.{k}.P.in", "w") as f:
             f.writelines(p_rows[i] for i in keep)
-    with open(os.path.join(a.out_dir, f"{a.sample}_sites.txt"), "w") as f:
-        f.write(f"{len(keep)} of {len(bim)} reference SNVs genotyped\n")
-    print(f"{len(keep)} of {len(bim)} reference SNVs genotyped")
+        levels.append(f"{level} {k}\n")
+    codes = data[3:]
+    with open(out(f"{a.sample}.geno"), "w") as f:
+        f.writelines(PED_ALLELES[c] + "\n" for c in codes)
+    with open(out(f"{a.sample}.map"), "w") as f:
+        f.writelines(" ".join(bim[i][4].split()[:4]) + "\n" for i in keep)
+    with open(out("levels.txt"), "w") as f:
+        f.writelines(levels)
+    nb = max(1, min(100, len(keep) // 5))
+    with open(out("run_admixture.sh"), "w") as f:
+        f.write(BOOT_SH.replace("@S@", a.sample).replace("@B@", str(a.bootstrap)).replace("@NB@", str(nb)))
+    with open(out(f"{a.sample}_sites.txt"), "w") as f:
+        f.write(f"{len(keep)} of the {len(bim)} SNVs ADMIXTURE uses genotyped\n")
+    print(f"{len(keep)} of the {len(bim)} SNVs ADMIXTURE uses genotyped")
+
+
+# --- chroms ------------------------------------------------------------------------
+
+def read_map(path):
+    """[(position, cM)] of a PLINK .map (chromosome, id, cM, position)."""
+    out = []
+    with open(path) as f:
+        for line in f:
+            c = line.split()
+            if len(c) >= 4:
+                out.append((int(c[3]), float(c[2])))
+    out.sort()
+    return out
+
+
+def cm_at(gmap, pos):
+    """The genetic position of pos, linear between the map's markers."""
+    if not gmap:
+        return 0.0
+    if pos <= gmap[0][0]:
+        return gmap[0][1]
+    if pos >= gmap[-1][0]:
+        return gmap[-1][1]
+    lo, hi = 0, len(gmap) - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if gmap[mid][0] <= pos:
+            lo = mid
+        else:
+            hi = mid
+    (p0, c0), (p1, c1) = gmap[lo], gmap[hi]
+    return c0 + (c1 - c0) * (pos - p0) / (p1 - p0) if p1 > p0 else c0
+
+
+def paint_chroms(counts, maps_dir, min_sites=100, min_cm=5.0):
+    """Chromosomes of counts.tsv (chrom, SNVs, first, last) to phase and paint."""
+    out = []
+    for chrom, n, first, last in counts:
+        path = os.path.join(maps_dir, f"{chrom}.map")
+        if n < min_sites or not os.path.isfile(path):
+            continue
+        gmap = read_map(path)
+        if cm_at(gmap, last) - cm_at(gmap, first) >= min_cm:
+            out.append(chrom)
+    return sorted(out, key=chrom_key)
+
+
+def read_counts(path):
+    out = []
+    with open(path) as f:
+        for line in f:
+            c = line.rstrip("\n").split("\t")
+            if len(c) >= 4 and c[0].startswith("chr"):
+                out.append((c[0], int(c[1]), int(c[2]), int(c[3])))
+    return out
+
+
+def chroms_main(a):
+    print(" ".join(paint_chroms(read_counts(a.counts), a.maps, a.min_sites, a.min_cm)))
 
 
 # --- report ------------------------------------------------------------------------
@@ -352,21 +474,38 @@ def read_levels(model):
     return out
 
 
+def percentile(xs, q):
+    xs = sorted(xs)
+    if not xs:
+        return None
+    i = q * (len(xs) - 1)
+    lo = int(math.floor(i))
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (i - lo)
+
+
 def fractions(level, k, codes, adm_dir, sample):
+    """Rows of one level: each group's fraction, and from the bootstrap
+    replicates its standard error and 2.5 to 97.5 percentile range."""
     q = read_matrix(os.path.join(adm_dir, f"{sample}_{level}.{k}.Q"))
     if len(q) != 1 or len(q[0]) != k:
         die(f"{adm_dir}/{sample}_{level}.{k}.Q is not one row of {k} values")
-    se_path = os.path.join(adm_dir, f"{sample}_{level}.{k}.Q_se")
-    se = read_matrix(se_path)[0] if os.path.isfile(se_path) else [None] * k
+    boot_path = os.path.join(adm_dir, f"{sample}_{level}.boot.Q")
+    boot = read_matrix(boot_path) if os.path.isfile(boot_path) else []
+    if any(len(r) != k for r in boot):
+        die(f"{boot_path} has a row that is not {k} values")
     rows = []
-    for code, f, s in zip(codes, q[0], se):
-        lo = hi = None
-        if s is not None:
-            lo, hi = max(0.0, f - 1.96 * s), min(1.0, f + 1.96 * s)
+    for j, (code, f) in enumerate(zip(codes, q[0])):
+        col = [r[j] for r in boot]
+        se = lo = hi = None
+        if len(col) >= 2:
+            mean = sum(col) / len(col)
+            se = math.sqrt(sum((x - mean) ** 2 for x in col) / (len(col) - 1))
+            lo, hi = percentile(col, 0.025), percentile(col, 0.975)
         rows.append({"level": level, "code": code, "group": label(level, code), "fraction": f,
-                     "se": s, "low": lo, "high": hi})
+                     "se": se, "low": lo, "high": hi})
     rows.sort(key=lambda r: -r["fraction"])
-    return rows
+    return rows, len(boot)
 
 
 def read_msp(path):
@@ -469,47 +608,52 @@ def pct(x):
     return "." if x is None else f"{100 * x:.0f}%"
 
 
-def text_block(sample, panel, fr, shares, painted_bp, n_sites):
-    out = [f"Fine-grained ancestry of {sample} (step 26b)",
-           f"Reference panel: {panel}; {n_sites}",
-           ""]
+LIMITS = [
+    "What this means: each name is a group of reference populations we put together and named,",
+    "not a nationality. The fractions say which groups your genome is most similar to; the range",
+    "after each is the 2.5 to 97.5 percentile of the bootstrap. Continental groups are well apart;",
+    "neighbouring regions are not: splits within Iberia are weak for every method, and Greek and",
+    "Southern Italian ancestry overlap (the panel has no Greek population at all). Read a regional",
+    "fraction with its range, never as one exact percentage. See docs/26b-ancestry-fine.md.",
+]
+
+
+def text_block(sample, panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms):
+    out = [f"Fine-grained ancestry of {sample} (step 26b)", f"Reference panel: {panel}; {n_sites}", ""]
     for level in LEVELS:
         rows = [r for r in fr if r["level"] == level]
         if not rows:
             continue
-        out.append(f"{'Continental' if level == 'continent' else 'Regional'} groups (ADMIXTURE, projection on "
-                   f"{len(rows)} reference groups), largest first:")
+        name = "Continental" if level == "continent" else "Regional"
+        out.append(f"{name} groups (ADMIXTURE projection on {len(rows)} groups, {n_boot[level]} bootstrap replicates):")
         for r in rows:
-            if r["fraction"] < 0.01 and level == "region":
+            if level == "region" and r["fraction"] < 0.01 and (r["high"] or 0) < 0.05:
                 continue
-            spread = f" (bootstrap range {pct(r['low'])} to {pct(r['high'])})" if r["low"] is not None else ""
+            spread = f"  ({pct(r['low'])} to {pct(r['high'])})" if r["low"] is not None else ""
             out.append(f"  {r['group']:<50} {pct(r['fraction']):>5}{spread}")
         out.append("")
     if shares:
-        out.append(f"Chromosome painting (RFMix, continental groups), share of the "
-                   f"{painted_bp / 1e6:.1f} Mb painted on both haplotypes:")
-        for code, s in sorted(shares.items(), key=lambda kv: -kv[1]):
-            out.append(f"  {label('continent', code):<50} {pct(s):>5}")
-        out.append("")
-    out += [
-        "What this means: each name is a group of reference populations we put together and named,",
-        "not a nationality. The fractions say which groups your genome is most similar to, with the",
-        "bootstrap range of each. Continental groups are well separated; neighbouring regions are not:",
-        "Iberian region-level splits are weak for every method, and Greek and Southern Italian ancestry",
-        "overlap. Read a regional fraction together with its range. See docs/26b-ancestry-fine.md.",
-    ]
-    return "\n".join(out) + "\n"
+        out.append(f"Chromosome painting (RFMix, continental groups) of {', '.join(painted_chroms)}: "
+                   f"share of the {painted_bp / 1e6:.1f} Mb painted on the two haplotypes")
+        for code, sh in sorted(shares.items(), key=lambda kv: -kv[1]):
+            out.append(f"  {label('continent', code):<50} {pct(sh):>5}")
+    else:
+        out.append("Chromosome painting: none. No chromosome had enough genotyped SNVs spanning 5 cM.")
+    out.append("")
+    return "\n".join(out + LIMITS) + "\n"
 
 
 def report_main(a):
     levels = read_levels(a.model)
-    fr = []
+    fr, n_boot = [], {}
     for level, k, codes in levels:
         if level not in LABELS:
             die(f"{a.model}/levels.tsv: unknown level {level}")
-        fr += fractions(level, k, codes, a.admixture, a.sample)
+        rows, n_boot[level] = fractions(level, k, codes, a.admixture, a.sample)
+        fr += rows
     rows = painting(a.paint) if a.paint and os.path.isdir(a.paint) else []
     painted_bp, shares = painting_shares(rows)
+    painted_chroms = sorted({r[0] for r in rows}, key=chrom_key)
     n_sites = "."
     stats = os.path.join(a.admixture, f"{a.sample}_sites.txt")
     if os.path.isfile(stats):
@@ -520,17 +664,18 @@ def report_main(a):
     fmt = lambda x: "." if x is None else f"{x:.4f}"  # noqa: E731
     table = [[r["level"], r["code"], r["group"], fmt(r["fraction"]), fmt(r["se"]), fmt(r["low"]), fmt(r["high"])]
              for r in fr]
-    table += [["painting", code, label("continent", code), fmt(s), ".", ".", "."]
-              for code, s in sorted(shares.items(), key=lambda kv: -kv[1])]
+    table += [["painting", code, label("continent", code), fmt(sh), ".", ".", "."]
+              for code, sh in sorted(shares.items(), key=lambda kv: -kv[1])]
     write_rows(base + "_ancestry_fine.tsv", ["level", "code", "group", "fraction", "se", "low", "high"], table)
     write_rows(base + "_painting.bed", ["#chrom", "start", "end", "haplotype", "group"], rows)
     with open(base + "_painting.png.tmp", "wb") as f:
         f.write(painting_png(rows))
     os.replace(base + "_painting.png.tmp", base + "_painting.png")
+    text = text_block(a.sample, a.panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms)
     with open(base + "_ancestry_fine.txt.tmp", "w") as f:
-        f.write(text_block(a.sample, a.panel, fr, shares, painted_bp, n_sites))
+        f.write(text)
     os.replace(base + "_ancestry_fine.txt.tmp", base + "_ancestry_fine.txt")
-    sys.stdout.write(text_block(a.sample, a.panel, fr, shares, painted_bp, n_sites))
+    sys.stdout.write(text)
 
 
 def main(argv=None):
@@ -550,8 +695,14 @@ def main(argv=None):
     p.add_argument("--vcf", required=True)
     p.add_argument("--sample", required=True)
     p.add_argument("--level", action="append", required=True, help="LEVEL:K:P_FILE, once per level")
+    p.add_argument("--bootstrap", type=int, default=100)
     p.add_argument("--min-sites", type=int, default=100)
     p.add_argument("--out-dir", required=True)
+    p = sub.add_parser("chroms")
+    p.add_argument("--counts", required=True)
+    p.add_argument("--maps", required=True)
+    p.add_argument("--min-sites", type=int, default=100)
+    p.add_argument("--min-cm", type=float, default=5.0)
     p = sub.add_parser("report")
     p.add_argument("--sample", required=True)
     p.add_argument("--model", required=True)
@@ -561,7 +712,7 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     {"panel-map": panel_map_main, "order": order_main, "sample-bed": sample_bed_main,
-     "report": report_main}[a.cmd](a)
+     "chroms": chroms_main, "report": report_main}[a.cmd](a)
 
 
 if __name__ == "__main__":

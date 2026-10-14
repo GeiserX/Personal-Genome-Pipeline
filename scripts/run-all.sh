@@ -13,7 +13,8 @@
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
 #   (only these --tools names; cyrius, parascopy and y_haplogroup run only when named); KIR=true (KIR genes with HLA);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, ANCESTRY_PANEL (--ancestry_ref; none: raw
-#   scores) and PGSC_CALC_DIR (--pgsc_calc) as for the single steps; the panel and pgsc_calc are passed when installed.
+#   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
+#   the single steps; the panels and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
 #   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report, also after a failed pipeline.
@@ -123,6 +124,10 @@ plan "25 PRS" prs "$(need "$(compgen -G "${G}/prs_scores/*.txt.gz" | head -n 1 |
 PANEL=${ANCESTRY_PANEL:-${G}/reference/pgsc_calc/${PGSC_PANEL}.tar.zst}
 plan "26 Ancestry (pgsc_calc)" ancestry "$(if [[ " ${SEL[*]} " != *" prs "* ]]; then echo 'needs PRS'; elif [ "$PANEL" = none ]; then echo 'ANCESTRY_PANEL=none'
   else need "$PANEL" "${PANEL%.tar.zst}_GRCh38_sites.tsv"; fi)" && NF+=(--ancestry_ref "$PANEL")
+# Step 26b against the panel setup.sh --ancestry-fine-panel installs (model/DONE is written last).
+AF=${ANCESTRY_FINE_DIR:-${G}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}}
+plan "26b Fine-grained ancestry" ancestry_fine "$(if [ "$AF" = none ]; then echo 'ANCESTRY_FINE_DIR=none'; else need "${AF}/model/DONE"; fi)" \
+  && NF+=(--ancestry_fine_panel "$AF")
 YD="${G}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup || need "${YD}/hg38/new_positions.txt")" && NF+=(--yleaf_data "$YD")
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
