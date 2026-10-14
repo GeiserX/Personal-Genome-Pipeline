@@ -260,7 +260,7 @@ Even if you only plan to use VCF, download FASTQ and BAM too. Storage is cheap; 
 | Priority | File | Why |
 |---|---|---|
 | **Critical** | FASTQ (R1 + R2) | Raw data. Can regenerate everything else. |
-| **High** | BAM + BAI | Skip alignment (saves 1-2 hours). Needed for SV calling. |
+| **High** | BAM + BAI | Skip alignment (saves the 4 to 5.7 hours fastp and the alignment took, measured). Needed for SV calling. |
 | **Medium** | VCF + TBI | Quick start for annotation steps. |
 | **Low** | Lab report PDF | Reference for comparing your pipeline results |
 | **Low** | QC metrics | Coverage stats, insert size distribution |

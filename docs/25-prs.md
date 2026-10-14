@@ -91,7 +91,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/prs/`.
 
 ## Runtime
 
-Without the panel, about 20-40 minutes: most of it is the gVCF pass over every score position (the large scores reach most of the genome) and pgsc_calc's conversion of those genotypes. The panel adds its extraction, the intersection with your genotypes, the panel's PCA and the projection; see the measured numbers below.
+Without the panel, 54 minutes to 1 h 17 min per genome in three measured 30-40x runs ([runtime](hardware-requirements.md#runtime-per-step)): the gVCF pass over every score position (the large scores reach most of the genome) took 21-31 minutes, and pgsc_calc 33-51 minutes with 24 GB. Preparing the scoring files took 6-11 minutes more, once per run. The panel adds its extraction, the intersection with your genotypes, the panel's PCA and the projection; see the measured numbers below.
 
 ## Memory
 
@@ -104,7 +104,7 @@ Two tasks read nothing but the scoring files, so their memory follows the score 
 | the same, two threads (pgsc_calc's own choice) | about 15.7 GB, 13.5 minutes, with swap | | |
 | the same, four threads (pgsc_calc's retry) | about 23.8 GB, 13 minutes, with swap | | |
 
-In one whole pgsc_calc run on the PGS Catalog's synthetic genome-wide target (300 samples), with `FORMAT_SCOREFILES` on one thread and 15 GB, Nextflow's trace gave `FORMAT_SCOREFILES` a `peak_rss` of 18.1 GB (the sum of its processes' peaks, an upper bound), its two matching tasks 13.3 and 12.5 GB, and the run took 36 minutes. A real genome has one sample and fewer positions; its peaks have not been measured here.
+In one whole pgsc_calc run on the PGS Catalog's synthetic genome-wide target (300 samples), with `FORMAT_SCOREFILES` on one thread and 15 GB, Nextflow's trace gave `FORMAT_SCOREFILES` a `peak_rss` of 18.1 GB (the sum of its processes' peaks, an upper bound), its two matching tasks 13.3 and 12.5 GB, and the run took 36 minutes. A real genome has one sample and fewer positions. On the three end-test genomes, with the current settings (`PRS` granted 24 GB), pgsc_calc passed on its first attempt each time: `FORMAT_SCOREFILES` held a working set of 12.7 to 13.5 GiB, the match combining 9 to 10 GiB and the variant matching 7 to 8.4 GiB, and `PRS_PREPARE` peaked at 11.3 to 12 GB (`peak_rss`).
 
 pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under the same `--max_memory`, so its retry needs more memory, not less. Both entry points therefore give it one thread, the whole of pgsc_calc's memory, and no retry inside pgsc_calc at the same limit. One thread is the slowest of the three (4 to 8 minutes more) and the smallest.
 

@@ -64,7 +64,7 @@ goleft writes the inferred sex to `indexcov-indexcov.ped`, whose columns are `#f
 - Systematic deviations across all chromosomes = library prep or sequencing problems
 
 ## Runtime
-~5 seconds per sample.
+1 to 3 seconds per sample, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Notes
 - Should be run as an early QC step after alignment (step 2). It only reads the `.bai` index, not the full BAM.

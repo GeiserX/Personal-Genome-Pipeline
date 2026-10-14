@@ -146,7 +146,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 
 ## Runtime
 
-~20-40 minutes for 23 genes. All genes run sequentially inside a single Docker container to avoid repeated container startup overhead.
+5.5 to 10 minutes for 23 genes, peak memory about 4 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). All genes run sequentially inside a single Docker container to avoid repeated container startup overhead.
 
 ## Resource Requirements
 

@@ -72,7 +72,7 @@ NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map
 Count only PASS calls: a call marked `possible_numt` or with another filter is not evidence of heteroplasmy. Calls near the two ends of the control region (about chrM:1-500 and 16,000-16,569) are less reliable: the reference is circular, so reads that span its end align poorly at both edges.
 
 ## Runtime
-~15-30 minutes per sample.
+1 to 2 minutes per sample through the pipeline, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Notes
 - `--mitochondria-mode` disables several filters inappropriate for mtDNA: no germline filtering, adjusted LOD thresholds, handles high copy number.

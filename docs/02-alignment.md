@@ -39,12 +39,12 @@ REF="${GENOME_DIR}/${REF_FASTA}"
 MMI="${REF%.fasta}.sr.mmi"
 OUT="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 
-# Step 1: Create the minimap2 index with the short-read preset (one-time, ~30 min).
+# Step 1: Create the minimap2 index with the short-read preset (one-time, 1-3 min measured).
 # The preset sets the k-mer and window size of the index (k21, w11 for -x sr);
 # a plain `minimap2 -d` builds k15, w10, which does not match `-x sr` mapping.
 minimap2 -x sr -d "$MMI" "$REF"
 
-# Step 2: Align, mark duplicates and sort (1-2 hours for 30X WGS).
+# Step 2: Align, mark duplicates and sort (3 h 51 min - 5 h 21 min measured on 30-40x WGS).
 # fixmate -m adds the mate tags markdup needs; it reads the pairs minimap2
 # writes next to each other, then sort orders by position for markdup.
 # markdup --write-index builds the index while it writes the BAM; the
@@ -73,7 +73,7 @@ The script writes the BAM and the index under temporary names, both in the one p
 
 ## Resource Requirements
 - CPU: 16+ cores recommended (`THREADS`)
-- RAM: minimap2 loads the whole index into memory. With the sr index it peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38), against 5.5 GB with the old default index, so plan for about 20 GB on GRCh38; the container's cap is 32 GB. samtools sort takes 1 GB per thread on top.
+- RAM: minimap2 loads the whole index into memory. With the sr index it peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38), against 5.5 GB with the old default index. On GRCh38 the whole task, minimap2 and samtools sort with 1 GB per thread, peaked at 18.3-18.4 GB in two measured 30-40x runs ([runtime](hardware-requirements.md#runtime-per-step)); the container's cap is 32 GB.
 - Disk and time: see [Hardware and storage requirements](hardware-requirements.md#runtime-per-step) (the BAM is about 80-120 GB). Sort spills go to `aligned/${SAMPLE}.sort_tmp/` in the sample directory and are removed at the end.
 
 ## Notes

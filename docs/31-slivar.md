@@ -90,7 +90,7 @@ Variants in constrained genes are more likely to be pathogenic -- these genes ar
 
 ## Runtime
 
-~5-10 minutes. Most time is spent on bcftools split-vep filtering.
+4 to 10 minutes, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)); almost all of it is the prioritising pass, where bcftools split-vep filters.
 
 ## Interpretation
 

@@ -121,7 +121,7 @@ Run by hand like this, `--sample_id` must be 3 to 40 characters long. The script
 - In the TSV, `CLASSIFICATION` is the final class and `ASSERTION_AUTHORITY` says whose it is: ClinVar's, unless ClinVar has no record or a conflicted one, then CPSR's own (`CPSR_CLASSIFICATION`, which every variant has). PCGR 2.2.5 named the final column `FINAL_CLASSIFICATION`; the reports (`bin/collect_summary.py`) read either. The file names are the same in both versions.
 
 ## Runtime
-~30-60 minutes per genome (depends on variant count).
+17 to 36 minutes per genome, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)); it depends on the variant count.
 
 ## Notes
 - **Sample id length:** CPSR accepts sample ids of 3 to 40 characters (PCGR 2.3.2, `SAMPLE_ID_MIN_LENGTH` and `SAMPLE_ID_MAX_LENGTH` in `pcgr/pcgr_vars.py`); any other length stops it before it reads the VCF. When your id is outside that range, the pipeline gives CPSR a padded or shortened id (`S1` becomes `S1_cpsr`, a longer id is cut to its first 40 characters, both by `bin/cpsr_sample_id`) and renames its files back to `${SAMPLE}.cpsr.*`, so CPSR's own report title shows that id.

@@ -296,7 +296,7 @@ Key observations:
 
 ## Practical Example: chr22-Only Benchmark
 
-Running all four callers on the full genome takes 1-12 hours each (FreeBayes being the slowest at 8-12h single-threaded, Strelka2 the fastest at ~1h). For a quick script validation, you can restrict GATK and FreeBayes to chromosome 22 only (~1-2% of the genome, takes 3-8 minutes per caller), but **full-genome runs are strongly recommended for meaningful benchmarking**.
+Each caller takes hours on the full genome: DeepVariant 8 h 50 min to 13 h 30 min in the end test, and in one historical run FreeBayes 9.3 h single-threaded, GATK 8.6 h and Strelka2 72 min ([Runtime](#runtime-full-genome-30x-wgs)). For a quick script validation, you can restrict GATK and FreeBayes to chromosome 22 only (~1-2% of the genome; the time per caller has not been measured here), but **full-genome runs are strongly recommended for meaningful benchmarking**.
 
 ### Step 1: Run Callers on chr22 (GATK + FreeBayes)
 
@@ -447,7 +447,7 @@ benchmark/
 - **PASS filter and normalization are applied automatically.** The `benchmark-variants.sh` script filters to PASS variants and normalizes VCFs with `bcftools norm -m-both` before running `bcftools isec`. This decomposes MNPs and left-aligns indels for fairer comparison. Without this, representation differences between callers (especially FreeBayes) depress Jaccard values.
 - **hap.py handles normalization internally.** It decomposes complex variants and performs genotype-aware matching, so it is more accurate than raw `bcftools isec` for truth set evaluation.
 - **chr22 is representative but not definitive.** It is a good proxy for genome-wide performance on autosomes, but does not test difficult regions (centromeres, segmental duplications, sex chromosomes).
-- **Runtime scales with region size.** Full-genome hap.py takes 30-60 minutes per caller. chr22-only takes 1-3 minutes.
+- **Runtime scales with region size.** hap.py on chr22 alone is far quicker than on the full genome; neither has been timed here.
 
 ---
 
@@ -493,6 +493,6 @@ Key observations:
 | Strelka2 2.9.10 | 72 min | 8 | 1 GB |
 | TIDDIT 3.9.5 | 7 min | 4 | <1 GB |
 
-For the pinned DeepVariant 1.10: about 13.5 hours on 8 CPUs in one observed ~30x run, and 1 h 9 min on 96 vCPUs upstream ([runtime](hardware-requirements.md#runtime-per-step)).
+For the pinned DeepVariant 1.10: 8 h 50 min to 13 h 30 min with 8 shards in three measured 30-40x runs, and 1 h 9 min on 96 vCPUs upstream ([runtime](hardware-requirements.md#runtime-per-step)).
 
 FreeBayes is the bottleneck — single-threaded with no parallelism flag. It also requires **32 GB memory** for full-genome runs (peaked at 12.8 GB but grows unpredictably through complex regions). Plan accordingly when running all callers.

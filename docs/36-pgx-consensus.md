@@ -58,7 +58,7 @@ For CYP2D6 the `Reason` is one of: the depth check's message (multi-mapped reads
 
 ## Runtime
 
-Seconds. PharmCAT (step 7) runs again afterwards, a few minutes.
+1 to 7 seconds, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). PharmCAT (step 7) then took 6 to 16 seconds in the pipeline.
 
 ## Notes
 

@@ -91,7 +91,7 @@ bcftools view -i 'INFO/SVTYPE="INV"' ${SAMPLE}_sv.vcf.gz
 ```
 
 ## Runtime
-Not measured here for a 30X WGS genome. The [runtime table](hardware-requirements.md#runtime-per-step) lists an estimate (~2-4 h), not a measurement.
+21 minutes to 3 h 19 min, peak memory 1.2-3.1 GB, in five runs on three 30-40x genomes ([runtime](hardware-requirements.md#runtime-per-step)). Delly used about one core of the four it was given. Two samples took 21 and 25 minutes; the third took 1 h 35 min to 3 h 19 min in its three runs.
 
 ## Notes
 - Delly outputs BCF by default (not VCF). Convert with `bcftools view` for compatibility.

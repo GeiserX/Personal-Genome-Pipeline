@@ -65,7 +65,7 @@ In the Nextflow pipeline, `multiqc` reads the mosdepth summaries only. A run wit
 
 ## Runtime
 
-< 1 minute. MultiQC only parses summary files, not raw data.
+About 3 seconds, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). MultiQC only parses summary files, not raw data.
 
 ## Notes
 

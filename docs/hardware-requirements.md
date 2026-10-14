@@ -7,7 +7,7 @@ Everything you need to know about disk space, RAM, CPU, and runtime before start
 - **1 sample:** 500 GB free disk from a BAM, about 700 GB from FASTQ ([disk](#total-disk-requirements)), 16 GB RAM ([RAM](#ram-requirements)), 4+ CPU cores
 - **2 samples:** 1 TB free disk, 32 GB RAM, 8+ CPU cores (recommended)
 - **First-time setup downloads:** ~73 GB for the default run, ~248 GB with the optional annotation databases ([table](#shared-reference-data-one-time))
-- **Time per sample:** plan for more than a day for a default `run-all.sh` from a BAM on 8 CPUs, and longer from FASTQ. DeepVariant is most of it: about 13.5 h in one observed ~30x run on 8 CPUs ([runtime](#runtime-per-step))
+- **Time per sample:** a default `run-all.sh` from FASTQ took about 20-21 h on a 16-thread server, measured on 30-40x genomes; on 8 CPUs plan for more than a day (not measured). DeepVariant is most of it: 8 h 50 min to 13 h 30 min ([runtime](#runtime-per-step))
 - **GRIDSS (step 4b, opt-in):** needs a 32 GB container on its own, so 32 GB of RAM or more
 
 ---
@@ -125,7 +125,7 @@ Every step runs in a Docker container with a hard `--memory` limit. The two entr
 | 25 (PRS): score positions genotyped from the gVCF | 2 / 8 GB | `PRS_SCORE_SITES` 2 / 4 GB |
 | 25 (PRS): pgsc_calc, each of its tasks | `PGSC_MAX_MEMORY` (three quarters of the RAM) | `PRS` 4 / 24 GB, given to pgsc_calc as `--max_memory` |
 
-These are limits, not measured peaks, except for step 25: on the nine default scores, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB, measured on a GitHub runner without a genome ([step 25, Memory](25-prs.md#memory)). minimap2 peaked at 10 GB on the test reference (1.8 Gb, 57% of GRCh38; `scripts/02-alignment.sh`), so [step 2](02-alignment.md) plans for about 20 GB on GRCh38; the full-genome peak has not been measured.
+These are limits, not measured peaks. The peaks measured for each task in the end test are in the [runtime table](#runtime-per-step): on 30-40x genomes the alignment task (minimap2 and samtools together) peaked at 18.3-18.4 GB and DeepVariant at 15.9-16.5 GB. For step 25, on the nine default scores, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB on a GitHub runner without a genome, and 12.7 to 13.5 GiB on the three end-test genomes ([step 25, Memory](25-prs.md#memory)).
 
 **Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it. Step 25's pgsc_calc is the exception that does not fit: its first task needs about 14 to 18 GB on the default scores and was killed under a 14.1 GB limit when the host has no swap, so a 16 GB machine needs swap for it ([step 25, Memory](25-prs.md#memory)).
 **Recommended:** 32 GB or more, so minimap2 and DeepVariant get close to the 32 GB they ask for.
@@ -151,7 +151,7 @@ process {
 `--max_cpus` still caps it. Its memory at 16 shards has not been measured; the request stays at 32 GB. The shard count is part of DeepVariant's command, so changing it makes `-resume` run DeepVariant again. `make_examples` runs one process per shard; upstream says `call_variants` on CPU scales sub-linearly ([DeepVariant details](https://github.com/google/deepvariant/blob/r1.10/docs/deepvariant-details.md#call_variants)).
 
 - **Minimum:** 4 cores. DeepVariant then runs 4 shards and, extrapolated from the 8-CPU run, likely takes more than a day on its own (not measured).
-- **Recommended:** 8 to 16 cores. On 8, each 8-CPU task runs alone ([what runs at once](#what-runs-at-once)); on 16, the BAM steps run beside DeepVariant. A 16-core run has not been measured end to end.
+- **Recommended:** 8 to 16 cores. On 8, each 8-CPU task runs alone ([what runs at once](#what-runs-at-once)); on 16, the BAM steps run beside DeepVariant. On a 16-thread server a default run from FASTQ took about 20-21 h ([runtime](#runtime-per-step)).
 
 ### A shared host
 
@@ -176,58 +176,63 @@ Check the shares on a running task: `docker ps` lists the pipeline's containers 
 
 ### Runtime per step
 
-In one observed ~30x run on an 8-CPU, 24 GB budget, DeepVariant 1.10 took about 13.5 hours: `make_examples` about 10.5 h for 5.8 million candidates, `call_variants` about 3 h, `postprocess_variants` under an hour. On a busy host `make_examples` ran at about half that speed. Upstream reports 1 h 9 min on a 96-vCPU cloud machine ([DeepVariant r1.10 metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md)), about 110 vCPU-hours, which agrees. Plan for more than a day for a full run from a BAM on 8 CPUs, and longer from FASTQ. We have not measured a 16-core run end to end.
+The figures below are measured, from our end test: three real 30-40x human whole genomes, run with `run-all.sh` in October 2026 on a 16-thread, 62 GB desktop-class server with the data on an SSD, while the server ran its other services. DeepVariant ran on the CPU. Each task had its default request from `conf/base.config`; on this path a task's CPUs are a Docker share, not a cap, so a task could use more cores than it asked for when the host had them free. fastp and the alignment have two runs, from the two samples that started from FASTQ in these runs (the third sample's alignment ran on an earlier version of the pipeline that split it into two tasks, and is left out); the other steps have one run per sample, and a step that ran again on a sample counts every completed run. Each figure is the range across those runs, taken from Nextflow's trace: the task's wall time, its `peak_rss` and its average `%cpu` (in cores). `peak_rss` adds up the resident memory of the task's processes, shared and file-mapped pages included, so it can be more than the container was charged: CPSR showed up to 15.6 GB under its 8 GB limit and was not killed.
 
-The other rows are estimates from the step pages for a 16-core / 32 GB desktop with each script's default CPU limit, not measurements. Step pages link here instead of giving their own figure.
+DeepVariant 1.10 with 8 shards took 8 h 50 min to 13 h 30 min. In the 13.5 h run, on an 8-CPU, 24 GB budget, `make_examples` took about 10.5 h, `call_variants` about 3 h and `postprocess_variants` under an hour; on a busy host `make_examples` ran at about half the speed it reached on a quiet one. Upstream reports 1 h 9 min on a 96-vCPU cloud machine ([DeepVariant r1.10 metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md)), about 110 vCPU-hours, which agrees.
 
-| Step | Runtime | Notes |
-|---|---|---|
-| 1 ORA to FASTQ | ~30 min | only for Illumina ORA input |
-| 1b fastp | ~10-20 min | |
-| 2 Alignment (minimap2) | ~1-2 h | plus ~30 min once to build the `.mmi` index |
-| 3 DeepVariant | ~13.5 h on 8 CPUs | observed once, ~30x, DeepVariant 1.10; 1 h 9 min on 96 vCPUs upstream |
-| 4 Manta | ~20 min | |
-| 5 AnnotSV | ~10 min | |
-| 6 ClinVar screen | ~5 min | |
-| 7 PharmCAT | ~10 min | |
-| 8 HLA typing (T1K) | ~30 min | plus well under a minute once to build the index (17 s in [CI run 37980248545](https://github.com/GeiserX/Personal-Genome-Pipeline/actions/runs/37980248545)) |
-| 9 ExpansionHunter | ~15 min | |
-| 9b Stranger | < 1 min | |
-| 10 TelomereHunter | ~1 h | |
-| 11 ROH | ~5 min | |
-| 12 Mito haplogroup | ~1 min | |
-| 13 VEP | ~2-4 h | |
-| 14 Imputation prep (opt-in) | ~10 min | |
-| 15 duphold | ~20 min | |
-| 16 indexcov | ~5 s | |
-| 16b mosdepth | ~5-10 min | |
-| 17 CPSR | ~30-60 min | |
-| 18 CNVpytor | ~1-3 h | |
-| 19 Delly | ~2-4 h | |
-| 20 Mito variants (Mutect2) | ~15-30 min | |
-| 21 Cyrius | ~5-15 min | opt-in; `setup.sh --cyrius` installs it once (about a minute) |
-| 22 SV consensus | ~5-15 min | |
-| 23 Clinical filter | ~5-10 min | |
-| 24 HTML report | ~1-3 min | |
-| 25 PRS | ~20-40 min | |
-| 26 Ancestry (opt-in) | ~15-30 min | most of it the first-run download |
-| 27 CPIC lookup | ~1-2 min | |
-| 28 MultiQC | < 1 min | |
-| 29 Somatic (opt-in) | ~2-6 h | under 5 min on a few genes with `INTERVALS` |
-| 30 vcfanno | ~5-15 min | |
-| 31 slivar | ~5-10 min | |
-| 32 pypgx | ~20-40 min | |
-| 3d Octopus (alternative) | ~2-4 h | |
-| 4b GRIDSS (opt-in) | ~4-8 h | |
+A step the end test did not run says "not measured"; where it shows a time, that is the step page's estimate. Step pages link here instead of giving their own figure.
+
+| Step | Wall time | Peak memory | CPU (cores) | Notes |
+|---|---|---|---|---|
+| 1 ORA to FASTQ | not measured (estimate ~30 min) | | | only for Illumina ORA input |
+| 1b fastp | 15-20 min | 1.4 GB | 7.1-7.7 | |
+| 2 minimap2 index | 1-3 min | 11.4 GB | 1.0-1.6 | once per reference |
+| 2 Alignment (minimap2, fixmate, sort, markdup) | 3 h 51 min - 5 h 21 min | 18.3-18.4 GB | 7.4-8.1 | one task |
+| 3 DeepVariant | 8 h 50 min - 13 h 30 min | 15.9-16.5 GB | 7.3-8.9 | 8 shards; 1 h 9 min on 96 vCPUs upstream |
+| 4 Manta | 22-41 min | 1.0-1.2 GB | 7.8-7.9 | |
+| 5 AnnotSV | 1-1.5 min | 1.3-1.7 GB | 0.8-1.0 | |
+| 6 ClinVar screen | 30 s - 1 min | 42 MB | 0.8-1.0 | |
+| 7 PharmCAT | 30 s - 1 min | 0.6-0.8 GB | | the VCF preprocessor 25-48 s, then PharmCAT 6-16 s |
+| 8 HLA typing (T1K) | 35 min - 1 h 5 min | 2.8-3.0 GB | 1.1-1.6 | plus 12-26 s once to build the index |
+| 9 ExpansionHunter | 2-6 s | 0.2 GB | 1.1-2.2 | |
+| 9b Stranger | about 1 s | | | |
+| 10 TelomereHunter | 1 h 11 min - 1 h 32 min | 0.1 GB | 1.0 | |
+| 11 ROH | 10-18 s | 53 MB | 0.9-1.0 | |
+| 12 Mito haplogroup | 4-22 s | 0.2 GB | | the chrM extraction, haplogrep3 and haplocheck together |
+| 13 VEP | 4 h 3 min - 4 h 37 min | 2.6-3.0 GB | 5.7-6.1 | PASS records only, 8 forks |
+| 14 Imputation prep (opt-in) | not measured (estimate ~10 min) | | | |
+| 15 duphold | 3-4 min | 1.0 GB | 3.2-4.1 | plus about a second for its filter |
+| 16 indexcov | 1-3 s | | | |
+| 16b mosdepth | 2-3 min | 1.9 GB | 2.7-3.5 | |
+| 17 CPSR | 17-36 min | 12.3-15.6 GB (`peak_rss`, see above) | 1.8-2.3 | |
+| 18 CNVpytor | 14-20 min | 1.4-2.7 GB | 2.3-3.7 | |
+| 19 Delly | 21 min - 3 h 19 min | 1.2-3.1 GB | 1.0-1.1 | five runs: 21 and 25 min on two samples, 1 h 35 min to 3 h 19 min in three runs on the third |
+| 20 Mito variants (Mutect2) | 1-2 min | 1.3-2.5 GB | 2.7-3.2 | |
+| 21 Cyrius (opt-in) | not measured (estimate ~5-15 min) | | | `setup.sh --cyrius` installs it once |
+| 22 SV consensus | 2-10 s | | | SURVIVOR's preparation, merge and sort together |
+| 23 Clinical filter | 2.5-6.5 min | under 50 MB | 0.9-1.2 | |
+| 24 HTML report | not measured (estimate ~1-3 min) | | | `run-all.sh` runs it after the pipeline, outside the trace |
+| 25 PRS | 54 min - 1 h 17 min per sample, plus 6-11 min once per run | see notes | | genotyping the score positions 21-31 min (1.1 GB), then pgsc_calc 33-51 min with 24 GB granted ([its tasks' memory](25-prs.md#memory)); preparing the scoring files 6-11 min, 11.3-12 GB, once per run |
+| 26 Ancestry (opt-in) | not measured on a genome | | | [step 25's panel numbers](25-prs.md#the-reference-panel-on-a-github-hosted-runner) were measured on a test target |
+| 27 CPIC lookup | 3-5 s | | | |
+| 28 MultiQC | about 3 s | 0.1-0.2 GB | | |
+| 29 Somatic (opt-in) | not measured (estimate ~2-6 h) | | | under 5 min on a few genes with `INTERVALS` (estimate) |
+| 30 vcfanno | not measured (estimate ~5-15 min) | | | not in the end test |
+| 31 slivar | 4-10 min | under 50 MB | 0.9-1.2 | almost all of it the prioritising pass |
+| 32 pypgx | 5.5-10 min | 3.9-4.1 GB | 2.0-2.4 | plus 5-10 s for the CYP2D6 depth check |
+| 36 PGx consensus | 1-7 s | | | |
+| 3d Octopus (alternative) | not measured (estimate ~2-4 h) | | | |
+| 4b GRIDSS (opt-in) | not measured (estimate ~4-8 h) | | | |
 
 | Run | Runtime |
 |---|---|
-| DeepVariant alone, 8 CPUs | about 13.5 h (one observed ~30x run) |
+| Default `run-all.sh` from FASTQ, 16 threads | 20 h 14 min and 20 h 52 min, measured (two runs; one stopped at PRS and finished it with a 39-minute `-resume`) |
+| Default `run-all.sh` from a BAM, 16 threads | not measured end to end; the two FASTQ runs less their fastp and alignment come to about 14.5-17 h |
+| `-resume` that runs pgsc_calc again, and what follows it | 39-52 min, measured (two runs) |
+| DeepVariant alone, 8 shards | 8 h 50 min - 13 h 30 min, measured (three runs) |
 | DeepVariant alone, 96 vCPUs | 1 h 9 min (upstream r1.10 metrics) |
 | DeepVariant alone, 4 CPUs | likely more than a day (extrapolated, not measured) |
-| Default `run-all.sh` from a BAM, 8 CPUs | plan for more than a day |
-| Default `run-all.sh` from FASTQ, 8 CPUs | longer than from a BAM |
-| Default `run-all.sh`, 16 CPUs | not measured end to end |
+| Default `run-all.sh`, 8 CPUs | not measured; plan for more than a day, because each 8-CPU task then runs alone |
 
 ### What runs at once
 
@@ -303,6 +308,6 @@ If you don't have suitable hardware, cloud instances work well:
 | Azure | Standard_D16s_v5 | 16 | 64 GB | ~$0.77 |
 | Hetzner | CCX33 | 8 | 32 GB | ~$0.18 |
 
-Multiply the hourly price by the run time: plan for more than a day on 8 vCPUs ([runtime](#runtime-per-step)). On 16 vCPUs `run-all.sh` still gives DeepVariant 8 shards, and a 16-vCPU run has not been measured end to end. Add ~$0.10/GB/month for persistent disk storage. A 500 GB disk costs ~$50/month.
+Multiply the hourly price by the run time: plan for more than a day on 8 vCPUs (not measured). On 16 vCPUs `run-all.sh` still gives DeepVariant 8 shards; a default run from FASTQ took about 20-21 h on a 16-thread server ([runtime](#runtime-per-step)), and a cloud vCPU may be slower or faster than that server's threads. Add ~$0.10/GB/month for persistent disk storage. A 500 GB disk costs ~$50/month.
 
-> **Tip:** Spot or preemptible instances cost less, but a preemption stops the run. `-resume` reuses every task that finished and starts the running one over, and DeepVariant is a single task of about 13.5 h on 8 CPUs (one observed run).
+> **Tip:** Spot or preemptible instances cost less, but a preemption stops the run. `-resume` reuses every task that finished and starts the running one over, and DeepVariant is a single task of 8 h 50 min to 13 h 30 min with 8 shards (three measured runs).

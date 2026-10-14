@@ -85,7 +85,7 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 - ClinVar pathogenic/likely pathogenic hits
 
 ## Important Notes
-- The time of a full WGS annotation (~5M variants) has not been measured here; the [runtime table](hardware-requirements.md#runtime-per-step) lists an estimate (~2-4 h), not a measurement. Reading PASS records only should take less; how much less depends on the sample's non-PASS share (`variants.total` minus `variants.pass` in `summary.json`) and has not been measured here
+- A full WGS annotation of the PASS records took 4 h 3 min to 4 h 37 min with 8 forks, peak memory 2.6-3.0 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). How much reading PASS records only saves depends on the sample's non-PASS share (`variants.total` minus `variants.pass` in `summary.json`) and has not been measured here
 - `--fork` follows `THREADS`; each fork loads its own copy of the cache index
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
 - `--dir_cache /opt/vep/.vep`: the cache is mounted there, not in the home directory VEP looks in by default

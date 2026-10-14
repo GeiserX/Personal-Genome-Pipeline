@@ -87,7 +87,7 @@ awk -F'\t' '$5 < 0.05 && $3 > 1000' ${SAMPLE}_cnvs.txt
 The first call is often a low-`level` artifact spanning the chromosome-start N gap (`pN` near 1.0); the `pN`/`q0` columns let you drop such regions.
 
 ## Runtime
-~1-3 hours per 30X WGS genome (CNVpytor is multi-threaded via `-j`).
+14 to 20 minutes per genome on 4 CPUs, peak memory 1.4-2.7 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)) (CNVpytor is multi-threaded via `-j`).
 
 ## Notes
 - Run AFTER alignment (step 2). Independent of Manta/Delly — can run in parallel.

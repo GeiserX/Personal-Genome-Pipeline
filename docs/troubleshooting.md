@@ -476,7 +476,7 @@ Usually means minimap2 failed silently. Run with `bash -x` to see the actual err
 - Docker `--memory` too low (minimap2 with the sr index needs about 20 GB on GRCh38, see [step 2](02-alignment.md))
 
 **Problem: minimap2 index build takes forever**
-The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, check that the reference FASTA is not corrupt and the output path is writable.
+The `.mmi` index build is a one-time step (1-3 minutes in the measured runs, [runtime](hardware-requirements.md#runtime-per-step)). If it seems stuck, check that the reference FASTA is not corrupt and the output path is writable.
 
 ---
 
@@ -487,7 +487,7 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 **What the pipeline does.** Neither entry point has a GPU option. `run-all.sh` and `scripts/03-deepvariant.sh` both run the CPU image, `DEEPVARIANT_IMAGE`.
 
 **What a GPU could save:**
-1. Only `call_variants` can use a GPU; `make_examples` and `postprocess_variants` always run on the CPU. In one observed ~30x run on 8 CPUs, `call_variants` took about 3 of the 13.5 hours, so that is the most a GPU could save there.
+1. Only `call_variants` can use a GPU; `make_examples` and `postprocess_variants` always run on the CPU. In the slowest measured run, 13.5 hours on 8 CPUs, `call_variants` took about 3 hours, so that is the most a GPU could save there.
 2. Upstream measured a 2.5x speed-up of `call_variants` with one P100 GPU and 8 CPUs, against its 96-core case study ([DeepVariant details](https://github.com/google/deepvariant/blob/r1.10/docs/deepvariant-details.md#call_variants)). On those 96 cores, `call_variants` is 16 of 69 minutes ([DeepVariant 1.10 metrics](https://github.com/google/deepvariant/blob/r1.10/docs/metrics.md)).
 3. We have not measured a GPU run.
 
@@ -506,7 +506,7 @@ The `.mmi` index build is a one-time step (~30 minutes). If it seems stuck, chec
 THREADS=2 DV_MEM=12g ./scripts/03-deepvariant.sh your_sample male   # or female
 ```
 
-**Expected runtime on Mac:** not measured. On 8 native CPUs DeepVariant took about 13.5 hours in one observed ~30x run; 2 emulated CPUs take much longer.
+**Expected runtime on Mac:** not measured. With 8 shards on Linux DeepVariant took 8 h 50 min to 13 h 30 min in three measured 30-40x runs; 2 emulated CPUs take much longer.
 
 **Alternative:** If DeepVariant repeatedly crashes on your Mac, run ONLY step 3 on a cloud Linux instance (e.g., Hetzner CCX33 for ~$0.18/hr) and download the VCF. All other steps can proceed on Mac.
 
@@ -789,17 +789,11 @@ docker run --rm "${CNVPYTOR_IMAGE}" \
 
 ### Step 19: Delly long runtime / high memory
 
-**Symptom:** Delly has been running for 8+ hours on a 30X genome.
+**Symptom:** Delly has been running for many hours on a 30X genome.
 
 **Cause:** Delly examines every read pair across the genome for split-read and paired-end SV evidence. On high-coverage samples or with slow storage, this takes longer.
 
-**Expected runtimes:**
-
-| Coverage | CPU Cores | Expected Runtime |
-|---|---|---|
-| 30X | 4 | 2-4 hours |
-| 30X | 8 | 1.5-3 hours |
-| 50X+ | 4 | 4-8 hours |
+**Measured runtimes:** in the pipeline (4 CPUs requested, Delly using about one), 21 minutes to 3 h 19 min over five runs on three 30-40x genomes, peak memory 1.2-3.1 GB ([runtime](hardware-requirements.md#runtime-per-step)). Higher coverage was not measured.
 
 **If Delly exceeds 12 hours:**
 1. Check `docker stats` to verify it is still using CPU (not stuck)
@@ -883,7 +877,7 @@ HLA typing from WGS data is unreliable in Docker. The two main tools have unreso
 
 **Expected slowdown by step:**
 
-We have not measured a run on Apple Silicon. Natively on 8 CPUs, DeepVariant alone took about 13.5 hours in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)); under emulation every step takes longer.
+We have not measured a run on Apple Silicon. Natively on Linux with 8 shards, DeepVariant alone took 8 h 50 min to 13 h 30 min in three measured 30-40x runs ([runtime](hardware-requirements.md#runtime-per-step)); under emulation every step takes longer.
 
 **Mitigation strategies:**
 1. **Run fewer heavy steps at once.** With `run-all.sh`, bound the total with an `executor` block set to Docker Desktop's CPUs and memory ([a shared host](hardware-requirements.md#a-shared-host)), and pass `THREADS` and `--max_memory` no larger than the VM's (e.g. `THREADS=6 ... --max_memory 14.GB`); `--max_cpus` and `--max_memory` alone cap each task, not the total.

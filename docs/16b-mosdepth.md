@@ -75,8 +75,8 @@ Shows what fraction of each region is covered at key depths:
 
 | Dataset | Threads | Time | Memory |
 |---|---|---|---|
-| 30X WGS (~100 GB BAM) | 4 | ~5-10 min | < 2 GB |
-| chr22 BAM | 2 | < 30 sec | < 1 GB |
+| 30-40x WGS, measured in three runs ([runtime](hardware-requirements.md#runtime-per-step)) | 4 | 2-3 min | 1.9 GB |
+| chr22 BAM (estimate) | 2 | < 30 sec | < 1 GB |
 
 ## MultiQC Integration
 

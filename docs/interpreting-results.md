@@ -667,7 +667,7 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 
 ### Recommended Re-analysis Schedule
 
-- **Every 6 months:** Re-run steps 6 (ClinVar) and 17 (CPSR) with updated databases. These are the fastest steps (~35 minutes total) and the most likely to have new classifications.
+- **Every 6 months:** Re-run steps 6 (ClinVar) and 17 (CPSR) with updated databases. These are quick steps (about 20-40 minutes together, measured; CPSR is most of it) and the most likely to have new classifications.
 - **Every 12 months:** Re-run step 13 (VEP) with updated cache for new gnomAD frequencies and consequence predictions.
 - **After major database releases:** ClinVar periodically reclassifies large batches of variants. Follow [@ClinVarUpdates](https://twitter.com/ClinVarUpdates) or check the NCBI blog for announcements.
 

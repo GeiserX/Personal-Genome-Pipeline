@@ -73,7 +73,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/sv_merged/`.
 
 ## Runtime
 
-A few minutes (mostly reading the input VCFs).
+2 to 10 seconds for SURVIVOR's preparation, merge and sort together, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Interpreting Results
 

@@ -72,11 +72,11 @@ nextflow run main.nf \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--skip_trim` | false | Align the raw reads, without fastp (`SKIP_TRIM=true` of step 01b) |
-| `--minimap2_index` | `<reference base>.sr.mmi` beside the FASTA | The minimap2 index built with `-x sr`, the file step 02 builds. When it is not there, the run builds one (about 30 minutes for GRCh38, cached by `-resume`) |
+| `--minimap2_index` | `<reference base>.sr.mmi` beside the FASTA | The minimap2 index built with `-x sr`, the file step 02 builds. When it is not there, the run builds one (1-3 minutes for GRCh38 in the measured runs, cached by `-resume`) |
 | `--intervals` | whole genome | Space-separated regions DeepVariant calls (`INTERVALS` of step 03) |
 | `--sex_check` | `fail` | When the sex indexcov infers from a BAM differs from the samplesheet's: `fail` stops the run before any BAM step starts, `warn` logs both and goes on with the declared sex. With `sample_qc`, the same applies to the sex somalier infers from the reads |
 
-The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: minimap2 needs about 20 GB planned on GRCh38 (10 GB measured on the 1.8 Gb test reference, [step 02](02-alignment.md#resource-requirements)), and `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`), so the task runs close to its 32 GB. A kill for memory anywhere in the pipe ends the task with that exit status, so it is retried once with twice the memory. DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
+The trimmed reads stay in the work directory; the fastp reports are published. `ALIGN_MINIMAP2` pipes minimap2 into `samtools fixmate`, `sort` and `markdup` in one task, as step 02 does, so no SAM file is written. It asks for the `process_high` label's 8 CPUs and 32 GB, and minimap2 and samtools share them: `samtools sort` takes a quarter of the task's memory (1 GB per thread at 32 GB and 8 CPUs, step 02's `-m 1G`), and the whole task peaked at 18.3-18.4 GB on GRCh38 in two measured 30-40x runs ([runtime](hardware-requirements.md#runtime-per-step)). A kill for memory anywhere in the pipe ends the task with that exit status, so it is retried once with twice the memory. DeepVariant also asks for 32 GB by default; `--max_memory` caps both.
 
 ### Resume After Failure
 

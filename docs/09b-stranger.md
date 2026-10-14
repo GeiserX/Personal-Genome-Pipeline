@@ -57,7 +57,7 @@ Key INFO fields added by Stranger:
 
 ## Runtime
 
-Under 1 minute. Stranger is a pure-Python VCF annotator — it reads the VCF once and writes to stdout.
+About a second, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). Stranger is a pure-Python VCF annotator — it reads the VCF once and writes to stdout.
 
 ## Notes
 
