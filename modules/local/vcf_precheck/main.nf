@@ -48,9 +48,15 @@
     contigs: a GRCh37 (hg19) file named the chr way would otherwise run to
     the end with every coordinate wrong. The lengths are those of the
     reference setup.sh installs (NCBI's no-ALT analysis set), the same for
-    every GRCh38 build. A file without ##contig lines, or without lengths in
-    them, is not checked here; validate-setup.sh spot-checks its REF bases
-    against the reference, and a direct `nextflow run` does not.
+    every GRCh38 build. A header that gives no length for chr1-22, X or Y
+    (no ##contig lines, or lines without lengths) cannot show the build, so
+    the REF bases of its first 1000 records on the reference's contigs are
+    compared with the reference, as validate-setup.sh does: bcftools norm
+    -c x drops a record whose REF differs, and the records it keeps give the
+    count. On GRCh38 none or almost none differ; on another build most do.
+    More than 5% different stops here, naming the count and the rate (a
+    line drawn, not measured). When bcftools norm cannot compare, the task
+    log says so and the run goes on.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -60,6 +66,8 @@ process VCF_PRECHECK {
 
     input:
     tuple val(meta), path(vcf), path(vcf_index)
+    path reference
+    path reference_fai
 
     output:
     tuple val(meta), env('FILTER_STATUS'), env('FILTER_COUNTS'),
@@ -123,8 +131,12 @@ process VCF_PRECHECK {
             if (match(\$0, /[<,]ID=[^,>]+/)) id = substr(\$0, RSTART + 4, RLENGTH - 4)
             if (match(\$0, /[<,]length=[0-9]+/)) len = substr(\$0, RSTART + 8, RLENGTH - 8)
             key = id; sub(/^chr/, "", key)
-            if ((key in want) && len != "" && len != want[key]) print id " " len " " want[key]
-        }' header.txt > build_mismatch.txt
+            if ((key in want) && len != "") {
+                n_len++
+                if (len != want[key]) print id " " len " " want[key]
+            }
+        }
+        END { print n_len + 0 > "build_lengths.txt" }' header.txt > build_mismatch.txt
     if [ -s build_mismatch.txt ]; then
         N_WRONG=\$(wc -l < build_mismatch.txt | tr -d ' ')
         {
@@ -140,6 +152,44 @@ process VCF_PRECHECK {
         } >&2
         exit 1
     fi
+
+    # Build, when the header gives no length for chr1-22, X or Y: compare the
+    # REF bases of the first 1000 records on the reference's contigs with the
+    # reference. The spot VCF declares the reference's contigs, which
+    # bcftools norm needs to write a record. (|| true: awk stops reading
+    # after 1000 records, and bcftools view then dies of SIGPIPE.)
+    if [ "\$(cat build_lengths.txt)" -eq 0 ]; then
+        (bcftools view -H ${vcf} 2>/dev/null || true) \\
+            | awk -F'\\t' 'NR == FNR { ref[\$1] = 1; next } (\$1 in ref) { print; if (++n == 1000) exit }' ${reference_fai} - \\
+            > spot_records.txt
+        awk -F'\\t' 'NR == FNR { c = c "##contig=<ID=" \$1 ",length=" \$2 ">\\n"; next }
+                     /^##contig=/ { next } /^#CHROM/ { printf "%s", c } { print }' ${reference_fai} header.txt > spot.vcf
+        cat spot_records.txt >> spot.vcf
+        N_SPOT=\$(wc -l < spot_records.txt | tr -d ' ')
+        if [ "\${N_SPOT}" -eq 0 ]; then
+            echo "${meta.id}: the header gives no contig lengths and no record is on a reference contig: REF bases not compared"
+        elif bcftools norm -c x -f ${reference} -o spot_kept.vcf spot.vcf 2> spot_norm.log; then
+            N_KEPT=\$(grep -vc '^#' spot_kept.vcf || true)
+            N_DIFF=\$((N_SPOT - N_KEPT))
+            PCT=\$((N_DIFF * 100 / N_SPOT))
+            echo "${meta.id}: the header gives no contig lengths; REF bases differ from the reference in \${N_DIFF} of the first \${N_SPOT} records (\${PCT}%)"
+            if [ \$((N_DIFF * 20)) -gt "\${N_SPOT}" ]; then
+                {
+                    echo "ERROR: Sample '${meta.id}': ${vcf.name} is not on GRCh38. Its header gives no contig lengths, so its"
+                    echo "REF bases were compared with the reference: they differ in \${N_DIFF} of the first \${N_SPOT} records (\${PCT}%)."
+                    echo "On GRCh38 none or almost none differ; more than 5% stops the run. The file is on another build"
+                    echo "(GRCh37, hg19, for example), and every position would be read on the wrong one. Renaming the"
+                    echo "contigs does not fix that. Get a GRCh38 VCF from your provider, or start from the FASTQ so the"
+                    echo "pipeline aligns and calls the reads on GRCh38 (docs/vendor-guide.md, Genome Build)."
+                } >&2
+                exit 1
+            fi
+        else
+            echo "WARNING: ${meta.id}: could not compare the REF bases of ${vcf.name} with the reference (bcftools norm failed):" >&2
+            head -n 5 spot_norm.log >&2
+        fi
+    fi
+
     if grep -q '^##GVCFBlock' header.txt; then
         GVCF=blocks
     fi
