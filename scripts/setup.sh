@@ -438,7 +438,11 @@ install_ancestry_panel() {
 # 2024): 4,091 people of 80 populations, open access. setup.sh streams the
 # common biallelic SNVs of chr1 to chr22 from gnomAD's public bucket (about
 # 19 GB is read; only the kept SNVs are stored) and keeps one per 2 kb.
-ANCESTRY_FINE_URL=https://storage.googleapis.com/gcp-public-data--gnomad/resources/hgdp_1kg/phased_haplotypes_v2
+# One of the 22 files, named in full, so scripts/ci/check-links.sh can request
+# it; the others differ only in the chromosome.
+ANCESTRY_FINE_CHR22_URL=https://storage.googleapis.com/gcp-public-data--gnomad/resources/hgdp_1kg/phased_haplotypes_v2/hgdp1kgp_chr22.filtered.SNV_INDEL.phased.shapeit5.bcf
+ANCESTRY_FINE_URL=${ANCESTRY_FINE_CHR22_URL%/*}
+ANCESTRY_FINE_SUFFIX=${ANCESTRY_FINE_CHR22_URL#*hgdp1kgp_chr22}
 ANCESTRY_FINE_META_URL=https://storage.googleapis.com/gcp-public-data--gnomad/release/3.1/secondary_analyses/hgdp_1kg_v2/metadata_and_qc/gnomad_meta_updated.tsv
 # Beagle's GRCh38 PLINK genetic map (HapMap, lifted from GRCh37), for phasing and painting.
 ANCESTRY_FINE_MAP_URL=https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip
@@ -452,7 +456,7 @@ ancestry_fine_pins() {
   local c
   command -v curl >/dev/null 2>&1 || { echo "ERROR: --ancestry-fine-panel needs curl to check the panel's files" >&2; return 1; }
   for c in $(seq 1 22); do
-    curl -fsI "${ANCESTRY_FINE_URL}/hgdp1kgp_chr${c}.filtered.SNV_INDEL.phased.shapeit5.bcf" | tr -d '\r' \
+    curl -fsI "${ANCESTRY_FINE_URL}/hgdp1kgp_chr${c}${ANCESTRY_FINE_SUFFIX}" | tr -d '\r' \
       | awk -v c="chr${c}" 'tolower($1) == "x-goog-hash:" && $2 ~ /^crc32c=/ {h = substr($2, 8)}
                             tolower($1) == "content-length:" {n = $2}
                             END {if (h == "" || n == "") exit 1; print c "\t" h "\t" n}' || return 1
@@ -527,7 +531,7 @@ install_ancestry_fine_panel() {
   # --net: the sample list is the header of a panel file in gnomAD's bucket.
   # shellcheck disable=SC2016  # $1 belongs to the inner sh
   if ! run_in --net --rw "$dir" "$BCFTOOLS_HTTPS_IMAGE" sh -c 'bcftools query -l "$1" 2>/dev/null' \
-        _ "${ANCESTRY_FINE_URL}/hgdp1kgp_chr22.filtered.SNV_INDEL.phased.shapeit5.bcf" > "${dir}/bcf_samples.txt.part" \
+        _ "$ANCESTRY_FINE_CHR22_URL" > "${dir}/bcf_samples.txt.part" \
      || [ ! -s "${dir}/bcf_samples.txt.part" ]; then
     rm -f "${dir}/bcf_samples.txt.part"
     echo "[WARN] Could not read the panel's sample list; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
@@ -571,7 +575,7 @@ install_ancestry_fine_panel() {
                 | bcftools +prune -n 1 -w "$5" -N maxAF -Oz -o "$3.part"; } 2> >(grep -v bcf_hdr_check_sanity >&2)
             bcftools index -t "$3.part"
             mv "$3.part.tbi" "$3.tbi"; mv "$3.part" "$3"' \
-            _ "${ANCESTRY_FINE_URL}/hgdp1kgp_${c}.filtered.SNV_INDEL.phased.shapeit5.bcf" \
+            _ "${ANCESTRY_FINE_URL}/hgdp1kgp_${c}${ANCESTRY_FINE_SUFFIX}" \
             "$(cpath "${dir}/panel/keep.txt")" "$(cpath "${dir}/panel/${c}.vcf.gz")" \
             "$([ -z "$rstamp" ] || cpath "${dir}/regions.bed")" "$thin"; then
         echo "[WARN] Could not read ${c} of the panel; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
