@@ -32,7 +32,11 @@ Checks:
      no hit gets a gray one, and both reports say population frequency is
      not checked;
   7. the telomere card says relative telomere content with its unit, and
-     no report in bin/ says "Telomere Length".
+     no report in bin/ says "Telomere Length";
+  8. the traits card (step 42): both reports carry the not-a-diagnosis
+     note; a traits table older than the latest run-all.sh run, whose step
+     42 was skipped in it, is shown as stale in both reports, and one newer
+     than the run is not.
 
 Run: python3 tests/test_render_report.py
 """
@@ -272,6 +276,33 @@ def main():
               and "intratelomeric reads per million reads with 48-52% GC" in html and "not a telomere length" in html)
         said = [p_ for p_ in glob.glob(os.path.join(REPO, "bin", "*.py")) if "Telomere Length" in open(p_).read()]
         check("no file in bin/ says 'Telomere Length'", not said, said)
+
+        # 8. traits card
+        import time
+        import traits_report
+        d = f"{work}/traits/S"
+        rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
+        put(f"{d}/traits/S_traits.tsv", "")
+        traits_report.write_tsv(f"{d}/traits/S_traits.tsv", traits_report.report(rows, {}))
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("traits: both reports say a reading is not a diagnosis",
+              render_report.TRAITS_NOTE in txt and render_report.TRAITS_NOTE in html, txt)
+        check("traits: with no reads anywhere every row is not read, and the APOE line too",
+              summ["sections"]["traits"]["data"]["called"] == 0
+              and summ["sections"]["traits"]["data"]["apoe"][-1]["status"] == "not_covered")
+        old = time.time() - 86400
+        os.utime(f"{d}/traits/S_traits.tsv", (old, old))
+        put(f"{d}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - 3600}\nstep\t42\tskipped (no gVCF: S/vcf/S.g.vcf.gz)\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        card_tr = html.split("<h2>Traits</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("traits: older than a run that skipped step 42 -> stale in both reports",
+              summ["sections"]["traits"]["state"] == "stale" and "[STALE: from an earlier run" in txt
+              and 'class="stale">STALE: from an earlier run' in card_tr, card_tr)
+        os.utime(f"{d}/traits/S_traits.tsv", None)
+        check("traits: newer than the run -> not stale",
+              collect_summary.collect("S", d)["sections"]["traits"]["state"] == "ok")
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

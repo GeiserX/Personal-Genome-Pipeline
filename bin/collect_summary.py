@@ -79,7 +79,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "37", "04b"}
+                 "27", "29", "30", "31", "32", "37", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -823,6 +823,25 @@ def sec_y_haplogroup(d, s):
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
+def sec_traits(d, s):
+    """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
+    every row with its genotype, status and reading, the counts per status,
+    and the APOE line on its own (the reports fold it away)."""
+    p = first_existing(d, [f"traits/{s}_traits.tsv"])
+    if not p:
+        return None, {}
+    with open(p, encoding="utf-8", errors="replace") as f:
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+    need = ("rsid", "gene", "trait", "genotype", "status", "reading", "ancestry", "note", "pmids")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
+    keep = [{k: (r.get(k) or "") for k in need} for r in rows]
+    apoe = [r for r in keep if r["gene"] == "APOE"]
+    counts = {st: sum(1 for r in keep if r["status"] == st and r["gene"] != "APOE")
+              for st in ("called", "not_covered", "other_allele")}
+    return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
+
+
 def sec_mito(d, s):
     p = first_existing(d, [f"mito/{s}_chrM_filtered.vcf.gz"])
     if not p:
@@ -1144,6 +1163,7 @@ SECTIONS = [
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
     ("mito", "Mitochondrial variants", "20", sec_mito),
+    ("traits", "Traits panel", "42", sec_traits),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
