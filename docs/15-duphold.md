@@ -56,7 +56,7 @@ docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
 The script prints how many records it kept. How many SVs the filter removes from a real genome has not been measured here.
 
 ## Runtime
-~20 minutes per genome.
+3 to 4 minutes per genome, peak memory about 1 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Notes
 - Run this AFTER Manta (step 4) and before AnnotSV (step 5), which annotates the filtered file when it is there and Manta's calls otherwise.

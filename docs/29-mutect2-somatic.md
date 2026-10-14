@@ -116,7 +116,7 @@ export GENOME_DIR=/path/to/your/data
 |---|---|---|
 | `GENOME_DIR` | (required) | Path to your data directory |
 | `THREADS` | 4 | CPU threads for Mutect2 |
-| `INTERVALS` | `chip` | `chip`: the CHIP driver genes in `assets/chip_genes_grch38.bed` (minutes). `genome`: the whole genome (2-6 hours). Anything else is passed to Mutect2 as it is: a region such as `chr22` or `chr17:7500000-7700000`, or a BED under `/genome` |
+| `INTERVALS` | `chip` | `chip`: the CHIP driver genes in `assets/chip_genes_grch38.bed` (minutes). `genome`: the whole genome (hours; an estimate of 2-6, not measured here). Anything else is passed to Mutect2 as it is: a region such as `chr22` or `chr17:7500000-7700000`, or a BED under `/genome` |
 | `ALIGN_DIR` | `aligned` | Use `aligned_bwamem2` for BWA-MEM2 alignments |
 | `SCATTER_JOBS` | THREADS/2 | With `INTERVALS=genome`: units Mutect2 runs at once (2 CPUs, 8 GB each) |
 | `SCATTER` | `true` | `false` calls the whole genome in one Mutect2 process |
@@ -134,7 +134,7 @@ The default covers the CHIP genes only. For everything:
 
 ```bash
 INTERVALS=genome ./scripts/29-mutect2-somatic.sh your_name
-# 2-6 hours in one process; scattered, about that divided by SCATTER_JOBS
+# hours in one process (estimate 2-6, not measured); scattered, about that divided by SCATTER_JOBS
 ```
 
 Mutect2 multithreads only its PairHMM, so the whole genome is scattered: one Mutect2 per unit (chr1-22, chrX, chrY and chrM one each, the other contigs together), `SCATTER_JOBS` at a time, each with its own orientation counts. `MergeVcfs` joins the calls and `MergeMutectStats` their statistics (FilterMutectCalls needs both), and LearnReadOrientationModel reads every unit's counts. The units are under `somatic/scatter/` while the step runs and removed after the filter.
@@ -208,6 +208,8 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 | Step 17 (CPSR) | Cancer predisposition report covers germline cancer gene variants |
 
 ## Runtime
+
+Estimates, not measured here; the end test does not run step 29.
 
 | Scope | Approximate Time | Memory |
 |---|---|---|

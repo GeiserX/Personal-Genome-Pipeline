@@ -192,7 +192,7 @@ tar xzf tmp/homo_sapiens_vep_115_GRCh38.tar.gz
 
 ## T1K HLA Reference (Optional)
 
-Only needed for step 8 (HLA typing). Step 8 builds its T1K index itself, the first time it runs (a few minutes), from the `hla.dat` and GENCODE gene lines `setup.sh` installs (see "Small pinned data files" above). The index goes to `t1k_idx/t1k-<T1K version>_imgt-<release>_gencode-<release>/`, so a new T1K image or a new database release builds a new index instead of reusing the old one. Step 8 writes the release it typed against to `hla_t1k/database_release.txt`.
+Only needed for step 8 (HLA typing). Step 8 builds its T1K index itself, the first time it runs (12-26 seconds in the measured runs), from the `hla.dat` and GENCODE gene lines `setup.sh` installs (see "Small pinned data files" above). The index goes to `t1k_idx/t1k-<T1K version>_imgt-<release>_gencode-<release>/`, so a new T1K image or a new database release builds a new index instead of reusing the old one. Step 8 writes the release it typed against to `hla_t1k/database_release.txt`.
 
 To type against another IPD-IMGT/HLA release, set `HLA_DB_RELEASE` (for example `HLA_DB_RELEASE=3.64.0`) for both `setup.sh` and step 8.
 

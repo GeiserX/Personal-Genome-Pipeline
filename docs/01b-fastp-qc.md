@@ -93,8 +93,8 @@ fastp's known adapters include the MGI/BGI forward (`AAGTCGGAGGCCAAGCGGTCTTAGGAA
 
 | Dataset | Threads | Time | Memory |
 |---|---|---|---|
-| 30X WGS (~60 GB FASTQ) | 8 | ~10-20 min | < 2 GB |
-| chr22 test data | 4 | < 1 min | < 1 GB |
+| 30-40x WGS, measured in two runs ([runtime](hardware-requirements.md#runtime-per-step)) | 8 | 15-20 min | 1.4 GB |
+| chr22 test data (estimate) | 4 | < 1 min | < 1 GB |
 
 fastp is I/O-bound, not CPU-bound. Threads beyond 8-16 provide minimal improvement.
 

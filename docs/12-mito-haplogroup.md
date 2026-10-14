@@ -65,7 +65,7 @@ docker run --rm --network none -v "${GENOME_DIR}:/genome" "${HAPLOCHECK_IMAGE}" 
 Both reports (step 24 and the text report) show the haplogroup and the contamination status, or "not checked" when the input was the step 03 VCF.
 
 ## Runtime
-About a minute.
+4 to 22 seconds for the chrM extraction, haplogrep3 and haplocheck together, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Interpretation
 - Common European haplogroups: H, U, J, T, K, V, W, X

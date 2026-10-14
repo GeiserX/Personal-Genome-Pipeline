@@ -63,7 +63,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" \
   bwa index "/genome/${REF_FASTA}"
 ```
 
-This takes ~1 hour and produces 5 index files (~5 GB total). Only needed once.
+This takes about an hour (an estimate, not measured here) and produces 5 index files (~5 GB total). Only needed once.
 
 ## Output
 
@@ -93,11 +93,13 @@ Note: GRIDSS QUAL scores are uncorrected for multiple testing and tend to be ove
 | Memory | 32 GB (28 GB JVM heap + OS overhead) |
 | CPU | 8 threads |
 | Disk | ~50 GB intermediate files in `sv_gridss/work/`, removed after a successful run |
-| Runtime | 4-8 hours for 30X WGS |
+| Runtime | not measured here; an estimate of 4-8 hours for 30X WGS |
 
 GRIDSS is the heaviest tool in the pipeline. With `GRIDSS=true` it runs in parallel with the other heavy steps (VEP, CNVpytor, Delly).
 
 ## Runtime
+
+Not measured here; the end test does not run GRIDSS. These are estimates:
 
 | Dataset | Threads | Time |
 |---|---|---|

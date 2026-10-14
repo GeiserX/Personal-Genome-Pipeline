@@ -18,7 +18,7 @@
 
 This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs the [analysis steps of a default run](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/#what-a-default-run-covers) to produce a full genomic profile: variant calling, pharmacogenomics, structural variants, cancer predisposition screening, polygenic risk scores, ancestry estimation, telomere length, mitochondrial analysis, and more. Everything runs locally in Docker containers, each with a hard memory limit.
 
-**Time:** plan for more than a day per sample on 8 CPUs ([runtime](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/#runtime-per-step)) | **Disk:** 500 GB per sample from a BAM, about 700 GB from FASTQ | **Cost:** Free (you just need your data)
+**Time:** about 21 h per sample from FASTQ on a 16-thread server, measured; plan for more than a day on 8 CPUs ([runtime](https://geiserx.github.io/Personal-Genome-Pipeline/hardware-requirements/#runtime-per-step)) | **Disk:** 500 GB per sample from a BAM, about 700 GB from FASTQ | **Cost:** Free (you just need your data)
 
 ## Features
 

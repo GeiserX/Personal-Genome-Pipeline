@@ -80,7 +80,7 @@ A section with no file whose step is recorded `failed` in `logs/run_status.tsv` 
 
 ## Runtime
 
-About a minute; reading a whole-genome VCF takes most of it.
+Not measured; `run-all.sh` runs it after the pipeline, outside Nextflow's trace. An estimate is about a minute, most of it reading the whole-genome VCF.
 
 ## How to Open
 

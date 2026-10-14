@@ -13,8 +13,8 @@ For hands-on benchmarking instructions, see [benchmarking.md](benchmarking.md).
 | **Script** | `scripts/02-alignment.sh` | `scripts/02a-alignment-bwamem2.sh` |
 | **Output directory** | `aligned/` | `aligned_bwamem2/` |
 | **Docker image** | `MINIMAP2_IMAGE` | set in the script |
-| **Speed (30X WGS)** | ~1-2 hours | ~4-8 hours |
-| **Index build time** | ~30 minutes | ~1 hour |
+| **Speed (30X WGS)** | 3 h 51 min - 5 h 21 min with duplicate marking, measured on 30-40x ([runtime](hardware-requirements.md#runtime-per-step)) | not measured here |
+| **Index build time** | 1-3 minutes, measured | not measured here |
 | **Index size** | ~7 GB (.mmi) | ~24 GB (multiple files) |
 | **XS tag** | Not produced | Produced |
 | **Germline SNP/indel accuracy** | Equivalent to BWA-MEM2 | Equivalent to minimap2 |
@@ -24,7 +24,7 @@ For hands-on benchmarking instructions, see [benchmarking.md](benchmarking.md).
 
 minimap2 is the default because:
 
-1. **Speed.** It is 2-4x faster than BWA-MEM2 for paired-end short reads, which matters on consumer hardware where alignment is the bottleneck step.
+1. **Speed.** For Illumina reads longer than 100 bp, minimap2's authors measured it at about three times the speed of BWA-MEM ([minimap2 README](https://github.com/lh3/minimap2#readme)), and BWA-MEM2's authors report 1.3-3.1x the speed of BWA-MEM ([BWA-MEM2 README](https://github.com/bwa-mem2/bwa-mem2#readme)). Neither compares minimap2 with BWA-MEM2 directly, and BWA-MEM2 has not been timed here. Speed matters on consumer hardware, where the alignment is the second longest step.
 2. **Equivalent germline accuracy.** For single-sample germline variant calling (this pipeline's focus), minimap2-aligned BAMs produce indistinguishable SNP and indel call sets compared to BWA-MEM2. The [UMCCR comparison](https://umccr.org/blog/bwa-mem-vs-minimap2/) found no significant accuracy difference for germline calls.
 3. **Simpler index.** A single `.mmi` file (~7 GB) vs multiple BWA-MEM2 index files (~24 GB total).
 
@@ -36,7 +36,7 @@ minimap2 is the default because:
 
 ### Key tradeoffs
 
-The alignment step is the single longest step in the pipeline when starting from FASTQ. Choosing minimap2 saves 2-6 hours of wall-clock time with no measurable loss in germline variant calling accuracy. The only functional downside is incompatibility with Strelka2's SNP mode, which is not part of the default pipeline.
+The alignment is the second longest step from FASTQ, after DeepVariant. How much time minimap2 saves over BWA-MEM2 has not been measured here; upstream compares each with BWA-MEM only (see Speed above). minimap2 comes with no measurable loss in germline variant calling accuracy. The only functional downside is incompatibility with Strelka2's SNP mode, which is not part of the default pipeline.
 
 **References:**
 - [UMCCR: BWA-MEM2 vs minimap2 for short reads (2021)](https://umccr.org/blog/bwa-mem-vs-minimap2/)
@@ -54,7 +54,7 @@ The alignment step is the single longest step in the pipeline when starting from
 | **Algorithm** | Deep learning (CNN) | Local haplotype assembly + PairHMM | Bayesian haplotype-based |
 | **SNP F1 (30X)** | ~0.999 | ~0.998 | ~0.994 |
 | **Indel F1 (30X)** | ~0.994 | ~0.983 | ~0.960 |
-| **Runtime (30X)** | ~13.5 h on 8 CPUs (1.10, one observed run) | 8.6 h on 8 threads (4.6.1, one historical run) | 9.3 h single-threaded (1.3.6, one historical run) |
+| **Runtime (30X)** | 8 h 50 min - 13 h 30 min with 8 shards (1.10, three measured runs) | 8.6 h on 8 threads (4.6.1, one historical run) | 9.3 h single-threaded (1.3.6, one historical run) |
 | **GPU support** | `call_variants` only, in DeepVariant's `-gpu` image; neither entry point here uses it | No | No |
 | **Multi-threading** | Yes (`--num_shards`) | Yes (`--native-pair-hmm-threads`) | No (single-threaded) |
 | **GVCF output** | Yes | Yes (script uses normal VCF; switch to `-ERC GVCF` for cohort workflows) | No |
@@ -66,7 +66,7 @@ The alignment step is the single longest step in the pipeline when starting from
 Strelka2 (`scripts/03c-strelka2-germline.sh`, output to `vcf_strelka2/`) is a fourth option for SNV and indel calling. Despite sometimes being grouped with SV tools because it ships alongside Manta, Strelka2's germline mode is a **small variant caller** — it calls SNVs and indels up to ~49 bp, not structural variants. See [Kim et al. 2018](https://doi.org/10.1038/s41592-018-0051-x).
 
 Key characteristics:
-- **Fast:** ~1-2 hours on 30X WGS with 8 threads (fastest of the four callers)
+- **Fast:** 72 min on 30X WGS with 8 threads in one historical run ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)), the fastest of the four callers
 - **Good accuracy:** Comparable to GATK for SNPs and indels
 - **BWA-MEM2 recommended:** Strelka2's scoring model relies on XS (suboptimal alignment score) tags. minimap2 does not produce these, causing reduced SNP precision. Use BWA-MEM2 alignments for best results.
 - **Complements Manta:** In Illumina's intended workflow, Manta detects SVs and Strelka2 detects small variants — they are complementary, not alternatives to each other
@@ -79,7 +79,7 @@ DeepVariant is the default because:
 2. **Low false positive rate.** Its deep learning model was trained on real sequencing data and recognizes systematic artifacts (strand bias, mapping artifacts) that rule-based callers miss.
 3. **No extra reference files.** Only needs the FASTA and FAI -- no sequence dictionary (.dict) required.
 
-The cost is time. In one observed ~30x run on 8 CPUs, DeepVariant 1.10 took about 13.5 hours, most of a default run ([runtime](hardware-requirements.md#runtime-per-step)). The GATK and FreeBayes figures in the table come from one historical run on other versions and hardware ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)), so they do not compare directly.
+The cost is time. With 8 shards DeepVariant 1.10 took 8 h 50 min to 13 h 30 min in three measured 30-40x runs, most of a default run ([runtime](hardware-requirements.md#runtime-per-step)). The GATK and FreeBayes figures in the table come from one historical run on other versions and hardware ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)), so they do not compare directly.
 
 ### GATK HaplotypeCaller: when to use it
 
@@ -128,14 +128,14 @@ The pipeline runs up to three SV callers and merges their output (step 22). Each
 | **Docker image** | `MANTA_IMAGE` | `DELLY_IMAGE` | `CNVPYTOR_IMAGE` |
 | **Signal types** | Paired-end + split-read | Paired-end + split-read + read-depth | Read-depth only |
 | **Best for** | DEL, DUP, INV, small indels | INV, BND (translocations) | Large CNVs (>1 kb) |
-| **Runtime (30X)** | ~20-60 min | ~2-4 hours | ~1-3 hours |
+| **Runtime (30-40x, measured)** | 22-41 min on 8 CPUs | 21 min - 3 h 19 min, on about one core | 14-20 min on 4 CPUs |
 | **Typical call count** | 3,000-5,000 SVs | 5,000-15,000 SVs | 500-2,000 CNVs |
 
 ### Default: Manta (with optional Delly + CNVpytor for consensus)
 
 Manta is the primary SV caller because:
 
-1. **Speed.** 20-60 minutes vs 2-4 hours for Delly or 1-3 hours for CNVpytor.
+1. **Speed.** 22-41 minutes, measured, against up to 3 h 19 min for Delly; CNVpytor (14-20 minutes) is quicker but reads depth only ([runtime](hardware-requirements.md#runtime-per-step)).
 2. **Balanced accuracy.** Good detection of deletions, duplications, inversions, and insertions with reasonable false positive rates.
 3. **Indel bonus.** Manta's `candidateSmallIndels.vcf.gz` captures indels in the 20-50 bp range that DeepVariant sometimes misses and that are below the size threshold of other SV callers.
 4. **Well-maintained.** Illumina's Manta is widely used in clinical SV pipelines.
@@ -164,9 +164,9 @@ Manta is the primary SV caller because:
 
 | Priority | Recommended Approach |
 |---|---|
-| Quick SV scan | Manta only (~20-60 min) |
-| Balanced analysis | Manta + Delly with consensus merge (~3-5 hours) |
-| Maximum sensitivity | All three callers + consensus merge (~4-8 hours) |
+| Quick SV scan | Manta only (22-41 min, measured) |
+| Balanced analysis | Manta + Delly with consensus merge (the pipeline runs them side by side: up to 3 h 19 min, Delly's time, measured) |
+| Maximum sensitivity | All three callers + consensus merge (side by side, so about the same as Manta + Delly; the merge takes seconds, measured) |
 | Large CNV focus | CNVpytor alone or CNVpytor + Manta |
 | Inversions / translocations | Delly (strongest for these SV types) |
 
@@ -185,7 +185,7 @@ Run all available callers and compare. This gives you the broadest view of your 
 - SNP/indel: DeepVariant + GATK HaplotypeCaller + FreeBayes
 - SV: Manta + Delly + CNVpytor with consensus merge (step 22)
 
-**Time estimate:** longer than a default run, which takes more than a day on 8 CPUs; each extra caller adds its own time ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)).
+**Time estimate:** longer than a default run, which took about 20-21 hours from FASTQ on a 16-thread server (measured) and more on 8 CPUs; each extra caller adds its own time ([benchmarking](benchmarking.md#runtime-full-genome-30x-wgs)).
 
 ### High-confidence analysis
 
@@ -196,7 +196,7 @@ Use a consensus of two or more callers. Variants called by multiple independent 
 - SNP/indel: DeepVariant + GATK HaplotypeCaller (keep intersection)
 - SV: Manta + Delly with consensus merge
 
-**Time estimate:** more than a day on 8 CPUs; DeepVariant alone took about 13.5 hours in one observed ~30x run.
+**Time estimate:** more than a default run, which took about 20-21 hours from FASTQ on a 16-thread server (measured); DeepVariant alone took 8 h 50 min to 13 h 30 min.
 
 ### Quick personal analysis
 
@@ -207,7 +207,7 @@ Stick with the defaults. The default tools were chosen for the best single-tool 
 - SNP/indel: DeepVariant
 - SV: Manta
 
-**Time estimate:** most of a day on 8 CPUs from FASTQ; DeepVariant alone took about 13.5 hours in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)).
+**Time estimate:** about 20-21 hours from FASTQ on a 16-thread server, measured on 30-40x genomes, and more than a day on 8 CPUs (not measured); DeepVariant alone took 8 h 50 min to 13 h 30 min ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ### Decision matrix
 

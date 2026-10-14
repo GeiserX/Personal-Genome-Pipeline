@@ -57,7 +57,7 @@ The comparison used to be written by step 32. It moved here because `run-all.sh`
 
 ## Runtime
 
-About a minute, mostly container start-up.
+3 to 5 seconds, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 ## Interpreting Results
 

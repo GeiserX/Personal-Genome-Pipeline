@@ -65,7 +65,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 
 ## Runtime
 
-A few minutes for the background depth over a 30x BAM, and under a minute for the SMN1/SMN2 locus.
+Not measured here; the end test does not run this step. An estimate is a few minutes for the background depth over a 30x BAM, and under a minute for the SMN1/SMN2 locus.
 
 ## Interpreting Results
 

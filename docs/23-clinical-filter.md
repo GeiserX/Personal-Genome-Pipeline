@@ -80,7 +80,7 @@ Both reports list, beside the clinical filter's counts, the variants in the 84 g
 
 ## Runtime
 
-~5-10 minutes (I/O-bound, reading the large VEP VCF)
+2.5 to 6.5 minutes, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)) (I/O-bound, reading the large VEP VCF)
 
 ## How to Use the Output
 

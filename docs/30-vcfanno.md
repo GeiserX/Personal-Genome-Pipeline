@@ -63,7 +63,7 @@ export GENOME_DIR=/path/to/your/data
 
 ## Runtime
 
-~5-15 minutes depending on which databases are present. The two-pass CADD approach adds ~2-3 minutes for the chromosome renaming steps.
+Not measured here; the end test does not run vcfanno. An estimate is 5-15 minutes depending on which databases are present, plus 2-3 minutes for the chromosome renaming of the two-pass CADD approach.
 
 ## INFO Fields Added
 

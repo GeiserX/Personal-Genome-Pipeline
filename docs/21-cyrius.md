@@ -63,7 +63,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/cyrius/`.
 
 ## Runtime
 
-~5-15 minutes. The one-time install (`setup.sh --cyrius`) takes about a minute.
+Not measured here; the end test does not run Cyrius. An estimate is 5-15 minutes, and the one-time install (`setup.sh --cyrius`) about a minute.
 
 ## Interpreting Results
 

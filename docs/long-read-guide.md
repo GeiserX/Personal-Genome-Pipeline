@@ -384,7 +384,7 @@ Rough numbers for a 30X human genome. Each runtime names its source or says it w
 | PASS rate | ~93% | ~85-90% | ~93% |
 | SVs (total) | ~7-9K (Manta) | ~20-25K (Sniffles2) | ~18-22K (Sniffles2) |
 | SV insertions | ~500 (poor) | ~8-10K (excellent) | ~7-9K (excellent) |
-| Alignment time | ~1-2 h, an estimate ([runtime table](hardware-requirements.md#runtime-per-step)) | not measured here | not measured here |
-| Variant calling time | DeepVariant: about 13.5 h on 8 CPUs, one observed ~30x run ([runtime table](hardware-requirements.md#runtime-per-step)) | Clair3: not measured here | Clair3: not measured here |
+| Alignment time | minimap2: 3 h 51 min - 5 h 21 min with duplicate marking, measured on 30-40x ([runtime table](hardware-requirements.md#runtime-per-step)) | not measured here | not measured here |
+| Variant calling time | DeepVariant: 8 h 50 min - 13 h 30 min with 8 shards, three measured 30-40x runs ([runtime table](hardware-requirements.md#runtime-per-step)) | Clair3: not measured here | Clair3: not measured here |
 
 The biggest advantage of long reads is SV detection — especially insertions, which short reads systematically miss.

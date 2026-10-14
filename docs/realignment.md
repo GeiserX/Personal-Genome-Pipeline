@@ -62,7 +62,7 @@ None of these depend on ALT contigs, so they stay as they are:
 |---|---|---|
 | `.fai` | `setup.sh` downloads NCBI's and checks its md5 | 195 lines |
 | `.dict` | `setup.sh` builds it | GATK, Picard and `chip-to-vcf.sh` read it |
-| minimap2 `.sr.mmi` | step 02 builds it the first time it runs | about 30 minutes, with a 32 GB container cap; named after the reference, `GRCh38_no_alt_analysis_set.sr.mmi`, so the old index is never used |
+| minimap2 `.sr.mmi` | step 02 builds it the first time it runs | 1-3 minutes and 11.4 GB measured in the pipeline ([runtime](hardware-requirements.md#runtime-per-step)), with a 32 GB container cap; named after the reference, `GRCh38_no_alt_analysis_set.sr.mmi`, so the old index is never used |
 | BWA-MEM2 (step 02a only) | by hand | about 90 GB of RAM for the build: [BWA-MEM2 index](00-reference-setup.md#bwa-mem2-index) |
 | classic BWA (GRIDSS, TIDDIT's assembly) | by hand | `bwa index`, about an hour: [GRIDSS](04b-gridss.md) |
 
@@ -70,7 +70,7 @@ The old reference's files (`Homo_sapiens_assembly38.fasta`, `.fai`, `.dict`, `.s
 
 ## Step by step, one sample
 
-Run these on the machine that holds your data, in the repository folder. The realignment itself is a normal step 02 run: 1-2 hours for a 30x genome, plus the one-time index build.
+Run these on the machine that holds your data, in the repository folder. The realignment itself is a normal step 02 run: 3 h 51 min to 5 h 21 min for a 30-40x genome in two measured runs ([runtime](hardware-requirements.md#runtime-per-step)), plus the one-time index build.
 
 **1. Install the new reference** next to the old one:
 

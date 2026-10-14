@@ -97,7 +97,7 @@ This checks Docker, disk space, reference data, Docker images, and sample files.
 
 ## Full run
 
-One command runs every step of a default run for one sample. `run-all.sh` checks the setup, writes a one-row samplesheet and starts the [Nextflow pipeline](nextflow.md) (`main.nf`). Nextflow runs the steps in parallel as far as CPUs and memory allow, keeps a log for each task, and on a second run reuses every task that finished and whose inputs did not change (`-resume`). A task that was running when the run stopped starts over, and DeepVariant is a single task: about 13.5 h on 8 CPUs in one observed ~30x run ([runtime](hardware-requirements.md#runtime-per-step)).
+One command runs every step of a default run for one sample. `run-all.sh` checks the setup, writes a one-row samplesheet and starts the [Nextflow pipeline](nextflow.md) (`main.nf`). Nextflow runs the steps in parallel as far as CPUs and memory allow, keeps a log for each task, and on a second run reuses every task that finished and whose inputs did not change (`-resume`). A task that was running when the run stopped starts over, and DeepVariant is a single task: 8 h 50 min to 13 h 30 min with 8 shards in three measured 30-40x runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
 It needs Docker, bash 4.4 or later, Java 17 or later and Nextflow 26.04.7, the release CI validates (`NEXTFLOW_VERSION` in `versions.env`). Pin the version when you install, because the plain installer fetches the newest release:
 
@@ -115,7 +115,7 @@ export GENOME_DIR=/path/to/your/data
 ./scripts/run-all.sh your_name male        # or female: sets the chrX/chrY ploidy and the sex check
 ```
 
-**Plan for more than a day.** Run `run-all.sh` inside `tmux` or `screen`, or with `nohup`, so a closed terminal or a dropped SSH session does not stop it:
+**Plan for about a day, and more on fewer than 16 cores.** A default run from FASTQ took about 20-21 h on a 16-thread server ([runtime](hardware-requirements.md#runtime-per-step)). Run `run-all.sh` inside `tmux` or `screen`, or with `nohup`, so a closed terminal or a dropped SSH session does not stop it:
 
 ```bash
 tmux new -s genome      # run the command inside; Ctrl-b d detaches, `tmux attach -t genome` comes back
@@ -204,11 +204,11 @@ export SAMPLE=your_name
 ./scripts/setup.sh $GENOME_DIR
 
 # 3. Run the pipeline
-./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (~10-20 min)
-./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (~1-2 hr)
+./scripts/01b-fastp-qc.sh $SAMPLE        # QC + adapter trimming (15-20 min measured)
+./scripts/02-alignment.sh $SAMPLE        # FASTQ -> sorted BAM (3 h 51 min - 5 h 21 min measured)
 ./scripts/03-deepvariant.sh $SAMPLE      # BAM -> VCF, the longest step (see hardware-requirements.md)
-./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (~5 min)
-./scripts/07-pharmacogenomics.sh $SAMPLE # Drug-gene interactions (~10 min)
+./scripts/06-clinvar-screen.sh $SAMPLE   # Find pathogenic variants (about a minute measured)
+./scripts/07-pharmacogenomics.sh $SAMPLE # Drug-gene interactions (about a minute measured)
 
 # 4. Optional: structural variants, annotation, etc.
 ./scripts/04-manta.sh $SAMPLE
