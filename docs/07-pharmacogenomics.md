@@ -24,13 +24,20 @@ GENOME_DIR=/path/to/your/data
 
 # Step 0 (when step 3 wrote a gVCF): expand its reference blocks over
 # PharmCAT's gene regions into a plain VCF, so a covered position where you
-# match the reference is a 0/0 call and an uncovered one (./.) stays missing
+# match the reference is a 0/0 call and an uncovered one (./.) stays missing;
+# then bin/pgx_refblock_fill.py calls 0/0 the positions longer than one base
+# (indels) that reference blocks with GQ >= 20 cover (see below)
 docker run --rm \
   -v ${GENOME_DIR}/${SAMPLE}/vcf:/data \
   -v "${GENOME_DIR}:/genome" \
+  -v "$PWD/bin:/pgp-bin:ro" \
   "${PHARMCAT_IMAGE}" \
-  sh -c 'bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
-    | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Oz -o "$3" --write-index=tbi' sh \
+  bash -euo pipefail -c 'records=$(mktemp)
+    bcftools view -R /pharmcat/pharmcat_regions.bed -Ov -o "$records" "$2"
+    bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
+      | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Ov \
+      | python3 /pgp-bin/pgx_refblock_fill.py /pharmcat/pharmcat_positions.vcf.bgz "$records" \
+      | bcftools view -Oz -o "$3" --write-index=tbi' _ \
     "/genome/${REF_FASTA}" /data/${SAMPLE}.g.vcf.gz /data/${SAMPLE}.pgx_regions.vcf.gz
 
 # Step 1: preprocess the VCF against the GRCh38 reference
@@ -74,13 +81,14 @@ docker run --rm \
 ### Input the preprocessor or PharmCAT refuses
 
 - **gVCF.** PharmCAT refuses a gVCF, and decides by the file name too (`.g.vcf`, `.genomic.vcf`). Yet a gVCF is the better input: a variants-only VCF leaves about half of PharmCAT's genes Unknown, because PharmCAT cannot tell a reference call from a position that was not covered. So the script reads `vcf/${SAMPLE}.g.vcf.gz` when step 3 wrote one and expands its reference blocks into `${SAMPLE}.pgx_regions.vcf.gz` (step 0 above, deleted afterwards), which PharmCAT accepts; without a gVCF it reads `${SAMPLE}.vcf.gz`, and does not check whether that file is itself a gVCF (PharmCAT then stops on it). The Nextflow pipeline does the same with DeepVariant's gVCF, or with the gVCF a samplesheet row gives in its `gvcf` column (`run-all.sh` fills it from `vcf/${SAMPLE}.g.vcf.gz`); a gVCF given in the `vcf` column stops the run before any analysis when `pharmcat` is selected. For a vendor gVCF, remove the reference blocks and rename the file: [Starting from a Vendor VCF](vcf-first.md).
+- **Positions longer than one base.** The expansion writes one record per base, each with a one-base REF. PharmCAT's preprocessor does not take such a record as a call at a position whose REF or ALT is longer than one base (it warns that the record "is not a valid GT format for INDELs" and sets FILTER `PCATxINDEL`): the insertions and deletions of DPYD, UGT1A1 (\*28, the TA-repeat insertion at chr2:233760233), TPMT, CYP3A4, CYP3A5, CFTR, CYP2C9, NUDT15, RYR1, CYP2D6 and G6PD, and two two-base substitutions in RYR1: 51 positions in PharmCAT 3.4.0. Without more, PharmCAT lists these positions as missing and their alleles as uncallable, even where the gVCF shows you match the reference over the whole span. So step 0 runs `bin/pgx_refblock_fill.py` on the expanded file. For each of these positions in PharmCAT's positions file (`/pharmcat/pharmcat_positions.vcf.bgz` in the image), it writes a 0/0 record with PharmCAT's own ID, REF and ALT (INFO flag `PGX_REFBLOCK`) in place of the one-base record, when every base of the REF span lies in reference blocks with GQ 20 or more (GQ is Phred-scaled: 20 means a 1 in 100 chance the reference call is wrong; genotype 0/0, or 0 on a haploid chrX; FILTER `PASS` or `.`) and no other record overlaps the span: no variant call, no `./.` block, no block below GQ 20. Otherwise the position stays missing. The step log names the positions it filled (`pgx_refblock_fill: N of 51 PharmCAT positions longer than one base called 0/0 from reference blocks with GQ >= 20: ...`). The GQ threshold applies to these positions only: a one-base position takes any 0/0 block, as before. The Nextflow module does the same.
 - **A backslash in a `##` header line.** PharmCAT up to 3.4.0 bundles vcf-parser 0.3.1, which stops with "Error parsing metadata: character to be escaped is missing" on one. The line is valid VCF; bcftools writes it for a soft filter with a quoted string (`bcftools filter -s LowDP -e 'FORMAT/DP<10 && GT!="0/0"'`). The script and the Nextflow module rewrite the header of PharmCAT's own copy (`${SAMPLE}.pharmcat_input.vcf`, deleted afterwards by the script): on `##` lines `\"` becomes `'` and any other `\` becomes `/`. PharmCAT's calls are the same with and without the rewrite. A newer PharmCAT is no fix yet: 3.4.0 still bundles vcf-parser 0.3.1 and fails the same way.
 
 ## Output
 - HTML report with drug recommendations per gene, including HLA-A, HLA-B and CYP2D6 when [step 36](36-pgx-consensus.md) passed them as outside calls
 - JSON report used by step 27 (`${SAMPLE}.report.json`)
 - Preprocessed VCF (`${SAMPLE}.preprocessed.vcf.bgz`) generated as an intermediate
-- `${SAMPLE}.missing_pgx_var.vcf`: the PGx positions absent from PharmCAT's input. With the gVCF these are the positions without coverage; with a variants-only VCF they include every position where you match the reference.
+- `${SAMPLE}.missing_pgx_var.vcf`: the PGx positions absent from PharmCAT's input. With the gVCF these are the positions without coverage, plus the positions longer than one base whose span is not wholly inside reference blocks with GQ 20 or more; with a variants-only VCF they include every position where you match the reference.
 - Covers CYP2C19, CYP2D6, CYP2B6, CYP3A4/5, UGT1A1, DPYD, NAT2, TPMT, etc.
 - Star allele calls with metabolizer status (Poor/Intermediate/Normal/Rapid/Ultra-rapid)
 
