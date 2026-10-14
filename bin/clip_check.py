@@ -189,7 +189,7 @@ def verdict(alt_n, alt_c, ref_n, ref_c):
     """(cdna_check, cdna_note) from the four counts."""
     if alt_n < MIN_ALT_READS:
         return "not_checked", f"fewer than {MIN_ALT_READS} reads carry the alt allele"
-    if alt_c >= ALT_SHARE_MIN * alt_n and (ref_n == 0 or ref_c <= REF_SHARE_MAX * ref_n):
+    if alt_c < ALT_SHARE_MIN * alt_n and (ref_n == 0 or ref_c <= REF_SHARE_MAX * ref_n):
         return "flagged", FLAG_NOTE
     return "clear", ""
 
