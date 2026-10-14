@@ -11,7 +11,7 @@
 #   and _R2; the VCF alone. Kept in <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; cyrius, parascopy and y_haplogroup run only when named); KIR=true (KIR genes with HLA);
+#   (only these --tools names; cyrius, parascopy, y_haplogroup and consumer_export run only when named); KIR=true (KIR genes with HLA);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores) and PGSC_CALC_DIR (--pgsc_calc) as for the single steps; the panel and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
@@ -125,6 +125,10 @@ plan "26 Ancestry (pgsc_calc)" ancestry "$(if [[ " ${SEL[*]} " != *" prs "* ]]; 
   else need "$PANEL" "${PANEL%.tar.zst}_GRCh38_sites.tsv"; fi)" && NF+=(--ancestry_ref "$PANEL")
 YD="${G}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup || need "${YD}/hg38/new_positions.txt")" && NF+=(--yleaf_data "$YD")
+# Step 40 reads the gVCF: a row that starts from a VCF without one beside it has none.
+CS="${G}/reference/consumer/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
+plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$fv" ] && [ -z "$GROW" ]; then echo 'no gVCF beside the VCF'; else need "$CS"; fi)" \
+  && NF+=(--consumer_sites "$CS")
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")
