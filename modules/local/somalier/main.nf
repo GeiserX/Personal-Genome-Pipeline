@@ -172,3 +172,111 @@ process SAMPLE_QC {
     END_VERSIONS
     """
 }
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    FAMILY_RELATE, FAMILY_CHECK — Are the family members who the pedigree says?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    The family workflow (workflows/family.nf, --pedigree) only. FAMILY_RELATE
+    runs somalier extract on each member's gVCF (a gVCF also gives the
+    depth where the sample matches the reference) and somalier relate over
+    them with the family's pedigree (FAMILY_PREPARE's family.ped). Its files
+    go to <outdir>/family/somalier, apart from SOMALIER_RELATE's, so a run
+    with sample_qc keeps both.
+
+    FAMILY_CHECK compares, pair by pair, the relatedness the pedigree implies
+    with somalier's (bin/family_report.py check, the rule scripts/38-family.sh
+    runs too) and stops the run on a pair that disagrees: a sample swap or a
+    wrong line in the pedigree. WhatsHap and the report wait for it.
+
+    Equivalent to: scripts/38-family.sh (its relationship check)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+process FAMILY_RELATE {
+    label 'process_single'
+
+    publishDir { "${params.outdir}/family/somalier" }, mode: params.publish_dir_mode
+
+    input:
+    val(ids)
+    path(gvcfs, stageAs: 'g?/*')
+    path(indexes, stageAs: 'i?/*')
+    path(sites)
+    path(reference)
+    path(reference_fai)
+    path(ped)
+
+    output:
+    path "family.pairs.tsv",   emit: pairs
+    path "family.samples.tsv", emit: samples
+    path "family.html",        emit: html, optional: true
+    path "versions.yml",       emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    def gl = gvcfs instanceof List ? gvcfs : [gvcfs]
+    def il = indexes instanceof List ? indexes : [indexes]
+    // Each gVCF as <id>.g.vcf.gz with its index beside it under the name
+    // htslib looks for, whatever the samplesheet called them
+    def links = [ids, gl, il].transpose().collect { p ->
+        "ln -s \"\$(readlink -f ${p[1]})\" gvcf/${p[0]}.g.vcf.gz && " +
+            "ln -s \"\$(readlink -f ${p[2]})\" gvcf/${p[0]}.g.vcf.gz.${p[2].name.endsWith('.csi') ? 'csi' : 'tbi'}"
+    }.join('\n    ')
+    """
+    mkdir gvcf extract
+    ${links}
+    for g in gvcf/*.g.vcf.gz; do
+        somalier extract -d extract --sites ${sites} -f ${reference} "\$g"
+    done
+    somalier relate --ped ${ped} -o family extract/*.somalier
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        somalier: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    printf '#sample_a\\tsample_b\\trelatedness\\tibs0\\tibs2\\tn\\n' > family.pairs.tsv
+    printf '#family_id\\tsample_id\\n' > family.samples.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        somalier: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process FAMILY_CHECK {
+    label 'process_single'
+
+    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+
+    input:
+    path(members)
+    path(pairs)
+
+    output:
+    path "relationships.tsv", emit: relationships
+    path "versions.yml",      emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    family_report.py check --members ${members} --pairs ${pairs} --out relationships.tsv
+
+    printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
+    """
+
+    stub:
+    """
+    printf 'sample_a\\tsample_b\\tdeclared\\texpected_relatedness\\trelatedness\\tibs0\\tibs0_rate\\tibs2\\tsites\\tverdict\\treason\\n' > relationships.tsv
+    printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
+    """
+}
