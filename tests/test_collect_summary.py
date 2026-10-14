@@ -42,7 +42,10 @@ Checks:
      HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
  14. a section whose step failed in the latest run says Failed, not Not
      run, in the summary and both reports, also in the CYP2D6 rows;
- 15. the CPIC card counts the genes called without a function phenotype.
+ 15. the CPIC card counts the genes called without a function phenotype;
+ 16. step 40's summary table: its counts and '--' reasons are read; a table
+     without a whole-number 'called' row is unreadable, not a zero; an
+     older table whose step was skipped in the latest run is stale.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -457,6 +460,26 @@ def main():
               and "failed (step 32)" in card_c and "FAILED: step 32 failed" in card_c, card_c)
         check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
               validate.validate(schema, json.loads(json.dumps(summ_f))))
+
+        # 16. step 40, the raw-data export
+        e_ = os.path.join(work, "export", "S")
+        put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t7\nno_call\t3\n"
+            "from_reference_blocks\t5\ntemplate_sites\t12\nfile_23andme\tS_23andme_v5.zip\n"
+            "file_ancestrydna\tS_ancestrydna_layout.zip\nno_call: no-call in the gVCF\t3\n")
+        ce = collect_summary.collect("S", e_)["sections"]["consumer_export"]
+        check("step 40: counts and reasons read", ce["state"] == "ok" and ce["step"] == "40"
+              and ce["data"].get("called") == 7 and ce["data"].get("sites") == 10
+              and ce["data"].get("no_call_reasons") == {"no-call in the gVCF": 3}, ce)
+        put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t\nno_call\t3\n")
+        ce = collect_summary.collect("S", e_)["sections"]["consumer_export"]
+        check("step 40: a table without a whole-number 'called' row is unreadable", ce["state"] == "unreadable", ce)
+        put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t7\nno_call\t3\n", age_days=2)
+        put(f"{e_}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - DAY}\nstep\t40\tskipped (opt-in: add consumer_export to TOOLS)\n")
+        summ_e = collect_summary.collect("S", e_)
+        ce = summ_e["sections"]["consumer_export"]
+        check("step 40: an older table whose step was skipped is stale", ce["state"] == "stale", ce)
+        check("step 40 summary validates", not validate.validate(schema, json.loads(json.dumps(summ_e))),
+              validate.validate(schema, json.loads(json.dumps(summ_e))))
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

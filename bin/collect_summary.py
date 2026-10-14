@@ -79,7 +79,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "37", "04b"}
+                 "27", "29", "30", "31", "32", "37", "40", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -823,6 +823,24 @@ def sec_y_haplogroup(d, s):
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
+def sec_consumer_export(d, s):
+    """Step 40's summary table (key, value): how many chip sites got a genotype."""
+    p = first_existing(d, [f"consumer_export/{s}_consumer_export.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"]: r.get("value", "") for r in read_tsv(p) if r.get("key")}
+    for k in ("sites", "called", "no_call"):
+        if not (data.get(k) or "").isdigit():
+            raise Unreadable(f"{os.path.basename(p)} has no whole-number '{k}' row")
+    return p, {"sites": int(data["sites"]), "called": int(data["called"]), "no_call": int(data["no_call"]),
+               "from_reference_blocks": int(data.get("from_reference_blocks") or 0),
+               "template_sites": data.get("template_sites") or ".",
+               "file_23andme": data.get("file_23andme") or ".",
+               "file_ancestrydna": data.get("file_ancestrydna") or ".",
+               "no_call_reasons": {k[len("no_call: "):]: int(v) for k, v in data.items()
+                                   if k.startswith("no_call: ") and v.isdigit()}}
+
+
 def sec_mito(d, s):
     p = first_existing(d, [f"mito/{s}_chrM_filtered.vcf.gz"])
     if not p:
@@ -1143,6 +1161,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),

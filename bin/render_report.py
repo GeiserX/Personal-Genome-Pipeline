@@ -316,6 +316,11 @@ def text_report(s):
         w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
         w("")
 
+    if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
+        for line in consumer_export_lines(S["consumer_export"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -453,6 +458,23 @@ def badge(text, colour):
 def done_badge(sec):
     """The Status badge of a section that ran: Complete, or Stale for a result from an earlier run."""
     return badge("Stale", "yellow") if sec["state"] == "stale" else badge("Complete", "green")
+
+
+CONSUMER_NOTE = ("These files stay on this machine. Uploading one to a service shares your genotypes with it, "
+                 "and with the relatives it matches you to: docs/40-export-consumer.md says what to weigh first.")
+
+
+def consumer_export_lines(d):
+    """Step 40's lines, the same in both reports."""
+    sites, called = d.get("sites", 0), d.get("called", 0)
+    pct = f" ({100.0 * called / sites:.1f}%)" if sites else ""
+    lines = [f"Sites with a genotype: {called} of {sites}{pct}; '--' at {d.get('no_call', 0)}",
+             f"Homozygous reference from the gVCF's reference blocks: {d.get('from_reference_blocks', 0)}",
+             f"Files: consumer_export/{d.get('file_23andme', '.')} and consumer_export/{d.get('file_ancestrydna', '.')}"]
+    reasons = d.get("no_call_reasons") or {}
+    if reasons:
+        lines.append("'--' because: " + "; ".join(f"{k} {v}" for k, v in sorted(reasons.items(), key=lambda x: -x[1])))
+    return lines + [CONSUMER_NOTE]
 
 
 def card(sec, title, body, full=False):
@@ -623,6 +645,9 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))]))
+    if S.get("consumer_export", MISSING)["state"] != "missing":
+        a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
+               [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", ".")))), small_note(TELOMERE_NOTE)]))
 
