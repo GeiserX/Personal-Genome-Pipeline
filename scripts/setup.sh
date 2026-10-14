@@ -479,11 +479,14 @@ ancestry_fine_pins() {
 # ANCESTRY_FINE_REGIONS (a BED file) keeps only those regions, and
 # ANCESTRY_FINE_EXCLUDE (sample ids) leaves people out of the panel: the e2e
 # case uses both, for the fixture's slices and the two people of its
-# synthetic mix. ANCESTRY_FINE_PAINT_PER_GROUP (default 50) caps the painting
-# references of each continental group.
+# synthetic mix. ANCESTRY_FINE_THIN (default 2kb) is the window that keeps
+# one SNV (the e2e case keeps more of its few megabases with 200bp), and
+# ANCESTRY_FINE_PAINT_PER_GROUP (default 50) caps the painting references of
+# each continental group.
 install_ancestry_fine_panel() {
   local dir=${ANCESTRY_FINE_DIR:-${GENOME_DIR}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}}
   local regions=${ANCESTRY_FINE_REGIONS:-} exclude=${ANCESTRY_FINE_EXCLUDE:-} smap=${ANCESTRY_FINE_SAMPLE_MAP:-}
+  local thin=${ANCESTRY_FINE_THIN:-2kb}
   local v c e level col k order rstamp="" pstamp mstamp tmp chroms=""
   cpath "$dir" >/dev/null || return 1
   echo "Installing the fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b) in ${dir}"
@@ -543,7 +546,7 @@ install_ancestry_fine_panel() {
 
   # panel/: redone when the pins, the regions or the people kept change; a
   # chromosome done by an interrupted run with the same inputs is kept.
-  pstamp="pins=${ANCESTRY_FINE_PANEL_SHA256} regions=${rstamp:-all} keep=$(_digest sha256 "${dir}/panel/keep.txt") bcftools=${BCFTOOLS_HTTPS_IMAGE}"
+  pstamp="pins=${ANCESTRY_FINE_PANEL_SHA256} regions=${rstamp:-all} thin=${thin} keep=$(_digest sha256 "${dir}/panel/keep.txt") bcftools=${BCFTOOLS_HTTPS_IMAGE}"
   if [ "$(cat "${dir}/panel/DONE" 2>/dev/null)" != "$pstamp" ]; then
     rm -f "${dir}/panel/DONE" "${dir}/model/DONE"
     for c in $chroms; do
@@ -553,19 +556,19 @@ install_ancestry_fine_panel() {
       # stores the remote index in the working directory, so the container
       # works in panel/ and deletes it after. bcftools warns about the files'
       # PP header line on every read; those lines go.
-      # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+      # shellcheck disable=SC2016  # $1 to $5 belong to the inner bash
       if ! run_in --net --rw "$dir" "$BCFTOOLS_HTTPS_IMAGE" bash -euo pipefail -c '
             cd "$(dirname "$3")"; trap "rm -f ./*.bcf.csi" EXIT
             r=(); [ -z "$4" ] || r=(-R "$4" --regions-overlap pos)
             { bcftools view "${r[@]}" --force-samples -S "$2" -m2 -M2 -v snps -Ou "$1" \
                 | bcftools view -q 0.05:minor -Ou \
                 | bcftools annotate -x ID,INFO,^FORMAT/GT -Ou \
-                | bcftools +prune -n 1 -w 2kb -N maxAF -Oz -o "$3.part"; } 2> >(grep -v bcf_hdr_check_sanity >&2)
+                | bcftools +prune -n 1 -w "$5" -N maxAF -Oz -o "$3.part"; } 2> >(grep -v bcf_hdr_check_sanity >&2)
             bcftools index -t "$3.part"
             mv "$3.part.tbi" "$3.tbi"; mv "$3.part" "$3"' \
             _ "${ANCESTRY_FINE_URL}/hgdp1kgp_${c}.filtered.SNV_INDEL.phased.shapeit5.bcf" \
             "$(cpath "${dir}/panel/keep.txt")" "$(cpath "${dir}/panel/${c}.vcf.gz")" \
-            "$([ -z "$rstamp" ] || cpath "${dir}/regions.bed")"; then
+            "$([ -z "$rstamp" ] || cpath "${dir}/regions.bed")" "$thin"; then
         echo "[WARN] Could not read ${c} of the panel; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
         return 1
       fi

@@ -129,7 +129,7 @@ run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
 while IFS=$'\t' read -r level k _; do
   # shellcheck disable=SC2016  # $1 to $6 belong to the inner sh
   run_in --cpus "$THREADS" --memory 4g "$ADMIXTURE_IMAGE" sh -c \
-    'cd "$1" && admixture -P -B"$4" -j"$5" "$2_$3.bed" "$6" > "$2_$3.log" 2>&1 || { tail -n 20 "$2_$3.log"; exit 1; }' \
+    'cd "$1" && b=""; [ "$4" -eq 0 ] || b="-B$4"; admixture -P $b -j"$5" "$2_$3.bed" "$6" > "$2_$3.log" 2>&1 || { tail -n 20 "$2_$3.log"; exit 1; }' \
     _ "${W}/admixture" "$SAMPLE" "$level" "$BOOT" "$THREADS" "$k" < /dev/null \
     || { echo "ERROR: ADMIXTURE failed on the ${level} level (log above)" >&2; exit 1; }
 done < "${PANEL}/model/levels.tsv"

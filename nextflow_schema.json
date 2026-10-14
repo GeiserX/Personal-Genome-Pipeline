@@ -104,7 +104,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), pypgx, SV callers, cram_archive, cyrius, parascopy, y_haplogroup (male samples)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), pypgx, SV callers, cram_archive, cyrius, parascopy, y_haplogroup (male samples)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
@@ -234,6 +234,12 @@
                     "type": "string",
                     "format": "file-path",
                     "description": "pgsc_calc's ancestry reference panel (pgsc_1000G_v1.tar.zst, installed by setup.sh --ancestry-panel with its _GRCh38_sites.tsv beside it). With it prs projects the sample onto the panel, reports each score as a percentile among the most similar population, and writes the ancestry table of step 26; without it the scores are raw sums.",
+                    "fa_icon": "fas fa-globe"
+                },
+                "ancestry_fine_panel": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Step 26b's reference: the folder setup.sh --ancestry-fine-panel writes (reference/ancestry_fine/hgdp1kgp_v2, gnomAD's phased HGDP + 1000 Genomes panel with ADMIXTURE's group frequencies). With ancestry_fine in --tools, ADMIXTURE projects the sample on the panel's groups and RFMix paints its chromosomes. ADMIXTURE and RFMix are free for academic and non-commercial use only.",
                     "fa_icon": "fas fa-globe"
                 },
                 "pgsc_calc": {

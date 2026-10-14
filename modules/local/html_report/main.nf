@@ -63,6 +63,7 @@ process HTML_REPORT {
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
             ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
+            ${id}_ancestry_fine.tsv|${id}_painting.png)   place ancestry_fine "\$f" ;;
             ${id})                                        place telomere "\$f" ;;
             ${id}_chrM_filtered.vcf.gz)                   place mito "\$f" ;;
             ${id}_hla_genotype.tsv)                       place hla_t1k "\$f" ;;
