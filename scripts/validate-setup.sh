@@ -109,8 +109,9 @@ check_bam_quickcheck() {
 # compare the REF bases of its first 1000 records with REF_FASTA. bcftools norm
 # -c x drops a record whose REF differs from the reference, so the records it
 # keeps give the count. On GRCh38 none or almost none differ; on another build
-# most do. Over 5% fails (a line drawn here, not measured). Only this script
-# runs this check: VCF_PRECHECK in the Nextflow pipeline reads the header only.
+# most do. Over 5% fails (a line drawn here, not measured). VCF_PRECHECK in
+# the Nextflow pipeline makes the same comparison when the header gives no
+# length for chr1-22, X or Y, and stops the run over 5%.
 check_vcf_ref_bases() {
   local counts n kept bad v="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
   counts=$(run_in "${BCFTOOLS_IMAGE}" sh -c "set -e
