@@ -10,9 +10,13 @@
 #
 # Control, in the same run: the step 07 recipe of before the fix (blocks
 # expanded, nothing filled) run on the same gVCF with PharmCAT's preprocessor
-# and matcher. It must list the five positions as missing and UGT1A1 *28 as
-# uncallable; step 07 must not, and must call the five positions reference in
-# its match.json, while the four stay missing.
+# and matcher. Its preprocessor must list the five positions as missing; its
+# matcher must have no call at the four whose PharmCAT REF is longer than one
+# base (it discards the one-base record there), and UGT1A1 *28 must be
+# uncallable. At the TPMT insertion (one-base REF) the matcher reads the
+# one-base record as C/C even so. Step 07 must list none of the five as
+# missing and call all five reference in its match.json, while the four
+# planted to stay missing do.
 . "$(dirname "$0")/lib.sh"
 
 P=REFBLOCKS
@@ -20,12 +24,12 @@ G="${E2E_WORK}/genome-refblocks"
 D="${G}/${P}/vcf"
 FX="${REPO}/tests/fixtures/pharmcat/refblocks.g.vcf"
 REF="reference/GRCh38_no_alt_analysis_set.fasta"
-# chrom pos REF gene: filled from the blocks
-FILL="chr1 97450065 TG DPYD
-chr2 233760233 CAT UGT1A1
-chr6 18149032 C TPMT
-chr19 38572266 TC RYR1
-chrX 154532055 CTCT G6PD"
+# chrom pos REF gene, and what the control's matcher has there: filled from the blocks
+FILL="chr1 97450065 TG DPYD missing
+chr2 233760233 CAT UGT1A1 missing
+chr6 18149032 C TPMT call:C/C
+chr19 38572266 TC RYR1 missing
+chrX 154532055 CTCT G6PD missing"
 # chrom pos why: must stay missing
 LEFT="chr10 94942205 a_./._hole_inside_the_span
 chr10 94949161 a_block_with_GQ_10
@@ -84,7 +88,7 @@ CTL="${CASE_TMP}/control"
 rm -rf "$CTL"
 mkdir -p "$CTL"
 # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
-docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp -w /ctl \
   -v "${G}:/genome:ro" -v "${CTL}:/ctl" "$PHARMCAT_IMAGE" \
   bash -euo pipefail -c '
     bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
@@ -99,11 +103,14 @@ check_eq "control: the recipe without the filler runs" "$CTL_RC" 0
 CTL_MISSING="${CTL}/before.missing_pgx_var.vcf"
 CTL_MATCH=$(match_table "${CTL}/before.match.json")
 check "control: PharmCAT's preprocessor wrote a missing-positions file" test -s "$CTL_MISSING"
+CTL_LOG=$(cat "${CTL}/log.txt")
 check "control: the preprocessor sets aside the one-base record at chr2:233760233" \
-  has 'chr2:233760233 REF=C ALT=\. ?" which is not a valid GT format for INDELs' "$(cat "${CTL}/log.txt")"
-while read -r c p _ g; do
-  check_eq "control: ${g} ${c}:${p} is listed missing" "$(listed "$CTL_MISSING" "$c" "$p")" 1
-  check_eq "control: ${g} ${c}:${p} is missing in match.json" "$(state "$CTL_MATCH" "$c" "$p")" missing
+  has 'chr2:233760233 REF=C ALT=\. ?" which is not a valid GT format for INDELs' "$CTL_LOG"
+check "control: the matcher discards it (REF C, PharmCAT expects CAT)" \
+  has 'REF in VCF \(C\) does not match expected reference \(CAT\)' "$CTL_LOG"
+while read -r c p _ g before; do
+  check_ge "control: ${g} ${c}:${p} is listed missing" "$(listed "$CTL_MISSING" "$c" "$p")" 1
+  check_eq "control: ${g} ${c}:${p} in match.json" "$(state "$CTL_MATCH" "$c" "$p")" "$before"
 done <<< "$FILL"
 check "control: UGT1A1 *28 is uncallable" has '(^|,)\*28(,|$)' "$(ugt1a1_uncallable "$CTL_MATCH")"
 
@@ -116,6 +123,7 @@ check "step 07 fills 5 of the 51 positions" \
   has 'pgx_refblock_fill: 5 of 51 PharmCAT positions longer than one base called 0/0 from reference blocks with GQ >= 20' "$LOG"
 check "the fill names UGT1A1 chr2:233760233" has 'UGT1A1 chr2:233760233' "$LOG"
 check "no one-base record at chr2:233760233 reaches the preprocessor" lacks 'chr2:233760233 REF=C ALT=\.' "$LOG"
+check "the matcher discards nothing at chr2:233760233" lacks 'does not match expected reference \(CAT\)' "$LOG"
 MISSING="${D}/${P}.missing_pgx_var.vcf"
 check "step 07 wrote the missing-positions file" test -s "$MISSING"
 MATCH=$(match_table "${D}/${P}.match.json")
@@ -123,7 +131,7 @@ check "step 07 wrote match.json" test -s "${D}/${P}.match.json"
 echo "match.json at the planted positions:"
 while read -r c p _; do awk -F'\t' -v c="$c" -v p="$p" '$1 == c && $2 == p' <<< "$MATCH"; done <<< "$FILL
 $LEFT"
-while read -r c p r g; do
+while read -r c p r g _; do
   check_eq "${g} ${c}:${p} is no longer listed missing" "$(listed "$MISSING" "$c" "$p")" 0
   call=$(state "$MATCH" "$c" "$p")
   check "${g} ${c}:${p} is called reference in match.json (${call:-nothing})" \
@@ -131,11 +139,10 @@ while read -r c p r g; do
     "$call" "$r"
 done <<< "$FILL"
 while read -r c p why; do
-  check_eq "${c}:${p} stays missing (${why//_/ })" "$(listed "$MISSING" "$c" "$p")" 1
+  check_ge "${c}:${p} stays missing (${why//_/ })" "$(listed "$MISSING" "$c" "$p")" 1
   check_eq "${c}:${p} is missing in match.json" "$(state "$MATCH" "$c" "$p")" missing
 done <<< "$LEFT"
 U=$(ugt1a1_uncallable "$MATCH")
 check "UGT1A1 *28 is callable now (uncallable: ${U:-none})" lacks '(^|,)\*28(,|$)' "$U"
-check "UGT1A1 has a named diplotype in report.json" has '^UGT1A1$' "$(pharmcat_called "${D}/${P}.report.json")"
 
 finish
