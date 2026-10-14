@@ -150,6 +150,7 @@ When the run starts from an existing VCF, the pipeline does not read a gVCF besi
 | `EH_CATALOG=file` | another ExpansionHunter catalog; by default the one inside the ExpansionHunter image, copied once to `reference/expansionhunter_variant_catalog.json` | `--expansion_catalog` |
 | `MANTA_CALL_REGIONS=file` | a bgzipped BED of the regions Manta calls | `--manta_call_regions` |
 | `ANCESTRY_PANEL=file`, `PGSC_CALC_DIR=dir` | another ancestry panel (step 26 and the percentiles of step 25), another pgsc_calc checkout; both are passed when `setup.sh` installed them, and `ANCESTRY_PANEL=none` scores without the panel | `--ancestry_ref`, `--pgsc_calc` |
+| `ANCESTRY_FINE_DIR=dir` | another fine-grained ancestry panel (step 26b); passed when `setup.sh --ancestry-fine-panel` installed it, and `ANCESTRY_FINE_DIR=none` skips the step | `--ancestry_fine_panel` |
 | `GRIDSS=true`, `IMPUTATION=true`, `SOMATIC=true` | run steps 4b, 14 and 29 as scripts after the pipeline | |
 | `EXTRA_CALLERS=gatk,freebayes,strelka2,octopus` | run the alternative callers 3a to 3d after the pipeline | |
 | `BENCHMARK=true` | runs `benchmark-variants.sh` after them; it needs `EXTRA_CALLERS` or a second caller's VCF from an earlier 3a-3d run, and is skipped without one | |

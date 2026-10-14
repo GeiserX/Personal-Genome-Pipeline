@@ -59,11 +59,12 @@ output_has run-all 'NOTE: starting from the existing VCF, with no gVCF with its 
 # Exact counts: a step that turns from run into skipped, or back, fails here.
 # Skipped: VEP, CPSR, CNVpytor, AnnotSV, pypgx, HLA and PRS (data not
 # installed), vcfanno, clinical filter and slivar (need VEP), ancestry (needs
-# PRS), and Cyrius, Parascopy and the Y haplogroup (opt-in: only with TOOLS
-# naming them).
+# PRS), fine-grained ancestry (its panel not installed), and Cyrius, Parascopy
+# and the Y haplogroup (opt-in: only with TOOLS naming them).
 [ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
-[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 14 ] || fail "not 14 steps skipped"
+[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps skipped"
 output_has run-all '^  26 Ancestry \(pgsc_calc\) +skipped +\(needs PRS\)$'
+output_has run-all '^  26b Fine-grained ancestry +skipped +\(data not installed: reference/ancestry_fine/hgdp1kgp_v2/model/DONE\)$'
 output_has run-all '^  37 Y haplogroup \(Yleaf\) +skipped +\(opt-in: add y_haplogroup to TOOLS\)$'
 output_has run-all '^  21 Cyrius CYP2D6 +skipped +\(opt-in: add cyrius to TOOLS\)$'
 output_has run-all '^  35 Parascopy SMN1/SMN2 +skipped +\(opt-in: add parascopy to TOOLS\)$'

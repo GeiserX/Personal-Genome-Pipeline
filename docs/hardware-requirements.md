@@ -63,6 +63,7 @@ While a VEP cache installs, the tarball and the unpacked tree are on disk togeth
 
 | Resource | Download | Used by |
 |---|---|---|
+| Fine-grained ancestry panel (gnomAD HGDP + 1000 Genomes, phased) | ~19 GB read, a few GB kept | step 26b, `setup.sh --ancestry-fine-panel` |
 | T1K HLA index (built from IPD-IMGT/HLA) | ~0.05 GB | step 8, built on first run |
 | CNVpytor GC/mask files | ~0.09 GB | step 18 |
 | pypgx bundle | ~0.4 GB | step 32 |
@@ -214,6 +215,7 @@ A step the end test did not run says "not measured"; where it shows a time, that
 | 24 HTML report | not measured (estimate ~1-3 min) | | | `run-all.sh` runs it after the pipeline, outside the trace |
 | 25 PRS | 54 min - 1 h 17 min per sample, plus 6-11 min once per run | see notes | | genotyping the score positions 21-31 min (1.1 GB), then pgsc_calc 33-51 min with 24 GB granted ([its tasks' memory](25-prs.md#memory)); preparing the scoring files 6-11 min, 11.3-12 GB, once per run |
 | 26 Ancestry (opt-in) | not measured on a genome | | | [step 25's panel numbers](25-prs.md#the-reference-panel-on-a-github-hosted-runner) were measured on a test target |
+| 26b Fine-grained ancestry (opt-in) | not measured on a genome | | | measured in CI on a reduced panel: 1 min 19 s for the fractions and one painted chromosome ([step 26b](26b-ancestry-fine.md#runtime)) |
 | 27 CPIC lookup | 3-5 s | | | |
 | 28 MultiQC | about 3 s | 0.1-0.2 GB | | |
 | 29 Somatic (opt-in) | not measured (estimate ~2-6 h) | | | under 5 min on a few genes with `INTERVALS` (estimate) |

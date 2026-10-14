@@ -461,3 +461,27 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** to stop pgsc_calc retrying `FORMAT_SCOREFILES` under the same memory cap, the PRS steps first gave it `maxRetries = 0`. The Nextflow CI stand-in for pgsc_calc, which exits 2 on any attempt after the first, showed pgsc_calc retried it anyway.
 - **Why:** Nextflow 26.04.7, and still 26.10.0, reads `maxRetries` as `result ? result as int : 1` (`TaskConfig.getMaxRetries`). Zero is false in Groovy, so `maxRetries = 0` means one retry.
 - **Fix:** the PRS steps set `errorStrategy = 'finish'` on `FORMAT_SCOREFILES`, which never retries. To turn retries off for a process, set its `errorStrategy`, not `maxRetries`.
+
+## Fine-grained ancestry (2026-10)
+
+### ADMIXTURE's bootstrap crashes when it is combined with projection
+- **Failed:** `admixture -P -B100 sample.bed 6` printed `Bootstrap replicate #0` and died with a segmentation fault, on the 1.3.0 BioContainer, on every input we tried: a planted person, a real one, 235 SNVs and 1,003 SNVs.
+- **Why:** not investigated beyond the crash; 1.3.0 is the last release (2015) and the only BioContainer.
+- **Fix:** step 26b runs its own block bootstrap. `bin/ancestry_fine_report.py sample-bed` writes `run_admixture.sh`, which projects the sample once per level, then for each replicate draws 100 blocks of neighbouring SNVs with replacement (awk, seeded by the replicate number), writes them as a PLINK `.ped` with the matching rows of the frequency file, and projects that. 100 replicates of 1,003 SNVs take about a second in total.
+
+### ADMIXTURE reads a `.ped` the other way round from a `.bed`
+- **Failed:** the same genotypes projected as a `.bed` and as a `.ped` gave different fractions (0.96 against 0.46 for the largest group).
+- **Why:** in PLINK's "12" coding, allele 2 is the `.bim`'s A1 (what plink2 wrote as the ALT allele here), not allele 1. Writing homozygous-ALT as `1 1` mirrors every genotype.
+- **Fix:** `PED_ALLELES` in `bin/ancestry_fine_report.py` maps the `.bed` codes to `2 2`, `1 2` and `1 1`, and `tests/test_ancestry_fine_report.py` checks both encodings of the same three genotypes.
+
+### ADMIXTURE stops on a SNV with no genotype, which for one person is every missing site
+- **Failed:** `admixture -P` exited 255 with `detected that all genotypes are missing for a SNP locus`.
+- **Fix:** the sample's input holds only the SNVs it has a genotype for, and each level's `.P.in` is cut to the same rows, so the frequencies still line up.
+
+### RFMix dies with a segmentation fault on a short chromosome
+- **Failed:** RFMix 2.03 printed `mm::allocate() ... requesting zero or negative size (0)` at `setup_ref_haplotypes()` and segfaulted on the fixture's slices (0.1 to 2.7 cM each), while the same command on chr6:29.9-33.1 Mb and on chr22:20-35 Mb ran to the end.
+- **Fix:** the step paints a chromosome only with 100 genotyped SNVs or more spanning 5 cM or more (`bin/ancestry_fine_report.py chroms`, from the panel's genetic map). Every autosome of a whole genome spans more than 40 cM; on a slice panel the step says it painted nothing instead of crashing.
+
+### htslib writes a remote index into the working directory
+- **Failed:** `bcftools view https://.../hgdp1kgp_chr1...bcf` inside the container could not create `hgdp1kgp_chr1....bcf.csi` in its working directory, so it could not read the index and failed.
+- **Fix:** the install runs that command with the writable panel folder as its working directory and deletes the downloaded `.csi` files when it ends.

@@ -184,6 +184,7 @@ results/
 │   ├── roh/                # Runs of homozygosity
 │   ├── prs/                # Polygenic risk scores
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
+│   ├── ancestry_fine/      # Fine-grained ancestry: fractions, painting BED and PNG (opt-in: ancestry_fine)
 │   ├── mito/               # Mitochondrial variant calls, the haplogroup from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── hla/                # HLA typing
@@ -321,6 +322,7 @@ Several tools require large reference databases that are **not automatically dow
 | `--gnomad_constraint` | Slivar gene constraint | ~95 MB |
 | `--pgs_scoring` | Polygenic risk scores | ~400 MB (`setup.sh` fills `<genome_dir>/prs_scores`) |
 | `--ancestry_ref` | PRS percentiles and ancestry (step 26) | ~7 GB (`setup.sh --ancestry-panel`) |
+| `--ancestry_fine_panel` | Fine-grained ancestry (step 26b, `ancestry_fine`) | the folder `setup.sh --ancestry-fine-panel` writes |
 
 Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunter, HLA typing, pypgx, AnnotSV, CNVpytor) will **fail at startup** if enabled in `--tools` without their required parameters. vcfanno and prs are in the default tools but are skipped, with a warning, until a score file or `--pgs_scoring` is set. The gnomAD constraint table is optional for slivar; when it is set and no gene matches it, the task fails.
 

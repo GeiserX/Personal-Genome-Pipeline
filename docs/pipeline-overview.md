@@ -11,7 +11,7 @@
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at the 31 loci of ExpansionHunter's bundled catalog | 9, 9b |
-| **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel | 11, 12, 26, 37 |
+| **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel, admixture fractions and a chromosome painting against an 80-population panel (opt-in) | 11, 12, 26, 26b, 37 |
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
 | **Polygenic Risk** | Scores for 9 common conditions (CAD, T2D, cancers, etc.) with pgsc_calc; a percentile among the most similar ancestry group with the panel installed | 25 |
@@ -133,6 +133,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 24 | [HTML Report](24-html-report.md) | bash + bcftools | `BCFTOOLS_IMAGE` | Recommended |
 | 25 | [Polygenic Risk Scores](25-prs.md) | pgsc_calc | `PGSC_UTILS_IMAGE`, `PLINK2_IMAGE` | Exploratory; percentiles need the ancestry panel |
 | 26 | [Ancestry](26-ancestry.md) | pgsc_calc | `PGSC_FRAPOSA_IMAGE`, `PGSC_UTILS_IMAGE` | After `setup.sh --ancestry-panel` (runs inside step 25) |
+| 26b | [Fine-Grained Ancestry](26b-ancestry-fine.md) | ADMIXTURE, Beagle, RFMix | `ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE` | Opt-in, after `setup.sh --ancestry-fine-panel` (academic and non-commercial licences) |
 | 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `PYTHON_IMAGE` | If step 7 run |
 | 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `MULTIQC_IMAGE` | Recommended |
 | 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `GATK_IMAGE` | Experimental, opt-in (`SOMATIC=true`) |
@@ -147,7 +148,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 ### What a default run covers
 
-A default `./scripts/run-all.sh <sample> <sex>` runs **32 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32 and 36. Steps 5, 8, 13, 17, 18 and 32 are reported as skipped when their data is not installed, 25 when no score file is, 26 (inside the PRS run of step 25) when the ancestry panel is not, 23, 30 and 31 when step 13 did not run, and 36 (inside the PharmCAT stage) runs when step 8 or 32 did. It ends with the summary report (`generate-report.sh`).
+A default `./scripts/run-all.sh <sample> <sex>` runs **33 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 22, 23, 24, 25, 26, 26b, 27, 28, 30, 31, 32 and 36. Steps 5, 8, 13, 17, 18 and 32 are reported as skipped when their data is not installed, 25 when no score file is, 26 (inside the PRS run of step 25) when the ancestry panel is not, 26b when its panel (`setup.sh --ancestry-fine-panel`) is not, 23, 30 and 31 when step 13 did not run, and 36 (inside the PharmCAT stage) runs when step 8 or 32 did. It ends with the summary report (`generate-report.sh`).
 
 Off unless you ask for them: 21 (`TOOLS=...,cyrius`, after `setup.sh --cyrius`), 35 (`TOOLS=...,parascopy`, after `setup.sh --parascopy-data`), KIR typing in step 8 (`KIR=true`, after `setup.sh --kir-data`), 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 29 (`SOMATIC=true`), 37 (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`, male samples), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
 
