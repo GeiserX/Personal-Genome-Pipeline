@@ -79,7 +79,9 @@ NORMAL_WORDS = {"normal", "typical", "extensive"}
 # to spaces. Anything else PharmCAT writes for a called gene (n/a, 'no
 # phenotype assigned', the reference genotype VKORC1 '-1639 GG', 'Uncertain
 # Susceptibility', 'Indeterminate') names no changed function: the gene is
-# 'unclassified', not counted and given no drug guidance.
+# 'unclassified', not counted and given no drug guidance. One exception: a
+# gene left 'Indeterminate' at gene level whose drug annotations all give it
+# one phenotype takes that one, with a note (drug_level_phenotype()).
 NON_NORMAL_PATTERNS = [re.compile(p) for p in (
     r"((likely|possible) )?(poor|intermediate|rapid|ultra ?rapid) metabolizer",
     r"((likely|possible) )?(decreased|increased|poor|no) function",
@@ -108,6 +110,12 @@ class GeneCall:
         self.called = called
         self.labels = labels or [diplotype]
         self.phenotypes = phenotypes or [phenotype]
+        self.note = None  # where the phenotype came from, when not the gene level
+
+    @property
+    def shown(self):
+        """The phenotype as the table and the text show it, with its note."""
+        return f"{self.phenotype} [{self.note}]" if self.note else self.phenotype
 
     @property
     def ambiguous(self):
@@ -129,7 +137,7 @@ class GeneCall:
         return "unclassified"
 
     def row(self):
-        return (self.gene, self.diplotype, self.phenotype, self.status)
+        return (self.gene, self.diplotype, self.shown, self.status)
 
 
 def is_normal(phenotype):
@@ -345,6 +353,25 @@ def drug_lines(call, guidance, related):
             "see the PharmCAT HTML report."]
 
 
+INDETERMINATE_NOTE = "gene level Indeterminate; phenotype from PharmCAT's drug annotations"
+
+
+def drug_level_phenotype(call, guidance):
+    """The phenotype PharmCAT's drug annotations give a called gene whose
+    only gene-level phenotype is 'Indeterminate', when they all give the same
+    one; else None. PharmCAT can leave a gene Indeterminate at gene level
+    while the annotations of its drugs assign it a phenotype; without this the
+    two levels of the same report disagree. Annotations for the called
+    diplotype are used when there are any, else every annotation of the gene."""
+    if not call.called or call.ambiguous or call.phenotype.strip().lower() != "indeterminate":
+        return None
+    entries = guidance.get(call.gene) or []
+    entries = [e for e in entries if call.labels[0] in e[4]] or entries
+    names = {e[5].strip() for e in entries if e[5].strip()}
+    names = {n for n in names if n.lower() not in ("indeterminate", "no result", "n/a")}
+    return names.pop() if len(names) == 1 else None
+
+
 # --- pypgx ---------------------------------------------------------------------
 
 def read_pypgx(path):
@@ -534,6 +561,10 @@ def cpic_report(args):
                   file=sys.stderr)
     held_back = {r["Gene"] for r in consensus if r.get("Outside_call") != "yes"}
     stale = unconfirm_outside(calls, consensus) if args.consensus else []
+    for c in calls:
+        p = drug_level_phenotype(c, guidance)
+        if p:
+            c.phenotype, c.note = p, INDETERMINATE_NOTE
     pypgx = {}
     pypgx_error = None
     if args.pypgx:
@@ -562,12 +593,12 @@ def cpic_report(args):
         "-" * 72,
         f"{'Gene':<12} {'Diplotype':<30} Phenotype",
     ]
-    lines += [f"{c.gene:<12} {c.diplotype:<30} {c.phenotype}"
+    lines += [f"{c.gene:<12} {c.diplotype:<30} {c.shown}"
               + ("  [outside call]" if c.source == "OUTSIDE" else "") for c in calls]
     lines += ["", "Affected Medications:", "-" * 72, ""]
     listed = [c for c in calls if c.status == "non-normal"]
     for c in listed:
-        lines.append(f"  {c.gene} -- {c.phenotype}:")
+        lines.append(f"  {c.gene} -- {c.shown}:")
         lines.append(f"    Diplotype: {c.diplotype}")
         lines += drug_lines(c, guidance, related)
         lines.append("    Action: Consult CPIC guidelines at https://cpicpgx.org/guidelines/")
@@ -588,7 +619,7 @@ def cpic_report(args):
     if unclassified:
         lines += ["Called Genes Without a Function Phenotype:", "-" * 72, ""]
         for c in unclassified:
-            lines.append(f"  {c.gene} -- {c.phenotype} ({c.diplotype})")
+            lines.append(f"  {c.gene} -- {c.shown} ({c.diplotype})")
         lines += ["  PharmCAT called these genes but its phenotype (n/a, a reference genotype,",
                   "  'no phenotype assigned', an uncertain result) names no changed function, so",
                   "  they are not counted as non-normal and get no drug list here. A variant allele",
