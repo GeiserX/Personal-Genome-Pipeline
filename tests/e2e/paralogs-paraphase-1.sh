@@ -20,7 +20,9 @@
 #      between the two homologous HBA "A" boxes (chr16:169,742 and its copy at
 #      173,999) are cut out and the reads aligned again. Paraphase must then
 #      name the 4.2 kb deletion, report one HBA2 copy fewer than on the
-#      unchanged slice, and the same HBA1;
+#      unchanged slice, and the same HBA1. A red control swaps the HBA1 and
+#      HBA2 labels in that JSON, as swapped regions in the config would, and
+#      the HBA2 check must then fail;
 #   4. Nextflow on a HiFi row and an Illumina row: the check fails on the
 #      Illumina row, the run goes on, and the HiFi row gets the same HBA rows
 #      as the bash step and a report card.
@@ -207,6 +209,17 @@ check "the unchanged slice has no 4.2 kb deletion" lacks '4.2 kb deletion' "$(ts
 check_eq "one HBA2 copy lost (unchanged slice: ${HBA2_BASE:-none})" "$(tsv "$QCN" hba HBA2 copy_number)" \
   "$([[ "${HBA2_BASE:-}" =~ ^[0-9]+$ ]] && echo $((HBA2_BASE - 1)) || echo 'a number')"
 check_eq "HBA1 as on the unchanged slice" "$(tsv "$QCN" hba HBA1 copy_number)" "${HBA1_BASE:-none}"
+# Red control: the HBA1 and HBA2 regions swapped in Paraphase's config label
+# each HBA1 haplotype hba2hap and each HBA2 one hba1hap. The same JSON with the
+# two labels swapped must then fail the "one HBA2 copy lost" check above.
+SWJ="${CASE_TMP}/swapped.paraphase.json"
+sed -e 's/hba1hap/hbaXhap/g' -e 's/hba2hap/hba1hap/g' -e 's/hbaXhap/hba2hap/g' \
+  "${GENOME_DIR}/${Q}/paralogs/${Q}_paraphase/${Q}.paraphase.json" > "$SWJ"
+python3 "${REPO}/bin/paraphase_report.py" table --sample "$Q" --json "$SWJ" \
+  --out-cn "${CASE_TMP}/swapped_cn.tsv" --out-variants "${CASE_TMP}/swapped_variants.tsv" >/dev/null
+SW_HBA2=$(tsv "${CASE_TMP}/swapped_cn.tsv" hba HBA2 copy_number)
+check "control: with HBA1 and HBA2 swapped the HBA2 check goes red (HBA2 ${SW_HBA2:-none}, the check wants $([[ "${HBA2_BASE:-}" =~ ^[0-9]+$ ]] && echo $((HBA2_BASE - 1))))" \
+  test -n "$SW_HBA2" -a "$SW_HBA2" != "$([[ "${HBA2_BASE:-}" =~ ^[0-9]+$ ]] && echo $((HBA2_BASE - 1)) || echo 'a number')"
 
 # --- 4. The same in Nextflow: a HiFi row and an Illumina row ------------------
 # PARAPHASE_CHECK fails on the Illumina row and is ignored (report-only), the
