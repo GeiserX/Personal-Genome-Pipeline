@@ -50,13 +50,14 @@
     reference setup.sh installs (NCBI's no-ALT analysis set), the same for
     every GRCh38 build. A header that gives no length for chr1-22, X or Y
     (no ##contig lines, or lines without lengths) cannot show the build, so
-    the REF bases of its first 1000 records on the reference's contigs are
-    compared with the reference, as validate-setup.sh does: bcftools norm
-    -c x drops a record whose REF differs, and the records it keeps give the
-    count. On GRCh38 none or almost none differ; on another build most do.
-    More than 5% different stops here, naming the count and the rate (a
-    line drawn, not measured). When bcftools norm cannot compare, the task
-    log says so and the run goes on.
+    the REF bases of its first 1000 records (less any on a contig the
+    reference lacks) are compared with the reference, as validate-setup.sh
+    does: bcftools norm -c x drops a record whose REF differs, and the
+    records it keeps give the count. On GRCh38 none or almost none differ;
+    on another build most do. More than 5% different stops here, naming the
+    count and the rate (a line drawn, not measured). When no record is left
+    to compare, or bcftools norm fails, the task log says so and the run
+    goes on.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -154,13 +155,14 @@ process VCF_PRECHECK {
     fi
 
     # Build, when the header gives no length for chr1-22, X or Y: compare the
-    # REF bases of the first 1000 records on the reference's contigs with the
-    # reference. The spot VCF declares the reference's contigs, which
-    # bcftools norm needs to write a record. (|| true: awk stops reading
-    # after 1000 records, and bcftools view then dies of SIGPIPE.)
+    # REF bases of the first 1000 records with the reference, leaving out
+    # those on a contig the reference lacks (bcftools norm stops on one).
+    # bcftools head stops reading by itself, so nothing dies of SIGPIPE. The
+    # spot VCF declares the reference's contigs, which bcftools norm needs to
+    # write a record.
     if [ "\$(cat build_lengths.txt)" -eq 0 ]; then
-        (bcftools view -H ${vcf} 2>/dev/null || true) \\
-            | awk -F'\\t' 'NR == FNR { ref[\$1] = 1; next } (\$1 in ref) { print; if (++n == 1000) exit }' ${reference_fai} - \\
+        bcftools head -h 0 -n 1000 ${vcf} \\
+            | awk -F'\\t' 'NR == FNR { ref[\$1] = 1; next } (\$1 in ref)' ${reference_fai} - \\
             > spot_records.txt
         awk -F'\\t' 'NR == FNR { c = c "##contig=<ID=" \$1 ",length=" \$2 ">\\n"; next }
                      /^##contig=/ { next } /^#CHROM/ { printf "%s", c } { print }' ${reference_fai} header.txt > spot.vcf
@@ -171,7 +173,7 @@ process VCF_PRECHECK {
         elif bcftools norm -c x -f ${reference} -o spot_kept.vcf spot.vcf 2> spot_norm.log; then
             N_KEPT=\$(grep -vc '^#' spot_kept.vcf || true)
             N_DIFF=\$((N_SPOT - N_KEPT))
-            PCT=\$((N_DIFF * 100 / N_SPOT))
+            PCT=\$(awk -v d="\${N_DIFF}" -v n="\${N_SPOT}" 'BEGIN { printf "%.1f", 100 * d / n }')
             echo "${meta.id}: the header gives no contig lengths; REF bases differ from the reference in \${N_DIFF} of the first \${N_SPOT} records (\${PCT}%)"
             if [ \$((N_DIFF * 20)) -gt "\${N_SPOT}" ]; then
                 {

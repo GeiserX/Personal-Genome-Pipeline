@@ -24,7 +24,7 @@ Before any analysis, `VCF_PRECHECK` reads each VCF once. It stops the run, namin
 
 What the check cannot catch:
 
-- **The build, when the REF bases cannot be compared.** Without `##contig` lengths the build is read from the REF bases of the first 1000 records on the reference's contigs. When no record is on one of them, or `bcftools norm` fails, nothing is compared and the run goes on; the task log of `VCF_PRECHECK` says so. Check the build yourself then: [Genome Build](vendor-guide.md#genome-build-grch37-hg19-vs-grch38-hg38).
+- **The build, when the REF bases cannot be compared.** Without `##contig` lengths the build is read from the REF bases of the first 1000 records, less any on a contig the reference lacks. When none is left, or `bcftools norm` fails, nothing is compared and the run goes on; the task log of `VCF_PRECHECK` says so. Check the build yourself then: [Genome Build](vendor-guide.md#genome-build-grch37-hg19-vs-grch38-hg38).
 - **Unplaced scaffolds.** Records on contigs outside the 25 main ones (`GL000195.1`, `KI270706.1`) keep their names after the rename. The ClinVar screen leaves out records on contigs that ClinVar or the reference lacks and says how many. Nothing else reads them.
 
 `run-all.sh` starts this pipeline, so it runs the check too. The numbered scripts need the same chr-named, variants-only file and do not run it: fix the file first.

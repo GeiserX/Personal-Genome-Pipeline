@@ -40,7 +40,7 @@ check "GRCh37 without contig lengths: the run fails" test "$NF_RC" -ne 0
 check "GRCh37 without contig lengths: the message names the sample and the build" \
   has "Sample '${SAMPLE}': ${SAMPLE}\.vcf\.gz is not on GRCh38\. Its header gives no contig lengths" "$LOG"
 check "GRCh37 without contig lengths: the message gives the count and the rate" \
-  has 'they differ in 45 of the first 60 records \(75%\)' "$LOG"
+  has 'they differ in 45 of the first 60 records \(75\.0%\)' "$LOG"
 check "GRCh37 without contig lengths: the message says what to do" has 'start from the FASTQ' "$LOG"
 check "GRCh37 without contig lengths: no analysis task started" only_precheck
 check "GRCh37 without contig lengths: no ROH file published" test ! -e "${NF_OUT}/${SAMPLE}/roh"
@@ -69,6 +69,6 @@ TASK_OUT=$(grep -rl --include=.command.out "^${SAMPLE}: the header gives no cont
   "${E2E_WORK}/nf-work-intake" 2>/dev/null | xargs -r grep -h "REF bases differ" | sort -u)
 echo "    VCF_PRECHECK said: ${TASK_OUT}"
 check "GRCh38 without contig lengths: VCF_PRECHECK compared ${WANT} records and none differ" \
-  has "REF bases differ from the reference in 0 of the first ${WANT} records \(0%\)" "$TASK_OUT"
+  has "REF bases differ from the reference in 0 of the first ${WANT} records \(0\.0%\)" "$TASK_OUT"
 
 finish

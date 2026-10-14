@@ -76,8 +76,10 @@ case "$1 ${2:-}" in
     gzip -dc "$3" | awk -F'\t' '!/^#/ { n[$1]++ } END { for (c in n) printf "%s\t.\t%d\n", c, n[c] }' ;;
   "view -h")
     gzip -dc "$3" | grep '^#' ;;
-  "view -H")
-    gzip -dc "$3" | grep -v '^#' ;;
+  "head -h")
+    # head -h 0 -n N FILE: the first N records, no header
+    [ "$3 $4" = "0 -n" ] || { echo "fake bcftools: unexpected head call: $*" >&2; exit 2; }
+    gzip -dc "$6" | grep -v '^#' | head -n "$5" ;;
   "norm -c")
     # norm -c x -f REF -o OUT IN: keep the records whose REF is the reference's
     # bases there. Like the real one it fails on a record whose contig the
@@ -228,7 +230,7 @@ fi
 grep -v '^##contig' "${FIX}/one_sample.vcf" > "${WORK}/nocontig.vcf"
 run_precheck "${WORK}/nocontig.vcf"
 if [ "$RC" -eq 0 ] && ! grep -q 'not on GRCh38' <<<"$OUT" \
-   && grep -q 'REF bases differ from the reference in 0 of the first 3 records (0%)' <<<"$OUT"; then
+   && grep -q 'REF bases differ from the reference in 0 of the first 3 records (0.0%)' <<<"$OUT"; then
   pass "VCF_PRECHECK spot-checks a header without ##contig lines and lets matching REF bases through"
 else
   fail "VCF_PRECHECK on a header without ##contig lines: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
@@ -249,24 +251,32 @@ spot_vcf() {
 spot_vcf "${WORK}/spot_all.vcf" 0 20
 run_precheck "${WORK}/spot_all.vcf"
 if [ "$RC" -ne 0 ] && grep -q "Sample 'S1': input.vcf.gz is not on GRCh38. Its header gives no contig lengths" <<<"$OUT" \
-   && grep -q 'they differ in 20 of the first 20 records (100%)' <<<"$OUT" \
+   && grep -q 'they differ in 20 of the first 20 records (100.0%)' <<<"$OUT" \
    && grep -q 'start from the FASTQ' <<<"$OUT" && ! grep -q 'FILTER counts' <<<"$OUT"; then
   pass "VCF_PRECHECK stops a header without contig lengths whose REF bases are not the reference's"
 else
   fail "VCF_PRECHECK on REF bases all different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
 
-# The line is validate-setup.sh's: 1 of 20 (5%) goes on, 2 of 20 (10%) stops.
+# The line is validate-setup.sh's: 1 of 20 (5%) goes on; 1 of 19 (5.3%) and
+# 2 of 20 (10%) stop, and the rate printed is above 5.
 spot_vcf "${WORK}/spot_5.vcf" 19 1
 run_precheck "${WORK}/spot_5.vcf"
-if [ "$RC" -eq 0 ] && grep -q 'REF bases differ from the reference in 1 of the first 20 records (5%)' <<<"$OUT"; then
+if [ "$RC" -eq 0 ] && grep -q 'REF bases differ from the reference in 1 of the first 20 records (5.0%)' <<<"$OUT"; then
   pass "VCF_PRECHECK lets 5% different REF bases through"
 else
   fail "VCF_PRECHECK on 1 of 20 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
+spot_vcf "${WORK}/spot_19.vcf" 18 1
+run_precheck "${WORK}/spot_19.vcf"
+if [ "$RC" -ne 0 ] && grep -q 'they differ in 1 of the first 19 records (5.3%)' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops at 1 of 19 different REF bases, and prints 5.3%"
+else
+  fail "VCF_PRECHECK on 1 of 19 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
 spot_vcf "${WORK}/spot_10.vcf" 18 2
 run_precheck "${WORK}/spot_10.vcf"
-if [ "$RC" -ne 0 ] && grep -q 'they differ in 2 of the first 20 records (10%)' <<<"$OUT"; then
+if [ "$RC" -ne 0 ] && grep -q 'they differ in 2 of the first 20 records (10.0%)' <<<"$OUT"; then
   pass "VCF_PRECHECK stops at 10% different REF bases"
 else
   fail "VCF_PRECHECK on 2 of 20 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
