@@ -2,6 +2,8 @@
 
 > **OPT-IN:** a default run leaves this step out. Run it by name (`TOOLS=...,parascopy` for `run-all.sh`, `--tools ...,parascopy` for Nextflow) after installing its data once with `./scripts/setup.sh --parascopy-data ${GENOME_DIR}`.
 
+> **PacBio HiFi reads?** [Step 35b](#step-35b-paralog-genes-from-pacbio-hifi-reads-paraphase) below runs Paraphase, which also covers HBA1/HBA2, CYP21A2, GBA1, PMS2, STRC, NCF1 and OTOA. It does not run on short reads.
+
 ## What This Does
 
 Estimates how many copies of SMN1 and SMN2 the genome carries, from the short-read BAM, with [Parascopy](https://github.com/tprodanov/parascopy). For each stretch of the SMN1/SMN2 locus it reports the aggregate copy number of the two genes together (agCN) and, where the few sequence differences between them allow, the copy number of each (psCN), each with a quality.
@@ -80,7 +82,7 @@ Not measured here; the end test does not run this step. An estimate is a few min
 ## What Is and Is Not Assessed
 
 - **Assessed:** the copy number of SMN1 and SMN2, together and, where possible, each.
-- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, and CYP21A2 and HBA1/HBA2, for which it has none. SMN1/SMN2 comes first; the others are not wired in yet.
+- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, and CYP21A2 and HBA1/HBA2, for which it has none. SMN1/SMN2 comes first; the others are not wired in yet for short reads. A PacBio HiFi BAM gets them from step 35b.
 
 ## Notes
 
@@ -93,3 +95,97 @@ Not measured here; the end test does not run this step. An estimate is a few min
 - [Parascopy](https://github.com/tprodanov/parascopy)
 - [Prodanov and Bansal 2022](https://doi.org/10.1038/s41467-022-30930-3)
 - [Parascopy precomputed data (Zenodo)](https://zenodo.org/records/15019940)
+
+## Step 35b: Paralog Genes from PacBio HiFi Reads (Paraphase)
+
+> **OPT-IN, PacBio HiFi only:** a default run leaves this step out. Run it by name (`TOOLS=...,paraphase` for `run-all.sh`, `--tools ...,paraphase` for Nextflow) on a BAM of PacBio HiFi reads. It has no data to install.
+
+### What This Does
+
+For a PacBio HiFi BAM, [Paraphase](https://github.com/PacificBiosciences/paraphase) gathers the reads of each family of near-identical genes, phases them into haplotypes (one per gene copy), and calls each gene's copy number and the variants each copy carries. It covers 162 GRCh38 regions. The report shows these genes one by one:
+
+| Gene | Why it matters | What the row says |
+|---|---|---|
+| SMN1, SMN2 | spinal muscular atrophy | copies of SMN1, of SMN2, and of SMN with exons 7-8 deleted |
+| HBA1, HBA2 | alpha-thalassaemia | copies of each gene, the genotype (`aa/aa`, `-a/aa`, `--/aa`...), and the 3.7 kb and 4.2 kb deletions or duplications by name |
+| CYP21A2 | congenital adrenal hyperplasia | copies of the RCCX module (each holds CYP21A2 or its pseudogene CYP21A1P), and Paraphase's annotation of each CYP21A2 allele |
+| GBA1 | Gaucher disease, Parkinson's risk | copies of GBA1, apart from GBAP1 |
+| PMS2 | Lynch syndrome | copies of PMS2, apart from PMS2CL |
+| STRC | hearing loss | copies of STRC, apart from STRCP1 |
+| NCF1 | chronic granulomatous disease | copies of NCF1, apart from NCF1B and NCF1C |
+| OTOA | hearing loss | copies of the OTOA family |
+
+Every other region gets one row with its copy number.
+
+### Why Only PacBio HiFi
+
+Paraphase is written for HiFi reads: a read of 10 kb or more spans the few differences between the copies, so the copies can be told apart. Short reads cannot do that, which is why step 35 uses Parascopy. Its licence (the PacBio Software License Agreement, from Paraphase 3.3.0 on) also allows it only on data from a PacBio instrument. So the step reads the BAM header first and stops unless every read group says `PL:PACBIO`. Step 02b with `PLATFORM=hifi` writes such a BAM, as PacBio's pbmm2 does.
+
+On a short-read genome these genes stay where step 35 leaves them: SMN1 and SMN2 from Parascopy, the others not assessed.
+
+### Tool
+
+- **Paraphase** 4.1.0 (Chen et al., Nature Communications 2025), PacBio Software License Agreement: free to use, binary only, for data from a PacBio instrument
+
+### Docker Image
+
+- `PARAPHASE_IMAGE` (optional: pulled the first time the step runs)
+- `PYTHON_IMAGE` for the read-group check and the two tables (`bin/paraphase_report.py`)
+
+### Command
+
+```bash
+PLATFORM=hifi ./scripts/02b-alignment-longread.sh your_name   # writes aligned_longread/
+./scripts/35b-paraphase.sh your_name
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALIGN_DIR` | `aligned_longread` | The folder of `<sample>_sorted.bam`. |
+| `PARAPHASE_REGIONS` | all regions | Paraphase region names, comma separated, for example `smn1,hba,rccx,GBA,pms2,strc,ncf1,OTOA`. |
+
+With Nextflow: `--tools ...,paraphase` on a samplesheet row whose BAM is PacBio HiFi, and `--paraphase_regions` for the variable. Its three processes are report-only: on a BAM that is not PacBio HiFi, `PARAPHASE_CHECK` fails, the rest of the run goes on, and `run-all.sh` marks step 35b failed.
+
+### What the Script Does Internally
+
+1. `bin/paraphase_report.py check-bam`: every read group of the BAM must say `PL:PACBIO`, or the step stops with the reason.
+2. `paraphase -b <bam> -r <reference> -o ... -p <sample>`: the calls, as Paraphase's JSON, one VCF per region and a BAM of the phased reads.
+3. `bin/paraphase_report.py table`: the copy-number table and the variant table.
+
+### Output
+
+All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
+
+| File | Contents |
+|---|---|
+| `${SAMPLE}_paraphase_copy_number.tsv` | One row per gene: `region`, `gene`, `copy_number`, `status` (`called` or `no call`), `detail`, `total_cn` (the whole family), `region_depth`, `genome_depth` |
+| `${SAMPLE}_paraphase_variants.tsv` | One row per variant a gene copy carries: `region`, `chrom`, `pos`, `ref`, `alt`, `filter`, `haplotypes` (the copies that carry it) and `support` (their ALT reads over their depth) |
+| `${SAMPLE}_paraphase/` | Paraphase's own output: `${SAMPLE}.paraphase.json`, `${SAMPLE}_paraphase_vcfs/`, `${SAMPLE}.paraphase.bam` ([described upstream](https://github.com/PacificBiosciences/paraphase#interpreting-the-output)) |
+
+### Interpreting Results
+
+- **no call** means Paraphase saw one haplotype and the depth did not settle whether it is one copy or two identical ones.
+- **HBA1 and HBA2:** most people have four alpha-globin genes (`aa/aa`). `-a` is an allele with one gene lost, `--` one with both lost. The 3.7 kb deletion (`-a3.7`, HBA2 and HBA1 fused into one gene) and the 4.2 kb deletion (`-a4.2`, HBA2 lost) are named, and so are the matching duplications. A `--` allele is a large deletion such as `--SEA`; its breakpoints lie outside the region Paraphase reads, so which large deletion it is cannot be told.
+- **CYP21A2:** most people have four RCCX copies, two per chromosome. The allele annotation names a CYP21A2 deletion or duplication and the common pseudogene-derived variants on each allele.
+- **SMN1 by both tools:** when step 35 (Parascopy) ran on the same BAM, the report shows both SMN1 values and says whether they agree. Parascopy's value counts only with filter `PASS` and quality 20 or more.
+
+**This is a research estimate, not a diagnostic test.** Confirm a result, for example an HBA deletion or one SMN1 copy, with a clinical laboratory.
+
+### What Is and Is Not Assessed
+
+- **Assessed (PacBio HiFi only):** copy number and phased variants in Paraphase's 162 GRCh38 regions; the HBA 3.7 kb and 4.2 kb deletions and duplications by name.
+- **Not assessed:** short-read and Oxford Nanopore BAMs (refused); which large HBA deletion removes both genes.
+
+### Runtime
+
+Not measured on a whole genome. Paraphase reads only the reads of its regions and of a few hundred depth windows, so the whole BAM is never read through.
+
+### How It Is Tested
+
+- The image's smoke test runs Paraphase's own demo, the HG01175 SMN1/SMN2 HiFi reads shipped with the pinned release, and checks the result its documentation publishes: two SMN1, one SMN2, one SMN with exons 7-8 deleted.
+- The e2e case `paralogs-paraphase-1` reads GIAB's HG002 PacBio Revio BAM over HTTPS for the eight regions above and Paraphase's depth windows. It checks that a short-read BAM is refused, that each gene has its row, and a planted 4.2 kb deletion: the 4,257 bp between the two homologous HBA boxes are cut out of the reads of one haplotype, and Paraphase must name the deletion and report one HBA2 copy fewer. The same BAM then runs through Nextflow beside a short-read BAM, which fails the check while the run goes on. No per-sample Paraphase results for HG002 are published, so the case does not compare HG002's copy numbers with a published value.
+
+### Links
+
+- [Paraphase](https://github.com/PacificBiosciences/paraphase) and its [region list](https://github.com/PacificBiosciences/paraphase/blob/main/docs/regions.md)
+- [Chen et al. 2025](https://doi.org/10.1038/s41467-025-57505-2)
