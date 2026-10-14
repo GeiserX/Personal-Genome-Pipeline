@@ -54,7 +54,7 @@ Yleaf downloads the whole hg38 FASTA on its first run unless its config file nam
 
 ## Runtime
 
-A few minutes: Yleaf reads the pileup at about 129,000 Y marker positions.
+Not measured here; the end test does not run this step. An estimate is a few minutes: Yleaf reads the pileup at about 129,000 Y marker positions.
 
 ## Notes
 
