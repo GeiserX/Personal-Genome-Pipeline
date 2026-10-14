@@ -660,7 +660,7 @@ Genomic databases are updated continuously. Variants classified as VUS today may
 
 | Database | Update Frequency | Pipeline Steps Affected | How to Update |
 |---|---|---|---|
-| ClinVar | Weekly | Step 6 (ClinVar screen) | Re-download from NCBI FTP (see [00-reference-setup.md](00-reference-setup.md)) |
+| ClinVar | Monthly (the release `setup.sh` downloads; NCBI also builds weekly files) | Step 6 (ClinVar screen) | Re-download from NCBI FTP (see [00-reference-setup.md](00-reference-setup.md)) |
 | VEP cache | Every 6 months | Step 13 (VEP annotation) | Download new release from Ensembl FTP |
 | PCGR/CPSR data | Every 6-12 months | Step 17 (CPSR) | Download new bundle from PCGR GitHub releases |
 | PharmCAT | Every few months | Step 7 (pharmacogenomics) | Bump `PHARMCAT_IMAGE` in `versions.env`, then pull it |

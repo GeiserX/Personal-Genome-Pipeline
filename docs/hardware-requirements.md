@@ -217,7 +217,7 @@ A step the end test did not run says "not measured"; where it shows a time, that
 | 27 CPIC lookup | 3-5 s | | | |
 | 28 MultiQC | about 3 s | 0.1-0.2 GB | | |
 | 29 Somatic (opt-in) | not measured (estimate ~2-6 h) | | | under 5 min on a few genes with `INTERVALS` (estimate) |
-| 30 vcfanno | not measured (estimate ~5-15 min) | | | not in the end test |
+| 30 vcfanno | not measured (estimate ~5-15 min, plus 2-3 min with CADD) | | | not in the end test |
 | 31 slivar | 4-10 min | under 50 MB | 0.9-1.2 | almost all of it the prioritising pass |
 | 32 pypgx | 5.5-10 min | 3.9-4.1 GB | 2.0-2.4 | plus 5-10 s for the CYP2D6 depth check |
 | 36 PGx consensus | 1-7 s | | | |

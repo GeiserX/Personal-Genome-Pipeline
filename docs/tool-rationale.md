@@ -24,7 +24,7 @@ For hands-on benchmarking instructions, see [benchmarking.md](benchmarking.md).
 
 minimap2 is the default because:
 
-1. **Speed.** It is 2-4x faster than BWA-MEM2 for paired-end short reads, which matters on consumer hardware where alignment is the bottleneck step.
+1. **Speed.** For Illumina reads longer than 100 bp, minimap2's authors measured it at about three times the speed of BWA-MEM ([minimap2 README](https://github.com/lh3/minimap2#readme)), and BWA-MEM2's authors report 1.3-3.1x the speed of BWA-MEM ([BWA-MEM2 README](https://github.com/bwa-mem2/bwa-mem2#readme)). Neither compares minimap2 with BWA-MEM2 directly, and BWA-MEM2 has not been timed here. Speed matters on consumer hardware, where the alignment is the second longest step.
 2. **Equivalent germline accuracy.** For single-sample germline variant calling (this pipeline's focus), minimap2-aligned BAMs produce indistinguishable SNP and indel call sets compared to BWA-MEM2. The [UMCCR comparison](https://umccr.org/blog/bwa-mem-vs-minimap2/) found no significant accuracy difference for germline calls.
 3. **Simpler index.** A single `.mmi` file (~7 GB) vs multiple BWA-MEM2 index files (~24 GB total).
 
@@ -36,7 +36,7 @@ minimap2 is the default because:
 
 ### Key tradeoffs
 
-The alignment is the second longest step from FASTQ, after DeepVariant. minimap2 is the faster aligner of the two; BWA-MEM2 has not been timed here, so the saving is not measured. It comes with no measurable loss in germline variant calling accuracy. The only functional downside is incompatibility with Strelka2's SNP mode, which is not part of the default pipeline.
+The alignment is the second longest step from FASTQ, after DeepVariant. How much time minimap2 saves over BWA-MEM2 has not been measured here; upstream compares each with BWA-MEM only (see Speed above). minimap2 comes with no measurable loss in germline variant calling accuracy. The only functional downside is incompatibility with Strelka2's SNP mode, which is not part of the default pipeline.
 
 **References:**
 - [UMCCR: BWA-MEM2 vs minimap2 for short reads (2021)](https://umccr.org/blog/bwa-mem-vs-minimap2/)
