@@ -195,7 +195,12 @@ mode == "tag" && FNR == NR {
     hcomb[n] = (from != "")
     if (from != "") {
         m = split(from, part, "|")
-        for (i = 1; i <= m; i++) partof[part[i]] = ((part[i] in partof) ? partof[part[i]] "|" : "") key[n]
+        for (i = 1; i <= m; i++) {
+            # Test before assigning: mawk and busybox awk create the element
+            # on the left before they evaluate the right.
+            prev = (part[i] in partof) ? partof[part[i]] "|" : ""
+            partof[part[i]] = prev key[n]
+        }
     }
     next
 }
