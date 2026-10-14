@@ -37,7 +37,7 @@
 # (both inside BCFTOOLS_IMAGE); tests/test_clinvar_join_adjacent.py checks it.
 BEGIN {
     FS = OFS = "\t"
-    if (window == "") window = 0
+    if (window == "") window = 10
     window += 0
     if (mode != "prepare" && mode != "finish" && mode != "tag") {
         print "clinvar_join_adjacent.awk: set -v mode=prepare, finish or tag" > "/dev/stderr"
