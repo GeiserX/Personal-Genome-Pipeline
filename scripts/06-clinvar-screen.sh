@@ -7,6 +7,9 @@
 # annotated with ClinVar's ID, GENEINFO, CLNSIG and CLNREVSTAT. Both reports
 # (steps 24 and generate-report.sh) read this file and group the hits by ClinVar
 # review stars. clinvar/${SAMPLE}_clinvar_hits.tsv holds the same hits, one row each.
+# Two neighbouring records that can be one allele are also matched as their
+# combined allele (bin/clinvar_join_adjacent.awk): a matched combined record is
+# a hit of its own (INFO/PGP_JOINED_FROM) and its parts are marked PGP_PART_OF.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -120,6 +123,30 @@ if [ "$PASS_COUNT" -eq 0 ]; then
   exit 1
 fi
 
+# Step 2b: the combined alleles. A caller can write one complex allele (a
+# delins) as two records a few bases apart on the same haplotype; matched one by
+# one, the parts can hit single-submitter ClinVar records and miss the better
+# reviewed record ClinVar holds for the whole allele. bcftools norm -m +any joins
+# only records at the same position, so bin/clinvar_join_adjacent.awk builds,
+# for each pair of neighbours that can be one allele (the second starts at most
+# 10 bases after the first ends, same phase set and GT, or the same unphased
+# GT), the allele from the first part's start to the second part's end, with the
+# reference bases between the parts (+fill-from-fasta), left-aligned the way
+# ClinVar is. The candidates matched below are the split calls plus these.
+JOINED="${OUTPUT_DIR}/${SAMPLE}_joined.vcf.gz"
+CANDIDATES="${OUTPUT_DIR}/${SAMPLE}_candidates.vcf.gz"
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+  bash -o pipefail -c "set -e
+    bcftools view '$(cpath "$PASS_VCF")' \
+      | awk -v mode=prepare -f /pgp-bin/clinvar_join_adjacent.awk \
+      | bcftools +fill-from-fasta --no-version -Ov - -- -c INFO/PGP_JOIN_SEQ -f '$(cpath "$REF")' \
+      | awk -v mode=finish -f /pgp-bin/clinvar_join_adjacent.awk \
+      | bcftools norm --no-version -c w -d exact -f '$(cpath "$REF")' -Oz -o '$(cpath "$JOINED")' -
+    bcftools index -f -t '$(cpath "$JOINED")'
+    bcftools concat --no-version -a -Oz -o '$(cpath "$CANDIDATES")' '$(cpath "$PASS_VCF")' '$(cpath "$JOINED")'
+    bcftools index -f -t '$(cpath "$CANDIDATES")'"
+echo "Combined alleles of neighbouring records: $(bcftools_run bcftools index -n "$(cpath "$JOINED")")"
+
 # Step 3: keep the sample's records whose allele is in ClinVar, then copy ClinVar's
 # ID, gene and significance onto them. isec -w1 writes the sample's side, which has
 # no GENEINFO/CLNSIG of its own. (annotate -a needs an indexed target, so the
@@ -128,15 +155,21 @@ fi
 # record, the 0/0 half of a multiallelic record and a reference-only ALT '.' row
 # would otherwise be listed. The test is a non-zero allele index anywhere in GT,
 # not GT="alt", which drops a half call such as ./1 that does carry the ALT allele.
-# --no-version keeps command lines out of the header.
+# --no-version keeps command lines out of the header. Last, the tag pass of
+# bin/clinvar_join_adjacent.awk marks each part of a matched combined allele
+# (PGP_PART_OF), and two hits in one gene that can be one allele but matched no
+# combined record (PGP_ONE_ALLELE).
 SHARED="${OUTPUT_DIR}/${SAMPLE}_shared.vcf.gz"
-run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "set -e
-    bcftools isec --no-version -n=2 -w1 -Oz -o '$(cpath "$SHARED")' '$(cpath "$PASS_VCF")' '$(cpath "$CLINVAR_NORM")'
+    bcftools isec --no-version -n=2 -w1 -Oz -o '$(cpath "$SHARED")' '$(cpath "$CANDIDATES")' '$(cpath "$CLINVAR_NORM")'
     bcftools index -f -t '$(cpath "$SHARED")'
     bcftools annotate --no-version -a '$(cpath "$CLINVAR_NORM")' --pair-logic exact \
       -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou '$(cpath "$SHARED")' \
-      | bcftools view --no-version -i 'GT~\"[1-9]\"' -Ov -o '$(cpath "${HITS}.part")'
+      | bcftools view --no-version -i 'GT~\"[1-9]\"' -Ov -o '$(cpath "${HITS}.untagged")'
+    awk -v mode=tag -f /pgp-bin/clinvar_join_adjacent.awk '$(cpath "${HITS}.untagged")' '$(cpath "${HITS}.untagged")' \
+      > '$(cpath "${HITS}.part")'
+    rm -f '$(cpath "${HITS}.untagged")'
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%GT]\\t%ID\\t%INFO/GENEINFO\\t%INFO/CLNSIG\\t%INFO/CLNREVSTAT\\n' \
       -o '$(cpath "${HITS_TSV}.body")' '$(cpath "${HITS}.part")'"
 # The same hits as a table, one row per hit.
@@ -146,7 +179,8 @@ run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
 } > "${HITS_TSV}.part"
 mv "${HITS}.part" "$HITS"
 mv "${HITS_TSV}.part" "$HITS_TSV"
-rm -f "$SHARED" "${SHARED}.tbi" "${HITS_TSV}.body" "$CLINVAR_TARGETS" "$SAMPLE_TARGETS"
+rm -f "$SHARED" "${SHARED}.tbi" "${HITS_TSV}.body" "$CLINVAR_TARGETS" "$SAMPLE_TARGETS" \
+  "$JOINED" "${JOINED}.tbi" "$CANDIDATES" "${CANDIDATES}.tbi"
 
 HIT_COUNT=$(grep -c -v '^#' "$HITS" || true)
 echo "=== ClinVar screen complete ==="
@@ -155,10 +189,11 @@ echo "Table: ${HITS_TSV}"
 echo "Count: ${HIT_COUNT} pathogenic hits"
 # A zero-star submission counts as a hit like an expert-panel one; the review
 # status (CLNREVSTAT, copied on above) says how much weight each deserves.
-# bin/clinvar_hits.awk maps it to ClinVar's stars, as both reports do.
+# bin/clinvar_hits.awk maps it to ClinVar's stars, as both reports do, and its
+# last column says when a hit is a combined allele or part of one.
 if [ "$HIT_COUNT" -gt 0 ]; then
   echo "By review status (ClinVar stars):"
   awk -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$HITS" | sort -t$'\t' -k1,1nr -k2,2V -k3,3n \
-    | awk -F'\t' '{n[$1]++; line[$1] = line[$1] sprintf("    %s %s:%s %s>%s %s %s [%s]\n", $7, $2, $3, $4, $5, $6, $8, $9)}
+    | awk -F'\t' '{n[$1]++; line[$1] = line[$1] sprintf("    %s %s:%s %s>%s %s %s [%s]%s\n", $7, $2, $3, $4, $5, $6, $8, $9, ($10 != "." && $10 != "" ? " (" $10 ")" : ""))}
         END {for (s = 4; s >= 0; s--) if (n[s]) printf "  %d star%s: %d\n%s", s, (s == 1 ? "" : "s"), n[s], line[s]}'
 fi
