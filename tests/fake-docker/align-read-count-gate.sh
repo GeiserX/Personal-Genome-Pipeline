@@ -84,7 +84,7 @@ before=$(cat "$BAM"); table_before=$(cat "$T")
 run_expect 1 short env FAKE_PRIMARY=4 FAKE_TAG=second "${SCRIPTS}/02-alignment.sh" sample1
 output_has short 'ERROR: the BAM holds 4 primary records, but 6 reads went in \(.*\): 2 reads \(33\.3%\) are missing\.'
 output_has short 'READ_COUNT_CHECK=warn goes on anyway'
-output_has short 'The earlier .*/sample1_sorted\.bam and its read count are left as they were'
+output_has short 'The earlier .*/sample1_sorted\.bam is left as it was'
 [ "$(cat "$BAM")" = "$before" ] || fail "a BAM with reads missing replaced the earlier one"
 [ "$(cat "$T")" = "$table_before" ] || fail "a BAM with reads missing replaced the earlier read-count table"
 [ -z "$(leftovers)" ] || fail "temporary files left after the shortfall: $(leftovers)"

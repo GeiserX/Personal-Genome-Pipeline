@@ -17,7 +17,9 @@
 export GENOME_DIR="${CASE_WORK}/genome"
 seed_reference "$GENOME_DIR"
 mkdir -p "${GENOME_DIR}/sample1/fastq"
-for r in R1 R2; do printf 'placeholder\n' | gzip -c > "${GENOME_DIR}/sample1/fastq/sample1_${r}.fastq.gz"; done
+# One FASTQ record per file: steps 02 and 02a count the records that go in
+# and compare them with the fake `samtools view -c` below (2, R1 plus R2).
+for r in R1 R2; do printf '@r1\nACGT\n+\nIIII\n' | gzip -c > "${GENOME_DIR}/sample1/fastq/sample1_${r}.fastq.gz"; done
 printf 'placeholder\n' | gzip -c > "${GENOME_DIR}/sample1/fastq/sample1.fastq.gz"   # long reads, step 02b
 
 use_output_hook
@@ -68,6 +70,8 @@ case "$args" in
     : > "$(host_path "$last").bai" ;;
   *" samtools quickcheck "*)
     [ "${FAKE_QC:-ok}" = ok ] || exit 1 ;;
+  *" samtools view -c "*)
+    echo 2 ;;
   *) exec "${CASE_WORK}/hook-outputs" image "$@" ;;
 esac
 HOOK
