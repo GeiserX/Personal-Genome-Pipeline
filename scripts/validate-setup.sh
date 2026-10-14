@@ -418,6 +418,13 @@ else
       echo "       Install it: ./scripts/setup.sh ${GENOME_DIR}"
     fi
   done
+  EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+  if [ -s "$EXONS_BED" ]; then
+    pass "GENCODE ${GENCODE_RELEASE} exons: present"
+  else
+    warn "GENCODE ${GENCODE_RELEASE} exons (step 06 skips its cDNA read check without them) not found at: ${EXONS_BED}"
+    echo "       Install them: ./scripts/setup.sh ${GENOME_DIR}"
+  fi
 
   # --- somalier's sites and VerifyBamID2's panel, for step 33 (setup.sh installs them) ---
   QC_MISSING=""
