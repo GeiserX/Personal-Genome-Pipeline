@@ -49,6 +49,12 @@ PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry popula
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
 
+def combined_cell(h):
+    """A ClinVar hit's combined-allele note (step 6), "" when it has none."""
+    note = h.get("combined_allele", ".")
+    return "" if note in (".", "") else note
+
+
 def hla_text(locus):
     """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
     q = locus.get("quality") or []
@@ -188,8 +194,9 @@ def text_report(s):
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
+                note = combined_cell(h)
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
-                  f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+                  f"{h['significance']} [{h['review_status']}] {h['stars']}*" + (f"  ({note})" if note else ""))
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -671,13 +678,16 @@ def html_report(s):
         a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
+        # The combined-allele cell is empty, not '.', for a hit that is
+        # neither a combined allele nor part of one: no note is no missing data.
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
-                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td></tr>" for h in c["hits"][:50]]
+                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
+                f"<td>{E(combined_cell(h))}</td></tr>" for h in c["hits"][:50]]
         a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
-                "<th>Significance</th><th>Review status</th><th>Stars</th></tr>"]
+                "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th></tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]

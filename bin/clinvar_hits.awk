@@ -9,7 +9,7 @@
 # maps review status to stars with the same table; tests/test_collect_summary.py
 # checks that the two agree.
 #
-# Columns: STARS CHROM POS REF ALT GENOTYPE GENE SIGNIFICANCE REVIEW_STATUS
+# Columns: STARS CHROM POS REF ALT GENOTYPE GENE SIGNIFICANCE REVIEW_STATUS COMBINED_ALLELE
 #   STARS          ClinVar's review-status stars: 4 practice guideline,
 #                  3 expert panel, 2 multiple submitters with no conflict,
 #                  1 single submitter or conflicting classifications,
@@ -18,10 +18,26 @@
 #   GENE           GENEINFO's symbols, comma-joined; "." when absent.
 #   SIGNIFICANCE, REVIEW_STATUS  CLNSIG and CLNREVSTAT with "_" as spaces;
 #                  "." when absent.
+#   COMBINED_ALLELE  from step 6's tags (bin/clinvar_join_adjacent.awk):
+#                  "combined allele of A + B" for a combined record,
+#                  "part of a combined allele: C" for each of its parts,
+#                  "possibly one allele with D: check ClinVar for a combined
+#                  record" for two hits that matched no combined record;
+#                  "." otherwise. Variants read CHROM:POS REF>ALT.
 BEGIN { FS = OFS = "\t" }
+
+# "chr1:10:C:T|chr1:15:G:A" -> "chr1:10 C>T<sep>chr1:15 G>A"
+function variants(v, sep,    n, x, i, f, out) {
+    n = split(v, x, "|"); out = ""
+    for (i = 1; i <= n; i++) {
+        split(x[i], f, ":")
+        out = out (i > 1 ? sep : "") f[1] ":" f[2] " " f[3] ">" f[4]
+    }
+    return out
+}
 /^#/ { next }
 {
-    geneinfo = ""; clnsig = ""; rev = ""
+    geneinfo = ""; clnsig = ""; rev = ""; joined = ""; partof = ""; one = ""
     n = split($8, kv, ";")
     for (i = 1; i <= n; i++) {
         p = index(kv[i], "=")
@@ -30,6 +46,9 @@ BEGIN { FS = OFS = "\t" }
         if (k == "GENEINFO") geneinfo = v
         else if (k == "CLNSIG") clnsig = v
         else if (k == "CLNREVSTAT") rev = v
+        else if (k == "PGP_JOINED_FROM") joined = v
+        else if (k == "PGP_PART_OF") partof = v
+        else if (k == "PGP_ONE_ALLELE") one = v
     }
     stars = 0
     if (rev == "practice_guideline") stars = 4
@@ -48,5 +67,9 @@ BEGIN { FS = OFS = "\t" }
     if (gt == "0/1" || gt == "1/0" || gt == "0|1" || gt == "1|0") zyg = "het"
     else if (gt == "1/1" || gt == "1|1") zyg = "hom"
     else zyg = gt
-    print stars, $1, $2, $4, $5, zyg, gene, clnsig, rev
+    note = "."
+    if (joined != "") note = "combined allele of " variants(joined, " + ")
+    else if (partof != "") note = "part of a combined allele: " variants(partof, ", ")
+    else if (one != "") note = "possibly one allele with " variants(one, ", ") ": check ClinVar for a combined record"
+    print stars, $1, $2, $4, $5, zyg, gene, clnsig, rev, note
 }

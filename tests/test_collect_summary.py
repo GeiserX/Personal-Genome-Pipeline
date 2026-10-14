@@ -13,7 +13,9 @@ Checks:
      marked stale in the summary and in both reports; one whose step was ok, or
      that is newer than the run, is not;
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
-     same number of stars;
+     same number of stars; 6b. and the same combined-allele note to a combined
+     record, its parts and two hits that may be one allele, which both reports
+     show;
   7. a corrupt file (not gzip, or gzip with damaged data) makes its section
      'unreadable' instead of stopping the report;
   8. the secondary-findings tier lists the ClinVar hits and the rare
@@ -91,6 +93,19 @@ HITS = VCF_HEAD + (
     "chr1\t10\t1\tC\tT\t50\tPASS\tGENEINFO=GENEA:11;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
     "chr1\t20\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Likely_pathogenic;CLNREVSTAT=reviewed_by_expert_panel\tGT\t1/1\n"
     "chr2\t5\t3\tA\tG\t50\tPASS\tGENEINFO=GENEC:33;CLNSIG=Pathogenic;CLNREVSTAT=no_assertion_criteria_provided\tGT\t0|1\n")
+# Step 6 hits with the combined-allele tags of bin/clinvar_join_adjacent.awk:
+# a 2-star combined record, its two 1-star parts, a single SNV, and two hits in
+# one gene that matched no combined record.
+_CV1 = "GENEINFO=SYNTH1:1;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter"
+COMBINED_HITS = VCF_HEAD + (
+    f"chr22\t30000037\t1\tAGC\tA\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000038\t3\tGCCAT\tCATGGG\t.\tPASS\tPGP_JOINED_FROM=chr22:30000037:AGC:A|chr22:30000042:T:TGGG;"
+    "GENEINFO=SYNTH1:1;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts\tGT\t0/1\n"
+    f"chr22\t30000042\t2\tT\tTGGG\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000210\t4\tC\tT\t50\tPASS\tGENEINFO=SYNTH2:2;CLNSIG=Pathogenic;"
+    "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
+    f"chr22\t30000300\t5\tA\tG\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000305:C:T\tGT\t0/1\n"
+    f"chr22\t30000305\t6\tC\tT\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000300:A:G\tGT\t0/1\n")
 MITO = VCF_HEAD.replace("##fileformat=VCFv4.2\n", "") + "".join(
     f"chrM\t{i}\t.\tA\tG\t.\tPASS\t.\tGT:AF\t0/1:{af}\n" for i, af in enumerate(("0.02", "0.30", "0.99", "0.05", "0.949"), 1))
 
@@ -148,8 +163,8 @@ def main():
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
-        check("HTML report: one row per hit, each with a Stars cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td></tr>"), rows)
+        check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
+              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td></tr>"), rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
         check("QC: mean depth 29.5x in both reports", "Mean depth: 29.5x" in txt and "29.5x" in html,
@@ -222,6 +237,37 @@ def main():
         py_stars = [collect_summary.STARS.get(x, 0) for x in statuses]
         check("bin/clinvar_hits.awk and collect_summary.py give the same stars", awk_stars == py_stars,
               f"awk {awk_stars} python {py_stars}")
+
+        # 6b. the combined-allele note (step 6's PGP_* tags): awk and python
+        # word it the same, and both reports show it
+        cv = os.path.join(work, "combined", "S")
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
+        out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                              f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+        awk_notes = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+        summ_cv, txt_cv, html_cv = render(cv)
+        py_notes = {str(h["pos"]): h["combined_allele"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]}
+        want = {"30000037": "part of a combined allele: chr22:30000038 GCCAT>CATGGG",
+                "30000038": "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG",
+                "30000042": "part of a combined allele: chr22:30000038 GCCAT>CATGGG",
+                "30000210": ".",
+                "30000300": "possibly one allele with chr22:30000305 C>T: check ClinVar for a combined record",
+                "30000305": "possibly one allele with chr22:30000300 A>G: check ClinVar for a combined record"}
+        check("combined allele: the note of each hit in the summary", py_notes == want, py_notes)
+        check("combined allele: bin/clinvar_hits.awk gives the same notes", awk_notes == want, awk_notes)
+        check("combined allele: the 2-star combined record is listed before its 1-star parts",
+              [h["pos"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]][0] == 30000038,
+              summ_cv["sections"]["clinvar"]["data"]["hits"])
+        check("combined allele: the text report shows the notes",
+              "(part of a combined allele: chr22:30000038 GCCAT>CATGGG)" in txt_cv
+              and "(combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG)" in txt_cv, txt_cv)
+        cv_rows = [l for l in html_cv.splitlines() if l.strip().startswith("<tr><td>chr22")]
+        check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
+              "<th>Stars</th><th>Combined allele</th>" in html_cv
+              and any("<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG</td>" in r for r in cv_rows)
+              and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+        check("combined allele: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_cv))),
+              validate.validate(schema, json.loads(json.dumps(summ_cv))))
 
         # 7. a corrupt file
         c = os.path.join(work, "corrupt", "S")
