@@ -14,8 +14,8 @@
                      cuts the variant-only VCF to those positions
     PRS              runs pgsc_calc (PGSC_CALC_VERSION) on the host: it is a
                      Nextflow pipeline of its own and starts its own
-                     containers, with the images versions.env pins and no
-                     network; with --ancestry_ref it projects the sample onto
+                     containers, with the images versions.env pins, no
+                     network and the run's other docker flags; with --ancestry_ref it projects the sample onto
                      the panel and adjusts each score for ancestry. With the
                      samplesheet's sex its plink2 gets the sex (--update-sex),
                      which it needs to read chrX
@@ -162,6 +162,14 @@ process PRS {
         "\"    withLabel: '${kv.substring(0, i)}' { ext.docker = '${image}'; ext.docker_version = '' }\""
     }.join(' ')
     def engine  = workflow.containerEngine ?: 'docker'
+    // The outer run's docker flags, for pgsc_calc's containers too: its
+    // docker.runOptions (a process reads the run's config only through
+    // nextflow.Global) and this process's containerOptions (the
+    // process.containerOptions of docs/hardware-requirements.md's shared-host
+    // config). The task script drops their user and network flags. Quoted for
+    // the shell.
+    def outer_docker = [(nextflow.Global.session?.config?.docker as Map)?.runOptions, task.containerOptions]
+        .findAll { o -> o }.join(' ').replace("'", "'\\''")
     // The sex for pgsc_calc's plink2 (--update-sex: the VCF's sample name, 1
     // male or 2 female), added to the ext.args its conf/modules.config gives
     // PLINK2_VCF at this release; the folder is mounted into its containers.
@@ -192,7 +200,7 @@ process PRS {
         SEX_LINE="    withName: 'PLINK2_VCF' { ext.args = '--new-id-max-allele-len 100 missing --update-sex \\"\$PWD/sex/sex.tsv\\"' }"
         MOUNT=" -v \\"\$PWD/sex:\$PWD/sex:ro\\""
     fi
-    # The images of versions.env for pgsc_calc's process labels, and no network for its containers.
+    # The images of versions.env for pgsc_calc's process labels.
     # FORMAT_SCOREFILES runs pgscatalog-format with one thread per CPU, and
     # its memory grows with the threads (docs/25-prs.md, Memory). pgsc_calc
     # gives it 2 CPUs, and 4 on its own retry under the same --max_memory.
@@ -201,7 +209,33 @@ process PRS {
     # ends pgsc_calc, and this task's retry doubles the memory. Not
     # maxRetries = 0: Nextflow reads 0 as its default, one retry.
     FORMAT_LINE="    withName: 'FORMAT_SCOREFILES' { cpus = 1; memory = '${task.memory.toGiga()}.GB'; errorStrategy = 'finish' }"
-    printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" "\$FORMAT_LINE" '}' "docker.runOptions = '-u \$(id -u):\$(id -g) --network none\$MOUNT'" > images.config
+    printf '%s\\n' 'process {' ${labels} "\$SEX_LINE" "\$FORMAT_LINE" '}' > images.config
+    OUTER_DOCKER='${outer_docker}'
+    # >>> outer docker flags (tests/test_prs_runopts.sh runs this block)
+    # pgsc_calc's containers run as this user, with no network and the sex
+    # folder mounted, then with every other flag of the outer run's: its
+    # user (-u, --user) and network (--net, --network) flags are dropped, so
+    # the ones here stay. A quote or a backslash is escaped for the config's
+    # quoted string.
+    outer_flags() {
+        local o skip=false out=''
+        local -a w=()
+        read -r -a w <<< "\$1"
+        for o in \${w[@]+"\${w[@]}"}; do
+            if \$skip; then skip=false; continue; fi
+            case "\$o" in
+                -u|--user|--net|--network) skip=true ;;
+                -u?*|--user=*|--net=*|--network=*) ;;
+                *) out="\$out \$o" ;;
+            esac
+        done
+        printf '%s' "\${out# }"
+    }
+    EXTRA=\$(outer_flags "\$OUTER_DOCKER")
+    EXTRA=\${EXTRA//\\\\/\\\\\\\\}
+    EXTRA=\${EXTRA//\\'/\\\\\\'}
+    printf "docker.runOptions = '%s'\\n" "-u \$(id -u):\$(id -g) --network none\$MOUNT\${EXTRA:+ \$EXTRA}" >> images.config
+    # <<< outer docker flags
     cat images.config
     ${offline}
     rc=0
@@ -242,8 +276,20 @@ process PRS {
             exit 1
         fi
     fi
-    # Its run reports carry the time of the run in their names.
-    rm -rf work .nextflow pgsc_calc/pipeline_info pgsc_calc-src
+    # pgsc_calc's own trace, report and timeline: the only record of its
+    # tasks' memory (FORMAT_SCOREFILES, MATCH_VARIANTS, MATCH_COMBINE); this
+    # task's own peak_rss is only the launcher's. Published without the time
+    # of the run in their names, so a run replaces the last one's; the rest
+    # of pipeline_info (the DAG) is dropped. The same as step 25.
+    INFO=pgsc_calc/pipeline_info
+    for f in trace.txt report.html timeline.html; do
+        m=( "\$INFO"/execution_\${f%.*}_*.\${f#*.} )
+        if [ -f "\${m[0]}" ]; then mv "\${m[0]}" "\$INFO/execution_\$f"; fi
+    done
+    if [ -d "\$INFO" ]; then
+        find "\$INFO" -type f ! -name execution_trace.txt ! -name execution_report.html ! -name execution_timeline.html -delete
+    fi
+    rm -rf work .nextflow pgsc_calc-src
 
     printf '"%s":\\n    pgsc_calc: %s\\n' "${task.process}" "${release}" > versions.yml
     """
