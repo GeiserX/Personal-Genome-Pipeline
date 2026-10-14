@@ -70,7 +70,7 @@ workflow {
         'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
-        'sample_qc', 'cram_archive', 'parascopy', 'y_haplogroup', 'html_report', 'multiqc',
+        'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -123,6 +123,11 @@ workflow {
     if (tools_list.contains('parascopy') && !(params.parascopy_population in ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
         error "--parascopy_population must be one of AFR, AMR, EAS, EUR, SAS (the 1000 Genomes models), " +
               "got '${params.parascopy_population}'."
+    }
+
+    if (params.paraphase_regions && !(params.paraphase_regions.toString() ==~ /[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*/)) {
+        error "--paraphase_regions must be Paraphase region names separated by commas (e.g. smn1,hba), " +
+              "got '${params.paraphase_regions}'."
     }
 
     // cpic requires pharmcat (it parses PharmCAT JSON output)
@@ -465,7 +470,7 @@ workflow {
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
-    // mito, SMN1/SMN2, sample QC, Y haplogroup. First, because PGX reads the HLA types.
+    // mito, SMN1/SMN2, paralog genes (HiFi), sample QC, Y haplogroup. First, because PGX reads the HLA types.
     // ═══════════════════════════════════════════════════════════════════
     BAM_ANALYSIS(
         ch_bam,
@@ -590,6 +595,8 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)

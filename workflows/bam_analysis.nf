@@ -4,7 +4,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs HLA typing (with an opt-in KIR pass), repeat expansion detection,
     telomere length estimation, coverage statistics, mitochondrial variant
-    calling, SMN1/SMN2 copy number (opt-in) and the sample identity and
+    calling, SMN1/SMN2 copy number (opt-in), paralog genes from PacBio HiFi
+    reads (opt-in) and the sample identity and
     contamination check, and the Y haplogroup (opt-in) ALL in parallel
     from a single BAM input. The CYP2D6
     callers run in the PGX workflow, which also reads the HLA types.
@@ -23,6 +24,7 @@ include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
 include { PARASCOPY        } from '../modules/local/parascopy/main'
+include { PARAPHASE_CHECK; PARAPHASE; PARAPHASE_REPORT } from '../modules/local/paraphase/main'
 include { SOMALIER         } from '../modules/local/somalier/main'
 include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
@@ -59,6 +61,7 @@ workflow BAM_ANALYSIS {
     ch_mito_vcf         = Channel.empty()
     ch_kir_genotype     = Channel.empty()
     ch_smn_copy_number  = Channel.empty()
+    ch_paraphase_cn     = Channel.empty()
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
@@ -170,6 +173,23 @@ workflow BAM_ANALYSIS {
     }
 
     //
+    // MODULE 6b: Paraphase (paralog genes from PacBio HiFi reads)
+    // Gates on: params.tools contains 'paraphase' (opt-in). PARAPHASE_CHECK
+    // passes a BAM on only when every read group says PL:PACBIO; the three
+    // processes are report-only (nextflow.config), so another BAM fails the
+    // check and the run goes on.
+    //
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('paraphase')) {
+        PARAPHASE_CHECK(ch_bam)
+        ch_paraphase_bam = ch_bam.join(PARAPHASE_CHECK.out.ok).map { meta, bam, bai, _ok -> [meta, bam, bai] }
+        PARAPHASE(ch_paraphase_bam, ch_reference, ch_reference_fai)
+        PARAPHASE_REPORT(PARAPHASE.out.results)
+        ch_paraphase_cn = PARAPHASE_REPORT.out.copy_number
+        ch_versions     = ch_versions.mix(PARAPHASE_CHECK.out.versions, PARAPHASE.out.versions,
+                                          PARAPHASE_REPORT.out.versions)
+    }
+
+    //
     // MODULE 7: Sample identity and contamination (somalier, VerifyBamID2)
     // Gates on: params.tools contains 'sample_qc' (main.nf requires
     // --somalier_sites and --verifybamid2_panel with it)
@@ -263,6 +283,7 @@ workflow BAM_ANALYSIS {
     mito_vcf         = ch_mito_vcf
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
+    paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     y_haplogroup     = ch_y_haplogroup    // [meta, <id>_y_haplogroup.txt]
     versions         = ch_versions
