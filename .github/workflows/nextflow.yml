@@ -9,7 +9,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '23 4 2 * *'   # monthly: a new 26.04.x release is tested even when nothing here changed
+    - cron: '23 4 2 * *'   # monthly: a new 26.10.x release is tested even when nothing here changed
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   # Two Nextflow lines, both accepted by the manifest's nextflowVersion:
   # "pinned" is NEXTFLOW_VERSION from versions.env, the release the pipeline
-  # is validated with; "26.04" is the newest 26.04.x release, so a new patch
+  # is validated with; "26.10" is the newest 26.10.x release, so a new patch
   # release that breaks the pipeline turns the monthly run red.
   nextflow:
     name: nextflow (${{ matrix.line }})
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        line: [pinned, '26.04']
+        line: [pinned, '26.10']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -87,7 +87,7 @@ jobs:
           java-version: '17'
 
       # Not a Nextflow pin: the version comes from versions.env or the newest
-      # 26.04.x. Quoted so the Renovate dry run does not count it as one.
+      # 26.10.x. Quoted so the Renovate dry run does not count it as one.
       - uses: "nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914" # v3.0.1
         if: steps.scope.outputs.run == 'true'
         with:
@@ -241,9 +241,9 @@ jobs:
       # task exits 137 on its first attempt, as an out-of-memory kill would,
       # and the second attempt must ask for twice the memory: a fixed memory
       # value would stop the retry from doubling it. Expected: DEEPVARIANT gets
-      # --max_time on its first attempt (Nextflow 26.04.7 can abort the whole
-      # run when a task passes its time limit, nextflow-io/nextflow#7569; read
-      # in its source, not reproduced), FASTP gets the 8 CPUs of step 01b,
+      # --max_time on its first attempt (Nextflow before 26.10.0 can abort the
+      # whole run when a task passes its time limit, nextflow-io/nextflow#7569;
+      # read in its source, not reproduced), FASTP gets the 8 CPUs of step 01b,
       # ALIGN_MINIMAP2 (minimap2 piped into samtools) the process_high label's
       # 8 CPUs and 32 GB, MANTA, CNVPYTOR and VEP what steps 04, 18 and 13
       # give them, PRS_PREPARE 16 GB and PRS 24 GB (pgsc_calc's --max_memory)
@@ -253,14 +253,16 @@ jobs:
       # attempt of this run asks for added together, and the check at the end
       # fails when it does not. So it accepts an 8-CPU stub on this 4-CPU
       # runner, and no task ever waits for room. The second part is why this
-      # step no longer hangs. Nextflow 26.04.7 keeps the local executor's free
-      # CPUs and memory in two plain fields that two threads change without a
-      # lock, so a release can be lost, and a task that asks for more than the
-      # executor then counts as free is never started. With executor.memory at
-      # 64 GB, the size of a doubled 32 GB request, this step stopped that way
-      # in 22 of 600 loop runs, and twice in this workflow's own runs, silent
-      # until the job timeout (docs/lessons-learned.md, "The local executor
-      # can lose track of free memory").
+      # step no longer hangs. Nextflow before 26.10.0 keeps the local
+      # executor's free CPUs and memory in two plain fields that two threads
+      # change without a lock, so a release can be lost, and a task that asks
+      # for more than the executor then counts as free is never started.
+      # With executor.memory at 64 GB, the size of a doubled 32 GB request,
+      # this step stopped that way in 22 of 600 loop runs, and twice in this
+      # workflow's own runs, silent until the job timeout
+      # (docs/lessons-learned.md, "The local executor can lose track of free
+      # memory"). 26.10.0 fixes the race (nextflow-io/nextflow#7816); the
+      # large executor stays so the step cannot hang on an older release.
       - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
