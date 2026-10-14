@@ -105,6 +105,38 @@ check_bam_quickcheck() {
   fi
 }
 
+# check_bam_read_count: with fastp's report beside an existing BAM
+# (fastq_trimmed/<sample>_fastp.json), the BAM's primary records must equal
+# the reads fastp wrote, the rule steps 02 and 02a apply when they align
+# (scripts/lib/common.sh, read_count_check). A BAM aligned before that rule
+# can have lost reads with no error. Counting reads the whole BAM: a few
+# minutes on a 30x one. READ_COUNT_CHECK=warn turns a difference into a WARN.
+check_bam_read_count() {
+  local json="${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_fastp.json" reads primary msg rc=0
+  [ -f "$json" ] || return 0
+  if ! reads=$(fastp_total_reads "$json"); then
+    warn "fastq_trimmed/${SAMPLE}_fastp.json has no summary.after_filtering.total_reads: the BAM's read count is not checked"
+    return 0
+  fi
+  info "Counting the BAM's primary records against fastp's ${reads} reads (a few minutes on a 30x BAM)..."
+  primary=$(run_in --memory 2g "${SAMTOOLS_IMAGE}" \
+    samtools view -c -F 0x900 -@ "$THREADS" "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null) || primary=""
+  msg=$(read_count_check "$primary" "fastq_trimmed/${SAMPLE}_fastp.json" "" "$reads" 2>&1) || rc=$?
+  case "$rc" in
+    0) pass "BAM holds the ${reads} reads fastp wrote as primary records" ;;
+    1) fail "BAM read count: ${primary} primary records, but fastp wrote ${reads} reads" ;;
+    3) warn "BAM read count: ${primary} primary records, but fastp wrote ${reads} reads (READ_COUNT_CHECK=warn)" ;;
+    *) warn "Could not compare the BAM's read count with fastp's report" ;;
+  esac
+  if [ "$rc" -ne 0 ]; then
+    sed 's/^ */       /' <<< "$msg"
+    if [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
+      echo "       A BAM aligned from the untrimmed reads (FASTQ_SUBDIR=fastq) is not comparable with fastp's"
+      echo "       count; otherwise realign with step 02 (docs/troubleshooting.md, \"The BAM lost reads\")."
+    fi
+  fi
+}
+
 # check_vcf_ref_bases: the sample VCF's header does not show its build, so
 # compare the REF bases of its first 1000 records with REF_FASTA. bcftools norm
 # -c x drops a record whose REF differs from the reference, so the records it
@@ -797,6 +829,7 @@ if [ -n "$SAMPLE" ]; then
         fail "Could not read the BAM header (samtools view -H failed): the BAM is unreadable or not a BAM"
       fi
       check_bam_quickcheck
+      check_bam_read_count
     fi
 
     if $HAS_VCF && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then
