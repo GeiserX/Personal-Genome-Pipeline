@@ -549,10 +549,13 @@ install_ancestry_fine_panel() {
     for c in $chroms; do
       [ ! -s "${dir}/panel/${c}.vcf.gz.tbi" ] || [ "$(cat "${dir}/panel/${c}.stamp" 2>/dev/null)" != "$pstamp" ] || continue
       echo "  ${c}: reading the panel's common SNVs..."
-      # --net: the panel is read from gnomAD's bucket over https. bcftools
-      # warns about the files' PP header line on every read; those lines go.
+      # --net: the panel is read from gnomAD's bucket over https. htslib
+      # stores the remote index in the working directory, so the container
+      # works in panel/ and deletes it after. bcftools warns about the files'
+      # PP header line on every read; those lines go.
       # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
       if ! run_in --net --rw "$dir" "$BCFTOOLS_HTTPS_IMAGE" bash -euo pipefail -c '
+            cd "$(dirname "$3")"; trap "rm -f ./*.bcf.csi" EXIT
             r=(); [ -z "$4" ] || r=(-R "$4" --regions-overlap pos)
             { bcftools view "${r[@]}" --force-samples -S "$2" -m2 -M2 -v snps -Ou "$1" \
                 | bcftools view -q 0.05:minor -Ou \
