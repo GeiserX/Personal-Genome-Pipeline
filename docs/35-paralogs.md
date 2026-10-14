@@ -109,11 +109,11 @@ For a PacBio HiFi BAM, [Paraphase](https://github.com/PacificBiosciences/parapha
 | SMN1, SMN2 | spinal muscular atrophy | copies of SMN1, of SMN2, and of SMN with exons 7-8 deleted |
 | HBA1, HBA2 | alpha-thalassaemia | copies of each gene, the genotype (`aa/aa`, `-a/aa`, `--/aa`...), and the 3.7 kb and 4.2 kb deletions or duplications by name |
 | CYP21A2 | congenital adrenal hyperplasia | copies of the RCCX module (each holds CYP21A2 or its pseudogene CYP21A1P), and Paraphase's annotation of each CYP21A2 allele |
-| GBA1 | Gaucher disease, Parkinson's risk | copies of GBA1, apart from GBAP1 |
+| GBA1 | Gaucher disease, Parkinson's risk | copies of GBA1 apart from GBAP1 when Paraphase tells them apart, else of the family; the detail says which, and names a GBA1/GBAP1 fusion |
 | PMS2 | Lynch syndrome | copies of PMS2, apart from PMS2CL |
 | STRC | hearing loss | copies of STRC, apart from STRCP1 |
 | NCF1 | chronic granulomatous disease | copies of NCF1, apart from NCF1B and NCF1C |
-| OTOA | hearing loss | copies of the OTOA family |
+| OTOA | hearing loss | copies of OTOA apart from its pseudogene when Paraphase tells them apart, else of the family; the detail says which |
 
 Every other region gets one row with its copy number.
 
@@ -183,7 +183,7 @@ Not measured on a whole genome. Paraphase reads only the reads of its regions an
 ### How It Is Tested
 
 - The image's smoke test runs Paraphase's own demo, the HG01175 SMN1/SMN2 HiFi reads shipped with the pinned release, and checks the result its documentation publishes: two SMN1, one SMN2, one SMN with exons 7-8 deleted.
-- The e2e case `paralogs-paraphase-1` reads GIAB's HG002 PacBio Revio BAM over HTTPS for the eight regions above and Paraphase's depth windows. It checks that a short-read BAM is refused, that each gene has its row, and a planted 4.2 kb deletion: the 4,257 bp between the two homologous HBA boxes are cut out of the reads of one haplotype, and Paraphase must name the deletion and report one HBA2 copy fewer. The same BAM then runs through Nextflow beside a short-read BAM, which fails the check while the run goes on. No per-sample Paraphase results for HG002 are published, so the case does not compare HG002's copy numbers with a published value.
+- The e2e case `paralogs-paraphase-1` reads GIAB's HG002 PacBio Revio BAM over HTTPS for the eight regions above and Paraphase's depth windows. It checks that a short-read BAM is refused, that each gene has its row, and a planted 4.2 kb deletion: the 4,257 bp between the two homologous HBA boxes are cut out of the reads of one haplotype, and Paraphase must name the deletion and report one HBA2 copy fewer. A control relabels that result as swapped HBA1 and HBA2 regions in Paraphase's config would, and the HBA2 check must then fail. The same BAM then runs through Nextflow beside a short-read BAM, which fails the check while the run goes on. No per-sample Paraphase results for HG002 are published, so the case does not compare HG002's copy numbers with a published value.
 
 ### Links
 
