@@ -391,7 +391,7 @@ def system_rhd(S, depth, regions):
         return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
                 "note": f"too few reads beside RHD{flank} for a copy number (at least {RHD_MIN_FLANK}x)"}
     copies, exons, _ = est
-    call = 0 if copies < 0.5 else (1 if copies < 1.5 else 2)
+    call = 2  # red control: RHD deletion detection disabled (reverted in the next commit)
     sd, s609 = S["RHD_PSI_DUP"], S["RHD_PSI_609"]
     used, extra = [], []
     n_psi = 0
