@@ -22,7 +22,11 @@ Checks:
   4. a gene PharmCAT could not call (or could not resolve) while pypgx did
      prints a warning naming every drug PharmCAT links to the gene, or a note
      when pypgx's call is normal, and the comparison marks it 'pypgx only';
-     an unreadable pypgx summary is reported, not fatal, and makes no comparison.
+     an unreadable pypgx summary is reported, not fatal, and makes no comparison;
+  5. a gene PharmCAT leaves 'Indeterminate' at gene level while its drug
+     annotations give it one phenotype shows that phenotype, with a note saying
+     where it came from, and takes its status; with no annotation, or two that
+     disagree, it stays Indeterminate and unclassified.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -318,6 +322,37 @@ def main():
         check("unreadable pypgx summary: exits 0 with the CPIC report written", rc == 0 and "CYP2C19 -- Poor" in rec, rc)
         check("unreadable pypgx summary: the report says no comparison was made, and an earlier one is removed",
               "Could not read the pypgx summary" in rec and not os.path.exists(comp), rec[-600:])
+
+        # 5. Indeterminate at gene level, a phenotype in the drug annotations
+        iann = lambda phen, label="*1/*80": {"phenotypes": {"UGT1A1": phen}, "classification": "Strong",
+                                             "drugRecommendation": f"Guidance for {phen}.",
+                                             "genotypes": [{"diplotypes": [{"gene": "UGT1A1", "label": label}]}]}
+        drugs = lambda *anns: {"CPIC Guideline Annotation": {"atazanavir": {"name": "atazanavir", "guidelines": [
+            {"annotations": list(anns)}]}}}
+        gene = {"UGT1A1": dict(dip("*1", "*80", "Indeterminate"), relatedDrugs=[{"name": "atazanavir"}])}
+        note = "[gene level Indeterminate; phenotype from PharmCAT's drug annotations]"
+        rc, rec, rows, _ = run_report(work, "INDET", {"genes": gene, "drugs": drugs(iann("Intermediate Metabolizer"))})
+        check("Indeterminate gene, one drug-level phenotype: exits 0", rc == 0, rc)
+        check("Indeterminate gene: the table shows the drug-level phenotype with its note, and its status",
+              rows == [["UGT1A1", "*1/*80", f"Intermediate Metabolizer {note}", "non-normal"]], rows)
+        check("Indeterminate gene: the gene results show the note",
+              f"Intermediate Metabolizer {note}" in rec.split("Affected Medications:")[0], rec[:1500])
+        check("Indeterminate gene: listed with its drugs, the guidance for the called diplotype",
+              f"  UGT1A1 -- Intermediate Metabolizer {note}:" in rec
+              and "- atazanavir [CPIC, Strong]: Guidance for Intermediate Metabolizer." in block(rec, "UGT1A1"),
+              block(rec, "UGT1A1"))
+        check("Indeterminate gene: not in the section of genes without a function phenotype",
+              "Called Genes Without a Function Phenotype:" not in rec, rec)
+        for label, d in (("no drug annotation", {}),
+                         ("two drug annotations that disagree",
+                          drugs(iann("Intermediate Metabolizer"), iann("Poor Metabolizer"))),
+                         ("a drug annotation that is Indeterminate too", drugs(iann("Indeterminate")))):
+            rc, rec, rows, _ = run_report(work, "INDET" + str(len(label)), dict({"genes": gene}, **({"drugs": d} if d else {})))
+            check(f"Indeterminate gene, {label}: stays Indeterminate and unclassified, no note",
+                  rc == 0 and rows == [["UGT1A1", "*1/*80", "Indeterminate", "unclassified"]] and note not in rec, rows)
+        rc, rec, rows, _ = run_report(work, "INDETNORMAL", {"genes": gene, "drugs": drugs(iann("Normal Metabolizer"))})
+        check("Indeterminate gene, drug level Normal Metabolizer: normal, with the note",
+              rows == [["UGT1A1", "*1/*80", f"Normal Metabolizer {note}", "normal"]], rows)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
