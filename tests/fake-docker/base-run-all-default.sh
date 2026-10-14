@@ -41,7 +41,7 @@ NFLOG=$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" || true)
 SHEET="${G}/sample1/nextflow/samplesheet.csv"
 TOOLS='pharmcat,cpic,roh,mito_haplogroup,mosdepth,telomere_hunter,mito_variants,manta,delly,duphold,survivor_merge,multiqc,clinvar,expansion_hunter,stranger'
 CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
-want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=26.04.7 :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
+want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=26.10.0 :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
   --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json" \
   --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
@@ -49,7 +49,7 @@ if [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null
 [ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
   got:  ${NFLOG}
   want: ${want}"
-grep -q '^NEXTFLOW_VERSION="26.04.7"' "${REPO_ROOT}/versions.env" || fail "versions.env no longer pins Nextflow 26.04.7: update this case's NXF_VER"
+grep -q '^NEXTFLOW_VERSION="26.10.0"' "${REPO_ROOT}/versions.env" || fail "versions.env no longer pins Nextflow 26.10.0: update this case's NXF_VER"
 
 B="${G}/sample1/aligned/sample1_sorted.bam" V="${G}/sample1/vcf/sample1.vcf.gz"
 [ "$(cat "$SHEET")" = "sample,fastq_1,fastq_2,bam,bam_index,vcf,vcf_index,sex

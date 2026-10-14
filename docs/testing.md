@@ -4,7 +4,7 @@ This page is for contributors. It says what CI runs, how the end-to-end test wor
 
 The stub runs in `nextflow.yml` check that the Nextflow wiring holds together, and `container-test.yml` runs each changed image's own tool on the fixture. Neither runs a pipeline step as the scripts and modules call it, so a step can be broken in real use while both stay green. The **E2E** workflow ([`.github/workflows/e2e.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/e2e.yml)) closes that gap: it runs the real tools, in the pinned containers, on a small slice of a public genome, and checks what they write.
 
-Every `nextflow run` step in `nextflow.yml` has a time limit of its own, well under the job's 45 minutes. It is 10 minutes for the runs without containers, which take under a minute, and 20 for the stub run that pulls images, which took about four minutes in the run we timed. When a step of that job fails or is cut by its limit, the job prints which tasks were running and which were waiting to start, and uploads `.nextflow.log` as the artifact `nextflow-logs-<line>` (`pinned` or `26.04`). Without that log the first two hangs of the retry step could not be explained ([Lessons learned](lessons-learned.md#the-local-executor-can-lose-track-of-free-memory-and-a-task-that-needs-all-of-it-then-never-starts)).
+Every `nextflow run` step in `nextflow.yml` has a time limit of its own, well under the job's 45 minutes. It is 10 minutes for the runs without containers, which take under a minute, and 20 for the stub run that pulls images, which took about four minutes in the run we timed. When a step of that job fails or is cut by its limit, the job prints which tasks were running and which were waiting to start, and uploads `.nextflow.log` as the artifact `nextflow-logs-<line>` (`pinned` or `26.10`). Without that log the first two hangs of the retry step could not be explained ([Lessons learned](lessons-learned.md#the-local-executor-can-lose-track-of-free-memory-and-a-task-that-needs-all-of-it-then-never-starts)).
 
 ## The fixture
 
@@ -145,7 +145,7 @@ It measures the memory of the two PRS tasks that read only the scoring files: `P
 
 ## Running the e2e job yourself
 
-The e2e run needs Linux, Docker, Nextflow 26.04.7 with Java 17, the `gh` CLI and about 25 GB of disk, and takes about 80 to 140 minutes on a 4-CPU GitHub runner. Run it on a machine you do not need for anything else:
+The e2e run needs Linux, Docker, Nextflow 26.10.0 with Java 17, the `gh` CLI and about 25 GB of disk, and takes about 80 to 140 minutes on a 4-CPU GitHub runner. Run it on a machine you do not need for anything else:
 
 ```bash
 E2E_WORK=/path/with/space scripts/ci/e2e-run.sh          # every case

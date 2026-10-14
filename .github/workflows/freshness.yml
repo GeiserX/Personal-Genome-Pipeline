@@ -24,7 +24,7 @@ name: Freshness
 # issue instead of failing an unrelated pull request.
 #
 # 60-day rule: GitHub disables scheduled workflows in a public repository after
-# 60 days without repository activity. Monthly Dependabot and Renovate merges
+# 60 days without repository activity. Monthly Dependabot and weekly Renovate merges
 # normally count as activity. As a fallback the keepalive job re-enables this
 # workflow through the API when the newest commit on the default branch is
 # older than 25 days. It is its own job with no `needs`, so an upstream outage

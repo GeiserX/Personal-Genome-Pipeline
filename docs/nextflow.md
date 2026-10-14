@@ -17,10 +17,10 @@ Every BAM then goes through a sex check (indexcov), and the pipeline runs pharma
 ### Prerequisites
 
 1. **Docker** (already required for the bash pipeline)
-2. **Java 17 or later** (Nextflow 26.04 runtime requirement; CI runs Java 17)
-3. **Nextflow 26.04.7**, the version CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
+2. **Java 17 or later** (Nextflow 26.10 runtime requirement; CI runs Java 17)
+3. **Nextflow 26.10.0**, the version CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
    ```bash
-   curl -s https://get.nextflow.io | NXF_VER=26.04.7 bash
+   curl -s https://get.nextflow.io | NXF_VER=26.10.0 bash
    sudo mv nextflow /usr/local/bin/
    ```
 
@@ -142,7 +142,7 @@ Combine profiles: `-profile docker,test`
 
 ## Resource Configuration
 
-Each process asks for a fixed CPU count, a memory and a time limit, from its label or from its own block in `conf/base.config`. After an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with its memory doubled. Time doubles too, except DeepVariant's, which gets `--max_time` from its first attempt. On Nextflow 26.04.7, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed upstream after 26.04.7); we read this in the source and have not reproduced it. These limits cap each request:
+Each process asks for a fixed CPU count, a memory and a time limit, from its label or from its own block in `conf/base.config`. After an exit that usually means a kill for memory (137 and the others `conf/base.config` lists), the task is retried once with its memory doubled. Time doubles too, except DeepVariant's, which gets `--max_time` from its first attempt. On Nextflow before 26.10.0, a task that runs past its time limit can stop the whole run instead of being retried ([nextflow-io/nextflow#7569](https://github.com/nextflow-io/nextflow/issues/7569), fixed in 26.10.0); we read this in the source and have not reproduced it. These limits cap each request:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -150,7 +150,7 @@ Each process asks for a fixed CPU count, a memory and a time limit, from its lab
 | `--max_memory` | 64.GB | Maximum memory per process |
 | `--max_time` | 48.h | Maximum wall time per process |
 
-`--max_cpus` and `--max_memory` cap each task. They do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM with as many tasks as fit. On Nextflow 26.04.7 that count of free CPUs and RAM can go wrong and leave a task waiting for room it will never be given; we have seen it in the CI stub runs only ([Troubleshooting](troubleshooting.md#the-run-is-silent-and-no-container-is-running)).
+`--max_cpus` and `--max_memory` cap each task. They do not limit how much runs at once: Nextflow fills the machine's CPUs and RAM with as many tasks as fit. On Nextflow before 26.10.0 that count of free CPUs and RAM can go wrong and leave a task waiting for room it will never be given; we have seen it in the CI stub runs only ([Troubleshooting](troubleshooting.md#the-run-is-silent-and-no-container-is-running)). 26.10.0, the pinned release, fixes it ([nextflow-io/nextflow#7816](https://github.com/nextflow-io/nextflow/issues/7816)).
 
 Override for smaller machines, with `--max_memory` below the RAM the machine reports. On a 32 GB Linux machine the kernel reports a little less than 32 GiB, so a 32 GB cap leaves every 32 GB task (DeepVariant, the minimap2 index and `ALIGN_MINIMAP2`) larger than the machine, and Nextflow refuses to start it:
 
@@ -370,7 +370,7 @@ Cyrius (CYP2D6 star alleles) is under a non-commercial licence and is not in the
 
 ### CI validation scope
 
-`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.04.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. A job that fails prints which tasks were running or waiting and uploads the Nextflow logs as the artifact `nextflow-logs-<line>`. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry, over several cases, with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup, survivor_merge, y_haplogroup, sample_qc, prs, cram_archive and html_report (the prs case's row names a gVCF too); and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
+`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.10.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. A job that fails prints which tasks were running or waiting and uploads the Nextflow logs as the artifact `nextflow-logs-<line>`. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry, over several cases, with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup, survivor_merge, y_haplogroup, sample_qc, prs, cram_archive and html_report (the prs case's row names a gVCF too); and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
 
 ---
 

@@ -74,7 +74,7 @@ personal-genome-pipeline/
     guard.yml                  # image variables, image tags (check-images.sh), coupled versions, fake-docker suite, helper binaries, unit tests; ci-ok sums them up
     container-test.yml         # Runs each changed image on the fixture (tests/smoke/commands.tsv); container-ok sums it up
     e2e.yml                    # Real tools on a small fixture
-    nextflow.yml               # Nextflow config, lint, schema and stub runs on the pinned release and the newest 26.04.x
+    nextflow.yml               # Nextflow config, lint, schema and stub runs on the pinned release and the newest 26.10.x
     renovate-dry-run.yml       # Renovate lookups without an app, and their checks
     freshness.yml              # Monthly issue of pins that fell behind upstream
     docs.yml                   # mkdocs build

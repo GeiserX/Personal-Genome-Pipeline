@@ -22,7 +22,7 @@ The Renovate GitHub App is installed on this repository only and runs in Interac
 
 ## What a Renovate PR looks like
 
-- It is opened on the first day of the month, before 06:00 UTC, with the labels `dependencies` and `automated`.
+- It is opened on a Monday, before 06:00 UTC, with the labels `dependencies` and `automated`.
 - One tool per PR. No group rules.
 - The title starts with `deps:` (`ci:` for actionlint and gitleaks).
 - It changes the tool's line in `versions.env` and the same string in `conf/containers.config` and `docs/versions.md`. Those two generated files are written by `scripts/ci/gen-containers-config.sh` and `scripts/ci/gen-versions-doc.sh`, which copy the string from `versions.env` as it is, so the PR leaves them exactly as the scripts would. If a check still says one of them is stale, run both scripts on the branch and commit the result.
