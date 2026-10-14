@@ -59,7 +59,7 @@ Both reports have a Traits section: every row with its genotype, reading, note a
 | Hair thickness | rs3827760 (EDAR) | 18065779 |
 | Folate metabolism | rs1801133 (MTHFR C677T) | 7647779 |
 | Secretor status | rs601338 (FUT2) | 7876235, 12692541 |
-| Vitamin D level | rs2282679 (GC) | 20541252 |
+| Vitamin D level | rs2282679 in GC, the vitamin D binding protein gene | 20541252 |
 | Bilirubin, Gilbert syndrome genotype | rs887829 (UGT1A1) | 19414484, 37456363 |
 | Nicotine breakdown | rs1801272 (CYP2A6*2) | 2322567, 9827545 |
 | APOE ε2/ε3/ε4 | rs429358, rs7412 | 8346443, 9343467 |
