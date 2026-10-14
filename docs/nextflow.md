@@ -63,7 +63,11 @@ nextflow run main.nf \
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
 #    TelomereHunter uses its own hg19 bands and the run logs a warning
 #    An unknown name in --tools stops the run.
+#    --pedigree pedigree.tsv                   + --somalier_sites: the family workflow over the samplesheet rows
+#                                                it names (two or more, each with a gVCF; docs/multi-sample.md)
 ```
+
+**Family workflow (opt-in).** `--pedigree` (tab separated: sample, sex, father, mother, partner; [`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)) runs `workflows/family.nf` over the samplesheet rows it names, the same work as step 38: `FAMILY_PREPARE` checks the pedigree and that each member's gVCF names its own sample, `GLNEXUS` and `GLNEXUS_VCF` joint-call the gVCFs, `FAMILY_RELATE` and `FAMILY_CHECK` stop the run when somalier's relatedness of a pair disagrees with the pedigree (a sample swap), `WHATSHAP_PED` phases the children of complete trios by inheritance, and `FAMILY_REPORT` writes each child's allele origin, de novo candidates when both parents are sequenced, and compound heterozygotes among the clinical filter's candidates. Each member needs a gVCF: DEEPVARIANT's for a FASTQ or BAM row, the `gvcf` column for a VCF row (the run stops on a VCF row without one). Fewer than two named samples, or no `--somalier_sites`, stops the run at the start. Without `--pedigree` none of these processes exists and a run is unchanged. What it checks and what the files hold: [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in).
 
 `--reference` is the FASTA the reads are aligned to and the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a given BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
 
@@ -207,6 +211,8 @@ results/
 │                           #   CPSR, clinical filter (with its ACMG SF tier), slivar, ROH, mito haplogroup and haplocheck,
 │                           #   Y haplogroup; "Not run" for a tool not selected
 ├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
+├── family/                 # --pedigree: family.vcf.gz (joint call), relationships.tsv, somalier/, family.phased.vcf.gz,
+│                           #   <child>_inheritance.tsv.gz, de_novo.tsv, compound_het.tsv, family_report.md
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
     ├── timeline_*.html
