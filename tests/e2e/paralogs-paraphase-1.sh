@@ -204,8 +204,10 @@ REF_FASTA="$REF" PARAPHASE_REGIONS=hba run_step 35b-paraphase.sh "$Q"
 check_step_exit 35b-paraphase.sh
 QCN="${GENOME_DIR}/${Q}/paralogs/${Q}_paraphase_copy_number.tsv"
 cat "$QCN" 2>/dev/null
-check "the 4.2 kb deletion is named" grep -q '4.2 kb deletion' <<< "$(tsv "$QCN" hba HBA2 detail)"
-check "the unchanged slice has no 4.2 kb deletion" lacks '4.2 kb deletion' "$(tsv "$CN" hba HBA2 detail)"
+# The named call, not the "no 3.7 kb or 4.2 kb deletion ... found" line.
+NAMED='4\.2 kb deletion \(-a4\.2\)'
+check "the 4.2 kb deletion is named" has "$NAMED" "$(tsv "$QCN" hba HBA2 detail)"
+check "the unchanged slice has no 4.2 kb deletion" lacks "$NAMED" "$(tsv "$CN" hba HBA2 detail)"
 check_eq "one HBA2 copy lost (unchanged slice: ${HBA2_BASE:-none})" "$(tsv "$QCN" hba HBA2 copy_number)" \
   "$([[ "${HBA2_BASE:-}" =~ ^[0-9]+$ ]] && echo $((HBA2_BASE - 1)) || echo 'a number')"
 check_eq "HBA1 as on the unchanged slice" "$(tsv "$QCN" hba HBA1 copy_number)" "${HBA1_BASE:-none}"
