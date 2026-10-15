@@ -446,7 +446,11 @@ ANCESTRY_FINE_URL=${ANCESTRY_FINE_CHR22_URL%/*}
 ANCESTRY_FINE_SUFFIX=${ANCESTRY_FINE_CHR22_URL#*hgdp1kgp_chr22}
 ANCESTRY_FINE_META_URL=https://storage.googleapis.com/gcp-public-data--gnomad/release/3.1/secondary_analyses/hgdp_1kg_v2/metadata_and_qc/gnomad_meta_updated.tsv
 # Beagle's GRCh38 PLINK genetic map (HapMap, lifted from GRCh37), for phasing and painting.
+# Beagle's server is its only host and was unreachable for hours on 2026-10-15;
+# the Internet Archive's copy is byte for byte the same file (same sha256), so
+# the install falls back to it, checked against the same pin.
 ANCESTRY_FINE_MAP_URL=https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip
+ANCESTRY_FINE_MAP_MIRROR_URL=https://web.archive.org/web/20260306143720id_/https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip
 
 # ancestry_fine_pins: one line per chromosome file of the panel: chrN, the
 # crc32c Google reports for it and its size, from a HEAD request each. Their
@@ -508,15 +512,20 @@ install_ancestry_fine_panel() {
     echo "       The bucket replaced a file: read what changed before moving the pin in versions.env."
     return 1
   fi
-  # The metadata and the map, unless they are there with their pinned sha256.
-  for v in "${ANCESTRY_FINE_META_URL}|${dir}/meta.tsv|${ANCESTRY_FINE_META_SHA256}" \
-           "${ANCESTRY_FINE_MAP_URL}|${dir}/maps/plink.GRCh38.map.zip|${ANCESTRY_FINE_MAP_SHA256}"; do
-    IFS='|' read -r c e k <<< "$v"
+  # The metadata and the map, unless they are there with their pinned sha256;
+  # the map's mirror (the fourth field) is tried when its own host fails.
+  for v in "${ANCESTRY_FINE_META_URL}|${dir}/meta.tsv|${ANCESTRY_FINE_META_SHA256}|" \
+           "${ANCESTRY_FINE_MAP_URL}|${dir}/maps/plink.GRCh38.map.zip|${ANCESTRY_FINE_MAP_SHA256}|${ANCESTRY_FINE_MAP_MIRROR_URL}"; do
+    IFS='|' read -r c e k m <<< "$v"
     [ -s "$e" ] && [ "$(_digest sha256 "$e")" = "$k" ] && continue
-    if ! fetch "$c" "$e" sha256 "$k"; then
-      echo "[WARN] Could not download ${c}; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
-      return 1
+    fetch "$c" "$e" sha256 "$k" && continue
+    if [ -n "$m" ]; then
+      rm -f "${e}.part"
+      echo "  Trying the mirror of ${c##*/}: ${m}"
+      fetch "$m" "$e" sha256 "$k" && continue
     fi
+    echo "[WARN] Could not download ${c}; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+    return 1
   done
   if [ -n "$regions" ]; then
     [ -s "$regions" ] || { echo "[WARN] ANCESTRY_FINE_REGIONS=${regions} is not a file"; return 1; }

@@ -34,7 +34,7 @@ gnomAD's HGDP + 1000 Genomes callset (Koenig et al., Genome Research 2024), phas
 - the biallelic SNVs with a minor allele frequency of 5% or more, one per 2 kb (`ANCESTRY_FINE_THIN`), for everyone in the panel: phasing reference and painting reference;
 - the people's groups (`samples.tsv`), from gnomAD's metadata of the release;
 - after LD pruning (r2 above 0.1 within 500 kb removed, among the unrelated reference people), the SNVs ADMIXTURE uses, and each group's allele frequencies at both levels;
-- Beagle's GRCh38 genetic map (HapMap, lifted from GRCh37).
+- Beagle's GRCh38 genetic map (HapMap, lifted from GRCh37). Beagle's server is its only host; when it does not answer, the install takes the Internet Archive's copy of the same file, which has the same pinned sha256.
 
 The bucket reports a crc32c checksum per file. `versions.env` pins the sha256 of those checksums and sizes (`ANCESTRY_FINE_PANEL_SHA256`), and of the metadata and the map, so a file gnomAD replaces stops the install rather than changing the panel silently.
 
