@@ -12,8 +12,9 @@
 #     it: HG002's windows with chrX at autosomal depth and no chrY, and a
 #     made-up VCF of heterozygous SNVs at 0.5 on chr20 and chrX, reads no
 #     loss; with chrX depth at 0.85 and the chrX sites at 0.5 +- 0.088 (one X
-#     lost in 30% of the cells) it reads about 0.30 from depth and from
-#     allele fractions, detected.
+#     lost in 30% of the cells) it reads about 0.30 from allele fractions
+#     and, from depth, 0.30 on top of what HG002's own chrX slice reads
+#     (about 0.25 here, as that slice reads 3% above two copies), detected.
 # The fixture holds chrY:2.70-3.00 Mb, of which 2.78-3.00 Mb lies in the
 # single-copy part the estimate reads (about 21 blocks of 10 kb), and
 # chrX:73.7-74.0 Mb. Step 33 needs somalier's sites and VerifyBamID2's panel
