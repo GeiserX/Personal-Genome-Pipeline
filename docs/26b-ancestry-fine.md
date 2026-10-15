@@ -61,7 +61,7 @@ The Allen Ancient DNA Resource (AADR, release v66.p1, CC0 1.0 on the [Harvard Da
 
 ## Docker Images
 
-`ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE`, with `BCFTOOLS_IMAGE`, `PYTHON_IMAGE` and, for the install, `BCFTOOLS_HTTPS_IMAGE` (the panel is read over https; `BCFTOOLS_IMAGE` has no CA certificates) and `PLINK2_IMAGE`. All are pinned in `versions.env`; [Image versions](versions.md) lists the tags. The first four are `# optional`: `setup.sh --ancestry-fine-panel` pulls them, a plain `setup.sh` does not.
+`ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE`, with `BCFTOOLS_IMAGE`, `PYTHON_IMAGE` and, for the install, `BCFTOOLS_HTTPS_IMAGE` (the panel is read over https; `BCFTOOLS_IMAGE` has no CA certificates) and `PLINK2_IMAGE`. All are pinned in `versions.env`; [Image versions](versions.md) lists the tags. `ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE` and `BCFTOOLS_HTTPS_IMAGE` are `# optional`: `setup.sh --ancestry-fine-panel` pulls them, a plain `setup.sh` does not.
 
 ## Input
 
@@ -76,7 +76,7 @@ The Allen Ancient DNA Resource (AADR, release v66.p1, CC0 1.0 on the [Harvard Da
 ./scripts/26b-ancestry-fine.sh your_name
 ```
 
-`run-all.sh` runs it in the pipeline whenever the panel is installed (`ancestry_fine` in `--tools`, `--ancestry_fine_panel` set); `ANCESTRY_FINE_DIR=none` skips it. In the Nextflow pipeline the step is `ancestry_fine` in `--tools` with `--ancestry_fine_panel <genome_dir>/reference/ancestry_fine/hgdp1kgp_v2`. Settings: `THREADS` (default 4), `ANCESTRY_FINE_BOOTSTRAP` (replicates, default 100; 0 for none), `ANCESTRY_FINE_DIR` (another panel folder inside the genome directory).
+`run-all.sh` runs it in the pipeline whenever the panel is installed (`ancestry_fine` in `--tools`, `--ancestry_fine_panel` set); `ANCESTRY_FINE_DIR=none` skips it. In the Nextflow pipeline the step is `ancestry_fine` in `--tools` with `--ancestry_fine_panel <genome_dir>/reference/ancestry_fine/hgdp1kgp_v2`. Settings: `THREADS` (default 4), `ANCESTRY_FINE_BOOTSTRAP` (replicates, default 100; 0 for none), `ANCESTRY_FINE_DIR` (another panel folder inside the genome directory). `ANCESTRY_FINE_BOOTSTRAP` applies to `26b-ancestry-fine.sh` only: the pipeline, and so `run-all.sh`, always runs 100 replicates.
 
 ## What the Script Does Internally
 
@@ -107,7 +107,7 @@ Measured in CI only, on the e2e job's reduced panel: the fixture's slices plus c
 
 | Part | Time | Notes |
 |---|---|---|
-| `setup.sh --ancestry-fine-panel` on that panel | 1 min 43 s | 154 MB on disk, 7,789 SNVs of 4,088 people, 1,003 of them for ADMIXTURE |
+| `setup.sh --ancestry-fine-panel` on that panel | 1 min 43 s | 154 MB on disk, 7,789 SNVs of 4,089 people, 1,003 of them for ADMIXTURE |
 | The step on the fixture's slices from a gVCF (no chromosome long enough to paint) | 4 s | 2,136 panel SNVs genotyped |
 | The step with the painting of chr22:20-35 Mb | 1 min 19 s | 100 bootstrap replicates, 236 painting references |
 | The same through the Nextflow pipeline, with the HTML report | 1 min 38 s | six processes |

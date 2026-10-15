@@ -13,7 +13,8 @@
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
 #   (only these --tools names; cyrius, parascopy and y_haplogroup run only when named); KIR=true (KIR genes with HLA);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, ANCESTRY_PANEL (--ancestry_ref; none: raw
-#   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
+#   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
+#   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
 #   the single steps; the panels and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs

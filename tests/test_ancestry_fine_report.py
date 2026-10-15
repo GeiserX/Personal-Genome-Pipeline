@@ -11,7 +11,8 @@
   sample-bed   the .bed code of each genotype (ALT is the .bim's A1), a site
                without a genotype or with another allele is left out of the
                .bed, the .bim and every level's .P.in alike, chr22 in the VCF
-               meets 22 in the .bim, and the .ped allele pair of each code
+               meets 22 in the .bim, the .ped allele pair of each code, and
+               the bootstrap draws only blocks that hold SNVs
   chroms       a chromosome is painted only with 100 SNVs spanning 5 cM
   report       fractions sorted with the bootstrap spread, neighbouring RFMix
                windows of one group merged into one BED row per haplotype,
@@ -24,6 +25,7 @@ import contextlib
 import io
 import os
 import struct
+import subprocess
 import sys
 import tempfile
 import zlib
@@ -114,6 +116,19 @@ expect("sample-bed: .ped allele pairs (2 is A1): hom ALT, het, hom REF",
        open(os.path.join(out, "S.geno")).read(), "2 2\n1 2\n1 1\n")
 sh = open(os.path.join(out, "run_admixture.sh")).read()
 expect("sample-bed: run_admixture.sh runs 7 replicates of sample S", ("-le 7 ]" in sh, "S_${level}.bed" in sh), (True, True))
+# The block bootstrap draws only blocks that hold SNVs: 4 SNVs in 3 blocks round
+# up to blocks of 2, so there are 2 blocks and every replicate holds 3 x 2 SNVs.
+awk_prog = af.BOOT_SH.split("-v k=\"$k\" '", 1)[1].split("' \"@S@.geno\"", 1)[0]
+boot = os.path.join(tmp, "boot")
+os.makedirs(boot)
+write(os.path.join(boot, "g"), "".join(f"1 {i}\n" for i in range(4)))
+write(os.path.join(boot, "m"), "".join(f"22 s{i} 0 {i}\n" for i in range(4)))
+write(os.path.join(boot, "p"), "".join(f"0.{i} 0.5\n" for i in range(4)))
+sizes = set()
+for r in range(1, 21):
+    subprocess.run(["awk", "-v", f"r={r}", "-v", "nb=3", "-v", "k=2", awk_prog, "g", "m", "p"], cwd=boot, check=True)
+    sizes.add(len(open(os.path.join(boot, "rep.map")).readlines()))
+expect("sample-bed: every bootstrap replicate draws 3 non-empty blocks of 2 SNVs (20 seeds)", sizes, {6})
 raises("sample-bed: fewer genotyped SNVs than --min-sites stops it", lambda: af.main(
     ["sample-bed", "--bim", bim, "--vcf", vcf, "--sample", "S", "--level", f"continent:2:{p_file}", "--out-dir", out]))
 

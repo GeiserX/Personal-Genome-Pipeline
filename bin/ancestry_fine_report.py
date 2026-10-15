@@ -325,7 +325,9 @@ def sample_bed(bim, genotypes):
 PED_ALLELES = {0: "2 2", 2: "1 2", 3: "1 1"}
 
 # run_admixture.sh: the projection at each level, then the bootstrap. awk
-# draws the blocks; srand(r) makes replicate r the same on every run.
+# draws nb blocks of bs SNVs among the nblk blocks that hold SNVs (with bs
+# rounded up, nblk can be below nb); srand(r) makes replicate r the same on
+# every run.
 BOOT_SH = r"""#!/bin/sh
 # Written by bin/ancestry_fine_report.py sample-bed. Usage: sh run_admixture.sh THREADS
 set -eu
@@ -342,9 +344,9 @@ while read -r level k; do
       f == 2 { m[n2++] = $0; next }
       f == 3 { p[n3++] = $0; next }
       END {
-        srand(r); bs = int((n + nb - 1) / nb); printf "S S 0 0 0 -9" > "rep.ped"
+        srand(r); bs = int((n + nb - 1) / nb); nblk = int((n + bs - 1) / bs); printf "S S 0 0 0 -9" > "rep.ped"
         for (b = 0; b < nb; b++) {
-          s = int(rand() * nb) * bs
+          s = int(rand() * nblk) * bs
           for (i = s; i < s + bs && i < n; i++) { printf " %s", g[i] > "rep.ped"; print m[i] > "rep.map"; print p[i] > ("rep." k ".P.in") }
         }
         printf "\n" > "rep.ped"
