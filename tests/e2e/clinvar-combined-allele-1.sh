@@ -62,14 +62,17 @@ run_step 24-html-report.sh "$S2"
 check_step_exit 24-html-report.sh
 HTML="${G2}/${S2}/${S2}_report.html"
 check "the HTML hits table has the combined-allele column" grep -q '<th>Stars</th><th>Combined allele</th>' "$HTML"
-check "the HTML report marks a part hit" grep -q '<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG</td>' "$HTML"
+# The fixture's parts are unphased het calls, so every note says the parts may
+# sit on different haplotypes.
+UNPH='; unphased, so the parts may sit on different haplotypes'
+check "the HTML report marks a part hit" grep -qF "<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG${UNPH}</td>" "$HTML"
 check "the HTML report lists the combined hit with 2 stars" \
-  grep -q '<td>30000038</td>.*<td>2</td><td>combined allele of chr22:30000037 AGC&gt;A + chr22:30000042 T&gt;TGGG</td>' "$HTML"
+  grep -q "<td>30000038</td>.*<td>2</td><td>combined allele of chr22:30000037 AGC&gt;A + chr22:30000042 T&gt;TGGG${UNPH}</td>" "$HTML"
 check "the HTML row of the single SNV has an empty combined-allele cell" grep -q '<td>30000210</td>.*<td></td></tr>' "$HTML"
 run_step generate-report.sh "$S2"
 check_step_exit generate-report.sh
 check "the text report marks a part hit" \
-  grep -q '(part of a combined allele: chr22:30000038 GCCAT>CATGGG)' "${G2}/${S2}/${S2}_report.txt"
+  grep -qF "(part of a combined allele: chr22:30000038 GCCAT>CATGGG${UNPH})" "${G2}/${S2}/${S2}_report.txt"
 
 # --- the Nextflow module --------------------------------------------------------
 if command -v nextflow >/dev/null; then

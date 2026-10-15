@@ -247,9 +247,12 @@ def main():
         awk_notes = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
         summ_cv, txt_cv, html_cv = render(cv)
         py_notes = {str(h["pos"]): h["combined_allele"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]}
-        want = {"30000037": "part of a combined allele: chr22:30000038 GCCAT>CATGGG",
-                "30000038": "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG",
-                "30000042": "part of a combined allele: chr22:30000038 GCCAT>CATGGG",
+        # All three are unphased het calls: the genotype cannot say the parts
+        # share a haplotype, so the note says so (a phased pair below does not).
+        unph = "; unphased, so the parts may sit on different haplotypes"
+        want = {"30000037": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
+                "30000038": "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG" + unph,
+                "30000042": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
                 "30000210": ".",
                 "30000300": "possibly one allele with chr22:30000305 C>T: check ClinVar for a combined record",
                 "30000305": "possibly one allele with chr22:30000300 A>G: check ClinVar for a combined record"}
@@ -259,13 +262,26 @@ def main():
               [h["pos"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]][0] == 30000038,
               summ_cv["sections"]["clinvar"]["data"]["hits"])
         check("combined allele: the text report shows the notes",
-              "(part of a combined allele: chr22:30000038 GCCAT>CATGGG)" in txt_cv
-              and "(combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG)" in txt_cv, txt_cv)
+              f"(part of a combined allele: chr22:30000038 GCCAT>CATGGG{unph})" in txt_cv
+              and f"(combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG{unph})" in txt_cv, txt_cv)
         cv_rows = [l for l in html_cv.splitlines() if l.strip().startswith("<tr><td>chr22")]
         check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
               "<th>Stars</th><th>Combined allele</th>" in html_cv
-              and any("<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG</td>" in r for r in cv_rows)
+              and any(f"<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG{unph}</td>" in r for r in cv_rows)
               and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+        # The same hits phased (0|1, one phase set) or homozygous: both
+        # parts are on one haplotype, so the notes carry no phase caveat.
+        for gt_ in ("0|1", "1/1"):
+            put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS.replace("\tGT\t0/1\n", f"\tGT\t{gt_}\n"))
+            out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                                  f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+            awk_g = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+            summ_g, _, _ = render(cv)
+            py_g = {str(h["pos"]): h["combined_allele"] for h in summ_g["sections"]["clinvar"]["data"]["hits"]}
+            want_g = {k: v.replace(unph, "") for k, v in want.items()}
+            check(f"combined allele: GT {gt_} gets no phase caveat, in the summary and in bin/clinvar_hits.awk",
+                  py_g == want_g and awk_g == want_g, (py_g, awk_g))
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
         check("combined allele: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_cv))),
               validate.validate(schema, json.loads(json.dumps(summ_cv))))
 
