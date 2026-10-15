@@ -599,9 +599,11 @@ else
   done < <(pipeline_images)
 
   # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh)
-  # when that tag names the same image id. Without it the image is dangling
-  # (UNTAGGED: a dangling-image cleanup deletes it) unless another local tag
-  # names the same id (NO_PINNED_TAG: kept for now, while that tag stays).
+  # when that tag names the same image id. Without it, what Docker lists
+  # decides: UNTAGGED, dangling, so a dangling-image cleanup deletes it (the
+  # classic image store, no other tag); NO_PINNED_TAG, not dangling, so the
+  # cleanup keeps it for now (another local tag on the same id, or the
+  # containerd image store, where the digest reference is the image's name);
   # DANGLING_UNKNOWN: Docker did not say which.
   PULLED=0
   UNTAGGED=()
@@ -643,7 +645,7 @@ else
     echo "       Tag them with: ./scripts/setup.sh --pull-only"
   fi
   if [ ${#NO_PINNED_TAG[@]} -gt 0 ]; then
-    info "${#NO_PINNED_TAG[@]} digest-pinned image(s) lack their localhost/pgp-pinned/ tag; another local tag keeps them from a dangling-image cleanup while it stays:"
+    info "${#NO_PINNED_TAG[@]} digest-pinned image(s) lack their localhost/pgp-pinned/ tag; Docker does not list them as dangling, so a dangling-image cleanup keeps them:"
     printf '         %s\n' "${NO_PINNED_TAG[@]}"
     echo "       Add it with: ./scripts/setup.sh --pull-only"
   fi
