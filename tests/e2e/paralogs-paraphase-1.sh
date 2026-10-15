@@ -263,6 +263,11 @@ if command -v nextflow >/dev/null; then
   check_eq "Nextflow: HBA2 as the bash step found" "$(tsv "$NCN" hba HBA2 copy_number)" "${HBA2_BASE:-none}"
   check_eq "Nextflow: HBA1 as the bash step found" "$(tsv "$NCN" hba HBA1 copy_number)" "${HBA1_BASE:-none}"
   check "Nextflow: the report has the paralog card with HBA2" grep -q 'HBA2' "${NF}/out/${P}/${P}_report.html"
+  # The card counts the variant table too, so HTML_REPORT must be handed it, not only the copy numbers.
+  NV=$(awk -F'\t' 'NR > 1 && $1 == "hba"' "${GENOME_DIR}/${P}/paralogs/${P}_paraphase_variants.tsv" 2>/dev/null | wc -l | tr -d ' ')
+  check_ge "the bash step has hba variant rows" "$NV" 1
+  check "Nextflow: the report counts the ${NV} hba variants the bash step found" \
+    grep -q "Variants on phased haplotypes</span><span class=\"value\">${NV}<" "${NF}/out/${P}/${P}_report.html"
   rm -rf "${NF}/work"
 else
   fail "nextflow is not on PATH"

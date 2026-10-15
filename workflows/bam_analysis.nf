@@ -63,6 +63,7 @@ workflow BAM_ANALYSIS {
     ch_kir_genotype     = Channel.empty()
     ch_smn_copy_number  = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
+    ch_paraphase_vars   = Channel.empty()
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
@@ -187,7 +188,8 @@ workflow BAM_ANALYSIS {
         ch_paraphase_bam = ch_bam.join(PARAPHASE_CHECK.out.ok).map { meta, bam, bai, _ok -> [meta, bam, bai] }
         PARAPHASE(ch_paraphase_bam, ch_reference, ch_reference_fai)
         PARAPHASE_REPORT(PARAPHASE.out.results)
-        ch_paraphase_cn = PARAPHASE_REPORT.out.copy_number
+        ch_paraphase_cn   = PARAPHASE_REPORT.out.copy_number
+        ch_paraphase_vars = PARAPHASE_REPORT.out.variants
         ch_versions     = ch_versions.mix(PARAPHASE_CHECK.out.versions, PARAPHASE.out.versions,
                                           PARAPHASE_REPORT.out.versions)
     }
@@ -292,6 +294,7 @@ workflow BAM_ANALYSIS {
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
+    paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     y_haplogroup     = ch_y_haplogroup    // [meta, <id>_y_haplogroup.txt]
     versions         = ch_versions
