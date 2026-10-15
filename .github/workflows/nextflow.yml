@@ -379,6 +379,7 @@ jobs:
               sort) cat ;;
               markdup) out="${*: -1}"; cat > "${out%%##idx##*}"; echo index > "${out#*##idx##}" ;;
               quickcheck) exit 0 ;;
+              view) echo 0 ;;   # the read count: the empty FASTQs below hold no record
               *) echo "unexpected samtools $*" >&2; exit 2 ;;
           esac
           EOF

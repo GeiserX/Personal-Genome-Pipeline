@@ -1146,12 +1146,35 @@ def sec_mosaic_sex_loss(d, s):
     return p, data
 
 
+def sec_read_count(d, s):
+    """Step 02's read count (and the ALIGN_MINIMAP2 task's): the reads that
+    went into the aligner and the primary records of the BAM it wrote."""
+    p = first_existing(d, [f"qc/{s}_read_count.tsv"])
+    if not p:
+        return None, {}
+    data = {}
+    for r in read_tsv(p):
+        if r.get("key"):
+            data[r["key"]] = r.get("value", "")
+    for k in ("input_reads", "primary_records", "missing_reads"):
+        if not re.fullmatch(r"-?[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        data[k] = int(data[k])
+    if data.get("read_count_check") not in ("ok", "mismatch"):
+        raise Unreadable(f"{os.path.basename(p)} has no read_count_check row (ok or mismatch)")
+    return p, data
+
+
+# Sections that are not a step of their own: no "not run" line without them.
+NOT_A_STEP = {"read_count"}
+
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
     ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),
+    ("read_count", "Reads kept by alignment", "02", sec_read_count),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),
@@ -1327,8 +1350,10 @@ def collect(sample, sample_dir, declared_sex=None):
         "manifest": manifest or [],
         "sections": sections,
         "cyp2d6": cyp2d6,
+        # The read count is written by alignment, which a run from a BAM or
+        # a VCF never does, so it is no step left undone.
         "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
-                    for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed")],
+                    for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
     }
     return summary
