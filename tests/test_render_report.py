@@ -39,7 +39,11 @@ Checks:
      ranges, a small regional group kept because its range is not small, the
      painted shares, the picture and the "not a nationality" sentence;
   7. the telomere card says relative telomere content with its unit, and
-     no report in bin/ says "Telomere Length".
+     no report in bin/ says "Telomere Length";
+  8. the mosaic card: a man with an estimated loss of Y shows it in both
+     reports with its 95% range, the depth ratio and the population-level
+     note; a woman shows the allele-fraction line too; a sample without the
+     estimate gets a card that says Not run, and no text section.
 
 Run: python3 tests/test_render_report.py
 """
@@ -339,6 +343,47 @@ def main():
               and "intratelomeric reads per million reads with 48-52% GC" in html and "not a telomere length" in html)
         said = [p_ for p_ in glob.glob(os.path.join(REPO, "bin", "*.py")) if "Telomere Length" in open(p_).read()]
         check("no file in bin/ says 'Telomere Length'", not said, said)
+
+        # 8. mosaic loss of chrY or chrX
+        d = f"{work}/mosaic/S"
+
+        def mosaic_table(rows):
+            put(f"{d}/qc/S_sample_qc.tsv", "key\tvalue\nsample\tS\ninferred_sex\tmale\n"
+                + "".join(f"mosaic_{k}\t{v}\n" for k, v in rows.items()))
+            summ_ = collect_summary.collect("S", d)
+            return render_report.text_report(summ_), render_report.html_report(summ_)
+        male = {"sex": "male", "chrom": "chrY", "depth_ratio": "0.351", "depth_ratio_expected": "0.5",
+                "loss_depth": "0.298", "loss_depth_low": "0.293", "loss_depth_high": "0.303", "floor": "0.100",
+                "call": "detected", "reason": "the low end of the 95% range is above 10%"}
+        txt, html = mosaic_table(male)
+        line = ("From depth: estimated share of the cells that lost the Y 29.8% (95% range 29.3% to 30.3%); "
+                "chrY to autosome depth ratio 0.351")
+        card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("mosaic: the text report heading, call and estimate",
+              "## Mosaic loss of chromosome Y or X" in txt and "chrY: detected (the low end" in txt and line in txt, txt)
+        check("mosaic: the HTML card shows the same", 'badge-yellow">detected<' in card_m and line in card_m, card_m)
+        check("mosaic: both say population-level, not a diagnosis, and the 10% floor",
+              all("population-level association, not a diagnosis" in t and "Below about 10% of the cells" in t
+                  for t in (txt, card_m)), card_m)
+        check("mosaic: a man has no allele-fraction line", "allele fractions at" not in txt, txt)
+        txt, html = mosaic_table(dict(male, sex="female", chrom="chrX", depth_ratio="0.849",
+                                      depth_ratio_expected="1.0", x_het_sites="600", loss_af="0.316",
+                                      loss_af_low="0.288", loss_af_high="0.340"))
+        check("mosaic: a woman shows one X and the allele-fraction line",
+              "of the cells that lost one X" in txt and "From chrX allele fractions at 600 heterozygous sites: 31.6% "
+              "(95% range 28.8% to 34.0%)" in txt and "31.6%" in html, txt)
+        txt, html = mosaic_table(dict(male, depth_ratio="", loss_depth="0.190", loss_depth_low="-0.002",
+                                      loss_depth_high="0.382", call="not_detected"))
+        card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("mosaic: not detected says 'above 10%', and a missing depth ratio prints '?'",
+              "chrY: not detected above 10%" in txt and "below 10%" not in txt and "depth ratio ?," in txt
+              and 'badge-gray">not detected above 10%<' in card_m, txt)
+        put(f"{d}/qc/S_sample_qc.tsv", "key\tvalue\nsample\tS\ninferred_sex\tmale\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("mosaic: no estimate, the card says Not run and the text has no section",
+              'badge-gray">Not run<' in card_m and "## Mosaic loss" not in txt, card_m)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

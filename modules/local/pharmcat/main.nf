@@ -11,8 +11,13 @@
     reference. When the sample has a gVCF (DEEPVARIANT wrote one), step 1
     first expands its reference blocks over PharmCAT's gene regions into a
     plain VCF, as scripts/07-pharmacogenomics.sh does: a covered position
-    becomes a 0/0 call, an uncovered one (./.) stays missing. The expanded
-    file is named without .g.vcf, which PharmCAT refuses.
+    becomes a 0/0 call, an uncovered one (./.) stays missing. The expansion
+    writes one-base records, which do not count at a PharmCAT position whose
+    REF or ALT is longer than one base (an indel such as UGT1A1 *28), so
+    pgx_refblock_fill.py (bin/) writes a 0/0 record with PharmCAT's own
+    alleles there when reference blocks with GQ >= 20 cover the whole REF
+    span and no other record overlaps it. The expanded file is named without
+    .g.vcf, which PharmCAT refuses.
 
     PharmCAT types neither HLA nor CYP2D6 from a VCF. When PGX_CONSENSUS
     wrote outside calls for the sample (HLA-A and HLA-B from T1K, a CYP2D6
@@ -43,8 +48,12 @@ process PHARMCAT_PREPROCESS {
     def pgx_input = gvcf ? "${meta.id}.pgx_regions.vcf.gz" : "${vcf}"
     def expand = gvcf ? """
     echo "Input: ${gvcf} (reference blocks expanded over PharmCAT's gene regions)"
+    bcftools view -R /pharmcat/pharmcat_regions.bed -Ov -o gvcf_records.vcf ${gvcf}
     bcftools convert --gvcf2vcf -f ${reference} -R /pharmcat/pharmcat_regions.bed -Ou ${gvcf} \\
-        | bcftools view --trim-alt-alleles -i 'GT!="mis"' -Oz -o ${meta.id}.pgx_regions.vcf.gz --write-index=tbi
+        | bcftools view --trim-alt-alleles -i 'GT!="mis"' -Ov \\
+        | pgx_refblock_fill.py /pharmcat/pharmcat_positions.vcf.bgz gvcf_records.vcf \\
+        | bcftools view -Oz -o ${meta.id}.pgx_regions.vcf.gz --write-index=tbi
+    rm -f gvcf_records.vcf
     """ : """
     echo "Input: ${vcf} (no gVCF: PGx positions where the sample matches the reference read as missing)"
     """

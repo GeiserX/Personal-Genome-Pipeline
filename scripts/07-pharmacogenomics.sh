@@ -36,8 +36,13 @@ done
 # the reference. Step 03's gVCF also records where it matches, so when there
 # is one its reference blocks are expanded over PharmCAT's gene regions into a
 # plain VCF: every covered position becomes a 0/0 call, and an uncovered one
-# (./.) stays missing. PharmCAT refuses a gVCF, by content and by a name with
-# .g.vcf in it, so the expanded file has neither.
+# (./.) stays missing. That expansion writes one-base records, which do not
+# count at a PharmCAT position whose REF or ALT is longer than one base (an
+# indel such as UGT1A1 *28); bin/pgx_refblock_fill.py writes a 0/0 record
+# with PharmCAT's own alleles there when reference blocks with GQ >= 20 cover
+# the whole REF span and no other record overlaps it. PharmCAT refuses a gVCF,
+# by content and by a name with .g.vcf in it, so the expanded file has
+# neither. The PHARMCAT_PREPROCESS module does the same.
 GVCF="${OUTPUT_DIR}/${SAMPLE}.g.vcf.gz"
 PGX_INPUT="${SAMPLE}.vcf.gz"
 rm -f "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz" "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz.tbi"
@@ -48,10 +53,16 @@ if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
   run_in \
     --cpus 1 --memory 2g \
     -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
+    -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
     "${PHARMCAT_IMAGE}" \
     bash -euo pipefail -c '
+      records=$(mktemp)
+      trap '\''rm -f "$records" "$3.part" "$3.part.tbi"'\'' EXIT
+      bcftools view -R /pharmcat/pharmcat_regions.bed -Ov -o "$records" "$2"
       bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
-        | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Oz -o "$3.part" --write-index=tbi
+        | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Ov \
+        | python3 /pgp-bin/pgx_refblock_fill.py /pharmcat/pharmcat_positions.vcf.bgz "$records" \
+        | bcftools view -Oz -o "$3.part" --write-index=tbi
       mv -f "$3.part" "$3"
       mv -f "$3.part.tbi" "$3.tbi"' \
     _ "${REF_FASTA_C}" "/data/${SAMPLE}.g.vcf.gz" "/data/${PGX_INPUT}"

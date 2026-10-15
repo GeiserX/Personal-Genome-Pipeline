@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr22,length=50818468>
+##INFO=<ID=GENEINFO,Number=1,Type=String,Description="Gene(s) for the variant reported as gene symbol:gene id">
+##INFO=<ID=CLNSIG,Number=.,Type=String,Description="Aggregate germline classification for this single variant">
+##INFO=<ID=CLNREVSTAT,Number=.,Type=String,Description="ClinVar review status of the germline classification">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr22	30000037	9900001	AGC	A	.	.	GENEINFO=SYNTH1:990001;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter
+chr22	30000038	9900003	GCCAT	CATGGG	.	.	GENEINFO=SYNTH1:990001;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts
+chr22	30000042	9900002	T	TGGG	.	.	GENEINFO=SYNTH1:990001;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter
+chr22	30000210	9900004	C	T	.	.	GENEINFO=SYNTH2:990002;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter
