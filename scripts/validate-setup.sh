@@ -109,8 +109,9 @@ check_bam_quickcheck() {
 # compare the REF bases of its first 1000 records with REF_FASTA. bcftools norm
 # -c x drops a record whose REF differs from the reference, so the records it
 # keeps give the count. On GRCh38 none or almost none differ; on another build
-# most do. Over 5% fails (a line drawn here, not measured). Only this script
-# runs this check: VCF_PRECHECK in the Nextflow pipeline reads the header only.
+# most do. Over 5% fails (a line drawn here, not measured). VCF_PRECHECK in
+# the Nextflow pipeline makes the same comparison when the header gives no
+# length for chr1-22, X or Y, and stops the run over 5%.
 check_vcf_ref_bases() {
   local counts n kept bad v="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
   counts=$(run_in "${BCFTOOLS_IMAGE}" sh -c "set -e
@@ -592,9 +593,11 @@ else
   done < <(pipeline_images)
 
   # A digest-pinned image is kept by its pinned_tag (scripts/lib/common.sh)
-  # when that tag names the same image id. Without it the image is dangling
-  # (UNTAGGED: a dangling-image cleanup deletes it) unless another local tag
-  # names the same id (NO_PINNED_TAG: kept for now, while that tag stays).
+  # when that tag names the same image id. Without it, what Docker lists
+  # decides: UNTAGGED, dangling, so a dangling-image cleanup deletes it (the
+  # classic image store, no other tag); NO_PINNED_TAG, not dangling, so the
+  # cleanup keeps it for now (another local tag on the same id, or the
+  # containerd image store, where the digest reference is the image's name);
   # DANGLING_UNKNOWN: Docker did not say which.
   PULLED=0
   UNTAGGED=()
@@ -636,7 +639,7 @@ else
     echo "       Tag them with: ./scripts/setup.sh --pull-only"
   fi
   if [ ${#NO_PINNED_TAG[@]} -gt 0 ]; then
-    info "${#NO_PINNED_TAG[@]} digest-pinned image(s) lack their localhost/pgp-pinned/ tag; another local tag keeps them from a dangling-image cleanup while it stays:"
+    info "${#NO_PINNED_TAG[@]} digest-pinned image(s) lack their localhost/pgp-pinned/ tag; Docker does not list them as dangling, so a dangling-image cleanup keeps them:"
     printf '         %s\n' "${NO_PINNED_TAG[@]}"
     echo "       Add it with: ./scripts/setup.sh --pull-only"
   fi

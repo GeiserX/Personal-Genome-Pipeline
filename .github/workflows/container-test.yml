@@ -22,7 +22,11 @@ name: Container Test
 #                 rows need, pull it, run the rows, check the outputs.
 #   pinned-images runs setup.sh --pull-only on the images versions.env pins
 #                 by digest and checks that none is left dangling (no tag), so
-#                 `docker image prune` keeps them. On a pull request it pulls
+#                 `docker image prune` keeps them, and that validate-setup.sh
+#                 reports a missing tag the way the image store answers. Two
+#                 legs: Docker's classic image store and its containerd image
+#                 store (the default for fresh installs since Engine 29). On a
+#                 pull request it pulls
 #                 only when versions.env, setup.sh, validate-setup.sh,
 #                 scripts/lib/common.sh or this file changed; otherwise the job
 #                 passes without pulling. Monthly and on dispatch it always runs.
@@ -189,13 +193,21 @@ jobs:
           path: ${{ env.SMOKE_WORK }}/logs/
           if-no-files-found: ignore
 
-  # An image pulled by digest alone has no tag: Docker lists it as dangling
-  # and a dangling-image cleanup (`docker image prune`) deletes it. setup.sh
-  # gives each digest-pinned image a second name (pinned_tag in
-  # scripts/lib/common.sh); tasks keep running the digest reference.
+  # On the classic image store an image pulled by digest alone has no tag:
+  # Docker lists it as dangling and a dangling-image cleanup
+  # (`docker image prune`) deletes it. On the containerd image store the
+  # digest reference is the image's name, so Docker does not list it as
+  # dangling and the cleanup keeps it. setup.sh gives each digest-pinned
+  # image a second name either way (pinned_tag in scripts/lib/common.sh);
+  # tasks keep running the digest reference.
   pinned-images:
+    name: pinned-images (${{ matrix.store }} store)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        store: [classic, containerd]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,11 +233,33 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Each leg sets the image store itself, so the runner's default does
+      # not decide what is tested, and proves the daemon took it.
+      - name: Use the ${{ matrix.store }} image store
+        if: steps.scope.outputs.run != 'false'
+        env:
+          STORE: ${{ matrix.store }}
+        run: |
+          on=false
+          [ "$STORE" = containerd ] && on=true
+          f=/etc/docker/daemon.json
+          cur='{}'
+          if sudo test -s "$f"; then cur=$(sudo cat "$f"); fi
+          jq --argjson on "$on" '.features["containerd-snapshotter"] = $on' <<< "$cur" | sudo tee "$f"
+          sudo systemctl restart docker
+          docker version --format 'Docker server {{.Server.Version}}'
+          status=$(docker info --format '{{.Driver}} {{json .DriverStatus}}')
+          echo "Storage driver: ${status}"
+          if grep -q 'io.containerd.snapshotter' <<< "$status"; then got=containerd; else got=classic; fi
+          if [ "$got" != "$STORE" ]; then
+            echo "::error::asked for the ${STORE} image store, docker info reports the ${got} one"; exit 1
+          fi
+
       - name: setup.sh --pull-only leaves no digest-pinned image dangling
         if: steps.scope.outputs.run != 'false'
+        env:
+          STORE: ${{ matrix.store }}
         run: |
-          docker version --format 'Docker server {{.Server.Version}}'
-          docker info --format 'Storage driver: {{.Driver}}'
           mapfile -t imgs < <(bash -c '. scripts/lib/common.sh && pipeline_images' | grep '@sha256:')
           if [ "${#imgs[@]}" -eq 0 ]; then
             echo "::error::versions.env pins no image by digest that setup.sh pulls; nothing to check"; exit 1
@@ -241,16 +275,20 @@ jobs:
           awk '/^[A-Z0-9_]+_IMAGE=/ && !/@sha256:/ && !/# optional/ { $0 = $0 "  # optional" } 1' \
             versions.env > "${copy}/versions.env"
           # validate-setup.sh lists an image alone on a line under its
-          # warning (no tag at all: a cleanup would delete it) or under its
-          # note (kept by another tag, only the pinned one is missing). It
-          # exits 1 here (no reference data): ignored.
+          # warning (dangling: a cleanup would delete it) or under its note
+          # (not dangling, only the pinned tag is missing). It exits 1 here
+          # (no reference data): ignored.
           listed() {
             "${copy}/scripts/validate-setup.sh" > "${RUNNER_TEMP}/validate.log" 2>&1 || true
             awk -v i="$1" -v start="$2" -v stop="$3" '$0 ~ start { w = 1; next } $0 ~ stop { w = 0 }
               w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${RUNNER_TEMP}/validate.log"
           }
           warned() { listed "$1" 'digest-pinned image[(]s[)] have no local tag' 'Tag them with'; }
-          noted() { listed "$1" 'lack their localhost/pgp-pinned/ tag' 'Add it with'; }
+          noted() { listed "$1" 'lack their localhost/pgp-pinned/ tag; Docker does not list them as dangling, so a dangling-image cleanup keeps them:' 'Add it with'; }
+          # untagged: the report validate-setup.sh owes an image whose pinned
+          # tag is missing and which has no other tag: the warning where that
+          # image is dangling (classic store), the note where it is not.
+          untagged() { if [ "$STORE" = classic ]; then warned "$1"; else noted "$1"; fi; }
           # pull_only N: setup.sh --pull-only, whose summary must say it added N pinned tags.
           pull_only() {
             "${copy}/scripts/setup.sh" --pull-only > "${RUNNER_TEMP}/setup.log" 2>&1 || { cat "${RUNNER_TEMP}/setup.log"; exit 1; }
@@ -260,19 +298,37 @@ jobs:
             fi
           }
 
-          # Control: pulled by digest the plain way, the first image is
-          # dangling, so the check below can fail, and validate-setup.sh
-          # warns about it.
+          # Control: pulled by digest the plain way. On the classic store the
+          # first image is dangling, so the check below can fail, and
+          # validate-setup.sh warns about it. On the containerd store it is
+          # not dangling, validate-setup.sh only notes the missing tag, and a
+          # dangling-image cleanup keeps it.
           docker pull --quiet "${imgs[0]}"
-          if ! is_dangling "${imgs[0]}"; then
-            echo "::error::control: ${imgs[0]} pulled by digest alone is not dangling; this check could not fail"; exit 1
+          echo "${STORE} store: ${imgs[0]} pulled by digest alone is listed as: $(docker images --no-trunc --format '{{.Repository}} {{.Tag}} {{.ID}}' | grep -F "$(id_of "${imgs[0]}")" || echo 'not listed')"
+          if [ "$STORE" = classic ]; then
+            if ! is_dangling "${imgs[0]}"; then
+              echo "::error::control: ${imgs[0]} pulled by digest alone is not dangling; this check could not fail"; exit 1
+            fi
+            echo "Control: ${imgs[0]} pulled by digest alone is dangling."
+            if ! warned "${imgs[0]}"; then
+              cat "${RUNNER_TEMP}/validate.log"
+              echo "::error::validate-setup.sh did not warn that ${imgs[0]} has no local tag"; exit 1
+            fi
+            echo "validate-setup.sh warns that ${imgs[0]} has no local tag."
+          else
+            if is_dangling "${imgs[0]}"; then
+              echo "::error::control: on the containerd store ${imgs[0]} pulled by digest alone is dangling; validate-setup.sh's note assumes it is not"; exit 1
+            fi
+            echo "Control: ${imgs[0]} pulled by digest alone is not dangling."
+            if warned "${imgs[0]}" || ! noted "${imgs[0]}"; then
+              cat "${RUNNER_TEMP}/validate.log"
+              echo "::error::validate-setup.sh should note, not warn, that ${imgs[0]} lacks its pinned tag and is not dangling"; exit 1
+            fi
+            echo "validate-setup.sh notes that ${imgs[0]} lacks its pinned tag and is not dangling."
+            docker image prune --force
+            docker image inspect "${imgs[0]}" > /dev/null || { echo "::error::docker image prune deleted ${imgs[0]}, pulled by digest alone"; exit 1; }
+            echo "docker image prune kept ${imgs[0]}, pulled by digest alone."
           fi
-          echo "Control: ${imgs[0]} pulled by digest alone is dangling."
-          if ! warned "${imgs[0]}"; then
-            cat "${RUNNER_TEMP}/validate.log"
-            echo "::error::validate-setup.sh did not warn that ${imgs[0]} has no local tag"; exit 1
-          fi
-          echo "validate-setup.sh warns that ${imgs[0]} has no local tag."
 
           # setup.sh: the first image takes the "already present" path, the
           # rest are pulled. Run twice: the first adds every pinned tag, the
@@ -286,8 +342,8 @@ jobs:
             done
           done
           echo "No digest-pinned image is dangling after setup.sh --pull-only."
-          if warned "${imgs[0]}"; then
-            echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh --pull-only"; exit 1
+          if warned "${imgs[0]}" || noted "${imgs[0]}"; then
+            echo "::error::validate-setup.sh still reports ${imgs[0]} after setup.sh --pull-only"; exit 1
           fi
 
           # One local tag per image, carrying its digest, on the same image id.
@@ -312,14 +368,14 @@ jobs:
           if [ "${#imgs[@]}" -ge 2 ]; then
             tag0=$(docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "${imgs[0]}" | grep '^localhost/pgp-pinned/')
             docker tag "${imgs[1]}" "$tag0"
-            if ! warned "${imgs[0]}"; then
+            if ! untagged "${imgs[0]}"; then
               cat "${RUNNER_TEMP}/validate.log"
               echo "::error::validate-setup.sh missed that ${tag0} names another image"; exit 1
             fi
             pull_only 1
             [ "$(id_of "$tag0")" = "$(id_of "${imgs[0]}")" ] || { echo "::error::setup.sh did not move ${tag0} back"; exit 1; }
-            if warned "${imgs[0]}"; then
-              echo "::error::validate-setup.sh still warns about ${imgs[0]} after setup.sh moved its tag back"; exit 1
+            if warned "${imgs[0]}" || noted "${imgs[0]}"; then
+              echo "::error::validate-setup.sh still reports ${imgs[0]} after setup.sh moved its tag back"; exit 1
             fi
             echo "A moved tag is reported by validate-setup.sh and put back by setup.sh."
           fi

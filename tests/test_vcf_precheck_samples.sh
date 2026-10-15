@@ -3,7 +3,9 @@
 # is refused at intake, with the count and the names, and a single-sample VCF
 # goes on. The same block refuses a VCF whose ##contig lengths are not
 # GRCh38's (a GRCh37 file named the chr way or the Ensembl way), and lets a
-# GRCh38 header, or one without ##contig lines, through.
+# GRCh38 header through. A header without contig lengths gets its REF bases
+# compared with the reference instead: more than 5% of the first 1000
+# records different stops the run, 5% or less goes on.
 #
 # Two places apply the rule, and both are run here on the synthetic VCFs in
 # tests/fixtures/vcf/:
@@ -41,6 +43,8 @@ values = {
     'meta.id': 'S1',
     'allow_unfiltered': 'false',
     'task.process': 'VCF_PRECHECK',
+    'reference': 'ref.fa',
+    'reference_fai': 'ref.fa.fai',
 }
 def interp(mo):
     expr = mo.group(1)
@@ -72,6 +76,23 @@ case "$1 ${2:-}" in
     gzip -dc "$3" | awk -F'\t' '!/^#/ { n[$1]++ } END { for (c in n) printf "%s\t.\t%d\n", c, n[c] }' ;;
   "view -h")
     gzip -dc "$3" | grep '^#' ;;
+  "head -h")
+    # head -h 0 -n N FILE: the first N records, no header
+    [ "$3 $4" = "0 -n" ] || { echo "fake bcftools: unexpected head call: $*" >&2; exit 2; }
+    gzip -dc "$6" | grep -v '^#' | head -n "$5" ;;
+  "norm -c")
+    # norm -c x -f REF -o OUT IN: keep the records whose REF is the reference's
+    # bases there. Like the real one it fails on a record whose contig the
+    # header does not declare, or the reference does not have.
+    [ "$3 $4 $6" = "x -f -o" ] || { echo "fake bcftools: unexpected norm call: $*" >&2; exit 2; }
+    awk -F'\t' -v OFS='\t' -v out="$7" '
+      FNR == 1 { f++ }
+      f == 1 { if (/^>/) { name = substr($1, 2); sub(/[ \t].*/, "", name) } else seq[name] = seq[name] $0; next }
+      /^##contig=<ID=/ { id = $0; sub(/^##contig=<ID=/, "", id); sub(/[,>].*/, "", id); declared[id] = 1 }
+      /^#/ { print > out; next }
+      !($1 in declared) { print "[E::vcf_format] Invalid BCF, CONTIG id=0 not present in the header" > "/dev/stderr"; exit 255 }
+      !($1 in seq) { print "faidx_fetch_seq failed at " $1 ":" $2 > "/dev/stderr"; exit 255 }
+      toupper(substr(seq[$1], $2, length($4))) == toupper($4) { print > out }' "$5" "$8" ;;
   "query -f")
     # %FILTER, or %FILTER\t%ALT\t%INFO/END: the reference-block columns read '.'
     case "$3" in
@@ -83,12 +104,30 @@ esac
 FAKE
 chmod +x "${WORK}/bin/bcftools"
 
+# --- a small reference -------------------------------------------------------
+# chr1 and chrM, every base G except the REF bases of the fixture's three
+# records: chr1:10000100 A, chr1:10000200 C, chrM:100 T.
+python3 - "${WORK}/ref.fa" <<'PY2'
+import sys
+seqs = {'chr1': (10001500, {10000100: 'A', 10000200: 'C'}), 'chrM': (16569, {100: 'T'})}
+with open(sys.argv[1], 'w') as fa, open(sys.argv[1] + '.fai', 'w') as fai:
+    for name, (n, bases) in seqs.items():
+        s = bytearray(b'G' * n)
+        for pos, b in bases.items():
+            s[pos - 1] = ord(b)
+        fa.write('>%s\n' % name)
+        fai.write('%s\t%d\t%d\t%d\t%d\n' % (name, n, fa.tell(), n, n + 1))
+        fa.write(s.decode() + '\n')
+PY2
+
 # run_precheck VCF_TEXT_FILE: run the block in a fresh task directory; sets OUT, RC
 run_precheck() {
   local dir
   dir=$(mktemp -d "${WORK}/task.XXXXXX")
   gzip -c "$1" > "${dir}/input.vcf.gz"
   : > "${dir}/input.vcf.gz.tbi"
+  ln -s "${WORK}/ref.fa" "${dir}/ref.fa"
+  ln -s "${WORK}/ref.fa.fai" "${dir}/ref.fa.fai"
   set +e
   OUT=$(cd "$dir" && PATH="${WORK}/bin:${PATH}" bash -euo pipefail "${WORK}/precheck.sh" 2>&1)
   RC=$?
@@ -180,17 +219,85 @@ fi
 } > "${WORK}/grch38-all.vcf"
 [ "$(grep -c '^##contig' "${WORK}/grch38-all.vcf")" -eq 24 ] || fail "the GRCh38 test header does not have 24 contigs"
 run_precheck "${WORK}/grch38-all.vcf"
-if [ "$RC" -eq 0 ] && grep -q 'FILTER counts PASS=3' <<<"$OUT"; then
-  pass "VCF_PRECHECK accepts GRCh38's 24 lengths (the demo sample's NCBI table)"
+if [ "$RC" -eq 0 ] && grep -q 'FILTER counts PASS=3' <<<"$OUT" && ! grep -q 'REF bases' <<<"$OUT"; then
+  pass "VCF_PRECHECK accepts GRCh38's 24 lengths (the demo sample's NCBI table), with no REF spot-check"
 else
   fail "VCF_PRECHECK on a full GRCh38 header: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
+
+# --- build: REF bases, when the header gives no contig length ------------------------
+# The fixture's records match the small reference: the file goes on.
 grep -v '^##contig' "${FIX}/one_sample.vcf" > "${WORK}/nocontig.vcf"
 run_precheck "${WORK}/nocontig.vcf"
-if [ "$RC" -eq 0 ] && ! grep -q 'not on GRCh38' <<<"$OUT"; then
-  pass "VCF_PRECHECK lets a header without ##contig lines through"
+if [ "$RC" -eq 0 ] && ! grep -q 'not on GRCh38' <<<"$OUT" \
+   && grep -q 'REF bases differ from the reference in 0 of the first 3 records (0.0%)' <<<"$OUT"; then
+  pass "VCF_PRECHECK spot-checks a header without ##contig lines and lets matching REF bases through"
 else
   fail "VCF_PRECHECK on a header without ##contig lines: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# spot_vcf FILE N_SAME N_DIFF [CONTIG]: a header without contig lengths and
+# N_SAME records whose REF is the reference's G, then N_DIFF whose REF is T.
+spot_vcf() {
+  local c=${4:-chr1}
+  {
+    grep -v '^##contig' "${FIX}/one_sample.vcf" | grep '^#'
+    awk -v s="$2" -v d="$3" -v c="$c" 'BEGIN { OFS = "\t"
+      for (i = 1; i <= s + d; i++) print c, 10000300 + i, ".", (i <= s ? "G" : "T"), "A", 50, "PASS", ".", "GT", "0/1" }'
+  } > "$1"
+}
+
+# Every REF different: the stop names the sample, the count, the rate and the fix.
+spot_vcf "${WORK}/spot_all.vcf" 0 20
+run_precheck "${WORK}/spot_all.vcf"
+if [ "$RC" -ne 0 ] && grep -q "Sample 'S1': input.vcf.gz is not on GRCh38. Its header gives no contig lengths" <<<"$OUT" \
+   && grep -q 'they differ in 20 of the first 20 records (100.0%)' <<<"$OUT" \
+   && grep -q 'start from the FASTQ' <<<"$OUT" && ! grep -q 'FILTER counts' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops a header without contig lengths whose REF bases are not the reference's"
+else
+  fail "VCF_PRECHECK on REF bases all different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# The line is validate-setup.sh's: 1 of 20 (5%) goes on; 1 of 19 (5.3%) and
+# 2 of 20 (10%) stop, and the rate printed is above 5.
+spot_vcf "${WORK}/spot_5.vcf" 19 1
+run_precheck "${WORK}/spot_5.vcf"
+if [ "$RC" -eq 0 ] && grep -q 'REF bases differ from the reference in 1 of the first 20 records (5.0%)' <<<"$OUT"; then
+  pass "VCF_PRECHECK lets 5% different REF bases through"
+else
+  fail "VCF_PRECHECK on 1 of 20 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+spot_vcf "${WORK}/spot_19.vcf" 18 1
+run_precheck "${WORK}/spot_19.vcf"
+if [ "$RC" -ne 0 ] && grep -q 'they differ in 1 of the first 19 records (5.3%)' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops at 1 of 19 different REF bases, and prints 5.3%"
+else
+  fail "VCF_PRECHECK on 1 of 19 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+spot_vcf "${WORK}/spot_10.vcf" 18 2
+run_precheck "${WORK}/spot_10.vcf"
+if [ "$RC" -ne 0 ] && grep -q 'they differ in 2 of the first 20 records (10.0%)' <<<"$OUT"; then
+  pass "VCF_PRECHECK stops at 10% different REF bases"
+else
+  fail "VCF_PRECHECK on 2 of 20 REF bases different: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# Only the first 1000 records count.
+spot_vcf "${WORK}/spot_1000.vcf" 1000 200
+run_precheck "${WORK}/spot_1000.vcf"
+if [ "$RC" -eq 0 ] && grep -q 'differ from the reference in 0 of the first 1000 records' <<<"$OUT"; then
+  pass "VCF_PRECHECK compares the first 1000 records only"
+else
+  fail "VCF_PRECHECK on 1200 records: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
+fi
+
+# Records on a contig the reference lacks are left out, not compared.
+spot_vcf "${WORK}/spot_chr2.vcf" 0 20 chr2
+run_precheck "${WORK}/spot_chr2.vcf"
+if [ "$RC" -eq 0 ] && grep -q 'no record is on a reference contig: REF bases not compared' <<<"$OUT"; then
+  pass "VCF_PRECHECK leaves out records on contigs the reference lacks"
+else
+  fail "VCF_PRECHECK on records off the reference: rc=${RC}, output: $(tr '\n' '|' <<<"$OUT")"
 fi
 
 # --- vcf_header_samples in scripts/lib/common.sh ------------------------------------
