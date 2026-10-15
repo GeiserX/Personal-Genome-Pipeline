@@ -344,11 +344,12 @@ One samplesheet row is one sample, so a VCF given on a row must hold one sample 
 
 ### Contig names and gVCF input
 
-`VCF_PRECHECK` also stops the run, before any analysis, in three cases, and the message names the sample and the fix:
+`VCF_PRECHECK` also stops the run, before any analysis, in four cases, and the message names the sample and the fix:
 
 - No contig that holds records is named the chr way (`1`, `MT` instead of `chr1`, `chrM`). Without this stop the mito haplogroup file comes out empty and chrX segments leak into the autosomal ROH summary, with exit 0. The message prints the `bcftools annotate --rename-chrs` command with its 25-line map.
 - `pharmcat` is selected and the VCF is a gVCF (a `##GVCFBlock` header line, or reference-block records: ALT `<*>`, `<NON_REF>` or `.` with `INFO/END`), or only its name says so (`.g.vcf`, `.genomic.vcf`). PharmCAT refuses both. Without `pharmcat`, a gVCF runs: ROH, the mito haplogroup and the ClinVar screen give the same results as on the matching variants-only file.
-- A `##contig` line for chr1-22, chrX or chrY (or 1-22, X, Y) gives a length GRCh38 does not have, for example `chr1 length 249250621 (GRCh38: 248956422)`, which is GRCh37 (hg19). The message lists up to five such contigs. Renaming the contigs does not fix this: get a GRCh38 VCF, or start from the FASTQ. A VCF without `##contig` lines, or without lengths in them, is not checked here; `validate-setup.sh` spot-checks its REF bases against the reference, and a direct `nextflow run` does not.
+- A `##contig` line for chr1-22, chrX or chrY (or 1-22, X, Y) gives a length GRCh38 does not have, for example `chr1 length 249250621 (GRCh38: 248956422)`, which is GRCh37 (hg19). The message lists up to five such contigs. Renaming the contigs does not fix this: get a GRCh38 VCF, or start from the FASTQ.
+- The header gives no length for chr1-22, chrX or chrY (no `##contig` lines, or lines without lengths), and the REF bases of the file's first 1000 records (less any on a contig the reference lacks) differ from `--reference` in more than 5% of them. `bcftools norm -c x` does the comparison, as in `validate-setup.sh`; the message gives the count and the rate, for example `they differ in 45 of the first 60 records (75.0%)`. On GRCh38 none or almost none differ, on another build most do; 5% is a line drawn, not measured. When no record is left to compare, or `bcftools norm` fails, the task log says so and the run goes on.
 
 [Starting from a Vendor VCF](vcf-first.md) has the commands that fix the first two.
 
