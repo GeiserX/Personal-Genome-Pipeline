@@ -426,6 +426,38 @@ For reference data downloads that fail repeatedly, see the per-step sections for
 
 ---
 
+### The BAM lost reads
+
+**Symptom:** Step 02 or 02a, or the pipeline's `ALIGN_MINIMAP2` task, stops with a line like:
+```
+ERROR: the BAM holds 24000 primary records, but 32000 reads went in (fastq/S_R1.fastq.gz 20000 records + fastq/S_R2.fastq.gz 12000 records): 8000 reads (25.0%) are missing.
+```
+Or `validate-setup.sh` prints `[FAIL] BAM read count: ... primary records, but fastp wrote ... reads` for an existing BAM with fastp's report (`fastq_trimmed/<sample>_fastp.json`) beside it.
+
+**Why it is checked:** the aligner writes every read it is given once, mapped or not, and fixmate, sort and markdup drop none, so the BAM's primary records must equal the FASTQ records of R1 plus R2 ([Read count](02-alignment.md#read-count)). A BAM with fewer passes `samtools quickcheck` and every later step runs on it, but depth, copy number (CYP2D6), CNV, telomere content and every call that depends on coverage are off.
+
+**Common cause:** R1 and R2 hold different numbers of records, for example one of them was copied or downloaded only in part, or the lanes were concatenated differently. minimap2 and bwa-mem2 stop at the end of the shorter file and only warn (`query files have different number of records; extra records skipped` from minimap2, `the 2nd file has fewer sequences` from bwa-mem2). The error line shows the records of each file.
+
+**How to check:**
+```bash
+for r in R1 R2; do
+  f=${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_${r}.fastq.gz
+  gzip -t "$f" && echo "${r}: $(( $(gzip -cd "$f" | wc -l) / 4 )) records"
+done
+```
+
+**Fix:** get both FASTQ files again, complete, and run step 02 again. For a BAM that `validate-setup.sh` fails, realign with step 02. If that BAM was aligned from the untrimmed reads (`FASTQ_SUBDIR=fastq`), fastp's count does not apply to it, but `run-all.sh` still stops on the `[FAIL]`. Realigning with step 02 writes `qc/<sample>_read_count.tsv` with `input_source` `fastq/...`, and `validate-setup.sh` then skips the fastp comparison with an `[INFO]` line. To go on without realigning, use `READ_COUNT_CHECK=warn` (below).
+
+**Going on anyway:** for an input you know is odd, `READ_COUNT_CHECK=warn` makes steps 02 and 02a keep the BAM with a warning, and `validate-setup.sh` print a `[WARN]` line instead of the `[FAIL]`. For the Nextflow pipeline (`run-all.sh` or `nextflow run`), put this in a file and pass it with `-c warn.config` (`run-all.sh` passes options after the sex on to `nextflow run`):
+```groovy
+process {
+    withName: 'ALIGN_MINIMAP2' { ext.read_count_check = 'warn' }
+}
+```
+The table `qc/<sample>_read_count.tsv` then says `mismatch`, and the text and HTML reports of the bash steps show the missing reads in red.
+
+---
+
 ### BAM not sorted or not indexed
 
 **Symptom:** Tools fail with "file is not sorted", "index file not found", or "[E::hts_idx_load3] Could not load index".

@@ -15,6 +15,16 @@
                     quickcheck, so PCR and optical duplicates carry the 0x400
                     flag. markdup writes the .bai while it writes the BAM
                     (--write-index), so no second pass reads the BAM.
+                    Then the read count, the rule of step 02
+                    (scripts/lib/common.sh, read_count_check): the BAM's
+                    primary records (samtools view -c -F 0x900) must equal
+                    the FASTQ records of R1 plus R2, counted while minimap2
+                    reads them, because minimap2 writes every read once,
+                    mapped or not. A difference fails the task (exit 1, not
+                    retried). Both counts go to qc/<id>_read_count.tsv.
+                    ext.read_count_check = 'warn' (a -c config: withName
+                    'ALIGN_MINIMAP2') keeps the BAM and the table says
+                    mismatch, as READ_COUNT_CHECK=warn does for step 02.
 
     The script pipes minimap2 into samtools across two containers. A task
     runs in one image, so ALIGN_MINIMAP2 runs in MINIMAP2_SAMTOOLS_IMAGE, a
@@ -67,7 +77,9 @@ process ALIGN_MINIMAP2 {
     tag "$meta.id"
     label 'process_high'
 
-    publishDir { "${params.outdir}/${meta.id}/aligned" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${meta.id}/aligned" }, mode: params.publish_dir_mode,
+        saveAs: { f -> f.endsWith('_read_count.tsv') ? null : f }
+    publishDir { "${params.outdir}/${meta.id}/qc" }, mode: params.publish_dir_mode, pattern: '*_read_count.tsv'
 
     input:
     tuple val(meta), path(fastq_1), path(fastq_2)
@@ -75,6 +87,7 @@ process ALIGN_MINIMAP2 {
 
     output:
     tuple val(meta), path("${meta.id}_sorted.bam"), path("${meta.id}_sorted.bam.bai"), emit: bam
+    tuple val(meta), path("${meta.id}_read_count.tsv"),                               emit: read_count
     path "versions.yml",                                                              emit: versions
 
     when:
@@ -94,6 +107,10 @@ process ALIGN_MINIMAP2 {
     // 20 GB planned on GRCh38, 10 GB measured on the 1.8 Gb test reference,
     // docs/02-alignment.md) and markdup's, so the first attempt runs near
     // its 32 GB.
+    def read_count_check = task.ext.read_count_check ?: 'fail'
+    if (!(read_count_check in ['fail', 'warn'])) {
+        error "ALIGN_MINIMAP2: ext.read_count_check must be 'fail' or 'warn', got '${read_count_check}'"
+    }
     def mem_mb  = task.memory ? task.memory.toMega() : 8192
     def sort_mb = Math.max(256, (mem_mb / 4 / task.cpus) as int)
     // The ##idx##<name>.bai suffix makes markdup's index a .bai, not a .csi.
@@ -110,8 +127,18 @@ process ALIGN_MINIMAP2 {
     // The last one, not the first: a killed markdup leaves the stages before
     // it to die of SIGPIPE (141, not retried). A retry runs in a new work
     // directory, so the block also removes the failed attempt's sort spills.
+    //
+    // The read counters run beside minimap2, one gzip per FASTQ, each in a
+    // subshell with pipefail so that wait returns a gzip error too. awk
+    // prints the records (lines / 4) or exits 3 when the lines are not a
+    // multiple of 4, as FASTQ_RECORDS_AWK in scripts/lib/common.sh does.
+    def count_awk = 'END { if (NR % 4) { printf "%.0f lines, not a multiple of 4: a record is cut short\\n", NR > "/dev/stderr"; exit 3 } printf "%.0f\\n", NR / 4 }'
     """
     mkdir -p sort_tmp
+    ( set -o pipefail; gzip -cdf ${fastq_1} | awk '${count_awk}' > r1.count ) &
+    r1_pid=\$!
+    ( set -o pipefail; gzip -cdf ${fastq_2} | awk '${count_awk}' > r2.count ) &
+    r2_pid=\$!
     minimap2 -t ${task.cpus} -a -x sr \\
         -R '${rg}' \\
         ${index} \\
@@ -135,6 +162,41 @@ process ALIGN_MINIMAP2 {
     test -s ${meta.id}_sorted.bam.bai
     touch ${meta.id}_sorted.bam.bai
 
+    wait \$r1_pid && wait \$r2_pid \\
+        || { echo "ERROR: could not count the records of ${fastq_1} and ${fastq_2} (see the message above)" >&2; exit 1; }
+    n1=\$(cat r1.count)
+    n2=\$(cat r2.count)
+    reads_in=\$((n1 + n2))
+    primary=\$(samtools view -c -F 0x900 -@ ${task.cpus} ${meta.id}_sorted.bam)
+    missing=\$((reads_in - primary))
+    src="${fastq_1} \$n1 records + ${fastq_2} \$n2 records"
+    verdict=ok
+    [ "\$missing" -eq 0 ] || verdict=mismatch
+    printf 'key\\tvalue\\ninput_reads\\t%s\\ninput_source\\t%s\\nprimary_records\\t%s\\nmissing_reads\\t%s\\nread_count_check\\t%s\\n' \\
+        "\$reads_in" "\$src" "\$primary" "\$missing" "\$verdict" > ${meta.id}_read_count.tsv
+    if [ "\$verdict" = ok ]; then
+        echo "Read count: the BAM holds \$primary primary records, the \$reads_in reads that went in (\$src)."
+    else
+        level=ERROR
+        [ "${read_count_check}" = fail ] || level=WARNING
+        if [ "\$missing" -gt 0 ]; then
+            pct=\$(awk -v m="\$missing" -v n="\$reads_in" 'BEGIN { printf "%.1f", 100 * m / n }')
+            echo "\$level: the BAM holds \$primary primary records, but \$reads_in reads went in (\$src): \$missing reads (\$pct%) are missing." >&2
+        else
+            echo "\$level: the BAM holds \$primary primary records, more than the \$reads_in reads that went in (\$src): it was not made from these reads." >&2
+        fi
+        echo "  The aligner writes every read it is given, mapped or not, once, so the two counts must be equal." >&2
+        echo "  Depth, copy number (CYP2D6), CNV, telomere content and every call that depends on coverage would be off." >&2
+        echo "  An R1 and R2 with different numbers of records is one cause: minimap2 and bwa-mem2 stop at the end" >&2
+        echo "  of the shorter file with only a warning. See docs/troubleshooting.md, \\"The BAM lost reads\\"." >&2
+        if [ "${read_count_check}" = warn ]; then
+            echo "  ext.read_count_check = 'warn': going on." >&2
+        else
+            echo "  For an input you know is odd, ext.read_count_check = 'warn' on ALIGN_MINIMAP2 goes on anyway." >&2
+            exit 1
+        fi
+    fi
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         minimap2-samtools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -146,6 +208,7 @@ process ALIGN_MINIMAP2 {
     stub:
     """
     touch ${meta.id}_sorted.bam ${meta.id}_sorted.bam.bai
+    printf 'key\\tvalue\\n' > ${meta.id}_read_count.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
