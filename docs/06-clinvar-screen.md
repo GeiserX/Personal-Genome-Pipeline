@@ -40,6 +40,10 @@ VCF_DIR=vcf_clair3 ./scripts/06-clinvar-screen.sh <sample_name>
 7. Marks the hits that belong together. A matched combined allele is a hit of its own and carries `INFO/PGP_JOINED_FROM`, its two parts as `CHROM:POS:REF:ALT`. Each of its parts that is a hit too keeps its row and gets `INFO/PGP_PART_OF`, the combined record it belongs to, so the reader sees one allele with the combined record's own review status, not two unrelated hits. Two hits in one gene that could be one allele by the rule of item 5 but matched no combined record each get `INFO/PGP_ONE_ALLELE`, the other hit: possibly one allele, check ClinVar for a combined record.
 8. Prints the hits grouped by ClinVar's review stars (`bin/clinvar_hits.awk`): 4 practice guideline, 3 expert panel, 2 multiple submitters with no conflict, 1 a single submitter or conflicting classifications, 0 no assertion criteria, each with its combined-allele note when it has one. The screening file keeps every Pathogenic/Likely_pathogenic submission whatever its review status, so a zero-star hit counts as a hit; the stars say how much weight it deserves. The Nextflow module runs the same steps and prints the same counts.
 
+## Runtime
+
+The [runtime table](hardware-requirements.md#runtime-per-step) gives the measured time of this step. That measurement is older than item 5 above, which streams the split sample VCF once more through awk and bcftools; that extra pass has not been timed on a whole genome.
+
 ## Output
 
 | File | Description |
