@@ -15,7 +15,8 @@ with chosen depths, runs the script, and checks rows of the table it writes:
      pseudogene, a hybrid gene (exons 3 to 7 without reads), low flank depth
   5. Duffy and Kell flip with planted variants: Fyb, the GATA box, FY*X; K
   6. the VCF: a site with too few reads, a FILTER-failed call, a RefCall 0/0,
-     contigs without chr, a multi-allelic record, a second sample
+     contigs without chr, a multi-allelic record, a record whose REF is not the
+     marker's REF, a second sample
   7. a BAM without some contigs (no depth rows there): those systems and RhD
      are not determined, the others are read as usual
 
@@ -46,9 +47,9 @@ def check(desc, got, want):
         FAILS.append(desc)
 
 
-def vcf_line(name, gt, filt="PASS", chrom=None, alt=None):
+def vcf_line(name, gt, filt="PASS", chrom=None, alt=None, ref=None):
     r = SITES[name]
-    return "\t".join([chrom or r["chrom"], str(r["pos"]), ".", r["ref"], alt or r["alt"], "50", filt, ".",
+    return "\t".join([chrom or r["chrom"], str(r["pos"]), ".", ref or r["ref"], alt or r["alt"], "50", filt, ".",
                       "GT", gt]) + "\n"
 
 
@@ -197,6 +198,13 @@ check("6 contigs without chr, gzip",
 multi = run([vcf_line("KEL_578", "1/2", alt="C,A")], rhd(2))
 check("6 a multi-allelic record: the second ALT is K", ph(multi, "Kell").split()[0], "K+k+")
 check("6 another allele at the site lowers the confidence", cf(multi, "Kell"), "low")
+mism = run([vcf_line("KEL_578", "1/1", ref="C", alt="T")], rhd(2))
+check("6 a record whose REF is not the marker's REF: that pair is not determined",
+      (ph(mism, "Kell").split()[0:3], cf(mism, "Kell")), (["K/k", "not", "determined"], "low"))
+check("6 and the note names both REFs", "REF C at this position, the marker's REF is G" in mism["Kell"]["note"], True)
+span = run([vcf_line("KEL_578", "0/0", ref="GT", alt="G")], rhd(2))
+check("6 a reference call over a longer REF that starts with the marker's REF is reference",
+      ph(span, "Kell").split()[0], "K-k+")
 check("6 a no-call genotype", ph(run([vcf_line("JK_838", "./.")], rhd(2)), "Kidd"), "not determined")
 two = run(samples=("S", "T"))
 check("6 two samples stop the script", isinstance(two, str) and "2 samples" in two, True)

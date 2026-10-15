@@ -189,10 +189,15 @@ def genotype_site(site, ref, alts, filt, alleles):
     if "." in alleles or len(alleles) != 2:
         site.status, site.note = "no call", f"genotype {'/'.join(alleles)}"
         return
+    # A record whose REF is not the marker's REF says nothing about the marker's ALT,
+    # unless it is a reference call over a span that starts with the marker's REF.
+    if ref != r["ref"] and not (ref.startswith(r["ref"]) and all(a == "0" for a in alleles)):
+        site.status, site.note = "no call", f"REF {ref} at this position, the marker's REF is {r['ref']}"
+        return
     if filt not in ("PASS", ".") and any(a != "0" for a in alleles):
         site.status, site.note = "no call", f"FILTER {filt}"
         return
-    site.status, site.n = "called", sum(1 for a in alleles if idx is not None and a == idx)
+    site.status, site.n, site.note = "called", sum(1 for a in alleles if idx is not None and a == idx), ""
     others = [a for a in alleles if a not in ("0", idx)]
     if others:
         site.note = f"another allele at this position ({ref}>{','.join(alts)}, genotype {'/'.join(alleles)})"
