@@ -57,12 +57,12 @@ if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
     "${PHARMCAT_IMAGE}" \
     bash -euo pipefail -c '
       records=$(mktemp)
+      trap '\''rm -f "$records" "$3.part" "$3.part.tbi"'\'' EXIT
       bcftools view -R /pharmcat/pharmcat_regions.bed -Ov -o "$records" "$2"
       bcftools convert --gvcf2vcf -f "$1" -R /pharmcat/pharmcat_regions.bed -Ou "$2" \
         | bcftools view --trim-alt-alleles -i "GT!=\"mis\"" -Ov \
         | python3 /pgp-bin/pgx_refblock_fill.py /pharmcat/pharmcat_positions.vcf.bgz "$records" \
         | bcftools view -Oz -o "$3.part" --write-index=tbi
-      rm -f "$records"
       mv -f "$3.part" "$3"
       mv -f "$3.part.tbi" "$3.tbi"' \
     _ "${REF_FASTA_C}" "/data/${SAMPLE}.g.vcf.gz" "/data/${PGX_INPUT}"
