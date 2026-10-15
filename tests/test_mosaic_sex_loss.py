@@ -6,6 +6,10 @@ Checks:
      near zero, with zero inside its 95% range, not detected; the chrY
      windows outside the single-copy part (ampliconic, centromere, gaps) do
      not move it, as they would move a whole-chromosome mean;
+  1b. depth that drifts along the genome (each 200 kb stretch of chr1-22 at
+     its own level, sd 8%) and a chrY read only on one 220 kb stretch that
+     sits 13% high: zero still lies inside the 95% range, not a gain; from
+     the blocks alone (the control) the range would leave zero out;
   2. 30% of the Y reads gone reads a loss of about 0.30, detected; an extra
      Y (47,XYY) reads as a gain, not a loss;
   3. a woman: no loss reads near zero from depth and from allele fractions;
@@ -81,6 +85,18 @@ def regions(path, sex, x_depth=None, y_depth=None, seed=1, prefix="chr", slice_o
     return path
 
 
+def drift_regions(path, y_level, seed=5):
+    """A 30x genome whose depth drifts: each 200 kb stretch of chr1-22 at
+    its own level; chrY only on 2.78-3.00 Mb, at y_level times one copy."""
+    rnd = random.Random(seed)
+    with gzip.open(path, "wt") as f:
+        for chrom, start in (("1", 1_000_000), ("2", 5_000_000)):
+            for s in range(start, start + 10_000_000, 200_000):
+                windows(f, chrom, s, s + 200_000, 30 * rnd.gauss(1, 0.08), rnd)
+        windows(f, "Y", 2_781_479, 3_000_000, 15 * y_level, rnd)
+    return path
+
+
 def binom(rnd, n, p):
     return sum(rnd.random() < p for _ in range(n))
 
@@ -147,6 +163,20 @@ def main():
         check("male: the rows say chrY and the floor", r["mosaic_chrom"] == "chrY" and r["mosaic_floor"] == "0.100"
               and r["mosaic_depth_ratio_expected"] == "0.5" and int(r["mosaic_depth_blocks"]) > 100, r)
         check("male: no allele-fraction estimate", r["mosaic_loss_af"] == "" and r["mosaic_x_het_sites"] == "", r)
+
+        # 1b. depth that drifts along the genome; chrY on one stretch, 13% high
+        reg_d = drift_regions(f"{w}/drift.bed.gz", 1.13)
+        r = run(MALE, reg_d)
+        print(r)
+        check("drift: zero lies inside the 95% range of one 220 kb stretch of chrY",
+              (num(r, "mosaic_loss_depth_low") or 1) <= 0 <= (num(r, "mosaic_loss_depth_high") or -1), r)
+        check("drift: not a gain, not detected", r["mosaic_call"] == "not_detected", r)
+        auto, sx = m.depth_blocks(reg_d, "Y")
+        (ma, sea), (ms, ses) = m.median_se([v for _, v in auto]), m.median_se([v for _, v in sx])
+        f = 1 - 2 * ms / ma
+        se_f = 2 * ms / ma * ((ses / ms) ** 2 + (sea / ma) ** 2) ** 0.5
+        check("control: from the blocks alone the 95% range would leave zero out",
+              f + 1.96 * se_f < 0, (f, se_f))
 
         # 2. 30% of the Y reads gone; 47,XYY
         r = run(MALE, regions(f"{w}/m30.bed.gz", "male", y_depth=10.5))

@@ -29,8 +29,14 @@ has mean phi + 4 (n - 1) d^2, phi the spread of the library at that depth.
 phi is read from the heterozygous SNVs of chr1-22, so a noisy library does not
 read as a shift: d^2 = (mean u on chrX - mean u on chr1-22) / (4 (mean n - 1)).
 
-Uncertainty: the standard error of each median (1.2533 * 1.4826 * MAD / sqrt
-of the number of blocks) and of each mean u, as a 95% range. The floor is
+Uncertainty, as a 95% range: the standard error of each median (1.2533 *
+1.4826 * MAD / sqrt of the number of blocks) and of each mean u. Depth also
+drifts along the genome with GC content and mappability, and neighbouring
+blocks share that drift, so the depth range adds it: the spread (1.4826 * MAD)
+of the medians of 200 kb stretches of chr1-22, over the square root of the
+number of 200 kb stretches the sex chromosome's blocks fill. On a whole genome
+chrY's 9.7 Mb fill about 48 and the term is small; on a slice of one 200 kb
+stretch it dominates, as it should. The floor is
 fixed: at 30x the depth of a sex chromosome against the autosomes varies by a
 few percent between libraries (GC content, mappability), which is 5 to 10% of
 the estimate, so a loss counts as detected only when the low end of its range
@@ -48,8 +54,10 @@ from array import array
 
 FLOOR = 0.10          # below this, nothing can be told at 30x
 BLOCK = 10_000        # bp per block of mosdepth windows
+STRETCH = 200_000     # bp per stretch, for the drift of depth along the genome
 MIN_WINDOWS = 10      # windows with reads a block needs (a block holds 20 at --by 500)
 MIN_BLOCKS = 10       # blocks the sex chromosome and the autosomes each need
+MIN_STRETCHES = 5     # 200 kb stretches of chr1-22 (10 blocks or more each) the drift needs
 MIN_DP = 10           # reads a heterozygous site needs
 MIN_X_HETS = 100      # heterozygous chrX sites the allele-fraction estimate needs
 MIN_AUTO_HETS = 1000  # heterozygous autosomal sites it needs for the library's spread
@@ -106,14 +114,15 @@ def median_se(xs):
 
 
 def depth_blocks(path, sex_chrom):
-    """Block medians of mosdepth's windows with reads: (on chr1-22, on the
-    single-copy part of sex_chrom)."""
+    """Block medians of mosdepth's windows with reads, each with its 200 kb
+    stretch: ([(stretch, median)] on chr1-22, the same on the single-copy part
+    of sex_chrom)."""
     auto, sex = [], []
     key, vals = None, []
 
     def flush():
         if key is not None and len(vals) >= MIN_WINDOWS:
-            (sex if key[0] else auto).append(statistics.median(vals))
+            (sex if key[0] else auto).append(((key[1], key[2] * BLOCK // STRETCH), statistics.median(vals)))
 
     with open_text(path) as f:
         for line in f:
@@ -140,14 +149,26 @@ def depth_blocks(path, sex_chrom):
 def depth_estimate(path, sex):
     """(ratio, blocks on the sex chromosome, loss, low, high), or a reason string."""
     chrom, expected, copies = EXPECTED[sex]
-    auto, sx = depth_blocks(path, chrom)
+    auto_b, sx_b = depth_blocks(path, chrom)
+    auto, sx = [v for _, v in auto_b], [v for _, v in sx_b]
     if len(auto) < MIN_BLOCKS or len(sx) < MIN_BLOCKS:
         return (f"too few 10 kb blocks with reads: {len(sx)} on chr{chrom}'s single-copy part and "
                 f"{len(auto)} on chr1-22 (each needs {MIN_BLOCKS}; a targeted or sliced BAM may have none)")
     ma, sea = median_se(auto)
     ms, ses = median_se(sx)
+    stretches = {}
+    for k, v in auto_b:
+        stretches.setdefault(k, []).append(v)
+    levels = [statistics.median(v) / ma for v in stretches.values() if len(v) >= MIN_BLOCKS]
+    if len(levels) < MIN_STRETCHES:
+        return (f"{len(levels)} stretches of 200 kb with {MIN_BLOCKS} or more blocks on chr1-22 "
+                f"(needs {MIN_STRETCHES} to measure how depth drifts along the genome)")
+    mid = statistics.median(levels)
+    drift = 1.4826 * statistics.median(abs(x - mid) for x in levels)
+    per = STRETCH // BLOCK
     r = ms / ma
-    se_r = r * math.sqrt((ses / ms) ** 2 + (sea / ma) ** 2) if ms > 0 else 0.0
+    se_r = r * math.sqrt((ses / ms) ** 2 + (sea / ma) ** 2
+                         + drift ** 2 * (per / max(len(sx), per) + per / max(len(auto), per))) if ms > 0 else 0.0
     f = copies * (1 - r / expected)
     se_f = copies * se_r / expected
     return r, len(sx), f, f - Z95 * se_f, f + Z95 * se_f
