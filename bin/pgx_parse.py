@@ -363,14 +363,21 @@ def drug_level_phenotype(call, guidance):
     while the annotations of its drugs assign it a phenotype; without this the
     two levels of the same report disagree. Annotations for any of the gene's
     possible diplotypes are used when there are any, else every annotation of
-    the gene, so diplotypes PharmCAT cannot tell apart must agree."""
+    the gene, so diplotypes PharmCAT cannot tell apart must agree. An
+    annotation that says Indeterminate, No Result or n/a disagrees; one with no
+    phenotype for the gene says nothing. Several possible diplotypes must also
+    get the same guidance, because drug_lines() shows the first one's."""
     if not call.called or call.ambiguous or call.phenotype.strip().lower() != "indeterminate":
         return None
     entries = guidance.get(call.gene) or []
+    per_label = [{e[:4] for e in entries if label in e[4]} for label in call.labels]
+    if any(g != per_label[0] for g in per_label):
+        return None
     entries = [e for e in entries if e[4] & set(call.labels)] or entries
     names = {e[5].strip() for e in entries if e[5].strip()}
-    names = {n for n in names if n.lower() not in ("indeterminate", "no result", "n/a")}
-    return names.pop() if len(names) == 1 else None
+    if len(names) != 1 or next(iter(names)).lower() in ("indeterminate", "no result", "n/a"):
+        return None
+    return names.pop()
 
 
 # --- pypgx ---------------------------------------------------------------------
