@@ -13,6 +13,9 @@
 # SAM on disk); markdup writes the index with the BAM, and the BAM is renamed
 # into place only once it passes samtools quickcheck, as in step 02. THREADS
 # (default 8) sets the CPUs.
+# As in step 02, the BAM's primary records must equal the FASTQ records that
+# went in, or the step stops and keeps no BAM; READ_COUNT_CHECK=warn keeps it
+# with a warning. Both counts go to qc/<sample>_bwamem2_read_count.tsv.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -20,6 +23,7 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
+read_count_mode > /dev/null || exit 1
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Detect trimmed FASTQs (same logic as 02-alignment.sh)
@@ -61,9 +65,14 @@ SORT_TMP="${OUTPUT_DIR}/${SAMPLE}.sort_tmp"
 # script tests for, so it is renamed last.
 IDX_TMP="${REF}.tmp.$$"
 IDX_EXTS=(0123 amb ann pac bwt.2bit.64)
+COUNTS="${SAMPLE_DIR}/qc/${SAMPLE}_bwamem2_read_count.tsv"
+COUNT_PIDS=()
+# A read counter still running is stopped first (its gzip then ends on the
+# closed pipe).
 cleanup() {
-  local e
-  rm -rf "$TMP_BAM" "${TMP_BAM}.bai" "$SORT_TMP"
+  local e p
+  for p in ${COUNT_PIDS[@]+"${COUNT_PIDS[@]}"}; do kill "$p" 2>/dev/null || true; done
+  rm -rf "$TMP_BAM" "${TMP_BAM}.bai" "$SORT_TMP" "${COUNTS}.tmp"
   for e in "${IDX_EXTS[@]}"; do rm -f "${IDX_TMP}.${e}"; done
 }
 trap cleanup EXIT
@@ -99,6 +108,11 @@ fi
 echo "=== Aligning reads with BWA-MEM2 and marking duplicates (this takes 4-8 hours for 30X WGS) ==="
 SORT_MEM_GB=$((THREADS + 4))
 mkdir -p "$SORT_TMP"
+# The reads that go in, counted while bwa-mem2 reads the same files (step 02).
+gzip -cdf "$R1" | awk "$FASTQ_RECORDS_AWK" > "${SORT_TMP}/R1.count" &
+COUNT_PIDS+=("$!")
+gzip -cdf "$R2" | awk "$FASTQ_RECORDS_AWK" > "${SORT_TMP}/R2.count" &
+COUNT_PIDS+=("$!")
 # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
 run_in \
   --cpus "${THREADS}" --memory 24g \
@@ -118,23 +132,48 @@ run_in \
       | samtools markdup -@ "$threads" --write-index -T "${tmp}/markdup" - "${out}##idx##${out}.bai"' \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
-# Step 3: Check, then rename (the old index goes first). markdup wrote the
-# index with the BAM (--write-index, as in step 02); the touch makes it the
-# newer file.
+# Step 3: Check the BAM, then compare its primary records with the reads that
+# went in (step 02, scripts/lib/common.sh read_count_check), then rename (the
+# old index goes first). markdup wrote the index with the BAM (--write-index,
+# as in step 02); the touch makes it the newer file.
 echo "=== Checking BAM ==="
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
 [ -s "${TMP_BAM}.bai" ] || { echo "ERROR: samtools markdup wrote no index" >&2; exit 1; }
+echo "=== Counting reads ==="
+for p in "${COUNT_PIDS[@]}"; do
+  wait "$p" || { echo "ERROR: could not count the records of ${R1} and ${R2} (see the message above)" >&2; exit 1; }
+done
+COUNT_PIDS=()
+N1=$(cat "${SORT_TMP}/R1.count")
+N2=$(cat "${SORT_TMP}/R2.count")
+PRIMARY=$(run_in \
+  --cpus "${THREADS}" --memory 2g \
+  "${SAMTOOLS_IMAGE}" \
+  samtools view -c -F 0x900 -@ "${THREADS}" "$(cpath "$TMP_BAM")")
+mkdir -p "$(dirname "$COUNTS")"
+rc=0
+read_count_check "$PRIMARY" \
+  "${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz ${N1} records + ${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz ${N2} records" \
+  "${COUNTS}.tmp" "$N1" "$N2" || rc=$?
+case "$rc" in
+  0|3) ;;
+  *) echo "ERROR: the BAM was not kept." >&2
+     [ ! -e "$BAM" ] || echo "  The earlier ${BAM} is left as it was." >&2
+     exit 1 ;;
+esac
 touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"
+mv -f "${COUNTS}.tmp" "$COUNTS"
 
 echo "=== BWA-MEM2 Alignment complete ==="
 echo "BAM: ${BAM}"
 echo "Index: ${BAM}.bai"
+echo "Read count: ${COUNTS}"
 ls -lh "$BAM" 2>/dev/null || true
 echo ""
 echo "Next step: call variants from this BAM into its own directory, so the"

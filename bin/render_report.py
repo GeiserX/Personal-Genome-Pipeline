@@ -91,6 +91,16 @@ def freemix_text(q):
     return f"{q['freemix']} (warning above {warn}{few})"
 
 
+def read_count_text(d):
+    """Step 02's two counts as one line, in both reports."""
+    txt = f"{d['input_reads']} reads in, {d['primary_records']} primary records in the BAM"
+    if d.get("read_count_check") == "mismatch":
+        m = d["missing_reads"]
+        txt += (f": {m} reads missing" if m > 0 else ": more records than reads in") + \
+            " (the BAM was kept by the warn setting, see docs/troubleshooting.md)"
+    return txt
+
+
 def prs_chrx_note(d):
     """A sentence when chrX rows of a score were left out (no sex given), else ''."""
     left = [f"{r['pgs_id']} ({r['chrx'].split()[0]})" for r in d.get("scores", [])
@@ -147,14 +157,18 @@ def text_report(s):
 
     # QC
     cov, sexc, sqc = S["coverage"], S["sex_check"], S.get("sample_qc", MISSING)
-    if cov["state"] != "missing" or sexc["state"] != "missing" or sqc["state"] != "missing":
+    rdc = S.get("read_count", MISSING)
+    if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
         w("## Quality control")
         w("---")
-        for sec in (cov, sexc, sqc):
+        for sec in (cov, sexc, sqc, rdc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
         md = cov["data"].get("mean_depth")
         w(f"  Mean depth: {md:.1f}x" if isinstance(md, (int, float)) else "  Mean depth: not available")
+        if rdc["state"] in ("ok", "stale"):
+            flag = "  ** READS LOST IN ALIGNMENT **" if rdc["data"].get("read_count_check") == "mismatch" else ""
+            w(f"  Alignment: {read_count_text(rdc['data'])}{flag}")
         inferred = sexc["data"].get("inferred_sex")
         declared = s["run"]["declared_sex"]
         w(f"  Inferred sex: {inferred or 'not available'}")
@@ -493,6 +507,11 @@ def html_report(s):
     qc = [stat("Mean depth", f"{md:.1f}x" if isinstance(md, (int, float)) else "not available"),
           stat("Inferred sex (indexcov)", sex_badge),
           stat("Declared sex", E(declared or "not declared"))]
+    rdc = S.get("read_count", MISSING)
+    if rdc["state"] in ("ok", "stale"):
+        qc.insert(1, stat("Reads kept by alignment",
+                          badge(read_count_text(rdc["data"]),
+                                "green" if rdc["data"].get("read_count_check") == "ok" else "red")))
     sqc = S.get("sample_qc", MISSING)
     if sqc["state"] in ("ok", "stale"):
         q = sqc["data"]
@@ -510,7 +529,7 @@ def html_report(s):
     else:
         qc.append(stat("Identity and contamination (step 33)", badge("Not run", "gray")))
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
-               for sec in (cov, sexc, sqc) if stale_note(sec)]
+               for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
     v = S["variants"]["data"]

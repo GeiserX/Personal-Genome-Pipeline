@@ -24,7 +24,8 @@
 # wrote_vcf, atomic_out, fetch, data_file / install_data_file, install_vep_cache,
 # lock_acquire / lock_release, pipeline_images, pinned_tag / tag_pinned_image /
 # pinned_tag_present, image_is_dangling,
-# scatter_beds and run_parallel,
+# scatter_beds and run_parallel, FASTQ_RECORDS_AWK / fastp_total_reads /
+# read_count_mode / read_count_check,
 # described where they are
 # defined. Keep it bash 3.2 compatible: macOS runs setup.sh with /bin/bash.
 
@@ -154,6 +155,95 @@ run_in() {
     fi
   fi
   return "$rc"
+}
+
+# --- The alignment read count (steps 02 and 02a, validate-setup.sh) ----------
+# minimap2 and bwa-mem2 write every read they are given, mapped or not, as one
+# primary record (neither 0x100 secondary nor 0x800 supplementary), and samtools
+# fixmate, sort and markdup drop none. So a finished BAM holds as many primary
+# records as R1 and R2 together hold FASTQ records: reads, not pairs, which is
+# also the unit of fastp's summary.after_filtering.total_reads. Both aligners
+# stop at the end of the shorter file of a pair with only a warning, so a cut
+# R1 or R2 loses reads without an error. The ALIGN_MINIMAP2 module applies the
+# same rule. READ_COUNT_CHECK=warn turns a difference into a warning.
+
+# FASTQ_RECORDS_AWK: an awk program that prints the number of FASTQ records in
+# its decompressed input, or exits 3 when the line count is not a multiple of
+# 4 (a record cut short). %.0f, not %d: a 30x file has more than 2^31 lines.
+# shellcheck disable=SC2034  # read by the step scripts
+FASTQ_RECORDS_AWK='END { if (NR % 4) { printf "%.0f lines, not a multiple of 4: a record is cut short\n", NR > "/dev/stderr"; exit 3 } printf "%.0f\n", NR / 4 }'
+
+# fastp_total_reads JSON: summary.after_filtering.total_reads of a fastp
+# report (the reads fastp wrote, R1 plus R2 records). Exit status 1 when the
+# report has none. The summary block comes first in fastp's report, so the
+# first "after_filtering" object is the summary's.
+fastp_total_reads() {
+  tr -d ' \t\r\n' < "$1" | awk '
+    { k = "\"after_filtering\":{\"total_reads\":"
+      i = index($0, k)
+      if (i) { v = substr($0, i + length(k)); sub(/[^0-9].*/, "", v); if (v != "") { print v; found = 1 } }
+      exit }
+    END { exit !found }'
+}
+
+# read_count_mode: prints READ_COUNT_CHECK (fail, the default, or warn), or
+# says what is wrong and returns 2. A step calls it before it starts work.
+read_count_mode() {
+  case "${READ_COUNT_CHECK:-fail}" in
+    fail|warn) echo "${READ_COUNT_CHECK:-fail}" ;;
+    *) echo "ERROR: READ_COUNT_CHECK must be 'fail' or 'warn', got '${READ_COUNT_CHECK}'" >&2; return 2 ;;
+  esac
+}
+
+# read_count_check PRIMARY SOURCE TABLE COUNT...: compare the primary records
+# of a BAM with the reads that went into the aligner, the sum of the COUNTs
+# (one per FASTQ, or fastp's total). SOURCE names where the COUNTs come from.
+# Returns 0 when they are equal; 1 when they differ (what is missing goes to
+# stderr); 3 when they differ and READ_COUNT_CHECK=warn (the same text, as a
+# warning); 2 when a count is not a whole number or READ_COUNT_CHECK is bad.
+# TABLE, unless empty, gets the key/value table the reports read: input_reads,
+# input_source, primary_records, missing_reads (input minus primary) and
+# read_count_check (ok or mismatch).
+read_count_check() {
+  local primary=$1 src=$2 table=$3 mode c total=0 missing verdict=ok level pct
+  shift 3
+  mode=$(read_count_mode) || return 2
+  for c in "$primary" "$@"; do
+    if [[ ! "$c" =~ ^(0|[1-9][0-9]*)$ ]]; then
+      echo "ERROR: could not count the reads: '${primary}' primary records in the BAM, '$*' reads in (${src})" >&2
+      return 2
+    fi
+  done
+  [ "$#" -gt 0 ] || { echo "ERROR: read_count_check got no input count" >&2; return 2; }
+  for c in "$@"; do total=$((total + c)); done
+  missing=$((total - primary))
+  [ "$missing" -eq 0 ] || verdict=mismatch
+  if [ -n "$table" ]; then
+    printf 'key\tvalue\ninput_reads\t%s\ninput_source\t%s\nprimary_records\t%s\nmissing_reads\t%s\nread_count_check\t%s\n' \
+      "$total" "$src" "$primary" "$missing" "$verdict" > "$table"
+  fi
+  if [ "$verdict" = ok ]; then
+    echo "Read count: the BAM holds ${primary} primary records, the ${total} reads that went in (${src})."
+    return 0
+  fi
+  level=ERROR
+  [ "$mode" = fail ] || level=WARNING
+  if [ "$missing" -gt 0 ]; then
+    pct=$(awk -v m="$missing" -v n="$total" 'BEGIN { printf "%.1f", 100 * m / n }')
+    echo "${level}: the BAM holds ${primary} primary records, but ${total} reads went in (${src}): ${missing} reads (${pct}%) are missing." >&2
+  else
+    echo "${level}: the BAM holds ${primary} primary records, more than the ${total} reads that went in (${src}): it was not made from these reads." >&2
+  fi
+  echo "  The aligner writes every read it is given, mapped or not, once, so the two counts must be equal." >&2
+  echo "  Depth, copy number (CYP2D6), CNV, telomere content and every call that depends on coverage would be off." >&2
+  echo "  An R1 and R2 with different numbers of records is one cause: minimap2 and bwa-mem2 stop at the end" >&2
+  echo "  of the shorter file with only a warning. See docs/troubleshooting.md, \"The BAM lost reads\"." >&2
+  if [ "$mode" = warn ]; then
+    echo "  READ_COUNT_CHECK=warn: going on." >&2
+    return 3
+  fi
+  echo "  For an input you know is odd, READ_COUNT_CHECK=warn goes on anyway." >&2
+  return 1
 }
 
 # have_output FILE...: true when every FILE is a finished output, the test a
