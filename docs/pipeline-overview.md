@@ -17,6 +17,7 @@
 | **Polygenic Risk** | Scores for 9 common conditions (CAD, T2D, cancers, etc.) with pgsc_calc; a percentile among the most similar ancestry group with the panel installed | 25 |
 | **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, sample identity and contamination, SV filtering | 1b, 15, 16, 16b, 28, 33 |
 | **Storage** | Alignments kept as a checked CRAM, about half the size of the BAM | 34 |
+| **Traits** | Lactase persistence, caffeine, alcohol flush, bitter taste, earwax, pigmentation, APOE and other replicated variants, each row citing its primary paper | 42 |
 
 ## Pipeline Overview
 

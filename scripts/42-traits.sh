@@ -44,6 +44,7 @@ echo "============================================"
 for f in "$GVCF" "${GVCF}.tbi" "$REF_FASTA" "${REF_FASTA}.fai"; do
   [ -f "$f" ] || { echo "ERROR: File not found: ${f}. Step 42 reads the gVCF of step 3 (a variant-only VCF cannot tell a reference match from a position without reads)." >&2; exit 1; }
 done
+[ -f "$TABLE" ] || { echo "ERROR: File not found: ${TABLE}. The traits table ships with the repository; restore it with git checkout -- assets/traits.tsv." >&2; exit 1; }
 
 mkdir -p "$OUTDIR"
 rm -f "$OUT"
