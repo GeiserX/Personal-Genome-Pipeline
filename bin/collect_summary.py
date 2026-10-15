@@ -185,6 +185,34 @@ def sec_variants(d, s):
     return p, {"total": total, "pass": passed, "snps": snps, "indels": indels}
 
 
+def clinvar_variants(v, sep):
+    """'chr1:10:C:T|chr1:15:G:A' -> 'chr1:10 C>T<sep>chr1:15 G>A'."""
+    out = []
+    for x in v.split("|"):
+        f = (x.split(":") + ["", "", "", ""])[:4]
+        out.append(f"{f[0]}:{f[1]} {f[2]}>{f[3]}")
+    return sep.join(out)
+
+
+def clinvar_combined_note(info, gt=""):
+    """Step 6's note on a hit that is a combined allele of two neighbouring
+    records, or part of one, from the tags bin/clinvar_join_adjacent.awk
+    writes; bin/clinvar_hits.awk words it the same way. "." when none.
+    On an unphased het call (0/1) the genotype cannot say the two parts share
+    a haplotype, so the note says they may not."""
+    a = gt.split("/")
+    phase = ("; unphased, so the parts may sit on different haplotypes"
+             if len(a) == 2 and all(x.isdigit() for x in a) and a[0] != a[1] else "")
+    if info.get("PGP_JOINED_FROM"):
+        return "combined allele of " + clinvar_variants(info["PGP_JOINED_FROM"], " + ") + phase
+    if info.get("PGP_PART_OF"):
+        return "part of a combined allele: " + clinvar_variants(info["PGP_PART_OF"], ", ") + phase
+    if info.get("PGP_ONE_ALLELE"):
+        return ("possibly one allele with " + clinvar_variants(info["PGP_ONE_ALLELE"], ", ")
+                + ": check ClinVar for a combined record")
+    return "."
+
+
 def clinvar_row(r):
     info = info_map(r[7]) if len(r) > 7 else {}
     rev = info.get("CLNREVSTAT", "")
@@ -198,6 +226,7 @@ def clinvar_row(r):
         "gene": ",".join(genes) or ".",
         "significance": info.get("CLNSIG", "").replace("_", " ") or ".",
         "review_status": rev.replace("_", " ") or ".",
+        "combined_allele": clinvar_combined_note(info, gt),
     }
 
 

@@ -18,3 +18,12 @@ the release to `REAL_REPORTS` in `tests/test_cpic_parser.py`:
 ```bash
 python3 tests/fixtures/pharmcat/trim_report.py report.json tests/fixtures/pharmcat/report-VERSION.json
 ```
+
+## Reference blocks over PharmCAT's positions longer than one base
+
+For `tests/test_pgx_refblock_fill.py` and the e2e case `tests/e2e/pharmcat-indel-refblocks-1.sh`.
+
+| File | Source |
+|---|---|
+| `pharmcat_positions-3.4.0-subset.vcf` | The lines of PharmCAT 3.4.0's `pharmcat_positions_3.4.0.vcf` (release asset, sha256 `63f49b9004b6a5ca921deebe8ec59f8e45f6990543e07b7890c0d6201f5e69fc`) inside the blocks of `refblocks.g.vcf`, with its header (only the contigs used). Nine of them are longer than one base. |
+| `refblocks.g.vcf` | Invented. A one-sample gVCF in DeepVariant's layout on GRCh38, written by hand: reference blocks over five PharmCAT positions longer than one base (DPYD, two blocks that meet inside the span; UGT1A1 with all four of its positions, \*28 included; a TPMT insertion; a RYR1 two-base substitution; a G6PD deletion on a haploid chrX), and four that must stay missing: a CYP2C9 deletion with a `./.` hole inside its span, one under a block with GQ 10, one with a variant record inside its span, and a TPMT deletion no block reaches. Each block's REF is the GRCh38 base at its position. |
