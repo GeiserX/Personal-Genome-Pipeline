@@ -361,12 +361,13 @@ def drug_level_phenotype(call, guidance):
     only gene-level phenotype is 'Indeterminate', when they all give the same
     one; else None. PharmCAT can leave a gene Indeterminate at gene level
     while the annotations of its drugs assign it a phenotype; without this the
-    two levels of the same report disagree. Annotations for the called
-    diplotype are used when there are any, else every annotation of the gene."""
+    two levels of the same report disagree. Annotations for any of the gene's
+    possible diplotypes are used when there are any, else every annotation of
+    the gene, so diplotypes PharmCAT cannot tell apart must agree."""
     if not call.called or call.ambiguous or call.phenotype.strip().lower() != "indeterminate":
         return None
     entries = guidance.get(call.gene) or []
-    entries = [e for e in entries if call.labels[0] in e[4]] or entries
+    entries = [e for e in entries if e[4] & set(call.labels)] or entries
     names = {e[5].strip() for e in entries if e[5].strip()}
     names = {n for n in names if n.lower() not in ("indeterminate", "no result", "n/a")}
     return names.pop() if len(names) == 1 else None

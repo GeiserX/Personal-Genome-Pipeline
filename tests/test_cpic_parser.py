@@ -353,6 +353,15 @@ def main():
         rc, rec, rows, _ = run_report(work, "INDETNORMAL", {"genes": gene, "drugs": drugs(iann("Normal Metabolizer"))})
         check("Indeterminate gene, drug level Normal Metabolizer: normal, with the note",
               rows == [["UGT1A1", "*1/*80", f"Normal Metabolizer {note}", "normal"]], rows)
+        # two possible diplotypes, both Indeterminate, whose drug annotations
+        # disagree: the gene is undecided and is not read as its first one
+        two = dip("*1", "*80", "Indeterminate")
+        two["sourceDiplotypes"] += dip("*80", "*80", "Indeterminate")["sourceDiplotypes"]
+        rc, rec, rows, _ = run_report(work, "INDETTWO", {"genes": {"UGT1A1": two}, "drugs": drugs(
+            iann("Intermediate Metabolizer", "*1/*80"), iann("Normal Metabolizer", "*80/*80"))})
+        check("Indeterminate gene, two possible diplotypes whose drug annotations disagree: stays Indeterminate, no note",
+              rc == 0 and rows == [["UGT1A1", "*1/*80 (1 of 2 possible)", "Indeterminate", "unclassified"]]
+              and note not in rec, rows)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
