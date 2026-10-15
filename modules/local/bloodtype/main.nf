@@ -33,10 +33,13 @@ process BLOODTYPE_DEPTH {
 
     script:
     // The marker table is a BED with extra columns; bedcov reads it once the
-    // comment and header lines are gone.
+    // comment and header lines are gone. bedcov stops on a contig the BAM has
+    // no @SQ line for, so those rows are left out (their sites are then not
+    // determined). The same commands as scripts/41-bloodtype.sh.
     """
-    grep -v '^#' ${markers} | tail -n +2 > targets.bed
-    samtools bedcov -Q 20 -j targets.bed ${bam} > ${meta.id}_bloodtype_depth.tsv
+    samtools view -H ${bam} | awk -F '\\t' '\$1 == "@SQ" {for (i = 2; i <= NF; i++) if (\$i ~ /^SN:/) print substr(\$i, 4)}' > contigs.txt
+    grep -v '^#' ${markers} | tail -n +2 | awk -F '\\t' 'NR == FNR {c[\$1] = 1; next} \$1 in c' contigs.txt - > targets.bed
+    if [ -s targets.bed ]; then samtools bedcov -Q 20 -j targets.bed ${bam} > ${meta.id}_bloodtype_depth.tsv; else : > ${meta.id}_bloodtype_depth.tsv; fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -50,7 +50,7 @@ With `run-all.sh`: `TOOLS=...,bloodtype`. It is opt-in and needs no data, so a r
 | Kidd, MNS, Lutheran, Diego, Dombrock, Colton | one variant each pair (c.838G>A; c.59T>C and c.143C>T; c.230G>A; c.2561C>T; c.793G>A; c.134C>T) | one allele per copy |
 | HPA-1, -2, -3, -4, -5, -15 | ITGB3 c.176T>C, GP1BA c.482C>T, ITGA2B c.2621T>G, ITGB3 c.506G>A, ITGA2 c.1600G>A, CD109 c.2108C>A | one allele per copy; GRCh38 carries HPA-15b |
 
-A site the VCF has no record for is the reference allele when the BAM has at least 8 reads there at MAPQ 20, and not determined below that. Without the BAM it is read as reference, and the confidence says so.
+A site the VCF has no record for is the reference allele when the BAM has at least 8 reads there at MAPQ 20, and not determined below that. Without the BAM it is read as reference, and the confidence says so. A contig the BAM has no `@SQ` line for (a BAM cut to a few chromosomes) gets no depth rows, because `samtools bedcov` stops on one: the sites there with no VCF record are not determined, and RhD is not determined without chr1.
 
 ## Output
 

@@ -16,6 +16,8 @@ with chosen depths, runs the script, and checks rows of the table it writes:
   5. Duffy and Kell flip with planted variants: Fyb, the GATA box, FY*X; K
   6. the VCF: a site with too few reads, a FILTER-failed call, a RefCall 0/0,
      contigs without chr, a multi-allelic record, a second sample
+  7. a BAM without some contigs (no depth rows there): those systems and RhD
+     are not determined, the others are read as usual
 
 Run: python3 tests/test_bloodtype_report.py
 """
@@ -50,7 +52,7 @@ def vcf_line(name, gt, filt="PASS", chrom=None, alt=None):
                       "GT", gt]) + "\n"
 
 
-def run(records=(), depth=None, gz=False, samples=("S",), raw=None):
+def run(records=(), depth=None, gz=False, samples=("S",), raw=None, drop=()):
     """{system: row} of the table the script writes, or the error text."""
     with tempfile.TemporaryDirectory() as tmp:
         vcf = os.path.join(tmp, "s.vcf.gz" if gz else "s.vcf")
@@ -68,6 +70,8 @@ def run(records=(), depth=None, gz=False, samples=("S",), raw=None):
             dp = os.path.join(tmp, "d.tsv")
             with open(dp, "w") as f:
                 for r in list(SITES.values()) + list(REGIONS.values()):
+                    if r["chrom"] in drop:
+                        continue   # a contig the BAM has no @SQ line for: step 41 leaves its rows out
                     mean = depth.get(r["name"], depth.get("*", 30.0))
                     cols = [r["chrom"], str(r["start"]), str(r["end"]), r["kind"], r["system"], r["name"]]
                     f.write("\t".join(cols + ["", "", "", "", "", "", "",
@@ -196,6 +200,20 @@ check("6 another allele at the site lowers the confidence", cf(multi, "Kell"), "
 check("6 a no-call genotype", ph(run([vcf_line("JK_838", "./.")], rhd(2)), "Kidd"), "not determined")
 two = run(samples=("S", "T"))
 check("6 two samples stop the script", isinstance(two, str) and "2 samples" in two, True)
+
+# 7. a BAM without chr1 and chr9: no depth rows for RH, Duffy and ABO
+part = run([vcf_line("JK_838", "1/1")], rhd(2), drop=("chr1", "chr9"))
+check("7 no depth over RHD: RhD not determined", ph(part, "RhD"), "not determined")
+check("7 the RhD note names the missing contig", "the BAM has no chr1 contig" in part["RhD"]["note"], True)
+check("7 ABO with no record and no depth row: not determined", ph(part, "ABO"), "not determined")
+check("7 the ABO note says why", "no depth row" in part["ABO"]["note"], True)
+check("7 Duffy (chr1) not determined", ph(part, "Duffy"), "not determined")
+check("7 Kidd (chr18, called) is read as usual", (ph(part, "Kidd"), cf(part, "Kidd")), ("Jk(a-b+)", "high"))
+check("7 Kell (chr7, covered) is read as usual", (ph(part, "Kell"), cf(part, "Kell")),
+      ("K-k+ Kp(a-b+) Js(a-b+)", "high"))
+empty = run(depth={}, drop=tuple({r["chrom"] for r in SITES.values()}))
+check("7 an empty depth file (no marker contig in the BAM): RhD not determined", ph(empty, "RhD"), "not determined")
+check("7 and a system with no record is not determined", ph(empty, "Kidd"), "not determined")
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

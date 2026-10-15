@@ -225,7 +225,7 @@ def apply_depth(sites, depth):
             s.status, s.n = "assumed", 0
             s.note = "no VCF record; no BAM depth to confirm the reference"
         elif d is None:
-            s.status, s.note = "no call", "no depth row"
+            s.status, s.note = "no call", "no VCF record and no depth row (the BAM has no such contig)"
         elif d >= MIN_DEPTH:
             s.status, s.n = "covered", 0
         else:
@@ -386,10 +386,13 @@ def system_rhd(S, depth, regions):
                 "note": "needs the BAM: the common RhD-negative allele (RHD*01N.01) deletes the whole RHD gene, "
                         "which a VCF does not show"}
     est = rhd_copies(depth, regions)
-    if est is None or est[0] is None:
-        flank = f" ({est[2]:.1f}x)" if est else ""
+    if est is None:
         return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
-                "note": f"too few reads beside RHD{flank} for a copy number (at least {RHD_MIN_FLANK}x)"}
+                "note": "no read depth over RHD and its flanks (the BAM has no "
+                        f"{regions['RHD_GENE']['chrom']} contig)"}
+    if est[0] is None:
+        return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
+                "note": f"too few reads beside RHD ({est[2]:.1f}x) for a copy number (at least {RHD_MIN_FLANK}x)"}
     copies, exons, _ = est
     call = 0 if copies < 0.5 else (1 if copies < 1.5 else 2)
     sd, s609 = S["RHD_PSI_DUP"], S["RHD_PSI_609"]

@@ -123,14 +123,17 @@ check_eq "without a BAM ABO is O at medium" "$(cell "$V" ABO phenotype)/$(cell "
 
 # --- Nextflow against the bash step ------------------------------------------------------
 # The same VCF, and the BAM step 02 wrote from the fixture's reads (its header is the
-# fixture reference's, which INDEXCOV checks): the sites with no record have no reads
-# there, so most systems are not determined, but every file must be the bash step's.
+# fixture reference's, which INDEXCOV checks). That BAM has no chr9, chr7, chr17 or
+# chr18 contig: the step leaves those rows out of bedcov, which stops on them, and
+# the sites there with no record are not determined. Every file must be the bash step's.
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
 N="${SAMPLE}btn" BASE="${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
 check "the BAM of step 02 is there" test -s "${BASE}.bai"
 sample "$N" "${T}/truth.vcf.gz" "$BASE"
 dk "$BCFTOOLS_IMAGE" bcftools index -t -f "${G}/${N}/vcf/${N}.vcf.gz"
 step "$N"
+check "a contig the BAM lacks (chr9): ABO is not determined" has '^not determined$' "$(cell "$N" ABO phenotype)"
+check "and the note says the BAM has no such contig" has 'no depth row \(the BAM has no such contig\)' "$(cell "$N" ABO note)"
 SHEET="${T}/samplesheet.csv"
 printf 'sample,sex,vcf,vcf_index,bam,bam_index\n%s,male,%s,%s,%s,%s\n' "$N" \
   "${G}/${N}/vcf/${N}.vcf.gz" "${G}/${N}/vcf/${N}.vcf.gz.tbi" \
