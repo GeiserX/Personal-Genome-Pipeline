@@ -49,6 +49,17 @@ PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry popula
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
 
+def cdna_text(h):
+    """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
+    c = h["cdna"]
+    if c["check"] == "flagged":
+        return (f"{c['note']} ({c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
+                f"{c['ref_reads']} ref reads clipped at an exon edge)")
+    if c["check"] == "clear":
+        return "clear"
+    return "not checked" + (f": {c['note']}" if c["note"] else "")
+
+
 def hla_text(locus):
     """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
     q = locus.get("quality") or []
@@ -89,6 +100,16 @@ def freemix_text(q):
     if q.get("contamination") == "warn":
         return f"{q['freemix']} (above {warn}: possible contamination, see docs/33-sample-qc.md{few})"
     return f"{q['freemix']} (warning above {warn}{few})"
+
+
+def read_count_text(d):
+    """Step 02's two counts as one line, in both reports."""
+    txt = f"{d['input_reads']} reads in, {d['primary_records']} primary records in the BAM"
+    if d.get("read_count_check") == "mismatch":
+        m = d["missing_reads"]
+        txt += (f": {m} reads missing" if m > 0 else ": more records than reads in") + \
+            " (the BAM was kept by the warn setting, see docs/troubleshooting.md)"
+    return txt
 
 
 def prs_chrx_note(d):
@@ -147,14 +168,18 @@ def text_report(s):
 
     # QC
     cov, sexc, sqc = S["coverage"], S["sex_check"], S.get("sample_qc", MISSING)
-    if cov["state"] != "missing" or sexc["state"] != "missing" or sqc["state"] != "missing":
+    rdc = S.get("read_count", MISSING)
+    if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
         w("## Quality control")
         w("---")
-        for sec in (cov, sexc, sqc):
+        for sec in (cov, sexc, sqc, rdc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
         md = cov["data"].get("mean_depth")
         w(f"  Mean depth: {md:.1f}x" if isinstance(md, (int, float)) else "  Mean depth: not available")
+        if rdc["state"] in ("ok", "stale"):
+            flag = "  ** READS LOST IN ALIGNMENT **" if rdc["data"].get("read_count_check") == "mismatch" else ""
+            w(f"  Alignment: {read_count_text(rdc['data'])}{flag}")
         inferred = sexc["data"].get("inferred_sex")
         declared = s["run"]["declared_sex"]
         w(f"  Inferred sex: {inferred or 'not available'}")
@@ -185,11 +210,15 @@ def text_report(s):
         if d["count"]:
             by = d["by_stars"]
             w("  By review status: " + ", ".join(f"{k} star{'s' if k != '1' else ''} {by[k]}" for k in ("4", "3", "2", "1", "0")))
+            if "cdna_flagged" in d:
+                w(f"  cDNA read check (alt reads clipped at exon edges): {d['cdna_flagged']} flagged")
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
                   f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+                if "cdna" in h:
+                    w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -528,6 +557,11 @@ def html_report(s):
     qc = [stat("Mean depth", f"{md:.1f}x" if isinstance(md, (int, float)) else "not available"),
           stat("Inferred sex (indexcov)", sex_badge),
           stat("Declared sex", E(declared or "not declared"))]
+    rdc = S.get("read_count", MISSING)
+    if rdc["state"] in ("ok", "stale"):
+        qc.insert(1, stat("Reads kept by alignment",
+                          badge(read_count_text(rdc["data"]),
+                                "green" if rdc["data"].get("read_count_check") == "ok" else "red")))
     sqc = S.get("sample_qc", MISSING)
     if sqc["state"] in ("ok", "stale"):
         q = sqc["data"]
@@ -545,7 +579,7 @@ def html_report(s):
     else:
         qc.append(stat("Identity and contamination (step 33)", badge("Not run", "gray")))
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
-               for sec in (cov, sexc, sqc) if stale_note(sec)]
+               for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
     v = S["variants"]["data"]
@@ -561,6 +595,9 @@ def html_report(s):
                stat("By stars (4/3/2/1/0)", E(" / ".join(str(by.get(k, 0)) for k in ("4", "3", "2", "1", "0")))),
                stat("ClinVar file date", E(s["databases"]["clinvar_release"] or "unknown")),
                small_note(CLINVAR_FREQ_NOTE)]
+    if "cdna_flagged" in c:
+        cv_body.insert(2, stat("Flagged by the cDNA read check",
+                               badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
 
     pg = S["pharmcat"]["data"]
@@ -722,13 +759,17 @@ def html_report(s):
         a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
+        # The cDNA read check column only when step 06 wrote its table.
+        reads = "cdna_flagged" in c
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
-                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td></tr>" for h in c["hits"][:50]]
+                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
+                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
         a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
-                "<th>Significance</th><th>Review status</th><th>Stars</th></tr>"]
+                "<th>Significance</th><th>Review status</th><th>Stars</th>"
+                + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]
