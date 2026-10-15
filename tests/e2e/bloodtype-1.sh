@@ -9,6 +9,8 @@
 # calls and reads, not from a serological typing of HG002: no c.261 insertion
 # in ABO, so both chromosomes carry c.261delG (group O); two RHD copies by
 # depth (D+); Fya and Fyb (Fy(a+b+)); no c.578C>T (K-k+); Jkb on both (Jk(a-b+)).
+# ABO is also checked on the reads alone: under 10% of HG002's reads over c.261
+# carry the insertion an A or a B allele would show.
 # Then:
 #   - planted variants flip Duffy (the GATA box with one Fyb: Fy(a+b-)) and
 #     Kell (c.578C>T: K+k+);
@@ -46,6 +48,26 @@ check_ge "reads fetched" "$(dk "$SAMTOOLS_IMAGE" samtools view -c "${T}/win.bam"
 awk -F'\t' 'BEGIN {OFS = "\t"} !/^#/ && $4 == "site" {print $1, $2 - 50, $3 + 50}' "$MARKERS" | sort -k1,1 -k2,2n > "${T}/sites.bed"
 dk "$BCFTOOLS_IMAGE" bcftools view -R "${T}/sites.bed" -Oz -o "${T}/truth.vcf.gz" "$TRUTH"
 check_ge "GIAB records near the marker sites" "$(dk "$BCFTOOLS_IMAGE" bcftools view -H "${T}/truth.vcf.gz" 2>/dev/null | wc -l)" 5
+
+# ABO from the reads themselves, apart from GIAB's calls and from step 41: the
+# reads (MAPQ 20) over c.261 that carry an insertion within 10 bp of it. GRCh38
+# carries c.261delG, so an A or a B allele is that insertion in about half the
+# reads or more. ins_reads prints "<with an insertion> <all>".
+ins_reads() {
+  awk -F'\t' '{pos = $4; c = $6; hit = 0
+    while (match(c, /^[0-9]+[MIDNSHP=X]/)) {
+      n = substr(c, 1, RLENGTH - 1) + 0; op = substr(c, RLENGTH, 1); c = substr(c, RLENGTH + 1)
+      if (op == "I" && pos >= 133257511 && pos <= 133257531) hit = 1
+      if (op ~ /[MDN=X]/) pos += n
+    }
+    all++; ins += hit} END {print ins + 0, all + 0}'
+}
+check_eq "control: ins_reads sees a planted insertion at c.261" \
+  "$(printf 'r\t0\tchr9\t133257471\t60\t51M1I49M\n' | ins_reads)" "1 1"
+read -r N_INS N_ALL < <(dk "$SAMTOOLS_IMAGE" samtools view -q 20 "${T}/win.bam" chr9:133257521-133257521 | ins_reads)
+check_ge "HG002's reads over ABO c.261" "$N_ALL" 8
+check "HG002's reads agree with O/O: under 10% carry the c.261 insertion (${N_INS} of ${N_ALL})" \
+  test $((N_INS * 10)) -lt "$N_ALL"
 
 # The planted copy: the GATA box (ACKR1 c.-67T>C) and KEL c.578C>T, each on one chromosome.
 { dk "$BCFTOOLS_IMAGE" bcftools view "${T}/truth.vcf.gz"
