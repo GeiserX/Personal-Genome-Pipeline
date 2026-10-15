@@ -10,6 +10,9 @@
 # Two neighbouring records that can be one allele are also matched as their
 # combined allele (bin/clinvar_join_adjacent.awk): a matched combined record is
 # a hit of its own (INFO/PGP_JOINED_FROM) and its parts are marked PGP_PART_OF.
+# clinvar/${SAMPLE}_clinvar_cdna_check.tsv says, for each hit, whether its alt
+# reads look like spliced cDNA (bin/clip_check.py; needs the sample's BAM and
+# the GENCODE exons setup.sh installs, and says "not checked" without them).
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -26,6 +29,9 @@ CLINVAR_NORM="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.norm.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/clinvar"
 HITS="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.vcf"
 HITS_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.tsv"
+CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_cdna_check.tsv"
+BAM="${GENOME_DIR}/${SAMPLE}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
+EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 
@@ -182,10 +188,28 @@ mv "${HITS_TSV}.part" "$HITS_TSV"
 rm -f "$SHARED" "${SHARED}.tbi" "${HITS_TSV}.body" "$CLINVAR_TARGETS" "$SAMPLE_TARGETS" \
   "$JOINED" "${JOINED}.tbi" "$CANDIDATES" "${CANDIDATES}.tbi"
 
+# Step 4: the cDNA read check. Spliced cDNA or expression-vector DNA (a lab
+# contaminant) gives reads clipped exactly at an exon edge, with the rest of
+# the read on the next exon; a variant it carries is called like any other.
+# For each hit, bin/clip_check.py counts the alt and ref reads clipped at an
+# exon edge and flags the hit when most alt reads are and few ref reads are.
+# It reads only the reads at the hits. pysam is in PYPGX_IMAGE.
+if [ ! -f "$BAM" ] || [ ! -f "${BAM}.bai" ]; then
+  CDNA_ARGS=(--skip "no BAM (${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam with its .bai)")
+elif [ ! -s "$EXONS_BED" ]; then
+  CDNA_ARGS=(--skip "no GENCODE exons (scripts/setup.sh installs them)")
+else
+  CDNA_ARGS=(--bam "$(cpath "$BAM")" --exons "$(cpath "$EXONS_BED")")
+fi
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
+  python3 /pgp-bin/clip_check.py --hits "$(cpath "$HITS_TSV")" --out "$(cpath "${CDNA_TSV}.part")" "${CDNA_ARGS[@]}"
+mv "${CDNA_TSV}.part" "$CDNA_TSV"
+
 HIT_COUNT=$(grep -c -v '^#' "$HITS" || true)
 echo "=== ClinVar screen complete ==="
 echo "Hits: ${HITS} (sample records carrying a ClinVar Pathogenic/Likely_pathogenic allele)"
 echo "Table: ${HITS_TSV}"
+echo "cDNA read check: ${CDNA_TSV}"
 echo "Count: ${HIT_COUNT} pathogenic hits"
 # A zero-star submission counts as a hit like an expert-panel one; the review
 # status (CLNREVSTAT, copied on above) says how much weight each deserves.
