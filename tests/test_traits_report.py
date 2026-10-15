@@ -9,8 +9,10 @@ Checks:
      as ref/ref and then as ref/alt gives two different readings, each the
      table's own;
   3. a position with no line is not_covered (never read as the reference); an
-     allele the table does not describe, a half call and a deletion starting
-     at the position are other_allele, not read;
+     allele the table does not describe and a deletion starting at the
+     position are other_allele, not read; a half call that reaches the script
+     (the bcftools genotype filter of step 42 drops it first, so in a run its
+     position is not_covered) is other_allele too;
   4. a gVCF REF that is not the table's reference base stops the run (exit 1,
      the row named), so a gVCF on another build is not read;
   5. the APOE line: every pair of rs429358 and rs7412 genotypes gives its

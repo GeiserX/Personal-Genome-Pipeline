@@ -37,7 +37,7 @@ In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the p
 | `traits/${SAMPLE}_traits.tsv` | one row per table row, then the APOE line: `rsid`, `gene`, `chrom`, `pos`, `trait`, `genotype` (reference allele first), `status`, `reading`, `ancestry`, `note`, `pmids` |
 | `traits/${SAMPLE}_traits_genotypes.tsv` | what bcftools read at the table's positions: chromosome, position, REF, ALT and the genotype as bases |
 
-`status` is `called`, `not_covered` (no reads at the position: not read) or `other_allele` (an allele the table does not describe, a half call, or an indel starting at the position: not read). A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.
+`status` is `called`, `not_covered` (no reads at the position: not read) or `other_allele` (an allele the table does not describe, or an indel starting at the position: not read). A record with a missing allele (a no-call or a half call such as `./T`) is dropped by the genotype filter, so its position reads as `not_covered`. A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.
 
 Both reports have a Traits section: every row with its genotype, reading, note and PubMed id, and a mark on the rows whose reading depends on ancestry. The APOE lines come last, after a warning, and in the HTML report they are folded away until you open them.
 

@@ -9,7 +9,9 @@ Nextflow TRAITS_SITES process run the same commands): one line per gVCF record
 at a table position, after the reference blocks are expanded to one record per
 base, as CHROM POS REF ALT GENOTYPE, the genotype as bases (C/T, or C|T when
 phased). A position with no line had no reads: it is "not_covered", never read
-as the reference.
+as the reference. bcftools drops a record with a missing allele (a no-call or a
+half call such as ./T) before this script, so such a position has no line and
+reads as not_covered too; a half call that still reaches here is other_allele.
 
 Each table row becomes one output row with the genotype (the reference allele
 first), a status (called, not_covered, other_allele) and the reading for that
