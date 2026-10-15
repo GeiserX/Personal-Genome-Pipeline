@@ -201,6 +201,31 @@ def clinvar_row(r):
     }
 
 
+def clinvar_cdna_checks(d, s):
+    """Step 06's cDNA read check (bin/clip_check.py), keyed by (chrom, pos,
+    ref, alt). None when the file is absent: the Nextflow pipeline does not
+    write it."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_cdna_check.tsv"])
+    if not p:
+        return None
+    try:
+        rows = read_tsv(p)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(p)}: {e}") from e
+
+    def num(v):
+        return int(v) if (v or "").isdigit() else None
+    out = {}
+    for r in rows:
+        if not (r.get("pos") or "").isdigit():
+            continue
+        out[(r.get("chrom"), int(r["pos"]), r.get("ref"), r.get("alt"))] = {
+            "check": r.get("cdna_check") or "not_checked", "note": r.get("cdna_note") or "",
+            "alt_reads": num(r.get("alt_reads")), "alt_clipped": num(r.get("alt_clipped")),
+            "ref_reads": num(r.get("ref_reads")), "ref_clipped": num(r.get("ref_clipped"))}
+    return out
+
+
 def sec_clinvar(d, s):
     p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if not p:
@@ -208,7 +233,16 @@ def sec_clinvar(d, s):
     rows = [clinvar_row(r) for r in vcf_records(p) if len(r) >= 8]
     rows.sort(key=lambda x: (-x["stars"], x["chrom"], x["pos"]))
     by = {str(k): sum(1 for x in rows if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
-    return p, {"count": len(rows), "by_stars": by, "hits": rows}
+    data = {"count": len(rows), "by_stars": by, "hits": rows}
+    # The cDNA read check, on each hit when step 06 wrote it.
+    cdna = clinvar_cdna_checks(d, s)
+    if cdna is not None:
+        for x in rows:
+            x["cdna"] = cdna.get((x["chrom"], x["pos"], x["ref"], x["alt"])) or {
+                "check": "not_checked", "note": "not in the read-check table", "alt_reads": None,
+                "alt_clipped": None, "ref_reads": None, "ref_clipped": None}
+        data["cdna_flagged"] = sum(1 for x in rows if x["cdna"]["check"] == "flagged")
+    return p, data
 
 
 def pharmcat_json(d, s):
@@ -1140,11 +1174,34 @@ def sec_sample_qc(d, s):
     return p, data
 
 
+def sec_read_count(d, s):
+    """Step 02's read count (and the ALIGN_MINIMAP2 task's): the reads that
+    went into the aligner and the primary records of the BAM it wrote."""
+    p = first_existing(d, [f"qc/{s}_read_count.tsv"])
+    if not p:
+        return None, {}
+    data = {}
+    for r in read_tsv(p):
+        if r.get("key"):
+            data[r["key"]] = r.get("value", "")
+    for k in ("input_reads", "primary_records", "missing_reads"):
+        if not re.fullmatch(r"-?[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        data[k] = int(data[k])
+    if data.get("read_count_check") not in ("ok", "mismatch"):
+        raise Unreadable(f"{os.path.basename(p)} has no read_count_check row (ok or mismatch)")
+    return p, data
+
+
+# Sections that are not a step of their own: no "not run" line without them.
+NOT_A_STEP = {"read_count"}
+
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
+    ("read_count", "Reads kept by alignment", "02", sec_read_count),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),
@@ -1321,8 +1378,10 @@ def collect(sample, sample_dir, declared_sex=None):
         "manifest": manifest or [],
         "sections": sections,
         "cyp2d6": cyp2d6,
+        # The read count is written by alignment, which a run from a BAM or
+        # a VCF never does, so it is no step left undone.
         "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
-                    for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed")],
+                    for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
     }
     return summary

@@ -9,7 +9,13 @@
 # markdup writes the BAM and its index together under a temporary name; the
 # BAM is checked with samtools quickcheck and only then renamed: a killed run
 # leaves no <sample>_sorted.bam behind for the next run to trust.
+# Before the rename the BAM's primary records are counted and compared with
+# the FASTQ records that went in (R1 plus R2, counted while the aligner reads
+# them): the aligner writes every read once, mapped or not, so the two must be
+# equal. A difference stops the step, and the BAM is not kept. Both counts go
+# to qc/<sample>_read_count.tsv, which the reports show.
 # THREADS (default 8) sets the CPUs of the aligner and of samtools.
+# READ_COUNT_CHECK=warn keeps a BAM whose count differs, with a warning.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -17,6 +23,7 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # shellcheck source=lib/common.sh
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
+read_count_mode > /dev/null || exit 1
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 
 # Allow explicit override (e.g., FASTQ_SUBDIR=fastq to use raw reads even when trimmed exist)
@@ -58,8 +65,16 @@ BAM="${OUTPUT_DIR}/${SAMPLE}_sorted.bam"
 TMP_BAM="${OUTPUT_DIR}/${SAMPLE}_sorted.tmp.bam"
 SORT_TMP="${OUTPUT_DIR}/${SAMPLE}.sort_tmp"
 MMI_TMP="${MMI}.tmp.$$"
+COUNTS="${SAMPLE_DIR}/qc/${SAMPLE}_read_count.tsv"
+COUNT_PIDS=()
 # Whatever this run leaves half written goes when it exits, finished or not.
-cleanup() { rm -rf "$TMP_BAM" "${TMP_BAM}.bai" "$SORT_TMP" "$MMI_TMP"; }
+# A read counter still running is stopped first (its gzip then ends on the
+# closed pipe).
+cleanup() {
+  local p
+  for p in ${COUNT_PIDS[@]+"${COUNT_PIDS[@]}"}; do kill "$p" 2>/dev/null || true; done
+  rm -rf "$TMP_BAM" "${TMP_BAM}.bai" "$SORT_TMP" "$MMI_TMP" "${COUNTS}.tmp"
+}
 trap cleanup EXIT
 
 # Step 1: Build the minimap2 index (one-time, ~30 min), under a temporary
@@ -97,6 +112,12 @@ fi
 SORT_MEM_GB=$((THREADS + 4))
 echo "Aligning reads and marking duplicates (this takes 1-2 hours for 30X WGS)..."
 mkdir -p "$SORT_TMP"
+# The reads that go in, counted on the host while minimap2 reads the same
+# files: one gzip per FASTQ, so the count adds no time to the step.
+gzip -cdf "$R1" | awk "$FASTQ_RECORDS_AWK" > "${SORT_TMP}/R1.count" &
+COUNT_PIDS+=("$!")
+gzip -cdf "$R2" | awk "$FASTQ_RECORDS_AWK" > "${SORT_TMP}/R2.count" &
+COUNT_PIDS+=("$!")
 # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
 run_in \
   --cpus "${THREADS}" --memory 32g \
@@ -116,21 +137,51 @@ run_in \
       | samtools markdup -@ "$threads" --write-index -T "${tmp}/markdup" - "${out}##idx##${out}.bai"' \
   _ "${THREADS}" "$(cpath "$SORT_TMP")" "$(cpath "$TMP_BAM")"
 
-# Step 3: Check, then rename. The old index goes first, so an index never
-# sits next to a BAM it was not built from. markdup finishes the index just
-# before the BAM's last block, so the touch makes the index the newer file.
+# Step 3: Check the BAM.
 echo "Checking BAM..."
 run_in \
   --cpus 1 --memory 1g \
   "${SAMTOOLS_IMAGE}" \
   samtools quickcheck -v "$(cpath "$TMP_BAM")"
 [ -s "${TMP_BAM}.bai" ] || { echo "ERROR: samtools markdup wrote no index" >&2; exit 1; }
+
+# Step 4: Every read that went in is in the BAM: its primary records (not
+# 0x100 secondary, not 0x800 supplementary) equal the FASTQ records of R1
+# plus R2 (scripts/lib/common.sh, read_count_check).
+echo "Counting reads..."
+for p in "${COUNT_PIDS[@]}"; do
+  wait "$p" || { echo "ERROR: could not count the records of ${R1} and ${R2} (see the message above)" >&2; exit 1; }
+done
+COUNT_PIDS=()
+N1=$(cat "${SORT_TMP}/R1.count")
+N2=$(cat "${SORT_TMP}/R2.count")
+PRIMARY=$(run_in \
+  --cpus "${THREADS}" --memory 2g \
+  "${SAMTOOLS_IMAGE}" \
+  samtools view -c -F 0x900 -@ "${THREADS}" "$(cpath "$TMP_BAM")")
+mkdir -p "$(dirname "$COUNTS")"
+rc=0
+read_count_check "$PRIMARY" \
+  "${FASTQ_SUBDIR}/${SAMPLE}_R1.fastq.gz ${N1} records + ${FASTQ_SUBDIR}/${SAMPLE}_R2.fastq.gz ${N2} records" \
+  "${COUNTS}.tmp" "$N1" "$N2" || rc=$?
+case "$rc" in
+  0|3) ;;
+  *) echo "ERROR: the BAM was not kept." >&2
+     [ ! -e "$BAM" ] || echo "  The earlier ${BAM} is left as it was." >&2
+     exit 1 ;;
+esac
+
+# Step 5: Rename. The old index goes first, so an index never sits next to a
+# BAM it was not built from. markdup finishes the index just before the BAM's
+# last block, so the touch makes the index the newer file.
 touch "${TMP_BAM}.bai"
 rm -f "${BAM}.bai"
 mv -f "$TMP_BAM" "$BAM"
 mv -f "${TMP_BAM}.bai" "${BAM}.bai"
+mv -f "${COUNTS}.tmp" "$COUNTS"
 
 echo "=== Alignment complete ==="
 echo "BAM: ${BAM}"
 echo "Index: ${BAM}.bai"
+echo "Read count: ${COUNTS}"
 ls -lh "$BAM" 2>/dev/null || true
