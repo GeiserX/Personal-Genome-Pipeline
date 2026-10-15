@@ -38,6 +38,11 @@ process TRAITS_SITES {
     script:
     // The same commands as scripts/42-traits.sh
     """
+    n=\$(bcftools query -l ${gvcf} | wc -l | tr -d ' ')
+    if [ "\$n" -ne 1 ]; then
+        echo "ERROR: Sample '${meta.id}': ${gvcf} holds \$n samples; step 42 reads a one-sample gVCF (keep one with bcftools view -s <sample>)." >&2
+        exit 1
+    fi
     grep -v '^#' ${table} | awk -F'\\t' 'NR > 1 { print \$1 "\\t" \$2 }' | LC_ALL=C sort -k1,1 -k2,2n -u > sites.tsv
     bcftools convert --gvcf2vcf -f ${reference} -R sites.tsv -Ou ${gvcf} \\
         | bcftools view -T sites.tsv --trim-alt-alleles -i 'GT!="mis"' -Ou \\

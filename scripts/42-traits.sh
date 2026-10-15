@@ -58,11 +58,13 @@ echo "[1/2] Genotyping the table's positions from the gVCF..."
 # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
 run_in --cpus 1 --memory 2g "$BCFTOOLS_IMAGE" \
   bash -euo pipefail -c '
+    n=$(bcftools query -l "$3" | wc -l | tr -d " ")
+    [ "$n" -eq 1 ] || { echo "ERROR: $3 holds $n samples; step 42 reads a one-sample gVCF (keep one with bcftools view -s <sample>)." >&2; exit 1; }
     bcftools convert --gvcf2vcf -f "$1" -R "$2" -Ou "$3" \
       | bcftools view -T "$2" --trim-alt-alleles -i "GT!=\"mis\"" -Ou \
       | bcftools query -f "%CHROM\t%POS\t%REF\t%ALT\t[%TGT]\n"' \
   _ "${REF_FASTA_C}" "$(cpath "$SITES")" "$(cpath "$GVCF")" > "${GENOTYPES}.tmp" \
-  || { rm -f "${GENOTYPES}.tmp" "$SITES"; echo "ERROR: bcftools could not read ${GVCF} at the table's positions." >&2; exit 1; }
+  || { rm -f "${GENOTYPES}.tmp" "$SITES"; echo "ERROR: step 42 could not genotype ${GVCF} at the table's positions (the line above says why)." >&2; exit 1; }
 mv -f "${GENOTYPES}.tmp" "$GENOTYPES"
 rm -f "$SITES"
 
@@ -72,8 +74,8 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" -
     --genotypes "$(cpath "$GENOTYPES")" --sample "$SAMPLE" --out "$(cpath "$OUT")"
 
 echo ""
-echo "Traits (${OUT}):"
-awk -F'\t' 'NR > 1 { printf "  %-45s %-12s %s\n", substr($5, 1, 45), $6, $7 }' "$OUT"
-echo ""
 echo "A reading is what the cited studies found on average, not a diagnosis. APOE is a risk factor"
 echo "for Alzheimer's disease: docs/42-traits.md says what it means before you read it."
+echo ""
+echo "Traits (${OUT}):"
+awk -F'\t' 'NR > 1 { printf "  %-45s %-12s %s\n", substr($5, 1, 45), $6, $7 }' "$OUT"

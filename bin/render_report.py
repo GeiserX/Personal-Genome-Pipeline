@@ -182,7 +182,7 @@ def prs_note(d):
 def traits_text(d, sample):
     """The traits section of the text report: the rows read, the ones not read,
     and the APOE lines last, after a warning."""
-    out = [f"  Read: {d['called']}  No reads at the position: {d['not_covered']}  Other allele: {d['other_allele']}"]
+    out = [f"  Read: {d['called']}  No genotype at the position: {d['not_covered']}  Other allele: {d['other_allele']}"]
     for r in d["rows"]:
         if r["status"] == "not_covered":
             continue
@@ -190,7 +190,7 @@ def traits_text(d, sample):
         out.append(f"  {r['trait']} ({r['gene']} {r['rsid']}): {r['genotype']}{mark}. {r['reading']} (PMID {r['pmids']})")
     missing = [r["rsid"] for r in d["rows"] if r["status"] == "not_covered"]
     if missing:
-        out.append(f"  Not read (no reads in the gVCF): {', '.join(missing)}")
+        out.append(f"  Not read (no genotype in the gVCF): {', '.join(missing)}")
     out.append(f"  {TRAITS_NOTE} Notes per row: traits/{sample}_traits.tsv")
     if d.get("apoe"):
         out.append(f"  {APOE_WARNING}")
@@ -208,7 +208,7 @@ def traits_html(d, sample):
                 f"{E(r['rsid'])}</span></td><td>{E(r['genotype'])}{anc}</td><td>{E(r['reading'])}"
                 f"<br><span style=\"font-size:12px;color:#666\">{E(r['note'])}</span></td><td>PMID {E(r['pmids'])}</td></tr>")
     head = "      <tr><th>Trait</th><th>Gene</th><th>Genotype</th><th>Reading</th><th>Source</th></tr>"
-    body = [stat("Read / no reads / other allele", E(f"{d['called']} / {d['not_covered']} / {d['other_allele']}")),
+    body = [stat("Read / no genotype / other allele", E(f"{d['called']} / {d['not_covered']} / {d['other_allele']}")),
             "    <table>", head] + ["      " + tr(r) for r in d["rows"]] + ["    </table>", small_note(TRAITS_NOTE)]
     if d.get("apoe"):
         body += [f"    <details><summary>{E(APOE_WARNING)} Open to show it.</summary>", "    <table>", head]

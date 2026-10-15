@@ -19,7 +19,7 @@ These are the results most people find easiest to read, and the pipeline had no 
 
 ## Input
 
-- `${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz` with its `.tbi`: the gVCF of [step 3](03-variant-calling.md). A gVCF holds reference blocks, so a position where you match the reference reads as ref/ref, and a position with no reads has no record and reads as "not covered". A variant-only VCF cannot tell those two apart, so the step does not read one.
+- `${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz` with its `.tbi`: the gVCF of [step 3](03-variant-calling.md). A gVCF holds reference blocks, so a position where you match the reference reads as ref/ref, and a position with no reads has no record and reads as "not covered". A variant-only VCF cannot tell those two apart, so the step does not read one. The gVCF must hold one sample: a gVCF with several sample columns stops the step with the count.
 - `assets/traits.tsv`: the table.
 
 In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the processes `TRAITS_SITES` and `TRAITS` run for every sample with a gVCF: one DeepVariant wrote (FASTQ, BAM or CRAM rows) or one the samplesheet gives in its `gvcf` and `gvcf_index` columns. A sample without one is skipped with a warning. From an existing VCF, `run-all.sh` passes a gVCF on only for a sample with a BAM and a VCF whose gVCF lies beside the VCF; any other sample that starts from a VCF gets step 42 listed as skipped, with the reason. A failed traits task is skipped and the run goes on, as for the other report-only tools.
@@ -37,7 +37,7 @@ In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the p
 | `traits/${SAMPLE}_traits.tsv` | one row per table row, then the APOE line: `rsid`, `gene`, `chrom`, `pos`, `trait`, `genotype` (reference allele first), `status`, `reading`, `ancestry`, `note`, `pmids` |
 | `traits/${SAMPLE}_traits_genotypes.tsv` | what bcftools read at the table's positions: chromosome, position, REF, ALT and the genotype as bases |
 
-`status` is `called`, `not_covered` (no reads at the position: not read) or `other_allele` (an allele the table does not describe, or an indel starting at the position: not read). A record with a missing allele (a no-call or a half call such as `./T`) is dropped by the genotype filter, so its position reads as `not_covered`. A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.
+`status` is `called`, `not_covered` (no genotype at the position, from no reads or a no-call: not read) or `other_allele` (an allele the table does not describe, or an indel starting at the position: not read). A record with a missing allele (a no-call or a half call such as `./T`) is dropped by the genotype filter, so its position reads as `not_covered`. A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.
 
 Both reports have a Traits section: every row with its genotype, reading, note and PubMed id, and a mark on the rows whose reading depends on ancestry. The APOE lines come last, after a warning, and in the HTML report they are folded away until you open them.
 
@@ -88,5 +88,5 @@ Seconds: bcftools reads the gVCF at the table's positions through its index, and
 - Rows marked `ancestry` read differently in other populations; their note says how. Lactase persistence is the clearest case: -13910T explains it in Europeans, and the three African alleles have their own rows.
 - Each row is read alone. Traits that depend on the combination of several sites on the same copy of a gene (the TAS2R38 taster haplotype, two different MC1R red-hair variants) say so in their note, because a gVCF from short reads does not give the phase.
 - SNVs only; the table has no indel and no chrX, chrY or chrM row.
-- Positions with no reads are listed as not read. On the e2e fixture, a small slice of the HG002 genome, only the table positions inside its slices are read, and the e2e case checks their genotypes against the GIAB truth.
+- Positions with no genotype (no reads, or a no-call) are listed as not read. On the e2e fixture, a small slice of the HG002 genome, only the table positions inside its slices are read, and the e2e case checks their genotypes against the GIAB truth.
 - The licence: the readings, notes and table are this project's own text, GPL-3.0 like the rest of the repository.

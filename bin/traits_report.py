@@ -8,8 +8,8 @@ G.tsv is what bcftools writes in step 42 (scripts/42-traits.sh and the
 Nextflow TRAITS_SITES process run the same commands): one line per gVCF record
 at a table position, after the reference blocks are expanded to one record per
 base, as CHROM POS REF ALT GENOTYPE, the genotype as bases (C/T, or C|T when
-phased). A position with no line had no reads: it is "not_covered", never read
-as the reference. bcftools drops a record with a missing allele (a no-call or a
+phased). A position with no line has no genotype: it is "not_covered", never
+read as the reference. bcftools drops a record with a missing allele (a no-call or a
 half call such as ./T) before this script, so such a position has no line and
 reads as not_covered too; a half call that still reaches here is other_allele.
 
@@ -58,7 +58,7 @@ APOE_NOTE = ("Odds ratios from a meta-analysis of people of European descent (Fa
              "weaker in African American and Hispanic people and stronger in Japanese people. Step 25's "
              "Alzheimer's score (PGS000334) includes the same two sites; docs/42-traits.md says why step 06 "
              "does not list APOE.")
-NOT_COVERED = "No reads at this position in the gVCF: not read."
+NOT_COVERED = "No genotype at this position in the gVCF (no reads, or a no-call): not read."
 OTHER_ALLELE = "An allele this table does not describe at this position: not read."
 
 

@@ -600,7 +600,7 @@ def main():
         check("traits: the text report has the read row with its genotype, reading and PMID, marked ancestry",
               f"(MCM6 rs4988235): {lct['ref']}/{lct['alt']} [ancestry]. {lct['het']} (PMID {lct['pmids']})" in txt_t, txt_t)
         check("traits: the text report lists a not-covered row as not read",
-              "Not read (no reads in the gVCF): " in txt_t and "rs671" in txt_t.split("Not read (no reads in the gVCF): ", 1)[-1])
+              "Not read (no genotype in the gVCF): " in txt_t and "rs671" in txt_t.split("Not read (no genotype in the gVCF): ", 1)[-1])
         apoe_at = txt_t.find(render_report.APOE_WARNING)
         check("traits: the APOE line comes after the warning in the text report, e3/e3",
               apoe_at > 0 and "(rs429358+rs7412): e3/e3." in txt_t[apoe_at:] and "e3/e3" not in txt_t[:apoe_at], txt_t)
