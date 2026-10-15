@@ -443,7 +443,7 @@ for r in R1 R2; do
 done
 ```
 
-**Fix:** get both FASTQ files again, complete, and run step 02 again. For a BAM that `validate-setup.sh` fails, realign with step 02. If that BAM was aligned from the untrimmed reads (`FASTQ_SUBDIR=fastq`), fastp's count does not apply to it and the line can be ignored.
+**Fix:** get both FASTQ files again, complete, and run step 02 again. For a BAM that `validate-setup.sh` fails, realign with step 02. If that BAM was aligned from the untrimmed reads (`FASTQ_SUBDIR=fastq`), fastp's count does not apply to it, but `run-all.sh` still stops on the `[FAIL]`. Realigning with step 02 writes `qc/<sample>_read_count.tsv` with `input_source` `fastq/...`, and `validate-setup.sh` then skips the fastp comparison with an `[INFO]` line. To go on without realigning, use `READ_COUNT_CHECK=warn` (below).
 
 **Going on anyway:** for an input you know is odd, `READ_COUNT_CHECK=warn` makes steps 02 and 02a keep the BAM with a warning, and `validate-setup.sh` print a `[WARN]` line instead of the `[FAIL]`. For the Nextflow pipeline (`run-all.sh` or `nextflow run`), put this in a file and pass it with `-c warn.config` (`run-all.sh` passes options after the sex on to `nextflow run`):
 ```groovy

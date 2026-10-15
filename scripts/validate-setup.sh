@@ -111,9 +111,22 @@ check_bam_quickcheck() {
 # (scripts/lib/common.sh, read_count_check). A BAM aligned before that rule
 # can have lost reads with no error. Counting reads the whole BAM: a few
 # minutes on a 30x one. READ_COUNT_CHECK=warn turns a difference into a WARN.
+# When step 02 wrote qc/<sample>_read_count.tsv with the BAM (not older than
+# it) and its input_source is the raw reads (fastq/...), the BAM was not made
+# from fastp's output and step 02 already compared it with its own input: the
+# fastp comparison is skipped with an INFO line.
 check_bam_read_count() {
   local json="${SAMPLE_DIR}/fastq_trimmed/${SAMPLE}_fastp.json" reads primary msg rc=0
+  local table="${SAMPLE_DIR}/qc/${SAMPLE}_read_count.tsv" bam="${SAMPLE_DIR}/aligned/${SAMPLE}_sorted.bam" src
   [ -f "$json" ] || return 0
+  if [ -f "$table" ] && [ ! "$table" -ot "$bam" ]; then
+    src=$(awk -F'\t' '$1 == "input_source" { print $2; exit }' "$table")
+    case "$src" in
+      fastq/*)
+        info "BAM was aligned from the raw reads (qc/${SAMPLE}_read_count.tsv: ${src}), not from fastp's output: its read count is not compared with fastp's"
+        return 0 ;;
+    esac
+  fi
   if ! reads=$(fastp_total_reads "$json"); then
     warn "fastq_trimmed/${SAMPLE}_fastp.json has no summary.after_filtering.total_reads: the BAM's read count is not checked"
     return 0
@@ -131,8 +144,9 @@ check_bam_read_count() {
   if [ "$rc" -ne 0 ]; then
     sed 's/^ */       /' <<< "$msg"
     if [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
-      echo "       A BAM aligned from the untrimmed reads (FASTQ_SUBDIR=fastq) is not comparable with fastp's"
-      echo "       count; otherwise realign with step 02 (docs/troubleshooting.md, \"The BAM lost reads\")."
+      echo "       Realign with step 02 (docs/troubleshooting.md, \"The BAM lost reads\"). A BAM aligned from the"
+      echo "       untrimmed reads (FASTQ_SUBDIR=fastq) before step 02 wrote qc/${SAMPLE}_read_count.tsv is not"
+      echo "       comparable with fastp's count: realigning records its own count, and this check then skips it."
     fi
   fi
 }
