@@ -72,7 +72,7 @@ Both reports (step 24 and `generate-report.sh`) show the counts and the file nam
 
 ## Runtime
 
-On the CI fixture (the gVCF of the fixture's 15 regions, 7,623 sites of the CI table) the step took under one second, container start included (e2e run 38649573454). It is not measured on a whole genome. The step reads the gVCF from start to end once in one Python process, so the time grows with the size of the gVCF; memory holds the site table, about 620,000 rows.
+On the CI fixture (the gVCF of the fixture's 15 regions, 7,623 sites of the CI table) the step took under one second, container start included (e2e run 38664867748). It is not measured on a whole genome. The step reads the gVCF from start to end once in one Python process, so the time grows with the size of the gVCF; memory holds the site table, about 620,000 rows.
 
 ## Notes
 
