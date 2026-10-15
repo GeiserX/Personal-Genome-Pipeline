@@ -18,8 +18,9 @@ Paraphase reads it, with exit 3 and the reason.
 turns Paraphase's JSON into one row per gene (copy number, call status, what
 the region-specific fields say) and its per-region VCFs into one row per
 variant a haplotype carries, with the reads behind it. The genes of
-GENE_ROWS get their own rows; every other region Paraphase ran gets one row
-with its gene-family copy number.
+GENE_ROWS get their own rows; every other region Paraphase ran gets one row:
+the gene's own copies where Paraphase labels haplotypes gene1 (the gene) and
+gene2 (its pseudogene), as for GBA and OTOA, else the gene family's copies.
 
 parascopy_smn1() and compare_smn1() are the rule bin/collect_summary.py uses
 to set SMN1 from Paraphase beside SMN1 from Parascopy (step 35), so both
@@ -189,9 +190,21 @@ def generic_rows(name, region):
     fusions = rsi.get("fusions_called")
     if fusions:
         detail.append("fusions: " + json.dumps(fusions, sort_keys=True))
+    names = hap_names(region)
     if "gene_cn" in rsi:
         cn = rsi.get("gene_cn")
         detail.insert(0, "copies of the gene, not of its pseudogenes")
+    elif any("_gene1hap" in h or "_gene2hap" in h for h in names):
+        # Paraphase labels each haplotype as the region's first gene (gene1) or
+        # its second gene or pseudogene (gene2): GBA1/GBAP1, OTOA/OTOAP1. A
+        # haplotype it cannot place is "unknownhap" and counts for neither.
+        gene = genes[0]
+        other = genes[1] if len(genes) > 1 else "pseudogene"
+        cn = sum("_gene1hap" in h for h in names)
+        unknown = sum("_unknownhap" in h for h in names)
+        detail.insert(0, f"copies of {gene} alone (Paraphase's gene1 haplotypes); {other} copies "
+                      f"{sum('_gene2hap' in h for h in names)} (gene2 haplotypes)"
+                      + (f"; {unknown} haplotype(s) not placed on either" if unknown else ""))
     else:
         cn = region.get("total_cn")
         detail.insert(0, "copies of the whole gene family (gene and paralogs together)")

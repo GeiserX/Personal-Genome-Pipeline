@@ -12,8 +12,9 @@ Checks:
      names (a two-copy haplotype twice), the genotype with its number of
      alpha-globin genes, the 4.2 kb deletion named and HBA2 one copy short; a
      '--' allele said to be a large deletion that cannot be told apart; the
-     RCCX copies with the CYP21A2 alleles; a region without gene_cn as the
-     whole family's copy number;
+     RCCX copies with the CYP21A2 alleles; GBA1 and OTOA counted from their
+     gene1 haplotypes (Paraphase 4.1.0's labels), not the family's total; a
+     region without gene labels as the whole family's copy number;
   3. the variant table: one row per record a haplotype carries, with the
      haplotypes and their reads (ALT reads / depth); records no haplotype
      carries are left out;
@@ -79,8 +80,16 @@ PARAPHASE_JSON = {
     "pms2": {"total_cn": 4, "region_specific_info": {"gene_cn": 2}},
     "strc": {"total_cn": 4, "region_specific_info": {"gene_cn": 2, "intergenic_depth": 30}},
     "ncf1": {"total_cn": 6, "region_specific_info": {"gene_cn": 2, "gene_reads": 20, "pseudo_reads": 40}},
-    "GBA": {"total_cn": 4, "genes_in_region": ["GBA1"], "region_specific_info": {"gene_cn": 2}},
-    "OTOA": {"total_cn": 3, "genes_in_region": ["OTOA"], "region_specific_info": {}},
+    # GBA and OTOA as Paraphase 4.1.0 writes them: genes_in_region a string,
+    # each haplotype labelled gene1 (the gene) or gene2 (its pseudogene).
+    "GBA": {"total_cn": 4, "genes_in_region": "GBA1",
+            "final_haplotypes": {"1": "GBA_gene1hap1", "2": "GBA_gene1hap2", "3": "GBA_gene2hap1", "4": "GBA_gene2hap2"},
+            "two_copy_haplotypes": [], "region_specific_info": {"fusions_called": {}}},
+    "OTOA": {"total_cn": 4, "genes_in_region": "OTOA",
+             "final_haplotypes": {"1": "OTOA_gene1hap1", "2": "OTOA_gene2hap1", "3": "OTOA_unknownhap1"},
+             "two_copy_haplotypes": ["OTOA_gene1hap1"], "region_specific_info": {}},
+    "CFC1": {"total_cn": 3, "genes_in_region": "CFC1,CFC1B",
+             "final_haplotypes": {"1": "CFC1_hap1", "2": "CFC1_hap2", "3": "CFC1_hap3"}, "region_specific_info": {}},
     "TNXB": {"total_cn": None, "genes_in_region": ["TNXB"], "region_specific_info": {}},
 }
 
@@ -142,9 +151,16 @@ def main():
               and g("smn1", "SMN1", "genome_depth") == "31.5", r.get(("smn1", "SMN1")))
         rd = g("rccx", "CYP21A2 (RCCX)", "detail") or ""
         check("RCCX: 4 copies, the CYP21A2 alleles", g("rccx", "CYP21A2 (RCCX)") == "4" and "WT / WT" in rd, rd)
-        check("GBA1 from gene_cn, OTOA as the whole family",
-              g("GBA", "GBA1") == "2" and "not of its pseudogenes" in (g("GBA", "GBA1", "detail") or "")
-              and g("OTOA", "OTOA") == "3" and "whole gene family" in (g("OTOA", "OTOA", "detail") or ""), r)
+        check("GBA1 2 from its gene1 haplotypes, not the family's 4; pseudogene copies 2",
+              g("GBA", "GBA1") == "2" and g("GBA", "GBA1", "total_cn") == "4"
+              and "copies of GBA1 alone" in (g("GBA", "GBA1", "detail") or "")
+              and "pseudogene copies 2" in (g("GBA", "GBA1", "detail") or ""), r.get(("GBA", "GBA1")))
+        check("OTOA 2 (a two-copy gene1 haplotype twice), the unplaced haplotype said",
+              g("OTOA", "OTOA") == "2" and "1 haplotype(s) not placed" in (g("OTOA", "OTOA", "detail") or ""),
+              r.get(("OTOA", "OTOA")))
+        check("a region without gene labels is the whole family's copy number",
+              g("CFC1", "CFC1,CFC1B") == "3" and "whole gene family" in (g("CFC1", "CFC1,CFC1B", "detail") or ""),
+              r.get(("CFC1", "CFC1,CFC1B")))
         check("another region with no copy number is a no-call row",
               g("TNXB", "TNXB") == "." and g("TNXB", "TNXB", "status") == "no call", r)
         order = [x["region"] for x in rows(cn)]

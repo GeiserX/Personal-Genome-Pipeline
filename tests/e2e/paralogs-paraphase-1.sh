@@ -15,7 +15,9 @@
 # Checks:
 #   1. step 35b stops on the fixture's Illumina BAM (no PL:PACBIO read group);
 #   2. on the HiFi slice every one of the eight families has its rows, and
-#      SMN1, SMN2, PMS2, STRC, NCF1, HBA1 and HBA2 a copy number;
+#      SMN1, SMN2, PMS2, STRC, NCF1, HBA1, HBA2, the RCCX modules and GBA1
+#      have the copy numbers Paraphase calls on this slice (GBA1 and OTOA
+#      counted from their gene1 haplotypes, not the family's total);
 #   3. a planted -a4.2 deletion: on the reads of haplotype 1 the 4,257 bp
 #      between the two homologous HBA "A" boxes (chr16:169,742 and its copy at
 #      173,999) are cut out and the reads aligned again. Paraphase must then
@@ -126,10 +128,20 @@ head -n 5 "${GENOME_DIR}/${P}/paralogs/${P}_paraphase_variants.tsv" 2>/dev/null
 for r in ${REGIONS//,/ }; do
   check_ge "rows for region ${r}" "$(awk -F'\t' -v r="$r" 'NR > 1 && $1 == r' "$CN" 2>/dev/null | wc -l | tr -d ' ')" 1
 done
-for g in smn1:SMN1 smn1:SMN2 pms2:PMS2 strc:STRC ncf1:NCF1 hba:HBA1 hba:HBA2; do
-  check "${g#*:} has a copy number ($(tsv "$CN" "${g%%:*}" "${g#*:}" copy_number))" \
-    grep -Eq '^[0-9]+$' <<< "$(tsv "$CN" "${g%%:*}" "${g#*:}" copy_number)"
+# The copy numbers Paraphase calls on this HG002 slice with the pinned image,
+# the same on every run. They are Paraphase's own calls, not a published truth
+# set (none is published per gene for HG002): a change in the slice, the
+# image or the parsing that moves one goes red here.
+for g in smn1:SMN1:2 smn1:SMN2:2 "smn1:SMN exon 7-8 deletion:0" pms2:PMS2:2 strc:STRC:2 ncf1:NCF1:2 \
+         hba:HBA1:2 hba:HBA2:2 "rccx:CYP21A2 (RCCX):4" GBA:GBA1:2; do
+  IFS=: read -r reg gene want <<< "$g"
+  check_eq "${gene} copies" "$(tsv "$CN" "$reg" "$gene" copy_number)" "$want"
 done
+check "GBA1 is counted from its gene1 haplotypes, not the family's $(tsv "$CN" GBA GBA1 total_cn)" \
+  has "copies of GBA1 alone" "$(tsv "$CN" GBA GBA1 detail)"
+OTOA_CN=$(tsv "$CN" OTOA OTOA copy_number) OTOA_TOTAL=$(tsv "$CN" OTOA OTOA total_cn)
+check "OTOA counts the gene alone (${OTOA_CN:-none}), fewer than the family's ${OTOA_TOTAL:-none}" \
+  test "${OTOA_CN:-x}" -lt "${OTOA_TOTAL:-0}" 2>/dev/null
 check_ge "variant rows from Paraphase's VCFs" "$(awk 'NR > 1' "${GENOME_DIR}/${P}/paralogs/${P}_paraphase_variants.tsv" 2>/dev/null | wc -l | tr -d ' ')" 1
 HBA2_BASE=$(tsv "$CN" hba HBA2 copy_number) HBA1_BASE=$(tsv "$CN" hba HBA1 copy_number)
 
