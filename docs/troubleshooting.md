@@ -102,9 +102,9 @@ docker run --rm -it \
 
 **Symptom:** `setup.sh --pull-only` pulled every image, but later `validate-setup.sh` reports Docker images not yet pulled, or a task fails because its image is not there. The missing ones are pinned by digest in `versions.env` (`name:tag@sha256:...`).
 
-**Cause:** Docker gives an image pulled by digest no local tag, so it lists it as dangling (`docker images --filter dangling=true`). A dangling-image cleanup (`docker image prune`, or `docker rmi $(docker images -qf dangling=true)`) deletes it unless a container is using it. We saw this once, on a host whose own cleanup job removes dangling images.
+**Cause:** on Docker's classic image store an image pulled by digest has no local tag, so Docker lists it as dangling (`docker images --filter dangling=true`). A dangling-image cleanup (`docker image prune`, or `docker rmi $(docker images -qf dangling=true)`) deletes it unless a container is using it. We saw this once, on a host whose own cleanup job removes dangling images. On the containerd image store (the default for fresh installs since Docker Engine 29) the digest reference is the image's name, so Docker does not list it as dangling and that cleanup keeps it. `docker info` names the store: the containerd one shows `io.containerd.snapshotter.v1` under the storage driver.
 
-**Fix:** run `./scripts/setup.sh --pull-only`. It pulls what is missing and gives each digest-pinned image a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`. A tagged image is not dangling, so those cleanups keep it. The tag is only a second name for the same image: every task still runs the digest reference from `versions.env`. It does not protect against `docker system prune -a` or a `docker rmi` of the image. `setup.sh` ends with a line that says how many of these tags it added (`0 pgp-pinned tag(s) added` when they were all there). `validate-setup.sh` warns when a digest-pinned image is present with no tag at all, the case a cleanup deletes. When the image has another local tag but not its `localhost/pgp-pinned/` one, it is not dangling, so `validate-setup.sh` only notes that the tag is missing: a cleanup keeps the image while the other tag stays. If Docker does not answer which images are dangling, it warns that a cleanup may delete the image. The same command fixes all three.
+**Fix:** run `./scripts/setup.sh --pull-only`. It pulls what is missing and gives each digest-pinned image a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`. A tagged image is not dangling, so those cleanups keep it. The tag is only a second name for the same image: every task still runs the digest reference from `versions.env`. It does not protect against `docker system prune -a` or a `docker rmi` of the image. `setup.sh` ends with a line that says how many of these tags it added (`0 pgp-pinned tag(s) added` when they were all there). `validate-setup.sh` warns when a digest-pinned image lacks that tag and Docker lists it as dangling, the case a cleanup deletes. When Docker does not list it as dangling (another local tag names it, or the containerd store keeps the digest reference as its name), `validate-setup.sh` only notes that the tag is missing: Docker does not list the image as dangling, so a dangling-image cleanup keeps it. Another tag keeps it only while that tag stays. If Docker does not answer which images are dangling, it warns that a cleanup may delete the image. The same command fixes all three.
 
 ---
 
@@ -245,7 +245,8 @@ docker system prune -a
 
 # Safer: only remove stopped containers and dangling images. Run
 # ./scripts/setup.sh --pull-only once first: it tags the digest-pinned
-# images, which are dangling otherwise and would be deleted too.
+# images, which are dangling otherwise on Docker's classic image store and
+# would be deleted too.
 docker container prune
 docker image prune
 
