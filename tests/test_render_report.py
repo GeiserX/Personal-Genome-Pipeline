@@ -31,6 +31,10 @@ Checks:
   6. the ClinVar card: a homozygous 3-star P/LP hit gets no green badge,
      no hit gets a gray one, and both reports say population frequency is
      not checked;
+  5b. the fine-grained ancestry section of step 26b in both reports, rendered
+     from the same summary as the PRS card: the groups with their bootstrap
+     ranges, a small regional group kept because its range is not small, the
+     painted shares, the picture and the "not a nationality" sentence;
   7. the telomere card says relative telomere content with its unit, and
      no report in bin/ says "Telomere Length".
 
@@ -241,6 +245,36 @@ def main():
         raw = collect_summary.collect("S", f"{work}/sample_raw/S")
         check("no panel: the ancestry-transfer caveat in both reports",
               caveat in render_report.text_report(raw) and caveat in render_report.html_report(raw))
+
+        # 5b. the fine-grained ancestry section (step 26b), in the same sample
+        # folder as the PRS card: both run in one report, and the PRS block's
+        # own local names must not break this one.
+        put(f"{d}/ancestry_fine/S_ancestry_fine.tsv",
+            "level\tcode\tgroup\tfraction\tse\tlow\thigh\n"
+            "continent\tWEA\tWest Eurasia (Europe, Middle East, North Africa)\t0.8200\t0.0300\t0.7600\t0.8800\n"
+            "continent\tCSA\tCentral and South Asia\t0.1500\t0.0300\t0.0900\t0.2100\n"
+            "continent\tAFR\tAfrica\t0.0300\t0.0100\t0.0100\t0.0500\n"
+            "region\tLEV\tLevant\t0.4600\t0.1000\t0.2600\t0.6600\n"
+            "region\tSAR\tSardinia\t0.0050\t0.0200\t0.0000\t0.0600\n"
+            "region\tOCE\tOceania\t0.0010\t0.0005\t0.0000\t0.0020\n"
+            "painting\tWEA\tWest Eurasia (Europe, Middle East, North Africa)\t0.6400\t.\t.\t.\n"
+            "painting\tAFR\tAfrica\t0.3600\t.\t.\t.\n")
+        with open(f"{d}/ancestry_fine/S_painting.png", "wb") as f_:
+            f_.write(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("26b: both reports still render with the PRS card beside this one",
+              "percentile 94.4 (EUR)" in txt and "<td>94.4 (EUR)</td>" in html, txt)
+        check("26b: the text section has the group, its fraction and its bootstrap range",
+              "## Fine-Grained Ancestry (ADMIXTURE, RFMix)" in txt
+              and "West Eurasia (Europe, Middle East, North Africa)     82% (76% to 88%)" in txt, txt)
+        check("26b: a regional group of 0.5% whose range reaches 6% is shown, one of 0.1% is not",
+              "Sardinia" in txt and "Oceania" not in txt.split("## Fine-Grained")[1].split("##")[0], txt)
+        check("26b: the painted shares and the picture are in the HTML card",
+              "<h2>Fine-Grained Ancestry</h2>" in html and "West Eurasia (Europe, Middle East, North Africa) 64%" in html
+              and 'src="data:image/png;base64,' in html, html[:200])
+        check("26b: both reports say a group name is not a nationality",
+              "not a nationality" in txt and "not a nationality" in html)
 
         # 6. ClinVar badge: one homozygous 3-star Pathogenic hit
         d = f"{work}/clinvar_hom/S"

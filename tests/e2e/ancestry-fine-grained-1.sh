@@ -20,7 +20,8 @@
 #   - red control: the same panel with every reference person's labels moved
 #     to the next group (Africa's people called West Eurasia, and so on) and
 #     the ADMIXTURE frequencies fitted again: on it the HG002T fraction checks
-#     fail (sample HG002R, the same genotypes);
+#     fail (sample HG002R, the same genotypes; the red copy loses the genetic
+#     map of chr22, so that run only estimates fractions);
 #   - the Nextflow module on HG002T (with html_report) writes the fractions of
 #     the bash step, and the HTML report has its card.
 # The time and disk of the panel install go to the job summary.
@@ -216,13 +217,14 @@ awk -F'\t' -v OFS='\t' '
   NR == 1 { print; next }
   { if ($3 in nc) $3 = nc[$3]; if ($4 in nr) $4 = nr[$4]; print }' "${PANEL}/samples.tsv" > "${CASE_TMP}/rotated.tsv"
 rm -f "${RED}/samples.tsv"
-# The red copy keeps no genetic map, so no chromosome passes the 5 cM rule and
-# the run stops after the fractions: this control is for the fraction checks,
-# and the painting checks have theirs in the two swapped sides above.
-rm -f "${RED}"/maps/*.map
 ANCESTRY_FINE_DIR="$RED" ANCESTRY_FINE_REGIONS="$REGIONS" ANCESTRY_FINE_SAMPLE_MAP="${CASE_TMP}/rotated.tsv" \
   "${REPO}/scripts/setup.sh" --ancestry-fine-panel "$G" > "${CASE_TMP}/red_setup.log" 2>&1
 RED_RC=$?
+# The genetic map of the long chromosome is then taken out of the red copy, so
+# no chromosome passes the 5 cM rule and the red run stops after the fractions:
+# this control is for the fraction checks, and the painting checks have theirs
+# in the two swapped sides above.
+rm -f "${RED}/maps/${LONG_CHR}.map" "${RED}/maps/${LONG_CHR}.rfmix.map"
 check_eq "setup.sh refits the model on the rotated labels" "$RED_RC" 0
 check "and reuses the panel's genotypes (no chromosome read again)" lacks 'reading the panel' "$(cat "${CASE_TMP}/red_setup.log")"
 mkdir -p "${G}/HG002R/vcf"
@@ -230,6 +232,7 @@ cp "${G}/HG002T/vcf/HG002T.vcf.gz" "${G}/HG002R/vcf/HG002R.vcf.gz"
 cp "${G}/HG002T/vcf/HG002T.vcf.gz.tbi" "${G}/HG002R/vcf/HG002R.vcf.gz.tbi"
 ANCESTRY_FINE_DIR="$RED" ANCESTRY_FINE_BOOTSTRAP=0 run_step 26b-ancestry-fine.sh HG002R
 check_step_exit "26b-ancestry-fine.sh HG002R (HG002T against the rotated labels)"
+check "red: without the map of ${LONG_CHR} the red run paints nothing" has 'No chromosome has 100 genotyped SNVs' "$(cat "$STEP_LOG")"
 WEA_R=$(frac HG002R continent WEA)
 check "red: with rotated labels West Eurasia is no longer first" \
   test "$(awk -F'\t' '$1 == "continent" {print $2; exit}' "${G}/HG002R/ancestry_fine/HG002R_ancestry_fine.tsv" 2>/dev/null)" != WEA

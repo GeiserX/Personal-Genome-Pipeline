@@ -124,7 +124,8 @@ def prs_note(d):
 
 # --- text ------------------------------------------------------------------------
 
-def pct(x):
+def share(x):
+    """A fraction as a whole percentage, for the fine-grained ancestry section."""
     return "." if x is None else f"{100 * x:.0f}%"
 
 
@@ -136,7 +137,7 @@ def ancestry_fine_rows(d, level):
 
 
 def ancestry_fine_spread(r):
-    return f" ({pct(r['low'])} to {pct(r['high'])})" if r.get("low") is not None else ""
+    return f" ({share(r['low'])} to {share(r['high'])})" if r.get("low") is not None else ""
 
 
 def text_report(s):
@@ -282,10 +283,10 @@ def text_report(s):
             if rows:
                 w(f"  {title} (fraction, bootstrap range):")
                 for r in rows:
-                    w(f"    {r['group']:<50} {pct(r['fraction']):>5}{ancestry_fine_spread(r)}")
+                    w(f"    {r['group']:<50} {share(r['fraction']):>5}{ancestry_fine_spread(r)}")
         if d.get("painting"):
             w("  Chromosome painting, share of the painted genome: "
-              + ", ".join(f"{r['group']} {pct(r['fraction'])}" for r in d["painting"]))
+              + ", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))
         else:
             w("  Chromosome painting: none (no chromosome long enough)")
         w(f"  {ANCESTRY_FINE_NOTE}")
@@ -701,7 +702,7 @@ def html_report(s):
         d = S["ancestry_fine"]["data"]
         body = []
         for level, title in ANCESTRY_FINE_LEVELS:
-            rows = "".join(f"<tr><td>{E(r['group'])}</td><td>{E(pct(r['fraction']))}</td>"
+            rows = "".join(f"<tr><td>{E(r['group'])}</td><td>{E(share(r['fraction']))}</td>"
                            f"<td>{E(ancestry_fine_spread(r).strip(' ()') or '.')}</td></tr>\n"
                            for r in ancestry_fine_rows(d, level))
             if rows:
@@ -709,7 +710,7 @@ def html_report(s):
                          "      <tr><th>Group</th><th>Fraction</th><th>Bootstrap range</th></tr>",
                          rows.rstrip("\n"), "    </table>"]
         if d.get("painting"):
-            body.append(stat("Painted genome", E(", ".join(f"{r['group']} {pct(r['fraction'])}" for r in d["painting"]))))
+            body.append(stat("Painted genome", E(", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))))
         else:
             body.append(stat("Painted genome", "none (no chromosome long enough)"))
         if d.get("painting_png"):
