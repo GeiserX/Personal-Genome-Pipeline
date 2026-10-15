@@ -46,7 +46,11 @@ Checks:
  14. a section whose step failed in the latest run says Failed, not Not
      run, in the summary and both reports, also in the CYP2D6 rows;
  15. the CPIC card counts the genes called without a function phenotype;
- 16. step 42's traits table (bin/traits_report.py's own output): the counts
+ 16. the mosaic_* rows of the step 33 table (bin/mosaic_sex_loss.py) make
+     their own section, with the numbers as numbers; a table without them
+     (written before the estimate) leaves the section missing, not broken; a
+     mosaic_call that is not one of the four is unreadable.
+ 17. step 42's traits table (bin/traits_report.py's own output): the counts
      per status leave the APOE rows out, the rows and the APOE lines reach
      both reports (the APOE lines last, after the warning, folded away in
      the HTML), a row with ancestry yes is marked, a not-covered row is
@@ -541,7 +545,41 @@ def main():
         check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
               validate.validate(schema, json.loads(json.dumps(summ_f))))
 
-        # 16. the traits panel (step 42)
+        # 16. mosaic loss of chrY or chrX, from the step 33 table
+        mo = os.path.join(work, "mosaic", "S")
+        base = "key\tvalue\nsample\tS\ninferred_sex\tmale\nsex_check\tok\n"
+        put(f"{mo}/qc/S_sample_qc.tsv", base)
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: a table without the rows leaves the section missing", sec_m["state"] == "missing", sec_m)
+        rows = {"sex": "male", "sex_from": "reads", "chrom": "chrY", "depth_ratio": "0.351",
+                "depth_ratio_expected": "0.5", "depth_blocks": "109", "loss_depth": "0.298",
+                "loss_depth_low": "0.293", "loss_depth_high": "0.303", "x_het_sites": "", "loss_af": "",
+                "loss_af_low": "", "loss_af_high": "", "floor": "0.100", "call": "detected",
+                "reason": "the low end of the 95% range is above 10%: a share of the cells lost the Y"}
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in rows.items()))
+        summ_m = collect_summary.collect("S", mo)
+        sec_m = summ_m["sections"]["mosaic_sex_loss"]
+        check("mosaic: the rows make an ok section from step 33", sec_m["state"] == "ok" and sec_m["step"] == "33"
+              and sec_m["source"] == "qc/S_sample_qc.tsv", sec_m)
+        check("mosaic: numbers are numbers, blanks are None, the call and reason stay text",
+              sec_m["data"]["loss_depth"] == 0.298 and sec_m["data"]["loss_af"] is None
+              and sec_m["data"]["x_het_sites"] is None and sec_m["data"]["call"] == "detected"
+              and sec_m["data"]["chrom"] == "chrY", sec_m["data"])
+        check("mosaic: the sample QC section still reads the same table",
+              summ_m["sections"]["sample_qc"]["data"].get("sex_check") == "ok", summ_m["sections"]["sample_qc"])
+        check("mosaic summary validates", not validate.validate(schema, json.loads(json.dumps(summ_m))),
+              validate.validate(schema, json.loads(json.dumps(summ_m))))
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in
+                                                       dict(rows, loss_depth="inf", loss_depth_high="-inf").items()))
+        summ_i = collect_summary.collect("S", mo)
+        sec_m = summ_i["sections"]["mosaic_sex_loss"]
+        check("mosaic: inf is no value (JSON null), never infinity", sec_m["data"]["loss_depth"] is None
+              and sec_m["data"]["loss_depth_high"] is None and "Infinity" not in json.dumps(summ_i), sec_m["data"])
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "mosaic_call\tmaybe\n")
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: an unknown mosaic_call is unreadable", sec_m["state"] == "unreadable"
+              and "mosaic_call" in (sec_m["note"] or ""), sec_m)
+        # 17. the traits panel (step 42)
         import traits_report
         t = os.path.join(work, "traits", "S")
         rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))

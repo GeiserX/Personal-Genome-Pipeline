@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Step 33: sample identity and contamination (somalier, VerifyBamID2)
+# Step 33: sample identity and contamination (somalier, VerifyBamID2), and
+#          mosaic loss of chrY or of one chrX
 # Input: sorted BAM with .bai (step 02), the somalier sites file and the
-#        VerifyBamID2 marker panel (setup.sh installs both)
+#        VerifyBamID2 marker panel (setup.sh installs both); for the mosaic
+#        estimate, step 16b's mosdepth windows and, for a woman, the VCF
+#        (step 03), when they are there
 # Output: ${SAMPLE}/qc/${SAMPLE}_sample_qc.tsv, a key/value table: the sex
 #         somalier infers from the reads, the declared sex, VerifyBamID2's
 #         FREEMIX (the estimated share of reads from another person) and its
-#         verdict; somalier's and VerifyBamID2's own files beside it
+#         verdict, then the mosaic_* rows (the estimated share of cells that
+#         lost the Y, or one X, with its 95% range); somalier's and
+#         VerifyBamID2's own files beside it
 #
 # Usage: ./scripts/33-sample-qc.sh <sample_name> [declared_sex: male|female]
 #
@@ -20,6 +25,9 @@
 # the sex from the reads; the verdict is still the sex from the reads alone. FREEMIX above FREEMIX_WARN
 # (default 0.03) is a warning only: contamination makes calls less reliable,
 # it does not make them someone else's.
+# The mosaic estimate (bin/mosaic_sex_loss.py) never stops the step either:
+# below about 10% of the cells nothing can be told at 30x, and above it the
+# result is a population-level marker, not a diagnosis (docs/33-sample-qc.md).
 #
 # Env: SEX_CHECK          fail (default) or warn
 #      FREEMIX_WARN       FREEMIX above this is reported as possible contamination (0.03)
@@ -173,6 +181,25 @@ TABLE="${OUT}/${SAMPLE}_sample_qc.tsv"
 [ -s "$TABLE" ] || { echo "ERROR: no ${TABLE}" >&2; exit 1; }
 val() { awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$TABLE"; }
 
+# --- 4. Mosaic loss of chrY or of one chrX -----------------------------------------
+# From step 16b's mosdepth windows and, for a woman, the VCF's chrX allele
+# fractions; bin/mosaic_sex_loss.py adds its rows to the table, as in the
+# Nextflow SAMPLE_QC process. A missing input is named in mosaic_reason.
+echo ""
+echo "--- mosaic loss of chrY or chrX"
+MOSAIC_ARGS=()
+for f in "${SAMPLE_DIR}/mosdepth/${SAMPLE}.regions.bed.gz" "${SAMPLE_DIR}/coverage/${SAMPLE}.regions.bed.gz"; do
+  if [ -s "$f" ]; then
+    MOSAIC_ARGS+=(--regions "/genome/${f#"${GENOME_DIR}/"}")
+    break
+  fi
+done
+if [ -s "${SAMPLE_DIR}/vcf/${SAMPLE}.vcf.gz" ]; then
+  MOSAIC_ARGS+=(--vcf "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz")
+fi
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+  python3 /pgp-bin/mosaic_sex_loss.py --table "/genome/${SAMPLE}/qc/${SAMPLE}_sample_qc.tsv" "${MOSAIC_ARGS[@]}"
+
 echo ""
 echo "=== Step 33 complete ==="
 echo "Results: ${TABLE}"
@@ -184,6 +211,13 @@ if [ "$(val contamination)" = warn ]; then
   echo "!!! FREEMIX $(val freemix) is above ${FREEMIX_WARN}: about $(awk -v f="$(val freemix)" 'BEGIN { printf "%d", f * 100 + 0.5 }')% of the reads may come" >&2
   echo "!!! from another person. Calls, above all heterozygous ones, are less reliable; see docs/33-sample-qc.md." >&2
 fi
+MOSAIC_CHROM=$(val mosaic_chrom)
+echo "Mosaic loss of ${MOSAIC_CHROM:-chrY or chrX}: $(val mosaic_call) ($(val mosaic_reason))"
+[ -z "$(val mosaic_loss_depth)" ] || echo "  from depth: $(val mosaic_loss_depth) of the cells (95% range $(val mosaic_loss_depth_low) to $(val mosaic_loss_depth_high))"
+[ -z "$(val mosaic_loss_af)" ] || echo "  from chrX allele fractions at $(val mosaic_x_het_sites) sites: $(val mosaic_loss_af) (95% range $(val mosaic_loss_af_low) to $(val mosaic_loss_af_high))"
+case "$(val mosaic_call)" in
+  detected|gain) echo "  A population-level marker, not a diagnosis: see docs/33-sample-qc.md." ;;
+esac
 echo "Sex from the reads (somalier): $(val inferred_sex)"
 if [ -n "$(val same_person_as)" ]; then
   echo "!!! The same person as: $(val same_person_as)" >&2
