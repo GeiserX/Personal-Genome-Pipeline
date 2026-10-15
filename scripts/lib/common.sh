@@ -616,10 +616,12 @@ pipeline_images() {
 # pinned_tag IMAGE: the local tag setup.sh gives an image versions.env pins by
 # digest (name[:tag]@sha256:HEX), printed as localhost/pgp-pinned/NAME:sha256-HEX;
 # nothing for an image pinned by tag alone. An image pulled by digest gets no
-# tag, so Docker lists it as dangling, and `docker image prune` or
-# `docker rmi $(docker images -qf dangling=true)` deletes it. This second name
-# keeps it out of that list. It does not stop `docker system prune -a` or an
-# explicit `docker rmi`. Every task still runs the digest reference: the tag
+# tag, so Docker's classic image store lists it as dangling, and
+# `docker image prune` or `docker rmi $(docker images -qf dangling=true)`
+# deletes it. This second name keeps it out of that list. (The containerd
+# image store keeps the digest reference as the image's name, so it never lists
+# such an image as dangling.) The tag does not stop `docker system prune -a` or
+# an explicit `docker rmi`. Every task still runs the digest reference: the tag
 # only names the same image id. `localhost` is a registry host no one else can
 # own, so the name can never be pulled from, or pushed to, a public registry.
 pinned_tag() {
@@ -651,7 +653,8 @@ pinned_tag_present() {
 
 # image_is_dangling IMAGE: 0 when Docker lists IMAGE's id as dangling (no tag
 # of any name), the images `docker image prune` deletes; 1 when it does not
-# (another local tag on the same id keeps it, the pinned_tag or not); 2 when
+# (another local tag on the same id, the pinned_tag or not, or the containerd
+# image store, where the digest reference is the image's name); 2 when
 # Docker gives no id or no dangling list, so the answer is unknown.
 image_is_dangling() {
   local id dangling
