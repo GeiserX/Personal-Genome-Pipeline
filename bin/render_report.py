@@ -54,6 +54,17 @@ PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry popula
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
 
+def cdna_text(h):
+    """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
+    c = h["cdna"]
+    if c["check"] == "flagged":
+        return (f"{c['note']} ({c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
+                f"{c['ref_reads']} ref reads clipped at an exon edge)")
+    if c["check"] == "clear":
+        return "clear"
+    return "not checked" + (f": {c['note']}" if c["note"] else "")
+
+
 def hla_text(locus):
     """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
     q = locus.get("quality") or []
@@ -220,11 +231,15 @@ def text_report(s):
         if d["count"]:
             by = d["by_stars"]
             w("  By review status: " + ", ".join(f"{k} star{'s' if k != '1' else ''} {by[k]}" for k in ("4", "3", "2", "1", "0")))
+            if "cdna_flagged" in d:
+                w(f"  cDNA read check (alt reads clipped at exon edges): {d['cdna_flagged']} flagged")
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
                   f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+                if "cdna" in h:
+                    w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -582,6 +597,9 @@ def html_report(s):
                stat("By stars (4/3/2/1/0)", E(" / ".join(str(by.get(k, 0)) for k in ("4", "3", "2", "1", "0")))),
                stat("ClinVar file date", E(s["databases"]["clinvar_release"] or "unknown")),
                small_note(CLINVAR_FREQ_NOTE)]
+    if "cdna_flagged" in c:
+        cv_body.insert(2, stat("Flagged by the cDNA read check",
+                               badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
 
     pg = S["pharmcat"]["data"]
@@ -750,13 +768,17 @@ def html_report(s):
         a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
+        # The cDNA read check column only when step 06 wrote its table.
+        reads = "cdna_flagged" in c
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
-                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td></tr>" for h in c["hits"][:50]]
+                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
+                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
         a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
-                "<th>Significance</th><th>Review status</th><th>Stars</th></tr>"]
+                "<th>Significance</th><th>Review status</th><th>Stars</th>"
+                + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]

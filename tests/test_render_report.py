@@ -30,7 +30,10 @@ Checks:
      and without, carry the ancestry-transfer caveat of docs/25-prs.md;
   6. the ClinVar card: a homozygous 3-star P/LP hit gets no green badge,
      no hit gets a gray one, and both reports say population frequency is
-     not checked;
+     not checked; with step 06's cDNA read check table, both reports print
+     the flag beside the flagged hit and "clear" beside the other, the HTML
+     hits table gets its column and the card the flagged count; without the
+     table (a Nextflow folder) there is no such column;
   5b. the fine-grained ancestry section of step 26b in both reports, rendered
      from the same summary as the PRS card: the groups with their bootstrap
      ranges, a small regional group kept because its range is not small, the
@@ -42,6 +45,7 @@ Run: python3 tests/test_render_report.py
 """
 import glob
 import gzip
+import json
 import os
 import shutil
 import sys
@@ -49,8 +53,10 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
+sys.path.insert(0, os.path.join(REPO, "tests", "schema"))
 import collect_summary  # noqa: E402
 import render_report  # noqa: E402
+import validate  # noqa: E402
 
 FAILS = 0
 
@@ -292,6 +298,33 @@ def main():
         html0 = render_report.html_report(collect_summary.collect("S", d))
         check("ClinVar: no hit gets a gray badge, not a green all-clear",
               'ClinVar matches</span><span class="value"><span class="badge badge-gray">0<' in html0)
+
+        # 6b. ClinVar: step 06's cDNA read check beside each hit
+        d = f"{work}/clinvar_cdna/S"
+        put(f"{d}/clinvar/S_clinvar_hits.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+            "chr1\t20\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n"
+            "chr2\t30\t3\tC\tA\t50\tPASS\tGENEINFO=GENEC:33;CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n")
+        summ = collect_summary.collect("S", d)
+        html = render_report.html_report(summ)
+        check("cDNA check: no table, no column (a Nextflow folder)", "cDNA read check" not in html
+              and "cdna_flagged" not in summ["sections"]["clinvar"]["data"], html)
+        flag = "possible cDNA/transgene contamination: check the reads"
+        put(f"{d}/clinvar/S_clinvar_cdna_check.tsv",
+            "chrom\tpos\tref\talt\talt_reads\talt_clipped\tref_reads\tref_clipped\tcdna_check\tcdna_note\n"
+            f"chr1\t20\tT\tG\t9\t8\t11\t0\tflagged\t{flag}\n"
+            "chr2\t30\tC\tA\t12\t0\t10\t0\tclear\t\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        shown = f"{flag} (8 of 9 alt reads and 0 of 11 ref reads clipped at an exon edge)"
+        check("cDNA check: the text report prints the flag under the flagged hit",
+              "chr1:20 T>G" in txt and f"reads: {shown}" in txt and "reads: clear" in txt, txt)
+        check("cDNA check: the HTML hits table has the column, the flag and clear",
+              "<th>cDNA read check</th>" in html and f"<td>{shown}</td>" in html and "<td>clear</td>" in html, html)
+        check("cDNA check: the card counts one flagged hit",
+              'Flagged by the cDNA read check</span><span class="value"><span class="badge badge-red">1<' in html, html)
+        check("cDNA check: the summary validates against the schema", not validate.validate(
+            json.load(open(os.path.join(REPO, "tests", "schema", "summary.schema.json"))),
+            json.loads(json.dumps(summ))))
 
         # 7. telomere card
         d = f"{work}/telomere/S"
