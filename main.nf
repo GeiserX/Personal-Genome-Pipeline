@@ -300,10 +300,13 @@ workflow {
     //     and chrX leaks into the ROH summary, both with exit 0;
     //   - a gVCF (or a file named like one) with pharmcat selected: PharmCAT
     //     refuses it.
+    // A file not on GRCh38 stops in VCF_PRECHECK too: by its ##contig lengths,
+    // or, when the header gives none, by the REF bases of its first records,
+    // compared with --reference.
     // Downstream filters keep FILTER=PASS only. A VCF with no PASS record
     // (FILTER '.' everywhere) would give zero hits in every step, so stop,
     // or with --allow_unfiltered use a copy where '.' reads as PASS.
-    VCF_PRECHECK(ch_vcf_input)
+    VCF_PRECHECK(ch_vcf_input, ch_reference, ch_reference_fai)
 
     ch_vcf_checked = ch_vcf_input
         .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
