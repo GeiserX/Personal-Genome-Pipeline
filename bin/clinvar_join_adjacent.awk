@@ -26,10 +26,12 @@
 #
 # Two records can be one allele when the second starts at most WINDOW bases
 # after the first ends (WINDOW = 10; a record that overlaps the other is never
-# joined), and their genotypes put both ALT alleles on the same haplotype:
+# joined), and their genotypes allow both ALT alleles on the same haplotype:
 # phased (|) with the same GT in the same phase set (FORMAT/PS, or none on
 # both), or unphased with the same GT (0/1 and 1/0 are the same het call).
-# A call with a missing allele (./1) is never joined. The gene is not known
+# Two unphased het calls may also sit on different haplotypes; the genotype
+# cannot tell, so bin/clinvar_hits.awk and bin/collect_summary.py say so in
+# the note of such a hit. A call with a missing allele (./1) is never joined. The gene is not known
 # here (the sample VCF is not annotated yet): a combined allele counts only
 # when ClinVar holds a record for it, and that record names its gene.
 #
@@ -47,7 +49,8 @@ BEGIN {
 }
 
 # The phase signature of a record's genotype: two records with the same
-# non-empty signature carry their ALT alleles on the same haplotype.
+# non-empty signature can carry their ALT alleles on the same haplotype
+# (they do when phased or homozygous; unphased het calls may not).
 function hapsig(fmt, smp,    nf, f, ns, s, i, gt, ps, a, na, phased, sorted) {
     nf = split(fmt, f, ":"); ns = split(smp, s, ":")
     gt = ""; ps = "."

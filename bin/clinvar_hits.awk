@@ -23,7 +23,10 @@
 #                  "part of a combined allele: C" for each of its parts,
 #                  "possibly one allele with D: check ClinVar for a combined
 #                  record" for two hits that matched no combined record;
-#                  "." otherwise. Variants read CHROM:POS REF>ALT.
+#                  "." otherwise. Variants read CHROM:POS REF>ALT. On an
+#                  unphased het call (0/1) the first two notes end with
+#                  "; unphased, so the parts may sit on different
+#                  haplotypes": the genotype cannot say they share one.
 BEGIN { FS = OFS = "\t" }
 
 # "chr1:10:C:T|chr1:15:G:A" -> "chr1:10 C>T<sep>chr1:15 G>A"
@@ -67,9 +70,13 @@ function variants(v, sep,    n, x, i, f, out) {
     if (gt == "0/1" || gt == "1/0" || gt == "0|1" || gt == "1|0") zyg = "het"
     else if (gt == "1/1" || gt == "1|1") zyg = "hom"
     else zyg = gt
-    note = "."
-    if (joined != "") note = "combined allele of " variants(joined, " + ")
-    else if (partof != "") note = "part of a combined allele: " variants(partof, ", ")
+    note = "."; phase = ""
+    if (gt ~ /^[0-9]+\/[0-9]+$/) {
+        split(gt, ga, "/")
+        if (ga[1] != ga[2]) phase = "; unphased, so the parts may sit on different haplotypes"
+    }
+    if (joined != "") note = "combined allele of " variants(joined, " + ") phase
+    else if (partof != "") note = "part of a combined allele: " variants(partof, ", ") phase
     else if (one != "") note = "possibly one allele with " variants(one, ", ") ": check ClinVar for a combined record"
     print stars, $1, $2, $4, $5, zyg, gene, clnsig, rev, note
 }
