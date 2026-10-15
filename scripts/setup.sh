@@ -30,7 +30,8 @@
 #   3. All Docker images (~10-15 GB)
 #   4. The reference's sequence dictionary and small pinned data files: Delly's
 #      exclude map, GRCh38 chromosome bands, an IPD-IMGT/HLA release, the
-#      GENCODE gene coordinates T1K needs (~350 MB), and somalier's sites and
+#      GENCODE gene coordinates T1K needs (~350 MB), GENCODE's exons for
+#      step 06's cDNA read check (~80 MB download), and somalier's sites and
 #      VerifyBamID2's marker panel for step 33 (~10 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
 #   6. Step 25: the PGS Catalog scores of assets/pgs_scores.tsv (~400 MB), a
@@ -816,6 +817,27 @@ for name in $DATA_FILES; do
     echo "[WARN] Could not install the ${what}. Re-run setup.sh to try again."
   fi
 done
+# The exons of GENCODE's basic annotation, for step 06's cDNA read check
+# (bin/clip_check.py): chrom, start (0-based) and end of each exon, once each,
+# from the same release as the gene coordinates above.
+EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+if [ -s "$EXONS_BED" ]; then
+  echo "[OK] GENCODE ${GENCODE_RELEASE} exons (step 06) already present."
+else
+  EXONS_URL="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${GENCODE_RELEASE}/gencode.v${GENCODE_RELEASE}.basic.annotation.gtf.gz"
+  EXONS_GZ="${EXONS_BED}.download.gz"
+  if fetch "$EXONS_URL" "$EXONS_GZ" md5 "$(dirname "$EXONS_URL")/MD5SUMS" \
+     && gzip -cd "$EXONS_GZ" | awk -F'\t' -v OFS='\t' '$3 == "exon" {print $1, $4 - 1, $5}' \
+          | LC_ALL=C sort -k1,1 -k2,2n -k3,3n -u > "${EXONS_BED}.tmp" \
+     && [ -s "${EXONS_BED}.tmp" ]; then
+    mv -f "${EXONS_BED}.tmp" "$EXONS_BED"
+    rm -f "$EXONS_GZ"
+    echo "[OK] GENCODE ${GENCODE_RELEASE} exons (step 06): ${EXONS_BED}"
+  else
+    rm -f "${EXONS_BED}.tmp" "$EXONS_GZ"
+    echo "[WARN] Could not install the GENCODE ${GENCODE_RELEASE} exons (step 06). Re-run setup.sh to try again."
+  fi
+fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
 # Step 25: its scores, pgsc_calc and its plugin (warnings only).
