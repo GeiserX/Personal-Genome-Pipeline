@@ -201,6 +201,31 @@ def clinvar_row(r):
     }
 
 
+def clinvar_cdna_checks(d, s):
+    """Step 06's cDNA read check (bin/clip_check.py), keyed by (chrom, pos,
+    ref, alt). None when the file is absent: the Nextflow pipeline does not
+    write it."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_cdna_check.tsv"])
+    if not p:
+        return None
+    try:
+        rows = read_tsv(p)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(p)}: {e}") from e
+
+    def num(v):
+        return int(v) if (v or "").isdigit() else None
+    out = {}
+    for r in rows:
+        if not (r.get("pos") or "").isdigit():
+            continue
+        out[(r.get("chrom"), int(r["pos"]), r.get("ref"), r.get("alt"))] = {
+            "check": r.get("cdna_check") or "not_checked", "note": r.get("cdna_note") or "",
+            "alt_reads": num(r.get("alt_reads")), "alt_clipped": num(r.get("alt_clipped")),
+            "ref_reads": num(r.get("ref_reads")), "ref_clipped": num(r.get("ref_clipped"))}
+    return out
+
+
 def sec_clinvar(d, s):
     p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if not p:
@@ -208,7 +233,16 @@ def sec_clinvar(d, s):
     rows = [clinvar_row(r) for r in vcf_records(p) if len(r) >= 8]
     rows.sort(key=lambda x: (-x["stars"], x["chrom"], x["pos"]))
     by = {str(k): sum(1 for x in rows if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
-    return p, {"count": len(rows), "by_stars": by, "hits": rows}
+    data = {"count": len(rows), "by_stars": by, "hits": rows}
+    # The cDNA read check, on each hit when step 06 wrote it.
+    cdna = clinvar_cdna_checks(d, s)
+    if cdna is not None:
+        for x in rows:
+            x["cdna"] = cdna.get((x["chrom"], x["pos"], x["ref"], x["alt"])) or {
+                "check": "not_checked", "note": "not in the read-check table", "alt_reads": None,
+                "alt_clipped": None, "ref_reads": None, "ref_clipped": None}
+        data["cdna_flagged"] = sum(1 for x in rows if x["cdna"]["check"] == "flagged")
+    return p, data
 
 
 def pharmcat_json(d, s):

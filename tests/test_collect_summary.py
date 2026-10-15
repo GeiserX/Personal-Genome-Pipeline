@@ -13,7 +13,8 @@ Checks:
      marked stale in the summary and in both reports; one whose step was ok, or
      that is newer than the run, is not;
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
-     same number of stars;
+     same number of stars; step 06's cDNA read check reaches each ClinVar
+     hit by chrom, pos, ref and alt, and a hit the table lacks is not checked;
   7. a corrupt file (not gzip, or gzip with damaged data) makes its section
      'unreadable' instead of stopping the report;
   8. the secondary-findings tier lists the ClinVar hits and the rare
@@ -148,6 +149,20 @@ def main():
               sec["clinvar"]["data"])
         check("ClinVar: count by stars", sec["clinvar"]["data"]["by_stars"] == {"4": 0, "3": 1, "2": 0, "1": 1, "0": 1},
               sec["clinvar"]["data"]["by_stars"])
+        # Step 06's cDNA read check, joined to each hit by chrom, pos, ref and alt;
+        # a hit the table lacks is not checked, never clear.
+        cd = os.path.join(work, "cdna", "S")
+        put(f"{cd}/clinvar/S_clinvar_hits.vcf", HITS)
+        put(f"{cd}/clinvar/S_clinvar_cdna_check.tsv",
+            "chrom\tpos\tref\talt\talt_reads\talt_clipped\tref_reads\tref_clipped\tcdna_check\tcdna_note\n"
+            "chr1\t10\tC\tT\t9\t8\t11\t0\tflagged\tpossible cDNA/transgene contamination: check the reads\n"
+            "chr1\t20\tT\tA\t9\t0\t0\t0\tclear\t\n")
+        cv = collect_summary.collect("S", cd)["sections"]["clinvar"]["data"]
+        got = {h["gene"]: (h["cdna"]["check"], h["cdna"]["note"]) for h in cv["hits"]}
+        check("cDNA check: one flagged hit, the others not checked (GENEB's alt differs from the table's row)",
+              cv["cdna_flagged"] == 1 and got["GENEA"][0] == "flagged" and got["GENEA"][1].startswith("possible cDNA")
+              and got["GENEB"] == ("not_checked", "not in the read-check table")
+              and got["GENEC"] == ("not_checked", "not in the read-check table"), got)
         check("text report: the ClinVar count line", "  Pathogenic/Likely Pathogenic hits: 3\n" in txt)
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
