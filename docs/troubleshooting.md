@@ -102,9 +102,9 @@ docker run --rm -it \
 
 **Symptom:** `setup.sh --pull-only` pulled every image, but later `validate-setup.sh` reports Docker images not yet pulled, or a task fails because its image is not there. The missing ones are pinned by digest in `versions.env` (`name:tag@sha256:...`).
 
-**Cause:** Docker gives an image pulled by digest no local tag, so it lists it as dangling (`docker images --filter dangling=true`). A dangling-image cleanup (`docker image prune`, or `docker rmi $(docker images -qf dangling=true)`) deletes it unless a container is using it. We saw this once, on a host whose own cleanup job removes dangling images.
+**Cause:** on Docker's classic image store an image pulled by digest has no local tag, so Docker lists it as dangling (`docker images --filter dangling=true`). A dangling-image cleanup (`docker image prune`, or `docker rmi $(docker images -qf dangling=true)`) deletes it unless a container is using it. We saw this once, on a host whose own cleanup job removes dangling images. On the containerd image store (the default for fresh installs since Docker Engine 29) the digest reference is the image's name, so Docker does not list it as dangling and that cleanup keeps it. `docker info` names the store: the containerd one shows `io.containerd.snapshotter.v1` under the storage driver.
 
-**Fix:** run `./scripts/setup.sh --pull-only`. It pulls what is missing and gives each digest-pinned image a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`. A tagged image is not dangling, so those cleanups keep it. The tag is only a second name for the same image: every task still runs the digest reference from `versions.env`. It does not protect against `docker system prune -a` or a `docker rmi` of the image. `setup.sh` ends with a line that says how many of these tags it added (`0 pgp-pinned tag(s) added` when they were all there). `validate-setup.sh` warns when a digest-pinned image is present with no tag at all, the case a cleanup deletes. When the image has another local tag but not its `localhost/pgp-pinned/` one, it is not dangling, so `validate-setup.sh` only notes that the tag is missing: a cleanup keeps the image while the other tag stays. If Docker does not answer which images are dangling, it warns that a cleanup may delete the image. The same command fixes all three.
+**Fix:** run `./scripts/setup.sh --pull-only`. It pulls what is missing and gives each digest-pinned image a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`. A tagged image is not dangling, so those cleanups keep it. The tag is only a second name for the same image: every task still runs the digest reference from `versions.env`. It does not protect against `docker system prune -a` or a `docker rmi` of the image. `setup.sh` ends with a line that says how many of these tags it added (`0 pgp-pinned tag(s) added` when they were all there). `validate-setup.sh` warns when a digest-pinned image lacks that tag and Docker lists it as dangling, the case a cleanup deletes. When Docker does not list it as dangling (another local tag names it, or the containerd store keeps the digest reference as its name), `validate-setup.sh` only notes that the tag is missing: Docker does not list the image as dangling, so a dangling-image cleanup keeps it. Another tag keeps it only while that tag stays. If Docker does not answer which images are dangling, it warns that a cleanup may delete the image. The same command fixes all three.
 
 ---
 
@@ -245,7 +245,8 @@ docker system prune -a
 
 # Safer: only remove stopped containers and dangling images. Run
 # ./scripts/setup.sh --pull-only once first: it tags the digest-pinned
-# images, which are dangling otherwise and would be deleted too.
+# images, which are dangling otherwise on Docker's classic image store and
+# would be deleted too.
 docker container prune
 docker image prune
 
@@ -304,6 +305,8 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 | ALT contigs | No | Yes in the full assembly; the pipeline's reference (the no-ALT analysis set) leaves them out |
 
 The prefix alone does not tell the build: some providers deliver GRCh38 with Ensembl names (`1`, `MT`). Check chr1's length. A GRCh38 VCF with Ensembl names needs only a rename, which the Nextflow pipeline prints when it stops on it: see [Starting from a Vendor VCF](vcf-first.md).
+
+**The Nextflow run stops with `is not on GRCh38. Its header gives no contig lengths`:** the VCF's header has no `##contig` length for chr1-22, chrX or chrY, so `VCF_PRECHECK` compared the REF bases of its first 1000 records with `--reference`, and more than 5% of them differ. The message gives the count and the rate, for example `they differ in 45 of the first 60 records (75.0%)`. The VCF is on another build, or `--reference` is not the GRCh38 FASTA. Renaming the contigs does not help: get a GRCh38 VCF from your provider, or start from the FASTQ. A header that does give lengths stops with `Its header gives ... contig length(s) that GRCh38 does not have` instead.
 
 **Fix (GRCh37 data):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash

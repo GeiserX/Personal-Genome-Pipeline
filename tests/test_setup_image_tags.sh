@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# versions.env pins a few images by digest (name:tag@sha256:...). Docker gives
-# an image pulled that way no tag, lists it as dangling, and a dangling-image
-# cleanup (`docker image prune`) deletes it. setup.sh gives each one a second
+# versions.env pins a few images by digest (name:tag@sha256:...). On Docker's
+# classic image store an image pulled that way has no tag, is listed as
+# dangling, and a dangling-image cleanup (`docker image prune`) deletes it; on
+# the containerd image store the digest reference is its name, so it is not
+# dangling. setup.sh gives each one a second
 # name, pinned_tag in scripts/lib/common.sh, and this test checks that name:
 #   - every digest-pinned image of versions.env gets one, a tag-only image none;
 #   - it starts with localhost/pgp-pinned/ (no public registry owns localhost)
@@ -10,7 +12,9 @@
 #   - tag_pinned_image is safe to repeat, and a failed `docker tag` is reported;
 #   - setup.sh --pull-only says how many pinned tags it added (0 on a rerun);
 #   - validate-setup.sh says a cleanup would delete an image only when the
-#     image is dangling: another local tag on the same image id keeps it.
+#     image is dangling; when it is not (another local tag on the same image
+#     id, or the containerd store) it notes that Docker does not list it as
+#     dangling, so the cleanup keeps it.
 # No Docker: a fake engine on CONTAINER_ENGINE logs the calls, and a second one
 # keeps a table of names and image ids. The real pull, tag and
 # `docker images --filter dangling=true` run in Container Test.
@@ -131,7 +135,9 @@ fi
 # 4. setup.sh --pull-only and validate-setup.sh against an engine that keeps
 # state: one "NAME ID" line per local name in $ENGINE_STATE. A pull adds the
 # digest reference, `tag` adds a name, `rmi` removes one; an image id is
-# dangling when none of its names is a tag (every name has '@').
+# dangling when none of its names is a tag (every name has '@'). With
+# FAKE_STORE=containerd a digest reference counts as a name, as on Docker's
+# containerd image store, so no image that has a name is dangling.
 cat > "${WORK}/stateful" <<'FAKE'
 #!/usr/bin/env bash
 S=$ENGINE_STATE
@@ -154,6 +160,7 @@ case "${1:-}" in
     [ -n "${IMAGES_FAILS:-}" ] && exit 1
     case " $* " in
       *" dangling=true "*)
+        [ "${FAKE_STORE:-}" = containerd ] && exit 0
         awk '{ if (!($2 in t)) t[$2] = 0; if ($1 !~ /@/) t[$2] = 1 } END { for (i in t) if (!t[i]) print i }' "$S" ;;
     esac ;;
 esac
@@ -187,9 +194,11 @@ unknown() {
   awk -v i="$1" '/Docker did not list its dangling images/ { w = 1; next } /Tag them with/ { w = 0 }
                  w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
 }
-# noted: validate-setup.sh lists IMAGE as missing its pinned tag only.
+# noted: validate-setup.sh lists IMAGE as missing its pinned tag only, under
+# a note that gives the reason the cleanup keeps it: Docker does not list it
+# as dangling (not "another local tag", which the containerd store need not have).
 noted() {
-  awk -v i="$1" '/lack their localhost\/pgp-pinned\/ tag/ { w = 1; next } /Add it with/ { w = 0 }
+  awk -v i="$1" '/lack their localhost\/pgp-pinned\/ tag; Docker does not list them as dangling, so a dangling-image cleanup keeps them:$/ { w = 1; next } /Add it with/ { w = 0 }
                  w && NF == 1 && $1 == i { f = 1 } END { exit !f }' "${WORK}/validate.log"
 }
 
@@ -226,6 +235,19 @@ elif unknown "$first"; then
   pass "a failed dangling query gets the could-not-tell warning, no claim either way"
 else
   fail "validate-setup.sh did not warn about ${first} when Docker did not list its dangling images"
+fi
+
+# Docker's containerd image store: the image is left with its digest reference
+# alone, no tag at all, and Docker still does not list it as dangling. No
+# deletion claim, and the note says why the cleanup keeps it.
+CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" rmi example/foreign:keep'
+FAKE_STORE=containerd validate
+if warned "$first"; then
+  fail "containerd store: validate-setup.sh claims a cleanup would delete ${first}, which Docker does not list as dangling"
+elif noted "$first"; then
+  pass "containerd store: an image with its digest reference alone is noted as not dangling, no would-delete warning"
+else
+  fail "containerd store: validate-setup.sh did not note that ${first} lacks its pinned tag and is not dangling: $(grep -A2 'pgp-pinned' "${WORK}/validate.log" | tr '\n' ' ')"
 fi
 pull_only || fail "setup.sh --pull-only failed after the tag was removed"
 summary_says 1 "one pinned tag missing"
