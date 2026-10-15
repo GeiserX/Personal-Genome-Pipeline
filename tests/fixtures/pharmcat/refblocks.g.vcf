@@ -1,0 +1,28 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position (for use with symbolic alleles)">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Conditional genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description="Minimum DP observed within the GVCF block.">
+##ALT=<ID=*,Description="Represents any possible alternative allele at this location">
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chr2,length=242193529>
+##contig=<ID=chr6,length=170805979>
+##contig=<ID=chr10,length=133797422>
+##contig=<ID=chr19,length=58617616>
+##contig=<ID=chrX,length=156040895>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	REFBLOCKS
+chr1	97450020	.	A	<*>	0	.	END=97450065	GT:GQ:MIN_DP	0/0:50:31
+chr1	97450066	.	G	<*>	0	.	END=97450110	GT:GQ:MIN_DP	0/0:45:29
+chr2	233759900	.	T	<*>	0	.	END=233761000	GT:GQ:MIN_DP	0/0:50:30
+chr6	18149010	.	A	<*>	0	.	END=18149060	GT:GQ:MIN_DP	0/0:40:27
+chr10	94942150	.	T	<*>	0	.	END=94942210	GT:GQ:MIN_DP	0/0:50:30
+chr10	94942211	.	A	<*>	0	.	END=94942211	GT:GQ:MIN_DP	./.:0:0
+chr10	94942212	.	A	<*>	0	.	END=94942260	GT:GQ:MIN_DP	0/0:50:30
+chr10	94949140	.	C	<*>	0	.	END=94949200	GT:GQ:MIN_DP	0/0:10:4
+chr10	94949250	.	A	<*>	0	.	END=94949281	GT:GQ:MIN_DP	0/0:50:30
+chr10	94949282	.	A	G,<*>	30	PASS	.	GT:GQ:DP	0/1:30:28
+chr10	94949283	.	A	<*>	0	.	END=94949330	GT:GQ:MIN_DP	0/0:50:30
+chr19	38572240	.	T	<*>	0	.	END=38572290	GT:GQ:MIN_DP	0/0:35:25
+chrX	154532040	.	T	<*>	0	.	END=154532070	GT:GQ:MIN_DP	0:30:20
