@@ -13,8 +13,10 @@ Checks:
      marked stale in the summary and in both reports; one whose step was ok, or
      that is newer than the run, is not;
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
-     same number of stars; step 06's cDNA read check reaches each ClinVar
-     hit by chrom, pos, ref and alt, and a hit the table lacks is not checked;
+     same number of stars; 6b. and the same combined-allele note to a combined
+     record, its parts and two hits that may be one allele, which both reports
+     show; 6c. step 06's cDNA read check reaches each ClinVar hit by chrom,
+     pos, ref and alt, and a hit the table lacks is not checked;
   7. a corrupt file (not gzip, or gzip with damaged data) makes its section
      'unreadable' instead of stopping the report;
   8. the secondary-findings tier lists the ClinVar hits and the rare
@@ -44,7 +46,11 @@ Checks:
  14. a section whose step failed in the latest run says Failed, not Not
      run, in the summary and both reports, also in the CYP2D6 rows;
  15. the CPIC card counts the genes called without a function phenotype;
- 16. step 35b (Paraphase): the named genes in order, the other regions
+ 16. the mosaic_* rows of the step 33 table (bin/mosaic_sex_loss.py) make
+     their own section, with the numbers as numbers; a table without them
+     (written before the estimate) leaves the section missing, not broken; a
+     mosaic_call that is not one of the four is unreadable.
+ 17. step 35b (Paraphase): the named genes in order, the other regions
      counted, the variant rows, SMN1 beside step 35's Parascopy call (agree,
      disagree, or no line without that table) in both reports, and a folder
      without the step lists it under Steps Not Run.
@@ -96,6 +102,19 @@ HITS = VCF_HEAD + (
     "chr1\t10\t1\tC\tT\t50\tPASS\tGENEINFO=GENEA:11;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
     "chr1\t20\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Likely_pathogenic;CLNREVSTAT=reviewed_by_expert_panel\tGT\t1/1\n"
     "chr2\t5\t3\tA\tG\t50\tPASS\tGENEINFO=GENEC:33;CLNSIG=Pathogenic;CLNREVSTAT=no_assertion_criteria_provided\tGT\t0|1\n")
+# Step 6 hits with the combined-allele tags of bin/clinvar_join_adjacent.awk:
+# a 2-star combined record, its two 1-star parts, a single SNV, and two hits in
+# one gene that matched no combined record.
+_CV1 = "GENEINFO=SYNTH1:1;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter"
+COMBINED_HITS = VCF_HEAD + (
+    f"chr22\t30000037\t1\tAGC\tA\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000038\t3\tGCCAT\tCATGGG\t.\tPASS\tPGP_JOINED_FROM=chr22:30000037:AGC:A|chr22:30000042:T:TGGG;"
+    "GENEINFO=SYNTH1:1;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts\tGT\t0/1\n"
+    f"chr22\t30000042\t2\tT\tTGGG\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000210\t4\tC\tT\t50\tPASS\tGENEINFO=SYNTH2:2;CLNSIG=Pathogenic;"
+    "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
+    f"chr22\t30000300\t5\tA\tG\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000305:C:T\tGT\t0/1\n"
+    f"chr22\t30000305\t6\tC\tT\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000300:A:G\tGT\t0/1\n")
 MITO = VCF_HEAD.replace("##fileformat=VCFv4.2\n", "") + "".join(
     f"chrM\t{i}\t.\tA\tG\t.\tPASS\t.\tGT:AF\t0/1:{af}\n" for i, af in enumerate(("0.02", "0.30", "0.99", "0.05", "0.949"), 1))
 
@@ -167,8 +186,8 @@ def main():
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
-        check("HTML report: one row per hit, each with a Stars cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td></tr>"), rows)
+        check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
+              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td></tr>"), rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
         check("QC: mean depth 29.5x in both reports", "Mean depth: 29.5x" in txt and "29.5x" in html,
@@ -241,6 +260,53 @@ def main():
         py_stars = [collect_summary.STARS.get(x, 0) for x in statuses]
         check("bin/clinvar_hits.awk and collect_summary.py give the same stars", awk_stars == py_stars,
               f"awk {awk_stars} python {py_stars}")
+
+        # 6b. the combined-allele note (step 6's PGP_* tags): awk and python
+        # word it the same, and both reports show it
+        cv = os.path.join(work, "combined", "S")
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
+        out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                              f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+        awk_notes = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+        summ_cv, txt_cv, html_cv = render(cv)
+        py_notes = {str(h["pos"]): h["combined_allele"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]}
+        # All three are unphased het calls: the genotype cannot say the parts
+        # share a haplotype, so the note says so (a phased pair below does not).
+        unph = "; unphased, so the parts may sit on different haplotypes"
+        want = {"30000037": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
+                "30000038": "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG" + unph,
+                "30000042": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
+                "30000210": ".",
+                "30000300": "possibly one allele with chr22:30000305 C>T: check ClinVar for a combined record",
+                "30000305": "possibly one allele with chr22:30000300 A>G: check ClinVar for a combined record"}
+        check("combined allele: the note of each hit in the summary", py_notes == want, py_notes)
+        check("combined allele: bin/clinvar_hits.awk gives the same notes", awk_notes == want, awk_notes)
+        check("combined allele: the 2-star combined record is listed before its 1-star parts",
+              [h["pos"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]][0] == 30000038,
+              summ_cv["sections"]["clinvar"]["data"]["hits"])
+        check("combined allele: the text report shows the notes",
+              f"(part of a combined allele: chr22:30000038 GCCAT>CATGGG{unph})" in txt_cv
+              and f"(combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG{unph})" in txt_cv, txt_cv)
+        cv_rows = [l for l in html_cv.splitlines() if l.strip().startswith("<tr><td>chr22")]
+        check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
+              "<th>Stars</th><th>Combined allele</th>" in html_cv
+              and any(f"<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG{unph}</td>" in r for r in cv_rows)
+              and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+        # The same hits phased (0|1, one phase set) or homozygous: both
+        # parts are on one haplotype, so the notes carry no phase caveat.
+        for gt_ in ("0|1", "1/1"):
+            put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS.replace("\tGT\t0/1\n", f"\tGT\t{gt_}\n"))
+            out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                                  f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+            awk_g = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+            summ_g, _, _ = render(cv)
+            py_g = {str(h["pos"]): h["combined_allele"] for h in summ_g["sections"]["clinvar"]["data"]["hits"]}
+            want_g = {k: v.replace(unph, "") for k, v in want.items()}
+            check(f"combined allele: GT {gt_} gets no phase caveat, in the summary and in bin/clinvar_hits.awk",
+                  py_g == want_g and awk_g == want_g, (py_g, awk_g))
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
+        check("combined allele: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_cv))),
+              validate.validate(schema, json.loads(json.dumps(summ_cv))))
 
         # 7. a corrupt file
         c = os.path.join(work, "corrupt", "S")
@@ -455,7 +521,7 @@ def main():
               and "HLA typing from short-read WGS is approximate" in html_q)
         check("HLA summary validates", not validate.validate(schema, json.loads(json.dumps(summ_q))))
 
-        # 16. step 35b: the Paraphase genes, SMN1 beside Parascopy, both reports
+        # 17. step 35b: the Paraphase genes, SMN1 beside Parascopy, both reports
         q = os.path.join(work, "paralogs", "S")
         put(f"{q}/paralogs/S_paraphase_copy_number.tsv",
             "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
@@ -519,6 +585,41 @@ def main():
               and "failed (step 32)" in card_c and "FAILED: step 32 failed" in card_c, card_c)
         check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
               validate.validate(schema, json.loads(json.dumps(summ_f))))
+
+        # 16. mosaic loss of chrY or chrX, from the step 33 table
+        mo = os.path.join(work, "mosaic", "S")
+        base = "key\tvalue\nsample\tS\ninferred_sex\tmale\nsex_check\tok\n"
+        put(f"{mo}/qc/S_sample_qc.tsv", base)
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: a table without the rows leaves the section missing", sec_m["state"] == "missing", sec_m)
+        rows = {"sex": "male", "sex_from": "reads", "chrom": "chrY", "depth_ratio": "0.351",
+                "depth_ratio_expected": "0.5", "depth_blocks": "109", "loss_depth": "0.298",
+                "loss_depth_low": "0.293", "loss_depth_high": "0.303", "x_het_sites": "", "loss_af": "",
+                "loss_af_low": "", "loss_af_high": "", "floor": "0.100", "call": "detected",
+                "reason": "the low end of the 95% range is above 10%: a share of the cells lost the Y"}
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in rows.items()))
+        summ_m = collect_summary.collect("S", mo)
+        sec_m = summ_m["sections"]["mosaic_sex_loss"]
+        check("mosaic: the rows make an ok section from step 33", sec_m["state"] == "ok" and sec_m["step"] == "33"
+              and sec_m["source"] == "qc/S_sample_qc.tsv", sec_m)
+        check("mosaic: numbers are numbers, blanks are None, the call and reason stay text",
+              sec_m["data"]["loss_depth"] == 0.298 and sec_m["data"]["loss_af"] is None
+              and sec_m["data"]["x_het_sites"] is None and sec_m["data"]["call"] == "detected"
+              and sec_m["data"]["chrom"] == "chrY", sec_m["data"])
+        check("mosaic: the sample QC section still reads the same table",
+              summ_m["sections"]["sample_qc"]["data"].get("sex_check") == "ok", summ_m["sections"]["sample_qc"])
+        check("mosaic summary validates", not validate.validate(schema, json.loads(json.dumps(summ_m))),
+              validate.validate(schema, json.loads(json.dumps(summ_m))))
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in
+                                                       dict(rows, loss_depth="inf", loss_depth_high="-inf").items()))
+        summ_i = collect_summary.collect("S", mo)
+        sec_m = summ_i["sections"]["mosaic_sex_loss"]
+        check("mosaic: inf is no value (JSON null), never infinity", sec_m["data"]["loss_depth"] is None
+              and sec_m["data"]["loss_depth_high"] is None and "Infinity" not in json.dumps(summ_i), sec_m["data"])
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "mosaic_call\tmaybe\n")
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: an unknown mosaic_call is unreadable", sec_m["state"] == "unreadable"
+              and "mosaic_call" in (sec_m["note"] or ""), sec_m)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

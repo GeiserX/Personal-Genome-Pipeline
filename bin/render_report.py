@@ -49,6 +49,12 @@ PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry popula
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
 
+def combined_cell(h):
+    """A ClinVar hit's combined-allele note (step 6), "" when it has none."""
+    note = h.get("combined_allele", ".")
+    return "" if note in (".", "") else note
+
+
 def cdna_text(h):
     """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
     c = h["cdna"]
@@ -100,6 +106,35 @@ def freemix_text(q):
     if q.get("contamination") == "warn":
         return f"{q['freemix']} (above {warn}: possible contamination, see docs/33-sample-qc.md{few})"
     return f"{q['freemix']} (warning above {warn}{few})"
+
+
+MOSAIC_NOTE = ("Loss of chrY in a share of the blood cells of men, and of one chrX in women, becomes more common "
+               "with age. Population studies link loss of Y with smoking and with higher rates of heart disease "
+               "and some cancers; loss of X is less studied. That is a population-level association, not a "
+               "diagnosis for one person. Below about 10% of the cells nothing can be told at 30x "
+               "(docs/33-sample-qc.md).")
+MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detected above 10%", "gray"),
+               "gain": ("an extra copy, not a loss", "yellow"), "not_estimated": ("not estimated", "gray")}
+
+
+def pct(x):
+    return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
+
+
+def mosaic_lines(q):
+    """The estimate from depth and from chrX allele fractions, one line each, as both reports print them."""
+    what = "the Y" if q.get("chrom") == "chrY" else "one X"
+    out = []
+    if isinstance(q.get("loss_depth"), (int, float)):
+        ratio = q.get("depth_ratio")
+        ratio = f"{ratio:.3f}" if isinstance(ratio, (int, float)) else "?"
+        out.append(f"From depth: estimated share of the cells that lost {what} {pct(q['loss_depth'])} (95% range "
+                   f"{pct(q.get('loss_depth_low'))} to {pct(q.get('loss_depth_high'))}); {q.get('chrom')} to "
+                   f"autosome depth ratio {ratio}, {q.get('depth_ratio_expected')} expected")
+    if isinstance(q.get("loss_af"), (int, float)):
+        out.append(f"From chrX allele fractions at {q.get('x_het_sites')} heterozygous sites: {pct(q['loss_af'])} "
+                   f"(95% range {pct(q.get('loss_af_low'))} to {pct(q.get('loss_af_high'))})")
+    return out
 
 
 def read_count_text(d):
@@ -196,6 +231,15 @@ def text_report(s):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         w("")
 
+    if head("mosaic_sex_loss"):
+        q = S["mosaic_sex_loss"]["data"]
+        w(f"  {q.get('chrom') or 'chrY or chrX'}: {MOSAIC_CALL.get(q.get('call'), (q.get('call'), ''))[0]}"
+          f" ({q.get('reason')})")
+        for line in mosaic_lines(q):
+            w(f"  {line}")
+        w(f"  {MOSAIC_NOTE}")
+        w("")
+
     if head("variants", "Variant Calling (DeepVariant)"):
         d = S["variants"]["data"]
         w(f"  Total variants: {d['total']}")
@@ -215,8 +259,9 @@ def text_report(s):
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
+                note = combined_cell(h)
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
-                  f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+                  f"{h['significance']} [{h['review_status']}] {h['stars']}*" + (f"  ({note})" if note else ""))
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
@@ -582,6 +627,14 @@ def html_report(s):
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
+    mo = S.get("mosaic_sex_loss", MISSING)
+    q = mo["data"]
+    label, colour = MOSAIC_CALL.get(q.get("call"), (q.get("call") or "?", "gray"))
+    mo_body = [stat(q.get("chrom") or "chrY or chrX", badge(label, colour)),
+               stat("Why", f'<span style="font-weight:normal;font-size:13px">{E(q.get("reason") or "")}</span>')]
+    mo_body += [small_note(line) for line in mosaic_lines(q)] + [small_note(MOSAIC_NOTE)]
+    a(card(mo, "Mosaic Loss of Chromosome Y or X", mo_body))
+
     v = S["variants"]["data"]
     a(card(S["variants"], "Variant Calling", [stat("Total variants", v.get("total")), stat("PASS variants", v.get("pass")),
                                               stat("SNPs", v.get("snps")), stat("Indels", v.get("indels"))]))
@@ -759,16 +812,19 @@ def html_report(s):
         a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
+        # The combined-allele cell is empty, not '.', for a hit that is
+        # neither a combined allele nor part of one: no note is no missing data.
         # The cDNA read check column only when step 06 wrote its table.
         reads = "cdna_flagged" in c
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
                 f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
+                f"<td>{E(combined_cell(h))}</td>"
                 + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
         a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
-                "<th>Significance</th><th>Review status</th><th>Stars</th>"
+                "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 
