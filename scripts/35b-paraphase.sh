@@ -68,18 +68,20 @@ rm -rf "$WORK"
 run_in --cpus "${THREADS}" --memory 8g "${PARAPHASE_IMAGE}" \
   paraphase -b "$(cpath "$BAM")" -r "$REF_FASTA_C" -o "$(cpath "$WORK")" -p "$SAMPLE" \
     -t "${THREADS}" ${REGIONS:+-g "$REGIONS"}
-rm -rf "$FINAL"
-mv "$WORK" "$FINAL"
 
-# [3/3] One row per gene and one per variant (bin/paraphase_report.py, as the PARAPHASE_REPORT module)
+# [3/3] One row per gene and one per variant (bin/paraphase_report.py, as the PARAPHASE_REPORT module).
+# The tables are written from WORK before it replaces FINAL, so a failed report leaves the
+# previous results and their tables together.
 echo "[3/3] Writing the tables..."
 CN="${OUTDIR}/${SAMPLE}_paraphase_copy_number.tsv"
 VARS="${OUTDIR}/${SAMPLE}_paraphase_variants.tsv"
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/paraphase_report.py table --sample "$SAMPLE" \
-    --json "$(cpath "${FINAL}/${SAMPLE}.paraphase.json")" \
-    --vcf-dir "$(cpath "${FINAL}/${SAMPLE}_paraphase_vcfs")" \
+    --json "$(cpath "${WORK}/${SAMPLE}.paraphase.json")" \
+    --vcf-dir "$(cpath "${WORK}/${SAMPLE}_paraphase_vcfs")" \
     --out-cn "$(cpath "$CN")" --out-variants "$(cpath "$VARS")"
+rm -rf "$FINAL"
+mv "$WORK" "$FINAL"
 
 echo ""
 echo "=== Paraphase complete ==="
