@@ -306,6 +306,8 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 
 The prefix alone does not tell the build: some providers deliver GRCh38 with Ensembl names (`1`, `MT`). Check chr1's length. A GRCh38 VCF with Ensembl names needs only a rename, which the Nextflow pipeline prints when it stops on it: see [Starting from a Vendor VCF](vcf-first.md).
 
+**The Nextflow run stops with `is not on GRCh38. Its header gives no contig lengths`:** the VCF's header has no `##contig` length for chr1-22, chrX or chrY, so `VCF_PRECHECK` compared the REF bases of its first 1000 records with `--reference`, and more than 5% of them differ. The message gives the count and the rate, for example `they differ in 45 of the first 60 records (75.0%)`. The VCF is on another build, or `--reference` is not the GRCh38 FASTA. Renaming the contigs does not help: get a GRCh38 VCF from your provider, or start from the FASTQ. A header that does give lengths stops with `Its header gives ... contig length(s) that GRCh38 does not have` instead.
+
 **Fix (GRCh37 data):** Extract FASTQ from BAM and re-align to GRCh38:
 ```bash
 source versions.env   # from the repository root
