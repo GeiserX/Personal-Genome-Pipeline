@@ -68,7 +68,8 @@ UNPH='; unphased, so the parts may sit on different haplotypes'
 check "the HTML report marks a part hit" grep -qF "<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG${UNPH}</td>" "$HTML"
 check "the HTML report lists the combined hit with 2 stars" \
   grep -q "<td>30000038</td>.*<td>2</td><td>combined allele of chr22:30000037 AGC&gt;A + chr22:30000042 T&gt;TGGG${UNPH}</td>" "$HTML"
-check "the HTML row of the single SNV has an empty combined-allele cell" grep -q '<td>30000210</td>.*<td></td></tr>' "$HTML"
+# The combined-allele cell follows Stars; step 06's cDNA read check column may follow it.
+check "the HTML row of the single SNV has an empty combined-allele cell" grep -q '<td>30000210</td>.*<td>[0-4]</td><td></td>' "$HTML"
 run_step generate-report.sh "$S2"
 check_step_exit generate-report.sh
 check "the text report marks a part hit" \
