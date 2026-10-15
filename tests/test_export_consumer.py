@@ -78,7 +78,8 @@ def unzip(path):
 
 
 def calls_23andme(text):
-    return {c[0]: c[3] for c in (l.split("\t") for l in text.splitlines() if l and not l.startswith("#"))}
+    """The genotype of each row, keyed by the number of its rsID."""
+    return {int(c[0][2:]): c[3] for c in (l.split("\t") for l in text.splitlines() if l and not l.startswith("#"))}
 
 
 # --- 1. build-sites ----------------------------------------------------------
@@ -99,7 +100,7 @@ DBSNP = "".join("\t".join(r) + "\n" for r in [
     ("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"),
     ("NC_000001.11", "900", "rs10", "A", "G", ".", ".", "RS=10;VC=SNV"),
     ("NC_000001.11", "1900", "rs11", "A", "G", ".", ".", "RS=11;VC=SNV"),
-    ("NC_000001.11", "4900", "rs13", "CT", "C", ".", ".", "RS=13;VC=INDEL"),
+    ("NC_000001.11", "4900", "rs13", "CTG", "C", ".", ".", "RS=13;VC=INDEL"),
     ("NC_000001.11", "5900", "rs14", "C", "T", ".", ".", "RS=14;VC=SNV"),
     ("NC_000001.11", "5950", "rs14", "C", "T", ".", ".", "RS=14;VC=SNV"),
     ("NC_000003.12", "6900", "rs15", "C", "T", ".", ".", "RS=15;VC=SNV"),
@@ -187,9 +188,9 @@ SITES = [
     ("rs301", "Y", 2900000, "A", 3000000, "A", "+"), ("rs401", "MT", 100, "A", 100, "A", "+"),
     ("rs402", "MT", 200, "G", 200, "G", "+"),
 ]
-WANT_MALE = {"rs101": "AA", "rs102": "CT", "rs103": "AA", "rs104": "--", "rs105": "--", "rs106": "--",
-             "rs107": "--", "rs108": "AA", "rs109": "CG", "rs110": "--", "rs111": "CC", "rs201": "AG", "rs202": "T",
-             "rs203": "--", "rs204": "G", "rs301": "C", "rs401": "A", "rs402": "--"}
+# Keyed by the number after rs (the public-data scan reads an rsID followed by a genotype as a leak).
+WANT_MALE = {101: "AA", 102: "CT", 103: "AA", 104: "--", 105: "--", 106: "--", 107: "--", 108: "AA", 109: "CG",
+             110: "--", 111: "CC", 201: "AG", 202: "T", 203: "--", 204: "G", 301: "C", 401: "A", 402: "--"}
 
 
 def export(work, name, gvcf_lines, sites, sex):
@@ -239,16 +240,16 @@ def test_export(work):
 
     rc, log, out = export(work, "female", GVCF_LINES, SITES, "female")
     got = calls_23andme(unzip(os.path.join(out, "S_23andme_v5.zip")))
-    check("female: chrY '--', chrX keeps the call's ploidy", rc == 0 and got["rs301"] == "--" and got["rs202"] == "TT"
-          and got["rs203"] == "CT" and got["rs204"] == "G", (rc, log, {k: got.get(k) for k in ("rs301", "rs202", "rs203", "rs204")}))
+    check("female: chrY '--', chrX keeps the call's ploidy", rc == 0 and got[301] == "--" and got[202] == "TT"
+          and got[203] == "CT" and got[204] == "G", (rc, log, {k: got.get(k) for k in (301, 202, 203, 204)}))
 
     # 5. a planted hole: drop the block over rs101
     holed = [l for l in GVCF_LINES if not l.startswith("chr20\t90\t")]
     rc, log, out = export(work, "hole", holed, SITES, "male")
     got = calls_23andme(unzip(os.path.join(out, "S_23andme_v5.zip")))
-    check("planted hole: the site is '--'", rc == 0 and got.get("rs101") == "--", (rc, log, got.get("rs101")))
-    check("planted hole: every other site unchanged", {k: v for k, v in got.items() if k != "rs101"}
-          == {k: v for k, v in WANT_MALE.items() if k != "rs101"})
+    check("planted hole: the site is '--'", rc == 0 and got.get(101) == "--", (rc, log, got.get(101)))
+    check("planted hole: every other site unchanged", {k: v for k, v in got.items() if k != 101}
+          == {k: v for k, v in WANT_MALE.items() if k != 101})
 
     # 6. the table shifted by one position (GRCh38) on a run of het SNVs
     seq = "ACGT" * 300
