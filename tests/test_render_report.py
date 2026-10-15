@@ -322,7 +322,8 @@ def main():
                 "loss_depth": "0.298", "loss_depth_low": "0.293", "loss_depth_high": "0.303", "floor": "0.100",
                 "call": "detected", "reason": "the low end of the 95% range is above 10%"}
         txt, html = mosaic_table(male)
-        line = "From depth: 29.8% of the cells lost the Y (95% range 29.3% to 30.3%); chrY to autosome depth ratio 0.351"
+        line = ("From depth: estimated share of the cells that lost the Y 29.8% (95% range 29.3% to 30.3%); "
+                "chrY to autosome depth ratio 0.351")
         card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
         check("mosaic: the text report heading, call and estimate",
               "## Mosaic loss of chromosome Y or X" in txt and "chrY: detected (the low end" in txt and line in txt, txt)
@@ -335,8 +336,14 @@ def main():
                                       depth_ratio_expected="1.0", x_het_sites="600", loss_af="0.316",
                                       loss_af_low="0.288", loss_af_high="0.340"))
         check("mosaic: a woman shows one X and the allele-fraction line",
-              "of the cells lost one X" in txt and "From chrX allele fractions at 600 heterozygous sites: 31.6% "
+              "of the cells that lost one X" in txt and "From chrX allele fractions at 600 heterozygous sites: 31.6% "
               "(95% range 28.8% to 34.0%)" in txt and "31.6%" in html, txt)
+        txt, html = mosaic_table(dict(male, depth_ratio="", loss_depth="0.190", loss_depth_low="-0.002",
+                                      loss_depth_high="0.382", call="not_detected"))
+        card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("mosaic: not detected says 'above 10%', and a missing depth ratio prints '?'",
+              "chrY: not detected above 10%" in txt and "below 10%" not in txt and "depth ratio ?," in txt
+              and 'badge-gray">not detected above 10%<' in card_m, txt)
         put(f"{d}/qc/S_sample_qc.tsv", "key\tvalue\nsample\tS\ninferred_sex\tmale\n")
         summ = collect_summary.collect("S", d)
         txt, html = render_report.text_report(summ), render_report.html_report(summ)

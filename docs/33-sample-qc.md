@@ -111,7 +111,7 @@ The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in i
 | FREEMIX 0.01 to 0.03 | Trace contamination, usual for a library | Nothing |
 | FREEMIX above 0.03 | About that share of the reads are someone else's | Treat heterozygous calls with care; ask the lab whether it can resequence |
 | `same_person_as` set | Two samples of the run share their genome (relatedness 0.9 or more) | A duplicate row, a resequenced sample, an identical twin, or a swap |
-| `mosaic_call not_detected` | No loss of the Y (or of one X) above about 10% of the cells | Nothing; a smaller loss cannot be told from noise at 30x |
+| `mosaic_call not_detected` | The 95% range does not put a loss of the Y (or of one X) above 10% of the cells; the estimate itself can be higher when the range is wide | Nothing; a smaller loss cannot be told from noise at 30x |
 | `mosaic_call detected` | The low end of the 95% range is above 10%: a share of the blood cells lost the Y, or one X | Nothing follows from it alone. It is a population-level marker, not a diagnosis; a doctor would test blood cells directly if it ever mattered |
 | `mosaic_call gain` | More depth than one Y or two X | An extra copy (47,XYY, 47,XXX) or a gain; it is not a loss |
 

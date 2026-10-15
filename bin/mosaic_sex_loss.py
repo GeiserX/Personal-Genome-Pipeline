@@ -304,7 +304,8 @@ def estimate(table, regions=None, vcf=None):
                       "the cells one X was lost and the other copied (copy-neutral), or the depth cannot tell")
     else:
         call = "not_detected"
-        why.insert(0, f"no loss of {what} above {FLOOR:.0%}; below that nothing can be told at 30x")
+        why.insert(0, f"the 95% range does not put a loss of {what} above {FLOOR:.0%}; "
+                      "below that nothing can be told at 30x")
     row.update(mosaic_call=call, mosaic_reason="; ".join(why))
     return list(row.items())
 

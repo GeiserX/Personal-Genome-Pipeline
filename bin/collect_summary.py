@@ -1175,7 +1175,8 @@ def sec_mosaic_sex_loss(d, s):
     if data.get("call") not in MOSAIC_CALLS:
         raise Unreadable(f"{os.path.basename(p)} has no mosaic_call row ({', '.join(MOSAIC_CALLS)})")
     for k in MOSAIC_NUMBERS:
-        data[k] = num(data.get(k))
+        v = num(data.get(k))
+        data[k] = v if v is not None and abs(v) != float("inf") else None   # inf is no value either
     data["x_het_sites"] = int(data["x_het_sites"]) if (data.get("x_het_sites") or "").isdigit() else None
     return p, data
 

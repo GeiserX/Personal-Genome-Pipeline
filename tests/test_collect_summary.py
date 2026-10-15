@@ -501,6 +501,12 @@ def main():
               summ_m["sections"]["sample_qc"]["data"].get("sex_check") == "ok", summ_m["sections"]["sample_qc"])
         check("mosaic summary validates", not validate.validate(schema, json.loads(json.dumps(summ_m))),
               validate.validate(schema, json.loads(json.dumps(summ_m))))
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in
+                                                       dict(rows, loss_depth="inf", loss_depth_high="-inf").items()))
+        summ_i = collect_summary.collect("S", mo)
+        sec_m = summ_i["sections"]["mosaic_sex_loss"]
+        check("mosaic: inf is no value (JSON null), never infinity", sec_m["data"]["loss_depth"] is None
+              and sec_m["data"]["loss_depth_high"] is None and "Infinity" not in json.dumps(summ_i), sec_m["data"])
         put(f"{mo}/qc/S_sample_qc.tsv", base + "mosaic_call\tmaybe\n")
         sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
         check("mosaic: an unknown mosaic_call is unreadable", sec_m["state"] == "unreadable"

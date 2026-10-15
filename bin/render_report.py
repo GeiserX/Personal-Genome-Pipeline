@@ -107,7 +107,7 @@ MOSAIC_NOTE = ("Loss of chrY in a share of the blood cells of men, and of one ch
                "and some cancers; loss of X is less studied. That is a population-level association, not a "
                "diagnosis for one person. Below about 10% of the cells nothing can be told at 30x "
                "(docs/33-sample-qc.md).")
-MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detected (below 10%)", "gray"),
+MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detected above 10%", "gray"),
                "gain": ("an extra copy, not a loss", "yellow"), "not_estimated": ("not estimated", "gray")}
 
 
@@ -120,9 +120,11 @@ def mosaic_lines(q):
     what = "the Y" if q.get("chrom") == "chrY" else "one X"
     out = []
     if isinstance(q.get("loss_depth"), (int, float)):
-        out.append(f"From depth: {pct(q['loss_depth'])} of the cells lost {what} (95% range {pct(q.get('loss_depth_low'))}"
-                   f" to {pct(q.get('loss_depth_high'))}); {q.get('chrom')} to autosome depth ratio "
-                   f"{q.get('depth_ratio'):.3f}, {q.get('depth_ratio_expected')} expected")
+        ratio = q.get("depth_ratio")
+        ratio = f"{ratio:.3f}" if isinstance(ratio, (int, float)) else "?"
+        out.append(f"From depth: estimated share of the cells that lost {what} {pct(q['loss_depth'])} (95% range "
+                   f"{pct(q.get('loss_depth_low'))} to {pct(q.get('loss_depth_high'))}); {q.get('chrom')} to "
+                   f"autosome depth ratio {ratio}, {q.get('depth_ratio_expected')} expected")
     if isinstance(q.get("loss_af"), (int, float)):
         out.append(f"From chrX allele fractions at {q.get('x_het_sites')} heterozygous sites: {pct(q['loss_af'])} "
                    f"(95% range {pct(q.get('loss_af_low'))} to {pct(q.get('loss_af_high'))})")
