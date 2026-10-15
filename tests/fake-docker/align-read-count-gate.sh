@@ -172,6 +172,25 @@ output_has v-short 'FASTQ_SUBDIR=fastq'
 run_rc v-warn env FAKE_PRIMARY=4 READ_COUNT_CHECK=warn "${SCRIPTS}/validate-setup.sh" v1
 output_has v-warn '\[WARN\].*BAM read count: 4 primary records, but fastp wrote 6 reads \(READ_COUNT_CHECK=warn\)'
 output_lacks v-warn '\[FAIL\].*BAM read count'
+# A BAM step 02 aligned from the raw reads (its table says fastq/...) was not
+# made from fastp's output: no comparison with fastp, an INFO line instead.
+VT="${GENOME_DIR}/v1/qc/v1_read_count.tsv"
+mkdir -p "$(dirname "$VT")"
+printf 'key\tvalue\ninput_reads\t8\ninput_source\tfastq/v1_R1.fastq.gz 4 records + fastq/v1_R2.fastq.gz 4 records\nprimary_records\t8\nmissing_reads\t0\nread_count_check\tok\n' > "$VT"
+: > "$FAKE_DOCKER_LOG"
+run_rc v-raw env FAKE_PRIMARY=8 "${SCRIPTS}/validate-setup.sh" v1
+output_has v-raw '\[INFO\].*BAM was aligned from the raw reads \(qc/v1_read_count\.tsv: fastq/v1_R1'
+output_lacks v-raw '\[FAIL\].*BAM read count'
+if grep -q 'samtools view -c' "$FAKE_DOCKER_LOG"; then fail "validate-setup.sh compared a BAM aligned from the raw reads with fastp's count"; fi
+# A table older than the BAM may belong to a BAM it replaced: compare as before.
+touch -t 200001010000 "$VT"
+run_rc v-raw-stale env FAKE_PRIMARY=8 "${SCRIPTS}/validate-setup.sh" v1
+output_has v-raw-stale '\[FAIL\].*BAM read count: 8 primary records, but fastp wrote 6 reads'
+# A table from the trimmed reads: the fastp comparison still runs.
+sed 's#fastq/#fastq_trimmed/#g' "$VT" > "${VT}.new" && mv "${VT}.new" "$VT"
+run_rc v-trimmed env FAKE_PRIMARY=4 "${SCRIPTS}/validate-setup.sh" v1
+output_has v-trimmed '\[FAIL\].*BAM read count: 4 primary records, but fastp wrote 6 reads'
+rm -f "$VT"
 # Without fastp's report there is nothing to compare with: no line, no count.
 rm -f "${GENOME_DIR}/v1/fastq_trimmed/v1_fastp.json"
 : > "$FAKE_DOCKER_LOG"
