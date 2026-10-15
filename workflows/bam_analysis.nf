@@ -46,6 +46,7 @@ workflow BAM_ANALYSIS {
     ch_parascopy_data    // channel: val(path) — Parascopy's homology table and models or []
     ch_parascopy_bed     // channel: val(path) — Parascopy background windows or []
     ch_yleaf_data        // channel: val(path) — Yleaf's data folder (--yleaf_data) or []
+    ch_vcf               // channel: [meta, vcf, tbi] — the sample's VCF, for SAMPLE_QC's chrX allele fractions
 
     main:
     ch_versions = Channel.empty()
@@ -62,6 +63,7 @@ workflow BAM_ANALYSIS {
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
+    ch_mosdepth_regions = Channel.empty()   // [meta, regions.bed.gz] when mosdepth runs
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -133,6 +135,7 @@ workflow BAM_ANALYSIS {
         MOSDEPTH(ch_bam)
         ch_coverage       = MOSDEPTH.out.summary
         ch_mosdepth_depth = MOSDEPTH.out.summary.join(MOSDEPTH.out.global_dist)
+        ch_mosdepth_regions = MOSDEPTH.out.regions_bed
         ch_versions       = ch_versions.mix(MOSDEPTH.out.versions)
     }
 
@@ -176,7 +179,8 @@ workflow BAM_ANALYSIS {
     // SOMALIER_RELATE runs once over every sample, so two rows that are the
     // same person are reported. A sex that disagrees with the samplesheet
     // stops the run as INDEXCOV's check does (--sex_check warn logs it);
-    // contamination only warns.
+    // contamination only warns. SAMPLE_QC also gets mosdepth's windows and
+    // the VCF, when they exist, for the mosaic loss of chrY or chrX.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('sample_qc')) {
         SOMALIER(ch_bam, ch_reference, ch_reference_fai, ch_somalier_sites)
@@ -194,7 +198,11 @@ workflow BAM_ANALYSIS {
         ch_qc_in = SOMALIER.out.extract
             .map { meta, f, id_file -> [meta.id, meta, id_file] }
             .join(VERIFYBAMID2.out.selfsm.map { meta, selfsm, marker_check -> [meta.id, selfsm, marker_check] })
-            .map { _id, meta, id_file, selfsm, marker_check -> [meta, id_file, selfsm, marker_check] }
+            .join(ch_mosdepth_regions.map { meta, f -> [meta.id, f] }, remainder: true)
+            .join(ch_vcf.map { meta, vcf, _tbi -> [meta.id, vcf] }, remainder: true)
+            .filter { items -> items[1] != null }   // a VCF-only row has no BAM
+            .map { _id, meta, id_file, selfsm, marker_check, regions, vcf ->
+                [meta, id_file, selfsm, marker_check, regions ?: [], vcf ?: []] }
         SAMPLE_QC(ch_qc_in, SOMALIER_RELATE.out.samples, SOMALIER_RELATE.out.pairs)
         ch_sample_qc = SAMPLE_QC.out.table.map { meta, tsv ->
             def qc = [:]

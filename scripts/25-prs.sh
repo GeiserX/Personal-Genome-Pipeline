@@ -344,9 +344,23 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
     --sample "$SAMPLE" --results "$(cpath "${WORK}/results")" --sampleset "$SAMPLESET" \
     --scores "$(cpath "${WORK}/scores")" --input-kind "$INPUT_KIND" \
     ${ZERO[@]+"${ZERO[@]}"} ${ANC_ARGS[@]+"${ANC_ARGS[@]}"} --out "$(cpath "$RESULTS_FILE")"
-# Kept: pgsc_calc's results (its HTML report, the match log); dropped: its work
-# folder and its run reports, whose names carry the time of the run.
-rm -rf "${WORK}/work" "${WORK}/.nextflow" "${WORK}/results/pipeline_info"
+# Kept: pgsc_calc's results (its HTML report, the match log), and its own
+# trace, report and timeline, the only record of its tasks' memory
+# (FORMAT_SCOREFILES, MATCH_VARIANTS, MATCH_COMBINE). They move to
+# pgsc_calc/pipeline_info, where the pipeline publishes them too, without the
+# time of the run in their names; the rest of pipeline_info (the DAG) and
+# pgsc_calc's work folder are dropped.
+INFO="${WORK}/pipeline_info"
+rm -rf "$INFO"
+if [ -d "${WORK}/results/pipeline_info" ]; then mv "${WORK}/results/pipeline_info" "$INFO"; fi
+for f in trace.txt report.html timeline.html; do
+  m=( "$INFO"/execution_"${f%.*}"_*."${f#*.}" )
+  if [ -f "${m[0]}" ]; then mv "${m[0]}" "${INFO}/execution_${f}"; fi
+done
+if [ -d "$INFO" ]; then
+  find "$INFO" -type f ! -name execution_trace.txt ! -name execution_report.html ! -name execution_timeline.html -delete
+fi
+rm -rf "${WORK}/work" "${WORK}/.nextflow"
 
 if awk -F'\t' 'NR > 1 && $6 + 0 < 50 {found = 1} END {exit !found}' "$RESULTS_FILE"; then
   echo "WARNING: under half of a score's variants were genotyped; that sum is not comparable to published distributions."
