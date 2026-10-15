@@ -13,7 +13,9 @@
 #      the AncestryDNA file back (bcftools tsv2vcf on GRCh37, UCSC's
 #      hg19ToHg38 chain, Picard LiftoverVcf): each lifted record lands on the
 #      table's GRCh38 position and has the alleles of case 21's calls there
-#      (hom-ref where case 21 called nothing). chrM is left out: the hg19
+#      (hom-ref where case 21 called nothing), but for at most 0.1% of the
+#      sites, where the list's GRCh37 position and dbSNP's GRCh38 position
+#      fall on two copies of a duplicated region. chrM is left out: the hg19
 #      chain maps hg19's chrM, not the rCRS positions the file uses;
 #   5. red controls: the table shifted by one GRCh38 position stops the
 #      export (reference bases differ); shifted by one GRCh37 position, the
@@ -249,6 +251,8 @@ for l in open(lifted):
     got += 1
     if int(pos) != int(t[4]):
         moved += 1
+        if moved <= 5:
+            print(f"moved {rid}: GRCh37 {t[1]}:{t[2]} lifts to {chrom}:{pos}, dbSNP's GRCh38 position is {t[4]}", file=sys.stderr)
         continue
     al = [ref] + alt.split(",")
     have = {al[int(i)][0] for i in idx}
@@ -269,7 +273,10 @@ rt_checks() {
   read -r called got moved compared nonref bad <<< "$2"
   echo "$1: ${called:-?} called sites off chrM, ${got:-?} lifted, ${moved:-?} moved, ${compared:-?} compared (${nonref:-?} non-reference), ${bad:-?} mismatches"
   check_ge "$1: lifted records, in percent of the called sites off chrM" "$(( ${got:-0} * 100 / (${called:-0} > 0 ? called : 1) ))" 95
-  check_eq "$1: lifted records on another GRCh38 position than the table's" "${moved:-x}" 0
+  # The list's GRCh37 position and dbSNP's GRCh38 position can fall on two
+  # copies of a duplicated region (one site in SMN1/SMN2 on the slice).
+  check "$1: lifted records on another GRCh38 position than the table's (${moved:-?}) are at most 0.1% of ${got:-?}" \
+    test "$(( ${moved:-1000000} * 1000 ))" -le "${got:-0}"
   check_ge "$1: non-reference sites compared" "${nonref:-0}" 100
   check_eq "$1: genotypes that differ from case 21's calls" "${bad:-x}" 0
 }

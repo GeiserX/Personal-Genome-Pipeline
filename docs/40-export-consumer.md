@@ -72,10 +72,11 @@ Both reports (step 24 and `generate-report.sh`) show the counts and the file nam
 
 ## Runtime
 
-Not measured on a whole genome. The step reads the gVCF from start to end once in one Python process, so the time grows with the size of the gVCF; memory holds the site table, about 620,000 rows.
+On the CI fixture (the gVCF of the fixture's 15 regions, 7,623 sites of the CI table) the step took under one second, container start included (e2e run 38649573454). It is not measured on a whole genome. The step reads the gVCF from start to end once in one Python process, so the time grows with the size of the gVCF; memory holds the site table, about 620,000 rows.
 
 ## Notes
 
 - The AncestryDNA file has the 23andMe v5 sites, not the sites of an AncestryDNA chip; the two chips share part of their sites. A service that matches on the sites it expects uses the ones the files have in common.
 - The 23andMe file has no internal `i` sites and none of the dropped sites, so it has fewer rows than a file from 23andMe.
+- In a duplicated region the list's GRCh37 position and dbSNP's GRCh38 position can sit on two different copies. The file then carries the list's position with the genotype read at dbSNP's. On the CI table this is one site of 7,338 off chrM (in SMN1/SMN2), found by the round trip below.
 - `scripts/chip-to-vcf.sh` reads both files back. The e2e case `consumer-export-1` does that on the CI fixture, lifts the result to GRCh38 and checks it against the fixture's calls; chrM is left out there, because the hg19 chain maps hg19's chrM, not the rCRS positions the file uses.
