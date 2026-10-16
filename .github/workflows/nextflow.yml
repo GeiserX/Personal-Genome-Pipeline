@@ -156,13 +156,16 @@ jobs:
 
       # Every tool with no container engine: the stubs only touch files. Each
       # process writes the tag of the image Nextflow gave it (task.container)
-      # into its versions.yml.
+      # into its versions.yml. --pedigree adds the family workflow over the
+      # FASTQ and BAM-only rows (the two DEEPVARIANT gives a gVCF). It is given
+      # here and not in conf/test_all.config, because other runs of the profile
+      # bring their own samplesheet, which the stub pedigree does not name.
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
-            -work-dir "${RUNNER_TEMP}/all-tools-work"
+            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv
 
       # The stub samplesheet has four samples with alignments (one aligned
       # from FASTQ, one given as CRAM): the T1K index is built once for all of
