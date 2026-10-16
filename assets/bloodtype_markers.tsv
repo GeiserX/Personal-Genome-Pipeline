@@ -1,0 +1,56 @@
+# bloodtype_markers.tsv: the positions step 41 (scripts/41-bloodtype.sh, the BLOODTYPE
+# processes) reads, GRCh38 (NCBI no-ALT analysis set), as a BED with extra columns: start is
+# 0-based, end 1-based, so samtools bedcov reads this file as it is (comment and header lines removed).
+#
+# kind site: one variant that defines a blood group antigen. ref and alt are the VCF alleles
+#   (left-aligned, + strand); ref_means and alt_means are what each allele gives. The variants
+#   and their antigens are the ones the ISBT allele tables define, as packaged by RBCeq2 2.4.4
+#   (database v2.5.1, MIT licence, Australian Red Cross Lifeblood; PyPI sdist sha256
+#   fbc0864d7c1365aace98900d6b86b51b700a6f63a63b5769b7fe28e5e55bea56). Every position and REF
+#   was checked against Ensembl GRCh38 and its dbSNP id. The HPA rows come from dbSNP through
+#   Ensembl GRCh38: that RBCeq2 database lists the HPA variants at their GRCh37 positions.
+# kind region: read depth for the RhD copy number: the RHD gene, its ten exons (Ensembl
+#   ENST00000328664) and two flanks outside the common RHD deletion (RHD*01N.01).
+# caveat: why a short-read call at that site is less certain (confidence low in the table).
+chrom	start	end	kind	system	name	ref	alt	ref_means	alt_means	hgvs	rsid	caveat
+chr9	133257520	133257521	site	ABO	ABO_261	T	TC	O.01 (c.261delG)	no c.261delG	ABO c.261delG	rs8176719	
+chr9	133255928	133255929	site	ABO	ABO_802	C	T	not O.02	O.02	ABO c.802G>A	rs41302905	
+chr9	133255927	133255928	site	ABO	ABO_803	C	G	A	B	ABO c.803G>C	rs8176747	
+chr9	133255934	133255935	site	ABO	ABO_796	G	T	A	B	ABO c.796C>A	rs8176746	
+chr9	133255668	133255669	site	ABO	ABO_1061	CG	C	A1	A2	ABO c.1061delC	rs56392308	a deletion in a run of C: short-read calls are less reliable here
+chr1	25300924	25300925	site	RhD	RHD_PSI_DUP	T	TCTTACTGGGTTTTATTGCAGACAGACTACCACATGAA		RHD*08N.01	RHD c.487-19_504dup		
+chr1	25301067	25301068	site	RhD	RHD_PSI_609	G	A		RHD*08N.01	RHD c.609G>A	rs114032679	
+chr1	25408710	25408711	site	RhCE	RHCE_307	G	A	c	C	RHCE c.307C>T	rs676785	RHCE exon 2 of a C allele is RHD-like: short reads can place it on RHD
+chr1	25390873	25390874	site	RhCE	RHCE_676	C	G	e	E	RHCE c.676G>C	rs609320	
+chr7	142957920	142957921	site	Kell	KEL_578	G	A	k	K	KEL c.578C>T	rs8176058	
+chr7	142954266	142954267	site	Kell	KEL_841	G	A	Kpb	Kpa	KEL c.841C>T	rs8176059	
+chr7	142943025	142943026	site	Kell	KEL_1790	A	G	Jsb	Jsa	KEL c.1790T>C	rs8176038	
+chr1	159205563	159205564	site	Duffy	FY_125	G	A	Fya	Fyb	ACKR1 c.125G>A	rs12075	
+chr1	159204892	159204893	site	Duffy	FY_GATA	T	C		no red cell expression	ACKR1 c.-67T>C	rs2814778	
+chr1	159205703	159205704	site	Duffy	FY_265	C	T		Fyb weak (FY*X)	ACKR1 c.265C>T	rs34599082	
+chr18	45739553	45739554	site	Kidd	JK_838	G	A	Jka	Jkb	SLC14A1 c.838G>A	rs1058396	
+chr4	144120566	144120567	site	MNS	GYPA_59	A	G	N	M	GYPA c.59T>C	rs7682260	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls
+chr4	143999442	143999443	site	MNS	GYPB_143	G	A	s	S	GYPB c.143C>T	rs7683365	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls
+chr19	44812187	44812188	site	Lutheran	LU_230	G	A	Lub	Lua	BCAM c.230G>A	rs28399653	
+chr17	44251252	44251253	site	Diego	DI_2561	G	A	Dib	Dia	SLC4A1 c.2561C>T	rs2285644	
+chr12	14840504	14840505	site	Dombrock	DO_793	C	T	Dob	Doa	ART4 c.793G>A	rs11276	
+chr7	30912042	30912043	site	Colton	CO_134	C	T	Coa	Cob	AQP1 c.134C>T	rs28362692	
+chr17	47283363	47283364	site	HPA-1	HPA1_176	T	C	1a	1b	ITGB3 c.176T>C	rs5918	
+chr17	4933085	4933086	site	HPA-2	HPA2_482	C	T	2a	2b	GP1BA c.482C>T	rs6065	
+chr17	44375696	44375697	site	HPA-3	HPA3_2621	A	C	3a	3b	ITGA2B c.2621T>G	rs5911	
+chr17	47284586	47284587	site	HPA-4	HPA4_506	G	A	4a	4b	ITGB3 c.506G>A	rs5917	
+chr5	53062926	53062927	site	HPA-5	HPA5_1600	G	A	5a	5b	ITGA2 c.1600G>A	rs1801106	
+chr6	73783708	73783709	site	HPA-15	HPA15_2108	A	C	15b	15a	CD109 c.2108C>A	rs10455097	
+chr1	25199999	25260000	region	RhD	RHD_FLANK_UP					flank 12 kb upstream of RHD, outside the RHD deletion		
+chr1	25334999	25360000	region	RhD	RHD_FLANK_DOWN					flank downstream of RHD (TMEM50A), outside the RHD deletion		
+chr1	25272392	25330445	region	RhD	RHD_GENE					RHD, first to last base (ENST00000328664)		
+chr1	25272508	25272695	region	RhD	RHD_EX1					RHD exon 1		
+chr1	25284572	25284759	region	RhD	RHD_EX2					RHD exon 2		
+chr1	25290640	25290791	region	RhD	RHD_EX3					RHD exon 3		
+chr1	25300945	25301093	region	RhD	RHD_EX4					RHD exon 4		
+chr1	25301519	25301686	region	RhD	RHD_EX5					RHD exon 5		
+chr1	25303321	25303459	region	RhD	RHD_EX6					RHD exon 6		
+chr1	25306595	25306729	region	RhD	RHD_EX7					RHD exon 7		
+chr1	25316999	25317079	region	RhD	RHD_EX8					RHD exon 8		
+chr1	25321888	25321962	region	RhD	RHD_EX9					RHD exon 9		
+chr1	25328897	25330445	region	RhD	RHD_EX10					RHD exon 10		

@@ -384,6 +384,27 @@ def main():
         check("no haplocheck file: the report says it was not checked",
               "Contamination (haplocheck): not checked" in render(h)[1])
 
+        # 9b. step 41: the blood group table
+        b = os.path.join(work, "blood", "S")
+        put(f"{b}/bloodtype/S_bloodtype.tsv", "system\tphenotype\tgenotype\tconfidence\tnote\n"
+            "ABO\tA1\tA1/O.01\thigh\t\nRhD\tD-\tRHD deleted/RHD deleted (RHD copies by read depth 0.02)\thigh\t\n"
+            "Kell\tK-k+ Kp(a-b+) Js(a-b+)\tk/k Kpb/Kpb Jsb/Jsb\tmedium\tx\n")
+        summ_b, txt_b, html_b = render(b)
+        bd = summ_b["sections"]["bloodtype"]
+        check("blood groups: read, with ABO and RhD picked out", bd["state"] == "ok" and bd["data"].get("abo") == "A1"
+              and bd["data"].get("rhd") == "D-" and len(bd["data"].get("systems", [])) == 3, bd)
+        check("blood groups: step 41 is a run-all step (a result older than the run can be stale)",
+              bd["step"] == "41" and "41" in collect_summary.RUN_ALL_STEPS, bd["step"])
+        check("blood groups: the summary still passes the schema",
+              not validate.validate(schema, json.loads(json.dumps(summ_b))),
+              validate.validate(schema, json.loads(json.dumps(summ_b))))
+        put(f"{b}/bloodtype/S_bloodtype.tsv", "system\tantigens\nABO\tA\n")
+        bad_b = render(b)[0]["sections"]["bloodtype"]
+        check("blood groups: a table without the columns is unreadable, not empty",
+              bad_b["state"] == "unreadable" and "phenotype" in (bad_b["note"] or ""), bad_b)
+        check("blood groups: a sample without step 41 lists it as not run",
+              "Blood groups (predicted)" in render(d)[0]["not_run"], render(d)[0]["not_run"])
+
         # 10. step 33 with the declared sex as somalier's pedigree
         head = ("#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\t"
                 "gt_depth_mean\tn_hom_ref\tn_het\tn_hom_alt\tp_middling_ab\tX_depth_mean\tX_n\tX_hom_ref\t"

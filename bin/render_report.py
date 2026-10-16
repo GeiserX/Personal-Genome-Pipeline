@@ -396,6 +396,12 @@ def text_report(s):
         w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
         w("")
 
+    if head("bloodtype", "Blood Groups (predicted from the genome)"):
+        for x in S["bloodtype"]["data"]["systems"]:
+            w(f"  {x['system']:<9} {x['phenotype']:<34} {x['genotype']:<28} ({x['confidence']})")
+        w(f"  {BLOODTYPE_NOTE}")
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -544,6 +550,20 @@ def contamination_text(d):
     word = {"YES": "YES, two mtDNA haplogroups in the reads (another person's DNA?)", "NO": "no",
             "ND": "not determined"}.get(s, s)
     return f"{word} (level {d.get('contamination_level', '.')})"
+
+
+BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
+                  "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
+                  "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+def bloodtype_body(d):
+    """The blood group card: one row per system, then what the prediction is."""
+    rows = "".join(f"<tr><td>{E(x['system'])}</td><td>{E(x['phenotype'])}</td><td>{E(x['genotype'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("systems", []))
+    return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
+            "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
+            + rows + "</table>", small_note(BLOODTYPE_NOTE)]
 
 
 def stat(label, value):
@@ -764,6 +784,8 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))]))
+    if S.get("bloodtype", MISSING)["state"] != "missing":
+        a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", ".")))), small_note(TELOMERE_NOTE)]))
 

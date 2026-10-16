@@ -57,6 +57,7 @@ nextflow run main.nf \
 #    --tools '...,cram_archive'                writes a checked CRAM beside each BAM (docs/34-cram-archive.md)
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
+#    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
 #    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
 #    With pharmcat, PGX_CONSENSUS gives PharmCAT the HLA types of hla_typing and a CYP2D6 call only when
 #    pypgx and cyrius agree (docs/36-pgx-consensus.md); PharmCAT then waits for those BAM steps.
@@ -186,6 +187,7 @@ results/
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
 │   ├── mito/               # Mitochondrial variant calls, the haplogroup from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
+│   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls
 │   ├── telomere/           # Telomere length estimation
