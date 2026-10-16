@@ -54,6 +54,10 @@ Checks:
  12. the raw-data export (step 40): both reports show how many chip sites
      got a genotype, the '--' reasons, the two files and the privacy note;
      without the step's table there is no card and no text section.
+ 13. the couple card (step 39), from a table bin/couple_report.py wrote:
+     both reports name the partner, the shared gene with its chance for a
+     child and both partners' findings, and point to a genetic counsellor;
+     without the table there is no card and no text section.
 
 Run: python3 tests/test_render_report.py
 """
@@ -450,6 +454,38 @@ def main():
         os.utime(f"{d}/traits/S_traits.tsv", None)
         check("traits: newer than the run -> not stale",
               collect_summary.collect("S", d)["sections"]["traits"]["state"] == "ok")
+
+        # 13. couple card (step 39)
+        import couple_report
+        genes = couple_report.read_genes(os.path.join(REPO, "assets", "carrier_genes.tsv"))
+        g = genes["NAGA"]
+        pos = (g["start"] + g["end"]) // 2
+        cv = ("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+              "chr22\t%d\t1\tA\tG\t.\tPASS\tGENEINFO=NAGA:4668;CLNSIG=Pathogenic;"
+              "CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n")
+        c = f"{work}/couple"
+        put(f"{c}/ped.tsv", "sample\tsex\tfather\tmother\tpartner\nP1\tfemale\t.\t.\tP2\nP2\tmale\t.\t.\tP1\n")
+        put(f"{c}/P1.vcf", cv % pos)
+        put(f"{c}/P2.vcf", cv % (pos + 5))
+        couple_report.main(["screen", "--pedigree", f"{c}/ped.tsv", "--genes", os.path.join(REPO, "assets", "carrier_genes.tsv"),
+                            "--clinvar", f"P1={c}/P1.vcf", "--clinvar", f"P2={c}/P2.vcf", "--out-dir", f"{c}/out"])
+        d = f"{c}/P2"
+        put(f"{d}/couple/P2_couple_carrier.tsv", open(f"{c}/out/P2_couple_carrier.tsv").read())
+        summ = collect_summary.collect("P2", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        card_c = html.split("<h2>Couple Carrier Screen</h2>", 1)[-1].split("<h2>", 1)[0]
+        want = ("Partner: P1", "Shared: NAGA (Schindler disease): 1 in 4 per pregnancy",
+                "This sample: chr22:%d A&gt;G het" % (pos + 5), "P1: chr22:%d A&gt;G het, Pathogenic, 3 stars" % pos,
+                "genetic counsellor")
+        check("couple: the card names the partner, the shared gene, its chance, both findings and the counsellor",
+              all(w in card_c for w in want), card_c)
+        check("couple: the text report says the same",
+              all(w.replace("&gt;", ">") in txt for w in want) and "## Couple Carrier Screen (step 39)" in txt, txt)
+        os.remove(f"{d}/couple/P2_couple_carrier.tsv")
+        summ = collect_summary.collect("P2", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("couple: without the table there is no card and no text section",
+              "Couple Carrier Screen" not in html and "Couple Carrier Screen" not in txt)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

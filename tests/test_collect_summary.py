@@ -65,6 +65,12 @@ Checks:
      without a whole-number 'called' row, or with a '--' reason without a
      whole-number count, is unreadable, not a zero or a reason left out; an
      older table whose step was skipped in the latest run is stale.
+ 20. step 39's couple table (bin/couple_report.py's columns): the partner,
+     the shared and X-linked genes with each side's findings from this
+     sample's point of view, the one-partner count; a table naming another
+     couple, or without a column, is unreadable; a table without rows names
+     no partner; a single sample without the step has no "not run" line for
+     it (the screen needs two people).
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -720,6 +726,45 @@ def main():
         check("step 40: an older table whose step was skipped is stale", ce["state"] == "stale", ce)
         check("step 40 summary validates", not validate.validate(schema, json.loads(json.dumps(summ_e))),
               validate.validate(schema, json.loads(json.dumps(summ_e))))
+
+        # 20. step 39, the couple table
+        import couple_report
+        c_ = os.path.join(work, "couple", "B")
+        head = "\t".join(couple_report.TABLE_COLUMNS) + "\n"
+
+        def crow(gene, result, risk, fa, fb):
+            r = {"gene": gene, "inheritance": "AR", "lists": "ACMG", "condition": f"{gene} disease", "result": result,
+                 "offspring_risk": risk, "partner_a": "A", "findings_a": fa, "partner_b": "B", "findings_b": fb,
+                 "explanation": "x"}
+            return "\t".join(r[k] for k in couple_report.TABLE_COLUMNS) + "\n"
+        put(f"{c_}/couple/B_couple_carrier.tsv", head + crow("NAGA", "shared", "1 in 4 per pregnancy", "a-snv", "b-snv")
+            + crow("FMR1", "x_linked", "A: sons 1 in 2", "a-repeat", ".") + crow("UGT1A1", "one_partner", "none shared", ".", "b-only"))
+        summ_c = collect_summary.collect("B", c_)
+        cs = summ_c["sections"]["couple"]
+        check("step 39: partner A, one shared gene with B's own findings first, one X-linked, one partner-only",
+              cs["state"] == "ok" and cs["step"] == "39" and cs["data"]["partner"] == "A"
+              and [x["gene"] for x in cs["data"]["shared"]] == ["NAGA"] and cs["data"]["shared"][0]["own"] == "b-snv"
+              and cs["data"]["shared"][0]["partner_findings"] == "a-snv" and cs["data"]["x_linked"][0]["gene"] == "FMR1"
+              and cs["data"]["one_partner"] == 1, cs)
+        txt_c, html_c = render_report.text_report(summ_c), render_report.html_report(summ_c)
+        check("step 39: both reports give the shared gene with its chance and the counselling note",
+              all("Shared: NAGA (NAGA disease): 1 in 4 per pregnancy" in t and "genetic counsellor" in t for t in (txt_c, html_c)),
+              txt_c)
+        check("step 39 summary validates", not validate.validate(schema, json.loads(json.dumps(summ_c))),
+              validate.validate(schema, json.loads(json.dumps(summ_c))))
+        put(f"{c_}/couple/B_couple_carrier.tsv", head + crow("NAGA", "shared", "1 in 4", "x", "y").replace("\tB\t", "\tC\t"))
+        cs = collect_summary.collect("B", c_)["sections"]["couple"]
+        check("step 39: a table of another couple is unreadable", cs["state"] == "unreadable", cs)
+        put(f"{c_}/couple/B_couple_carrier.tsv", "gene\tresult\nNAGA\tshared\n")
+        cs = collect_summary.collect("B", c_)["sections"]["couple"]
+        check("step 39: a table without the columns is unreadable", cs["state"] == "unreadable", cs)
+        put(f"{c_}/couple/B_couple_carrier.tsv", head)
+        cs = collect_summary.collect("B", c_)["sections"]["couple"]
+        check("step 39: a table without rows names no partner and counts nothing",
+              cs["state"] == "ok" and cs["data"]["partner"] is None and cs["data"]["shared"] == [], cs)
+        check("step 39: a single sample without the step has no not-run line for it",
+              render(d)[0]["sections"]["couple"]["state"] == "missing"
+              and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
