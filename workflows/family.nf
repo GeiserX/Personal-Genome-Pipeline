@@ -16,17 +16,23 @@
       WHATSHAP_PED    phase the children of complete trios by inheritance
       FAMILY_REPORT   allele origin per child, de novo candidates (both
                       parents sequenced), compound heterozygotes, the report
+      COUPLE_CARRIER  the carrier screen of two partners (step 39): only
+                      when the pedigree marks two members as partners and
+                      main.nf hands their ClinVar hits over
 
-    Everything is published under <outdir>/family/. docs/multi-sample.md
-    describes the pedigree, the outputs and the limits.
+    Everything is published under <outdir>/family/, and each partner's copy
+    of the couple table under <outdir>/<id>/couple/. docs/multi-sample.md
+    describes the pedigree, the outputs and the limits; docs/39-couple.md the
+    couple screen.
 
-    Equivalent to: scripts/38-family.sh
+    Equivalent to: scripts/38-family.sh and scripts/39-couple.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
 include { FAMILY_PREPARE; GLNEXUS; GLNEXUS_VCF } from '../modules/local/glnexus/main'
 include { FAMILY_RELATE; FAMILY_CHECK         } from '../modules/local/somalier/main'
 include { WHATSHAP_PED; FAMILY_REPORT         } from '../modules/local/whatshap_ped/main'
+include { COUPLE_CARRIER                      } from '../modules/local/couple/main'
 
 workflow FAMILY {
 
@@ -38,6 +44,10 @@ workflow FAMILY {
     ch_reference      // channel: val(path) — reference FASTA
     ch_reference_fai  // channel: val(path) — reference .fai
     ch_par_bed        // channel: val(path) — assets/par_grch38.bed
+    ch_couple_outputs // channel: path — the partners' ClinVar hits, Delly VCF, ExpansionHunter VCF and SMN1
+                      //   table, named <id>_*; empty when the pedigree marks no partners
+    ch_carrier_genes  // channel: val(path) — assets/carrier_genes.tsv
+    ch_exons          // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
 
     main:
     // One list of the members, sorted by id, so every task sees them in
@@ -67,15 +77,24 @@ workflow FAMILY {
         ch_par_bed
     )
 
+    // The couple screen reads each partner's own step outputs, not the joint
+    // call: one task for every couple of the pedigree, once those are all
+    // there. No output (no partners) means no task.
+    COUPLE_CARRIER(
+        ch_pedigree, ch_ids, ch_sexes, ch_couple_outputs.collect(sort: true),
+        ch_carrier_genes, ch_exons, ch_par_bed
+    )
+
     ch_versions = Channel.empty().mix(
         FAMILY_PREPARE.out.versions, GLNEXUS.out.versions, GLNEXUS_VCF.out.versions,
         FAMILY_RELATE.out.versions, FAMILY_CHECK.out.versions, WHATSHAP_PED.out.versions,
-        FAMILY_REPORT.out.versions
+        FAMILY_REPORT.out.versions, COUPLE_CARRIER.out.versions
     )
 
     emit:
     vcf           = GLNEXUS_VCF.out.vcf              // [family.vcf.gz, tbi]
     relationships = FAMILY_CHECK.out.relationships   // relationships.tsv
     report        = FAMILY_REPORT.out.report         // family_report.md
+    couple_tables = COUPLE_CARRIER.out.partner_tables  // <id>_couple_carrier.tsv of each partner (a list per task)
     versions      = ch_versions
 }
