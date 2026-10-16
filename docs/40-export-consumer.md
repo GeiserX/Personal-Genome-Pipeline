@@ -31,6 +31,8 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 A site is dropped from the table, with its reason in `reference/consumer/23andme_v5_dropped_dbsnp<build>.tsv`, when it has no rsID (23andMe's own `i` numbers, about 17,800 sites), dbSNP has no SNV for it, dbSNP places it at two positions or on another chromosome, or neither strand of its GRCh37 base is one of dbSNP's alleles. A site whose GRCh37 base is on the other strand in GRCh38 is written on the GRCh37 strand. A pseudoautosomal site, which dbSNP lists on chrX and chrY, keeps the chromosome of the list. The list numbers its MT sites the way hg19's chrM does, which is one or two bases off the rCRS; the table gives them dbSNP's rCRS position, the same in GRCh37 and GRCh38.
 
+With the pinned list and dbSNP b157 the table keeps 614,138 sites and drops 24,325: 17,829 with no rsID, 4,408 that are not an SNV in dbSNP, 2,069 that dbSNP merged or withdrew, and 19 that sit on another chromosome in GRCh38. The build reads dbSNP once, in about 22 minutes on a 20-core server, with under 2 GB of memory (page cache included) of the 4 GB its container gets; the download before it depends on your link to NCBI. Both inputs are checked against their pins, so the table is always the same: `CONSUMER_SITES_TABLE_SHA256` holds the sha256 of its content, and `setup.sh` and `validate-setup.sh` warn when a table differs from it.
+
 ## Input
 
 - `${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz` from step 03. A sample with a VCF alone has no gVCF: run step 03 again from the BAM, or give the gVCF of the same calls.

@@ -303,7 +303,11 @@ install_yleaf_data() {
 # takes the GRCh38 position from dbSNP instead of a liftover and lists every
 # site it drops with the reason. grep first keeps the lines of the list's
 # rsIDs, so Python reads about 600,000 lines instead of more than a billion.
-# The dbSNP file is deleted once the table is built.
+# Each rsID is matched with the tabs around it, which is the whole ID column;
+# never with -w, whose word check made GNU grep read 30 MB in over 20 minutes
+# with 620,000 patterns.
+# The dbSNP file is deleted once the table is built. The table built is then
+# compared with CONSUMER_SITES_TABLE_SHA256: a difference is a warning.
 install_consumer_sites() {
   local dir="${GENOME_DIR}/reference/consumer" tpl db out dropped
   out="${dir}/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
@@ -319,17 +323,23 @@ install_consumer_sites() {
     return 1
   fi
   db="${dir}/dbsnp_${CONSUMER_DBSNP_BUILD}_GRCh38.vcf.gz"
-  echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
-  if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
-    echo "[WARN] Could not download dbSNP ${CONSUMER_DBSNP_BUILD}. Run this command again: the download resumes."
-    return 1
+  # fetch renames a download to its name only after the md5 matched, so a file
+  # under that name is whole: a run after a failed build reuses it.
+  if [ -s "$db" ]; then
+    echo "dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 already downloaded: ${db}"
+  else
+    echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
+    if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
+      echo "[WARN] Could not download dbSNP ${CONSUMER_DBSNP_BUILD}. Run this command again: the download resumes."
+      return 1
+    fi
   fi
   echo "Building the site table (reads the whole dbSNP file once)..."
   # The table is written to reference/consumer/, outside any sample directory.
   # shellcheck disable=SC2016  # $1 to $5 expand in the container's shell
   if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 4g "$PYTHON_IMAGE" bash -euo pipefail -c '
-      gzip -dc "$1" | cut -f3 | grep "^rs" > "$3.ids"
-      gzip -dc "$2" | LC_ALL=C grep -Fwf "$3.ids" \
+      gzip -dc "$1" | cut -f3 | grep "^rs" | sed "s/.*/\t&\t/" > "$3.ids"
+      gzip -dc "$2" | LC_ALL=C grep -Ff "$3.ids" \
         | python3 /pgp-bin/export_consumer.py build-sites --template "$1" --dbsnp - --out "$3" --dropped "$4" --source "$5"
       rm -f "$3.ids"' _ "$(cpath "$tpl")" "$(cpath "$db")" "$(cpath "$out")" "$(cpath "$dropped")" \
       "23andme2vcf ${CONSUMER_SITES_COMMIT} 23andme_v5_hg19_ref.txt.gz; dbSNP ${CONSUMER_DBSNP_BUILD} GCF_000001405.40"; then
@@ -338,7 +348,16 @@ install_consumer_sites() {
     return 1
   fi
   rm -f "$db"
-  echo "[OK] Site table of step 40: ${out} (dropped sites and their reasons: ${dropped})"
+  # Both inputs were checked against their pins, so the table must be the one
+  # the pin was taken from. A difference means build-sites changed since then.
+  local got
+  got=$(consumer_sites_digest "$out")
+  if [ "$got" = "$CONSUMER_SITES_TABLE_SHA256" ]; then
+    echo "[OK] Site table of step 40: ${out}, the same as the pinned build (dropped sites and their reasons: ${dropped})"
+  else
+    echo "[WARN] Site table of step 40: ${out} differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
+    echo "       The inputs matched their pins, so bin/export_consumer.py build-sites changed since the pin was taken. Step 40 uses the table."
+  fi
 }
 
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------

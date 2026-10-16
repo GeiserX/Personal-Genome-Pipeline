@@ -594,7 +594,11 @@ else
   fi
   CONSUMER_SITES="${GENOME_DIR}/reference/consumer/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
   if [ -s "$CONSUMER_SITES" ] && gzip -t "$CONSUMER_SITES" 2>/dev/null; then
-    pass "Site table of the raw-data export (opt-in step 40, dbSNP ${CONSUMER_DBSNP_BUILD}): present"
+    if [ "$(consumer_sites_digest "$CONSUMER_SITES")" = "$CONSUMER_SITES_TABLE_SHA256" ]; then
+      pass "Site table of the raw-data export (opt-in step 40, dbSNP ${CONSUMER_DBSNP_BUILD}): present, the same as the pinned build"
+    else
+      warn "Site table ${CONSUMER_SITES} differs from the pinned build (CONSUMER_SITES_TABLE_SHA256): it was built by another version of the pipeline. Step 40 uses it; to rebuild it, remove it and run ./scripts/setup.sh --consumer-sites ${GENOME_DIR}"
+    fi
   elif [ -e "$CONSUMER_SITES" ]; then
     fail "Site table ${CONSUMER_SITES} is damaged: remove it and run ./scripts/setup.sh --consumer-sites ${GENOME_DIR}"
   else
