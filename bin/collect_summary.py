@@ -80,7 +80,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "35b", "37", "40", "04b"}
+                 "27", "29", "30", "31", "32", "35b", "37", "40", "41", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -942,6 +942,18 @@ def sec_consumer_export(d, s):
                "file_ancestrydna": data.get("file_ancestrydna") or ".",
                "no_call_reasons": {k[len("no_call: "):]: int(v) for k, v in data.items()
                                    if k.startswith("no_call: ") and v.isdigit()}}
+def sec_bloodtype(d, s):
+    """Step 41's table: one row per blood group system, predicted from the genome."""
+    p = first_existing(d, [f"bloodtype/{s}_bloodtype.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if not rows or not {"system", "phenotype", "confidence"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no system, phenotype and confidence columns, or no row")
+    systems = [{"system": r["system"], "phenotype": r["phenotype"] or ".", "genotype": r.get("genotype") or ".",
+                "confidence": r["confidence"] or "."} for r in rows]
+    by = {x["system"]: x["phenotype"] for x in systems}
+    return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
 
 
 def sec_mito(d, s):
@@ -1316,6 +1328,7 @@ SECTIONS = [
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
+    ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),

@@ -42,7 +42,12 @@ Checks:
      estimate gets a card that says Not run, and no text section.
   9. the paralog card of step 35b is left out when the step did not run, and
      a result older than a run in which step 35b failed is marked Stale.
- 10. the raw-data export (step 40): both reports show how many chip sites
+  10. the blood group card (step 41): every system's row in the HTML table and
+     the text report, ABO and RhD on top, the "predicted, not typed" caption;
+     the card is absent when step 41 did not run; and neither the reports nor
+     bin/bloodtype_report.py say anything about transfusion or donation (the
+     table is information).
+ 11. the raw-data export (step 40): both reports show how many chip sites
      got a genotype, the '--' reasons, the two files and the privacy note;
      without the step's table there is no card and no text section.
 
@@ -52,6 +57,7 @@ import glob
 import gzip
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -370,7 +376,7 @@ def main():
         check("paralogs: a result older than a run where step 35b failed is stale, with its PMS2 row",
               summ["sections"]["paralogs"]["state"] == "stale" and 'badge-yellow">Stale<' in card_p
               and "<td>PMS2</td><td>2</td>" in card_p, card_p)
-        # 10. raw-data export card
+        # 11. raw-data export card
         d = f"{work}/consumer/S"
         summ = collect_summary.collect("S", d)
         txt, html = render_report.text_report(summ), render_report.html_report(summ)
@@ -389,6 +395,30 @@ def main():
               and all(w_ in txt for w_ in want), txt)
         check("raw-data export: the HTML card has every line", "<h2>Raw-Data Export (23andMe v5 layout)</h2>" in html
               and all(render_report.E(w_) in html for w_ in want), html)
+
+        # 10. blood groups
+        d = f"{work}/blood/S"
+        put(f"{d}/bloodtype/S_bloodtype.tsv", "system\tphenotype\tgenotype\tconfidence\tnote\n"
+            "ABO\tO\tO.01/O.01\thigh\t\nRhD\tD+\tRHD/RHD (RHD copies by read depth 1.78)\thigh\t\n"
+            "Duffy\tFy(a+b-)\tFY*A/FY*B GATA\thigh\tc.-67T>C\nHPA-1\tHPA-1(a+b+)\t1a/1b\thigh\t\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("blood groups: the text section has every system",
+              "## Blood Groups (predicted from the genome)" in txt
+              and all(x in txt for x in ("ABO       O ", "RhD       D+ ", "Duffy     Fy(a+b-) ", "HPA-1     HPA-1(a+b+) ")), txt)
+        check("blood groups: the HTML card has ABO, RhD and the table",
+              "<h2>Blood Groups (predicted)</h2>" in html and "<td>Fy(a+b-)</td>" in html
+              and "<td>FY*A/FY*B GATA</td>" in html and ">D+</span>" in html, html[-3000:])
+        check("blood groups: both reports say it is predicted, not typed from blood",
+              txt.count("not typed from blood") == 1 and html.count("not typed from blood") == 1)
+        nothing = collect_summary.collect("S", f"{work}/telomere/S")
+        check("blood groups: no card without step 41", "Blood Groups" not in render_report.html_report(nothing))
+        words = re.compile(r"transfus|donat|donor", re.I)
+        said = [n for n, t in (("text report", txt), ("HTML report", html),
+                               ("bin/bloodtype_report.py", open(os.path.join(REPO, "bin", "bloodtype_report.py")).read()))
+                if words.search(t)]
+        check("blood groups: nothing about transfusion or donation", not said, said)
+        check("control: the wording check finds the word", bool(words.search("for a transfusion")))
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
