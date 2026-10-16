@@ -40,10 +40,12 @@ Checks:
      reports with its 95% range, the depth ratio and the population-level
      note; a woman shows the allele-fraction line too; a sample without the
      estimate gets a card that says Not run, and no text section.
-  9. the traits card (step 42): both reports carry the not-a-diagnosis
-     note; a traits table older than the latest run-all.sh run, whose step
-     42 was skipped in it, is shown as stale in both reports, and one newer
-     than the run is not.
+  9. the paralog card of step 35b is left out when the step did not run, and
+     a result older than a run in which step 35b failed is marked Stale.
+  10. the traits card (step 42): both reports carry the not-a-diagnosis
+      note; a traits table older than the latest run-all.sh run, whose step
+      42 was skipped in it, is shown as stale in both reports, and one newer
+      than the run is not.
 
 Run: python3 tests/test_render_report.py
 """
@@ -354,7 +356,22 @@ def main():
         card_m = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1].split("<h2>", 1)[0]
         check("mosaic: no estimate, the card says Not run and the text has no section",
               'badge-gray">Not run<' in card_m and "## Mosaic loss" not in txt, card_m)
-        # 9. traits card
+        # 9. paralog card (step 35b): hidden when the step did not run; a
+        # result older than a run in which step 35b failed is marked Stale
+        check("paralogs: no card when step 35b did not run", "Paralog Genes (Paraphase)" not in html)
+        d = f"{work}/paralogs/S"
+        put(f"{d}/paralogs/S_paraphase_copy_number.tsv",
+            "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+            "pms2\tPMS2\t2\tcalled\t.\t4\t60\t30\n")
+        os.utime(f"{d}/paralogs/S_paraphase_copy_number.tsv", (1, 1))
+        put(f"{d}/logs/run_status.tsv", "meta\tstarted_epoch\t1000\nstep\t35b\tfailed\n")
+        summ = collect_summary.collect("S", d)
+        html = render_report.html_report(summ)
+        card_p = html.split("<h2>Paralog Genes (Paraphase)</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("paralogs: a result older than a run where step 35b failed is stale, with its PMS2 row",
+              summ["sections"]["paralogs"]["state"] == "stale" and 'badge-yellow">Stale<' in card_p
+              and "<td>PMS2</td><td>2</td>" in card_p, card_p)
+        # 10. traits card
         import time
         import traits_report
         d = f"{work}/traits/S"

@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an HLA allele
+import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -79,7 +80,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "37", "42", "04b"}
+                 "27", "29", "30", "31", "32", "35b", "37", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -346,6 +347,45 @@ def sec_cyrius(d, s):
     rows = read_tsv(p)
     r = rows[0] if rows else {}
     return p, {"genotype": r.get("Genotype", "") or "none", "filter": r.get("Filter", "")}
+
+
+# The Paraphase regions the report shows gene by gene, in this order; the
+# others are counted.
+PARALOG_REGIONS = ("smn1", "hba", "rccx", "GBA", "pms2", "strc", "ncf1", "OTOA")
+
+
+def sec_paralogs(d, s):
+    """Step 35b (Paraphase, PacBio HiFi): the genes of PARALOG_REGIONS, a
+    count of the other regions, the variant rows per region, and SMN1 beside
+    step 35's Parascopy call when that table is there too."""
+    p = first_existing(d, [f"paralogs/{s}_paraphase_copy_number.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if rows and not {"region", "gene", "copy_number", "status"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks the region, gene, copy_number or status column")
+    genes = [{"region": r["region"], "gene": r["gene"], "copy_number": r["copy_number"],
+              "status": r["status"], "detail": r.get("detail") or "."}
+             for r in rows if r["region"] in PARALOG_REGIONS]
+    genes.sort(key=lambda g: PARALOG_REGIONS.index(g["region"]))
+    others = [r for r in rows if r["region"] not in PARALOG_REGIONS]
+    variants = {}
+    vp = os.path.join(os.path.dirname(p), f"{s}_paraphase_variants.tsv")
+    if os.path.isfile(vp):
+        for r in read_tsv(vp):
+            variants[r.get("region", "")] = variants.get(r.get("region", ""), 0) + 1
+    smn1 = next((g["copy_number"] for g in genes if g["gene"] == "SMN1"), None)
+    smn1 = int(smn1) if smn1 and smn1.isdigit() else None
+    parascopy = None
+    pp = os.path.join(os.path.dirname(p), f"{s}_smn_copy_number.tsv")
+    if os.path.isfile(pp):
+        parascopy = paraphase_report.parascopy_smn1(pp)
+    return p, {"genes": genes,
+               "other_regions": len(others),
+               "other_regions_called": sum(1 for r in others if r["status"] == "called"),
+               "variants": variants,
+               "smn1": {"paraphase": smn1, "parascopy": parascopy,
+                        "agree": paraphase_report.compare_smn1(smn1, parascopy)}}
 
 
 def sec_hla(d, s):
@@ -1264,6 +1304,7 @@ SECTIONS = [
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),
     ("cyrius", "Cyrius (CYP2D6)", "21", sec_cyrius),
+    ("paralogs", "Paralog genes (Paraphase, PacBio HiFi)", "35b", sec_paralogs),
     ("hla", "HLA typing (T1K)", "08", sec_hla),
     ("prs", "Polygenic risk scores", "25", sec_prs),
     ("manta", "Structural variants (Manta)", "04", sec_manta),

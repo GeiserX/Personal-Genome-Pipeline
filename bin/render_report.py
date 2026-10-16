@@ -355,6 +355,12 @@ def text_report(s):
             w(f"  Step 36: {verdict}")
         w("")
 
+    if head("paralogs", "Paralog Genes (Paraphase, PacBio HiFi)"):
+        for line in paralog_lines(S["paralogs"]["data"]):
+            w(f"  {line}")
+        w(f"  {PARALOG_NOTE}")
+        w("")
+
     if head("hla", "HLA Typing (T1K)"):
         for l in S["hla"]["data"]["loci"]:
             w(f"    {l['gene']:<8} {hla_text(l)}")
@@ -542,6 +548,35 @@ CSS = """
   .footer table { font-size: 12px; color: #666; margin-top: 8px; }
   @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
 """
+
+
+PARALOG_NOTE = ("Paraphase reads PacBio HiFi reads only. A 'no call' means it saw one haplotype and the depth "
+                "did not settle one copy or two. A research estimate, not a diagnostic test: confirm a result "
+                "(for example an HBA deletion or one SMN1 copy) with a clinical laboratory.")
+
+
+def smn1_text(m):
+    """SMN1 from Paraphase beside Parascopy (step 35), with the verdict."""
+    pc = m.get("parascopy")
+    if pc is None:
+        return None
+    pp = m.get("paraphase")
+    verdict = {"agree": "the two agree", "disagree": "they DISAGREE: check both before using either"}.get(
+        m.get("agree"), "no comparison: one of them has no call")
+    return f"Paraphase {pp if pp is not None else 'no call'}, Parascopy {pc['text']}: {verdict}"
+
+
+def paralog_lines(d):
+    """Lines of the text report's paralog section."""
+    out = [f"{g['gene']}: {g['copy_number']} ({g['status']})" + ("" if g["detail"] in ("", ".") else f"; {g['detail']}")
+           for g in d.get("genes", [])]
+    smn = smn1_text(d.get("smn1") or {})
+    if smn:
+        out.append(f"SMN1 by both tools: {smn}")
+    if d.get("other_regions"):
+        out.append(f"Other Paraphase regions: {d['other_regions']} ({d['other_regions_called']} with a call)")
+    out.append(f"Variants on phased haplotypes: {sum(d.get('variants', {}).values())}")
+    return out
 
 
 ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
@@ -754,6 +789,22 @@ def html_report(s):
     a(card(S["haplogroup"], "Mitochondrial Haplogroup",
            [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
             stat("Contamination (haplocheck)", E(contamination_text(hg)))]))
+    if S.get("paralogs", MISSING)["state"] != "missing":
+        pg = S["paralogs"]["data"]
+        rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['copy_number'])}</td><td>{E(g['status'])}</td>"
+                       f"<td>{E(g['detail'])}</td></tr>" for g in pg.get("genes", []))
+        body = [stat("Status", done_badge(S["paralogs"]))]
+        if rows:
+            body.append("    <table><tr><th>Gene</th><th>Copy number</th><th>Call</th><th>Detail</th></tr>"
+                        + rows + "</table>")
+        smn = smn1_text(pg.get("smn1") or {})
+        if smn:
+            body.append(stat("SMN1 by both tools", E(smn)))
+        if pg.get("other_regions"):
+            body.append(stat("Other Paraphase regions", f"{pg['other_regions']} ({pg['other_regions_called']} with a call)"))
+        body.append(stat("Variants on phased haplotypes", sum(pg.get("variants", {}).values())))
+        body.append(small_note(PARALOG_NOTE))
+        a(card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
     if S.get("y_haplogroup", MISSING)["state"] != "missing":
         yh = S["y_haplogroup"]["data"]
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
