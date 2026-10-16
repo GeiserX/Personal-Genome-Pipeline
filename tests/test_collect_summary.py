@@ -50,6 +50,10 @@ Checks:
      their own section, with the numbers as numbers; a table without them
      (written before the estimate) leaves the section missing, not broken; a
      mosaic_call that is not one of the four is unreadable.
+ 17. step 35b (Paraphase): the named genes in order, the other regions
+     counted, the variant rows, SMN1 beside step 35's Parascopy call (agree,
+     disagree, or no line without that table) in both reports, and a folder
+     without the step lists it under Steps Not Run.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -537,6 +541,49 @@ def main():
               "B*57:01:01 (quality 0)" in html_q and html_q.count("not passed to PharmCAT</span>") == 1
               and "HLA typing from short-read WGS is approximate" in html_q)
         check("HLA summary validates", not validate.validate(schema, json.loads(json.dumps(summ_q))))
+
+        # 17. step 35b: the Paraphase genes, SMN1 beside Parascopy, both reports
+        q = os.path.join(work, "paralogs", "S")
+        put(f"{q}/paralogs/S_paraphase_copy_number.tsv",
+            "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+            "smn1\tSMN1\t2\tcalled\t.\t4\t120\t31\n"
+            "smn1\tSMN2\t.\tno call\tone haplotype seen\t4\t120\t31\n"
+            "hba\tHBA1\t2\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost\t3\t90\t31\n"
+            "hba\tHBA2\t1\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost\t3\t90\t31\n"
+            "TNXB\tTNXB\t4\tcalled\tcopies of the whole gene family\t4\t60\t31\n"
+            "SSX2\tSSX2,SSX2B\t.\tno call\t.\t.\t0\t31\n")
+        put(f"{q}/paralogs/S_paraphase_variants.tsv", "region\tchrom\tpos\tref\talt\tfilter\thaplotypes\tsupport\n"
+            "hba\tchr16\t172900\tC\tT\tPASS\thba_hba2hap1\thba_hba2hap1:20/21\n")
+        put(f"{q}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\t"
+            "psCN_filter\tpsCN\tpsCN_qual\thomologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t3\t40\t"
+            "PASS\t1,2\t33,30\tchr5:70049000-70077000:-\n")
+        summ_p, txt_p, html_p = render(q)
+        pd = summ_p["sections"]["paralogs"]
+        check("paralogs: read, HBA1 then HBA2 kept in order, two other regions counted (one called)",
+              pd["state"] == "ok" and [g["gene"] for g in pd["data"]["genes"]] == ["SMN1", "SMN2", "HBA1", "HBA2"]
+              and pd["data"]["other_regions"] == 2 and pd["data"]["other_regions_called"] == 1, pd)
+        check("paralogs: SMN1 Paraphase 2 against Parascopy 1 is a disagreement",
+              pd["data"]["smn1"]["paraphase"] == 2 and pd["data"]["smn1"]["parascopy"]["cn"] == 1
+              and pd["data"]["smn1"]["agree"] == "disagree", pd["data"]["smn1"])
+        check("paralogs: the text report lists HBA2 1 with the deletion, and the disagreement",
+              "  HBA2: 1 (called); genotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost" in txt_p
+              and "SMN1 by both tools: Paraphase 2, Parascopy 1 (quality 33, filter PASS): they DISAGREE" in txt_p
+              and "Variants on phased haplotypes: 1" in txt_p, txt_p)
+        card_p = html_p.split("<h2>Paralog Genes (Paraphase)</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("paralogs: the HTML card has the HBA2 row and the SMN1 line",
+              "<td>HBA2</td><td>1</td>" in card_p and "they DISAGREE" in card_p and "PacBio HiFi reads only" in card_p,
+              card_p)
+        check("paralogs summary validates", not validate.validate(schema, json.loads(json.dumps(summ_p))))
+        put(f"{q}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\t"
+            "psCN_filter\tpsCN\tpsCN_qual\thomologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\t"
+            "PASS\t2,2\t33,30\tchr5:70049000-70077000:-\n")
+        check("paralogs: Parascopy 2 agrees", "Parascopy 2 (quality 33, filter PASS): the two agree" in render(q)[1])
+        os.remove(f"{q}/paralogs/S_smn_copy_number.tsv")
+        _, txt_p2, _ = render(q)
+        check("paralogs: without step 35's table there is no SMN1 comparison line", "SMN1 by both tools" not in txt_p2,
+              txt_p2)
+        check("paralogs: a folder without step 35b lists it under Steps Not Run",
+              "  - Paralog genes (Paraphase, PacBio HiFi)" in render(os.path.join(work, "mito", "S"))[1])
 
         # 14. a step that failed in the latest run
         f_ = os.path.join(work, "failed", "S")
