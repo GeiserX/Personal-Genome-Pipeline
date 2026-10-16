@@ -1,7 +1,7 @@
 # Step 2: Alignment (FASTQ to BAM)
 
 ## What This Does
-Aligns raw sequencing reads against the GRCh38 human reference genome and marks duplicate reads. Produces a sorted, duplicate-marked, indexed BAM file.
+Aligns raw sequencing reads against the GRCh38 human reference genome and marks duplicate reads. Produces a sorted, duplicate-marked, indexed BAM file, and checks that the BAM holds every read that went in.
 
 ## Why
 Alignment maps each 150bp sequencing read to its position in the human genome. Required for all downstream variant calling.
@@ -58,18 +58,40 @@ minimap2 -a -x sr -t 16 \
 | samtools sort -u -@ 16 -m 1G - \
 | samtools markdup -@ 16 --write-index - "${OUT%.bam}.tmp.bam##idx##${OUT%.bam}.tmp.bam.bai"
 
-# Step 3: Check, then rename into place. test -s stops if markdup wrote no
-# index. markdup finishes the index just before the BAM's last block, so
-# touch makes the index the newer file.
+# Step 3: Check the BAM. test -s stops if markdup wrote no index.
 samtools quickcheck "${OUT%.bam}.tmp.bam"
 test -s "${OUT%.bam}.tmp.bam.bai"
+
+# Step 4: Every read that went in is in the BAM: its primary records (not
+# secondary 0x100, not supplementary 0x800) equal the FASTQ records of R1
+# plus R2. The script counts the FASTQ while minimap2 reads it.
+IN=$(( $(gzip -cd ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R1.fastq.gz \
+         ${GENOME_DIR}/${SAMPLE}/fastq/${SAMPLE}_R2.fastq.gz | wc -l) / 4 ))
+PRIMARY=$(samtools view -c -F 0x900 "${OUT%.bam}.tmp.bam")
+[ "$PRIMARY" -eq "$IN" ] || { echo "the BAM lost $((IN - PRIMARY)) reads"; exit 1; }
+
+# Step 5: Rename into place. markdup finishes the index just before the
+# BAM's last block, so touch makes the index the newer file.
 touch "${OUT%.bam}.tmp.bam.bai"
 mv "${OUT%.bam}.tmp.bam" "$OUT" && mv "${OUT%.bam}.tmp.bam.bai" "${OUT}.bai"
 
 # Output: ~80-120 GB BAM + ~9 MB BAI index
 ```
 
-The script writes the BAM and the index under temporary names, both in the one pass of `samtools markdup`, and renames them only after `samtools quickcheck` passes, so a run that is killed never puts a partial BAM under `${SAMPLE}_sorted.bam`. A BAM and index from an earlier complete run stay in place, and later steps still read them. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
+The script writes the BAM and the index under temporary names, both in the one pass of `samtools markdup`, and renames them only after `samtools quickcheck` and the read count pass, so a run that is killed never puts a partial BAM under `${SAMPLE}_sorted.bam`. A BAM and index from an earlier complete run stay in place, and later steps still read them. `run-all.sh` starts the pipeline from that BAM when it and its `.bai` exist (and `validate-setup.sh` checks its header against the reference); with no BAM it starts from the FASTQ, and the pipeline aligns them. An index built by an older version (`reference/GRCh38.mmi`, default preset) is no longer used and can be deleted.
+
+## Read count
+minimap2 and bwa-mem2 write every read they are given once, mapped or not, and `samtools fixmate`, `sort` and `markdup` drop none. So the finished BAM holds exactly as many primary records as R1 and R2 together hold FASTQ records. The unit is reads, not pairs: both reads of a pair count, which is also what fastp's `summary.after_filtering.total_reads` counts.
+
+Steps 02 and 02a count the records of the two FASTQ files they align, with one `gzip` per file running beside the aligner, and count the BAM's primary records with `samtools view -c -F 0x900` once markdup is done. That second count reads the whole BAM once more. When the two differ, the step exits 1, keeps no new BAM, and leaves an earlier BAM in place. The message says how many reads are missing and how many records each FASTQ had. The Nextflow task `ALIGN_MINIMAP2` applies the same rule and fails, without a retry.
+
+Both counts go to `qc/<sample>_read_count.tsv` (step 02a: `qc/<sample>_bwamem2_read_count.tsv`), a key/value table with `input_reads`, `input_source`, `primary_records`, `missing_reads` and `read_count_check` (`ok` or `mismatch`). The Nextflow pipeline publishes the same table under `<outdir>/<sample>/qc/`. The text report (`generate-report.sh`) and the HTML report of step 24 show the two counts in their quality-control block, and the missing reads in red. The pipeline's own `HTML_REPORT` task does not get the table yet, so the Nextflow HTML report leaves the counts out.
+
+One way to lose reads without an error: when R1 and R2 hold different numbers of records, minimap2 and bwa-mem2 stop at the end of the shorter file with only a warning. The e2e case `align-read-count-gate-1` cuts R2 of a 20,000-pair slice to 12,000 records: minimap2 writes 24,000 records of the 32,000 reads, and step 02 and `ALIGN_MINIMAP2` stop.
+
+For an input you know is odd, `READ_COUNT_CHECK=warn` keeps the BAM with a warning, and the table says `mismatch`. In the Nextflow pipeline the same switch is `ext.read_count_check = 'warn'` on `ALIGN_MINIMAP2`, in a config file given with `-c` ([Troubleshooting](troubleshooting.md#the-bam-lost-reads)).
+
+`validate-setup.sh` runs the same comparison for an existing BAM when fastp's report sits beside it (`fastq_trimmed/<sample>_fastp.json`): the BAM's primary records against fastp's `total_reads`, an `[OK]` or a `[FAIL]` line (`[WARN]` under `READ_COUNT_CHECK=warn`). That covers a BAM aligned before this check. Counting reads the whole BAM, a few minutes on a 30x one. A BAM aligned from the untrimmed reads (`FASTQ_SUBDIR=fastq`) is not comparable with fastp's count: when `qc/<sample>_read_count.tsv`, not older than the BAM, says its `input_source` is `fastq/...`, `validate-setup.sh` skips the comparison with an `[INFO]` line, because step 02 already compared that BAM with its own input. A BAM from the raw reads with no such table, aligned before this check, still gets the `[FAIL]`: realign it with step 02, or go on with `READ_COUNT_CHECK=warn`.
 
 ## Resource Requirements
 - CPU: 16+ cores recommended (`THREADS`)

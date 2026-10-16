@@ -14,6 +14,11 @@
     the reference lacks (a vendor scaffold, ClinVar's NT_ contigs), and a
     record on a contig the other file lacks cannot match anyway.
 
+    Two neighbouring records that can be one allele are also matched as their
+    combined allele (bin/clinvar_join_adjacent.awk): a matched combined
+    record is a hit of its own (INFO/PGP_JOINED_FROM) and its parts are
+    marked PGP_PART_OF.
+
     Equivalent to: scripts/06-clinvar-screen.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -105,6 +110,26 @@ process CLINVAR_SCREEN {
         exit 1
     fi
 
+    # Step 2b: the combined alleles. A caller can write one complex allele (a
+    # delins) as two records a few bases apart on the same haplotype; matched
+    # one by one, the parts can hit single-submitter ClinVar records and miss
+    # the better reviewed record for the whole allele. bcftools norm -m +any
+    # joins only records at the same position, so clinvar_join_adjacent.awk
+    # (on the task PATH) builds the allele of each pair of neighbours that can
+    # be one allele, with the reference bases between the parts
+    # (+fill-from-fasta), left-aligned the way ClinVar is. The candidates
+    # matched below are the split calls plus these.
+    JOIN_AWK="\$(command -v clinvar_join_adjacent.awk)"
+    bcftools view ${meta.id}_pass.vcf.gz \\
+        | awk -v mode=prepare -f "\${JOIN_AWK}" \\
+        | bcftools +fill-from-fasta --no-version -Ov - -- -c INFO/PGP_JOIN_SEQ -f ${reference} \\
+        | awk -v mode=finish -f "\${JOIN_AWK}" \\
+        | bcftools norm --no-version -c w -d exact -f ${reference} -Oz -o joined.vcf.gz -
+    bcftools index -t joined.vcf.gz
+    bcftools concat --no-version -a -Oz -o candidates.vcf.gz ${meta.id}_pass.vcf.gz joined.vcf.gz
+    bcftools index -t candidates.vcf.gz
+    echo "Combined alleles of neighbouring records: \$(bcftools index -n joined.vcf.gz)"
+
     # Step 3: sample records matching a ClinVar allele, with ClinVar's ID, gene,
     # significance and review status copied on, kept only where the genotype
     # carries an ALT allele. The match is by allele, so after the split above a
@@ -114,11 +139,15 @@ process CLINVAR_SCREEN {
     # call such as ./1 that does carry the ALT allele.
     # (annotate -a needs an indexed target, so the shared records go to a file first.)
     # --no-version: no command line, with ClinVar's absolute path, in the header.
-    bcftools isec --no-version -n=2 -w1 -Oz -o shared.vcf.gz ${meta.id}_pass.vcf.gz "\${CLINVAR_NORM}"
+    # Last, the tag pass marks each part of a matched combined allele
+    # (PGP_PART_OF), and two hits in one gene that can be one allele but
+    # matched no combined record (PGP_ONE_ALLELE).
+    bcftools isec --no-version -n=2 -w1 -Oz -o shared.vcf.gz candidates.vcf.gz "\${CLINVAR_NORM}"
     bcftools index -t shared.vcf.gz
     bcftools annotate --no-version -a "\${CLINVAR_NORM}" --pair-logic exact \\
         -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou shared.vcf.gz \\
-        | bcftools view --no-version -i 'GT~"[1-9]"' -Ov -o ${meta.id}_clinvar_hits.vcf
+        | bcftools view --no-version -i 'GT~"[1-9]"' -Ov -o hits_untagged.vcf
+    awk -v mode=tag -f "\${JOIN_AWK}" hits_untagged.vcf hits_untagged.vcf > ${meta.id}_clinvar_hits.vcf
 
     # The same hits as a table, one row per hit
     printf 'chrom\\tpos\\tref\\talt\\tgenotype\\tclinvar_id\\tgeneinfo\\tclnsig\\tclnrevstat\\n' > ${meta.id}_clinvar_hits.tsv
