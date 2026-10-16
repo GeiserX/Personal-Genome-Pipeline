@@ -11,7 +11,7 @@
 #   and _R2; the VCF alone. Kept in <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; cyrius, parascopy, paraphase and y_haplogroup run only when named; paraphase needs the BAM
+#   (only these --tools names; cyrius, parascopy, paraphase, y_haplogroup and bloodtype run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on); KIR=true (KIR genes with HLA);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
@@ -133,6 +133,8 @@ plan "26b Fine-grained ancestry" ancestry_fine "$(if [ "$AF" = none ]; then echo
   && NF+=(--ancestry_fine_panel "$AF")
 YD="${G}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup || need "${YD}/hg38/new_positions.txt")" && NF+=(--yleaf_data "$YD")
+# Step 41 (blood groups) is opt-in and listed only when TOOLS names it; without a BAM its RhD is not determined.
+if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")
