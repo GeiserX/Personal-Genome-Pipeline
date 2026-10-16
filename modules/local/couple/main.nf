@@ -50,7 +50,8 @@ process COUPLE_CARRIER {
     def files = outputs instanceof List ? outputs : [outputs]
     def kinds = [clinvar: '_clinvar_hits.vcf', delly: '_sv.vcf.gz', eh: '_eh.vcf', smn: '_smn_copy_number.tsv']
     def args = files.collect { f ->
-        def n = f.name
+        // A staged input's name is its stage path (in/<file>): keep the file name only
+        def n = f.name.tokenize('/')[-1]
         def k = kinds.find { kind, suffix -> n.endsWith(suffix) && ids.contains(n.substring(0, n.length() - suffix.length())) }
         k ? "--${k.key} ${n.substring(0, n.length() - k.value.length())}=in/${n}" : ''
     }.findAll { a -> a }.sort().join(' ')
