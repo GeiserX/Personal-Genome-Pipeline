@@ -31,6 +31,8 @@ include { REPORTING    } from './workflows/reporting'
 include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
+include { TRAITS_SITES } from './modules/local/traits/main'
+include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 
 /*
@@ -73,6 +75,7 @@ workflow {
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
         'bloodtype',
+        'traits',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -555,6 +558,29 @@ workflow {
         BAM_ANALYSIS.out.mito_vcf
     )
 
+    // ─── Traits panel (traits, step 42) ─────────────────────────────────
+    // The genotype at each position of assets/traits.tsv, read from the gVCF
+    // only: a sample without one is skipped with a warning, because its
+    // variant-only VCF cannot tell a reference match from a position
+    // without reads.
+    ch_traits          = Channel.empty()
+    ch_traits_versions = Channel.empty()
+    if (tools_list.contains('traits')) {
+        ch_traits_table = Channel.value(file("${projectDir}/assets/traits.tsv", checkIfExists: true))
+        ch_vcf
+            .map { meta, _vcf, _idx -> [meta.id, meta] }
+            .join(ch_gvcf.map { meta, _gvcf, _gidx -> [meta.id, true] }, remainder: true)
+            .filter { _id, meta, has_gvcf -> meta != null && !has_gvcf }
+            .subscribe { id, _meta, _has_gvcf ->
+                log.warn "traits skipped for ${id}: it reads the gVCF, and the samplesheet row has none " +
+                         "(add the gvcf and gvcf_index columns, or start from the BAM or FASTQ)."
+            }
+        TRAITS_SITES(ch_gvcf, ch_traits_table, ch_reference, ch_reference_fai)
+        TRAITS(TRAITS_SITES.out.genotypes, ch_traits_table)
+        ch_traits          = TRAITS.out.traits
+        ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS.out.versions)
+    }
+
     // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
     // The CRAM of every BAM, checked against it, published beside it; a row
     // given as CRAM already has one. The BAM is never deleted here.
@@ -643,6 +669,7 @@ workflow {
         .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -670,6 +697,7 @@ workflow {
             REPORTING.out.versions,
             CRAM_TO_BAM.out.versions,
             ch_cram_versions,
+            ch_traits_versions,
             ch_bloodtype_versions
         )
         .map { f -> f.text }

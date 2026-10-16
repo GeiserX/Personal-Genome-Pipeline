@@ -45,6 +45,10 @@ EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, a
 TELOMERE_UNIT = "intratelomeric reads per million reads with 48-52% GC"
 TELOMERE_NOTE = (f"Relative telomere content ({TELOMERE_UNIT}), not a telomere length: compare it only with "
                  "samples of a similar age sequenced on the same platform (docs/10-telomere-analysis.md).")
+TRAITS_NOTE = ("Each reading is what the cited studies found on average in the people they studied, not a "
+               "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
+APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
+                "their APOE result; docs/42-traits.md explains it.")
 PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry populations and predict less well for "
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
@@ -174,6 +178,44 @@ def prs_note(d):
 
 
 # --- text ------------------------------------------------------------------------
+
+def traits_text(d, sample):
+    """The traits section of the text report: the rows read, the ones not read,
+    and the APOE lines last, after a warning."""
+    out = [f"  Read: {d['called']}  No genotype at the position: {d['not_covered']}  Other allele: {d['other_allele']}"]
+    for r in d["rows"]:
+        if r["status"] == "not_covered":
+            continue
+        mark = " [ancestry]" if r["ancestry"] == "yes" else ""
+        out.append(f"  {r['trait']} ({r['gene']} {r['rsid']}): {r['genotype']}{mark}. {r['reading']} (PMID {r['pmids']})")
+    missing = [r["rsid"] for r in d["rows"] if r["status"] == "not_covered"]
+    if missing:
+        out.append(f"  Not read (no genotype in the gVCF): {', '.join(missing)}")
+    out.append(f"  {TRAITS_NOTE} Notes per row: traits/{sample}_traits.tsv")
+    if d.get("apoe"):
+        out.append(f"  {APOE_WARNING}")
+        for r in d["apoe"]:
+            out.append(f"    {r['trait']} ({r['rsid']}): {r['genotype']}. {r['reading']}")
+    return out
+
+
+def traits_html(d, sample):
+    """The traits card's body: one table row per table row read or not read,
+    and the APOE lines folded away behind a warning."""
+    def tr(r):
+        anc = " " + badge("ancestry", "yellow") if r["ancestry"] == "yes" else ""
+        return (f"<tr><td>{E(r['trait'])}</td><td>{E(r['gene'])}<br><span style=\"font-size:12px;color:#666\">"
+                f"{E(r['rsid'])}</span></td><td>{E(r['genotype'])}{anc}</td><td>{E(r['reading'])}"
+                f"<br><span style=\"font-size:12px;color:#666\">{E(r['note'])}</span></td><td>PMID {E(r['pmids'])}</td></tr>")
+    head = "      <tr><th>Trait</th><th>Gene</th><th>Genotype</th><th>Reading</th><th>Source</th></tr>"
+    body = [stat("Read / no genotype / other allele", E(f"{d['called']} / {d['not_covered']} / {d['other_allele']}")),
+            "    <table>", head] + ["      " + tr(r) for r in d["rows"]] + ["    </table>", small_note(TRAITS_NOTE)]
+    if d.get("apoe"):
+        body += [f"    <details><summary>{E(APOE_WARNING)} Open to show it.</summary>", "    <table>", head]
+        body += ["      " + tr(r) for r in d["apoe"]] + ["    </table></details>"]
+    body.append(small_note(f"Every row with its note: traits/{sample}_traits.tsv"))
+    return body
+
 
 def text_report(s):
     S = s["sections"]
@@ -406,6 +448,10 @@ def text_report(s):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
         w(f"  Heteroplasmic (AF 0.05 to 0.95): {d['heteroplasmic']}")
+        w("")
+
+    if head("traits", "Traits Panel (step 42)"):
+        out.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -823,6 +869,10 @@ def html_report(s):
         a(card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
                ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
+
+    tr_sec = S.get("traits", MISSING)
+    a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
+           full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"
