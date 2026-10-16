@@ -74,6 +74,7 @@ workflow {
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
+        'consumer_export',
         'bloodtype',
         'traits',
     ]
@@ -103,6 +104,7 @@ workflow {
         ['parascopy',        'parascopy_data',     '--parascopy_data'],
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
+        ['consumer_export',  'consumer_sites',     '--consumer_sites'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -680,6 +682,7 @@ workflow {
         .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }

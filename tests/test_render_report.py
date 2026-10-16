@@ -55,6 +55,9 @@ Checks:
       note; a traits table older than the latest run-all.sh run, whose step
       42 was skipped in it, is shown as stale in both reports, and one newer
       than the run is not.
+ 12. the raw-data export (step 40): both reports show how many chip sites
+     got a genotype, the '--' reasons, the two files and the privacy note;
+     without the step's table there is no card and no text section.
 
 Run: python3 tests/test_render_report.py
 """
@@ -411,6 +414,25 @@ def main():
         check("paralogs: a result older than a run where step 35b failed is stale, with its PMS2 row",
               summ["sections"]["paralogs"]["state"] == "stale" and 'badge-yellow">Stale<' in card_p
               and "<td>PMS2</td><td>2</td>" in card_p, card_p)
+        # 12. raw-data export card
+        d = f"{work}/consumer/S"
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        check("raw-data export: no card and no text section without the step's table",
+              "Raw-Data Export" not in txt and "Raw-Data Export" not in html)
+        put(f"{d}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t200\ncalled\t150\nno_call\t50\n"
+            "from_reference_blocks\t120\nfile_23andme\tS_23andme_v5.zip\nfile_ancestrydna\tS_ancestrydna_layout.zip\n"
+            "no_call: no gVCF record\t30\nno_call: filtered call\t20\n")
+        summ = collect_summary.collect("S", d)
+        txt, html = render_report.text_report(summ), render_report.html_report(summ)
+        want = ["Sites with a genotype: 150 of 200 (75.0%); '--' at 50",
+                "Homozygous reference from the gVCF's reference blocks: 120",
+                "consumer_export/S_23andme_v5.zip and consumer_export/S_ancestrydna_layout.zip",
+                "'--' because: no gVCF record 30; filtered call 20", "Uploading one to a service shares your genotypes"]
+        check("raw-data export: the text section has every line", "## Raw-Data Export (23andMe v5 layout)" in txt
+              and all(w_ in txt for w_ in want), txt)
+        check("raw-data export: the HTML card has every line", "<h2>Raw-Data Export (23andMe v5 layout)</h2>" in html
+              and all(render_report.E(w_) in html for w_ in want), html)
 
         # 10. blood groups
         d = f"{work}/blood/S"

@@ -7,7 +7,8 @@
     step 26), fine-grained ancestry against the panel of setup.sh
     --ancestry-fine-panel (step 26b), and the mitochondrial haplogroup (from MITO_VARIANTS' Mutect2
     calls when they exist, with the haplocheck contamination check) in
-    parallel from a single input VCF.
+    parallel from a single input VCF; and, opt-in, the consumer raw-data
+    export from the gVCF (step 40).
 
     Each module is gated on params.tools containing the tool name.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -28,6 +29,7 @@ include { ANCESTRY_FINE_ADMIXTURE } from '../modules/local/ancestry_fine/main'
 include { ANCESTRY_FINE_PHASE     } from '../modules/local/ancestry_fine/main'
 include { ANCESTRY_FINE_PAINT     } from '../modules/local/ancestry_fine/main'
 include { ANCESTRY_FINE_REPORT    } from '../modules/local/ancestry_fine/main'
+include { CONSUMER_EXPORT    } from '../modules/local/export_consumer/main'
 
 workflow CLINICAL {
 
@@ -57,6 +59,7 @@ workflow CLINICAL {
     ch_haplocheck         = Channel.empty()
     ch_ancestry_fine      = Channel.empty()
     ch_ancestry_fine_png  = Channel.empty()
+    ch_consumer_export    = Channel.empty()
 
     //
     // MODULE 1: CPSR — Cancer predisposition screening
@@ -215,6 +218,34 @@ workflow CLINICAL {
         )
     }
 
+    //
+    // CONSUMER_EXPORT: a 23andMe-layout raw-data file from the gVCF (opt-in:
+    // 'consumer_export' in --tools, with --consumer_sites). Samples without a
+    // gVCF (a row that gives a VCF alone) are skipped with a warning: a VCF
+    // has no reference calls, so most sites would be '--'.
+    //
+    if (tools_here.contains('consumer_export')) {
+        ch_export_in = ch_vcf
+            .map { meta, vcf, idx -> [meta.id, meta] }
+            .join(ch_gvcf.map { meta, gvcf, gidx -> [meta.id, gvcf, gidx] }, remainder: true)
+            .filter { row -> row[1] != null }
+            .filter { row ->
+                if (row[2] == null) {
+                    log.warn "Sample '${row[0]}': consumer_export skipped: it has no gVCF. Give the gVCF of its calls " +
+                             "in the samplesheet (gvcf, gvcf_index), or start from the BAM or the reads."
+                }
+                row[2] != null
+            }
+            .map { row -> [row[1], row[2], row[3]] }
+        CONSUMER_EXPORT(
+            ch_export_in,
+            Channel.value(file(params.consumer_sites, checkIfExists: true)),
+            Channel.value(file("${projectDir}/assets/par_grch38.bed", checkIfExists: true))
+        )
+        ch_consumer_export = CONSUMER_EXPORT.out.summary
+        ch_versions        = ch_versions.mix(CONSUMER_EXPORT.out.versions)
+    }
+
     emit:
     cpsr_html         = ch_cpsr_html
     roh_regions       = ch_roh_regions
@@ -224,5 +255,6 @@ workflow CLINICAL {
     haplocheck        = ch_haplocheck     // [meta, <id>_haplocheck.txt]
     ancestry_fine     = ch_ancestry_fine      // [meta, <id>_ancestry_fine.tsv]
     ancestry_fine_png = ch_ancestry_fine_png  // [meta, <id>_painting.png]
+    consumer_export   = ch_consumer_export // [meta, <id>_consumer_export.tsv]
     versions          = ch_versions
 }
