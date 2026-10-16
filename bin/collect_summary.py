@@ -935,13 +935,20 @@ def sec_consumer_export(d, s):
     for k in ("sites", "called", "no_call"):
         if not (data.get(k) or "").isdigit():
             raise Unreadable(f"{os.path.basename(p)} has no whole-number '{k}' row")
+    reasons = {}
+    for k, v in data.items():
+        if k.startswith("no_call: "):
+            if not (v or "").isdigit():
+                raise Unreadable(f"{os.path.basename(p)} has a '{k}' row without a whole-number count")
+            reasons[k[len("no_call: "):]] = int(v)
     return p, {"sites": int(data["sites"]), "called": int(data["called"]), "no_call": int(data["no_call"]),
                "from_reference_blocks": int(data.get("from_reference_blocks") or 0),
                "template_sites": data.get("template_sites") or ".",
                "file_23andme": data.get("file_23andme") or ".",
                "file_ancestrydna": data.get("file_ancestrydna") or ".",
-               "no_call_reasons": {k[len("no_call: "):]: int(v) for k, v in data.items()
-                                   if k.startswith("no_call: ") and v.isdigit()}}
+               "no_call_reasons": reasons}
+
+
 def sec_bloodtype(d, s):
     """Step 41's table: one row per blood group system, predicted from the genome."""
     p = first_existing(d, [f"bloodtype/{s}_bloodtype.tsv"])

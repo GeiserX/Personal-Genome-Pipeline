@@ -62,7 +62,8 @@ Checks:
      cut short, is unreadable;
      without the file the section is missing and listed as not run.
  19. step 40's summary table: its counts and '--' reasons are read; a table
-     without a whole-number 'called' row is unreadable, not a zero; an
+     without a whole-number 'called' row, or with a '--' reason without a
+     whole-number count, is unreadable, not a zero or a reason left out; an
      older table whose step was skipped in the latest run is stale.
 
 Run: python3 tests/test_collect_summary.py
@@ -707,6 +708,11 @@ def main():
         put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t\nno_call\t3\n")
         ce = collect_summary.collect("S", e_)["sections"]["consumer_export"]
         check("step 40: a table without a whole-number 'called' row is unreadable", ce["state"] == "unreadable", ce)
+        put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t7\nno_call\t3\n"
+            "no_call: filtered call\tthree\n")
+        ce = collect_summary.collect("S", e_)["sections"]["consumer_export"]
+        check("step 40: a '--' reason without a whole-number count is unreadable, not left out",
+              ce["state"] == "unreadable" and "no_call: filtered call" in (ce["note"] or ""), ce)
         put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t7\nno_call\t3\n", age_days=2)
         put(f"{e_}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - DAY}\nstep\t40\tskipped (opt-in: add consumer_export to TOOLS)\n")
         summ_e = collect_summary.collect("S", e_)
