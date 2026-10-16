@@ -57,6 +57,7 @@ nextflow run main.nf \
 #    --tools '...,cram_archive'                writes a checked CRAM beside each BAM (docs/34-cram-archive.md)
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
+#    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
 #    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
 #    With pharmcat, PGX_CONSENSUS gives PharmCAT the HLA types of hla_typing and a CYP2D6 call only when
 #    pypgx and cyrius agree (docs/36-pgx-consensus.md); PharmCAT then waits for those BAM steps.
@@ -190,6 +191,7 @@ results/
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
 │   ├── mito/               # Mitochondrial variant calls, the haplogroup from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
+│   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls
 │   ├── telomere/           # Telomere length estimation
@@ -369,7 +371,7 @@ Every task script runs under `bash -euo pipefail` (`process.shell` in `conf/base
 
 With `-profile docker` every container runs with `--network none` (`process.containerOptions` in `nextflow.config`). The steps read only their inputs, so a tool that tries to download something at run time fails instead of fetching an unpinned file. The `singularity` profile does not cut the network.
 
-One process runs on the host instead of in a container: `PRS` starts pgsc_calc, a Nextflow pipeline of its own that starts its own containers. It gets the images of `versions.env` through `conf/containers.config` (`ext.pipeline_images`, written by `scripts/ci/gen-containers-config.sh`), and gives every one of its containers `--network none`. With `--pgsc_calc <genome_dir>/tools/pgsc_calc-<release>` (setup.sh installs it with its nf-schema plugin) it runs offline; without, the task first fetches GitHub's archive of the pinned release, checked against `PGSC_CALC_SHA256`, and Nextflow the plugin.
+One process runs on the host instead of in a container: `PRS` starts pgsc_calc, a Nextflow pipeline of its own that starts its own containers. It gets the images of `versions.env` through `conf/containers.config` (`ext.pipeline_images`, written by `scripts/ci/gen-containers-config.sh`), and gives every one of its containers `-u` with your ids and `--network none`, followed by the run's own `docker.runOptions` and the `PRS` process's `containerOptions` less their user and network flags ([step 25](25-prs.md#what-the-script-does-internally)). With `--pgsc_calc <genome_dir>/tools/pgsc_calc-<release>` (setup.sh installs it with its nf-schema plugin) it runs offline; without, the task first fetches GitHub's archive of the pinned release, checked against `PGSC_CALC_SHA256`, and Nextflow the plugin.
 
 ### Cyrius, opt-in
 

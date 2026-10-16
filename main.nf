@@ -32,6 +32,7 @@ include { FAMILY       } from './workflows/family'
 include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
+include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -71,7 +72,8 @@ workflow {
         'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
-        'sample_qc', 'cram_archive', 'parascopy', 'y_haplogroup', 'html_report', 'multiqc',
+        'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
+        'bloodtype',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -124,6 +126,11 @@ workflow {
     if (tools_list.contains('parascopy') && !(params.parascopy_population in ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
         error "--parascopy_population must be one of AFR, AMR, EAS, EUR, SAS (the 1000 Genomes models), " +
               "got '${params.parascopy_population}'."
+    }
+
+    if (params.paraphase_regions && !(params.paraphase_regions.toString() ==~ /[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*/)) {
+        error "--paraphase_regions must be Paraphase region names separated by commas (e.g. smn1,hba), " +
+              "got '${params.paraphase_regions}'."
     }
 
     // cpic requires pharmcat (it parses PharmCAT JSON output)
@@ -511,7 +518,7 @@ workflow {
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
-    // mito, SMN1/SMN2, sample QC, Y haplogroup. First, because PGX reads the HLA types.
+    // mito, SMN1/SMN2, paralog genes (HiFi), sample QC, Y haplogroup. First, because PGX reads the HLA types.
     // ═══════════════════════════════════════════════════════════════════
     BAM_ANALYSIS(
         ch_bam,
@@ -527,7 +534,8 @@ workflow {
         ch_kir_dat,
         ch_parascopy_data,
         ch_parascopy_bed,
-        ch_yleaf_data
+        ch_yleaf_data,
+        ch_vcf
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -630,6 +638,27 @@ workflow {
         ch_manta_call_regions_index
     )
 
+    // ─── Blood groups (opt-in: bloodtype) ───────────────────────────────
+    // The antigens of assets/bloodtype_markers.tsv from the VCF, and RhD from
+    // the BAM's read depth. A sample without a BAM gets [] for the depth: its
+    // RhD is not determined. Equivalent to scripts/41-bloodtype.sh.
+    ch_bloodtype          = Channel.empty()
+    ch_bloodtype_versions = Channel.empty()
+    if (tools_list.contains('bloodtype')) {
+        ch_bloodtype_markers = Channel.value(file("${projectDir}/assets/bloodtype_markers.tsv", checkIfExists: true))
+        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers)
+        BLOODTYPE(
+            ch_vcf
+                .map { meta, vcf, idx -> [meta.id, meta, vcf] }
+                .join(BLOODTYPE_DEPTH.out.depth.map { meta, f -> [meta.id, f] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> [row[1], row[2], row[3] ?: []] },
+            ch_bloodtype_markers
+        )
+        ch_bloodtype          = BLOODTYPE.out.table
+        ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -654,6 +683,9 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
@@ -672,6 +704,7 @@ workflow {
         .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 
@@ -698,7 +731,8 @@ workflow {
             REPORTING.out.versions,
             CRAM_TO_BAM.out.versions,
             ch_cram_versions,
-            ch_family_versions
+            ch_family_versions,
+            ch_bloodtype_versions
         )
         .map { f -> f.text }
         .unique()

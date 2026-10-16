@@ -49,6 +49,23 @@ PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry popula
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
 
+def combined_cell(h):
+    """A ClinVar hit's combined-allele note (step 6), "" when it has none."""
+    note = h.get("combined_allele", ".")
+    return "" if note in (".", "") else note
+
+
+def cdna_text(h):
+    """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
+    c = h["cdna"]
+    if c["check"] == "flagged":
+        return (f"{c['note']} ({c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
+                f"{c['ref_reads']} ref reads clipped at an exon edge)")
+    if c["check"] == "clear":
+        return "clear"
+    return "not checked" + (f": {c['note']}" if c["note"] else "")
+
+
 def hla_text(locus):
     """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
     q = locus.get("quality") or []
@@ -89,6 +106,35 @@ def freemix_text(q):
     if q.get("contamination") == "warn":
         return f"{q['freemix']} (above {warn}: possible contamination, see docs/33-sample-qc.md{few})"
     return f"{q['freemix']} (warning above {warn}{few})"
+
+
+MOSAIC_NOTE = ("Loss of chrY in a share of the blood cells of men, and of one chrX in women, becomes more common "
+               "with age. Population studies link loss of Y with smoking and with higher rates of heart disease "
+               "and some cancers; loss of X is less studied. That is a population-level association, not a "
+               "diagnosis for one person. Below about 10% of the cells nothing can be told at 30x "
+               "(docs/33-sample-qc.md).")
+MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detected above 10%", "gray"),
+               "gain": ("an extra copy, not a loss", "yellow"), "not_estimated": ("not estimated", "gray")}
+
+
+def pct(x):
+    return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
+
+
+def mosaic_lines(q):
+    """The estimate from depth and from chrX allele fractions, one line each, as both reports print them."""
+    what = "the Y" if q.get("chrom") == "chrY" else "one X"
+    out = []
+    if isinstance(q.get("loss_depth"), (int, float)):
+        ratio = q.get("depth_ratio")
+        ratio = f"{ratio:.3f}" if isinstance(ratio, (int, float)) else "?"
+        out.append(f"From depth: estimated share of the cells that lost {what} {pct(q['loss_depth'])} (95% range "
+                   f"{pct(q.get('loss_depth_low'))} to {pct(q.get('loss_depth_high'))}); {q.get('chrom')} to "
+                   f"autosome depth ratio {ratio}, {q.get('depth_ratio_expected')} expected")
+    if isinstance(q.get("loss_af"), (int, float)):
+        out.append(f"From chrX allele fractions at {q.get('x_het_sites')} heterozygous sites: {pct(q['loss_af'])} "
+                   f"(95% range {pct(q.get('loss_af_low'))} to {pct(q.get('loss_af_high'))})")
+    return out
 
 
 def read_count_text(d):
@@ -185,6 +231,15 @@ def text_report(s):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         w("")
 
+    if head("mosaic_sex_loss"):
+        q = S["mosaic_sex_loss"]["data"]
+        w(f"  {q.get('chrom') or 'chrY or chrX'}: {MOSAIC_CALL.get(q.get('call'), (q.get('call'), ''))[0]}"
+          f" ({q.get('reason')})")
+        for line in mosaic_lines(q):
+            w(f"  {line}")
+        w(f"  {MOSAIC_NOTE}")
+        w("")
+
     if head("variants", "Variant Calling (DeepVariant)"):
         d = S["variants"]["data"]
         w(f"  Total variants: {d['total']}")
@@ -199,11 +254,16 @@ def text_report(s):
         if d["count"]:
             by = d["by_stars"]
             w("  By review status: " + ", ".join(f"{k} star{'s' if k != '1' else ''} {by[k]}" for k in ("4", "3", "2", "1", "0")))
+            if "cdna_flagged" in d:
+                w(f"  cDNA read check (alt reads clipped at exon edges): {d['cdna_flagged']} flagged")
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
+                note = combined_cell(h)
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
-                  f"{h['significance']} [{h['review_status']}] {h['stars']}*")
+                  f"{h['significance']} [{h['review_status']}] {h['stars']}*" + (f"  ({note})" if note else ""))
+                if "cdna" in h:
+                    w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -251,6 +311,12 @@ def text_report(s):
                                           else "fewer than two usable calls"))
         if verdict:
             w(f"  Step 36: {verdict}")
+        w("")
+
+    if head("paralogs", "Paralog Genes (Paraphase, PacBio HiFi)"):
+        for line in paralog_lines(S["paralogs"]["data"]):
+            w(f"  {line}")
+        w(f"  {PARALOG_NOTE}")
         w("")
 
     if head("hla", "HLA Typing (T1K)"):
@@ -328,6 +394,12 @@ def text_report(s):
     if head("y_haplogroup", "Y-Chromosome Haplogroup (Yleaf)"):
         d = S["y_haplogroup"]["data"]
         w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
+        w("")
+
+    if head("bloodtype", "Blood Groups (predicted from the genome)"):
+        for x in S["bloodtype"]["data"]["systems"]:
+            w(f"  {x['system']:<9} {x['phenotype']:<34} {x['genotype']:<28} ({x['confidence']})")
+        w(f"  {BLOODTYPE_NOTE}")
         w("")
 
     if head("mito", "Mitochondrial Variants (Mutect2)"):
@@ -438,6 +510,35 @@ CSS = """
 """
 
 
+PARALOG_NOTE = ("Paraphase reads PacBio HiFi reads only. A 'no call' means it saw one haplotype and the depth "
+                "did not settle one copy or two. A research estimate, not a diagnostic test: confirm a result "
+                "(for example an HBA deletion or one SMN1 copy) with a clinical laboratory.")
+
+
+def smn1_text(m):
+    """SMN1 from Paraphase beside Parascopy (step 35), with the verdict."""
+    pc = m.get("parascopy")
+    if pc is None:
+        return None
+    pp = m.get("paraphase")
+    verdict = {"agree": "the two agree", "disagree": "they DISAGREE: check both before using either"}.get(
+        m.get("agree"), "no comparison: one of them has no call")
+    return f"Paraphase {pp if pp is not None else 'no call'}, Parascopy {pc['text']}: {verdict}"
+
+
+def paralog_lines(d):
+    """Lines of the text report's paralog section."""
+    out = [f"{g['gene']}: {g['copy_number']} ({g['status']})" + ("" if g["detail"] in ("", ".") else f"; {g['detail']}")
+           for g in d.get("genes", [])]
+    smn = smn1_text(d.get("smn1") or {})
+    if smn:
+        out.append(f"SMN1 by both tools: {smn}")
+    if d.get("other_regions"):
+        out.append(f"Other Paraphase regions: {d['other_regions']} ({d['other_regions_called']} with a call)")
+    out.append(f"Variants on phased haplotypes: {sum(d.get('variants', {}).values())}")
+    return out
+
+
 ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
              "homozygous C282Y only, BTD and CYP27A1 two variants) are not applied here.")
 
@@ -449,6 +550,20 @@ def contamination_text(d):
     word = {"YES": "YES, two mtDNA haplogroups in the reads (another person's DNA?)", "NO": "no",
             "ND": "not determined"}.get(s, s)
     return f"{word} (level {d.get('contamination_level', '.')})"
+
+
+BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
+                  "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
+                  "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+def bloodtype_body(d):
+    """The blood group card: one row per system, then what the prediction is."""
+    rows = "".join(f"<tr><td>{E(x['system'])}</td><td>{E(x['phenotype'])}</td><td>{E(x['genotype'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("systems", []))
+    return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
+            "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
+            + rows + "</table>", small_note(BLOODTYPE_NOTE)]
 
 
 def stat(label, value):
@@ -532,6 +647,14 @@ def html_report(s):
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
+    mo = S.get("mosaic_sex_loss", MISSING)
+    q = mo["data"]
+    label, colour = MOSAIC_CALL.get(q.get("call"), (q.get("call") or "?", "gray"))
+    mo_body = [stat(q.get("chrom") or "chrY or chrX", badge(label, colour)),
+               stat("Why", f'<span style="font-weight:normal;font-size:13px">{E(q.get("reason") or "")}</span>')]
+    mo_body += [small_note(line) for line in mosaic_lines(q)] + [small_note(MOSAIC_NOTE)]
+    a(card(mo, "Mosaic Loss of Chromosome Y or X", mo_body))
+
     v = S["variants"]["data"]
     a(card(S["variants"], "Variant Calling", [stat("Total variants", v.get("total")), stat("PASS variants", v.get("pass")),
                                               stat("SNPs", v.get("snps")), stat("Indels", v.get("indels"))]))
@@ -545,6 +668,9 @@ def html_report(s):
                stat("By stars (4/3/2/1/0)", E(" / ".join(str(by.get(k, 0)) for k in ("4", "3", "2", "1", "0")))),
                stat("ClinVar file date", E(s["databases"]["clinvar_release"] or "unknown")),
                small_note(CLINVAR_FREQ_NOTE)]
+    if "cdna_flagged" in c:
+        cv_body.insert(2, stat("Flagged by the cDNA read check",
+                               badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
 
     pg = S["pharmcat"]["data"]
@@ -637,11 +763,29 @@ def html_report(s):
     a(card(S["haplogroup"], "Mitochondrial Haplogroup",
            [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
             stat("Contamination (haplocheck)", E(contamination_text(hg)))]))
+    if S.get("paralogs", MISSING)["state"] != "missing":
+        pg = S["paralogs"]["data"]
+        rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['copy_number'])}</td><td>{E(g['status'])}</td>"
+                       f"<td>{E(g['detail'])}</td></tr>" for g in pg.get("genes", []))
+        body = [stat("Status", done_badge(S["paralogs"]))]
+        if rows:
+            body.append("    <table><tr><th>Gene</th><th>Copy number</th><th>Call</th><th>Detail</th></tr>"
+                        + rows + "</table>")
+        smn = smn1_text(pg.get("smn1") or {})
+        if smn:
+            body.append(stat("SMN1 by both tools", E(smn)))
+        if pg.get("other_regions"):
+            body.append(stat("Other Paraphase regions", f"{pg['other_regions']} ({pg['other_regions_called']} with a call)"))
+        body.append(stat("Variants on phased haplotypes", sum(pg.get("variants", {}).values())))
+        body.append(small_note(PARALOG_NOTE))
+        a(card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
     if S.get("y_haplogroup", MISSING)["state"] != "missing":
         yh = S["y_haplogroup"]["data"]
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))]))
+    if S.get("bloodtype", MISSING)["state"] != "missing":
+        a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", ".")))), small_note(TELOMERE_NOTE)]))
 
@@ -690,13 +834,20 @@ def html_report(s):
         a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
+        # The combined-allele cell is empty, not '.', for a hit that is
+        # neither a combined allele nor part of one: no note is no missing data.
+        # The cDNA read check column only when step 06 wrote its table.
+        reads = "cdna_flagged" in c
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
-                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td></tr>" for h in c["hits"][:50]]
+                f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
+                f"<td>{E(combined_cell(h))}</td>"
+                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
         a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
-                "<th>Significance</th><th>Review status</th><th>Stars</th></tr>"]
+                "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
+                + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]

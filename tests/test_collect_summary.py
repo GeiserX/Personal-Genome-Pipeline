@@ -13,7 +13,10 @@ Checks:
      marked stale in the summary and in both reports; one whose step was ok, or
      that is newer than the run, is not;
   6. bin/clinvar_hits.awk and collect_summary.py give every review status the
-     same number of stars;
+     same number of stars; 6b. and the same combined-allele note to a combined
+     record, its parts and two hits that may be one allele, which both reports
+     show; 6c. step 06's cDNA read check reaches each ClinVar hit by chrom,
+     pos, ref and alt, and a hit the table lacks is not checked;
   7. a corrupt file (not gzip, or gzip with damaged data) makes its section
      'unreadable' instead of stopping the report;
   8. the secondary-findings tier lists the ClinVar hits and the rare
@@ -42,7 +45,15 @@ Checks:
      HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
  14. a section whose step failed in the latest run says Failed, not Not
      run, in the summary and both reports, also in the CYP2D6 rows;
- 15. the CPIC card counts the genes called without a function phenotype.
+ 15. the CPIC card counts the genes called without a function phenotype;
+ 16. the mosaic_* rows of the step 33 table (bin/mosaic_sex_loss.py) make
+     their own section, with the numbers as numbers; a table without them
+     (written before the estimate) leaves the section missing, not broken; a
+     mosaic_call that is not one of the four is unreadable.
+ 17. step 35b (Paraphase): the named genes in order, the other regions
+     counted, the variant rows, SMN1 beside step 35's Parascopy call (agree,
+     disagree, or no line without that table) in both reports, and a folder
+     without the step lists it under Steps Not Run.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -91,6 +102,19 @@ HITS = VCF_HEAD + (
     "chr1\t10\t1\tC\tT\t50\tPASS\tGENEINFO=GENEA:11;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
     "chr1\t20\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Likely_pathogenic;CLNREVSTAT=reviewed_by_expert_panel\tGT\t1/1\n"
     "chr2\t5\t3\tA\tG\t50\tPASS\tGENEINFO=GENEC:33;CLNSIG=Pathogenic;CLNREVSTAT=no_assertion_criteria_provided\tGT\t0|1\n")
+# Step 6 hits with the combined-allele tags of bin/clinvar_join_adjacent.awk:
+# a 2-star combined record, its two 1-star parts, a single SNV, and two hits in
+# one gene that matched no combined record.
+_CV1 = "GENEINFO=SYNTH1:1;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter"
+COMBINED_HITS = VCF_HEAD + (
+    f"chr22\t30000037\t1\tAGC\tA\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000038\t3\tGCCAT\tCATGGG\t.\tPASS\tPGP_JOINED_FROM=chr22:30000037:AGC:A|chr22:30000042:T:TGGG;"
+    "GENEINFO=SYNTH1:1;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts\tGT\t0/1\n"
+    f"chr22\t30000042\t2\tT\tTGGG\t50\tPASS\t{_CV1};PGP_PART_OF=chr22:30000038:GCCAT:CATGGG\tGT\t0/1\n"
+    "chr22\t30000210\t4\tC\tT\t50\tPASS\tGENEINFO=SYNTH2:2;CLNSIG=Pathogenic;"
+    "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t0/1\n"
+    f"chr22\t30000300\t5\tA\tG\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000305:C:T\tGT\t0/1\n"
+    f"chr22\t30000305\t6\tC\tT\t50\tPASS\t{_CV1.replace('SYNTH1', 'SYNTH3')};PGP_ONE_ALLELE=chr22:30000300:A:G\tGT\t0/1\n")
 MITO = VCF_HEAD.replace("##fileformat=VCFv4.2\n", "") + "".join(
     f"chrM\t{i}\t.\tA\tG\t.\tPASS\t.\tGT:AF\t0/1:{af}\n" for i, af in enumerate(("0.02", "0.30", "0.99", "0.05", "0.949"), 1))
 
@@ -144,12 +168,26 @@ def main():
               sec["clinvar"]["data"])
         check("ClinVar: count by stars", sec["clinvar"]["data"]["by_stars"] == {"4": 0, "3": 1, "2": 0, "1": 1, "0": 1},
               sec["clinvar"]["data"]["by_stars"])
+        # Step 06's cDNA read check, joined to each hit by chrom, pos, ref and alt;
+        # a hit the table lacks is not checked, never clear.
+        cd = os.path.join(work, "cdna", "S")
+        put(f"{cd}/clinvar/S_clinvar_hits.vcf", HITS)
+        put(f"{cd}/clinvar/S_clinvar_cdna_check.tsv",
+            "chrom\tpos\tref\talt\talt_reads\talt_clipped\tref_reads\tref_clipped\tcdna_check\tcdna_note\n"
+            "chr1\t10\tC\tT\t9\t8\t11\t0\tflagged\tpossible cDNA/transgene contamination: check the reads\n"
+            "chr1\t20\tT\tA\t9\t0\t0\t0\tclear\t\n")
+        cv = collect_summary.collect("S", cd)["sections"]["clinvar"]["data"]
+        got = {h["gene"]: (h["cdna"]["check"], h["cdna"]["note"]) for h in cv["hits"]}
+        check("cDNA check: one flagged hit, the others not checked (GENEB's alt differs from the table's row)",
+              cv["cdna_flagged"] == 1 and got["GENEA"][0] == "flagged" and got["GENEA"][1].startswith("possible cDNA")
+              and got["GENEB"] == ("not_checked", "not in the read-check table")
+              and got["GENEC"] == ("not_checked", "not in the read-check table"), got)
         check("text report: the ClinVar count line", "  Pathogenic/Likely Pathogenic hits: 3\n" in txt)
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
-        check("HTML report: one row per hit, each with a Stars cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td></tr>"), rows)
+        check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
+              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td></tr>"), rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
         check("QC: mean depth 29.5x in both reports", "Mean depth: 29.5x" in txt and "29.5x" in html,
@@ -222,6 +260,53 @@ def main():
         py_stars = [collect_summary.STARS.get(x, 0) for x in statuses]
         check("bin/clinvar_hits.awk and collect_summary.py give the same stars", awk_stars == py_stars,
               f"awk {awk_stars} python {py_stars}")
+
+        # 6b. the combined-allele note (step 6's PGP_* tags): awk and python
+        # word it the same, and both reports show it
+        cv = os.path.join(work, "combined", "S")
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
+        out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                              f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+        awk_notes = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+        summ_cv, txt_cv, html_cv = render(cv)
+        py_notes = {str(h["pos"]): h["combined_allele"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]}
+        # All three are unphased het calls: the genotype cannot say the parts
+        # share a haplotype, so the note says so (a phased pair below does not).
+        unph = "; unphased, so the parts may sit on different haplotypes"
+        want = {"30000037": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
+                "30000038": "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG" + unph,
+                "30000042": "part of a combined allele: chr22:30000038 GCCAT>CATGGG" + unph,
+                "30000210": ".",
+                "30000300": "possibly one allele with chr22:30000305 C>T: check ClinVar for a combined record",
+                "30000305": "possibly one allele with chr22:30000300 A>G: check ClinVar for a combined record"}
+        check("combined allele: the note of each hit in the summary", py_notes == want, py_notes)
+        check("combined allele: bin/clinvar_hits.awk gives the same notes", awk_notes == want, awk_notes)
+        check("combined allele: the 2-star combined record is listed before its 1-star parts",
+              [h["pos"] for h in summ_cv["sections"]["clinvar"]["data"]["hits"]][0] == 30000038,
+              summ_cv["sections"]["clinvar"]["data"]["hits"])
+        check("combined allele: the text report shows the notes",
+              f"(part of a combined allele: chr22:30000038 GCCAT>CATGGG{unph})" in txt_cv
+              and f"(combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG{unph})" in txt_cv, txt_cv)
+        cv_rows = [l for l in html_cv.splitlines() if l.strip().startswith("<tr><td>chr22")]
+        check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
+              "<th>Stars</th><th>Combined allele</th>" in html_cv
+              and any(f"<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG{unph}</td>" in r for r in cv_rows)
+              and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+        # The same hits phased (0|1, one phase set) or homozygous: both
+        # parts are on one haplotype, so the notes carry no phase caveat.
+        for gt_ in ("0|1", "1/1"):
+            put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS.replace("\tGT\t0/1\n", f"\tGT\t{gt_}\n"))
+            out = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                                  f"{cv}/clinvar/S_clinvar_hits.vcf"], capture_output=True, text=True).stdout
+            awk_g = {(l.split("\t")[2]): l.split("\t")[9] for l in out.split("\n") if l}
+            summ_g, _, _ = render(cv)
+            py_g = {str(h["pos"]): h["combined_allele"] for h in summ_g["sections"]["clinvar"]["data"]["hits"]}
+            want_g = {k: v.replace(unph, "") for k, v in want.items()}
+            check(f"combined allele: GT {gt_} gets no phase caveat, in the summary and in bin/clinvar_hits.awk",
+                  py_g == want_g and awk_g == want_g, (py_g, awk_g))
+        put(f"{cv}/clinvar/S_clinvar_hits.vcf", COMBINED_HITS)
+        check("combined allele: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_cv))),
+              validate.validate(schema, json.loads(json.dumps(summ_cv))))
 
         # 7. a corrupt file
         c = os.path.join(work, "corrupt", "S")
@@ -298,6 +383,27 @@ def main():
         os.remove(f"{h}/mito/S_haplocheck.txt")
         check("no haplocheck file: the report says it was not checked",
               "Contamination (haplocheck): not checked" in render(h)[1])
+
+        # 9b. step 41: the blood group table
+        b = os.path.join(work, "blood", "S")
+        put(f"{b}/bloodtype/S_bloodtype.tsv", "system\tphenotype\tgenotype\tconfidence\tnote\n"
+            "ABO\tA1\tA1/O.01\thigh\t\nRhD\tD-\tRHD deleted/RHD deleted (RHD copies by read depth 0.02)\thigh\t\n"
+            "Kell\tK-k+ Kp(a-b+) Js(a-b+)\tk/k Kpb/Kpb Jsb/Jsb\tmedium\tx\n")
+        summ_b, txt_b, html_b = render(b)
+        bd = summ_b["sections"]["bloodtype"]
+        check("blood groups: read, with ABO and RhD picked out", bd["state"] == "ok" and bd["data"].get("abo") == "A1"
+              and bd["data"].get("rhd") == "D-" and len(bd["data"].get("systems", [])) == 3, bd)
+        check("blood groups: step 41 is a run-all step (a result older than the run can be stale)",
+              bd["step"] == "41" and "41" in collect_summary.RUN_ALL_STEPS, bd["step"])
+        check("blood groups: the summary still passes the schema",
+              not validate.validate(schema, json.loads(json.dumps(summ_b))),
+              validate.validate(schema, json.loads(json.dumps(summ_b))))
+        put(f"{b}/bloodtype/S_bloodtype.tsv", "system\tantigens\nABO\tA\n")
+        bad_b = render(b)[0]["sections"]["bloodtype"]
+        check("blood groups: a table without the columns is unreadable, not empty",
+              bad_b["state"] == "unreadable" and "phenotype" in (bad_b["note"] or ""), bad_b)
+        check("blood groups: a sample without step 41 lists it as not run",
+              "Blood groups (predicted)" in render(d)[0]["not_run"], render(d)[0]["not_run"])
 
         # 10. step 33 with the declared sex as somalier's pedigree
         head = ("#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\toriginal_pedigree_sex\t"
@@ -436,6 +542,49 @@ def main():
               and "HLA typing from short-read WGS is approximate" in html_q)
         check("HLA summary validates", not validate.validate(schema, json.loads(json.dumps(summ_q))))
 
+        # 17. step 35b: the Paraphase genes, SMN1 beside Parascopy, both reports
+        q = os.path.join(work, "paralogs", "S")
+        put(f"{q}/paralogs/S_paraphase_copy_number.tsv",
+            "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+            "smn1\tSMN1\t2\tcalled\t.\t4\t120\t31\n"
+            "smn1\tSMN2\t.\tno call\tone haplotype seen\t4\t120\t31\n"
+            "hba\tHBA1\t2\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost\t3\t90\t31\n"
+            "hba\tHBA2\t1\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost\t3\t90\t31\n"
+            "TNXB\tTNXB\t4\tcalled\tcopies of the whole gene family\t4\t60\t31\n"
+            "SSX2\tSSX2,SSX2B\t.\tno call\t.\t.\t0\t31\n")
+        put(f"{q}/paralogs/S_paraphase_variants.tsv", "region\tchrom\tpos\tref\talt\tfilter\thaplotypes\tsupport\n"
+            "hba\tchr16\t172900\tC\tT\tPASS\thba_hba2hap1\thba_hba2hap1:20/21\n")
+        put(f"{q}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\t"
+            "psCN_filter\tpsCN\tpsCN_qual\thomologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t3\t40\t"
+            "PASS\t1,2\t33,30\tchr5:70049000-70077000:-\n")
+        summ_p, txt_p, html_p = render(q)
+        pd = summ_p["sections"]["paralogs"]
+        check("paralogs: read, HBA1 then HBA2 kept in order, two other regions counted (one called)",
+              pd["state"] == "ok" and [g["gene"] for g in pd["data"]["genes"]] == ["SMN1", "SMN2", "HBA1", "HBA2"]
+              and pd["data"]["other_regions"] == 2 and pd["data"]["other_regions_called"] == 1, pd)
+        check("paralogs: SMN1 Paraphase 2 against Parascopy 1 is a disagreement",
+              pd["data"]["smn1"]["paraphase"] == 2 and pd["data"]["smn1"]["parascopy"]["cn"] == 1
+              and pd["data"]["smn1"]["agree"] == "disagree", pd["data"]["smn1"])
+        check("paralogs: the text report lists HBA2 1 with the deletion, and the disagreement",
+              "  HBA2: 1 (called); genotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost" in txt_p
+              and "SMN1 by both tools: Paraphase 2, Parascopy 1 (quality 33, filter PASS): they DISAGREE" in txt_p
+              and "Variants on phased haplotypes: 1" in txt_p, txt_p)
+        card_p = html_p.split("<h2>Paralog Genes (Paraphase)</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("paralogs: the HTML card has the HBA2 row and the SMN1 line",
+              "<td>HBA2</td><td>1</td>" in card_p and "they DISAGREE" in card_p and "PacBio HiFi reads only" in card_p,
+              card_p)
+        check("paralogs summary validates", not validate.validate(schema, json.loads(json.dumps(summ_p))))
+        put(f"{q}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\t"
+            "psCN_filter\tpsCN\tpsCN_qual\thomologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\t"
+            "PASS\t2,2\t33,30\tchr5:70049000-70077000:-\n")
+        check("paralogs: Parascopy 2 agrees", "Parascopy 2 (quality 33, filter PASS): the two agree" in render(q)[1])
+        os.remove(f"{q}/paralogs/S_smn_copy_number.tsv")
+        _, txt_p2, _ = render(q)
+        check("paralogs: without step 35's table there is no SMN1 comparison line", "SMN1 by both tools" not in txt_p2,
+              txt_p2)
+        check("paralogs: a folder without step 35b lists it under Steps Not Run",
+              "  - Paralog genes (Paraphase, PacBio HiFi)" in render(os.path.join(work, "mito", "S"))[1])
+
         # 14. a step that failed in the latest run
         f_ = os.path.join(work, "failed", "S")
         put(f"{f_}/clinvar/S_clinvar_hits.vcf", HITS)
@@ -457,6 +606,41 @@ def main():
               and "failed (step 32)" in card_c and "FAILED: step 32 failed" in card_c, card_c)
         check("failed summary validates", not validate.validate(schema, json.loads(json.dumps(summ_f))),
               validate.validate(schema, json.loads(json.dumps(summ_f))))
+
+        # 16. mosaic loss of chrY or chrX, from the step 33 table
+        mo = os.path.join(work, "mosaic", "S")
+        base = "key\tvalue\nsample\tS\ninferred_sex\tmale\nsex_check\tok\n"
+        put(f"{mo}/qc/S_sample_qc.tsv", base)
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: a table without the rows leaves the section missing", sec_m["state"] == "missing", sec_m)
+        rows = {"sex": "male", "sex_from": "reads", "chrom": "chrY", "depth_ratio": "0.351",
+                "depth_ratio_expected": "0.5", "depth_blocks": "109", "loss_depth": "0.298",
+                "loss_depth_low": "0.293", "loss_depth_high": "0.303", "x_het_sites": "", "loss_af": "",
+                "loss_af_low": "", "loss_af_high": "", "floor": "0.100", "call": "detected",
+                "reason": "the low end of the 95% range is above 10%: a share of the cells lost the Y"}
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in rows.items()))
+        summ_m = collect_summary.collect("S", mo)
+        sec_m = summ_m["sections"]["mosaic_sex_loss"]
+        check("mosaic: the rows make an ok section from step 33", sec_m["state"] == "ok" and sec_m["step"] == "33"
+              and sec_m["source"] == "qc/S_sample_qc.tsv", sec_m)
+        check("mosaic: numbers are numbers, blanks are None, the call and reason stay text",
+              sec_m["data"]["loss_depth"] == 0.298 and sec_m["data"]["loss_af"] is None
+              and sec_m["data"]["x_het_sites"] is None and sec_m["data"]["call"] == "detected"
+              and sec_m["data"]["chrom"] == "chrY", sec_m["data"])
+        check("mosaic: the sample QC section still reads the same table",
+              summ_m["sections"]["sample_qc"]["data"].get("sex_check") == "ok", summ_m["sections"]["sample_qc"])
+        check("mosaic summary validates", not validate.validate(schema, json.loads(json.dumps(summ_m))),
+              validate.validate(schema, json.loads(json.dumps(summ_m))))
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "".join(f"mosaic_{k}\t{v}\n" for k, v in
+                                                       dict(rows, loss_depth="inf", loss_depth_high="-inf").items()))
+        summ_i = collect_summary.collect("S", mo)
+        sec_m = summ_i["sections"]["mosaic_sex_loss"]
+        check("mosaic: inf is no value (JSON null), never infinity", sec_m["data"]["loss_depth"] is None
+              and sec_m["data"]["loss_depth_high"] is None and "Infinity" not in json.dumps(summ_i), sec_m["data"])
+        put(f"{mo}/qc/S_sample_qc.tsv", base + "mosaic_call\tmaybe\n")
+        sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
+        check("mosaic: an unknown mosaic_call is unreadable", sec_m["state"] == "unreadable"
+              and "mosaic_call" in (sec_m["note"] or ""), sec_m)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

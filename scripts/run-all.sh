@@ -11,8 +11,9 @@
 #   and _R2; the VCF alone. Kept in <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; cyrius, parascopy and y_haplogroup run only when named); KIR=true (KIR genes with HLA);
-#   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, ANCESTRY_PANEL (--ancestry_ref; none: raw
+#   (only these --tools names; cyrius, parascopy, paraphase, y_haplogroup and bloodtype run only when named; paraphase needs the BAM
+#   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on); KIR=true (KIR genes with HLA);
+#   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores) and PGSC_CALC_DIR (--pgsc_calc) as for the single steps; the panel and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
@@ -54,7 +55,7 @@ need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: $
 optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 35 37 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 35 35b 37 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}") TOOL_OF[${1%% *}]=$2; printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -117,6 +118,7 @@ plan "21 Cyrius CYP2D6" cyrius "$(optin cyrius || { [ "$(cat "${CY}/INSTALLED" 2
   || echo "data not installed: ${CY#"$G"/} for this version (setup.sh --cyrius)"; })" && NF+=(--cyrius_install "$CY")
 plan "35 Parascopy SMN1/SMN2" parascopy "$(optin parascopy || need "${PS}/homology_table/GRCh38.bed.gz")" && NF+=(--parascopy_data "$PS") \
   && NF+=(--parascopy_population "${PARASCOPY_POPULATION:-EUR}")
+plan "35b Paraphase (PacBio HiFi)" paraphase "$(optin paraphase)" && { [ -z "${PARAPHASE_REGIONS:-}" ] || NF+=(--paraphase_regions "$PARAPHASE_REGIONS"); }
 plan "25 PRS" prs "$(need "$(compgen -G "${G}/prs_scores/*.txt.gz" | head -n 1 || echo "${G}/prs_scores/<PGS id>.txt.gz")")" && NF+=(--pgs_scoring "${G}/prs_scores") \
   && { PC=${PGSC_CALC_DIR:-${G}/tools/pgsc_calc-${PGSC_CALC_VERSION}}; [ ! -f "${PC}/main.nf" ] || NF+=(--pgsc_calc "$PC"); }
 # Step 26 is pgsc_calc's projection inside the PRS run, with its panel and the site list setup.sh writes beside it.
@@ -125,6 +127,8 @@ plan "26 Ancestry (pgsc_calc)" ancestry "$(if [[ " ${SEL[*]} " != *" prs "* ]]; 
   else need "$PANEL" "${PANEL%.tar.zst}_GRCh38_sites.tsv"; fi)" && NF+=(--ancestry_ref "$PANEL")
 YD="${G}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 plan "37 Y haplogroup (Yleaf)" y_haplogroup "$(optin y_haplogroup || need "${YD}/hg38/new_positions.txt")" && NF+=(--yleaf_data "$YD")
+# Step 41 (blood groups) is opt-in and listed only when TOOLS names it; without a BAM its RhD is not determined.
+if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 [ -z "${INTERVALS:-}" ] || NF+=(--intervals "$INTERVALS"); [[ " $* " == *" --max_cpus"* ]] || NF+=(--max_cpus "${USER_THREADS:-$(getconf _NPROCESSORS_ONLN)}")

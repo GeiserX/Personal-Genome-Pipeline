@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an HLA allele
+import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -79,7 +80,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "37", "04b"}
+                 "27", "29", "30", "31", "32", "35b", "37", "41", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -185,6 +186,34 @@ def sec_variants(d, s):
     return p, {"total": total, "pass": passed, "snps": snps, "indels": indels}
 
 
+def clinvar_variants(v, sep):
+    """'chr1:10:C:T|chr1:15:G:A' -> 'chr1:10 C>T<sep>chr1:15 G>A'."""
+    out = []
+    for x in v.split("|"):
+        f = (x.split(":") + ["", "", "", ""])[:4]
+        out.append(f"{f[0]}:{f[1]} {f[2]}>{f[3]}")
+    return sep.join(out)
+
+
+def clinvar_combined_note(info, gt=""):
+    """Step 6's note on a hit that is a combined allele of two neighbouring
+    records, or part of one, from the tags bin/clinvar_join_adjacent.awk
+    writes; bin/clinvar_hits.awk words it the same way. "." when none.
+    On an unphased het call (0/1) the genotype cannot say the two parts share
+    a haplotype, so the note says they may not."""
+    a = gt.split("/")
+    phase = ("; unphased, so the parts may sit on different haplotypes"
+             if len(a) == 2 and all(x.isdigit() for x in a) and a[0] != a[1] else "")
+    if info.get("PGP_JOINED_FROM"):
+        return "combined allele of " + clinvar_variants(info["PGP_JOINED_FROM"], " + ") + phase
+    if info.get("PGP_PART_OF"):
+        return "part of a combined allele: " + clinvar_variants(info["PGP_PART_OF"], ", ") + phase
+    if info.get("PGP_ONE_ALLELE"):
+        return ("possibly one allele with " + clinvar_variants(info["PGP_ONE_ALLELE"], ", ")
+                + ": check ClinVar for a combined record")
+    return "."
+
+
 def clinvar_row(r):
     info = info_map(r[7]) if len(r) > 7 else {}
     rev = info.get("CLNREVSTAT", "")
@@ -198,7 +227,33 @@ def clinvar_row(r):
         "gene": ",".join(genes) or ".",
         "significance": info.get("CLNSIG", "").replace("_", " ") or ".",
         "review_status": rev.replace("_", " ") or ".",
+        "combined_allele": clinvar_combined_note(info, gt),
     }
+
+
+def clinvar_cdna_checks(d, s):
+    """Step 06's cDNA read check (bin/clip_check.py), keyed by (chrom, pos,
+    ref, alt). None when the file is absent: the Nextflow pipeline does not
+    write it."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_cdna_check.tsv"])
+    if not p:
+        return None
+    try:
+        rows = read_tsv(p)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(p)}: {e}") from e
+
+    def num(v):
+        return int(v) if (v or "").isdigit() else None
+    out = {}
+    for r in rows:
+        if not (r.get("pos") or "").isdigit():
+            continue
+        out[(r.get("chrom"), int(r["pos"]), r.get("ref"), r.get("alt"))] = {
+            "check": r.get("cdna_check") or "not_checked", "note": r.get("cdna_note") or "",
+            "alt_reads": num(r.get("alt_reads")), "alt_clipped": num(r.get("alt_clipped")),
+            "ref_reads": num(r.get("ref_reads")), "ref_clipped": num(r.get("ref_clipped"))}
+    return out
 
 
 def sec_clinvar(d, s):
@@ -208,7 +263,16 @@ def sec_clinvar(d, s):
     rows = [clinvar_row(r) for r in vcf_records(p) if len(r) >= 8]
     rows.sort(key=lambda x: (-x["stars"], x["chrom"], x["pos"]))
     by = {str(k): sum(1 for x in rows if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
-    return p, {"count": len(rows), "by_stars": by, "hits": rows}
+    data = {"count": len(rows), "by_stars": by, "hits": rows}
+    # The cDNA read check, on each hit when step 06 wrote it.
+    cdna = clinvar_cdna_checks(d, s)
+    if cdna is not None:
+        for x in rows:
+            x["cdna"] = cdna.get((x["chrom"], x["pos"], x["ref"], x["alt"])) or {
+                "check": "not_checked", "note": "not in the read-check table", "alt_reads": None,
+                "alt_clipped": None, "ref_reads": None, "ref_clipped": None}
+        data["cdna_flagged"] = sum(1 for x in rows if x["cdna"]["check"] == "flagged")
+    return p, data
 
 
 def pharmcat_json(d, s):
@@ -283,6 +347,45 @@ def sec_cyrius(d, s):
     rows = read_tsv(p)
     r = rows[0] if rows else {}
     return p, {"genotype": r.get("Genotype", "") or "none", "filter": r.get("Filter", "")}
+
+
+# The Paraphase regions the report shows gene by gene, in this order; the
+# others are counted.
+PARALOG_REGIONS = ("smn1", "hba", "rccx", "GBA", "pms2", "strc", "ncf1", "OTOA")
+
+
+def sec_paralogs(d, s):
+    """Step 35b (Paraphase, PacBio HiFi): the genes of PARALOG_REGIONS, a
+    count of the other regions, the variant rows per region, and SMN1 beside
+    step 35's Parascopy call when that table is there too."""
+    p = first_existing(d, [f"paralogs/{s}_paraphase_copy_number.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if rows and not {"region", "gene", "copy_number", "status"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks the region, gene, copy_number or status column")
+    genes = [{"region": r["region"], "gene": r["gene"], "copy_number": r["copy_number"],
+              "status": r["status"], "detail": r.get("detail") or "."}
+             for r in rows if r["region"] in PARALOG_REGIONS]
+    genes.sort(key=lambda g: PARALOG_REGIONS.index(g["region"]))
+    others = [r for r in rows if r["region"] not in PARALOG_REGIONS]
+    variants = {}
+    vp = os.path.join(os.path.dirname(p), f"{s}_paraphase_variants.tsv")
+    if os.path.isfile(vp):
+        for r in read_tsv(vp):
+            variants[r.get("region", "")] = variants.get(r.get("region", ""), 0) + 1
+    smn1 = next((g["copy_number"] for g in genes if g["gene"] == "SMN1"), None)
+    smn1 = int(smn1) if smn1 and smn1.isdigit() else None
+    parascopy = None
+    pp = os.path.join(os.path.dirname(p), f"{s}_smn_copy_number.tsv")
+    if os.path.isfile(pp):
+        parascopy = paraphase_report.parascopy_smn1(pp)
+    return p, {"genes": genes,
+               "other_regions": len(others),
+               "other_regions_called": sum(1 for r in others if r["status"] == "called"),
+               "variants": variants,
+               "smn1": {"paraphase": smn1, "parascopy": parascopy,
+                        "agree": paraphase_report.compare_smn1(smn1, parascopy)}}
 
 
 def sec_hla(d, s):
@@ -823,6 +926,20 @@ def sec_y_haplogroup(d, s):
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
+def sec_bloodtype(d, s):
+    """Step 41's table: one row per blood group system, predicted from the genome."""
+    p = first_existing(d, [f"bloodtype/{s}_bloodtype.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if not rows or not {"system", "phenotype", "confidence"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no system, phenotype and confidence columns, or no row")
+    systems = [{"system": r["system"], "phenotype": r["phenotype"] or ".", "genotype": r.get("genotype") or ".",
+                "confidence": r["confidence"] or "."} for r in rows]
+    by = {x["system"]: x["phenotype"] for x in systems}
+    return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
+
+
 def sec_mito(d, s):
     p = first_existing(d, [f"mito/{s}_chrM_filtered.vcf.gz"])
     if not p:
@@ -1121,6 +1238,32 @@ def sec_sample_qc(d, s):
     return p, data
 
 
+# --- mosaic loss of chrY or of one chrX (step 33, bin/mosaic_sex_loss.py) ----------
+
+MOSAIC_CALLS = ("detected", "not_detected", "gain", "not_estimated")
+MOSAIC_NUMBERS = ("depth_ratio", "depth_ratio_expected", "loss_depth", "loss_depth_low", "loss_depth_high",
+                  "loss_af", "loss_af_low", "loss_af_high", "floor")
+
+
+def sec_mosaic_sex_loss(d, s):
+    """The mosaic_* rows of the step 33 table, without the prefix; none in a
+    table written before the estimate existed."""
+    p = first_existing(d, [f"qc/{s}_sample_qc.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"][len("mosaic_"):]: r.get("value") or "" for r in read_tsv(p)
+            if (r.get("key") or "").startswith("mosaic_")}
+    if not data:
+        return None, {}
+    if data.get("call") not in MOSAIC_CALLS:
+        raise Unreadable(f"{os.path.basename(p)} has no mosaic_call row ({', '.join(MOSAIC_CALLS)})")
+    for k in MOSAIC_NUMBERS:
+        v = num(data.get(k))
+        data[k] = v if v is not None and abs(v) != float("inf") else None   # inf is no value either
+    data["x_het_sites"] = int(data["x_het_sites"]) if (data.get("x_het_sites") or "").isdigit() else None
+    return p, data
+
+
 def sec_read_count(d, s):
     """Step 02's read count (and the ALIGN_MINIMAP2 task's): the reads that
     went into the aligner and the primary records of the BAM it wrote."""
@@ -1148,6 +1291,7 @@ SECTIONS = [
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
+    ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),
     ("read_count", "Reads kept by alignment", "02", sec_read_count),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
@@ -1155,6 +1299,7 @@ SECTIONS = [
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),
     ("cyrius", "Cyrius (CYP2D6)", "21", sec_cyrius),
+    ("paralogs", "Paralog genes (Paraphase, PacBio HiFi)", "35b", sec_paralogs),
     ("hla", "HLA typing (T1K)", "08", sec_hla),
     ("prs", "Polygenic risk scores", "25", sec_prs),
     ("manta", "Structural variants (Manta)", "04", sec_manta),
@@ -1166,6 +1311,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
