@@ -1,0 +1,4 @@
+sample	sex	father	mother	partner
+child_a	female	father_a	mother_a	.
+father_a	male	.	.	mother_a
+mother_a	female	.	.	father_a

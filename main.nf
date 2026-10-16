@@ -28,6 +28,7 @@ include { CLINICAL     } from './workflows/clinical'
 include { BAM_ANALYSIS } from './workflows/bam_analysis'
 include { SV           } from './workflows/sv'
 include { REPORTING    } from './workflows/reporting'
+include { FAMILY       } from './workflows/family'
 include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
@@ -239,6 +240,48 @@ workflow {
         if (tools_list.contains('expansion_hunter') && (row.bam || row.cram) && !row.sex) {
             error "Sample '${row.sample}': expansion_hunter needs the sample's sex to genotype chrX loci. " +
                   "Add a 'sex' column (male or female) to the samplesheet, or remove 'expansion_hunter' from --tools."
+        }
+    }
+
+    // ─── Pedigree (opt-in: --pedigree) ──────────────────────────────────
+    // The family workflow runs only when --pedigree is given, and only on
+    // the samples of the samplesheet the pedigree names: two or more, each
+    // with a gVCF (DEEPVARIANT's, or the row's gvcf column). Here only the
+    // sample column is read; FAMILY_PREPARE (bin/family_report.py prepare)
+    // checks the rest before the joint call starts. Read with containsKey,
+    // so a run without the option is not told about an undefined parameter.
+    def pedigree   = params.containsKey('pedigree') ? params.pedigree : null
+    def family_ids = []
+    if (pedigree) {
+        def ped_lines = file(pedigree, checkIfExists: true).readLines().findAll { l -> l.trim() }
+        def ped_cols  = ped_lines ? ped_lines[0].replaceFirst(/^#/, '').split('\t').collect { c -> c.trim().toLowerCase() } : []
+        def si        = ped_cols.indexOf('sample')
+        if (si < 0) {
+            error "--pedigree ${pedigree}: the first line must be a header with a 'sample' column " +
+                  "(sample, sex, father, mother, partner, tab separated; see assets/pedigree.example.tsv)."
+        }
+        def ped_samples = ped_lines.drop(1).findAll { l -> !l.startsWith('#') }.collect { l ->
+            def v = l.split('\t', -1)
+            si < v.size() ? v[si].trim() : ''
+        }
+        family_ids = ped_samples.findAll { s -> seen_samples.contains(s) }.unique()
+        if (family_ids.size() < 2) {
+            error "--pedigree ${pedigree} names ${family_ids.size()} sample${family_ids.size() == 1 ? '' : 's'} of " +
+                  "${params.input} (${family_ids ? family_ids.join(', ') : 'none'}): the family analysis needs two " +
+                  "or more. Add the other members' rows to the samplesheet, or leave --pedigree out."
+        }
+        if (seen_samples.contains('family')) {
+            error "A sample is named 'family', the folder of <outdir> where --pedigree writes the family results. " +
+                  "Rename the sample."
+        }
+        if (!params.somalier_sites) {
+            error "--pedigree checks the declared relationships with somalier and needs --somalier_sites " +
+                  "(scripts/setup.sh --sample-qc-data installs reference/somalier/sites.hg38.vcf.gz)."
+        }
+        samplesheet_rows.findAll { row -> family_ids.contains(row.sample) && row.vcf && !row.gvcf }.each { row ->
+            error "Sample '${row.sample}' is in --pedigree, and the family joint call reads each member's gVCF, but " +
+                  "its row gives a vcf without a gvcf. Add the gvcf and gvcf_index columns (step 03 and DEEPVARIANT " +
+                  "write <sample>.g.vcf.gz), or give the row's BAM or FASTQ instead so DeepVariant calls it here."
         }
     }
 
@@ -560,6 +603,24 @@ workflow {
         BAM_ANALYSIS.out.mito_vcf
     )
 
+    // ═══════════════════════════════════════════════════════════════════
+    // WORKFLOW 4b: FAMILY — joint call, relationship check, phasing by
+    // inheritance (opt-in: --pedigree naming two or more samples)
+    // ═══════════════════════════════════════════════════════════════════
+    ch_family_versions = Channel.empty()
+    if (family_ids) {
+        FAMILY(
+            ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
+            ANNOTATION.out.clinical_vcf.filter { meta, f -> family_ids.contains(meta.id) },
+            Channel.value(file(pedigree, checkIfExists: true)),
+            ch_somalier_sites,
+            ch_reference,
+            ch_reference_fai,
+            ch_par_bed
+        )
+        ch_family_versions = FAMILY.out.versions
+    }
+
     // ─── Traits panel (traits, step 42) ─────────────────────────────────
     // The genotype at each position of assets/traits.tsv, read from the gVCF
     // only: a sample without one is skipped with a warning, because its
@@ -700,6 +761,7 @@ workflow {
             REPORTING.out.versions,
             CRAM_TO_BAM.out.versions,
             ch_cram_versions,
+            ch_family_versions,
             ch_traits_versions,
             ch_bloodtype_versions
         )

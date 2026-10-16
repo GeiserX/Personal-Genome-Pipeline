@@ -6,6 +6,70 @@ Ran the pipeline on two or more people? This guide explains how to compare their
 
 ---
 
+## Family analysis (step 38, opt-in)
+
+When two or more related people are processed, step 38 analyses them together: one joint call, a check that the samples are the people the pedigree says, and for a child with a sequenced parent, which allele came from which parent. It runs only when you give it a pedigree; a single-sample run is not changed.
+
+### The pedigree
+
+A tab-separated file with a header line and one row per person ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)):
+
+```text
+sample	sex	father	mother	partner
+child_a	female	father_a	mother_a	.
+father_a	male	.	.	mother_a
+mother_a	female	.	.	father_a
+```
+
+`sample` is the sample name the pipeline uses. `sex` is `male`, `female` or `unknown`. `father`, `mother` and `partner` name another person, or `.` (or empty) for none. A parent or partner named without a row of their own is a person who was not sequenced: a child's unsequenced father can still be named. The step stops, before any work, when a column name is unknown, a person has two rows, a father is female or a mother male, someone is their own parent or ancestor, two people name different partners, the samplesheet's sex contradicts the pedigree's, a gVCF holds another sample name than its own, or fewer than two named people have a gVCF.
+
+### Running it
+
+From the scripts, once each member has a gVCF from step 03 (`<sample>/vcf/<sample>.g.vcf.gz`) and somalier's sites are installed (`setup.sh --sample-qc-data`):
+
+```bash
+GENOME_DIR=/path/to/data ./scripts/38-family.sh my_family pedigree.tsv
+```
+
+The results go to `$GENOME_DIR/my_family/`, a folder of its own: the family name follows the sample-name rule and may not be a sample's name. Without the second argument the step reads `$GENOME_DIR/my_family/pedigree.tsv`.
+
+In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree pedigree.tsv --somalier_sites <sites.hg38.vcf.gz>`. A person processed earlier is a VCF row with the `gvcf` and `gvcf_index` columns; a row from FASTQ or a BAM is called in the same run and its gVCF is used. The family results go to `<outdir>/family/`.
+
+### What it does
+
+1. **Joint call.** GLnexus (`GLNEXUS_IMAGE`, its DeepVariantWGS preset) merges the members' DeepVariant gVCFs into one VCF, `family.vcf.gz`. A site where one person has a variant gets the others' genotypes from their reference blocks, so "not called" and "matches the reference" are told apart.
+2. **Relationship check.** somalier extracts each member's genotypes at its sites from the gVCF and `somalier relate` measures the relatedness of every pair: about the share of the genome two people inherited from common ancestors (1 the same person, 0.5 parent and child or full siblings, 0.25 second degree, 0 unrelated). The pedigree gives the expected value. A pair must fall in the same degree as declared (bins at 0.707, 0.354, 0.177 and 0.088); a declared parent and child must also be opposite homozygotes at under 1% of the sites, which siblings are not; a pair declared unrelated or distant must not measure first degree. A pair that disagrees stops the step with exit 1, before any phasing, and `relationships.tsv` says which pair and why: two samples were swapped, or a pedigree line is wrong. A pair compared at fewer than 1,000 sites is reported as not checked.
+3. **Phasing by inheritance.** For each child whose two parents are sequenced, WhatsHap (`WHATSHAP_IMAGE`, `whatshap phase --ped`) phases the family by inheritance alone; no reads are given. A site where the child and both parents are heterozygous stays unphased, because no genotype tells it.
+4. **The report.** For each child with a sequenced parent, `<child>_inheritance.tsv.gz` gives, at every site of the joint VCF where the child and a sequenced parent have a genotype, the allele from the father and the allele from the mother when the genotypes tell (`how` is `genotype`), or `ambiguous` (both parents heterozygous like the child) or `inconsistent` (a genotype error, a deletion or a new mutation). On chrX and chrY outside the pseudoautosomal regions a son's X comes from his mother and his Y from his father; the child's sex must be known there. chrM is left out. With one parent sequenced, the allele the other parent passed on is known wherever the sequenced parent is homozygous or differs from the child: that is the half of the unsequenced parent's genome the child carries, and `family_report.md` gives its share of the sites. The half the child did not inherit is not seen.
+
+   De novo candidates (`de_novo.tsv`, a child allele neither parent has) are called only when both parents are sequenced. A candidate is `pass` with GQ 20 or more and depth 10 or more in all three and, when the child is heterozygous, 25% to 75% of the child's reads on the new allele; otherwise `low`. Most candidates of a whole genome are genotype errors: confirm one that matters by another method.
+
+   When step 23 (the clinical filter) ran for a child, every pair of its candidate variants the child carries heterozygous in one gene is listed in `compound_het.tsv`: `in trans` when one came from each parent (both copies of the gene are hit), `in cis` when both came from one parent, `unknown` when the genotypes do not tell.
+
+### Outputs
+
+The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR/<family_name>/` (with the `pedigree.tsv` it read).
+
+| File | Content |
+|---|---|
+| `family.vcf.gz` (+ `.tbi`) | the joint call |
+| `members.tsv`, `family.ped`, `trios.ped` | the pedigree as read, somalier's pedigree, WhatsHap's trios |
+| `somalier/family.pairs.tsv`, `family.samples.tsv`, `family.html` | somalier relate's own tables and plot |
+| `relationships.tsv` | each pair: declared relationship, expected and measured relatedness, opposite homozygotes, sites, verdict and reason |
+| `family.phased.vcf.gz` (+ `.tbi`) | WhatsHap's phasing (only when a child has both parents sequenced) |
+| `<child>_inheritance.tsv.gz` | allele from each parent, site by site |
+| `de_novo.tsv`, `compound_het.tsv` | as above |
+| `family_report.md` | all of it in words, pair by pair and child by child |
+
+### Limits
+
+- The gVCFs must be DeepVariant's: the GLnexus preset reads DeepVariant's fields.
+- No reads are used for phasing, so an all-heterozygous trio site stays unphased, and a duo is phased only where the genotypes tell.
+- The relatedness is one number per pair for the whole genome. Shared segments (where two people share a stretch of DNA) are not reported.
+- Runtime on whole genomes has not been measured yet; the CI test runs it on 2.45 Mb of the GIAB Ashkenazi trio.
+
+---
+
 ## Carrier Screening for Partners
 
 The most immediately useful multi-sample analysis: checking whether both partners carry pathogenic variants in the **same recessive gene**. If so, each child has a 25% chance of being affected.
@@ -105,7 +169,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
     -p /genome/${CHILD}/vcf/de_novo_candidates/
 ```
 
-**Note:** This is a rough screen. True de novo detection requires **trio analysis** (both parents + child) and careful filtering for sequencing errors. Many variants flagged by `bcftools isec` will be false positives (present in the parent but missed by the variant caller due to low coverage at that position).
+**Note:** This is a rough screen. With both parents sequenced, [step 38](#family-analysis-step-38-opt-in) calls de novo candidates from a joint call instead. True de novo detection requires **trio analysis** (both parents + child) and careful filtering for sequencing errors. Many variants flagged by `bcftools isec` will be false positives (present in the parent but missed by the variant caller due to low coverage at that position).
 
 ### Carrier Inheritance Tracing
 
@@ -180,8 +244,8 @@ Telomere length (step 10) is most informative when compared between samples of *
 
 ## What This Pipeline Cannot Do (Yet)
 
-- **True trio analysis** (proband + both parents) with de novo calling: Requires tools like GATK's `--pedigree` mode or DeNovoGear
-- **Phasing** (determining which variants are on which chromosome copy): Requires statistical phasing tools like Eagle2/SHAPEIT or long-read data
+- **Read-backed or statistical phasing** (which variants are on which chromosome copy in one person): step 38 phases a child only by inheritance, from the parents' genotypes; a single person needs read-based phasing (long reads help) or statistical phasing tools like Eagle2/SHAPEIT
+- **Shared segments between relatives** (identity by descent, stretch by stretch): step 38 gives one relatedness number per pair
 - **Comparable polygenic risk scores**: step 25 computes raw scores per person, but turning them into percentiles that can be compared between people needs a matched reference population (see [step 25](25-prs.md))
 - **Ancestry estimates**: step 26 prepares a SNP set shared with 1000 Genomes, but a usable estimate needs joint PCA or admixture analysis against a reference panel, which is not implemented (see [step 26](26-ancestry.md))
 
