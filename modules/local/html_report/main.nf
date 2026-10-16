@@ -10,7 +10,7 @@
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
     into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
-    cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, ...); a step that did
+    cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, traits/, ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
     name is the user's. indexcov's folder becomes indexcov/ itself (the
@@ -77,6 +77,7 @@ process HTML_REPORT {
             indexcov)                                     ln -s "\$(readlink -f "\$f")" "\$S/indexcov" ;;
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;
             ${id}_pgx_consensus.tsv)                      place pgx_consensus "\$f" ;;
+            ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
