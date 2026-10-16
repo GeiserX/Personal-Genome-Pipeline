@@ -46,6 +46,8 @@ In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree
 
    When step 23 (the clinical filter) ran for a child, every pair of its candidate variants the child carries heterozygous in one gene is listed in `compound_het.tsv`: `in trans` when one came from each parent (both copies of the gene are hit), `in cis` when both came from one parent, `unknown` when the genotypes do not tell.
 
+Two members marked as partners also get the couple carrier screen of [step 39](39-couple.md): `scripts/39-couple.sh`, or in the Nextflow pipeline the `COUPLE_CARRIER` process of the family workflow (with `clinvar` in `--tools`).
+
 ### Outputs
 
 The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR/<family_name>/` (with the `pedigree.tsv` it read).
@@ -73,6 +75,8 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 ## Carrier Screening for Partners
 
 The most immediately useful multi-sample analysis: checking whether both partners carry pathogenic variants in the **same recessive gene**. If so, each child has a 25% chance of being affected.
+
+[Step 39](39-couple.md) does this for two partners of a pedigree: the recessive genes where both carry a change, counting ClinVar hits, Delly deletions over an exon, SMN1 copy loss and FMR1 and FXN expansions, the X-linked findings, and what the screen does not see. The cross-check below is the same comparison by hand, for ClinVar hits only.
 
 ### Quick Cross-Check
 
