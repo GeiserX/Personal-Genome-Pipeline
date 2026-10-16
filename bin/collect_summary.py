@@ -45,6 +45,7 @@ percentile and the reference group when pgsc_calc ran with an ancestry panel,
 and then writes the principal components and population of step 26.
 """
 import argparse
+import base64
 import csv
 import glob
 import gzip
@@ -57,6 +58,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an HLA allele
+import ancestry_fine_report  # noqa: E402  step 26b's group names and painting colours
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -79,7 +81,7 @@ STARS = {
 # step is not here (variant calling, step 03, which run-all reuses on purpose)
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
-                 "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
+                 "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
                  "27", "29", "30", "31", "32", "35b", "37", "40", "41", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
@@ -767,6 +769,33 @@ def count_vcf(p):
     return total, passed
 
 
+def sec_ancestry_fine(d, s):
+    """Step 26b: <s>_ancestry_fine.tsv (level, code, group, fraction, se, low,
+    high; levels continent, region and painting) and the painting picture."""
+    p = first_existing(d, [f"ancestry_fine/{s}_ancestry_fine.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = {"level", "code", "group", "fraction", "se", "low", "high"}
+    if not rows or not need <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {sorted(need)}")
+    out = {"continent": [], "region": [], "painting": []}
+    for r in rows:
+        if r["level"] in out:
+            out[r["level"]].append({"code": r["code"], "group": r["group"], "fraction": num(r["fraction"]),
+                                    "low": num(r["low"]), "high": num(r["high"])})
+    # The painting picture travels in the summary, so the HTML report shows it
+    # from the summary alone (render_report.py --summary).
+    png = first_existing(d, [f"ancestry_fine/{s}_painting.png"])
+    out["painting_png"] = None
+    out["legend"] = [{"code": c, "group": ancestry_fine_report.label("continent", c),
+                      "colour": "#%02x%02x%02x" % rgb} for c, rgb in ancestry_fine_report.COLOURS.items()]
+    if png and os.path.getsize(png) < 2_000_000:
+        with open(png, "rb") as f:
+            out["painting_png"] = base64.b64encode(f.read()).decode()
+    return p, out
+
+
 def sec_manta(d, s):
     p = first_existing(d, ["manta/results/variants/diploidSV.vcf.gz", "manta/*diploidSV.vcf.gz",
                            "manta/**/diploidSV.vcf.gz"])
@@ -1350,6 +1379,7 @@ SECTIONS = [
     ("paralogs", "Paralog genes (Paraphase, PacBio HiFi)", "35b", sec_paralogs),
     ("hla", "HLA typing (T1K)", "08", sec_hla),
     ("prs", "Polygenic risk scores", "25", sec_prs),
+    ("ancestry_fine", "Fine-grained ancestry (ADMIXTURE, RFMix)", "26b", sec_ancestry_fine),
     ("manta", "Structural variants (Manta)", "04", sec_manta),
     ("delly", "Structural variants (Delly)", "19", sec_delly),
     ("cnvpytor", "Copy number (CNVpytor)", "18", sec_cnvpytor),

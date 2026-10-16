@@ -9,6 +9,7 @@
 #        ./scripts/setup.sh --parascopy-data <genome_dir>
 #        ./scripts/setup.sh --kir-data <genome_dir>
 #        ./scripts/setup.sh --ancestry-panel <genome_dir>
+#        ./scripts/setup.sh --ancestry-fine-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #                                            what an opt-in step needs, and nothing
@@ -17,9 +18,11 @@
 #                                            image (step 35), IPD-KIR (step 08
 #                                            with KIR=true), pgsc_calc's ancestry
 #                                            panel (step 26, and percentiles in
-#                                            step 25), Yleaf's marker tables plus
-#                                            its image (step 37), the site table
-#                                            of the raw-data export (step 40)
+#                                            step 25), the fine-grained ancestry
+#                                            panel plus its images (step 26b),
+#                                            Yleaf's marker tables plus its image
+#                                            (step 37), the site table of the
+#                                            raw-data export (step 40)
 #        ./scripts/setup.sh --vep-cache <genome_dir>
 #                                            the VEP cache of VEP_CACHE_RELEASE
 #                                            (VEP, vcfanno, clinical filter and
@@ -66,7 +69,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data|--consumer-sites|--vep-cache)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--vep-cache)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -91,7 +94,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data | --consumer-sites | --vep-cache <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --vep-cache <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -109,6 +112,11 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --ancestry-panel"
   echo "                Install pgsc_calc's ancestry reference panel ${PGSC_PANEL:-} (~7 GB download): step 26, and"
   echo "                percentiles instead of raw scores in step 25; then exit."
+  echo "  --ancestry-fine-panel"
+  echo "                Install the reference of step 26b, gnomAD's HGDP + 1000 Genomes panel (~19 GB is read, a few GB"
+  echo "                stored, hours on a home connection), and its images; then exit. Step 26b runs ADMIXTURE,"
+  echo "                free for academic use, and RFMix, free for academic research use only: any other use,"
+  echo "                a personal one included, needs a licence from Stanford."
   echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB), pull its image and exit."
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
@@ -478,6 +486,249 @@ install_ancestry_panel() {
   echo "[OK] ancestry panel ${name} (steps 25 and 26): ${panel} ($(wc -l < "$sites" | tr -d ' ') common GRCh38 SNVs in ${sites##*/})"
 }
 
+# --- Step 26b: the fine-grained ancestry panel (opt-in) -----------------------------
+# gnomAD's HGDP + 1000 Genomes callset, phased with SHAPEIT5 (Koenig et al.
+# 2024): 4,091 people of 80 populations, open access. setup.sh streams the
+# common biallelic SNVs of chr1 to chr22 from gnomAD's public bucket (about
+# 19 GB is read; only the kept SNVs are stored) and keeps one per 2 kb.
+# One of the 22 files, named in full, so scripts/ci/check-links.sh can request
+# it; the others differ only in the chromosome.
+ANCESTRY_FINE_CHR22_URL=https://storage.googleapis.com/gcp-public-data--gnomad/resources/hgdp_1kg/phased_haplotypes_v2/hgdp1kgp_chr22.filtered.SNV_INDEL.phased.shapeit5.bcf
+ANCESTRY_FINE_URL=${ANCESTRY_FINE_CHR22_URL%/*}
+ANCESTRY_FINE_SUFFIX=${ANCESTRY_FINE_CHR22_URL#*hgdp1kgp_chr22}
+ANCESTRY_FINE_META_URL=https://storage.googleapis.com/gcp-public-data--gnomad/release/3.1/secondary_analyses/hgdp_1kg_v2/metadata_and_qc/gnomad_meta_updated.tsv
+# Beagle's GRCh38 PLINK genetic map (HapMap, lifted from GRCh37), for phasing and painting.
+# Beagle's server is its only host and was unreachable for hours on 2026-10-15;
+# the Internet Archive's copy is byte for byte the same file (same sha256), so
+# the install falls back to it, checked against the same pin.
+ANCESTRY_FINE_MAP_URL=https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip
+ANCESTRY_FINE_MAP_MIRROR_URL=https://web.archive.org/web/20260306143720id_/https://bochet.gcc.biostat.washington.edu/beagle/genetic_maps/plink.GRCh38.map.zip
+
+# ancestry_fine_pins: one line per chromosome file of the panel: chrN, the
+# crc32c Google reports for it and its size, from a HEAD request each. Their
+# sha256 is ANCESTRY_FINE_PANEL_SHA256, so a file the bucket replaces changes
+# it. bcftools reads the panel a region at a time, so the bytes cannot be
+# checked as they stream; the bucket's own checksum of each file can.
+ancestry_fine_pins() {
+  local c
+  command -v curl >/dev/null 2>&1 || { echo "ERROR: --ancestry-fine-panel needs curl to check the panel's files" >&2; return 1; }
+  for c in $(seq 1 22); do
+    curl -fsI --connect-timeout 20 --max-time 60 --retry 3 --retry-delay 5 \
+        "${ANCESTRY_FINE_URL}/hgdp1kgp_chr${c}${ANCESTRY_FINE_SUFFIX}" | tr -d '\r' \
+      | awk -v c="chr${c}" 'tolower($1) == "x-goog-hash:" && $2 ~ /^crc32c=/ {h = substr($2, 8)}
+                            tolower($1) == "content-length:" {n = $2}
+                            END {if (h == "" || n == "") exit 1; print c "\t" h "\t" n}' \
+      || { echo "ERROR: no crc32c or size for the panel's chr${c} file (${ANCESTRY_FINE_URL})" >&2; return 1; }
+  done
+}
+
+# install_ancestry_fine_panel: the reference of step 26b, in
+# reference/ancestry_fine/ANCESTRY_FINE_PANEL (ANCESTRY_FINE_DIR: another
+# folder inside GENOME_DIR). ADMIXTURE is free for academic use; RFMix for
+# academic research use only, and any other use, a personal one included,
+# needs a licence from Stanford. Four parts, each redone only when its inputs change:
+#   samples.tsv  every person of the panel with population, continental and
+#                regional group, reference and painting flags (panel-map of
+#                bin/ancestry_fine_report.py); ANCESTRY_FINE_SAMPLE_MAP gives
+#                a table of your own instead;
+#   panel/       chrN.vcf.gz: their phased genotypes at the biallelic SNVs with a
+#                minor allele frequency of 5% or more, one per 2 kb (bcftools
+#                +prune); sites.tsv (chrN, position, REF, ALT) and positions.tsv;
+#   maps/        chrN.map (Beagle) and chrN.rfmix.map (RFMix's column order);
+#   model/       ref.bed of the reference individuals on the SNVs left after LD
+#                pruning (r2 above 0.1 within 500 kb removed); for each level
+#                (continent, region) the group allele frequencies of a supervised
+#                ADMIXTURE run, <level>.P, with their column order in levels.tsv;
+#                and paint_map.tsv, the reference individuals RFMix paints with.
+# ANCESTRY_FINE_REGIONS (a BED file) keeps only those regions, and
+# ANCESTRY_FINE_EXCLUDE (sample ids) leaves people out of the panel: the e2e
+# case uses both, for the fixture's slices and the two people of its
+# synthetic mix. ANCESTRY_FINE_THIN (default 2kb) is the window that keeps
+# one SNV (the e2e case keeps more of its few megabases with 200bp), and
+# ANCESTRY_FINE_PAINT_PER_GROUP (default 50) caps the painting references of
+# each continental group.
+install_ancestry_fine_panel() {
+  local dir=${ANCESTRY_FINE_DIR:-${GENOME_DIR}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}}
+  local regions=${ANCESTRY_FINE_REGIONS:-} exclude=${ANCESTRY_FINE_EXCLUDE:-} smap=${ANCESTRY_FINE_SAMPLE_MAP:-}
+  local thin=${ANCESTRY_FINE_THIN:-2kb}
+  local v c e level col k order rstamp="" pstamp mstamp tmp chroms=""
+  cpath "$dir" >/dev/null || return 1
+  echo "Installing the fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b) in ${dir}"
+  echo "  Step 26b runs ADMIXTURE, free for academic use, and RFMix, free for academic research use only:"
+  echo "  any other use of RFMix, a personal one included, needs a licence from Stanford."
+  for v in BCFTOOLS_HTTPS_IMAGE ADMIXTURE_IMAGE BEAGLE_IMAGE RFMIX_IMAGE; do ensure_image "$v" 26b || return 1; done
+  mkdir -p "${dir}/panel" "${dir}/maps" "${dir}/model"
+  echo "  Checking the panel's files against ANCESTRY_FINE_PANEL_SHA256..."
+  if ! ancestry_fine_pins > "${dir}/pins.tsv"; then
+    echo "[WARN] Could not read the panel's files at ${ANCESTRY_FINE_URL}; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+    return 1
+  fi
+  if [ "$(_digest sha256 "${dir}/pins.tsv")" != "$ANCESTRY_FINE_PANEL_SHA256" ]; then
+    echo "[WARN] The panel's files at ${ANCESTRY_FINE_URL} are not the ones ANCESTRY_FINE_PANEL_SHA256 pins (see ${dir}/pins.tsv)."
+    echo "       The bucket replaced a file: read what changed before moving the pin in versions.env."
+    return 1
+  fi
+  # The metadata and the map, unless they are there with their pinned sha256;
+  # the map's mirror (the fourth field) is tried when its own host fails.
+  for v in "${ANCESTRY_FINE_META_URL}|${dir}/meta.tsv|${ANCESTRY_FINE_META_SHA256}|" \
+           "${ANCESTRY_FINE_MAP_URL}|${dir}/maps/plink.GRCh38.map.zip|${ANCESTRY_FINE_MAP_SHA256}|${ANCESTRY_FINE_MAP_MIRROR_URL}"; do
+    IFS='|' read -r c e k m <<< "$v"
+    [ -s "$e" ] && [ "$(_digest sha256 "$e")" = "$k" ] && continue
+    fetch "$c" "$e" sha256 "$k" && continue
+    if [ -n "$m" ]; then
+      rm -f "${e}.part"
+      echo "  Trying the mirror of ${c##*/}: ${m}"
+      fetch "$m" "$e" sha256 "$k" && continue
+    fi
+    echo "[WARN] Could not download ${c}; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+    return 1
+  done
+  if [ -n "$regions" ]; then
+    [ -s "$regions" ] || { echo "[WARN] ANCESTRY_FINE_REGIONS=${regions} is not a file"; return 1; }
+    cp "$regions" "${dir}/regions.bed"
+    rstamp=$(_digest sha256 "${dir}/regions.bed")
+    chroms=$(awk '$1 ~ /^chr([1-9]|1[0-9]|2[0-2])$/ {sub(/^chr/, "", $1); print $1}' "${dir}/regions.bed" | sort -un | sed 's/^/chr/' | tr '\n' ' ')
+  else
+    rm -f "${dir}/regions.bed"
+    for c in $(seq 1 22); do chroms+="chr${c} "; done
+  fi
+
+  # samples.tsv: from the metadata, or the table given.
+  # --net: the sample list is the header of a panel file in gnomAD's bucket.
+  # shellcheck disable=SC2016  # $1 belongs to the inner sh
+  if ! run_in --net --rw "$dir" "$BCFTOOLS_HTTPS_IMAGE" sh -c 'bcftools query -l "$1" 2>/dev/null' \
+        _ "$ANCESTRY_FINE_CHR22_URL" > "${dir}/bcf_samples.txt.part" \
+     || [ ! -s "${dir}/bcf_samples.txt.part" ]; then
+    rm -f "${dir}/bcf_samples.txt.part"
+    echo "[WARN] Could not read the panel's sample list; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+    return 1
+  fi
+  mv "${dir}/bcf_samples.txt.part" "${dir}/bcf_samples.txt"
+  if [ -n "$smap" ]; then
+    head -n 1 "$smap" | grep -q $'^sample\tpopulation\tcontinent\tregion\treference\tpaint$' \
+      || { echo "[WARN] ANCESTRY_FINE_SAMPLE_MAP=${smap} does not start with the header of samples.tsv"; return 1; }
+    cp "$smap" "${dir}/samples.tsv.part"
+  elif ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+        python3 /pgp-bin/ancestry_fine_report.py panel-map --meta "$(cpath "${dir}/meta.tsv")" \
+          --bcf-samples "$(cpath "${dir}/bcf_samples.txt")" --exclude "$exclude" \
+          --paint-per-group "${ANCESTRY_FINE_PAINT_PER_GROUP:-50}" --out "$(cpath "${dir}/samples.tsv.part")"; then
+    rm -f "${dir}/samples.tsv.part"
+    echo "[WARN] Could not write the panel's sample table"
+    return 1
+  fi
+  mv "${dir}/samples.tsv.part" "${dir}/samples.tsv"
+  awk -F'\t' 'NR > 1 {print $1}' "${dir}/samples.tsv" > "${dir}/panel/keep.txt"
+
+  # panel/: redone when the pins, the regions or the people kept change; a
+  # chromosome done by an interrupted run with the same inputs is kept.
+  pstamp="pins=${ANCESTRY_FINE_PANEL_SHA256} regions=${rstamp:-all} thin=${thin} keep=$(_digest sha256 "${dir}/panel/keep.txt") bcftools=${BCFTOOLS_HTTPS_IMAGE}"
+  if [ "$(cat "${dir}/panel/DONE" 2>/dev/null)" != "$pstamp" ]; then
+    rm -f "${dir}/panel/DONE" "${dir}/model/DONE"
+    for c in $chroms; do
+      [ ! -s "${dir}/panel/${c}.vcf.gz.tbi" ] || [ "$(cat "${dir}/panel/${c}.stamp" 2>/dev/null)" != "$pstamp" ] || continue
+      echo "  ${c}: reading the panel's common SNVs..."
+      # --net: the panel is read from gnomAD's bucket over https. htslib
+      # stores the remote index in the working directory, so the container
+      # works in panel/ and deletes it after. bcftools warns about the files'
+      # PP header line on every read; those lines go.
+      # shellcheck disable=SC2016  # $1 to $5 belong to the inner bash
+      if ! run_in --net --rw "$dir" "$BCFTOOLS_HTTPS_IMAGE" bash -euo pipefail -c '
+            cd "$(dirname "$3")"; trap "rm -f ./*.bcf.csi" EXIT
+            r=(); [ -z "$4" ] || r=(-R "$4" --regions-overlap pos)
+            { bcftools view "${r[@]}" --force-samples -S "$2" -m2 -M2 -v snps -Ou "$1" \
+                | bcftools view -q 0.05:minor -Ou \
+                | bcftools annotate -x ID,INFO,^FORMAT/GT -Ou \
+                | bcftools +prune -n 1 -w "$5" -N maxAF -Oz -o "$3.part"; } 2> >(grep -v bcf_hdr_check_sanity >&2)
+            bcftools index -t "$3.part"
+            mv "$3.part.tbi" "$3.tbi"; mv "$3.part" "$3"' \
+            _ "${ANCESTRY_FINE_URL}/hgdp1kgp_${c}${ANCESTRY_FINE_SUFFIX}" \
+            "$(cpath "${dir}/panel/keep.txt")" "$(cpath "${dir}/panel/${c}.vcf.gz")" \
+            "$([ -z "$rstamp" ] || cpath "${dir}/regions.bed")" "$thin"; then
+        echo "[WARN] Could not read ${c} of the panel; run: $0 --ancestry-fine-panel ${GENOME_DIR}"
+        return 1
+      fi
+      echo "$pstamp" > "${dir}/panel/${c}.stamp"
+    done
+    # sites.tsv: chrN, position, REF and ALT of every SNV; positions.tsv: the
+    # first two columns, the form bcftools -R and -T read.
+    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
+          'cd "$1"; for c in $2; do bcftools query -f "%CHROM\t%POS\t%REF\t%ALT\n" "$c.vcf.gz"; done' \
+          _ "$(cpath "${dir}/panel")" "$chroms" > "${dir}/panel/sites.tsv.part" || [ ! -s "${dir}/panel/sites.tsv.part" ]; then
+      echo "[WARN] Could not list the panel's sites"
+      return 1
+    fi
+    cut -f1,2 "${dir}/panel/sites.tsv.part" > "${dir}/panel/positions.tsv"
+    mv "${dir}/panel/sites.tsv.part" "${dir}/panel/sites.tsv"
+    echo "$pstamp" > "${dir}/panel/DONE"
+  fi
+  echo "  panel: $(wc -l < "${dir}/panel/sites.tsv" | tr -d ' ') SNVs of $(wc -l < "${dir}/panel/keep.txt" | tr -d ' ') people"
+
+  # maps/: Beagle's file of each chromosome, and the same in RFMix's column
+  # order (chromosome, position, cM).
+  for c in $chroms; do
+    [ -s "${dir}/maps/${c}.rfmix.map" ] && continue
+    # shellcheck disable=SC2016  # no shell variables: the python reads sys.argv
+    if ! run_in --rw "$dir" "$PYTHON_IMAGE" python3 -c '
+import sys, zipfile
+z, c, out = sys.argv[1:]
+with zipfile.ZipFile(z) as f:
+    text = f.read(f"chr_in_chrom_field/plink.chr{c}.GRCh38.map").decode()
+rows = [line.split() for line in text.splitlines() if line.strip()]
+open(f"{out}/{c}.map", "w").write(text)
+open(f"{out}/{c}.rfmix.map", "w").write("".join(f"{r[0]}\t{r[3]}\t{r[2]}\n" for r in rows))
+' "$(cpath "${dir}/maps/plink.GRCh38.map.zip")" "$c" "$(cpath "${dir}/maps")"; then
+      echo "[WARN] Could not unpack the genetic map of ${c}"
+      return 1
+    fi
+  done
+
+  # model/: redone when samples.tsv or the panel changes.
+  mstamp="panel=$(_digest sha256 "${dir}/panel/sites.tsv") samples=$(_digest sha256 "${dir}/samples.tsv") admixture=${ADMIXTURE_IMAGE}"
+  if [ "$(cat "${dir}/model/DONE" 2>/dev/null)" != "$mstamp" ]; then
+    tmp="${dir}/model/tmp"
+    rm -rf "$tmp" "${dir}/model/DONE"
+    mkdir -p "$tmp"
+    awk -F'\t' 'NR > 1 && $5 == 1 {print $1}' "${dir}/samples.tsv" > "${tmp}/ref.txt"
+    echo "  model: LD pruning on $(wc -l < "${tmp}/ref.txt" | tr -d ' ') reference individuals, then ADMIXTURE's group frequencies..."
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+          for c in $4; do bcftools view -S "$2" -Ou "$1/$c.vcf.gz" | bcftools +prune -m 0.1 -w 500kb -Ob -o "$3/$c.bcf"; done
+          for c in $4; do echo "$3/$c.bcf"; done > "$3/bcfs.txt"
+          bcftools concat -f "$3/bcfs.txt" -Oz -o "$3/adm.vcf.gz"' \
+          _ "$(cpath "${dir}/panel")" "$(cpath "${tmp}/ref.txt")" "$(cpath "$tmp")" "$chroms" \
+       || ! run_in --rw "$dir" "$PLINK2_IMAGE" plink2 --vcf "$(cpath "${tmp}/adm.vcf.gz")" --make-bed \
+              --set-all-var-ids '@:#' --threads "$THREADS" --out "$(cpath "${tmp}/ref")" > "${tmp}/plink2.log" 2>&1; then
+      tail -n 20 "${tmp}/plink2.log" 2>/dev/null || true
+      echo "[WARN] Could not make the reference's ADMIXTURE input"
+      return 1
+    fi
+    : > "${tmp}/levels.tsv"
+    for v in continent:3 region:4; do
+      level=${v%:*} col=${v#*:}
+      awk -F'\t' -v c="$col" 'NR == FNR {if (FNR > 1) g[$1] = $c; next} {print g[$2]}' "${dir}/samples.tsv" "${tmp}/ref.fam" > "${tmp}/ref_${level}.pop"
+      k=$(sort -u "${tmp}/ref_${level}.pop" | grep -cv '^-\{0,1\}$' || true)
+      for e in bed bim fam; do ln -sf "ref.${e}" "${tmp}/ref_${level}.${e}"; done
+      # shellcheck disable=SC2016  # $1 to $4 belong to the inner sh
+      if ! run_in --rw "$dir" "$ADMIXTURE_IMAGE" sh -c 'cd "$1" && admixture --supervised -j"$4" "ref_$2.bed" "$3" > "admixture_$2.log" 2>&1' \
+            _ "$(cpath "$tmp")" "$level" "$k" "$THREADS" \
+         || ! order=$(run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/ancestry_fine_report.py order \
+              --pop "$(cpath "${tmp}/ref_${level}.pop")" --q "$(cpath "${tmp}/ref_${level}.${k}.Q")"); then
+        tail -n 20 "${tmp}/admixture_${level}.log" 2>/dev/null || true
+        echo "[WARN] ADMIXTURE could not estimate the frequencies of the ${level} groups"
+        return 1
+      fi
+      mv "${tmp}/ref_${level}.${k}.P" "${tmp}/${level}.P"
+      printf '%s\t%s\t%s\n' "$level" "$k" "$order" >> "${tmp}/levels.tsv"
+    done
+    awk -F'\t' -v OFS='\t' 'NR > 1 && $6 == 1 {print $1, $3}' "${dir}/samples.tsv" > "${tmp}/paint_map.tsv"
+    for e in ref.bed ref.bim ref.fam continent.P region.P levels.tsv paint_map.tsv; do mv -f "${tmp}/${e}" "${dir}/model/${e}"; done
+    rm -rf "$tmp"
+    echo "$mstamp" > "${dir}/model/DONE"
+  fi
+  echo "[OK] fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b): ${dir} ($(wc -l < "${dir}/model/ref.bim" | tr -d ' ') SNVs for ADMIXTURE, $(wc -l < "${dir}/model/paint_map.tsv" | tr -d ' ') painting references)"
+}
+
 # pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
 # FETCH_WAIT seconds apart (default 5, then 10, ...), the knobs fetch uses.
 # Docker's own message goes to the terminal: a rate limit (toomanyrequests)
@@ -540,6 +791,7 @@ install_vep_cache_opt_in() {
 
 case "$OPT_IN" in
   ancestry-panel) install_ancestry_panel; exit $? ;;
+  ancestry-fine-panel) install_ancestry_fine_panel; exit $? ;;
   cyrius) install_cyrius; exit $? ;;
   parascopy-data) install_parascopy_data && ensure_image PARASCOPY_IMAGE 35; exit $? ;;
   kir-data) install_kir_data; exit $? ;;

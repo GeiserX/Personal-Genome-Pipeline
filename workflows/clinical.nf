@@ -4,7 +4,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs cancer predisposition (CPSR), runs of homozygosity, polygenic scores
     (pgsc_calc; with an ancestry panel also the sample's projection onto it,
-    step 26), and the mitochondrial haplogroup (from MITO_VARIANTS' Mutect2
+    step 26), fine-grained ancestry against the panel of setup.sh
+    --ancestry-fine-panel (step 26b), and the mitochondrial haplogroup (from MITO_VARIANTS' Mutect2
     calls when they exist, with the haplocheck contamination check) in
     parallel from a single input VCF; and, opt-in, the consumer raw-data
     export from the gVCF (step 40).
@@ -22,6 +23,12 @@ include { PRS_SUMMARY        } from '../modules/local/prs/main'
 include { MITO_EXTRACT_CHRM  } from '../modules/local/mito_haplogroup/main'
 include { MITO_HAPLOGROUP    } from '../modules/local/mito_haplogroup/main'
 include { HAPLOCHECK         } from '../modules/local/mito_haplogroup/main'
+include { ANCESTRY_FINE_GENOTYPE  } from '../modules/local/ancestry_fine/main'
+include { ANCESTRY_FINE_PREPARE   } from '../modules/local/ancestry_fine/main'
+include { ANCESTRY_FINE_ADMIXTURE } from '../modules/local/ancestry_fine/main'
+include { ANCESTRY_FINE_PHASE     } from '../modules/local/ancestry_fine/main'
+include { ANCESTRY_FINE_PAINT     } from '../modules/local/ancestry_fine/main'
+include { ANCESTRY_FINE_REPORT    } from '../modules/local/ancestry_fine/main'
 include { CONSUMER_EXPORT    } from '../modules/local/export_consumer/main'
 
 workflow CLINICAL {
@@ -38,6 +45,7 @@ workflow CLINICAL {
     ch_reference        // channel: val(path) — reference FASTA (gVCF expansion)
     ch_reference_fai    // channel: val(path) — reference .fai
     ch_mito_vcf         // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
+    ch_ancestry_fine_panel // channel: path — the folder setup.sh --ancestry-fine-panel writes, or []
 
     main:
     ch_versions = Channel.empty()
@@ -49,6 +57,8 @@ workflow CLINICAL {
     ch_ancestry_results   = Channel.empty()
     ch_haplogroup         = Channel.empty()
     ch_haplocheck         = Channel.empty()
+    ch_ancestry_fine      = Channel.empty()
+    ch_ancestry_fine_png  = Channel.empty()
     ch_consumer_export    = Channel.empty()
 
     //
@@ -136,6 +146,44 @@ workflow CLINICAL {
     }
 
     //
+    // ANCESTRY_FINE — step 26b: ADMIXTURE fractions and an RFMix painting
+    // against the fine-grained panel. With a gVCF the panel's SNVs are
+    // genotyped from it, as in PRS; without one the VCF must hold reference
+    // calls, or ANCESTRY_FINE_GENOTYPE stops (the bash step's rule).
+    //
+    if (tools_here.contains('ancestry_fine')) {
+        ch_af_input = ch_vcf
+            .map { meta, vcf, idx -> [meta.id, meta, vcf, idx] }
+            .join(ch_gvcf.map { meta, gvcf, gidx -> [meta.id, gvcf, gidx] }, remainder: true)
+            .filter { row -> row[1] != null }
+            .map { row -> row[4] != null ? [row[1], row[4], row[5], 'gvcf'] : [row[1], row[2], row[3], 'vcf'] }
+        ANCESTRY_FINE_GENOTYPE(ch_af_input, ch_ancestry_fine_panel, ch_reference, ch_reference_fai)
+        ANCESTRY_FINE_PREPARE(ANCESTRY_FINE_GENOTYPE.out.genotypes, ch_ancestry_fine_panel)
+        ANCESTRY_FINE_ADMIXTURE(ANCESTRY_FINE_PREPARE.out.admixture_input)
+        ANCESTRY_FINE_PHASE(
+            ANCESTRY_FINE_GENOTYPE.out.genotypes
+                .map { meta, g, gi, _counts -> [meta.id, meta, g, gi] }
+                .join(ANCESTRY_FINE_PREPARE.out.chroms.map { meta, c -> [meta.id, c] })
+                .map { _id, meta, g, gi, c -> [meta, g, gi, c] },
+            ch_ancestry_fine_panel
+        )
+        ANCESTRY_FINE_PAINT(ANCESTRY_FINE_PHASE.out.phased, ch_ancestry_fine_panel)
+        ANCESTRY_FINE_REPORT(
+            ANCESTRY_FINE_ADMIXTURE.out.admixture
+                .map { meta, d -> [meta.id, meta, d] }
+                .join(ANCESTRY_FINE_PAINT.out.painting.map { meta, d -> [meta.id, d] })
+                .map { _id, meta, adm, paint -> [meta, adm, paint] },
+            ch_ancestry_fine_panel,
+            params.ancestry_fine_panel ? file(params.ancestry_fine_panel).name : ''
+        )
+        ch_ancestry_fine     = ANCESTRY_FINE_REPORT.out.fractions
+        ch_ancestry_fine_png = ANCESTRY_FINE_REPORT.out.painting_png
+        ch_versions = ch_versions.mix(ANCESTRY_FINE_GENOTYPE.out.versions, ANCESTRY_FINE_PREPARE.out.versions,
+                                      ANCESTRY_FINE_ADMIXTURE.out.versions, ANCESTRY_FINE_PHASE.out.versions,
+                                      ANCESTRY_FINE_PAINT.out.versions, ANCESTRY_FINE_REPORT.out.versions)
+    }
+
+    //
     // MITO: haplogroup from the Mutect2 chrM calls when MITO_VARIANTS ran for
     // the sample (then also the haplocheck contamination check), else from
     // the chrM records of its VCF
@@ -205,6 +253,8 @@ workflow CLINICAL {
     ancestry_results  = ch_ancestry_results
     haplogroup        = ch_haplogroup
     haplocheck        = ch_haplocheck     // [meta, <id>_haplocheck.txt]
+    ancestry_fine     = ch_ancestry_fine      // [meta, <id>_ancestry_fine.tsv]
+    ancestry_fine_png = ch_ancestry_fine_png  // [meta, <id>_painting.png]
     consumer_export   = ch_consumer_export // [meta, <id>_consumer_export.tsv]
     versions          = ch_versions
 }
