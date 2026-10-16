@@ -33,6 +33,7 @@ include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
+include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -73,6 +74,7 @@ workflow {
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
+        'bloodtype',
         'traits',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
@@ -601,6 +603,27 @@ workflow {
         ch_manta_call_regions_index
     )
 
+    // ─── Blood groups (opt-in: bloodtype) ───────────────────────────────
+    // The antigens of assets/bloodtype_markers.tsv from the VCF, and RhD from
+    // the BAM's read depth. A sample without a BAM gets [] for the depth: its
+    // RhD is not determined. Equivalent to scripts/41-bloodtype.sh.
+    ch_bloodtype          = Channel.empty()
+    ch_bloodtype_versions = Channel.empty()
+    if (tools_list.contains('bloodtype')) {
+        ch_bloodtype_markers = Channel.value(file("${projectDir}/assets/bloodtype_markers.tsv", checkIfExists: true))
+        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers)
+        BLOODTYPE(
+            ch_vcf
+                .map { meta, vcf, idx -> [meta.id, meta, vcf] }
+                .join(BLOODTYPE_DEPTH.out.depth.map { meta, f -> [meta.id, f] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> [row[1], row[2], row[3] ?: []] },
+            ch_bloodtype_markers
+        )
+        ch_bloodtype          = BLOODTYPE.out.table
+        ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -647,6 +670,7 @@ workflow {
         .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 
@@ -673,7 +697,8 @@ workflow {
             REPORTING.out.versions,
             CRAM_TO_BAM.out.versions,
             ch_cram_versions,
-            ch_traits_versions
+            ch_traits_versions,
+            ch_bloodtype_versions
         )
         .map { f -> f.text }
         .unique()

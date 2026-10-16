@@ -80,7 +80,7 @@ STARS = {
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "27", "29", "30", "31", "32", "35b", "37", "42", "04b"}
+                 "27", "29", "30", "31", "32", "35b", "37", "41", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -926,6 +926,20 @@ def sec_y_haplogroup(d, s):
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
+def sec_bloodtype(d, s):
+    """Step 41's table: one row per blood group system, predicted from the genome."""
+    p = first_existing(d, [f"bloodtype/{s}_bloodtype.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if not rows or not {"system", "phenotype", "confidence"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no system, phenotype and confidence columns, or no row")
+    systems = [{"system": r["system"], "phenotype": r["phenotype"] or ".", "genotype": r.get("genotype") or ".",
+                "confidence": r["confidence"] or "."} for r in rows]
+    by = {x["system"]: x["phenotype"] for x in systems}
+    return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -1322,6 +1336,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
