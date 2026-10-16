@@ -62,11 +62,14 @@ done
 SITES_C=$(cpath "$SITES") || exit 1
 
 # The samples the pedigree names (its sample column; the first non-blank
-# line is the header), and which of them have a gVCF here. family_report.py
-# prepare checks everything else.
+# line is the header), and which of them have a gVCF here. Read as
+# family_report.py reads it: CRLF line ends, whitespace-only lines and spaces
+# around a column name are allowed. family_report.py prepare checks
+# everything else.
 mapfile -t NAMED < <(awk -F'\t' '
-  !NF { next }
-  !h { sub(/^#/, ""); for (i = 1; i <= NF; i++) if (tolower($i) == "sample") c = i; h = 1; next }
+  { sub(/\r+$/, "") }
+  /^[ \t]*$/ { next }
+  !h { sub(/^#+/, ""); for (i = 1; i <= NF; i++) { f = tolower($i); gsub(/^[ \t]+|[ \t]+$/, "", f); if (f == "sample") c = i }; h = 1; next }
   /^#/ || !c { next }
   { s = $c; gsub(/^[ \t]+|[ \t]+$/, "", s); if (s != "") print s }' "$PEDIGREE")
 MEMBERS=()
