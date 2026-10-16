@@ -256,9 +256,15 @@ check_eq "with both parents homozygous reference" "$(cut -f7,8 <<< "$DN" | cut -
 # --- 5. A single-sample run is what main publishes ---------------------------------------------
 # norm DIR: one line per published file (outside pipeline_info), its path and
 # the md5 of its text without the lines that hold a date or a command line.
+# An index (.tbi, .csi) is listed by name only: it holds byte offsets into the
+# compressed file, and those move when the dated header compresses to another
+# size, so two runs with the same records give different indexes.
 norm() {
   ( cd "$1" && find . -type f ! -path './pipeline_info/*' | LC_ALL=C sort | while read -r f; do
-      printf '%s %s\n' "$f" "$(gzip -cdf "$f" | grep -avE 'Date=|^##[A-Za-z_]*[Cc]ommand(line)?=|^# The command line' | md5sum | cut -d' ' -f1)"
+      case "$f" in
+        *.tbi|*.csi) printf '%s index\n' "$f" ;;
+        *) printf '%s %s\n' "$f" "$(gzip -cdf "$f" | grep -avE 'Date=|^##[A-Za-z_]*[Cc]ommand(line)?=|^# The command line' | md5sum | cut -d' ' -f1)" ;;
+      esac
     done )
 }
 MAIN="${CASE_TMP}/main"
