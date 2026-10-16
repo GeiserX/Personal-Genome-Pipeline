@@ -512,10 +512,12 @@ ancestry_fine_pins() {
   local c
   command -v curl >/dev/null 2>&1 || { echo "ERROR: --ancestry-fine-panel needs curl to check the panel's files" >&2; return 1; }
   for c in $(seq 1 22); do
-    curl -fsI "${ANCESTRY_FINE_URL}/hgdp1kgp_chr${c}${ANCESTRY_FINE_SUFFIX}" | tr -d '\r' \
+    curl -fsI --connect-timeout 20 --max-time 60 --retry 3 --retry-delay 5 \
+        "${ANCESTRY_FINE_URL}/hgdp1kgp_chr${c}${ANCESTRY_FINE_SUFFIX}" | tr -d '\r' \
       | awk -v c="chr${c}" 'tolower($1) == "x-goog-hash:" && $2 ~ /^crc32c=/ {h = substr($2, 8)}
                             tolower($1) == "content-length:" {n = $2}
-                            END {if (h == "" || n == "") exit 1; print c "\t" h "\t" n}' || return 1
+                            END {if (h == "" || n == "") exit 1; print c "\t" h "\t" n}' \
+      || { echo "ERROR: no crc32c or size for the panel's chr${c} file (${ANCESTRY_FINE_URL})" >&2; return 1; }
   done
 }
 
