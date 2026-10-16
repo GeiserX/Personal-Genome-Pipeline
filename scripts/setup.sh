@@ -10,6 +10,7 @@
 #        ./scripts/setup.sh --kir-data <genome_dir>
 #        ./scripts/setup.sh --ancestry-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
+#        ./scripts/setup.sh --consumer-sites <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -17,7 +18,8 @@
 #                                            with KIR=true), pgsc_calc's ancestry
 #                                            panel (step 26, and percentiles in
 #                                            step 25), Yleaf's marker tables plus
-#                                            its image (step 37)
+#                                            its image (step 37), the site table
+#                                            of the raw-data export (step 40)
 #        ./scripts/setup.sh --vep-cache <genome_dir>
 #                                            the VEP cache of VEP_CACHE_RELEASE
 #                                            (VEP, vcfanno, clinical filter and
@@ -64,7 +66,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data|--vep-cache)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--yleaf-data|--consumer-sites|--vep-cache)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -89,7 +91,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data | --vep-cache <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --yleaf-data | --consumer-sites | --vep-cache <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -108,6 +110,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Install pgsc_calc's ancestry reference panel ${PGSC_PANEL:-} (~7 GB download): step 26, and"
   echo "                percentiles instead of raw scores in step 25; then exit."
   echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB), pull its image and exit."
+  echo "  --consumer-sites"
+  echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
+  echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --vep-cache   Install the VEP ${VEP_CACHE_RELEASE:-} cache (step 13 and the Nextflow VEP: ~26 GB download, ~30 GB"
   echo "                unpacked, both on disk during the install) and exit. Without it a run skips VEP, vcfanno,"
   echo "                the clinical filter and slivar."
@@ -288,6 +293,52 @@ install_yleaf_data() {
   rm -rf "$dest"
   mv "${dest}.part" "$dest"
   echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+}
+
+# install_consumer_sites: the site table of the raw-data export (step 40). The
+# 23andMe v5 site list (GRCh37 positions and reference bases) of
+# CONSUMER_SITES_COMMIT, checked against CONSUMER_SITES_SHA256, is joined by
+# rsID with dbSNP CONSUMER_DBSNP_BUILD's GRCh38 VCF (about 30 GB, checked
+# against CONSUMER_DBSNP_MD5) in bin/export_consumer.py build-sites, which
+# takes the GRCh38 position from dbSNP instead of a liftover and lists every
+# site it drops with the reason. grep first keeps the lines of the list's
+# rsIDs, so Python reads about 600,000 lines instead of more than a billion.
+# The dbSNP file is deleted once the table is built.
+install_consumer_sites() {
+  local dir="${GENOME_DIR}/reference/consumer" tpl db out dropped
+  out="${dir}/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
+  dropped="${dir}/23andme_v5_dropped_dbsnp${CONSUMER_DBSNP_BUILD}.tsv"
+  if [ -s "$out" ]; then
+    echo "[OK] Site table of step 40 already present: ${out}"
+    return 0
+  fi
+  tpl="${dir}/23andme_v5_hg19_ref.txt.gz"
+  if ! fetch "https://raw.githubusercontent.com/arrogantrobot/23andme2vcf/${CONSUMER_SITES_COMMIT}/23andme_v5_hg19_ref.txt.gz" \
+       "$tpl" sha256 "$CONSUMER_SITES_SHA256"; then
+    echo "[WARN] Could not download the 23andMe v5 site list."
+    return 1
+  fi
+  db="${dir}/dbsnp_${CONSUMER_DBSNP_BUILD}_GRCh38.vcf.gz"
+  echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
+  if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
+    echo "[WARN] Could not download dbSNP ${CONSUMER_DBSNP_BUILD}. Run this command again: the download resumes."
+    return 1
+  fi
+  echo "Building the site table (reads the whole dbSNP file once)..."
+  # The table is written to reference/consumer/, outside any sample directory.
+  # shellcheck disable=SC2016  # $1 to $5 expand in the container's shell
+  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 4g "$PYTHON_IMAGE" bash -euo pipefail -c '
+      gzip -dc "$1" | cut -f3 | grep "^rs" > "$3.ids"
+      gzip -dc "$2" | LC_ALL=C grep -Fwf "$3.ids" \
+        | python3 /pgp-bin/export_consumer.py build-sites --template "$1" --dbsnp - --out "$3" --dropped "$4" --source "$5"
+      rm -f "$3.ids"' _ "$(cpath "$tpl")" "$(cpath "$db")" "$(cpath "$out")" "$(cpath "$dropped")" \
+      "23andme2vcf ${CONSUMER_SITES_COMMIT} 23andme_v5_hg19_ref.txt.gz; dbSNP ${CONSUMER_DBSNP_BUILD} GCF_000001405.40"; then
+    rm -f "$out" "${out}.ids" "${out}.tmp" "${dropped}.tmp"
+    echo "[WARN] Could not build the site table of step 40; the dbSNP download is kept: run this command again."
+    return 1
+  fi
+  rm -f "$db"
+  echo "[OK] Site table of step 40: ${out} (dropped sites and their reasons: ${dropped})"
 }
 
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------
@@ -493,6 +544,7 @@ case "$OPT_IN" in
   parascopy-data) install_parascopy_data && ensure_image PARASCOPY_IMAGE 35; exit $? ;;
   kir-data) install_kir_data; exit $? ;;
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
+  consumer-sites) install_consumer_sites; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
 esac
 

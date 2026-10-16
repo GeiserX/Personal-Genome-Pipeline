@@ -575,7 +575,7 @@ else
     info "Annotation databases not downloaded (steps 30-31 will be skipped). See docs/00-reference-setup.md"
   fi
 
-  # --- Opt-in steps: Cyrius (21), Parascopy (35), IPD-KIR (08 with KIR=true) ---
+  # --- Opt-in steps: Cyrius (21), Parascopy (35), IPD-KIR (08 with KIR=true), the raw-data export (40) ---
   if [ "$(cat "${GENOME_DIR}/tools/cyrius-${CYRIUS_VERSION}/INSTALLED" 2>/dev/null)" = \
        "python=${PYTHON_IMAGE} lock=$(_digest sha256 "${PGP_ROOT}/scripts/cyrius-constraints.txt")" ]; then
     pass "Cyrius ${CYRIUS_VERSION} (opt-in step 21): installed"
@@ -591,6 +591,14 @@ else
     pass "IPD-KIR ${KIR_DB_RELEASE} (step 08 with KIR=true): present"
   else
     info "IPD-KIR ${KIR_DB_RELEASE} not installed (KIR=true in step 08): ./scripts/setup.sh --kir-data ${GENOME_DIR}"
+  fi
+  CONSUMER_SITES="${GENOME_DIR}/reference/consumer/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
+  if [ -s "$CONSUMER_SITES" ] && gzip -t "$CONSUMER_SITES" 2>/dev/null; then
+    pass "Site table of the raw-data export (opt-in step 40, dbSNP ${CONSUMER_DBSNP_BUILD}): present"
+  elif [ -e "$CONSUMER_SITES" ]; then
+    fail "Site table ${CONSUMER_SITES} is damaged: remove it and run ./scripts/setup.sh --consumer-sites ${GENOME_DIR}"
+  else
+    info "Site table of the raw-data export not built (opt-in step 40): ./scripts/setup.sh --consumer-sites ${GENOME_DIR}"
   fi
 
   # --- Step 25 (pgsc_calc, its scores) and its ancestry panel (step 26) ---
