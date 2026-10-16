@@ -466,7 +466,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 
 ### ADMIXTURE's bootstrap crashes when it is combined with projection
 - **Failed:** `admixture -P -B100 sample.bed 6` printed `Bootstrap replicate #0` and died with a segmentation fault, on the 1.3.0 BioContainer, on every input we tried: a planted person, a real one, 235 SNVs and 1,003 SNVs.
-- **Why:** not investigated beyond the crash; 1.3.0 is the last release (2015) and the only BioContainer.
+- **Why:** not investigated beyond the crash; 1.3.0 is the only build BioContainers publishes, so a newer ADMIXTURE would need an image built here.
 - **Fix:** step 26b runs its own block bootstrap. `bin/ancestry_fine_report.py sample-bed` writes `run_admixture.sh`, which projects the sample once per level, then for each replicate draws 100 blocks of neighbouring SNVs with replacement (awk, seeded by the replicate number), writes them as a PLINK `.ped` with the matching rows of the frequency file, and projects that. 100 replicates of 1,003 SNVs take about a second in total.
 
 ### ADMIXTURE reads a `.ped` the other way round from a `.bed`

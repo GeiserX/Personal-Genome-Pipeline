@@ -135,7 +135,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 24 | [HTML Report](24-html-report.md) | bash + bcftools | `BCFTOOLS_IMAGE` | Recommended |
 | 25 | [Polygenic Risk Scores](25-prs.md) | pgsc_calc | `PGSC_UTILS_IMAGE`, `PLINK2_IMAGE` | Exploratory; percentiles need the ancestry panel |
 | 26 | [Ancestry](26-ancestry.md) | pgsc_calc | `PGSC_FRAPOSA_IMAGE`, `PGSC_UTILS_IMAGE` | After `setup.sh --ancestry-panel` (runs inside step 25) |
-| 26b | [Fine-Grained Ancestry](26b-ancestry-fine.md) | ADMIXTURE, Beagle, RFMix | `ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE` | Opt-in, after `setup.sh --ancestry-fine-panel` (academic and non-commercial licences) |
+| 26b | [Fine-Grained Ancestry](26b-ancestry-fine.md) | ADMIXTURE, Beagle, RFMix | `ADMIXTURE_IMAGE`, `BEAGLE_IMAGE`, `RFMIX_IMAGE` | Opt-in, after `setup.sh --ancestry-fine-panel` (ADMIXTURE: academic use; RFMix: academic research only) |
 | 27 | [CPIC Recommendations](27-cpic-lookup.md) | Python + CPIC | `PYTHON_IMAGE` | If step 7 run |
 | 28 | [MultiQC Report](28-multiqc.md) | MultiQC | `MULTIQC_IMAGE` | Recommended |
 | 29 | [Somatic Variants](29-mutect2-somatic.md) | GATK Mutect2 | `GATK_IMAGE` | Experimental, opt-in (`SOMATIC=true`) |

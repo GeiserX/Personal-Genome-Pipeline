@@ -114,8 +114,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                percentiles instead of raw scores in step 25; then exit."
   echo "  --ancestry-fine-panel"
   echo "                Install the reference of step 26b, gnomAD's HGDP + 1000 Genomes panel (~19 GB is read, a few GB"
-  echo "                stored, hours on a home connection), and its images; then exit. ADMIXTURE and RFMix,"
-  echo "                which step 26b runs, are free for academic and non-commercial use only."
+  echo "                stored, hours on a home connection), and its images; then exit. Step 26b runs ADMIXTURE,"
+  echo "                free for academic use, and RFMix, free for academic research use only: any other use,"
+  echo "                a personal one included, needs a licence from Stanford."
   echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB), pull its image and exit."
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
@@ -523,8 +524,9 @@ ancestry_fine_pins() {
 
 # install_ancestry_fine_panel: the reference of step 26b, in
 # reference/ancestry_fine/ANCESTRY_FINE_PANEL (ANCESTRY_FINE_DIR: another
-# folder inside GENOME_DIR). ADMIXTURE and RFMix are free for academic and
-# non-commercial use only. Four parts, each redone only when its inputs change:
+# folder inside GENOME_DIR). ADMIXTURE is free for academic use; RFMix for
+# academic research use only, and any other use, a personal one included,
+# needs a licence from Stanford. Four parts, each redone only when its inputs change:
 #   samples.tsv  every person of the panel with population, continental and
 #                regional group, reference and painting flags (panel-map of
 #                bin/ancestry_fine_report.py); ANCESTRY_FINE_SAMPLE_MAP gives
@@ -552,7 +554,8 @@ install_ancestry_fine_panel() {
   local v c e level col k order rstamp="" pstamp mstamp tmp chroms=""
   cpath "$dir" >/dev/null || return 1
   echo "Installing the fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b) in ${dir}"
-  echo "  ADMIXTURE and RFMix, which step 26b runs, are free for academic and non-commercial use only."
+  echo "  Step 26b runs ADMIXTURE, free for academic use, and RFMix, free for academic research use only:"
+  echo "  any other use of RFMix, a personal one included, needs a licence from Stanford."
   for v in BCFTOOLS_HTTPS_IMAGE ADMIXTURE_IMAGE BEAGLE_IMAGE RFMIX_IMAGE; do ensure_image "$v" 26b || return 1; done
   mkdir -p "${dir}/panel" "${dir}/maps" "${dir}/model"
   echo "  Checking the panel's files against ANCESTRY_FINE_PANEL_SHA256..."

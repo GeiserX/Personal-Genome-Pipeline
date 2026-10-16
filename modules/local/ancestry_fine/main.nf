@@ -18,7 +18,8 @@
       ANCESTRY_FINE_REPORT    the fractions table, the painting (BED, PNG) and
                               the text summary
 
-    ADMIXTURE and RFMix are free for academic and non-commercial use only.
+    ADMIXTURE is free for academic use; RFMix for academic research use only,
+    and any other use, a personal one included, needs a licence from Stanford.
 
     Equivalent to: scripts/26b-ancestry-fine.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -48,6 +49,13 @@ process ANCESTRY_FINE_GENOTYPE {
         : "bcftools view -T ${panel}/panel/positions.tsv -Ov ${vcf}"
     """
     set -euo pipefail
+    # As scripts/26b-ancestry-fine.sh: the awk reads the first sample column
+    # only, so a file with more than one sample stops here.
+    n=\$(bcftools query -l ${vcf} | wc -l | tr -d ' ')
+    if [ "\$n" -ne 1 ]; then
+        echo "ERROR: Sample '${id}': ${vcf} holds \$n samples; step 26b reads a one-sample file (keep one with bcftools view -s <sample>)." >&2
+        exit 1
+    fi
     # As scripts/26b-ancestry-fine.sh: a record is kept only with the panel's
     # REF and ALT (a 0/0 gets the panel's ALT), and the records are counted
     # per chromosome with the first and the last position.

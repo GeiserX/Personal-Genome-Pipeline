@@ -17,13 +17,17 @@
 #     both left out of the panel: Africa and East Asia each 25% to 75%, the
 #     painting African left of 25.5 Mb and East Asian right of 29.5 Mb, and
 #     neither side passing the other group's check;
+#   - TWO, a two-sample gVCF whose first sample is MIX and second HG002T: the
+#     step reads the first sample column, so it must stop with the reason and
+#     write no fractions, instead of reporting MIX's ancestry under TWO's name;
 #   - red control: the same panel with every reference person's labels moved
 #     to the next group (Africa's people called West Eurasia, and so on) and
 #     the ADMIXTURE frequencies fitted again: on it the HG002T fraction checks
 #     fail (sample HG002R, the same genotypes; the red copy loses the genetic
 #     map of chr22, so that run only estimates fractions);
 #   - the Nextflow module on HG002T (with html_report) writes the fractions of
-#     the bash step, and the HTML report has its card.
+#     the bash step, and the HTML report has its card; on TWO's gVCF it stops
+#     the same way and publishes nothing.
 # The time and disk of the panel install go to the job summary.
 . "$(dirname "$0")/lib.sh"
 
@@ -206,6 +210,18 @@ check "MIX: the left side is not East Asian ($(side MIX "$LONG_CHR" "$LONG_START
 check "MIX: the right side is not African ($(side MIX "$LONG_CHR" $((JUNCTION + 2000000)) "$LONG_END" AFR))" \
   test "$(ge "$(side MIX "$LONG_CHR" $((JUNCTION + 2000000)) "$LONG_END" AFR)" 0.6 && echo pass)" != pass
 
+# --- TWO: a two-sample gVCF ------------------------------------------------------------
+# Its VCF is HG002T's (one sample), so the check that stops the run is the gVCF's.
+mkdir -p "${G}/TWO/vcf"
+in_genome "$BCFTOOLS_IMAGE" bash -c 'bcftools merge -Oz -o TWO/vcf/TWO.g.vcf.gz MIX/vcf/MIX.vcf.gz HG002T/vcf/HG002T.vcf.gz && bcftools index -t TWO/vcf/TWO.g.vcf.gz'
+cp "${G}/HG002T/vcf/HG002T.vcf.gz" "${G}/TWO/vcf/TWO.vcf.gz"
+cp "${G}/HG002T/vcf/HG002T.vcf.gz.tbi" "${G}/TWO/vcf/TWO.vcf.gz.tbi"
+check_eq "TWO: the gVCF holds MIX then HG002T" "$(bcf query -l TWO/vcf/TWO.g.vcf.gz | paste -sd, -)" "MIX,HG002T"
+ANCESTRY_FINE_BOOTSTRAP=0 run_step 26b-ancestry-fine.sh TWO
+check "TWO: step 26b stops on the two-sample gVCF (exit ${STEP_RC})" test "$STEP_RC" -ne 0
+check "TWO: and says why" has 'holds 2 samples; step 26b reads a one-sample file' "$(cat "$STEP_LOG")"
+check "TWO: and writes no fractions" test ! -e "${G}/TWO/ancestry_fine/TWO_ancestry_fine.tsv"
+
 # --- red control: the reference labels moved to the next group ------------------------
 RED="${G}/reference/ancestry_fine/red-control"
 rm -rf "$RED"
@@ -269,5 +285,28 @@ PY
 check "the HTML report has the fine-grained ancestry card with its painting" \
   python3 -I -c 'import sys; t = open(sys.argv[1]).read(); sys.exit(0 if "Fine-Grained Ancestry" in t and "data:image/png;base64," in t else 1)' \
   "${NF_OUT}/HG002T/HG002T_report.html"
+
+# The module on TWO's two-sample gVCF: ANCESTRY_FINE_GENOTYPE stops, the
+# pipeline ignores the failure of a report-only step and names it in
+# failed_tasks.tsv, and nothing is published for TWO.
+NF2="${CASE_TMP}/nf-two"
+mkdir -p "$NF2"
+printf 'sample,vcf,vcf_index,gvcf,gvcf_index\nTWO,%s,%s,%s,%s\n' "${G}/TWO/vcf/TWO.vcf.gz" "${G}/TWO/vcf/TWO.vcf.gz.tbi" \
+  "${G}/TWO/vcf/TWO.g.vcf.gz" "${G}/TWO/vcf/TWO.g.vcf.gz.tbi" > "${NF2}/samplesheet.csv"
+(
+  cd "$NF2" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
+    -work-dir "${E2E_WORK}/nf-work-ancestry-fine-two" \
+    --input "${NF2}/samplesheet.csv" \
+    --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
+    --tools ancestry_fine \
+    --ancestry_fine_panel "$PANEL" \
+    --outdir "${NF2}/out" \
+    --max_cpus 4 --max_memory 14.GB
+) 2>&1 | tee "$STEP_LOG"
+echo "+ exit ${PIPESTATUS[0]}"
+check "TWO (Nextflow): failed_tasks.tsv names ANCESTRY_FINE_GENOTYPE" has 'ANCESTRY_FINE_GENOTYPE' "$(cat "${NF2}/failed_tasks.tsv" 2>/dev/null)"
+check "TWO (Nextflow): the task says why" \
+  has 'holds 2 samples; step 26b reads a one-sample file' "$(cat "${E2E_WORK}"/nf-work-ancestry-fine-two/*/*/.command.err 2>/dev/null)"
+check "TWO (Nextflow): no fractions published" test ! -e "${NF2}/out/TWO/ancestry_fine/TWO_ancestry_fine.tsv"
 
 finish

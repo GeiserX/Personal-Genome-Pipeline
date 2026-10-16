@@ -23,7 +23,7 @@ Each choice is the tool with a maintained, pinned BioContainers image that fits 
 - **RFMix** 2.03 (Maples et al., AJHG 2013) for the painting. FLARE, the other candidate, has no BioContainers image.
 - **bin/ancestry_fine_report.py** writes the outputs and the bootstrap.
 
-**Licences: ADMIXTURE and RFMix are free for academic and non-commercial use only** (RFMix prints "licensed for non-commercial academic research use only" when it starts). Check them before any other use.
+**Licences: ADMIXTURE is free for academic use, and RFMix for academic research use only.** [RFMix's notice](https://github.com/slowkoni/rfmix) says that commercial users and non-profits whose use is not academic research need a separate licence from Stanford's Office of Technology Licensing, so a personal analysis is not covered by it either; the program prints "licensed for non-commercial academic research use only" when it starts. ADMIXTURE's licence, as its Bioconda recipe gives it, is "Free for Academic Use". Check both before you run the step.
 
 ADMIXTURE's own bootstrap (`-B`) crashes with a segmentation fault when it is combined with projection (`-P`) in this build. The spread comes instead from a block bootstrap run by the step: each of 100 replicates draws 100 blocks of neighbouring SNVs with replacement and projects them again.
 
@@ -67,6 +67,7 @@ The Allen Ancient DNA Resource (AADR, release v66.p1, CC0 1.0 on the [Harvard Da
 
 - VCF from DeepVariant (step 3) and its gVCF beside it: the panel's SNVs are genotyped from the gVCF, so the sites where you match the reference count.
 - Without a gVCF, a VCF that holds reference calls (0/0), such as the output of `chip-to-vcf.sh`. A variant-only VCF stops the step: from the sites where you differ from the reference alone, the fractions would lean toward the groups where those alleles are common. The rule: at least one in five of the genotyped panel SNVs must be 0/0.
+- One sample per file. The step reads the first sample column only, so a gVCF or VCF that holds more than one stops it, in the script and in the pipeline (keep one with `bcftools view -s <sample>`).
 - The panel, installed once: `./scripts/setup.sh --ancestry-fine-panel <genome_dir>`.
 
 ## Command
@@ -133,7 +134,7 @@ A whole genome has not been run here. Expected, scaled from those numbers: the i
 
 ## Notes
 
-- The e2e case (`tests/e2e/ancestry-fine-grained-1.sh`) checks HG002 from its gVCF, HG002's GIAB genotypes on chr22:20-35 Mb, and a planted person whose first half comes from a Yoruba and second half from a Han Chinese person (both left out of the panel): the planted person must come out near half and half with a painting that switches at the junction. A red control in the same case moves every reference person's label to the next group and checks that the HG002 checks then fail.
+- The e2e case (`tests/e2e/ancestry-fine-grained-1.sh`) checks HG002 from its gVCF, HG002's GIAB genotypes on chr22:20-35 Mb, and a planted person whose first half comes from a Yoruba and second half from a Han Chinese person (both left out of the panel): the planted person must come out near half and half with a painting that switches at the junction. A red control in the same case moves every reference person's label to the next group and checks that the HG002 checks then fail. A two-sample gVCF must stop the step and the Nextflow module with the reason and no fractions.
 
 ## Links
 

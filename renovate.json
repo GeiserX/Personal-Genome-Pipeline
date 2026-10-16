@@ -150,7 +150,7 @@
     {
       "description": [
         "Step 26b's three tools, no automated bumps: their tags are not versions this versioning can read, so a lookup would only report them as invalid.",
-        "ADMIXTURE is tagged 1.3.0--0, without the conda hash and build number the biocontainers rule above needs, and 1.3.0 (2015) is its last release. RFMix is 2.03.r0.9505bfa--h503566f_8, a version with a commit in it, and 2.03 (2017) is its last release. Beagle is 5.5_27Feb25.75f--hdfd78af_0, whose real version is the date.",
+        "ADMIXTURE is tagged 1.3.0--0, without the conda hash and build number the biocontainers rule above needs, and 1.3.0 is the only build BioContainers publishes. RFMix is 2.03.r0.9505bfa--h503566f_8, a version with a commit in it, and 2.03 (2017) is its last release. Beagle is 5.5_27Feb25.75f--hdfd78af_0, whose real version is the date.",
         "Bump one by hand after running step 26b on the e2e fixture; the monthly freshness issue reports a newer tag."
       ],
       "matchDatasources": ["docker"],

@@ -17,8 +17,9 @@
 #   5. bin/ancestry_fine_report.py writes the fractions table, the painting
 #      (BED and PNG) and a plain-text summary.
 # A group name is ours: a set of reference populations, not a nationality.
-# docs/26b-ancestry-fine.md says where the resolution ends. ADMIXTURE and
-# RFMix are free for academic and non-commercial use only.
+# docs/26b-ancestry-fine.md says where the resolution ends. ADMIXTURE is free
+# for academic use; RFMix for academic research use only, and any other use,
+# a personal one included, needs a licence from Stanford.
 #
 # Without the panel the step says so in one line and exits 0.
 # Env: ANCESTRY_FINE_DIR (another panel folder inside GENOME_DIR, or none to
@@ -73,17 +74,20 @@ W=$(cpath "$WORK")
 # panel's two alleles, and counts them per chromosome with the first and the
 # last position.
 GENO="${WORK}/genotypes.vcf"
+# The awk below reads the first sample column only, so a file with more than
+# one sample would give that person's ancestry under this sample's name: the
+# inner bash stops first unless the file holds exactly one sample.
 if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
   INPUT_KIND=gvcf
   echo "[1/5] Genotyping the panel's SNVs from the gVCF (${GVCF})..."
   # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
-  CMD=(bash -euo pipefail -c 'bcftools convert --gvcf2vcf -f "$1" -R "$2" -Ou "$3" | bcftools view -T "$2" --trim-alt-alleles -i "GT!=\"mis\"" -Ov'
+  CMD=(bash -euo pipefail -c 'n=$(bcftools query -l "$3" | wc -l | tr -d " "); [ "$n" -eq 1 ] || { echo "ERROR: $3 holds $n samples; step 26b reads a one-sample file (keep one with bcftools view -s <sample>)." >&2; exit 1; }; bcftools convert --gvcf2vcf -f "$1" -R "$2" -Ou "$3" | bcftools view -T "$2" --trim-alt-alleles -i "GT!=\"mis\"" -Ov'
        _ "$REF_FASTA_C" "${P}/panel/positions.tsv" "/genome/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz")
 else
   INPUT_KIND=vcf
   echo "[1/5] No gVCF beside the VCF: genotyping the panel's SNVs from the VCF (${VCF})..."
   # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
-  CMD=(bash -euo pipefail -c 'bcftools view -T "$1" -Ov "$2"' _ "${P}/panel/positions.tsv" "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz")
+  CMD=(bash -euo pipefail -c 'n=$(bcftools query -l "$2" | wc -l | tr -d " "); [ "$n" -eq 1 ] || { echo "ERROR: $2 holds $n samples; step 26b reads a one-sample file (keep one with bcftools view -s <sample>)." >&2; exit 1; }; bcftools view -T "$1" -Ov "$2"' _ "${P}/panel/positions.tsv" "/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz")
 fi
 run_in --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" "${CMD[@]}" \
   | awk -F'\t' -v OFS='\t' -v sites="${PANEL}/panel/sites.tsv" -v counts="${WORK}/counts.tsv" '
