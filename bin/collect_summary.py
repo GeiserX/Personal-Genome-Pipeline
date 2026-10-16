@@ -938,7 +938,13 @@ def sec_traits(d, s):
     need = ("rsid", "gene", "trait", "genotype", "status", "reading", "ancestry", "note", "pmids")
     if not rows or any(k not in rows[0] for k in need):
         raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
-    keep = [{k: (r.get(k) or "") for k in need} for r in rows]
+    # A row cut short (DictReader fills the missing fields with None) or with
+    # extra fields (kept under the key None) is a damaged table, never a
+    # called trait without its reading.
+    bad = next((i for i, r in enumerate(rows, 2) if None in r or any(r.get(k) is None for k in need)), None)
+    if bad:
+        raise Unreadable(f"{os.path.basename(p)} line {bad} does not have one field per column")
+    keep = [{k: r[k] for k in need} for r in rows]
     apoe = [r for r in keep if r["gene"] == "APOE"]
     counts = {st: sum(1 for r in keep if r["status"] == st and r["gene"] != "APOE")
               for st in ("called", "not_covered", "other_allele")}

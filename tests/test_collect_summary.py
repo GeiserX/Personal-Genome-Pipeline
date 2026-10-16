@@ -58,7 +58,8 @@ Checks:
      per status leave the APOE rows out, the rows and the APOE lines reach
      both reports (the APOE lines last, after the warning, folded away in
      the HTML), a row with ancestry yes is marked, a not-covered row is
-     listed as not read; a table without the reading column is unreadable;
+     listed as not read; a table without the reading column, or with a row
+     cut short, is unreadable;
      without the file the section is missing and listed as not run.
 
 Run: python3 tests/test_collect_summary.py
@@ -660,6 +661,10 @@ def main():
         check("traits: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_t))))
         put(f"{t}/traits/S_traits.tsv", "rsid\tgene\tstatus\nrs1\tX\tcalled\n")
         check("traits: a table without the reading column is unreadable",
+              collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
+        put(f"{t}/traits/S_traits.tsv", "rsid\tgene\ttrait\tgenotype\tstatus\treading\tancestry\tnote\tpmids\n"
+            "rs1\tX\tT\tA/A\tcalled\n")
+        check("traits: a row cut short after its status is unreadable, never a called trait without a reading",
               collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
         os.remove(f"{t}/traits/S_traits.tsv")
         summ_m, _, html_m = render(t)
