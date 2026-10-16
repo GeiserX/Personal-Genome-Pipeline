@@ -78,4 +78,4 @@ echo "A reading is what the cited studies found on average, not a diagnosis. APO
 echo "for Alzheimer's disease: docs/42-traits.md says what it means before you read it."
 echo ""
 echo "Traits (${OUT}):"
-awk -F'\t' 'NR > 1 { printf "  %-45s %-12s %s\n", substr($5, 1, 45), $6, $7 }' "$OUT"
+awk -F'\t' 'NR > 1 { printf "  %-45s %-12s %s\n", substr($5, 1, 45), $6, $8 }' "$OUT"
