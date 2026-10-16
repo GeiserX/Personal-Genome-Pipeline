@@ -99,7 +99,7 @@ echo "Members: ${MEMBERS[*]}"
 
 mkdir -p "$OUT"
 [ "$PEDIGREE" -ef "${OUT}/pedigree.tsv" ] || cp -f "$PEDIGREE" "${OUT}/pedigree.tsv"
-PY=(run_in --rw "$OUT" -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets/par_grch38.bed:/pgp/par_grch38.bed:ro"
+PY=(run_in --rw "$OUT" --cpus 2 --memory 4g -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets/par_grch38.bed:/pgp/par_grch38.bed:ro"
     "$PYTHON_IMAGE" python3 /pgp-bin/family_report.py)
 
 # --- 1. The pedigree, and each gVCF's sample name --------------------------------------
@@ -120,8 +120,8 @@ run_in --rw "$OUT" --cpus "$THREADS" --memory "${GLNEXUS_MEM}g" "$GLNEXUS_IMAGE"
     --mem-gbytes "$((GLNEXUS_MEM > 1 ? GLNEXUS_MEM - 1 : 1))" "${GVCFS_C[@]}" > "${OUT}/family.bcf.tmp"
 rm -rf "${OUT}/glnexus_db"
 mv -f "${OUT}/family.bcf.tmp" "${OUT}/family.bcf"
-run_in --rw "$OUT" "$BCFTOOLS_IMAGE" bcftools view -Oz -o "${OUT_C}/family.vcf.gz" "${OUT_C}/family.bcf"
-run_in --rw "$OUT" "$BCFTOOLS_IMAGE" bcftools index -f -t "${OUT_C}/family.vcf.gz"
+run_in --rw "$OUT" --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" bcftools view -Oz -o "${OUT_C}/family.vcf.gz" "${OUT_C}/family.bcf"
+run_in --rw "$OUT" --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" bcftools index -f -t "${OUT_C}/family.vcf.gz"
 rm -f "${OUT}/family.bcf"
 have_output "${OUT}/family.vcf.gz" || { echo "ERROR: no ${OUT}/family.vcf.gz" >&2; exit 1; }
 
@@ -132,11 +132,11 @@ rm -rf "${OUT}/somalier"
 mkdir -p "${OUT}/somalier/extract"
 EXTRACTED=()
 for s in "${MEMBERS[@]}"; do
-  run_in --rw "$OUT" "$SOMALIER_IMAGE" \
+  run_in --rw "$OUT" --cpus 2 --memory 4g "$SOMALIER_IMAGE" \
     somalier extract -d "${OUT_C}/somalier/extract" --sites "$SITES_C" -f "$REF_FASTA_C" "/genome/${s}/vcf/${s}.g.vcf.gz"
   EXTRACTED+=("${OUT_C}/somalier/extract/${s}.somalier")
 done
-run_in --rw "$OUT" "$SOMALIER_IMAGE" \
+run_in --rw "$OUT" --cpus 1 --memory 2g "$SOMALIER_IMAGE" \
   somalier relate --ped "${OUT_C}/family.ped" -o "${OUT_C}/somalier/family" "${EXTRACTED[@]}"
 rm -rf "${OUT}/somalier/extract"
 "${PY[@]}" check --members "${OUT_C}/members.tsv" --pairs "${OUT_C}/somalier/family.pairs.tsv" \
@@ -148,9 +148,9 @@ echo "--- phasing by inheritance (WhatsHap)"
 rm -f "${OUT}/family.phased.vcf.gz" "${OUT}/family.phased.vcf.gz.tbi"
 PHASED=()
 if [ -s "${OUT}/trios.ped" ]; then
-  run_in --rw "$OUT" "$WHATSHAP_IMAGE" \
+  run_in --rw "$OUT" --cpus 4 --memory 8g "$WHATSHAP_IMAGE" \
     whatshap phase --ped "${OUT_C}/trios.ped" --use-ped-samples -o "${OUT_C}/family.phased.vcf.gz" "${OUT_C}/family.vcf.gz"
-  run_in --rw "$OUT" "$WHATSHAP_IMAGE" \
+  run_in --rw "$OUT" --cpus 1 --memory 2g "$WHATSHAP_IMAGE" \
     python -c "import pysam; pysam.tabix_index('${OUT_C}/family.phased.vcf.gz', preset='vcf', force=True)"
   PHASED=(--phased "${OUT_C}/family.phased.vcf.gz")
 else
