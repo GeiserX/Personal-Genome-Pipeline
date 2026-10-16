@@ -313,7 +313,7 @@ install_consumer_sites() {
   out="${dir}/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
   dropped="${dir}/23andme_v5_dropped_dbsnp${CONSUMER_DBSNP_BUILD}.tsv"
   if [ -s "$out" ]; then
-    echo "[OK] Site table of step 40 already present: ${out}"
+    consumer_sites_pin_check "$out" "already present"
     return 0
   fi
   tpl="${dir}/23andme_v5_hg19_ref.txt.gz"
@@ -348,15 +348,21 @@ install_consumer_sites() {
     return 1
   fi
   rm -f "$db"
-  # Both inputs were checked against their pins, so the table must be the one
-  # the pin was taken from. A difference means build-sites changed since then.
+  consumer_sites_pin_check "$out" "built (dropped sites and their reasons: ${dropped})"
+}
+
+# consumer_sites_pin_check TABLE WHAT: compare the site table with
+# CONSUMER_SITES_TABLE_SHA256 and say so. A difference is a warning: both
+# inputs are checked against their own pins, so it means build-sites changed
+# since the pin was taken, and step 40 can still use the table.
+consumer_sites_pin_check() {
   local got
-  got=$(consumer_sites_digest "$out")
+  got=$(consumer_sites_digest "$1")
   if [ "$got" = "$CONSUMER_SITES_TABLE_SHA256" ]; then
-    echo "[OK] Site table of step 40: ${out}, the same as the pinned build (dropped sites and their reasons: ${dropped})"
+    echo "[OK] Site table of step 40 $2: $1, the same as the pinned build"
   else
-    echo "[WARN] Site table of step 40: ${out} differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
-    echo "       The inputs matched their pins, so bin/export_consumer.py build-sites changed since the pin was taken. Step 40 uses the table."
+    echo "[WARN] Site table of step 40 $2: $1 differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
+    echo "       It was built by another version of bin/export_consumer.py build-sites. Step 40 uses it; to rebuild it, remove it and run this command again."
   fi
 }
 
