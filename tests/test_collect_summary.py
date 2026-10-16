@@ -54,7 +54,14 @@ Checks:
      counted, the variant rows, SMN1 beside step 35's Parascopy call (agree,
      disagree, or no line without that table) in both reports, and a folder
      without the step lists it under Steps Not Run.
- 18. step 40's summary table: its counts and '--' reasons are read; a table
+ 18. step 42's traits table (bin/traits_report.py's own output): the counts
+     per status leave the APOE rows out, the rows and the APOE lines reach
+     both reports (the APOE lines last, after the warning, folded away in
+     the HTML), a row with ancestry yes is marked, a not-covered row is
+     listed as not read; a table without the reading column, or with a row
+     cut short, is unreadable;
+     without the file the section is missing and listed as not run.
+ 19. step 40's summary table: its counts and '--' reasons are read; a table
      without a whole-number 'called' row is unreadable, not a zero; an
      older table whose step was skipped in the latest run is stale.
 
@@ -644,7 +651,51 @@ def main():
         sec_m = collect_summary.collect("S", mo)["sections"]["mosaic_sex_loss"]
         check("mosaic: an unknown mosaic_call is unreadable", sec_m["state"] == "unreadable"
               and "mosaic_call" in (sec_m["note"] or ""), sec_m)
-        # 18. step 40, the raw-data export
+        # 18. the traits panel (step 42)
+        import traits_report
+        t = os.path.join(work, "traits", "S")
+        rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
+        by_id = {r["rsid"]: r for r in rows}
+        lct, ear = by_id["rs4988235"], by_id["rs17822931"]
+        g = os.path.join(work, "traits_g.tsv")
+        put(g, f"{lct['chrom']}\t{lct['pos']}\t{lct['ref']}\t{lct['alt']}\t{lct['ref']}/{lct['alt']}\n"
+               f"{ear['chrom']}\t{ear['pos']}\t{ear['ref']}\t.\t{ear['ref']}/{ear['ref']}\n"
+               "chr19\t44908684\tT\t.\tT/T\nchr19\t44908822\tC\t.\tC/C\n")
+        os.makedirs(f"{t}/traits", exist_ok=True)
+        traits_report.write_tsv(f"{t}/traits/S_traits.tsv", traits_report.report(rows, traits_report.read_genotypes(g)))
+        summ_t, txt_t, html_t = render(t)
+        td = summ_t["sections"]["traits"]
+        check("traits: section ok, counts without the APOE rows",
+              td["state"] == "ok" and (td["data"]["called"], td["data"]["not_covered"]) == (2, len(rows) - 4), td)
+        check("traits: the APOE rows and the APOE line are kept apart",
+              len(td["data"]["apoe"]) == 3 and not any(r["gene"] == "APOE" for r in td["data"]["rows"]), td["data"]["apoe"])
+        check("traits: the text report has the read row with its genotype, reading and PMID, marked ancestry",
+              f"(MCM6 rs4988235): {lct['ref']}/{lct['alt']} [ancestry]. {lct['het']} (PMID {lct['pmids']})" in txt_t, txt_t)
+        check("traits: the text report lists a not-covered row as not read",
+              "Not read (no genotype in the gVCF): " in txt_t and "rs671" in txt_t.split("Not read (no genotype in the gVCF): ", 1)[-1])
+        apoe_at = txt_t.find(render_report.APOE_WARNING)
+        check("traits: the APOE line comes after the warning in the text report, e3/e3",
+              apoe_at > 0 and "(rs429358+rs7412): e3/e3." in txt_t[apoe_at:] and "e3/e3" not in txt_t[:apoe_at], txt_t)
+        card_tr = html_t.split("<h2>Traits</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("traits: the HTML card has the row and the ancestry badge",
+              f"rs4988235</span></td><td>{lct['ref']}/{lct['alt']} " in card_tr and 'badge-yellow">ancestry<' in card_tr, card_tr)
+        folded = card_tr.split("<details>", 1)
+        check("traits: in the HTML the APOE lines are inside the folded block only",
+              len(folded) == 2 and "rs429358+rs7412" in folded[1] and "rs429358" not in folded[0], card_tr)
+        check("traits: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ_t))))
+        put(f"{t}/traits/S_traits.tsv", "rsid\tgene\tstatus\nrs1\tX\tcalled\n")
+        check("traits: a table without the reading column is unreadable",
+              collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
+        put(f"{t}/traits/S_traits.tsv", "rsid\tgene\ttrait\tgenotype\tstatus\treading\tancestry\tnote\tpmids\n"
+            "rs1\tX\tT\tA/A\tcalled\n")
+        check("traits: a row cut short after its status is unreadable, never a called trait without a reading",
+              collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
+        os.remove(f"{t}/traits/S_traits.tsv")
+        summ_m, _, html_m = render(t)
+        check("traits: no file -> missing, listed under Steps Not Run, the card says Not run",
+              summ_m["sections"]["traits"]["state"] == "missing" and "Traits panel" in summ_m["not_run"]
+              and ">Not run<" in html_m.split("<h2>Traits</h2>", 1)[-1].split("<h2>", 1)[0], summ_m["not_run"])
+        # 19. step 40, the raw-data export
         e_ = os.path.join(work, "export", "S")
         put(f"{e_}/consumer_export/S_consumer_export.tsv", "key\tvalue\nsites\t10\ncalled\t7\nno_call\t3\n"
             "from_reference_blocks\t5\ntemplate_sites\t12\nfile_23andme\tS_23andme_v5.zip\n"
