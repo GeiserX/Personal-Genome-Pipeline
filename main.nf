@@ -71,7 +71,7 @@ workflow {
     def known_tools = [
         'pharmcat', 'cpic', 'clinvar', 'pypgx',
         'vep', 'vcfanno', 'slivar', 'clinical_filter',
-        'cpsr', 'roh', 'prs', 'ancestry', 'mito_haplogroup',
+        'cpsr', 'roh', 'prs', 'ancestry', 'ancestry_fine', 'mito_haplogroup',
         'hla_typing', 'expansion_hunter', 'stranger', 'telomere_hunter', 'mosdepth', 'mito_variants', 'cyrius',
         'manta', 'delly', 'cnvpytor', 'duphold', 'annotsv', 'survivor_merge',
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
@@ -104,6 +104,7 @@ workflow {
         ['cyrius',           'cyrius_install',     '--cyrius_install'],
         ['parascopy',        'parascopy_data',     '--parascopy_data'],
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
+        ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
     ]
 
@@ -496,6 +497,13 @@ workflow {
         error "ERROR: --pgsc_calc ${params.pgsc_calc} holds no main.nf; it is the pgsc_calc checkout setup.sh makes (tools/pgsc_calc-<release>)."
     }
 
+    // Step 26b's panel folder (setup.sh --ancestry-fine-panel): its model/DONE
+    // is written last, so a folder without it is an install that stopped.
+    ch_ancestry_fine_panel = Channel.value(params.ancestry_fine_panel ? file(params.ancestry_fine_panel, checkIfExists: true) : [])
+    if (params.ancestry_fine_panel && !workflow.stubRun && !file("${params.ancestry_fine_panel}/model/DONE").exists()) {
+        error "ERROR: --ancestry_fine_panel ${params.ancestry_fine_panel} is not a finished panel (no model/DONE); run scripts/setup.sh --ancestry-fine-panel <genome_dir> again."
+    }
+
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
 
@@ -596,7 +604,7 @@ workflow {
     )
 
     // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS and ancestry (pgsc_calc), mito
+    // WORKFLOW 4: CLINICAL — CPSR, ROH, PRS and ancestry (pgsc_calc), fine-grained ancestry, mito
     // haplogroup (from the Mutect2 chrM calls of BAM_ANALYSIS when they exist)
     // ═══════════════════════════════════════════════════════════════════
     CLINICAL(
@@ -610,7 +618,8 @@ workflow {
         ch_gvcf,
         ch_reference,
         ch_reference_fai,
-        BAM_ANALYSIS.out.mito_vcf
+        BAM_ANALYSIS.out.mito_vcf,
+        ch_ancestry_fine_panel
     )
 
     // ─── Traits panel (traits, step 42) ─────────────────────────────────
@@ -743,6 +752,8 @@ workflow {
         .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)

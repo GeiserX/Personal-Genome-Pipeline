@@ -251,6 +251,6 @@ Telomere length (step 10) is most informative when compared between samples of *
 - **Read-backed or statistical phasing** (which variants are on which chromosome copy in one person): step 38 phases a child only by inheritance, from the parents' genotypes; a single person needs read-based phasing (long reads help) or statistical phasing tools like Eagle2/SHAPEIT
 - **Shared segments between relatives** (identity by descent, stretch by stretch): step 38 gives one relatedness number per pair
 - **Comparable polygenic risk scores**: step 25 computes raw scores per person, but turning them into percentiles that can be compared between people needs a matched reference population (see [step 25](25-prs.md))
-- **Ancestry estimates**: step 26 prepares a SNP set shared with 1000 Genomes, but a usable estimate needs joint PCA or admixture analysis against a reference panel, which is not implemented (see [step 26](26-ancestry.md))
+- **Ancestry estimates**: one sample at a time. Step 26 projects each sample onto a 1000 Genomes panel and [step 26b](26b-ancestry-fine.md) estimates its admixture fractions and paints its chromosomes; neither compares two samples with each other, so read their outputs side by side
 
 These are planned for future pipeline versions.
