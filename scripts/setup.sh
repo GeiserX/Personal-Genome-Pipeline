@@ -23,6 +23,10 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40)
+#        ./scripts/setup.sh --annotsv-data <genome_dir>
+#                                            AnnotSV's data for step 5 (the bundle
+#                                            when missing, gnomAD-SV's common SVs
+#                                            and the MANE Select list) and exit
 #        ./scripts/setup.sh --vep-cache <genome_dir>
 #                                            the VEP cache of VEP_CACHE_RELEASE
 #                                            (VEP, vcfanno, clinical filter and
@@ -38,7 +42,9 @@
 #      GENCODE gene coordinates T1K needs (~350 MB), GENCODE's exons for
 #      step 06's cDNA read check (~80 MB download), and somalier's sites and
 #      VerifyBamID2's marker panel for step 33 (~10 MB)
-#   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked)
+#   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked),
+#      plus gnomAD-SV's common SVs (~1.7 GB download, kept as a few MB) and the
+#      MANE Select transcript list
 #   6. Step 25: the PGS Catalog scores of assets/pgs_scores.tsv (~400 MB), a
 #      checkout of pgsc_calc and the Nextflow plugin it needs, so step 25 and
 #      the PRS process run without the network
@@ -69,7 +75,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--vep-cache)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -94,7 +100,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --vep-cache <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -121,6 +127,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --annotsv-data"
+  echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
+  echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
   echo "  --vep-cache   Install the VEP ${VEP_CACHE_RELEASE:-} cache (step 13 and the Nextflow VEP: ~26 GB download, ~30 GB"
   echo "                unpacked, both on disk during the install) and exit. Without it a run skips VEP, vcfanno,"
   echo "                the clinical filter and slivar."
@@ -788,6 +797,177 @@ keep_image() {
   return 1
 }
 
+# --- Step 5: AnnotSV's annotation data, gnomAD-SV and MANE ----------------------------
+# The AnnotSV image holds code only; without its data AnnotSV exits with an
+# error. Two files are added to the bundle, each pinned in versions.env:
+#   - gnomAD-SV GNOMAD_SV_VERSION's sites (GNOMAD_SV_SHA256): its common
+#     deletions, duplications, insertions and inversions, written where AnnotSV
+#     reads a gnomAD-SV v4 source of its benign set (ACMG 2F/4O, B_*_AFmax);
+#   - MANE MANE_RELEASE's summary (MANE_SUMMARY_SHA256): the MANE Select RefSeq
+#     transcripts, the list step 05 passes as -txFile, so the Tx, Frameshift,
+#     Location and exon columns follow MANE Select.
+ANNOTSV_DIR="${GENOME_DIR:+${GENOME_DIR}/annotsv_annotations}"
+ANNOTSV_NAME="Annotations_Human_${ANNOTSV_ANNOTATIONS_VERSION}.tar.gz"
+ANNOTSV_URL="https://www.lbgi.fr/~geoffroy/Annotations/${ANNOTSV_NAME}"
+ANNOTSV_TARBALL="${GENOME_DIR:+${GENOME_DIR}/${ANNOTSV_NAME}}"
+GNOMAD_SV_URL="https://storage.googleapis.com/gcp-public-data--gnomad/release/${GNOMAD_SV_VERSION}/genome_sv/gnomad.v${GNOMAD_SV_VERSION}.sv.sites.vcf.gz"
+MANE_SUMMARY_URL="https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/release_${MANE_RELEASE}/MANE.GRCh38.v${MANE_RELEASE}.summary.txt.gz"
+
+# install_annotsv_bundle: AnnotSV's annotation bundle, downloaded under a .part
+# name, extracted into a temporary directory and moved into place only when
+# complete.
+install_annotsv_bundle() {
+  if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
+    echo "[OK] AnnotSV annotation data already present."
+    return 0
+  fi
+  echo "Downloading AnnotSV ${ANNOTSV_ANNOTATIONS_VERSION} annotation data (~5.3 GB)..."
+  echo "  The AnnotSV server is slow (about 0.8 MB/s measured from a GitHub runner), so this can take"
+  echo "  1-2 hours. An interrupted download resumes when setup.sh runs again."
+  if ! fetch "$ANNOTSV_URL" "$ANNOTSV_TARBALL"; then
+    echo "[WARN] AnnotSV annotation download failed. Step 5 (AnnotSV) will be skipped until it is in place."
+    echo "  Re-run setup.sh, or download it by hand:"
+    echo "    curl -fL -C - -o ${ANNOTSV_TARBALL} ${ANNOTSV_URL}"
+    echo "    mkdir -p ${ANNOTSV_DIR} && tar -xzf ${ANNOTSV_TARBALL} -C ${ANNOTSV_DIR}"
+    return 1
+  fi
+  echo "  Extracting..."
+  rm -rf "${ANNOTSV_DIR}.part"
+  mkdir -p "${ANNOTSV_DIR}.part"
+  if ! tar -xzf "$ANNOTSV_TARBALL" -C "${ANNOTSV_DIR}.part"; then
+    rm -rf "${ANNOTSV_DIR}.part"
+    echo "[WARN] Could not extract ${ANNOTSV_TARBALL}. Step 5 (AnnotSV) will be skipped until it is in place."
+    return 1
+  fi
+  rm -rf "$ANNOTSV_DIR"
+  mv "${ANNOTSV_DIR}.part" "$ANNOTSV_DIR"
+  rm -f "$ANNOTSV_TARBALL"
+  echo "[OK] AnnotSV annotation data: ${ANNOTSV_DIR}/ ($(du -sh "$ANNOTSV_DIR" | cut -f1))"
+}
+
+# install_annotsv_gnomad_sv: gnomAD-SV's sites, reduced to the records AnnotSV
+# keeps for its benign set (FILTER PASS; DEL, DUP, INS or INV; AN >= 1000,
+# AF >= 0.001 and N_HOMALT >= 5; AnnotSV then applies its -benignAF, 1%, when
+# it annotates). AnnotSV 3.5 reads gnomAD-SV v4 from files named
+# gnomad.v4.0.sv.chr*.vcf.gz in BenignSV/GRCh38, and from the INFO keys END,
+# SVTYPE, controls_and_biobanks_AN, _AF and _N_HOMALT in that order. The v4.1
+# sites file has no controls-and-biobanks subset, so its AN, AF and N_HOMALT of
+# all genomes are written under those keys, in a file of that name. AnnotSV
+# merges the file into its benign_*_SV_GRCh38.sorted.bed on its next run and
+# then deletes it; gnomad-sv.installed records what was added.
+install_annotsv_gnomad_sv() {
+  local benign="${ANNOTSV_DIR}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38"
+  local stamp="${benign}/gnomad-sv.installed"
+  local want="gnomAD-SV ${GNOMAD_SV_VERSION} sha256 ${GNOMAD_SV_SHA256}"
+  local src="${ANNOTSV_DIR}/gnomad.v${GNOMAD_SV_VERSION}.sv.sites.vcf.gz"
+  local out="${benign}/gnomad.v4.0.sv.chrAll.from-v${GNOMAD_SV_VERSION}-sites.vcf.gz"
+  local n
+  if [ "$(cat "$stamp" 2>/dev/null)" = "$want" ]; then
+    echo "[OK] gnomAD-SV ${GNOMAD_SV_VERSION} frequencies for AnnotSV already present."
+    return 0
+  fi
+  if [ -s "$stamp" ]; then
+    echo "  ${stamp} records '$(cat "$stamp")'; adding ${want}."
+    echo "  The rows of the earlier release stay in AnnotSV's benign files; reinstall the bundle to drop them."
+  fi
+  mkdir -p "$benign"
+  # fetch keeps a download only once its checksum matches, so a file there is whole.
+  if [ ! -s "$src" ]; then
+    echo "Downloading gnomAD-SV ${GNOMAD_SV_VERSION} sites (~1.7 GB)..."
+    if ! fetch "$GNOMAD_SV_URL" "$src" sha256 "$GNOMAD_SV_SHA256"; then
+      echo "[WARN] Could not download gnomAD-SV ${GNOMAD_SV_VERSION}. Step 5 stops until it is in place; run setup.sh again."
+      return 1
+    fi
+  fi
+  echo "  Keeping the records AnnotSV uses for its benign set..."
+  if ! gzip -dc "$src" | awk -F'\t' -v OFS='\t' -v ver="$GNOMAD_SV_VERSION" '
+      BEGIN {
+        print "##fileformat=VCFv4.2"
+        print "##source=gnomAD-SV v" ver " sites, all genomes: AN, AF and N_HOMALT under the controls_and_biobanks_* keys AnnotSV 3.5 reads"
+        print "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO"
+      }
+      /^#/ || $7 != "PASS" { next }
+      {
+        end = ""; t = ""; an = ""; af = ""; hom = ""
+        n = split($8, kv, ";")
+        for (i = 1; i <= n; i++) {
+          eq = index(kv[i], "=")
+          if (!eq) continue
+          k = substr(kv[i], 1, eq - 1); v = substr(kv[i], eq + 1)
+          if (k == "END") end = v
+          else if (k == "SVTYPE") t = v
+          else if (k == "AN") an = v
+          else if (k == "AF") af = v
+          else if (k == "N_HOMALT") hom = v
+        }
+        if (t != "DEL" && t != "DUP" && t != "INS" && t != "INV") next
+        if (end == "" || an == "" || af == "" || hom == "") next
+        if (an + 0 < 1000 || af + 0 < 0.001 || hom + 0 < 5) next
+        print $1, $2, $3, "N", "<" t ">", ".", "PASS", "END=" end ";SVTYPE=" t ";controls_and_biobanks_AN=" an ";controls_and_biobanks_AF=" af ";controls_and_biobanks_N_HOMALT=" hom
+      }' | gzip -c > "${out}.part"; then
+    rm -f "${out}.part"
+    echo "[WARN] Could not read ${src}; removed nothing. Run setup.sh again."
+    return 1
+  fi
+  n=$(gzip -dc "${out}.part" | grep -vc '^#' || true)
+  if [ "$n" -eq 0 ]; then
+    rm -f "${out}.part" "$src"
+    echo "[WARN] ${src} gave no record AnnotSV can use; removed it. Run setup.sh again."
+    return 1
+  fi
+  mv "${out}.part" "$out"
+  printf '%s\n' "$want" > "$stamp"
+  rm -f "$src"
+  echo "[OK] gnomAD-SV ${GNOMAD_SV_VERSION}: ${n} common SVs for AnnotSV's benign set, merged on AnnotSV's next run (${out})"
+}
+
+# install_annotsv_mane: the MANE Select RefSeq transcripts of MANE MANE_RELEASE,
+# one per line, read by step 05 and the Nextflow ANNOTSV as -txFile.
+# mane_select_refseq.release records the release and checksum.
+install_annotsv_mane() {
+  local out="${ANNOTSV_DIR}/mane_select_refseq.txt"
+  local stamp="${ANNOTSV_DIR}/mane_select_refseq.release"
+  local want="MANE ${MANE_RELEASE} sha256 ${MANE_SUMMARY_SHA256}"
+  local src="${ANNOTSV_DIR}/MANE.GRCh38.v${MANE_RELEASE}.summary.txt.gz"
+  local n
+  if [ -s "$out" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$want" ]; then
+    echo "[OK] MANE ${MANE_RELEASE} Select transcripts for AnnotSV already present."
+    return 0
+  fi
+  if [ ! -s "$src" ] && ! fetch "$MANE_SUMMARY_URL" "$src" sha256 "$MANE_SUMMARY_SHA256"; then
+    echo "[WARN] Could not download the MANE ${MANE_RELEASE} summary. Step 5 stops until it is in place; run setup.sh again."
+    return 1
+  fi
+  # Columns by name: RefSeq_nuc holds NM_ ids with a version, MANE_status
+  # "MANE Select" or "MANE Plus Clinical".
+  if ! gzip -dc "$src" | awk -F'\t' '
+      NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+      $col["MANE_status"] == "MANE Select" && $col["RefSeq_nuc"] ~ /^NM_/ { print $col["RefSeq_nuc"] }' > "${out}.part"; then
+    rm -f "${out}.part"
+    echo "[WARN] Could not read ${src}. Run setup.sh again."
+    return 1
+  fi
+  n=$(wc -l < "${out}.part" | tr -d ' ')
+  if [ "$n" -eq 0 ]; then
+    rm -f "${out}.part" "$src"
+    echo "[WARN] ${src} lists no MANE Select RefSeq transcript; removed it. Run setup.sh again."
+    return 1
+  fi
+  mv "${out}.part" "$out"
+  printf '%s\n' "$want" > "$stamp"
+  rm -f "$src"
+  echo "[OK] MANE ${MANE_RELEASE}: ${n} MANE Select transcripts for AnnotSV (${out})"
+}
+
+# install_annotsv_data: the bundle, then the two files step 05 needs with it.
+install_annotsv_data() {
+  install_annotsv_bundle || return 1
+  local rc=0
+  install_annotsv_gnomad_sv || rc=1
+  install_annotsv_mane || rc=1
+  return "$rc"
+}
+
 # ensure_image VAR STEP: the image of an opt-in step (`# optional` in
 # versions.env, so the main setup leaves it out), pulled with its data, so
 # the run does not pull it in the middle.
@@ -831,6 +1011,7 @@ case "$OPT_IN" in
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
+  annotsv-data) install_annotsv_data; exit $? ;;
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
@@ -1183,42 +1364,12 @@ install_prs
 ###############################################################################
 # Phase 5: AnnotSV annotation data (step 5, a default step)
 ###############################################################################
-# The AnnotSV image holds code only; without this data AnnotSV exits with an
-# error. Downloaded under a .part name, extracted into a temporary directory
-# and moved into place only when complete.
+# The bundle, gnomAD-SV's common SVs and the MANE Select transcripts
+# (install_annotsv_data above). A failure is a warning: the rest of setup goes on.
 echo ""
-echo "=== Phase 5: AnnotSV annotation data (~5.3 GB download, ~20 GB unpacked) ==="
+echo "=== Phase 5: AnnotSV annotation data (~5.3 GB + ~1.7 GB download, ~20 GB unpacked) ==="
 
-ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
-ANNOTSV_NAME="Annotations_Human_${ANNOTSV_ANNOTATIONS_VERSION}.tar.gz"
-ANNOTSV_URL="https://www.lbgi.fr/~geoffroy/Annotations/${ANNOTSV_NAME}"
-ANNOTSV_TARBALL="${GENOME_DIR}/${ANNOTSV_NAME}"
-if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
-  echo "[OK] AnnotSV annotation data already present."
-else
-  echo "Downloading AnnotSV ${ANNOTSV_ANNOTATIONS_VERSION} annotation data (~5.3 GB)..."
-  echo "  The AnnotSV server is slow (about 0.8 MB/s measured from a GitHub runner), so this can take"
-  echo "  1-2 hours. An interrupted download resumes when setup.sh runs again."
-  if fetch "$ANNOTSV_URL" "$ANNOTSV_TARBALL"; then
-    echo "  Extracting..."
-    rm -rf "${ANNOTSV_DIR}.part"
-    mkdir -p "${ANNOTSV_DIR}.part"
-    if tar -xzf "$ANNOTSV_TARBALL" -C "${ANNOTSV_DIR}.part"; then
-      rm -rf "$ANNOTSV_DIR"
-      mv "${ANNOTSV_DIR}.part" "$ANNOTSV_DIR"
-      rm -f "$ANNOTSV_TARBALL"
-      echo "[OK] AnnotSV annotation data: ${ANNOTSV_DIR}/ ($(du -sh "$ANNOTSV_DIR" | cut -f1))"
-    else
-      rm -rf "${ANNOTSV_DIR}.part"
-      echo "[WARN] Could not extract ${ANNOTSV_TARBALL}. Step 5 (AnnotSV) will be skipped until it is in place."
-    fi
-  else
-    echo "[WARN] AnnotSV annotation download failed. Step 5 (AnnotSV) will be skipped until it is in place."
-    echo "  Re-run setup.sh, or download it by hand:"
-    echo "    curl -fL -C - -o ${ANNOTSV_TARBALL} ${ANNOTSV_URL}"
-    echo "    mkdir -p ${ANNOTSV_DIR} && tar -xzf ${ANNOTSV_TARBALL} -C ${ANNOTSV_DIR}"
-  fi
-fi
+install_annotsv_data || true
 
 ###############################################################################
 # Phase 6: Optional Downloads (instructions only)
