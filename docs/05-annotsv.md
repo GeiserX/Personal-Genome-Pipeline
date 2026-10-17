@@ -26,6 +26,20 @@ tar -xzf ${GENOME_DIR}/Annotations_Human_3.5.tar.gz -C ${GENOME_DIR}/annotsv_ann
 
 The script checks for `${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes/GRCh38` and stops with a pointer to `setup.sh` when it is missing. `run-all.sh` reports step 5 as skipped in that case.
 
+### gnomAD-SV frequencies and MANE Select transcripts
+
+`setup.sh` adds two files to the bundle. Both are pinned in `versions.env` with a sha256, and the run manifest records the pins through its copy of `versions.env`. `./scripts/setup.sh --annotsv-data ${GENOME_DIR}` adds them to an existing install without running the rest of setup.
+
+- **gnomAD-SV common SVs** (`GNOMAD_SV_VERSION`, `GNOMAD_SV_SHA256`). Without population frequencies, a deletion that many people carry is scored as if nobody did, and can reach class 4. `setup.sh` downloads gnomAD-SV's sites file (about 1.7 GB) and keeps the records AnnotSV uses for its benign set: FILTER PASS, type DEL, DUP, INS or INV, AN at least 1,000, AF at least 0.1% and at least 5 homozygous carriers. It writes them as `Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad.v4.0.sv.chrAll.from-v4.1-sites.vcf.gz`, the file name and layout AnnotSV 3.5's gnomAD-SV v4 reader expects, and deletes the download. The v4.1 sites file has no controls-and-biobanks subset, so the frequencies of all genomes are written under the `controls_and_biobanks_*` keys that reader takes. On its next run AnnotSV merges these records into its `benign_*_SV_GRCh38.sorted.bed` files and deletes the file; `gnomad-sv.installed` beside it records the release.
+- **MANE Select transcripts** (`MANE_RELEASE`, `MANE_SUMMARY_SHA256`). For each gene AnnotSV reports one transcript in `Tx`, `Frameshift`, `Location`, `Location2` and `Exon_count`, by default the one with the longest overlapped coding sequence, which is often a predicted `XM_` transcript. The ranking reads `Frameshift` and `Location`, so the transcript can change the class. `setup.sh` takes the MANE Select RefSeq ids (`NM_`) from NCBI's MANE summary into `annotsv_annotations/mane_select_refseq.txt`, and the step passes that file as `-txFile`, so AnnotSV reports the MANE Select transcript of a gene whenever the SV overlaps it. The exon numbers then match ClinVar and the literature.
+
+What the frequencies change in the ranking, by AnnotSV's rules:
+
+- A loss gets criterion 2F/4O (score -1.00) when it lies entirely inside a gnomAD-SV deletion of at least 1% frequency (`-benignAF`, default 0.01); `B_loss_source`, `B_loss_coord` and `B_loss_AFmax` name that record. A call that reaches a few bases past the gnomAD record does not get it.
+- 2F counts only when no stronger criterion of section 2 applies. A deletion that breaks the reading frame of a haploinsufficient gene (2E-1, +0.90) keeps its class even when it is common. With MANE Select as the transcript, an intronic deletion is no longer read as a frameshift of an `XM_` exon, so the benign criterion can apply.
+
+Step 05 and the Nextflow `ANNOTSV` stop with a pointer to `--annotsv-data` when `mane_select_refseq.txt` or `gnomad-sv.installed` is missing, and `validate-setup.sh` fails on either.
+
 ## Command
 ```bash
 ./scripts/05-annotsv.sh your_sample
@@ -46,14 +60,15 @@ docker run --rm --user "$(id -u):$(id -g)" \
     -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv \
     -genomeBuild GRCh38 \
     -annotationMode both \
-    -annotationsDir /genome/annotsv_annotations
+    -annotationsDir /genome/annotsv_annotations \
+    -txFile /genome/annotsv_annotations/mane_select_refseq.txt
 ```
 
 To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its host path; the file must be inside `${GENOME_DIR}`.
 
 ## Output
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv` — main annotated output (one row per SV, with ACMG class)
-- Columns include: SV type, coordinates, overlapping genes, DGV frequency, ACMG classification, ClinVar hits
+- Columns include: SV type, coordinates, overlapping genes and the MANE Select transcript (`Tx`), the benign-set frequency (`B_loss_AFmax`, `B_gain_AFmax`), ACMG classification, ClinVar hits
 
 ## ACMG Classification
 | Class | Meaning | Action |
