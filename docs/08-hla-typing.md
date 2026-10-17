@@ -16,7 +16,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Prerequisites
 - Aligned BAM from step 2 (or set `ALIGN_DIR`, for example `ALIGN_DIR=aligned_bwamem2`)
-- The IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.65.0) and the GENCODE gene lines, both installed by `setup.sh` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without them the step prints `SKIPPED` and the command that installs them.
+- The IPD-IMGT/HLA release `HLA_DB_RELEASE` (3.66.0) and the GENCODE gene lines, both installed by `setup.sh` (see [reference setup](00-reference-setup.md#small-pinned-data-files)). Without them the step prints `SKIPPED` and the command that installs them.
 - The step builds its T1K index on the first run, into `t1k_idx/t1k-<T1K version>_imgt-<release>_gencode-<release>/`. A new T1K image or another `HLA_DB_RELEASE` builds a new index.
 
 ## Command
@@ -33,7 +33,7 @@ The T1K call the script makes. It uses the DNA index with its coordinate file an
 source versions.env   # from the repository root
 SAMPLE=your_sample
 GENOME_DIR=/path/to/your/data
-IDX=$(ls -d ${GENOME_DIR}/t1k_idx/t1k-*_imgt-3.65.0_gencode-* | head -n 1)
+IDX=$(ls -d ${GENOME_DIR}/t1k_idx/t1k-*_imgt-3.66.0_gencode-* | head -n 1)
 IDX=/genome/${IDX#${GENOME_DIR}/}
 
 mkdir -p ${GENOME_DIR}/${SAMPLE}/hla_t1k
