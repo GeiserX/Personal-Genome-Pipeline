@@ -200,8 +200,8 @@ jobs:
     # 10.7 GB, over the repository's 10 GB limit) and the case list grew to
     # 84: runs took 2 h 20 min to 2 h 43 min, and on 2026-10-17 one was cut
     # at 150 minutes inside "Run the e2e cases". The limit covers the slowest
-    # run (163 minutes) plus the fixture wait above (75): 255 minutes, until
-    # the cache fits again.
+    # run (163 minutes) plus the fixture wait above (75), 238 minutes, with a
+    # 17-minute margin: 255 minutes, until the cache fits again.
     timeout-minutes: 255
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
