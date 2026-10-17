@@ -196,7 +196,12 @@ jobs:
     # (runs 37574186079, 37754488905, 37756039583); the cause is not checked.
     # A pull request that bumps the fixture also waits for it inside this
     # limit (scripts/ci/e2e-run.sh, up to 75 minutes).
-    timeout-minutes: 150
+    # In October 2026 every run misses the image cache (its entry is about
+    # 10.7 GB, over the repository's 10 GB limit) and the case list grew to
+    # 84: runs took 2 h 20 min to 2 h 34 min, and on 2026-10-17 one was cut
+    # at 150 minutes inside "Run the e2e cases". 210 minutes keeps a margin
+    # until the cache fits again.
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
