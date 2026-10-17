@@ -1017,6 +1017,41 @@ def sec_traits(d, s):
     return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
 
 
+def sec_couple(d, s):
+    """Step 39's couple table (couple/<id>_couple_carrier.tsv, bin/couple_report.py):
+    the partner, the shared and X-linked genes with the chance for a child, and
+    how many genes only one partner carries a change in. A table without rows
+    (no finding in either partner) names no partner."""
+    p = first_existing(d, [f"couple/{s}_couple_carrier.tsv"])
+    if not p:
+        return None, {}
+    with open(p, encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
+        rows = list(reader)
+        cols = reader.fieldnames or []
+    need = ("gene", "condition", "result", "offspring_risk", "partner_a", "findings_a", "partner_b",
+            "findings_b", "explanation")
+    if any(k not in cols for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    bad = next((i for i, r in enumerate(rows, 2) if None in r or any(r.get(k) is None for k in need)
+                or s not in (r["partner_a"], r["partner_b"]) or r["result"] not in ("shared", "x_linked", "one_partner")),
+               None)
+    if bad:
+        raise Unreadable(f"{os.path.basename(p)} line {bad} is not a row of {s}'s couple table")
+
+    def side(r):
+        own = "a" if r["partner_a"] == s else "b"
+        other = "b" if own == "a" else "a"
+        return {"gene": r["gene"], "condition": r["condition"], "risk": r["offspring_risk"],
+                "own": r["findings_" + own], "partner_findings": r["findings_" + other],
+                "explanation": r["explanation"]}
+    partner = next((r["partner_b"] if r["partner_a"] == s else r["partner_a"] for r in rows), None)
+    return p, {"partner": partner,
+               "shared": [side(r) for r in rows if r["result"] == "shared"],
+               "x_linked": [side(r) for r in rows if r["result"] == "x_linked"],
+               "one_partner": sum(1 for r in rows if r["result"] == "one_partner")}
+
+
 def sec_mito(d, s):
     p = first_existing(d, [f"mito/{s}_chrM_filtered.vcf.gz"])
     if not p:
@@ -1360,8 +1395,9 @@ def sec_read_count(d, s):
     return p, data
 
 
-# Sections that are not a step of their own: no "not run" line without them.
-NOT_A_STEP = {"read_count"}
+# Sections that are not a step of their own, or not one of one person (the
+# couple screen needs two): no "not run" line without them.
+NOT_A_STEP = {"read_count", "couple"}
 
 SECTIONS = [
     # key, title, step, reader
@@ -1372,6 +1408,7 @@ SECTIONS = [
     ("read_count", "Reads kept by alignment", "02", sec_read_count),
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
+    ("couple", "Couple carrier screen", "39", sec_couple),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),

@@ -253,6 +253,7 @@ workflow {
     // so a run without the option is not told about an undefined parameter.
     def pedigree   = params.containsKey('pedigree') ? params.pedigree : null
     def family_ids = []
+    def couple_ids = []
     if (pedigree) {
         def ped_lines = file(pedigree, checkIfExists: true).readLines().findAll { l -> l.trim() }
         def ped_cols  = ped_lines ? ped_lines[0].replaceFirst(/^#/, '').split('\t').collect { c -> c.trim().toLowerCase() } : []
@@ -266,6 +267,15 @@ workflow {
             si < v.size() ? v[si].trim() : ''
         }
         family_ids = ped_samples.findAll { s -> seen_samples.contains(s) }.unique()
+        // Partners (the partner column) among those samples: the couple
+        // carrier screen (step 39) runs inside FAMILY when there are two.
+        def pi = ped_cols.indexOf('partner')
+        couple_ids = ped_lines.drop(1).findAll { l -> !l.startsWith('#') }
+            .collect { l -> l.split('\t', -1).collect { c -> c.trim() } }
+            .findAll { v -> pi >= 0 && si < v.size() && pi < v.size() && family_ids.contains(v[si]) && family_ids.contains(v[pi]) }
+            .collectMany { v -> [v[si], v[pi]] }
+            .unique()
+            .sort()
         if (family_ids.size() < 2) {
             error "--pedigree ${pedigree} names ${family_ids.size()} sample${family_ids.size() == 1 ? '' : 's'} of " +
                   "${params.input} (${family_ids ? family_ids.join(', ') : 'none'}): the family analysis needs two " +
@@ -612,24 +622,6 @@ workflow {
         ch_ancestry_fine_panel
     )
 
-    // ═══════════════════════════════════════════════════════════════════
-    // WORKFLOW 4b: FAMILY — joint call, relationship check, phasing by
-    // inheritance (opt-in: --pedigree naming two or more samples)
-    // ═══════════════════════════════════════════════════════════════════
-    ch_family_versions = Channel.empty()
-    if (family_ids) {
-        FAMILY(
-            ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
-            ANNOTATION.out.clinical_vcf.filter { meta, f -> family_ids.contains(meta.id) },
-            Channel.value(file(pedigree, checkIfExists: true)),
-            ch_somalier_sites,
-            ch_reference,
-            ch_reference_fai,
-            ch_par_bed
-        )
-        ch_family_versions = FAMILY.out.versions
-    }
-
     // ─── Traits panel (traits, step 42) ─────────────────────────────────
     // The genotype at each position of assets/traits.tsv, read from the gVCF
     // only: a sample without one is skipped with a warning, because its
@@ -674,6 +666,41 @@ workflow {
         ch_manta_call_regions,
         ch_manta_call_regions_index
     )
+
+    // ═══════════════════════════════════════════════════════════════════
+    // WORKFLOW 5b: FAMILY — joint call, relationship check, phasing by
+    // inheritance (opt-in: --pedigree naming two or more samples), and the
+    // couple carrier screen when it marks two of them as partners. After SV,
+    // because the couple screen reads the partners' Delly calls.
+    // ═══════════════════════════════════════════════════════════════════
+    ch_family_versions = Channel.empty()
+    ch_couple_tables   = Channel.empty()
+    if (family_ids) {
+        if (couple_ids && !tools_list.contains('clinvar')) {
+            log.warn "--pedigree marks ${couple_ids.join(' and ')} as partners, but clinvar is not in --tools: " +
+                     "the couple carrier screen reads each partner's ClinVar hits, so it does not run."
+        }
+        def gencode_exons = params.containsKey('gencode_exons') ? params.gencode_exons : null
+        def ch_couple_outputs = couple_ids && tools_list.contains('clinvar') ? Channel.empty().mix(
+            PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number
+        ).filter { meta, f -> couple_ids.contains(meta.id) }.map { meta, f -> f } : Channel.empty()
+        FAMILY(
+            ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
+            ANNOTATION.out.clinical_vcf.filter { meta, f -> family_ids.contains(meta.id) },
+            Channel.value(file(pedigree, checkIfExists: true)),
+            ch_somalier_sites,
+            ch_reference,
+            ch_reference_fai,
+            ch_par_bed,
+            ch_couple_outputs,
+            Channel.value(file("${projectDir}/assets/carrier_genes.tsv", checkIfExists: true)),
+            Channel.value(gencode_exons ? file(gencode_exons, checkIfExists: true) : [])
+        )
+        ch_family_versions = FAMILY.out.versions
+        // <id>_couple_carrier.tsv: the id is the name without its 19-character suffix
+        ch_couple_tables   = FAMILY.out.couple_tables.flatten()
+            .map { f -> [[id: f.name.substring(0, f.name.length() - 19)], f] }
+    }
 
     // ─── Blood groups (opt-in: bloodtype) ───────────────────────────────
     // The antigens of assets/bloodtype_markers.tsv from the VCF, and RhD from
@@ -746,6 +773,7 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
 

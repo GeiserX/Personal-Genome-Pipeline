@@ -54,6 +54,9 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+COUPLE_NOTE = ("A screen, not a diagnosis: the couple report (couple_<a>_<b>.md in the family folder) lists the "
+               "genes, variant types and repeats it does not see. See a genetic counsellor before acting on a "
+               "result, or on its absence (docs/39-couple.md).")
 PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry populations and predict less well for "
                      "other ancestries, even with an ancestry-adjusted percentile.")
 
@@ -183,6 +186,20 @@ def prs_note(d):
 
 
 # --- text ------------------------------------------------------------------------
+
+def couple_lines(d):
+    """Step 39's lines, the same in both reports: the counts, then each shared
+    and X-linked gene with the chance for a child and both partners' findings."""
+    partner = d.get("partner") or "the partner"
+    lines = [f"Partner: {partner}. Genes where both carry a change: {len(d.get('shared', []))}; X-linked "
+             f"findings: {len(d.get('x_linked', []))}; genes where only one partner carries a change: "
+             f"{d.get('one_partner', 0)}"]
+    for label, key in (("Shared", "shared"), ("X-linked", "x_linked")):
+        for x in d.get(key, []):
+            lines.append(f"{label}: {x['gene']} ({x['condition']}): {x['risk']}. This sample: {x['own']}. "
+                         f"{partner}: {x['partner_findings']}")
+    return lines + [COUPLE_NOTE]
+
 
 def share(x):
     """A fraction as a whole percentage, for the fine-grained ancestry section."""
@@ -328,6 +345,11 @@ def text_report(s):
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
+        w("")
+
+    if head("couple", "Couple Carrier Screen (step 39)"):
+        for line in couple_lines(S["couple"]["data"]):
+            w(f"  {line}")
         w("")
 
     if head("pharmcat", "Pharmacogenomics (PharmCAT)"):
@@ -777,6 +799,9 @@ def html_report(s):
         cv_body.insert(2, stat("Flagged by the cDNA read check",
                                badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
+    if S.get("couple", MISSING)["state"] != "missing":
+        a(card(S["couple"], "Couple Carrier Screen",
+               [f"    <p>{E(line)}</p>" for line in couple_lines(S["couple"]["data"])], full=True))
 
     pg = S["pharmcat"]["data"]
     cp = S["cpic"]["data"]
