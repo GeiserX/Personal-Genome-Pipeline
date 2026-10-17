@@ -168,8 +168,8 @@ FAKE
   if grep -qxF "$VEP" <<< "$LIST"; then echo "FAIL: the pull list holds ${VEP}, which no case runs"; st_failed=1; else echo "ok: the pull list leaves VEP out"; fi
   # Cache groups: a version bump keeps an image in its group, and every image
   # of the pull list is in exactly one group.
-  for pair in "quay.io/biocontainers/minimap2:2.31--h118bc1c_0 quay.io/biocontainers/minimap2:2.32--h0_0" \
-              "python:3.15.0@sha256:16e7e5fc python:3.16.0@sha256:0123abcd" \
+  for pair in "example/tool:2.31--h118bc1c_0 example/tool:2.32--h0_0" \
+              "example/pinned:3.15.0@sha256:16e7e5fc example/pinned:3.16.0@sha256:0123abcd" \
               "registry.example:5000/tool:1.0 registry.example:5000/tool:2.0"; do
     read -r a b <<< "$pair"
     if [ "$(image_group "$a")" = "$(image_group "$b")" ]; then echo "ok: ${a} and ${b} share a cache group"
