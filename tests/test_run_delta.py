@@ -72,13 +72,13 @@ MANIFEST = [
     ("run", "written_utc", "2026-01-01 00:00:00 UTC"),
     ("run", "written_by", "run-all.sh"),
     ("run", "git_commit", "abc"),
-    ("version", "PYTHON_IMAGE", "python:3.12-slim"),
-    ("version", "DEEPVARIANT_IMAGE", "google/deepvariant:1.9.0"),
-    ("version", "PHARMCAT_IMAGE", "pgkb/pharmcat:3.4.0"),
+    ("version", "PYTHON_IMAGE", "python-ref"),
+    ("version", "DEEPVARIANT_IMAGE", "deepvariant-ref"),
+    ("version", "PHARMCAT_IMAGE", "pharmcat-ref"),
     ("version", "VEP_CACHE_RELEASE", "115"),
-    ("image", "python:3.12-slim", "python@sha256:aaa"),
-    ("image", "google/deepvariant:1.9.0", "google/deepvariant@sha256:bbb"),
-    ("image", "pgkb/pharmcat:3.4.0", "pgkb/pharmcat@sha256:ccc"),
+    ("image", "python-ref", "digest-aaa"),
+    ("image", "deepvariant-ref", "digest-bbb"),
+    ("image", "pharmcat-ref", "digest-ccc"),
     ("data", "clinvar_file_date", "20260101 (clinvar/clinvar.vcf.gz)"),
     ("data", "ancestry_panel", "not installed (setup.sh --ancestry-panel)"),
 ]
@@ -136,7 +136,7 @@ def main():
         # 3. one reclassification and one new digest
         s = summary("2026-02-01T00:00:00Z")
         s["sections"]["clinvar"]["data"]["hits"][1]["significance"] = "Benign"
-        m = set_row(MANIFEST, "image", "google/deepvariant:1.9.0", "google/deepvariant@sha256:ddd")
+        m = set_row(MANIFEST, "image", "deepvariant-ref", "digest-ddd")
         write_run(cur, s, m)
         d, txt, _ = delta(w, prev, cur, "planted")
         kinds = sorted((c["area"], c["kind"], c["item"]) for c in d["changes"])
@@ -147,14 +147,14 @@ def main():
         check("planted: the reclassification reads Likely pathogenic -> Benign",
               cv.get("before") == "Likely pathogenic" and cv.get("after") == "Benign", cv)
         check("planted: the new DeepVariant digest is named as a possible cause",
-              "DEEPVARIANT_IMAGE" in cv.get("why", "") and "sha256:ddd" in cv.get("why", ""), cv)
+              "DEEPVARIANT_IMAGE" in cv.get("why", "") and "digest-ddd" in cv.get("why", ""), cv)
         img = next((c for c in d["changes"] if c["item"] == "DEEPVARIANT_IMAGE"), {})
         check("planted: the digest change shows both digests",
-              "sha256:bbb" in img.get("before", "") and "sha256:ddd" in img.get("after", ""), img)
+              "digest-bbb" in img.get("before", "") and "digest-ddd" in img.get("after", ""), img)
         check("planted: the text lists 2 changes", "2 change(s):" in txt, txt)
 
         # 3b. the same reclassification with only the PharmCAT digest changed
-        m = set_row(MANIFEST, "image", "pgkb/pharmcat:3.4.0", "pgkb/pharmcat@sha256:eee")
+        m = set_row(MANIFEST, "image", "pharmcat-ref", "digest-eee")
         write_run(cur, s, m)
         d, _, _ = delta(w, prev, cur, "unrelated")
         cv = next((c for c in d["changes"] if c["kind"] == "reclassified"), {})
