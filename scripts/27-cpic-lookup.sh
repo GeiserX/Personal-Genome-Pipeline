@@ -8,7 +8,10 @@
 # table. With pypgx output (step 32) it also writes the PharmCAT/pypgx
 # comparison and warns about genes only pypgx could call. With step 36's
 # consensus table it lists the calls other tools gave PharmCAT (HLA from T1K,
-# an agreed CYP2D6) and why a gene was held back.
+# an agreed CYP2D6) and why a gene was held back. When PharmCAT has no single
+# result for CYP4F2 or VKORC1, whose warfarin rule rests on one position, it
+# adds the genotype PharmCAT read there, labelled as a single-position
+# fallback, not a PharmCAT call.
 #
 # Requires: PharmCAT output from step 7. No internet connection needed.
 set -euo pipefail

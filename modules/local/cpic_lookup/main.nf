@@ -9,7 +9,10 @@
     comparison (published to pypgx/, as the bash steps do) and warns, in the
     recommendations, about a gene PharmCAT could not call but pypgx did.
     With PGX_CONSENSUS's table it lists the calls other tools gave PharmCAT
-    (HLA from T1K, an agreed CYP2D6) and why a gene was held back.
+    (HLA from T1K, an agreed CYP2D6) and why a gene was held back. When
+    PharmCAT has no single result for CYP4F2 or VKORC1, whose warfarin rule
+    rests on one position, it adds the genotype PharmCAT read there, labelled
+    as a single-position fallback, not a PharmCAT call.
     Fails when the report yields no gene.
 
     Equivalent to: scripts/27-cpic-lookup.sh

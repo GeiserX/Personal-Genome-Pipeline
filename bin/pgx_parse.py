@@ -16,8 +16,11 @@ other tools gave PharmCAT (HLA from T1K, an agreed CYP2D6) and say why a gene
 was held back; a held-back gene gets no pypgx-only warning, which would
 steer by one caller. An outside call in PharmCAT's report counts only when
 the consensus passed that same call (an unreadable table confirms none): a
-report left from an earlier step 36 run gives no drug guidance for it. It
-exits 1 when the report cannot be
+report left from an earlier step 36 run gives no drug guidance for it. A
+gene whose CPIC warfarin rule rests on one position (CYP4F2 *3, VKORC1
+-1639) and that PharmCAT left without a single result gets the genotype
+PharmCAT read there (its `variants` list), labelled as a single-position
+fallback, not a PharmCAT call. It exits 1 when the report cannot be
 read or yields no gene: a report that parses to nothing is a format change,
 never an all-clear.
 
@@ -336,7 +339,7 @@ def drug_lines(call, guidance, related):
             rec = " ".join(rec.split())
             head = f"      - {drug} [CPIC{', ' + cls if cls and cls != 'Unspecified' else ''}]"
             if rec:
-                head += ": " + (rec if len(rec) <= 200 else rec[:197] + "...")
+                head += ": " + rec  # whole: a cut loses dose qualifiers at the end
             lines.append(head)
         others = sorted({e[0] for e in entries if e[1] != "CPIC" and e[0] not in shown})
         if others:
@@ -380,6 +383,73 @@ def drug_level_phenotype(call, guidance):
     return names.pop()
 
 
+# --- single-position fallback ---------------------------------------------------
+
+WARFARIN_GUIDELINE = "https://cpicpgx.org/guidelines/guideline-for-warfarin-and-cyp2c9-and-vkorc1/"
+# Genes whose CPIC warfarin guidance rests on one position. When PharmCAT gives
+# no single result for one (extra unphased heterozygous calls elsewhere in
+# CYP4F2 can leave no diplotype that matches), the genotype PharmCAT itself
+# read at that position, in the gene's `variants` list of report.json, still
+# says what the rule needs. gene: (rsid, reference base, variant base, how
+# the genotype is written, the CPIC rule).
+SINGLE_POSITION = {
+    "CYP4F2": ("rs2108622", "C", "T",
+               lambda n: f"{['no copy', 'one copy', 'two copies'][n]} of the *3 variant (T, p.V433M)",
+               "the CPIC warfarin dosing algorithm for patients not of African ancestry adds 5-10% "
+               "to the dose of a CYP4F2 *3 carrier."),
+    # rs9923231 is VKORC1 -1639G>A; the gene is on the minus strand, so the
+    # genomic C is -1639 G and T is -1639 A.
+    "VKORC1": ("rs9923231", "C", "T",
+               lambda n: "-1639 " + "G" * (2 - n) + "A" * n,
+               "the CPIC warfarin guideline doses by a pharmacogenetic algorithm that takes VKORC1 "
+               "-1639G>A with CYP2C9; each A allele lowers the expected dose."),
+}
+FALLBACK_LABEL = "single-position fallback, not a PharmCAT call"
+
+
+def position_read(data, gene, rsid):
+    """The entry of PharmCAT's `variants` list for rsid in gene (3.x flat
+    report), or None when the report lists none."""
+    genes = data.get("genes") if isinstance(data, dict) else None
+    g = genes.get(gene) if isinstance(genes, dict) else None
+    for v in (g.get("variants") or []) if isinstance(g, dict) else []:
+        if isinstance(v, dict) and rsid in re.split(r"[;,\s]+", str(v.get("dbSnpId") or "")):
+            return v
+    return None
+
+
+def fallback_lines(calls, data):
+    """The single-position fallback for each SINGLE_POSITION gene PharmCAT
+    left without a single result. A variant carrier is a WARNING line, so the
+    summary and the reports carry it; every line says it is not PharmCAT's
+    call. PharmCAT's own result for the gene is left as it is."""
+    lines = []
+    for c in calls:
+        if c.gene not in SINGLE_POSITION or c.status not in ("not called", "ambiguous") or c.source == "OUTSIDE":
+            continue
+        rsid, ref, alt, spell, rule = SINGLE_POSITION[c.gene]
+        what = "no result" if c.status == "not called" else "no single result"
+        v = position_read(data, c.gene, rsid)
+        call = str((v or {}).get("call") or "")
+        alleles = re.split(r"[/|]", call) if call else []
+        if v is None:
+            lines.append(f"  {c.gene} -- PharmCAT has {what}, and its report lists no genotype at {rsid}: not callable.")
+            continue
+        if len(alleles) != 2 or any(a not in (ref, alt) for a in alleles):
+            got = f"reads {call}, not two of {ref} and {alt}" if call else "has no genotype in the VCF PharmCAT read"
+            lines.append(f"  {c.gene} -- PharmCAT has {what}; {rsid} {got}: not callable.")
+            continue
+        n = alleles.count(alt)
+        head = f"PharmCAT has {what} for {c.gene}; {FALLBACK_LABEL}: {rsid} reads {call}, {spell(n)}."
+        if n:
+            lines.append(f"  WARNING: {head}")
+            lines.append(f"    Warfarin (CPIC): {rule}")
+            lines.append(f"    {WARFARIN_GUIDELINE}")
+        else:
+            lines.append(f"  {head} The CPIC warfarin rule for this position does not apply.")
+    return lines
+
+
 # --- pypgx ---------------------------------------------------------------------
 
 def read_pypgx(path):
@@ -397,14 +467,27 @@ def pypgx_called(diplotype):
     return diplotype not in ("", "FAILED", "N/A", "Not called")
 
 
+def _norm_allele(allele):
+    """One allele name in a form both tools share. PharmCAT names the alleles
+    of a single-position gene (VKORC1, IFNL3) 'rs9923231 reference (C)' and
+    'rs9923231 variant (T)', where pypgx writes 'Reference' and 'rs9923231'."""
+    a = allele.strip()
+    m = re.fullmatch(r"(\S+) (variant|reference) \([ACGT]+\)", a)
+    if m:
+        return "Reference" if m.group(2) == "reference" else m.group(1)
+    return "Reference" if a.lower() == "reference" else a
+
+
 def _norm(diplotype):
-    # PharmCAT names VKORC1 alleles 'rs9923231 variant (T)' where pypgx writes
-    # 'rs9923231', and either tool may put the alleles in either order.
-    return sorted(re.sub(r" (variant|reference) \([ACGT]+\)", "", a).strip() for a in diplotype.split("/"))
+    # Either tool may put the alleles in either order.
+    return sorted(_norm_allele(a) for a in diplotype.split("/"))
 
 
 def compare(calls, pypgx):
-    """Rows (gene, PharmCAT, pypgx, match, called_by) for genes either tool called."""
+    """Rows (gene, PharmCAT, pypgx, match, called_by, PharmCAT phenotype, pypgx
+    phenotype) for genes either tool called. The phenotypes sit beside the
+    diplotypes so a gene pypgx has no phenotype rule for (step 32 writes 'no
+    pypgx phenotype rule') still shows the phenotype PharmCAT gave it."""
     pc = {c.gene: c for c in calls}
     rows = []
     for gene in sorted(set(pc) | set(pypgx)):
@@ -413,7 +496,8 @@ def compare(calls, pypgx):
         pc_ok = bool(c and c.called and not c.ambiguous)
         if c and c.ambiguous:
             pc_dip = f"ambiguous ({len(c.labels)} possible diplotypes)"
-        pg_dip = pypgx.get(gene, ("Not called", ""))[0] or "Not called"
+        pg_dip, pg_phen = pypgx.get(gene, ("Not called", ""))
+        pg_dip = pg_dip or "Not called"
         pg_ok = pypgx_called(pg_dip)
         if not pc_ok and not pg_ok:
             continue
@@ -425,7 +509,7 @@ def compare(calls, pypgx):
             match, by = "Yes", "both"
         else:
             match, by = "No", "both"
-        rows.append((gene, pc_dip, pg_dip, match, by))
+        rows.append((gene, pc_dip, pg_dip, match, by, c.shown if c else "", pg_phen))
     return rows
 
 
@@ -651,6 +735,13 @@ def cpic_report(args):
         lines.append("  None -- all genes were successfully called.")
     lines.append("")
 
+    fallback = fallback_lines(calls, data)
+    if fallback:
+        lines += ["Single-Position Fallback (not a PharmCAT call):", "-" * 72, ""]
+        lines += fallback
+        lines += ["  Read from the genotype PharmCAT lists at the position in its report.json. Confirm",
+                  "  it before acting on it: PharmCAT itself made no call for the gene.", ""]
+
     if args.pypgx:
         lines += ["PharmCAT and pypgx:", "-" * 72, ""]
         if pypgx_error:
@@ -685,7 +776,8 @@ def cpic_report(args):
         rows = compare(calls, pypgx)
         with open(args.comparison, "w", newline="") as f:
             w = csv.writer(f, delimiter="\t", lineterminator="\n")
-            w.writerow(["Gene", "PharmCAT_diplotype", "pypgx_diplotype", "Match", "Called_by"])
+            w.writerow(["Gene", "PharmCAT_diplotype", "pypgx_diplotype", "Match", "Called_by",
+                        "PharmCAT_phenotype", "pypgx_phenotype"])
             w.writerows(rows)
         same = sum(1 for r in rows if r[3] == "Yes")
         print(f"Comparison written: {args.comparison} (concordant {same}, other {len(rows) - same})")
