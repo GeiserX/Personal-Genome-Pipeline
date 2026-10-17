@@ -134,16 +134,18 @@ field() {
     }' "$1"
 }
 
-# annotsv OUT ANN_DIR [OPTION...]: the image on the fixture SVs, as step 05 runs it.
+# annotsv NAME ANN_DIR [OPTION...]: the image on the fixture SVs, as step 05
+# runs it, into ${WORK}/runs/NAME. AnnotSV also writes beside its output
+# directory (NAME.SV_RE_intersect.tmp), so the parent is mounted.
 annotsv() {
-  local out=$1 ann=$2
+  local name=$1 ann=$2
   shift 2
-  mkdir -p "$out"
+  mkdir -p "${WORK}/runs/${name}"
   docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "${G}/s1/sv:/in:ro" -v "${ann}:/ann" -v "${out}:/out" "$ANNOTSV_IMAGE" \
-    AnnotSV -SVinputFile /in/fixture_sv.vcf -outputFile /out/annotated.tsv -outputDir /out \
-      -genomeBuild GRCh38 -annotationMode both -annotationsDir /ann "$@" > "${out}/annotsv.log" 2>&1 \
-    || { fail "AnnotSV exited non-zero in ${out}"; tail -n 30 "${out}/annotsv.log"; }
+    -v "${G}/s1/sv:/in:ro" -v "${ann}:/ann" -v "${WORK}/runs:/runs" "$ANNOTSV_IMAGE" \
+    AnnotSV -SVinputFile /in/fixture_sv.vcf -outputFile "/runs/${name}/annotated.tsv" -outputDir "/runs/${name}" \
+      -genomeBuild GRCh38 -annotationMode both -annotationsDir /ann "$@" > "${WORK}/runs/${name}.log" 2>&1 \
+    || { fail "AnnotSV exited non-zero for ${name}"; tail -n 30 "${WORK}/runs/${name}.log"; }
 }
 
 # --- 1. setup.sh --annotsv-data ---------------------------------------------------------
@@ -205,15 +207,15 @@ expect "second run: no gnomAD-SV file written again" "$([ -e "$ADAPTER" ] && ech
 # --- 3. red controls --------------------------------------------------------------------
 # Without -txFile, on the same data (gnomAD-SV merged): XM_900002 is back.
 cp -R "$ANN" "${WORK}/ann-merged"
-annotsv "${WORK}/no-tx" "${WORK}/ann-merged"
-NT="${WORK}/no-tx/annotated.tsv"
+annotsv no-tx "${WORK}/ann-merged"
+NT="${WORK}/runs/no-tx/annotated.tsv"
 expect "control without -txFile: DEL1 on XM_900002" "$(field "$NT" 1004000 FIXG1 Tx 2>/dev/null)" '^XM_900002$'
 expect "control without -txFile: a frameshift" "$(field "$NT" 1004000 FIXG1 Frameshift 2>/dev/null)" '^yes$'
 expect "control without -txFile: DEL1 class 4" "$(field "$NT" 1004000 '' ACMG_class 2>/dev/null)" '^4'
 # Without gnomAD-SV, with the MANE list: DEL2 stays class 4.
 cp "${ANN}/mane_select_refseq.txt" "${WORK}/ann-plain/"
-annotsv "${WORK}/no-gnomad" "${WORK}/ann-plain" -txFile /ann/mane_select_refseq.txt
-NG="${WORK}/no-gnomad/annotated.tsv"
+annotsv no-gnomad "${WORK}/ann-plain" -txFile /ann/mane_select_refseq.txt
+NG="${WORK}/runs/no-gnomad/annotated.tsv"
 expect "control without gnomAD-SV: DEL2 has no frequency" "$(field "$NG" 2450000 '' B_loss_AFmax 2>/dev/null)" '^$'
 expect "control without gnomAD-SV: DEL2 class 4" "$(field "$NG" 2450000 '' ACMG_class 2>/dev/null)" '^4'
 
