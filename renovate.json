@@ -1,11 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
-    "Renovate proposes container image, Nextflow and CI tool updates; Dependabot keeps the GitHub Actions and the docs pip file (.github/dependabot.yml).",
+    "Renovate proposes container image, Nextflow, data release, CI tool and pinned Python package updates; Dependabot keeps the GitHub Actions and the docs pip file (.github/dependabot.yml).",
     "One PR per tool: no group rules. How a PR is checked and what to revalidate by hand: docs/updating.md.",
     "The images live in versions.env. conf/containers.config and docs/versions.md are generated from it and hold the same strings, so the same dependency is matched in all of them and one PR updates every copy. If a PR touches only versions.env, the generated-file checks fail and name the command to run."
   ],
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", ":semanticCommitTypeAll(deps)"],
   "enabledManagers": ["custom.regex"],
   "schedule": ["* 0-5 * * 1"],
   "labels": ["dependencies", "automated"],
@@ -45,7 +45,7 @@
     },
     {
       "customType": "regex",
-      "description": "Nextflow: NEXTFLOW_VERSION in versions.env, the setup-nextflow pins in the workflows and the NXF_VER install lines in the docs, all in one PR.",
+      "description": "Nextflow: NEXTFLOW_VERSION in versions.env, the setup-nextflow pins in the workflows and the NXF_VER install lines in the docs, all in one PR. The fake nextflow of the fake-docker suite and its test case read NEXTFLOW_VERSION from versions.env, so they hold no copy to match.",
       "managerFilePatterns": [
         "/^versions\\.env$/",
         "/^\\.github/workflows/[^/]+\\.ya?ml$/",
@@ -78,6 +78,78 @@
       "depNameTemplate": "gitleaks/gitleaks",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "ShellCheck, the version input of the action-shellcheck step in the lint workflow.",
+      "managerFilePatterns": ["/^\\.github/workflows/lint\\.yml$/"],
+      "matchStrings": ["uses: ludeeus/action-shellcheck@[^\\n]*\\n(?:[ \\t]+[^\\s-][^\\n]*\\n)*?[ \\t]+version: v(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "koalaman/shellcheck",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The Renovate CLI of the dry run: RENOVATE_VERSION in renovate-dry-run.yml and the command at the end of docs/updating.md, in one PR.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/renovate-dry-run\\.yml$/",
+        "/^docs/updating\\.md$/"
+      ],
+      "matchStrings": [
+        "RENOVATE_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "renovate@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "renovate",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "The Python the docs workflow builds the site with (python-version of setup-python in docs.yml), read as the python image's tags. The python rule below sends every update to the dependency dashboard.",
+      "managerFilePatterns": ["/^\\.github/workflows/docs\\.yml$/"],
+      "matchStrings": ["python-version: ['\"]?(?<currentValue>\\d+\\.\\d+)['\"]?\\n"],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "IPD-IMGT/HLA release step 8 types against: HLA_DB_RELEASE in scripts/lib/common.sh. The IMGTHLA repository tags each release v<x.y.z>-alpha. setup.sh checks the new hla.dat against the md5 that release lists, and step 8 builds a new T1K index for it.",
+      "managerFilePatterns": ["/^scripts/lib/common\\.sh$/"],
+      "matchStrings": ["HLA_DB_RELEASE=\\$\\{HLA_DB_RELEASE:-(?<currentValue>\\d+\\.\\d+\\.\\d+)\\}"],
+      "depNameTemplate": "ANHIG/IMGTHLA",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)-alpha$"
+    },
+    {
+      "customType": "regex",
+      "description": "pgsc_calc, the release steps 25 and 26 run: PGSC_CALC_VERSION in versions.env and its copy in conf/containers.config, in one PR. Every update waits on the dependency dashboard (rule below).",
+      "managerFilePatterns": [
+        "/^versions\\.env$/",
+        "/^conf/containers\\.config$/"
+      ],
+      "matchStrings": [
+        "PGSC_CALC_VERSION=\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\"",
+        "ext\\.pipeline_version = '(?<currentValue>v\\d+\\.\\d+\\.\\d+)'"
+      ],
+      "depNameTemplate": "PGScatalog/pgsc_calc",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "The Python packages the screenshot script installs (playwright, pillow and, on macOS, pyobjc-framework-Vision), pinned with == in tests/demo/retake-screenshots.sh.",
+      "managerFilePatterns": ["/^tests/demo/retake-screenshots\\.sh$/"],
+      "matchStrings": ["[(\\s](?<depName>[A-Za-z][A-Za-z0-9._-]*)==(?<currentValue>\\d+(?:\\.\\d+)*)"],
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
+      "description": "Aldy, the CYP2D6 caller docs/21-cyrius.md recommends: the version in its prose and in its pip install line, in one PR.",
+      "managerFilePatterns": ["/^docs/21-cyrius\\.md$/"],
+      "matchStrings": [
+        "\\[Aldy\\]\\(https://github\\.com/0xTCG/aldy\\) v(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "pip install -q aldy==(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "aldy",
+      "datasourceTemplate": "pypi"
     }
   ],
 
@@ -106,7 +178,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "The python image waits for approval on the dependency dashboard. Step 21 installs Cyrius into it with wheels hash-locked for Python 3.14 (scripts/cyrius-constraints.txt); a new minor or major needs them resolved again in the same PR. A patch (3.14.x) is safe to approve: the image test runs Cyrius on it.",
+      "description": "The python image, and the Python of the docs workflow, wait for approval on the dependency dashboard. Step 21 installs Cyrius into the image with wheels hash-locked for the image's Python (the header of scripts/cyrius-constraints.txt names it); a new minor or major needs them resolved again in the same PR. A patch of the same minor is safe to approve: the image test runs Cyrius on it.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["python"],
       "dependencyDashboardApproval": true
@@ -167,8 +239,13 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "CI tools take the ci prefix.",
-      "matchDepNames": ["rhysd/actionlint", "gitleaks/gitleaks"],
+      "description": "pgsc_calc: every update waits for approval on the dependency dashboard. PGSC_CALC_SHA256, PGSC_CALC_NF_SCHEMA and the PGSC_*_IMAGE lines (PGSC_PANEL too on a new release line) move with the release, by hand, after reading its nextflow.config and conf/modules.config again (docs/25-prs.md, Maintenance).",
+      "matchDepNames": ["PGScatalog/pgsc_calc"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "CI tools take the ci prefix: actionlint, gitleaks, ShellCheck and the Renovate CLI of the dry run.",
+      "matchDepNames": ["rhysd/actionlint", "gitleaks/gitleaks", "koalaman/shellcheck", "renovate"],
       "semanticCommitType": "ci"
     }
   ]
