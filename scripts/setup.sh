@@ -331,10 +331,18 @@ install_consumer_sites() {
     return 1
   fi
   db="${dir}/dbsnp_${CONSUMER_DBSNP_BUILD}_GRCh38.vcf.gz"
-  # fetch renames a download to its name only after the md5 matched, so a file
-  # under that name is whole: a run after a failed build reuses it.
+  # A run after a failed build reuses the download, once its md5 matches the
+  # pin again: a file under that name that is not the pinned one is removed
+  # and downloaded anew, so the table is never built from another file.
   if [ -s "$db" ]; then
-    echo "dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 already downloaded: ${db}"
+    echo "Checking the md5 of the dbSNP ${CONSUMER_DBSNP_BUILD} file already downloaded: ${db}"
+    if [ "$(_digest md5 "$db")" != "$CONSUMER_DBSNP_MD5" ]; then
+      echo "[WARN] ${db} is not the pinned dbSNP ${CONSUMER_DBSNP_BUILD} (md5 differs): removing it and downloading it again."
+      rm -f "$db"
+    fi
+  fi
+  if [ -s "$db" ]; then
+    echo "dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 already downloaded and checked: ${db}"
   else
     echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
     if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
