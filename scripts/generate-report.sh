@@ -8,6 +8,11 @@
 # summary. A result from an earlier run whose step was skipped or failed in the
 # latest run-all.sh run is marked stale with its date. Run after completing all
 # (or some) pipeline steps.
+#
+# Then it writes what changed since the previous run of the sample
+# (bin/run_delta.py, docs/delta-report.md): ${SAMPLE}_delta.txt, .html and
+# .json, against the newest copy under history/, and keeps this run's
+# summary.json and run_manifest.tsv as history/<UTC time>/ for the next run.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -43,3 +48,31 @@ fi
 cat "$REPORT"
 echo ""
 echo "Report saved to: ${REPORT}"
+
+# What changed since the previous run, then keep this run as the next baseline.
+HISTORY="${SAMPLE_DIR}/history"
+PREV=$(find "$HISTORY" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)
+PREV_ARG=()
+[ -z "$PREV" ] || PREV_ARG=(--previous "/genome/${SAMPLE}/history/$(basename "$PREV")")
+echo ""
+if ! run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+  python3 /pgp-bin/run_delta.py \
+    --sample "$SAMPLE" \
+    --summary "/genome/${SAMPLE}/summary.json" \
+    --manifest "/genome/${SAMPLE}/run_manifest.tsv" \
+    ${PREV_ARG[@]+"${PREV_ARG[@]}"} \
+    --out "/genome/${SAMPLE}/${SAMPLE}_delta"; then
+  echo "ERROR: the delta against the previous run was not written (bin/run_delta.py failed)" >&2
+  exit 1
+fi
+# history/<UTC time>[-NN]/: sorts by name in run order.
+if [ -f "${SAMPLE_DIR}/summary.json" ]; then
+  stamp=$(date -u '+%Y-%m-%dT%H%M%SZ') dest="${HISTORY}/${stamp}" n=1
+  while [ -e "$dest" ]; do n=$((n + 1)); dest=$(printf '%s/%s-%02d' "$HISTORY" "$stamp" "$n"); done
+  mkdir -p "$dest"
+  cp -p "${SAMPLE_DIR}/summary.json" "$dest/"
+  [ ! -f "${SAMPLE_DIR}/run_manifest.tsv" ] || cp -p "${SAMPLE_DIR}/run_manifest.tsv" "$dest/"
+  echo "Delta saved to: ${SAMPLE_DIR}/${SAMPLE}_delta.txt (this run kept as ${dest#"${SAMPLE_DIR}"/})"
+else
+  echo "WARNING: no ${SAMPLE_DIR}/summary.json, so this run is not kept in history/" >&2
+fi
