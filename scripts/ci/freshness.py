@@ -2,10 +2,13 @@
 """freshness.py: say which pinned databases, bundles and images have fallen behind.
 
 Renovate can bump an image tag, but it cannot see the Ensembl cache release,
-the PCGR bundle date, the pypgx-bundle tag, the Nextflow line or a ClinVar file
-that has gone a month without a refresh. This script reads the pins from
-versions.env (and the ClinVar URL from scripts/setup.sh), asks each upstream,
-and prints a Markdown report. The monthly workflow (.github/workflows/
+the PCGR bundle date, the pypgx-bundle tag, the Nextflow line, the IPD-KIR
+release, the dbSNP build, Parascopy's data or a ClinVar file that has gone a
+month without a refresh. This script reads the pins from versions.env (the
+ClinVar URL and Parascopy's Zenodo record from scripts/setup.sh, the
+IPD-IMGT/HLA release from scripts/lib/common.sh), asks each upstream, and
+prints a Markdown report. It also lists the IPD-IMGT/HLA and pgsc_calc
+releases, which Renovate proposes, so a silent Renovate shows. The monthly workflow (.github/workflows/
 freshness.yml) puts that report into one issue labelled `freshness`.
 
 Every lookup fails closed: an HTTP error, a timeout, an empty answer or an
@@ -422,16 +425,93 @@ def pharmcat(report, pins):
               "" if not behind else "Revalidate steps 7 and 27 on a known sample before moving PHARMCAT_IMAGE.")
 
 
-def imgt(report, pins):
-    text = request("https://raw.githubusercontent.com/ANHIG/IMGTHLA/Latest/release_version.txt", want="text")[0]
-    v = re.search(r"#\s*version:\s*IPD-IMGT/HLA\s+(\S+)", text)
+def release_version(repo, product):
+    """(version, date or None) from the release_version.txt of an ANHIG repository's Latest branch."""
+    text = request(f"https://raw.githubusercontent.com/ANHIG/{repo}/Latest/release_version.txt", want="text")[0]
+    v = re.search(r"#\s*version:\s*" + re.escape(product) + r"\s+(\d+(?:\.\d+)+)", text)
     d = re.search(r"#\s*date:\s*(\S+)", text)
     if not v:
-        raise LookupFailed("no version line in IMGTHLA release_version.txt")
-    report.db("IPD-IMGT/HLA (step 8)", "whatever was current when the T1K index was built",
-              f"{v.group(1)}" + (f" ({d.group(1)})" if d else ""), "report only",
-              "To type against this release, delete `$GENOME_DIR/t1k_idx/` and rerun step 8; "
-              "the release is in the header of `t1k_idx/hlaidx/hla.dat`.")
+        raise LookupFailed(f"no '{product}' version line in {repo} release_version.txt")
+    return v.group(1), (d.group(1) if d else None)
+
+
+def hla_db_release(common_path=None):
+    """HLA_DB_RELEASE's default in scripts/lib/common.sh (HLA_DB_RELEASE=${HLA_DB_RELEASE:-x.y.z})."""
+    path = common_path or os.path.join(ROOT, "scripts", "lib", "common.sh")
+    m = re.search(r"^HLA_DB_RELEASE=\$\{HLA_DB_RELEASE:-(\d+(?:\.\d+)+)\}", open(path).read(), re.M)
+    if not m:
+        raise LookupFailed(f"no HLA_DB_RELEASE=${{HLA_DB_RELEASE:-x.y.z}} line in {path}")
+    return m.group(1)
+
+
+def imgt(report, pins, common_path=None):
+    pinned = hla_db_release(common_path)
+    latest, date = release_version("IMGTHLA", "IPD-IMGT/HLA")
+    behind = ver(latest) > ver(pinned)
+    report.db("IPD-IMGT/HLA (step 8)", f"HLA_DB_RELEASE={pinned} (scripts/lib/common.sh)",
+              latest + (f" ({date})" if date else ""), "behind" if behind else "current",
+              "" if not behind else
+              "Renovate opens this bump (ANHIG/IMGTHLA). After it merges, rerun `setup.sh` and step 8, "
+              "which builds a new T1K index for the release.")
+
+
+def kir(report, pins):
+    pinned = pin(pins, "KIR_DB_RELEASE")
+    latest, date = release_version("IPDKIR", "IPD-KIR")
+    behind = ver(latest) > ver(pinned)
+    report.db("IPD-KIR (step 8 with KIR=true)", pinned, latest + (f" ({date})" if date else ""),
+              "behind" if behind else "current",
+              "" if not behind else
+              f"Move KIR_DB_RELEASE to {latest} (`setup.sh --kir-data` reads branch "
+              f"{latest.replace('.', '')} of ANHIG/IPDKIR), then rerun step 8 with KIR=true.")
+
+
+def pgsc_calc(report, pins):
+    pinned = pin(pins, "PGSC_CALC_VERSION")
+    latest = need(gh_api("/repos/PGScatalog/pgsc_calc/releases/latest").get("tag_name"), "pgsc_calc latest release")
+    behind = ver(latest.lstrip("v")) > ver(pinned.lstrip("v"))
+    report.db("pgsc_calc (steps 25, 26)", pinned, latest, "behind" if behind else "current",
+              "" if not behind else
+              "Renovate lists it on the dependency dashboard. Read its conf/modules.config and nextflow.config "
+              "and move the PGSC_*_IMAGE lines, PGSC_CALC_SHA256 and PGSC_CALC_NF_SCHEMA with it (docs/25-prs.md).")
+
+
+def dbsnp(report, pins):
+    pinned = pin(pins, "CONSUMER_DBSNP_BUILD")
+    text = request("https://ftp.ncbi.nih.gov/snp/archive/", want="text")[0]
+    builds = need(sorted({int(b) for b in re.findall(r'href="b(\d+)/"', text)}), "dbSNP builds in the archive listing")
+    m = re.fullmatch(r"b(\d+)", pinned)
+    if not m:
+        raise LookupFailed(f"CONSUMER_DBSNP_BUILD {pinned!r} is not b<number>")
+    behind = builds[-1] > int(m.group(1))
+    report.db("dbSNP (step 40 site table)", pinned, f"b{builds[-1]}", "behind" if behind else "current",
+              "" if not behind else
+              f"Move CONSUMER_DBSNP_BUILD to b{builds[-1]} with its md5, rebuild the table once "
+              "(`setup.sh --consumer-sites`, about 30 GB) and record CONSUMER_SITES_TABLE_SHA256 (docs/updating.md).")
+
+
+def parascopy_data(report, pins, setup_path):
+    pinned = pin(pins, "PARASCOPY_DATA_VERSION")
+    m = re.search(r"^PARASCOPY_DATA_RECORD=(\d+)", open(setup_path).read(), re.M)
+    if not m:
+        raise LookupFailed(f"no PARASCOPY_DATA_RECORD in {setup_path}")
+    record = m.group(1)
+    hits = need(request(f"https://zenodo.org/api/records/{record}/versions?size=25&sort=version")[0]
+                .get("hits", {}).get("hits"), f"versions of Zenodo record {record}")
+    found = {}
+    for h in hits:
+        for f in h.get("files", []):
+            fm = re.fullmatch(r"GRCh38_v(\d+(?:\.\d+)*)\.tar\.gz", f.get("key", ""))
+            if fm:
+                found[fm.group(1)] = h.get("id")
+    need(found, f"a GRCh38_v<version>.tar.gz in the versions of Zenodo record {record}")
+    newest = max(found, key=ver)
+    behind = ver(newest) > ver(pinned)
+    report.db("Parascopy data (step 35)", f"{pinned} (Zenodo record {record})",
+              f"{newest} (Zenodo record {found[newest]})", "behind" if behind else "current",
+              "" if not behind else
+              "Check that PARASCOPY_IMAGE reads it, then move PARASCOPY_DATA_VERSION, PARASCOPY_DATA_RECORD "
+              "and the two md5s in scripts/setup.sh together and rerun step 35.")
 
 
 def gnomad(report, versions_path):
@@ -546,9 +626,11 @@ def build(pins, notes, versions_path, setup_path, sections):
         run_lookup(report, "ClinVar", clinvar, setup_path)
     if "databases" in sections:
         for what, fn in (("Ensembl / VEP cache", ensembl), ("PCGR / CPSR", pcgr), ("pypgx", pypgx),
-                         ("PharmCAT", pharmcat), ("IPD-IMGT/HLA", imgt), ("Nextflow", nextflow),
+                         ("PharmCAT", pharmcat), ("IPD-IMGT/HLA", imgt), ("IPD-KIR", kir),
+                         ("Nextflow", nextflow), ("pgsc_calc", pgsc_calc), ("dbSNP", dbsnp),
                          ("Cyrius", cyrius)):
             run_lookup(report, what, fn, pins)
+        run_lookup(report, "Parascopy data", parascopy_data, pins, setup_path)
         run_lookup(report, "gnomAD constraint", gnomad, versions_path)
     if "images" in sections:
         images(report, pins, notes)
@@ -821,6 +903,56 @@ def self_test():
     run_lookup(rs, "odd shape", lambda report: [].get("x"))
     check(rs.errors and rs.errors[0][0] == "odd shape" and "unexpected answer" in rs.errors[0][1]
           and rs.db_rows[0][3] == "ERROR", "an answer in an unexpected shape is an error row, not a crash")
+
+    # The rows for data releases, on stubbed answers: a newer upstream is
+    # behind, the same one is current, and an answer without the version is an
+    # error row, never "current".
+    def data_rows(answers, release):
+        def fake_request(url, **kw):
+            for key, body in answers.items():
+                if key in url:
+                    if body is None:
+                        raise LookupFailed(f"{url}: HTTP 404")
+                    return body, {}
+            raise LookupFailed(f"{url}: not stubbed")
+        saved = globals()["request"], globals()["gh_api"]
+        globals()["request"] = fake_request
+        globals()["gh_api"] = lambda path, **kw: {"tag_name": release} if release else {}
+        rep = Report()
+        with tempfile.TemporaryDirectory() as d:
+            common, setup = os.path.join(d, "common.sh"), os.path.join(d, "setup.sh")
+            with open(common, "w") as fh:
+                fh.write("HLA_DB_RELEASE=${HLA_DB_RELEASE:-3.65.0}\n")
+            with open(setup, "w") as fh:
+                fh.write("PARASCOPY_DATA_RECORD=15019940\n")
+            pins = {"KIR_DB_RELEASE": "2.15.0", "PGSC_CALC_VERSION": "v2.3.0",
+                    "CONSUMER_DBSNP_BUILD": "b157", "PARASCOPY_DATA_VERSION": "1.7"}
+            try:
+                run_lookup(rep, "IPD-IMGT/HLA", imgt, pins, common)
+                for what, fn in (("IPD-KIR", kir), ("pgsc_calc", pgsc_calc), ("dbSNP", dbsnp)):
+                    run_lookup(rep, what, fn, pins)
+                run_lookup(rep, "Parascopy data", parascopy_data, pins, setup)
+            finally:
+                globals()["request"], globals()["gh_api"] = saved
+        return [r[3] for r in rep.db_rows], rep.errors
+
+    def zenodo(name):
+        return {"hits": {"hits": [{"id": 1, "files": [{"key": name}, {"key": "GRCh37_v9.9.tar.gz"}]}]}}
+    newer = {"IMGTHLA/Latest": "# date: 2026-10-14\n# version: IPD-IMGT/HLA 3.66.0\n",
+             "IPDKIR/Latest": "# version: IPD-KIR 2.16.0\n",
+             "snp/archive": '<a href="b156/">b156/</a> <a href="b158/">b158/</a>',
+             "zenodo.org": zenodo("GRCh38_v1.8.tar.gz")}
+    same = {"IMGTHLA/Latest": "# version: IPD-IMGT/HLA 3.65.0\n", "IPDKIR/Latest": "# version: IPD-KIR 2.15.0\n",
+            "snp/archive": '<a href="b157/">b157/</a>', "zenodo.org": zenodo("GRCh38_v1.7.tar.gz")}
+    broken = {"IMGTHLA/Latest": "# version: something else\n", "IPDKIR/Latest": None,
+              "snp/archive": "<html>no builds</html>", "zenodo.org": zenodo("CHM13_v1.16.tar.gz")}
+    states, errors = data_rows(newer, "v2.4.0")
+    check(states == ["behind"] * 5 and not errors, f"HLA, KIR, pgsc_calc, dbSNP and Parascopy: a newer upstream is behind ({states})")
+    states, errors = data_rows(same, "v2.3.0")
+    check(states == ["current"] * 5 and not errors, f"the same release upstream is current ({states})")
+    states, errors = data_rows(broken, None)
+    check(states == ["ERROR"] * 5 and len(errors) == 5,
+          f"an answer without the release is an error row for each of the five ({states})")
 
     # 2. Fake server: an empty 200 must fail, and the issue logic.
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeGitHub)
