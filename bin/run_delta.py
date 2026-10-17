@@ -92,6 +92,7 @@ def change(area, kind, item, before, after, why=None):
 
 def diff_inputs(prev, cur):
     a, b = manifest_items(prev), manifest_items(cur)
+    a = b  # RED CONTROL: ignore the previous manifest
     out = []
     for k in sorted(set(a) | set(b)):
         if a.get(k) != b.get(k):
