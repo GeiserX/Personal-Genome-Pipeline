@@ -77,7 +77,7 @@ The panel's extraction, QC and PCA come on top of step 25's run; see the measure
 
 - Five continental groups only. Mixed ancestry is shown as the single most similar group, with its probabilities; this step does not estimate admixture fractions or local ancestry.
 - Groups the 1000 Genomes Project does not sample well are placed less reliably.
-- Fine-grained ancestry (for example Spanish versus Italian) needs other panels and tools.
+- Fractions, regional groups and a chromosome painting are [step 26b](26b-ancestry-fine.md), against an open panel of 80 populations. It has limits of its own: a regional name is a cluster we name, splits within Iberia are weak for every method, Greek and Southern Italian ancestry overlap, and what it supports well is continental, and in places country-level, similarity.
 
 ## Notes
 

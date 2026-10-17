@@ -45,6 +45,11 @@ EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, a
 TELOMERE_UNIT = "intratelomeric reads per million reads with 48-52% GC"
 TELOMERE_NOTE = (f"Relative telomere content ({TELOMERE_UNIT}), not a telomere length: compare it only with "
                  "samples of a similar age sequenced on the same platform (docs/10-telomere-analysis.md).")
+ANCESTRY_FINE_NOTE = ("Each name is a group of reference populations we put together and named, not a nationality. "
+                      "Continental groups are well apart; neighbouring regions are not: splits within Iberia are weak "
+                      "for every method, and Greek and Southern Italian ancestry overlap. Read a regional fraction "
+                      "with its bootstrap range. See docs/26b-ancestry-fine.md.")
+ANCESTRY_FINE_LEVELS = (("continent", "Continental groups"), ("region", "Regional groups"))
 TRAITS_NOTE = ("Each reading is what the cited studies found on average in the people they studied, not a "
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
@@ -178,6 +183,22 @@ def prs_note(d):
 
 
 # --- text ------------------------------------------------------------------------
+
+def share(x):
+    """A fraction as a whole percentage, for the fine-grained ancestry section."""
+    return "." if x is None else f"{100 * x:.0f}%"
+
+
+def ancestry_fine_rows(d, level):
+    """The groups of one level worth a line: every continental group of 1% or
+    more, a regional one of 1% or more or whose bootstrap range reaches 5%."""
+    return [r for r in d.get(level, []) if r["fraction"] is not None
+            and (r["fraction"] >= 0.01 or (level == "region" and (r.get("high") or 0) >= 0.05))]
+
+
+def ancestry_fine_spread(r):
+    return f" ({share(r['low'])} to {share(r['high'])})" if r.get("low") is not None else ""
+
 
 def traits_text(d, sample):
     """The traits section of the text report: the rows read, the ones not read,
@@ -375,6 +396,22 @@ def text_report(s):
                    if r.get("percentile") else "")
             w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
         w("  " + prs_note(d))
+        w("")
+
+    if head("ancestry_fine", "Fine-Grained Ancestry (ADMIXTURE, RFMix)"):
+        d = S["ancestry_fine"]["data"]
+        for level, title in ANCESTRY_FINE_LEVELS:
+            rows = ancestry_fine_rows(d, level)
+            if rows:
+                w(f"  {title} (fraction, bootstrap range):")
+                for r in rows:
+                    w(f"    {r['group']:<50} {share(r['fraction']):>5}{ancestry_fine_spread(r)}")
+        if d.get("painting"):
+            w("  Chromosome painting, share of the painted genome: "
+              + ", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))
+        else:
+            w("  Chromosome painting: none (no chromosome long enough)")
+        w(f"  {ANCESTRY_FINE_NOTE}")
         w("")
 
     if head("manta", "Structural Variants (Manta)"):
@@ -894,6 +931,29 @@ def html_report(s):
         a(card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
                ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
+
+    if S.get("ancestry_fine", MISSING)["state"] != "missing":
+        d = S["ancestry_fine"]["data"]
+        body = []
+        for level, title in ANCESTRY_FINE_LEVELS:
+            rows = "".join(f"<tr><td>{E(r['group'])}</td><td>{E(share(r['fraction']))}</td>"
+                           f"<td>{E(ancestry_fine_spread(r).strip(' ()') or '.')}</td></tr>\n"
+                           for r in ancestry_fine_rows(d, level))
+            if rows:
+                body += [f"    <h3>{E(title)}</h3>", "    <table>",
+                         "      <tr><th>Group</th><th>Fraction</th><th>Bootstrap range</th></tr>",
+                         rows.rstrip("\n"), "    </table>"]
+        if d.get("painting"):
+            body.append(stat("Painted genome", E(", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))))
+        else:
+            body.append(stat("Painted genome", "none (no chromosome long enough)"))
+        if d.get("painting_png"):
+            body.append(f'    <img alt="Chromosome painting: chromosomes 1 to 22, two haplotypes each, coloured by '
+                        f'continental group" style="max-width:100%" src="data:image/png;base64,{d["painting_png"]}">')
+            body.append("    <p>" + " ".join(f'<span style="color:{E(x["colour"])}">&#9632;</span> {E(x["group"])}'
+                                             for x in d.get("legend", [])) + " <span style=\"color:#e1e1e1\">&#9632;</span> not painted</p>")
+        body.append(f"    <p>{E(ANCESTRY_FINE_NOTE)}</p>")
+        a(card(S["ancestry_fine"], "Fine-Grained Ancestry", body, full=True))
 
     tr_sec = S.get("traits", MISSING)
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
