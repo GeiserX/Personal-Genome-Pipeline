@@ -681,7 +681,7 @@ workflow {
                      "the couple carrier screen reads each partner's ClinVar hits, so it does not run."
         }
         def gencode_exons = params.containsKey('gencode_exons') ? params.gencode_exons : null
-        def ch_couple_outputs = couple_ids ? Channel.empty().mix(
+        def ch_couple_outputs = couple_ids && tools_list.contains('clinvar') ? Channel.empty().mix(
             PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number
         ).filter { meta, f -> couple_ids.contains(meta.id) }.map { meta, f -> f } : Channel.empty()
         FAMILY(

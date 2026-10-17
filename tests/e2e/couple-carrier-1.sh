@@ -19,7 +19,9 @@
 #     inputs (no Delly calls: the pipeline calls Delly from a BAM), and the
 #     partner's HTML report has the card. somalier gets 20 sites, so the pair
 #     is "not checked" rather than measured.
-# Cost: about 3 minutes, most of it the Nextflow run.
+#   - a stub run with partners and without clinvar in --tools schedules no
+#     COUPLE_CARRIER (red control: the same run with the gate taken out).
+# Cost: about 5 minutes, most of it the Nextflow runs.
 . "$(dirname "$0")/lib.sh"
 
 G0="$GENOME_DIR"
@@ -152,6 +154,8 @@ CARRIER_GENES="${C}/reference/empty_genes.tsv" run_step 39-couple.sh couple "${C
 check "red: with the gene list emptied step 39 stops (exit ${STEP_RC})" test "$STEP_RC" -ne 0
 check "and says why, and writes no couple table" \
   sh -c "grep -q 'holds no gene' '$STEP_LOG' && test ! -e '$T'"
+check "and leaves no stale copy in either partner's folder" \
+  sh -c "test ! -e '${C}/HG002/couple/HG002_couple_carrier.tsv' && test ! -e '${C}/PARTNER/couple/PARTNER_couple_carrier.tsv'"
 run_step 39-couple.sh couple "${C}/pedigree.tsv"
 check "the step back on the full inputs writes the first table again" cmp -s "$T" "${CASE_TMP}/with_exons.tsv"
 
@@ -210,5 +214,35 @@ check "the pipeline published each partner's copy" \
 check "the pipeline's report of PARTNER has the couple card" \
   has 'Shared: NAGA \(Schindler disease\): 1 in 4 per pregnancy' "$(cat "${OUT}/PARTNER/PARTNER_report.html" 2>/dev/null)"
 echo "couple: shared $(genes_of "$T" shared); pipeline shared $(genes_of "$NT" shared)" >> "$E2E_NOTES"
+
+# --- without clinvar in --tools -------------------------------------------------
+# A stub run (no containers) of the stub samplesheet, whose pedigree marks two
+# samples as partners, with Delly, ExpansionHunter and Parascopy but not
+# clinvar: COUPLE_CARRIER must not be scheduled, because without ClinVar hits
+# the screen stops with exit 1 and would fail the whole run. Red control: the
+# same run on a copy of the repository with the clinvar gate taken out of
+# main.nf schedules it.
+tasks() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+  | grep -c "$2" || true; }
+stub_run() {  # stub_run DIR: copy the tracked files to DIR and run the stub there
+  rm -rf "$1"; mkdir -p "$1"
+  git -C "$REPO" ls-files -z | (cd "$REPO" && tar --null -T - -cf -) | tar -xf - -C "$1"
+  [ "${2:-}" = ungated ] && sed -i "s/couple_ids && tools_list.contains('clinvar') ?/couple_ids ?/" "${1}/main.nf"
+  ( cd "$1" && nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${1}/out" -work-dir "${1}/work" \
+      --pedigree assets/stub/pedigree.tsv --tools delly,expansion_hunter,parascopy,html_report ) > "${1}.log" 2>&1
+}
+stub_run "${CASE_TMP}/stub-ungated" ungated
+check "red control: the copy's main.nf has the gate taken out" \
+  sh -c "grep -q 'def ch_couple_outputs = couple_ids ?' '${CASE_TMP}/stub-ungated/main.nf'"
+check_ge "red: with the gate taken out, the stub run without clinvar schedules COUPLE_CARRIER" \
+  "$(tasks "${CASE_TMP}/stub-ungated/work" COUPLE_CARRIER)" 1
+stub_run "${CASE_TMP}/stub-gated"
+STUB_RC=$?
+tail -n 15 "${CASE_TMP}/stub-gated.log"
+check_eq "stub run with partners and without clinvar: exit" "$STUB_RC" 0
+check "it warns that the couple screen does not run" grep -q 'clinvar is not in --tools' "${CASE_TMP}/stub-gated.log"
+check_ge "it ran the partners' Delly tasks" "$(tasks "${CASE_TMP}/stub-gated/work" DELLY)" 2
+check_eq "and schedules no COUPLE_CARRIER task" "$(tasks "${CASE_TMP}/stub-gated/work" COUPLE_CARRIER)" 0
+rm -rf "${CASE_TMP}/stub-ungated" "${CASE_TMP}/stub-gated"
 in_e2e rm -rf /w/genome-couple /w/nf-work-couple
 finish

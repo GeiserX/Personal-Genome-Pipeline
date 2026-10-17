@@ -98,6 +98,9 @@ fi
 
 mkdir -p "$OUT"
 rm -f "${OUT}"/couple_*.tsv "${OUT}"/couple_*.md "${OUT}"/*_couple_carrier.tsv
+# and each named sample's copy, so a failed screen or a sample no longer
+# paired leaves no stale table for its own reports to read.
+for s in ${NAMED[@]+"${NAMED[@]}"}; do rm -f "${GENOME_DIR}/${s}/couple/${s}_couple_carrier.tsv"; done
 [ "$PEDIGREE" -ef "${OUT}/pedigree.tsv" ] || cp -f "$PEDIGREE" "${OUT}/pedigree.tsv"
 run_in --rw "$OUT" --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
   -v "${PGP_ROOT}/assets/par_grch38.bed:/pgp/par_grch38.bed:ro" -v "${GENES}:/pgp/carrier_genes.tsv:ro" \
