@@ -421,13 +421,13 @@ def main():
               len(long) > 400 and f"- amitriptyline [CPIC, Optional]: {long}" in rec and "..." not in block(rec, "CYP2C19"),
               block(rec, "CYP2C19"))
 
-        def variants(gene, rsid, call):
+        def variants(gene, call, rsid):  # call before rsid: an rsID next to a genotype reads as a leak
             return {"sourceDiplotypes": [{"allele1": {"name": "Unknown"}, "allele2": {"name": "Unknown"},
                                           "label": "Unknown/Unknown", "phenotypes": []}],
                     "variants": [{"position": 1, "dbSnpId": "rs0000001", "call": "G/A"},
                                  {"position": 2, "dbSnpId": rsid, "call": call, "referenceAllele": "C"}]}
         fb = "Single-Position Fallback (not a PharmCAT call):"
-        rc, rec, rows, _ = run_report(work, "CYP4F2HET", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "C/T")}})
+        rc, rec, rows, _ = run_report(work, "CYP4F2HET", {"genes": {"CYP4F2": variants("CYP4F2", "C/T", "rs2108622")}})
         tail = rec.split(fb)[-1]
         check("CYP4F2 No Result with C/T at rs2108622: the fallback names the genotype and the *3 rule, labelled",
               rc == 0 and fb in rec
@@ -436,17 +436,17 @@ def main():
               and "Warfarin (CPIC): the CPIC warfarin dosing algorithm" in tail and "5-10%" in tail, rec[-1500:])
         check("CYP4F2 fallback: PharmCAT's own result stays not called in the phenotypes table",
               rows == [["CYP4F2", "Unknown/Unknown", "No Result", "not called"]], rows)
-        rc, rec, _, _ = run_report(work, "CYP4F2HOM", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "T|T")}})
+        rc, rec, _, _ = run_report(work, "CYP4F2HOM", {"genes": {"CYP4F2": variants("CYP4F2", "T|T", "rs2108622")}})
         check("CYP4F2 T|T (phased): two copies", "rs2108622 reads T|T, two copies of the *3 variant" in rec, rec[-1200:])
-        rc, rec, _, _ = run_report(work, "CYP4F2REF", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "C/C")}})
+        rc, rec, _, _ = run_report(work, "CYP4F2REF", {"genes": {"CYP4F2": variants("CYP4F2", "C/C", "rs2108622")}})
         check("CYP4F2 C/C: no copy, the rule does not apply, and no WARNING",
               "rs2108622 reads C/C, no copy of the *3 variant (T, p.V433M). The CPIC warfarin rule for this position does not apply."
               in rec and "WARNING: PharmCAT has no result for CYP4F2" not in rec, rec[-1200:])
-        rc, rec, _, _ = run_report(work, "CYP4F2MISS", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", None)}})
+        rc, rec, _, _ = run_report(work, "CYP4F2MISS", {"genes": {"CYP4F2": variants("CYP4F2", None, "rs2108622")}})
         check("CYP4F2 with no genotype at rs2108622: not callable",
               "CYP4F2 -- PharmCAT has no result; rs2108622 has no genotype in the VCF PharmCAT read: not callable."
               in rec and "WARNING" not in rec.split(fb)[-1], rec[-1200:])
-        rc, rec, _, _ = run_report(work, "VKORC1HET", {"genes": {"VKORC1": variants("VKORC1", "rs9923231", "C/T")}})
+        rc, rec, _, _ = run_report(work, "VKORC1HET", {"genes": {"VKORC1": variants("VKORC1", "C/T", "rs9923231")}})
         check("VKORC1 No Result with C/T at rs9923231: the fallback reads -1639 GA",
               "single-position fallback, not a PharmCAT call: rs9923231 reads C/T, -1639 GA." in rec, rec[-1200:])
         called = {"genes": {"CYP4F2": dict(dip("*1", "*3", "Decreased Function"),
