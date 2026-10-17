@@ -229,9 +229,11 @@ stub_run() {  # stub_run DIR: copy the tracked files to DIR and run the stub the
   git -C "$REPO" ls-files -z | (cd "$REPO" && tar --null -T - -cf -) | tar -xf - -C "$1"
   [ "${2:-}" = ungated ] && sed -i "s/couple_ids && tools_list.contains('clinvar') ?/couple_ids ?/" "${1}/main.nf"
   ( cd "$1" && nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${1}/out" -work-dir "${1}/work" \
-      --pedigree assets/stub/pedigree.tsv --tools delly,expansion_hunter,parascopy,html_report --kir false ) > "${1}.log" 2>&1
+      --pedigree assets/stub/pedigree.tsv --tools delly,expansion_hunter,parascopy,html_report -params-file "${CASE_TMP}/no-kir.json" ) > "${1}.log" 2>&1
 }
-# (--kir false: the profile turns KIR typing on, which needs hla_typing.)
+# The profile turns KIR typing on, which needs hla_typing: a params file turns
+# it off (on the command line, --kir false arrives as a string and stays on).
+echo '{"kir": false}' > "${CASE_TMP}/no-kir.json"
 stub_run "${CASE_TMP}/stub-ungated" ungated
 tail -n 5 "${CASE_TMP}/stub-ungated.log"
 check "red control: the copy's main.nf has the gate taken out" \
