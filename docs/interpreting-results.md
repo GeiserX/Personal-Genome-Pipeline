@@ -105,7 +105,7 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 | CYP2C9 | Warfarin, NSAIDs, phenytoin | Dose adjustment needed |
 | DPYD | 5-fluorouracil (cancer drug) | Poor metabolizers can die from standard doses |
 | SLCO1B1 | Statins (simvastatin, atorvastatin) | Increased myopathy risk |
-| NAT2 | Isoniazid (TB), caffeine | Slow acetylators have more side effects |
+| NAT2 | Isoniazid (TB), hydralazine | Slow acetylators have more side effects |
 | UGT1A1 | Irinotecan, atazanavir | Two \*28 alleles are associated with Gilbert syndrome (elevated bilirubin) |
 
 **What to do:** Share the PharmCAT report with your prescribing physician or pharmacist. PharmCAT is a research tool — its authors explicitly note that missing positions, unphased input, and undetected structural variation (especially CYP2D6) can affect genotype and phenotype calls. The report is a valuable starting point for pharmacogenomic-guided prescribing, but clinical confirmation may be warranted before making medication changes, especially for high-risk drugs (DPYD, CYP2D6-dependent opioids).
@@ -717,7 +717,7 @@ The HTML report will show a table like:
 Gene        Diplotype           Phenotype              Affected Drugs
 CYP2C19    *x/*y               <phenotype>             PPIs, SSRIs, clopidogrel
 CYP2C9     *x/*y               <phenotype>             Warfarin, NSAIDs
-NAT2       *x/*y               <phenotype>             Isoniazid, caffeine
+NAT2       *x/*y               <phenotype>             Isoniazid, hydralazine
 DPYD       *x/*y               <phenotype>             5-FU
 SLCO1B1    *x/*y               <phenotype>             Statins
 ```

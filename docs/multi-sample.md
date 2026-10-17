@@ -147,7 +147,7 @@ PharmCAT results can differ dramatically between partners. Compare the HTML repo
 |---|---|---|
 | CYP2C19 | PPIs, SSRIs, clopidogrel | Different SSRI dosing needed |
 | CYP2D6 | Codeine, tramadol, psych meds | Codeine dangerous for poor metabolizers |
-| NAT2 | Isoniazid, caffeine | Different caffeine sensitivity |
+| NAT2 | Isoniazid, hydralazine | Slow acetylators get more side effects at standard doses |
 | CYP2C9 | Warfarin, NSAIDs | Warfarin dosing differs |
 
 ---
