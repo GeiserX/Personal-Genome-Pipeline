@@ -127,7 +127,7 @@ hla_release() {
     | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
 }
 hla=""
-for f in "$(data_file hla_dat || true)" "${GENOME_DIR}/t1k_idx/hlaidx/hla.dat"; do
+for f in "${HLA_DAT:-}" "$(data_file hla_dat || true)" "${GENOME_DIR}/t1k_idx/hlaidx/hla.dat"; do
   if [ -n "$f" ] && [ -f "$f" ]; then hla=$f; break; fi
 done
 idx=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name 't1k-*_imgt-*_gencode-*' 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)
