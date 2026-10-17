@@ -937,7 +937,9 @@ def self_test():
         return [r[3] for r in rep.db_rows], rep.errors
 
     def zenodo(name):
-        return {"hits": {"hits": [{"id": 1, "files": [{"key": name}, {"key": "GRCh37_v9.9.tar.gz"}]}]}}
+        # Another assembly's archive beside it must be ignored.
+        names = (name, "GRCh37_v9.9.tar.gz")
+        return {"hits": {"hits": [{"id": 1, "files": [dict(key=n) for n in names]}]}}
     newer = {"IMGTHLA/Latest": "# date: 2026-10-14\n# version: IPD-IMGT/HLA 3.66.0\n",
              "IPDKIR/Latest": "# version: IPD-KIR 2.16.0\n",
              "snp/archive": '<a href="b156/">b156/</a> <a href="b158/">b158/</a>',
