@@ -3,10 +3,12 @@
   "description": [
     "Renovate proposes container image, Nextflow, data release, CI tool and pinned Python package updates; Dependabot keeps the GitHub Actions and the docs pip file (.github/dependabot.yml).",
     "One PR per tool: no group rules. How a PR is checked and what to revalidate by hand: docs/updating.md.",
+    "ignorePaths is config:recommended's list without **/tests/**, so the pins of tests/demo/retake-screenshots.sh are read; no other file under tests/ matches a manager.",
     "The images live in versions.env. conf/containers.config and docs/versions.md are generated from it and hold the same strings, so the same dependency is matched in all of them and one PR updates every copy. If a PR touches only versions.env, the generated-file checks fail and name the command to run."
   ],
   "extends": ["config:recommended", ":semanticCommitTypeAll(deps)"],
   "enabledManagers": ["custom.regex"],
+  "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**", "**/examples/**", "**/__tests__/**", "**/test/**", "**/__fixtures__/**"],
   "schedule": ["* 0-5 * * 1"],
   "labels": ["dependencies", "automated"],
   "semanticCommits": "enabled",
