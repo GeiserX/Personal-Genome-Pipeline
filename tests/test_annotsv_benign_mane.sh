@@ -9,7 +9,8 @@
 #   FIXG1   a haploinsufficient gene (HI 3) with two transcripts: NM_900001,
 #           its MANE Select, and XM_900002, which has one more coding exon of
 #           100 bp inside NM_900001's first intron;
-#   G01-G40 forty one-exon genes.
+#   G01-G40 forty one-exon genes;
+#   FARG1   far from both, under the benign records of the set.
 # Two deletions:
 #   DEL1  chr20:1003001-1004000, inside NM_900001's first intron and over
 #         XM_900002's extra exon. On XM_900002 it is a frameshift (2E-1,
@@ -66,6 +67,7 @@ build_annotations() {
       s=$((2000000 + i * 10000))
       printf '20\t%d\t%d\t+\tG%02d\tNM_91%04d\t%d\t%d\t%d,\t%d,\n' "$s" $((s + 2000)) "$i" "$i" $((s + 100)) $((s + 1900)) "$s" $((s + 2000))
     done
+    printf '20\t50000000\t50020000\t+\tFARG1\tNM_920001\t50000100\t50019900\t50000000,\t50020000,\n'
   } > "${h}/Genes/GRCh38/genes.RefSeq.sorted.bed"
   sed 's/\t\(NM\|XM\)_9/\tENST9/' "${h}/Genes/GRCh38/genes.RefSeq.sorted.bed" > "${h}/Genes/GRCh38/genes.ENSEMBL.sorted.bed"
   cut -f6 "${h}/Genes/GRCh38/genes.RefSeq.sorted.bed" | awk '{print $1 "\t1"}' > "${h}/Genes/GRCh38/transcript_version.RefSeq.tsv"
@@ -78,11 +80,13 @@ build_annotations() {
     > "${h}/Gene-based/NCBIandHGNCgeneID/geneSymbol_NCBIandHGNCgeneID.tsv"
   # One record per SV type, far from both deletions. AnnotSV removes the
   # benign and pathogenic columns (and so the ranking) unless the files of
-  # every type exist, and it checks them in the CHM13 folder.
+  # every type exist, and it checks them in the CHM13 folder. Each benign
+  # record overlaps a gene (FARG1): AnnotSV 3.5.10 stops on a benign file
+  # that overlaps none.
   for b in GRCh38 CHM13; do
     mkdir -p "${h}/SVincludedInFt/BenignSV/${b}" "${h}/FtIncludedInSV/PathogenicSV/${b}"
     for t in Loss Gain Ins Inv; do
-      printf '20\t50000000\t50010000\tfixture_benign_%s\t20:50000000-50010000\t0.2000\n' "$t" \
+      printf '20\t50001000\t50002000\tfixture_benign_%s\t20:50001000-50002000\t0.2000\n' "$t" \
         > "${h}/SVincludedInFt/BenignSV/${b}/benign_${t}_SV_${b}.sorted.bed"
       printf '20\t50100000\t50100500\tfixture phenotype\t\tfixture_pathogenic_%s\t20:50100000-50100500\n' "$t" \
         > "${h}/FtIncludedInSV/PathogenicSV/${b}/pathogenic_${t}_SV_${b}.sorted.bed"
