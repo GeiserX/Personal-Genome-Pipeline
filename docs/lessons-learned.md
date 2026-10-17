@@ -488,3 +488,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** `bcftools view https://.../hgdp1kgp_chr1...bcf` inside the container could not create `hgdp1kgp_chr1....bcf.csi` in its working directory, so it could not read the index and failed.
 - **Why:** htslib saves the index of a remote file in the current directory, and the container's working directory is not writable.
 - **Fix:** the install runs that command with the writable panel folder as its working directory and deletes the downloaded `.csi` files when it ends.
+
+## E2E parity checks (2026-10)
+
+### A tabix index differs between two runs with the same records
+- **Failed:** family-joint-1 checks that a single-sample run publishes the same files as main. It failed on three runs in a row (PRs 149 and 151, unrelated changes), each time on `HG002/clinvar/HG002_pass.vcf.gz.tbi` alone, with a different md5 every time.
+- **Why:** the check hashes each file's text without its date and command lines, but an index is binary. It holds byte offsets into the bgzip file, and the VCF header carries bcftools' dated command line, so the first block compresses to a different size from run to run and every offset moves.
+- **Fix:** the check lists `.tbi` and `.csi` files by name only, so a missing index still fails it. The records behind them are compared through the VCF itself.
