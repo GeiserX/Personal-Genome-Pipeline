@@ -839,6 +839,11 @@ install_annotsv_bundle() {
     echo "[WARN] Could not extract ${ANNOTSV_TARBALL}. Step 5 (AnnotSV) will be skipped until it is in place."
     return 1
   fi
+  if [ ! -d "${ANNOTSV_DIR}.part/Annotations_Human/Genes/GRCh38" ]; then
+    rm -rf "${ANNOTSV_DIR}.part" "$ANNOTSV_TARBALL"
+    echo "[WARN] ${ANNOTSV_TARBALL} holds no Annotations_Human/Genes/GRCh38; removed it. Step 5 (AnnotSV) will be skipped until it is in place."
+    return 1
+  fi
   rm -rf "$ANNOTSV_DIR"
   mv "${ANNOTSV_DIR}.part" "$ANNOTSV_DIR"
   rm -f "$ANNOTSV_TARBALL"

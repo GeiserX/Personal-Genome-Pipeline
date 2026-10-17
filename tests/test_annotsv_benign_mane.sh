@@ -72,6 +72,10 @@ build_annotations() {
   cut -f6 "${h}/Genes/GRCh38/genes.ENSEMBL.sorted.bed" | awk '{print $1 "\t1"}' > "${h}/Genes/GRCh38/transcript_version.ENSEMBL.tsv"
   printf 'genes\tHI\tTS\tGnomAD_pLI\tLOEUF_bin\tDDD_HI_percent\tOMIM_morbid\nFIXG1\t3\t0\t0.10\t5\t50\tno\n' \
     > "${h}/Gene-based/Fixture/fixture_genes.tsv"
+  # AnnotSV reads gene aliases from this table before it annotates anything.
+  mkdir -p "${h}/Gene-based/NCBIandHGNCgeneID"
+  printf 'genes\tNCBI_gene_ID\tHGNC_gene_ID\nFIXG1\t900001\tHGNC:900001\n' \
+    > "${h}/Gene-based/NCBIandHGNCgeneID/geneSymbol_NCBIandHGNCgeneID.tsv"
   # One record per SV type, far from both deletions. AnnotSV removes the
   # benign and pathogenic columns (and so the ranking) unless the files of
   # every type exist, and it checks them in the CHM13 folder.
