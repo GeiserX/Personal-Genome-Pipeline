@@ -495,3 +495,15 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** family-joint-1 checks that a single-sample run publishes the same files as main. It failed on three runs in a row (PRs 149 and 151, unrelated changes), each time on `HG002/clinvar/HG002_pass.vcf.gz.tbi` alone, with a different md5 every time.
 - **Why:** the check hashes each file's text without its date and command lines, but an index is binary. It holds byte offsets into the bgzip file, and the VCF header carries bcftools' dated command line, so the first block compresses to a different size from run to run and every offset moves.
 - **Fix:** the check lists `.tbi` and `.csi` files by name only, so a missing index still fails it. The records behind them are compared through the VCF itself.
+
+## The raw-data export's site table (2026-10)
+
+### `grep -Fwf` with 620,000 rsIDs never finished reading dbSNP
+- **Failed:** the first full build of step 40's site table (`setup.sh --consumer-sites`) read 0.1% of dbSNP's 30 GB GRCh38 VCF in two hours, with grep at one full core. On a 200,000-line slice (30 MB) the same command printed nothing in 20 minutes. CI never builds the full table, so nothing had run it at full size.
+- **Why:** we did not profile grep. What we measured: with the same 620,000 patterns, GNU grep 3.11 is fast without `-w` and stalls with it. The likely cause is the word check: many rsIDs are prefixes of others (rs1 of rs10, rs100, ...), so nearly every line has hits that fail the check and send grep back to retry the other patterns there.
+- **Fix:** each rsID is wrapped in the tabs that surround dbSNP's ID column and matched with `grep -F` alone. On a 5-million-line slice it took 4.6 s, kept the same lines as an exact lookup in awk, and gave a table identical to Python reading the slice unfiltered. The full table builds in about 25 minutes.
+
+### A rerun after a failed build downloaded dbSNP again
+- **Failed:** the build's failure message said the dbSNP download was kept and to run the command again, but the rerun started the 30 GB download from zero.
+- **Why:** `fetch` always downloads into `<name>.part` and renames it when the checksum matches. It never looks at a finished file under the final name, so the kept file was not used.
+- **Fix:** `install_consumer_sites` skips the download when the finished file exists. That file is whole: only `fetch` writes it, after the md5 matched.

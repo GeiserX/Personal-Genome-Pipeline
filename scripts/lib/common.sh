@@ -335,6 +335,14 @@ _digest() {
   esac
 }
 
+# consumer_sites_digest TABLE: the sha256 of the step-40 site table's content,
+# read through gzip. The gzip wrapper holds the time it was written, so two
+# builds of the same table differ as files and agree here. setup.sh and
+# validate-setup.sh compare it with CONSUMER_SITES_TABLE_SHA256.
+consumer_sites_digest() {
+  _digest sha256 <(gzip -dc "$1")
+}
+
 # _get URL OUT: download URL to OUT (resuming a partial OUT), curl first and
 # wget when curl is missing. OUT "-" writes to stdout. A server that cannot
 # resume (curl exit 33) gets the partial OUT dropped and one fresh download.
