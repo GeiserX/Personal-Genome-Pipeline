@@ -27,7 +27,15 @@ Checks:
      annotations give it one phenotype shows that phenotype, with a note saying
      where it came from, and takes its status; with no annotation, two that
      disagree, one that is Indeterminate itself, or possible diplotypes whose
-     guidance differs, it stays Indeterminate and unclassified.
+     guidance differs, it stays Indeterminate and unclassified;
+  6. a single-position gene PharmCAT labels 'rsX reference (C)/rsX variant
+     (T)' matches pypgx's 'Reference/rsX', and a real difference still does
+     not; the comparison carries both tools' phenotypes, so a gene pypgx has
+     no phenotype rule for shows PharmCAT's; a CPIC recommendation over 200
+     characters prints whole; CYP4F2 (and VKORC1) with no PharmCAT result
+     takes the genotype PharmCAT read at the *3 (-1639) position as a
+     labelled single-position fallback, and a position with no genotype is
+     'not callable'.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -288,8 +296,10 @@ def main():
               and "WARNING: PharmCAT has no result for CYP2C9" not in rec, rec)
         check("pypgx: CYP2D6 is in the uncallable list", "CYP2D6 -- No Result (not callable" in rec)
         check("pypgx: comparison marks CYP2D6 'pypgx only' and CYP2C19 concordant",
-              ["CYP2D6", "Unknown/Unknown", "*1/*4", "pypgx only", "pypgx only"] in comp
-              and ["CYP2C19", "*1/*1", "*1/*1", "Yes", "both"] in comp, comp)
+              ["CYP2D6", "Unknown/Unknown", "*1/*4", "pypgx only", "pypgx only",
+               "No Result", "Intermediate Metabolizer"] in comp
+              and ["CYP2C19", "*1/*1", "*1/*1", "Yes", "both", "Normal Metabolizer", "Normal Metabolizer"] in comp,
+              comp)
 
         # an ambiguous PharmCAT gene is not compared as if it were its first diplotype
         data = {"genes": {"CYP2C19": {"sourceDiplotypes": [
@@ -378,6 +388,71 @@ def main():
             iann("Intermediate Metabolizer", "*1/*80"), iann("Intermediate Metabolizer", "*80/*80"))})
         check("Indeterminate gene, two possible diplotypes with the same phenotype and guidance: takes it, with the note",
               rows == [["UGT1A1", "*1/*80 (1 of 2 possible)", f"Intermediate Metabolizer {note}", "non-normal"]], rows)
+
+        # 6. label-only differences, phenotypes, long text, single-position fallback
+        vk = "rs9923231 reference (C)/rs9923231 variant (T)"
+        data = {"genes": {"VKORC1": {"sourceDiplotypes": [{"label": vk, "phenotypes": ["-1639 GA"]}]},
+                          "IFNL3": {"sourceDiplotypes": [{"label": "rs12979860 variant (T)/rs12979860 variant (T)",
+                                                          "phenotypes": ["unfavorable response genotype"]}]}}}
+        rc, rec, _, comp = run_report(work, "LABELS", data, pypgx={
+            "VKORC1": ("Reference/rs9923231", "no pypgx phenotype rule"),
+            "IFNL3": ("Reference/rs12979860", "Unfavorable Response")})
+        check("VKORC1 'rsX reference (C)/rsX variant (T)' against pypgx 'Reference/rsX' is a Match",
+              ["VKORC1", vk, "Reference/rs9923231", "Yes", "both", "-1639 GA", "no pypgx phenotype rule"] in comp, comp)
+        check("IFNL3 'rsX variant (T)/rsX variant (T)' against pypgx 'Reference/rsX' is still a conflict",
+              [r[3] for r in comp if r[0] == "IFNL3"] == ["No"], comp)
+        check("the comparison shows PharmCAT's phenotype beside pypgx's 'no pypgx phenotype rule', no Indeterminate",
+              all("Indeterminate" not in "\t".join(r) for r in comp), comp)
+        with open(os.path.join(work, "LABELS", "comparison.tsv")) as f:
+            head = f.readline().rstrip("\n").split("\t")
+        check("the comparison header ends with the two phenotype columns",
+              head == ["Gene", "PharmCAT_diplotype", "pypgx_diplotype", "Match", "Called_by",
+                       "PharmCAT_phenotype", "pypgx_phenotype"], head)
+
+        long = ("Initiate therapy with 50% of the starting dose followed by titration of dose based on "
+                "toxicity or therapeutic drug monitoring. " * 4 + "If plasma concentrations are not available, "
+                "consider a lower dose of a tricyclic in this patient.")
+        data = {"genes": {"CYP2C19": dip("*2", "*2", "Poor Metabolizer")},
+                "drugs": {"CPIC Guideline Annotation": {"amitriptyline": {"name": "amitriptyline", "guidelines": [
+                    {"annotations": [{"phenotypes": {"CYP2C19": "Poor Metabolizer"}, "classification": "Optional",
+                                      "drugRecommendation": long}]}]}}}}
+        rc, rec, _, _ = run_report(work, "LONG", data)
+        check(f"a recommendation of {len(long)} characters prints whole",
+              len(long) > 400 and f"- amitriptyline [CPIC, Optional]: {long}" in rec and "..." not in block(rec, "CYP2C19"),
+              block(rec, "CYP2C19"))
+
+        def variants(gene, rsid, call):
+            return {"sourceDiplotypes": [{"allele1": {"name": "Unknown"}, "allele2": {"name": "Unknown"},
+                                          "label": "Unknown/Unknown", "phenotypes": []}],
+                    "variants": [{"position": 1, "dbSnpId": "rs0000001", "call": "G/A"},
+                                 {"position": 2, "dbSnpId": rsid, "call": call, "referenceAllele": "C"}]}
+        fb = "Single-Position Fallback (not a PharmCAT call):"
+        rc, rec, rows, _ = run_report(work, "CYP4F2HET", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "C/T")}})
+        tail = rec.split(fb)[-1]
+        check("CYP4F2 No Result with C/T at rs2108622: the fallback names the genotype and the *3 rule, labelled",
+              rc == 0 and fb in rec
+              and "WARNING: PharmCAT has no result for CYP4F2; single-position fallback, not a PharmCAT call: "
+                  "rs2108622 reads C/T, one copy of the *3 variant (T, p.V433M)." in tail
+              and "Warfarin (CPIC): the CPIC warfarin dosing algorithm" in tail and "5-10%" in tail, rec[-1500:])
+        check("CYP4F2 fallback: PharmCAT's own result stays not called in the phenotypes table",
+              rows == [["CYP4F2", "Unknown/Unknown", "No Result", "not called"]], rows)
+        rc, rec, _, _ = run_report(work, "CYP4F2HOM", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "T|T")}})
+        check("CYP4F2 T|T (phased): two copies", "rs2108622 reads T|T, two copies of the *3 variant" in rec, rec[-1200:])
+        rc, rec, _, _ = run_report(work, "CYP4F2REF", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", "C/C")}})
+        check("CYP4F2 C/C: no copy, the rule does not apply, and no WARNING",
+              "rs2108622 reads C/C, no copy of the *3 variant (T, p.V433M). The CPIC warfarin rule for this position does not apply."
+              in rec and "WARNING: PharmCAT has no result for CYP4F2" not in rec, rec[-1200:])
+        rc, rec, _, _ = run_report(work, "CYP4F2MISS", {"genes": {"CYP4F2": variants("CYP4F2", "rs2108622", None)}})
+        check("CYP4F2 with no genotype at rs2108622: not callable",
+              "CYP4F2 -- PharmCAT has no result; rs2108622 has no genotype in the VCF PharmCAT read: not callable."
+              in rec and "WARNING" not in rec.split(fb)[-1], rec[-1200:])
+        rc, rec, _, _ = run_report(work, "VKORC1HET", {"genes": {"VKORC1": variants("VKORC1", "rs9923231", "C/T")}})
+        check("VKORC1 No Result with C/T at rs9923231: the fallback reads -1639 GA",
+              "single-position fallback, not a PharmCAT call: rs9923231 reads C/T, -1639 GA." in rec, rec[-1200:])
+        called = {"genes": {"CYP4F2": dict(dip("*1", "*3", "Decreased Function"),
+                                           variants=[{"dbSnpId": "rs2108622", "call": "C/T"}])}}
+        rc, rec, _, _ = run_report(work, "CYP4F2CALLED", called)
+        check("CYP4F2 called by PharmCAT: no fallback section", fb not in rec, rec[-1200:])
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
