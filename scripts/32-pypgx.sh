@@ -220,6 +220,16 @@ all_genes = bam_genes + vcf_genes
 summary_path = f'{outbase}/{sample}_pypgx_summary.tsv'
 rows = []
 
+# pypgx writes Indeterminate for a gene it has no phenotype rule for (no
+# PhenotypeMethod in its own gene table): say that instead, so the label is
+# not read as an undecided call. The PYPGX module does the same.
+try:
+    import pypgx
+    no_rule = {g for g in all_genes if not pypgx.has_phenotype(g)}
+except Exception as e:
+    print(f'WARNING: could not read pypgx gene table ({e}); phenotypes left as pypgx wrote them', file=sys.stderr)
+    no_rule = set()
+
 for gene in all_genes:
     results_zip = f'{outbase}/{gene}/results.zip'
     if not os.path.isfile(results_zip):
@@ -247,6 +257,8 @@ for gene in all_genes:
                 return None
             diplotype = col('Genotype') or 'N/A'
             phenotype = col('Phenotype') or 'N/A'
+            if gene in no_rule:
+                phenotype = 'no pypgx phenotype rule'
             # Copy number is called from read depth, so it is meaningful only for the
             # BAM-based genes. Report pypgx's own value, never a guess from allele names.
             if source == 'BAM':

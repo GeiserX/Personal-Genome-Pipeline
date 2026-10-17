@@ -42,7 +42,7 @@ check_nonnormal_drugs() {
 # on CYP2C19 *2/*2.
 check_nonnormal_drugs "$PHENO" "$REC"
 COMP="${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pharmcat_comparison.tsv"
-check "step 27 wrote the PharmCAT/pypgx comparison" has '^Gene	PharmCAT_diplotype	pypgx_diplotype	Match	Called_by$' "$(head -1 "$COMP" 2>/dev/null)"
+check "step 27 wrote the PharmCAT/pypgx comparison" has '^Gene	PharmCAT_diplotype	pypgx_diplotype	Match	Called_by	PharmCAT_phenotype	pypgx_phenotype$' "$(head -1 "$COMP" 2>/dev/null)"
 check_ge "comparison rows" "$(awk 'NR > 1' "$COMP" 2>/dev/null | grep -c . || true)" 1
 check "the comparison has a CYP2D6 row (pypgx called it in case 38)" grep -q '^CYP2D6	' "$COMP"
 

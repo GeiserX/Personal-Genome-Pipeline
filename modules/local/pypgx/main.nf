@@ -136,6 +136,16 @@ all_genes = bam_genes + vcf_genes
 summary_path = '${meta.id}_pypgx_summary.tsv'
 rows = []
 
+# pypgx writes Indeterminate for a gene it has no phenotype rule for (no
+# PhenotypeMethod in its own gene table): say that instead, as
+# scripts/32-pypgx.sh does.
+try:
+    import pypgx
+    no_rule = {g for g in all_genes if not pypgx.has_phenotype(g)}
+except Exception as e:
+    print(f'WARNING: could not read pypgx gene table ({e}); phenotypes left as pypgx wrote them', file=sys.stderr)
+    no_rule = set()
+
 for gene in all_genes:
     results_zip = f'{outbase}/{gene}/results.zip'
     if not os.path.isfile(results_zip):
@@ -162,6 +172,8 @@ for gene in all_genes:
                     idx = headers.index('Phenotype')
                     if idx < len(values):
                         phenotype = values[idx]
+                if gene in no_rule:
+                    phenotype = 'no pypgx phenotype rule'
     except Exception as e:
         print(f'WARNING: Error extracting {gene}: {e}', file=sys.stderr)
 
