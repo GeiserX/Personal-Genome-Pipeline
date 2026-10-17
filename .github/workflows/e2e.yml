@@ -56,6 +56,10 @@ on:
         description: 'build-fixture: replace the assets of an existing release'
         type: boolean
         default: false
+      save_images:
+        description: 'e2e: save the image cache from this branch too (only main saves by default)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -244,23 +248,76 @@ jobs:
         with:
           version: "26.10.0"
 
-      # Images are cached as one compressed tar, keyed on the pinned versions,
-      # so a run does not pull ~10 GB from Docker Hub and quay every time.
-      - name: Restore cached images
-        id: images
+      # Images are cached in four entries, one per group of
+      # `scripts/ci/e2e-run.sh --image-groups`, each keyed on its own image
+      # list: a version bump misses one group's key, and that group restores
+      # the newest older entry of the group (restore-keys) and pulls only
+      # what changed. Only runs on main save (see the save step), and caches
+      # saved on main are the ones every pull request can read.
+      - name: Image cache keys
+        id: keys
+        run: |
+          grep -qx 'IMAGE_GROUPS=4' scripts/ci/e2e-run.sh \
+            || { echo "::error::IMAGE_GROUPS in scripts/ci/e2e-run.sh is not 4: change the cache steps of e2e.yml with it."; exit 1; }
+          scripts/ci/e2e-run.sh --image-groups > "${RUNNER_TEMP}/image-groups.txt"
+          for g in 0 1 2 3; do
+            h=$(awk -v g="$g" '$1 == g {print $2}' "${RUNNER_TEMP}/image-groups.txt" | sort | sha256sum | cut -c1-16)
+            echo "g${g}=e2e-images-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
+          done
+
+      - name: Restore cached images, group 0
+        id: images0
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/images.tar.zst
-          key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
+          path: ${{ runner.temp }}/images/g0
+          key: ${{ steps.keys.outputs.g0 }}
+          restore-keys: e2e-images-g0-
 
+      - name: Restore cached images, group 1
+        id: images1
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images/g1
+          key: ${{ steps.keys.outputs.g1 }}
+          restore-keys: e2e-images-g1-
+
+      - name: Restore cached images, group 2
+        id: images2
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images/g2
+          key: ${{ steps.keys.outputs.g2 }}
+          restore-keys: e2e-images-g2-
+
+      - name: Restore cached images, group 3
+        id: images3
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/images/g3
+          key: ${{ steps.keys.outputs.g3 }}
+          restore-keys: e2e-images-g3-
+
+      # One image per file; the four groups load side by side. An image that
+      # does not load is pulled by e2e-run.sh like any missing image.
       - name: Load cached images
+        env:
+          HITS: ${{ steps.images0.outputs.cache-hit }} ${{ steps.images1.outputs.cache-hit }} ${{ steps.images2.outputs.cache-hit }} ${{ steps.images3.outputs.cache-hit }}
         run: |
           # What the runner ships is not ours to cache: remember it first.
           docker image ls --format '{{.Repository}}:{{.Tag}}' | sort -u > "${RUNNER_TEMP}/images-before.txt"
-          if [ -f "${RUNNER_TEMP}/images.tar.zst" ]; then
-            zstd -dc "${RUNNER_TEMP}/images.tar.zst" | docker load
-            rm -f "${RUNNER_TEMP}/images.tar.zst"
-          fi
+          n=$(find "${RUNNER_TEMP}/images" -name '*.tar.zst' 2>/dev/null | wc -l)
+          for d in "${RUNNER_TEMP}"/images/g*; do
+            [ -d "$d" ] || continue
+            (
+              for f in "$d"/*.tar.zst; do
+                [ -f "$f" ] || continue
+                zstd -dc "$f" | docker load -q > /dev/null || echo "::warning::${f##*/} did not load; e2e-run.sh pulls it"
+              done
+            ) &
+          done
+          wait
+          rm -rf "${RUNNER_TEMP}/images"
+          echo "Image cache: ${n} images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run the e2e cases
         id: cases
@@ -302,30 +359,99 @@ jobs:
           path: ${{ env.E2E_WORK }}/logs/
           if-no-files-found: ignore
 
-      # Only a run that got through every case has pulled every image; a
-      # cache saved from a run that stopped early would stay incomplete until
-      # versions.env changes.
-      - name: Save images for the next run
+      # Prints each image's size and what became of it to the job summary.
+      # Saves only on main (or when a run by hand asks for it with
+      # save_images), only from a run that got through every case, and only
+      # the groups whose exact key missed. A cache saved on a pull request is
+      # readable by that pull request alone, and every entry counts against
+      # the repository's 10 GB, so it would only push main's entries out.
+      # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
+      # output; the rest are pulled on every run. Four groups of 1900 MB are
+      # 7.4 GB, and while main replaces one group the old and the new entry
+      # both count: 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # is never saved: docker load gives it back without its digest, so
+      # e2e-run.sh would pull it again anyway.
+      - name: Image sizes, and save images for the next run
         id: save
-        if: always() && steps.images.outputs.cache-hit != 'true'
+        if: always() && steps.keys.outcome == 'success'
+        env:
+          SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
+          GROUP_BUDGET_MB: 1900
+          HIT0: ${{ steps.images0.outputs.cache-hit }}
+          HIT1: ${{ steps.images1.outputs.cache-hit }}
+          HIT2: ${{ steps.images2.outputs.cache-hit }}
+          HIT3: ${{ steps.images3.outputs.cache-hit }}
         run: |
-          if [ ! -f "${E2E_WORK}/all-cases-ran" ]; then
-            echo "The cases did not all run; not caching images."
-            exit 0
+          budget=$((GROUP_BUDGET_MB * 1024 * 1024))
+          why=""
+          if [ "$SAVE" != true ]; then
+            why="not saved: only main, or a run by hand with save_images, saves"
+          elif [ ! -f "${E2E_WORK}/all-cases-ran" ]; then
+            why="not saved: the cases did not all run"
+          else
+            sudo rm -rf "${E2E_WORK}"
           fi
-          sudo rm -rf "${E2E_WORK}"
-          mapfile -t refs < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>' | sort -u \
-            | comm -13 "${RUNNER_TEMP}/images-before.txt" -)
-          [ "${#refs[@]}" -gt 0 ] || exit 0
-          docker save "${refs[@]}" | zstd -T0 -3 -q -o "${RUNNER_TEMP}/images.tar.zst"
-          ls -lh "${RUNNER_TEMP}/images.tar.zst"
-          echo "saved=true" >> "$GITHUB_OUTPUT"
+          table="${RUNNER_TEMP}/image-table.md"
+          printf '### Image cache\n\n| Group | Image | Size | Cache |\n|---|---|---|---|\n' > "$table"
+          for g in 0 1 2 3; do
+            hit_var="HIT${g}"
+            hit=${!hit_var}
+            used=0 full=no
+            # Smallest first, so the budget holds as many images as it can.
+            while read -r size ref; do
+              if [ "$size" = 0 ]; then shown="not here" state="-"
+              else shown=$(numfmt --to=iec "$size"); fi
+              if [ "$size" = 0 ]; then :
+              elif [ "$hit" = true ]; then state="restored (exact key hit)"
+              elif [[ "$ref" == *@* ]]; then state="not saved: pinned by digest"
+              elif [ -n "$why" ]; then state="$why"
+              elif [ "$full" = yes ]; then state="not saved: over the group budget"
+              else
+                f="${RUNNER_TEMP}/images/g${g}/$(tr '/:' '__' <<< "$ref").tar.zst"
+                mkdir -p "${f%/*}"
+                docker save "$ref" | zstd -T0 -12 -q -o "$f"
+                fsize=$(stat -c %s "$f")
+                if [ $((used + fsize)) -gt "$budget" ]; then
+                  rm -f "$f"
+                  full=yes state="not saved: over the group budget"
+                else
+                  used=$((used + fsize)) state="saved, $(numfmt --to=iec "$fsize")"
+                fi
+              fi
+              echo "| ${g} | ${ref} | ${shown} | ${state} |" >> "$table"
+            done < <(awk -v g="$g" '$1 == g {print $2}' "${RUNNER_TEMP}/image-groups.txt" | while read -r ref; do
+                       echo "$(docker image inspect -f '{{.Size}}' "$ref" 2> /dev/null || echo 0) ${ref}"
+                     done | sort -n)
+            if [ "$used" -gt 0 ]; then
+              echo "save${g}=true" >> "$GITHUB_OUTPUT"
+              echo "| ${g} | group ${g} saved | | $(numfmt --to=iec "$used") of $(numfmt --to=iec "$budget") |" >> "$table"
+            fi
+          done
+          tee -a "$GITHUB_STEP_SUMMARY" < "$table"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always() && steps.save.outputs.saved == 'true'
+        if: always() && steps.save.outputs.save0 == 'true'
         with:
-          path: ${{ runner.temp }}/images.tar.zst
-          key: e2e-images-${{ hashFiles('versions.env', 'modules/local/*/main.nf') }}
+          path: ${{ runner.temp }}/images/g0
+          key: ${{ steps.keys.outputs.g0 }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.save.outputs.save1 == 'true'
+        with:
+          path: ${{ runner.temp }}/images/g1
+          key: ${{ steps.keys.outputs.g1 }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.save.outputs.save2 == 'true'
+        with:
+          path: ${{ runner.temp }}/images/g2
+          key: ${{ steps.keys.outputs.g2 }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.save.outputs.save3 == 'true'
+        with:
+          path: ${{ runner.temp }}/images/g3
+          key: ${{ steps.keys.outputs.g3 }}
 
   settle-doubts:
     needs: build-fixture
