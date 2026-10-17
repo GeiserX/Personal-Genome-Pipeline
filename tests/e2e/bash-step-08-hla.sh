@@ -29,7 +29,8 @@ check "the pin (${PIN}) is a release and differs from ${OTHER}" \
 
 check "IPD-IMGT/HLA ${PIN} and the GENCODE genes install" install "$PIN"
 
-run_step 08-hla-typing.sh "$SAMPLE"
+# Explicit, so a HLA_DB_RELEASE in the environment cannot pick another release.
+HLA_DB_RELEASE=$PIN run_step 08-hla-typing.sh "$SAMPLE"
 check_step_exit 08-hla-typing.sh
 REL="${GENOME_DIR}/${SAMPLE}/hla_t1k/database_release.txt"
 cat "$REL" 2>/dev/null
