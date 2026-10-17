@@ -311,13 +311,17 @@ install_yleaf_data() {
 # takes the GRCh38 position from dbSNP instead of a liftover and lists every
 # site it drops with the reason. grep first keeps the lines of the list's
 # rsIDs, so Python reads about 600,000 lines instead of more than a billion.
-# The dbSNP file is deleted once the table is built.
+# Each rsID is matched with the tabs around it, which is the whole ID column;
+# never with -w, whose word check made GNU grep read 30 MB in over 20 minutes
+# with 620,000 patterns.
+# The dbSNP file is deleted once the table is built. The table built is then
+# compared with CONSUMER_SITES_TABLE_SHA256: a difference is a warning.
 install_consumer_sites() {
   local dir="${GENOME_DIR}/reference/consumer" tpl db out dropped
   out="${dir}/23andme_v5_sites_dbsnp${CONSUMER_DBSNP_BUILD}.tsv.gz"
   dropped="${dir}/23andme_v5_dropped_dbsnp${CONSUMER_DBSNP_BUILD}.tsv"
   if [ -s "$out" ]; then
-    echo "[OK] Site table of step 40 already present: ${out}"
+    consumer_sites_pin_check "$out" "already present"
     return 0
   fi
   tpl="${dir}/23andme_v5_hg19_ref.txt.gz"
@@ -327,17 +331,31 @@ install_consumer_sites() {
     return 1
   fi
   db="${dir}/dbsnp_${CONSUMER_DBSNP_BUILD}_GRCh38.vcf.gz"
-  echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
-  if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
-    echo "[WARN] Could not download dbSNP ${CONSUMER_DBSNP_BUILD}. Run this command again: the download resumes."
-    return 1
+  # A run after a failed build reuses the download, once its md5 matches the
+  # pin again: a file under that name that is not the pinned one is removed
+  # and downloaded anew, so the table is never built from another file.
+  if [ -s "$db" ]; then
+    echo "Checking the md5 of the dbSNP ${CONSUMER_DBSNP_BUILD} file already downloaded: ${db}"
+    if [ "$(_digest md5 "$db")" != "$CONSUMER_DBSNP_MD5" ]; then
+      echo "[WARN] ${db} is not the pinned dbSNP ${CONSUMER_DBSNP_BUILD} (md5 differs): removing it and downloading it again."
+      rm -f "$db"
+    fi
+  fi
+  if [ -s "$db" ]; then
+    echo "dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 already downloaded and checked: ${db}"
+  else
+    echo "Downloading dbSNP ${CONSUMER_DBSNP_BUILD} for GRCh38 (about 30 GB; deleted once the table is built)..."
+    if ! fetch "https://ftp.ncbi.nih.gov/snp/archive/${CONSUMER_DBSNP_BUILD}/VCF/GCF_000001405.40.gz" "$db" md5 "$CONSUMER_DBSNP_MD5"; then
+      echo "[WARN] Could not download dbSNP ${CONSUMER_DBSNP_BUILD}. Run this command again: the download resumes."
+      return 1
+    fi
   fi
   echo "Building the site table (reads the whole dbSNP file once)..."
   # The table is written to reference/consumer/, outside any sample directory.
   # shellcheck disable=SC2016  # $1 to $5 expand in the container's shell
   if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 4g "$PYTHON_IMAGE" bash -euo pipefail -c '
-      gzip -dc "$1" | cut -f3 | grep "^rs" > "$3.ids"
-      gzip -dc "$2" | LC_ALL=C grep -Fwf "$3.ids" \
+      gzip -dc "$1" | cut -f3 | grep "^rs" | sed "s/.*/\t&\t/" > "$3.ids"
+      gzip -dc "$2" | LC_ALL=C grep -Ff "$3.ids" \
         | python3 /pgp-bin/export_consumer.py build-sites --template "$1" --dbsnp - --out "$3" --dropped "$4" --source "$5"
       rm -f "$3.ids"' _ "$(cpath "$tpl")" "$(cpath "$db")" "$(cpath "$out")" "$(cpath "$dropped")" \
       "23andme2vcf ${CONSUMER_SITES_COMMIT} 23andme_v5_hg19_ref.txt.gz; dbSNP ${CONSUMER_DBSNP_BUILD} GCF_000001405.40"; then
@@ -346,7 +364,22 @@ install_consumer_sites() {
     return 1
   fi
   rm -f "$db"
-  echo "[OK] Site table of step 40: ${out} (dropped sites and their reasons: ${dropped})"
+  consumer_sites_pin_check "$out" "built (dropped sites and their reasons: ${dropped})"
+}
+
+# consumer_sites_pin_check TABLE WHAT: compare the site table with
+# CONSUMER_SITES_TABLE_SHA256 and say so. A difference is a warning: both
+# inputs are checked against their own pins, so it means build-sites changed
+# since the pin was taken, and step 40 can still use the table.
+consumer_sites_pin_check() {
+  local got
+  got=$(consumer_sites_digest "$1")
+  if [ "$got" = "$CONSUMER_SITES_TABLE_SHA256" ]; then
+    echo "[OK] Site table of step 40 $2: $1, the same as the pinned build"
+  else
+    echo "[WARN] Site table of step 40 $2: $1 differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
+    echo "       It was built by another version of bin/export_consumer.py build-sites. Step 40 uses it; to rebuild it, remove it and run this command again."
+  fi
 }
 
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------

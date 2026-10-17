@@ -12,6 +12,7 @@ This page is for maintainers. It says how a pinned version gets bumped, what che
 | GitHub Actions (`uses:` lines) | the workflows | Dependabot, monthly |
 | MkDocs and its plugins | `docs/requirements-docs.txt` | Dependabot, monthly |
 | Data releases: VEP cache, PCGR bundle, pypgx bundle, AnnotSV annotations, gnomAD constraint, Cyrius, the GRIDSS blacklist commit | the variables at the end of `versions.env` | nobody: bump them by hand, together with the image they belong to |
+| The site table of step 40: the 23andMe v5 site list commit, the dbSNP build and the table's hash | `CONSUMER_SITES_COMMIT`, `CONSUMER_DBSNP_BUILD`, their checksums and `CONSUMER_SITES_TABLE_SHA256` in `versions.env` | nobody: dbSNP releases a build every year or two, and the site list has not changed since 2019. A new build, a new commit or a change to `bin/export_consumer.py build-sites` needs one full build (`setup.sh --consumer-sites`, about 30 GB), then `gzip -dc <table> \| sha256sum` into `CONSUMER_SITES_TABLE_SHA256`. CI never builds the full table |
 | Renovate CLI used by the dry run | `RENOVATE_VERSION` in `renovate-dry-run.yml` and the command at the end of this page | nobody: bump both by hand |
 
 Renovate runs only its regex managers ([`renovate.json`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/renovate.json)), so it never touches what Dependabot owns ([`.github/dependabot.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/dependabot.yml)).
