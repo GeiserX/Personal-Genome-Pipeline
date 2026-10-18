@@ -14,11 +14,11 @@
 
 NO_RULE='^(CYP4F2|VKORC1|COMT|MTHFR)$'
 # check_labels NAME SUMMARY: every called no-rule gene says so, and the gene
-# with a rule does not.
+# with a rule does not. FAILED and N/A diplotypes are genes pypgx did not call.
 check_labels() {
   local name=$1 tsv=$2 n bad
-  n=$(awk -F'\t' -v re="$NO_RULE" 'NR > 1 && $1 ~ re && $2 != "FAILED"' "$tsv" 2>/dev/null | grep -c . || true)
-  bad=$(awk -F'\t' -v re="$NO_RULE" 'NR > 1 && $1 ~ re && $2 != "FAILED" && $3 != "no pypgx phenotype rule" {print $1 ": " $3}' \
+  n=$(awk -F'\t' -v re="$NO_RULE" 'NR > 1 && $1 ~ re && $2 != "FAILED" && $2 != "N/A"' "$tsv" 2>/dev/null | grep -c . || true)
+  bad=$(awk -F'\t' -v re="$NO_RULE" 'NR > 1 && $1 ~ re && $2 != "FAILED" && $2 != "N/A" && $3 != "no pypgx phenotype rule" {print $1 ": " $3}' \
     "$tsv" 2>/dev/null)
   check_ge "${name}: called genes pypgx has no phenotype rule for" "$n" 1
   check "${name}: each says 'no pypgx phenotype rule' (${bad:-all do})" test -z "$bad"
