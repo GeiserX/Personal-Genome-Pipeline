@@ -8,7 +8,7 @@ The project's own scripted check is wider: CI runs most of the steps on a small 
 
 ## Option 0: Check Java, Nextflow and Docker with a stub run
 
-A full run goes through `run-all.sh`, which needs Java 17 or later and Nextflow 26.10.0 beside Docker ([Getting started](getting-started.md)). A stub run checks that the three work together with the pipeline before you spend a day on a real genome. From the root of the checkout:
+A full run goes through `run-all.sh`, which needs Java 17 or later and the Nextflow release `versions.env` pins beside Docker ([Getting started](getting-started.md)). A stub run checks that the three work together with the pipeline before you spend a day on a real genome. From the root of the checkout:
 
 ```bash
 nextflow run main.nf -profile test,docker -stub
