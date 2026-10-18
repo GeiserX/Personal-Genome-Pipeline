@@ -260,7 +260,8 @@ jobs:
             || { echo "::error::IMAGE_GROUPS in scripts/ci/e2e-run.sh is not 4: change the cache steps of e2e.yml with it."; exit 1; }
           scripts/ci/e2e-run.sh --image-groups > "${RUNNER_TEMP}/image-groups.txt"
           for g in 0 1 2 3; do
-            h=$(awk -v g="$g" '$1 == g {print $2}' "${RUNNER_TEMP}/image-groups.txt" | sort | sha256sum | cut -c1-16)
+            # Only refs that can be saved: a digest bump never changes an entry.
+            h=$(awk -v g="$g" '$1 == g && $2 !~ /@/ {print $2}' "${RUNNER_TEMP}/image-groups.txt" | sort | sha256sum | cut -c1-16)
             echo "g${g}=e2e-images-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
           done
 
@@ -300,10 +301,8 @@ jobs:
       # does not load is pulled by e2e-run.sh like any missing image.
       - name: Load cached images
         env:
-          HITS: ${{ steps.images0.outputs.cache-hit }} ${{ steps.images1.outputs.cache-hit }} ${{ steps.images2.outputs.cache-hit }} ${{ steps.images3.outputs.cache-hit }}
+          HITS: ${{ steps.images0.outputs.cache-hit || 'false' }} ${{ steps.images1.outputs.cache-hit || 'false' }} ${{ steps.images2.outputs.cache-hit || 'false' }} ${{ steps.images3.outputs.cache-hit || 'false' }}
         run: |
-          # What the runner ships is not ours to cache: remember it first.
-          docker image ls --format '{{.Repository}}:{{.Tag}}' | sort -u > "${RUNNER_TEMP}/images-before.txt"
           # The archives that loaded, so the summary calls only them restored.
           loaded="${RUNNER_TEMP}/images-loaded.txt"
           : > "$loaded"
@@ -319,7 +318,7 @@ jobs:
           done
           wait
           rm -rf "${RUNNER_TEMP}/images"
-          echo "Image cache: $(wc -l < "$loaded") images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Image cache: $(wc -l < "$loaded") images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run the e2e cases
         id: cases
@@ -405,13 +404,18 @@ jobs:
               else shown=$(numfmt --to=iec "$size"); fi
               if [ "$size" = 0 ]; then :
               elif [[ "$ref" == *@* ]]; then state="not saved: pinned by digest"
-              elif [ "$hit" = true ]; then
-                if grep -qxF "$(tr '/:' '__' <<< "$ref").tar.zst" "${RUNNER_TEMP}/images-loaded.txt" 2> /dev/null
-                then state="restored (exact key hit)"
-                else state="pulled: not in the cache entry"; fi
+              elif grep -qxF "$(tr '/:' '__' <<< "$ref").tar.zst" "${RUNNER_TEMP}/images-loaded.txt" 2> /dev/null \
+                   && { [ "$hit" = true ] || [ -n "$why" ]; }; then
+                # Loaded from the cache and not saved again by this run.
+                if [ "$hit" = true ]; then state="restored (exact key hit)"
+                else state="restored (older entry); ${why}"; fi
+              elif [ "$hit" = true ]; then state="pulled: not in the cache entry"
               elif [ -n "$why" ]; then state="$why"
               elif [ "$full" = yes ]; then state="not saved: over the group budget"
               else
+                from=""
+                grep -qxF "$(tr '/:' '__' <<< "$ref").tar.zst" "${RUNNER_TEMP}/images-loaded.txt" 2> /dev/null \
+                  && from="restored (older entry), "
                 f="${RUNNER_TEMP}/images/g${g}/$(tr '/:' '__' <<< "$ref").tar.zst"
                 mkdir -p "${f%/*}"
                 docker save "$ref" | zstd -T0 -12 -q -o "$f"
@@ -420,7 +424,7 @@ jobs:
                   rm -f "$f"
                   full=yes state="not saved: over the group budget"
                 else
-                  used=$((used + fsize)) state="saved, $(numfmt --to=iec "$fsize")"
+                  used=$((used + fsize)) state="${from}saved, $(numfmt --to=iec "$fsize")"
                 fi
               fi
               echo "| ${g} | ${ref} | ${shown} | ${state} |" >> "$table"
