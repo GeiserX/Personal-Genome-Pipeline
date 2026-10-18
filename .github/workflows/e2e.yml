@@ -194,19 +194,18 @@ jobs:
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
-    # The 39 passing e2e jobs of 2026-10-07 to 2026-10-10 took 79 to 137
-    # minutes (median about 115), so the slowest left 13 minutes before the
-    # timeout. Three jobs on deliberately broken test branches ran into it
-    # (runs 37574186079, 37754488905, 37756039583); the cause is not checked.
-    # A pull request that bumps the fixture also waits for it inside this
-    # limit (scripts/ci/e2e-run.sh, up to 75 minutes).
-    # In October 2026 every run misses the image cache (its entry is about
-    # 10.7 GB, over the repository's 10 GB limit) and the case list grew to
-    # 84: runs took 2 h 20 min to 2 h 43 min, and on 2026-10-17 one was cut
-    # at 150 minutes inside "Run the e2e cases". The limit covers the slowest
-    # run (163 minutes) plus the fixture wait above (75), 238 minutes, with a
-    # 17-minute margin: 255 minutes, until the cache fits again.
-    timeout-minutes: 255
+    # The runner's CPU decides the time, not the image cache. Measured on
+    # this cache layout in October 2026 (84 cases): 112 minutes on an Intel
+    # Xeon 6973P (run 39088086725, no cache), 156 and 191 minutes on an AMD
+    # EPYC 7763 (run 39075764278 with no cache, run 39075201465 with all
+    # four groups restored), 166 minutes on an AMD EPYC 9V45 (run
+    # 39075176392, no cache, plus the 12-minute save). A cache hit saves
+    # about 7 minutes: the pull of every image took 9, restoring and
+    # loading the cache took 2.5. A pull request that bumps the fixture
+    # also waits for it inside this limit (scripts/ci/e2e-run.sh, up to 75
+    # minutes). The slowest run (191) plus the fixture wait (75) plus a
+    # save (12) is 278 minutes: 300 leaves a 22-minute margin.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
