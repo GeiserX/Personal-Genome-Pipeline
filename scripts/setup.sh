@@ -857,9 +857,9 @@ install_annotsv_bundle() {
 # gnomad.v4.0.sv.chr*.vcf.gz in BenignSV/GRCh38, and from the INFO keys END,
 # SVTYPE, controls_and_biobanks_AN, _AF and _N_HOMALT in that order. The v4.1
 # sites file has no controls-and-biobanks subset, so its AN, AF and N_HOMALT of
-# all genomes are written under those keys, in a file of that name. AnnotSV
-# merges the file into its benign_*_SV_GRCh38.sorted.bed on its next run and
-# then deletes it; gnomad-sv.installed records what was added.
+# all genomes are written under those keys, in a file of that name. One AnnotSV
+# run (annotsv_merge_benign) merges the file into its benign_*_SV_GRCh38.sorted.bed
+# and deletes it; only then does gnomad-sv.installed record what was added.
 install_annotsv_gnomad_sv() {
   local benign="${ANNOTSV_DIR}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38"
   local stamp="${benign}/gnomad-sv.installed"
@@ -921,9 +921,48 @@ install_annotsv_gnomad_sv() {
     return 1
   fi
   mv "${out}.part" "$out"
+  if ! annotsv_merge_benign "$out"; then
+    rm -f "$out"
+    echo "[WARN] AnnotSV did not merge gnomAD-SV ${GNOMAD_SV_VERSION} into its benign set; kept ${src}. Run setup.sh again."
+    return 1
+  fi
   printf '%s\n' "$want" > "$stamp"
   rm -f "$src"
-  echo "[OK] gnomAD-SV ${GNOMAD_SV_VERSION}: ${n} common SVs for AnnotSV's benign set, merged on AnnotSV's next run (${out})"
+  echo "[OK] gnomAD-SV ${GNOMAD_SV_VERSION}: ${n} common SVs merged into AnnotSV's benign set (${benign})"
+}
+
+# annotsv_merge_benign ADAPTER: AnnotSV merges a gnomad.v4.0.sv.chr*.vcf.gz it
+# finds in BenignSV/GRCh38 into its shared benign_*_SV_GRCh38.sorted.bed at
+# the start of a run, then deletes it. One AnnotSV run here, as the caller, on
+# a one-deletion VCF does that merge at setup: sample runs then find nothing to
+# merge, so parallel Nextflow tasks never rewrite those files at once, and
+# tasks running as root never take them over. Succeeds when AnnotSV exits 0,
+# ADAPTER is gone and the benign loss file exists.
+annotsv_merge_benign() {
+  local adapter=$1 probe="${ANNOTSV_DIR}/.setup-merge" rc=0
+  local loss="${ANNOTSV_DIR}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/benign_Loss_SV_GRCh38.sorted.bed"
+  rm -rf "$probe"
+  mkdir -p "${probe}/out"
+  printf '%s\n' '##fileformat=VCFv4.2' \
+    '##INFO=<ID=END,Number=1,Type=Integer,Description="End">' \
+    '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type">' \
+    '##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Length">' \
+    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' > "${probe}/probe.vcf"
+  printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tprobe\n' >> "${probe}/probe.vcf"
+  printf 'chr20\t1000001\tsetup_probe\tN\t<DEL>\t100\tPASS\tEND=1001000;SVTYPE=DEL;SVLEN=-1000\tGT\t0/1\n' >> "${probe}/probe.vcf"
+  echo "  AnnotSV merges the records into its benign set (one run, a few minutes)..."
+  # The annotations directory is writable: AnnotSV rewrites its benign files there.
+  run_in --rw "$ANNOTSV_DIR" --cpus 2 --memory 8g "$ANNOTSV_IMAGE" \
+    AnnotSV -SVinputFile "$(cpath "${probe}/probe.vcf")" \
+      -outputFile "$(cpath "${probe}/out/probe.tsv")" -outputDir "$(cpath "${probe}/out")" \
+      -genomeBuild GRCh38 -annotationsDir "$(cpath "$ANNOTSV_DIR")" > "${probe}.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ] || [ -e "$adapter" ] || [ ! -s "$loss" ]; then
+    echo "[WARN] AnnotSV's merge run: exit ${rc}, $([ -e "$adapter" ] && echo "${adapter##*/} still there" || echo "${adapter##*/} consumed"). Its log: ${probe}.log"
+    tail -n 20 "${probe}.log" >&2
+    rm -rf "$probe"
+    return 1
+  fi
+  rm -rf "$probe" "${probe}.log"
 }
 
 # install_annotsv_mane: the MANE Select RefSeq transcripts of MANE MANE_RELEASE,

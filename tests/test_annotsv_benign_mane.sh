@@ -21,9 +21,11 @@
 #
 # Checks:
 #   1. setup.sh --annotsv-data turns the two files into what AnnotSV reads:
-#      the three records AnnotSV can use out of nine (PASS, DEL/DUP/INS/INV,
-#      AN >= 1000, AF >= 0.001, N_HOMALT >= 5), and the one MANE Select RefSeq
-#      id; a second run changes nothing;
+#      it runs AnnotSV once, as the caller, so the three records AnnotSV can
+#      use out of nine (PASS, DEL/DUP/INS/INV, AN >= 1000, AF >= 0.001,
+#      N_HOMALT >= 5) are already merged into the benign files, owned by the
+#      caller, before any sample run; and the one MANE Select RefSeq id; a
+#      second run changes nothing;
 #   2. step 05: DEL1 is reported on NM_900001 with no frameshift and gets the
 #      gnomAD frequency, class 1; DEL2 gets the gnomAD frequency and leaves
 #      class 4 for class 3;
@@ -161,18 +163,18 @@ mane_summary | gzip -c > "${ANN}/MANE.GRCh38.v${MANE_RELEASE}.summary.txt.gz"
 rc=0
 GENOME_DIR="$G" "${REPO}/scripts/setup.sh" --annotsv-data "$G" > "${WORK}/setup1.log" 2>&1 || rc=$?
 expect "setup.sh --annotsv-data exits 0" "$rc" '^0$'
-ADAPTER="${H}/SVincludedInFt/BenignSV/GRCh38/gnomad.v4.0.sv.chrAll.from-v${GNOMAD_SV_VERSION}-sites.vcf.gz"
-if [ -s "$ADAPTER" ]; then
-  expect "gnomAD-SV records AnnotSV can use" \
-    "$(gzip -dc "$ADAPTER" | grep -v '^#' | cut -f3 | sort | tr '\n' ' ')" \
-    '^gnomAD-SV_fixture_DEL1 gnomAD-SV_fixture_DEL2 gnomAD-SV_fixture_INS $'
-  expect "DEL1's record in the keys AnnotSV's gnomAD-SV v4 reader takes" \
-    "$(gzip -dc "$ADAPTER" | awk -F'\t' '$3 == "gnomAD-SV_fixture_DEL1" {print $8}')" \
-    '^END=1004100;SVTYPE=DEL;controls_and_biobanks_AN=100000;controls_and_biobanks_AF=0.05;controls_and_biobanks_N_HOMALT=200$'
-else
-  fail "setup.sh wrote no ${ADAPTER}"
-  cat "${WORK}/setup1.log"
-fi
+BEN="${H}/SVincludedInFt/BenignSV/GRCh38"
+ADAPTER="${BEN}/gnomad.v4.0.sv.chrAll.from-v${GNOMAD_SV_VERSION}-sites.vcf.gz"
+expect "setup.sh had AnnotSV merge and remove the gnomAD-SV file" "$([ -e "$ADAPTER" ] && echo present || echo gone)" '^gone$'
+expect "gnomAD-SV records in AnnotSV's benign files" \
+  "$(cat "${BEN}"/benign_*_SV_GRCh38.sorted.bed 2>/dev/null | cut -f4 | grep -v '^fixture_benign_' | sort | tr '\n' ' ')" \
+  '^gnomAD-SV_fixture_DEL1 gnomAD-SV_fixture_DEL2 gnomAD-SV_fixture_INS $'
+expect "DEL1 in the benign loss file with its frequency" \
+  "$(awk -F'\t' '$4 == "gnomAD-SV_fixture_DEL1" {print $1 ":" $2 "-" $3 " " $6}' "${BEN}/benign_Loss_SV_GRCh38.sorted.bed" 2>/dev/null)" \
+  '^(chr)?20:1002899-1004100 0\.0500$'
+expect "the benign files belong to the caller" \
+  "$(find "$BEN" -name 'benign_*_SV_GRCh38.sorted.bed' ! -user "$(id -u)" | wc -l | tr -d ' ')" '^0$'
+expect "setup.sh leaves no merge run behind" "$(find "$ANN" -maxdepth 1 -name '.setup-merge*' | wc -l | tr -d ' ')" '^0$'
 expect "the MANE Select list" "$(tr '\n' ' ' < "${ANN}/mane_select_refseq.txt" 2>/dev/null)" '^NM_900001\.3 $'
 expect "the gnomAD-SV stamp" "$(cat "${H}/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed" 2>/dev/null)" \
   "^gnomAD-SV ${GNOMAD_SV_VERSION} sha256 ${GNOMAD_SV_SHA256}\$"
@@ -191,7 +193,6 @@ if [ -s "$OUT" ]; then
   expect "DEL1: class 1 (2F, common in gnomAD-SV)" "$(field "$OUT" 1004000 '' ACMG_class)" '^1'
   expect "DEL2: gnomAD-SV frequency" "$(field "$OUT" 2450000 '' B_loss_AFmax)" '^0\.02'
   expect "DEL2: out of class 4" "$(field "$OUT" 2450000 '' ACMG_class)" '^3'
-  expect "the gnomAD-SV file was merged and removed by AnnotSV" "$([ -e "$ADAPTER" ] && echo present || echo gone)" '^gone$'
 else
   fail "step 05 wrote no ${OUT}"
   tail -n 40 "${WORK}/step05.log"
