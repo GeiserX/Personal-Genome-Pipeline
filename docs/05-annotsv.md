@@ -40,6 +40,8 @@ What the frequencies change in the ranking, by AnnotSV's rules:
 
 Step 05 and the Nextflow `ANNOTSV` stop with a pointer to `--annotsv-data` when `mane_select_refseq.txt` or `gnomad-sv.installed` is missing, and `validate-setup.sh` fails on either.
 
+Nextflow runs its tasks as root. When the first AnnotSV run after setup is the Nextflow `ANNOTSV` task, the merged `benign_*_SV_GRCh38.sorted.bed` files end up owned by root. Before a later `--annotsv-data` with a new `GNOMAD_SV_VERSION`, take them back with `sudo chown -R "$(id -u):$(id -g)" ${GENOME_DIR}/annotsv_annotations`, or step 05 stops with permission denied when AnnotSV merges the new release.
+
 ## Command
 ```bash
 ./scripts/05-annotsv.sh your_sample
