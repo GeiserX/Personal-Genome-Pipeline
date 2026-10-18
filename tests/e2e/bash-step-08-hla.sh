@@ -20,45 +20,48 @@ PIN=$( unset HLA_DB_RELEASE
        . "${REPO}/scripts/lib/common.sh"
        printf '%s' "$HLA_DB_RELEASE" )
 PIN_RE=${PIN//./\\.}
-# The release before the pin, typed second: a new index, and the calls to
+# The release before the pin, typed first: a new index, and the calls to
 # compare with. Change it only when the pin itself becomes 3.65.0.
 OTHER=3.65.0
 OTHER_RE=${OTHER//./\\.}
 check "the pin (${PIN}) is a release and differs from ${OTHER}" \
   test -n "$PIN" -a "$PIN" != "$OTHER"
 
-check "IPD-IMGT/HLA ${PIN} and the GENCODE genes install" install "$PIN"
-
-# Explicit, so a HLA_DB_RELEASE in the environment cannot pick another release.
-HLA_DB_RELEASE=$PIN run_step 08-hla-typing.sh "$SAMPLE"
-check_step_exit 08-hla-typing.sh
 REL="${GENOME_DIR}/${SAMPLE}/hla_t1k/database_release.txt"
-cat "$REL" 2>/dev/null
-check "database_release.txt names IPD-IMGT/HLA ${PIN}" grep -q "^database: IPD-IMGT/HLA Release Version ${PIN_RE}\$" "$REL"
 GT="${GENOME_DIR}/${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv"
-head -n 12 "$GT" 2>/dev/null
-for g in HLA-A HLA-B HLA-C; do
-  check_ge "${g} rows with a called allele" "$(awk -F'\t' -v g="$g" '$1 == g && $3 ~ /^HLA-/' "$GT" 2>/dev/null | wc -l | tr -d ' ')" 1
-done
-check_ge "index directories for release ${PIN}" \
-  "$(find "${GENOME_DIR}/t1k_idx" -maxdepth 1 -type d -name "t1k-*_imgt-${PIN}_gencode-*" | wc -l | tr -d ' ')" 1
-cp "$GT" "${CASE_TMP}/genotype_${PIN}.tsv" 2>/dev/null
 
-# Another release: a new index, and the output says which release it used.
-check "IPD-IMGT/HLA ${OTHER} installs" install "$OTHER"
+# The release before the pin first: a new index, and the output says which
+# release it used. Its calls are kept for the comparison below.
+check "IPD-IMGT/HLA ${OTHER} and the GENCODE genes install" install "$OTHER"
 HLA_DB_RELEASE=$OTHER run_step 08-hla-typing.sh "$SAMPLE"
 check_step_exit 08-hla-typing.sh
 check "the log says it built an index for ${OTHER}" has "Building the T1K .* index for IPD-IMGT/HLA ${OTHER_RE}" "$(cat "$STEP_LOG")"
 check_ge "index directories for release ${OTHER}" \
   "$(find "${GENOME_DIR}/t1k_idx" -maxdepth 1 -type d -name "t1k-*_imgt-${OTHER}_gencode-*" | wc -l | tr -d ' ')" 1
 check "database_release.txt names IPD-IMGT/HLA ${OTHER}" grep -q "^database: IPD-IMGT/HLA Release Version ${OTHER_RE}\$" "$REL"
+cp "$GT" "${CASE_TMP}/genotype_${OTHER}.tsv" 2>/dev/null
+
+# The pin last, so the genotypes later cases read (the drop-in baseline, the
+# PharmCAT outside calls, KIR) are the pinned release's.
+check "IPD-IMGT/HLA ${PIN} installs" install "$PIN"
+# Explicit, so a HLA_DB_RELEASE in the environment cannot pick another release.
+HLA_DB_RELEASE=$PIN run_step 08-hla-typing.sh "$SAMPLE"
+check_step_exit 08-hla-typing.sh
+cat "$REL" 2>/dev/null
+check "database_release.txt names IPD-IMGT/HLA ${PIN}" grep -q "^database: IPD-IMGT/HLA Release Version ${PIN_RE}\$" "$REL"
+head -n 12 "$GT" 2>/dev/null
+for g in HLA-A HLA-B HLA-C; do
+  check_ge "${g} rows with a called allele" "$(awk -F'\t' -v g="$g" '$1 == g && $3 ~ /^HLA-/' "$GT" 2>/dev/null | wc -l | tr -d ' ')" 1
+done
+check_ge "index directories for release ${PIN}" \
+  "$(find "${GENOME_DIR}/t1k_idx" -maxdepth 1 -type d -name "t1k-*_imgt-${PIN}_gencode-*" | wc -l | tr -d ' ')" 1
 
 # The calls of the two releases (gene and the two alleles, T1K columns 1, 3
 # and 6), for the reviewer of a pin bump: a difference is printed, not
 # failed, since a new release may rightly change a call.
 calls() { awk -F'\t' '$1 ~ /^HLA-/ {print $1 "\t" $3 "\t" $6}' "$1" 2>/dev/null | sort; }
 echo "=== HLA calls: IPD-IMGT/HLA ${OTHER} (left) and ${PIN} (right) ==="
-if diff <(calls "$GT") <(calls "${CASE_TMP}/genotype_${PIN}.tsv"); then
+if diff <(calls "${CASE_TMP}/genotype_${OTHER}.tsv") <(calls "$GT"); then
   echo "identical calls on the fixture"
 fi
 
