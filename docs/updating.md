@@ -70,7 +70,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 | Sniffles 2.8.0 | none needed | 2.8.1 has no biocontainer tag in the normal shape yet | Renovate proposes it once the tag exists |
 | Yleaf 3.2.1 | none needed | the only Yleaf biocontainer; upstream is on 4.x. `YLEAF_DATA_VERSION` must equal the image version | a 4.x biocontainer, after step 37 runs on it; move `YLEAF_DATA_VERSION` and `YLEAF_DATA_SHA256` with it |
 | hap.py 0.3.12 (`HAPPY_IMAGE`) | none needed | the hap.py biocontainer (0.3.15) has no RTG Tools, so it cannot run `--engine=vcfeval` | a biocontainer that ships RTG Tools |
-| ADMIXTURE, RFMix, Beagle (step 26b) | disabled | their tags are not versions Renovate can read (`1.3.0--0`, a commit, a date) | bump by hand after step 26b runs on the e2e fixture; the freshness report shows a newer tag |
+| ADMIXTURE, RFMix, Beagle (step 26b) | disabled | their tags are not versions Renovate can read (`1.3.0--0`, a commit, a date) | bump by hand after step 26b runs on the e2e fixture; check each upstream yourself, because the freshness report cannot order a commit or date tag and can miss a newer RFMix or Beagle build |
 | pgsc_calc images (`ghcr.io/pgscatalog/...`) | disabled | they are the images pgsc_calc's `conf/modules.config` names at `PGSC_CALC_VERSION` | never by themselves: they move with a pgsc_calc release |
 
 ## What to check by hand
