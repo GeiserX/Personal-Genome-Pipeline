@@ -4,8 +4,14 @@
 # Runs nothing. Appends one line per call to $FAKE_DOCKER_LOG,
 #   nextflow :: cwd=<directory> :: <arguments, shell-quoted>
 # plus the value of NXF_VER, and exits with FAKE_NEXTFLOW_RC (default 0). A
-# case reads the line to check the flags run-all.sh built.
+# case reads the line to check the flags run-all.sh built. `-version` prints
+# NXF_VER, or without it the NEXTFLOW_VERSION versions.env pins, so a Renovate
+# bump of that line needs no edit here.
 set -uo pipefail
 printf 'nextflow :: cwd=%s :: NXF_VER=%s :: %s\n' "$PWD" "${NXF_VER:-}" "$(printf '%q ' "$@")" >> "${FAKE_DOCKER_LOG:-/dev/null}"
-[ "${1:-}" != -version ] || { echo "nextflow version ${NXF_VER:-26.10.0}"; exit 0; }
+if [ "${1:-}" = -version ]; then
+  v=${NXF_VER:-$(sed -n 's/^NEXTFLOW_VERSION="\(.*\)".*/\1/p' "$(dirname "$0")/../../../versions.env")}
+  echo "nextflow version ${v:?the fake nextflow cannot read NEXTFLOW_VERSION from versions.env}"
+  exit 0
+fi
 exit "${FAKE_NEXTFLOW_RC:-0}"

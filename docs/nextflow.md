@@ -18,7 +18,7 @@ Every BAM then goes through a sex check (indexcov), and the pipeline runs pharma
 
 1. **Docker** (already required for the bash pipeline)
 2. **Java 17 or later** (Nextflow 26.10 runtime requirement; CI runs Java 17)
-3. **Nextflow 26.10.0**, the version CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
+3. **Nextflow**, the release CI validates (`NEXTFLOW_VERSION` in versions.env). Pin it when installing, because the plain installer fetches the newest release:
    ```bash
    curl -s https://get.nextflow.io | NXF_VER=26.10.0 bash
    sudo mv nextflow /usr/local/bin/
