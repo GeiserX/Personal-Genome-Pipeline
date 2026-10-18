@@ -304,19 +304,22 @@ jobs:
         run: |
           # What the runner ships is not ours to cache: remember it first.
           docker image ls --format '{{.Repository}}:{{.Tag}}' | sort -u > "${RUNNER_TEMP}/images-before.txt"
-          n=$(find "${RUNNER_TEMP}/images" -name '*.tar.zst' 2>/dev/null | wc -l)
+          # The archives that loaded, so the summary calls only them restored.
+          loaded="${RUNNER_TEMP}/images-loaded.txt"
+          : > "$loaded"
           for d in "${RUNNER_TEMP}"/images/g*; do
             [ -d "$d" ] || continue
             (
               for f in "$d"/*.tar.zst; do
                 [ -f "$f" ] || continue
-                zstd -dc "$f" | docker load -q > /dev/null || echo "::warning::${f##*/} did not load; e2e-run.sh pulls it"
+                if zstd -dc "$f" | docker load -q > /dev/null; then echo "${f##*/}" >> "$loaded"
+                else echo "::warning::${f##*/} did not load; e2e-run.sh pulls it"; fi
               done
             ) &
           done
           wait
           rm -rf "${RUNNER_TEMP}/images"
-          echo "Image cache: ${n} images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Image cache: $(wc -l < "$loaded") images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run the e2e cases
         id: cases
@@ -401,8 +404,11 @@ jobs:
               if [ "$size" = 0 ]; then shown="not here" state="-"
               else shown=$(numfmt --to=iec "$size"); fi
               if [ "$size" = 0 ]; then :
-              elif [ "$hit" = true ]; then state="restored (exact key hit)"
               elif [[ "$ref" == *@* ]]; then state="not saved: pinned by digest"
+              elif [ "$hit" = true ]; then
+                if grep -qxF "$(tr '/:' '__' <<< "$ref").tar.zst" "${RUNNER_TEMP}/images-loaded.txt" 2> /dev/null
+                then state="restored (exact key hit)"
+                else state="pulled: not in the cache entry"; fi
               elif [ -n "$why" ]; then state="$why"
               elif [ "$full" = yes ]; then state="not saved: over the group budget"
               else
