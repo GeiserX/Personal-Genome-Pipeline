@@ -14,8 +14,10 @@ name: Renovate dry run
 #            conf/containers.config holds only those, so one Renovate PR
 #            updates every copy
 #   one-pr   a tool gets the same proposal in every file it is in
-#   pins     Nextflow, actionlint and gitleaks are detected in every place
-#            they are pinned, as often as the text has them. A setup-nextflow
+#   pins     every non-image pin (Nextflow, actionlint, gitleaks, ShellCheck,
+#            the Renovate CLI, the HLA database, pgsc_calc, the demo's Python
+#            packages, Aldy, the docs workflow's Python) is detected in every
+#            place it is pinned, as often as the text has them. A setup-nextflow
 #            step counts as a pin only when its version: line is a literal
 #            version, quoted or not; a computed one (an expression) is not a pin
 #   lookups  no lookup failed and no tag was unreadable; the only skipped
@@ -27,8 +29,10 @@ name: Renovate dry run
 # scripts/ci/gen-versions-doc.sh writes from versions.env.
 on:
   # Every file a manager in renovate.json reads (the workflows hold the
-  # Nextflow, actionlint and gitleaks pins, the docs the NXF_VER lines), plus
-  # the doc generator. The lookups take about a minute.
+  # Nextflow, actionlint, gitleaks, ShellCheck, Renovate and docs Python pins,
+  # the docs the NXF_VER lines and the Aldy pin, scripts/lib/common.sh the HLA
+  # database, the demo script its Python packages), plus the doc generator.
+  # The lookups take about a minute.
   pull_request:
     branches: [main]
     paths:
@@ -38,6 +42,8 @@ on:
       - 'docs/*.md'
       - '.github/workflows/**'
       - 'scripts/ci/gen-versions-doc.sh'
+      - 'scripts/lib/common.sh'
+      - 'tests/demo/retake-screenshots.sh'
   push:
     branches: [main]
     paths:
@@ -87,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      RENOVATE_VERSION: 44.132.2
+      RENOVATE_VERSION: 44.166.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -138,13 +144,30 @@ jobs:
           # between are blank or start with anything but '-', which opens the
           # next step).
           SETUP_NEXTFLOW = r'uses: ["\x27]?nf-core/setup-nextflow@[^\n]*\n(?:[ \t]*(?:[^\s-][^\n]*)?\n)*?[ \t]+version: ["\x27]?\d'
+          DEMO = "tests/demo/retake-screenshots.sh"
           PINS = (
               ("nextflow-io/nextflow", [ENV], r'^NEXTFLOW_VERSION="'),
               ("nextflow-io/nextflow", sorted(glob.glob(".github/workflows/*.yml")), SETUP_NEXTFLOW),
               ("nextflow-io/nextflow", sorted(glob.glob("docs/*.md")), r"NXF_VER=\d"),
               ("rhysd/actionlint", sorted(glob.glob(".github/workflows/*.yml")), r"ACTIONLINT_VERSION=\d"),
               ("gitleaks/gitleaks", sorted(glob.glob(".github/workflows/*.yml")), r"GITLEAKS_VERSION=\d"),
+              ("koalaman/shellcheck", [".github/workflows/lint.yml"], r"^[ \t]+version: v\d"),
+              ("renovate", [".github/workflows/renovate-dry-run.yml"], r"RENOVATE_VERSION: \d"),
+              ("renovate", ["docs/updating.md"], r"renovate@\d"),
+              ("python", [".github/workflows/docs.yml"], r"python-version: ['\"]?\d"),
+              ("ANHIG/IMGTHLA", ["scripts/lib/common.sh"], r"^HLA_DB_RELEASE=\$\{HLA_DB_RELEASE:-\d"),
+              ("PGScatalog/pgsc_calc", [ENV], r'^PGSC_CALC_VERSION="'),
+              ("PGScatalog/pgsc_calc", ["conf/containers.config"], r"ext\.pipeline_version = '"),
+              ("playwright", [DEMO], r"playwright==\d"),
+              ("pillow", [DEMO], r"pillow==\d"),
+              ("pyobjc-framework-Vision", [DEMO], r"pyobjc-framework-Vision==\d"),
+              ("aldy", ["docs/21-cyrius.md"], r"aldy==\d|\[Aldy\]\([^)]*\) v\d"),
           )
+          # Only the files a pin is listed for are counted: python is also the
+          # docker image of versions.env, which the image checks cover.
+          PIN_FILES = collections.defaultdict(set)
+          for _name, _files, _ in PINS:
+              PIN_FILES[_name].update(_files)
 
           def pin_counts():
               want = collections.Counter()
@@ -218,7 +241,7 @@ jobs:
                   if d.get("skipReason") and d["skipReason"] not in RULE_SKIPS:
                       fails.append("lookups: %s (%s) skipped: %s" % (d.get("depName"), f, d["skipReason"]))
               got = collections.Counter((d.get("depName"), f) for f, d in deps
-                                        if d.get("depName") in {name for name, _, _ in PINS})
+                                        if f in PIN_FILES.get(d.get("depName"), ()))
               for k in sorted(set(want_pins) | set(got)):
                   if want_pins[k] != got[k]:
                       fails.append("pins: %s in %s: the text pins it %d times, Renovate found %d" % (k[0], k[1], want_pins[k], got[k]))
