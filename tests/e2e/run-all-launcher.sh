@@ -61,10 +61,11 @@ status_count() {
 all_cached() { [ "$(status_count "$1" CACHED)" -ge 10 ] && [ "$(status_count "$1" COMPLETED)" -eq 0 ] && [ "$(status_count "$1" FAILED)" -eq 0 ]; }
 not_all_cached() { ! all_cached "$1"; }
 # published DIR: the files under DIR, relative, without the launcher's own (inputs, launch directory,
-# logs, manifest, bash reports) and the two outputs the direct case makes and run-all.sh does not.
+# logs, manifest, bash reports, the run-to-run delta and its history copies) and the two outputs
+# the direct case makes and run-all.sh does not.
 published() {
   (cd "$1" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) \
-    | grep -vE "^(fastq|nextflow|logs|vep)/|^run_manifest\.tsv$|^summary\.json$|^${P}_report\.(html|txt)$"
+    | grep -vE "^(fastq|nextflow|logs|vep)/|^run_manifest\.tsv$|^summary\.json$|^${P}_report\.(html|txt)$|^${P}_delta\.(html|txt|json)$|^history/"
 }
 
 # --- first run, with fs.protected_hardlinks 0 ---------------------------------------------

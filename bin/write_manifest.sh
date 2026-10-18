@@ -130,7 +130,7 @@ hla=""
 for f in "${HLA_DAT:-}" "$(data_file hla_dat || true)" "${GENOME_DIR}/t1k_idx/hlaidx/hla.dat"; do
   if [ -n "$f" ] && [ -f "$f" ]; then hla=$f; break; fi
 done
-idx=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name 't1k-*_imgt-*_gencode-*' 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)
+idx=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name 't1k-*_imgt-*_gencode-*' 2>/dev/null | sort -V | tail -n 1 || true)
 if [ -n "$hla" ]; then
   rel=$(hla_release "$hla")
   # IPD-IMGT-HLA_<release>/hla.dat (setup.sh) names its release in its folder.

@@ -120,7 +120,9 @@ def diff_states(p, c):
     keys = sorted(set(p.get("sections") or {}) | set(c.get("sections") or {}))
     for k in keys:
         a, b = section(p, k), section(c, k)
-        sa, sb = a.get("state", "absent"), b.get("state", "absent")
+        # A section only one summary knows (a newer version added it) and that did not run reads as
+        # missing on both sides, so a pipeline upgrade lists no noise rows.
+        sa, sb = a.get("state", "missing"), b.get("state", "missing")
         if sa != sb:
             out.append(change(b.get("title") or a.get("title") or k, "section", k, sa, sb))
     return out

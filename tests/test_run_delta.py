@@ -215,6 +215,18 @@ def main():
               got == [("re-starred", "2 stars (criteria provided, multiple submitters, no conflicts)",
                        "3 stars (reviewed by expert panel)")], got)
 
+        # 4c. a section only the newer summary knows (a pipeline upgrade added it)
+        s = summary("2026-02-01T00:00:00Z")
+        s["sections"]["newstep"] = sec("New step", state="missing")
+        write_run(cur, s, MANIFEST)
+        d, _, _ = delta(w, prev, cur, "newsection")
+        check("a new section that did not run is no change", d["changes"] == [], d["changes"])
+        s["sections"]["newstep"] = sec("New step")
+        write_run(cur, s, MANIFEST)
+        d, _, _ = delta(w, prev, cur, "newsection-ran")
+        got = [(c["kind"], c["item"], c["before"], c["after"]) for c in d["changes"]]
+        check("a new section that ran is one section change", got == [("section", "newstep", "missing", "ok")], got)
+
         # 5. HTML escaping
         s = summary("2026-02-01T00:00:00Z")
         s["sections"]["clinvar"]["data"]["hits"][1]["significance"] = "<b>x</b>"
