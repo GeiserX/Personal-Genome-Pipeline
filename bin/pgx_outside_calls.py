@@ -293,7 +293,7 @@ def vcf_lookup(path):
             smp = rec.samples[0] if len(rec.samples) else {}
             gq, ad = smp.get("GQ"), smp.get("AD")
             return {"filter": ";".join(rec.filter.keys()) or ".",
-                    "gq": gq if isinstance(gq, int) else None,
+                    "gq": int(gq) if isinstance(gq, (int, float)) else None,
                     "ad": ",".join("." if x is None else str(x) for x in ad) if ad else "."}
         return None
     return lookup
