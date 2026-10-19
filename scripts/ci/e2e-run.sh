@@ -2,12 +2,14 @@
 # e2e-run.sh — run every end-to-end case in tests/e2e/ on the HG002 fixture.
 #
 # Usage: scripts/ci/e2e-run.sh [pattern]
-#        scripts/ci/e2e-run.sh --self-test-pull
+#        scripts/ci/e2e-run.sh --self-test-pull | --image-groups
 #   pattern  optional shell glob; runs only the cases whose file name matches
 #            (e.g. '2*' or '*cyrius*'). Later cases read earlier cases' outputs,
 #            so a partial run is for debugging only.
 #   --self-test-pull  checks the pull retry of step 3 against a fake docker
-#            (seconds, no network) and exits.
+#            (seconds, no network) and the image cache groups, and exits.
+#   --image-groups  prints "GROUP IMAGE" for every image the cases use (the
+#            e2e workflow's image cache entries) and exits.
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -88,6 +90,30 @@ case_images() {
       done | awk '!seen[$0]++'
 }
 
+# --- Image cache groups -------------------------------------------------------
+# The e2e workflow caches the images of case_images in IMAGE_GROUPS cache
+# entries, so no single entry, and not their sum, reaches the repository's
+# 10 GB cache limit. An image's group comes from its repository name without
+# the tag or digest, so a version bump moves no image to another group and
+# changes the cache key of one group only.
+IMAGE_GROUPS=4
+# image_group REF: the group (0 to IMAGE_GROUPS-1) of an image reference.
+image_group() {
+  local repo=${1%@*}
+  [[ "${repo##*/}" == *:* ]] && repo=${repo%:*}
+  echo $(( $(printf '%s' "$repo" | cksum | cut -d' ' -f1) % IMAGE_GROUPS ))
+}
+# image_groups: one "GROUP REF" line per image of case_images.
+image_groups() {
+  local ref
+  case_images | while IFS= read -r ref; do echo "$(image_group "$ref") ${ref}"; done
+}
+
+if [ "${1:-}" = --image-groups ]; then
+  image_groups
+  exit 0
+fi
+
 if [ "${1:-}" = --self-test-pull ]; then
   T=$(mktemp -d)
   trap 'rm -rf "$T"' EXIT
@@ -140,6 +166,22 @@ FAKE
   HAPPY=$(. "${REPO}/versions.env" && echo "$HAPPY_IMAGE") VEP=$(. "${REPO}/versions.env" && echo "$VEP_IMAGE")
   if grep -qxF "$HAPPY" <<< "$LIST"; then echo "ok: the pull list holds hap.py's image"; else echo "FAIL: the pull list lacks ${HAPPY}"; st_failed=1; fi
   if grep -qxF "$VEP" <<< "$LIST"; then echo "FAIL: the pull list holds ${VEP}, which no case runs"; st_failed=1; else echo "ok: the pull list leaves VEP out"; fi
+  # Cache groups: a version bump keeps an image in its group, and every image
+  # of the pull list is in exactly one group.
+  for pair in "example/tool:2.31--h118bc1c_0 example/tool:2.32--h0_0" \
+              "example/pinned:3.15.0@sha256:16e7e5fc example/pinned:3.16.0@sha256:0123abcd" \
+              "registry.example:5000/tool:1.0 registry.example:5000/tool:2.0"; do
+    read -r a b <<< "$pair"
+    if [ "$(image_group "$a")" = "$(image_group "$b")" ]; then echo "ok: ${a} and ${b} share a cache group"
+    else echo "FAIL: ${a} and ${b} fall in different cache groups"; st_failed=1; fi
+  done
+  GROUPS_LIST=$(image_groups)
+  if [ "$(cut -d' ' -f2 <<< "$GROUPS_LIST")" = "$LIST" ] && ! grep -qvE "^[0-9]+ " <<< "$GROUPS_LIST" \
+     && [ -z "$(awk -v n="$IMAGE_GROUPS" '$1 >= n' <<< "$GROUPS_LIST")" ]; then
+    echo "ok: each of the $(wc -l <<< "$LIST" | tr -d ' ') listed images is in one cache group of ${IMAGE_GROUPS}"
+  else
+    echo "FAIL: the cache groups do not hold the pull list once each"; st_failed=1
+  fi
   exit "$st_failed"
 fi
 

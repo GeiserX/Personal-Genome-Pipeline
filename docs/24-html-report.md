@@ -47,8 +47,10 @@ Two more files, when present:
 
 The report contains:
 - **Quality Control** — mean depth (mosdepth), sex inferred from X/Y coverage (indexcov) against the declared sex, and from step 33: the sex somalier infers from the reads, FREEMIX (VerifyBamID2's estimate of reads from another person) against its warning threshold, and any other sample that is the same person
+- **Mosaic Loss of Chromosome Y or X** — step 33's call on chrY (men) or chrX (women), the reason for it, and a note that this is a population-level association, not a diagnosis
 - **Variant Calling** — total variants, PASS count, SNPs, indels (one pass over the VCF)
-- **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column. The count's badge is yellow when there is a hit and gray when there is none, never green: the screen does not check population frequency, so look up a homozygous P/LP hit in gnomAD before reading much into it
+- **ClinVar Screening** — hit count by review stars, the ClinVar file date, and the hits table best-reviewed first with a Stars column. The count's badge is yellow when there is a hit and gray when there is none, never green: the screen does not check population frequency, so look up a homozygous P/LP hit in gnomAD before reading much into it. When step 6's cDNA read check ran, the card also counts the hits it flagged
+- **Couple Carrier Screen** — when step 39 ran for this sample: the partner, the genes where both carry a change, the X-linked findings and the genes where only one partner does, each shared or X-linked gene with the chance for a child
 - **Pharmacogenomics** — PharmCAT version and PharmCAT/pypgx conflicts
 - **CPIC Drug Recommendations** — genes with a non-normal phenotype, with more than one possible result, not called, called without a function phenotype (`unclassified`, no drug guidance), and a table of the non-normal genes
 - **CYP2D6 Across Callers** — pypgx and Cyrius side by side, judged by step 36's rule: a no-call such as `Indeterminate` is not a call, and a Cyrius genotype counts only with Filter `PASS` (otherwise it is shown as not usable, with its Filter). The card says whether the two agree and, with [step 36](36-pgx-consensus.md)'s table, its verdict and reason. The PharmCAT row is the call step 36 passed to PharmCAT, not a third caller: PharmCAT calls no CYP2D6 from a VCF
@@ -60,10 +62,15 @@ The report contains:
 - **Runs of Homozygosity** — total, largest segment, segments, autosomal runs over 5 MB
 - **Mitochondrial Haplogroup** — haplogrep3's call, and haplocheck's contamination status ("not checked" when step 12 read the step 03 VCF instead of step 20's calls)
 - **Y-Chromosome Haplogroup** — Yleaf's call, its marker count and QC-score, or "insufficient markers" (step 37, when it ran)
+- **Paralog Genes (Paraphase)** — when step 35b ran: copy number and call per gene, SMN1 from Paraphase beside Parascopy, with whether they agree, when step 35 ran too, and the count of variants on phased haplotypes
+- **Raw-Data Export (23andMe v5 layout)** — when step 40 ran: the sites with a genotype out of all the sites, the homozygous-reference sites taken from the gVCF's reference blocks, why the others are `--`, and the names of the two zips under `consumer_export/`
+- **Blood Groups (predicted)** — when step 41 ran: ABO, RhD, and per blood group system the predicted phenotype, genotype and confidence
 - **Telomere content (relative)** — TelomereHunter's `tel_content`: intratelomeric reads per million reads with 48-52% GC. It is a relative measure, not a telomere length
 - **Mitochondrial** — chrM PASS variants and heteroplasmic calls (allele fraction 0.05 to 0.95; below 5% NUMT reads and noise dominate)
 - **Clinical Filter** and **slivar** — variant counts from steps 23 and 31
 - **Secondary-Findings Genes (ACMG SF v3.3)** — the step 06 ClinVar hits and the clinical filter's rare HIGH-impact records in the 84 genes of the ACMG list, as a list to review with a clinician: the list's per-gene reporting rules (for example HFE homozygous C282Y only) are not applied
+- **Fine-Grained Ancestry** — when step 26b ran: the continental and regional fractions with their bootstrap ranges, and the chromosome painting
+- **Traits** — step 42's panel: each row read with its genotype, reading and PubMed ids, the rows with no genotype, and the APOE lines folded away behind a warning; "Not run" without step 42
 - **Steps Not Run** and **Not Assessed by This Pipeline**
 - The run manifest in the footer
 
@@ -74,8 +81,8 @@ A step that is skipped or fails leaves the previous run's output on disk. When `
 A section with no file whose step is recorded `failed` in `logs/run_status.tsv` says **Failed**, with the step, in both reports (the CYP2D6 rows too), and is listed under Steps Not Run with "(step N failed)". A section whose step never ran still says **Not run**.
 
 <figure markdown="span">
-  ![The step 24 HTML report: a header with the sample name, seventeen cards of counts and statuses, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }
-  <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops above the CPIC gene table, so the tables that list genes (the CPIC genes and the ClinVar hits) and the disclaimer are not shown.</figcaption>
+  ![The step 24 HTML report: a header with the sample name, twenty-two cards of counts and statuses, then the polygenic risk scores table and the fine-grained ancestry tables with the chromosome painting](images/demo-html-report.png){ loading=lazy }
+  <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops above the Traits card, so the traits table, the CPIC gene table, the ClinVar hits and the disclaimer are not shown.</figcaption>
 </figure>
 
 ## What changed since the previous run

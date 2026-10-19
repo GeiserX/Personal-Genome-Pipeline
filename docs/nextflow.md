@@ -68,7 +68,7 @@ nextflow run main.nf \
 #                                                it names (two or more, each with a gVCF; docs/multi-sample.md)
 ```
 
-**Family workflow (opt-in).** `--pedigree` (tab separated: sample, sex, father, mother, partner; [`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)) runs `workflows/family.nf` over the samplesheet rows it names, the same work as step 38: `FAMILY_PREPARE` checks the pedigree and that each member's gVCF names its own sample, `GLNEXUS` and `GLNEXUS_VCF` joint-call the gVCFs, `FAMILY_RELATE` and `FAMILY_CHECK` stop the run when somalier's relatedness of a pair disagrees with the pedigree (a sample swap), `WHATSHAP_PED` phases the children of complete trios by inheritance, and `FAMILY_REPORT` writes each child's allele origin, de novo candidates when both parents are sequenced, and compound heterozygotes among the clinical filter's candidates. Each member needs a gVCF: DEEPVARIANT's for a FASTQ or BAM row, the `gvcf` column for a VCF row (the run stops on a VCF row without one). Fewer than two named samples, or no `--somalier_sites`, stops the run at the start. Without `--pedigree` none of these processes exists and a run is unchanged. What it checks and what the files hold: [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in).
+**Family workflow (opt-in).** `--pedigree` (tab separated: sample, sex, father, mother, partner; [`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)) runs `workflows/family.nf` over the samplesheet rows it names, the same work as step 38: `FAMILY_PREPARE` checks the pedigree and that each member's gVCF names its own sample, `GLNEXUS` and `GLNEXUS_VCF` joint-call the gVCFs, `FAMILY_RELATE` and `FAMILY_CHECK` stop the run when somalier's relatedness of a pair disagrees with the pedigree (a sample swap), `WHATSHAP_PED` phases the children of complete trios by inheritance, and `FAMILY_REPORT` writes each child's allele origin, de novo candidates when both parents are sequenced, and compound heterozygotes among the clinical filter's candidates. Each member needs a gVCF: DEEPVARIANT's for a FASTQ or BAM row, the `gvcf` column for a VCF row (the run stops on a VCF row without one). Fewer than two named samples, or no `--somalier_sites`, stops the run at the start. When the pedigree marks two of those samples as each other's partner, `COUPLE_CARRIER` runs the couple carrier screen of step 39 on them ([Couple Carrier Screen](39-couple.md)): it reads each partner's ClinVar hits, so it needs `clinvar` in `--tools` (without it the run logs a warning and skips the screen), uses deletions over an exon only with `--gencode_exons` (the GENCODE exons BED `setup.sh` installs as `reference/gencode.v50.basic.exons.bed`), and reads Delly's calls, ExpansionHunter's and Parascopy's SMN1 table when those steps ran. Without `--pedigree` none of these processes exists and a run is unchanged. What it checks and what the files hold: [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in).
 
 `--reference` is the FASTA the reads are aligned to and the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a given BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
 
@@ -177,7 +177,8 @@ results/
 │   ├── indexcov/           # goleft indexcov coverage plots and .ped (rows with a BAM)
 │   ├── <sample>_sex_check.tsv  # the sex indexcov infers, with CNchrX and CNchrY
 │   ├── qc/                 # <sample>_sample_qc.tsv: somalier's sex, FREEMIX, same person as (sample_qc);
-│   │                       #   somalier/ and verifybamid2/ hold each tool's own files
+│   │                       #   somalier/ and verifybamid2/ hold each tool's own files;
+│   │                       #   <sample>_read_count.tsv: reads in and primary records in the BAM (ALIGN_MINIMAP2)
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
 │   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
 │   ├── pypgx/              # pypgx star allele calling (optional)
@@ -200,7 +201,12 @@ results/
 │   ├── cyrius/             # CYP2D6 star allele (Cyrius, opt-in) and the CYP2D6 depth check
 │   ├── pgx_consensus/      # PharmCAT's outside calls (HLA-A/B, an agreed CYP2D6) and who said what
 │   ├── kir/                # KIR genotypes and the IPD-KIR release (--kir)
-│   ├── paralogs/           # SMN1/SMN2 copy number (Parascopy, opt-in)
+│   ├── paralogs/           # SMN1/SMN2 copy number (Parascopy, opt-in); Paraphase's copy number and variant
+│   │                       #   tables and its own folder (opt-in: paraphase, PacBio HiFi BAMs only)
+│   ├── traits/             # <sample>_traits.tsv and <sample>_traits_genotypes.tsv: the traits panel (traits)
+│   ├── consumer_export/    # 23andMe-layout and AncestryDNA-layout raw-data zips and the summary table
+│   │                       #   (opt-in: consumer_export)
+│   ├── couple/             # <sample>_couple_carrier.tsv: the couple carrier screen for this partner (--pedigree)
 │   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV;
 │   │                       #   diploidSV.raw.vcf.gz as Manta wrote it (an inversion is two BND records)
 │   ├── sv_duphold/         # Manta SVs with duphold depth tags (optional)
@@ -210,12 +216,16 @@ results/
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers, SURVIVOR merge (optional)
 │   ├── summary.json        # The numbers the report is rendered from (html_report)
+│   ├── <sample>_delta.*    # .txt, .html and .json: what changed since the previous run (run-all.sh only:
+│   │                       #   generate-report.sh writes them after the pipeline; delta-report.md)
+│   ├── history/            # each run's summary.json and run_manifest.tsv, the next delta's baseline (run-all.sh only)
 │   └── *_report.html       # Summary HTML report (published to sample root): QC, ClinVar, PharmCAT, CPIC,
 │                           #   CPSR, clinical filter (with its ACMG SF tier), slivar, ROH, mito haplogroup and haplocheck,
 │                           #   Y haplogroup; "Not run" for a tool not selected
 ├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
 ├── family/                 # --pedigree: family.vcf.gz (joint call), relationships.tsv, somalier/, family.phased.vcf.gz,
-│                           #   <child>_inheritance.tsv.gz, de_novo.tsv, compound_het.tsv, family_report.md
+│                           #   <child>_inheritance.tsv.gz, de_novo.tsv, compound_het.tsv, family_report.md;
+│                           #   couple_<a>_<b>.tsv and .md for two partners (COUPLE_CARRIER)
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
     ├── timeline_*.html
@@ -279,6 +289,7 @@ The pipeline and the scripts run the same commands at the same tool releases, so
 | prs | each score's sum, matched variant count and input (gVCF or VCF) |
 | sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
 | y_haplogroup | Yleaf's prediction table; on the same hardening run |
+| traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 

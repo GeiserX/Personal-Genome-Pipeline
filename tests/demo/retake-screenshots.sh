@@ -91,7 +91,7 @@ python3 "${DEMO}/make_demo_sample.py" check --genome-dir "$GENOME_DIR"
 echo "=== 4. Pictures"
 VENV=${VENV:-${WORK}/venv}
 [ -x "${VENV}/bin/python" ] || python3 -m venv "$VENV"
-PKGS=(playwright==1.63.0 pillow==12.3.0)
+PKGS=(playwright==1.64.0 pillow==13.0.0)
 [ "$(uname -s)" != Darwin ] || PKGS+=(pyobjc-framework-Vision==12.2.2)
 "${VENV}/bin/python" -m pip install -q "${PKGS[@]}"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${VENV}/browsers}
@@ -102,7 +102,10 @@ if [ -n "${PLAYWRIGHT_WITH_DEPS:-}" ]; then
 else
   "${VENV}/bin/python" -m playwright install chromium
 fi
-"${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT"
+# The HTML picture also stops above the Traits card: its table of genes and
+# genotypes would add about 3,700 pixels below the cards.
+"${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT" \
+  --html-stop-before "Traits,Secondary-Findings Genes,Genes With a Non-Normal,ClinVar Hits,Steps Not Run"
 
 echo "=== 5. Checks"
 ARGS=()
