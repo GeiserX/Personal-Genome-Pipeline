@@ -130,8 +130,9 @@ exclude_docs: |
 # Every page, grouped by what a reader is doing. The nav title equals the
 # page's H1, except where one page holds two steps (35 and 35b) or a step
 # lives in a guide (38, in multi-sample.md, listed twice). Step pages are
-# grouped by pipeline stage; the numbers stay in the titles because the scripts, the output directories and every other page
-# refer to steps by number.
+# grouped by pipeline stage; the numbers stay in the titles because the
+# scripts, the output directories and every other page refer to steps by
+# number.
 nav:
   - Home: index.md
   - Get started:
