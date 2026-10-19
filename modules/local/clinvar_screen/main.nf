@@ -223,7 +223,8 @@ process CLINVAR_CDNA_CHECK {
     tag "$meta.id"
     label 'process_single'
 
-    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode
+    // The table only: CLINVAR_SCREEN's versions.yml is the one in clinvar/.
+    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_check.tsv'
 
     input:
     tuple val(meta), path(hits_tsv), path(bam), path(bai)
