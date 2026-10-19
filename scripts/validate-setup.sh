@@ -457,6 +457,7 @@ else
       cytoband) what="GRCh38 chromosome bands (step 10 falls back to hg19 bands)" ;;
       hla_dat) what="IPD-IMGT/HLA ${HLA_DB_RELEASE} (step 08 is skipped without it)" ;;
       gencode_genes) what="GENCODE ${GENCODE_RELEASE} gene coordinates (step 08 is skipped without them)" ;;
+      gencode_exons) what="GENCODE ${GENCODE_RELEASE} exons (steps 06 and 17 skip their cDNA read check without them)" ;;
     esac
     if DATA_PATH=$(data_file "$name"); then
       pass "${what%% (*}: present"
@@ -465,13 +466,6 @@ else
       echo "       Install it: ./scripts/setup.sh ${GENOME_DIR}"
     fi
   done
-  EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
-  if [ -s "$EXONS_BED" ]; then
-    pass "GENCODE ${GENCODE_RELEASE} exons: present"
-  else
-    warn "GENCODE ${GENCODE_RELEASE} exons (step 06 skips its cDNA read check without them) not found at: ${EXONS_BED}"
-    echo "       Install them: ./scripts/setup.sh ${GENOME_DIR}"
-  fi
 
   # --- somalier's sites and VerifyBamID2's panel, for step 33 (setup.sh installs them) ---
   QC_MISSING=""
