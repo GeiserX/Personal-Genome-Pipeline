@@ -105,7 +105,7 @@ graph LR
 | 3 | [Variant Calling](03-variant-calling.md) | DeepVariant | `DEEPVARIANT_IMAGE` | Yes |
 | 4 | [Structural Variants](04-structural-variants.md) | Manta | `MANTA_IMAGE` | Recommended |
 | 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `ANNOTSV_IMAGE` | If step 4 run |
-| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec | `BCFTOOLS_IMAGE` | Yes |
+| 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec, then the cDNA read check (pysam) | `BCFTOOLS_IMAGE` + `PYPGX_IMAGE` | Yes |
 | 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `PHARMCAT_IMAGE` | Yes |
 | 8 | [HLA Typing](08-hla-typing.md) | T1K | `T1K_IMAGE` | Optional |
 | 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | Recommended |
@@ -145,8 +145,11 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 33 | [Sample Identity and Contamination](33-sample-qc.md) | somalier + VerifyBamID2 | `SOMALIER_IMAGE` + `VERIFYBAMID2_IMAGE` | Recommended |
 | 34 | [CRAM Archive](34-cram-archive.md) | samtools | `SAMTOOLS_IMAGE` | Optional, when the analysis is done |
 | 35 | [Paralog Genes: SMN1/SMN2](35-paralogs.md) | Parascopy | `PARASCOPY_IMAGE` | Opt-in (`TOOLS=...,parascopy`) |
+| 35b | [Paralog Genes from PacBio HiFi Reads](35-paralogs.md#step-35b-paralog-genes-from-pacbio-hifi-reads-paraphase) | Paraphase + Python | `PARAPHASE_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,paraphase`; PacBio HiFi BAMs only) |
 | 36 | [PGx Consensus](36-pgx-consensus.md) | Python | `PYTHON_IMAGE` | Runs with step 7 when step 8, 21 or 32 ran |
 | 37 | [Y-Chromosome Haplogroup](37-y-haplogroup.md) | Yleaf | `YLEAF_IMAGE` | Opt-in (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`; male samples) |
+| 38 | [Family Analysis](multi-sample.md#family-analysis-step-38-opt-in) | GLnexus + somalier + WhatsHap | `GLNEXUS_IMAGE` + `SOMALIER_IMAGE` + `WHATSHAP_IMAGE` (with `BCFTOOLS_IMAGE` + `PYTHON_IMAGE`) | Opt-in (a pedigree naming two or more samples with a gVCF; after `setup.sh --sample-qc-data`) |
+| 39 | [Couple Carrier Screen](39-couple.md) | Python | `PYTHON_IMAGE` | Opt-in (a pedigree marking two samples as partners; after step 6 for both) |
 | 40 | [Raw-Data Export](40-export-consumer.md) | Python | `PYTHON_IMAGE` | Opt-in (`TOOLS=...,consumer_export`, after `setup.sh --consumer-sites`; needs the gVCF) |
 | 41 | [Blood Groups (predicted)](41-bloodtype.md) | samtools + Python | `SAMTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,bloodtype`; RhD needs the BAM) |
 | 42 | [Traits Panel](42-traits.md) | bcftools + Python | `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` | Recommended (reads the gVCF of step 3) |
@@ -155,7 +158,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 
 A default `./scripts/run-all.sh <sample> <sex>` runs **34 numbered steps**: 1b and 2 (only when there is no BAM yet), 3 (only when there is no VCF yet), 4, 5, 6, 7, 8, 9, 9b, 10, 11, 12, 13, 15, 16, 16b, 17, 18, 19, 20, 22, 23, 24, 25, 26, 26b, 27, 28, 30, 31, 32, 36 and 42. Steps 5, 8, 13, 17, 18 and 32 are reported as skipped when their data is not installed, 25 when no score file is, 26 (inside the PRS run of step 25) when the ancestry panel is not, 26b when its panel (`setup.sh --ancestry-fine-panel`) is not, 23, 30 and 31 when step 13 did not run, 36 (inside the PharmCAT stage) runs when step 8 or 32 did, and 42 is reported as skipped for a sample that starts from a VCF, unless it has a BAM too and a gVCF beside the VCF (the gVCF `run-all.sh` passes on). It ends with the summary report (`generate-report.sh`).
 
-Off unless you ask for them: 21 (`TOOLS=...,cyrius`, after `setup.sh --cyrius`), 35 (`TOOLS=...,parascopy`, after `setup.sh --parascopy-data`), KIR typing in step 8 (`KIR=true`, after `setup.sh --kir-data`), 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 29 (`SOMATIC=true`), 37 (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`, male samples), 40 (`TOOLS=...,consumer_export`, after `setup.sh --consumer-sites`), 41 (`TOOLS=...,bloodtype`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`.
+Off unless you ask for them: 21 (`TOOLS=...,cyrius`, after `setup.sh --cyrius`), 35 (`TOOLS=...,parascopy`, after `setup.sh --parascopy-data`), 35b (`TOOLS=...,paraphase`, on a PacBio HiFi BAM), KIR typing in step 8 (`KIR=true`, after `setup.sh --kir-data`), 4b (`GRIDSS=true`), 14 (`IMPUTATION=true`), 29 (`SOMATIC=true`), 37 (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`, male samples), 40 (`TOOLS=...,consumer_export`, after `setup.sh --consumer-sites`), 41 (`TOOLS=...,bloodtype`), the alternative callers 3a to 3d (`EXTRA_CALLERS=gatk,freebayes,strelka2,octopus`) and the caller comparison (`BENCHMARK=true`). Step 1 (ORA input) and the other alternative scripts (2a, 2b, 3e, 4a, 4c) run only by hand. Steps 33 and 34 run by hand, or in the Nextflow pipeline with `sample_qc` and `cram_archive` in `--tools`. Steps 38 and 39 work on a family, not one sample, so `run-all.sh` never runs them: run `38-family.sh` and `39-couple.sh` by hand with a pedigree, or give the Nextflow pipeline `--pedigree` (step 39 then runs for two samples the pedigree marks as partners, when `clinvar` is in `--tools`).
 
 The [Nextflow pipeline](nextflow.md) runs the same chain from a samplesheet, from FASTQ (steps 1b, 2, 16 and 3) to the report, with the steps above that have a module.
 
