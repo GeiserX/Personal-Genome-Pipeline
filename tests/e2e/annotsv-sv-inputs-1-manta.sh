@@ -76,7 +76,7 @@ check "the log counts each kind" \
 OUT=$(records "${V}/diploidSV.vcf.gz")
 printf '%s\n' "$OUT"
 check "the reciprocal inversion stays two INV records with INV_JUNCTIONS=2" \
-  test "$(grep -cE $'^chr20\t101001?00\tMantaINV:800:[01]:[12]:0:0:0\t[^\t]*\t<INV>\t.*INV_JUNCTIONS=2' <<< "$OUT" || true)" -eq 2
+  test "$(grep -cE $'^chr20\t(10100000|10100100)\tMantaINV:800:[01]:[12]:0:0:0\t[^\t]*\t<INV>\t.*INV_JUNCTIONS=2' <<< "$OUT" || true)" -eq 2
 LONGEST=$(awk -F'\t' '$8 ~ /(^|;)SVTYPE=INV(;|$)/ { e = $8; sub(/.*(^|;)END=/, "", e); sub(/;.*/, "", e); if (e - $2 > m) m = e - $2 } END { print m + 0 }' <<< "$OUT")
 check "no INV record longer than the paired inversion (500 kb)" test "$LONGEST" -le 500001
 check "the 50 Mb junction keeps its two breakends, INV_JUNCTIONS=1" \
