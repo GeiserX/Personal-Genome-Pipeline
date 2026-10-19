@@ -102,7 +102,10 @@ if [ -n "${PLAYWRIGHT_WITH_DEPS:-}" ]; then
 else
   "${VENV}/bin/python" -m playwright install chromium
 fi
-"${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT"
+# The HTML picture also stops above the Traits card: its table of genes and
+# genotypes would add about 3,700 pixels below the cards.
+"${VENV}/bin/python" "${DEMO}/render_pictures.py" --genome-dir "$GENOME_DIR" --out "$OUT" \
+  --html-stop-before "Traits,Secondary-Findings Genes,Genes With a Non-Normal,ClinVar Hits,Steps Not Run"
 
 echo "=== 5. Checks"
 ARGS=()
