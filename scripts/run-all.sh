@@ -11,8 +11,9 @@
 #   and _R2; the VCF alone. Kept in <sample>/nextflow/samplesheet.csv while its files exist and its BAM is this call's.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; cyrius, parascopy, paraphase, y_haplogroup, consumer_export and bloodtype run only when named; paraphase needs the BAM
-#   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on); KIR=true (KIR genes with HLA);
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, consumer_export and bloodtype run only when named; paraphase needs the BAM
+#   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
+#   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
@@ -116,8 +117,11 @@ plan "05 AnnotSV" annotsv "$(need "${G}/annotsv_annotations/Annotations_Human/Ge
 plan "32 pypgx" pypgx "$(need "${G}/reference/pypgx-bundle")" && NF+=(--pypgx_bundle "${G}/reference/pypgx-bundle")
 CY="${G}/tools/cyrius-${CYRIUS_VERSION}" PS="${G}/reference/parascopy-${PARASCOPY_DATA_VERSION}"
 CYSTAMP="python=${PYTHON_IMAGE} lock=$(_digest sha256 "${SCRIPT_DIR}/cyrius-constraints.txt")"
-plan "21 Cyrius CYP2D6" cyrius "$(optin cyrius || { [ "$(cat "${CY}/INSTALLED" 2>/dev/null)" = "$CYSTAMP" ] \
-  || echo "data not installed: ${CY#"$G"/} for this version (setup.sh --cyrius)"; })" && NF+=(--cyrius_install "$CY")
+# Step 21 runs when setup.sh --cyrius installed this version (whoever ran it accepted Cyrius's non-commercial licence).
+CYOK=$([ "$(cat "${CY}/INSTALLED" 2>/dev/null)" != "$CYSTAMP" ] || echo yes)
+plan "21 Cyrius CYP2D6" cyrius "$([ -n "$CYOK" ] || if [ -e "${CY}/INSTALLED" ] || [[ ",${T// /}," == *",cyrius,"* ]]; then
+  echo "data not installed: ${CY#"$G"/} for this version (setup.sh --cyrius)"; else echo "not installed: setup.sh --cyrius (non-commercial licence)"; fi)" \
+  && NF+=(--cyrius_install "$CY") && { [ -n "$T" ] || echo "    (planned because setup.sh --cyrius installed it; TOOLS without cyrius leaves it out)"; }
 plan "35 Parascopy SMN1/SMN2" parascopy "$(optin parascopy || need "${PS}/homology_table/GRCh38.bed.gz")" && NF+=(--parascopy_data "$PS") \
   && NF+=(--parascopy_population "${PARASCOPY_POPULATION:-EUR}")
 plan "35b Paraphase (PacBio HiFi)" paraphase "$(optin paraphase)" && { [ -z "${PARAPHASE_REGIONS:-}" ] || NF+=(--paraphase_regions "$PARAPHASE_REGIONS"); }

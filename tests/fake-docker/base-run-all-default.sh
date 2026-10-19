@@ -61,9 +61,9 @@ output_has run-all 'NOTE: starting from the existing VCF, with no gVCF with its 
 # Exact counts: a step that turns from run into skipped, or back, fails here.
 # Skipped: VEP, CPSR, CNVpytor, AnnotSV, pypgx, HLA and PRS (data not
 # installed), vcfanno, clinical filter and slivar (need VEP), ancestry (needs
-# PRS), fine-grained ancestry (its panel not installed), Cyrius, Parascopy,
-# Paraphase, the Y haplogroup and the raw-data export (opt-in: only with TOOLS
-# naming them), and the traits panel (it reads the gVCF, and this row has none).
+# PRS), fine-grained ancestry (its panel not installed), Cyrius (not
+# installed: setup.sh --cyrius), Parascopy, Paraphase, the Y haplogroup and the
+# raw-data export (opt-in: only with TOOLS naming them), and the traits panel (it reads the gVCF, and this row has none).
 [ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
 [ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 18 ] || fail "not 18 steps skipped"
 output_has run-all '^  42 Traits panel +skipped +\(no gVCF: sample1/vcf/sample1\.g\.vcf\.gz\)$'
@@ -71,7 +71,7 @@ output_has run-all '^  26 Ancestry \(pgsc_calc\) +skipped +\(needs PRS\)$'
 output_has run-all '^  26b Fine-grained ancestry +skipped +\(data not installed: reference/ancestry_fine/hgdp1kgp_v2/model/DONE\)$'
 output_has run-all '^  37 Y haplogroup \(Yleaf\) +skipped +\(opt-in: add y_haplogroup to TOOLS\)$'
 output_has run-all '^  40 Raw-data export +skipped +\(opt-in: add consumer_export to TOOLS\)$'
-output_has run-all '^  21 Cyrius CYP2D6 +skipped +\(opt-in: add cyrius to TOOLS\)$'
+output_has run-all '^  21 Cyrius CYP2D6 +skipped +\(not installed: setup\.sh --cyrius \(non-commercial licence\)\)$'
 output_has run-all '^  35 Parascopy SMN1/SMN2 +skipped +\(opt-in: add parascopy to TOOLS\)$'
 output_has run-all '^  35b Paraphase \(PacBio HiFi\) +skipped +\(opt-in: add paraphase to TOOLS\)$'
 output_has run-all '^  31 slivar +skipped +\(needs VEP, data not installed: vep_cache/'
@@ -80,7 +80,7 @@ output_has run-all '^  25 PRS +skipped +\(data not installed: prs_scores/<PGS id
 STATUS="${G}/sample1/logs/run_status.tsv"
 grep -q $'^meta\tdeclared_sex\tmale$' "$STATUS" || fail "run_status.tsv lacks the declared sex"
 grep -q $'^step\t13\tskipped (data not installed: ' "$STATUS" || fail "run_status.tsv lacks step 13 skipped"
-grep -q $'^step\t21\tskipped (opt-in: add cyrius to TOOLS)$' "$STATUS" || fail "run_status.tsv lacks step 21 skipped (opt-in)"
+grep -q $'^step\t21\tskipped (not installed: setup.sh --cyrius (non-commercial licence))$' "$STATUS" || fail "run_status.tsv lacks step 21 skipped (not installed)"
 for s in 06 07 16 27 28; do grep -q $'^step\t'"${s}"$'\tok$' "$STATUS" || fail "run_status.tsv lacks step ${s} ok: $(cat "$STATUS")"; done
 grep -q $'^run\twritten_by\trun-all.sh' "${G}/sample1/run_manifest.tsv" || fail "no run manifest from run-all.sh"
 for l in 24-html-report generate-report; do [ -s "${G}/sample1/logs/${l}.log" ] || fail "the report ${l} did not run"; done
