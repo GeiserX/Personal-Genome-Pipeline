@@ -245,7 +245,7 @@ jobs:
 
       - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
         with:
-          version: "26.10.0"
+          version: "26.10.2"
 
       # Images are cached in four entries, one per group of
       # `scripts/ci/e2e-run.sh --image-groups`, each keyed on its own image
