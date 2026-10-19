@@ -1,7 +1,7 @@
 # Step 5: Structural Variant Annotation (AnnotSV)
 
 ## What This Does
-Classifies every structural variant from Manta that passes duphold's depth filter (step 15; when that file is missing or older than Manta's calls, the script annotates Manta's calls and says so) using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
+Classifies every structural variant from Manta that passes duphold's depth filter (step 15; when that file is missing or older than Manta's calls, the script annotates Manta's calls and says so), plus the Delly and CNVpytor deletions and duplications that no Manta call covers, using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
 
 ## Why
 Raw Manta output contains thousands of SVs with no clinical interpretation. AnnotSV tells you which ones matter by cross-referencing known pathogenic SVs, gene databases, and population data.
@@ -40,6 +40,19 @@ What the frequencies change in the ranking, by AnnotSV's rules:
 
 Step 05 and the Nextflow `ANNOTSV` stop with a pointer to `--annotsv-data` when `mane_select_refseq.txt` or `gnomad-sv.installed` is missing, and `validate-setup.sh` fails on either.
 
+### What AnnotSV reads
+
+AnnotSV classifies only the records of the one VCF it is given. The step builds that VCF, `annotsv/<sample>_annotsv_input.vcf`, in two passes inside the AnnotSV image:
+
+- **The net length change** (`bin/sv_svlen_fix.py`). Manta writes a deletion that also inserts a few bases with its REF and ALT sequences, `END` at the last deleted base and `SVLEN` as the deleted length. AnnotSV measures the overlapped coding sequence over `POS-1..END`, so REF 137 bp with ALT 2 bp read as 137 deleted coding bases: `Frameshift` "yes" and criterion 2E-1 (+0.90, class 4), although the change is -135 bp and keeps the frame. For every record whose REF and ALT are both sequence, the script sets `SVLEN` to `len(ALT) - len(REF)` and, for a net deletion, `END` to `POS - 1 + len(REF) - len(ALT)`, the `END` AnnotSV itself writes when it shortens a deletion with a REF over 10 kb. The old values stay in `ORIG_SVLEN` and `ORIG_END`. Symbolic records (`<DEL>`) and breakends pass unchanged.
+- **The other callers' calls** (`bin/cnvpytor_to_vcf.py`). A large deletion that CNVpytor (step 18) or Delly (step 19) calls, but Manta calls as something else or misses, got no class before. The script adds Delly's PASS deletions and duplications, then CNVpytor's with e-val (`pytorP1`) below 0.01 and a fraction of mapping-quality-0 reads (`pytorQ0`) below 0.5, each only when no record already in the file has the same type on the same chromosome with a reciprocal overlap of at least half the longer call. A deletion both of them call is added once, as Delly's. CNVpytor's copy-neutral LOH calls are left out. Each file is used when it exists, and the step says when one is missing.
+
+Every record names its caller in `INFO/SVCALLER` (`manta`, `delly` or `cnvpytor`), which AnnotSV copies into its `INFO` column. With `SV_VCF` set, that file alone is annotated, after the length pass, with `SVCALLER=sv_vcf`.
+
+The step passes `-bracketedAltMode DEL,DUP,INS`. By default AnnotSV reads a breakend pair on one chromosome up to 10 Mb apart as a whole-span inversion. Step 4 keeps a lone inversion junction of 1 Mb or more as its two breakends on purpose (see [step 4](04-structural-variants.md#inversions-with-one-junction)), so AnnotSV annotates those as breakends.
+
+The step 22 consensus is not AnnotSV's input: it keeps only the calls two callers agree on, and would drop every call only Manta makes.
+
 ## Command
 ```bash
 ./scripts/05-annotsv.sh your_sample
@@ -52,23 +65,34 @@ source versions.env   # from the repository root
 # The input is step 15's filtered calls; without them, Manta's
 # /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz
 docker run --rm --user "$(id -u):$(id -g)" \
+  -v ${GENOME_DIR}:/genome -v "$PWD/bin:/pgp-bin:ro" \
+  "${ANNOTSV_IMAGE}" \
+  bash -c 'python3 /pgp-bin/sv_svlen_fix.py "$1" | python3 /pgp-bin/cnvpytor_to_vcf.py --base - --base-name manta "${@:2}"' \
+  _ /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz \
+    --delly /genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz \
+    --cnvpytor /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz \
+  > ${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_annotsv_input.vcf
+docker run --rm --user "$(id -u):$(id -g)" \
   --cpus 4 --memory 8g \
   -v ${GENOME_DIR}:/genome \
   "${ANNOTSV_IMAGE}" \
   AnnotSV \
-    -SVinputFile /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz \
+    -SVinputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_annotsv_input.vcf \
     -outputFile /genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv \
     -genomeBuild GRCh38 \
     -annotationMode both \
     -annotationsDir /genome/annotsv_annotations \
-    -txFile /genome/annotsv_annotations/mane_select_refseq.txt
+    -txFile /genome/annotsv_annotations/mane_select_refseq.txt \
+    -bracketedAltMode DEL,DUP,INS
 ```
 
 To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its host path; the file must be inside `${GENOME_DIR}`.
 
 ## Output
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv` — main annotated output (one row per SV, with ACMG class)
-- Columns include: SV type, coordinates, overlapping genes and the MANE Select transcript (`Tx`), the benign-set frequency (`B_loss_AFmax`, `B_gain_AFmax`), ACMG classification, ClinVar hits
+- Columns include: SV type, coordinates, overlapping genes and the MANE Select transcript (`Tx`), the benign-set frequency (`B_loss_AFmax`, `B_gain_AFmax`), ACMG classification, ClinVar hits, and the input record's `INFO` with its `SVCALLER`
+- `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_class4_5.tsv` — the class 4 and 5 SVs: AnnotSV's header and each one's `full` row. The step finds `ACMG_class` and `Annotation_mode` by name. The command it used to print read columns 120 and 16, but AnnotSV leaves out the columns of annotation files a bundle lacks, so those numbers point at other columns on another bundle
+- `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_annotsv_input.vcf` — the VCF AnnotSV read (see What AnnotSV reads)
 
 ## ACMG Classification
 | Class | Meaning | Action |
@@ -83,5 +107,6 @@ To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its h
 - **Class 4-5 = pathogenic/likely pathogenic** — these require manual review
 - SVs >5MB in short-read WGS are usually artifacts from segmental duplications — do not trust large calls blindly
 - Most SVs will be class 2-3 (benign/VUS) — this is normal for a healthy genome
-- Input: step 15's `duphold/<sample>_sv_filtered.vcf.gz`, Manta's calls after duphold's depth filter, the file the Nextflow `ANNOTSV` reads. Without it (or when Manta's `diploidSV.vcf.gz` is newer), the script annotates Manta's calls and says so. `SV_VCF=<path>` picks another file, for example Sniffles2's. Do not point it at Manta's `candidateSV.vcf.gz`: those are unfiltered candidates, not calls
+- Input: step 15's `duphold/<sample>_sv_filtered.vcf.gz`, Manta's calls after duphold's depth filter, the file the Nextflow `ANNOTSV` reads, with the Delly and CNVpytor calls Manta lacks. Without it (or when Manta's `diploidSV.vcf.gz` is newer), the script annotates Manta's calls and says so. `SV_VCF=<path>` picks another file, for example Sniffles2's. Do not point it at Manta's `candidateSV.vcf.gz`: those are unfiltered candidates, not calls
+- In Nextflow, `ANNOTSV` gets Delly's and CNVpytor's VCF of the same sample when `delly` and `cnvpytor` are in `--tools`, and runs without them otherwise
 - The annotation databases are not in the Docker image: they live in `${GENOME_DIR}/annotsv_annotations/` (see Annotation Data above)

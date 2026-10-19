@@ -3,13 +3,15 @@
     SV — Structural Variant Calling, Filtering & Annotation Workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Runs three SV callers in parallel (Manta, Delly, CNVpytor), annotates
-    Manta output with duphold depth metrics, classifies SVs via AnnotSV,
-    and keeps the calls two or more callers agree on (SURVIVOR merge).
+    Manta output with duphold depth metrics, classifies SVs via AnnotSV
+    (Manta's filtered calls plus the Delly and CNVpytor deletions and
+    duplications no Manta call covers), and keeps the calls two or more
+    callers agree on (SURVIVOR merge).
 
     DAG:
-      BAM ──┬── MANTA ──── DUPHOLD ──── DUPHOLD_FILTER ──── ANNOTSV
-            ├── DELLY
-            └── CNVPYTOR
+      BAM ──┬── MANTA ──── DUPHOLD ──── DUPHOLD_FILTER ──┬── ANNOTSV
+            ├── DELLY ───────────────────────────────────┤
+            └── CNVPYTOR ────────────────────────────────┘
                          └── SURVIVOR_PREP ── SURVIVOR_MERGE ── SURVIVOR_SORT
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -99,14 +101,21 @@ workflow SV {
     // ── AnnotSV classification (DUPHOLD -> ANNOTSV) ─────────────────────
 
     //
-    // ANNOTSV: ACMG pathogenicity classification of duphold-filtered SVs
+    // ANNOTSV: ACMG pathogenicity classification of duphold-filtered SVs,
+    // with the Delly and CNVpytor calls of the same sample when those ran
+    // ([] otherwise)
     //
     ch_annotsv_tsv = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv') && !params.tools.split(',').collect{it.trim()}.contains('duphold')) {
         error "Tool 'annotsv' requires 'duphold' (and 'manta') output — add both to --tools or remove 'annotsv'."
     }
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv')) {
-        ANNOTSV(ch_duphold_vcf, ch_annotsv_annotations)
+        ch_annotsv_input = ch_duphold_vcf
+            .join(ch_delly_vcf, remainder: true)
+            .join(ch_cnvpytor_vcf, remainder: true)
+            .filter { row -> row[1] != null }
+            .map { meta, sv_vcf, delly_vcf, cnvpytor_vcf -> [meta, sv_vcf, delly_vcf ?: [], cnvpytor_vcf ?: []] }
+        ANNOTSV(ch_annotsv_input, ch_annotsv_annotations)
         ch_annotsv_tsv = ANNOTSV.out.annotated_tsv
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
     }
