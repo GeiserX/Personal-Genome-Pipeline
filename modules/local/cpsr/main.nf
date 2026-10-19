@@ -12,6 +12,10 @@
     and its files are renamed back to <meta.id>.cpsr.*. CPSR's own HTML
     title then shows that id.
 
+    Unlike scripts/17, this process does not run the cDNA read check on
+    CPSR's P/LP rows (bin/clip_check.py --cpsr): it gets no BAM, as
+    CLINVAR_SCREEN does not for step 06's check.
+
     Equivalent to: scripts/17-cpsr.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */

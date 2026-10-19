@@ -10,7 +10,8 @@
 #   image    each *_IMAGE reference and the digest Docker resolved it to
 #            ("not pulled" when the image is not on this machine)
 #   data     clinvar_file_date (##fileDate of the ClinVar file), vep_cache,
-#            pcgr_bundle, pypgx_bundle, ancestry_panel (pgsc_calc's panel,
+#            pcgr_bundle, cpsr_clinvar_release (the ClinVar release in the PCGR
+#            bundle CPSR uses), pypgx_bundle, ancestry_panel (pgsc_calc's panel,
 #            installed or not), hla_database (the newest IPD-IMGT/HLA release
 #            named in the hla.dat the run used), pgs:<ID> (the header lines of
 #            each PGS scoring file)
@@ -104,6 +105,20 @@ if [ -d "${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}/data" ]; then
 else
   row data pcgr_bundle "${PCGR_DATA_BUNDLE} (not installed)"
 fi
+# The ClinVar release inside the PCGR bundle, which CPSR (step 17) classifies
+# with: the source_version of the clinvar row in the bundle's metadata tables
+# (data/grch38/.METADATA/tsv/*_metadata.tsv, as PCGR reads them). It is older
+# than the ClinVar file step 6 uses, so the reports print both.
+cpsr_clinvar="PCGR bundle not installed"
+meta_dir="${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}/data/grch38/.METADATA/tsv"
+if [ -d "$meta_dir" ]; then
+  cpsr_clinvar=$(awk -F'\t' 'FNR == 1 {a = v = 0; for (i = 1; i <= NF; i++) {if ($i == "source_abbreviation") a = i; if ($i == "source_version") v = i}; next}
+    a && v && tolower($a) == "clinvar" && r == "" {r = $v} END {print r}' "$meta_dir"/*_metadata.tsv 2>/dev/null || true)
+  cpsr_clinvar="${cpsr_clinvar:-not found in the PCGR bundle metadata}"
+elif [ -d "${GENOME_DIR}/pcgr_data/${PCGR_DATA_BUNDLE}/data" ]; then
+  cpsr_clinvar="not found (the PCGR bundle has no data/grch38/.METADATA/tsv)"
+fi
+row data cpsr_clinvar_release "$cpsr_clinvar"
 bundle="${GENOME_DIR}/reference/pypgx-bundle"
 if [ -d "$bundle" ]; then
   ref=$(git -C "$bundle" describe --tags --always 2>/dev/null || echo "present, not a git checkout")

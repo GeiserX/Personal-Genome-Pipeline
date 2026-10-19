@@ -122,6 +122,12 @@
       "string",
       "null"
      ]
+    },
+    "cpsr_clinvar_release": {
+     "type": [
+      "string",
+      "null"
+     ]
     }
    }
   },
@@ -266,7 +272,92 @@
              },
              "review_status": {
               "type": "string"
+             },
+             "combined_allele": {
+              "type": "string"
+             },
+             "dp": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "gq": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "low_confidence": {
+              "type": "boolean"
+             },
+             "af": {
+              "type": [
+               "number",
+               "null"
+              ]
+             },
+             "gnomad_exome_af": {
+              "type": [
+               "number",
+               "null"
+              ]
+             },
+             "gnomad_genome_af": {
+              "type": [
+               "number",
+               "null"
+              ]
+             },
+             "common": {
+              "type": "boolean"
              }
+            }
+           }
+          },
+          "low_confidence": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "call_floor": {
+           "type": "object",
+           "required": [
+            "GQ",
+            "DP"
+           ],
+           "properties": {
+            "GQ": {
+             "type": "integer",
+             "minimum": 0
+            },
+            "DP": {
+             "type": "integer",
+             "minimum": 0
+            }
+           }
+          },
+          "frequency": {
+           "type": "object",
+           "required": [
+            "source",
+            "note",
+            "common_af"
+           ],
+           "properties": {
+            "source": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "note": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "common_af": {
+             "type": "number"
             }
            }
           }
@@ -625,6 +716,212 @@
            }
           },
           "no_status": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "cpsr": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "html_report": {
+           "type": "boolean"
+          },
+          "classification_column": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "classification": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+           }
+          },
+          "plp": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "variant",
+             "gene",
+             "final",
+             "dp",
+             "low_confidence"
+            ],
+            "properties": {
+             "variant": {
+              "type": "string"
+             },
+             "gene": {
+              "type": "string"
+             },
+             "final": {
+              "type": "string"
+             },
+             "cpsr": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "clinvar": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "authority": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "acmg_codes": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "dp": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "low_confidence": {
+              "type": "boolean"
+             },
+             "cdna": {
+              "type": "object",
+              "required": [
+               "check",
+               "note"
+              ],
+              "properties": {
+               "check": {
+                "enum": [
+                 "flagged",
+                 "clear",
+                 "not_checked"
+                ]
+               },
+               "note": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "disagreements": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "variant",
+             "gene",
+             "final",
+             "dp",
+             "low_confidence"
+            ],
+            "properties": {
+             "variant": {
+              "type": "string"
+             },
+             "gene": {
+              "type": "string"
+             },
+             "final": {
+              "type": "string"
+             },
+             "cpsr": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "clinvar": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "authority": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "acmg_codes": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "dp": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "low_confidence": {
+              "type": "boolean"
+             },
+             "cdna": {
+              "type": "object",
+              "required": [
+               "check",
+               "note"
+              ],
+              "properties": {
+               "check": {
+                "enum": [
+                 "flagged",
+                 "clear",
+                 "not_checked"
+                ]
+               },
+               "note": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "final_plp_own_benign": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "own_class_column": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "low_confidence": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "call_floor_dp": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "cdna_flagged": {
            "type": "integer",
            "minimum": 0
           }

@@ -52,6 +52,7 @@ import gzip
 import json
 import os
 import re
+import struct
 import sys
 import zlib
 from datetime import datetime, timezone
@@ -60,6 +61,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an HLA allele
 import ancestry_fine_report  # noqa: E402  step 26b's group names and painting colours
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
+import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -76,6 +78,14 @@ STARS = {
     "criteria_provided,_conflicting_classifications": 1,
     "criteria_provided,_conflicting_interpretations": 1,
 }
+
+# The call floor of step 6 (scripts/06-clinvar-screen.sh writes a floor other
+# than this default into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=..): a P/LP
+# hit below either is a low-confidence call, listed but counted apart. A hits
+# file without the line used this default, or was written before the floor.
+CALL_FLOOR = {"GQ": 30, "DP": 10}
+# gnomAD allele frequency above which a P/LP hit is marked common.
+COMMON_AF = 0.01
 
 # Steps run-all.sh runs and records in logs/run_status.tsv. A section whose
 # step is not here (variant calling, step 03, which run-all reuses on purpose)
@@ -216,12 +226,35 @@ def clinvar_combined_note(info, gt=""):
     return "."
 
 
-def clinvar_row(r):
+def call_floor(path):
+    """Step 6's call floor from its hits VCF header, CALL_FLOOR without the line."""
+    floor = dict(CALL_FLOOR)
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if not line.startswith("##"):
+                    break
+                if line.startswith("##PGP_CALL_FLOOR="):
+                    for k, v in re.findall(r"(GQ|DP)=(\d+)", line):
+                        floor[k] = int(v)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(path)}: {e}") from e
+    return floor
+
+
+def low_confidence(dp, gq, floor):
+    """True when the call's GQ or DP is known and below the floor."""
+    return (gq is not None and gq < floor["GQ"]) or (dp is not None and dp < floor["DP"])
+
+
+def clinvar_row(r, floor=None):
     info = info_map(r[7]) if len(r) > 7 else {}
     rev = info.get("CLNREVSTAT", "")
     genes = [g.split(":")[0] for g in info.get("GENEINFO", "").split("|") if g]
     gt = r[9].split(":")[0] if len(r) > 9 else ""
     zyg = {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
+    fmt = dict(zip(r[8].split(":"), r[9].split(":"))) if len(r) > 9 else {}
+    dp, gq = (int(fmt[k]) if fmt.get(k, "").isdigit() else None for k in ("DP", "GQ"))
     return {
         "stars": STARS.get(rev, 0),
         "chrom": r[0], "pos": int(r[1]), "ref": r[3], "alt": r[4],
@@ -230,14 +263,16 @@ def clinvar_row(r):
         "significance": info.get("CLNSIG", "").replace("_", " ") or ".",
         "review_status": rev.replace("_", " ") or ".",
         "combined_allele": clinvar_combined_note(info, gt),
+        "dp": dp, "gq": gq,
+        "low_confidence": low_confidence(dp, gq, floor or CALL_FLOOR),
     }
 
 
-def clinvar_cdna_checks(d, s):
+def clinvar_cdna_checks(d, s, p=None):
     """Step 06's cDNA read check (bin/clip_check.py), keyed by (chrom, pos,
-    ref, alt). None when the file is absent: the Nextflow pipeline does not
-    write it."""
-    p = first_existing(d, [f"clinvar/{s}_clinvar_cdna_check.tsv"])
+    ref, alt), or the table at p. None when the file is absent: the Nextflow
+    pipeline does not write it."""
+    p = p or first_existing(d, [f"clinvar/{s}_clinvar_cdna_check.tsv"])
     if not p:
         return None
     try:
@@ -258,14 +293,150 @@ def clinvar_cdna_checks(d, s):
     return out
 
 
+def tabix_linear_index(path):
+    """{contig: linear index} of a bgzipped VCF's .tbi: for each 16 kb window,
+    the virtual file offset of the first record that can overlap it (standard
+    library only, as the rest of this script)."""
+    with gzip.open(path + ".tbi", "rb") as f:
+        b = f.read()
+    if b[:4] != b"TBI\x01":
+        raise ValueError(f"{os.path.basename(path)}.tbi is not a tabix index")
+    n_ref = struct.unpack_from("<i", b, 4)[0]
+    l_nm = struct.unpack_from("<i", b, 32)[0]
+    names = [x.decode() for x in b[36:36 + l_nm].split(b"\0")[:n_ref]]
+    off, out = 36 + l_nm, {}
+    for name in names:
+        n_bin = struct.unpack_from("<i", b, off)[0]
+        off += 4
+        for _ in range(n_bin):
+            n_chunk = struct.unpack_from("<i", b, off + 4)[0]
+            off += 8 + 16 * n_chunk
+        n_intv = struct.unpack_from("<i", b, off)[0]
+        off += 4
+        out[name] = struct.unpack_from(f"<{n_intv}Q", b, off)
+        off += 8 * n_intv
+    return out
+
+
+def tabix_lines(path, index, chrom, pos):
+    """The data lines of a bgzipped VCF that start at chrom:pos, read from the
+    offset its tabix linear index gives for pos's window. A window with no
+    offset recorded (0, or all ones) reads from the start of the file and
+    skips the other contigs, which is slower but still right."""
+    ioff = index.get(chrom)
+    if not ioff:
+        return []
+    voff = ioff[min((pos - 1) >> 14, len(ioff) - 1)]
+    if voff == 0xFFFFFFFFFFFFFFFF:
+        voff = 0
+    out, seen = [], False
+    with open(path, "rb") as raw:
+        raw.seek(voff >> 16)
+        g = gzip.GzipFile(fileobj=raw)
+        g.read(voff & 0xFFFF)
+        for line in g:
+            if line.startswith(b"#"):
+                continue
+            f = line.split(b"\t", 2)
+            if len(f) < 3 or not f[1].isdigit():
+                continue
+            if f[0].decode() != chrom:
+                if seen:
+                    break
+                continue
+            seen = True
+            if int(f[1]) > pos:
+                break
+            if int(f[1]) == pos:
+                out.append(line.decode(errors="replace").rstrip("\n").split("\t"))
+    return out
+
+
+def vep_gnomad_af(vep, hits):
+    """gnomAD exome and genome AF of each hit from step 13's VEP output, as
+    {(chrom, pos, ref, alt): (exome, genome)}; a hit with no record is left
+    out. The fields are VEP's gnomADe_AF and gnomADg_AF (--everything)."""
+    fmt = None
+    with open_text(vep) as f:
+        for line in f:
+            if not line.startswith("#"):
+                break
+            if line.startswith("##INFO=<ID=CSQ"):
+                m = re.search(r"Format: ([^\"]+)", line)
+                fmt = m.group(1).split("|") if m else None
+    if not fmt or "Allele" not in fmt:
+        return {}
+    cols = [fmt.index(c) if c in fmt else None for c in ("gnomADe_AF", "gnomADg_AF")]
+
+    def num(v):
+        vals = []
+        for x in (v or "").split("&"):
+            try:
+                vals.append(float(x))
+            except ValueError:
+                pass
+        return max(vals) if vals else None
+    out = {}
+    keys = sorted({(h["chrom"], h["pos"], h["ref"], h["alt"]) for h in hits})
+    index = tabix_linear_index(vep) if keys else {}
+    for key in keys:
+        chrom, pos, ref, alt = key
+        for r in tabix_lines(vep, index, chrom, pos):
+            alts = r[4].split(",") if len(r) > 7 else []
+            if r[3] != ref or alt not in alts:
+                continue
+            # VEP's Allele drops the base an indel's alleles share.
+            snv = len(ref) == 1 and all(len(a) == 1 for a in alts)
+            allele = alt if snv or any(a[:1] != ref[:1] for a in alts) else (alt[1:] or "-")
+            got = [None, None]
+            for tr in info_map(r[7]).get("CSQ", "").split(","):
+                v = tr.split("|")
+                if len(v) != len(fmt) or (len(alts) > 1 and v[fmt.index("Allele")] != allele):
+                    continue
+                for i, c in enumerate(cols):
+                    if c is not None and got[i] is None:
+                        got[i] = num(v[c])
+            out[key] = tuple(got)
+    return out
+
+
+def clinvar_frequencies(d, s, rows):
+    """Put the gnomAD AF from step 13's VEP output on each ClinVar hit, and
+    say where it came from or why there is none."""
+    vep = first_existing(d, [f"vep/{s}_vep.vcf.gz"])
+    note = None
+    if not vep:
+        note = "no VEP output (step 13) in this folder"
+    elif not os.path.exists(vep + ".tbi"):
+        note = f"{os.path.relpath(vep, d)} has no .tbi index"
+    found = {}
+    if note is None:
+        try:
+            found = vep_gnomad_af(vep, rows)
+        except (OSError, EOFError, ValueError, struct.error, gzip.BadGzipFile, zlib.error) as e:
+            note = f"{os.path.relpath(vep, d)} could not be read: {e}"
+    for x in rows:
+        e, g = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None))
+        known = [v for v in (e, g) if v is not None]
+        x["gnomad_exome_af"], x["gnomad_genome_af"] = e, g
+        x["af"] = max(known) if known else None
+        x["common"] = x["af"] is not None and x["af"] > COMMON_AF
+    return {"source": os.path.relpath(vep, d) if note is None else None, "note": note, "common_af": COMMON_AF}
+
+
 def sec_clinvar(d, s):
     p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if not p:
         return None, {}
-    rows = [clinvar_row(r) for r in vcf_records(p) if len(r) >= 8]
+    floor = call_floor(p)
+    rows = [clinvar_row(r, floor) for r in vcf_records(p) if len(r) >= 8]
     rows.sort(key=lambda x: (-x["stars"], x["chrom"], x["pos"]))
-    by = {str(k): sum(1 for x in rows if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
-    data = {"count": len(rows), "by_stars": by, "hits": rows}
+    # The headline count and the stars leave the low-confidence calls out;
+    # they stay in the hits, marked, and are counted on their own.
+    sure = [x for x in rows if not x["low_confidence"]]
+    by = {str(k): sum(1 for x in sure if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
+    data = {"count": len(sure), "by_stars": by, "hits": rows, "low_confidence": len(rows) - len(sure),
+            "call_floor": floor, "frequency": clinvar_frequencies(d, s, rows)}
     # The cDNA read check, on each hit when step 06 wrote it.
     cdna = clinvar_cdna_checks(d, s)
     if cdna is not None:
@@ -1075,6 +1246,13 @@ def sec_mito(d, s):
     return p, {"pass": passed, "heteroplasmic": het, "heteroplasmy_floor": 0.05}
 
 
+def cpsr_cdna_checks(d, s):
+    """Step 17's cDNA read check of CPSR's P/LP rows (bin/clip_check.py
+    --cpsr), keyed like step 06's; None when step 17 did not write it."""
+    p = first_existing(d, [f"cpsr/{s}_cpsr_cdna_check.tsv"])
+    return clinvar_cdna_checks(d, s, p) if p else None
+
+
 def sec_cpsr(d, s):
     html = first_existing(d, [f"cpsr/{s}.cpsr.grch38.html", "cpsr/*.cpsr.*.html"])
     tsv = first_existing(d, [f"cpsr/{s}.cpsr.grch38.classification.tsv.gz", "cpsr/*.cpsr.*.classification.tsv.gz"])
@@ -1096,9 +1274,64 @@ def sec_cpsr(d, s):
                 counts[r.get(col) or "."] = counts.get(r.get(col) or ".", 0) + 1
             out["classification_column"] = col
             out["classification"] = dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+            out.update(cpsr_compare(d, s, rows, cols, col))
         else:
             out["classification_column"] = None
     return p, out
+
+
+def cpsr_compare(d, s, rows, cols, col):
+    """CPSR's own class beside the final class and ClinVar's.
+
+    The final class (CLASSIFICATION) is ClinVar's whenever ClinVar has a
+    trusted record, so it hides CPSR's own call (CPSR_CLASSIFICATION). This
+    lists the P/LP rows (final or own class), counts the final P/LP rows that
+    CPSR's own rules class benign or likely benign, and lists every row where
+    ClinVar and CPSR's own class disagree on P/LP. ClinVar's class is
+    CLINVAR_CLASSIFICATION, or the final class where ASSERTION_AUTHORITY is
+    ClinVar. A table with one class column has no disagreement to show.
+    Low-confidence: DP_CONTROL below step 6's depth floor (CPSR writes no
+    GQ). The cDNA read check of step 17 goes on each P/LP row."""
+    own = "CPSR_CLASSIFICATION" if "CPSR_CLASSIFICATION" in cols and col != "CPSR_CLASSIFICATION" else None
+    hits = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
+    floor = call_floor(hits) if hits else dict(CALL_FLOOR)
+    cdna = cpsr_cdna_checks(d, s)
+    norm = clip_check.norm_class
+    plp, disagree, own_benign = [], [], 0
+    for r in rows:
+        final, mine = norm(r.get(col)), norm(r.get(own)) if own else ""
+        authority = (r.get("ASSERTION_AUTHORITY") or "").strip()
+        clinvar_raw = ((r.get("CLINVAR_CLASSIFICATION") or "").strip() if "CLINVAR_CLASSIFICATION" in cols
+                       else (r.get(col) or "").strip() if authority.lower() == "clinvar" else "")
+        clinvar = norm(clinvar_raw)
+        if final in clip_check.PLP and mine in ("benign", "likely benign"):
+            own_benign += 1
+        is_plp = final in clip_check.PLP or mine in clip_check.PLP
+        differ = bool(own and clinvar and mine) and (clinvar in clip_check.PLP) != (mine in clip_check.PLP)
+        if not (is_plp or differ):
+            continue
+        v = clip_check.cpsr_variant(r)
+        dp = (r.get("DP_CONTROL") or "").strip()
+        dp = int(dp) if dp.isdigit() else None
+        x = {"variant": f"{v[0]}:{v[1]} {v[2]}>{v[3]}" if v else (r.get("GENOMIC_CHANGE") or "."),
+             "gene": r.get("SYMBOL") or ".", "final": r.get(col) or ".",
+             "cpsr": (r.get(own) or ".") if own else None, "clinvar": clinvar_raw if clinvar else None,
+             "authority": authority or None, "acmg_codes": (r.get("ACMG_CODE") or "").strip() or None,
+             "dp": dp, "low_confidence": dp is not None and dp < floor["DP"]}
+        if cdna is not None and is_plp:
+            x["cdna"] = (cdna.get((v[0], v[1], v[2], v[3])) if v else None) or {
+                "check": "not_checked", "note": "not in the read-check table", "alt_reads": None,
+                "alt_clipped": None, "ref_reads": None, "ref_clipped": None}
+        if is_plp:
+            plp.append(x)
+        if differ:
+            disagree.append(x)
+    out = {"plp": plp, "disagreements": disagree, "final_plp_own_benign": own_benign,
+           "own_class_column": own, "low_confidence": sum(1 for x in plp if x["low_confidence"]),
+           "call_floor_dp": floor["DP"]}
+    if cdna is not None:
+        out["cdna_flagged"] = sum(1 for x in plp if x["cdna"]["check"] == "flagged")
+    return out
 
 
 def csq_high_impact_genes(path):
@@ -1139,14 +1372,16 @@ def acmg_sf_tier(d, s, clinical_vcf):
     clinvar, high = [], []
     hits = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if hits:
+        floor = call_floor(hits)
         for r in vcf_records(hits):
             if len(r) < 8:
                 continue
-            row = clinvar_row(r)
+            row = clinvar_row(r, floor)
             on = [g for g in row["gene"].split(",") if g in ACMG_SF_GENES]
             if on:
                 clinvar.append({"gene": ",".join(on), "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
-                                "genotype": row["genotype"], "significance": row["significance"], "stars": row["stars"]})
+                                "genotype": row["genotype"], "significance": row["significance"], "stars": row["stars"],
+                                "low_confidence": row["low_confidence"]})
     if clinical_vcf:
         for (c, pos, ref, alt), (gt, genes) in sorted(csq_high_impact_genes(clinical_vcf).items()):
             for g, cons in sorted(genes.items()):
@@ -1582,6 +1817,7 @@ def collect(sample, sample_dir, declared_sex=None):
         },
         "databases": {
             "clinvar_release": clinvar_date,
+            "cpsr_clinvar_release": manifest_value(manifest, "data", "cpsr_clinvar_release"),
             "hla_database": manifest_value(manifest, "data", "hla_database"),
         },
         "manifest": manifest or [],

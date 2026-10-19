@@ -19,6 +19,17 @@
     record is a hit of its own (INFO/PGP_JOINED_FROM) and its parts are
     marked PGP_PART_OF.
 
+    A hit whose call has a genotype quality below ext.min_gq (default 30) or
+    a depth below ext.min_dp (default 10) is a low-confidence call; a floor
+    other than the default goes into the hits VCF as
+    ##PGP_CALL_FLOOR=GQ=..,DP=.., which bin/clinvar_hits.awk and the report
+    read (without the line they use the default). Set it in a config with
+    withName: 'CLINVAR_SCREEN' { ext.min_gq = 20; ext.min_dp = 8 }
+    (scripts/06 reads CLINVAR_MIN_GQ and CLINVAR_MIN_DP).
+
+    Unlike scripts/06, this process does not run the cDNA read check
+    (bin/clip_check.py): it gets no BAM.
+
     Equivalent to: scripts/06-clinvar-screen.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -49,6 +60,12 @@ process CLINVAR_SCREEN {
     task.ext.when == null || task.ext.when
 
     script:
+    def min_gq = task.ext.min_gq != null ? task.ext.min_gq : 30
+    def min_dp = task.ext.min_dp != null ? task.ext.min_dp : 10
+    if (!(min_gq.toString() ==~ /[0-9]+/) || !(min_dp.toString() ==~ /[0-9]+/)) {
+        error "CLINVAR_SCREEN: ext.min_gq and ext.min_dp must be whole numbers, got '${min_gq}' and '${min_dp}'"
+    }
+    def floor_line = (min_gq.toString() == '30' && min_dp.toString() == '10') ? '' : "##PGP_CALL_FLOOR=GQ=${min_gq},DP=${min_dp}"
     """
     set -euo pipefail
 
@@ -147,7 +164,9 @@ process CLINVAR_SCREEN {
     bcftools annotate --no-version -a "\${CLINVAR_NORM}" --pair-logic exact \\
         -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou shared.vcf.gz \\
         | bcftools view --no-version -i 'GT~"[1-9]"' -Ov -o hits_untagged.vcf
-    awk -v mode=tag -f "\${JOIN_AWK}" hits_untagged.vcf hits_untagged.vcf > ${meta.id}_clinvar_hits.vcf
+    # A floor other than the default, for bin/clinvar_hits.awk and the report.
+    awk -v mode=tag -f "\${JOIN_AWK}" hits_untagged.vcf hits_untagged.vcf \\
+        | awk -v l="${floor_line}" 'l != "" && /^#CHROM/ { print l } { print }' > ${meta.id}_clinvar_hits.vcf
 
     # The same hits as a table, one row per hit
     printf 'chrom\\tpos\\tref\\talt\\tgenotype\\tclinvar_id\\tgeneinfo\\tclnsig\\tclnrevstat\\n' > ${meta.id}_clinvar_hits.tsv
@@ -162,6 +181,8 @@ process CLINVAR_SCREEN {
         echo "By review status (ClinVar stars):"
         awk -f "\$(command -v clinvar_hits.awk)" ${meta.id}_clinvar_hits.vcf | cut -f1 | sort -nr | uniq -c \\
             | awk '{printf "  %d star%s: %d\\n", \$2, (\$2 == 1 ? "" : "s"), \$1}'
+        LOW=\$(awk -f "\$(command -v clinvar_hits.awk)" ${meta.id}_clinvar_hits.vcf | awk -F'\\t' '\$13 == "yes"' | wc -l | tr -d ' ')
+        echo "Low-confidence calls among them (GQ below ${min_gq} or DP below ${min_dp}): \${LOW}"
     fi
 
     cat <<-END_VERSIONS > versions.yml

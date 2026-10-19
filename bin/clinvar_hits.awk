@@ -10,6 +10,7 @@
 # checks that the two agree.
 #
 # Columns: STARS CHROM POS REF ALT GENOTYPE GENE SIGNIFICANCE REVIEW_STATUS COMBINED_ALLELE
+#          DP GQ LOW_CONFIDENCE
 #   STARS          ClinVar's review-status stars: 4 practice guideline,
 #                  3 expert panel, 2 multiple submitters with no conflict,
 #                  1 single submitter or conflicting classifications,
@@ -27,7 +28,19 @@
 #                  unphased het call (0/1) the first two notes end with
 #                  "; unphased, so the parts may sit on different
 #                  haplotypes": the genotype cannot say they share one.
-BEGIN { FS = OFS = "\t" }
+#   DP, GQ         the call's FORMAT/DP and FORMAT/GQ; "." when the caller
+#                  wrote none.
+#   LOW_CONFIDENCE "yes" when GQ or DP is below step 6's floor, the
+#                  ##PGP_CALL_FLOOR=GQ=..,DP=.. header line step 6 writes
+#                  for a floor other than the default (GQ 30 and DP 10 when
+#                  the line is missing); "no" otherwise,
+#                  also when neither value is there to compare.
+BEGIN { FS = OFS = "\t"; min_gq = 30; min_dp = 10 }
+/^##PGP_CALL_FLOOR=/ {
+    if (match($0, /GQ=[0-9]+/)) min_gq = substr($0, RSTART + 3, RLENGTH - 3) + 0
+    if (match($0, /DP=[0-9]+/)) min_dp = substr($0, RSTART + 3, RLENGTH - 3) + 0
+    next
+}
 
 # "chr1:10:C:T|chr1:15:G:A" -> "chr1:10 C>T<sep>chr1:15 G>A"
 function variants(v, sep,    n, x, i, f, out) {
@@ -67,6 +80,13 @@ function variants(v, sep,    n, x, i, f, out) {
     if (rev == "") rev = "."
     gsub(/_/, " ", rev)
     split($10, f, ":"); gt = f[1]
+    dp = "."; gq = "."
+    nk = split($9, fk, ":")
+    for (i = 1; i <= nk; i++) {
+        if (fk[i] == "DP" && f[i] ~ /^[0-9]+$/) dp = f[i]
+        else if (fk[i] == "GQ" && f[i] ~ /^[0-9]+$/) gq = f[i]
+    }
+    low = ((gq != "." && gq + 0 < min_gq) || (dp != "." && dp + 0 < min_dp)) ? "yes" : "no"
     if (gt == "0/1" || gt == "1/0" || gt == "0|1" || gt == "1|0") zyg = "het"
     else if (gt == "1/1" || gt == "1|1") zyg = "hom"
     else zyg = gt
@@ -78,5 +98,5 @@ function variants(v, sep,    n, x, i, f, out) {
     if (joined != "") note = "combined allele of " variants(joined, " + ") phase
     else if (partof != "") note = "part of a combined allele: " variants(partof, ", ") phase
     else if (one != "") note = "possibly one allele with " variants(one, ", ") ": check ClinVar for a combined record"
-    print stars, $1, $2, $4, $5, zyg, gene, clnsig, rev, note
+    print stars, $1, $2, $4, $5, zyg, gene, clnsig, rev, note, dp, gq, low
 }

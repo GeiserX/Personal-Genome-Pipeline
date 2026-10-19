@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""clip_check.py: do the alt reads of a ClinVar hit look like spliced cDNA?
+"""clip_check.py: do the alt reads of a ClinVar or CPSR hit look like spliced cDNA?
 
 Spliced cDNA or expression-vector DNA in a sample (a known lab contaminant)
 aligns to a gene's exons. Its reads that cross an exon junction are clipped
@@ -18,10 +18,17 @@ allele, at least ALT_SHARE_MIN of them are clipped that way, and at most
 REF_SHARE_MAX of the ref reads are.
 
   clip_check.py --hits HITS.tsv --bam BAM --exons EXONS.bed --out OUT.tsv
+  clip_check.py --cpsr CLASSIFICATION.tsv.gz --bam BAM --exons EXONS.bed --out OUT.tsv
   clip_check.py --hits HITS.tsv --skip REASON --out OUT.tsv
 
 HITS.tsv is step 06's hits table (columns chrom, pos, ref, alt are read by
-name). EXONS.bed holds exon intervals, 0-based and half-open (chrom, start,
+name). --cpsr reads step 17's CPSR classification table instead and checks
+its P/LP rows: the rows whose final class (CLASSIFICATION) or CPSR's own
+class (CPSR_CLASSIFICATION) is Pathogenic or Likely pathogenic, at the
+position of their VAR_ID (chrom_pos_ref_alt) or GENOMIC_CHANGE
+(chrom:g.posREF>ALT). CPSR writes contig names without "chr"; a name the BAM
+lacks is also looked up with "chr" added or removed, and OUT.tsv keeps
+CPSR's name. EXONS.bed holds exon intervals, 0-based and half-open (chrom, start,
 end), such as the GENCODE basic exons setup.sh installs. --skip writes every
 hit as not checked, with REASON. OUT.tsv has one row per hit:
 
@@ -33,7 +40,9 @@ cdna_check is flagged, clear or not_checked; cdna_note says why. Needs pysam
 import argparse
 import bisect
 import csv
+import gzip
 import os
+import re
 import sys
 
 MIN_CLIP = 10
@@ -228,6 +237,51 @@ def read_hits(path):
     return rows
 
 
+def norm_class(v):
+    """A CPSR or ClinVar class in one spelling: 'Likely_Pathogenic' and 'LP'
+    -> 'likely pathogenic'; '' for an empty or NA cell."""
+    v = (v or "").replace("_", " ").strip().lower()
+    return {"p": "pathogenic", "lp": "likely pathogenic", "b": "benign", "lb": "likely benign",
+            "na": "", ".": ""}.get(v, v)
+
+
+PLP = ("pathogenic", "likely pathogenic")
+
+
+def cpsr_variant(row):
+    """(chrom, pos, ref, alt) of a CPSR row from VAR_ID or GENOMIC_CHANGE;
+    None when neither can be read."""
+    f = (row.get("VAR_ID") or "").split("_")
+    if len(f) >= 4 and f[-3].isdigit():
+        return "_".join(f[:-3]), int(f[-3]), f[-2], f[-1]
+    m = re.match(r"^(\S+):g\.(\d+)([A-Za-z]+)>([A-Za-z]+)$", row.get("GENOMIC_CHANGE") or "")
+    if m:
+        return m.group(1), int(m.group(2)), m.group(3), m.group(4)
+    return None
+
+
+def read_cpsr(path):
+    """The P/LP rows of a CPSR classification table as hits (chrom, pos, ref, alt)."""
+    opener = gzip.open if path.endswith(".gz") else open
+    with opener(path, "rt", newline="") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    out = []
+    for r in rows:
+        classes = [norm_class(r.get(c)) for c in ("CLASSIFICATION", "FINAL_CLASSIFICATION", "CPSR_CLASSIFICATION")]
+        v = cpsr_variant(r)
+        if v and any(c in PLP for c in classes):
+            out.append(dict(zip(("chrom", "pos", "ref", "alt"), (v[0], str(v[1]), v[2], v[3]))))
+    return out
+
+
+def bam_contig(chrom, references):
+    """The BAM's name for chrom: itself, or with "chr" added or removed."""
+    for c in (chrom, "chr" + chrom, chrom[3:] if chrom.startswith("chr") else None):
+        if c and c in references:
+            return c
+    return None
+
+
 def check(hits, bam_path, exons_path, skip):
     """One output row per hit."""
     out = []
@@ -245,18 +299,21 @@ def check(hits, bam_path, exons_path, skip):
         if complex_allele(ref, alt):
             out.append(row + ["not_checked", "not a SNV, MNV or simple indel"])
             continue
-        if chrom not in bam.references:
+        contig = bam_contig(chrom, bam.references)
+        if contig is None:
             out.append(row + ["not_checked", f"the BAM has no contig {chrom}"])
             continue
         pos0 = pos - 1
-        counts = count_reads(bam.fetch(chrom, pos0, pos0 + max(len(ref), 1) + 1), exons, chrom, pos0, ref, alt)
+        counts = count_reads(bam.fetch(contig, pos0, pos0 + max(len(ref), 1) + 1), exons, contig, pos0, ref, alt)
         out.append([chrom, str(pos), ref, alt] + [str(x) for x in counts] + list(verdict(*counts)))
     return out
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--hits", required=True)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--hits", help="step 06's hits table")
+    src.add_argument("--cpsr", help="step 17's CPSR classification table (its P/LP rows are checked)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--bam")
     ap.add_argument("--exons")
@@ -265,8 +322,9 @@ def main(argv=None):
     if not a.skip and not (a.bam and a.exons):
         ap.error("give --bam and --exons, or --skip REASON")
     try:
-        rows = check(read_hits(a.hits), a.bam, a.exons, a.skip)
-    except (OSError, ValueError) as e:
+        hits = read_cpsr(a.cpsr) if a.cpsr else read_hits(a.hits)
+        rows = check(hits, a.bam, a.exons, a.skip)
+    except (OSError, ValueError, EOFError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
     tmp = a.out + ".tmp"

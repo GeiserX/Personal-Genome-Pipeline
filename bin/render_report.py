@@ -36,8 +36,9 @@ def stale_note(sec):
 
 
 # Sentences both reports print, kept to what the pipeline can back.
-CLINVAR_FREQ_NOTE = ("Population frequency is not checked here. Look up a homozygous P/LP hit in gnomAD "
-                     "before reading much into it.")
+CLINVAR_FREQ_NOTE = ("Check every P/LP hit's population frequency, a heterozygous hit in a dominant gene as well as "
+                     "a homozygous one: a hit above 1% in gnomAD is unlikely to be a high-penetrance finding, and a "
+                     "hit whose frequency is unknown has not been checked.")
 HLA_NOTE = ("HLA typing from short-read WGS is approximate. If either HLA-A or HLA-B allele has a T1K quality "
             "of 0 or less, that gene is not passed to PharmCAT (step 36).")
 EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, and a long expansion "
@@ -76,6 +77,79 @@ def cdna_text(h):
     if c["check"] == "clear":
         return "clear"
     return "not checked" + (f": {c['note']}" if c["note"] else "")
+
+
+def af_text(h):
+    """A ClinVar hit's gnomAD allele frequency (from step 13's VEP output), as
+    both reports print it; "" for a summary written before the field."""
+    if "af" not in h:
+        return ""
+    if h["af"] is None:
+        return "gnomAD AF unknown"
+    txt = f"gnomAD AF {h['af']:.3g}"
+    return txt + ("; common: unlikely to be a high-penetrance finding" if h.get("common") else "")
+
+
+def call_text(h, floor=None):
+    """The low-confidence mark of a ClinVar or CPSR row, "" for a confident one."""
+    if not h.get("low_confidence"):
+        return ""
+    vals = ", ".join(f"{k} {h[k.lower()]}" for k in ("GQ", "DP") if h.get(k.lower()) is not None)
+    return f"low-confidence call ({vals}): check the reads"
+
+
+def clinvar_floor_line(d):
+    """How many ClinVar hits fall below step 6's call floor, or None for a
+    summary written before the floor."""
+    if "low_confidence" not in d:
+        return None
+    f = d.get("call_floor") or {}
+    return (f"Low-confidence calls (GQ below {f.get('GQ')} or DP below {f.get('DP')}), listed but not counted "
+            f"above: {d['low_confidence']}")
+
+
+def clinvar_freq_line(d):
+    """Where the hits' gnomAD frequencies came from, or why there are none."""
+    fr = d.get("frequency")
+    if not fr:
+        return None
+    if fr.get("note"):
+        return f"gnomAD AF: unknown for every hit ({fr['note']})"
+    common = sum(1 for h in d.get("hits", []) if h.get("common"))
+    return f"gnomAD AF from {fr['source']}: {common} hit(s) above {fr['common_af']:.0%}"
+
+
+def cpsr_row_text(x):
+    """One CPSR P/LP or disagreement row: variant, gene, the classes and codes."""
+    parts = [f"final {x['final']}" + (f" ({x['authority']})" if x.get("authority") else "")]
+    if x.get("clinvar"):
+        parts.append(f"ClinVar {x['clinvar']}")
+    if x.get("cpsr"):
+        parts.append(f"CPSR's own {x['cpsr']}" + (f" ({x['acmg_codes']})" if x.get("acmg_codes") else ""))
+    return f"{x['gene']} {x['variant']}: " + ", ".join(parts)
+
+
+def cpsr_lines(d, dbs):
+    """The CPSR lines both reports share beyond the breakdown: the two ClinVar
+    releases, CPSR's own benign calls among the final P/LP rows, the rows where
+    CPSR and ClinVar disagree, the low-confidence rows and the cDNA flag."""
+    out = []
+    if "plp" not in d:
+        return out
+    out.append(f"ClinVar release in CPSR's bundle: {dbs.get('cpsr_clinvar_release') or 'unknown'}; "
+               f"step 6 used the ClinVar file of {dbs.get('clinvar_release') or 'unknown'}")
+    if d.get("own_class_column"):
+        out.append(f"Final P/LP rows that CPSR's own rules class benign or likely benign: {d['final_plp_own_benign']}")
+        out.append(f"Rows where ClinVar and CPSR's own class disagree on P/LP: {len(d['disagreements'])}")
+        out += ["  " + cpsr_row_text(x) for x in d["disagreements"]]
+    else:
+        out.append("The classification table has no CPSR_CLASSIFICATION column, so no disagreement can be shown.")
+    out.append(f"P/LP rows below the depth floor (DP below {d['call_floor_dp']}): {d['low_confidence']}")
+    out += ["  " + cpsr_row_text(x) + f"; {call_text(x)}" for x in d["plp"] if x.get("low_confidence")]
+    if "cdna_flagged" in d:
+        out.append(f"cDNA read check of the P/LP rows (alt reads clipped at exon edges): {d['cdna_flagged']} flagged")
+        out += ["  " + cpsr_row_text(x) + f"; reads: {cdna_text(x)}" for x in d["plp"] if x["cdna"]["check"] == "flagged"]
+    return out
 
 
 def hla_text(locus):
@@ -330,18 +404,28 @@ def text_report(s):
     if head("clinvar", "ClinVar Pathogenic Screen"):
         d = S["clinvar"]["data"]
         w(f"  Pathogenic/Likely Pathogenic hits: {d['count']}")
+        low = clinvar_floor_line(d)
+        if low:
+            w(f"  {low}")
         w(f"  ClinVar file date: {s['databases']['clinvar_release'] or 'unknown'}")
-        if d["count"]:
+        if d["hits"]:
             by = d["by_stars"]
             w("  By review status: " + ", ".join(f"{k} star{'s' if k != '1' else ''} {by[k]}" for k in ("4", "3", "2", "1", "0")))
             if "cdna_flagged" in d:
                 w(f"  cDNA read check (alt reads clipped at exon edges): {d['cdna_flagged']} flagged")
+            freq = clinvar_freq_line(d)
+            if freq:
+                w(f"  {freq}")
             w("")
             w("  Hits (best-reviewed first, up to 50): gene, position, genotype, significance [review status] stars")
             for h in d["hits"][:50]:
                 note = combined_cell(h)
                 w(f"    {h['gene']:<10} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']}  {h['genotype']}  "
                   f"{h['significance']} [{h['review_status']}] {h['stars']}*" + (f"  ({note})" if note else ""))
+                if af_text(h):
+                    w(f"               frequency: {af_text(h)}")
+                if call_text(h):
+                    w(f"               call: {call_text(h)}")
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
@@ -528,6 +612,8 @@ def text_report(s):
                 w(f"    {k}: {v}")
         elif "classification_column" in d:
             w("  Classification table has no CLASSIFICATION column.")
+        for line in cpsr_lines(d, s["databases"]):
+            w(f"  {line}")
         w("")
 
     if head("clinical", "Clinical Variant Filter"):
@@ -540,7 +626,8 @@ def text_report(s):
             w(f"  Secondary-findings genes ({sf['version']}, {sf['genes_on_list']} genes): "
               f"{len(sf['clinvar_hits'])} ClinVar P/LP, {len(sf['high_impact'])} rare HIGH impact")
             for x in sf["clinvar_hits"]:
-                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  ClinVar {x['significance']}")
+                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  ClinVar {x['significance']}"
+                  + ("  (low-confidence call: check the reads)" if x.get("low_confidence") else ""))
             for x in sf["high_impact"]:
                 w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  {x['consequence']}")
             w(f"    {ACMG_NOTE}")
@@ -798,6 +885,12 @@ def html_report(s):
     if "cdna_flagged" in c:
         cv_body.insert(2, stat("Flagged by the cDNA read check",
                                badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
+    if "low_confidence" in c:
+        f = c.get("call_floor") or {}
+        cv_body.insert(1, stat(f"Low-confidence calls (GQ below {f.get('GQ')} or DP below {f.get('DP')}), not counted",
+                               badge(c["low_confidence"], "yellow" if c["low_confidence"] else "gray")))
+    if clinvar_freq_line(c):
+        cv_body.insert(-1, small_note(clinvar_freq_line(c)))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
     if S.get("couple", MISSING)["state"] != "missing":
         a(card(S["couple"], "Couple Carrier Screen",
@@ -858,6 +951,7 @@ def html_report(s):
     cpsr_body = [stat("CPSR report", badge("Complete", "green") if cs.get("html_report") else badge("No HTML", "gray"))]
     for k, val in (cs.get("classification") or {}).items():
         cpsr_body.append(stat(k, val))
+    cpsr_body += [small_note(line.strip()) for line in cpsr_lines(cs, s["databases"])]
     a(card(S["cpsr"], "Cancer Predisposition", cpsr_body))
 
     eh = S["expansions"]["data"]
@@ -934,7 +1028,8 @@ def html_report(s):
     sf = cl.get("acmg_sf")
     if sf and (sf["clinvar_hits"] or sf["high_impact"]):
         rows = "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
-                       f"<td>{E('ClinVar ' + x['significance'])}</td></tr>\n" for x in sf["clinvar_hits"])
+                       f"<td>{E('ClinVar ' + x['significance'] + ('; low-confidence call: check the reads' if x.get('low_confidence') else ''))}</td></tr>\n"
+                       for x in sf["clinvar_hits"])
         rows += "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
                         f"<td>{E(x['consequence'])}</td></tr>\n" for x in sf["high_impact"])
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
@@ -998,15 +1093,23 @@ def html_report(s):
         # neither a combined allele nor part of one: no note is no missing data.
         # The cDNA read check column only when step 06 wrote its table.
         reads = "cdna_flagged" in c
+        # The frequency and call columns only for a summary that carries them.
+        freq = "frequency" in c
+        call = "low_confidence" in c
+        nh = len(c["hits"])
         rows = [f"<tr><td>{E(h['chrom'])}</td><td>{h['pos']}</td><td>{E(h['ref'])}</td><td>{E(h['alt'])}</td>"
                 f"<td>{E(h['genotype'])}</td><td>{E(h['gene'])}</td><td>{E(h['significance'])}</td>"
                 f"<td>{E(h['review_status'])}</td><td>{h['stars']}</td>"
                 f"<td>{E(combined_cell(h))}</td>"
+                + (f"<td>{E(af_text(h))}</td>" if freq else "")
+                + (f"<td>{E(call_text(h))}</td>" if call else "")
                 + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
-        a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(n, 50)} of {n})",
+        a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(nh, 50)} of {nh})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
                 "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
+                + ("<th>gnomAD frequency</th>" if freq else "")
+                + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"], full=True))
 

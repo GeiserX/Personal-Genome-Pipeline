@@ -8,9 +8,11 @@ ClinVar screening (step 6) finds known pathogenic variants, but CPSR applies ACM
 
 ## Tool
 - **CPSR** (Cancer Predisposition Sequencing Reporter), bundled inside the PCGR image
+- **`bin/clip_check.py --cpsr`** (pysam) — step 6's cDNA read check on CPSR's P/LP rows
 
 ## Docker Image
 - `PCGR_IMAGE`
+- `PYPGX_IMAGE`, for pysam (the cDNA read check; steps 6 and 32 use the same image)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
@@ -119,6 +121,17 @@ Run by hand like this, `--sample_id` must be 3 to 40 characters long. The script
 - `${SAMPLE}.cpsr.grch38.classification.tsv.gz` — Tab-separated variant classifications (gzipped; read it with `zcat`)
 - Every variant in the panel genes gets one of the five ACMG/AMP classes: Pathogenic, Likely pathogenic, VUS, Likely benign, Benign
 - In the TSV, `CLASSIFICATION` is the final class and `ASSERTION_AUTHORITY` says whose it is: ClinVar's, unless ClinVar has no record or a conflicted one, then CPSR's own (`CPSR_CLASSIFICATION`, which every variant has). PCGR 2.2.5 named the final column `FINAL_CLASSIFICATION`; the reports (`bin/collect_summary.py`) read either. The file names are the same in both versions.
+- `${SAMPLE}_cpsr_cdna_check.tsv` — step 6's cDNA read check on CPSR's P/LP rows (final class or CPSR's own), in the columns of step 6's `clinvar/${SAMPLE}_clinvar_cdna_check.tsv`. The rows are read from `VAR_ID` (or `GENOMIC_CHANGE`) and keep CPSR's contig names (`13`, not `chr13`); the BAM is read under either name. It needs the sample's BAM, `aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` picks another folder), and the GENCODE exons `setup.sh` installs; without either, every row is "not checked" with the reason. The Nextflow `CPSR` process does not run it: it gets no BAM, as `CLINVAR_SCREEN` does not.
+
+### What the reports show
+
+The final class is ClinVar's whenever ClinVar has a trusted record, so the breakdown by `CLASSIFICATION` can count as Pathogenic a row CPSR's own rules class Benign (BA1, common in gnomAD), and it never shows CPSR's own Likely Benign on an allele ClinVar holds as Likely Pathogenic. Both reports keep the breakdown by final class and add:
+
+- the ClinVar release in CPSR's bundle (the `source_version` of the `clinvar` row in the bundle's `data/grch38/.METADATA/tsv/*_metadata.tsv`, recorded by `bin/write_manifest.sh` as `cpsr_clinvar_release`) beside the date of the ClinVar file step 6 used. The bundle's release is older, so the two can disagree on a variant ClinVar reclassified in between;
+- how many final P/LP rows CPSR's own class calls benign or likely benign;
+- every row where ClinVar's class (`CLINVAR_CLASSIFICATION`) and CPSR's own (`CPSR_CLASSIFICATION`) disagree on P/LP, in either direction, with CPSR's ACMG codes (`ACMG_CODE`). A table without `CPSR_CLASSIFICATION` shows no disagreement and says so;
+- the P/LP rows whose depth (`DP_CONTROL`) is below step 6's depth floor (DP 10 unless step 6 ran with another), as low-confidence calls. CPSR writes no genotype quality, so only depth is compared;
+- the cDNA read check of the P/LP rows, when step 17 wrote it, and the flagged rows.
 
 ## Runtime
 17 to 36 minutes per genome, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)); it depends on the variant count.
