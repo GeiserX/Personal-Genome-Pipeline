@@ -20,8 +20,9 @@ CNVpytor's, so a deletion both of them call and Manta misses is added once.
 
 Every record says where it came from in INFO SVCALLER (the base's records
 get --base-name, default manta). An added record keeps the caller's ID, END,
-SVLEN, CIPOS, CIEND and IMPRECISE, and its genotype as FORMAT GT in the first
-sample column. The output is sorted by the base header's ##contig order, then
+CIPOS, CIEND and IMPRECISE, and its genotype as FORMAT GT in the first sample
+column. It drops SVLEN: CNVpytor writes it positive for a deletion too, and
+AnnotSV, which keeps a given SVLEN, derives it from END with the right sign. The output is sorted by the base header's ##contig order, then
 POS. One summary line goes to stderr.
 
 Usage: cnvpytor_to_vcf.py --base BASE.vcf[.gz]|- [--base-name NAME]
@@ -43,7 +44,7 @@ STANDARD_INFO = {
     "SVCALLER": '##INFO=<ID=SVCALLER,Number=1,Type=String,Description="The SV caller of this record: the input '
                 'of step 05 (manta), or delly or cnvpytor for a call no record of that input covers">',
 }
-KEPT = ("END", "SVTYPE", "SVLEN", "CIPOS", "CIEND")
+KEPT = ("END", "SVTYPE", "CIPOS", "CIEND")
 
 
 def open_text(path):
