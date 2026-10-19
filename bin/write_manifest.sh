@@ -10,9 +10,17 @@
 #   image    each *_IMAGE reference and the digest Docker resolved it to
 #            ("not pulled" when the image is not on this machine)
 #   data     clinvar_file_date (##fileDate of the ClinVar file), vep_cache,
-#            pcgr_bundle, pypgx_bundle, hla_database (newest IPD-IMGT/HLA
-#            release named in t1k_idx/hlaidx/hla.dat), pgs:<ID> (the header
-#            lines of each PGS scoring file)
+#            pcgr_bundle, pypgx_bundle, ancestry_panel (pgsc_calc's panel,
+#            installed or not), hla_database (the newest IPD-IMGT/HLA release
+#            named in the hla.dat the run used), pgs:<ID> (the header lines of
+#            each PGS scoring file)
+#
+# HLA_DAT: the hla.dat the run used (run-all.sh passes it). Without it the
+# script reads the one setup.sh installs (data_file hla_dat), then an older
+# t1k_idx/hlaidx/hla.dat, then the release in the name of the T1K index folder
+# step 08 builds (t1k_idx/t1k-<version>_imgt-<release>_gencode-<release>/).
+# ANCESTRY_PANEL: the panel path, as run-all.sh reads it (default
+# reference/pgsc_calc/<PGSC_PANEL>.tar.zst; none = not used).
 #
 # run-all.sh calls it when a run starts and again just before the reports, so
 # an image a step pulled during the run gets its digest; the two report scripts
@@ -103,13 +111,37 @@ if [ -d "$bundle" ]; then
 else
   row data pypgx_bundle "not installed"
 fi
-hla="${GENOME_DIR}/t1k_idx/hlaidx/hla.dat"
-if [ -f "$hla" ]; then
-  rel=$(awk '/^DT/ && match($0, /Rel\. [0-9]+\.[0-9]+\.[0-9]+/) {print substr($0, RSTART + 5, RLENGTH - 5)}' "$hla" \
-    | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
-  row data hla_database "IPD-IMGT/HLA ${rel:-release not found in hla.dat}"
+# pgsc_calc's ancestry panel: listed in versions.env either way, so say
+# whether it is installed (step 26 needs the panel and its sites list).
+panel=${ANCESTRY_PANEL:-${GENOME_DIR}/reference/pgsc_calc/${PGSC_PANEL}.tar.zst}
+if [ "$panel" = none ]; then
+  row data ancestry_panel "not used (ANCESTRY_PANEL=none)"
+elif [ -f "$panel" ] && [ -f "${panel%.tar.zst}_GRCh38_sites.tsv" ]; then
+  row data ancestry_panel "$(basename "$panel" .tar.zst) (installed)"
 else
-  row data hla_database "not installed (step 8 builds it)"
+  row data ancestry_panel "not installed (setup.sh --ancestry-panel)"
+fi
+# hla_release FILE: the newest "Rel. X.Y.Z" on the DT lines of an hla.dat.
+hla_release() {
+  awk '/^DT/ && match($0, /Rel\. [0-9]+\.[0-9]+\.[0-9]+/) {print substr($0, RSTART + 5, RLENGTH - 5)}' "$1" \
+    | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+}
+hla=""
+for f in "${HLA_DAT:-}" "$(data_file hla_dat || true)" "${GENOME_DIR}/t1k_idx/hlaidx/hla.dat"; do
+  if [ -n "$f" ] && [ -f "$f" ]; then hla=$f; break; fi
+done
+idx=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name 't1k-*_imgt-*_gencode-*' 2>/dev/null | sort -V | tail -n 1 || true)
+if [ -n "$hla" ]; then
+  rel=$(hla_release "$hla")
+  # IPD-IMGT-HLA_<release>/hla.dat (setup.sh) names its release in its folder.
+  [ -n "$rel" ] || [[ ! "$(basename "$(dirname "$hla")")" =~ ^IPD-IMGT-HLA_([0-9.]+)$ ]] || rel=${BASH_REMATCH[1]}
+  row data hla_database "IPD-IMGT/HLA ${rel:-release not found in ${hla#"${GENOME_DIR}"/}}"
+elif [[ "$(basename "${idx:-none}")" =~ _imgt-([0-9.]+)_gencode- ]]; then
+  row data hla_database "IPD-IMGT/HLA ${BASH_REMATCH[1]} (from the T1K index folder name; hla.dat not found)"
+elif compgen -G "${GENOME_DIR}/${SAMPLE}/hla*/*_hla_genotype.tsv" >/dev/null; then
+  row data hla_database "unknown (HLA calls exist, but no hla.dat or T1K index was found)"
+else
+  row data hla_database "not installed (setup.sh installs it)"
 fi
 for f in "${GENOME_DIR}"/prs_scores/*.txt.gz; do
   [ -f "$f" ] || continue

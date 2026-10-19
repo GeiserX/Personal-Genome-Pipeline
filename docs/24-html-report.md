@@ -24,7 +24,7 @@ All output directories from previous pipeline steps. The script detects which st
 
 Two more files, when present:
 
-- `${SAMPLE}/run_manifest.tsv` (`bin/write_manifest.sh`): the pipeline commit, `versions.env`, the digest of every image, the ClinVar file date, the VEP cache, the PCGR and pypgx bundles, the HLA database release and the header of each PGS scoring file. `run-all.sh` writes it when a run starts and again just before this step, so an image pulled during the run gets its digest; this step writes one when the sample has none.
+- `${SAMPLE}/run_manifest.tsv` (`bin/write_manifest.sh`): the pipeline commit, `versions.env`, the digest of every image, the ClinVar file date, the VEP cache, the PCGR and pypgx bundles, whether pgsc_calc's ancestry panel is installed, the IPD-IMGT/HLA release of the `hla.dat` the run used (`run-all.sh` passes it as `HLA_DAT`; without it the one `setup.sh` installs, then the release in the T1K index folder name, and `unknown` when HLA calls exist but no database is found) and the header of each PGS scoring file. `run-all.sh` writes it when a run starts and again just before this step, so an image pulled during the run gets its digest; this step writes one when the sample has none.
 - `${SAMPLE}/logs/run_status.tsv`: when the latest `run-all.sh` run started, then one line per step. A step it did not start is `skipped (<reason>)`, for example `skipped (no BAM)` or `skipped (not in TOOLS)`. Once the pipeline has ended, each step it started is one of:
     - `ok`: the pipeline finished. After a pipeline that another step stopped, a step is still `ok` when each of its processes has a task that completed in this run or came from Nextflow's cache (`-resume`), and none was left unfinished.
     - `failed`: one of the step's tasks failed. A report-only tool's failure is ignored by the pipeline, which goes on without it. Ancestry (step 26) is computed inside the PRS run, so it is `failed` when PRS is.
@@ -77,6 +77,10 @@ A section with no file whose step is recorded `failed` in `logs/run_status.tsv` 
   ![The step 24 HTML report: a header with the sample name, seventeen cards of counts and statuses, then the polygenic risk scores table](images/demo-html-report.png){ loading=lazy }
   <figcaption>The report for DEMO-001, an invented sample. Every number is made up. The picture stops above the CPIC gene table, so the tables that list genes (the CPIC genes and the ClinVar hits) and the disclaimer are not shown.</figcaption>
 </figure>
+
+## What changed since the previous run
+
+`scripts/generate-report.sh`, which `run-all.sh` runs after this step, keeps each run's `summary.json` and `run_manifest.tsv` under `${SAMPLE}/history/` and writes `${SAMPLE}_delta.txt`, `.html` and `.json`: the inputs and results that changed since the previous run of the same sample, such as a reclassified ClinVar hit, a new image digest or a moved PRS percentile. [What changed since the previous run](delta-report.md) says what it compares.
 
 ## Runtime
 
