@@ -6,8 +6,10 @@
 #
 # The case reads what earlier cases left: 30-clinvar-screen-06 (step 06),
 # bash-step-11-roh (step 11), bash-step-14-imputation (step 14),
-# bash-step-20-numt (step 20) and bash-step-08-hla (step 08, IPD-IMGT/HLA
-# 3.64.0). A bump that changes a value fails here and the diff names the line.
+# bash-step-20-numt (step 20) and bash-step-08-hla (step 08, typed last on
+# the pinned IPD-IMGT/HLA release, HLA_DB_RELEASE's default in
+# scripts/lib/common.sh). A bump that changes a value fails here and the diff
+# names the line.
 # When a change is expected (a tool fix, a new fixture), update BASELINE in
 # the same pull request and say why in its description.
 #
