@@ -4,7 +4,9 @@
 Prepares a WGS VCF for submission to the Michigan Imputation Server (MIS) or TOPMed Imputation Server. Splits the VCF by chromosome, filters to PASS variants, and converts to the required format.
 
 ## Why
-Imputation servers statistically infer missing genotypes using large reference panels. For WGS data, imputation is primarily useful for **phasing** (determining which alleles are on the same chromosome) rather than filling in missing variants. Phased data is required for haplotype-level analyses and accurate PRS calculation.
+Imputation servers statistically infer missing genotypes using large reference panels. For WGS data, imputation is primarily useful for **phasing** (determining which alleles are on the same chromosome) rather than filling in missing variants. Phased data is what haplotype-level analyses need.
+
+Polygenic scores do not need it. Step 25 reads the gVCF, which records where you match the reference, so a score variant is missing only where the genome was not covered, and the scores are already near-complete; the report prints each score's matched and total variant counts. What a percentile needs is the ancestry reference panel (`setup.sh --ancestry-panel`, [step 26](26-ancestry.md)), not imputation. Use this step to phase the genome or to merge it with other samples.
 
 ## Tool
 - **bcftools** (samtools/bcftools) — for VCF filtering, splitting, and indexing
