@@ -139,8 +139,8 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | Defining_variants | For a called gene: how many of the variants that define its star alleles (pypgx's core variants for each allele, `pypgx.list_variants`) the VCF has, as `2/2 in the VCF`; `none` when the alleles are defined by no variant (\*1, a whole-gene deletion) |
 | Min_GQ | The lowest GQ among those variants in the VCF |
 | Weakest_variant | That variant with its GQ and AD, for example `chr10:94781859 G>A GQ 12 AD 26,3` |
-| Defining_filter | `PASS` when every defining variant is in the VCF with FILTER `PASS`; otherwise the ones that are not PASS (`RefCall`, `LowQual`...) or not in the VCF |
-| Quality | `low-confidence: check the reads` when a defining variant has a GQ below the floor, `ok` otherwise, `N/A` without defining variants |
+| Defining_filter | `PASS` when every defining variant is in the VCF with FILTER `PASS`; otherwise the ones that are not PASS (`RefCall`, `LowQual`...) or not in the VCF, and any star allele pypgx's table lacks (`not in pypgx's table: *99`) |
+| Quality | `low-confidence: check the reads` when a defining variant has a GQ below the floor, `GQ not in the VCF: check the reads` when one has no GQ, `ok` otherwise, `N/A` without defining variants |
 
 ### Low-GQ star alleles
 

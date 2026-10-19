@@ -57,6 +57,7 @@ PROBABLE = "probable (one caller: pypgx)"
 # quality flag, and the GQ below which a defining variant raises it.
 NOT_CALLABLE = "not callable on this reference"
 LOW_GQ = "low-confidence: check the reads"
+NO_GQ = "GQ not in the VCF: check the reads"
 DEFAULT_GQ_FLOOR = 20
 SUMMARY_HEADER = ["Gene", "Diplotype", "Phenotype", "CNV_call", "Source", "Status",
                   "Defining_variants", "Min_GQ", "Weakest_variant", "Defining_filter", "Quality"]
@@ -204,15 +205,16 @@ def probable_cyp2d6(row, cyrius, depth_status):
 
     Not probable: no call, a usable Cyrius call (then the two callers decide),
     a depth check that did not pass, a defining variant that is missing from
-    the VCF or not PASS (a summary written before these columns has none), or
-    one with a GQ below the floor."""
+    the VCF or not PASS (a summary written before these columns has none), a
+    star allele pypgx's table lacks, or a defining variant with a GQ below the
+    floor or no GQ."""
     if not row or not is_call(row.get("Diplotype")):
         return None
     if cyrius is not None and is_call(cyrius[0]) and cyrius[1] == "PASS":
         return None
     if depth_status is not None and depth_status != "ok":
         return None
-    if (row.get("Defining_filter") or "") not in ("PASS", "none") or row.get("Quality") == LOW_GQ:
+    if (row.get("Defining_filter") or "") not in ("PASS", "none") or row.get("Quality") not in ("ok", "N/A"):
         return None
     return {"diplotype": row["Diplotype"].strip(), "phenotype": (row.get("Phenotype") or "").strip(),
             "label": PROBABLE}
@@ -244,13 +246,19 @@ def defining_evidence(diplotype, variants_of, lookup, floor=DEFAULT_GQ_FLOOR):
     the VCF record, or None when the VCF has none."""
     if not star_alleles(diplotype):
         return ["N/A", "N/A", "N/A", "N/A", "N/A"]
-    variants = []
+    variants, unknown = [], []
     for a in star_alleles(diplotype):
-        for v in variants_of(a) or []:
+        vs = variants_of(a)
+        if vs is None:
+            unknown.append(a)
+            continue
+        for v in vs:
             if v not in variants:
                 variants.append(v)
+    not_in_table = [f"not in pypgx's table: {', '.join(unknown)}"] if unknown else []
     if not variants:
-        return ["none", "N/A", "N/A", "none", "N/A"]
+        return (["unknown", "N/A", "N/A", not_in_table[0], "N/A"] if unknown
+                else ["none", "N/A", "N/A", "none", "N/A"])
     found, missing, not_pass = [], [], []
     for v in variants:
         rec = lookup(v)
@@ -258,19 +266,21 @@ def defining_evidence(diplotype, variants_of, lookup, floor=DEFAULT_GQ_FLOOR):
         if rec is None:
             missing.append(name)
             continue
-        found.append((rec.get("gq"), name, rec.get("ad") or "."))
+        gq = rec.get("gq")
+        found.append((int(gq) if isinstance(gq, (int, float)) else None, name, rec.get("ad") or "."))
         if rec.get("filter") not in ("PASS", "."):
             not_pass.append(f"{name} {rec.get('filter')}")
     with_gq = [f for f in found if isinstance(f[0], int)]
     weakest = min(with_gq) if with_gq else None
-    filt = "PASS" if not (missing or not_pass) else "; ".join(
+    filt = "PASS" if not (missing or not_pass or unknown) else "; ".join(
         ([f"not PASS: {', '.join(not_pass)}"] if not_pass else [])
-        + ([f"not in the VCF: {', '.join(missing)}"] if missing else []))
+        + ([f"not in the VCF: {', '.join(missing)}"] if missing else []) + not_in_table)
     low = weakest is not None and weakest[0] < floor
+    quality = LOW_GQ if low else NO_GQ if len(with_gq) < len(found) else "ok"
     return [f"{len(found)}/{len(variants)} in the VCF",
             str(weakest[0]) if weakest else "N/A",
             f"{weakest[1]} GQ {weakest[0]} AD {weakest[2]}" if weakest else "N/A",
-            filt, LOW_GQ if low else "ok"]
+            filt, quality]
 
 
 def vcf_lookup(path):

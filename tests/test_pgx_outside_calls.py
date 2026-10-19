@@ -263,6 +263,14 @@ same("12 a RefCall defining variant is not PASS",
      poc.defining_evidence("*2/*17", DEFS.get, vcf(filt="RefCall"))[3], "not PASS: chr10:94781859 G>A RefCall")
 same("12 *1/*1 rests on no defining variant", poc.defining_evidence("*1/*1", DEFS.get, vcf()),
      ["none", "N/A", "N/A", "none", "N/A"])
+same("12 an allele pypgx's table lacks is named, and the call is not PASS-backed",
+     poc.defining_evidence("*2/*99", DEFS.get, vcf())[3], "not in pypgx's table: *99")
+same("12 a call whose alleles are all unknown to the table rests on no lookup",
+     poc.defining_evidence("*98/*99", DEFS.get, vcf()), ["unknown", "N/A", "N/A", "not in pypgx's table: *98, *99", "N/A"])
+same("12 a defining variant with no GQ in the VCF says so, it is not 'ok'",
+     poc.defining_evidence("*2/*17", DEFS.get, vcf(gq_781859=None))[4], poc.NO_GQ)
+same("12 a Float GQ is read like an Integer one",
+     poc.defining_evidence("*2/*17", DEFS.get, vcf(gq_781859=12.0))[4], poc.LOW_GQ)
 same("12 a no-call has no evidence", poc.defining_evidence("Indeterminate", DEFS.get, vcf()), ["N/A"] * 5)
 
 # 13.
@@ -280,6 +288,10 @@ same("13 a low-GQ defining variant: no probable call",
      poc.probable_cyp2d6(dict(ROW, Quality=poc.LOW_GQ), None, "ok"), None)
 same("13 a defining variant not PASS: no probable call",
      poc.probable_cyp2d6(dict(ROW, Defining_filter="not PASS: chr22:42128945 C>T RefCall"), None, "ok"), None)
+same("13 an allele pypgx's table lacks: no probable call",
+     poc.probable_cyp2d6(dict(ROW, Defining_filter="not in pypgx's table: *99"), None, "ok"), None)
+same("13 a defining variant with no GQ: no probable call",
+     poc.probable_cyp2d6(dict(ROW, Quality=poc.NO_GQ), None, "ok"), None)
 same("13 a summary without the columns: no probable call",
      poc.probable_cyp2d6({"Diplotype": "*1/*2", "Phenotype": "NM"}, None, "ok"), None)
 with tempfile.TemporaryDirectory() as tmp:

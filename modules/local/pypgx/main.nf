@@ -47,7 +47,7 @@ process PYPGX {
     script:
     def bam_genes = "CYP2D6 CYP2A6 GSTM1 GSTT1"
     def vcf_genes = "CYP1A2 CYP2B6 CYP2C9 CYP2C19 CYP3A4 CYP3A5 CYP4F2 DPYD TPMT NUDT15 UGT1A1 SLCO1B1 VKORC1 NAT2 COMT MTHFR ABCB1 G6PD IFNL3"
-    def gq_floor = task.ext.gq_floor ?: 20
+    def gq_floor = task.ext.gq_floor != null ? task.ext.gq_floor : 20
     """
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
