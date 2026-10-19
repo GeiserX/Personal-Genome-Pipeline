@@ -65,6 +65,23 @@ Checks:
      without a whole-number 'called' row, or with a '--' reason without a
      whole-number count, is unreadable, not a zero or a reason left out; an
      older table whose step was skipped in the latest run is stale.
+ 21. ClinVar call quality and frequency (step 06's floor, step 13's VEP): a
+     hit below GQ 30 or DP 10 is marked low confidence and left out of the
+     count and the stars, in the summary and in bin/clinvar_hits.awk alike,
+     and a floor of 0 marks nothing; each hit carries the gnomAD AF read from
+     a bgzipped, tabix-indexed VEP file (two BGZF blocks, two contigs), a hit
+     above 1% is common, one VEP lacks is unknown, and without VEP output the
+     reports say why; both reports print the AF, the call mark and the
+     frequency caveat on every hit;
+ 22. CPSR beside ClinVar (step 17): the P/LP rows by final or own class, the
+     rows where CLINVAR_CLASSIFICATION and CPSR_CLASSIFICATION disagree on
+     P/LP with CPSR's ACMG codes, the final P/LP rows CPSR's own rules class
+     benign, the rows below the depth floor (DP_CONTROL), the cDNA read
+     check of step 17 on the P/LP rows, and CPSR's bundled ClinVar release
+     beside step 6's; a table with one class column shows no disagreement;
+     bin/clip_check.py --cpsr checks the P/LP rows only (a fake pysam: the
+     spliced reads at a P/LP row are flagged, genomic reads at the same row
+     are clear, and CPSR's "13" finds the BAM's "chr13").
  20. step 39's couple table (bin/couple_report.py's columns): the partner,
      the shared and X-linked genes with each side's findings from this
      sample's point of view, the one-partner count; a table naming another
@@ -78,14 +95,18 @@ import gzip
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import types
+import zlib
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
 sys.path.insert(0, os.path.join(REPO, "tests", "schema"))
+import clip_check  # noqa: E402
 import collect_summary  # noqa: E402
 import render_report  # noqa: E402
 import validate  # noqa: E402
@@ -167,6 +188,260 @@ def render(d, s="S"):
     return summ, render_report.text_report(summ), render_report.html_report(summ)
 
 
+def bgzf_block(data):
+    """One BGZF block (a gzip member with the BC extra field) holding data."""
+    c = zlib.compressobj(6, zlib.DEFLATED, -15)
+    comp = c.compress(data) + c.flush()
+    return (struct.pack("<BBBBIBBHBBHH", 31, 139, 8, 4, 0, 0, 255, 6, 66, 67, 2, len(comp) + 25) + comp
+            + struct.pack("<II", zlib.crc32(data) & 0xFFFFFFFF, len(data)))
+
+
+def write_tabixed_vcf(path, header, blocks):
+    """A bgzipped VCF of one BGZF block per item of blocks (lists of record
+    lines, the header in the first block) and its .tbi with the linear index
+    only (no bins: bin/collect_summary.py reads the linear index)."""
+    raw, lin, coff = b"", {}, 0
+    for i, lines in enumerate(blocks):
+        data = (header if i == 0 else "").encode()
+        for line in lines:
+            chrom, pos = line.split("\t")[0], int(line.split("\t")[1])
+            w, ix = (pos - 1) >> 14, lin.setdefault(chrom, [])
+            while len(ix) <= w:
+                ix.append(None)
+            if ix[w] is None:
+                ix[w] = (coff << 16) | len(data)
+            data += (line + "\n").encode()
+        blk = bgzf_block(data)
+        raw += blk
+        coff += len(blk)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(raw + bgzf_block(b""))
+    names = list(lin)
+    nm = b"".join(n.encode() + b"\0" for n in names)
+    tbi = b"TBI\x01" + struct.pack("<8i", len(names), 2, 1, 2, 0, ord("#"), 0, len(nm)) + nm
+    for n in names:
+        ix, last = lin[n], 0
+        for j, v in enumerate(ix):  # an empty window takes the offset before it, as htslib fills it
+            ix[j] = last = v if v is not None else last
+        tbi += struct.pack("<i", 0) + struct.pack("<i", len(ix)) + struct.pack(f"<{len(ix)}Q", *ix)
+    with gzip.open(path + ".tbi", "wb") as f:
+        f.write(tbi)
+    return {n: tuple(v) for n, v in lin.items()}
+
+
+CSQ_HEAD = ('##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '
+            'Format: Allele|Consequence|IMPACT|SYMBOL|gnomADe_AF|gnomADg_AF">\n')
+FLOOR_HITS = ("##fileformat=VCFv4.2\n##PGP_CALL_FLOOR=GQ=30,DP=10\n" + VCF_HEAD.split("\n", 1)[1] + (
+    "chr1\t100\t1\tC\tT\t50\tPASS\tGENEINFO=GENEA:11;CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel"
+    "\tGT:GQ:DP\t0/1:12:6\n"
+    "chr1\t40000\t2\tG\tA\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel"
+    "\tGT:GQ:DP\t0/1:50:40\n"
+    "chr2\t20000\t3\tCA\tC\t50\tPASS\tGENEINFO=GENEC:33;CLNSIG=Likely_pathogenic;"
+    "CLNREVSTAT=criteria_provided,_single_submitter\tGT:DP:GQ\t0/1:35:45\n"
+    "chr3\t10\t4\tA\tG\t50\tPASS\tGENEINFO=GENED:44;CLNSIG=Pathogenic;"
+    "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t1/1\n"))
+
+
+def clinvar_quality(work, schema):
+    """21. the call floor and the gnomAD frequency on step 06's hits."""
+    d = os.path.join(work, "clinvar-quality", "S")
+    put(f"{d}/clinvar/S_clinvar_hits.vcf", FLOOR_HITS)
+    vep_head = "##fileformat=VCFv4.2\n" + CSQ_HEAD + VCF_HEAD.split("\n", 1)[1]
+    lin = write_tabixed_vcf(f"{d}/vep/S_vep.vcf.gz", vep_head, [
+        ["chr1\t100\t.\tC\tT\t50\tPASS\tCSQ=T|missense_variant|MODERATE|GENEA|0.03|0.02\tGT\t0/1",
+         "chr1\t40000\t.\tG\tA\t50\tPASS\tCSQ=A|stop_gained|HIGH|GENEB|0.0002|\tGT\t0/1"],
+        ["chr2\t50\t.\tT\tG\t50\tPASS\tCSQ=G|intron_variant|MODIFIER|GENEC|0.5|0.5\tGT\t0/1",
+         "chr2\t20000\t.\tCA\tC\t50\tPASS\tCSQ=-|frameshift_variant|HIGH|GENEC|0.0001|0.00005\tGT\t0/1"]])
+    summ, txt, html = render(d)
+    cv = summ["sections"]["clinvar"]["data"]
+    by = {h["gene"]: h for h in cv["hits"]}
+    check("call floor: the GQ 12, DP 6 hit is low confidence, the others are not (no GQ/DP is not low)",
+          [g for g in ("GENEA", "GENEB", "GENEC", "GENED") if by[g]["low_confidence"]] == ["GENEA"]
+          and (by["GENEA"]["gq"], by["GENEA"]["dp"]) == (12, 6) and (by["GENEC"]["gq"], by["GENEC"]["dp"]) == (45, 35)
+          and (by["GENED"]["gq"], by["GENED"]["dp"]) == (None, None), by)
+    check("call floor: the low-confidence hit is listed but left out of the count and the stars",
+          cv["count"] == 3 and cv["low_confidence"] == 1 and len(cv["hits"]) == 4
+          and cv["by_stars"] == {"4": 0, "3": 1, "2": 0, "1": 2, "0": 0}, cv)
+    awk = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), f"{d}/clinvar/S_clinvar_hits.vcf"],
+                         capture_output=True, text=True).stdout
+    awk_low = {r.split("\t")[6]: tuple(r.split("\t")[10:13]) for r in awk.splitlines()}
+    check("call floor: bin/clinvar_hits.awk gives the same DP, GQ and mark",
+          awk_low == {"GENEA": ("6", "12", "yes"), "GENEB": ("40", "50", "no"), "GENEC": ("35", "45", "no"),
+                      "GENED": (".", ".", "no")}, awk_low)
+    zero = FLOOR_HITS.replace("##PGP_CALL_FLOOR=GQ=30,DP=10", "##PGP_CALL_FLOOR=GQ=0,DP=0")
+    z = os.path.join(work, "clinvar-floor-zero", "S")
+    put(f"{z}/clinvar/S_clinvar_hits.vcf", zero)
+    cz = collect_summary.collect("S", z)["sections"]["clinvar"]["data"]
+    awk_z = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), f"{z}/clinvar/S_clinvar_hits.vcf"],
+                           capture_output=True, text=True).stdout
+    check("call floor: a floor of GQ 0 and DP 0 marks nothing, so the mark above depends on the floor",
+          cz["low_confidence"] == 0 and cz["count"] == 4 and "\tyes" not in awk_z, (cz["low_confidence"], awk_z))
+    check("call floor: a hits file without the floor line uses GQ 30 and DP 10",
+          collect_summary.call_floor(f"{work}/cdna/S/clinvar/S_clinvar_hits.vcf") == {"GQ": 30, "DP": 10})
+    af = {g: (by[g]["af"], by[g]["common"]) for g in by}
+    check("gnomAD AF: read through the tabix index from both BGZF blocks; above 1% is common; no VEP record is unknown",
+          af == {"GENEA": (0.03, True), "GENEB": (0.0002, False), "GENEC": (0.0001, False), "GENED": (None, False)}
+          and (by["GENEA"]["gnomad_exome_af"], by["GENEA"]["gnomad_genome_af"]) == (0.03, 0.02), af)
+    got_lin = collect_summary.tabix_linear_index(f"{d}/vep/S_vep.vcf.gz")
+    check("tabix: the linear index is read as written (chr2 starts in the second BGZF block)",
+          got_lin == lin and got_lin["chr2"][0] >> 16 > 0 and len(got_lin["chr1"]) == 3, (got_lin, lin))
+    check("gnomAD AF: the summary names the VEP file", cv["frequency"]["source"] == "vep/S_vep.vcf.gz"
+          and cv["frequency"]["note"] is None, cv["frequency"])
+    check("both reports: the AF and the common mark on the hit, unknown on the hit VEP lacks",
+          "frequency: gnomAD AF 0.03; common: unlikely to be a high-penetrance finding" in txt
+          and "frequency: gnomAD AF unknown" in txt
+          and "<td>gnomAD AF 0.03; common: unlikely to be a high-penetrance finding</td>" in html
+          and "<th>gnomAD frequency</th>" in html, txt)
+    check("both reports: the low-confidence mark on the hit and the count beside the headline",
+          "call: low-confidence call (GQ 12, DP 6): check the reads" in txt
+          and "Low-confidence calls (GQ below 30 or DP below 10), listed but not counted above: 1" in txt
+          and "<td>low-confidence call (GQ 12, DP 6): check the reads</td>" in html, txt)
+    check("both reports: the frequency caveat covers heterozygous hits too",
+          all("a heterozygous hit in a dominant gene as well as a homozygous one" in t for t in (txt, html)))
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("call floor and AF: the summary validates", not errs, errs)
+    os.remove(f"{d}/vep/S_vep.vcf.gz.tbi")
+    cn = collect_summary.collect("S", d)["sections"]["clinvar"]["data"]
+    check("gnomAD AF: a VEP file without its .tbi leaves every AF unknown and says why",
+          all(h["af"] is None for h in cn["hits"]) and "no .tbi" in cn["frequency"]["note"], cn["frequency"])
+    shutil.rmtree(f"{d}/vep")
+    summ_n, txt_n, _ = render(d)
+    check("gnomAD AF: without step 13 the text report says the frequency is unknown and why",
+          "gnomAD AF: unknown for every hit (no VEP output (step 13) in this folder)" in txt_n, txt_n)
+
+
+CPSR_COLS = ("VAR_ID\tGENOMIC_CHANGE\tSYMBOL\tCLINVAR_CLASSIFICATION\tCPSR_CLASSIFICATION\tACMG_CODE\t"
+             "ASSERTION_AUTHORITY\tCLASSIFICATION\tDP_CONTROL\n")
+CPSR_ROWS = (
+    "13_32340300_G_A\t13:g.32340300G>A\tBRCA2\tPathogenic\tBenign\tBA1\tClinVar\tPathogenic\t40\n"
+    "17_43045700_C_T\t17:g.43045700C>T\tBRCA1\tLikely Pathogenic\tLikely Benign\tBS1\tClinVar\tLikely Pathogenic\t6\n"
+    "2_47800000_A_G\t2:g.47800000A>G\tMSH2\t\tLikely Pathogenic\tPVS1,PM2\tCPSR\tLikely Pathogenic\t30\n"
+    "5_112800000_T_C\t5:g.112800000T>C\tAPC\tBenign\tPathogenic\tPVS1,PM2\tClinVar\tBenign\t30\n"
+    "3_100_A_G\t3:g.100A>G\tMLH1\tVUS\tVUS\tPM2\tCPSR\tVUS\t30\n")
+
+
+class FakeRead:
+    """The pysam.AlignedSegment attributes bin/clip_check.py reads."""
+
+    def __init__(self, name, start, cigar, seq):
+        self.query_name, self.reference_start, self.cigartuples, self.query_sequence = name, start, cigar, seq
+        self.is_unmapped = self.is_secondary = self.is_duplicate = self.is_qcfail = self.is_read2 = False
+        self.is_read1 = True
+
+    def has_tag(self, tag):
+        return False
+
+
+def fake_pysam(pos0, exon_end):
+    """A pysam stand-in with two BAMs on contig chr13: 'spliced' has 8 alt
+    reads clipped at the exon end, 'genomic' 8 alt reads running on; both
+    have 6 genomic ref reads."""
+    def reads(kind):
+        out = [FakeRead(f"ref{i}", pos0 - 50 + i, [(0, 100)], "N" * (50 - i) + "G" + "N" * (49 + i)) for i in range(6)]
+        for i in range(8):
+            if kind == "spliced":
+                aligned = 70 + i
+                s = exon_end - aligned
+                out.append(FakeRead(f"alt{i}", s, [(0, aligned), (4, 100 - aligned)],
+                                    "N" * (pos0 - s) + "A" + "N" * (100 - (pos0 - s) - 1)))
+            else:
+                out.append(FakeRead(f"alt{i}", pos0 - 50 + i, [(0, 100)], "N" * (50 - i) + "A" + "N" * (49 + i)))
+        return out
+
+    class AlignmentFile:
+        references = ("chr13",)
+
+        def __init__(self, path):
+            self.kind = os.path.basename(path)
+
+        def fetch(self, contig, start, end):
+            return reads(self.kind) if contig == "chr13" else []
+    return types.SimpleNamespace(AlignmentFile=AlignmentFile)
+
+
+def cpsr_beside_clinvar(work, schema):
+    """22. CPSR's own class beside ClinVar's, its depth, its read check and release."""
+    d = os.path.join(work, "cpsr-compare", "S")
+    put(f"{d}/cpsr/S.cpsr.grch38.classification.tsv.gz", CPSR_COLS + CPSR_ROWS, gz=True)
+    put(f"{d}/cpsr/S.cpsr.grch38.html", "<html></html>\n")
+    put(f"{d}/clinvar/S_clinvar_hits.vcf", FLOOR_HITS)
+    put(f"{d}/cpsr/S_cpsr_cdna_check.tsv", "\t".join(clip_check.COLUMNS) + "\n"
+        "13\t32340300\tG\tA\t12\t0\t10\t0\tclear\t\n"
+        f"2\t47800000\tA\tG\t9\t8\t11\t0\tflagged\t{clip_check.FLAG_NOTE}\n")
+    put(f"{d}/run_manifest.tsv", "data\tclinvar_file_date\t20261001\ndata\tcpsr_clinvar_release\t20250309\n")
+    summ, txt, html = render(d)
+    c = summ["sections"]["cpsr"]["data"]
+    plp = [x["gene"] for x in c["plp"]]
+    dis = {x["gene"]: (x["clinvar"], x["cpsr"], x["acmg_codes"]) for x in c["disagreements"]}
+    check("CPSR: the P/LP rows by final or own class, not the VUS row", plp == ["BRCA2", "BRCA1", "MSH2", "APC"], plp)
+    check("CPSR: both directions of a ClinVar and CPSR disagreement, with CPSR's codes",
+          dis == {"BRCA2": ("Pathogenic", "Benign", "BA1"), "BRCA1": ("Likely Pathogenic", "Likely Benign", "BS1"),
+                  "APC": ("Benign", "Pathogenic", "PVS1,PM2")}, dis)
+    check("CPSR: two final P/LP rows that CPSR's own rules class benign or likely benign",
+          c["final_plp_own_benign"] == 2 and c["classification"] == {"Pathogenic": 1, "Likely Pathogenic": 2,
+                                                                     "Benign": 1, "VUS": 1}, c)
+    check("CPSR: the DP 6 row is low confidence against step 6's depth floor",
+          c["low_confidence"] == 1 and [x["gene"] for x in c["plp"] if x["low_confidence"]] == ["BRCA1"], c["plp"])
+    cd = {x["gene"]: x["cdna"]["check"] for x in c["plp"]}
+    check("CPSR: step 17's read check on each P/LP row, a row the table lacks not checked",
+          cd == {"BRCA2": "clear", "BRCA1": "not_checked", "MSH2": "flagged", "APC": "not_checked"}
+          and c["cdna_flagged"] == 1, cd)
+    check("CPSR: both reports print the disagreement with both classes and the codes",
+          all("BRCA2 13:32340300 G>A: final Pathogenic (ClinVar), ClinVar Pathogenic, CPSR's own Benign (BA1)"
+              in t.replace("&#x27;", "'").replace("&gt;", ">") for t in (txt, html)), txt)
+    check("CPSR: both reports print the two ClinVar releases",
+          all("ClinVar release in CPSR's bundle: 20250309; step 6 used the ClinVar file of 20261001"
+              in t.replace("&#x27;", "'") for t in (txt, html))
+          and summ["databases"]["cpsr_clinvar_release"] == "20250309", txt)
+    check("CPSR: both reports print the low-confidence row and the cDNA flag",
+          "Rows where ClinVar and CPSR's own class disagree on P/LP: 3" in txt
+          and "low-confidence call (DP 6): check the reads" in txt
+          and "cDNA read check of the P/LP rows (alt reads clipped at exon edges): 1 flagged" in txt, txt)
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("CPSR comparison: the summary validates", not errs, errs)
+    # Red control: one class column, nothing to compare.
+    put(f"{d}/cpsr/S.cpsr.grch38.classification.tsv.gz",
+        "VAR_ID\tSYMBOL\tCLASSIFICATION\n13_32340300_G_A\tBRCA2\tPathogenic\n5_112800000_T_C\tAPC\tBenign\n", gz=True)
+    summ1, txt1, _ = render(d)
+    c1 = summ1["sections"]["cpsr"]["data"]
+    check("CPSR: a table with one class column has no disagreement and says so",
+          c1["disagreements"] == [] and c1["own_class_column"] is None
+          and "has no CPSR_CLASSIFICATION column" in txt1, c1)
+
+    # bin/clip_check.py --cpsr, with a fake pysam
+    pos0 = 32340299
+    exon_end = pos0 + 30
+    put(f"{d}/exons.bed", f"chr13\t{pos0 - 30}\t{exon_end}\nchr13\t{pos0 + 3000}\t{pos0 + 3150}\n")
+    put(f"{d}/cls.tsv.gz", CPSR_COLS + CPSR_ROWS, gz=True)
+    keep = sys.modules.get("pysam")
+    sys.modules["pysam"] = fake_pysam(pos0, exon_end)
+    try:
+        got = {}
+        for kind in ("spliced", "genomic"):
+            out = f"{d}/{kind}.tsv"
+            with open(os.devnull, "w") as null:
+                so, sys.stdout = sys.stdout, null
+                try:
+                    rc = clip_check.main(["--cpsr", f"{d}/cls.tsv.gz", "--bam", f"{d}/{kind}", "--exons",
+                                          f"{d}/exons.bed", "--out", out])
+                finally:
+                    sys.stdout = so
+            rows = [line.rstrip("\n").split("\t") for line in open(out)][1:]
+            got[kind] = (rc, [(r[0], r[1], r[8]) for r in rows])
+    finally:
+        if keep is None:
+            sys.modules.pop("pysam", None)
+        else:
+            sys.modules["pysam"] = keep
+    check("clip_check --cpsr: the spliced reads at a P/LP row are flagged, CPSR's contig name kept",
+          got["spliced"][0] == 0 and got["spliced"][1][0] == ("13", "32340300", "flagged"), got)
+    check("clip_check --cpsr: genomic reads at the same row are clear",
+          got["genomic"][1][0] == ("13", "32340300", "clear"), got)
+    check("clip_check --cpsr: only the four P/LP rows are checked (not the VUS row)",
+          [r[0] for r in got["spliced"][1]] == ["13", "17", "2", "5"], got)
+
+
 def main():
     work = tempfile.mkdtemp()
     schema = json.load(open(os.path.join(REPO, "tests", "schema", "summary.schema.json")))
@@ -204,7 +479,8 @@ def main():
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
         check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td></tr>"), rows)
+              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td><td>gnomAD AF unknown</td><td></td></tr>"),
+              rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
         check("QC: mean depth 29.5x in both reports", "Mean depth: 29.5x" in txt and "29.5x" in html,
@@ -765,6 +1041,8 @@ def main():
         check("step 39: a single sample without the step has no not-run line for it",
               render(d)[0]["sections"]["couple"]["state"] == "missing"
               and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
+        clinvar_quality(work, schema)
+        cpsr_beside_clinvar(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

@@ -29,8 +29,8 @@ Checks:
      one whose chrX rows were scored is not; both captions, with a panel
      and without, carry the ancestry-transfer caveat of docs/25-prs.md;
   6. the ClinVar card: a homozygous 3-star P/LP hit gets no green badge,
-     no hit gets a gray one, and both reports say population frequency is
-     not checked; with step 06's cDNA read check table, both reports print
+     no hit gets a gray one, and both reports ask for every hit's population
+     frequency (heterozygous ones too) and say it is unknown without step 13; with step 06's cDNA read check table, both reports print
      the flag beside the flagged hit and "clear" beside the other, the HTML
      hits table gets its column and the card the flagged count; without the
      table (a Nextflow folder) there is no such column;
@@ -315,8 +315,11 @@ def main():
         badge_line = next((l for l in html.splitlines() if "ClinVar matches" in l), "")
         check("ClinVar: a homozygous 3-star P/LP hit gets no green badge", "badge-green" not in badge_line
               and 'badge-yellow">1<' in badge_line, badge_line)
-        freq = "Population frequency is not checked here. Look up a homozygous P/LP hit in gnomAD"
-        check("ClinVar: both reports say population frequency is not checked", freq in txt and freq in html, txt)
+        freq = "a heterozygous hit in a dominant gene as well as a homozygous one: a hit above 1% in gnomAD"
+        check("ClinVar: both reports ask for every hit's population frequency, not only a homozygous one's",
+              freq in txt and freq in html and "Look up a homozygous P/LP hit" not in txt + html, txt)
+        check("ClinVar: without step 13 both reports say the hit's frequency is unknown",
+              "frequency: gnomAD AF unknown" in txt and "<td>gnomAD AF unknown</td>" in html, txt)
         put(f"{d}/clinvar/S_clinvar_hits.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
         html0 = render_report.html_report(collect_summary.collect("S", d))
         check("ClinVar: no hit gets a gray badge, not a green all-clear",
