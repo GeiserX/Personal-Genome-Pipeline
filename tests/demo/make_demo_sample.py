@@ -20,7 +20,16 @@ Borrowed, not rewritten:
     fixtures of tests/fixtures/pgx;
   - step 33's table is written by `collect_summary.py sample-qc`, and step 25's
     PRS and ancestry tables by `collect_summary.py prs-format` and `prs-table`,
-    from made-up somalier, VerifyBamID2 and pgsc_calc files.
+    from made-up somalier, VerifyBamID2 and pgsc_calc files;
+  - step 33's mosaic rows come from bin/mosaic_sex_loss.py, step 26b's painting
+    from bin/ancestry_fine_report.py, step 35b's table from
+    bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
+    from bin/traits_report.py, each fed made-up inputs; steps 02, 40 and 41's
+    tables are written here in their writers' columns.
+
+DEMO-001 carries every section, so every card is in the pictures: also the
+Paraphase card (a PacBio HiFi step, though the invented reads are short) and
+the couple card, with an invented partner DEMO-002.
 
 The second form reads DIR/DEMO-001/summary.json (step 24 writes it) and fails
 when a section is not "ok", so a new report card that this script does not
@@ -628,6 +637,211 @@ def clinical(d, rng):
         f"<!DOCTYPE html><html><head><title>CPSR {SAMPLE}</title></head><body>Invented sample.</body></html>\n")
 
 
+# --- steps 02, 33 (mosaic), 26b, 35b, 39, 40, 41 and 42 ---------------------------------
+# The sections added since wave 18. Each table is written by the writer its
+# step uses (bin/*.py) from made-up inputs where that writer is a function,
+# else in the writer's own columns.
+
+def read_count(d):
+    """qc/S_read_count.tsv as read_count_check (scripts/lib/common.sh) writes it:
+    the BAM holds every read fastp kept, so the check is ok."""
+    with open(os.path.join(d, "fastq_trimmed", f"{SAMPLE}_fastp.json")) as f:
+        kept = json.load(f)["filtering_result"]["passed_filter_reads"]
+    r1 = r2 = kept // 2
+    src = (f"fastq_trimmed/{SAMPLE}_R1.fastq.gz {r1} records + fastq_trimmed/{SAMPLE}_R2.fastq.gz {r2} records")
+    put(os.path.join(d, "qc", f"{SAMPLE}_read_count.tsv"),
+        f"key\tvalue\ninput_reads\t{r1 + r2}\ninput_source\t{src}\nprimary_records\t{r1 + r2}\n"
+        "missing_reads\t0\nread_count_check\tok\n")
+
+
+def mosaic(d, rng):
+    """mosdepth's 500 bp windows (step 16b's regions.bed.gz), cut down to three
+    200 kb stretches of each autosome and the single-copy part of chrY, then
+    bin/mosaic_sex_loss.py itself adds its rows to step 33's table. One Y in
+    every cell: the ratio sits near 0.5 and no loss is detected."""
+    import mosaic_sex_loss
+    path = os.path.join(d, "mosdepth", f"{SAMPLE}.regions.bed.gz")
+    lines = []
+    for chrom, length in AUTOSOMES:
+        mean = MEAN_DEPTH * rng.uniform(0.98, 1.02)
+        for k in range(3):
+            start = (length // 4) * (k + 1) // 500 * 500
+            lines += [f"{chrom}\t{s}\t{s + 500}\t{max(0.0, rng.gauss(mean, mean * 0.12)):.2f}"
+                      for s in range(start, start + 200_000, 500)]
+    ymean = MEAN_DEPTH / 2 * rng.uniform(0.98, 1.0)
+    for start, end in mosaic_sex_loss.SINGLE_COPY["Y"]:
+        s0 = (start // 500 + 1) * 500
+        lines += [f"chrY\t{s}\t{s + 500}\t{max(0.0, rng.gauss(ymean, ymean * 0.14)):.2f}"
+                  for s in range(s0, end - 500, 500)]
+    put(path, "\n".join(lines) + "\n", gz=True)
+    if mosaic_sex_loss.main(["--table", os.path.join(d, "qc", f"{SAMPLE}_sample_qc.tsv"), "--regions", path]):
+        raise SystemExit("mosaic_sex_loss failed")
+
+
+def ancestry_fine(d, rng):
+    """Step 26b's table (ADMIXTURE fractions with their bootstrap range, then
+    the painted shares) and its painting, drawn by bin/ancestry_fine_report.py.
+    Mostly West Eurasian, as step 25's EUR placement above."""
+    import ancestry_fine_report as afr
+    continent = {"WEA": 0.942, "CSA": 0.031, "AFR": 0.012, "EAS": 0.008, "AMR": 0.005, "OCE": 0.002}
+    region = {"NWE": 0.463, "IBE": 0.274, "ITA": 0.118, "NEE": 0.052, "SAR": 0.009, "CAU": 0.011, "LEV": 0.008,
+              "BDN": 0.002, "NAF": 0.005, "CSA": 0.031, "WAF": 0.007, "EAF": 0.003, "CAF": 0.001, "SAF": 0.001,
+              "EAS": 0.006, "SIB": 0.002, "AMR": 0.005, "OCE": 0.002}
+    table = []
+    for level, fr in (("continent", continent), ("region", region)):
+        for code, f in sorted(fr.items(), key=lambda kv: -kv[1]):
+            se = max(0.002, math.sqrt(f * (1 - f)) * rng.uniform(0.04, 0.08))
+            table.append([level, code, afr.label(level, code), f"{f:.4f}", f"{se:.4f}",
+                          f"{max(0.0, f - 1.96 * se):.4f}", f"{min(1.0, f + 1.96 * se):.4f}"])
+    # The painting: each haplotype of chr1-22 in segments of 8 to 60 Mb, West
+    # Eurasian but for a few short ones.
+    rows = []
+    for i, n in enumerate(afr.CHROM_LEN):
+        for hap in (1, 2):
+            pos = rng.randint(200_000, 1_500_000)
+            while pos < n - 2_000_000:
+                end = min(n - rng.randint(200_000, 1_500_000), pos + rng.randint(8_000_000, 60_000_000))
+                code = "WEA" if rng.random() < 0.8 else rng.choice(["CSA", "CSA", "AFR"])
+                if code != "WEA":
+                    end = min(end, pos + rng.randint(3_000_000, 12_000_000))
+                rows.append([f"chr{i + 1}", pos, end, hap, code])
+                pos = end
+    _, shares = afr.painting_shares(rows)
+    table += [["painting", code, afr.label("continent", code), f"{sh:.4f}", ".", ".", "."]
+              for code, sh in sorted(shares.items(), key=lambda kv: -kv[1])]
+    out = os.path.join(d, "ancestry_fine")
+    os.makedirs(out, exist_ok=True)
+    afr.write_rows(os.path.join(out, f"{SAMPLE}_ancestry_fine.tsv"),
+                   ["level", "code", "group", "fraction", "se", "low", "high"], table)
+    with open(os.path.join(out, f"{SAMPLE}_painting.png"), "wb") as f:
+        f.write(afr.painting_png(rows))
+
+
+def paralogs(d):
+    """Step 35b: a Paraphase JSON with the usual copy numbers (two of each
+    gene, four in each gene family), as bin/paraphase_report.py tables it.
+    Paraphase reads PacBio HiFi; DEMO-001 carries the section so its card is
+    in the pictures."""
+    import paraphase_report as pr
+
+    def region(total, rsi, **kw):
+        return dict({"total_cn": total, "genome_depth": MEAN_DEPTH, "region_depth": {"median": (total or 4) * 15.6},
+                     "region_specific_info": rsi}, **kw)
+    data = {
+        "smn1": region(4, {"smn1_cn": 2, "smn2_cn": 2, "smn_del78_cn": 0}),
+        "hba": region(4, {"genotype": "aa/aa", "sv_called": {}},
+                      final_haplotypes={"1": "hba_hba2hap1", "2": "hba_hba2hap2", "3": "hba_hba1hap1",
+                                        "4": "hba_hba1hap2"}),
+        "rccx": region(4, {"annotated_alleles": ["WT", "WT"], "phasing_success": True}),
+        "GBA": region(4, {}, genes_in_region=["GBA1", "GBAP1"],
+                      final_haplotypes={"1": "GBA_gene1hap1", "2": "GBA_gene1hap2", "3": "GBA_gene2hap1",
+                                        "4": "GBA_gene2hap2"}),
+        "pms2": region(4, {"gene_cn": 2}),
+        "strc": region(4, {"gene_cn": 2}),
+        "ncf1": region(6, {"gene_cn": 2}),
+        "OTOA": region(4, {}, genes_in_region=["OTOA", "OTOAP1"],
+                       final_haplotypes={"1": "OTOA_gene1hap1", "2": "OTOA_gene1hap2", "3": "OTOA_gene2hap1",
+                                         "4": "OTOA_gene2hap2"}),
+        "CFC1": region(4, {}, genes_in_region=["CFC1", "CFC1B"]),
+        "NEB": region(6, {}, genes_in_region=["NEB"]),
+        "TNXB": region(None, {}, genes_in_region=["TNXB"]),
+    }
+    out = os.path.join(d, "paralogs")
+    os.makedirs(out, exist_ok=True)
+    pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_copy_number.tsv"), pr.CN_HEADER, pr.cn_table(data))
+    pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_variants.tsv"), pr.VARIANT_HEADER, [])
+
+
+def couple(d, rng):
+    """Step 39 with an invented partner, DEMO-002: each carries one change in a
+    different recessive gene of the carrier list, so no gene is shared and the
+    card names none. Rows by bin/couple_report.py's own screen_couple."""
+    import couple_report
+    genes = couple_report.read_genes(os.path.join(REPO, "assets", "carrier_genes.tsv"))
+    ar = sorted(g for g, v in genes.items() if v["inheritance"] == "AR" and "ACMG" in v["lists"])
+    found = {}
+    for who, gene in zip((SAMPLE, "DEMO-002"), rng.sample(ar, 2)):
+        g = genes[gene]
+        pos = rng.randint(int(g["start"]), int(g["end"]))
+        ref, alt = rng.sample("ACGT", 2)
+        text = f"{g['chrom']}:{pos} {ref}>{alt} het, Pathogenic, 2 stars"
+        found[who] = [couple_report.finding(gene, text, 1)]
+    rows = couple_report.screen_couple(SAMPLE, "DEMO-002", {SAMPLE: SEX, "DEMO-002": "female"}, found, genes)
+    os.makedirs(os.path.join(d, "couple"), exist_ok=True)
+    couple_report.write_table(os.path.join(d, "couple", f"{SAMPLE}_couple_carrier.tsv"), rows)
+
+
+def consumer_export(d):
+    """Step 40's summary table, in bin/export_consumer.py's rows: the pinned
+    site table keeps 614,138 of the chip list's 638,463 sites
+    (docs/40-export-consumer.md); the counts below are made up."""
+    sites, from_blocks, from_records = 614138, 470912, 140206
+    reasons = {"no gVCF record": 1954, "inside a deletion or a longer allele": 611, "filtered call": 309,
+               "no-call in the gVCF": 146}
+    called = from_blocks + from_records
+    assert sites - called == sum(reasons.values())
+    rows = [("sites", sites), ("called", called), ("no_call", sites - called), ("from_reference_blocks", from_blocks),
+            ("from_variant_records", from_records), ("reference_checked", from_records), ("reference_mismatch", 0),
+            ("template_sites", 638463), ("table_dropped", 24325), ("sex", SEX),
+            ("file_23andme", f"{SAMPLE}_23andme_v5.zip"), ("file_ancestrydna", f"{SAMPLE}_ancestrydna_layout.zip")]
+    rows += sorted((f"no_call: {k}", v) for k, v in reasons.items())
+    put(os.path.join(d, "consumer_export", f"{SAMPLE}_consumer_export.tsv"),
+        "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in rows))
+
+
+# Step 41's rows (bin/bloodtype_report.py's columns and spelling), a common
+# European set.
+BLOODTYPE = [
+    ("ABO", "A1", "A1/O.01", "high", ""),
+    ("RhD", "D+", "RHD/RHD (RHD copies by read depth 1.96)", "high",
+     "weak and partial D (RHD missense alleles) are not assessed"),
+    ("RhCE", "C+c+ E-e+", "C/c e/e", "high", ""),
+    ("Kell", "K-k+ Kp(a-b+) Js(a-b+)", "k/k Kpb/Kpb Jsb/Jsb", "high", ""),
+    ("Duffy", "Fy(a+b+)", "FY*A/FY*B", "high", ""),
+    ("Kidd", "Jk(a+b+)", "Jka/Jkb", "high", ""),
+    ("MNS", "M+N+ S-s+", "M/N s/s", "high", ""),
+    ("Lutheran", "Lu(a-b+)", "Lub/Lub", "high", ""),
+    ("Diego", "Di(a-b+)", "Dib/Dib", "high", ""),
+    ("Dombrock", "Do(a+b+)", "Doa/Dob", "medium", ""),
+    ("Colton", "Co(a+b-)", "Coa/Coa", "high", ""),
+    ("HPA-1", "HPA-1(a+b-)", "1a/1a", "high", ""),
+    ("HPA-2", "HPA-2(a+b-)", "2a/2a", "high", ""),
+    ("HPA-3", "HPA-3(a+b+)", "3a/3b", "high", ""),
+    ("HPA-4", "HPA-4(a+b-)", "4a/4a", "high", ""),
+    ("HPA-5", "HPA-5(a+b-)", "5a/5a", "high", ""),
+    ("HPA-15", "HPA-15(a+b+)", "15a/15b", "high", ""),
+]
+
+
+def bloodtype(d):
+    import bloodtype_report
+    names = [s for s, _ in bloodtype_report.SYSTEMS]
+    if [r[0] for r in BLOODTYPE] != names:
+        raise SystemExit(f"BLOODTYPE lists {[r[0] for r in BLOODTYPE]}, step 41 writes {names}")
+    os.makedirs(os.path.join(d, "bloodtype"), exist_ok=True)
+    bloodtype_report.write_tsv(os.path.join(d, "bloodtype", f"{SAMPLE}_bloodtype.tsv"),
+                               bloodtype_report.TABLE_HEADER,
+                               [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in BLOODTYPE])
+
+
+def traits(d, rng):
+    """Step 42: made-up genotypes at the panel's positions, read by
+    bin/traits_report.py. APOE e3/e3 (both sites reference), the rare alleles
+    absent, two positions without a genotype."""
+    import traits_report
+    rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
+    rare = {"rs145946881", "rs41380347", "rs41525747", "rs671", "rs1229984", "rs3827760"}
+    missing = set(rng.sample([r["rsid"] for r in rows if r["gene"] != "APOE"], 2))
+    recs = {}
+    for r in rows:
+        if r["rsid"] in missing:
+            continue
+        n = 0 if r["gene"] == "APOE" or r["rsid"] in rare else rng.choices([0, 1, 2], weights=[45, 40, 15])[0]
+        recs[(r["chrom"], r["pos"])] = [(r["ref"], [r["ref"]] * (2 - n) + [r["alt"]] * n)]
+    os.makedirs(os.path.join(d, "traits"), exist_ok=True)
+    traits_report.write_tsv(os.path.join(d, "traits", f"{SAMPLE}_traits.tsv"), traits_report.report(rows, recs))
+
+
 def run_status(d, started):
     """logs/run_status.tsv as run-all.sh writes it, every step ok."""
     lines = ["# run-all.sh: when this run started and how each step ended",
@@ -654,7 +868,12 @@ def make(a):
              ("pgx", lambda r: pgx(d, a.genome_dir, r)), ("prs", lambda r: prs(d, a.genome_dir, r)),
              ("coverage", lambda r: coverage(d, r)), ("sample_qc", lambda r: sample_qc(d)),
              ("reads", lambda r: reads(d, r)), ("structural", lambda r: structural(d, r)),
-             ("repeats", lambda r: repeats_and_more(d, r)), ("clinical", lambda r: clinical(d, r))]
+             ("repeats", lambda r: repeats_and_more(d, r)), ("clinical", lambda r: clinical(d, r)),
+             # after "reads" and "sample_qc", whose files these two read
+             ("read_count", lambda r: read_count(d)), ("mosaic", lambda r: mosaic(d, r)),
+             ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
+             ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
+             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
