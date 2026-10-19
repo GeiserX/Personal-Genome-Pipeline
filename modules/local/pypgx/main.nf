@@ -9,7 +9,15 @@
 
     CYP2D6 copy number comes from read depth: the depth CYP2D6_DEPTH measured
     is judged first (bin/cyp2d6_depth_check.py), and when the reads there are
-    multi-mapped the summary's CYP2D6 row says Indeterminate.
+    multi-mapped the summary's CYP2D6 row says Indeterminate. Beside the
+    verdict, the check gives the MAPQ >= 20 and gene-body (without REP6)
+    shares it counts from the BAM.
+
+    The summary is bin/pgx_outside_calls.py pypgx-summary, as in the bash
+    step: the defining variants of each call looked up in the VCF, a call
+    resting on one below the GQ floor (task.ext.gq_floor, default 20) marked
+    'low-confidence: check the reads', and GSTT1 'not callable on this
+    reference' on a BAM without its ALT contig.
 
     Equivalent to: scripts/32-pypgx.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,12 +47,20 @@ process PYPGX {
     script:
     def bam_genes = "CYP2D6 CYP2A6 GSTM1 GSTT1"
     def vcf_genes = "CYP1A2 CYP2B6 CYP2C9 CYP2C19 CYP3A4 CYP3A5 CYP4F2 DPYD TPMT NUDT15 UGT1A1 SLCO1B1 VKORC1 NAT2 COMT MTHFR ABCB1 G6PD IFNL3"
+    def gq_floor = task.ext.gq_floor ?: 20
     """
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
 
-    # CYP2D6 depth check (CYP2D6_DEPTH measured it)
-    cyp2d6_depth_check.py check --all ${depth_q0} --mapq1 ${depth_q1} --out ${meta.id}_cyp2d6_depth_check.tsv
+    # CYP2D6 depth check (CYP2D6_DEPTH measured it), with the MAPQ >= 20 and
+    # gene-body shares counted here from the BAM, as scripts/32-pypgx.sh does
+    MEASURE=""
+    if cyp2d6_depth_check.py measure --bam ${bam} --out cyp2d6_mapq_shares.tsv && [ -s cyp2d6_mapq_shares.tsv ]; then
+        MEASURE="--measure cyp2d6_mapq_shares.tsv"
+    else
+        echo "WARNING: the MAPQ >= 20 and gene-body depth at CYP2D6 was not measured; the check says 'not measured'"
+    fi
+    cyp2d6_depth_check.py check --all ${depth_q0} --mapq1 ${depth_q1} \$MEASURE --out ${meta.id}_cyp2d6_depth_check.tsv
     DEPTH_STATUS=\$(awk -F'\\t' '\$1 == "status" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)
 
     # pypgx reads its bundle from ~/pypgx-bundle. HOME is the task directory,
@@ -65,11 +81,18 @@ process PYPGX {
     # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a
     # reference without ALT contigs (the default) has no such contig, and
     # depth preparation then fails for every SV gene. Leave GSTT1 out in that
-    # case and say so, as scripts/32-pypgx.sh does.
-    if ! python3 -c "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 1)" ${bam}; then
-      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
-      BAM_GENES=\$(echo "\$BAM_GENES" | tr " " "\\n" | grep -vx GSTT1 | tr "\\n" " ")
-      FAILED="\${FAILED} GSTT1"
+    # case: the summary says it is not callable on this reference, as
+    # scripts/32-pypgx.sh does.
+    NOT_CALLABLE=""
+    rc=0
+    python3 -c "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 3)" ${bam} || rc=\$?
+    if [ "\$rc" = 3 ]; then
+      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 is not callable on this reference and is skipped"
+      BAM_GENES="CYP2D6 CYP2A6 GSTM1"
+      NOT_CALLABLE="--not-callable GSTT1"
+    elif [ "\$rc" != 0 ]; then
+      echo "ERROR: could not read the contigs of ${bam} (exit \$rc)" >&2
+      exit 1
     fi
 
     # Phase 1: Prepare depth of coverage for SV genes
@@ -124,94 +147,28 @@ process PYPGX {
     [ -n "\$FAILED" ] && echo "Failed genes:\${FAILED}"
     [ "\$SUCCEEDED" -gt 0 ] || exit 1
 
-    # Consolidate results into summary TSV
-    python3 -c "
-import os, sys, subprocess, csv
-
-outbase = '\$OUTBASE'
-bam_genes = '${bam_genes}'.split()
-vcf_genes = '${vcf_genes}'.split()
-all_genes = bam_genes + vcf_genes
-
-summary_path = '${meta.id}_pypgx_summary.tsv'
-rows = []
-
-# pypgx writes Indeterminate for a gene it has no phenotype rule for (no
-# PhenotypeMethod in its own gene table): say that instead, as
-# scripts/32-pypgx.sh does.
-try:
-    import pypgx
-    no_rule = {g for g in all_genes if not pypgx.has_phenotype(g)}
-except Exception as e:
-    print(f'WARNING: could not read pypgx gene table ({e}); phenotypes left as pypgx wrote them', file=sys.stderr)
-    no_rule = set()
-
-for gene in all_genes:
-    results_zip = f'{outbase}/{gene}/results.zip'
-    if not os.path.isfile(results_zip):
-        rows.append([gene, 'FAILED', 'N/A', 'N/A', 'BAM' if gene in bam_genes else 'VCF'])
-        continue
-
-    diplotype = 'N/A'
-    phenotype = 'N/A'
-    try:
-        out = subprocess.run(
-            ['pypgx', 'print-data', results_zip],
-            capture_output=True, text=True
-        )
-        if out.returncode == 0:
-            lines = out.stdout.rstrip().split('\\n')
-            if len(lines) >= 2:
-                headers = lines[0].split('\\t')
-                values = lines[1].split('\\t')
-                if 'Genotype' in headers:
-                    idx = headers.index('Genotype')
-                    if idx < len(values):
-                        diplotype = values[idx]
-                if 'Phenotype' in headers:
-                    idx = headers.index('Phenotype')
-                    if idx < len(values):
-                        phenotype = values[idx]
-                if gene in no_rule:
-                    phenotype = 'no pypgx phenotype rule'
-    except Exception as e:
-        print(f'WARNING: Error extracting {gene}: {e}', file=sys.stderr)
-
-    source = 'BAM' if gene in bam_genes else 'VCF'
-    if gene in bam_genes:
-        sv_detected = 'Yes' if any(x in (diplotype or '') for x in ['DEL', 'DUP', 'x2', 'x3', '*5']) else 'No'
-    else:
-        sv_detected = 'N/A'
-    rows.append([gene, diplotype, phenotype, sv_detected, source])
-
-with open(summary_path, 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\\t')
-    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'SV_detected', 'Source'])
-    w.writerows(rows)
-
-called = sum(1 for r in rows if r[1] != 'FAILED')
-print(f'Summary: {called}/{len(rows)} genes called')
-"
+    # Consolidate results into the summary TSV, as scripts/32-pypgx.sh does
+    pgx_outside_calls.py pypgx-summary --outbase "\$OUTBASE" --bam-genes "${bam_genes}" --vcf-genes "${vcf_genes}" \\
+        --vcf ${vcf} --gq-floor ${gq_floor} \$NOT_CALLABLE --out ${meta.id}_pypgx_summary.tsv
 
     # A CYP2D6 call from multi-mapped depth is not a call: the row says so
     # (the call stays in CYP2D6/results.zip), as scripts/32-pypgx.sh does.
     if [ "\$DEPTH_STATUS" != ok ]; then
-        awk -F'\\t' -v OFS='\\t' '\$1 == "CYP2D6" {\$2 = "Indeterminate"; \$3 = "Indeterminate (CYP2D6 depth check)"} {print}' \\
+        awk -F'\\t' -v OFS='\\t' '\$1 == "CYP2D6" {\$2 = "Indeterminate"; \$3 = "Indeterminate (CYP2D6 depth check)"; \$4 = "N/A (CYP2D6 depth check)"; \$6 = "no call (CYP2D6 depth check)"} {print}' \\
             ${meta.id}_pypgx_summary.tsv > summary.tmp
         mv summary.tmp ${meta.id}_pypgx_summary.tsv
         echo "WARNING: \$(awk -F'\\t' '\$1 == "message" {print \$2}' ${meta.id}_cyp2d6_depth_check.tsv)"
     fi
 
-    # printf, not a here-document: the column-0 lines above stop Nextflow
-    # from stripping this script's indent, and an indented END_VERSIONS
-    # would not end a <<- here-document.
+    # printf, not a here-document: it writes the same file whether or not
+    # Nextflow strips this script's indent.
     printf '"%s":\\n    pypgx: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
     mkdir -p ${meta.id}_pypgx_results
-    printf 'Gene\\tDiplotype\\tPhenotype\\tSV_detected\\tSource\\n' > ${meta.id}_pypgx_summary.tsv
+    printf 'Gene\\tDiplotype\\tPhenotype\\tCNV_call\\tSource\\tStatus\\tDefining_variants\\tMin_GQ\\tWeakest_variant\\tDefining_filter\\tQuality\\n' > ${meta.id}_pypgx_summary.tsv
     printf 'metric\\tvalue\\nstatus\\tok\\nmessage\\tstub\\n' > ${meta.id}_cyp2d6_depth_check.tsv
 
     cat <<-END_VERSIONS > versions.yml

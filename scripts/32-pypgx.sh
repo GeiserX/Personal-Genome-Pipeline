@@ -9,6 +9,12 @@
 # When the reads there are multi-mapped (a BAM aligned to a reference with
 # ALT contigs), the summary's CYP2D6 row says Indeterminate instead of the
 # call, and <sample>_cyp2d6_depth_check.tsv says why.
+#
+# The summary (bin/pgx_outside_calls.py pypgx-summary) also looks up, for each
+# star allele called, the variants that define it in the VCF, and marks a call
+# 'low-confidence: check the reads' when one of them has a GQ below
+# PYPGX_GQ_FLOOR (default 20). GSTT1, which GRCh38 has only on an ALT contig,
+# is 'not callable on this reference' on a BAM without that contig.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -73,12 +79,18 @@ if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
   exit 1
 fi
 
+GQ_FLOOR=${PYPGX_GQ_FLOOR:-20}
+[[ "$GQ_FLOOR" =~ ^[0-9]+$ ]] || { echo "ERROR: PYPGX_GQ_FLOOR must be a whole number, got '${GQ_FLOOR}'" >&2; exit 1; }
+
 # CYP2D6 depth check: mosdepth over CYP2D6 and its flanks, all reads and
 # MAPQ >= 1, judged by bin/cyp2d6_depth_check.py (the regions come from it too).
+# Beside the verdict, `measure` counts the MAPQ >= 20 depth and the gene body
+# without REP6 from the BAM (pysam, in the pypgx image, as the PYPGX module does).
 DEPTH_DIR="${OUTPUT_DIR}/cyp2d6_depth"
 CHECK="${OUTPUT_DIR}/${SAMPLE}_cyp2d6_depth_check.tsv"
+SHARES="${DEPTH_DIR}/mapq_shares.tsv"
 mkdir -p "$DEPTH_DIR"
-rm -f "$CHECK"
+rm -f "$CHECK" "$SHARES"
 echo "CYP2D6 depth check..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/cyp2d6_depth_check.py bed > "${DEPTH_DIR}/regions.bed"
@@ -87,11 +99,20 @@ for Q in 0 1; do
     mosdepth -n -c chr22 -t 2 -Q "$Q" -b "$(cpath "${DEPTH_DIR}/regions.bed")" \
       "$(cpath "${DEPTH_DIR}/q${Q}")" "$(cpath "$BAM")"
 done
+MEASURE=()
+if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYPGX_IMAGE}" \
+     python3 /pgp-bin/cyp2d6_depth_check.py measure --bam "$(cpath "$BAM")" --out "$(cpath "$SHARES")" \
+   && [ -s "$SHARES" ]; then
+  MEASURE=(--measure "$(cpath "$SHARES")")
+else
+  echo "WARNING: the MAPQ >= 20 and gene-body depth at CYP2D6 was not measured; the check says 'not measured'"
+  rm -f "$SHARES"
+fi
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/cyp2d6_depth_check.py check \
     --all "$(cpath "${DEPTH_DIR}/q0.regions.bed.gz")" \
     --mapq1 "$(cpath "${DEPTH_DIR}/q1.regions.bed.gz")" \
-    --out "$(cpath "$CHECK")"
+    "${MEASURE[@]}" --out "$(cpath "$CHECK")"
 # A check that wrote nothing counts as failed: CYP2D6 is then Indeterminate.
 DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || true)
 
@@ -101,6 +122,22 @@ DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || tr
 #   CYP4F2, DPYD, TPMT, NUDT15, UGT1A1, SLCO1B1, VKORC1, NAT2, COMT, MTHFR, ABCB1, G6PD, IFNL3
 BAM_GENES="CYP2D6 CYP2A6 GSTM1 GSTT1"
 VCF_GENES="CYP1A2 CYP2B6 CYP2C9 CYP2C19 CYP3A4 CYP3A5 CYP4F2 DPYD TPMT NUDT15 UGT1A1 SLCO1B1 VKORC1 NAT2 COMT MTHFR ABCB1 G6PD IFNL3"
+
+# GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a reference
+# without ALT contigs has no such contig, and depth preparation then fails for
+# every SV gene. Leave GSTT1 out in that case: the summary says it is not
+# callable on this reference (a property of the reference, not a tool error).
+NOT_CALLABLE="" CALL_BAM_GENES=$BAM_GENES
+rc=0
+run_in "${PYPGX_IMAGE}" python3 -c \
+  "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 3)" \
+  "$(cpath "$BAM")" || rc=$?
+case "$rc" in
+  0) ;;
+  3) echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 is not callable on this reference and is skipped"
+     NOT_CALLABLE=GSTT1 CALL_BAM_GENES="CYP2D6 CYP2A6 GSTM1" ;;
+  *) echo "ERROR: could not read the contigs of ${BAM} (exit ${rc})" >&2; exit 1 ;;
+esac
 
 echo ""
 echo "Running pypgx for $(echo "$BAM_GENES" "$VCF_GENES" | wc -w | tr -d ' ') genes..."
@@ -122,7 +159,7 @@ run_in --cpus 4 --memory 8g \
   "${PYPGX_IMAGE}" \
   bash -c '
     SAMPLE="'"${SAMPLE}"'"
-    BAM_GENES="'"${BAM_GENES}"'"
+    BAM_GENES="'"${CALL_BAM_GENES}"'"
     VCF_GENES="'"${VCF_GENES}"'"
     OUTBASE="/genome/${SAMPLE}/pypgx"
     BAM="/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
@@ -131,15 +168,6 @@ run_in --cpus 4 --memory 8g \
     CTRL="${OUTBASE}/control_statistics.zip"
     FAILED=""
     SUCCEEDED=0
-
-    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a reference
-    # without ALT contigs has no such contig, and depth preparation then fails for
-    # every SV gene. Leave GSTT1 out in that case and say so.
-    if ! python3 -c "import pysam, sys; sys.exit(0 if \"chr22_KI270879v1_alt\" in pysam.AlignmentFile(sys.argv[1]).references else 1)" "$BAM"; then
-      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 cannot be called from depth and is skipped"
-      BAM_GENES=$(echo "$BAM_GENES" | tr " " "\n" | grep -vx GSTT1 | tr "\n" " ")
-      FAILED="${FAILED} GSTT1"
-    fi
 
     # Phase 1: Prepare depth of coverage for the SV genes (one-time, from BAM)
     echo "--- Preparing depth of coverage for SV genes: ${BAM_GENES} ---"
@@ -202,85 +230,26 @@ run_in --cpus 4 --memory 8g \
 echo ""
 echo "Extracting results and building summary..."
 
-# Consolidate per-gene results into a summary TSV. It is written as .partial
+# Consolidate per-gene results into a summary TSV (bin/pgx_outside_calls.py
+# pypgx-summary, the same code as the PYPGX module). It is written as .partial
 # and renamed only after the depth check's verdict is applied below, so a run
 # that stops in between never leaves an unchecked CYP2D6 call for step 36.
+SUMMARY="${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv"
+NC_ARG=()
+[ -z "$NOT_CALLABLE" ] || NC_ARG=(--not-callable "$NOT_CALLABLE")
 run_in --cpus 2 --memory 4g \
   -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
+  -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
   "${PYPGX_IMAGE}" \
-  python3 -c "
-import os, sys, csv, subprocess
-
-sample = '${SAMPLE}'
-outbase = f'/genome/{sample}/pypgx'
-bam_genes = '${BAM_GENES}'.split()
-vcf_genes = '${VCF_GENES}'.split()
-all_genes = bam_genes + vcf_genes
-
-summary_path = f'{outbase}/{sample}_pypgx_summary.tsv'
-rows = []
-
-# pypgx writes Indeterminate for a gene it has no phenotype rule for (no
-# PhenotypeMethod in its own gene table): say that instead, so the label is
-# not read as an undecided call. The PYPGX module does the same.
-try:
-    import pypgx
-    no_rule = {g for g in all_genes if not pypgx.has_phenotype(g)}
-except Exception as e:
-    print(f'WARNING: could not read pypgx gene table ({e}); phenotypes left as pypgx wrote them', file=sys.stderr)
-    no_rule = set()
-
-for gene in all_genes:
-    results_zip = f'{outbase}/{gene}/results.zip'
-    if not os.path.isfile(results_zip):
-        rows.append([gene, 'FAILED', 'N/A', 'N/A', 'BAM' if gene in bam_genes else 'VCF'])
-        continue
-
-    diplotype = 'N/A'
-    phenotype = 'N/A'
-    cnv = 'N/A'
-    source = 'BAM' if gene in bam_genes else 'VCF'
-    # pypgx print-data results.zip outputs a TSV whose first column is the sample
-    # and whose named columns include Genotype, Phenotype and CNV (the copy-number
-    # call pypgx made from read depth, e.g. Normal or WholeDel1).
-    out = subprocess.run(['pypgx', 'print-data', results_zip], capture_output=True, text=True)
-    if out.returncode != 0:
-        print(f'WARNING: pypgx print-data failed for {gene}: {out.stderr.strip()}', file=sys.stderr)
-    else:
-        lines = out.stdout.rstrip().split('\n')
-        if len(lines) >= 2:
-            headers = lines[0].split('\t')
-            values = lines[1].split('\t')
-            def col(name):
-                if name in headers and headers.index(name) < len(values):
-                    return values[headers.index(name)]
-                return None
-            diplotype = col('Genotype') or 'N/A'
-            phenotype = col('Phenotype') or 'N/A'
-            if gene in no_rule:
-                phenotype = 'no pypgx phenotype rule'
-            # Copy number is called from read depth, so it is meaningful only for the
-            # BAM-based genes. Report pypgx's own value, never a guess from allele names.
-            if source == 'BAM':
-                cnv = col('CNV')
-                if cnv is None:
-                    print(f'WARNING: {gene} results have no CNV column', file=sys.stderr)
-                    cnv = 'N/A'
-    rows.append([gene, diplotype, phenotype, cnv, source])
-
-with open(summary_path + '.partial', 'w', newline='') as f:
-    w = csv.writer(f, delimiter='\t', lineterminator='\n')
-    w.writerow(['Gene', 'Diplotype', 'Phenotype', 'CNV_call', 'Source'])
-    w.writerows(rows)
-
-print(f'Genes called: {sum(1 for r in rows if r[1] != \"FAILED\")}/{len(rows)}')
-" 2>&1
+  python3 /pgp-bin/pgx_outside_calls.py pypgx-summary \
+    --outbase "$(cpath "$OUTPUT_DIR")" --bam-genes "$BAM_GENES" --vcf-genes "$VCF_GENES" \
+    --vcf "$(cpath "$VCF")" --gq-floor "$GQ_FLOOR" "${NC_ARG[@]}" \
+    --out "$(cpath "${SUMMARY}.partial")" 2>&1
 
 # A CYP2D6 call from multi-mapped depth is not a call: the row says so; the
 # call itself stays in CYP2D6/results.zip.
-SUMMARY="${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv"
 if [ "$DEPTH_STATUS" != ok ] && [ -f "${SUMMARY}.partial" ]; then
-  awk -F'\t' -v OFS='\t' '$1 == "CYP2D6" {$2 = "Indeterminate"; $3 = "Indeterminate (CYP2D6 depth check)"} {print}' \
+  awk -F'\t' -v OFS='\t' '$1 == "CYP2D6" {$2 = "Indeterminate"; $3 = "Indeterminate (CYP2D6 depth check)"; $4 = "N/A (CYP2D6 depth check)"; $6 = "no call (CYP2D6 depth check)"} {print}' \
     "${SUMMARY}.partial" > "${SUMMARY}.tmp"
   mv "${SUMMARY}.tmp" "${SUMMARY}.partial"
   MSG=$(awk -F'\t' '$1 == "message" {print $2}' "$CHECK" 2>/dev/null || true)

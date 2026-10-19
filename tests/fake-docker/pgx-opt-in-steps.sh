@@ -61,12 +61,10 @@ case "$args" in
       exit 1
     fi
     put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\tNone\tNot_assigned_to_haplotypes\n' ;;
-  *"summary_path = "*)
-    # Step 32's summary, at the path its Python opens.
-    suffix=""
-    case "$args" in *"summary_path + '.partial'"*) suffix=.partial ;; esac
-    put "/genome/sample1/pypgx/sample1_pypgx_summary.tsv${suffix}" \
-      'Gene\tDiplotype\tPhenotype\tCNV_call\tSource\nCYP2D6\t*1/*2\tNormal Metabolizer\tNormal\tBAM\n'
+  *"pgx_outside_calls.py pypgx-summary"*)
+    # Step 32's summary, at the path it names with --out.
+    put "$(opt --out)" \
+      'Gene\tDiplotype\tPhenotype\tCNV_call\tSource\tStatus\nCYP2D6\t*1/*2\tNormal Metabolizer\tNormal\tBAM\tcalled\n'
     [ ! -e "${CASE_WORK}/interrupt" ] || exit 1 ;;
 esac
 exec "${CASE_WORK}/hook-outputs" "$@"
@@ -146,7 +144,7 @@ git -C "$BUNDLE" -c user.name=case -c user.email=case@example.invalid commit -q 
 git -C "$BUNDLE" tag "$PYPGX_BUNDLE_VERSION"
 SUMMARY="${G}/sample1/pypgx/sample1_pypgx_summary.tsv"
 run_expect 0 pypgx-unreliable "${SCRIPTS}/32-pypgx.sh" sample1
-[ "$(awk -F'\t' '$1 == "CYP2D6" {print $2}' "$SUMMARY" 2>/dev/null)" = Indeterminate ] \
+[ "$(awk -F'\t' '$1 == "CYP2D6" {print $2 "|" $6}' "$SUMMARY" 2>/dev/null)" = "Indeterminate|no call (CYP2D6 depth check)" ] \
   || fail "step 32 did not mark CYP2D6 Indeterminate after a failed depth check: $(cat "$SUMMARY" 2>/dev/null)"
 [ ! -e "${SUMMARY}.partial" ] || fail "step 32 left its partial summary behind"
 touch "${CASE_WORK}/interrupt"
