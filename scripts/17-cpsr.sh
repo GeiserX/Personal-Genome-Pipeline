@@ -65,7 +65,9 @@ CPSR_ID=$(sh "${PGP_ROOT}/bin/cpsr_sample_id" "$SAMPLE")
 # (CPSR_CLASSIFICATION), so 2.2's --classify_all is gone (2.3 refuses it).
 # The final class (CLASSIFICATION, source in ASSERTION_AUTHORITY) is
 # ClinVar's unless ClinVar has no record or a conflicted one: the default
-# --clinvar_trust_level 0.
+# --clinvar_trust_level 0. The reports (bin/collect_summary.py) count the
+# final class and list every row where CPSR's own class and ClinVar's
+# disagree on P/LP.
 
 # ACMG secondary findings (genes outside CPSR's cancer panels, such as cardiac
 # and metabolic ones) are reported unless CPSR_SECONDARY_FINDINGS=false: some
@@ -98,6 +100,34 @@ run_in --root --cpus 4 --memory 8g \
     --force_overwrite
 sh "${PGP_ROOT}/bin/cpsr_sample_id" --rename "$OUTPUT_DIR" "$SAMPLE"
 
+# The cDNA read check of step 06 on CPSR's P/LP rows (final class or CPSR's
+# own): spliced cDNA or expression-vector DNA in the sample gives alt reads
+# clipped exactly at an exon edge, and CPSR classes a novel variant such a
+# construct carries like any other. bin/clip_check.py --cpsr reads the rows
+# from the classification table and writes ${SAMPLE}_cpsr_cdna_check.tsv,
+# which the reports put beside each row. Same BAM and exons as step 06.
+CLASS_TSV="${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.classification.tsv.gz"
+CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_cpsr_cdna_check.tsv"
+BAM="${SAMPLE_DIR}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
+EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+if [ ! -s "$CLASS_TSV" ]; then
+  rm -f "$CDNA_TSV"
+  echo "cDNA read check: skipped, CPSR wrote no classification table"
+else
+  if [ ! -f "$BAM" ] || [ ! -f "${BAM}.bai" ]; then
+    CDNA_ARGS=(--skip "no BAM (${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam with its .bai)")
+  elif [ ! -s "$EXONS_BED" ]; then
+    CDNA_ARGS=(--skip "no GENCODE exons (scripts/setup.sh installs them)")
+  else
+    CDNA_ARGS=(--bam "$(cpath "$BAM")" --exons "$(cpath "$EXONS_BED")")
+  fi
+  # pysam is in PYPGX_IMAGE.
+  run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
+    python3 /pgp-bin/clip_check.py --cpsr "$(cpath "$CLASS_TSV")" --out "$(cpath "${CDNA_TSV}.part")" "${CDNA_ARGS[@]}"
+  mv "${CDNA_TSV}.part" "$CDNA_TSV"
+fi
+
 echo "=== CPSR complete ==="
 echo "HTML report: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.html"
 echo "Variant table: ${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.classification.tsv.gz"
+[ ! -f "$CDNA_TSV" ] || echo "cDNA read check: ${CDNA_TSV}"
