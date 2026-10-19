@@ -239,9 +239,9 @@ process CLINVAR_CDNA_CHECK {
     script:
     def reads = !bam ? "--skip 'no BAM for this sample in the samplesheet'" :
                 !exons ? "--skip 'no GENCODE exons (--gencode_exons)'" :
-                "--bam ${bam} --exons ${exons}"
+                "--bam '${bam}' --exons '${exons}'"
     """
-    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
+    clip_check.py --hits '${hits_tsv}' --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
