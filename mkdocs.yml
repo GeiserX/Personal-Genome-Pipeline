@@ -128,11 +128,11 @@ exclude_docs: |
   requirements-docs.txt
 
 # Every page, grouped by what a reader is doing. The nav title equals the
-# page's H1, except where one page holds two steps (35 and 35b) or a step
-# lives in a guide (38, in multi-sample.md, listed twice). Step pages are
-# grouped by pipeline stage; the numbers stay in the titles because the
+# page's H1, except where one page holds two steps (35 and 35b). Step pages
+# are grouped by pipeline stage; the numbers stay in the titles because the
 # scripts, the output directories and every other page refer to steps by
-# number.
+# number. Step 38 lives in the multi-sample guide, reached from the step
+# table.
 nav:
   - Home: index.md
   - Get started:
@@ -167,7 +167,6 @@ nav:
           - "Step 17: Cancer Predisposition Screening with CPSR": 17-cpsr.md
           - "Step 23: Clinical Variant Filter": 23-clinical-filter.md
           - "Step 35 and 35b: Paralog Genes (Parascopy, Paraphase)": 35-paralogs.md
-          - "Step 38: Family Analysis": multi-sample.md
           - "Step 39: Couple Carrier Screen": 39-couple.md
           - "Step 29: Somatic Variant Calling (Mutect2 Tumor-Only) [EXPERIMENTAL]": 29-mutect2-somatic.md
           - "Step 30: Annotation Enrichment (vcfanno)": 30-vcfanno.md
