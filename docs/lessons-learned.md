@@ -466,6 +466,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** Nextflow 26.04.7, and still 26.10.0, reads `maxRetries` as `result ? result as int : 1` (`TaskConfig.getMaxRetries`). Zero is false in Groovy, so `maxRetries = 0` means one retry.
 - **Fix:** the PRS steps set `errorStrategy = 'finish'` on `FORMAT_SCOREFILES`, which never retries. To turn retries off for a process, set its `errorStrategy`, not `maxRetries`.
 
+### A PRS summary with a `Variants_Used` column comes from the old scoring path
+- **Failed:** before 2026-10-01 step 25 scored with plink2 directly and wrote `<sample>_prs_summary.tsv` with the columns `Condition`, `PGS_ID`, `Score`, `Variants_Used`, `Variants_Total`. `Score` held plink2's `SCORE1_AVG` (an average, not the sum), `Variants_Used` held `NAMED_ALLELE_DOSAGE_SUM` (a dosage sum, not a count of matched variants), and the condition labels came from a hard-coded list that named PGS000738, a vitiligo score, as schizophrenia.
+- **Why:** the script read the last two columns of plink2's `.sscore` by position and took the labels from its own list instead of the PGS Catalog.
+- **Fix:** the summary now has `Score_SUM` and `Variants_Matched` and labels each score with the catalog's trait. Such old files can still sit in a sample folder. Do not reuse them or compare them with new ones: a header with `Variants_Used` marks one. Rerun step 25 instead ([Keeping versions up to date](updating.md#what-to-check-by-hand)).
+
 ## Fine-grained ancestry (2026-10)
 
 ### ADMIXTURE's bootstrap crashes when it is combined with projection
@@ -511,3 +516,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** the build's failure message said the dbSNP download was kept and to run the command again, but the rerun started the 30 GB download from zero.
 - **Why:** `fetch` always downloads into `<name>.part` and renames it when the checksum matches. It never looks at a finished file under the final name, so the kept file was not used.
 - **Fix:** `install_consumer_sites` skips the download when the finished file exists. That file is whole: only `fetch` writes it, after the md5 matched.
+
+## Pharmacogenomics from the gVCF (2026-10)
+
+### PharmCAT sets aside a one-base record at a position longer than one base
+- **Failed:** after step 7 expanded the gVCF's reference blocks into one record per base, the alleles PharmCAT defines by an indel (DPYD, UGT1A1 \*28, TPMT, CYP3A4 and others) stayed uncallable, even where the gVCF showed the reference over the whole span.
+- **Why:** PharmCAT 3.4.0's preprocessor does not read a one-base 0/0 record as a call at a position whose REF or ALT is longer than one base. It sets the record aside with FILTER `PCATxINDEL` (or `PCATxREF` for a two-base substitution) and lists the position as missing; where PharmCAT's REF is longer than one base, the matcher then discards it.
+- **Fix:** `bin/pgx_refblock_fill.py` writes PharmCAT's own record (its ID, REF and ALT) as 0/0 at each such position when every base of the span lies in reference blocks with GQ 20 or more and nothing else overlaps it. The details are in [Pharmacogenomics, Input the preprocessor or PharmCAT refuses](07-pharmacogenomics.md#input-the-preprocessor-or-pharmcat-refuses).
