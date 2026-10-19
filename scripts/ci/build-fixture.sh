@@ -95,7 +95,16 @@ REGIONS=(
   "chrX:73700000-74000000"    # non-PAR chrX (XIST)
   "chrX:1000000-1200000"      # PAR1
   "chrY:2700000-3000000"      # non-PAR chrY (SRY, RPS4Y1, ZFY)
-  "chrM"                      # whole mitochondrial genome
+  # Five more 200 kb stretches of chrY, each inside a different single-copy
+  # piece of bin/mosaic_sex_loss.py's SINGLE_COPY, so step 33's estimate of
+  # a mosaic loss of Y reads about 120 blocks over six pieces instead of 22
+  # blocks of one (tests/e2e/mosaic-loy-lox-1.sh).
+  "chrY:6800000-7000000"      # TBL1Y
+  "chrY:12600000-12800000"    # USP9Y
+  "chrY:14600000-14800000"    # NLGN4Y
+  "chrY:19600000-19800000"    # KDM5D
+  "chrY:20500000-20700000"    # EIF1AY
+  "chrM"                    # whole mitochondrial genome
 )
 CONTIGS=(chr1 chr2 chr4 chr5 chr6 chr10 chr12 chr16 chr19 chr20 chr22 chrX chrY chrM)
 # pypgx (step 32) reads depth over the region of every gene it can call
