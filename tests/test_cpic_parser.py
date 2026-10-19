@@ -447,8 +447,12 @@ def main():
               "CYP4F2 -- PharmCAT has no result; rs2108622 has no genotype in the VCF PharmCAT read: not callable."
               in rec and "WARNING" not in rec.split(fb)[-1], rec[-1200:])
         rc, rec, _, _ = run_report(work, "VKORC1HET", {"genes": {"VKORC1": variants("VKORC1", "C/T", "rs9923231")}})
-        check("VKORC1 No Result with C/T at rs9923231: the fallback reads -1639 GA",
-              "single-position fallback, not a PharmCAT call: rs9923231 reads C/T, -1639 GA." in rec, rec[-1200:])
+        check("VKORC1 No Result with C/T at rs9923231: a WARNING reads -1639 GA, with the VKORC1 warfarin rule",
+              "WARNING: PharmCAT has no result for VKORC1; single-position fallback, not a PharmCAT call: "
+              "rs9923231 reads C/T, -1639 GA." in rec
+              and "Warfarin (CPIC): the CPIC warfarin guideline doses by a pharmacogenetic algorithm "
+                  "that takes VKORC1 -1639G>A with CYP2C9; each A allele lowers the expected dose." in rec,
+              rec[-1200:])
         called = {"genes": {"CYP4F2": dict(dip("*1", "*3", "Decreased Function"),
                                            variants=[{"dbSnpId": "rs2108622", "call": "C/T"}])}}
         rc, rec, _, _ = run_report(work, "CYP4F2CALLED", called)
