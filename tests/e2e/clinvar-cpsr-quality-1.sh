@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Step 06's call floor, the gnomAD frequency the reports put beside each hit,
 # and the cDNA read check on CPSR's P/LP rows, with the real tools.
-#   1. The sample as case 30 left it: the hits file carries the default floor
-#      line, every hit has its GQ and DP, and bin/clinvar_hits.awk and the
-#      summary mark the same hits low confidence.
+#   1. The sample as case 30 left it: at the default floor the hits file has
+#      no floor line (it stays as it was before the floor), every hit has its
+#      GQ and DP, and bin/clinvar_hits.awk and the summary mark the same hits
+#      low confidence.
 #   2. Step 06 again on a copy of the sample with CLINVAR_MIN_GQ=99 and
 #      CLINVAR_MIN_DP=999: the floor line says so, every hit is marked, the
 #      step counts them, and the summary's headline count leaves them out.
@@ -39,7 +40,7 @@ PY
 # --- 1. the sample as case 30 left it ------------------------------------------
 H="${GENOME_DIR}/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.vcf"
 check "case 30 left a hits file" test -s "$H"
-check_eq "the hits file carries the default call floor" "$(grep -c '^##PGP_CALL_FLOOR=GQ=30,DP=10$' "$H")" 1
+check_eq "at the default floor the hits file has no floor line" "$(grep -c '^##PGP_CALL_FLOOR=' "$H")" 0
 N=$(grep -vc '^#' "$H" || true)
 AWK_ROWS=$(awk -f "${REPO}/bin/clinvar_hits.awk" "$H")
 check_eq "bin/clinvar_hits.awk prints 13 columns on every hit" \

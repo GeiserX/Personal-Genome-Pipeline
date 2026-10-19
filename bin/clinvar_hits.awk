@@ -32,7 +32,8 @@
 #                  wrote none.
 #   LOW_CONFIDENCE "yes" when GQ or DP is below step 6's floor, the
 #                  ##PGP_CALL_FLOOR=GQ=..,DP=.. header line step 6 writes
-#                  (GQ 30 and DP 10 when the line is missing); "no" otherwise,
+#                  for a floor other than the default (GQ 30 and DP 10 when
+#                  the line is missing); "no" otherwise,
 #                  also when neither value is there to compare.
 BEGIN { FS = OFS = "\t"; min_gq = 30; min_dp = 10 }
 /^##PGP_CALL_FLOOR=/ {

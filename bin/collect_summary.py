@@ -79,10 +79,10 @@ STARS = {
     "criteria_provided,_conflicting_interpretations": 1,
 }
 
-# The call floor of step 6 (scripts/06-clinvar-screen.sh writes the one it
-# used into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=..): a P/LP hit below
-# either is a low-confidence call, listed but counted apart. These are the
-# defaults, for a hits file written before the line existed.
+# The call floor of step 6 (scripts/06-clinvar-screen.sh writes a floor other
+# than this default into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=..): a P/LP
+# hit below either is a low-confidence call, listed but counted apart. A hits
+# file without the line used this default, or was written before the floor.
 CALL_FLOOR = {"GQ": 30, "DP": 10}
 # gnomAD allele frequency above which a P/LP hit is marked common.
 COMMON_AF = 0.01

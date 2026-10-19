@@ -20,9 +20,10 @@
     marked PGP_PART_OF.
 
     A hit whose call has a genotype quality below ext.min_gq (default 30) or
-    a depth below ext.min_dp (default 10) is a low-confidence call; the
-    floor goes into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=.., which
-    bin/clinvar_hits.awk and the report read. Set it in a config with
+    a depth below ext.min_dp (default 10) is a low-confidence call; a floor
+    other than the default goes into the hits VCF as
+    ##PGP_CALL_FLOOR=GQ=..,DP=.., which bin/clinvar_hits.awk and the report
+    read (without the line they use the default). Set it in a config with
     withName: 'CLINVAR_SCREEN' { ext.min_gq = 20; ext.min_dp = 8 }
     (scripts/06 reads CLINVAR_MIN_GQ and CLINVAR_MIN_DP).
 
@@ -64,6 +65,7 @@ process CLINVAR_SCREEN {
     if (!(min_gq.toString() ==~ /[0-9]+/) || !(min_dp.toString() ==~ /[0-9]+/)) {
         error "CLINVAR_SCREEN: ext.min_gq and ext.min_dp must be whole numbers, got '${min_gq}' and '${min_dp}'"
     }
+    def floor_line = (min_gq.toString() == '30' && min_dp.toString() == '10') ? '' : "##PGP_CALL_FLOOR=GQ=${min_gq},DP=${min_dp}"
     """
     set -euo pipefail
 
@@ -162,9 +164,9 @@ process CLINVAR_SCREEN {
     bcftools annotate --no-version -a "\${CLINVAR_NORM}" --pair-logic exact \\
         -c ID,INFO/GENEINFO,INFO/CLNSIG,INFO/CLNREVSTAT -Ou shared.vcf.gz \\
         | bcftools view --no-version -i 'GT~"[1-9]"' -Ov -o hits_untagged.vcf
-    # The call floor of this run, for bin/clinvar_hits.awk and the report.
+    # A floor other than the default, for bin/clinvar_hits.awk and the report.
     awk -v mode=tag -f "\${JOIN_AWK}" hits_untagged.vcf hits_untagged.vcf \\
-        | awk -v l="##PGP_CALL_FLOOR=GQ=${min_gq},DP=${min_dp}" '/^#CHROM/ { print l } { print }' > ${meta.id}_clinvar_hits.vcf
+        | awk -v l="${floor_line}" 'l != "" && /^#CHROM/ { print l } { print }' > ${meta.id}_clinvar_hits.vcf
 
     # The same hits as a table, one row per hit
     printf 'chrom\\tpos\\tref\\talt\\tgenotype\\tclinvar_id\\tgeneinfo\\tclnsig\\tclnrevstat\\n' > ${meta.id}_clinvar_hits.tsv

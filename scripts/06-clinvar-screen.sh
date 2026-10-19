@@ -15,9 +15,10 @@
 # the GENCODE exons setup.sh installs, and says "not checked" without them).
 # A hit whose call has a genotype quality below CLINVAR_MIN_GQ (default 30) or
 # a depth below CLINVAR_MIN_DP (default 10) is a low-confidence call: it stays
-# in the hits, marked, and the reports count it apart from the others. The
-# floor is written into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=.., so
-# bin/clinvar_hits.awk and both reports read the floor this run used.
+# in the hits, marked, and the reports count it apart from the others. A floor
+# other than the default is written into the hits VCF as
+# ##PGP_CALL_FLOOR=GQ=..,DP=.., so bin/clinvar_hits.awk and both reports read
+# the floor this run used; without the line they use the default.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -188,9 +189,12 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
     rm -f '$(cpath "${HITS}.untagged")'
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%GT]\\t%ID\\t%INFO/GENEINFO\\t%INFO/CLNSIG\\t%INFO/CLNREVSTAT\\n' \
       -o '$(cpath "${HITS_TSV}.body")' '$(cpath "${HITS}.part")'"
-# The call floor this run used, for bin/clinvar_hits.awk and the reports.
-awk -v l="##PGP_CALL_FLOOR=GQ=${MIN_GQ},DP=${MIN_DP}" '/^#CHROM/ {print l} {print}' "${HITS}.part" > "${HITS}.floor"
-mv "${HITS}.floor" "${HITS}.part"
+# A floor other than the default, for bin/clinvar_hits.awk and the reports. At
+# the default the hits file stays as it was before the floor existed.
+if [ "$MIN_GQ" -ne 30 ] || [ "$MIN_DP" -ne 10 ]; then
+  awk -v l="##PGP_CALL_FLOOR=GQ=${MIN_GQ},DP=${MIN_DP}" '/^#CHROM/ {print l} {print}' "${HITS}.part" > "${HITS}.floor"
+  mv "${HITS}.floor" "${HITS}.part"
+fi
 # The same hits as a table, one row per hit.
 {
   printf 'chrom\tpos\tref\talt\tgenotype\tclinvar_id\tgeneinfo\tclnsig\tclnrevstat\n'
