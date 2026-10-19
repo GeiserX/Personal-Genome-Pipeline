@@ -14,6 +14,8 @@
 #     expression of the Nextflow DUPHOLD_FILTER, and its index.
 #   AnnotSV (05): annotates that file, the input of the Nextflow ANNOTSV;
 #     without it, or when Manta's calls are newer, Manta's calls with a note.
+#     It passes the MANE Select list as -txFile, and stops before AnnotSV
+#     when that list or gnomAD-SV's stamp is missing.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -107,11 +109,25 @@ WANT=$(awk -F"'" '/^ *-e .*SVTYPE/ {print $2; exit}' "${REPO_ROOT}/modules/local
 output_has duphold 'Filtered: .*sample1_sv_filtered\.vcf\.gz'
 
 # --- AnnotSV --------------------------------------------------------------------------
-mkdir -p "${GENOME_DIR}/annotsv_annotations/Annotations_Human/Genes/GRCh38"
+ANN="${GENOME_DIR}/annotsv_annotations"
+mkdir -p "${ANN}/Annotations_Human/Genes/GRCh38"
+# Without the two files setup.sh adds to the bundle, step 05 stops before AnnotSV.
+: > "$FAKE_DOCKER_LOG"
+run_expect 1 annotsv-no-mane "${SCRIPTS}/05-annotsv.sh" sample1
+output_has annotsv-no-mane 'mane_select_refseq\.txt not found'
+output_has annotsv-no-mane 'setup\.sh --annotsv-data'
+if grep -q annotsv "$FAKE_DOCKER_LOG"; then fail "step 05 ran AnnotSV without the MANE Select list"; fi
+printf 'NM_000001.1\n' > "${ANN}/mane_select_refseq.txt"
+run_expect 1 annotsv-no-gnomad "${SCRIPTS}/05-annotsv.sh" sample1
+output_has annotsv-no-gnomad 'gnomad-sv\.installed not found'
+mkdir -p "${ANN}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38"
+printf 'gnomAD-SV fixture\n' > "${ANN}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 annotsv "${SCRIPTS}/05-annotsv.sh" sample1
 docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/duphold/sample1_sv_filtered\.vcf\.gz ' \
   "step 05 did not annotate step 15's filtered calls"
+docker_log_has '^run image=[^ ]*annotsv.* -txFile /genome/annotsv_annotations/mane_select_refseq\.txt' \
+  "step 05 did not pass the MANE Select list as -txFile"
 output_lacks annotsv 'NOTE:'
 # Manta's calls newer than the filtered ones: Manta's, with a note.
 touch -t 209901010000 "${GENOME_DIR}/sample1/manta/results/variants/diploidSV.vcf.gz"

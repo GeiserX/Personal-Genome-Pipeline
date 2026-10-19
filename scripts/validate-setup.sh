@@ -523,6 +523,21 @@ else
   ANNOTSV_DIR="${GENOME_DIR}/annotsv_annotations"
   if [ -d "${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38" ]; then
     pass "AnnotSV annotation data (step 5): present"
+    # The two files setup.sh adds; step 5 stops without them.
+    GNOMAD_SV_STAMP="${ANNOTSV_DIR}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed"
+    if [ "$(cat "$GNOMAD_SV_STAMP" 2>/dev/null)" = "gnomAD-SV ${GNOMAD_SV_VERSION} sha256 ${GNOMAD_SV_SHA256}" ]; then
+      pass "AnnotSV benign set (step 5): gnomAD-SV ${GNOMAD_SV_VERSION} common SVs added"
+    else
+      fail "AnnotSV benign set (step 5): gnomAD-SV ${GNOMAD_SV_VERSION} not added (${GNOMAD_SV_STAMP} missing or of another release)"
+      echo "       Without it AnnotSV grades common deletions as if no one carried them. Add it with: ./scripts/setup.sh --annotsv-data ${GENOME_DIR}"
+    fi
+    MANE_TX="${ANNOTSV_DIR}/mane_select_refseq.txt"
+    if [ -s "$MANE_TX" ] && [ "$(cat "${ANNOTSV_DIR}/mane_select_refseq.release" 2>/dev/null)" = "MANE ${MANE_RELEASE} sha256 ${MANE_SUMMARY_SHA256}" ]; then
+      pass "AnnotSV transcripts (step 5): MANE ${MANE_RELEASE} Select list, $(wc -l < "$MANE_TX" | tr -d ' ') transcripts"
+    else
+      fail "AnnotSV transcripts (step 5): MANE ${MANE_RELEASE} Select list missing or of another release (${MANE_TX})"
+      echo "       Without it the Tx, Frameshift and exon columns follow whichever transcript overlaps most. Add it with: ./scripts/setup.sh --annotsv-data ${GENOME_DIR}"
+    fi
   else
     warn "AnnotSV annotation data not found at: ${ANNOTSV_DIR}/Annotations_Human/Genes/GRCh38"
     echo "       Step 5 (AnnotSV) will be skipped. Download it (~5.3 GB, ~20 GB unpacked) with: ./scripts/setup.sh ${GENOME_DIR}"

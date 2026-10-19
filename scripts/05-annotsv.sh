@@ -46,6 +46,21 @@ if [ ! -d "${ANNOTATIONS_DIR}/Annotations_Human/Genes/GRCh38" ]; then
   exit 1
 fi
 
+# setup.sh adds two files to the bundle: the MANE Select transcripts, which
+# AnnotSV reports in the Tx, Frameshift, Location and exon columns instead of
+# the transcript with the longest overlap (often a predicted XM_ one), and
+# gnomAD-SV's common SVs in its benign set. Without them the ACMG classes are
+# wrong for the reasons in docs/05-annotsv.md, so the step stops.
+MANE_TX="${ANNOTATIONS_DIR}/mane_select_refseq.txt"
+GNOMAD_SV_STAMP="${ANNOTATIONS_DIR}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed"
+for f in "$MANE_TX" "$GNOMAD_SV_STAMP"; do
+  if [ ! -s "$f" ]; then
+    echo "ERROR: ${f} not found: AnnotSV's data lacks the MANE Select list or gnomAD-SV's common SVs." >&2
+    echo "  Run ./scripts/setup.sh --annotsv-data ${GENOME_DIR} to add them, or see docs/05-annotsv.md." >&2
+    exit 1
+  fi
+done
+
 if [ ! -f "$MANTA_VCF" ]; then
   echo "ERROR: SV VCF not found: ${MANTA_VCF}" >&2
   exit 1
@@ -65,7 +80,8 @@ run_in --rw "$ANNOTATIONS_DIR" --cpus 4 --memory 8g \
     -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \
     -genomeBuild GRCh38 \
     -annotationMode both \
-    -annotationsDir /genome/annotsv_annotations
+    -annotationsDir /genome/annotsv_annotations \
+    -txFile /genome/annotsv_annotations/mane_select_refseq.txt
 
 echo "=== AnnotSV complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_sv_annotated.tsv"
