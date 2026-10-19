@@ -520,9 +520,10 @@ def pypgx_section(work, schema):
     check("CYP2D6: a failed depth check gives no probable call", summ["cyp2d6"]["probable"] is None
           and "Probable (one caller" not in txt, summ["cyp2d6"])
     put(f"{d}/pypgx/S_cyp2d6_depth_check.tsv", DEPTH_OK)
-    put(f"{d}/cyrius/S_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\t*1/*2\tPASS\n")
+    cy_head = "Sample\tGenotype\tFilter\n"
+    put(f"{d}/cyrius/S_cyp2d6.tsv", cy_head + "S\t*1/*2\tPASS\n")
     check("CYP2D6: beside a usable Cyrius call there is no probable call", render(d)[0]["cyp2d6"]["probable"] is None)
-    put(f"{d}/cyrius/S_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\tNone\tNot_assigned_to_haplotypes\n")
+    put(f"{d}/cyrius/S_cyp2d6.tsv", cy_head + "S\tNone\tNot_assigned_to_haplotypes\n")
     check("CYP2D6: a Cyrius no-call leaves pypgx the only caller: probable",
           (render(d)[0]["cyp2d6"]["probable"] or {}).get("diplotype") == "*1/*2")
     os.remove(f"{d}/cyrius/S_cyp2d6.tsv")
