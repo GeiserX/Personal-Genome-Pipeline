@@ -11,7 +11,9 @@
     MANE Select transcripts passed as -txFile; the task stops without them.
 
     Before AnnotSV, bin/sv_svlen_fix.py gives sequence-resolved records their
-    net length change and bin/cnvpytor_to_vcf.py adds the Delly (PASS) and
+    net length change (SVLEN, and for a net deletion END = POS-1+len(REF)-
+    len(ALT), one base less than AnnotSV's own default END, so its POS-1..END
+    interval, which counts the anchor base, is as long as the change) and bin/cnvpytor_to_vcf.py adds the Delly (PASS) and
     CNVpytor (e-val < 0.01, q0 < 0.5) deletions and duplications no Manta
     call covers, each record with its caller in INFO SVCALLER; either input
     may be [] when that caller did not run. -bracketedAltMode DEL,DUP,INS

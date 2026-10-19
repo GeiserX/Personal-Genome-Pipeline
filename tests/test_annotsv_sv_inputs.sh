@@ -25,7 +25,8 @@
 # Checks:
 #   1. step 05: PLANT reads SV_length -135, Frameshift "no" on NM_900001, no
 #      2E-1, class 3; the CNVpytor deletion is in AnnotSV's table with
-#      SVCALLER=cnvpytor; Delly's DEL2 is not there twice; the breakend pair
+#      SVCALLER=cnvpytor and a negative SV_length (CNVpytor's own SVLEN is
+#      positive); Delly's DEL2 is not there twice; the breakend pair
 #      is annotated as breakends, no INV row; the class 4-5 table holds DEL2
 #      and nothing else, found by column name;
 #   2. red controls with the same image and data, AnnotSV on Manta's calls
@@ -142,6 +143,7 @@ if [ -s "$OUT" ]; then
   expect "PLANT: class 3" "$(field "$OUT" PLANT ACMG_class)" '^3$'
   expect "CNVpytor's deletion is in AnnotSV's table" "$(rows "$OUT" CNVpytor_del0)" '^1$'
   expect "CNVpytor's deletion names its caller" "$(field "$OUT" CNVpytor_del0 INFO | grep -o 'SVCALLER=[a-z_]*')" '^SVCALLER=cnvpytor$'
+  expect "CNVpytor's deletion: a negative SV_length, as Manta's deletions" "$(field "$OUT" CNVpytor_del0 SV_length)" '^-[0-9]+$'
   expect "Manta's DEL2 names its caller" "$(field "$OUT" DEL2 INFO | grep -o 'SVCALLER=[a-z_]*')" '^SVCALLER=manta$'
   expect "Delly's copy of DEL2 is not added" "$(rows "$OUT" DEL00000001)" '^0$'
   expect "the breakend pair is annotated as breakends" "$(field "$OUT" MantaBND:7:0:1:0:0:0:0 SV_type)" '^BND$'

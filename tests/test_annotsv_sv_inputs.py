@@ -15,7 +15,7 @@ Checks:
        - the deletion passes unchanged, and the summary line counts each kind;
   2. sv_svlen_fix.py: REF 137 bp / ALT 2 bp gets SVLEN -135 and END
      POS+134, with the old values kept (the control: the input says -136);
-     a pure deletion keeps SVLEN and gets the END AnnotSV writes; a net
+     a pure deletion keeps SVLEN and gets END POS+135 (POS-1+len(REF)-len(ALT)); a net
      insertion gets its net SVLEN and keeps END; symbolic, breakend and
      multi-ALT records pass unchanged; a second run changes nothing;
   3. cnvpytor_to_vcf.py: a Delly PASS deletion Manta has is not added, one
@@ -275,9 +275,9 @@ def test_extra_callers(w):
           d is not None and info(d).get("SVCALLER") == "delly" and d[4] == "<DEL>" and info(d).get("END") == "2050000"
           and d[8:] == ["GT", "1/1"], d)
     c = by_id.get("CNVpytor_del1")
-    check("CNVpytor's deletion: SVCALLER=cnvpytor, END, SVLEN, IMPRECISE, its genotype",
+    check("CNVpytor's deletion: SVCALLER=cnvpytor, END, no SVLEN (its positive one), IMPRECISE, its genotype",
           c is not None and info(c).get("SVCALLER") == "cnvpytor" and info(c).get("END") == "3700000"
-          and info(c).get("SVLEN") == "500000" and info(c).get("IMPRECISE") is True and c[8:] == ["GT", "0/1"], c)
+          and "SVLEN" not in info(c) and info(c).get("IMPRECISE") is True and c[8:] == ["GT", "0/1"], c)
     c = by_id.get("CNVpytor_dup5")
     check("CNVpytor's duplication is a <DUP>", c is not None and c[4] == "<DUP>" and info(c).get("SVTYPE") == "DUP", c)
     check("the header declares SVCALLER", "##INFO=<ID=SVCALLER," in out)

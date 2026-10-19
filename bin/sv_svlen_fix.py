@@ -12,9 +12,9 @@ in-frame change.
 
 For every record whose REF and ALT are both plain sequence (one ALT) of
 different lengths, this script sets SVLEN to len(ALT) - len(REF), and for a
-net deletion END to POS - 1 + len(REF) - len(ALT): the END AnnotSV itself
-writes when it shortens a deletion whose REF is longer than 10 kb, so the
-interval it reads is as long as the net change. Symbolic (<DEL>) and
+net deletion END to POS - 1 + len(REF) - len(ALT): one base less than
+AnnotSV's own default END (POS + len(REF) - len(ALT)), so that its POS-1..END
+interval, which counts the anchor base, is as long as the net change. Symbolic (<DEL>) and
 breakend records pass unchanged. A rewritten record keeps its old values in
 ORIG_SVLEN and ORIG_END.
 
