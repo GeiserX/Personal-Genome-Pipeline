@@ -791,9 +791,20 @@ pull_image() {
 
 # keep_image IMAGE: tag a digest-pinned image (tag_pinned_image in
 # scripts/lib/common.sh), so a dangling-image cleanup does not delete it.
+# When the tag fails, what Docker lists decides the warning, as in
+# validate-setup.sh (image_is_dangling): on the classic image store an image
+# with no tag is dangling and the cleanup deletes it; on the containerd image
+# store, or with another local tag, it is not; or Docker did not say.
 keep_image() {
+  local rc=0 msg
   tag_pinned_image "$1" && return 0
-  echo "  WARNING: Could not tag ${1} as $(pinned_tag "$1"); a dangling-image cleanup would delete it." >&2
+  image_is_dangling "$1" || rc=$?
+  case $rc in
+    0) msg="Docker lists it as dangling, so a dangling-image cleanup would delete it" ;;
+    1) msg="it has no pgp-pinned tag, but Docker does not list it as dangling, so a dangling-image cleanup keeps it" ;;
+    *) msg="Docker did not list its dangling images, so a dangling-image cleanup may delete it" ;;
+  esac
+  echo "  WARNING: Could not tag ${1} as $(pinned_tag "$1"); ${msg}." >&2
   return 1
 }
 
