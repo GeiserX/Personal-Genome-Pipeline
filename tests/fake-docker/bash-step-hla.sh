@@ -51,6 +51,14 @@ install_hla() {
   printf 'ID   HLA00001; SV 4; standard; DNA; HUM; 3503 BP.\nCC   IPD-IMGT/HLA Release Version %s\n' "$1" \
     > "${GENOME_DIR}/hla/IPD-IMGT-HLA_$1/hla.dat"
 }
+# The release step 08 uses by default: the pin in common.sh, never a literal
+# here, so a pin bump runs this case on the new release.
+unset HLA_DB_RELEASE
+# shellcheck disable=SC2016  # the pattern matches a literal ${...}
+PIN=$(sed -n 's/^HLA_DB_RELEASE=\${HLA_DB_RELEASE:-\([0-9.]*\)}$/\1/p' "${REPO_ROOT}/scripts/lib/common.sh")
+[ -n "$PIN" ] || fail "no HLA_DB_RELEASE default in scripts/lib/common.sh"
+case "$PIN" in 3.63.0|3.64.0) fail "the pin ${PIN} is a release this case uses as 'another release'; pick others" ;; esac
+PIN_RE=${PIN//./\\.}
 GENES="${GENOME_DIR}/reference/gencode.v50.basic.genes.gtf"
 grep -q '^GENCODE_RELEASE=50$' "${REPO_ROOT}/scripts/lib/common.sh" \
   || fail "common.sh no longer pins GENCODE 50; update this case"
@@ -61,19 +69,19 @@ output_has hla-not-installed 'SKIPPED: IPD-IMGT/HLA [0-9.]+ is not installed'
 [ ! -e "${CASE_WORK}/t1k-builds" ] || fail "step 08 built an index without an installed database"
 
 # --- installed: built once, reused, release recorded ---------------------------------------
-install_hla 3.65.0
+install_hla "$PIN"
 printf 'chr6\tHAVANA\tgene\t29941260\t29949572\t.\t+\t.\tgene_name "HLA-A";\n' > "$GENES"
 : > "$FAKE_DOCKER_LOG"
 THREADS=2 ALIGN_DIR=aligned_bwamem2 run_expect 0 hla "${SCRIPTS}/08-hla-typing.sh" sample1
-IDX=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name 't1k-*_imgt-3.65.0_gencode-50')
-[ -n "$IDX" ] || fail "step 08 built no index directory keyed on T1K version and release 3.65.0"
-docker_log_has '^run image=[^ ]*t1k.* t1k-build\.pl -d /genome/hla/IPD-IMGT-HLA_3\.65\.0/hla\.dat -g /genome/reference/gencode\.v50\.basic\.genes\.gtf ' \
+IDX=$(find "${GENOME_DIR}/t1k_idx" -mindepth 1 -maxdepth 1 -type d -name "t1k-*_imgt-${PIN}_gencode-50")
+[ -n "$IDX" ] || fail "step 08 built no index directory keyed on T1K version and release ${PIN}"
+docker_log_has "^run image=[^ ]*t1k.* t1k-build\\.pl -d /genome/hla/IPD-IMGT-HLA_${PIN_RE}/hla\\.dat -g /genome/reference/gencode\\.v50\\.basic\\.genes\\.gtf " \
   "step 08 did not build from the installed hla.dat and GENCODE genes"
 docker_log_has '^run image=[^ ]*t1k.* --cpus 2 .* run-t1k -b /genome/sample1/aligned_bwamem2/sample1_sorted\.bam .* -t 2 ' \
   "step 08 did not use THREADS=2 and ALIGN_DIR=aligned_bwamem2"
 REL="${GENOME_DIR}/sample1/hla_t1k/database_release.txt"
-grep -q '^database: IPD-IMGT/HLA Release Version 3\.65\.0$' "$REL" 2>/dev/null \
-  || fail "database_release.txt does not name release 3.65.0: $(cat "$REL" 2>/dev/null)"
+grep -q "^database: IPD-IMGT/HLA Release Version ${PIN_RE}\$" "$REL" 2>/dev/null \
+  || fail "database_release.txt does not name release ${PIN}: $(cat "$REL" 2>/dev/null)"
 THREADS=2 ALIGN_DIR=aligned_bwamem2 run_expect 0 hla-again "${SCRIPTS}/08-hla-typing.sh" sample1
 [ "$(grep -c . "${CASE_WORK}/t1k-builds")" -eq 1 ] || fail "step 08 rebuilt an index that already existed"
 

@@ -452,7 +452,7 @@ fetch() {
 # them (data_file) and runs no download of its own. HLA_DB_RELEASE can be
 # overridden from the environment; step 08 keys its T1K index on it, so a new
 # release builds a new index.
-HLA_DB_RELEASE=${HLA_DB_RELEASE:-3.65.0}
+HLA_DB_RELEASE=${HLA_DB_RELEASE:-3.66.0}
 GENCODE_RELEASE=50
 DELLY_EXCL_COMMIT=72a05f3cd23bf55f1edd723b9504a0faf1fba230
 # shellcheck disable=SC2034  # read by setup.sh and validate-setup.sh

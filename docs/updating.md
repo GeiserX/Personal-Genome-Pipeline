@@ -99,5 +99,5 @@ The lookup job's summary lists every dependency with the update Renovate would p
 To run the same lookups on your machine, with Node 24:
 
 ```bash
-LOG_LEVEL=debug npx --yes renovate@44.166.0 --platform=local --dry-run=lookup
+LOG_LEVEL=debug npx --yes renovate@44.167.1 --platform=local --dry-run=lookup
 ```
