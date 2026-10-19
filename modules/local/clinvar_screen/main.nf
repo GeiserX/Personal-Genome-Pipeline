@@ -227,8 +227,9 @@ process CLINVAR_CDNA_CHECK {
     publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_check.tsv'
 
     input:
-    tuple val(meta), path(hits_tsv), path(bam), path(bai)
-    path(exons)
+    // Fixed names: a samplesheet path may hold any character, and these go on a command line.
+    tuple val(meta), path(hits_tsv), path(bam, stageAs: 'sample.bam'), path(bai, stageAs: 'sample.bam.bai')
+    path(exons, stageAs: 'exons.bed')
 
     output:
     tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check
@@ -240,9 +241,9 @@ process CLINVAR_CDNA_CHECK {
     script:
     def reads = !bam ? "--skip 'no BAM for this sample in the samplesheet'" :
                 !exons ? "--skip 'no GENCODE exons (--gencode_exons)'" :
-                "--bam '${bam}' --exons '${exons}'"
+                "--bam ${bam} --exons ${exons}"
     """
-    clip_check.py --hits '${hits_tsv}' --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
+    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
