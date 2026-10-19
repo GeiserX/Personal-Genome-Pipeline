@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Self-test (a VEP cache, pypgx bundle or AnnotSV data version that left its image, and a lone PCGR variable, must be caught)
+      - name: Self-test (a VEP cache, pypgx bundle, AnnotSV or Yleaf data version, GENCODE release or VerifyBamID panel that left its image, and a lone PCGR variable, must be caught)
         run: scripts/ci/check-coupled-versions.sh --self-test
 
       - name: Each data version in versions.env matches the image it belongs to
