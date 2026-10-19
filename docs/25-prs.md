@@ -162,7 +162,7 @@ Without a gVCF (`Input` is `vcf`, a sample called by an older version), the sum 
 NOTE: hom-ref sites are absent from this VCF, so the score is biased; not comparable to published distributions
 ```
 
-Call the sample again with step 3 to get the gVCF.
+Call the sample again with step 3 to get the gVCF. Imputation (step 14) is not needed for a score from a gVCF: it adds phasing, which the scores do not use, and a percentile needs the ancestry panel, not imputed sites.
 
 ### What these scores are NOT
 
