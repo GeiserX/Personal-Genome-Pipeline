@@ -194,17 +194,19 @@ jobs:
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
-    # The runner's CPU decides the time, not the image cache. Measured on
-    # this cache layout in October 2026 (84 cases): 112 minutes on an Intel
-    # Xeon 6973P (run 39088086725, no cache), 156 and 191 minutes on an AMD
+    # The runner decides the time, not the image cache. Measured on this
+    # cache layout in October 2026 (84 cases): 106 and 166 minutes on an
+    # AMD EPYC 9V45 (run 39197502832 with no cache, run 39075176392 with
+    # no cache plus the 12-minute save), 112 minutes on an Intel Xeon
+    # 6973P (run 39088086725, no cache), 156 and 191 minutes on an AMD
     # EPYC 7763 (run 39075764278 with no cache, run 39075201465 with all
-    # four groups restored), 166 minutes on an AMD EPYC 9V45 (run
-    # 39075176392, no cache, plus the 12-minute save). A cache hit saves
+    # four groups restored), 205 minutes on an AMD EPYC 9V74 (run
+    # 39197512594, three groups saved in 14 minutes). A cache hit saves
     # about 7 minutes: the pull of every image took 9, restoring and
     # loading the cache took 2.5. A pull request that bumps the fixture
     # also waits for it inside this limit (scripts/ci/e2e-run.sh, up to 75
-    # minutes). The slowest run (191) plus the fixture wait (75) plus a
-    # save (12) is 278 minutes: 300 leaves a 22-minute margin.
+    # minutes). The slowest run with its save (205) plus the fixture wait
+    # (75) is 280 minutes: 300 leaves a 20-minute margin.
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
