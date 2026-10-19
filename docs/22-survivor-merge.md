@@ -102,7 +102,7 @@ docker run --rm -v "${GENOME_DIR}:/genome" "${BCFTOOLS_IMAGE}" \
 - Single-caller SVs are discarded even if they are real. If you suspect a specific SV, check the individual caller outputs directly.
 - CNVpytor's calls are depth-only and their breakpoints are coarse (its bin size), so a CNVpytor call often lies more than 1 kb from the Manta or Delly breakpoint of the same event and does not pair with it.
 - The CNVpytor VCF made from its table carries no genotype and no quality.
-- Breakend (BND) records pair only with breakends of another caller.
+- Breakend (BND) records pair only with breakends of another caller. That includes a lone Manta inversion junction of 1 Mb or more, which step 4 keeps as its two breakends instead of a whole-span inversion.
 
 ## Notes
 

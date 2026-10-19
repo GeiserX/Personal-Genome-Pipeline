@@ -2,8 +2,13 @@
 # AnnotSV — Annotate structural variants with ACMG pathogenicity classification
 # Input: step 15's duphold-filtered calls (duphold/<sample>_sv_filtered.vcf.gz),
 #   the input of the Nextflow ANNOTSV; without them, Manta's diploidSV.vcf.gz,
-#   with a note. SV_VCF overrides both.
-# Output: *_sv_annotated.tsv (ACMG class 1-5 for each SV)
+#   with a note. SV_VCF overrides both. Before AnnotSV, bin/sv_svlen_fix.py
+#   gives sequence-resolved records their net length change, and, unless
+#   SV_VCF is set, bin/cnvpytor_to_vcf.py adds the Delly (step 19) and
+#   CNVpytor (step 18) deletions and duplications no Manta call covers.
+# Output: *_sv_annotated.tsv (ACMG class 1-5 for each SV),
+#   *_sv_class4_5.tsv (its class 4 and 5 rows) and *_annotsv_input.vcf
+#   (what AnnotSV read, each record with its caller in INFO SVCALLER)
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -68,23 +73,79 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Determine relative path of Manta VCF within SAMPLE_DIR
-MANTA_REL=$(echo "$MANTA_VCF" | sed "s|${GENOME_DIR}/||")
+# AnnotSV classifies only the records of the VCF it is given. The other
+# callers' deletions and duplications that no Manta call covers (reciprocal
+# overlap of half the longer call, same type) join Manta's: Delly's PASS
+# calls, and CNVpytor's with e-val below 0.01 and q0 below 0.5. Each file is
+# used when it exists. With SV_VCF set, that file alone is annotated.
+EXTRA_ARGS=()
+CALLER_NAME=sv_vcf
+if [ -z "${SV_VCF:-}" ]; then
+  CALLER_NAME=manta
+  DELLY_VCF="${SAMPLE_DIR}/delly/${SAMPLE}_sv.vcf.gz"
+  CNVPYTOR_VCF="${SAMPLE_DIR}/cnvpytor/${SAMPLE}_cnvs.vcf.gz"
+  if [ -f "$DELLY_VCF" ]; then
+    EXTRA_ARGS+=(--delly "$(cpath "$DELLY_VCF")")
+  else
+    echo "Delly: no ${DELLY_VCF#"$GENOME_DIR"/} (scripts/19-delly.sh), so no Delly calls are added."
+  fi
+  if [ -f "$CNVPYTOR_VCF" ]; then
+    EXTRA_ARGS+=(--cnvpytor "$(cpath "$CNVPYTOR_VCF")")
+  else
+    echo "CNVpytor: no ${CNVPYTOR_VCF#"$GENOME_DIR"/} (scripts/18-cnvpytor.sh), so no CNVpytor calls are added."
+  fi
+fi
+
+# The input AnnotSV reads. bin/sv_svlen_fix.py first: AnnotSV measures a
+# sequence-resolved SV over POS-1..END, so a deletion that also inserts bases
+# (REF 137 bp, ALT 2 bp) reads as 137 deleted coding bases, a frameshift
+# (criterion 2E-1), although the net change, -135, keeps the frame.
+INPUT_VCF="${OUTPUT_DIR}/${SAMPLE}_annotsv_input.vcf"
+SV_VCF_C=$(cpath "$MANTA_VCF")
+# shellcheck disable=SC2016  # the $ expressions expand inside the container
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${ANNOTSV_IMAGE}" bash -c '
+  set -euo pipefail
+  python3 /pgp-bin/sv_svlen_fix.py "$1" | python3 /pgp-bin/cnvpytor_to_vcf.py --base - --base-name "$2" "${@:3}"
+' _ "$SV_VCF_C" "$CALLER_NAME" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} > "${INPUT_VCF}.part"
+mv "${INPUT_VCF}.part" "$INPUT_VCF"
 
 # AnnotSV builds sorted copies of its annotation files inside the annotations
 # directory the first time it runs, so that directory is writable here.
+# -bracketedAltMode DEL,DUP,INS: AnnotSV would otherwise read a breakend pair
+# on one chromosome up to 10 Mb apart as a whole-span inversion, which is what
+# step 04 left as breakends on purpose (a lone inversion junction of 1 Mb or
+# more); it annotates them as breakends.
+TSV="${OUTPUT_DIR}/${SAMPLE}_sv_annotated.tsv"
 run_in --rw "$ANNOTATIONS_DIR" --cpus 4 --memory 8g \
   "${ANNOTSV_IMAGE}" \
   AnnotSV \
-    -SVinputFile "/genome/${MANTA_REL}" \
-    -outputFile "/genome/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv" \
+    -SVinputFile "$(cpath "$INPUT_VCF")" \
+    -outputFile "$(cpath "$TSV")" \
     -genomeBuild GRCh38 \
     -annotationMode both \
     -annotationsDir /genome/annotsv_annotations \
-    -txFile /genome/annotsv_annotations/mane_select_refseq.txt
+    -txFile /genome/annotsv_annotations/mane_select_refseq.txt \
+    -bracketedAltMode DEL,DUP,INS
+
+# The class 4 and 5 SVs, one "full" row each, found by column name: AnnotSV
+# drops the columns of annotation files a bundle lacks, so a column number
+# points elsewhere on another bundle.
+CLASS45="${OUTPUT_DIR}/${SAMPLE}_sv_class4_5.tsv"
+if [ -s "$TSV" ]; then
+  awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i
+                         if (!("ACMG_class" in c) || !("Annotation_mode" in c)) { print "no ACMG_class or Annotation_mode column" > "/dev/stderr"; exit 2 }
+                         print; next }
+               $c["Annotation_mode"] == "full" && ($c["ACMG_class"] == "4" || $c["ACMG_class"] == "5")' \
+    "$TSV" > "${CLASS45}.part"
+  mv "${CLASS45}.part" "$CLASS45"
+  N45=$(($(wc -l < "$CLASS45") - 1))
+else
+  echo "WARNING: AnnotSV wrote no ${TSV} (no SV it could annotate)."
+  rm -f "$CLASS45"
+  N45=0
+fi
 
 echo "=== AnnotSV complete ==="
-echo "Results: ${OUTPUT_DIR}/${SAMPLE}_sv_annotated.tsv"
-echo ""
-echo "Filter pathogenic (class 4-5, <5MB):"
-echo "  awk -F'\t' 'NR==1 || (\$120==4 || \$120==5) && \$16==\"full\"' ${OUTPUT_DIR}/${SAMPLE}_sv_annotated.tsv"
+echo "Input: ${INPUT_VCF}"
+echo "Results: ${TSV}"
+echo "Class 4-5 (pathogenic or likely pathogenic): ${N45} SVs in ${CLASS45}"

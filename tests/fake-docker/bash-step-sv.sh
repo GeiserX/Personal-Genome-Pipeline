@@ -12,8 +12,9 @@
 #     runs as before and warns.
 #   duphold (15): writes duphold/<sample>_sv_filtered.vcf.gz with the filter
 #     expression of the Nextflow DUPHOLD_FILTER, and its index.
-#   AnnotSV (05): annotates that file, the input of the Nextflow ANNOTSV;
-#     without it, or when Manta's calls are newer, Manta's calls with a note.
+#   AnnotSV (05): builds its input from that file, the input of the Nextflow
+#     ANNOTSV, and annotates it; without it, or when Manta's calls are newer,
+#     from Manta's calls with a note.
 #     It passes the MANE Select list as -txFile, and stops before AnnotSV
 #     when that list or gnomAD-SV's stamp is missing.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -124,8 +125,10 @@ mkdir -p "${ANN}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38"
 printf 'gnomAD-SV fixture\n' > "${ANN}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 annotsv "${SCRIPTS}/05-annotsv.sh" sample1
-docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/duphold/sample1_sv_filtered\.vcf\.gz ' \
-  "step 05 did not annotate step 15's filtered calls"
+docker_log_has '^run image=[^ ]*annotsv.*/sv_svlen_fix\.py .* /genome/sample1/duphold/sample1_sv_filtered\.vcf\.gz ' \
+  "step 05 did not build AnnotSV's input from step 15's filtered calls"
+docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/annotsv/sample1_annotsv_input\.vcf ' \
+  "step 05 did not annotate the input it built"
 docker_log_has '^run image=[^ ]*annotsv.* -txFile /genome/annotsv_annotations/mane_select_refseq\.txt' \
   "step 05 did not pass the MANE Select list as -txFile"
 output_lacks annotsv 'NOTE:'
@@ -133,14 +136,14 @@ output_lacks annotsv 'NOTE:'
 touch -t 209901010000 "${GENOME_DIR}/sample1/manta/results/variants/diploidSV.vcf.gz"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 annotsv-stale "${SCRIPTS}/05-annotsv.sh" sample1
-docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
+docker_log_has '^run image=[^ ]*annotsv.*/sv_svlen_fix\.py .* /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
   "step 05 annotated filtered calls older than Manta's"
 output_has annotsv-stale 'NOTE: .*older than Manta'
 # No filtered calls at all: Manta's, with a note.
 rm -f "${D}/sample1_sv_filtered.vcf.gz" "${D}/sample1_sv_filtered.vcf.gz.tbi"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 annotsv-no-duphold "${SCRIPTS}/05-annotsv.sh" sample1
-docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
+docker_log_has '^run image=[^ ]*annotsv.*/sv_svlen_fix\.py .* /genome/sample1/manta/results/variants/diploidSV\.vcf\.gz ' \
   "step 05 did not fall back to Manta's calls without step 15"
 output_has annotsv-no-duphold 'NOTE: no duphold-filtered calls'
 # SV_VCF still wins.
@@ -148,4 +151,4 @@ mkdir -p "${GENOME_DIR}/sample1/sniffles"
 printf 'placeholder\n' > "${GENOME_DIR}/sample1/sniffles/sv.vcf.gz"
 : > "$FAKE_DOCKER_LOG"
 SV_VCF="${GENOME_DIR}/sample1/sniffles/sv.vcf.gz" run_expect 0 annotsv-sv-vcf "${SCRIPTS}/05-annotsv.sh" sample1
-docker_log_has '^run image=[^ ]*annotsv.* -SVinputFile /genome/sample1/sniffles/sv\.vcf\.gz ' "SV_VCF did not pick step 05's input"
+docker_log_has '^run image=[^ ]*annotsv.*/sv_svlen_fix\.py .* /genome/sample1/sniffles/sv\.vcf\.gz ' "SV_VCF did not pick step 05's input"
