@@ -75,14 +75,14 @@ These are called using both BAM and VCF data. Star alleles are determined from v
 | CYP2C19 | Clopidogrel, SSRIs, PPIs | A | |
 | CYP3A4 | Tacrolimus (with CYP3A5) | B | |
 | CYP3A5 | Tacrolimus | A | |
-| CYP4F2 | Warfarin (vitamin K cycle) | B | |
+| CYP4F2 | Warfarin (vitamin K cycle) | A | |
 | DPYD | Fluorouracil, capecitabine | A | |
 | TPMT | Azathioprine, mercaptopurine | A | |
 | NUDT15 | Azathioprine, mercaptopurine | A | |
 | UGT1A1 | Irinotecan, atazanavir, bilirubin | A | |
 | SLCO1B1 | Simvastatin, statins | A | |
 | VKORC1 | Warfarin | A | |
-| NAT2 | Isoniazid, hydralazine | A | |
+| NAT2 | Hydralazine; isoniazid | A (hydralazine), C (isoniazid) | |
 | COMT | Catecholamine metabolism | -- | Not in PharmCAT |
 | MTHFR | Folate metabolism, methotrexate | -- | Not in PharmCAT |
 | ABCB1 | Drug efflux (broad substrate range) | -- | Not in PharmCAT |
@@ -130,7 +130,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 |---|---|
 | Gene | Gene symbol |
 | Diplotype | Star allele call (e.g., \*1/\*4); `Indeterminate` for CYP2D6 when the depth check found multi-mapped reads |
-| Phenotype | Metabolizer status (e.g., Intermediate Metabolizer) |
+| Phenotype | Metabolizer status (e.g., Intermediate Metabolizer). `no pypgx phenotype rule` for a gene pypgx has no phenotype rule for (no `PhenotypeMethod` in its own gene table; in 0.26.0 among the genes run here: CYP1A2, CYP2A6, CYP3A4, CYP4F2, VKORC1, NAT2, COMT, MTHFR, ABCB1, GSTM1, GSTT1), where pypgx itself writes `Indeterminate` |
 | CNV_call | The copy-number call pypgx itself made from read depth (its `CNV` field, for example `Normal` or `WholeDel1`). BAM-based genes only; `N/A` for VCF-based genes. Earlier versions guessed a Yes/No flag from the allele names, which flagged any name containing `*5` and missed the GSTM1/GSTT1/CYP2A6 whole-gene deletions |
 | Source | BAM (SV genes) or VCF (variant-based genes) |
 
@@ -141,8 +141,10 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pypgx/`.
 | Gene | Gene symbol |
 | PharmCAT_diplotype | Diplotype from step 7 |
 | pypgx_diplotype | Diplotype from this step |
-| Match | Yes, No, pypgx only, or PharmCAT only |
+| Match | Yes, No, pypgx only, or PharmCAT only. Allele names are compared after one rename: PharmCAT's `rs9923231 reference (C)` and pypgx's `Reference` are the same allele, and so are `rs9923231 variant (T)` and `rs9923231` |
 | Called_by | `both` when both tools called the gene (Match is Yes or No), otherwise which tool did. PharmCAT's `Unknown/Unknown` and pypgx's `FAILED` count as no call; a gene neither tool called is left out |
+| PharmCAT_phenotype | PharmCAT's phenotype for the gene, as step 27's phenotypes table shows it |
+| pypgx_phenotype | The Phenotype column of the summary above |
 
 ## Runtime
 
