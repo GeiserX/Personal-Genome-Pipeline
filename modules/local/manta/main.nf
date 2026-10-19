@@ -5,11 +5,15 @@
     Three steps:
     1. Configure Manta (configManta.py), on --manta_call_regions only when set
     2. Run workflow (runWorkflow.py)
-    3. Inversions: Manta writes each one as two breakend (BND) records, and
-       duphold, AnnotSV and the SV consensus read SVTYPE. Manta's
-       libexec/convertInversion.py (with the samtools and bgzip beside it in
-       the image) turns each pair into one SVTYPE=INV record. Manta's own file
-       is kept as diploidSV.raw.vcf.gz; diploidSV.vcf.gz is the converted one.
+    3. Inversions: Manta writes each inversion junction as two breakend
+       (BND) records, and duphold, AnnotSV and the SV consensus read SVTYPE.
+       Manta's libexec/convertInversion.py (with the samtools and bgzip
+       beside it in the image) turns each pair into one SVTYPE=INV record,
+       then bin/manta_inv_filter.py (on the image's Python 2.7) marks each
+       INV with the junctions Manta found (INV_JUNCTIONS=2 or 1), puts a lone
+       junction of 1 Mb or more back as its two breakends and marks a lone
+       one under 1 kb INVDUP_CANDIDATE. Manta's own file is kept as
+       diploidSV.raw.vcf.gz; diploidSV.vcf.gz is the converted one.
 
     Equivalent to: scripts/04-manta.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -60,8 +64,10 @@ process MANTA {
     V=results/variants
     mv \$V/diploidSV.vcf.gz \$V/diploidSV.raw.vcf.gz
     mv \$V/diploidSV.vcf.gz.tbi \$V/diploidSV.raw.vcf.gz.tbi
-    "\$LIBEXEC/convertInversion.py" "\$LIBEXEC/samtools" ${reference} \$V/diploidSV.raw.vcf.gz \\
+    "\$LIBEXEC/convertInversion.py" "\$LIBEXEC/samtools" ${reference} \$V/diploidSV.raw.vcf.gz > converted.vcf
+    python "\$(command -v manta_inv_filter.py)" \$V/diploidSV.raw.vcf.gz converted.vcf \\
         | "\$LIBEXEC/bgzip" -c > \$V/diploidSV.vcf.gz
+    rm -f converted.vcf
     "\$LIBEXEC/tabix" -f -p vcf \$V/diploidSV.vcf.gz
     N_BND=\$(gzip -cd \$V/diploidSV.raw.vcf.gz | awk -F'\\t' '!/^#/ && (\$5 ~ /^\\[/ || \$5 ~ /\\]\$/) {
         m = \$5; sub(/^[^][]*[][]/, "", m); sub(/:.*/, "", m); if (m == \$1) n++ } END { print n + 0 }')

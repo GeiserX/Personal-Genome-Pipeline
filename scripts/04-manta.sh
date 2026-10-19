@@ -2,8 +2,10 @@
 # Manta — Structural variant calling (deletions, duplications, inversions, translocations)
 # Input: sorted BAM + GRCh38 reference
 # Output: diploidSV.vcf.gz (~7-9K structural variants per 30X WGS), with
-#         inversions as SVTYPE=INV records; diploidSV.raw.vcf.gz is Manta's
-#         own file, where an inversion is a pair of breakend (BND) records.
+#         inversions as SVTYPE=INV records, except a single inversion
+#         junction of 1 Mb or more, which stays a pair of breakend (BND)
+#         records; diploidSV.raw.vcf.gz is Manta's own file, where every
+#         inversion junction is a pair of breakend records.
 # Env: THREADS (default 8) caps the container and Manta's -j; ALIGN_DIR
 #      (default aligned) is the folder under the sample that holds the BAM;
 #      MANTA_CALL_REGIONS, a bgzipped BED under GENOME_DIR with its .tbi
@@ -96,11 +98,18 @@ else
   fi
 fi
 
-# Step 3: Inversions. Manta writes an inversion as two breakend (BND) records;
-# AnnotSV, duphold and the SV consensus (steps 05, 15, 22) read SVTYPE, so
-# libexec/convertInversion.py, which ships with Manta, turns each pair into
-# one SVTYPE=INV record. It needs a samtools and the reference: both come from
-# the Manta image. Manta's own file stays as diploidSV.raw.vcf.gz, and the
+# Step 3: Inversions. Manta writes each inversion junction as two breakend
+# (BND) records, flagged INV3 or INV5; a balanced inversion has one junction
+# of each. AnnotSV, duphold and the SV consensus (steps 05, 15, 22) read
+# SVTYPE, so libexec/convertInversion.py, which ships with Manta, turns each
+# pair into one SVTYPE=INV record. It needs a samtools and the reference:
+# both come from the Manta image. It converts a lone junction too, and one
+# whose breakends lie 150 Mb apart becomes a 150 Mb inversion that AnnotSV
+# annotates over hundreds of genes, so bin/manta_inv_filter.py then marks
+# each INV with the junctions Manta found (INV_JUNCTIONS=2 or 1), puts a
+# lone junction of 1 Mb or more back as its two breakends, and marks a lone
+# one under 1 kb INVDUP_CANDIDATE (more likely an inverted insertion or
+# duplication). Manta's own file stays as diploidSV.raw.vcf.gz, and the
 # converted file takes the name the later steps read.
 # Each file moves on its own, so a run stopped between the two moves finishes
 # them on the next run.
@@ -125,12 +134,14 @@ if [ "$N_BND" -eq 0 ]; then
   cp -f "${RAW}.tbi" "${DIPLOID}.tbi"
   echo "Inversion conversion: 0 inversion breakend records in Manta's calls, nothing to convert; ${DIPLOID} is a copy of ${RAW}"
 else
-  echo "Converting inversions (libexec/convertInversion.py)..."
+  echo "Converting inversions (libexec/convertInversion.py, then bin/manta_inv_filter.py)..."
+  # The filter runs on the image's Python 2.7; its summary line goes to stderr.
   # shellcheck disable=SC2016  # the $ expressions expand inside the container
-  atomic_out "$DIPLOID" run_in "${MANTA_IMAGE}" bash -c '
+  atomic_out "$DIPLOID" run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${MANTA_IMAGE}" bash -c '
     set -euo pipefail
     libexec="$(dirname "$(readlink -f "$(command -v configManta.py)")")/../libexec"
-    "${libexec}/convertInversion.py" "${libexec}/samtools" "$1" "$2" | "${libexec}/bgzip" -c
+    "${libexec}/convertInversion.py" "${libexec}/samtools" "$1" "$2" > /tmp/converted.vcf
+    python /pgp-bin/manta_inv_filter.py "$2" /tmp/converted.vcf | "${libexec}/bgzip" -c
   ' _ "$REF_FASTA_C" "${VARIANTS_C}/diploidSV.raw.vcf.gz"
   # shellcheck disable=SC2016  # expands inside the container
   run_in "${MANTA_IMAGE}" bash -c \
