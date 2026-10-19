@@ -824,20 +824,30 @@ def bloodtype(d):
                                [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in BLOODTYPE])
 
 
-def traits(d, rng):
-    """Step 42: made-up genotypes at the panel's positions, read by
-    bin/traits_report.py. APOE e3/e3 (both sites reference), the rare alleles
-    absent, two positions without a genotype."""
+# Step 42: copies of each row's alt allele, a common European set; the
+# TAS2R38 rows are one taster and one non-taster haplotype, APOE is e3/e3.
+# AHR and OR2M7 have no genotype, as a gap in the gVCF.
+TRAIT_ALT_COPIES = {
+    "rs4988235": 1, "rs182549": 1, "rs145946881": 0, "rs41380347": 0, "rs41525747": 0, "rs671": 0,
+    "rs1229984": 2, "rs762551": 2, "rs2472297": 1, "rs713598": 1, "rs1726866": 1, "rs10246939": 1,
+    "rs17822931": 0, "rs10427255": 1, "rs1815739": 1, "rs12913832": 1, "rs1800407": 0, "rs16891982": 2,
+    "rs1426654": 0, "rs12203592": 0, "rs1805007": 0, "rs1805008": 0, "rs1805009": 0, "rs3827760": 0,
+    "rs1801133": 1, "rs601338": 1, "rs2282679": 1, "rs887829": 1, "rs1801272": 0, "rs429358": 0, "rs7412": 0,
+}
+
+
+def traits(d):
+    """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
     rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
-    rare = {"rs145946881", "rs41380347", "rs41525747", "rs671", "rs1229984", "rs3827760"}
-    missing = set(rng.sample([r["rsid"] for r in rows if r["gene"] != "APOE"], 2))
+    unknown = sorted(r["rsid"] for r in rows if r["rsid"] not in TRAIT_ALT_COPIES | {"rs4410790": 0, "rs4481887": 0})
+    if unknown:
+        raise SystemExit(f"assets/traits.tsv has rows TRAIT_ALT_COPIES does not give: {', '.join(unknown)}")
     recs = {}
     for r in rows:
-        if r["rsid"] in missing:
-            continue
-        n = 0 if r["gene"] == "APOE" or r["rsid"] in rare else rng.choices([0, 1, 2], weights=[45, 40, 15])[0]
-        recs[(r["chrom"], r["pos"])] = [(r["ref"], [r["ref"]] * (2 - n) + [r["alt"]] * n)]
+        if r["rsid"] in TRAIT_ALT_COPIES:
+            n = TRAIT_ALT_COPIES[r["rsid"]]
+            recs[(r["chrom"], r["pos"])] = [(r["ref"], [r["ref"]] * (2 - n) + [r["alt"]] * n)]
     os.makedirs(os.path.join(d, "traits"), exist_ok=True)
     traits_report.write_tsv(os.path.join(d, "traits", f"{SAMPLE}_traits.tsv"), traits_report.report(rows, recs))
 
@@ -873,7 +883,7 @@ def make(a):
              ("read_count", lambda r: read_count(d)), ("mosaic", lambda r: mosaic(d, r)),
              ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
-             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d, r))]
+             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
