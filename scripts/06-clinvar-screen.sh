@@ -13,6 +13,11 @@
 # clinvar/${SAMPLE}_clinvar_cdna_check.tsv says, for each hit, whether its alt
 # reads look like spliced cDNA (bin/clip_check.py; needs the sample's BAM and
 # the GENCODE exons setup.sh installs, and says "not checked" without them).
+# A hit whose call has a genotype quality below CLINVAR_MIN_GQ (default 30) or
+# a depth below CLINVAR_MIN_DP (default 10) is a low-confidence call: it stays
+# in the hits, marked, and the reports count it apart from the others. The
+# floor is written into the hits VCF as ##PGP_CALL_FLOOR=GQ=..,DP=.., so
+# bin/clinvar_hits.awk and both reports read the floor this run used.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -32,6 +37,11 @@ HITS_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.tsv"
 CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_cdna_check.tsv"
 BAM="${GENOME_DIR}/${SAMPLE}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
 EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+MIN_GQ=${CLINVAR_MIN_GQ:-30}
+MIN_DP=${CLINVAR_MIN_DP:-10}
+for v in "CLINVAR_MIN_GQ=${MIN_GQ}" "CLINVAR_MIN_DP=${MIN_DP}"; do
+  [[ "${v#*=}" =~ ^[0-9]+$ ]] || { echo "ERROR: ${v%%=*} must be a whole number, got '${v#*=}'" >&2; exit 1; }
+done
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 
@@ -178,6 +188,9 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
     rm -f '$(cpath "${HITS}.untagged")'
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%GT]\\t%ID\\t%INFO/GENEINFO\\t%INFO/CLNSIG\\t%INFO/CLNREVSTAT\\n' \
       -o '$(cpath "${HITS_TSV}.body")' '$(cpath "${HITS}.part")'"
+# The call floor this run used, for bin/clinvar_hits.awk and the reports.
+awk -v l="##PGP_CALL_FLOOR=GQ=${MIN_GQ},DP=${MIN_DP}" '/^#CHROM/ {print l} {print}' "${HITS}.part" > "${HITS}.floor"
+mv "${HITS}.floor" "${HITS}.part"
 # The same hits as a table, one row per hit.
 {
   printf 'chrom\tpos\tref\talt\tgenotype\tclinvar_id\tgeneinfo\tclnsig\tclnrevstat\n'
@@ -211,13 +224,18 @@ echo "Hits: ${HITS} (sample records carrying a ClinVar Pathogenic/Likely_pathoge
 echo "Table: ${HITS_TSV}"
 echo "cDNA read check: ${CDNA_TSV}"
 echo "Count: ${HIT_COUNT} pathogenic hits"
+if [ "$HIT_COUNT" -gt 0 ]; then
+  LOW_COUNT=$(awk -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$HITS" | awk -F'\t' '$13 == "yes"' | wc -l | tr -d ' ')
+  echo "Low-confidence calls among them (GQ below ${MIN_GQ} or DP below ${MIN_DP}): ${LOW_COUNT}"
+fi
 # A zero-star submission counts as a hit like an expert-panel one; the review
 # status (CLNREVSTAT, copied on above) says how much weight each deserves.
 # bin/clinvar_hits.awk maps it to ClinVar's stars, as both reports do, and its
-# last column says when a hit is a combined allele or part of one.
+# 10th column says when a hit is a combined allele or part of one, and the
+# last when the call is below the floor.
 if [ "$HIT_COUNT" -gt 0 ]; then
   echo "By review status (ClinVar stars):"
   awk -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$HITS" | sort -t$'\t' -k1,1nr -k2,2V -k3,3n \
-    | awk -F'\t' '{n[$1]++; line[$1] = line[$1] sprintf("    %s %s:%s %s>%s %s %s [%s]%s\n", $7, $2, $3, $4, $5, $6, $8, $9, ($10 != "." && $10 != "" ? " (" $10 ")" : ""))}
+    | awk -F'\t' '{n[$1]++; line[$1] = line[$1] sprintf("    %s %s:%s %s>%s %s %s [%s]%s%s\n", $7, $2, $3, $4, $5, $6, $8, $9, ($10 != "." && $10 != "" ? " (" $10 ")" : ""), ($13 == "yes" ? " LOW-CONFIDENCE CALL (GQ " $12 ", DP " $11 "): check the reads" : ""))}
         END {for (s = 4; s >= 0; s--) if (n[s]) printf "  %d star%s: %d\n%s", s, (s == 1 ? "" : "s"), n[s], line[s]}'
 fi
