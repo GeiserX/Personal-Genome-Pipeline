@@ -582,6 +582,67 @@
           },
           "cyp2d6": {
            "type": "string"
+          },
+          "cnv_call": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "string"
+           }
+          },
+          "not_callable": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "low_gq": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "gene",
+             "diplotype",
+             "min_gq",
+             "weakest"
+            ],
+            "properties": {
+             "gene": {
+              "type": "string"
+             },
+             "diplotype": {
+              "type": "string"
+             },
+             "min_gq": {
+              "type": [
+               "integer",
+               "null"
+              ]
+             },
+             "weakest": {
+              "type": "string"
+             }
+            }
+           }
+          },
+          "cyp2d6_evidence": {
+           "type": "object",
+           "properties": {
+            "phenotype": {
+             "type": "string"
+            },
+            "defining_filter": {
+             "type": "string"
+            },
+            "quality": {
+             "type": "string"
+            }
+           }
+          },
+          "depth_check": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "string"
+           }
           }
          }
         }
@@ -930,6 +991,71 @@
        }
       }
      ]
+    },
+    "cnvpytor": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "total": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "deletions": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "duplications": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "significant": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "ugt2b17": {
+           "type": "object",
+           "required": [
+            "call",
+            "note"
+           ],
+           "properties": {
+            "call": {
+             "enum": [
+              "no copy (deleted on both chromosomes)",
+              "one copy",
+              "two copies",
+              "more than two copies",
+              "not assessed"
+             ]
+            },
+            "note": {
+             "type": "string"
+            },
+            "span": {
+             "type": "string"
+            },
+            "gencode_release": {
+             "type": "string"
+            },
+            "level": {
+             "type": "number"
+            },
+            "e_value": {
+             "type": "number"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
     }
    }
   },
@@ -981,6 +1107,30 @@
        "type": [
         "string",
         "null"
+       ]
+      }
+     }
+    },
+    "probable": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "required": [
+      "diplotype",
+      "phenotype",
+      "label"
+     ],
+     "properties": {
+      "diplotype": {
+       "type": "string"
+      },
+      "phenotype": {
+       "type": "string"
+      },
+      "label": {
+       "enum": [
+        "probable (one caller: pypgx)"
        ]
       }
      }

@@ -493,6 +493,11 @@ def sec_cpic(d, s):
                "warnings": warnings}
 
 
+# The rows of the CYP2D6 depth check (bin/cyp2d6_depth_check.py) the reports
+# show: its verdict and the MAPQ shares beside it.
+DEPTH_CHECK_KEYS = ("status", "gene_mapq1_share", "gene_mapq20_share", "body_mapq1_share", "body_mapq20_share")
+
+
 def sec_pypgx(d, s):
     p = first_existing(d, [f"pypgx/{s}_pypgx_summary.tsv"])
     if not p:
@@ -500,8 +505,31 @@ def sec_pypgx(d, s):
     rows = read_tsv(p)
     # A no-call by step 36's list (Indeterminate, FAILED, N/A...), in any case
     called = [r for r in rows if (r.get("Diplotype") or "").strip().lower() not in pgx_outside_calls.NO_CALL]
-    cyp = next((r.get("Diplotype", "") for r in rows if r.get("Gene") == "CYP2D6"), "")
+    cyp_row = next((r for r in rows if r.get("Gene") == "CYP2D6"), None)
+    cyp = (cyp_row or {}).get("Diplotype", "")
     out = {"genes_total": len(rows), "genes_called": len(called), "cyp2d6": cyp or "not called"}
+    # pypgx's copy-number call from read depth, BAM-based genes only; 'N/A'
+    # (a VCF gene, GSTT1 without its contig, CYP2D6 after a failed depth check)
+    # is none.
+    out["cnv_call"] = {r["Gene"]: r["CNV_call"].strip() for r in rows
+                       if (r.get("Source") or "").strip().upper() == "BAM"
+                       and (r.get("CNV_call") or "").strip() not in ("", ".")
+                       and not r["CNV_call"].strip().startswith("N/A")}
+    out["not_callable"] = [r["Gene"] for r in rows
+                           if (r.get("Status") or "").strip() == pgx_outside_calls.NOT_CALLABLE]
+    out["low_gq"] = [{"gene": r["Gene"], "diplotype": (r.get("Diplotype") or "").strip(),
+                      "min_gq": int(r["Min_GQ"]) if (r.get("Min_GQ") or "").strip().isdigit() else None,
+                      "weakest": (r.get("Weakest_variant") or "").strip()}
+                     for r in rows if (r.get("Quality") or "").strip() == pgx_outside_calls.LOW_GQ]
+    if cyp_row is not None:
+        out["cyp2d6_evidence"] = {"phenotype": (cyp_row.get("Phenotype") or "").strip(),
+                                  "defining_filter": (cyp_row.get("Defining_filter") or "").strip(),
+                                  "quality": (cyp_row.get("Quality") or "").strip()}
+    dc = os.path.join(os.path.dirname(p), f"{s}_cyp2d6_depth_check.tsv")
+    if os.path.isfile(dc):
+        with open(dc, errors="replace") as f:
+            kv = dict(line.rstrip("\n").split("\t", 1) for line in f if "\t" in line)
+        out["depth_check"] = {k: kv[k] for k in DEPTH_CHECK_KEYS if k in kv}
     comp = os.path.join(os.path.dirname(p), f"{s}_pharmcat_comparison.tsv")
     if os.path.isfile(comp):
         crow = read_tsv(comp)
@@ -984,11 +1012,64 @@ def sec_delly(d, s):
     return p, {"total": t, "pass": ps}
 
 
+def gencode_gene(d, gene):
+    """(chrom, start, end, release) of GENCODE's gene line for gene, 1-based,
+    from the gene lines setup.sh installs beside the sample folders
+    (reference/gencode.v<N>.basic.genes.gtf, the newest release there), or
+    None when there are none or the gene is not in them."""
+    files = glob.glob(os.path.join(d, os.pardir, "reference", "gencode.v*.basic.genes.gtf"))
+    rel = {f: int(m.group(1)) for f in files for m in [re.search(r"gencode\.v(\d+)\.basic", os.path.basename(f))] if m}
+    if not rel:
+        return None
+    path = max(rel, key=rel.get)
+    want = f'gene_name "{gene}";'
+    with open(path, errors="replace") as f:
+        for line in f:
+            c = line.split("\t", 9)
+            if len(c) >= 9 and c[2] == "gene" and want in c[8] and re.fullmatch(r"chr([0-9]+|X|Y)", c[0]):
+                return c[0], int(c[3]), int(c[4]), str(rel[path])
+    return None
+
+
+# CNVpytor's read-depth level (1.0 is two copies) below which a deletion
+# leaves no copy, and below which it leaves one.
+UGT2B17_NO_COPY, UGT2B17_ONE_COPY = 0.25, 0.75
+
+
+def ugt2b17_copy_number(calls, span):
+    """UGT2B17 copy number from the CNVpytor call that covers most of its
+    GENCODE span. calls: (type, chrom, start, end, level, e-value)."""
+    chrom, gs, ge = span[:3]
+    best = None
+    for t, c, cs, ce, level, ev in calls:
+        ov = min(ce, ge) - max(cs, gs) + 1
+        if c == chrom and ov > 0 and (best is None or ov > best[0]):
+            best = (ov, t, c, cs, ce, level, ev)
+    out = {"span": f"{chrom}:{gs}-{ge}", "gencode_release": span[3]}
+    if best is None:
+        return dict(out, call="two copies", note="no CNVpytor call over the gene")
+    ov, t, c, cs, ce, level, ev = best
+    if t == "duplication":
+        call = "more than two copies"
+    elif level < UGT2B17_NO_COPY:
+        call = "no copy (deleted on both chromosomes)"
+    elif level < UGT2B17_ONE_COPY:
+        call = "one copy"
+    else:
+        call = "two copies"
+    note = (f"CNVpytor {t} {c}:{cs}-{ce}, depth level {level:.2f}, e-value {ev:.2g}, "
+            f"covers {ov / (ge - gs + 1):.0%} of the gene")
+    if ev >= 0.01:
+        note += "; not significant (e-value 0.01 or above)"
+    return dict(out, call=call, note=note, level=level, e_value=ev)
+
+
 def sec_cnvpytor(d, s):
     p = first_existing(d, [f"cnvpytor/{s}_cnvs.txt"])
     if not p:
         return None, {}
     total = dels = dups = sig = 0
+    calls = []
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1001,7 +1082,17 @@ def sec_cnvpytor(d, s):
                 sig += float(c[4]) < 0.01
             except (IndexError, ValueError):
                 pass
-    return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig}
+            m = re.fullmatch(r"(\S+):(\d+)-(\d+)", c[1]) if len(c) > 4 else None
+            try:
+                if m:
+                    calls.append((c[0], m.group(1), int(m.group(2)), int(m.group(3)), float(c[3]), float(c[4])))
+            except ValueError:
+                pass
+    span = gencode_gene(d, "UGT2B17")
+    ugt = (ugt2b17_copy_number(calls, span) if span else
+           {"call": "not assessed", "note": "no GENCODE gene lines beside the results "
+            "(reference/gencode.v<N>.basic.genes.gtf, which setup.sh installs) to place the gene"})
+    return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig, "ugt2b17": ugt}
 
 
 def sec_sv_consensus(d, s):
@@ -1765,7 +1856,18 @@ def cyp2d6_block(sample, sample_dir, sections):
         consensus = read_consensus(sample_dir, sample, sections)
     except (OSError, csv.Error) as e:
         consensus = {"result": "unreadable", "passed_to_pharmcat": False, "reason": str(e), "source": None}
-    return {"calls": calls, "agree": agree, "consensus": consensus}
+    # pypgx's call alone, labelled, when step 36's rule allows it
+    # (pgx_outside_calls.probable_cyp2d6); it never reaches PharmCAT.
+    probable = None
+    if pg_ok:
+        pd = sections["pypgx"]["data"]
+        ev = pd.get("cyp2d6_evidence") or {}
+        probable = pgx_outside_calls.probable_cyp2d6(
+            {"Diplotype": pg, "Phenotype": ev.get("phenotype"), "Defining_filter": ev.get("defining_filter"),
+             "Quality": ev.get("quality")},
+            (cy.get("genotype"), cy.get("filter")) if cy is not None else None,
+            (pd.get("depth_check") or {}).get("status"))
+    return {"calls": calls, "agree": agree, "consensus": consensus, "probable": probable}
 
 
 def collect(sample, sample_dir, declared_sex=None):

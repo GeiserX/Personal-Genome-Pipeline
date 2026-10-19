@@ -177,6 +177,51 @@ def cyp2d6_verdict(c):
 # VCF, it shows the call step 36 passed to it.
 CYP2D6_LABELS = {"PharmCAT": "PharmCAT (step 36's call)"}
 
+# Why step 32 could not call a gene on this reference.
+NOT_CALLABLE_WHY = {"GSTT1": "GRCh38 has it only on the ALT contig chr22_KI270879v1_alt, "
+                             "which a reference without ALT contigs lacks"}
+
+
+def probable_text(p):
+    """The probable CYP2D6 call (pgx_outside_calls.probable_cyp2d6) as one line."""
+    return (f"{p.get('diplotype')}" + (f", {p['phenotype']}" if p.get("phenotype") else "")
+            + "; not passed to PharmCAT, so no drug guidance rests on it")
+
+
+def pypgx_lines(d):
+    """Step 32's lines below its counts, the same in both reports: the genes
+    this reference cannot hold, the calls resting on a low-GQ variant, and the
+    CYP2D6 depth check with its MAPQ shares."""
+    lines = []
+    for g in d.get("not_callable", []):
+        lines.append(f"Not assessable on this reference: {g} ({NOT_CALLABLE_WHY.get(g, 'see docs/32-pypgx.md')})")
+    for x in d.get("low_gq", []):
+        lines.append(f"Low-confidence: {x['gene']} {x['diplotype']} rests on {x['weakest'] or 'a low-GQ variant'}: "
+                     "check the reads")
+    dc = d.get("depth_check")
+    if dc:
+        nm = "not measured"
+        lines.append(f"CYP2D6 depth check: {dc.get('status') or 'unreadable'}; share of the depth at MAPQ >= 1 / >= 20: "
+                     f"Cyrius's region with REP6 {dc.get('gene_mapq1_share', nm)} / {dc.get('gene_mapq20_share', nm)}, "
+                     f"gene body without REP6 {dc.get('body_mapq1_share', nm)} / {dc.get('body_mapq20_share', nm)}")
+    return lines
+
+
+def pgx_copy_number(S):
+    """(gene, copy number) rows, the same in both reports: pypgx's call from
+    read depth for its BAM-based genes, and UGT2B17 from CNVpytor's calls
+    over its GENCODE span."""
+    pg, cn = S.get("pypgx", MISSING), S.get("cnvpytor", MISSING)
+    if pg["state"] == "missing" and cn["state"] == "missing":
+        return []
+    rows = [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
+    u = cn["data"].get("ugt2b17") if cn["state"] in ("ok", "stale") else None
+    if u:
+        rows.append(("UGT2B17", f"{u['call']} ({u['note']})"))
+    else:
+        rows.append(("UGT2B17", f"not assessed (CNVpytor, step 18, {'failed' if cn['state'] == 'failed' else 'did not run' if cn['state'] == 'missing' else 'gave no UGT2B17 result'})"))
+    return rows
+
 
 # A section the summary lacks (one written before the section existed).
 MISSING = {"title": "", "state": "missing", "note": None, "data": {}}
@@ -466,6 +511,16 @@ def text_report(s):
             w(f"  PharmCAT vs pypgx conflicts: {d['comparison']['conflicts']}")
             if d["comparison"]["one_tool_only"]:
                 w(f"  Scope differences (only one tool called): {d['comparison']['one_tool_only']}")
+        for line in pypgx_lines(d):
+            w(f"  {line}")
+        w("")
+
+    cn_rows = pgx_copy_number(S)
+    if cn_rows:
+        w("## PGx copy number")
+        w("---")
+        for g, v in cn_rows:
+            w(f"  {g:<8} {v}")
         w("")
 
     calls = s["cyp2d6"]["calls"]
@@ -480,6 +535,8 @@ def text_report(s):
                                           else "fewer than two usable calls"))
         if verdict:
             w(f"  Step 36: {verdict}")
+        if s["cyp2d6"].get("probable"):
+            w(f"  {s['cyp2d6']['probable']['label'].capitalize()}: {probable_text(s['cyp2d6']['probable'])}")
         w("")
 
     if head("paralogs", "Paralog Genes (Paraphase, PacBio HiFi)"):
@@ -905,6 +962,15 @@ def html_report(s):
     if S["pypgx"]["state"] in ("ok", "stale") and "comparison" in S["pypgx"]["data"]:
         pgx_body.append(stat("PharmCAT vs pypgx conflicts", S["pypgx"]["data"]["comparison"]["conflicts"]))
     a(card(S["pharmcat"], "Pharmacogenomics", pgx_body))
+    if S["pypgx"]["state"] != "missing":
+        pd = S["pypgx"]["data"]
+        a(card(S["pypgx"], "pypgx Pharmacogenomics",
+               [stat("Genes called", f"{pd.get('genes_called')}/{pd.get('genes_total')}"),
+                stat("CYP2D6 diplotype", E(pd.get("cyp2d6") or "not called"))]
+               + [f"    <p>{E(line)}</p>" for line in pypgx_lines(pd)]))
+    cn_rows = pgx_copy_number(S)
+    if cn_rows:
+        a(card(None, "PGx Copy Number", [stat(g, E(v)) for g, v in cn_rows]))
 
     cpic_body = [stat("Status", done_badge(S["cpic"]))]
     if not cp.get("parse_failed"):
@@ -929,6 +995,9 @@ def html_report(s):
                                              else "yellow")))
         cy_body.append(small_note(("Passed to PharmCAT: " if cons.get("passed_to_pharmcat") else "Not passed to PharmCAT: ")
                                   + (cons.get("reason") or "no reason given")))
+    prob = s["cyp2d6"].get("probable")
+    if prob:
+        cy_body.append(stat(prob["label"].capitalize(), E(probable_text(prob))))
     a(["  <div class=\"card\">", "    <h2>CYP2D6 Across Callers</h2>"]
       + [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
          for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] in ("stale", "failed")]
