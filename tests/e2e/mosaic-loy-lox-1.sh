@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 # Step 33's mosaic loss of chrY or chrX (bin/mosaic_sex_loss.py) on the fixture:
-#   - HG002 (male), declared male, with the mosdepth windows of case 35: zero
-#     lies inside the 95% range of the estimated loss of Y, not detected. The
-#     fixture's chrY is one 220 kb stretch, which reads about 15% above one
-#     copy, so the range is wide (the drift of depth from one 200 kb stretch
-#     to the next, measured on chr1-22, counts once);
+#   - HG002 (male), declared male, with the mosdepth windows of case 35: the
+#     loss of Y reads within 0.05 of zero, zero lies inside its 95% range,
+#     not detected;
 #   - the same BAM with 30% of its chrY reads removed (samtools view -s on
-#     chrY only), step 16b run on it: the loss rises by what was removed, on
-#     top of HG002's own, and that lies inside its 95% range;
+#     chrY only), step 16b run on it: the loss reads 0.25 to 0.35, what was
+#     removed on top of HG002's own lies inside its 95% range, detected;
 #   - a synthetic woman, through the tool in PYTHON_IMAGE as the step runs
 #     it: HG002's windows with chrX at autosomal depth and no chrY, and a
 #     made-up VCF of heterozygous SNVs at 0.5 on chr20 and chrX, reads no
@@ -15,8 +13,10 @@
 #     lost in 30% of the cells) it reads about 0.30 from allele fractions
 #     and, from depth, 0.30 on top of what HG002's own chrX slice reads
 #     (about 0.25 here, as that slice reads 3% above two copies), detected.
-# The fixture holds chrY:2.70-3.00 Mb, of which 2.78-3.00 Mb lies in the
-# single-copy part the estimate reads (about 21 blocks of 10 kb), and
+# The fixture holds six 200 to 300 kb stretches of chrY (2.70-3.00, 6.80-7.00,
+# 12.60-12.80, 14.60-14.80, 19.60-19.80 and 20.50-20.70 Mb), each in a different
+# piece of the single-copy part the estimate reads (about 120 blocks of 10 kb;
+# from fixture-v7, before which it was the first stretch alone), and
 # chrX:73.7-74.0 Mb. Step 33 needs somalier's sites and VerifyBamID2's panel
 # cut to the fixture reference's contigs, as case qc-1 does; this case runs
 # before qc-1, so it installs its own copy in a folder of its own and leaves
@@ -70,8 +70,9 @@ check_eq "the estimate assumes the declared male (somalier cannot tell on the sl
   "$(tval "$T" mosaic_sex)/$(tval "$T" mosaic_sex_from)/$(tval "$T" mosaic_chrom)" male/declared/chrY
 check_ge "10 kb blocks on chrY's single-copy part" "$(tval "$T" mosaic_depth_blocks)" 15
 check "HG002: the loss of Y is within 0.30 of zero (${F0})" within "$F0" -0.30 0.30
+check "HG002: the loss of Y is within 0.05 of zero (${F0})" within "$F0" -0.05 0.05
 check "HG002: zero lies inside its 95% range (${LO0} to ${HI0})" within 0 "${LO0:-1}" "${HI0:--1}"
-check "HG002: the 95% range is under 0.70 wide on one 220 kb stretch of chrY" \
+check "HG002: the 95% range is under 0.70 wide on six stretches of chrY" \
   within "$(awk -v a="${LO0:-0}" -v b="${HI0:-9}" 'BEGIN { print b - a }')" 0 0.70
 check_eq "HG002: not detected" "$(tval "$T" mosaic_call)" not_detected
 check "the step prints the estimate" has 'Mosaic loss of chrY: not_detected' "$(cat "$STEP_LOG")"
@@ -113,6 +114,8 @@ check "30% of chrY gone: the loss reads ${WANT}, what was removed on top of HG00
   within "$F30" "$(awk -v w="$WANT" 'BEGIN { print w - 0.05 }')" "$(awk -v w="$WANT" 'BEGIN { print w + 0.05 }')"
 check "30% of chrY gone: ${WANT} lies inside its 95% range ($(tval "$TL" mosaic_loss_depth_low) to $(tval "$TL" mosaic_loss_depth_high))" \
   within "$WANT" "$(tval "$TL" mosaic_loss_depth_low)" "$(tval "$TL" mosaic_loss_depth_high)"
+check "30% of chrY gone: the loss reads about 0.30 (${F30})" within "$F30" 0.25 0.35
+check_eq "30% of chrY gone: detected" "$(tval "$TL" mosaic_call)" detected
 check "30% of chrY gone: the step prints the estimate" has 'from depth: ' "$(cat "$STEP_LOG")"
 echo "mosaic loss of Y: HG002 ${F0} (95% range ${LO0} to ${HI0}); with ${REMOVED} of chrY's reads removed ${F30}" >> "$E2E_NOTES"
 in_genome "$BCFTOOLS_IMAGE" rm -rf "$L"
