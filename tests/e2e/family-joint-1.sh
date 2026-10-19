@@ -292,8 +292,10 @@ check_eq "main, one sample, no --pedigree: exit" "$SRC" 0
 single "$REPO" head
 check_eq "this branch, one sample, no --pedigree: exit" "$SRC" 0
 check_ge "files the single-sample run publishes" "$(wc -l < "${CASE_TMP}/single-head/files.txt" | tr -d ' ')" 3
-check "a single-sample run publishes the same files, with the same content, as main" \
-  diff "${CASE_TMP}/single-main/files.txt" "${CASE_TMP}/single-head/files.txt"
+# A file main does not publish yet is a new output, not a change: compare only
+# the files main publishes, so a missing or changed one still fails.
+check "a single-sample run publishes every file main publishes, with the same content" \
+  diff "${CASE_TMP}/single-main/files.txt" <(awk 'NR == FNR {keep[$1]; next} $1 in keep' "${CASE_TMP}/single-main/files.txt" "${CASE_TMP}/single-head/files.txt")
 check "no family/ folder without --pedigree" test ! -e "${CASE_TMP}/single-head/out/family"
 F1=$(awk 'NR == 1 {print $1}' "${CASE_TMP}/single-head/files.txt")
 cp -r "${CASE_TMP}/single-head/out" "${CASE_TMP}/single-planted"

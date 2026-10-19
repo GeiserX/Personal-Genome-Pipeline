@@ -12,6 +12,8 @@
 #      reads, 0 of 10 ref reads clipped), and no other hit is flagged.
 #   2. <sample>nobam: the VCF alone. The module still writes the table, every
 #      hit not checked with the reason "no BAM", instead of passing silently.
+# Then a control: the same run with -resume and no --gencode_exons. The planted
+# hit is then not checked, so the "flagged" check above can go red.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -97,6 +99,27 @@ check_eq "every hit of the sample without a BAM is not checked" \
 check_eq "rows that give no BAM as the reason" \
   "$(awk -F'\t' 'NR > 1 && $10 == "no BAM for this sample in the samplesheet"' "$T2" 2>/dev/null | wc -l | tr -d ' ')" \
   "$(awk 'NR > 1' "$HITS_TSV" | wc -l | tr -d ' ')"
+
+# --- 3. control: the same run without --gencode_exons -------------------------------
+# Proves the checks of section 1 can go red: with no exon file the planted hit is
+# not checked, so "the planted hit is flagged" would fail. -resume reuses every
+# task but CLINVAR_CDNA_CHECK.
+NF_OFF="${CASE_TMP}/nf-no-exons"
+echo "+ nextflow run main.nf --tools clinvar -resume (no --gencode_exons)"
+(
+  cd "$CASE_TMP" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -resume \
+    -work-dir "${E2E_WORK}/nf-work-cdna" --input "$SHEET" \
+    --reference "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta" --tools clinvar \
+    --clinvar "${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz" \
+    --clinvar_index "${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi" \
+    --outdir "$NF_OFF" --max_cpus 4 --max_memory 14.GB
+) > "${CASE_TMP}/no-exons.log" 2>&1
+check_eq "control: nextflow run without --gencode_exons exits 0" "$?" 0
+OFF_ROW=$(row "${NF_OFF}/${N}/clinvar/${N}_clinvar_cdna_check.tsv")
+echo "control planted row:  ${OFF_ROW}"
+check_eq "control: without --gencode_exons the planted hit is not checked, so the flagged check can fail" \
+  "$(cut -f9 <<< "$OFF_ROW")" not_checked
+check_eq "control: the reason names the missing exon file" "$(cut -f10 <<< "$OFF_ROW")" "no GENCODE exons (--gencode_exons)"
 
 rm -rf "${GENOME_DIR:?}/${N}"
 finish

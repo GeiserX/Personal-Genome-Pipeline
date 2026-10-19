@@ -66,7 +66,7 @@ For each hit, `bin/clip_check.py` reads the BAM at the hit's position and splits
 
 A flag is a reason to look at the reads (in IGV, for example), not a verdict. A real variant in a sample that also holds the construct is flagged too, and a construct whose junction reads all fall outside the hit is not seen. Mates on the next exon are not used.
 
-In the Nextflow pipeline the process `CLINVAR_CDNA_CHECK` runs the same `bin/clip_check.py` on `CLINVAR_SCREEN`'s hits, in the same image, with the sample's BAM from the samplesheet (or the one the pipeline aligned) and the exon BED of `--gencode_exons`. It writes `<sample>/clinvar/<sample>_clinvar_cdna_check.tsv`, the same table. A sample without a BAM, or a run without `--gencode_exons`, gets every hit as not checked, with the reason. The Nextflow HTML report does not read this table yet, so it shows no cDNA column.
+In the Nextflow pipeline the process `CLINVAR_CDNA_CHECK` runs the same `bin/clip_check.py` on `CLINVAR_SCREEN`'s hits, in the same image, with the sample's BAM from the samplesheet (or the one the pipeline aligned) and the exon BED of `--gencode_exons` (`run-all.sh` passes the one `setup.sh` installs). It writes `<sample>/clinvar/<sample>_clinvar_cdna_check.tsv`, the same table. A sample without a BAM, or a run without `--gencode_exons`, gets every hit as not checked, with the reason. The Nextflow HTML report does not read this table yet, so it shows no cDNA column.
 
 ## Runtime
 
