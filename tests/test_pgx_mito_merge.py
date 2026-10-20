@@ -13,8 +13,11 @@ VCFs (GT 0/1 at every AF, as Mutect2 writes them), and checks:
      says why; so do a homoplasmic PASS change at a named position that
      PharmCAT does not name and a PASS deletion near m.961; a filtered one,
      or a low-AF unnamed change, does not;
-  4. PASS chrM records with no named allele give Reference; a file with no
-     PASS chrM record gives no call; records on other contigs are ignored;
+  4. PASS chrM records with no named allele give Reference when samtools
+     depth shows 20 reads or more at every named position; without a depth
+     file, with one position below 20 (--min-depth moves the bound) or absent
+     from it, no call; a homoplasmic named allele needs no depth; a file with
+     no PASS chrM record gives no call; records on other contigs are ignored;
   5. two homoplasmic named alleles: the increased-risk one is the call, the
      other is listed;
   6. INFO AF when FORMAT has none, the AF of the second ALT of a multi-allelic
@@ -68,8 +71,13 @@ class Case:
                 "namedAlleles": [{"name": n, "functionValue": f, "activityValue": None} for n, f in ALLELES]}))
         self.n = 0
 
-    def run(self, records, outside=None, gz=False, extra=(), jar=None):
+    def run(self, records, outside=None, gz=False, extra=(), jar=None, depth=None):
         self.n += 1
+        if depth is not None:
+            path = os.path.join(self.tmp, f"d{self.n}.depth")
+            with open(path, "w") as f:
+                f.writelines(f"chrM\t{p}\t{depth.get(p, 500)}\n" for p in range(648, 1602) if depth.get(p, 500) is not None)
+            extra = (*extra, "--depth", path)
         vcf = os.path.join(self.tmp, f"m{self.n}.vcf" + (".gz" if gz else ""))
         text = HEADER + records
         if gz:
@@ -134,14 +142,31 @@ def main():
             check(f"3: {desc}: the log says why ({want})", want in log, log)
             check(f"3: {desc}: the log says the gene stays No Result", "it stays No Result" in log, log)
         rc, log, lines = c.run(BACKGROUND + rec(1555, "A", "C", 0.3, filt="weak_evidence")
-                               + rec(955, "AC", "A", 0.2, filt="weak_evidence"))
+                               + rec(955, "AC", "A", 0.2, filt="weak_evidence"), depth={})
         check("3: a filtered unnamed change and a filtered deletion near m.961 hold nothing back",
               c.mt(lines) == ["Reference"], log)
 
         # 4. Reference, and no PASS record
-        rc, log, lines = c.run(BACKGROUND + rec(2706, "A", "G", 0.999) + rec(1555, "A", "G", 0.99, chrom="chr1"))
-        check("4: no named allele on chrM: Reference", c.mt(lines) == ["Reference"], log)
-        check("4: the log counts the PASS chrM records", "3 PASS chrM records read" in log, log)
+        rc, log, lines = c.run(BACKGROUND + rec(2706, "A", "G", 0.999) + rec(1555, "A", "G", 0.99, chrom="chr1"),
+                               depth={})
+        check("4: no named allele on chrM, depth 500: Reference", c.mt(lines) == ["Reference"], log)
+        check("4: the log says all 6 named positions are covered and counts the PASS records",
+              "all 6 named positions have depth 20 or more (lowest 500); 3 PASS chrM records read" in log, log)
+        rc, log, lines = c.run(BACKGROUND, depth={1555: 20, 961: 20})
+        check("4: depth exactly 20 counts", c.mt(lines) == ["Reference"], log)
+        rc, log, lines = c.run(BACKGROUND)
+        check("4: no depth file: no call", c.mt(lines) == [], log)
+        check("4: no depth file: the log says so", "there is no read depth" in log and "stays No Result" in log, log)
+        rc, log, lines = c.run(BACKGROUND, depth={1555: 5})
+        check("4: chrM:1555 at depth 5: no call", c.mt(lines) == [], log)
+        check("4: chrM:1555 at depth 5: the log names it", "1 of its 6 positions have depth below 20 (chrM:1555 depth 5)" in log, log)
+        rc, log, lines = c.run(BACKGROUND, depth={1555: 5}, extra=("--min-depth", "5"))
+        check("4: --min-depth 5 takes depth 5", c.mt(lines) == ["Reference"], log)
+        rc, log, lines = c.run(BACKGROUND, depth={960: None})
+        check("4: a named position absent from the depth file counts as depth 0",
+              c.mt(lines) == [] and "chrM:960 depth 0" in log, log)
+        rc, log, lines = c.run(BACKGROUND + rec(1555, "A", "G", 0.99))
+        check("4: a homoplasmic named allele needs no depth file", c.mt(lines) == ["m.1555A>G"], log)
         rc, log, lines = c.run(rec(263, "A", "G", 0.99, filt="weak_evidence"))
         check("4: no PASS chrM record: exit 0", rc == 0, log)
         check("4: no PASS chrM record: no call", c.mt(lines) == [], lines)

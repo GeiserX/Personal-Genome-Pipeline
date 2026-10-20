@@ -28,9 +28,11 @@
     no MT-RNR1 definition, so the gene is No Result from any VCF. When
     MITO_VARIANTS called the sample's chrM, pgx_mito_merge.py (bin/) adds
     an MT-RNR1 line to a copy of the outside calls: a homoplasmic (AF >=
-    0.95) PASS allele PharmCAT names, or Reference when there is none, and
-    no line, with the reason in the task log, for a heteroplasmic or
-    filtered named allele.
+    0.95) PASS allele PharmCAT names, or Reference when there is none and
+    the BAM has 20 reads or more (samtools depth, MAPQ and base quality 20)
+    at every position PharmCAT names an allele at; no line, with the reason
+    in the task log, for a heteroplasmic or filtered named allele or a
+    position without that depth.
 
     The jar's built-in logback.xml writes pharmcat.log into the working
     directory. A task runs in its own writable work directory, so the log
@@ -103,8 +105,9 @@ process PHARMCAT {
 
     input:
     // outside_calls is [] when PGX_CONSENSUS did not run for the sample,
-    // mito_vcf is [] when MITO_VARIANTS did not
-    tuple val(meta), path(preprocessed_vcf), path(outside_calls), path(mito_vcf)
+    // mito_vcf is [] when MITO_VARIANTS did not, bam and bai are [] [] for a
+    // sample without a BAM
+    tuple val(meta), path(preprocessed_vcf), path(outside_calls), path(mito_vcf), path(bam), path(bai)
 
     output:
     tuple val(meta), path("*.report.html"),  emit: html_report
@@ -126,6 +129,7 @@ process PHARMCAT {
     // vcf-parser newer than 0.3.1 (scripts/07-pharmacogenomics.sh does the same).
     def outside = outside_calls ? "${outside_calls}" : ''
     def mito = mito_vcf ? "${mito_vcf}" : ''
+    def bam_file = bam ? "${bam}" : ''
     """
     gzip -dc ${preprocessed_vcf} \\
         | awk '/^##/ { gsub(/\\\\"/, "\\047"); gsub(/\\\\/, "/") } { print }' \\
@@ -136,6 +140,12 @@ process PHARMCAT {
         echo "chrM calls (MITO_VARIANTS): ${mito}"
         MERGE=(--mito "${mito}")
         if [ -n "\${OUTSIDE}" ] && [ -s "\${OUTSIDE}" ]; then MERGE+=(--outside "\${OUTSIDE}"); fi
+        if [ -n "${bam_file}" ]; then
+            samtools depth -a -Q 20 -q 20 -r chrM:648-1601 ${bam_file} > mtrnr1.depth
+            MERGE+=(--depth mtrnr1.depth)
+        else
+            echo "No BAM: MT-RNR1 can be a named allele, not Reference."
+        fi
         pgx_mito_merge.py --jar /pharmcat/pharmcat.jar "\${MERGE[@]}" --out ${meta.id}.pharmcat_outside_calls.tsv
         OUTSIDE=${meta.id}.pharmcat_outside_calls.tsv FROM="PGX_CONSENSUS, and MT-RNR1 from MITO_VARIANTS"
     else

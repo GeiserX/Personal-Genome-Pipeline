@@ -19,18 +19,22 @@ writes 0/1 even at AF 1.0, so the genotype is not read.
   - More than one: the one PharmCAT ranks highest (increased risk, then
     uncertain, then normal) is the call, and the others are listed: PharmCAT
     takes one MT-RNR1 allele.
-  - None, and the file has at least one PASS chrM record (so chrM was
-    sequenced and called): "Reference".
+  - None: "Reference", but only when the read depth (--depth, samtools depth
+    over chrM:648-1601) is MIN_DEPTH or more at every position PharmCAT names
+    an MT-RNR1 allele at, since Mutect2 writes variant records only and an
+    uncovered position has no record either.
 Nothing is passed, and the gene stays No Result, with a line saying why,
 when a named allele is heteroplasmic (AF below MIN_AF), filtered, or has no
 allele fraction; when a homoplasmic PASS record at a named position has
 another ALT; when a PASS insertion or deletion overlaps a named position or
 lies within 10 bases of a named deletion (m.960 and m.961, in a C run whose
-calls this script does not map to PharmCAT's names); and when the file has no
-PASS chrM record.
+calls this script does not map to PharmCAT's names); when the file has no
+PASS chrM record; and, for Reference, when there is no depth file or a named
+position is below MIN_DEPTH.
 
   pgx_mito_merge.py --jar pharmcat.jar --mito chrM.vcf.gz [--outside calls.tsv]
-                    [--min-af 0.95] --out merged.tsv
+                    [--depth chrM.depth] [--min-af 0.95] [--min-depth 20]
+                    --out merged.tsv
 
 --outside is step 36's outside-call file; its lines are copied, except an
 MT-RNR1 line (this script's call replaces it). The output is written even
@@ -46,6 +50,7 @@ import sys
 import zipfile
 
 MIN_AF = 0.95
+MIN_DEPTH = 20
 GENE = "MT-RNR1"
 RESOURCE = "org/pharmgkb/pharmcat/phenotype/MT_RNR1.json"
 CHROMS = {"chrM", "MT", "M", "chrMT"}
@@ -144,12 +149,26 @@ def read_chrm(path):
     return recs, n_pass
 
 
+def read_depth(path):
+    """{pos: depth} of the chrM rows of samtools depth output."""
+    out = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                c = line.split()
+                if len(c) >= 3 and c[0] in CHROMS:
+                    out[int(c[1])] = int(c[2])
+    except (OSError, ValueError) as e:
+        die(f"cannot read {path} ({type(e).__name__}: {e})")
+    return out
+
+
 def rank(func):
     f = func.lower()
     return next((i for i, w in enumerate(RANK) if f.startswith(w)), len(RANK))
 
 
-def decide(recs, n_pass, snv, other, has_ref, min_af):
+def decide(recs, n_pass, snv, other, has_ref, min_af, depth=None, min_depth=MIN_DEPTH):
     """(call or None, [lines]) for MT-RNR1."""
     named_pos = {p for p, _, _ in snv}
     calls, held, lines = [], [], []
@@ -202,8 +221,21 @@ def decide(recs, n_pass, snv, other, has_ref, min_af):
     if not has_ref:
         lines.append(f"no named {GENE} allele, and PharmCAT's definitions have no Reference: no call passed")
         return None, lines
+    if depth is None:
+        lines.append(f"no named {GENE} allele is called, but there is no read depth to show its positions were "
+                     f"covered (no BAM): Reference not passed, {GENE} stays No Result")
+        return None, lines
+    positions = sorted(named_pos | set(other))
+    low = [(p, depth.get(p, 0)) for p in positions if depth.get(p, 0) < min_depth]
+    if low:
+        shown = ", ".join(f"chrM:{p} depth {d}" for p, d in low[:5]) + (", ..." if len(low) > 5 else "")
+        lines.append(f"no named {GENE} allele is called, but {len(low)} of its {len(positions)} positions have "
+                     f"depth below {min_depth} ({shown}): Reference not passed, {GENE} stays No Result")
+        return None, lines
     lines.append(f"{GENE} Reference passed to PharmCAT as an outside call: none of PharmCAT's "
-                 f"{len(snv)} named single-base alleles is called, {n_pass} PASS chrM records read")
+                 f"{len(snv)} named single-base alleles is called, and all {len(positions)} named positions "
+                 f"have depth {min_depth} or more (lowest {min(depth[p] for p in positions)}); "
+                 f"{n_pass} PASS chrM records read")
     return "Reference", lines
 
 
@@ -212,13 +244,17 @@ def main(argv=None):
     ap.add_argument("--jar", required=True, help="pharmcat.jar (its MT-RNR1 definitions)")
     ap.add_argument("--mito", required=True, help="chrM VCF of step 20 / MITO_VARIANTS (bgzip or plain)")
     ap.add_argument("--outside", help="step 36's outside-call file, copied into the output")
+    ap.add_argument("--depth", help="samtools depth -a over chrM:648-1601 (MT-RNR1); without it, no Reference")
     ap.add_argument("--min-af", type=float, default=MIN_AF, help=f"homoplasmic from this AF (default {MIN_AF})")
+    ap.add_argument("--min-depth", type=int, default=MIN_DEPTH,
+                    help=f"Reference needs this depth at every named position (default {MIN_DEPTH})")
     ap.add_argument("--out", required=True, help="the outside-call file PharmCAT reads")
     a = ap.parse_args(argv)
 
     snv, other, has_ref = read_alleles(a.jar)
     recs, n_pass = read_chrm(a.mito)
-    call, lines = decide(recs, n_pass, snv, other, has_ref, a.min_af)
+    depth = read_depth(a.depth) if a.depth else None
+    call, lines = decide(recs, n_pass, snv, other, has_ref, a.min_af, depth, a.min_depth)
     for line in lines:
         say(line)
 

@@ -106,8 +106,10 @@ run_in \
 # MT-RNR1 definition, so the gene is No Result from any VCF. When step 20
 # wrote its chrM calls, bin/pgx_mito_merge.py adds an MT-RNR1 line to a copy
 # of step 36's calls: a homoplasmic (AF >= 0.95) PASS allele PharmCAT names,
-# or Reference when there is none, and no line, with the reason in the log,
-# for a heteroplasmic or filtered named allele (the PHARMCAT module does the
+# or Reference when there is none and the BAM has 20 reads or more (samtools
+# depth, MAPQ and base quality 20) at every position PharmCAT names an allele
+# at; no line, with the reason in the log, for a heteroplasmic or filtered
+# named allele or a position without that depth (the PHARMCAT module does the
 # same).
 OUTSIDE="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv"
 MITO="${GENOME_DIR}/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
@@ -118,11 +120,27 @@ if [ -s "$MITO" ]; then
   echo "chrM calls (step 20): ${MITO}"
   MERGE_ARGS=(--mito "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz")
   [ ! -s "$OUTSIDE" ] || MERGE_ARGS+=(--outside "/genome/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv")
+  # The BAM step 20 read: the depth over MT-RNR1 shows its positions were covered.
+  BAM_C=""
+  if [ -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" ] && [ -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" ]; then
+    BAM_C="/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+  else
+    echo "No BAM (aligned/${SAMPLE}_sorted.bam with .bai): MT-RNR1 can be a named allele, not Reference."
+  fi
+  # shellcheck disable=SC2016  # $1 and $@ belong to the inner bash
   run_in \
     --cpus 1 --memory 1g \
     -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
     "${PHARMCAT_IMAGE}" \
-    python3 /pgp-bin/pgx_mito_merge.py --jar /pharmcat/pharmcat.jar "${MERGE_ARGS[@]}" \
+    bash -euo pipefail -c '
+      depth=()
+      if [ -n "$1" ]; then
+        samtools depth -a -Q 20 -q 20 -r chrM:648-1601 "$1" > /tmp/mtrnr1.depth
+        depth=(--depth /tmp/mtrnr1.depth)
+      fi
+      shift
+      python3 /pgp-bin/pgx_mito_merge.py "${depth[@]}" "$@"' _ "$BAM_C" \
+      --jar /pharmcat/pharmcat.jar "${MERGE_ARGS[@]}" \
       --out "/genome/${SAMPLE}/vcf/${SAMPLE}.pharmcat_outside_calls.tsv"
   OUTSIDE=$MERGED OUTSIDE_FROM="step 36, and MT-RNR1 from step 20"
 else

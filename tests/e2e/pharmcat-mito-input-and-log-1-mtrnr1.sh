@@ -9,7 +9,9 @@
 # so no later case sees them:
 #   MTHOM  m.1555A>G at AF 0.99, PASS: PharmCAT reports MT-RNR1 m.1555A>G as
 #          an outside call, with an aminoglycoside recommendation for it;
-#   MTREF  PASS chrM records, none at an MT-RNR1 allele: MT-RNR1 Reference;
+#   MTREF  PASS chrM records, none at an MT-RNR1 allele, and HG002's BAM
+#          (case 20; about 500x on chrM) to show the positions are covered:
+#          MT-RNR1 Reference;
 #   MTHET  m.1555A>G at AF 0.40: nothing passed, the log says heteroplasmic,
 #          MT-RNR1 stays No Result;
 #   MTNONE no chrM call set (the control, the state before the fix for every
@@ -89,6 +91,12 @@ denied() { grep -c 'pharmcat\.log (Permission denied)' <<< "$1" || true; }
 sample MTHOM "${BACKGROUND}
 $(row 1555 A G PASS 0.990)"
 sample MTREF "$BACKGROUND"
+BAM="${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam"
+check "case 20 wrote HG002's BAM" test -s "$BAM"
+mkdir -p "${G}/MTREF/aligned"
+for e in "" .bai; do
+  ln -f "${BAM}${e}" "${G}/MTREF/aligned/MTREF_sorted.bam${e}" 2>/dev/null || cp "${BAM}${e}" "${G}/MTREF/aligned/MTREF_sorted.bam${e}"
+done
 sample MTHET "${BACKGROUND}
 $(row 1555 A G PASS 0.400)"
 sample MTNONE
@@ -116,7 +124,10 @@ check "MTHOM: amikacin is one of them" has $'^drug\tamikacin\t' "$R"
 
 R=$(mt "${G}/MTREF/vcf/MTREF.report.json")
 echo "MTREF MT-RNR1: ${R}"
-check "MTREF: the merge passed Reference" has '^pgx_mito_merge: MT-RNR1 Reference passed to PharmCAT' "${LOGS[MTREF]}"
+check "MTREF: the merge passed Reference, every named position covered" \
+  has '^pgx_mito_merge: MT-RNR1 Reference passed to PharmCAT as an outside call: .* named positions have depth 20 or more' "${LOGS[MTREF]}"
+check "MTHOM (no BAM): the step says Reference would need one" \
+  has '^No BAM \(aligned/MTHOM_sorted\.bam with \.bai\): MT-RNR1 can be a named allele, not Reference\.' "${LOGS[MTHOM]}"
 check_eq "MTREF: PharmCAT reports MT-RNR1 Reference as an outside call" "$(head -n 1 <<< "$R")" $'OUTSIDE\tReference'
 
 R=$(mt "${G}/MTHET/vcf/MTHET.report.json")
