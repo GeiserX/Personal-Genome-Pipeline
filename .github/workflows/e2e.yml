@@ -154,6 +154,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.need.outputs.tag }}
+          # On a pull request GITHUB_SHA is the temporary merge commit, which
+          # is on no branch; the notes name the pull request's head instead.
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           cd "${RUNNER_TEMP}/fixture"
           # MANIFEST.txt goes up last: a release without it is rebuilt by the
@@ -171,7 +174,7 @@ jobs:
             # the notes name the commit that built the data.
             gh release create "$TAG" "${files[@]}" -R "$GITHUB_REPOSITORY" \
               --title "Test fixture ${TAG}" \
-              --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome, built by scripts/ci/build-fixture.sh at ${GITHUB_SHA}; see MANIFEST.txt and docs/testing.md." \
+              --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome, built by scripts/ci/build-fixture.sh at ${BUILD_SHA}; see MANIFEST.txt and docs/testing.md." \
               --prerelease --latest=false
           fi
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber MANIFEST.txt
@@ -531,7 +534,10 @@ jobs:
           fetch-depth: 0
 
       # On a push or a pull request this job only runs when its own script
-      # changed: in the push, or on the branch since it left main.
+      # changed: in the push, or in the pull request against main. A pull
+      # request ignores github.event.before: on a second push that is the old
+      # head, and the diff to the merge commit would also hold whatever main
+      # changed since.
       - name: Decide whether to run
         id: need
         env:
@@ -539,6 +545,7 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          [ "$EVENT" = "push" ] || BEFORE=""
           base="$BEFORE"
           if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             base=$(git merge-base origin/main HEAD)
