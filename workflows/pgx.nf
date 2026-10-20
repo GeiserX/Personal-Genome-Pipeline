@@ -165,7 +165,7 @@ workflow PGX {
         PHARMCAT_PREPROCESS(ch_pharmcat_input, ch_reference, ch_reference_fai)
         // PharmCAT waits for the sample's outside calls and its chrM calls
         // (MT-RNR1), with the BAM whose depth shows MT-RNR1 was covered;
-        // [] without them
+        // [] without them (no BAM without the chrM calls)
         PHARMCAT(
             PHARMCAT_PREPROCESS.out.preprocessed_vcf
                 .map { meta, vcf -> [meta.id, meta, vcf] }
@@ -173,7 +173,11 @@ workflow PGX {
                 .join(ch_mito_vcf.map { meta, f -> [meta.id, f] }, remainder: true)
                 .join(ch_bam.map { meta, bam, bai -> [meta.id, [bam, bai]] }, remainder: true)
                 .filter { row -> row[1] != null }
-                .map { row -> [row[1], row[2], row[3] ?: [], row[4] ?: [], row[5] ? row[5][0] : [], row[5] ? row[5][1] : []] }
+                .map { row ->
+                    // the BAM is staged only with a chrM call set, the one case that reads it
+                    def bam = (row[4] && row[5]) ? row[5] : [[], []]
+                    [row[1], row[2], row[3] ?: [], row[4] ?: [], bam[0], bam[1]]
+                }
         )
         ch_pharmcat_html = PHARMCAT.out.html_report
         ch_pharmcat_json = PHARMCAT.out.json_report
