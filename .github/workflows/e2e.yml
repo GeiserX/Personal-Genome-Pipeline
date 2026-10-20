@@ -5,12 +5,11 @@ name: E2E
 # call. Four jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
 #
 #   build-fixture  builds the data set and publishes it as release assets
-#                  under the tag in tests/fixtures/VERSION. Runs on every push
-#                  in the e2e scope below, which includes the build script,
-#                  VERSION and this file (a dispatch-only job could not run
-#                  before this file is on main), and on dispatch; it does
-#                  nothing when the release already exists and was built by
-#                  the same script.
+#                  under the tag in tests/fixtures/VERSION. Runs on pull
+#                  requests (a dispatch-only job could not run before this
+#                  file is on main), on a push to main and on dispatch; it
+#                  does nothing when the release already exists and was
+#                  built by the same script.
 #   e2e            runs every case in tests/e2e/ on that data set, then the
 #                  parity check: the bash single steps and the Nextflow
 #                  pipeline, both from the fixture's FASTQ, must agree, and
@@ -34,15 +33,15 @@ name: E2E
 # pull requests, so nothing in this file may use a self-hosted runner.
 on:
   push:
-    # Without a branches filter a tag push would start this workflow too:
-    # GitHub skips path filters for tags.
-    branches: ['**']
+    # Main only. Main does not require a branch to be up to date, so two
+    # pull requests merged close together are first tested together here.
+    # A push to another branch is tested by its pull request: a push run
+    # there would put a skipped e2e job, which counts as passed, on the same
+    # commit as the pull request's required e2e check.
+    branches: [main]
     # The e2e scope, the same paths e2e-scope checks on a pull request
     # (E2E_SCOPE_DIRS and E2E_SCOPE_FILES below; the e2e job fails when the
-    # two lists differ). On main the e2e job runs on such a push, so pull
-    # requests merged close together are tested together. On another branch
-    # only build-fixture and settle-doubts run, and both do nothing unless
-    # their own files changed.
+    # two lists differ), so a docs-only merge starts no run.
     paths:
       - 'scripts/**'
       - 'modules/**'
@@ -87,17 +86,18 @@ env:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  # Never cancel a fixture upload or a run on main half way; pull request
-  # runs may be replaced. A push run waits for the running one of its
-  # branch, and GitHub keeps one waiting run per group: a newer push
-  # replaces the waiting one, so the next run on main tests every merge
-  # since the last one.
+  # Never cancel a run on main half way; pull request runs may be
+  # replaced (build-fixture publishes MANIFEST.txt last, so a cancelled
+  # upload is rebuilt by the next run). A push run waits for the running
+  # one, and GitHub keeps one waiting run per group: a newer merge replaces
+  # the waiting one, so the next run on main tests every merge since the
+  # last one.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-fixture:
     if: >-
-      github.event_name == 'push' ||
+      github.event_name == 'push' || github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' && inputs.job == 'build-fixture')
     runs-on: ubuntu-latest
     # VEP --database answers at Ensembl's pace: 20 to 60 minutes so far.
@@ -156,7 +156,11 @@ jobs:
           TAG: ${{ steps.need.outputs.tag }}
         run: |
           cd "${RUNNER_TEMP}/fixture"
-          files=(*)
+          # MANIFEST.txt goes up last: a release without it is rebuilt by the
+          # next run, so an upload cut half way (a newer push cancels a pull
+          # request run) is never taken for a finished one.
+          files=()
+          for f in *; do [ "$f" = MANIFEST.txt ] || files+=("$f"); done
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
           else
@@ -170,6 +174,7 @@ jobs:
               --notes "Test data for the E2E workflow, not a pipeline release. A slice of the public GIAB HG002 genome, built by scripts/ci/build-fixture.sh at ${GITHUB_SHA}; see MANIFEST.txt and docs/testing.md." \
               --prerelease --latest=false
           fi
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber MANIFEST.txt
           {
             echo "### Fixture ${TAG}"
             echo '```'
@@ -216,14 +221,10 @@ jobs:
 
   e2e:
     needs: e2e-scope
-    # On a push to a branch other than main this job is skipped (its pull
-    # request runs it). The skipped job gets another name, so the required
-    # e2e check of the pull request never has a skipped twin on its commit.
-    name: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && 'e2e (branch push, runs on the pull request)' || 'e2e' }}
     if: >-
       ${{ !cancelled() && needs.e2e-scope.outputs.run != 'false' && (
         github.event_name == 'pull_request' ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'push' ||
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
@@ -519,7 +520,7 @@ jobs:
     if: >-
       always() &&
       (needs.build-fixture.result == 'success' || needs.build-fixture.result == 'skipped') &&
-      (github.event_name == 'push' ||
+      (github.event_name == 'push' || github.event_name == 'pull_request' ||
        (github.event_name == 'workflow_dispatch' && inputs.job == 'settle-doubts'))
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -529,14 +530,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # On push this job only runs when its own script changed in the push.
+      # On a push or a pull request this job only runs when its own script
+      # changed: in the push, or on the branch since it left main.
       - name: Decide whether to run
         id: need
         env:
           BEFORE: ${{ github.event.before }}
           EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" != "push" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$EVENT" = "workflow_dispatch" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           base="$BEFORE"
           if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             base=$(git merge-base origin/main HEAD)
@@ -544,7 +546,7 @@ jobs:
           if git diff --name-only "$base" HEAD | grep -qx 'scripts/ci/settle-doubts.sh'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "scripts/ci/settle-doubts.sh did not change in this push: nothing to do."
+            echo "scripts/ci/settle-doubts.sh did not change: nothing to do."
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
