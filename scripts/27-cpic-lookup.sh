@@ -71,9 +71,11 @@ STEP36_OUTSIDE=""
 if [ ! -f "$CONSENSUS" ]; then
   # The genes of step 36 (CYP2D6, HLA-A, HLA-B) PharmCAT called from an outside
   # call. Step 07's MT-RNR1 outside call comes from step 20, not step 36, so it
-  # is not listed and never asks for step 36.
+  # is not listed and never asks for step 36. A report it cannot read lists
+  # nothing: the parser below then writes its PARSING FAILED report.
   STEP36_OUTSIDE=$(run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
-    python3 /pgp-bin/pgx_parse.py step36-outside --report "$(cpath "$PHARMCAT_JSON")" | paste -sd' ' -)
+    python3 /pgp-bin/pgx_parse.py step36-outside --report "$(cpath "$PHARMCAT_JSON")" | paste -sd' ' -) \
+    || STEP36_OUTSIDE=""
 fi
 if [ -f "$CONSENSUS" ]; then
   echo "Outside-call consensus (step 36): ${CONSENSUS}"

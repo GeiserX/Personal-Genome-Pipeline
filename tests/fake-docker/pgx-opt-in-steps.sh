@@ -188,5 +188,12 @@ if grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus'
   fail "step 27 passed step 36's missing table for a report whose only outside call is MT-RNR1"
 fi
 output_lacks cpic-mtrnr1-outside "consensus is missing"
+# A report the lister cannot read still reaches the parser, which writes the
+# PARSING FAILED report, instead of stopping the step before it.
+printf 'not json\n' > "$REPORT_JSON"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 cpic-unreadable-report "${SCRIPTS}/27-cpic-lookup.sh" sample1
+grep -q 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" \
+  || fail "step 27 stopped before the parser on a report step36-outside cannot read"
 
 echo "Cyrius installs hash-locked with network and runs without; step 07 passes only non-empty outside calls."
