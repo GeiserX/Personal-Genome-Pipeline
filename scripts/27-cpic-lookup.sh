@@ -67,14 +67,22 @@ fi
 
 # Step 36: what the BAM-based callers gave PharmCAT, and what they held back.
 CONSENSUS="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+STEP36_OUTSIDE=""
+if [ ! -f "$CONSENSUS" ]; then
+  # The genes of step 36 (CYP2D6, HLA-A, HLA-B) PharmCAT called from an outside
+  # call. Step 07's MT-RNR1 outside call comes from step 20, not step 36, so it
+  # is not listed and never asks for step 36.
+  STEP36_OUTSIDE=$(run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+    python3 /pgp-bin/pgx_parse.py step36-outside --report "$(cpath "$PHARMCAT_JSON")" | paste -sd' ' -)
+fi
 if [ -f "$CONSENSUS" ]; then
   echo "Outside-call consensus (step 36): ${CONSENSUS}"
   PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
-elif grep -Eq '"callSource"[[:space:]]*:[[:space:]]*"OUTSIDE"' "$PHARMCAT_JSON"; then
-  # PharmCAT read outside calls, but step 36's table is gone (a caller step
-  # ran again since): pass the missing table, so the parser confirms none of
-  # them and gives them no drug guidance.
-  echo "WARNING: PharmCAT's report has outside calls, but step 36's consensus is missing: run step 36, then step 07, again."
+elif [ -n "$STEP36_OUTSIDE" ]; then
+  # PharmCAT read outside calls from step 36, but its table is gone (a caller
+  # step ran again since): pass the missing table, so the parser confirms none
+  # of them and gives them no drug guidance.
+  echo "WARNING: PharmCAT's report has outside calls from step 36 (${STEP36_OUTSIDE}), but step 36's consensus is missing: run step 36, then step 07, again."
   PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
 else
   echo "No outside-call consensus (step 36 not run): HLA and CYP2D6 from the BAM are not listed."

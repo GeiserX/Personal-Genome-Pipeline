@@ -14,15 +14,22 @@ writes DIR/S_phenotypes.tsv and DIR/S_cpic_recommendations.txt, and with
 PGX_CONSENSUS, bin/pgx_outside_calls.py) the recommendations list the calls
 other tools gave PharmCAT (HLA from T1K, an agreed CYP2D6) and say why a gene
 was held back; a held-back gene gets no pypgx-only warning, which would
-steer by one caller. An outside call in PharmCAT's report counts only when
-the consensus passed that same call (an unreadable table confirms none): a
-report left from an earlier step 36 run gives no drug guidance for it. A
+steer by one caller. An outside call of a step 36 gene (CYP2D6, HLA-A,
+HLA-B) in PharmCAT's report counts only when the consensus passed that same
+call (an unreadable table confirms none): a report left from an earlier
+step 36 run gives no drug guidance for it. Other outside calls, such as
+MT-RNR1 from step 20's chrM calls, are not checked against the table. A
 gene whose CPIC warfarin rule rests on one position (CYP4F2 *3, VKORC1
 -1639) and that PharmCAT left without a single result gets the genotype
 PharmCAT read there (its `variants` list), labelled as a single-position
 fallback, not a PharmCAT call. It exits 1 when the report cannot be
 read or yields no gene: a report that parses to nothing is a format change,
 never an all-clear.
+
+  pgx_parse.py step36-outside --report R.json
+
+prints, one per line, the step 36 genes the report calls from an outside
+call. Step 27 runs it when step 36's table is missing.
 
 PharmCAT 3.x writes `genes` as a flat {gene: GeneReport} map and `drugs` as
 {guidance source: {drug: DrugReport}} holding only the annotations that match
@@ -557,15 +564,21 @@ def gene_drugs(gene, guidance, related):
     return list(dict.fromkeys(names))
 
 
+# The genes step 36 (bin/pgx_outside_calls.py) can pass to PharmCAT. Any other
+# outside call, such as MT-RNR1 from step 20's chrM calls (bin/pgx_mito_merge.py),
+# never appears in its table, so the table cannot confirm or refute it.
+STEP36_GENES = ("CYP2D6", "HLA-A", "HLA-B")
+
+
 def unconfirm_outside(calls, rows):
-    """Mark every outside call in PharmCAT's report that the consensus rows did
-    not pass on, with the same diplotype, as not called; return those calls.
-    Such a call comes from an earlier step 36 run that step 07 has not
-    replaced, so it must give no drug guidance."""
+    """Mark every outside call of a step 36 gene in PharmCAT's report that the
+    consensus rows did not pass on, with the same diplotype, as not called;
+    return those calls. Such a call comes from an earlier step 36 run that
+    step 07 has not replaced, so it must give no drug guidance."""
     passed = {r["Gene"]: r.get("Result", "") for r in rows if r.get("Outside_call") == "yes"}
     stale = []
     for c in calls:
-        if c.source == "OUTSIDE" and c.called and \
+        if c.source == "OUTSIDE" and c.called and c.gene in STEP36_GENES and \
                 (c.gene not in passed or _norm(passed[c.gene]) != _norm(c.diplotype)):
             c.called = False
             c.phenotype = "outside call not confirmed by step 36"
@@ -787,6 +800,23 @@ def cpic_report(args):
     return 0
 
 
+def step36_outside(args):
+    """Print, one per line, the step 36 genes (STEP36_GENES) PharmCAT's report
+    calls from an outside call: the ones a missing consensus table leaves
+    unconfirmed. Step 27 runs it to decide whether to ask for step 36 again."""
+    try:
+        with open(args.report) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: could not read PharmCAT report {args.report}: {e}", file=sys.stderr)
+        return 1
+    _, calls = parse_genes(data)
+    for c in calls:
+        if c.source == "OUTSIDE" and c.called and c.gene in STEP36_GENES:
+            print(c.gene)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -797,9 +827,13 @@ def main(argv=None):
     c.add_argument("--pypgx", help="pypgx summary TSV (step 32 / PYPGX)")
     c.add_argument("--comparison", help="where to write the PharmCAT/pypgx comparison TSV")
     c.add_argument("--consensus", help="consensus table of the outside calls (step 36 / PGX_CONSENSUS)")
+    o = sub.add_parser("step36-outside", help="the step 36 genes the report calls from an outside call")
+    o.add_argument("--report", required=True, help="PharmCAT report.json")
     args = p.parse_args(argv)
     if args.cmd == "cpic-report":
         return cpic_report(args)
+    if args.cmd == "step36-outside":
+        return step36_outside(args)
     return 2
 
 

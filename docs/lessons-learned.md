@@ -523,3 +523,13 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** after step 7 expanded the gVCF's reference blocks into one record per base, the alleles PharmCAT defines by an indel (DPYD, UGT1A1 \*28, TPMT, CYP3A4 and others) stayed uncallable, even where the gVCF showed the reference over the whole span.
 - **Why:** PharmCAT 3.4.0's preprocessor does not read a one-base 0/0 record as a call at a position whose REF or ALT is longer than one base. It sets the record aside with FILTER `PCATxINDEL` (or `PCATxREF` for a two-base substitution) and lists the position as missing; where PharmCAT's REF is longer than one base, the matcher then discards it.
 - **Fix:** `bin/pgx_refblock_fill.py` writes PharmCAT's own record (its ID, REF and ALT) as 0/0 at each such position when every base of the span lies in reference blocks with GQ 20 or more and nothing else overlaps it. The details are in [Pharmacogenomics, Input the preprocessor or PharmCAT refuses](07-pharmacogenomics.md#input-the-preprocessor-or-pharmcat-refuses).
+
+### PharmCAT reads MT-RNR1 only as an outside call
+- **Failed:** MT-RNR1 (aminoglycoside-induced hearing loss) was No Result on every sample, although step 20 calls chrM with Mutect2 at high depth.
+- **Why:** PharmCAT 3.4.0 has no MT-RNR1 allele definition for its matcher, so chrM records in its VCF input are never matched for the gene. It lists MT-RNR1 among the genes it prefers as an outside call, and its own MT-RNR1 test passes the gene that way.
+- **Fix:** `bin/pgx_mito_merge.py` turns step 20's chrM calls into one MT-RNR1 outside call (a homoplasmic named allele, or `Reference` only when the BAM covers every named position), added to step 36's outside calls. Step 27 checks only CYP2D6, HLA-A and HLA-B against step 36's table: MT-RNR1 never appears there, and checking it marked the new call stale. The details are in [Pharmacogenomics, Input the preprocessor or PharmCAT refuses](07-pharmacogenomics.md#input-the-preprocessor-or-pharmcat-refuses).
+
+### PharmCAT's log file needs a writable working directory
+- **Failed:** every step 07 run printed a logback status dump with a `pharmcat.log (Permission denied)` stack trace. The calls were not affected.
+- **Why:** the jar's built-in `logback.xml` writes `pharmcat.log` by a relative path, into the working directory. In the image that is `/pharmcat`, which the calling user cannot write. No `-D` property moves the file.
+- **Fix:** step 07 runs the jar with `-w /tmp`. A Nextflow task already runs in its own writable work directory, so the module needed no change.
