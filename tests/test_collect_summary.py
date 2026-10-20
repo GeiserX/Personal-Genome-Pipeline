@@ -106,7 +106,10 @@ Checks:
      frequency unknown, a common one not at all; neither a weak call nor an
      unknown frequency counts as rare; the summary table's FREQ_TIER and
      CALL_CHECK columns and step 31's FREQ_TIER are counted; both reports
-     show the counts and the marks.
+     show the counts and the marks. bin/csq_rank.awk, the program steps 23
+     and 31 and their modules run, tags the same records the same way
+     (PGP_IMPACT, PGP_TX, PGP_FREQ, PGP_CALL), drops the common one with
+     keep=noncommon, and agrees with the summary on every record.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -509,6 +512,38 @@ def clinical_mane_quality(work, schema):
         "chr3\t700\t.\tC\tT\t50\tPASS\tCSQ=T|missense_variant|MODERATE|SCN5A|ENST8|||0.0001,"
         "T|stop_gained|HIGH|SCN5A|ENST9|YES||0.0001\tGT:GQ:DP:AD\t0/1:50:30:15,15\n")
     put(f"{d}/clinical/S_clinical.vcf.gz", head + body, gz=True)
+    # bin/csq_rank.awk on the same records
+    awk_file = os.path.join(REPO, "bin", "csq_rank.awk")
+
+    def ranked(keep):
+        p_ = subprocess.run(["awk", "-v", f"keep={keep}", "-f", awk_file], input=head + body,
+                            capture_output=True, text=True, env=dict(os.environ, LC_ALL="C"))
+        tags = {}
+        for line in p_.stdout.splitlines():
+            if not line.startswith("#"):
+                r = line.split("\t")
+                tags[int(r[1])] = dict(kv.split("=", 1) for kv in r[7].split(";") if kv.startswith("PGP_"))
+        return p_.returncode, tags, p_.stdout
+    rc, tags, out = ranked("all")
+    want = {100: ("MODIFIER", "MANE", "rare", "ok"), 200: ("HIGH", "MANE", "rare", "weak"),
+            300: ("HIGH", "MANE", "rare", "weak"), 400: ("HIGH", "MANE", "rare", "ok"),
+            500: ("HIGH", "MANE", "unknown", "ok"), 600: ("HIGH", "MANE", "common", "ok"),
+            700: ("HIGH", "CANONICAL", "rare", "ok")}
+    got = {p_: (t.get("PGP_IMPACT"), t.get("PGP_TX"), t.get("PGP_FREQ"), t.get("PGP_CALL")) for p_, t in tags.items()}
+    check("csq_rank.awk: impact on the MANE transcript, else the canonical one; frequency tier; call check",
+          rc == 0 and got == want, (rc, got, out[-600:]))
+    check("csq_rank.awk: what made a call weak (GQ12; GQ11,AB0.29)",
+          (tags.get(200, {}).get("PGP_CALL_WHY"), tags.get(300, {}).get("PGP_CALL_WHY")) == ("GQ12", "GQ11,AB0.29"), tags)
+    check("csq_rank.awk: the header names the floor it used",
+          "##PGP_CALL_FLOOR=GQ=30,DP=10,HET_AB=0.2-0.8,HOM_AB=0.8\n" in out, out[:900])
+    rc, tags_nc, _ = ranked("noncommon")
+    check("csq_rank.awk: keep=noncommon drops the common record only",
+          rc == 0 and sorted(tags_nc) == [100, 200, 300, 400, 500, 700], sorted(tags_nc))
+    agree = collect_summary.csq_high_impact_genes(f"{d}/clinical/S_clinical.vcf.gz")
+    check("csq_rank.awk and the summary agree on which records are HIGH and which calls are weak",
+          {p_ for p_, t in tags.items() if t.get("PGP_IMPACT") == "HIGH"} == {k[1] for k in agree}
+          and {p_ for p_, t in tags.items() if t.get("PGP_CALL") == "weak"} == {k[1] for k, x in agree.items() if x["weak"]},
+          (tags, agree))
     summ, txt, html = render(d)
     sf = summ["sections"]["clinical"]["data"]["acmg_sf"]
     by = {x["gene"]: x for x in sf["high_impact"]}
