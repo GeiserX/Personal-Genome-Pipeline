@@ -523,3 +523,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** after step 7 expanded the gVCF's reference blocks into one record per base, the alleles PharmCAT defines by an indel (DPYD, UGT1A1 \*28, TPMT, CYP3A4 and others) stayed uncallable, even where the gVCF showed the reference over the whole span.
 - **Why:** PharmCAT 3.4.0's preprocessor does not read a one-base 0/0 record as a call at a position whose REF or ALT is longer than one base. It sets the record aside with FILTER `PCATxINDEL` (or `PCATxREF` for a two-base substitution) and lists the position as missing; where PharmCAT's REF is longer than one base, the matcher then discards it.
 - **Fix:** `bin/pgx_refblock_fill.py` writes PharmCAT's own record (its ID, REF and ALT) as 0/0 at each such position when every base of the span lies in reference blocks with GQ 20 or more and nothing else overlaps it. The details are in [Pharmacogenomics, Input the preprocessor or PharmCAT refuses](07-pharmacogenomics.md#input-the-preprocessor-or-pharmcat-refuses).
+
+## Nextflow's task wrapper header (2026-10)
+
+### Nextflow 26.10.3 quotes task names with double quotes
+- **Failed:** the nextflow (26.10) job, which runs the newest 26.10.x release, counted 0 T1K_BUILD, HLA_TYPING, INDEXCOV and DEEPVARIANT tasks on every branch from 2026-10-20, although the run's log shows them completed.
+- **Why:** each task's `.command.run` starts with a YAML header. Up to 26.10.2 Nextflow wrote `### name: 'X'`; 26.10.3 writes `### name: "X"` (BashWrapperBuilder now renders the values as YAML double-quoted strings). The counts matched single quotes only.
+- **Fix:** every reader of that header (four steps in `.github/workflows/nextflow.yml` and `tests/e2e/couple-carrier-1.sh`) accepts either quote, so the pinned release and the newest one both count.
