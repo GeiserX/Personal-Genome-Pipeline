@@ -453,9 +453,14 @@ if [ -f "$BAM" ] && [ -f "${BAM}.bai" ]; then
 else
   PHASE_ARGS=(--skip "no BAM (${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam with its .bai)")
 fi
-run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
+if ! run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
   python3 /pgp-bin/comphet_phase.py --vcf "$(cpath "$COMPHET_VCF")" --out "$(cpath "${COMPHET_PAIRS_TSV}.part")" \
-    --variants "$(cpath "${COMPHET_TSV}.unphased")" --variants-out "$(cpath "${COMPHET_TSV}.part")" "${PHASE_ARGS[@]}"
+    --variants "$(cpath "${COMPHET_TSV}.unphased")" --variants-out "$(cpath "${COMPHET_TSV}.part")" "${PHASE_ARGS[@]}"; then
+  echo "ERROR: the phase of the compound-het pairs failed (bin/comphet_phase.py, image: ${PYPGX_IMAGE})." >&2
+  echo "  Input: ${COMPHET_VCF} and ${PHASE_ARGS[*]}; would write ${COMPHET_PAIRS_TSV} and ${COMPHET_TSV}." >&2
+  rm -f "${COMPHET_PAIRS_TSV}.part" "${COMPHET_TSV}.part"
+  exit 1
+fi
 mv "${COMPHET_PAIRS_TSV}.part" "$COMPHET_PAIRS_TSV"
 mv "${COMPHET_TSV}.part" "$COMPHET_TSV"
 rm -f "${COMPHET_TSV}.unphased"
