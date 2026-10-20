@@ -179,6 +179,11 @@ jobs:
           files=()
           for f in *; do [ "$f" = MANIFEST.txt ] || files+=("$f"); done
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # A rebuild in place: drop the old MANIFEST.txt first, or a cut
+            # upload would leave it beside half-replaced data.
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx MANIFEST.txt; then
+              gh release delete-asset "$TAG" MANIFEST.txt -R "$GITHUB_REPOSITORY" -y
+            fi
             gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "${files[@]}"
           else
             # A prerelease that is never "latest": the project's real releases
