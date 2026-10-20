@@ -25,12 +25,16 @@
 # moved: step 06 26573 to 26255 records, step 11 ST 27021 to 26691 and RG 38
 # to 40, step 20 chrM 31 to 33 records with the same 19 PASS, and a few step 14
 # chromosomes. The HLA alleles of step 08 did not change.
+#
+# fixture-v7 added five 200 kb stretches of chrY, so steps 06 and 11 see the
+# calls there: step 06 26255 to 26391 records, step 11 ST 26691 to 26825. Step
+# 14 has no chrY line and nothing else moved.
 . "$(dirname "$0")/lib.sh"
 
 BASELINE=$(cat <<'BASE'
-step06 pass.vcf.gz records 26255
+step06 pass.vcf.gz records 26391
 step06 clinvar_hits.vcf records 1
-step11 ST lines 26691
+step11 ST lines 26825
 step11 RG lines 40
 step14 chr1 records 243
 step14 chr2 records 240
