@@ -685,6 +685,37 @@ def pypgx_section(work, schema):
           "UGT2B17  not assessed (CNVpytor, step 18, did not run)" in txt, txt)
 
 
+def comphet_phase_section(work, schema):
+    """Step 31's pairs table: the pairs by phase in both reports, the trans
+    ones by name; without the table the old candidates line stays."""
+    d = os.path.join(work, "comphet", "S")
+    put(f"{d}/slivar/S_slivar_summary.tsv", "CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\nchr1\t1\tA\tG\tHIGH\tX\n")
+    put(f"{d}/slivar/S_compound_hets.tsv", "GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\tPHASE\n"
+        + "".join(f"G{i}\tchr1\t{p}\tA\tG\tHIGH\tstop_gained\t0/1\t.\n" for i, p in ((1, 10), (1, 13), (2, 50), (2, 90))))
+    _, txt0, _ = render(d)
+    check("comphet phase: without the pairs table the candidates line says unphased",
+          "(Candidates only: unphased single-sample data." in txt0 and "Phase from the reads" not in txt0, txt0)
+    cols = "GENE\tCHROM\tPOS_1\tREF_1\tALT_1\tPOS_2\tREF_2\tALT_2\tDISTANCE\tPHASE\tCIS_READS\tTRANS_READS\tPHASE_NOTE\n"
+    put(f"{d}/slivar/S_compound_het_pairs.tsv", cols
+        + "G1\tchr1\t10\tA\tG\t13\tC\tT\t3\tcis\t22\t0\tx\n"
+        + "G2\tchr1\t50\tA\tG\t90\tC\tT\t40\ttrans\t1\t19\tx\n"
+        + "G3\tchr1\t100\tA\tG\t50100\tC\tT\t50000\tunknown\t0\t0\tno read or read pair covers both positions\n")
+    summ, txt, html = render(d)
+    sl = summ["sections"]["slivar"]["data"]
+    check("comphet phase: the pairs counted by phase",
+          (sl.get("compound_het_pairs"), sl.get("compound_het_phase")) == (3, {"trans": 1, "cis": 1, "unknown": 1}), sl)
+    check("comphet phase: the trans pair by name, with its reads",
+          sl.get("compound_het_trans") == [{"gene": "G2", "variants": "chr1:50 A>G + chr1:90 C>T", "reads": "19 of 20"}], sl)
+    check("comphet phase: the text report prints the counts and the trans pair, not the unphased line",
+          "Phase from the reads: 1 trans, 1 cis, 1 unknown of 3 pairs" in txt
+          and "G2       chr1:50 A>G + chr1:90 C>T  in trans on 19 of 20 reads or read pairs" in txt
+          and "unphased single-sample data" not in txt, txt)
+    check("comphet phase: the HTML card shows the counts and the trans pair",
+          "1 / 1 / 1" in html and "<td>G2</td><td>chr1:50 A&gt;G + chr1:90 C&gt;T</td><td>19 of 20</td>" in html, html)
+    check("comphet phase: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+
+
 def main():
     work = tempfile.mkdtemp()
     schema = json.load(open(os.path.join(REPO, "tests", "schema", "summary.schema.json")))
@@ -1288,6 +1319,7 @@ def main():
         cpsr_beside_clinvar(work, schema)
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
+        comphet_phase_section(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
