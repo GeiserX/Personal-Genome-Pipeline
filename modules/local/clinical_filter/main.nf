@@ -4,16 +4,23 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Produces a small VCF of PASS variants that are:
       - Rare (MAX_AF < 1%, else gnomADe_AF and gnomADg_AF) AND HIGH/MODERATE VEP impact
+      - OR HIGH/MODERATE with no known frequency: their own tier
+        (*_freq_unknown.vcf.gz), never counted as rare
       - OR ClinVar pathogenic/likely pathogenic, any frequency: ClinVar_CLNSIG
         (the --clinvar file through VEP --custom), else the cache's CLIN_SIG
-      - OR rare with a high CADD score (>= 20) outside HIGH/MODERATE
-      - OR rare with a high SpliceAI delta score (>= 0.2), any gene of the value
-      - OR rare with REVEL >= 0.644 or AlphaMissense >= 0.564
+      - OR rare or of unknown frequency with a high CADD score (>= 20) outside HIGH/MODERATE
+      - OR rare or of unknown frequency with a high SpliceAI delta score (>= 0.2), any gene of the value
+      - OR rare or of unknown frequency with REVEL >= 0.644 or AlphaMissense >= 0.564
     With no frequency field no tier is filtered by frequency (as the script).
 
-    Uses bcftools +split-vep for VEP CSQ fields and bcftools view -i for
-    INFO-level annotations from vcfanno. Gene constraint columns are added by
-    the script only (this process gets no constraint table).
+    bin/csq_rank.awk (on the task PATH, the program scripts/23 runs) ranks each
+    record on its MANE Select transcript, else the canonical one, else any,
+    gives it a frequency tier and checks its genotype call against the floors
+    ext.min_gq (30), ext.min_dp (10), ext.het_ab_min and ext.het_ab_max
+    (0.2, 0.8) and ext.hom_ab_min (0.8), as PGP_* INFO tags. The tiers select
+    on those tags; bcftools view -i reads the INFO-level scores from vcfanno.
+    Gene constraint columns are added by the script only (this process gets
+    no constraint table).
 
     Equivalent to: scripts/23-clinical-filter.sh (bcftools portion only)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -38,6 +45,19 @@ process CLINICAL_FILTER {
     task.ext.when == null || task.ext.when
 
     script:
+    def min_gq = task.ext.min_gq != null ? task.ext.min_gq : 30
+    def min_dp = task.ext.min_dp != null ? task.ext.min_dp : 10
+    def het_lo = task.ext.het_ab_min != null ? task.ext.het_ab_min : 0.2
+    def het_hi = task.ext.het_ab_max != null ? task.ext.het_ab_max : 0.8
+    def hom_lo = task.ext.hom_ab_min != null ? task.ext.hom_ab_min : 0.8
+    if (!(min_gq.toString() ==~ /[0-9]+/) || !(min_dp.toString() ==~ /[0-9]+/)) {
+        error "CLINICAL_FILTER: ext.min_gq and ext.min_dp must be whole numbers, got '${min_gq}' and '${min_dp}'"
+    }
+    [het_lo, het_hi, hom_lo].each { ab ->
+        if (!(ab.toString() ==~ /0(\.[0-9]+)?|1(\.0+)?/)) {
+            error "CLINICAL_FILTER: ext.het_ab_min, ext.het_ab_max and ext.hom_ab_min must be fractions from 0 to 1, got '${ab}'"
+        }
+    }
     """
     # --- Detect available annotation fields ---
     bcftools +split-vep -l ${vcf} | cut -f2 > csq_fields.txt
@@ -50,42 +70,50 @@ process CLINICAL_FILTER {
     done
     bcftools view -h ${vcf} > header.txt
     has_info() { grep -q "^##INFO=<ID=\$1," header.txt; }
+    has_format() { grep -q "^##FORMAT=<ID=\$1," header.txt; }
+    # rank KEEP: bin/csq_rank.awk on stdin (as scripts/23); KEEP=noncommon
+    # drops the records with a known frequency of 1% or more.
+    rank() {
+        LC_ALL=C awk -v keep="\$1" -v min_gq=${min_gq} -v min_dp=${min_dp} \\
+            -v het_lo=${het_lo} -v het_hi=${het_hi} -v hom_lo=${hom_lo} \\
+            -f "\$(command -v csq_rank.awk)"
+    }
 
     # --- Rarity: MAX_AF, else gnomADe_AF and gnomADg_AF (as scripts/23) ---
-    FREQ_COLS=""
-    FREQ_EXPR=""
-    if grep -qx MAX_AF csq_fields.txt; then
-        FREQ_COLS="MAX_AF:Float"
-        FREQ_EXPR='(MAX_AF<0.01 || MAX_AF=".")'
-    else
-        for f in gnomADe_AF gnomADg_AF; do
-            grep -qx "\${f}" csq_fields.txt || continue
-            FREQ_COLS="\${FREQ_COLS:+\${FREQ_COLS},}\${f}:Float"
-            FREQ_EXPR="\${FREQ_EXPR:+\${FREQ_EXPR} && }(\${f}<0.01 || \${f}=\\".\\")"
-        done
-    fi
-
-    # --- PASS records every non-ClinVar tier starts from, rare when a frequency exists ---
-    if [ -n "\${FREQ_EXPR}" ]; then
-        bcftools view -f PASS ${vcf} | \\
-            bcftools +split-vep - -c "\${FREQ_COLS}" -s worst -i "\${FREQ_EXPR}" -Oz -o rare_pass.vcf.gz
-    else
+    HAS_FREQ=0
+    for f in MAX_AF gnomADe_AF gnomADg_AF; do
+        if grep -qx "\${f}" csq_fields.txt; then HAS_FREQ=1; fi
+    done
+    if [ "\${HAS_FREQ}" -eq 0 ]; then
         # Same as scripts/23: keep every MODERATE variant and say so.
         echo "NOTICE: no MAX_AF, gnomADe_AF or gnomADg_AF in the CSQ fields; no tier is filtered by frequency and every MODERATE variant is kept" >&2
-        bcftools view -f PASS ${vcf} -Oz -o rare_pass.vcf.gz
     fi
-    bcftools index -t rare_pass.vcf.gz
 
-    # --- Filter 1: HIGH impact, rare ---
-    bcftools +split-vep rare_pass.vcf.gz -c IMPACT -s worst -i 'IMPACT="HIGH"' \\
+    # --- PASS records every non-ClinVar tier starts from: ranked, the common ones left out ---
+    bcftools view -f PASS ${vcf} | rank noncommon | bcftools view -Oz -o rare_pass.vcf.gz
+    bcftools index -t rare_pass.vcf.gz
+    # "rare" for the HIGH and MODERATE tiers: a known frequency below 1%, or
+    # any record when the CSQ has no frequency field at all.
+    RARE_FREQ='(INFO/PGP_FREQ="rare" || INFO/PGP_FREQ="none")'
+
+    # --- Filter 1: HIGH impact on the ranked transcript, rare ---
+    bcftools view -i "INFO/PGP_IMPACT=\\"HIGH\\" && \${RARE_FREQ}" rare_pass.vcf.gz \\
         -Oz -o ${meta.id}_high_impact.vcf.gz
     bcftools index -t ${meta.id}_high_impact.vcf.gz
 
-    # --- Filter 2: MODERATE impact, rare ---
-    bcftools +split-vep rare_pass.vcf.gz -c IMPACT -s worst -i 'IMPACT="MODERATE"' \\
+    # --- Filter 2: MODERATE impact on the ranked transcript, rare ---
+    bcftools view -i "INFO/PGP_IMPACT=\\"MODERATE\\" && \${RARE_FREQ}" rare_pass.vcf.gz \\
         -Oz -o ${meta.id}_rare_moderate.vcf.gz
     bcftools index -t ${meta.id}_rare_moderate.vcf.gz
     MERGE_FILES="${meta.id}_high_impact.vcf.gz ${meta.id}_rare_moderate.vcf.gz"
+
+    # --- Filter 2b: HIGH or MODERATE with no known frequency: their own tier, not rare ---
+    if [ "\${HAS_FREQ}" -eq 1 ]; then
+        bcftools view -i '(INFO/PGP_IMPACT="HIGH" || INFO/PGP_IMPACT="MODERATE") && INFO/PGP_FREQ="unknown"' \\
+            rare_pass.vcf.gz -Oz -o ${meta.id}_freq_unknown.vcf.gz
+        bcftools index -t ${meta.id}_freq_unknown.vcf.gz
+        MERGE_FILES="\${MERGE_FILES} ${meta.id}_freq_unknown.vcf.gz"
+    fi
 
     # --- Filter 3: ClinVar pathogenic/likely pathogenic, any frequency ---
     # ClinVar_CLNSIG is the --clinvar file VEP annotated with --custom, so it
@@ -96,7 +124,7 @@ process CLINICAL_FILTER {
         bcftools view -f PASS ${vcf} | \\
             bcftools +split-vep - -c ClinVar_CLNSIG \\
                 -i 'ClinVar_CLNSIG~"athogenic" && ClinVar_CLNSIG!~"onflicting"' \\
-                -Oz -o ${meta.id}_clinvar_pathogenic.vcf.gz
+            | rank all | bcftools view -Oz -o ${meta.id}_clinvar_pathogenic.vcf.gz
         bcftools index -t ${meta.id}_clinvar_pathogenic.vcf.gz
         MERGE_FILES="\${MERGE_FILES} ${meta.id}_clinvar_pathogenic.vcf.gz"
     elif grep -qx CLIN_SIG csq_fields.txt; then
@@ -104,7 +132,7 @@ process CLINICAL_FILTER {
         bcftools view -f PASS ${vcf} | \\
             bcftools +split-vep - -c CLIN_SIG \\
                 -i 'CLIN_SIG~"pathogenic" && CLIN_SIG!~"conflicting"' \\
-                -Oz -o ${meta.id}_clinvar_pathogenic.vcf.gz
+            | rank all | bcftools view -Oz -o ${meta.id}_clinvar_pathogenic.vcf.gz
         bcftools index -t ${meta.id}_clinvar_pathogenic.vcf.gz
         MERGE_FILES="\${MERGE_FILES} ${meta.id}_clinvar_pathogenic.vcf.gz"
     fi
@@ -114,8 +142,8 @@ process CLINICAL_FILTER {
     has_info CADD_PHRED && CADD_EXPR="INFO/CADD_PHRED>=20"
     has_info CADD_PHRED_indel && CADD_EXPR="\${CADD_EXPR:+\${CADD_EXPR} || }INFO/CADD_PHRED_indel>=20"
     if [ -n "\${CADD_EXPR}" ]; then
-        bcftools +split-vep rare_pass.vcf.gz -c IMPACT -s worst \\
-            -i "IMPACT!=\\"HIGH\\" && IMPACT!=\\"MODERATE\\" && (\${CADD_EXPR})" \\
+        bcftools view rare_pass.vcf.gz \\
+            -i "INFO/PGP_IMPACT!=\\"HIGH\\" && INFO/PGP_IMPACT!=\\"MODERATE\\" && (\${CADD_EXPR})" \\
             -Oz -o ${meta.id}_cadd_high.vcf.gz
         bcftools index -t ${meta.id}_cadd_high.vcf.gz
         MERGE_FILES="\${MERGE_FILES} ${meta.id}_cadd_high.vcf.gz"
@@ -161,21 +189,26 @@ process CLINICAL_FILTER {
         bcftools sort -Oz -o ${meta.id}_clinical.vcf.gz
     bcftools index -t ${meta.id}_clinical.vcf.gz
 
-    # --- Summary TSV: gene, impact and consequence of the worst consequence ---
+    # --- Summary TSV (as scripts/23): IMPACT, GENE and Consequence of the
+    #     ranked transcript, the worst consequence beside them, the frequency
+    #     tier and the call check of bin/csq_rank.awk ---
     COL_FREQ='.'; grep -qx MAX_AF csq_fields.txt && COL_FREQ='%MAX_AF'
     COL_CADD='.'; has_info CADD_PHRED && COL_CADD='%INFO/CADD_PHRED'
     COL_REVEL='.'; has_info REVEL && COL_REVEL='%INFO/REVEL'
     COL_AM='.'; has_info AM_class && COL_AM='%INFO/AM_class'
+    COL_GQ='.'; has_format GQ && COL_GQ='%GQ'
+    COL_DP='.'; has_format DP && COL_DP='%DP'
+    COL_AD='.'; has_format AD && COL_AD='%AD'
     {
-        printf 'CHROM\\tPOS\\tREF\\tALT\\tGT\\tIMPACT\\tGENE\\tConsequence\\tMAX_AF\\tCADD_PHRED\\tREVEL\\tAM_CLASS\\n'
+        printf 'CHROM\\tPOS\\tREF\\tALT\\tGT\\tIMPACT\\tGENE\\tConsequence\\tMAX_AF\\tCADD_PHRED\\tREVEL\\tAM_CLASS\\tTRANSCRIPT\\tWORST_IMPACT\\tWORST_Consequence\\tFREQ_TIER\\tGQ\\tDP\\tAD\\tCALL_CHECK\\tCALL_WHY\\n'
         bcftools +split-vep ${meta.id}_clinical.vcf.gz -s worst \\
-            -f "%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t\${COL_FREQ}\\t\${COL_CADD}\\t\${COL_REVEL}\\t\${COL_AM}\\n" \\
+            -f "%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\t%INFO/PGP_IMPACT\\t%INFO/PGP_GENE\\t%INFO/PGP_CSQ\\t\${COL_FREQ}\\t\${COL_CADD}\\t\${COL_REVEL}\\t\${COL_AM}\\t%INFO/PGP_TX\\t%IMPACT\\t%Consequence\\t%INFO/PGP_FREQ[\\t\${COL_GQ}\\t\${COL_DP}\\t\${COL_AD}]\\t%INFO/PGP_CALL\\t%INFO/PGP_CALL_WHY\\n" \\
             | awk -F'\\t' 'BEGIN {OFS = "\\t"} \$7 == "" {\$7 = "."} {print}'
     } > ${meta.id}_clinical_summary.tsv
 
     # Clean up intermediate tier files
     rm -f rare_pass.vcf.gz* csq_fields.txt header.txt
-    rm -f ${meta.id}_high_impact.vcf.gz* ${meta.id}_rare_moderate.vcf.gz*
+    rm -f ${meta.id}_high_impact.vcf.gz* ${meta.id}_rare_moderate.vcf.gz* ${meta.id}_freq_unknown.vcf.gz*
     rm -f ${meta.id}_clinvar_pathogenic.vcf.gz* ${meta.id}_cadd_high.vcf.gz*
     rm -f ${meta.id}_spliceai_high.vcf.gz* ${meta.id}_missense_deleterious.vcf.gz*
 
@@ -189,7 +222,7 @@ process CLINICAL_FILTER {
     """
     touch ${meta.id}_clinical.vcf.gz
     touch ${meta.id}_clinical.vcf.gz.tbi
-    printf 'CHROM\\tPOS\\tREF\\tALT\\tGT\\tIMPACT\\tGENE\\tConsequence\\tMAX_AF\\tCADD_PHRED\\tREVEL\\tAM_CLASS\\n' > ${meta.id}_clinical_summary.tsv
+    printf 'CHROM\\tPOS\\tREF\\tALT\\tGT\\tIMPACT\\tGENE\\tConsequence\\tMAX_AF\\tCADD_PHRED\\tREVEL\\tAM_CLASS\\tTRANSCRIPT\\tWORST_IMPACT\\tWORST_Consequence\\tFREQ_TIER\\tGQ\\tDP\\tAD\\tCALL_CHECK\\tCALL_WHY\\n' > ${meta.id}_clinical_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
