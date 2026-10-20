@@ -137,8 +137,12 @@ if [ -s "$OUTSIDE" ]; then
 else
   echo "No outside calls (step 36 not run, or it passed none): HLA and CYP2D6 stay uncalled."
 fi
+# -w /tmp: the jar's built-in logback.xml writes pharmcat.log into the working
+# directory. The image's is /pharmcat, which the calling user cannot write, so
+# logback printed a "pharmcat.log (Permission denied)" stack trace on every
+# run; /tmp is writable and goes away with the container.
 run_in \
-  --cpus 2 --memory 4g \
+  --cpus 2 --memory 4g -w /tmp \
   -v "${GENOME_DIR}/${SAMPLE}/vcf:/data" \
   ${OUTSIDE_ARGS[@]+"${OUTSIDE_ARGS[@]}"} \
   "${PHARMCAT_IMAGE}" \

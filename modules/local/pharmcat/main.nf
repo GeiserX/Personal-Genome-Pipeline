@@ -32,6 +32,11 @@
     no line, with the reason in the task log, for a heteroplasmic or
     filtered named allele.
 
+    The jar's built-in logback.xml writes pharmcat.log into the working
+    directory. A task runs in its own writable work directory, so the log
+    lands there and logback prints nothing; scripts/07-pharmacogenomics.sh
+    runs the jar in /tmp for the same reason.
+
     Equivalent to: scripts/07-pharmacogenomics.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
