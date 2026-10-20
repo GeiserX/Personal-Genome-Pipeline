@@ -184,8 +184,9 @@ def main():
         def state(summ, allele):
             return {a["allele"]: a["state"] for a in summ["sections"]["hla"]["data"]["derived"]["alleles"]}[allele]
         check("B*57:01:01 -> B*57:01 present", state(cis, "B*57:01") == "present")
+        b7 = summary(work, "b7", [("HLA-B", "B*07:02:01", 40, "B*08:01:01", 40)])
         check("B*57:01 absent with B*07:02 / B*08:01, and B*58:01 absent in the same sample",
-              state(summary(work, "b7", [("HLA-B", "B*07:02:01", 40, "B*08:01:01", 40)]), "B*57:01") == "absent")
+              state(b7, "B*57:01") == "absent" and state(b7, "B*58:01") == "absent")
         grp = summary(work, "b27", [("HLA-B", "B*27:05:02", 40, "B*57:03:01,B*57:01:01", 40),
                                     ("HLA-C", "C*06:02:01", 0, "C*07:01:01", 40)])
         check("B*27:05:02 -> the B*27 group present", state(grp, "B*27") == "present")
