@@ -23,7 +23,8 @@
 # known variant and gets no frequency, which step 23 would show as
 # "frequency unknown" even for a common allele. Records on a contig the
 # reference lacks are left out (bcftools norm cannot read their bases), and
-# the step says how many contigs that is. The Nextflow VEP module does not
+# the step says how many contigs that is. A split keeps the AD sum and drops
+# the half whose genotype carries no ALT (0/0). The Nextflow VEP module does not
 # normalise yet (docs/13-vep-annotation.md).
 #
 # ClinVar: when clinvar/clinvar_pathogenic_chr.vcf.gz is installed (setup.sh,
@@ -90,6 +91,10 @@ run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
 # Split and left-align against the reference (see the header). -T keeps the
 # contigs the reference holds: bcftools norm stops at the first record whose
 # contig the FASTA lacks. -c w warns on a REF base that differs, as step 06.
+# --keep-sum AD (when the VCF has AD): a split 1/2 keeps the reads of the other ALT in its REF
+# count, so the allele balance of each half stays true. The split writes the
+# ALT the sample does not carry as 0/0 (0/1 with ALT A,C gives a 0/0 record
+# for C), so the view after it keeps the records whose genotype holds an ALT.
 awk -v OFS='\t' '{print $1, 1, 2147483647}' "${REF_FASTA}.fai" > "$REF_TARGETS"
 OFF_REF=$(run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
     bcftools index -s "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
@@ -97,9 +102,15 @@ OFF_REF=$(run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
 if [ "${OFF_REF:-0}" -gt 0 ]; then
   echo "NOTICE: ${OFF_REF} contig(s) of ${VCF} are not in ${REF_FASTA}; their records are not annotated."
 fi
+# --keep-sum AD stops with an error when the header defines no FORMAT/AD.
+KEEP_SUM=()
+PASS_HDR=$(run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" bcftools view -h "$(cpath "$PASS_VCF")")
+case "$PASS_HDR" in *'##FORMAT=<ID=AD,'*) KEEP_SUM=(--keep-sum AD) ;; esac
 run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
-  bcftools norm -m -any -c w -f "$REF_FASTA_C" -T "$(cpath "$REF_TARGETS")" -Oz -o "$(cpath "$NORM_VCF")" "$(cpath "$PASS_VCF")"
-mv -f "$NORM_VCF" "$PASS_VCF"
+  bcftools norm -m -any ${KEEP_SUM[@]+"${KEEP_SUM[@]}"} -c w -f "$REF_FASTA_C" -T "$(cpath "$REF_TARGETS")" -Oz -o "$(cpath "$NORM_VCF")" "$(cpath "$PASS_VCF")"
+run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+  bcftools view -i 'GT="alt"' -Oz -o "$(cpath "$PASS_VCF")" "$(cpath "$NORM_VCF")"
+rm -f "$NORM_VCF"
 # Each VEP fork holds its own copy of the cache index: 2 GB per thread, 8 GB at least.
 VEP_MEM=$(( THREADS * 2 > 8 ? THREADS * 2 : 8 ))
 run_in \

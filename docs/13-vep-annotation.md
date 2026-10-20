@@ -39,14 +39,20 @@ docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
     /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
 
 # Split multiallelic records and left-align indels, on the reference's contigs
+# (leave out --keep-sum AD when the VCF has no FORMAT/AD; step 13 checks it)
 awk -v OFS='\t' '{print $1, 1, 2147483647}' "${GENOME_DIR}/${REF_FASTA}.fai" \
   > "${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.ref_contigs.tmp.tsv"
 docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
-  bcftools norm -m -any -c w -f /genome/${REF_FASTA} \
+  bcftools norm -m -any --keep-sum AD -c w -f /genome/${REF_FASTA} \
     -T /genome/${SAMPLE}/vep/${SAMPLE}.ref_contigs.tmp.tsv \
     -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}.norm.tmp.vcf.gz \
     /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz
-mv ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.norm.tmp.vcf.gz ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz
+# Keep the split records whose genotype holds an ALT (a 0/1 with ALT A,C
+# splits into 0/1 for A and 0/0 for C)
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
+  bcftools view -i 'GT="alt"' \
+    -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz \
+    /genome/${SAMPLE}/vep/${SAMPLE}.norm.tmp.vcf.gz
 
 docker run --rm \
   --cpus 8 --memory 16g \
@@ -74,7 +80,7 @@ The last line is added when `clinvar/clinvar_pathogenic_chr.vcf.gz` is installed
 
 VEP reads the PASS records only, from a temporary copy the script removes afterwards: the clinical filter (23) and slivar (31), which read VEP's output directly or through vcfanno (30), keep PASS records alone, so annotating DeepVariant's `RefCall` records and other non-PASS calls cost time and changed nothing downstream. `${SAMPLE}_vep.vcf.gz` and vcfanno's `${SAMPLE}_annotated.vcf.gz` built from it therefore hold no non-PASS record; look those up in the VCF of step 3. The Nextflow VEP module selects the same records.
 
-Before VEP, the PASS copy is normalised: `bcftools norm -m -any` splits a multiallelic record into one record per ALT, and `-f` left-aligns each indel against the reference. VEP finds a variant's population frequency (`MAX_AF`, `gnomADe_AF`, `gnomADg_AF`) and its `CLIN_SIG` by matching the allele to the known variants in its cache, which are written split and left-aligned. A common deletion in a repeat that the caller wrote right-shifted, or inside a multiallelic record, matches nothing and gets no frequency; step 23 would then show it as "frequency unknown". Records on a contig the reference lacks are left out (bcftools norm cannot read their bases), and the step prints how many contigs that is. `-c w` warns about a REF base that differs from the reference and keeps the record, as step 6 does. Because of the split, `${SAMPLE}_vep.vcf.gz` holds one ALT per record.
+Before VEP, the PASS copy is normalised: `bcftools norm -m -any` splits a multiallelic record into one record per ALT, and `-f` left-aligns each indel against the reference. VEP finds a variant's population frequency (`MAX_AF`, `gnomADe_AF`, `gnomADg_AF`) and its `CLIN_SIG` by matching the allele to the known variants in its cache, which are written split and left-aligned. A common deletion in a repeat that the caller wrote right-shifted, or inside a multiallelic record, matches nothing and gets no frequency; step 23 would then show it as "frequency unknown". Records on a contig the reference lacks are left out (bcftools norm cannot read their bases), and the step prints how many contigs that is. `-c w` warns about a REF base that differs from the reference and keeps the record, as step 6 does. Because of the split, `${SAMPLE}_vep.vcf.gz` holds one ALT per record. When the VCF has an `AD` field, `--keep-sum AD` keeps each half's read counts true: a 1/2 call with AD 0,15,13 becomes 1/0 with AD 13,15 and 0/1 with AD 15,13, the other ALT's reads counted with REF, so step 23's allele-balance check sees 0.54 and 0.46 rather than 1.00. The split also writes the ALT a sample does not carry as 0/0 (a 0/1 call with ALT A,C gives a 0/0 record for C), so a `bcftools view -i 'GT="alt"'` after it keeps only the records whose genotype holds an ALT; a hom-ref half never reaches VEP or the findings.
 
 The Nextflow VEP module does not normalise yet: the VEP image has no bcftools, so the split needs its own process in the annotation workflow. Its output can therefore leave such an indel without a frequency, and the clinical filter and slivar modules put it in their "frequency unknown" tier, not in the rare ones.
 

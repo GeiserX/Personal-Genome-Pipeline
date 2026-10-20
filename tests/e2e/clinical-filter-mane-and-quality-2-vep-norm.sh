@@ -5,7 +5,10 @@
 # for real, on a 60-base reference written below:
 #   chrT 17 GCAG>G  the last CAG of a CAG repeat deleted, written right-shifted
 #                   -> VEP gets chrT 8 ACAG>A, the left-aligned form gnomAD uses
-#   chrT 30 G>A,C   a multiallelic record -> two records, one per ALT
+#   chrT 30 G>A,C   a 1/2 call, AD 0,15,13 -> two records, one per ALT, each
+#                   AD with the other ALT's reads on REF (13,15 and 15,13)
+#   chrT 40 C>A,G   a 0/1 call -> the A record only; the G half is 0/0 and
+#                   never reaches VEP
 #   chrZ 5 A>G      a contig the reference lacks -> left out, and the step says so
 # The Nextflow VEP module does not normalise yet (docs/13-vep-annotation.md).
 . "$(dirname "$0")/lib.sh"
@@ -23,10 +26,12 @@ printf 'chrT\t%s\t6\t%s\t%s\n' "${#SEQ}" "${#SEQ}" "$(( ${#SEQ} + 1 ))" > "${GD}
   printf '##fileformat=VCFv4.2\n##contig=<ID=chrT,length=%s>\n##contig=<ID=chrZ,length=100>\n' "${#SEQ}"
   printf '##FILTER=<ID=PASS,Description="All filters passed">\n'
   printf '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+  printf '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">\n'
   printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t%s\n' "$S"
-  printf 'chrT\t17\t.\tGCAG\tG\t50\tPASS\t.\tGT\t0/1\n'
-  printf 'chrT\t30\t.\tG\tA,C\t50\tPASS\t.\tGT\t1/2\n'
-  printf 'chrZ\t5\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n'
+  printf 'chrT\t17\t.\tGCAG\tG\t50\tPASS\t.\tGT:AD\t0/1:12,10\n'
+  printf 'chrT\t30\t.\tG\tA,C\t50\tPASS\t.\tGT:AD\t1/2:0,15,13\n'
+  printf 'chrT\t40\t.\tC\tA,G\t50\tPASS\t.\tGT:AD\t0/1:10,9,0\n'
+  printf 'chrZ\t5\t.\tA\tG\t50\tPASS\t.\tGT:AD\t0/1:8,7\n'
 } > "${GD}/${S}/vcf/${S}.vcf"
 docker run --rm --user "$(id -u):$(id -g)" -v "${GD}:/genome" -w /genome "$BCFTOOLS_IMAGE" \
   sh -c "bcftools view -Oz -o ${S}/vcf/${S}.vcf.gz ${S}/vcf/${S}.vcf && bcftools index -t ${S}/vcf/${S}.vcf.gz"
@@ -72,8 +77,11 @@ check_step_exit 13-vep-annotation.sh
 check "step 13 says a contig is not in the reference" has 'NOTICE: 1 contig\(s\) of .* are not in ' "$(cat "$STEP_LOG")"
 SEEN=$(gzip -dc "$WRAP_SEEN" 2>/dev/null | grep -v '^#' | cut -f1,2,4,5 | tr '\t' ' ' | paste -sd';' -)
 echo "VEP was given: ${SEEN:-nothing}"
-check_eq "VEP gets the deletion left-aligned, the multiallelic record split, chrZ left out" \
-  "${SEEN:-nothing}" "chrT 8 ACAG A;chrT 30 G A;chrT 30 G C"
+check_eq "VEP gets the deletion left-aligned, the multiallelic records split, no 0/0 half, chrZ left out" \
+  "${SEEN:-nothing}" "chrT 8 ACAG A;chrT 30 G A;chrT 30 G C;chrT 40 C A"
+SEEN_AD=$(gzip -dc "$WRAP_SEEN" 2>/dev/null | awk -F'\t' '!/^#/ && $2 == 30 {split($9, f, ":"); split($10, v, ":"); for (i in f) if (f[i] == "AD") a = v[i]; print $5 "=" a}' | paste -sd';' -)
+echo "chrT 30 AD after the split: ${SEEN_AD:-nothing}"
+check_eq "the split 1/2 keeps the other ALT's reads on REF" "${SEEN_AD:-nothing}" "A=13,15;C=15,13"
 check "step 13 wrote and indexed its output" test -s "${GD}/${S}/vep/${S}_vep.vcf.gz.tbi"
 check "step 13 removed its temporary files" \
   test -z "$(find "${GD}/${S}/vep" -name '*.tmp*' -print -quit)"
