@@ -86,6 +86,13 @@ STARS = {
 CALL_FLOOR = {"GQ": 30, "DP": 10}
 # gnomAD allele frequency above which a P/LP hit is marked common.
 COMMON_AF = 0.01
+# The genotype check of the clinical filter (bin/csq_rank.awk, step 23 and the
+# CLINICAL_FILTER module): step 6's GQ and DP floor, and the alt read fraction
+# (AD) a heterozygote must lie within and a homozygous alt call must reach.
+# bin/csq_rank.awk writes the floors it used into the clinical VCF as
+# ##PGP_CALL_FLOOR=GQ=..,DP=..,HET_AB=lo-hi,HOM_AB=..; these are its defaults.
+AB_FLOOR = {"HET_AB": (0.2, 0.8), "HOM_AB": 0.8}
+IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 
 # Steps run-all.sh runs and records in logs/run_status.tsv. A section whose
 # step is not here (variant calling, step 03, which run-all reuses on purpose)
@@ -1425,9 +1432,91 @@ def cpsr_compare(d, s, rows, cols, col):
     return out
 
 
+def csq_rank(fmt, csq):
+    """The rule of bin/csq_rank.awk on one CSQ value: (class, entries, freq).
+    class is MANE (entries of the MANE Select transcript), else CANONICAL,
+    else ANY (every entry); freq is rare, common, unknown (no value) or none
+    (the CSQ has no frequency field): MAX_AF, else gnomADe_AF and gnomADg_AF,
+    the highest over the entries."""
+    ix = {k: i for i, k in enumerate(fmt)}
+    entries = [v for v in (t.split("|") for t in csq.split(",") if t) if len(v) == len(fmt)]
+
+    def get(v, k):
+        return v[ix[k]] if k in ix else ""
+    mane = [v for v in entries if get(v, "MANE_SELECT")]
+    canon = [v for v in entries if get(v, "CANONICAL") == "YES"]
+    cls, chosen = ("MANE", mane) if mane else ("CANONICAL", canon) if canon else ("ANY", entries)
+    fields = ["MAX_AF"] if "MAX_AF" in ix else [f for f in ("gnomADe_AF", "gnomADg_AF") if f in ix]
+    afs = []
+    for v in entries:
+        for f in fields:
+            for a in get(v, f).split("&"):
+                try:
+                    afs.append(float(a))
+                except ValueError:
+                    pass
+    freq = "none" if not fields else "unknown" if not afs else "rare" if max(afs) < COMMON_AF else "common"
+    return cls, [{"impact": get(v, "IMPACT"), "gene": get(v, "SYMBOL"),
+                  "consequence": get(v, "Consequence").replace("&", ",")} for v in chosen], freq
+
+
+def call_check(fmt, sample, floor):
+    """bin/csq_rank.awk's genotype check of one sample: (weak, reasons, gq,
+    dp, ad). Weak: GQ or DP below the floor, a heterozygote's alt read
+    fraction outside HET_AB, a homozygous alt call's below HOM_AB."""
+    f = dict(zip(fmt.split(":"), sample.split(":")))
+    gq, dp = (int(f[k]) if f.get(k, "").isdigit() else None for k in ("GQ", "DP"))
+    ad = f.get("AD", "")
+    why = []
+    if gq is not None and gq < floor["GQ"]:
+        why.append(f"GQ {gq} < {floor['GQ']}")
+    if dp is not None and dp < floor["DP"]:
+        why.append(f"DP {dp} < {floor['DP']}")
+    al = f.get("GT", "").replace("|", "/").split("/")
+    depths = ad.split(",")
+    if len(al) == 2 and all(a.isdigit() for a in al) and len(depths) > 1 and all(x.isdigit() for x in depths):
+        tot = sum(int(x) for x in depths)
+        if tot:
+            ab = sum(int(x) for x in depths[1:]) / tot
+            lo, hi = floor["HET_AB"]
+            if (al[0] == "0") != (al[1] == "0") and not lo <= ab <= hi:
+                why.append(f"alt reads {ab:.2f} of the depth on a heterozygote")
+            elif al[0] == al[1] != "0" and ab < floor["HOM_AB"]:
+                why.append(f"alt reads {ab:.2f} of the depth on a homozygous call")
+    return bool(why), why, gq, dp, ad or None
+
+
+def clinical_call_floor(path):
+    """The floors bin/csq_rank.awk wrote into the clinical VCF, the defaults without the line."""
+    floor = dict(CALL_FLOOR, **AB_FLOOR)
+    try:
+        with open_text(path) as f:
+            for line in f:
+                if not line.startswith("##"):
+                    break
+                if line.startswith("##PGP_CALL_FLOOR="):
+                    for k, v in re.findall(r"\b(GQ|DP)=(\d+)", line):
+                        floor[k] = int(v)
+                    m = re.search(r"HET_AB=([0-9.]+)-([0-9.]+)", line)
+                    if m:
+                        floor["HET_AB"] = (float(m.group(1)), float(m.group(2)))
+                    m = re.search(r"HOM_AB=([0-9.]+)", line)
+                    if m:
+                        floor["HOM_AB"] = float(m.group(1))
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(path)}: {e}") from e
+    return floor
+
+
 def csq_high_impact_genes(path):
-    """{(chrom, pos, ref, alt): (genotype, {gene: consequence})} of the records
-    with a HIGH-impact VEP consequence (any transcript), from the CSQ field."""
+    """{(chrom, pos, ref, alt): record} of the records whose ranked CSQ entries
+    (bin/csq_rank.awk's rule: the MANE Select transcript, else the canonical
+    one, else any) hold a HIGH-impact consequence. record: genotype, genes
+    ({gene: consequence}), transcript (MANE, CANONICAL or ANY), frequency
+    (rare, common, unknown or none), weak (the call check failed), why, gq,
+    dp and ad. A HIGH consequence on a transcript other than the MANE Select
+    one does not count when the record has a MANE Select transcript."""
+    floor = clinical_call_floor(path)
     fmt, out = None, {}
     try:
         with open_text(path) as f:
@@ -1441,17 +1530,17 @@ def csq_high_impact_genes(path):
                 r = line.rstrip("\n").split("\t")
                 if len(r) < 8:
                     continue
-                csq = info_map(r[7]).get("CSQ", "")
+                cls, entries, freq = csq_rank(fmt, info_map(r[7]).get("CSQ", ""))
                 genes = {}
-                for tr in csq.split(","):
-                    v = tr.split("|")
-                    if len(v) != len(fmt) or v[fmt.index("IMPACT")] != "HIGH":
-                        continue
-                    cons = v[fmt.index("Consequence")] if "Consequence" in fmt else ""
-                    genes.setdefault(v[fmt.index("SYMBOL")], cons.replace("&", ","))
+                for e in entries:
+                    if e["impact"] == "HIGH":
+                        genes.setdefault(e["gene"], e["consequence"])
                 if genes:
                     gt = r[9].split(":")[0] if len(r) > 9 else ""
-                    out[(r[0], int(r[1]), r[3], r[4])] = (gt, genes)
+                    weak, why, gq, dp, ad = call_check(r[8], r[9], floor) if len(r) > 9 else (False, [], None, None, None)
+                    out[(r[0], int(r[1]), r[3], r[4])] = {
+                        "genotype": gt, "genes": genes, "transcript": cls, "frequency": freq,
+                        "weak": weak, "why": why, "gq": gq, "dp": dp, "ad": ad}
     except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
         raise Unreadable(f"{os.path.basename(path)}: {e}") from e
     return out
@@ -1474,14 +1563,28 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                 "genotype": row["genotype"], "significance": row["significance"], "stars": row["stars"],
                                 "low_confidence": row["low_confidence"]})
     if clinical_vcf:
-        for (c, pos, ref, alt), (gt, genes) in sorted(csq_high_impact_genes(clinical_vcf).items()):
-            for g, cons in sorted(genes.items()):
+        # A common record is in the clinical VCF through the ClinVar tier,
+        # not as a rare HIGH impact; one of unknown frequency is listed and
+        # marked, never counted as rare; a weak call is listed and marked.
+        for (c, pos, ref, alt), x in sorted(csq_high_impact_genes(clinical_vcf).items()):
+            if x["frequency"] == "common":
+                continue
+            for g, cons in sorted(x["genes"].items()):
                 if g in ACMG_SF_GENES:
+                    gt = x["genotype"]
                     zyg = {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
-                    high.append({"gene": g, "variant": f"{c}:{pos} {ref}>{alt}", "genotype": zyg, "consequence": cons})
+                    high.append({"gene": g, "variant": f"{c}:{pos} {ref}>{alt}", "genotype": zyg, "consequence": cons,
+                                 "transcript": x["transcript"], "frequency": x["frequency"],
+                                 "frequency_unknown": x["frequency"] == "unknown",
+                                 "weak_call": x["weak"], "call_note": "; ".join(x["why"]) or None,
+                                 "gq": x["gq"], "dp": x["dp"], "ad": x["ad"]})
+    sure = [x for x in high if not (x["weak_call"] or x["frequency_unknown"])]
     return {"version": ACMG_SF_VERSION, "genes_on_list": len(ACMG_SF_GENES),
             "clinvar_hits": clinvar, "clinvar_checked": bool(hits),
-            "high_impact": high, "high_impact_checked": bool(clinical_vcf)}
+            "high_impact": high, "high_impact_checked": bool(clinical_vcf),
+            "high_impact_rare": len(sure),
+            "high_impact_weak": sum(1 for x in high if x["weak_call"]),
+            "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"])}
 
 
 def sec_clinical(d, s):
@@ -1498,7 +1601,13 @@ def sec_clinical(d, s):
     for r in rows:
         by[r.get("IMPACT") or "."] = by.get(r.get("IMPACT") or ".", 0) + 1
     genes = sorted({r.get("GENE") for r in rows if r.get("GENE") not in (None, "", ".")})
-    return p, {"variants": len(rows), "by_impact": by, "genes": len(genes), "acmg_sf": acmg_sf_tier(d, s, v)}
+    out = {"variants": len(rows), "by_impact": by, "genes": len(genes), "acmg_sf": acmg_sf_tier(d, s, v)}
+    # Step 23's tier and call check columns; a table written before them has neither.
+    if rows and "FREQ_TIER" in rows[0]:
+        out["frequency_unknown"] = sum(1 for r in rows if r.get("FREQ_TIER") == "unknown")
+    if rows and "CALL_CHECK" in rows[0]:
+        out["weak_calls"] = sum(1 for r in rows if r.get("CALL_CHECK") == "weak")
+    return p, out
 
 
 def sec_slivar(d, s):
@@ -1511,6 +1620,9 @@ def sec_slivar(d, s):
         return v, {"prioritized": sum(1 for _ in vcf_records(v))}
     rows = read_tsv(p)
     out = {"prioritized": len(rows)}
+    # Step 31's frequency tier: prioritized for the compound-het search, not rare.
+    if rows and "FREQ_TIER" in rows[0]:
+        out["frequency_unknown"] = sum(1 for r in rows if r.get("FREQ_TIER") == "unknown")
     ch = os.path.join(os.path.dirname(p), f"{s}_compound_hets.tsv")
     if os.path.isfile(ch):
         crow = read_tsv(ch)
