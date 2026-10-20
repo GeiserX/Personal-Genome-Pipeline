@@ -105,8 +105,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # On a pull request, the head commit rather than the merge commit: the
+      # release notes name the commit whose script built the data.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
       # A release that exists and was built by this exact script is left alone.
@@ -140,6 +143,17 @@ jobs:
             echo "::error::scripts/ci/build-fixture.sh changed but tests/fixtures/VERSION is still ${tag}. Bump VERSION so the new data gets a new release."
             exit 1
           fi
+
+      # A pull request from a fork gets a read-only token and could never
+      # publish the release: say so now rather than after a two-hour build.
+      - name: Refuse a fixture build from a fork
+        if: >-
+          steps.need.outputs.build == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::A pull request from a fork cannot publish the fixture release. A maintainer builds it with workflow_dispatch, job build-fixture."
+          exit 1
 
       - name: Install bgzip and tabix
         if: steps.need.outputs.build == 'true'
