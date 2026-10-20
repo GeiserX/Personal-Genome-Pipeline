@@ -32,19 +32,21 @@ docker run --rm --user "$(id -u):$(id -g)" -v "${GD}:/genome" -w /genome "$BCFTO
   sh -c "bcftools view -Oz -o ${S}/vcf/${S}.vcf.gz ${S}/vcf/${S}.vcf && bcftools index -t ${S}/vcf/${S}.vcf.gz"
 check "the sample VCF is indexed" test -s "${GD}/${S}/vcf/${S}.vcf.gz.tbi"
 
-# The wrapper: the VEP image only; every other call goes to the next docker on PATH.
+# The wrapper: the VEP image only; every other call goes to the docker the
+# PATH without the wrapper finds (the e2e shim, which looks the PATH up again:
+# with the wrapper still on it, the two would call each other forever).
 WRAP="${CASE_TMP}/wrap"
 mkdir -p "$WRAP"
 cat > "${WRAP}/docker" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
-real=""
+rest=""
 IFS=: read -r -a dirs <<< "$PATH"
 for d in "${dirs[@]}"; do
-  [ "$d" = "$self" ] && continue
-  if [ -x "${d}/docker" ]; then real="${d}/docker"; break; fi
+  [ "$d" = "$self" ] || rest+="${rest:+:}${d}"
 done
+export PATH="$rest"
 args=("$@") in="" out="" vep=0
 for i in "${!args[@]}"; do
   case "${args[$i]}" in
@@ -58,7 +60,7 @@ if [ "$vep" = 1 ] && [ -n "$in" ] && [ -n "$out" ]; then
   cp "${WRAP_GENOME}${in#/genome}" "${WRAP_GENOME}${out#/genome}"
   exit 0
 fi
-exec "$real" "$@"
+exec docker "$@"
 WRAPPER
 chmod +x "${WRAP}/docker"
 export WRAP_VEP_IMAGE="$VEP_IMAGE" WRAP_GENOME="$GD" WRAP_SEEN="${CASE_TMP}/vep_input.vcf.gz"
