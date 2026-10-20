@@ -27,8 +27,11 @@
     withName: 'CLINVAR_SCREEN' { ext.min_gq = 20; ext.min_dp = 8 }
     (scripts/06 reads CLINVAR_MIN_GQ and CLINVAR_MIN_DP).
 
-    Unlike scripts/06, this process does not run the cDNA read check
-    (bin/clip_check.py): it gets no BAM.
+    CLINVAR_CDNA_CHECK, below, runs scripts/06's cDNA read check
+    (bin/clip_check.py) on these hits: <id>_clinvar_cdna_check.tsv says for
+    each hit whether its alt reads look like spliced cDNA. It needs the
+    sample's BAM and --gencode_exons; without either it writes every hit as
+    not_checked, with the reason, as scripts/06 does.
 
     Equivalent to: scripts/06-clinvar-screen.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -200,6 +203,61 @@ process CLINVAR_SCREEN {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         bcftools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+/*
+    CLINVAR_CDNA_CHECK — step 06's cDNA read check of each ClinVar hit
+    Spliced cDNA or expression-vector DNA (a lab contaminant) gives alt reads
+    clipped exactly at an exon edge, with the rest of the read on the next
+    exon; bin/clip_check.py counts them for each hit and flags the hit when
+    most alt reads are clipped that way and few ref reads are. It reads only
+    the reads at the hits. pysam is in PYPGX_IMAGE (conf/containers.config).
+    bam and bai are [] for a sample without a BAM, exons [] without
+    --gencode_exons: the table then says "not checked" and why.
+
+    Equivalent to: scripts/06-clinvar-screen.sh, step 4
+*/
+process CLINVAR_CDNA_CHECK {
+    tag "$meta.id"
+    label 'process_single'
+
+    // The table only: CLINVAR_SCREEN's versions.yml is the one in clinvar/.
+    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_check.tsv'
+
+    input:
+    // Fixed names: a samplesheet path may hold any character, and these go on a command line.
+    tuple val(meta), path(hits_tsv), path(bam, stageAs: 'sample.bam'), path(bai, stageAs: 'sample.bam.bai')
+    path(exons, stageAs: 'exons.bed')
+
+    output:
+    tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check
+    path "versions.yml",                                         emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    def reads = !bam ? "--skip 'no BAM for this sample in the samplesheet'" :
+                !exons ? "--skip 'no GENCODE exons (--gencode_exons)'" :
+                "--bam ${bam} --exons ${exons}"
+    """
+    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_clinvar_cdna_check.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

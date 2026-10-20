@@ -48,7 +48,7 @@ In the Nextflow pipeline the same floor is `ext.min_gq` and `ext.min_dp` of `CLI
 7. Marks the hits that belong together. A matched combined allele is a hit of its own and carries `INFO/PGP_JOINED_FROM`, its two parts as `CHROM:POS:REF:ALT`. Each of its parts that is a hit too keeps its row and gets `INFO/PGP_PART_OF`, the combined record it belongs to, so the reader sees one allele with the combined record's own review status, not two unrelated hits. Two hits in one gene that could be one allele by the rule of item 5 but matched no combined record each get `INFO/PGP_ONE_ALLELE`, the other hit: possibly one allele, check ClinVar for a combined record.
 8. Writes a call floor other than the default into the hits file's header, for example `##PGP_CALL_FLOOR=GQ=20,DP=8` (below). At the default the file has no such line and reads as GQ 30 and DP 10.
 9. Runs the cDNA read check on each hit (below).
-10. Prints the hits grouped by ClinVar's review stars (`bin/clinvar_hits.awk`): 4 practice guideline, 3 expert panel, 2 multiple submitters with no conflict, 1 a single submitter or conflicting classifications, 0 no assertion criteria, each with its combined-allele note when it has one and "LOW-CONFIDENCE CALL (GQ .., DP ..): check the reads" when the call is below the floor, and the count of low-confidence calls. The screening file keeps every Pathogenic/Likely_pathogenic submission whatever its review status, so a zero-star hit counts as a hit; the stars say how much weight it deserves. The Nextflow module runs the same steps, except the cDNA read check, and prints the same counts.
+10. Prints the hits grouped by ClinVar's review stars (`bin/clinvar_hits.awk`): 4 practice guideline, 3 expert panel, 2 multiple submitters with no conflict, 1 a single submitter or conflicting classifications, 0 no assertion criteria, each with its combined-allele note when it has one and "LOW-CONFIDENCE CALL (GQ .., DP ..): check the reads" when the call is below the floor, and the count of low-confidence calls. The screening file keeps every Pathogenic/Likely_pathogenic submission whatever its review status, so a zero-star hit counts as a hit; the stars say how much weight it deserves. The Nextflow module runs the same steps and prints the same counts; its `CLINVAR_CDNA_CHECK` process runs the cDNA read check.
 
 ### Low-confidence calls
 
@@ -66,7 +66,7 @@ For each hit, `bin/clip_check.py` reads the BAM at the hit's position and splits
 
 A flag is a reason to look at the reads (in IGV, for example), not a verdict. A real variant in a sample that also holds the construct is flagged too, and a construct whose junction reads all fall outside the hit is not seen. Mates on the next exon are not used.
 
-The Nextflow pipeline does not run this check yet: `CLINVAR_SCREEN` has no BAM input. Its hits have no cDNA column, and the reports show none.
+In the Nextflow pipeline the process `CLINVAR_CDNA_CHECK` runs the same `bin/clip_check.py` on `CLINVAR_SCREEN`'s hits, in the same image, with the sample's BAM from the samplesheet (or the one the pipeline aligned) and the exon BED of `--gencode_exons` (`run-all.sh` passes the one `setup.sh` installs). It writes `<sample>/clinvar/<sample>_clinvar_cdna_check.tsv`, the same table. A sample without a BAM, or a run without `--gencode_exons`, gets every hit as not checked, with the reason. The Nextflow HTML report does not read this table yet, so it shows no cDNA column.
 
 ## Runtime
 

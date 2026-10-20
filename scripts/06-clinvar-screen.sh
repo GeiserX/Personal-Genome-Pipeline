@@ -37,7 +37,7 @@ HITS="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.vcf"
 HITS_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.tsv"
 CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_cdna_check.tsv"
 BAM="${GENOME_DIR}/${SAMPLE}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
-EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+EXONS_BED=$(data_file gencode_exons) || true
 MIN_GQ=${CLINVAR_MIN_GQ:-30}
 MIN_DP=${CLINVAR_MIN_DP:-10}
 for v in "CLINVAR_MIN_GQ=${MIN_GQ}" "CLINVAR_MIN_DP=${MIN_DP}"; do

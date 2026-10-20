@@ -2,7 +2,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     PGX — Pharmacogenomics & ClinVar Screening Workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    The VCF feeds PharmCAT and the ClinVar screen in parallel. The BAM feeds
+    The VCF feeds PharmCAT and the ClinVar screen in parallel; the ClinVar
+    hits and the BAM feed the cDNA read check. The BAM also feeds
     the CYP2D6 callers (pypgx, and Cyrius when opted in), each after the
     CYP2D6 depth check. PGX_CONSENSUS turns their calls and T1K's HLA types
     into PharmCAT's outside calls: HLA-A and HLA-B from T1K, CYP2D6 only when
@@ -14,6 +15,7 @@
 include { PHARMCAT_PREPROCESS } from '../modules/local/pharmcat/main'
 include { PHARMCAT            } from '../modules/local/pharmcat/main'
 include { CLINVAR_SCREEN      } from '../modules/local/clinvar_screen/main'
+include { CLINVAR_CDNA_CHECK  } from '../modules/local/clinvar_screen/main'
 include { CYP2D6_DEPTH        } from '../modules/local/pgx_consensus/main'
 include { PGX_CONSENSUS       } from '../modules/local/pgx_consensus/main'
 include { PYPGX               } from '../modules/local/pypgx/main'
@@ -33,10 +35,12 @@ workflow PGX {
     ch_gvcf           // channel: [meta, gvcf, gvcf_index] — DEEPVARIANT's, or the samplesheet's gvcf column
     ch_hla_alleles    // channel: [meta, <id>_hla_genotype.tsv] — HLA_TYPING's
     ch_cyrius_install // channel: val(path) — setup.sh --cyrius install directory or []
+    ch_gencode_exons  // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
 
     main:
     ch_versions    = Channel.empty()
     ch_clinvar_dir = Channel.empty()
+    ch_clinvar_cdna = Channel.empty()
     def tools = params.tools ? params.tools.split(',').collect { it.trim() } : []
 
     //
@@ -53,6 +57,19 @@ workflow PGX {
         )
         ch_clinvar_dir = CLINVAR_SCREEN.out.isec_dir
         ch_versions    = ch_versions.mix(CLINVAR_SCREEN.out.versions)
+
+        // Step 06's cDNA read check: each sample's hits with its BAM, or []
+        // for a sample without one, so its table says "not checked" and why.
+        CLINVAR_CDNA_CHECK(
+            CLINVAR_SCREEN.out.hits_tsv
+                .map { meta, tsv -> [meta.id, meta, tsv] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, [bam, bai]] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> tuple(row[1], row[2], row[3] ? row[3][0] : [], row[3] ? row[3][1] : []) },
+            ch_gencode_exons
+        )
+        ch_clinvar_cdna = CLINVAR_CDNA_CHECK.out.cdna_check
+        ch_versions     = ch_versions.mix(CLINVAR_CDNA_CHECK.out.versions)
     }
 
     //
@@ -186,6 +203,7 @@ workflow PGX {
 
     emit:
     clinvar_dir          = ch_clinvar_dir
+    clinvar_cdna         = ch_clinvar_cdna        // [meta, <id>_clinvar_cdna_check.tsv]
     pharmcat_html        = ch_pharmcat_html
     pharmcat_json        = ch_pharmcat_json
     pypgx_results        = ch_pypgx_results

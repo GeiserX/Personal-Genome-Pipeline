@@ -15,6 +15,9 @@
 #     image is dangling; when it is not (another local tag on the same image
 #     id, or the containerd store) it notes that Docker does not list it as
 #     dangling, so the cleanup keeps it.
+#   - when setup.sh cannot add the pinned tag, its warning says the same three
+#     things: a cleanup would delete the image (dangling), keeps it (the
+#     containerd store), or Docker did not say.
 # No Docker: a fake engine on CONTAINER_ENGINE logs the calls, and a second one
 # keeps a table of names and image ids. The real pull, tag and
 # `docker images --filter dangling=true` run in Container Test.
@@ -147,7 +150,7 @@ case "${1:-}" in
   --version) echo "Docker version 0.0.0-stateful" ;;
   info) case " $* " in *" --format "*) echo 17179869184 ;; *) echo ok ;; esac ;;
   pull) put "$2" "sha256:$(printf '%s' "$2" | cksum | cut -d' ' -f1)" ;;
-  tag) id=$(id_of "$2") || exit 1; put "$3" "$id" ;;
+  tag) [ -n "${TAG_FAILS:-}" ] && exit 1; id=$(id_of "$2") || exit 1; put "$3" "$id" ;;
   rmi) awk -v r="$2" '$1 != r' "$S" > "${S}.new"; mv "${S}.new" "$S" ;;
   image)
     [ "${2:-}" = inspect ] || exit 0
@@ -251,6 +254,24 @@ else
 fi
 pull_only || fail "setup.sh --pull-only failed after the tag was removed"
 summary_says 1 "one pinned tag missing"
+
+# 5. setup.sh cannot add the pinned tag: its warning says what a dangling-image
+# cleanup would do, the same three cases as validate-setup.sh.
+setup_warns() {  # setup_warns LABEL PATTERN [VAR=VALUE ...]: the tag warning for ${first} matches PATTERN
+  local label=$1 want=$2 line
+  shift 2
+  CONTAINER_ENGINE=$STATEFUL bash -c '"$CONTAINER_ENGINE" rmi "$1"' _ "$first_tag"
+  env "$@" TAG_FAILS=1 CONTAINER_ENGINE="$STATEFUL" bash "${REPO}/scripts/setup.sh" --pull-only > "${WORK}/setup.log" 2>&1 || true
+  line=$(grep -F "WARNING: Could not tag ${first} as ${first_tag};" "${WORK}/setup.log" || true)
+  if grep -qE "$want" <<< "$line"; then
+    pass "${label}: setup.sh warns: ${line#*; }"
+  else
+    fail "${label}: setup.sh should warn /${want}/ about ${first}; it printed: ${line:-$(tail -3 "${WORK}/setup.log")}"
+  fi
+}
+setup_warns "classic store, no tag at all" 'Docker lists it as dangling, so a dangling-image cleanup would delete it\.$'
+setup_warns "containerd store" 'Docker does not list it as dangling, so a dangling-image cleanup keeps it\.$' FAKE_STORE=containerd
+setup_warns "no dangling list" 'Docker did not list its dangling images, so a dangling-image cleanup may delete it\.$' IMAGES_FAILS=1
 
 [ "$FAILS" -eq 0 ] || { echo "${FAILS} check(s) failed"; exit 1; }
 echo "All pinned-tag checks passed."
