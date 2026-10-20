@@ -148,6 +148,8 @@ def part1():
             self.is_duplicate = self.is_qcfail = False
     got = cp.site_alleles([R("a", True, "AGA"), R("a", False, "ACA"), R("b", True, "AGA")], ("chrX", 101, "C", "G"))
     expect("mates showing alt and ref at one site: the pair is left out", got, {"b": "alt"})
+    got = cp.site_alleles([R("a", True, None), R("b", True, "AGA")], ("chrX", 101, "C", "G"))
+    expect("a read with no stored sequence (SEQ *) is skipped, the rest still counted", got, {"b": "alt"})
 
     # Per-variant PHASE: trans over unknown over cis.
     rows = [["G", "c", "1", "A", "C", "5", "G", "T", ".", "cis", "3", "0", "."],

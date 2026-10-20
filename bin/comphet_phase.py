@@ -115,7 +115,10 @@ def site_alleles(reads, var):
     for r in reads:
         if not counts_read(r):
             continue
-        bases, ins = walk(r.reference_start, r.cigartuples, r.query_sequence)
+        seq = r.query_sequence
+        if not seq:
+            continue
+        bases, ins = walk(r.reference_start, r.cigartuples, seq)
         a = allele(bases, ins, pos - 1, ref, alt)
         if a is None:
             continue
