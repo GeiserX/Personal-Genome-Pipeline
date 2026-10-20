@@ -6,7 +6,7 @@ The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`.
 - **a BAM or a CRAM** without a VCF: it is called;
 - **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM or CRAM.
 
-Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 7 workflows, 62 processes in 39 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 8 workflows, 84 processes in 47 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
 > **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` is a launcher: it writes a one-row samplesheet and starts this pipeline with `-resume`, then runs the few script-only steps you ask for and the reports. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
@@ -45,7 +45,9 @@ nextflow run main.nf \
 # 3. To enable database-requiring tools, add them to --tools with their flags:
 #    --tools '...,vep,slivar,clinical_filter'  + --vep_cache /path/to/vep_cache
 #    --tools '...,cpsr'                        + --pcgr_data + --vep_cache_cpsr
-#    --tools '...,clinvar'                     + --clinvar + --clinvar_index
+#    --tools '...,clinvar'                     + --clinvar + --clinvar_index (optional --gencode_exons
+#                                                <reference/gencode.v50.basic.exons.bed>: the cDNA read check
+#                                                of each hit with the sample's BAM, as step 06 does)
 #    --tools '...,expansion_hunter'            + --expansion_catalog (and a sex column)
 #    --tools '...,hla_typing'                  + --hla_dat + --hla_genes (hla.dat and the GENCODE gene lines setup.sh installs)
 #    --tools '...,annotsv'                     + --annotsv_annotations
@@ -180,7 +182,7 @@ results/
 │   │                       #   somalier/ and verifybamid2/ hold each tool's own files;
 │   │                       #   <sample>_read_count.tsv: reads in and primary records in the BAM (ALIGN_MINIMAP2)
 │   ├── pharmcat/           # PharmCAT PGx reports (HTML + JSON)
-│   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV
+│   ├── clinvar/            # ClinVar pathogenic variant screen: hits as VCF and TSV, and the cDNA read check of each hit
 │   ├── pypgx/              # pypgx star allele calling (optional)
 │   ├── cpic/               # CPIC drug-gene recommendations (optional)
 │   ├── vep/                # VEP VCF, and the vcfanno-enriched VCF when a score file is set

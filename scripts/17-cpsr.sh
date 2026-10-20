@@ -109,7 +109,7 @@ sh "${PGP_ROOT}/bin/cpsr_sample_id" --rename "$OUTPUT_DIR" "$SAMPLE"
 CLASS_TSV="${OUTPUT_DIR}/${SAMPLE}.cpsr.grch38.classification.tsv.gz"
 CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_cpsr_cdna_check.tsv"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
-EXONS_BED="${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed"
+EXONS_BED=$(data_file gencode_exons) || true
 if [ ! -s "$CLASS_TSV" ]; then
   rm -f "$CDNA_TSV"
   echo "cDNA read check: skipped, CPSR wrote no classification table"

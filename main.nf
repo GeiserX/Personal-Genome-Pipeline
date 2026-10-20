@@ -538,6 +538,10 @@ workflow {
     ch_parascopy_data = Channel.value(params.parascopy_data ? file(params.parascopy_data, checkIfExists: true) : [])
     ch_parascopy_bed  = Channel.value(params.parascopy_depth_bed ? file(params.parascopy_depth_bed, checkIfExists: true) : [])
     ch_yleaf_data     = Channel.value(params.yleaf_data ? file(params.yleaf_data, checkIfExists: true) : [])
+    // GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed):
+    // the cDNA read check of CLINVAR_SCREEN's hits, and the couple screen's
+    // deletions over an exon
+    ch_gencode_exons  = Channel.value(params.gencode_exons ? file(params.gencode_exons, checkIfExists: true) : [])
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
@@ -575,7 +579,8 @@ workflow {
         ch_pypgx_bundle,
         ch_gvcf,
         BAM_ANALYSIS.out.hla_alleles,
-        ch_cyrius_install
+        ch_cyrius_install,
+        ch_gencode_exons
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -680,7 +685,6 @@ workflow {
             log.warn "--pedigree marks ${couple_ids.join(' and ')} as partners, but clinvar is not in --tools: " +
                      "the couple carrier screen reads each partner's ClinVar hits, so it does not run."
         }
-        def gencode_exons = params.containsKey('gencode_exons') ? params.gencode_exons : null
         def ch_couple_outputs = couple_ids && tools_list.contains('clinvar') ? Channel.empty().mix(
             PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number
         ).filter { meta, f -> couple_ids.contains(meta.id) }.map { meta, f -> f } : Channel.empty()
@@ -694,7 +698,7 @@ workflow {
             ch_par_bed,
             ch_couple_outputs,
             Channel.value(file("${projectDir}/assets/carrier_genes.tsv", checkIfExists: true)),
-            Channel.value(gencode_exons ? file(gencode_exons, checkIfExists: true) : [])
+            ch_gencode_exons
         )
         ch_family_versions = FAMILY.out.versions
         // <id>_couple_carrier.tsv: the id is the name without its 19-character suffix

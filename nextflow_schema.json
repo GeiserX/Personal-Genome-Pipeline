@@ -266,6 +266,12 @@
                     "description": "Gene annotation (GTF) T1K takes each HLA gene's GRCh38 coordinates from: the gene lines of GENCODE's basic annotation that scripts/setup.sh installs as reference/gencode.v<release>.basic.genes.gtf. Required with hla_typing.",
                     "fa_icon": "fas fa-file"
                 },
+                "gencode_exons": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "The exons of GENCODE's basic annotation as a BED, which scripts/setup.sh installs as reference/gencode.v<release>.basic.exons.bed. With clinvar, CLINVAR_CDNA_CHECK reads it for the cDNA read check of the ClinVar hits (without it every hit is not checked); with --pedigree, the couple carrier screen uses deletions over an exon.",
+                    "fa_icon": "fas fa-file"
+                },
                 "kir": {
                     "type": "boolean",
                     "default": false,

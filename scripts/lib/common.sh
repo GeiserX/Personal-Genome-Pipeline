@@ -456,7 +456,7 @@ HLA_DB_RELEASE=${HLA_DB_RELEASE:-3.66.0}
 GENCODE_RELEASE=50
 DELLY_EXCL_COMMIT=72a05f3cd23bf55f1edd723b9504a0faf1fba230
 # shellcheck disable=SC2034  # read by setup.sh and validate-setup.sh
-DATA_FILES="delly_exclude cytoband hla_dat gencode_genes"
+DATA_FILES="delly_exclude cytoband hla_dat gencode_genes gencode_exons"
 
 # data_file NAME: print the host path of data file NAME and return 0 when it
 # is installed, 1 when it is not (the path is printed either way).
@@ -466,6 +466,8 @@ DATA_FILES="delly_exclude cytoband hla_dat gencode_genes"
 #   hla_dat        hla.dat of IPD-IMGT/HLA release HLA_DB_RELEASE (step 08)
 #   gencode_genes  the gene lines of GENCODE's basic annotation, release
 #                  GENCODE_RELEASE: T1K takes HLA gene coordinates from it (step 08)
+#   gencode_exons  the exons of the same annotation as a BED (chrom, 0-based
+#                  start, end, once each): the cDNA read check of steps 06 and 17
 data_file() {
   local out
   case "$1" in
@@ -473,6 +475,7 @@ data_file() {
     cytoband) out="${GENOME_DIR:?}/reference/cytoBand.hg38.txt" ;;
     hla_dat) out="${GENOME_DIR:?}/hla/IPD-IMGT-HLA_${HLA_DB_RELEASE}/hla.dat" ;;
     gencode_genes) out="${GENOME_DIR:?}/reference/gencode.v${GENCODE_RELEASE}.basic.genes.gtf" ;;
+    gencode_exons) out="${GENOME_DIR:?}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed" ;;
     *) echo "ERROR: unknown data file '${1}'" >&2; return 2 ;;
   esac
   printf '%s\n' "$out"
@@ -517,13 +520,49 @@ install_data_file() {
       fi
       mv -f "${out}.tmp" "$out"
       rm -f "${out}.zip" ;;
-    gencode_genes)
-      url="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${GENCODE_RELEASE}/gencode.v${GENCODE_RELEASE}.basic.annotation.gtf.gz"
-      gz="${out}.download.gz"
-      fetch "$url" "$gz" md5 "$(dirname "$url")/MD5SUMS" >&2 || return 1
-      _keep_lines "$gz" "$out" '$3 == "gene"' || return 1 ;;
+    gencode_genes|gencode_exons)
+      _install_gencode || return 1 ;;
   esac
   [ -s "$out" ]
+}
+
+# _install_gencode: download GENCODE's basic annotation once and write from it
+# each of gencode_genes and gencode_exons that is missing, then delete the
+# download. Fails when one of them cannot be written.
+_install_gencode() {
+  local genes exons url gz rc=0
+  genes=$(data_file gencode_genes) || true
+  exons=$(data_file gencode_exons) || true
+  url="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${GENCODE_RELEASE}/gencode.v${GENCODE_RELEASE}.basic.annotation.gtf.gz"
+  gz="${genes}.download.gz"
+  fetch "$url" "$gz" md5 "$(dirname "$url")/MD5SUMS" >&2 || return 1
+  if [ ! -s "$genes" ]; then
+    _gz_to "$gz" "$genes" awk -F'\t' '$3 == "gene"' || rc=1
+  fi
+  if [ ! -s "$exons" ]; then
+    _gz_to "$gz" "$exons" _gtf_exons || rc=1
+  fi
+  rm -f "$gz"
+  return "$rc"
+}
+
+# _gtf_exons: the exon lines of a GTF on stdin as a sorted BED, once each.
+_gtf_exons() {
+  awk -F'\t' -v OFS='\t' '$3 == "exon" {print $1, $4 - 1, $5}' | LC_ALL=C sort -k1,1 -k2,2n -k3,3n -u
+}
+
+# _gz_to GZ OUT COMMAND...: write GZ, uncompressed and piped through COMMAND,
+# to OUT (through OUT.tmp). Fails, keeping no OUT, when COMMAND writes nothing.
+_gz_to() {
+  local gz=$1 out=$2
+  shift 2
+  if gzip -cd "$gz" | "$@" > "${out}.tmp" && [ -s "${out}.tmp" ]; then
+    mv -f "${out}.tmp" "$out"
+  else
+    rm -f "${out}.tmp"
+    echo "ERROR: no usable lines for $(basename "$out") in $(basename "$gz")" >&2
+    return 1
+  fi
 }
 
 # _keep_lines GZ OUT AWK_CONDITION: write the tab-separated lines of GZ that
