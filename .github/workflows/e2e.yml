@@ -5,17 +5,19 @@ name: E2E
 # call. Four jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
 #
 #   build-fixture  builds the data set and publishes it as release assets
-#                  under the tag in tests/fixtures/VERSION. Runs on a push that
-#                  changes the build script, VERSION or this file (a
-#                  dispatch-only job could not run before this file is on
-#                  main) and on dispatch; it does nothing when the release
-#                  already exists and was built by the same script.
+#                  under the tag in tests/fixtures/VERSION. Runs on every push
+#                  in the e2e scope below, which includes the build script,
+#                  VERSION and this file (a dispatch-only job could not run
+#                  before this file is on main), and on dispatch; it does
+#                  nothing when the release already exists and was built by
+#                  the same script.
 #   e2e            runs every case in tests/e2e/ on that data set, then the
 #                  parity check: the bash single steps and the Nextflow
 #                  pipeline, both from the fixture's FASTQ, must agree, and
 #                  so must the SV consensus and the Y haplogroup of the
 #                  hardening run (scripts/ci/parity-diff.sh). Runs on pull requests that
-#                  touch the pipeline, monthly, on dispatch. Every pull
+#                  touch the pipeline, on main after every merge that does,
+#                  monthly, on dispatch. Every pull
 #                  request starts this workflow, so main can require the e2e
 #                  check: e2e-scope decides, and on a pull request that
 #                  touches none of the pipeline paths e2e is skipped, which
@@ -35,10 +37,24 @@ on:
     # Without a branches filter a tag push would start this workflow too:
     # GitHub skips path filters for tags.
     branches: ['**']
+    # The e2e scope, the same paths e2e-scope checks on a pull request
+    # (E2E_SCOPE_DIRS and E2E_SCOPE_FILES below; the e2e job fails when the
+    # two lists differ). On main the e2e job runs on such a push, so pull
+    # requests merged close together are tested together. On another branch
+    # only build-fixture and settle-doubts run, and both do nothing unless
+    # their own files changed.
     paths:
-      - 'scripts/ci/build-fixture.sh'
-      - 'scripts/ci/settle-doubts.sh'
+      - 'scripts/**'
+      - 'modules/**'
+      - 'workflows/**'
+      - 'bin/**'
+      - 'conf/**'
+      - 'assets/**'
+      - 'tests/e2e/**'
       - 'tests/fixtures/VERSION'
+      - 'main.nf'
+      - 'nextflow.config'
+      - 'versions.env'
       - '.github/workflows/e2e.yml'
   pull_request:
     branches: [main]
@@ -64,9 +80,18 @@ on:
 permissions:
   contents: read
 
+# The paths the e2e cases exercise: a directory covers everything under it.
+env:
+  E2E_SCOPE_DIRS: scripts modules workflows bin conf assets tests/e2e
+  E2E_SCOPE_FILES: tests/fixtures/VERSION main.nf nextflow.config versions.env .github/workflows/e2e.yml
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  # Never cancel a fixture upload half way; pull request runs may be replaced.
+  # Never cancel a fixture upload or a run on main half way; pull request
+  # runs may be replaced. A push run waits for the running one of its
+  # branch, and GitHub keeps one waiting run per group: a newer push
+  # replaces the waiting one, so the next run on main tests every merge
+  # since the last one.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -153,7 +178,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The pull request paths the e2e cases exercise. Outside a pull request the
-  # answer is always run=true. A failed or missing answer runs e2e anyway (the
+  # answer is always run=true: on a push the paths filter above already
+  # asked the same question. A failed or missing answer runs e2e anyway (the
   # test below is != 'false'), so a broken scope job can never skip the gate.
   e2e-scope:
     runs-on: ubuntu-latest
@@ -179,7 +205,9 @@ jobs:
           if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
           cat "${RUNNER_TEMP}/changed.txt"
-          if grep -qE '^(scripts|modules|workflows|bin|conf|assets|tests/e2e)/|^(tests/fixtures/VERSION|main\.nf|nextflow\.config|versions\.env|\.github/workflows/e2e\.yml)$' "${RUNNER_TEMP}/changed.txt"; then
+          dirs=$(tr ' ' '|' <<< "$E2E_SCOPE_DIRS")
+          files=$(tr ' ' '|' <<< "$E2E_SCOPE_FILES" | sed 's/\./\\./g')
+          if grep -qE "^(${dirs})/|^(${files})\$" "${RUNNER_TEMP}/changed.txt"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "Nothing the e2e cases exercise changed: e2e is skipped."
@@ -188,9 +216,14 @@ jobs:
 
   e2e:
     needs: e2e-scope
+    # On a push to a branch other than main this job is skipped (its pull
+    # request runs it). The skipped job gets another name, so the required
+    # e2e check of the pull request never has a skipped twin on its commit.
+    name: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && 'e2e (branch push, runs on the pull request)' || 'e2e' }}
     if: >-
       ${{ !cancelled() && needs.e2e-scope.outputs.run != 'false' && (
         github.event_name == 'pull_request' ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
@@ -212,6 +245,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The push paths filter is the scope a second time, because a filter
+      # cannot read env. A path in one list and not the other would start e2e
+      # on a pull request and never on main after the merge, or the reverse.
+      - name: The push paths are the e2e scope
+        run: |
+          read -ra dirs <<< "$E2E_SCOPE_DIRS"
+          read -ra files <<< "$E2E_SCOPE_FILES"
+          want=$( { printf '%s/**\n' "${dirs[@]}"; printf '%s\n' "${files[@]}"; } | sort)
+          have=$(awk '/^  push:/ {p = 1; next} p && /^  [a-z_]+:/ {exit}
+                      p && /^      - / {sub(/^      - /, ""); gsub(/\047/, ""); print}' .github/workflows/e2e.yml | sort)
+          if [ "$want" != "$have" ]; then
+            echo "::error::The push paths of e2e.yml differ from E2E_SCOPE_DIRS and E2E_SCOPE_FILES (< scope, > push paths):"
+            diff <(echo "$want") <(echo "$have") || true
+            exit 1
+          fi
+          echo "Push paths match the e2e scope: $(wc -l <<< "$have") entries."
 
       # Seconds, no network: a planted registry 500 must be tried again, and a
       # missing tag or a rate limit must not.
