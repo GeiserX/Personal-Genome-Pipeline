@@ -261,6 +261,8 @@ same("12 a variant missing from the VCF is named, and the call is not PASS-backe
      "not in the VCF: chr10:94775367 A>G")
 same("12 a RefCall defining variant is not PASS",
      poc.defining_evidence("*2/*17", DEFS.get, vcf(filt="RefCall"))[3], "not PASS: chr10:94781859 G>A RefCall")
+same("12 an unfiltered defining variant (FILTER .) is not PASS",
+     poc.defining_evidence("*2/*17", DEFS.get, vcf(filt="."))[3], "not PASS: chr10:94781859 G>A no filter")
 same("12 *1/*1 rests on no defining variant", poc.defining_evidence("*1/*1", DEFS.get, vcf()),
      ["none", "N/A", "N/A", "none", "N/A"])
 same("12 an allele pypgx's table lacks is named, and the call is not PASS-backed",

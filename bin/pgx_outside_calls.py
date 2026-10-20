@@ -268,8 +268,8 @@ def defining_evidence(diplotype, variants_of, lookup, floor=DEFAULT_GQ_FLOOR):
             continue
         gq = rec.get("gq")
         found.append((int(gq) if isinstance(gq, (int, float)) else None, name, rec.get("ad") or "."))
-        if rec.get("filter") not in ("PASS", "."):
-            not_pass.append(f"{name} {rec.get('filter')}")
+        if rec.get("filter") != "PASS":
+            not_pass.append(f"{name} {'no filter' if rec.get('filter') in (None, '.') else rec.get('filter')}")
     with_gq = [f for f in found if isinstance(f[0], int)]
     weakest = min(with_gq) if with_gq else None
     filt = "PASS" if not (missing or not_pass or unknown) else "; ".join(
