@@ -608,9 +608,9 @@ Step 23 keeps the HIGH-impact variants, the MODERATE ones below 1% in gnomAD exo
 
 ## Variant Prioritization (Step 31)
 
-**Where to look:** `${SAMPLE}/slivar/${SAMPLE}_slivar_summary.tsv` and `${SAMPLE}/slivar/${SAMPLE}_compound_hets.tsv`.
+**Where to look:** `${SAMPLE}/slivar/${SAMPLE}_slivar_summary.tsv`, `${SAMPLE}/slivar/${SAMPLE}_compound_hets.tsv` and `${SAMPLE}/slivar/${SAMPLE}_compound_het_pairs.tsv`.
 
-slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODERATE with damaging scores, ClinVar pathogenic) and lists genes where you carry two such variants. Those compound-het candidates are not phased: from one genome the pipeline cannot tell whether the two variants sit on different copies of the gene (which can cause recessive disease) or on the same copy (which usually does not). Expect a thousand or more candidate pairs; nearly all are noise. A pair matters only in a gene that fits your health history, and confirming it needs a parent's DNA or long reads. See [step 31](31-slivar.md#interpretation).
+slivar sorts the rare, damaging variants into three groups (rare HIGH, rare MODERATE with damaging scores, ClinVar pathogenic) and lists genes where you carry two such variants. The genotypes alone cannot tell whether the two variants sit on different copies of the gene (in trans, which can cause recessive disease) or on the same copy (in cis, which usually does not), so step 31 reads the phase from the reads: `${SAMPLE}_compound_het_pairs.tsv` says `trans`, `cis` or `unknown` for each pair, with the reads that say so. Only variants close enough for one read pair to cover both (a few hundred bases) can be phased this way, so most pairs read `unknown`. Expect a thousand or more candidate pairs; nearly all are noise. A `trans` pair matters only in a gene that fits your health history, and an `unknown` one needs a parent's DNA or long reads to phase. See [step 31](31-slivar.md#interpretation).
 
 ## More Pharmacogenomics: Cyrius, CPIC, pypgx and the Consensus (Steps 21, 27, 32, 36)
 

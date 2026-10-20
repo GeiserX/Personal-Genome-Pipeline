@@ -12,11 +12,13 @@ slivar (by Brent Pedersen, author of vcfanno, mosdepth, duphold) is a streaming 
 
 - VEP-annotated VCF from step 13, or vcfanno-enriched VCF from step 30 (recommended). The step 30 output is used only when it is newer than the VEP output; an older one is ignored with a notice.
 - Optional: gnomAD v4.1 gene constraint TSV at `${GENOME_DIR}/annotations/gnomad_v4.1_constraint.tsv`
+- Optional: the sample's BAM, `aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` picks another folder), to phase the compound-het pairs. Without it every pair is `unknown`.
 
 ## Docker Images
 
 - `SLIVAR_IMAGE` (compound het detection)
 - `BCFTOOLS_IMAGE` (variant filtering via split-vep)
+- `PYPGX_IMAGE` (its pysam reads the BAM for the phase of each compound-het pair, as in step 06's read check)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
@@ -63,9 +65,21 @@ All tiers are merged and deduplicated into a single prioritized VCF.
 
 slivar's `compound-hets` command groups heterozygous variants by gene from the prioritized VCF and reports pairs that could form compound heterozygotes (two different damaging variants in the same gene, one from each parent). It requires a PED file (`--ped`) describing sample relationships. For singleton samples (no trio), the `--allow-non-trios` flag is required.
 
-The command outputs VCF to stdout with `INFO/slivar_comphet` annotations linking partner variants. Each VCF record represents a unique variant; the `slivar_comphet` field lists all its compound-het partners (format: `sample/GENE/PAIR_ID/chrom/pos/ref/alt`, comma-separated). A gene with N variants produces up to C(N,2) pairs but only N VCF records. The script counts unique pair IDs from this field and exports a human-readable TSV with columns: GENE, CHROM, POS, REF, ALT, IMPACT, Consequence, GT, MAX_AF, gnomADe_AF, gnomADg_AF, FREQ_TIER, TRANSCRIPT, MANE_Consequence -- sorted by gene so that compound-het partners appear in consecutive rows. The frequency columns are VEP's (`.` for a field VEP did not write), `FREQ_TIER` is `rare`, `unknown`, `common` (a ClinVar record) or `none` (no frequency field), `TRANSCRIPT` is the set step 23 ranks on (`MANE`, `CANONICAL` or `ANY`), and `MANE_Consequence` is the consequence on the MANE Select transcript (`.` when the variant has none). The summary TSV ends with the same six columns, before the constraint columns. The Nextflow `SLIVAR_PRIORITIZE` module applies the same tiers and writes the same summary columns; it writes no compound-het TSV.
+The command outputs VCF to stdout with `INFO/slivar_comphet` annotations linking partner variants. Each VCF record represents a unique variant; the `slivar_comphet` field lists all its compound-het partners (format: `sample/GENE/PAIR_ID/chrom/pos/ref/alt`, comma-separated). A gene with N variants produces up to C(N,2) pairs but only N VCF records. The script counts unique pair IDs from this field and exports a human-readable TSV with columns: GENE, CHROM, POS, REF, ALT, IMPACT, Consequence, GT, PHASE, MAX_AF, gnomADe_AF, gnomADg_AF, FREQ_TIER, TRANSCRIPT, MANE_Consequence -- sorted by gene so that compound-het partners appear in consecutive rows. The frequency columns are VEP's (`.` for a field VEP did not write), `FREQ_TIER` is `rare`, `unknown`, `common` (a ClinVar record) or `none` (no frequency field), `TRANSCRIPT` is the set step 23 ranks on (`MANE`, `CANONICAL` or `ANY`), and `MANE_Consequence` is the consequence on the MANE Select transcript (`.` when the variant has none). The summary TSV ends with the same six columns, before the constraint columns. The Nextflow `SLIVAR_PRIORITIZE` module applies the same tiers and writes the same summary columns; it writes no per-variant compound-het TSV.
 
-**Important:** With single-sample unphased data, these are *candidates only*. The two variants might be on the same haplotype (cis) rather than different haplotypes (trans). Trio data or read-backed phasing is needed to confirm true compound hets.
+### Phase of each pair, from the reads
+
+Two variants in one gene hit both copies of the gene only when they sit on different copies (in trans). On the same copy (in cis) the other copy is intact, which for a recessive gene usually means no disease. The genotypes of one sample do not tell the two apart, but the reads can: a read, or a read and its mate, that covers both positions shows both alt alleles together in cis, and one without the other in trans.
+
+`bin/comphet_phase.py` does this for every pair slivar lists, with pysam on the sample's BAM. It counts the reads and read pairs that show an allele at both positions. A read pair counts once, with what its two mates show together; a pair whose mates disagree at a position is not counted. Reads that count are mapped, primary, not duplicates, not QC-failed, with mapping quality 20 or more. The verdict is `trans` or `cis` when at least 2 reads or read pairs cover both positions and at least 80% of them agree; otherwise `unknown`, with the reason. SNVs, MNVs and indels that share their first base with the reference are phased; a complex allele is not.
+
+Two positions further apart than a read pair spans (about 500 bp for short reads) are never covered by one fragment, so the pair stays `unknown`. For those, a parent's genome (step 38, [family analysis](multi-sample.md#family-analysis-step-38-opt-in)) or long reads can phase the pair; this step does not run WhatsHap over whole genes.
+
+The step writes `${SAMPLE}_compound_het_pairs.tsv`, one row per pair: GENE, CHROM, POS_1, REF_1, ALT_1, POS_2, REF_2, ALT_2, DISTANCE, PHASE, CIS_READS, TRANS_READS, PHASE_NOTE. CIS_READS and TRANS_READS are the reads or read pairs that show the two variants on the same copy and on different copies. The per-variant TSV gets a PHASE column after GT: `trans` when the variant is in trans with at least one partner, else `unknown` when one of its pairs is unknown, else `cis`. The HTML and text reports count the pairs by phase and list the first 20 trans ones by name.
+
+The Nextflow module has the same phasing as its `COMPHET_PHASE` process (same script, `PYPGX_IMAGE`), on SLIVAR's compound-het VCF and the sample's BAM. The pipeline does not run it yet: the annotation workflow gets no BAM, so a Nextflow run has no pairs table.
+
+**Important:** `cis` and `unknown` pairs are not two-hit findings. A `trans` pair is a candidate worth a look in a gene that fits your health history, and confirming it still needs a clinical test.
 
 ## Gene Constraint Enrichment
 
@@ -89,7 +103,8 @@ Variants in constrained genes are more likely to be pathogenic -- these genes ar
 | `slivar/${SAMPLE}_prioritized.vcf.gz` | All prioritized variants (merged, deduplicated) |
 | `slivar/${SAMPLE}_slivar_summary.tsv` | Human-readable table with gene constraint |
 | `slivar/${SAMPLE}_compound_hets.vcf.gz` | Compound het candidate variants (VCF) |
-| `slivar/${SAMPLE}_compound_hets.tsv` | Compound het candidates (human-readable TSV) |
+| `slivar/${SAMPLE}_compound_hets.tsv` | Compound het candidates (human-readable TSV, with PHASE) |
+| `slivar/${SAMPLE}_compound_het_pairs.tsv` | Each compound-het pair: cis, trans or unknown, with the read counts |
 | `slivar/${SAMPLE}_rare_high.vcf.gz` | Tier 1: HIGH impact |
 | `slivar/${SAMPLE}_rare_moderate_del.vcf.gz` | Tier 2: MODERATE + deleterious |
 | `slivar/${SAMPLE}_freq_unknown.vcf.gz` | Tier 2b: HIGH or MODERATE, frequency unknown (when the VEP output has a frequency field) |
@@ -105,12 +120,12 @@ A typical 30X WGS sample produces:
 - **rare_high:** 50-200 variants (loss-of-function in rare alleles)
 - **rare_moderate_deleterious:** 200-1,000 variants (depends on predictor availability)
 - **clinvar_pathogenic:** 0-10 variants (most are heterozygous carriers)
-- **compound het candidates:** 1,000-2,000 pairs across 100-200 genes (combinatorial: N variants in a gene = N*(N-1)/2 pairs; most are false positives in unphased data)
+- **compound het candidates:** 1,000-2,000 pairs across 100-200 genes (combinatorial: N variants in a gene = N*(N-1)/2 pairs). Most variants of a gene lie further apart than a read pair spans, so most pairs read `unknown`
 
 Focus review on:
 1. Variants in **constrained genes** (CONSTRAINED=YES)
 2. **Homozygous** rare HIGH/MODERATE variants (potential recessive disease)
-3. **Compound het pairs** in known disease genes
+3. **Compound het pairs in trans** in known disease genes
 4. Any **ClinVar pathogenic** variants, especially in dominant disease genes
 
 See [docs/interpreting-results.md](interpreting-results.md) for pathogenicity score thresholds.

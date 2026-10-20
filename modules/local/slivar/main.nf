@@ -12,12 +12,15 @@
     no known frequency goes into its own freq_unknown tier instead of the
     rare ones; the prioritized VCF still includes it. The summary TSV ends
     with MAX_AF, gnomADe_AF, gnomADg_AF, FREQ_TIER, TRANSCRIPT and
-    MANE_Consequence, as the script's. This module writes no compound-het
-    TSV (the script does).
+    MANE_Consequence, as the script's. This module writes no per-variant
+    compound-het TSV (the script does).
 
-    Two processes, each in its own pinned image:
+    Three processes, each in its own pinned image:
       SLIVAR_PRIORITIZE  bcftools image: tiers, prioritized VCF, PED, summary TSV
       SLIVAR             slivar image:   compound-hets on the prioritized VCF
+      COMPHET_PHASE      pypgx image:    each compound-het pair cis, trans or
+                                         unknown from the sample's BAM, the
+                                         pairs table scripts/31 writes
 
     Equivalent to: scripts/31-slivar.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -237,6 +240,58 @@ process SLIVAR {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         slivar: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+/*
+    COMPHET_PHASE — the phase of each compound-het pair, from the reads
+    bin/comphet_phase.py (the rule scripts/31-slivar.sh runs) counts, for each
+    pair SLIVAR found, the reads and read pairs that cover both positions:
+    alt with alt or ref with ref is cis (one copy of the gene carries both),
+    alt with ref is trans (both copies are hit). It writes
+    <id>_compound_het_pairs.tsv with the verdict and the counts. bam and bai
+    are [] for a sample without a BAM: every pair is then unknown, with the
+    reason. pysam is in PYPGX_IMAGE (conf/containers.config).
+
+    Equivalent to: scripts/31-slivar.sh, the phase of the pairs
+*/
+process COMPHET_PHASE {
+    tag "$meta.id"
+    label 'process_single'
+
+    publishDir { "${params.outdir}/${meta.id}/slivar" }, mode: params.publish_dir_mode,
+        pattern: "*_compound_het_pairs.tsv"
+
+    input:
+    // Fixed names: a samplesheet path may hold any character, and these go on a command line.
+    tuple val(meta), path(vcf, stageAs: 'compound_hets.vcf.gz'), path(bam, stageAs: 'sample.bam'), path(bai, stageAs: 'sample.bam.bai')
+
+    output:
+    tuple val(meta), path("${meta.id}_compound_het_pairs.tsv"), emit: pairs
+    path "versions.yml",                                         emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    def reads = bam ? "--bam ${bam}" : "--skip 'no BAM for this sample in the samplesheet'"
+    """
+    comphet_phase.py --vcf ${vcf} --out ${meta.id}_compound_het_pairs.tsv ${reads}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    printf 'GENE\\tCHROM\\tPOS_1\\tREF_1\\tALT_1\\tPOS_2\\tREF_2\\tALT_2\\tDISTANCE\\tPHASE\\tCIS_READS\\tTRANS_READS\\tPHASE_NOTE\\n' > ${meta.id}_compound_het_pairs.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        pypgx: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }

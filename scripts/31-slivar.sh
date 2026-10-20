@@ -13,8 +13,14 @@
 # the TSVs say FREQ_TIER=unknown. The tiers take the worst consequence; the
 # TSVs add the MANE Select consequence (MANE_Consequence) and the gnomAD AF.
 #
-# Input: vcfanno-enriched VCF (step 30) or VEP-annotated VCF (step 13)
-# Output: prioritized VCF, compound het TSV, summary TSV
+# Each compound-het pair is phased from the sample's BAM (bin/comphet_phase.py,
+# pysam from PYPGX_IMAGE): cis, trans or unknown with the reads that say so,
+# in <sample>_compound_het_pairs.tsv and the PHASE column of the per-variant
+# table. Without the BAM every pair is unknown.
+#
+# Input: vcfanno-enriched VCF (step 30) or VEP-annotated VCF (step 13), and
+#   aligned/<sample>_sorted.bam (ALIGN_DIR) with its .bai for the phase
+# Output: prioritized VCF, compound het TSV and pairs TSV, summary TSV
 # Requires: VEP-annotated VCF. Step 30 (vcfanno) recommended for full filtering.
 set -euo pipefail
 
@@ -355,10 +361,11 @@ echo "[4/5] Detecting compound heterozygote candidates..."
 #   --ped: PED file describing sample relationships
 #   --allow-non-trios: required for singleton/duo samples (no trio structure)
 # It groups heterozygous variants by gene (from CSQ) and outputs VCF to stdout
-# with pairs of variants per gene.
-# For single-sample unphased data, these are CANDIDATES only.
+# with pairs of variants per gene. From one sample's genotypes these are
+# candidates: below, each pair is phased from the reads.
 COMPHET_VCF="${OUTDIR}/${SAMPLE}_compound_hets.vcf.gz"
 COMPHET_TSV="${OUTDIR}/${SAMPLE}_compound_hets.tsv"
+COMPHET_PAIRS_TSV="${OUTDIR}/${SAMPLE}_compound_het_pairs.tsv"
 COMPHET_PED="${OUTDIR}/${SAMPLE}.ped"
 
 # Generate minimal PED file for single sample (no parents, unaffected)
@@ -367,7 +374,7 @@ echo -e "${SAMPLE}\t${SAMPLE}\t0\t0\t0\t-9" > "$COMPHET_PED"
 
 COMPHET_LOG="${OUTDIR}/${SAMPLE}_compound_hets.log"
 # Remove stale outputs from a previous run so a failure cannot leave old results behind
-rm -f "$COMPHET_VCF" "$COMPHET_TSV"
+rm -f "$COMPHET_VCF" "$COMPHET_TSV" "$COMPHET_PAIRS_TSV" "${COMPHET_TSV}.unphased"
 
 # A failure here (wrong image, slivar crash, broken input) stops the step with
 # slivar's own error. It must never be reported as "no candidates found".
@@ -423,17 +430,38 @@ if [ "$COMPHET_RECORDS" -gt 0 ]; then
   {
     printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\t%s\n' "$EXTRA_HEAD"
     mane_col < "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
-  } > "${COMPHET_TSV}.tmp"
-  mv "${COMPHET_TSV}.tmp" "$COMPHET_TSV"
+  } > "${COMPHET_TSV}.unphased"
   rm -f "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
   echo "  Found: ${COMPHET_PAIRS} compound het candidate pairs across ${COMPHET_GENES} genes"
 else
   echo "  slivar ran and returned no records: no compound heterozygote candidates found."
 fi
 
-if [ ! -s "$COMPHET_TSV" ]; then
-  printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\t%s\n' "$EXTRA_HEAD" > "$COMPHET_TSV"
+if [ ! -s "${COMPHET_TSV}.unphased" ]; then
+  printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\t%s\n' "$EXTRA_HEAD" > "${COMPHET_TSV}.unphased"
 fi
+
+# Phase of each pair from the reads (bin/comphet_phase.py): a read, or a read
+# and its mate, that covers both positions shows the two alt alleles together
+# (cis, one copy of the gene hit) or apart (trans, both copies hit). Pairs
+# further apart than a read pair spans stay unknown. The pairs table holds the
+# verdict and the read counts; the per-variant table gets a PHASE column after
+# GT. pysam is in PYPGX_IMAGE, as for step 06's read check.
+BAM="${SAMPLE_DIR}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
+if [ -f "$BAM" ] && [ -f "${BAM}.bai" ]; then
+  PHASE_ARGS=(--bam "$(cpath "$BAM")")
+else
+  PHASE_ARGS=(--skip "no BAM (${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam with its .bai)")
+fi
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
+  python3 /pgp-bin/comphet_phase.py --vcf "$(cpath "$COMPHET_VCF")" --out "$(cpath "${COMPHET_PAIRS_TSV}.part")" \
+    --variants "$(cpath "${COMPHET_TSV}.unphased")" --variants-out "$(cpath "${COMPHET_TSV}.part")" "${PHASE_ARGS[@]}"
+mv "${COMPHET_PAIRS_TSV}.part" "$COMPHET_PAIRS_TSV"
+mv "${COMPHET_TSV}.part" "$COMPHET_TSV"
+rm -f "${COMPHET_TSV}.unphased"
+PHASE_TRANS=$(awk -F'\t' 'NR > 1 && $10 == "trans"' "$COMPHET_PAIRS_TSV" | wc -l | tr -d ' ')
+PHASE_CIS=$(awk -F'\t' 'NR > 1 && $10 == "cis"' "$COMPHET_PAIRS_TSV" | wc -l | tr -d ' ')
+PHASE_UNKNOWN=$(awk -F'\t' 'NR > 1 && $10 == "unknown"' "$COMPHET_PAIRS_TSV" | wc -l | tr -d ' ')
 
 # ── Step 5: Generate summary TSV with gene constraint ─────────────────
 echo ""
@@ -495,6 +523,7 @@ echo "    ───────────────────────�
 echo "    Total prioritized (deduplicated):   ${PRIORITIZED_COUNT}"
 echo ""
 echo "  Compound heterozygote candidates:     ${COMPHET_PAIRS} pairs (${COMPHET_GENES} genes)"
+echo "    phase from the reads: ${PHASE_TRANS} trans, ${PHASE_CIS} cis, ${PHASE_UNKNOWN} unknown"
 echo ""
 
 # Highlight constrained genes if constraint data was used
@@ -513,7 +542,8 @@ fi
 echo "  Output files:"
 echo "    ${OUTDIR}/${SAMPLE}_prioritized.vcf.gz         (all prioritized variants)"
 echo "    ${OUTDIR}/${SAMPLE}_compound_hets.vcf.gz       (compound het VCF)"
-echo "    ${OUTDIR}/${SAMPLE}_compound_hets.tsv           (compound het candidates)"
+echo "    ${OUTDIR}/${SAMPLE}_compound_hets.tsv           (compound het candidates, PHASE column)"
+echo "    ${OUTDIR}/${SAMPLE}_compound_het_pairs.tsv      (each pair: cis, trans or unknown, with the reads)"
 echo "    ${OUTDIR}/${SAMPLE}_slivar_summary.tsv          (summary + gene constraint)"
 echo "    ${OUTDIR}/${SAMPLE}_rare_high.vcf.gz            (HIGH impact tier)"
 echo "    ${OUTDIR}/${SAMPLE}_rare_moderate_del.vcf.gz    (MODERATE + deleterious)"
@@ -525,8 +555,9 @@ echo "    ${OUTDIR}/${SAMPLE}_clinvar_path.vcf.gz         (ClinVar P/LP)"
 fi
 echo "============================================"
 echo ""
-echo "NOTE: Compound het candidates from single-sample unphased data are"
-echo "  not confirmed. Phased data (trio or read-backed) is needed to"
-echo "  distinguish true compound hets from variants on the same haplotype."
+echo "NOTE: A compound-het pair is two-hit (both copies of the gene) only when"
+echo "  it is in trans. cis means one copy carries both variants. unknown means"
+echo "  no read or read pair covers both positions: a parent's genome (step 38)"
+echo "  or long reads can phase it."
 echo ""
 echo "Next: Review ${SAMPLE}_slivar_summary.tsv or load prioritized VCF in IGV/gene.iobio"
