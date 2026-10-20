@@ -2,7 +2,7 @@
 # PharmCAT — Clinical pharmacogenomics (star alleles + drug recommendations)
 # Input: VCF.gz + GRCh38 reference; the gVCF from step 03 when there is one;
 #        the outside calls of step 36 (HLA-A, HLA-B, an agreed CYP2D6) when
-#        that step wrote any
+#        that step wrote any; step 20's chrM calls for MT-RNR1 when there are
 # Output: HTML + JSON reports with metabolizer status for 23 pharmacogenes
 set -euo pipefail
 
@@ -102,10 +102,35 @@ run_in \
 # CYP2D6 from a VCF; step 36 writes those calls from the BAM-based callers
 # (T1K, and CYP2D6 only when pypgx and Cyrius agree), and PharmCAT reads them
 # with -po. An empty file means nothing was agreed, and is not passed.
+# PharmCAT 3.4.0 reads MT-RNR1 only as an outside call too: its matcher has no
+# MT-RNR1 definition, so the gene is No Result from any VCF. When step 20
+# wrote its chrM calls, bin/pgx_mito_merge.py adds an MT-RNR1 line to a copy
+# of step 36's calls: a homoplasmic (AF >= 0.95) PASS allele PharmCAT names,
+# or Reference when there is none, and no line, with the reason in the log,
+# for a heteroplasmic or filtered named allele (the PHARMCAT module does the
+# same).
 OUTSIDE="${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv"
+MITO="${GENOME_DIR}/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
+MERGED="${OUTPUT_DIR}/${SAMPLE}.pharmcat_outside_calls.tsv"
+OUTSIDE_FROM="step 36"
+rm -f "$MERGED"
+if [ -s "$MITO" ]; then
+  echo "chrM calls (step 20): ${MITO}"
+  MERGE_ARGS=(--mito "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz")
+  [ ! -s "$OUTSIDE" ] || MERGE_ARGS+=(--outside "/genome/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv")
+  run_in \
+    --cpus 1 --memory 1g \
+    -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
+    "${PHARMCAT_IMAGE}" \
+    python3 /pgp-bin/pgx_mito_merge.py --jar /pharmcat/pharmcat.jar "${MERGE_ARGS[@]}" \
+      --out "/genome/${SAMPLE}/vcf/${SAMPLE}.pharmcat_outside_calls.tsv"
+  OUTSIDE=$MERGED OUTSIDE_FROM="step 36, and MT-RNR1 from step 20"
+else
+  echo "No chrM calls (step 20 not run, no ${MITO}): MT-RNR1 stays No Result."
+fi
 OUTSIDE_ARGS=() PO_ARGS=()
 if [ -s "$OUTSIDE" ]; then
-  echo "Outside calls (step 36): ${OUTSIDE}"
+  echo "Outside calls (${OUTSIDE_FROM}): ${OUTSIDE}"
   sed 's/^/  /' "$OUTSIDE"
   OUTSIDE_ARGS=(-v "${OUTSIDE}:/outside_calls.tsv:ro")
   PO_ARGS=(-po /outside_calls.tsv)
@@ -126,7 +151,7 @@ run_in \
     -reporterHtml
 
 rm -f "${OUTPUT_DIR}/${SAMPLE}.pharmcat_input.vcf" "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz" \
-  "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz.tbi"
+  "${OUTPUT_DIR}/${SAMPLE}.pgx_regions.vcf.gz.tbi" "$MERGED"
 
 echo "=== PharmCAT complete ==="
 echo "Reports: ${OUTPUT_DIR}/${SAMPLE}.report.html and ${OUTPUT_DIR}/${SAMPLE}.report.json"
@@ -134,3 +159,4 @@ echo ""
 echo "Key genes covered: CYP2C19, CYP2D6, CYP2B6, CYP3A5, UGT1A1, DPYD, NAT2, TPMT"
 echo "NOTE: PharmCAT calls no CYP2D6 or HLA from a VCF. Step 36 gives it T1K's HLA types and a"
 echo "  CYP2D6 call that pypgx (step 32) and Cyrius (step 21) agree on; run it, then this step again."
+echo "  Nor MT-RNR1: step 20's chrM calls give it that; run step 20 before this step."

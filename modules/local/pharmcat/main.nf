@@ -24,6 +24,14 @@
     call pypgx and Cyrius agree on), step 2 reads them with -po; an empty
     file is not passed.
 
+    PharmCAT 3.4.0 reads MT-RNR1 only as an outside call: its matcher has
+    no MT-RNR1 definition, so the gene is No Result from any VCF. When
+    MITO_VARIANTS called the sample's chrM, pgx_mito_merge.py (bin/) adds
+    an MT-RNR1 line to a copy of the outside calls: a homoplasmic (AF >=
+    0.95) PASS allele PharmCAT names, or Reference when there is none, and
+    no line, with the reason in the task log, for a heteroplasmic or
+    filtered named allele.
+
     Equivalent to: scripts/07-pharmacogenomics.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -89,8 +97,9 @@ process PHARMCAT {
     publishDir { "${params.outdir}/${meta.id}/pharmcat" }, mode: params.publish_dir_mode
 
     input:
-    // outside_calls is [] when PGX_CONSENSUS did not run for the sample
-    tuple val(meta), path(preprocessed_vcf), path(outside_calls)
+    // outside_calls is [] when PGX_CONSENSUS did not run for the sample,
+    // mito_vcf is [] when MITO_VARIANTS did not
+    tuple val(meta), path(preprocessed_vcf), path(outside_calls), path(mito_vcf)
 
     output:
     tuple val(meta), path("*.report.html"),  emit: html_report
@@ -111,16 +120,27 @@ process PHARMCAT {
     // any other \ becomes /. Remove it once a PharmCAT release bundles
     // vcf-parser newer than 0.3.1 (scripts/07-pharmacogenomics.sh does the same).
     def outside = outside_calls ? "${outside_calls}" : ''
+    def mito = mito_vcf ? "${mito_vcf}" : ''
     """
     gzip -dc ${preprocessed_vcf} \\
         | awk '/^##/ { gsub(/\\\\"/, "\\047"); gsub(/\\\\/, "/") } { print }' \\
         > ${meta.id}.pharmcat_input.vcf
 
+    OUTSIDE="${outside}" FROM=PGX_CONSENSUS
+    if [ -n "${mito}" ] && [ -s "${mito}" ]; then
+        echo "chrM calls (MITO_VARIANTS): ${mito}"
+        MERGE=(--mito "${mito}")
+        if [ -n "\${OUTSIDE}" ] && [ -s "\${OUTSIDE}" ]; then MERGE+=(--outside "\${OUTSIDE}"); fi
+        pgx_mito_merge.py --jar /pharmcat/pharmcat.jar "\${MERGE[@]}" --out ${meta.id}.pharmcat_outside_calls.tsv
+        OUTSIDE=${meta.id}.pharmcat_outside_calls.tsv FROM="PGX_CONSENSUS, and MT-RNR1 from MITO_VARIANTS"
+    else
+        echo "No chrM calls (MITO_VARIANTS did not run): MT-RNR1 stays No Result."
+    fi
     PO=()
-    if [ -n "${outside}" ] && [ -s "${outside}" ]; then
-        echo "Outside calls (PGX_CONSENSUS):"
-        cat "${outside}"
-        PO=(-po "${outside}")
+    if [ -n "\${OUTSIDE}" ] && [ -s "\${OUTSIDE}" ]; then
+        echo "Outside calls (\${FROM}):"
+        cat "\${OUTSIDE}"
+        PO=(-po "\${OUTSIDE}")
     else
         echo "No outside calls: HLA and CYP2D6 stay uncalled."
     fi

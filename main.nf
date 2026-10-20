@@ -567,7 +567,8 @@ workflow {
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 2: PGX — Pharmacogenomics & ClinVar screening; PharmCAT gets
-    // the HLA types and an agreed CYP2D6 call as outside calls
+    // the HLA types, an agreed CYP2D6 call and MT-RNR1 from the chrM calls
+    // as outside calls
     // ═══════════════════════════════════════════════════════════════════
     PGX(
         ch_vcf,
@@ -580,7 +581,8 @@ workflow {
         ch_gvcf,
         BAM_ANALYSIS.out.hla_alleles,
         ch_cyrius_install,
-        ch_gencode_exons
+        ch_gencode_exons,
+        BAM_ANALYSIS.out.mito_vcf
     )
 
     // ═══════════════════════════════════════════════════════════════════

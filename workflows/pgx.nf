@@ -9,6 +9,7 @@
     into PharmCAT's outside calls: HLA-A and HLA-B from T1K, CYP2D6 only when
     pypgx and Cyrius agree and the depth check passed. PharmCAT waits for
     them, and the CPIC lookup lists what was passed and what was held back.
+    PharmCAT also waits for MITO_VARIANTS' chrM calls, its MT-RNR1 call.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -36,6 +37,7 @@ workflow PGX {
     ch_hla_alleles    // channel: [meta, <id>_hla_genotype.tsv] — HLA_TYPING's
     ch_cyrius_install // channel: val(path) — setup.sh --cyrius install directory or []
     ch_gencode_exons  // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
+    ch_mito_vcf       // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
 
     main:
     ch_versions    = Channel.empty()
@@ -161,13 +163,15 @@ workflow PGX {
             .filter { row -> row[1] != null }
             .map { row -> [row[1], row[2], row[3], row[4] ?: [], row[5] ?: []] }
         PHARMCAT_PREPROCESS(ch_pharmcat_input, ch_reference, ch_reference_fai)
-        // PharmCAT waits for the sample's outside calls; [] without them
+        // PharmCAT waits for the sample's outside calls and its chrM calls
+        // (MT-RNR1); [] without them
         PHARMCAT(
             PHARMCAT_PREPROCESS.out.preprocessed_vcf
                 .map { meta, vcf -> [meta.id, meta, vcf] }
                 .join(ch_outside_calls.map { meta, f -> [meta.id, f] }, remainder: true)
+                .join(ch_mito_vcf.map { meta, f -> [meta.id, f] }, remainder: true)
                 .filter { row -> row[1] != null }
-                .map { row -> [row[1], row[2], row[3] ?: []] }
+                .map { row -> [row[1], row[2], row[3] ?: [], row[4] ?: []] }
         )
         ch_pharmcat_html = PHARMCAT.out.html_report
         ch_pharmcat_json = PHARMCAT.out.json_report
