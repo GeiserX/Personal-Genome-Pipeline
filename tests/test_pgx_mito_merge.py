@@ -141,6 +141,11 @@ def main():
             check(f"3: {desc}: step 36's line is still copied", lines == ["HLA-B\t*35:01/*44:02"], lines)
             check(f"3: {desc}: the log says why ({want})", want in log, log)
             check(f"3: {desc}: the log says the gene stays No Result", "it stays No Result" in log, log)
+        # m.960 is named only as a deletion: an unnamed SNV there still holds Reference back.
+        rc, log, lines = c.run(BACKGROUND + rec(960, "C", "T", 0.99), depth={})
+        check("3: an unnamed SNV at m.960 (named only as a deletion): no MT-RNR1 line", c.mt(lines) == [], log)
+        check("3: an unnamed SNV at m.960: the log says why",
+              "a change at an MT-RNR1 position that PharmCAT does not name" in log, log)
         rc, log, lines = c.run(BACKGROUND + rec(1555, "A", "C", 0.3, filt="weak_evidence")
                                + rec(955, "AC", "A", 0.2, filt="weak_evidence"), depth={})
         check("3: a filtered unnamed change and a filtered deletion near m.961 hold nothing back",

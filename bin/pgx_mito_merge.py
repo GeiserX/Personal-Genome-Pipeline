@@ -177,7 +177,7 @@ def decide(recs, n_pass, snv, other, has_ref, min_af, depth=None, min_depth=MIN_
         if len(ref) == 1 and len(alt) == 1:
             hit = snv.get((pos, ref, alt))
             if hit is None:
-                if pos in named_pos and filt == "PASS" and (af is None or af >= min_af):
+                if (pos in named_pos or pos in other) and filt == "PASS" and (af is None or af >= min_af):
                     held.append(f"{shown}: a change at an MT-RNR1 position that PharmCAT does not name")
                 continue
             name, func = hit
