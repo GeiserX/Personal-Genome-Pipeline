@@ -7,6 +7,14 @@
     compound heterozygote candidates. Optionally annotates results with gnomAD
     gene constraint metrics (LOEUF, pLI).
 
+    Rarity is the rule of scripts/23 and scripts/31: bin/csq_rank.awk (on the
+    task PATH) gives each record PGP_FREQ, and a HIGH or MODERATE record with
+    no known frequency goes into its own freq_unknown tier instead of the
+    rare ones; the prioritized VCF still includes it. The summary TSV ends
+    with MAX_AF, gnomADe_AF, gnomADg_AF, FREQ_TIER, TRANSCRIPT and
+    MANE_Consequence, as the script's. This module writes no compound-het
+    TSV (the script does).
+
     Two processes, each in its own pinned image:
       SLIVAR_PRIORITIZE  bcftools image: tiers, prioritized VCF, PED, summary TSV
       SLIVAR             slivar image:   compound-hets on the prioritized VCF
@@ -51,37 +59,31 @@ process SLIVAR_PRIORITIZE {
     awk '\$2 == "CLIN_SIG" { f = 1 } END { exit !f }' csq_fields.txt && HAS_CLINSIG=1
     # Rarity, as scripts/31-slivar.sh: VEP's MAX_AF (highest frequency in any
     # 1000 Genomes or gnomAD exome/genome population), else gnomADe_AF and
-    # gnomADg_AF. Exome frequency alone calls a variant common in genomes but
-    # absent from exomes rare.
-    RARE_COLS="IMPACT"
-    RARE_AND=""
-    if awk '\$2 == "MAX_AF" { f = 1 } END { exit !f }' csq_fields.txt; then
-        RARE_COLS="IMPACT,MAX_AF:Float"
-        RARE_AND=' && (MAX_AF<0.01 || MAX_AF=".")'
-    else
-        for f in gnomADe_AF gnomADg_AF; do
-            awk -v f="\${f}" '\$2 == f { x = 1 } END { exit !x }' csq_fields.txt || continue
-            RARE_COLS="\${RARE_COLS},\${f}:Float"
-            RARE_AND="\${RARE_AND} && (\${f}<0.01 || \${f}=\\".\\")"
-        done
-    fi
-    if [ -z "\${RARE_AND}" ]; then
+    # gnomADg_AF, applied by bin/csq_rank.awk (PGP_FREQ). Exome frequency
+    # alone calls a variant common in genomes but absent from exomes rare.
+    has_csq() { awk -v f="\$1" '\$2 == f { x = 1 } END { exit !x }' csq_fields.txt; }
+    rank() { LC_ALL=C awk -v keep="\$1" -f "\$(command -v csq_rank.awk)"; }
+    HAS_FREQ=0
+    for f in MAX_AF gnomADe_AF gnomADg_AF; do
+        if has_csq "\${f}"; then HAS_FREQ=1; fi
+    done
+    if [ "\${HAS_FREQ}" -eq 0 ]; then
         echo "WARNING: no MAX_AF, gnomADe_AF or gnomADg_AF in the CSQ fields; rare tiers are not filtered by frequency." >&2
     fi
+    # PASS records, ranked, the common ones left out. Rare: a known frequency
+    # below 1%, or any record when the CSQ has no frequency field at all.
+    bcftools view -f PASS ${vcf} | rank noncommon | bcftools view -Oz -o ranked.vcf.gz
+    RARE_FREQ='(INFO/PGP_FREQ="rare" || INFO/PGP_FREQ="none")'
 
     # --- Filter 1: rare_high (PASS + HIGH impact + rare) ---
-    bcftools view -f PASS ${vcf} | \\
-        bcftools +split-vep - -c "\${RARE_COLS}" -s worst \\
-            -i "IMPACT=\\"HIGH\\"\${RARE_AND}" \\
-            -Oz -o ${meta.id}_rare_high.vcf.gz
+    bcftools +split-vep ranked.vcf.gz -c IMPACT -s worst -i 'IMPACT="HIGH"' | \\
+        bcftools view -i "\${RARE_FREQ}" -Oz -o ${meta.id}_rare_high.vcf.gz
     bcftools index -t ${meta.id}_rare_high.vcf.gz
 
     # --- Filter 2: rare_moderate_deleterious (two-pass: CSQ then INFO predictors) ---
     # Pass 1: extract rare MODERATE via split-vep (CSQ fields)
-    bcftools view -f PASS ${vcf} | \\
-        bcftools +split-vep - -c "\${RARE_COLS}" -s worst \\
-            -i "IMPACT=\\"MODERATE\\"\${RARE_AND}" \\
-            -Oz -o ${meta.id}_rare_moderate_all.vcf.gz
+    bcftools +split-vep ranked.vcf.gz -c IMPACT -s worst -i 'IMPACT="MODERATE"' | \\
+        bcftools view -i "\${RARE_FREQ}" -Oz -o ${meta.id}_rare_moderate_all.vcf.gz
     bcftools index -t ${meta.id}_rare_moderate_all.vcf.gz
 
     # Pass 2: gate on deleteriousness predictors in INFO fields (added by vcfanno)
@@ -114,13 +116,22 @@ process SLIVAR_PRIORITIZE {
     fi
     bcftools index -t ${meta.id}_rare_moderate_del.vcf.gz
 
-    # --- Filter 3: clinvar_pathogenic ---
     MERGE_FILES="${meta.id}_rare_high.vcf.gz ${meta.id}_rare_moderate_del.vcf.gz"
+
+    # --- Filter 2b: freq_unknown (PASS + HIGH or MODERATE + no known frequency; not rare) ---
+    if [ "\${HAS_FREQ}" -eq 1 ]; then
+        bcftools +split-vep ranked.vcf.gz -c IMPACT -s worst -i 'IMPACT="HIGH" || IMPACT="MODERATE"' | \\
+            bcftools view -i 'INFO/PGP_FREQ="unknown"' -Oz -o ${meta.id}_freq_unknown.vcf.gz
+        bcftools index -t ${meta.id}_freq_unknown.vcf.gz
+        MERGE_FILES="\${MERGE_FILES} ${meta.id}_freq_unknown.vcf.gz"
+    fi
+
+    # --- Filter 3: clinvar_pathogenic (ranked too, for the summary columns) ---
     if [ "\${HAS_CLINSIG}" -eq 1 ]; then
         bcftools view -f PASS ${vcf} | \\
             bcftools +split-vep - -c CLIN_SIG \\
                 -i 'CLIN_SIG~"pathogenic" && CLIN_SIG!~"conflicting"' \\
-                -Oz -o ${meta.id}_clinvar_path.vcf.gz
+            | rank all | bcftools view -Oz -o ${meta.id}_clinvar_path.vcf.gz
         bcftools index -t ${meta.id}_clinvar_path.vcf.gz
         MERGE_FILES="\${MERGE_FILES} ${meta.id}_clinvar_path.vcf.gz"
     else
@@ -133,12 +144,20 @@ process SLIVAR_PRIORITIZE {
     bcftools index -t ${meta.id}_prioritized.vcf.gz
 
     # --- Generate summary TSV with optional gnomAD constraint enrichment ---
+    # The last six columns as scripts/31: the frequency fields VEP wrote ('.'
+    # for one it did not), the tier, the ranked transcript set and the MANE
+    # Select consequence ('.' without a MANE transcript).
+    EXTRA_FMT=""
+    for f in MAX_AF gnomADe_AF gnomADg_AF; do
+        if has_csq "\${f}"; then EXTRA_FMT="\${EXTRA_FMT}\\t%\${f}"; else EXTRA_FMT="\${EXTRA_FMT}\\t."; fi
+    done
     {
-        printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n'
+        printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\tMAX_AF\\tgnomADe_AF\\tgnomADg_AF\\tFREQ_TIER\\tTRANSCRIPT\\tMANE_Consequence\\n'
         bcftools +split-vep \\
             ${meta.id}_prioritized.vcf.gz \\
-            -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t%Existing_variation[\\t%GT]\\n' \\
-            -s worst -d
+            -f "%CHROM\\t%POS\\t%REF\\t%ALT\\t%IMPACT\\t%SYMBOL\\t%Consequence\\t%Existing_variation[\\t%GT]\${EXTRA_FMT}\\t%INFO/PGP_FREQ\\t%INFO/PGP_TX\\t%INFO/PGP_CSQ\\n" \\
+            -s worst -d \\
+            | awk -F'\\t' 'BEGIN {OFS = "\\t"} \$(NF - 1) != "MANE" {\$NF = "."} {print}'
     } > ${meta.id}_variants_raw.tsv
 
     if [ "${has_constraint}" = "true" ]; then
@@ -154,7 +173,8 @@ process SLIVAR_PRIORITIZE {
 
     # Clean up intermediate files
     rm -f ${meta.id}_variants_raw.tsv ${meta.id}_rare_high.vcf.gz* ${meta.id}_rare_moderate_del.vcf.gz* \\
-          ${meta.id}_rare_moderate_all.vcf.gz* ${meta.id}_clinvar_path.vcf.gz* csq_fields.txt
+          ${meta.id}_rare_moderate_all.vcf.gz* ${meta.id}_clinvar_path.vcf.gz* ${meta.id}_freq_unknown.vcf.gz* \\
+          ranked.vcf.gz csq_fields.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -167,7 +187,7 @@ process SLIVAR_PRIORITIZE {
     touch ${meta.id}_prioritized.vcf.gz
     touch ${meta.id}_prioritized.vcf.gz.tbi
     touch ${meta.id}.ped
-    printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\n' > ${meta.id}_slivar_summary.tsv
+    printf 'CHROM\\tPOS\\tREF\\tALT\\tIMPACT\\tSYMBOL\\tConsequence\\tExisting_variation\\tGT\\tMAX_AF\\tgnomADe_AF\\tgnomADg_AF\\tFREQ_TIER\\tTRANSCRIPT\\tMANE_Consequence\\n' > ${meta.id}_slivar_summary.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -9,8 +9,10 @@
 #   3. Two synthetic CSQ samples, one with MAX_AF and one with only gnomADe_AF
 #      and gnomADg_AF: a missense common in genomes but absent from exomes, and
 #      a common stop-gain, are not in the rare tiers of either step; a rare
-#      missense and a stop-gain with no frequency are; a SpliceAI value whose
-#      second gene scores 0.5 reaches the splice tier.
+#      missense is; a stop-gain with no frequency is in step 23's
+#      frequency-unknown tier, not the rare HIGH one, and in step 31's
+#      prioritized VCF; a SpliceAI value whose second gene scores 0.5 reaches
+#      the splice tier.
 . "$(dirname "$0")/lib.sh"
 
 SUM23="${GENOME_DIR}/${SAMPLE}/clinical/${SAMPLE}_clinical_summary.tsv"
@@ -60,7 +62,7 @@ rm -f "$CONSTRAINT"
 #   1000 missense, absent from exomes, 20% in genomes      -> not rare
 #   2000 missense, rare everywhere                         -> rare MODERATE
 #   3000 stop-gain, 30% everywhere                         -> not rare
-#   4000 stop-gain, no frequency at all                    -> rare HIGH
+#   4000 stop-gain, no frequency at all                    -> frequency unknown
 #   5000 intron, SpliceAI 0.50 for its second gene, rare   -> splice tier
 write_sample() {
   local name=$1 with_max=$2 fields='Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|CANONICAL|Existing_variation|gnomADe_AF|gnomADg_AF'
@@ -101,10 +103,12 @@ for S in FREQMAX FREQEG; do
   check "${S} step 23: says which frequency it filtered on" has 'Population frequency: (MAX_AF|gnomADe_AF and gnomADg_AF)' "$(cat "$STEP_LOG")"
   MOD=$(positions "${S}/clinical/${S}_rare_moderate.vcf.gz")
   HIGH=$(positions "${S}/clinical/${S}_high_impact.vcf.gz")
+  UNKNOWN=$(positions "${S}/clinical/${S}_freq_unknown.vcf.gz")
   SPLICE=$(positions "${S}/clinical/${S}_spliceai_high.vcf.gz")
   echo "${S} step 23: MODERATE ${MOD:-none}; HIGH ${HIGH:-none}; SpliceAI ${SPLICE:-none}"
   check_eq "${S} step 23: rare MODERATE is the rare missense only" "${MOD:-none}" 2000
-  check_eq "${S} step 23: rare HIGH is the stop-gain with no frequency only" "${HIGH:-none}" 4000
+  check_eq "${S} step 23: no rare HIGH (the stop-gain with no frequency is not rare)" "${HIGH:-none}" none
+  check_eq "${S} step 23: the stop-gain with no frequency is in the frequency-unknown tier" "${UNKNOWN:-none}" 4000
   check_eq "${S} step 23: the SpliceAI tier tests the value's second gene" "${SPLICE:-none}" 5000
   check_eq "${S} step 23: summary rows with gene '.'" \
     "$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["GENE"] == "." {n++} END {print n + 0}' \
@@ -114,7 +118,7 @@ for S in FREQMAX FREQEG; do
   check_step_exit 31-slivar.sh
   PRI=$(positions "${S}/slivar/${S}_prioritized.vcf.gz")
   echo "${S} step 31: prioritized ${PRI:-none}"
-  check_eq "${S} step 31: prioritized are the rare missense and the rare stop-gain" "${PRI:-none}" 2000,4000
+  check_eq "${S} step 31: prioritized are the rare missense and the stop-gain of unknown frequency" "${PRI:-none}" 2000,4000
 done
 
 finish
