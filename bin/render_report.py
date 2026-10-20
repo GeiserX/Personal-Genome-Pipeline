@@ -184,14 +184,15 @@ def cpsr_lines(d, dbs):
 
 def hla_text(locus):
     """One HLA locus: each allele with its T1K quality, and the low-confidence mark.
-    A quality-0 allele with more than three candidates reads 'no confident call';
-    the HFE row carries its label."""
+    A quality-0 allele with more than collect_summary.HLA_MAX_CANDIDATES candidates
+    reads 'no confident call'; the HFE row carries its label."""
     q = locus.get("quality") or []
     n = locus.get("candidates") or []
     parts = []
     for i, a in enumerate(locus["alleles"]):
         qi = q[i] if i < len(q) else ""
-        if i < len(n) and n[i] > 3 and qi != "" and hla_q(qi) <= 0:
+        if (i < len(n) and n[i] > collect_summary.HLA_MAX_CANDIDATES and qi != ""
+                and collect_summary.hla_quality(qi) <= 0):
             parts.append(f"no confident call ({n[i]} candidates, quality {qi})")
         else:
             parts.append(a + (f" (quality {qi})" if qi != "" else ""))
@@ -203,13 +204,6 @@ def hla_text(locus):
     if locus.get("label"):
         txt += f" [{locus['label']}]"
     return txt
-
-
-def hla_q(q):
-    try:
-        return float(q)
-    except ValueError:
-        return -1.0
 
 
 HLA_DERIVED_NOTE = ("Information about alleles, not a diagnosis: each line is an association reported in the cited "
