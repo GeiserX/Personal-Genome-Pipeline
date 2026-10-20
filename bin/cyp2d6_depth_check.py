@@ -9,12 +9,20 @@ mosdepth region files and says whether the depth can be trusted.
 
   cyp2d6_depth_check.py bed
       print the regions (GRCh38, 0-based BED, name in column 4) to stdout
-  cyp2d6_depth_check.py check --all Q0.regions.bed[.gz] --mapq1 Q1.regions.bed[.gz] --out CHECK.tsv
-      write CHECK.tsv (metric<TAB>value: status, message and the depths) and
-      print the message. Exit 0 whatever the status; 2 on unreadable input.
+  cyp2d6_depth_check.py measure --bam BAM --out SHARES.tsv
+      count the depth over Cyrius's CYP2D6 region (with REP6) and over the
+      gene body alone (without REP6), for all reads, MAPQ >= 1 and
+      MAPQ >= 20, from the BAM itself (pysam: run it in the pypgx image)
+  cyp2d6_depth_check.py check --all Q0.regions.bed[.gz] --mapq1 Q1.regions.bed[.gz]
+                              [--measure SHARES.tsv] --out CHECK.tsv
+      write CHECK.tsv (metric<TAB>value: status, message, the depths and the
+      MAPQ shares) and print the message. Exit 0 whatever the status; 2 on
+      unreadable input. Without --measure the shares it gives read 'not
+      measured'.
 
-status is 'ok' or 'unreliable'. Standard library only: it runs in the plain
-python image, in the pypgx image and under tests/test_cyp2d6_depth.py.
+status is 'ok' or 'unreliable'; the shares do not change it. Standard
+library only, except `measure`, which imports pysam: the rest runs in the
+plain python image, in the pypgx image and under tests/test_cyp2d6_depth.py.
 """
 import argparse
 import gzip
@@ -28,6 +36,18 @@ REGIONS = [
     ("chr22", 42200000, 42250000, "flank"),
 ]
 CHROM = "chr22"
+# The gene body without REP6: CYP2D6's MANE Select transcript
+# (ENST00000645361, NM_000106.6), GRCh38 chr22:42,126,499-42,130,810, 0-based
+# here. Cyrius's region above adds REP6 and the 3' flank, where much of the
+# depth is MAPQ 0 even on a clean BAM; this one says how the gene itself maps.
+BODY = (CHROM, 42126498, 42130810)
+# The MAPQ floors `measure` counts at: all reads, what the callers keep, and
+# a floor that leaves out the reads an aligner placed with little confidence.
+MEASURE_MAPQ = (0, 1, 20)
+# Reads mosdepth leaves out by default (its -F 1796): unmapped, secondary,
+# QC-failed and duplicate. `measure` leaves out the same.
+SKIP_FLAGS = 0x4 | 0x100 | 0x200 | 0x400
+NOT_MEASURED = "not measured"
 
 UNRELIABLE = ("CYP2D6 copy number unreliable: reads are multi-mapped "
               "(was this BAM aligned to a reference with ALT contigs?)")
@@ -97,14 +117,83 @@ def assess(gene_all, gene_q1, flank_all, flank_q1):
     return "ok", "CYP2D6 depth is fit for a copy-number call"
 
 
+def mean_depth(reads, start, end, min_mapq):
+    """Mean depth over [start, end) of reads given as (flag, mapq, aligned
+    blocks), the blocks 0-based half-open as pysam's get_blocks() gives them.
+    Only aligned bases count, as in mosdepth; a read mosdepth skips by
+    default (SKIP_FLAGS) or below min_mapq counts nowhere."""
+    total = 0
+    for flag, mapq, blocks in reads:
+        if flag & SKIP_FLAGS or mapq < min_mapq:
+            continue
+        for s, e in blocks:
+            total += max(0, min(e, end) - max(s, start))
+    return total / (end - start)
+
+
+def measure_rows(reads):
+    """(region, min_mapq, mean depth) for Cyrius's region and the gene body,
+    at each floor of MEASURE_MAPQ."""
+    gene = next((s, e) for c, s, e, n in REGIONS if n == "CYP2D6")
+    return [(name, q, mean_depth(reads, s, e, q))
+            for name, (s, e) in (("gene", gene), ("body", BODY[1:])) for q in MEASURE_MAPQ]
+
+
+def measure(args):
+    try:
+        import pysam
+    except ImportError:
+        print("ERROR: measure needs pysam (run it in the pypgx image)", file=sys.stderr)
+        return 2
+    gene = next((s, e) for c, s, e, n in REGIONS if n == "CYP2D6")
+    try:
+        with pysam.AlignmentFile(args.bam) as bam:
+            chrom = CHROM if CHROM in bam.references else CHROM[3:] if CHROM[3:] in bam.references else None
+            if chrom is None:
+                raise ValueError(f"{args.bam} has no {CHROM}")
+            reads = [(r.flag, r.mapping_quality, r.get_blocks()) for r in bam.fetch(chrom, gene[0], gene[1])]
+        rows = measure_rows(reads)
+        with open(args.out, "w") as f:
+            f.write("region\tmin_mapq\tmean_depth\n")
+            f.writelines(f"{n}\t{q}\t{d:.4f}\n" for n, q, d in rows)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def read_measure(path):
+    """{(region, min_mapq): mean depth} from `measure`'s file."""
+    out = {}
+    with open(path) as f:
+        head = f.readline().rstrip("\n").split("\t")
+        if head != ["region", "min_mapq", "mean_depth"]:
+            raise ValueError(f"{path}: not a file of `cyp2d6_depth_check.py measure`")
+        for line in f:
+            if line.strip():
+                n, q, d = line.rstrip("\n").split("\t")
+                out[(n, int(q))] = float(d)
+    return out
+
+
+def share(num, den):
+    """num/den as two decimals, 'no reads' when den is 0, NOT_MEASURED
+    when either is missing."""
+    if num is None or den is None:
+        return NOT_MEASURED
+    return f"{num / den:.2f}" if den > 0 else "no reads"
+
+
 def check(args):
     try:
         d_all = read_regions(args.all)
         d_q1 = read_regions(args.mapq1)
+        m = read_measure(args.measure) if args.measure else {}
     except (OSError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
     status, message = assess(d_all["gene"], d_q1["gene"], d_all["flank"], d_q1["flank"])
+    body_all = m.get(("body", 0))
     rows = [
         ("status", status),
         ("message", message),
@@ -112,6 +201,14 @@ def check(args):
         ("gene_depth_mapq1", f"{d_q1['gene']:.2f}"),
         ("flank_depth_all", f"{d_all['flank']:.2f}"),
         ("flank_depth_mapq1", f"{d_q1['flank']:.2f}"),
+        # The share the verdict reads (mosdepth, Cyrius's region with REP6),
+        # then what `measure` counted: the same region at MAPQ >= 20, and the
+        # gene body without REP6. These do not change the status.
+        ("gene_mapq1_share", share(d_q1["gene"], d_all["gene"])),
+        ("gene_mapq20_share", share(m.get(("gene", 20)), m.get(("gene", 0)))),
+        ("body_depth_all", NOT_MEASURED if body_all is None else f"{body_all:.2f}"),
+        ("body_mapq1_share", share(m.get(("body", 1)), body_all)),
+        ("body_mapq20_share", share(m.get(("body", 20)), body_all)),
     ]
     try:
         with open(args.out, "w") as f:
@@ -123,6 +220,9 @@ def check(args):
     print(f"CYP2D6 depth check: {status}: {message}")
     print("  mean depth, all reads: CYP2D6 {:.2f}, flanks {:.2f}; MAPQ >= 1: CYP2D6 {:.2f}, flanks {:.2f}".format(
         d_all["gene"], d_all["flank"], d_q1["gene"], d_q1["flank"]))
+    kv = dict(rows)
+    print("  share of the depth at MAPQ >= 1 / >= 20: Cyrius's region (with REP6) {} / {}; gene body without REP6 {} / {}".format(
+        kv["gene_mapq1_share"], kv["gene_mapq20_share"], kv["body_mapq1_share"], kv["body_mapq20_share"]))
     return 0
 
 
@@ -133,12 +233,18 @@ def main(argv=None):
     c = sub.add_parser("check", help="assess two mosdepth region files")
     c.add_argument("--all", required=True, help="mosdepth regions file, all reads (-Q 0)")
     c.add_argument("--mapq1", required=True, help="mosdepth regions file, MAPQ >= 1 (-Q 1)")
+    c.add_argument("--measure", help="the file of `measure` (the MAPQ >= 20 and gene-body shares)")
     c.add_argument("--out", required=True, help="where to write the check (TSV)")
+    m = sub.add_parser("measure", help="count the MAPQ >= 1 and >= 20 depth of the region and the gene body (pysam)")
+    m.add_argument("--bam", required=True)
+    m.add_argument("--out", required=True)
     args = p.parse_args(argv)
     if args.cmd == "bed":
         for chrom, start, end, name in REGIONS:
             print(f"{chrom}\t{start}\t{end}\t{name}")
         return 0
+    if args.cmd == "measure":
+        return measure(args)
     return check(args)
 
 

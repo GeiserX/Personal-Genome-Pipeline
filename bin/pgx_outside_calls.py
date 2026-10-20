@@ -20,19 +20,47 @@ CYP2D6, what each caller said and what reached PharmCAT.
                 PharmCAT itself calls no CYP2D6 from a VCF (3.4.0 reports it
                 with callSource NONE), so it is not a second caller here.
 
+A CYP2D6 call of pypgx alone is never passed on. The reports show it as
+'probable (one caller: pypgx)' (probable_cyp2d6) when the depth check passed
+and every star-defining variant pypgx used is a PASS call at or above the GQ
+floor; step 36's table still says 'indeterminate'.
+
+  pgx_outside_calls.py pypgx-summary --outbase DIR --bam-genes "G ..." --vcf-genes "G ..."
+                       --vcf VCF --out SUMMARY.tsv [--not-callable GENE ...] [--gq-floor 20]
+
+writes step 32's summary (scripts/32-pypgx.sh and the PYPGX module run it in
+the pypgx image): per gene the diplotype, phenotype, pypgx's copy-number call
+and, for each star allele called, the variants that define it (pypgx's core
+variants) looked up in the VCF: how many it has, the lowest GQ among them,
+the weakest one with its AD, their FILTER, and 'low-confidence: check the
+reads' when one has a GQ below the floor. A gene in --not-callable (GSTT1 on
+a reference without ALT contigs) is written as not callable on this
+reference, not as FAILED.
+
 Used by scripts/36-pgx-consensus.sh and the PGX_CONSENSUS module (bin/ is on
 the task PATH); tests/test_pgx_outside_calls.py checks it. Standard library
-only.
+only, except pypgx-summary, which imports pypgx and pysam.
 """
 import argparse
 import csv
+import os
 import re
+import subprocess
 import sys
 
 CONSENSUS_HEADER = ["Gene", "Result", "Outside_call", "Reason", "Evidence"]
 HLA_GENES = ("HLA-A", "HLA-B")
 NO_CALL = {"", "none", "n/a", "na", "failed", "indeterminate", "not called", "unknown", "."}
-ONE_CALLER = "one caller only: a second caller must agree (Cyrius, --tools cyrius)"
+ONE_CALLER = "one caller only: a second caller must agree (Cyrius: setup.sh --cyrius)"
+PROBABLE = "probable (one caller: pypgx)"
+# Step 32's summary: the status of a gene the reference cannot hold, the
+# quality flag, and the GQ below which a defining variant raises it.
+NOT_CALLABLE = "not callable on this reference"
+LOW_GQ = "low-confidence: check the reads"
+NO_GQ = "GQ not in the VCF: check the reads"
+DEFAULT_GQ_FLOOR = 20
+SUMMARY_HEADER = ["Gene", "Diplotype", "Phenotype", "CNV_call", "Source", "Status",
+                  "Defining_variants", "Min_GQ", "Weakest_variant", "Defining_filter", "Quality"]
 
 
 # --- HLA ---------------------------------------------------------------------
@@ -167,7 +195,203 @@ def cyp2d6_row(pypgx_path, cyrius_path, depth_path):
     return ["CYP2D6", pg, "yes", "pypgx and Cyrius agree; the depth check passed", evidence], pg
 
 
+def probable_cyp2d6(row, cyrius, depth_status):
+    """{'diplotype', 'phenotype', 'label'} for pypgx's CYP2D6 call when it is
+    the only usable call, else None. row: pypgx's CYP2D6 summary row (a
+    dict); cyrius: (genotype, filter), or None when Cyrius did not run;
+    depth_status: the depth check's status, or None without its file (step 32
+    turns the row into Indeterminate when the check fails, so a call in the
+    row passed it).
+
+    Not probable: no call, a usable Cyrius call (then the two callers decide),
+    a depth check that did not pass, a defining variant that is missing from
+    the VCF or not PASS (a summary written before these columns has none), a
+    star allele pypgx's table lacks, or a defining variant with a GQ below the
+    floor or no GQ."""
+    if not row or not is_call(row.get("Diplotype")):
+        return None
+    if cyrius is not None and is_call(cyrius[0]) and cyrius[1] == "PASS":
+        return None
+    if depth_status is not None and depth_status != "ok":
+        return None
+    if (row.get("Defining_filter") or "") not in ("PASS", "none") or row.get("Quality") not in ("ok", "N/A"):
+        return None
+    return {"diplotype": row["Diplotype"].strip(), "phenotype": (row.get("Phenotype") or "").strip(),
+            "label": PROBABLE}
+
+
+# --- step 32's summary ---------------------------------------------------------
+
+def star_alleles(diplotype):
+    """The star alleles of a pypgx diplotype, each once: '*2x2/*4' gives
+    ['*2', '*4'] (a copy count is not an allele), '*36+*10/*4' gives
+    ['*36', '*10', '*4']; a no-call gives []."""
+    d = (diplotype or "").strip()
+    if d.lower() in NO_CALL or "/" not in d:
+        return []
+    out = []
+    for half in d.split("/"):
+        for a in half.split("+"):
+            a = re.sub(r"x(\d+|N)$", "", a.strip())
+            if a and a not in out:
+                out.append(a)
+    return out
+
+
+def defining_evidence(diplotype, variants_of, lookup, floor=DEFAULT_GQ_FLOOR):
+    """[Defining_variants, Min_GQ, Weakest_variant, Defining_filter, Quality]
+    for one call. variants_of(allele): the variants pypgx defines the allele
+    by ('22-42128945-C-T'), [] for one defined by none (*1, a deletion), None
+    for one pypgx's table lacks. lookup(variant): {'filter', 'gq', 'ad'} of
+    the VCF record, or None when the VCF has none."""
+    if not star_alleles(diplotype):
+        return ["N/A", "N/A", "N/A", "N/A", "N/A"]
+    variants, unknown = [], []
+    for a in star_alleles(diplotype):
+        vs = variants_of(a)
+        if vs is None:
+            unknown.append(a)
+            continue
+        for v in vs:
+            if v not in variants:
+                variants.append(v)
+    not_in_table = [f"not in pypgx's table: {', '.join(unknown)}"] if unknown else []
+    if not variants:
+        return (["unknown", "N/A", "N/A", not_in_table[0], "N/A"] if unknown
+                else ["none", "N/A", "N/A", "none", "N/A"])
+    found, missing, not_pass = [], [], []
+    for v in variants:
+        rec = lookup(v)
+        name = "chr{}:{} {}>{}".format(*v.replace("chr", "", 1).split("-", 3))
+        if rec is None:
+            missing.append(name)
+            continue
+        gq = rec.get("gq")
+        found.append((int(gq) if isinstance(gq, (int, float)) else None, name, rec.get("ad") or "."))
+        if rec.get("filter") != "PASS":
+            not_pass.append(f"{name} {'no filter' if rec.get('filter') in (None, '.') else rec.get('filter')}")
+    with_gq = [f for f in found if isinstance(f[0], int)]
+    weakest = min(with_gq) if with_gq else None
+    filt = "PASS" if not (missing or not_pass or unknown) else "; ".join(
+        ([f"not PASS: {', '.join(not_pass)}"] if not_pass else [])
+        + ([f"not in the VCF: {', '.join(missing)}"] if missing else []) + not_in_table)
+    low = weakest is not None and weakest[0] < floor
+    quality = LOW_GQ if low else NO_GQ if len(with_gq) < len(found) else "ok"
+    return [f"{len(found)}/{len(variants)} in the VCF",
+            str(weakest[0]) if weakest else "N/A",
+            f"{weakest[1]} GQ {weakest[0]} AD {weakest[2]}" if weakest else "N/A",
+            filt, quality]
+
+
+def vcf_lookup(path):
+    """lookup(variant) for defining_evidence over a bgzipped, indexed VCF
+    (pysam), on its first sample."""
+    import pysam
+    vf = pysam.VariantFile(path)
+    contigs = set(vf.header.contigs)
+
+    def lookup(v):
+        chrom, pos, ref, alt = v.split("-", 3)
+        chrom = chrom.replace("chr", "", 1)
+        c = f"chr{chrom}" if f"chr{chrom}" in contigs else chrom if chrom in contigs else None
+        if c is None:
+            return None
+        pos = int(pos)
+        for rec in vf.fetch(c, pos - 1, pos):
+            if rec.pos != pos or rec.ref != ref or alt not in (rec.alts or ()):
+                continue
+            smp = rec.samples[0] if len(rec.samples) else {}
+            gq, ad = smp.get("GQ"), smp.get("AD")
+            return {"filter": ";".join(rec.filter.keys()) or ".",
+                    "gq": int(gq) if isinstance(gq, (int, float)) else None,
+                    "ad": ",".join("." if x is None else str(x) for x in ad) if ad else "."}
+        return None
+    return lookup
+
+
+def pypgx_summary_main(argv):
+    p = argparse.ArgumentParser(prog="pgx_outside_calls.py pypgx-summary",
+                                description="Write step 32's summary from pypgx's results (pypgx image).")
+    p.add_argument("--outbase", required=True, help="the folder with <gene>/results.zip")
+    p.add_argument("--bam-genes", required=True)
+    p.add_argument("--vcf-genes", required=True)
+    p.add_argument("--vcf", required=True, help="the VCF pypgx read (bgzipped, indexed)")
+    p.add_argument("--out", required=True)
+    p.add_argument("--not-callable", action="append", default=[], help="a gene this reference cannot hold")
+    p.add_argument("--gq-floor", type=int, default=DEFAULT_GQ_FLOOR)
+    a = p.parse_args(argv)
+    bam_genes, vcf_genes = a.bam_genes.split(), a.vcf_genes.split()
+    import pypgx
+    # pypgx writes Indeterminate for a gene it has no phenotype rule for (no
+    # PhenotypeMethod in its own gene table): say that instead, so the label
+    # is not read as an undecided call.
+    try:
+        no_rule = {g for g in bam_genes + vcf_genes if not pypgx.has_phenotype(g)}
+    except Exception as e:
+        print(f"WARNING: could not read pypgx gene table ({e}); phenotypes left as pypgx wrote them", file=sys.stderr)
+        no_rule = set()
+    try:
+        lookup = vcf_lookup(a.vcf)
+    except Exception as e:
+        print(f"WARNING: cannot read {a.vcf} ({e}); the defining variants are not looked up", file=sys.stderr)
+        lookup = None
+    rows = []
+    for gene in bam_genes + vcf_genes:
+        source = "BAM" if gene in bam_genes else "VCF"
+        if gene in a.not_callable:
+            rows.append([gene, "N/A", "N/A", "N/A", source, NOT_CALLABLE] + ["N/A"] * 5)
+            continue
+        results_zip = os.path.join(a.outbase, gene, "results.zip")
+        if not os.path.isfile(results_zip):
+            rows.append([gene, "FAILED", "N/A", "N/A", source, "failed"] + ["N/A"] * 5)
+            continue
+        diplotype = phenotype = cnv = "N/A"
+        # pypgx print-data results.zip prints a TSV whose first column is the
+        # sample and whose named columns include Genotype, Phenotype and CNV
+        # (the copy-number call pypgx made from read depth, e.g. Normal or
+        # WholeDel1).
+        out = subprocess.run(["pypgx", "print-data", results_zip], capture_output=True, text=True)
+        if out.returncode != 0:
+            print(f"WARNING: pypgx print-data failed for {gene}: {out.stderr.strip()}", file=sys.stderr)
+        else:
+            lines = out.stdout.rstrip().split("\n")
+            if len(lines) >= 2:
+                col = dict(zip(lines[0].split("\t"), lines[1].split("\t")))
+                diplotype = col.get("Genotype") or "N/A"
+                phenotype = col.get("Phenotype") or "N/A"
+                if gene in no_rule:
+                    phenotype = "no pypgx phenotype rule"
+                # Copy number is called from read depth, so it is meaningful only
+                # for the BAM-based genes: pypgx's own value, never a guess.
+                if source == "BAM":
+                    cnv = col.get("CNV")
+                    if cnv is None:
+                        print(f"WARNING: {gene} results have no CNV column", file=sys.stderr)
+                        cnv = "N/A"
+
+        def variants_of(allele, gene=gene):
+            try:
+                return pypgx.list_variants(gene, alleles=[allele], mode="core", assembly="GRCh38")
+            except Exception:
+                return None
+        evidence = (defining_evidence(diplotype, variants_of, lookup, a.gq_floor) if lookup
+                    else ["not looked up"] + ["N/A"] * 4)
+        rows.append([gene, diplotype, phenotype, cnv, source, "called" if is_call(diplotype) else "no call"] + evidence)
+    with open(a.out, "w", newline="") as f:
+        w = csv.writer(f, delimiter="\t", lineterminator="\n")
+        w.writerow(SUMMARY_HEADER)
+        w.writerows(rows)
+    print(f"Genes called: {sum(1 for r in rows if r[5] == 'called')}/{len(rows)}")
+    low = [f"{r[0]} {r[1]} ({r[8]})" for r in rows if r[10] == LOW_GQ]
+    if low:
+        print(f"WARNING: star alleles resting on a variant below GQ {a.gq_floor}, check the reads: {'; '.join(low)}")
+    return 0
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["pypgx-summary"]:
+        return pypgx_summary_main(argv[1:])
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--calls", required=True, help="outside-call file to write (PharmCAT -po)")
     p.add_argument("--consensus", required=True, help="consensus table to write")

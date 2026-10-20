@@ -1,6 +1,6 @@
 # Step 21: CYP2D6 Star Allele Calling with Cyrius
 
-> **OPT-IN, NON-COMMERCIAL LICENCE:** a default run leaves this step out. Cyrius 1.1.1, as published on PyPI, is under the [PolyForm Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0): use for a non-commercial purpose only, and no distribution of it or of changed copies. (Its source files still carry GPL-3.0 headers from before Illumina changed the licence in December 2022; the licence of the package is PolyForm Strict.) It has had no release since May 2021. You install it yourself, once, with `./scripts/setup.sh --cyrius ${GENOME_DIR}`; the pipeline does not ship it.
+> **OPT-IN, NON-COMMERCIAL LICENCE:** the pipeline does not install Cyrius, and a default run leaves this step out until you do. Once `setup.sh --cyrius` has installed it, `run-all.sh` plans this step in a default run and says so. Cyrius 1.1.1, as published on PyPI, is under the [PolyForm Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0): use for a non-commercial purpose only, and no distribution of it or of changed copies. (Its source files still carry GPL-3.0 headers from before Illumina changed the licence in December 2022; the licence of the package is PolyForm Strict.) It has had no release since May 2021. You install it yourself, once, with `./scripts/setup.sh --cyrius ${GENOME_DIR}`, and with that you accept its licence; the pipeline does not ship it.
 
 ## What This Does
 
@@ -42,7 +42,7 @@ pip install --require-hashes --no-deps --only-binary :all: --target <dir> -r scr
 ./scripts/21-cyrius.sh your_name
 ```
 
-With `run-all.sh`, name it: `TOOLS=...,cyrius`. With Nextflow: `--tools ...,cyrius --cyrius_install ${GENOME_DIR}/tools/cyrius-1.1.1`.
+With `run-all.sh`, a default run plans it when the install matches this version (`21 Cyrius CYP2D6 runs`, with the line `planned because setup.sh --cyrius installed it`); without the install it is skipped with `not installed: setup.sh --cyrius (non-commercial licence)`, and with an install for another image or lock file with `data not installed: ... for this version`. A `TOOLS` list without `cyrius` leaves it out even when installed. With Nextflow: `--tools ...,cyrius --cyrius_install ${GENOME_DIR}/tools/cyrius-1.1.1`.
 
 ## What the Script Does Internally
 
@@ -119,7 +119,7 @@ docker run --rm --user root \
   "
 ```
 
-> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution, the same kind of restriction as Cyrius's PolyForm Strict licence. That is why both stay outside a default run: Aldy is documented here only, and Cyrius is opt-in. A GPL-compatible caller (pypgx) is step 32.
+> **License note:** Aldy uses an academic/non-commercial license (IURTC, Indiana University). It is free for personal and research use but is NOT compatible with GPL-3.0 redistribution, the same kind of restriction as Cyrius's PolyForm Strict licence. That is why neither ships with the pipeline: Aldy is documented here only, and Cyrius runs only after you install it. A GPL-compatible caller (pypgx) is step 32.
 
 ## Notes
 

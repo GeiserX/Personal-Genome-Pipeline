@@ -5,7 +5,7 @@
 Decides what the BAM-based callers tell PharmCAT. PharmCAT (step 7) reads a VCF, and from a VCF it types neither the HLA genes nor CYP2D6, so its drug guidance for them (abacavir, carbamazepine, allopurinol, codeine, tramadol, tamoxifen and many more) could never fire. This step writes PharmCAT's [outside-call file](https://pharmcat.org/using/Outside-Call-Format/):
 
 - **HLA-A and HLA-B** from T1K (step 8), cut to two fields (`*57:01`), when every allele has a T1K quality above 0. One allele reads as homozygous, the way T1K reports a homozygous gene.
-- **CYP2D6** only when pypgx (step 32) and Cyrius (step 21, opt-in) give the same diplotype **and** the [CYP2D6 depth check](32-pypgx.md#cyp2d6-depth-check) passed. One caller alone, a disagreement, or multi-mapped reads leave CYP2D6 `indeterminate`, and nothing reaches PharmCAT.
+- **CYP2D6** only when pypgx (step 32) and Cyrius (step 21, once `setup.sh --cyrius` installed it) give the same diplotype **and** the [CYP2D6 depth check](32-pypgx.md#cyp2d6-depth-check) passed. One caller alone, a disagreement, or multi-mapped reads leave CYP2D6 `indeterminate`, and nothing reaches PharmCAT.
 
 It also writes a consensus table that says, for each of the three genes, what every caller said and what was passed on. Step 27 copies it into the CPIC recommendations.
 
@@ -29,7 +29,7 @@ Each one is read when it exists, and the table says when it does not:
 |---|---|
 | `${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv` | step 8 |
 | `${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` | step 32 |
-| `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` | step 21 (opt-in) |
+| `${SAMPLE}/cyrius/${SAMPLE}_cyp2d6.tsv` | step 21 (after `setup.sh --cyrius`) |
 | `${SAMPLE}/pypgx/${SAMPLE}_cyp2d6_depth_check.tsv` (else step 21's) | the CYP2D6 depth check of step 32 or 21 |
 
 ## Command
@@ -37,7 +37,7 @@ Each one is read when it exists, and the table says when it does not:
 ```bash
 ./scripts/08-hla-typing.sh your_name
 ./scripts/32-pypgx.sh your_name
-./scripts/21-cyrius.sh your_name          # opt-in: setup.sh --cyrius first
+./scripts/21-cyrius.sh your_name          # setup.sh --cyrius first
 ./scripts/36-pgx-consensus.sh your_name
 ./scripts/07-pharmacogenomics.sh your_name   # reads the outside calls
 ./scripts/27-cpic-lookup.sh your_name        # lists them
@@ -54,7 +54,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/pgx_consensus/`.
 | `${SAMPLE}_outside_calls.tsv` | PharmCAT's outside-call file: `gene<TAB>diplotype`, one line per gene passed on; empty when none was. Step 7 passes it with `-po` when it is not empty. |
 | `${SAMPLE}_pgx_consensus.tsv` | `Gene`, `Result` (the diplotype, `indeterminate` or `not typed`), `Outside_call` (`yes` or `no`), `Reason`, `Evidence` (what each caller said) |
 
-For CYP2D6 the `Reason` is one of: the depth check's message (multi-mapped reads), `no caller made a call`, `one caller only: a second caller must agree (Cyrius, --tools cyrius)`, `pypgx and Cyrius disagree`, `the CYP2D6 depth check did not run`, or `pypgx and Cyrius agree; the depth check passed`.
+For CYP2D6 the `Reason` is one of: the depth check's message (multi-mapped reads), `no caller made a call`, `one caller only: a second caller must agree (Cyrius: setup.sh --cyrius)`, `pypgx and Cyrius disagree`, `the CYP2D6 depth check did not run`, or `pypgx and Cyrius agree; the depth check passed`.
 
 ## Runtime
 
@@ -62,7 +62,8 @@ For CYP2D6 the `Reason` is one of: the depth check's message (multi-mapped reads
 
 ## Notes
 
-- Without Cyrius, CYP2D6 is always `indeterminate`: that is the point, not a fault. Install Cyrius (`setup.sh --cyrius`, non-commercial licence) and add it to the tools to get an agreed call.
+- Without Cyrius, CYP2D6 is always `indeterminate` here: that is the point, not a fault. Install Cyrius (`setup.sh --cyrius`, non-commercial licence) to get an agreed call; `run-all.sh` then runs step 21 in a default run.
+- **A probable call, never an outside call.** When pypgx alone called CYP2D6 (Cyrius did not run, or made no usable call), the depth check passed, and every variant that defines its star alleles is in the VCF as a `PASS` call at or above the GQ floor (step 32's `Defining_filter` and `Quality` columns), both reports show pypgx's diplotype and phenotype labelled `probable (one caller: pypgx)`. This table still says `indeterminate` for it and nothing reaches PharmCAT, so no drug guidance rests on it. The rule is `probable_cyp2d6` in `bin/pgx_outside_calls.py`; a failed depth check, a usable Cyrius call (then the two callers decide), a defining variant that is missing, not `PASS`, below the GQ floor or without a GQ, a star allele pypgx's table lacks, or a summary from before these columns gives no probable call.
 - A Cyrius call counts only with Filter `PASS`; `None`, an ambiguous call (two diplotypes) or `CYP2D6_depth_unreliable` is no call.
 - The two diplotypes must be the same up to the order of the alleles. The one passed to PharmCAT is pypgx's.
 - PharmCAT turns the HLA alleles into its own phenotypes (`*57:01 positive`, `*58:01 negative` and so on) and gives the drug guidance for them; step 27 marks those genes `[outside call]`.

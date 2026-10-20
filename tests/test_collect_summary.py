@@ -82,6 +82,15 @@ Checks:
      bin/clip_check.py --cpsr checks the P/LP rows only (a fake pysam: the
      spliced reads at a P/LP row are flagged, genomic reads at the same row
      are clear, and CPSR's "13" finds the BAM's "chr13").
+ 23. step 32's summary beyond the diplotypes: pypgx's copy-number calls for
+     its BAM genes and UGT2B17's copy number from CNVpytor over its GENCODE
+     span (no copy, one copy, two copies with no call; not assessed without
+     the gene lines or without CNVpytor) in a PGx copy number block; GSTT1
+     not assessable on this reference; a call resting on a GQ 12 defining
+     variant flagged; the CYP2D6 depth check with its MAPQ shares; the
+     probable CYP2D6 call of pypgx alone in both reports, and none after a
+     failed depth check, beside a usable Cyrius call, or from a summary
+     written before the evidence columns.
  20. step 39's couple table (bin/couple_report.py's columns): the partner,
      the shared and X-linked genes with each side's findings from this
      sample's point of view, the one-partner count; a table naming another
@@ -440,6 +449,108 @@ def cpsr_beside_clinvar(work, schema):
           got["genomic"][1][0] == ("13", "32340300", "clear"), got)
     check("clip_check --cpsr: only the four P/LP rows are checked (not the VUS row)",
           [r[0] for r in got["spliced"][1]] == ["13", "17", "2", "5"], got)
+
+
+PYPGX_HEAD = ("Gene\tDiplotype\tPhenotype\tCNV_call\tSource\tStatus\tDefining_variants\tMin_GQ\tWeakest_variant"
+              "\tDefining_filter\tQuality\n")
+PYPGX_ROWS = (
+    "CYP2D6\t*1/*2\tNormal Metabolizer\tNormal\tBAM\tcalled\t1/1 in the VCF\t50\tchr22:42126611 C>G GQ 50 AD 20,22"
+    "\tPASS\tok\n"
+    "CYP2A6\t*1/*1\tno pypgx phenotype rule\tNormal\tBAM\tcalled\tnone\tN/A\tN/A\tnone\tN/A\n"
+    "GSTM1\t*0/*0\tno pypgx phenotype rule\tWholeDel2\tBAM\tcalled\tnone\tN/A\tN/A\tnone\tN/A\n"
+    "GSTT1\tN/A\tN/A\tN/A\tBAM\tnot callable on this reference\tN/A\tN/A\tN/A\tN/A\tN/A\n"
+    "CYP2C19\t*1/*2\tIntermediate Metabolizer\tN/A\tVCF\tcalled\t2/2 in the VCF\t12"
+    "\tchr10:94781859 G>A GQ 12 AD 26,3\tPASS\tlow-confidence: check the reads\n")
+DEPTH_OK = ("metric\tvalue\nstatus\tok\nmessage\tCYP2D6 depth is fit for a copy-number call\ngene_depth_all\t18.53\n"
+            "gene_mapq1_share\t0.91\ngene_mapq20_share\t0.84\nbody_depth_all\t30.10\nbody_mapq1_share\t0.99\n"
+            "body_mapq20_share\t0.97\n")
+GENES_GTF = ('chr4\tHAVANA\tgene\t68516301\t68627039\t.\t-\t.\tgene_id "ENSG00000197888.11"; gene_type "protein_coding"; '
+             'gene_name "UGT2B17"; level 2;\n'
+             'chr4\tHAVANA\tgene\t68670652\t68694000\t.\t-\t.\tgene_id "ENSG1"; gene_name "UGT2B15"; level 2;\n')
+
+
+def pypgx_section(work, schema):
+    """23. step 32's summary beyond the diplotypes, and the probable CYP2D6 call."""
+    import html as htmlmod
+    root = os.path.join(work, "pgxcn")
+    d = os.path.join(root, "S")
+    put(f"{d}/pypgx/S_pypgx_summary.tsv", PYPGX_HEAD + PYPGX_ROWS)
+    put(f"{d}/pypgx/S_cyp2d6_depth_check.tsv", DEPTH_OK)
+    put(f"{root}/reference/gencode.v50.basic.genes.gtf", GENES_GTF)
+    put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:68500001-68650000\t150000\t0.0300\t1.2e-30\t1e-20\t1\t1\t0.01\t0\t9\n"
+        "deletion\tchr4:68660001-68700000\t40000\t0.5\t1e-5\t1\t1\t1\t0\t0\t9\n")
+    summ, txt, html_ = render(d)
+    html_ = htmlmod.unescape(html_)
+    pd = summ["sections"]["pypgx"]["data"]
+    check("pypgx: the CNV call of the BAM genes, GSTT1's N/A left out",
+          pd["cnv_call"] == {"CYP2D6": "Normal", "CYP2A6": "Normal", "GSTM1": "WholeDel2"}, pd.get("cnv_call"))
+    check("pypgx: GSTT1 is not callable on this reference", pd["not_callable"] == ["GSTT1"], pd.get("not_callable"))
+    check("pypgx: GSTT1 is not counted as called", pd["genes_called"] == 4, pd["genes_called"])
+    check("pypgx: the GQ 12 call is flagged with its weakest variant",
+          pd["low_gq"] == [{"gene": "CYP2C19", "diplotype": "*1/*2", "min_gq": 12,
+                            "weakest": "chr10:94781859 G>A GQ 12 AD 26,3"}], pd.get("low_gq"))
+    ugt = summ["sections"]["cnvpytor"]["data"]["ugt2b17"]
+    check("UGT2B17: the deletion over its GENCODE span leaves no copy",
+          ugt["call"] == "no copy (deleted on both chromosomes)" and ugt["span"] == "chr4:68516301-68627039"
+          and ugt["gencode_release"] == "50", ugt)
+    cn_lines = ["GSTM1    WholeDel2 (pypgx, read depth)",
+                "UGT2B17  no copy (deleted on both chromosomes) (CNVpytor deletion chr4:68500001-68650000, "
+                "depth level 0.03, e-value 1.2e-30, covers 100% of the gene)"]
+    check("text report: the PGx copy number block", "## PGx copy number" in txt and all(x in txt for x in cn_lines), txt)
+    check("HTML report: the PGx Copy Number card", "PGx Copy Number" in html_ and "WholeDel2 (pypgx, read depth)" in html_
+          and "no copy (deleted on both chromosomes) (CNVpytor deletion chr4:68500001-68650000" in html_)
+    lines = ["Not assessable on this reference: GSTT1 (GRCh38 has it only on the ALT contig chr22_KI270879v1_alt",
+             "Low-confidence: CYP2C19 *1/*2 rests on chr10:94781859 G>A GQ 12 AD 26,3: check the reads",
+             "CYP2D6 depth check: ok; share of the depth at MAPQ >= 1 / >= 20: Cyrius's region with REP6 0.91 / 0.84, "
+             "gene body without REP6 0.99 / 0.97",
+             "Probable (one caller: pypgx): *1/*2, Normal Metabolizer; not passed to PharmCAT"]
+    for x in lines:
+        h = x.replace("Probable (one caller: pypgx): ", "")
+        check(f"both reports: {x[:60]}", x in txt and h in html_, txt if x not in txt else "HTML lacks it")
+    check("HTML report: the probable call's label", "Probable (one caller: pypgx)" in html_)
+    check("CYP2D6: the probable call in the summary",
+          summ["cyp2d6"]["probable"] == {"diplotype": "*1/*2", "phenotype": "Normal Metabolizer",
+                                         "label": "probable (one caller: pypgx)"}, summ["cyp2d6"])
+    check("pypgx section summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+
+    # red controls for the probable call
+    put(f"{d}/pypgx/S_cyp2d6_depth_check.tsv", DEPTH_OK.replace("status\tok", "status\tunreliable"))
+    summ, txt, _ = render(d)
+    check("CYP2D6: a failed depth check gives no probable call", summ["cyp2d6"]["probable"] is None
+          and "Probable (one caller" not in txt, summ["cyp2d6"])
+    put(f"{d}/pypgx/S_cyp2d6_depth_check.tsv", DEPTH_OK)
+    cy_head = "Sample\tGenotype\tFilter\n"
+    put(f"{d}/cyrius/S_cyp2d6.tsv", cy_head + "S\t*1/*2\tPASS\n")
+    check("CYP2D6: beside a usable Cyrius call there is no probable call", render(d)[0]["cyp2d6"]["probable"] is None)
+    put(f"{d}/cyrius/S_cyp2d6.tsv", cy_head + "S\tNone\tNot_assigned_to_haplotypes\n")
+    check("CYP2D6: a Cyrius no-call leaves pypgx the only caller: probable",
+          (render(d)[0]["cyp2d6"]["probable"] or {}).get("diplotype") == "*1/*2")
+    os.remove(f"{d}/cyrius/S_cyp2d6.tsv")
+    put(f"{d}/pypgx/S_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\n"
+        "CYP2D6\t*1/*2\tNormal Metabolizer\tNormal\tBAM\n")
+    summ, txt, _ = render(d)
+    check("CYP2D6: a summary without the evidence columns gives no probable call, no flags",
+          summ["cyp2d6"]["probable"] is None and summ["sections"]["pypgx"]["data"]["low_gq"] == []
+          and summ["sections"]["pypgx"]["data"]["not_callable"] == [], summ["cyp2d6"])
+
+    # UGT2B17: one copy, no call, no gene lines, no CNVpytor
+    put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:68530001-68600000\t70000\t0.4800\t3e-9\t1\t1\t1\t0\t0\t9\n")
+    u = render(d)[0]["sections"]["cnvpytor"]["data"]["ugt2b17"]
+    check("UGT2B17: a level 0.48 deletion leaves one copy", u["call"] == "one copy", u)
+    put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:1000001-1100000\t100000\t0.0\t1e-9\t1\t1\t1\t0\t0\t9\n")
+    u = render(d)[0]["sections"]["cnvpytor"]["data"]["ugt2b17"]
+    check("UGT2B17: no CNVpytor call over the gene reads two copies, and says why",
+          u["call"] == "two copies" and u["note"] == "no CNVpytor call over the gene", u)
+    os.remove(f"{root}/reference/gencode.v50.basic.genes.gtf")
+    summ, txt, _ = render(d)
+    check("UGT2B17: without the GENCODE gene lines it is not assessed, and the report says why",
+          summ["sections"]["cnvpytor"]["data"]["ugt2b17"]["call"] == "not assessed"
+          and "UGT2B17  not assessed (no GENCODE gene lines" in txt, txt)
+    os.remove(f"{d}/cnvpytor/S_cnvs.txt")
+    txt = render(d)[1]
+    check("UGT2B17: without CNVpytor the block says it did not run",
+          "UGT2B17  not assessed (CNVpytor, step 18, did not run)" in txt, txt)
 
 
 def main():
@@ -1043,6 +1154,7 @@ def main():
               and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
         clinvar_quality(work, schema)
         cpsr_beside_clinvar(work, schema)
+        pypgx_section(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
