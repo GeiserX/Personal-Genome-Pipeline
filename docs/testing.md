@@ -28,6 +28,7 @@ The test data is a slice of **HG002**, the Genome in a Bottle (GIAB) son of the 
 | chrX:73,700,000-74,000,000 | non-PAR chrX |
 | chrX:1,000,000-1,200,000 | PAR1 |
 | chrY:2,700,000-3,000,000 | non-PAR chrY (HG002 is male) |
+| chrY:6,800,000-7,000,000, chrY:12,600,000-12,800,000, chrY:14,600,000-14,800,000, chrY:19,600,000-19,800,000, chrY:20,500,000-20,700,000 | five more single-copy stretches of chrY (TBL1Y, USP9Y, NLGN4Y, KDM5D, EIF1AY), each in a different piece of the single-copy part step 33 reads, so its mosaic loss-of-Y estimate rests on about 120 blocks of 10 kb over six pieces (since `fixture-v7`) |
 | chrM | the whole mitochondrial genome, sampled to about 500x (the source has thousands of x there) |
 
 The chr5, chrX and chrY slices are not used by every step yet. They are there so the paralog, ploidy, sample-QC and Y-haplogroup work needs no new fixture.
@@ -55,12 +56,12 @@ The whole release stays under 1.5 GB. The build checks that both BAMs pass `samt
 
 ### Where it lives and how to change it
 
-The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v6`). The e2e job reads the same file, so the workflow never changes when the data does.
+The fixture is published as assets of a GitHub release, a prerelease that is never marked latest. Its tag is the one line in [`tests/fixtures/VERSION`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/tests/fixtures/VERSION) (now `fixture-v7`). The e2e job reads the same file, so the workflow never changes when the data does.
 
 To change the data:
 
 1. Edit `scripts/ci/build-fixture.sh`.
-2. Bump `tests/fixtures/VERSION` (for example from `fixture-v6` to `fixture-v7`).
+2. Bump `tests/fixtures/VERSION` (for example from `fixture-v7` to `fixture-v8`).
 3. Push the branch. The `build-fixture` job runs on any push that changes either file, builds the data on a GitHub runner (30 to 70 minutes, most of it VEP querying Ensembl's public database) and publishes the new release. The e2e job of your pull request waits up to 75 minutes for it, and that wait counts against the job's time limit (`timeout-minutes` of the `e2e` job in `e2e.yml`).
 
 A push that changes the build script but keeps the old version fails on purpose: the existing release was built by different code, and replacing its files would change the data under every open pull request. To rebuild a release in place anyway (for example after a failed upload), run the E2E workflow by hand with `job: build-fixture` and `rebuild: true`.
@@ -126,7 +127,7 @@ This is every step script that no e2e case runs, plus the full-size index build 
 | 17 (CPSR) | the PCGR bundle (about 8 GB) plus a second VEP cache. CI never runs real CPSR | the image's smoke test, and the fake-docker cases for the command line |
 | 05 (AnnotSV) | the annotation data is 5.3 GB | the image's smoke test; the row that annotates the fixture's SV records with the full data runs monthly and on dispatch only |
 | 04b (GRIDSS) | needs a 31 GB Java heap | the image's smoke test |
-| 02a on GRCh38 (BWA-MEM2 index build) | about 90 GB of RAM | case `alignment-markdup-gvcf-sex-4-bwamem2` runs step 02a on a 7 Mb reference cut from the fixture's regions |
+| 02a on GRCh38 (BWA-MEM2 index build) | about 90 GB of RAM | case `alignment-markdup-gvcf-sex-4-bwamem2` runs step 02a on an 8.4 Mb reference cut from the fixture's regions |
 | 01 (ORA to FASTQ) | needs Illumina's `orad` binary, which runs outside Docker | nothing |
 | 02b (long-read alignment) | long reads; the e2e fixture has none | the minimap2 image's smoke test, which maps synthetic HiFi reads with `-x map-hifi`; nothing runs the script |
 | 03e (Clair3) | long reads; the e2e fixture has none | the image's smoke test, with a recall check on synthetic HiFi reads and a check that the two model directories the script names exist; the fake-docker suite runs the script |
