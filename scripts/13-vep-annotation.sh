@@ -16,6 +16,16 @@
 # records alone, so the others were annotated for nothing; the Nextflow VEP
 # module selects the same records.
 #
+# Normalised: the PASS copy goes through bcftools norm -m -any -f <reference>
+# (multiallelic records split, indels left-aligned) before VEP, because VEP
+# matches an allele to gnomAD and ClinVar as those files write it. A deletion
+# written right-shifted, or inside a multiallelic record, otherwise finds no
+# known variant and gets no frequency, which step 23 would show as
+# "frequency unknown" even for a common allele. Records on a contig the
+# reference lacks are left out (bcftools norm cannot read their bases), and
+# the step says how many contigs that is. The Nextflow VEP module does not
+# normalise yet (docs/13-vep-annotation.md).
+#
 # ClinVar: when clinvar/clinvar_pathogenic_chr.vcf.gz is installed (setup.sh,
 # the file step 06 screens against), VEP also annotates it with --custom: its
 # CLNSIG, CLNREVSTAT and CLNDN become the CSQ fields ClinVar_CLNSIG,
@@ -72,9 +82,24 @@ OUT_C="/genome/${SAMPLE}/vep/${SAMPLE}_vep.vcf.gz"
 # compressed, ready for tabix.
 rm -f "${OUT}.tmp.vcf.gz"
 PASS_VCF="${OUTPUT_DIR}/${SAMPLE}.pass.tmp.vcf.gz"
-trap 'rm -f "$PASS_VCF"' EXIT
+NORM_VCF="${OUTPUT_DIR}/${SAMPLE}.norm.tmp.vcf.gz"
+REF_TARGETS="${OUTPUT_DIR}/${SAMPLE}.ref_contigs.tmp.tsv"
+trap 'rm -f "$PASS_VCF" "$NORM_VCF" "$REF_TARGETS"' EXIT
 run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   bcftools view -f PASS,. -Oz -o "$(cpath "$PASS_VCF")" "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz"
+# Split and left-align against the reference (see the header). -T keeps the
+# contigs the reference holds: bcftools norm stops at the first record whose
+# contig the FASTA lacks. -c w warns on a REF base that differs, as step 06.
+awk -v OFS='\t' '{print $1, 1, 2147483647}' "${REF_FASTA}.fai" > "$REF_TARGETS"
+OFF_REF=$(run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+    bcftools index -s "/genome/${SAMPLE}/${VCF_DIR}/${SAMPLE}.vcf.gz" \
+  | awk -F'\t' 'NR == FNR {ref[$1] = 1; next} $3 > 0 && !($1 in ref) {n++} END {print n + 0}' "${REF_FASTA}.fai" -)
+if [ "${OFF_REF:-0}" -gt 0 ]; then
+  echo "NOTICE: ${OFF_REF} contig(s) of ${VCF} are not in ${REF_FASTA}; their records are not annotated."
+fi
+run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
+  bcftools norm -m -any -c w -f "$REF_FASTA_C" -T "$(cpath "$REF_TARGETS")" -Oz -o "$(cpath "$NORM_VCF")" "$(cpath "$PASS_VCF")"
+mv -f "$NORM_VCF" "$PASS_VCF"
 # Each VEP fork holds its own copy of the cache index: 2 GB per thread, 8 GB at least.
 VEP_MEM=$(( THREADS * 2 > 8 ? THREADS * 2 : 8 ))
 run_in \
