@@ -38,6 +38,16 @@ docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
   bcftools view -f PASS,. -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz \
     /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz
 
+# Split multiallelic records and left-align indels, on the reference's contigs
+awk -v OFS='\t' '{print $1, 1, 2147483647}' "${GENOME_DIR}/${REF_FASTA}.fai" \
+  > "${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.ref_contigs.tmp.tsv"
+docker run --rm -v ${GENOME_DIR}:/genome "${BCFTOOLS_IMAGE}" \
+  bcftools norm -m -any -c w -f /genome/${REF_FASTA} \
+    -T /genome/${SAMPLE}/vep/${SAMPLE}.ref_contigs.tmp.tsv \
+    -Oz -o /genome/${SAMPLE}/vep/${SAMPLE}.norm.tmp.vcf.gz \
+    /genome/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz
+mv ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.norm.tmp.vcf.gz ${GENOME_DIR}/${SAMPLE}/vep/${SAMPLE}.pass.tmp.vcf.gz
+
 docker run --rm \
   --cpus 8 --memory 16g \
   -v ${GENOME_DIR}:/genome \
@@ -64,6 +74,10 @@ The last line is added when `clinvar/clinvar_pathogenic_chr.vcf.gz` is installed
 
 VEP reads the PASS records only, from a temporary copy the script removes afterwards: the clinical filter (23) and slivar (31), which read VEP's output directly or through vcfanno (30), keep PASS records alone, so annotating DeepVariant's `RefCall` records and other non-PASS calls cost time and changed nothing downstream. `${SAMPLE}_vep.vcf.gz` and vcfanno's `${SAMPLE}_annotated.vcf.gz` built from it therefore hold no non-PASS record; look those up in the VCF of step 3. The Nextflow VEP module selects the same records.
 
+Before VEP, the PASS copy is normalised: `bcftools norm -m -any` splits a multiallelic record into one record per ALT, and `-f` left-aligns each indel against the reference. VEP finds a variant's population frequency (`MAX_AF`, `gnomADe_AF`, `gnomADg_AF`) and its `CLIN_SIG` by matching the allele to the known variants in its cache, which are written split and left-aligned. A common deletion in a repeat that the caller wrote right-shifted, or inside a multiallelic record, matches nothing and gets no frequency; step 23 would then show it as "frequency unknown". Records on a contig the reference lacks are left out (bcftools norm cannot read their bases), and the step prints how many contigs that is. `-c w` warns about a REF base that differs from the reference and keeps the record, as step 6 does. Because of the split, `${SAMPLE}_vep.vcf.gz` holds one ALT per record.
+
+The Nextflow VEP module does not normalise yet: the VEP image has no bcftools, so the split needs its own process in the annotation workflow. Its output can therefore leave such an indel without a frequency, and the clinical filter and slivar modules put it in their "frequency unknown" tier, not in the rare ones.
+
 The script writes VEP's output under a temporary name, renames it to `${SAMPLE}_vep.vcf.gz` only when VEP succeeded, and indexes it.
 
 ## Output
@@ -87,6 +101,7 @@ After annotation, use step 23 (clinical filter) which automatically detects avai
 ## Important Notes
 - A full WGS annotation of the PASS records took 4 h 3 min to 4 h 37 min with 8 forks, peak memory 2.6-3.0 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)). How much reading PASS records only saves depends on the sample's non-PASS share (`variants.total` minus `variants.pass` in `summary.json`) and has not been measured here
 - `--fork` follows `THREADS`; each fork loads its own copy of the cache index
+- `MANE_SELECT` and `CANONICAL` are what step 23 ranks a variant's impact on: the MANE Select transcript first, then the canonical one, then the most severe of all
 - `--everything` replaces individual flags (`--sift b`, `--polyphen b`, `--canonical`, `--af_gnomade`, etc.) with a single comprehensive flag
 - `--dir_cache /opt/vep/.vep`: the cache is mounted there, not in the home directory VEP looks in by default
 - `--fasta`: running `--offline` without a FASTA file disables HGVS notation (`INFO: Disabling --hgvs`), so the script always passes the reference ([`REF_FASTA`](00-reference-setup.md#the-reference-path-on-every-page) is the reference path)
