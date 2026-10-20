@@ -6,6 +6,13 @@
 # compound heterozygote candidates using slivar. Optionally annotates results
 # with gnomAD gene constraint metrics (LOEUF, pLI).
 #
+# Rarity is the rule of step 23 (bin/csq_rank.awk, PGP_FREQ): a known MAX_AF
+# (else gnomADe_AF and gnomADg_AF) below 1%. A HIGH or MODERATE variant with
+# no frequency at all is not rare: it goes into its own freq_unknown tier,
+# which the prioritized VCF and the compound-het search still include, and
+# the TSVs say FREQ_TIER=unknown. The tiers take the worst consequence; the
+# TSVs add the MANE Select consequence (MANE_Consequence) and the gnomAD AF.
+#
 # Input: vcfanno-enriched VCF (step 30) or VEP-annotated VCF (step 13)
 # Output: prioritized VCF, compound het TSV, summary TSV
 # Requires: VEP-annotated VCF. Step 30 (vcfanno) recommended for full filtering.
@@ -113,20 +120,15 @@ printf '%s\n' "$VEP_FIELDS" | awk -F'\t' '$2 == "CLIN_SIG" {f = 1} END {exit !f}
 # Rarity: VEP's MAX_AF (highest frequency in any 1000 Genomes or gnomAD
 # exome/genome population), or gnomADe_AF and gnomADg_AF when MAX_AF is
 # absent. Exome frequency alone would call a variant common in genomes but
-# absent from exomes rare. The same rule as step 23.
-FREQ_COLS=""
-FREQ_EXPR=""
+# absent from exomes rare. bin/csq_rank.awk applies the rule, the same as
+# step 23; this only names the fields.
+has_csq() { printf '%s\n' "$VEP_FIELDS" | awk -F'\t' -v f="$1" '$2 == f {x = 1} END {exit !x}'; }
 FREQ_NAME=""
-if printf '%s\n' "$VEP_FIELDS" | awk -F'\t' '$2 == "MAX_AF" {f = 1} END {exit !f}'; then
-  FREQ_COLS="MAX_AF:Float"
-  FREQ_EXPR='(MAX_AF<0.01 || MAX_AF=".")'
+if has_csq MAX_AF; then
   FREQ_NAME="MAX_AF"
 else
   for f in gnomADe_AF gnomADg_AF; do
-    printf '%s\n' "$VEP_FIELDS" | awk -F'\t' -v f="$f" '$2 == f {x = 1} END {exit !x}' || continue
-    FREQ_COLS="${FREQ_COLS:+${FREQ_COLS},}${f}:Float"
-    FREQ_EXPR="${FREQ_EXPR:+${FREQ_EXPR} && }(${f}<0.01 || ${f}=\".\")"
-    FREQ_NAME="${FREQ_NAME:+${FREQ_NAME} and }${f}"
+    if has_csq "$f"; then FREQ_NAME="${FREQ_NAME:+${FREQ_NAME} and }${f}"; fi
   done
 fi
 
@@ -151,7 +153,7 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
 fi
 
 echo "  VEP CSQ fields: frequency=${FREQ_NAME:-none}, ClinVar=$([ "$HAS_CLINVAR" -eq 1 ] && echo 'yes' || echo 'no')"
-if [ -z "$FREQ_EXPR" ]; then
+if [ -z "$FREQ_NAME" ]; then
   echo "  NOTICE: no MAX_AF, gnomADe_AF or gnomADg_AF in the VEP output: the rare tiers are not filtered by frequency."
 fi
 echo "  vcfanno INFO fields: CADD=$([ "$HAS_CADD" -eq 1 ] && echo 'yes' || echo 'no'), REVEL=$([ "$HAS_REVEL" -eq 1 ] && echo 'yes' || echo 'no'), AlphaMissense=$([ "$HAS_AM" -eq 1 ] && echo 'yes' || echo 'no'), SpliceAI=$([ "$HAS_SPLICEAI" -eq 1 ] && echo 'yes' || echo 'no')"
@@ -162,16 +164,28 @@ echo ""
 # Three filter tiers: rare_high, rare_moderate_deleterious, clinvar_pathogenic.
 echo "[3/5] Prioritizing variants..."
 
+# rank KEEP: bin/csq_rank.awk on stdin, on the host (PGP_FREQ, the MANE
+# Select consequence PGP_CSQ and PGP_TX); KEEP=noncommon drops the records
+# with a known frequency of 1% or more.
+rank() { LC_ALL=C awk -v keep="$1" -f "${PGP_ROOT}/bin/csq_rank.awk"; }
+S="/genome/${SAMPLE}/slivar"
+RANKED="${S}/${SAMPLE}_ranked.vcf.gz"
+run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" bcftools view -f PASS "${CONTAINER_INPUT}" \
+  | rank noncommon \
+  | run_in -i --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" bcftools view -Oz -o "$RANKED"
+run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" bcftools index -f -t "$RANKED"
+# Rare: a known frequency below 1%, or any record when the VEP output has no
+# frequency field at all.
+RARE_FREQ='(INFO/PGP_FREQ="rare" || INFO/PGP_FREQ="none")'
+
 # --- Filter 1: rare_high ---
-# PASS + HIGH VEP impact + rare (see FREQ_EXPR above)
-RARE_COLS="IMPACT${FREQ_COLS:+,${FREQ_COLS}}"
-RARE_AND="${FREQ_EXPR:+ && ${FREQ_EXPR}}"
+# PASS + HIGH VEP impact + rare
 echo "  [a] rare_high: PASS + HIGH impact + ${FREQ_NAME:-no frequency filter}..."
 run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
-  bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-    bcftools +split-vep - -c '${RARE_COLS}' -s worst \
-      -i 'IMPACT=\"HIGH\"${RARE_AND}' \
+  bash -o pipefail -c "bcftools +split-vep ${RANKED} -c IMPACT -s worst \
+      -i 'IMPACT=\"HIGH\"' | \
+    bcftools view -i '${RARE_FREQ}' \
       -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz && \
     bcftools index -f -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz"
 
@@ -185,9 +199,8 @@ echo "      Found: ${RARE_HIGH_COUNT} variants"
 # PASS + MODERATE impact + gnomAD AF < 0.01 + at least one deleterious predictor
 echo "  [b] rare_moderate_deleterious: PASS + MODERATE + rare + deleterious predictors..."
 
-# Build the filter expression depending on available annotations
-MODERATE_FILTER="IMPACT=\"MODERATE\"${RARE_AND}"
-VEP_COLUMNS="$RARE_COLS"
+# The rare MODERATE records; the predictors below narrow them.
+MODERATE_SEL="bcftools +split-vep ${RANKED} -c IMPACT -s worst -i 'IMPACT=\"MODERATE\"' | bcftools view -i '${RARE_FREQ}'"
 
 # If vcfanno annotations are available, add predictor thresholds as a second pass
 if [ "$HAS_VCFANNO" -eq 1 ]; then
@@ -221,9 +234,7 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
 
     run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
-      bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-        bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
-          -i '${MODERATE_FILTER}' | \
+      bash -o pipefail -c "${MODERATE_SEL} | \
         bcftools view -i '${PREDICTOR_EXPR}' \
           -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
         bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
@@ -231,9 +242,7 @@ if [ "$HAS_VCFANNO" -eq 1 ]; then
     # No predictors available despite vcfanno — fall back to all rare MODERATE
     run_in --cpus 2 --memory 4g \
       "${BCFTOOLS_IMAGE}" \
-      bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-        bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
-          -i '${MODERATE_FILTER}' \
+      bash -o pipefail -c "${MODERATE_SEL} \
           -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
         bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
   fi
@@ -244,9 +253,7 @@ else
 
   run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
-    bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
-      bcftools +split-vep - -c '${VEP_COLUMNS}' -s worst \
-        -i '${MODERATE_FILTER}' \
+    bash -o pipefail -c "${MODERATE_SEL} \
         -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz && \
       bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
 fi
@@ -257,18 +264,44 @@ MODERATE_DEL_COUNT=$(run_in \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "      Found: ${MODERATE_DEL_COUNT} variants"
 
+# --- Filter 2b: freq_unknown ---
+# PASS + HIGH or MODERATE + no known frequency: not rare (an indel VEP could
+# not match to gnomAD may be common), kept for the compound-het search.
+FREQ_UNKNOWN_COUNT=0
+FREQ_UNKNOWN_FILE=""
+if [ -n "$FREQ_NAME" ]; then
+  echo "  [b2] freq_unknown: PASS + HIGH or MODERATE + no known frequency (not rare)..."
+  run_in --cpus 2 --memory 4g \
+    "${BCFTOOLS_IMAGE}" \
+    bash -o pipefail -c "bcftools +split-vep ${RANKED} -c IMPACT -s worst \
+        -i 'IMPACT=\"HIGH\" || IMPACT=\"MODERATE\"' | \
+      bcftools view -i 'INFO/PGP_FREQ=\"unknown\"' \
+        -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_freq_unknown.vcf.gz && \
+      bcftools index -f -t /genome/${SAMPLE}/slivar/${SAMPLE}_freq_unknown.vcf.gz"
+  FREQ_UNKNOWN_COUNT=$(run_in \
+    --cpus 2 --memory 2g \
+    "${BCFTOOLS_IMAGE}" \
+    bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_freq_unknown.vcf.gz" 2>/dev/null | wc -l || echo 0)
+  echo "      Found: ${FREQ_UNKNOWN_COUNT} variants"
+  FREQ_UNKNOWN_FILE="/genome/${SAMPLE}/slivar/${SAMPLE}_freq_unknown.vcf.gz"
+fi
+
 # --- Filter 3: clinvar_pathogenic ---
 CLINVAR_COUNT=0
 CLINVAR_FILE=""
 if [ "$HAS_CLINVAR" -eq 1 ]; then
   echo "  [c] clinvar_pathogenic: ClinVar pathogenic/likely_pathogenic..."
+  # Ranked too, so the TSVs show its frequency tier and MANE consequence.
   run_in --cpus 2 --memory 4g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools view -f PASS ${CONTAINER_INPUT} | \
       bcftools +split-vep - -c CLIN_SIG \
-        -i 'CLIN_SIG~\"pathogenic\" && CLIN_SIG!~\"conflicting\"' \
-        -Oz -o /genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz && \
-    bcftools index -t /genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz"
+        -i 'CLIN_SIG~\"pathogenic\" && CLIN_SIG!~\"conflicting\"'" \
+    | rank all \
+    | run_in -i --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" \
+      bcftools view -Oz -o "/genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz"
+  run_in --cpus 2 --memory 2g "${BCFTOOLS_IMAGE}" \
+    bcftools index -f -t "/genome/${SAMPLE}/slivar/${SAMPLE}_clinvar_path.vcf.gz"
 
   CLINVAR_COUNT=$(run_in \
     --cpus 2 --memory 2g \
@@ -284,6 +317,7 @@ fi
 echo ""
 echo "  Merging filter tiers into prioritized VCF..."
 MERGE_FILES="/genome/${SAMPLE}/slivar/${SAMPLE}_rare_high.vcf.gz /genome/${SAMPLE}/slivar/${SAMPLE}_rare_moderate_del.vcf.gz"
+[ -n "$FREQ_UNKNOWN_FILE" ] && MERGE_FILES="${MERGE_FILES} ${FREQ_UNKNOWN_FILE}"
 [ -n "$CLINVAR_FILE" ] && MERGE_FILES="${MERGE_FILES} ${CLINVAR_FILE}"
 
 run_in --cpus 2 --memory 4g \
@@ -298,6 +332,19 @@ PRIORITIZED_COUNT=$(run_in \
   "${BCFTOOLS_IMAGE}" \
   bcftools view -H "/genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz" 2>/dev/null | wc -l || echo 0)
 echo "  Total prioritized variants: ${PRIORITIZED_COUNT}"
+
+# Columns both TSVs end with: the frequency fields VEP wrote ('.' for a field
+# it did not), the frequency tier, the transcript set step 23 ranks on and
+# the MANE Select consequence ('.' when the record has no MANE transcript).
+EXTRA_HEAD=$'MAX_AF\tgnomADe_AF\tgnomADg_AF\tFREQ_TIER\tTRANSCRIPT\tMANE_Consequence'
+EXTRA_FMT=""
+for f in MAX_AF gnomADe_AF gnomADg_AF; do
+  if has_csq "$f"; then EXTRA_FMT+="\\t%${f}"; else EXTRA_FMT+="\\t."; fi
+done
+EXTRA_FMT+='\t%INFO/PGP_FREQ\t%INFO/PGP_TX\t%INFO/PGP_CSQ'
+# mane_col: the last column (PGP_CSQ) is the MANE consequence only when the
+# column before it says MANE.
+mane_col() { awk -F'\t' 'BEGIN {OFS = "\t"} $(NF - 1) != "MANE" {$NF = "."} {print}'; }
 
 # ── Step 4: Compound heterozygote detection with slivar ───────────────
 echo ""
@@ -363,18 +410,19 @@ if [ "$COMPHET_RECORDS" -gt 0 ]; then
   COMPHET_PAIRS=$(echo "$COMPHET_STATS" | awk '{print $1}')
   COMPHET_GENES=$(echo "$COMPHET_STATS" | awk '{print $2}')
 
-  # Export to TSV sorted by gene for human review
+  # Export to TSV sorted by gene for human review, with the population
+  # frequency and the MANE Select consequence (EXTRA_COLS below).
   run_in --cpus 2 --memory 2g \
     "${BCFTOOLS_IMAGE}" \
     bash -o pipefail -c "bcftools +split-vep \
         /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets.vcf.gz \
-        -f '%SYMBOL\t%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%Consequence[\t%GT]\n' \
+        -f '%SYMBOL\t%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%Consequence[\t%GT]${EXTRA_FMT}\n' \
         -s worst -d \
       | sort -t\$'\t' -k1,1 -k2,2V -k3,3n \
       > /genome/${SAMPLE}/slivar/${SAMPLE}_compound_hets_raw.tsv"
   {
-    printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\n'
-    cat "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
+    printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\t%s\n' "$EXTRA_HEAD"
+    mane_col < "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
   } > "${COMPHET_TSV}.tmp"
   mv "${COMPHET_TSV}.tmp" "$COMPHET_TSV"
   rm -f "${OUTDIR}/${SAMPLE}_compound_hets_raw.tsv"
@@ -384,7 +432,7 @@ else
 fi
 
 if [ ! -s "$COMPHET_TSV" ]; then
-  printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\n' > "$COMPHET_TSV"
+  printf 'GENE\tCHROM\tPOS\tREF\tALT\tIMPACT\tConsequence\tGT\t%s\n' "$EXTRA_HEAD" > "$COMPHET_TSV"
 fi
 
 # ── Step 5: Generate summary TSV with gene constraint ─────────────────
@@ -398,7 +446,7 @@ if ! run_in --cpus 2 --memory 4g \
   "${BCFTOOLS_IMAGE}" \
   bash -o pipefail -c "bcftools +split-vep \
     /genome/${SAMPLE}/slivar/${SAMPLE}_prioritized.vcf.gz \
-    -f '%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%SYMBOL\t%Consequence\t%Existing_variation[\t%GT]\n' \
+    -f '%CHROM\t%POS\t%REF\t%ALT\t%IMPACT\t%SYMBOL\t%Consequence\t%Existing_variation[\t%GT]${EXTRA_FMT}\n' \
     -s worst -d \
   > /genome/${SAMPLE}/slivar/${SAMPLE}_variants_raw.tsv"; then
   echo "ERROR: Summary extraction from ${OUTDIR}/${SAMPLE}_prioritized.vcf.gz failed." >&2
@@ -411,8 +459,8 @@ fi
 # mis.z_score, the Ensembl row over the RefSeq one; it exits non-zero when rows
 # carry genes and not one matches the file).
 {
-  printf 'CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\n'
-  cat "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
+  printf 'CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\t%s\n' "$EXTRA_HEAD"
+  mane_col < "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
 } > "${SUMMARY_TSV}.raw"
 if [ -f "$CONSTRAINT_TSV" ]; then
   echo "  Joining with gnomAD gene constraint metrics..."
@@ -426,8 +474,8 @@ else
 fi
 mv "${SUMMARY_TSV}.tmp" "$SUMMARY_TSV"
 
-# Clean up intermediate file
-rm -f "${OUTDIR}/${SAMPLE}_variants_raw.tsv"
+# Clean up intermediate files
+rm -f "${OUTDIR}/${SAMPLE}_variants_raw.tsv" "${OUTDIR}/${SAMPLE}_ranked.vcf.gz" "${OUTDIR}/${SAMPLE}_ranked.vcf.gz.tbi"
 
 # ── Summary ───────────────────────────────────────────────────────────
 echo ""
@@ -437,6 +485,9 @@ echo ""
 echo "  Filter results:"
 echo "    rare_high (HIGH, rare):            ${RARE_HIGH_COUNT}"
 echo "    rare_moderate_deleterious:          ${MODERATE_DEL_COUNT}"
+if [ -n "$FREQ_NAME" ]; then
+echo "    freq_unknown (HIGH/MODERATE, not rare): ${FREQ_UNKNOWN_COUNT}"
+fi
 if [ "$HAS_CLINVAR" -eq 1 ]; then
 echo "    clinvar_pathogenic:                 ${CLINVAR_COUNT}"
 fi
@@ -466,6 +517,9 @@ echo "    ${OUTDIR}/${SAMPLE}_compound_hets.tsv           (compound het candidat
 echo "    ${OUTDIR}/${SAMPLE}_slivar_summary.tsv          (summary + gene constraint)"
 echo "    ${OUTDIR}/${SAMPLE}_rare_high.vcf.gz            (HIGH impact tier)"
 echo "    ${OUTDIR}/${SAMPLE}_rare_moderate_del.vcf.gz    (MODERATE + deleterious)"
+if [ -n "$FREQ_UNKNOWN_FILE" ]; then
+echo "    ${OUTDIR}/${SAMPLE}_freq_unknown.vcf.gz         (HIGH/MODERATE, frequency unknown)"
+fi
 if [ "$HAS_CLINVAR" -eq 1 ]; then
 echo "    ${OUTDIR}/${SAMPLE}_clinvar_path.vcf.gz         (ClinVar P/LP)"
 fi
