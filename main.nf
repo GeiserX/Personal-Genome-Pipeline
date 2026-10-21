@@ -607,7 +607,8 @@ workflow {
         ch_alphamissense_index,
         ch_gnomad_constraint,
         ch_clinvar,
-        ch_clinvar_index
+        ch_clinvar_index,
+        ch_bam
     )
 
     // ═══════════════════════════════════════════════════════════════════

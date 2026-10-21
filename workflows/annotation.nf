@@ -3,7 +3,7 @@
     ANNOTATION — Variant annotation, enrichment, prioritization, and clinical filtering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Sequential pipeline:
-      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR_PRIORITIZE → SLIVAR  (sequential dependency)
+      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR_PRIORITIZE → SLIVAR → COMPHET_PHASE  (sequential dependency)
                                     → CLINICAL_FILTER  (branches from VCFANNO output)
 
     Each module is gated on params.tools containing the tool name.
@@ -16,6 +16,7 @@ include { VCFANNO         } from '../modules/local/vcfanno/main'
 include { VCFANNO_INDEX   } from '../modules/local/vcfanno/main'
 include { SLIVAR_PRIORITIZE } from '../modules/local/slivar/main'
 include { SLIVAR          } from '../modules/local/slivar/main'
+include { COMPHET_PHASE   } from '../modules/local/slivar/main'
 include { CLINICAL_FILTER } from '../modules/local/clinical_filter/main'
 
 workflow ANNOTATION {
@@ -40,6 +41,7 @@ workflow ANNOTATION {
     ch_gnomad_constraint  // channel: path — gnomAD constraint TSV or []
     ch_clinvar            // channel: path — the ClinVar VCF the screen reads (--clinvar) or []
     ch_clinvar_index      // channel: path — its index or []
+    ch_bam                // channel: [meta, bam, bai] — every sample with a BAM
 
     main:
     ch_versions = Channel.empty()
@@ -125,7 +127,16 @@ workflow ANNOTATION {
             ch_gnomad_constraint
         )
         SLIVAR(SLIVAR_PRIORITIZE.out.vcf.join(SLIVAR_PRIORITIZE.out.ped))
-        ch_versions  = ch_versions.mix(SLIVAR_PRIORITIZE.out.versions, SLIVAR.out.versions)
+        // The phase of each compound-het pair from the sample's BAM, as
+        // scripts/31 does, or [] for a sample without one (every pair unknown).
+        COMPHET_PHASE(
+            SLIVAR.out.compound_het_vcf
+                .map { meta, vcf -> [meta.id, meta, vcf] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, [bam, bai]] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> tuple(row[1], row[2], row[3] ? row[3][0] : [], row[3] ? row[3][1] : []) }
+        )
+        ch_versions  = ch_versions.mix(SLIVAR_PRIORITIZE.out.versions, SLIVAR.out.versions, COMPHET_PHASE.out.versions)
         ch_slivar_vcf = SLIVAR_PRIORITIZE.out.vcf
     }
 
