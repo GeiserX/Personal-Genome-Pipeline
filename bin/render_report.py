@@ -687,6 +687,18 @@ def text_report(s):
         w(f"  {PARALOG_NOTE}")
         w("")
 
+    if head("parascopy", "SMN1/SMN2 Copy Number (Parascopy, short reads)"):
+        for line in parascopy_lines(S["parascopy"]["data"]):
+            w(f"  {line}")
+        w(f"  {PARASCOPY_NOTE}")
+        w("")
+    unchecked = paralogs_unchecked(S)
+    if unchecked:
+        w("## Paralog Copy Number")
+        w("---")
+        w(f"  {unchecked}")
+        w("")
+
     if head("hla", "HLA Typing (T1K)"):
         for l in S["hla"]["data"]["loci"]:
             w(f"    {l['gene']:<8} {hla_text(l)}")
@@ -1032,6 +1044,36 @@ def paralog_lines(d):
     return out
 
 
+PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 only; HBA1/HBA2 and CYP21A2 have no Parascopy "
+                  "model and are not assessed. A quality under 20 or a filter other than PASS leaves a copy "
+                  "unresolved. A research estimate, not a diagnostic test: confirm a result with a clinical "
+                  "laboratory (MLPA or qPCR).")
+
+
+def parascopy_lines(d):
+    """Step 35's lines, the same in both reports."""
+    smn1, smn2 = d.get("smn1") or {}, d.get("smn2") or {}
+    return [f"SMN1 copies: {smn1.get('text', '.')}",
+            f"SMN2 copies: {smn2.get('text', '.')}",
+            f"SMN1 and SMN2 together (agCN) at exon 7: {d.get('agcn', '.')} (quality {d.get('agcn_qual', '.')}, "
+            f"filter {d.get('agcn_filter', '.')})",
+            f"Reading: {d.get('reading', '.')}"]
+
+
+def paralogs_unchecked(S):
+    """'Paralog copy number: not checked (...)' when neither step 35 nor step
+    35b left a result, so a report without them never reads as normal."""
+    states = {k: S.get(k, MISSING)["state"] for k in ("parascopy", "paralogs")}
+    if any(v in ("ok", "stale") for v in states.values()):
+        return None
+    if all(v == "missing" for v in states.values()):
+        why = "neither step 35 nor step 35b ran"
+    else:
+        words = {"missing": "not run", "failed": "failed", "unreadable": "unreadable"}
+        why = ", ".join(f"step {st} {words.get(states[k], states[k])}" for k, st in (("parascopy", "35"), ("paralogs", "35b")))
+    return f"Paralog copy number: not checked ({why})"
+
+
 ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
              "homozygous C282Y only, BTD and CYP27A1 two variants) are not applied here.")
 
@@ -1330,6 +1372,14 @@ def html_report(s):
         body.append(stat("Variants on phased haplotypes", sum(pg.get("variants", {}).values())))
         body.append(small_note(PARALOG_NOTE))
         a(card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
+    if S.get("parascopy", MISSING)["state"] != "missing":
+        a(card(S["parascopy"], "SMN1/SMN2 Copy Number (Parascopy)",
+               [stat("Status", done_badge(S["parascopy"]))]
+               + [stat(*(E(x) for x in line.split(": ", 1))) for line in parascopy_lines(S["parascopy"]["data"])]
+               + [small_note(PARASCOPY_NOTE)]))
+    unchecked = paralogs_unchecked(S)
+    if unchecked:
+        a(card(None, "Paralog Copy Number", [stat("Status", badge("Not checked", "gray")), small_note(unchecked)]))
     if S.get("y_haplogroup", MISSING)["state"] != "missing":
         yh = S["y_haplogroup"]["data"]
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
