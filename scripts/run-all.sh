@@ -14,6 +14,7 @@
 #   (only these --tools names; parascopy, paraphase, y_haplogroup, consumer_export and bloodtype run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
+#   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
@@ -103,6 +104,7 @@ H=$(data_file hla_dat || true) GT=$(data_file gencode_genes || true)
 plan "08 HLA typing (T1K)" hla_typing "$(need "$H" "$GT")" && NF+=(--hla_dat "$H" --hla_genes "$GT") \
   && if on KIR; then K="${G}/kir/IPD-KIR_${KIR_DB_RELEASE}/kir.dat"; [ -s "$K" ] && NF+=(--kir true --kir_dat "$K") \
     || echo "  KIR typing skipped: data not installed: ${K#"$G"/} (setup.sh --kir-data)"; fi
+[[ " ${SEL[*]} " != *" hla_typing "* ]] || ! on HLA_QC || { NF+=(--hla_qc true); echo "    (HLA_QC=true: OptiType checks T1K's HLA-A and HLA-B)"; }
 plan "09 ExpansionHunter" expansion_hunter "$(need "$CAT")" && NF+=(--expansion_catalog "$CAT")
 plan "09b Stranger" stranger "$(need "$CAT")" || true
 plan "13 VEP" vep "$VEPW" && NF+=(--vep_cache "${G}/vep_cache") && arg --gnomad_constraint "${A}/gnomad_v4.1_constraint.tsv"
@@ -187,12 +189,12 @@ rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker 
 # run when ExpansionHunter failed.
 # tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
 # (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
-# extraction and haplocheck are step 12's, T1K's index build and the KIR pass (KIR=true) are step 08's, somalier's and
+# extraction and haplocheck are step 12's, T1K's index build, the KIR pass (KIR=true) and OptiType (HLA_QC=true) are step 08's, somalier's and
 # VerifyBamID2's are step 33's (sample_qc); indexcov is step 16.
 tool_of() {
   local p=${1##*:} t best=""; p=${p,,}
   case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
-    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing) echo hla_typing; return ;;
+    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing|hla_qc|hla_qc_reads) echo hla_typing; return ;;
     somalier|somalier_relate|verifybamid2) echo sample_qc; return ;; esac
   for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
   echo "${best:-$p}"

@@ -6,7 +6,8 @@
     hits and the BAM feed the cDNA read check. The BAM also feeds
     the CYP2D6 callers (pypgx, and Cyrius when opted in), each after the
     CYP2D6 depth check. PGX_CONSENSUS turns their calls and T1K's HLA types
-    into PharmCAT's outside calls: HLA-A and HLA-B from T1K, CYP2D6 only when
+    into PharmCAT's outside calls: HLA-A and HLA-B from T1K (with --hla_qc
+    only when OptiType agrees at two fields), CYP2D6 only when
     pypgx and Cyrius agree and the depth check passed. PharmCAT waits for
     them, and the CPIC lookup lists what was passed and what was held back.
     PharmCAT also waits for MITO_VARIANTS' chrM calls, its MT-RNR1 call.
@@ -38,6 +39,7 @@ workflow PGX {
     ch_cyrius_install // channel: val(path) — setup.sh --cyrius install directory or []
     ch_gencode_exons  // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
     ch_mito_vcf       // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
+    ch_hla_optitype   // channel: [meta, <id>_optitype_result.tsv] — HLA_QC's (--hla_qc), the second HLA caller
 
     main:
     ch_versions    = Channel.empty()
@@ -140,8 +142,9 @@ workflow PGX {
             .join(ch_pypgx_summary.map  { meta, f -> [meta.id, f] }, remainder: true)
             .join(ch_cyrius_results.map { meta, f -> [meta.id, f] }, remainder: true)
             .join(ch_depth_check.map    { meta, f -> [meta.id, f] }, remainder: true)
+            .join(ch_hla_optitype.map   { meta, f -> [meta.id, f] }, remainder: true)
             .filter { row -> row[1] != null }
-            .map { row -> [row[1], row[2] ?: [], row[3] ?: [], row[4] ?: [], row[5] ?: []] }
+            .map { row -> [row[1], row[2] ?: [], row[3] ?: [], row[4] ?: [], row[5] ?: [], row[6] ?: []] }
         PGX_CONSENSUS(ch_consensus_in)
         ch_outside_calls = PGX_CONSENSUS.out.calls
         ch_consensus     = PGX_CONSENSUS.out.consensus

@@ -129,6 +129,10 @@ workflow {
     if (params.kir && !params.kir_dat) {
         error "--kir needs --kir_dat, IPD-KIR's kir.dat (scripts/setup.sh --kir-data installs it)."
     }
+    // --hla_qc: OptiType, a second HLA caller, checks T1K's HLA-A and HLA-B
+    if (params.hla_qc && !tools_list.contains('hla_typing')) {
+        error "--hla_qc runs OptiType as a second caller beside T1K's hla_typing: add 'hla_typing' to --tools."
+    }
     if (tools_list.contains('parascopy') && !(params.parascopy_population in ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
         error "--parascopy_population must be one of AFR, AMR, EAS, EUR, SAS (the 1000 Genomes models), " +
               "got '${params.parascopy_population}'."
@@ -582,7 +586,8 @@ workflow {
         BAM_ANALYSIS.out.hla_alleles,
         ch_cyrius_install,
         ch_gencode_exons,
-        BAM_ANALYSIS.out.mito_vcf
+        BAM_ANALYSIS.out.mito_vcf,
+        BAM_ANALYSIS.out.hla_optitype
     )
 
     // ═══════════════════════════════════════════════════════════════════

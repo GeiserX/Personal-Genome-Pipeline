@@ -199,3 +199,117 @@ process KIR_TYPING {
     END_VERSIONS
     """
 }
+
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    HLA_QC_READS and HLA_QC — OptiType, a second HLA caller (opt-in: --hla_qc)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    HLA_QC_READS takes the read pairs of HLA-A, HLA-B and HLA-C from the BAM:
+    each gene's span in T1K_BUILD's coordinate file, 1 kb either side.
+    HLA_QC types them with OptiType against the HLA sequences bundled in its
+    image and writes the two-field concordance of T1K and OptiType
+    (pgx_outside_calls.py hla-concordance). PGX_CONSENSUS passes HLA-A and
+    HLA-B to PharmCAT only when the two agree. A BAM with no read pairs
+    there gets a result file that says so, which PGX_CONSENSUS reads as no
+    OptiType call.
+
+    Equivalent to: the HLA_QC=true pass of scripts/08-hla-typing.sh
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+process HLA_QC_READS {
+    tag "$meta.id"
+    label 'process_low'
+
+    input:
+    tuple val(meta), path(bam), path(bai)
+    path(coord_fa)  // T1K_BUILD: the GRCh38 coordinates of the allele sequences
+
+    output:
+    tuple val(meta), path("${meta.id}_hla_R1.fq"), path("${meta.id}_hla_R2.fq"), emit: reads
+    path "versions.yml",                                                       emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    awk '/^>HLA-[ABC]\\*/ && \$3 > 0 {g = substr(\$1, 2); sub(/\\*.*/, "", g)
+        if (!(g in lo) || \$3 < lo[g]) lo[g] = \$3; if (\$4 > hi[g]) hi[g] = \$4; c[g] = \$2}
+      END {for (g in lo) printf "%s:%d-%d\\n", c[g], (lo[g] > 1000 ? lo[g] - 1000 : 1), hi[g] + 1000}' ${coord_fa} | sort > regions.txt
+    if [ "\$(wc -l < regions.txt)" -ne 3 ]; then
+        echo "ERROR: ${coord_fa} gives no GRCh38 span for each of HLA-A, HLA-B and HLA-C: \$(tr '\\n' ' ' < regions.txt)" >&2
+        exit 1
+    fi
+    mkdir -p tmp
+    samtools view -u -F 0x900 ${bam} \$(cat regions.txt) \\
+        | samtools collate -u -O - tmp/collate \\
+        | samtools fastq -n -1 ${meta.id}_hla_R1.fq -2 ${meta.id}_hla_R2.fq -0 /dev/null -s /dev/null -
+    echo "read pairs at HLA-A, HLA-B and HLA-C: \$(( \$(wc -l < ${meta.id}_hla_R1.fq) / 4 ))"
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        samtools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch ${meta.id}_hla_R1.fq ${meta.id}_hla_R2.fq
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        samtools: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process HLA_QC {
+    tag "$meta.id"
+    label 'process_medium'
+
+    publishDir { "${params.outdir}/${meta.id}/hla_optitype" }, mode: params.publish_dir_mode
+
+    input:
+    // HLA_QC_READS' read pairs joined with HLA_TYPING's genotypes
+    tuple val(meta), path(r1), path(r2), path(t1k_genotype)
+
+    output:
+    tuple val(meta), path("${meta.id}_optitype_result.tsv"), emit: result
+    tuple val(meta), path("${meta.id}_hla_concordance.tsv"), emit: concordance, optional: true
+    path "versions.yml",                                     emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    if [ ! -s ${r1} ]; then
+        printf '# OptiType not run: no read pairs at HLA-A, HLA-B or HLA-C in this BAM\\n' > ${meta.id}_optitype_result.tsv
+        echo "OptiType: no reads to type; PGX_CONSENSUS will not pass HLA-A or HLA-B to PharmCAT."
+    else
+        optitype run -i ${r1} -i ${r2} --dna --solver glpk --threads ${task.cpus} -o out -p ${meta.id}
+        out=\$(find out -name '*_result.tsv' | head -n 1)
+        [ -n "\$out" ] || { echo "ERROR: OptiType wrote no *_result.tsv" >&2; exit 1; }
+        cp "\$out" ${meta.id}_optitype_result.tsv
+        pgx_outside_calls.py hla-concordance --t1k ${t1k_genotype} \\
+            --optitype ${meta.id}_optitype_result.tsv --out ${meta.id}_hla_concordance.tsv
+    fi
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        optitype: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    printf '\\tA1\\tA2\\tB1\\tB2\\tC1\\tC2\\tReads\\tObjective\\n' > ${meta.id}_optitype_result.tsv
+    printf 'Gene\\tT1K\\tOptiType\\tAgree\\tNote\\n' > ${meta.id}_hla_concordance.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        optitype: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}

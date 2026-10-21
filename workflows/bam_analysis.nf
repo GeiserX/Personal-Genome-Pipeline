@@ -18,6 +18,8 @@ include { T1K_BUILD        } from '../modules/local/t1k_build/main'
 include { HLA_TYPING       } from '../modules/local/hla_typing/main'
 include { KIR_BUILD        } from '../modules/local/hla_typing/main'
 include { KIR_TYPING       } from '../modules/local/hla_typing/main'
+include { HLA_QC_READS     } from '../modules/local/hla_typing/main'
+include { HLA_QC           } from '../modules/local/hla_typing/main'
 include { EXPANSION_HUNTER } from '../modules/local/expansion_hunter/main'
 include { STRANGER         } from '../modules/local/stranger/main'
 include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
@@ -61,6 +63,7 @@ workflow BAM_ANALYSIS {
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
     ch_kir_genotype     = Channel.empty()
+    ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_smn_copy_number  = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
     ch_paraphase_vars   = Channel.empty()
@@ -88,6 +91,20 @@ workflow BAM_ANALYSIS {
             KIR_TYPING(ch_bam, KIR_BUILD.out.seq_fa, KIR_BUILD.out.coord_fa, KIR_BUILD.out.release)
             ch_kir_genotype = KIR_TYPING.out.kir_genotype
             ch_versions     = ch_versions.mix(KIR_BUILD.out.versions, KIR_TYPING.out.versions)
+        }
+
+        // Opt-in: --hla_qc, OptiType as a second caller of HLA-A, -B and -C,
+        // on the reads of those genes; PGX_CONSENSUS passes HLA-A and HLA-B
+        // to PharmCAT only when it agrees with T1K at two fields
+        if (params.hla_qc) {
+            HLA_QC_READS(ch_bam, T1K_BUILD.out.coord_fa)
+            HLA_QC(
+                HLA_QC_READS.out.reads.map { meta, r1, r2 -> [meta.id, meta, r1, r2] }
+                    .join(HLA_TYPING.out.hla_alleles.map { meta, f -> [meta.id, f] })
+                    .map { id, meta, r1, r2, f -> tuple(meta, r1, r2, f) }
+            )
+            ch_hla_optitype = HLA_QC.out.result
+            ch_versions     = ch_versions.mix(HLA_QC_READS.out.versions, HLA_QC.out.versions)
         }
     }
 
@@ -292,6 +309,7 @@ workflow BAM_ANALYSIS {
     coverage         = ch_coverage
     mito_vcf         = ch_mito_vcf
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
+    hla_optitype     = ch_hla_optitype    // [meta, <id>_optitype_result.tsv] (--hla_qc)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
     paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]

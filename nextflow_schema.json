@@ -284,6 +284,12 @@
                     "description": "IPD-KIR's kir.dat of release KIR_DB_RELEASE (versions.env), which `scripts/setup.sh --kir-data` installs as kir/IPD-KIR_<release>/kir.dat. Required with --kir.",
                     "fa_icon": "fas fa-file"
                 },
+                "hla_qc": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "With hla_typing: also type HLA-A, HLA-B and HLA-C with OptiType (OPTITYPE_IMAGE), a second caller, and write its two-field concordance with T1K. HLA-A and HLA-B then reach PharmCAT only when the two callers agree.",
+                    "fa_icon": "fas fa-dna"
+                },
                 "cyrius_install": {
                     "type": "string",
                     "format": "directory-path",
