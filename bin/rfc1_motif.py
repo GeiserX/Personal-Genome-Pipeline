@@ -141,7 +141,7 @@ def repeat_bases(read, lo, hi, softclip=True):
             q += n
     if first is None:
         return ""
-    if softclip and False:  # RED CONTROL: soft-clip rescue off; reverted in the next commit
+    if softclip:
         if cig and cig[0][0] == SOFT and first == cig[0][1]:
             first = 0
         if cig and cig[-1][0] == SOFT and last == len(seq) - cig[-1][1]:
