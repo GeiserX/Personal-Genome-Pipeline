@@ -97,6 +97,19 @@ Checks:
      couple, or without a column, is unreadable; a table without rows names
      no partner; a single sample without the step has no "not run" line for
      it (the screen needs two people).
+ 24. the clinical filter's HIGH-impact list (bin/csq_rank.awk's rule, step 23):
+     a HIGH consequence on a non-MANE transcript whose MANE Select one is
+     intronic is not listed; without a MANE transcript the canonical one
+     ranks; a heterozygote at GQ 12 with AD 3,2 and a 1/1 at GQ 11 with AD
+     12,5 are weak calls, a 1/1 at GQ 50 with AD 0,30 is not, and a floor of 0
+     in ##PGP_CALL_FLOOR marks nothing; an indel with no MAX_AF is listed as
+     frequency unknown, a common one not at all; neither a weak call nor an
+     unknown frequency counts as rare; the summary table's FREQ_TIER and
+     CALL_CHECK columns and step 31's FREQ_TIER are counted; both reports
+     show the counts and the marks. bin/csq_rank.awk, the program steps 23
+     and 31 and their modules run, tags the same records the same way
+     (PGP_IMPACT, PGP_TX, PGP_FREQ, PGP_CALL), drops the common one with
+     keep=noncommon, and agrees with the summary on every record.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -467,6 +480,125 @@ DEPTH_OK = ("metric\tvalue\nstatus\tok\nmessage\tCYP2D6 depth is fit for a copy-
 GENES_GTF = ('chr4\tHAVANA\tgene\t68516301\t68627039\t.\t-\t.\tgene_id "ENSG00000197888.11"; gene_type "protein_coding"; '
              'gene_name "UGT2B17"; level 2;\n'
              'chr4\tHAVANA\tgene\t68670652\t68694000\t.\t-\t.\tgene_id "ENSG1"; gene_name "UGT2B15"; level 2;\n')
+
+
+def clinical_mane_quality(work, schema):
+    """24. the clinical filter: MANE first, weak calls, unknown frequency."""
+    d = os.path.join(work, "clinical-mane", "S")
+    fmt = "Allele|Consequence|IMPACT|SYMBOL|Feature|CANONICAL|MANE_SELECT|MAX_AF"
+    head = ("##fileformat=VCFv4.2\n"
+            f'##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. Format: {fmt}">\n'
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
+    body = (
+        # TTN: HIGH on a non-MANE transcript, intronic on the MANE Select one
+        "chr2\t100\t.\tC\tT\t50\tPASS\tCSQ=T|stop_gained|HIGH|TTN|ENST2|||0.0001,"
+        "T|intron_variant|MODIFIER|TTN|ENST1|YES|NM_1|0.0001\tGT:GQ:DP:AD\t0/1:50:30:15,15\n"
+        # BRCA2: a heterozygote at GQ 12, AD 3,2
+        "chr13\t200\t.\tA\tAT\t50\tPASS\tCSQ=AT|frameshift_variant|HIGH|BRCA2|ENST3|YES|NM_2|0.0001"
+        "\tGT:GQ:DP:AD\t0/1:12:.:3,2\n"
+        # LDLR: 1/1 at GQ 11 on 12 ref and 5 alt reads
+        "chr19\t300\t.\tG\tA\t50\tPASS\tCSQ=A|stop_gained|HIGH|LDLR|ENST4|YES|NM_3|0.0001"
+        "\tGT:GQ:DP:AD\t1/1:11:17:12,5\n"
+        # MYBPC3: 1/1 at GQ 50 on 30 alt reads
+        "chr11\t400\t.\tG\tA\t50\tPASS\tCSQ=A|stop_gained|HIGH|MYBPC3|ENST5|YES|NM_4|0.0001"
+        "\tGT:GQ:DP:AD\t1/1:50:30:0,30\n"
+        # MYH7: a multi-base deletion VEP found no frequency for
+        "chr14\t500\t.\tCTTT\tC\t50\tPASS\tCSQ=-|frameshift_variant|HIGH|MYH7|ENST6|YES|NM_5|"
+        "\tGT:GQ:DP:AD\t0/1:50:30:15,15\n"
+        # KCNQ1: a common stop-gain (in the clinical VCF through the ClinVar tier)
+        "chr11\t600\t.\tC\tT\t50\tPASS\tCSQ=T|stop_gained|HIGH|KCNQ1|ENST7|YES|NM_6|0.3"
+        "\tGT:GQ:DP:AD\t0/1:50:30:15,15\n"
+        # SCN5A: no MANE transcript; HIGH on the canonical one
+        "chr3\t700\t.\tC\tT\t50\tPASS\tCSQ=T|missense_variant|MODERATE|SCN5A|ENST8|||0.0001,"
+        "T|stop_gained|HIGH|SCN5A|ENST9|YES||0.0001\tGT:GQ:DP:AD\t0/1:50:30:15,15\n")
+    put(f"{d}/clinical/S_clinical.vcf.gz", head + body, gz=True)
+    # bin/csq_rank.awk on the same records
+    awk_file = os.path.join(REPO, "bin", "csq_rank.awk")
+
+    def ranked(keep):
+        p_ = subprocess.run(["awk", "-v", f"keep={keep}", "-f", awk_file], input=head + body,
+                            capture_output=True, text=True, env=dict(os.environ, LC_ALL="C"))
+        tags = {}
+        for line in p_.stdout.splitlines():
+            if not line.startswith("#"):
+                r = line.split("\t")
+                tags[int(r[1])] = dict(kv.split("=", 1) for kv in r[7].split(";") if kv.startswith("PGP_"))
+        return p_.returncode, tags, p_.stdout
+    rc, tags, out = ranked("all")
+    want = {100: ("MODIFIER", "MANE", "rare", "ok"), 200: ("HIGH", "MANE", "rare", "weak"),
+            300: ("HIGH", "MANE", "rare", "weak"), 400: ("HIGH", "MANE", "rare", "ok"),
+            500: ("HIGH", "MANE", "unknown", "ok"), 600: ("HIGH", "MANE", "common", "ok"),
+            700: ("HIGH", "CANONICAL", "rare", "ok")}
+    got = {p_: (t.get("PGP_IMPACT"), t.get("PGP_TX"), t.get("PGP_FREQ"), t.get("PGP_CALL")) for p_, t in tags.items()}
+    check("csq_rank.awk: impact on the MANE transcript, else the canonical one; frequency tier; call check",
+          rc == 0 and got == want, (rc, got, out[-600:]))
+    check("csq_rank.awk: what made a call weak (GQ12; GQ11,AB0.29)",
+          (tags.get(200, {}).get("PGP_CALL_WHY"), tags.get(300, {}).get("PGP_CALL_WHY")) == ("GQ12", "GQ11,AB0.29"), tags)
+    check("csq_rank.awk: the header names the floor it used",
+          "##PGP_CALL_FLOOR=GQ=30,DP=10,HET_AB=0.2-0.8,HOM_AB=0.8\n" in out, out[:900])
+    rc, tags_nc, _ = ranked("noncommon")
+    check("csq_rank.awk: keep=noncommon drops the common record only",
+          rc == 0 and sorted(tags_nc) == [100, 200, 300, 400, 500, 700], sorted(tags_nc))
+    agree = collect_summary.csq_high_impact_genes(f"{d}/clinical/S_clinical.vcf.gz")
+    check("csq_rank.awk and the summary agree on which records are HIGH and which calls are weak",
+          {p_ for p_, t in tags.items() if t.get("PGP_IMPACT") == "HIGH"} == {k[1] for k in agree}
+          and {p_ for p_, t in tags.items() if t.get("PGP_CALL") == "weak"} == {k[1] for k, x in agree.items() if x["weak"]},
+          (tags, agree))
+    summ, txt, html = render(d)
+    sf = summ["sections"]["clinical"]["data"]["acmg_sf"]
+    by = {x["gene"]: x for x in sf["high_impact"]}
+    check("clinical MANE: a HIGH consequence off the MANE Select transcript is not listed (TTN)",
+          "TTN" not in by, sorted(by))
+    check("clinical MANE: without a MANE transcript the canonical HIGH one is listed (SCN5A)",
+          by.get("SCN5A", {}).get("transcript") == "CANONICAL" and by["SCN5A"]["consequence"] == "stop_gained",
+          by.get("SCN5A"))
+    check("clinical MANE: the common stop-gain is not listed as rare HIGH (KCNQ1)", "KCNQ1" not in by, sorted(by))
+    check("clinical call: the GQ 12 heterozygote with AD 3,2 is a weak call (BRCA2)",
+          by.get("BRCA2", {}).get("weak_call") is True and "GQ 12 < 30" in (by["BRCA2"].get("call_note") or ""),
+          by.get("BRCA2"))
+    check("clinical call: the GQ 11 1/1 on AD 12,5 is weak by GQ and by its alt reads (LDLR)",
+          by.get("LDLR", {}).get("weak_call") is True and "GQ 11" in by["LDLR"]["call_note"]
+          and "0.29 of the depth on a homozygous call" in by["LDLR"]["call_note"], by.get("LDLR"))
+    check("clinical call: the GQ 50 1/1 on AD 0,30 is not weak (MYBPC3)",
+          by.get("MYBPC3", {}).get("weak_call") is False, by.get("MYBPC3"))
+    check("clinical frequency: the deletion with no MAX_AF is listed as frequency unknown (MYH7)",
+          by.get("MYH7", {}).get("frequency_unknown") is True and by["MYH7"]["frequency"] == "unknown", by.get("MYH7"))
+    check("clinical: only the sound rare calls count as rare HIGH (MYBPC3, SCN5A); 2 weak, 1 unknown frequency",
+          (sf.get("high_impact_rare"), sf.get("high_impact_weak"), sf.get("high_impact_frequency_unknown")) == (2, 2, 1), sf)
+    check("clinical: the text report counts 2 rare and lists the others apart, with their marks",
+          "0 ClinVar P/LP, 2 rare HIGH impact (listed apart: 2 weak call(s), 1 of unknown frequency)" in txt
+          and "weak call (GQ 12 < 30): check the reads" in txt and "frequency unknown, not counted as rare" in txt, txt)
+    check("clinical: the HTML report marks the weak call and the unknown frequency",
+          "weak call (GQ 12 &lt; 30): check the reads" in html and "frequency unknown, not counted as rare" in html)
+    # A floor of 0 written by bin/csq_rank.awk marks nothing.
+    put(f"{d}/clinical/S_clinical.vcf.gz", head.replace(
+        "#CHROM", "##PGP_CALL_FLOOR=GQ=0,DP=0,HET_AB=0-1,HOM_AB=0\n#CHROM") + body, gz=True)
+    sf0 = collect_summary.collect("S", d)["sections"]["clinical"]["data"]["acmg_sf"]
+    check("clinical call: with ##PGP_CALL_FLOOR GQ=0 and no allele-balance floor no call is weak",
+          sf0.get("high_impact_weak") == 0 and sf0.get("high_impact_rare") == 4, sf0)
+    # The summary tables of steps 23 and 31.
+    cols = ("CHROM\tPOS\tREF\tALT\tGT\tIMPACT\tGENE\tConsequence\tMAX_AF\tCADD_PHRED\tREVEL\tAM_CLASS\tTRANSCRIPT\t"
+            "WORST_IMPACT\tWORST_Consequence\tFREQ_TIER\tGQ\tDP\tAD\tCALL_CHECK\tCALL_WHY\n")
+    put(f"{d}/clinical/S_clinical_summary.tsv", cols
+        + "chr13\t200\tA\tAT\t0/1\tHIGH\tBRCA2\tframeshift_variant\t0.0001\t.\t.\t.\tMANE\tHIGH\tframeshift_variant\trare\t12\t.\t3,2\tweak\tGQ12\n"
+        + "chr14\t500\tCTTT\tC\t0/1\tHIGH\tMYH7\tframeshift_variant\t.\t.\t.\t.\tMANE\tHIGH\tframeshift_variant\tunknown\t50\t30\t15,15\tok\t.\n"
+        + "chr2\t100\tC\tT\t0/1\tMODIFIER\tTTN\tintron_variant\t0.0001\t.\t.\t.\tMANE\tHIGH\tstop_gained\trare\t50\t30\t15,15\tok\t.\n")
+    put(f"{d}/slivar/S_slivar_summary.tsv",
+        "CHROM\tPOS\tREF\tALT\tIMPACT\tSYMBOL\tConsequence\tExisting_variation\tGT\tMAX_AF\tgnomADe_AF\tgnomADg_AF\t"
+        "FREQ_TIER\tTRANSCRIPT\tMANE_Consequence\n"
+        "chr14\t500\tCTTT\tC\tHIGH\tMYH7\tframeshift_variant\t.\t0/1\t.\t.\t.\tunknown\tMANE\tframeshift_variant\n"
+        "chr13\t200\tA\tAT\tHIGH\tBRCA2\tframeshift_variant\t.\t0/1\t0.0001\t0.0001\t.\trare\tMANE\tframeshift_variant\n")
+    summ, txt, html = render(d)
+    cl, sl = summ["sections"]["clinical"]["data"], summ["sections"]["slivar"]["data"]
+    check("clinical table: one row of unknown frequency and one weak call counted; slivar: one of unknown frequency",
+          (cl.get("frequency_unknown"), cl.get("weak_calls"), sl.get("frequency_unknown")) == (1, 1, 1), (cl, sl))
+    check("clinical table: the text report prints both counts and the slivar one",
+          "Frequency unknown (not counted as rare): 1" in txt and "Weak genotype calls (check the reads): 1" in txt
+          and "Frequency unknown (prioritized, not counted as rare): 1" in txt, txt)
+    check("clinical table: the HTML cards print the counts",
+          "Frequency unknown (not rare)" in html and "Weak genotype calls" in html)
+    check("clinical MANE section validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
 
 
 def pypgx_section(work, schema):
@@ -1155,6 +1287,7 @@ def main():
         clinvar_quality(work, schema)
         cpsr_beside_clinvar(work, schema)
         pypgx_section(work, schema)
+        clinical_mane_quality(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

@@ -29,7 +29,9 @@ export GENOME_DIR=/path/to/your/data
 
 ## Filter Tiers
 
-"Rare" is the rule step 23 uses: VEP's `MAX_AF` (highest frequency in any 1000 Genomes or gnomAD exome/genome population) below 1% or missing; without `MAX_AF`, `gnomADe_AF` and `gnomADg_AF` both below 1% or missing. Exome frequency alone would call a variant that is common in genomes but absent from exomes rare. With none of these fields the tiers are not filtered by frequency and the step prints a notice.
+"Rare" is the rule step 23 uses (`bin/csq_rank.awk`): VEP's `MAX_AF` (highest frequency in any 1000 Genomes or gnomAD exome/genome population) below 1%; without `MAX_AF`, the values of `gnomADe_AF` and `gnomADg_AF` below 1%. Exome frequency alone would call a variant that is common in genomes but absent from exomes rare. A variant with no frequency value at all is not rare: VEP found no gnomAD allele that matches it, which happens to common indels written differently from gnomAD. HIGH and MODERATE variants of unknown frequency go into their own tier, `freq_unknown`. With none of these fields the tiers are not filtered by frequency and the step prints a notice.
+
+The tiers take the impact of the most severe consequence over every transcript (`bcftools +split-vep -s worst`). Step 23 ranks on the MANE Select transcript instead; the TSVs here show that consequence beside the worst one.
 
 ### Tier 1: rare_high
 - PASS variants with HIGH VEP impact (stop-gain, frameshift, splice donor/acceptor)
@@ -51,13 +53,17 @@ export GENOME_DIR=/path/to/your/data
 - Excludes `conflicting_interpretations_of_pathogenicity` (the substring match `~"pathogenic"` would otherwise include these)
 - No frequency filter (pathogenic variants can be common carriers)
 
+### Tier 2b: freq_unknown
+- PASS variants with HIGH or MODERATE VEP impact and no frequency value
+- Not counted as rare; kept so the compound-het search still sees them
+
 All tiers are merged and deduplicated into a single prioritized VCF.
 
 ## Compound Heterozygote Detection
 
 slivar's `compound-hets` command groups heterozygous variants by gene from the prioritized VCF and reports pairs that could form compound heterozygotes (two different damaging variants in the same gene, one from each parent). It requires a PED file (`--ped`) describing sample relationships. For singleton samples (no trio), the `--allow-non-trios` flag is required.
 
-The command outputs VCF to stdout with `INFO/slivar_comphet` annotations linking partner variants. Each VCF record represents a unique variant; the `slivar_comphet` field lists all its compound-het partners (format: `sample/GENE/PAIR_ID/chrom/pos/ref/alt`, comma-separated). A gene with N variants produces up to C(N,2) pairs but only N VCF records. The script counts unique pair IDs from this field and exports a human-readable TSV with columns: GENE, CHROM, POS, REF, ALT, IMPACT, Consequence, GT -- sorted by gene so that compound-het partners appear in consecutive rows.
+The command outputs VCF to stdout with `INFO/slivar_comphet` annotations linking partner variants. Each VCF record represents a unique variant; the `slivar_comphet` field lists all its compound-het partners (format: `sample/GENE/PAIR_ID/chrom/pos/ref/alt`, comma-separated). A gene with N variants produces up to C(N,2) pairs but only N VCF records. The script counts unique pair IDs from this field and exports a human-readable TSV with columns: GENE, CHROM, POS, REF, ALT, IMPACT, Consequence, GT, MAX_AF, gnomADe_AF, gnomADg_AF, FREQ_TIER, TRANSCRIPT, MANE_Consequence -- sorted by gene so that compound-het partners appear in consecutive rows. The frequency columns are VEP's (`.` for a field VEP did not write), `FREQ_TIER` is `rare`, `unknown`, `common` (a ClinVar record) or `none` (no frequency field), `TRANSCRIPT` is the set step 23 ranks on (`MANE`, `CANONICAL` or `ANY`), and `MANE_Consequence` is the consequence on the MANE Select transcript (`.` when the variant has none). The summary TSV ends with the same six columns, before the constraint columns. The Nextflow `SLIVAR_PRIORITIZE` module applies the same tiers and writes the same summary columns; it writes no compound-het TSV.
 
 **Important:** With single-sample unphased data, these are *candidates only*. The two variants might be on the same haplotype (cis) rather than different haplotypes (trans). Trio data or read-backed phasing is needed to confirm true compound hets.
 
@@ -86,6 +92,7 @@ Variants in constrained genes are more likely to be pathogenic -- these genes ar
 | `slivar/${SAMPLE}_compound_hets.tsv` | Compound het candidates (human-readable TSV) |
 | `slivar/${SAMPLE}_rare_high.vcf.gz` | Tier 1: HIGH impact |
 | `slivar/${SAMPLE}_rare_moderate_del.vcf.gz` | Tier 2: MODERATE + deleterious |
+| `slivar/${SAMPLE}_freq_unknown.vcf.gz` | Tier 2b: HIGH or MODERATE, frequency unknown (when the VEP output has a frequency field) |
 | `slivar/${SAMPLE}_clinvar_path.vcf.gz` | Tier 3: ClinVar P/LP |
 
 ## Runtime

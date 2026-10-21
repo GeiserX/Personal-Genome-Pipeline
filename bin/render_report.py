@@ -98,6 +98,36 @@ def call_text(h, floor=None):
     return f"low-confidence call ({vals}): check the reads"
 
 
+def high_rare(sf):
+    """The secondary-findings HIGH-impact records counted as rare: neither a
+    weak call nor of unknown frequency (a summary written before those marks
+    counts every record)."""
+    return sf.get("high_impact_rare", len(sf["high_impact"]))
+
+
+def high_apart(sf):
+    """The HIGH-impact records listed but not counted as rare, "" without any."""
+    parts = []
+    if sf.get("high_impact_weak"):
+        parts.append(f"{sf['high_impact_weak']} weak call(s)")
+    if sf.get("high_impact_frequency_unknown"):
+        parts.append(f"{sf['high_impact_frequency_unknown']} of unknown frequency")
+    return f" (listed apart: {', '.join(parts)})" if parts else ""
+
+
+def high_marks(x, lead):
+    """The marks of one HIGH-impact record (unknown frequency, weak call), each
+    after lead ("  (" closes with ")"), "" for a rare record with a sound call."""
+    marks = []
+    if x.get("frequency_unknown"):
+        marks.append("frequency unknown, not counted as rare")
+    if x.get("weak_call"):
+        marks.append(f"weak call ({x.get('call_note')}): check the reads")
+    if not marks:
+        return ""
+    return lead + "; ".join(marks) + (")" if lead.endswith("(") else "")
+
+
 def clinvar_floor_line(d):
     """How many ClinVar hits fall below step 6's call floor, or None for a
     summary written before the floor."""
@@ -678,21 +708,27 @@ def text_report(s):
         w(f"  Clinical variants: {d['variants']}" + (f" in {d['genes']} genes" if "genes" in d else ""))
         if d.get("by_impact"):
             w("  By impact: " + ", ".join(f"{k} {v}" for k, v in sorted(d["by_impact"].items())))
+        if "frequency_unknown" in d:
+            w(f"  Frequency unknown (not counted as rare): {d['frequency_unknown']}")
+        if "weak_calls" in d:
+            w(f"  Weak genotype calls (check the reads): {d['weak_calls']}")
         sf = d.get("acmg_sf")
         if sf:
             w(f"  Secondary-findings genes ({sf['version']}, {sf['genes_on_list']} genes): "
-              f"{len(sf['clinvar_hits'])} ClinVar P/LP, {len(sf['high_impact'])} rare HIGH impact")
+              f"{len(sf['clinvar_hits'])} ClinVar P/LP, {high_rare(sf)} rare HIGH impact" + high_apart(sf))
             for x in sf["clinvar_hits"]:
                 w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  ClinVar {x['significance']}"
                   + ("  (low-confidence call: check the reads)" if x.get("low_confidence") else ""))
             for x in sf["high_impact"]:
-                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  {x['consequence']}")
+                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  {x['consequence']}" + high_marks(x, "  ("))
             w(f"    {ACMG_NOTE}")
         w("")
 
     if head("slivar", "Variant Prioritization (slivar)"):
         d = S["slivar"]["data"]
         w(f"  Prioritized variants: {d['prioritized']}")
+        if "frequency_unknown" in d:
+            w(f"  Frequency unknown (prioritized, not counted as rare): {d['frequency_unknown']}")
         if "compound_het_variants" in d:
             w(f"  Compound het candidates: {d['compound_het_variants']} variants across {d['compound_het_genes']} genes")
             w("  (Candidates only: unphased single-sample data. See docs/31-slivar.md)")
@@ -1093,20 +1129,24 @@ def html_report(s):
     a(card(S["clinical"], "Clinical Variant Filter",
            [stat("Total interesting variants", cl.get("variants"))]
            + ([stat("Genes", cl["genes"])] if "genes" in cl else [])
-           + [stat(f"{k} impact", v) for k, v in sorted((cl.get("by_impact") or {}).items())]))
+           + [stat(f"{k} impact", v) for k, v in sorted((cl.get("by_impact") or {}).items())]
+           + ([stat("Frequency unknown (not rare)", cl["frequency_unknown"])] if "frequency_unknown" in cl else [])
+           + ([stat("Weak genotype calls", cl["weak_calls"])] if "weak_calls" in cl else [])))
     sf = cl.get("acmg_sf")
     if sf and (sf["clinvar_hits"] or sf["high_impact"]):
         rows = "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
                        f"<td>{E('ClinVar ' + x['significance'] + ('; low-confidence call: check the reads' if x.get('low_confidence') else ''))}</td></tr>\n"
                        for x in sf["clinvar_hits"])
         rows += "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
-                        f"<td>{E(x['consequence'])}</td></tr>\n" for x in sf["high_impact"])
+                        f"<td>{E(x['consequence'] + high_marks(x, '; '))}</td></tr>\n" for x in sf["high_impact"])
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
     sl_body = [stat("Prioritized variants", sl.get("prioritized"))]
+    if "frequency_unknown" in sl:
+        sl_body.append(stat("Frequency unknown (not rare)", sl["frequency_unknown"]))
     if "compound_het_variants" in sl:
         sl_body.append(stat("Compound het candidates", f"{sl['compound_het_variants']} variants, {sl['compound_het_genes']} genes"))
     a(card(S["slivar"], "Variant Prioritization (slivar)", sl_body))

@@ -533,3 +533,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** every step 07 run printed a logback status dump with a `pharmcat.log (Permission denied)` stack trace. The calls were not affected.
 - **Why:** the jar's built-in `logback.xml` writes `pharmcat.log` by a relative path, into the working directory. In the image that is `/pharmcat`, which the calling user cannot write. No `-D` property moves the file.
 - **Fix:** step 07 runs the jar with `-w /tmp`. A Nextflow task already runs in its own writable work directory, so the module needed no change.
+
+## Nextflow's task wrapper header (2026-10)
+
+### Nextflow 26.10.3 quotes task names with double quotes
+- **Failed:** the nextflow (26.10) job, which runs the newest 26.10.x release, counted 0 T1K_BUILD, HLA_TYPING, INDEXCOV and DEEPVARIANT tasks on every branch from 2026-10-20, although the run's log shows them completed.
+- **Why:** each task's `.command.run` starts with a YAML header. Up to 26.10.2 Nextflow wrote `### name: 'X'`; 26.10.3 writes `### name: "X"` (BashWrapperBuilder now renders the values as YAML double-quoted strings). The counts matched single quotes only.
+- **Fix:** every reader of that header (four steps in `.github/workflows/nextflow.yml` and `tests/e2e/couple-carrier-1.sh`) accepts either quote, so the pinned release and the newest one both count.

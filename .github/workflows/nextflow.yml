@@ -142,7 +142,7 @@ jobs:
         run: |
           total=0 cyrius=0 bad=0
           while IFS= read -r run; do
-            name=$(sed -n "s/^### name: '\(.*\)'\$/\1/p" "$run")
+            name=$(sed -n "s/^### name: [\"']\(.*\)[\"']\$/\1/p" "$run")
             line=$(grep -m1 'docker run' "$run" || true)
             [ -n "$line" ] || { echo "FAIL ${name:-$run}: no docker run line"; bad=$((bad + 1)); continue; }
             total=$((total + 1))
@@ -173,7 +173,7 @@ jobs:
       - name: T1K_BUILD ran once, HLA_TYPING once per sample with a BAM
         if: steps.scope.outputs.run == 'true'
         run: |
-          count() { find "${RUNNER_TEMP}/all-tools-work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+          count() { find "${RUNNER_TEMP}/all-tools-work" -name .command.run -exec sed -n "s/^### name: [\"']\(.*\)[\"']\$/\1/p" {} + \
             | grep -cE "(^|:)$1( |\$)" || true; }
           build=$(count T1K_BUILD) typing=$(count HLA_TYPING) indexcov=$(count INDEXCOV) dv=$(count DEEPVARIANT)
           bams=$(awk -F, 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next} $c["bam"] != "" || $c["fastq_1"] != "" || $c["cram"] != ""' assets/test_samplesheet.csv | wc -l)
@@ -189,7 +189,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: |
           work="${RUNNER_TEMP}/all-tools-work"
-          count() { find "$work" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+          count() { find "$work" -name .command.run -exec sed -n "s/^### name: [\"']\(.*\)[\"']\$/\1/p" {} + \
             | grep -cE "(^|:)$1( |\$)" || true; }
           align=$(count ALIGN_MINIMAP2) markdup=$(count ALIGN_MARKDUP)
           sams=$(find "$work" -type f \( -name '*.sam' -o -name '*.sam.gz' \) | wc -l)
@@ -214,7 +214,7 @@ jobs:
           [ "$(awk 'NR > 1' "$sheet" | wc -l)" -eq 1 ] || { echo "FAIL: want one VCF+BAM row in the stub samplesheet"; exit 1; }
           nextflow run main.nf -profile test -stub -ansi-log false --input "$sheet" \
             --outdir "${RUNNER_TEMP}/vcf-bam-out" -work-dir "${RUNNER_TEMP}/vcf-bam-work"
-          count() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+          count() { find "$1" -name .command.run -exec sed -n "s/^### name: [\"']\(.*\)[\"']\$/\1/p" {} + \
             | grep -cE "(^|:)$2( |\$)" || true; }
           bad=0
           for p in MINIMAP2_INDEX ALIGN_MINIMAP2; do
