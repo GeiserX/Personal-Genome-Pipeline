@@ -1365,6 +1365,134 @@
        }
       }
      ]
+    },
+    "annotsv": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "count": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "single_caller": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "exon_edge": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "common": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "exon_edge_checked": {
+           "type": "boolean"
+          },
+          "consensus": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "consensus_note": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "rows": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "sv",
+             "type",
+             "acmg_class",
+             "genes",
+             "caller",
+             "support",
+             "support_callers",
+             "exon_edge",
+             "population_af",
+             "common"
+            ],
+            "properties": {
+             "sv": {
+              "type": "string"
+             },
+             "type": {
+              "type": "string"
+             },
+             "length": {
+              "type": "string"
+             },
+             "acmg_class": {
+              "enum": [
+               "4",
+               "5"
+              ]
+             },
+             "genes": {
+              "type": "array",
+              "items": {
+               "type": "string"
+              }
+             },
+             "caller": {
+              "type": "string"
+             },
+             "support": {
+              "type": [
+               "integer",
+               "null"
+              ],
+              "minimum": 1
+             },
+             "support_callers": {
+              "type": "array",
+              "items": {
+               "type": "string"
+              }
+             },
+             "exon_edge": {
+              "enum": [
+               "yes",
+               "no",
+               ".",
+               "not checked"
+              ]
+             },
+             "exon_edge_detail": {
+              "type": "string"
+             },
+             "population_af": {
+              "type": [
+               "number",
+               "null"
+              ],
+              "minimum": 0
+             },
+             "population_source": {
+              "type": "string"
+             },
+             "common": {
+              "type": "boolean"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     ]
     }
    }
   },
