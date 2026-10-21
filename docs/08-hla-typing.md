@@ -97,14 +97,41 @@ docker run --rm \
 - Docker image is 4.5GB (includes pre-built graph)
 - Slower but uses a different algorithm — useful for validation
 
-## Key HLA Alleles for Drug Safety
-| Allele | Drug | Risk |
-|---|---|---|
-| HLA-B*57:01 | Abacavir (HIV) | Severe hypersensitivity reaction |
-| HLA-B*58:01 | Allopurinol (gout) | Stevens-Johnson syndrome / TEN |
-| HLA-B*15:02 | Carbamazepine | Stevens-Johnson syndrome (SE Asian) |
-| HLA-A*31:01 | Carbamazepine | Drug reaction with eosinophilia |
-| HLA-B*57:01 | Flucloxacillin | Drug-induced liver injury |
+## What the Report Derives
+
+The report (step 24 and the text report) lists each T1K row and then derives three things from it. The code is `sec_hla` and the helpers below it in `bin/collect_summary.py`; `tests/test_hla_report.py` checks every rule on synthetic T1K rows. The genotypes are unphased: T1K gives two alleles per gene, not which chromosome each sits on.
+
+**Coeliac DQ.** From the DQA1 and DQB1 rows:
+
+| Line | Rule |
+|---|---|
+| DQ2.5 | a DQA1\*05 allele and a DQB1\*02 allele. "Likely cis" when DRB1\*03 is present (the two usually sit together on that haplotype), "possible trans" when it is not, "phase unknown" when DRB1 has no confident call |
+| DQ2.2 | DQA1\*02:01 and DQB1\*02:02 |
+| DQ8 | a DQA1\*03 allele and DQB1\*03:02 |
+| DQB1\*02 copies | how many DQB1 alleles are DQB1\*02: 0, 1 or 2. T1K writes a homozygous gene as one allele, which counts twice |
+
+The rules follow Sollid 1989 (J Exp Med, PMID 2909659), which tied coeliac disease to the DQA1\*05/DQB1\*02 heterodimer in cis or trans, and Karell 2003 (Hum Immunol, PMID 12651074), which names DQ8 as DQA1\*03-DQB1\*03:02 and found that 57 of the 61 patients with neither DQ2.5 nor DQ8 carried one half of DQ2.5, such as the DQB1\*02 of DQ2.2. Each line reads present, absent or uncertain (only some of T1K's tied candidates fit). When DQA1 or DQB1 is missing or low confidence (a quality of 0 or below), the line says "not determined" and why.
+
+**Alleles present or absent.** `bin/hla_alleles.tsv` lists each allele with what it is associated with and the primary paper (PubMed id and citation). An allele group matches at a field boundary: `B*27` matches `B*27:05:02`, `B*57:01` matches `B*57:01:01`. The table sits in `bin/` because the report containers mount only that folder.
+
+| Allele | Kind | Association | Source |
+|---|---|---|---|
+| HLA-A\*31:01 | drug | carbamazepine hypersensitivity reactions in Europeans | McCormack 2011, PMID 21428769 |
+| HLA-B\*15:02 | drug | carbamazepine Stevens-Johnson syndrome in Han Chinese | Chung 2004, PMID 15057820 |
+| HLA-B\*57:01 | drug | abacavir hypersensitivity; flucloxacillin liver injury | Mallal 2008, PMID 18256392; Daly 2009, PMID 19483685 |
+| HLA-B\*58:01 | drug | allopurinol severe skin reactions | Hung 2005, PMID 15743917 |
+| HLA-B\*27 | disease | ankylosing spondylitis | Brewerton 1973, PMID 4123836; Schlosstein 1973, PMID 4688372 |
+| HLA-C\*06:02 | disease | psoriasis | Nair 2006, PMID 16642438 |
+| HLA-DQB1\*06:02 | disease | narcolepsy with cataplexy | Mignot 2001, PMID 11179016 |
+| HLA-DRB1\*15:01 | disease | multiple sclerosis | Barcellos 2003, PMID 12557126 |
+| HLA-DRB1\*01:01, \*04:01, \*04:04, \*04:05, \*04:08, \*14:02 | disease | rheumatoid arthritis, shared epitope alleles | Gregersen 1987, PMID 2446635 |
+
+Each row reads present, absent, uncertain (some tied candidates fit, some do not) or not determined (the gene is missing or low confidence). This is information about alleles, not a diagnosis: carrying one does not mean the condition or reaction will happen, and not carrying one does not rule it out.
+
+**Rows the report shortens or labels.**
+
+- A quality-0 allele with more than three tied candidates prints as `no confident call (N candidates, quality 0)`; `summary.json` keeps the first three and the count, the TSV keeps them all. This is common for DRB3, DRB4 and DRB5, which only some DR haplotypes carry.
+- The HLA-HFE row is a T1K sequence allele of the HFE gene. The report labels it so it is not read as the haemochromatosis genotype: C282Y and H63D come from the variant calls and appear with the ClinVar hits.
 
 ## Important Notes
 - HLA typing from WGS is **approximate** — clinical HLA typing for transplant or critical drug decisions uses dedicated high-resolution panels (sequence-based typing)

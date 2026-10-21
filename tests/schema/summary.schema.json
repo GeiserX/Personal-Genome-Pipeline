@@ -691,7 +691,9 @@
              "alleles",
              "quality",
              "low_confidence",
-             "withheld_from_pharmcat"
+             "withheld_from_pharmcat",
+             "candidates",
+             "one_allele_type"
             ],
             "properties": {
              "gene": {
@@ -714,6 +716,155 @@
              },
              "withheld_from_pharmcat": {
               "type": "boolean"
+             },
+             "candidates": {
+              "type": "array",
+              "items": {
+               "type": "integer",
+               "minimum": 0
+              }
+             },
+             "one_allele_type": {
+              "type": "boolean"
+             },
+             "label": {
+              "type": "string"
+             }
+            }
+           }
+          },
+          "derived": {
+           "type": "object",
+           "required": [
+            "coeliac",
+            "alleles"
+           ],
+           "properties": {
+            "coeliac": {
+             "type": "object",
+             "required": [
+              "status",
+              "reason",
+              "dq2_5",
+              "dq2_5_phase",
+              "dq2_2",
+              "dq8",
+              "dqb1_02_dose"
+             ],
+             "properties": {
+              "status": {
+               "type": "string",
+               "enum": [
+                "derived",
+                "not_determined"
+               ]
+              },
+              "reason": {
+               "type": "string"
+              },
+              "dq2_5": {
+               "type": [
+                "string",
+                "null"
+               ],
+               "enum": [
+                "present",
+                "absent",
+                "uncertain",
+                null
+               ]
+              },
+              "dq2_5_phase": {
+               "type": [
+                "string",
+                "null"
+               ]
+              },
+              "dq2_2": {
+               "type": [
+                "string",
+                "null"
+               ],
+               "enum": [
+                "present",
+                "absent",
+                "uncertain",
+                null
+               ]
+              },
+              "dq8": {
+               "type": [
+                "string",
+                "null"
+               ],
+               "enum": [
+                "present",
+                "absent",
+                "uncertain",
+                null
+               ]
+              },
+              "dqb1_02_dose": {
+               "type": [
+                "integer",
+                "null"
+               ],
+               "minimum": 0,
+               "enum": [
+                0,
+                1,
+                2,
+                null
+               ]
+              }
+             }
+            },
+            "alleles": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "allele",
+               "kind",
+               "association",
+               "pmids",
+               "citation",
+               "state",
+               "reason"
+              ],
+              "properties": {
+               "allele": {
+                "type": "string"
+               },
+               "kind": {
+                "type": "string",
+                "enum": [
+                 "drug",
+                 "disease"
+                ]
+               },
+               "association": {
+                "type": "string"
+               },
+               "pmids": {
+                "type": "string"
+               },
+               "citation": {
+                "type": "string"
+               },
+               "state": {
+                "type": "string",
+                "enum": [
+                 "present",
+                 "absent",
+                 "uncertain",
+                 "not_determined"
+                ]
+               },
+               "reason": {
+                "type": "string"
+               }
+              }
              }
             }
            }

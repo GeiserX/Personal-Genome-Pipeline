@@ -183,15 +183,52 @@ def cpsr_lines(d, dbs):
 
 
 def hla_text(locus):
-    """One HLA locus: each allele with its T1K quality, and the low-confidence mark."""
+    """One HLA locus: each allele with its T1K quality, and the low-confidence mark.
+    A quality-0 allele with more than collect_summary.HLA_MAX_CANDIDATES candidates
+    reads 'no confident call'; the HFE row carries its label."""
     q = locus.get("quality") or []
-    parts = [a + (f" (quality {q[i]})" if i < len(q) and q[i] != "" else "") for i, a in enumerate(locus["alleles"])]
+    n = locus.get("candidates") or []
+    parts = []
+    for i, a in enumerate(locus["alleles"]):
+        qi = q[i] if i < len(q) else ""
+        if (i < len(n) and n[i] > collect_summary.HLA_MAX_CANDIDATES and qi != ""
+                and collect_summary.hla_quality(qi) <= 0):
+            parts.append(f"no confident call ({n[i]} candidates, quality {qi})")
+        else:
+            parts.append(a + (f" (quality {qi})" if qi != "" else ""))
     txt = " / ".join(parts) or "no call"
     if locus.get("low_confidence"):
         txt += "; low confidence (T1K quality 0 or below)"
         if locus.get("withheld_from_pharmcat"):
             txt += ", not passed to PharmCAT"
+    if locus.get("label"):
+        txt += f" [{locus['label']}]"
     return txt
+
+
+HLA_DERIVED_NOTE = ("Information about alleles, not a diagnosis: each line is an association reported in the cited "
+                    "study. Carrying an allele does not mean the condition or reaction will happen, and not carrying "
+                    "it does not rule it out. The genotypes are unphased.")
+
+
+def hla_derived_lines(d):
+    """The derived HLA lines both reports print: the coeliac DQ line, the
+    DQB1*02 dose and the allele table (bin/hla_alleles.tsv), present ones first."""
+    if not d:
+        return []
+    c = d.get("coeliac") or {}
+    if c.get("status") == "derived":
+        dq25 = c["dq2_5"] + (f", {c['dq2_5_phase']}" if c.get("dq2_5_phase") else "")
+        out = [f"Coeliac DQ: DQ2.5 {dq25}; DQ2.2 {c['dq2_2']}; DQ8 {c['dq8']}"]
+    else:
+        out = [f"Coeliac DQ: not determined ({c.get('reason') or 'no DQA1 and DQB1 call'})"]
+    dose = c.get("dqb1_02_dose")
+    out.append(f"DQB1*02 copies: {dose if dose is not None else 'not determined'}")
+    order = {"present": 0, "uncertain": 1, "absent": 2, "not_determined": 3}
+    for a in sorted(d.get("alleles") or [], key=lambda x: order.get(x["state"], 9)):
+        state = a["state"].replace("_", " ") + (f" ({a['reason']})" if a.get("reason") else "")
+        out.append(f"{a['allele']} {state}: {a['association']} ({a['citation']})")
+    return out
 
 
 def cyp2d6_verdict(c):
@@ -578,6 +615,10 @@ def text_report(s):
     if head("hla", "HLA Typing (T1K)"):
         for l in S["hla"]["data"]["loci"]:
             w(f"    {l['gene']:<8} {hla_text(l)}")
+        for line in hla_derived_lines(S["hla"]["data"].get("derived")):
+            w(f"  {line}")
+        if S["hla"]["data"].get("derived"):
+            w(f"  {HLA_DERIVED_NOTE}")
         w(f"  HLA database: {s['databases']['hla_database'] or 'unknown'}")
         w(f"  {HLA_NOTE}")
         w("")
@@ -1040,7 +1081,10 @@ def html_report(s):
       + cy_body + ["  </div>"])
 
     hla = S["hla"]["data"]
-    a(card(S["hla"], "HLA Typing", [stat(l["gene"], E(hla_text(l))) for l in hla.get("loci", [])]
+    hla_body = [stat(l["gene"], E(hla_text(l))) for l in hla.get("loci", [])]
+    if hla.get("derived"):
+        hla_body += [small_note(x) for x in hla_derived_lines(hla["derived"])] + [small_note(HLA_DERIVED_NOTE)]
+    a(card(S["hla"], "HLA Typing", hla_body
            + [stat("HLA database", E(s["databases"]["hla_database"] or "unknown")), small_note(HLA_NOTE)]))
 
     m, dl, cn, sv = (S[k]["data"] for k in ("manta", "delly", "cnvpytor", "sv_consensus"))

@@ -1,0 +1,22 @@
+# bin/hla_alleles.tsv: the HLA alleles the report marks present or absent (step 08, docs/08-hla-typing.md).
+# Read by bin/collect_summary.py. It sits in bin/ because bin/ is the only repository folder the report
+# containers mount (scripts/24-html-report.sh and the Nextflow HTML_REPORT process).
+# allele: an allele group at a field boundary: B*27 matches B*27:05:02, B*57:01 matches B*57:01:01.
+# kind: drug (a drug reaction) or disease (a condition). association: what the study in pmids reports.
+# pmids: the primary papers, comma-separated PubMed ids. citation: first author, year, journal.
+# tests/test_hla_report.py checks the schema.
+allele	kind	association	pmids	citation
+A*31:01	drug	carbamazepine hypersensitivity reactions in Europeans	21428769	McCormack 2011, N Engl J Med
+B*15:02	drug	carbamazepine Stevens-Johnson syndrome in Han Chinese	15057820	Chung 2004, Nature
+B*57:01	drug	abacavir hypersensitivity; flucloxacillin liver injury	18256392,19483685	Mallal 2008, N Engl J Med; Daly 2009, Nat Genet
+B*58:01	drug	allopurinol severe skin reactions	15743917	Hung 2005, Proc Natl Acad Sci U S A
+B*27	disease	ankylosing spondylitis	4123836,4688372	Brewerton 1973, Lancet; Schlosstein 1973, N Engl J Med
+C*06:02	disease	psoriasis	16642438	Nair 2006, Am J Hum Genet
+DQB1*06:02	disease	narcolepsy with cataplexy	11179016	Mignot 2001, Am J Hum Genet
+DRB1*15:01	disease	multiple sclerosis	12557126	Barcellos 2003, Am J Hum Genet
+DRB1*01:01	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
+DRB1*04:01	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
+DRB1*04:04	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
+DRB1*04:05	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
+DRB1*04:08	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
+DRB1*14:02	disease	rheumatoid arthritis, shared epitope allele	2446635	Gregersen 1987, Arthritis Rheum
