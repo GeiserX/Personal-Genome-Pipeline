@@ -714,6 +714,19 @@ def comphet_phase_section(work, schema):
           "1 / 1 / 1" in html and "<td>G2</td><td>chr1:50 A&gt;G + chr1:90 C&gt;T</td><td>19 of 20</td>" in html, html)
     check("comphet phase: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
           validate.validate(schema, json.loads(json.dumps(summ))))
+    # A Nextflow folder: the prioritized VCF and the pairs table, no summary
+    # TSV and no per-variant table. The phase still reaches both reports.
+    n = os.path.join(work, "comphet-nf", "S")
+    put(f"{n}/slivar/S_prioritized.vcf.gz", VCF_HEAD + "chr1\t10\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n", gz=True)
+    put(f"{n}/slivar/S_compound_het_pairs.tsv", cols + "G2\tchr1\t50\tA\tG\t90\tC\tT\t40\ttrans\t1\t19\tx\n")
+    summ, txt, html = render(n)
+    sl = summ["sections"]["slivar"]["data"]
+    check("comphet phase: a Nextflow folder gets the phase beside the prioritized count",
+          (sl.get("prioritized"), sl.get("compound_het_phase")) == (1, {"trans": 1, "cis": 0, "unknown": 0}), sl)
+    check("comphet phase: without the per-variant table the text report still prints the phase",
+          "Phase from the reads: 1 trans, 0 cis, 0 unknown of 1 pairs" in txt and "unphased single-sample data" not in txt, txt)
+    check("comphet phase: the Nextflow summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
 
 
 def main():

@@ -442,7 +442,8 @@ def traits_html(d, sample):
 
 
 COMPHET_NOTE = ("A pair can hit both copies of the gene only in trans. cis: one copy carries both variants. "
-                "unknown: no read or read pair covers both positions; a parent's genome or long reads can phase it. "
+                "unknown: fewer than 2 reads or read pairs cover both positions, the reads disagree, or there is no BAM; "
+                "the pairs table gives the reason. A parent's genome or long reads can phase it. "
                 "Every pair: slivar/<sample>_compound_het_pairs.tsv")
 
 
@@ -802,11 +803,11 @@ def text_report(s):
             w(f"  Frequency unknown (prioritized, not counted as rare): {d['frequency_unknown']}")
         if "compound_het_variants" in d:
             w(f"  Compound het candidates: {d['compound_het_variants']} variants across {d['compound_het_genes']} genes")
-            if "compound_het_phase" in d:
-                for line in comphet_phase_text(d):
-                    w(line)
-            else:
-                w("  (Candidates only: unphased single-sample data. See docs/31-slivar.md)")
+        if "compound_het_phase" in d:
+            for line in comphet_phase_text(d):
+                w(line)
+        elif "compound_het_variants" in d:
+            w("  (Candidates only: unphased single-sample data. See docs/31-slivar.md)")
         w("")
 
     w("## Steps Not Run")

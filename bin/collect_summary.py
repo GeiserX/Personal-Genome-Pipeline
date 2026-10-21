@@ -1729,11 +1729,15 @@ def sec_clinical(d, s):
 def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
-        # The Nextflow report gets the prioritized VCF: the count only.
+        # The Nextflow report gets the prioritized VCF: the count, plus the
+        # phase when COMPHET_PHASE's pairs table sits beside it (a published
+        # output folder).
         v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
         if not v:
             return None, {}
-        return v, {"prioritized": sum(1 for _ in vcf_records(v))}
+        out = {"prioritized": sum(1 for _ in vcf_records(v))}
+        out.update(comphet_phase(os.path.join(os.path.dirname(v), f"{s}_compound_het_pairs.tsv")))
+        return v, out
     rows = read_tsv(p)
     out = {"prioritized": len(rows)}
     # Step 31's frequency tier: prioritized for the compound-het search, not rare.
