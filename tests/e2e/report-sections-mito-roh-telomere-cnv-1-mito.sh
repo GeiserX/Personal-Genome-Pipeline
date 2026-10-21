@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Step 20 annotates its chrM calls with ClinVar and gnomAD v3.1's chrM sites,
+# validate-setup.sh fails without the pinned gnomAD file or with another file
+# under its name, and the text report shows the annotation, the poly-C tract
+# count, the autosomal ROH lines and the telomere read count.
+#
+# Red first: the earlier step-20 cases ran without the gnomAD file, so the
+# table must say it is not annotated, and validate-setup.sh must fail. Then
+# the pinned file goes in and both turn.
+. "$(dirname "$0")/lib.sh"
+
+G="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
+T="${GENOME_DIR}/${SAMPLE}/mito/${SAMPLE}_chrM_annotated.tsv"
+# Alleles with a value in column N of the annotation table (11 gnomad_af_hom, 7 clinvar_id).
+filled() { awk -F'\t' -v c="$1" '!/^#/ && $1 != "chrom" && $c != "." {n++} END {print n + 0}' "$T" 2>/dev/null; }
+validate_line() { grep -E 'gnomAD v3\.1 mitochondrial sites' "$STEP_LOG" | head -n 1; }
+
+# --- 1. without the gnomAD file -------------------------------------------------
+rm -f "$G"
+run_step 20-mtoolbox.sh "$SAMPLE"
+check_step_exit 20-mtoolbox.sh
+check "the step wrote the annotation table" test -s "$T"
+head -n 3 "$T"
+check "without the gnomAD file the table says it is not annotated" has $'^# gnomad\tnot annotated' "$(head -n 3 "$T")"
+check_eq "alleles with a gnomAD value without the file" "$(filled 11)" 0
+run_step validate-setup.sh "$SAMPLE"
+check "validate-setup.sh fails without the gnomAD file ($(validate_line))" has '\[FAIL\].*not found at' "$(validate_line)"
+
+# --- 2. another file under its name ---------------------------------------------
+mkdir -p "$(dirname "$G")"
+printf 'not the pinned file\n' > "$G"
+run_step validate-setup.sh "$SAMPLE"
+check "validate-setup.sh fails on a file that is not the pinned one ($(validate_line))" has '\[FAIL\].*sha256 differs' "$(validate_line)"
+
+# --- 3. the pinned file ---------------------------------------------------------
+rm -f "$G"
+curl -fsSL --retry 3 -o "${G}.part" "$GNOMAD_MITO_URL"
+check_eq "the download has the pinned sha256" "$(sha256sum "${G}.part" 2>/dev/null | awk '{print $1}')" "$GNOMAD_MITO_SHA256"
+mv -f "${G}.part" "$G"
+run_step validate-setup.sh "$SAMPLE"
+check "validate-setup.sh passes the pinned file ($(validate_line))" has '\[OK\].*present' "$(validate_line)"
+
+run_step 20-mtoolbox.sh "$SAMPLE"
+check_step_exit 20-mtoolbox.sh
+head -n 3 "$T"
+check "the table names the gnomAD file" has $'^# gnomad\tgnomad\\.genomes\\.v3\\.1\\.sites\\.chrM\\.vcf\\.bgz' "$(head -n 3 "$T")"
+check "the table names the ClinVar file and its date" has $'^# clinvar\tclinvar_chr\\.vcf\\.gz\t[0-9]{4}-?[0-9]{2}-?[0-9]{2}' "$(head -n 3 "$T")"
+check_ge "alleles with a gnomAD value" "$(filled 11)" 1
+check_ge "alleles with a ClinVar record" "$(filled 7)" 1
+# One ClinVar match, read back from ClinVar's own file: same id, position and alleles.
+read -r POS REF ALT ID < <(awk -F'\t' '!/^#/ && $1 != "chrom" && $7 != "." {print $2, $3, $4, $7; exit}' "$T")
+BACK=$(bcf query -r "chrM:${POS:-0}" -f '%ID %REF %ALT\n' clinvar/clinvar_chr.vcf.gz 2>/dev/null | awk -v i="${ID:-x}" '$1 == i')
+check "ClinVar record ${ID:-none} at m.${POS:-?} is in ClinVar's file with the same alleles (${BACK:-none})" \
+  has "^${ID:-x} ${REF:-x} ${ALT:-x}\$" "${BACK:-}"
+awk -F'\t' '!/^#/ && ($7 != "." || $1 == "chrom")' "$T" | head -n 6
+
+# --- 4. the text report ---------------------------------------------------------
+run_step generate-report.sh "$SAMPLE"
+check_step_exit generate-report.sh
+TXT=$(cat "${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.txt" 2>/dev/null)
+grep -A 12 '^## Mitochondrial Variants' <<< "$TXT" | head -n 20
+check "the report counts heteroplasmy outside the poly-C tracts" \
+  has '^  Heteroplasmic \(AF 0\.05 to 0\.95, outside the D-loop poly-C tracts\): [0-9]+$' "$TXT"
+check "the report has the poly-C tract count" \
+  has '^  Length heteroplasmy in the D-loop poly-C tracts \(m\.303-315, m\.16184-16193; common, usually technical\): [0-9]+$' "$TXT"
+check "the report names the annotation and both sources" \
+  has "^  Annotation \\(mito/${SAMPLE}_chrM_annotated\\.tsv\\): ClinVar clinvar_chr\\.vcf\\.gz \\([0-9]{4}-?[0-9]{2}-?[0-9]{2}\\); gnomAD gnomad\\.genomes\\.v3\\.1\\.sites\\.chrM\\.vcf\\.bgz\$" "$TXT"
+check "the report counts ClinVar P/LP chrM calls" has '^  ClinVar pathogenic or likely pathogenic: [0-9]+$' "$TXT"
+check "the ROH section says autosomes only and no population AFs" has 'No population allele frequencies were used' "$TXT"
+S11="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
+check "step 11's summary has the masked_bp column" has $'^chrom\tstart\tend\tlength_bp\tlength_mb\tmasked_bp$' "$(cat "$S11" 2>/dev/null)"
+if grep -q '^## Telomere' <<< "$TXT"; then
+  check "the telomere section gives the intratelomeric read count" has '^  Intratelomeric reads: ' "$TXT"
+fi
+
+finish
