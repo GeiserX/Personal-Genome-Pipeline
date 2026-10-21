@@ -658,8 +658,8 @@ def read_inhibitors(path):
         lines = [line for line in f if not line.startswith("#")]
     out = {}
     for r in csv.DictReader(lines, delimiter="\t"):
-        if any(r.get(k) is None for k in ("Drug", "Gene", "Strength")):
-            raise ValueError(f"{path}: a row has no Drug, Gene or Strength cell")
+        if any(not (r.get(k) or "").strip() for k in ("Drug", "Gene", "Strength")):
+            raise ValueError(f"{path}: a row has an empty or missing Drug, Gene or Strength cell")
         gene = r["Gene"].strip()
         fac = (r.get("Activity_score_factor") or "").strip()
         factor = None if fac in ("", "-") else _score(fac)

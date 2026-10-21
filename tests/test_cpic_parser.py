@@ -258,6 +258,13 @@ def phenoconversion_checks(work):
     rc, rec, rows, _ = run_report(work, "PHENOSHORT", pheno_report(), medications="paroxetine\n", inhibitors=short)
     check("phenoconversion: a table row with no Gene cell is reported as unreadable, the report still written",
           rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
+    blank = os.path.join(work, "inhibitors-blank-gene.tsv")
+    with open(INHIBITORS) as f, open(blank, "w") as out:
+        for line in f:
+            out.write(line.replace("paroxetine\tCYP2D6\t", "paroxetine\t \t"))
+    rc, rec, rows, _ = run_report(work, "PHENOBLANK", pheno_report(), medications="paroxetine\n", inhibitors=blank)
+    check("phenoconversion: a row with a blank Gene cell is reported as unreadable, never read as a known drug",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
     nofac = os.path.join(work, "inhibitors-no-factor.tsv")
     with open(INHIBITORS) as f, open(nofac, "w") as out:
         for line in f:
