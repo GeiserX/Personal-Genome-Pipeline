@@ -8,6 +8,7 @@ library only, so it runs in the plain python image.
   pgx_parse.py cpic-report --sample S --report R.json --outdir DIR
                            [--pypgx S_pypgx_summary.tsv --comparison OUT.tsv]
                            [--consensus S_pgx_consensus.tsv]
+                           [--medications LIST --inhibitors pgx_inhibitors.tsv]
 
 writes DIR/S_phenotypes.tsv and DIR/S_cpic_recommendations.txt, and with
 --pypgx the PharmCAT/pypgx comparison TSV. With --consensus (step 36 /
@@ -22,7 +23,12 @@ MT-RNR1 from step 20's chrM calls, are not checked against the table. A
 gene whose CPIC warfarin rule rests on one position (CYP4F2 *3, VKORC1
 -1639) and that PharmCAT left without a single result gets the genotype
 PharmCAT read there (its `variants` list), labelled as a single-position
-fallback, not a PharmCAT call. It exits 1 when the report cannot be
+fallback, not a PharmCAT call. With --medications (opt-in: a list the user
+gives, one drug per line) and the inhibitor table, a strong or moderate
+CYP2D6 inhibitor on the list gives CYP2D6 a phenoconverted phenotype by
+CPIC's activity-score rule, beside the genotype phenotype and never in its
+place; a CYP2C19 inhibitor gets a note (CPIC has no CYP2C19 activity score),
+and a line naming no drug of the table is listed as not checked. It exits 1 when the report cannot be
 read or yields no gene: a report that parses to nothing is a format change,
 never an all-clear.
 
@@ -121,6 +127,7 @@ class GeneCall:
         self.labels = labels or [diplotype]
         self.phenotypes = phenotypes or [phenotype]
         self.note = None  # where the phenotype came from, when not the gene level
+        self.scores = []  # PharmCAT's activityScore of each possible diplotype
 
     @property
     def shown(self):
@@ -203,7 +210,9 @@ def _diplotype(name, g):
         if len(phenotypes) > 1:
             shown = ", ".join(phenotypes[:5]) + (", ..." if len(phenotypes) > 5 else "")
             phenotype = f"ambiguous: one of {shown}"
-    return GeneCall(name, label, phenotype, called, labels, phenotypes, g.get("callSource"))
+    call = GeneCall(name, label, phenotype, called, labels, phenotypes, g.get("callSource"))
+    call.scores = [d.get("activityScore") for d in dips]  # read by phenoconversion()
+    return call
 
 
 def parse_genes(data):
@@ -621,6 +630,131 @@ def consensus_lines(rows, calls, guidance, related):
     return lines
 
 
+# --- phenoconversion (opt-in medication list) ---------------------------------
+
+# The genes a medication list is checked for, with the inhibitor table
+# assets/pgx_inhibitors.tsv: the FDA's strong and moderate inhibitors of each,
+# and for CYP2D6 the factor CPIC's opioid guideline multiplies the activity
+# score by (0 strong, 0.5 moderate). CPIC has no activity score for CYP2C19.
+PHENOCONVERSION_GENES = ("CYP2D6", "CYP2C19")
+CPIC_CYP2D6_RULE = {
+    "strong": "for patients on strong CYP2D6 inhibitors, the CYP2D6 activity score is adjusted to 0 "
+              "and the predicted phenotype is a poor metabolizer.",
+    "moderate": "for patients who are on moderate CYP2D6 inhibitors, the activity score is multiplied "
+                "by 0.5 and then converted to the predicted phenotype.",
+}
+NO_CONVERSION = "-"
+
+
+def norm_drug(name):
+    return " ".join(str(name).lower().split())
+
+
+def read_inhibitors(path):
+    """{(drug, gene): (strength, factor or None)} from the inhibitor table;
+    lines starting with '#' are comments."""
+    with open(path) as f:
+        lines = [line for line in f if not line.startswith("#")]
+    out = {}
+    for r in csv.DictReader(lines, delimiter="\t"):
+        fac = (r.get("Activity_score_factor") or "").strip()
+        out[(norm_drug(r["Drug"]), r["Gene"].strip())] = \
+            (r["Strength"].strip(), None if fac in ("", "-") else float(fac))
+    return out
+
+
+def read_medications(path):
+    """The lines of a medication list, one drug per line; '#' starts a
+    comment and blank lines are skipped. Returns [(line as written, drug
+    name)]: the name is the first word, lower case, so a dose after it ('20
+    mg') does not hide the drug."""
+    out = []
+    with open(path) as f:
+        for line in f:
+            text = line.split("#", 1)[0].strip()
+            if text:
+                out.append((text, norm_drug(re.split(r"[\s,;]+", text)[0])))
+    return out
+
+
+def cyp2d6_band(score):
+    """CPIC's CYP2D6 phenotype for an activity score."""
+    if score == 0:
+        return "Poor Metabolizer"
+    if score < 1.25:
+        return "Intermediate Metabolizer"
+    if score <= 2.25:
+        return "Normal Metabolizer"
+    return "Ultrarapid Metabolizer"
+
+
+def _score(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def phenoconversion(calls, meds, inhibitors, guidance, related):
+    """({gene: Phenoconverted_phenotype column}, report lines). A line of the
+    list naming no drug of the inhibitor table is listed as not checked. The genotype phenotype is never changed: the converted one
+    sits beside it. With several inhibitors of one gene the strongest counts
+    (CPIC gives no rule for combining them)."""
+    pc = {c.gene: c for c in calls}
+    column, lines = {}, []
+    known = {d for d, _ in inhibitors}
+    unknown = list(dict.fromkeys(text for text, name in meds if name not in known))
+    names = list(dict.fromkeys(name for _, name in meds))
+    for gene in PHENOCONVERSION_GENES:
+        hits = [(n,) + inhibitors[(n, gene)] for n in names if (n, gene) in inhibitors]
+        if not hits:
+            continue
+        on = ", ".join(f"{n} ({st} {gene} inhibitor)" for n, st, _ in hits)
+        c = pc.get(gene)
+        if c is None or c.status not in ("normal", "non-normal"):
+            why = "the report has no result for the gene" if c is None else f"the gene is {c.status} here"
+            column[gene] = f"not converted: {why}"
+            lines.append(f"  {gene} -- on {on}: not converted, {why}, so there is no genotype phenotype to convert.")
+            continue
+        drugs = gene_drugs(gene, guidance, related)
+        if gene == "CYP2C19":
+            column[gene] = f"not computed: {', '.join(n for n, _, _ in hits)} inhibits CYP2C19; CPIC has no CYP2C19 activity score"
+            lines.append(f"  WARNING: CYP2C19 genotype phenotype {c.shown}; on {on}. CPIC has no activity score "
+                         "for CYP2C19, so no converted phenotype is computed.")
+            lines.append("    The inhibitor can lower CYP2C19 activity below what the genotype predicts.")
+        else:
+            factor = min(f for _, _, f in hits)
+            strongest = [n for n, _, f in hits if f == factor]
+            strength = next(st for _, st, f in hits if f == factor)
+            scores = [_score(s) for s in c.scores]
+            if factor == 0:
+                converted = "Poor Metabolizer"
+                how = "activity score adjusted to 0"
+            elif scores and all(s is not None for s in scores) and \
+                    len({cyp2d6_band(s * factor) for s in scores}) == 1:
+                converted = cyp2d6_band(scores[0] * factor)
+                how = "activity score " + ", ".join(dict.fromkeys(
+                    f"{s:g} x {factor:g} = {s * factor:g}" for s in scores))
+            else:
+                why = "the report gives no activity score" if not scores or None in scores \
+                    else "the possible diplotypes convert to different phenotypes"
+                column[gene] = f"not converted: {why}"
+                lines.append(f"  {gene} -- on {on}: not converted, {why}.")
+                continue
+            label = f"{converted} (phenoconverted by {', '.join(strongest)})"
+            column[gene] = label
+            lines.append(f"  WARNING: CYP2D6 genotype phenotype {c.shown}; phenoconverted phenotype {label}, "
+                         f"{how}.")
+            lines.append(f"    CPIC: {CPIC_CYP2D6_RULE[strength]}")
+        if drugs:
+            lines.append(f"    Drugs affected by {gene}: {', '.join(drugs)}.")
+    if unknown:
+        lines.append(f"  Not in the inhibitor table: {', '.join(unknown)}.")
+        lines.append("  These were not checked. A drug missing from the table (a brand name, a weak inhibitor)")
+        lines.append("  can still change CYP2D6 or CYP2C19 activity.")
+    return column, lines
+
+
 # --- report --------------------------------------------------------------------
 
 def write_failure(outdir, sample, why):
@@ -681,11 +815,28 @@ def cpic_report(args):
             pypgx_error = f"{type(e).__name__}: {e}"
             print(f"WARNING: could not read the pypgx summary {args.pypgx} ({pypgx_error}); "
                   "no PharmCAT/pypgx comparison is made", file=sys.stderr)
+    meds, med_error, conv_column, conv_lines = [], None, {}, []
+    if args.medications:
+        try:
+            meds = read_medications(args.medications)
+            inhibitors = read_inhibitors(args.inhibitors)
+            conv_column, conv_lines = phenoconversion(calls, meds, inhibitors, guidance, related)
+        except (OSError, UnicodeDecodeError, csv.Error, KeyError, ValueError) as e:
+            # Opt-in and beside the report: say why it is missing, never fail the step.
+            med_error = f"{type(e).__name__}: {e}"
+            meds = []
+            print(f"WARNING: could not read the medication list or the inhibitor table ({med_error}); "
+                  "no phenotype is converted", file=sys.stderr)
 
     with open(os.path.join(args.outdir, f"{args.sample}_phenotypes.tsv"), "w", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
-        w.writerow(["Gene", "Diplotype", "Phenotype", "Status"])
-        w.writerows(c.row() for c in calls)
+        if meds:
+            # Beside the genotype phenotype, never in its place.
+            w.writerow(["Gene", "Diplotype", "Phenotype", "Status", "Phenoconverted_phenotype"])
+            w.writerows(c.row() + (conv_column.get(c.gene, NO_CONVERSION),) for c in calls)
+        else:
+            w.writerow(["Gene", "Diplotype", "Phenotype", "Status"])
+            w.writerows(c.row() for c in calls)
 
     lines = [
         "Pharmacogenomic Drug Recommendations",
@@ -700,6 +851,19 @@ def cpic_report(args):
     ]
     lines += [f"{c.gene:<12} {c.diplotype:<30} {c.shown}"
               + ("  [outside call]" if c.source == "OUTSIDE" else "") for c in calls]
+    if args.medications:
+        lines += ["", "Medications and Phenoconversion (CYP2D6, CYP2C19):", "-" * 72, ""]
+        if med_error:
+            lines += [f"  Could not read the medication list or the inhibitor table ({med_error}).",
+                      "  No phenotype is converted."]
+        elif not meds:
+            lines += ["  The medication list names no drug: no phenotype is converted."]
+        else:
+            lines += [f"  Medication list: {os.path.basename(args.medications)} ({len(meds)} "
+                      f"line{'' if len(meds) == 1 else 's'})."]
+            lines += conv_lines or ["  No drug on the list is a strong or moderate CYP2D6 or CYP2C19 inhibitor."]
+            lines += ["  The genotype phenotype in the table above is unchanged. A phenoconverted phenotype",
+                      "  holds while the inhibitor is taken. This is an aid for your clinician, not advice."]
     lines += ["", "Affected Medications:", "-" * 72, ""]
     listed = [c for c in calls if c.status == "non-normal"]
     for c in listed:
@@ -827,9 +991,14 @@ def main(argv=None):
     c.add_argument("--pypgx", help="pypgx summary TSV (step 32 / PYPGX)")
     c.add_argument("--comparison", help="where to write the PharmCAT/pypgx comparison TSV")
     c.add_argument("--consensus", help="consensus table of the outside calls (step 36 / PGX_CONSENSUS)")
+    c.add_argument("--medications", help="opt-in medication list, one drug per line: phenoconversion "
+                   "of CYP2D6 and CYP2C19 (needs --inhibitors)")
+    c.add_argument("--inhibitors", help="inhibitor table (assets/pgx_inhibitors.tsv)")
     o = sub.add_parser("step36-outside", help="the step 36 genes the report calls from an outside call")
     o.add_argument("--report", required=True, help="PharmCAT report.json")
     args = p.parse_args(argv)
+    if args.cmd == "cpic-report" and args.medications and not args.inhibitors:
+        p.error("--medications needs --inhibitors (assets/pgx_inhibitors.tsv)")
     if args.cmd == "cpic-report":
         return cpic_report(args)
     if args.cmd == "step36-outside":
