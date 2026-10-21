@@ -102,9 +102,11 @@ check_bam_reference() {
 # of what it publishes; an older index comes from before that, or from a
 # file replaced by hand.
 check_stale_indexes() {
-  local idx n=0
+  local idx data n=0
   while IFS= read -r -d '' idx; do
-    [ -e "${idx%.*}" ] && [ "$idx" -ot "${idx%.*}" ] || continue
+    data=${idx%.*}   # sample.bam.bai indexes sample.bam; sample.bai and sample.crai name the BAM or CRAM without the suffix
+    [ -e "$data" ] || case "$idx" in *.bai) data="${idx%.bai}.bam" ;; *.crai) data="${idx%.crai}.cram" ;; esac
+    [ -e "$data" ] && [ "$idx" -ot "$data" ] || continue
     n=$((n + 1))
     warn "Index older than its data file: ${idx#"${GENOME_DIR}"/}"
   done < <(find "$1" -path "$1/nextflow" -prune -o -type f \( -name '*.bai' -o -name '*.crai' -o -name '*.csi' -o -name '*.tbi' \) -print0 2>/dev/null)

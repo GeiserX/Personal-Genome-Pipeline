@@ -10,8 +10,9 @@
 #   3. A failed SOMALIER task (a process not named after the tool) marks
 #      step 33 failed, not ok.
 #   4. validate-setup.sh warns about a .tbi older than its VCF (then about
-#      the gVCF's too), and says nothing about a pair in the right order or
-#      about an index in the Nextflow work directory.
+#      the gVCF's too, then about extra.bai beside extra.bam), and says
+#      nothing about a pair in the right order or about an index in the
+#      Nextflow work directory.
 # A fake nextflow stands in; a wrapper in front of it writes the two files
 # main.nf's completion handler would (as in run-all-kir-step.sh).
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
@@ -87,7 +88,12 @@ touch -d 2026-01-03T00:00:00 "$GV"   # now the gVCF's .tbi is older too
 run_expect 0 stale-gvcf "${SCRIPTS}/validate-setup.sh" sample1
 output_has stale-gvcf 'Index older than its data file: sample1/vcf/sample1\.g\.vcf\.gz\.tbi$'
 [ "$(grep -c 'Index older than its data file: ' "${CASE_WORK}/stale-gvcf.out")" -eq 2 ] || fail "validate-setup.sh did not name both older indexes"
-touch "${V}.tbi" "${GV}.tbi"
+# An index named sample.bai belongs to sample.bam (samtools reads that name too).
+printf 'placeholder\n' > "${G}/sample1/aligned/extra.bai"; printf 'placeholder\n' > "${G}/sample1/aligned/extra.bam"
+touch -d 2026-01-01T00:00:00 "${G}/sample1/aligned/extra.bai"
+run_expect 0 stale-bai "${SCRIPTS}/validate-setup.sh" sample1
+output_has stale-bai 'Index older than its data file: sample1/aligned/extra\.bai$'
+touch "${V}.tbi" "${GV}.tbi" "${G}/sample1/aligned/extra.bai"
 run_expect 0 fresh "${SCRIPTS}/validate-setup.sh" sample1
 output_lacks fresh 'Index older than its data file'
 echo "Step 33 runs in a default run when its data is installed, is skipped without it, and validate-setup.sh names an index older than its data."

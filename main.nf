@@ -855,7 +855,10 @@ workflow {
     // data; a hard link shares its time with the task's file in work/, and
     // touching that would make the next -resume run its downstream tasks
     // again. The search covers each sample's folder and family/ under
-    // --outdir, six levels down, and never the work directory.
+    // --outdir, six levels down, and skips the folder that holds the work
+    // directory (run-all.sh puts it in <sample>/nextflow/). An index named
+    // sample.bai or sample.crai belongs to sample.bam or sample.cram when
+    // there is no sample.bai's data file.
     def index_ext   = ['.bai', '.crai', '.csi', '.tbi']
     def index_roots = (samplesheet_rows.collect { row -> row.sample } + ['family']).unique()
         .collect { d -> file("${params.outdir}/${d}") }
@@ -866,14 +869,22 @@ workflow {
             def kept = []
             index_roots
                 .findAll { d -> d.getFileSystem() == java.nio.file.FileSystems.getDefault() && d.isDirectory() }
-                .each { d ->
-                    def found = java.nio.file.Files.walk(d, 6).withCloseable { s -> s.iterator().toList() }
-                    found.findAll { p ->
-                        def n = p.getFileName().toString()
-                        index_ext.any { x -> n.endsWith(x) } && !p.toAbsolutePath().normalize().toString().startsWith(index_skip)
-                    }.each { idx ->
+                .collectMany { d -> java.nio.file.Files.list(d).withCloseable { s -> s.iterator().toList() } }
+                .findAll { c -> !index_skip.startsWith(c.toAbsolutePath().normalize().toString() + '/') }
+                .each { c ->
+                    def found = []
+                    try {
+                        found = java.nio.file.Files.walk(c, 5).withCloseable { s -> s.iterator().toList() }
+                    }
+                    catch( e ) {
+                        run_log.warn "Could not read ${c} to check its index times: ${e}"
+                    }
+                    found.findAll { p -> index_ext.any { x -> p.getFileName().toString().endsWith(x) } }.each { idx ->
                         def n = idx.getFileName().toString()
                         def data = idx.resolveSibling(n.substring(0, n.lastIndexOf('.')))
+                        if (!java.nio.file.Files.exists(data) && (n.endsWith('.bai') || n.endsWith('.crai'))) {
+                            data = idx.resolveSibling(n.endsWith('.bai') ? n.substring(0, n.length() - 4) + '.bam' : n.substring(0, n.length() - 5) + '.cram')
+                        }
                         if (java.nio.file.Files.exists(data)) {
                             def t_idx  = java.nio.file.Files.getLastModifiedTime(idx)
                             def t_data = java.nio.file.Files.getLastModifiedTime(data)

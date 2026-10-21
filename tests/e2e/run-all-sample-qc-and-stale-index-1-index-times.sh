@@ -13,10 +13,11 @@
 #   2. The handler itself, on a short VCF-only run (roh) into a new outdir
 #      with two pairs planted under the sample's folder: pair A's index is
 #      newer than the run's start but older than its data (what a parallel
-#      copy leaves), pair B's index is from two days before the run. Both
-#      fail the check before the run (the red state). After it, A's index is
-#      not older than its data, B's is left as it was, and the run's warning
-#      names B and not A.
+#      copy leaves), pair B's index is from two days before the run, and
+#      pair C is A's case with the index named c.bai beside c.bam. All three
+#      fail the check before the run (the red state). After it, A's and C's
+#      indexes are not older than their data, B's is left as it was, and the
+#      run's warning names B and not A.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -69,6 +70,10 @@ touch -d "@$((NOW + 7200))" "${PL}/a.vcf.gz" "${PL}/b.vcf.gz"
 touch -d "@$((NOW + 3600))" "${PL}/a.vcf.gz.tbi"          # A: after the run's start, before its data
 touch -d "@$((NOW - 172800))" "${PL}/b.vcf.gz.tbi"        # B: two days before the run
 check_eq "before the run: both planted indexes are older than their data" "$(count "$(older_indexes "$PL")")" 2
+# C: an index named c.bai beside c.bam, timed as A (samtools reads that name too)
+printf 'data\n' > "${PL}/c.bam"; printf 'index\n' > "${PL}/c.bai"
+touch -d "@$((NOW + 7200))" "${PL}/c.bam"; touch -d "@$((NOW + 3600))" "${PL}/c.bai"
+check "before the run: c.bai is older than c.bam" test "${PL}/c.bai" -ot "${PL}/c.bam"
 B_BEFORE=$(stat -c %Y "${PL}/b.vcf.gz.tbi")
 printf 'sample,vcf,vcf_index\n%s,%s,%s\n' "$SAMPLE" "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
   "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi" > "${CASE_TMP}/sheet.csv"
@@ -86,6 +91,7 @@ check_eq "nextflow run exits 0" "$NF_RC" 0
 check "the run published ROH's output" test -n "$(find "${OUT}/${SAMPLE}/roh" -type f 2>/dev/null | head -n 1)"
 LEFT=$(older_indexes "$PL")
 check "pair A (written in the run, before its data) is no longer older" lacks 'a\.vcf\.gz\.tbi$' "$LEFT"
+check "pair C's c.bai is no longer older than c.bam" test ! "${PL}/c.bai" -ot "${PL}/c.bam"
 check "pair B (from before the run) is left older than its data" has 'b\.vcf\.gz\.tbi$' "$LEFT"
 check_eq "pair B's index time is unchanged" "$(stat -c %Y "${PL}/b.vcf.gz.tbi")" "$B_BEFORE"
 check "pair A's index still holds the index, not something else" has '^index$' "$(cat "${PL}/a.vcf.gz.tbi")"
