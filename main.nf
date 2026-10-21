@@ -860,12 +860,6 @@ workflow {
     def index_roots = (samplesheet_rows.collect { row -> row.sample } + ['family']).unique()
         .collect { d -> file("${params.outdir}/${d}") }
     def index_skip  = workflow.workDir.toAbsolutePath().normalize().toString() + '/'
-    def one_link    = { p ->
-        def n = 0
-        try { n = java.nio.file.Files.getAttribute(p, 'unix:nlink', java.nio.file.LinkOption.NOFOLLOW_LINKS) }
-        catch( e ) { n = 0 }
-        java.nio.file.Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS) && n == 1
-    }
     run_info.onComplete {
         try {
             def start_ms = run_info.start.toInstant().toEpochMilli()
@@ -883,7 +877,15 @@ workflow {
                         if (java.nio.file.Files.exists(data)) {
                             def t_idx  = java.nio.file.Files.getLastModifiedTime(idx)
                             def t_data = java.nio.file.Files.getLastModifiedTime(data)
-                            if (t_idx < t_data && one_link(idx) && t_idx.toMillis() >= start_ms) {
+                            def links = 0
+                            try {
+                                links = java.nio.file.Files.isRegularFile(idx, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                                    ? java.nio.file.Files.getAttribute(idx, 'unix:nlink', java.nio.file.LinkOption.NOFOLLOW_LINKS) : 0
+                            }
+                            catch( _e ) {
+                                links = 0
+                            }
+                            if (t_idx < t_data && links == 1 && t_idx.toMillis() >= start_ms) {
                                 def now = java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis())
                                 java.nio.file.Files.setLastModifiedTime(idx, t_data > now ? t_data : now)
                             } else if (t_idx < t_data) {
