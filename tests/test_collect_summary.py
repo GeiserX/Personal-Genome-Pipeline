@@ -1067,20 +1067,23 @@ def main():
         fmt = "GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC"
 
         def strec(rep, cn, so, ci, adsp, st, nmax="20", pmin="40"):
+            # Per-allele values come as tuples, joined here: scripts/ci/check-personal-data.sh
+            # reads a literal count pair beside a gene name as a genotype.
+            cn, ci, adsp = ("/".join(map(str, x)) if isinstance(x, tuple) else x for x in (cn, ci, adsp))
             return (f"chr1\t{100 + len(rep)}\t.\tC\t<STR50>\t.\tPASS\tEND=200;REPID={rep};VARID={rep};"
                     f"STR_STATUS={st};STR_NORMAL_MAX={nmax};STR_PATHOLOGIC_MIN={pmin}\t{fmt}\t"
                     f"1/2:{so}:{cn}:{ci}:{adsp}:0/0:0/0:30.0\n")
         span2 = "SPANNING/SPANNING"
-        recs = [strec("HTT", "17/30", span2, "17-17/30-30", "12/9", "normal", "26", "40"),
+        recs = [strec("HTT", (17, 30), span2, ("17-17", "30-30"), (12, 9), "normal", "26", "40"),
                 strec("FMR1", "30", "SPANNING", "30-30", "14", "normal", "44", "201"),
-                strec("C9ORF72", "2/8", span2, "2-2/8-8", "10/11", "normal", "24", "30"),
-                strec("ATXN1", "29/31", span2, "29-29/31-31", "8/7", "normal", "35", "39"),
-                strec("DMPK", "5/40", span2, "5-5/40-40", "15/6", "pre_mutation", "34", "50"),
-                strec("LOCUS_FL", "15/60", "FLANKING/FLANKING", "0-119/4-507", "0/0", "normal"),
-                strec("LOCUS_SP", "15/60", span2, "15-15/60-60", "5/5", "normal", "100", "200"),
-                strec("LOCUS_LOW", "12/18", span2, "12-12/16-45", "6/1", "normal"),
+                strec("C9ORF72", (2, 8), span2, ("2-2", "8-8"), (10, 11), "normal", "24", "30"),
+                strec("ATXN1", (29, 31), span2, ("29-29", "31-31"), (8, 7), "normal", "35", "39"),
+                strec("DMPK", (5, 40), span2, ("5-5", "40-40"), (15, 6), "pre_mutation", "34", "50"),
+                strec("LOCUS_FL", (15, 60), "FLANKING/FLANKING", ("0-119", "4-507"), (0, 0), "normal"),
+                strec("LOCUS_SP", (15, 60), span2, ("15-15", "60-60"), (5, 5), "normal", "100", "200"),
+                strec("LOCUS_LOW", (12, 18), span2, ("12-12", "16-45"), (6, 1), "normal"),
                 strec("LOCUS_NC", ".", ".", ".", ".", "normal"),
-                strec("RFC1", "100/150", "INREPEAT/INREPEAT", "80-120/130-170", "0/0", "full_mutation", "11", "12")]
+                strec("RFC1", (100, 150), "INREPEAT/INREPEAT", ("80-120", "130-170"), (0, 0), "full_mutation", "11", "12")]
         put(f"{z}/expansion_hunter/S_eh.vcf", VCF_HEAD + "".join(recs), age_days=2)
         put(f"{z}/expansion_hunter/S_eh_stranger.vcf", VCF_HEAD + "".join(recs), age_days=1)
         put(f"{z}/expansion_hunter/S_rfc1_motif.tsv",

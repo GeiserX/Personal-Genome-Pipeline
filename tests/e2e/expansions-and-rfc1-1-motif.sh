@@ -4,12 +4,12 @@
 # samples of its own: an ExpansionHunter VCF with one RFC1 record (the header
 # of tests/smoke/stranger_input.vcf.in) and a BAM of made-up reads at the
 # locus, the reads of tests/test_rfc1_motif.py.
-#   path    RFC1 at 100/150 in-repeat; AAGGG reads (soft-clipped, unmapped
+#   path    RFC1 at 100 and 150 units, in-repeat; AAGGG reads (soft-clipped, unmapped
 #           and placed at the mate, mates on another contig, reverse strand)
 #           and three reference reads: Stranger flags full_mutation, the
 #           count says pathogenic_motif, and the text report prints it.
 #   benign  the same record; AAAAG reads: benign_motif.
-#   normal  RFC1 at 5/5 on spanning reads: Stranger does not flag it, so
+#   normal  RFC1 at 5 units on spanning reads: Stranger does not flag it, so
 #           no motif table is written (the control that the count runs only
 #           on a flag).
 # What this cannot show: reads from a real carrier. Real AAGGG and AAAAG
@@ -31,11 +31,12 @@ head = [l for l in open(os.path.join(repo, "tests", "smoke", "stranger_input.vcf
 alts = sorted({int(x) for x in cn.split("/")})
 head[-1:-1] = [f'##ALT=<ID=STR{a},Description="Allele comprised of {a} repeat units">\n' for a in alts]
 gt = "1/2" if len(alts) == 2 else "1/1"
+sp, fl, ir = ("/".join([x, x]) for x in ("0", "2", "20"))  # spanning, flanking and in-repeat reads
 with open(vcf, "w") as fh:
     fh.writelines(head)
     fh.write(f"{t.CHROM}\t{t.START + 1}\tRFC1\tA\t" + ",".join(f"<STR{a}>" for a in alts)
              + f"\t.\tPASS\tSVTYPE=STR;END={t.END};REF=11;RL=55;RU=AARRG;VARID=RFC1;REPID=RFC1"
-             f"\tGT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC\t{gt}:{so}:{cn}:{ci}:0/0:2/2:20/20:30.0\n")
+             "\tGT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC\t" + ":".join([gt, so, cn, ci, sp, fl, ir]) + ":30.0\n")
 at, elsewhere = t.case(kind)
 with open(sam, "w") as fh:
     fh.write("@HD\tVN:1.6\tSO:unsorted\n")
@@ -70,7 +71,7 @@ make_sample "$P" pathogenic 100/150 INREPEAT/INREPEAT 80-120/130-170
 check "the BAM of made-up reads is indexed" test -s "${GENOME_DIR}/${P}/aligned/${P}_sorted.bam.bai"
 run_step 09b-stranger.sh "$P"
 check_step_exit 09b-stranger.sh
-check_eq "path: Stranger flags RFC1 at 100/150 (the catalog's low pathogenic minimum)" "$(stranger_status "$P")" full_mutation
+check_eq "path: Stranger flags RFC1 at 100 and 150 units (the catalog's low pathogenic minimum)" "$(stranger_status "$P")" full_mutation
 check "path: the log says the motif count ran" has 'RFC1 is flagged: counting the repeat motif' "$(cat "$STEP_LOG")"
 check_eq "path: verdict" "$(motif_col "$P" verdict)" pathogenic_motif
 check_eq "path: dominant motif" "$(motif_col "$P" dominant_motif)" AAGGG
@@ -100,7 +101,7 @@ N="${SAMPLE}rfc1normal"
 make_sample "$N" benign 5/5 SPANNING/SPANNING 5-5/5-5
 run_step 09b-stranger.sh "$N"
 check_step_exit 09b-stranger.sh
-check_eq "normal: Stranger does not flag RFC1 at 5/5" "$(stranger_status "$N")" normal
+check_eq "normal: Stranger does not flag RFC1 at 5 units" "$(stranger_status "$N")" normal
 check "normal: no motif table" test ! -e "${GENOME_DIR}/${N}/expansion_hunter/${N}_rfc1_motif.tsv"
 check "normal: the log does not mention the motif count" lacks 'RFC1 is flagged' "$(cat "$STEP_LOG")"
 

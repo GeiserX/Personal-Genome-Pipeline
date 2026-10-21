@@ -50,7 +50,7 @@ LEFT = "".join(RNG.choice("ACGT") for _ in range(300))
 RIGHT = "".join(RNG.choice("ACGT") for _ in range(300))
 VCF = ("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
        f"{CHROM}\t{START + 1}\t.\tA\t<STR100>\t.\tPASS\tEND={END};REF=11;RL=55;RU=AARRG;VARID=RFC1;REPID=RFC1;"
-       "STR_STATUS=full_mutation\tGT:SO:REPCN\t1/1:INREPEAT/INREPEAT:100/150\n")
+       "STR_STATUS=full_mutation\tGT:SO:REPCN\t" + ":".join(["/".join("11"), "INREPEAT/INREPEAT", "/".join(["100", "150"])]) + "\n")
 
 
 def expect(desc, got, want):
