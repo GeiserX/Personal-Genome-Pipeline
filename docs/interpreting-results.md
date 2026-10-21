@@ -196,7 +196,13 @@ The output VCF lists each tested locus with the number of repeats found. Key loc
 
 **FMR1 intermediate zone (45-54 repeats):** Not affected, but repeats may expand in offspring. Carriers should receive genetic counseling. Premutation (55-200) carries risk of FXTAS (males >50) and FXPOI.
 
-The report prints no all-clear verdict for these loci. It shows the counts of the five loci above and, when step 9b (Stranger) ran, lists every locus Stranger marks `pre_mutation` or `full_mutation`; without step 9b, compare the counts with the table yourself. A count under every threshold is not a guarantee: repeat-expansion calls from short reads can be wrong at some loci, and a long expansion cannot be sized. Intermediate-range results should be discussed with a genetic counselor.
+The report prints no all-clear verdict for these loci. It lists every locus in the ExpansionHunter output, the five above first, with its repeat count, Stranger's status and the catalog's normal maximum (`STR_NORMAL_MAX`), and, when step 9b (Stranger) ran, every locus Stranger marks `pre_mutation` or `full_mutation`; without step 9b, compare the counts with the table yourself. It also says:
+
+- **Not sized.** A locus whose call rests on flanking reads only prints "size not determined (flanking reads only)"; one with in-repeat reads only (longer than a read) prints its count as at least the lower end of ExpansionHunter's interval; one with fewer than 2 spanning reads, or an interval that reaches the catalog's pathogenic minimum, is marked low confidence. Such a locus is listed apart and never shown as normal, because an unsized repeat can hide an expansion.
+- **Intermediate range.** A sized count inside the HTT, FMR1 or DMPK intermediate range of the table above prints the range, a note that it does not cause disease but may expand in offspring, and the GeneReviews chapter. The report reads these ranges from `bin/str_intermediate_ranges.tsv`, and `tests/test_str_ranges.py` checks that the table above prints the same ones.
+- **RFC1.** A `full_mutation` flag at RFC1 carries the motif verdict of step 9b ([RFC1 note](09b-stranger.md#notes)).
+
+A count under every threshold is not a guarantee: repeat-expansion calls from short reads can be wrong at some loci, and a long expansion cannot be sized. Intermediate-range results should be discussed with a genetic counselor.
 
 ### Stranger Annotation (Step 9b)
 
