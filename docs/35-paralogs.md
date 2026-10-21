@@ -67,7 +67,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 
 ## Runtime
 
-Not measured here; the end test does not run this step. An estimate is a few minutes for the background depth over a 30x BAM, and under a minute for the SMN1/SMN2 locus.
+On the CI fixture the step takes 8 seconds: one thread, the background depth over 4,000 windows of 100 bp on the chr20 slice, then the SMN1/SMN2 locus on the chr5 slice (case `pgx-4-parascopy`, e2e run 39544031036). A 30x genome has not been timed: there the background depth reads Parascopy's windows across the whole genome, which the fixture's slices do not have.
 
 ## Interpreting Results
 
@@ -82,7 +82,13 @@ Not measured here; the end test does not run this step. An estimate is a few min
 ## What Is and Is Not Assessed
 
 - **Assessed:** the copy number of SMN1 and SMN2, together and, where possible, each.
-- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, and CYP21A2 and HBA1/HBA2, for which it has none. SMN1/SMN2 comes first; the others are not wired in yet for short reads. A PacBio HiFi BAM gets them from step 35b.
+- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; and CYP21A2 and HBA1/HBA2, for which Parascopy has no model. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. HBA1/HBA2 copy number on short reads, the 3.7 kb and 4.2 kb alpha-thalassaemia deletions first, needs another method, such as a depth check over the two deletion spans against their flanks; none is built yet. A PacBio HiFi BAM gets all of these from step 35b.
+
+## In the Reports
+
+Both reports (step 24 and the Nextflow `HTML_REPORT`) read `${SAMPLE}_smn_copy_number.tsv` into a section of its own, **SMN1/SMN2 Copy Number (Parascopy, short reads)**. It shows the copy number of SMN1 and of SMN2 at exon 7 (the row of the table, or its homologous region, that holds chr5:70,951,946 for SMN1 and chr5:70,076,526 for SMN2), with quality and filter; the two together (agCN) there; and a one-line reading: no SMN1 copy is the pattern of SMA, one copy that of a carrier, two copies is not a carrier by copy number with a 2+0 carrier not ruled out. A copy with a quality under 20 or a filter other than `PASS` is shown as not resolved and gets no reading. With step 35b's table too, the Paraphase section also sets the two tools' SMN1 side by side.
+
+When neither step 35 nor step 35b left a result, both reports print `Paralog copy number: not checked (neither step 35 nor step 35b ran)`, naming a step that failed instead, so a missing check never reads as a normal result. Without step 35b's result the "Not Assessed" list also names HBA1/HBA2 copy number from short reads.
 
 ## Notes
 
