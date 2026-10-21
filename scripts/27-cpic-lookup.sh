@@ -107,6 +107,10 @@ if [ -n "${MEDICATIONS:-}" ]; then
   fi
   MED_HOST="$(cd "$(dirname "$MEDICATIONS")" && pwd)/$(basename "$MEDICATIONS")"
   echo "Medication list: ${MED_HOST} (phenoconversion of CYP2D6 and CYP2C19)"
+  if [ ! -f "${PGP_ROOT}/assets/pgx_inhibitors.tsv" ]; then
+    echo "ERROR: inhibitor table ${PGP_ROOT}/assets/pgx_inhibitors.tsv not found." >&2
+    exit 1
+  fi
   MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro")
   MED_ARGS=(--medications /pgp-med/medications.txt --inhibitors /pgp-assets/pgx_inhibitors.tsv)
 fi

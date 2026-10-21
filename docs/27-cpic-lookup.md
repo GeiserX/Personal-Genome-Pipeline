@@ -23,7 +23,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 - PharmCAT JSON report from step 7: the first `*.report.json` (or `*_pharmcat.json`) in `${GENOME_DIR}/${SAMPLE}/pharmcat/`, else in `${GENOME_DIR}/${SAMPLE}/vcf/`.
 - Optional: `${GENOME_DIR}/${SAMPLE}/pypgx/${SAMPLE}_pypgx_summary.tsv` from step 32.
 - Optional: `${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv` from step 36.
-- Optional, opt-in: `MEDICATIONS=FILE`, a plain text list of the drugs you take, one per line. Write the generic name first (`paroxetine 20 mg` is read as `paroxetine`; a brand name is not recognised). `#` starts a comment and blank lines are skipped. The file can sit anywhere; it is mounted read-only. Nothing is ever inferred: without the list there is no phenoconversion. In the Nextflow pipeline the same list is `--medications FILE`. `run-all.sh` does not take one: run this step again with `MEDICATIONS` afterwards.
+- Optional, opt-in: `MEDICATIONS=FILE`, a plain text list of the drugs you take, one per line. Write the generic name first (`paroxetine 20 mg` is read as `paroxetine`; a brand name is not recognised). `#` starts a comment and blank lines are skipped. The file can sit anywhere; it is mounted read-only. A missing list, or a missing `assets/pgx_inhibitors.tsv`, stops the step. Nothing is ever inferred: without the list there is no phenoconversion. In the Nextflow pipeline the same list is `--medications FILE`. `run-all.sh` does not take one: run this step again with `MEDICATIONS` afterwards.
 
 ## Command
 
