@@ -94,6 +94,23 @@ check_bam_reference() {
   esac
 }
 
+# check_stale_indexes DIR: warn about each index (.bai, .crai, .csi, .tbi)
+# under DIR older than the data file beside it, outside DIR/nextflow (the
+# work directory). samtools and htslib warn about such an index on every
+# query, and it may index an earlier version of the file, so a rewritten BAM
+# or VCF would be read through the old index. main.nf sets the index times
+# of what it publishes; an older index comes from before that, or from a
+# file replaced by hand.
+check_stale_indexes() {
+  local idx n=0
+  while IFS= read -r -d '' idx; do
+    [ -e "${idx%.*}" ] && [ "$idx" -ot "${idx%.*}" ] || continue
+    n=$((n + 1))
+    warn "Index older than its data file: ${idx#"${GENOME_DIR}"/}"
+  done < <(find "$1" -path "$1/nextflow" -prune -o -type f \( -name '*.bai' -o -name '*.crai' -o -name '*.csi' -o -name '*.tbi' \) -print0 2>/dev/null)
+  [ "$n" -eq 0 ] || echo "       If the data file changed after its index was made, index it again (samtools index for a BAM or CRAM, bcftools index for a VCF); if it was only copied, touch the index."
+}
+
 # check_bam_quickcheck: the sample BAM passes samtools quickcheck (a header
 # with at least one sequence, and the end-of-file block). Runs whether or not
 # its header could be read.
@@ -837,6 +854,8 @@ if [ -n "$SAMPLE" ]; then
         echo "         bcftools index -t /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
       fi
     fi
+
+    check_stale_indexes "$SAMPLE_DIR"
 
     # Validate genome build (GRCh38) if BAM or VCF exists
     if $HAS_BAM && command -v "$CONTAINER_ENGINE" >/dev/null 2>&1; then

@@ -69,6 +69,12 @@ Every failure encountered during pipeline development (Mar 2026), documented so 
 
 ## bcftools/htslib Issues
 
+### "The index file is older than the data file" on published BAMs and VCFs
+- **Observed:** samtools warned about the published `<sample>_sorted.bam.bai`, and htslib about the VEP VCF's `.tbi`, on every region query after a Nextflow run, although each task wrote its index after its data file.
+- **Root cause:** publishDir (mode `copy`) copies a task's output files in parallel. The small index finishes first and the large BAM or VCF gets the later time.
+- **Why it matters:** the warning is noise there, and it hides the real case: an old index left beside a BAM or VCF that was rewritten, which serves the wrong regions without an error.
+- **Fix:** main.nf's completion handler runs after the last copy. It sets each published index that this run wrote, and that is older than its data file, to the data file's time. An older index from before the run, or a hard link into `work/`, is left as it is and named in a warning. `validate-setup.sh` warns about any index under the sample folder older than its data file: index it again when the data changed, touch it when the file was only copied.
+
 ### bgzip/tabix not in bcftools image PATH
 - **Failed:** `staphb/bcftools:1.21` does not include `bgzip` or `tabix` in `$PATH`
 - **Fix:** Use `bcftools view -Oz -o output.vcf.gz` (native bgzip output) and `bcftools index -t` (native tabix index) instead of piping to `bgzip`/`tabix`

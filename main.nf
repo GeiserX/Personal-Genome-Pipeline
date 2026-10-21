@@ -842,7 +842,67 @@ workflow {
     def outdir      = params.outdir
     def tasks_file  = file("${workflow.launchDir}/failed_tasks.tsv")
     def status_file = file("${workflow.launchDir}/process_status.tsv")
+    //
+    // A published index (.bai, .crai, .csi, .tbi) older than its data file
+    // makes samtools and htslib warn "The index file is older than the data
+    // file" on every later query. publishDir copies a task's files in
+    // parallel, so the small index is often in place before its BAM or VCF
+    // is. Nextflow runs this handler after the last copy has finished. It
+    // sets each such index to its data file's time (or now, when later) when
+    // the index is a plain file with one link that this run wrote. Any other
+    // older index is left as it is and named in a warning: written before
+    // this run, beside a data file this run replaced, it may index other
+    // data; a hard link shares its time with the task's file in work/, and
+    // touching that would make the next -resume run its downstream tasks
+    // again. The search covers each sample's folder and family/ under
+    // --outdir, six levels down, and never the work directory.
+    def index_ext   = ['.bai', '.crai', '.csi', '.tbi']
+    def index_roots = (samplesheet_rows.collect { row -> row.sample } + ['family']).unique()
+        .collect { d -> file("${params.outdir}/${d}") }
+    def index_skip  = workflow.workDir.toAbsolutePath().normalize().toString() + '/'
+    def one_link    = { p ->
+        def n = 0
+        try { n = java.nio.file.Files.getAttribute(p, 'unix:nlink', java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+        catch( e ) { n = 0 }
+        java.nio.file.Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS) && n == 1
+    }
     run_info.onComplete {
+        try {
+            def start_ms = run_info.start.toInstant().toEpochMilli()
+            def kept = []
+            index_roots
+                .findAll { d -> d.getFileSystem() == java.nio.file.FileSystems.getDefault() && d.isDirectory() }
+                .each { d ->
+                    def found = java.nio.file.Files.walk(d, 6).withCloseable { s -> s.iterator().toList() }
+                    found.findAll { p ->
+                        def n = p.getFileName().toString()
+                        index_ext.any { x -> n.endsWith(x) } && !p.toAbsolutePath().normalize().toString().startsWith(index_skip)
+                    }.each { idx ->
+                        def n = idx.getFileName().toString()
+                        def data = idx.resolveSibling(n.substring(0, n.lastIndexOf('.')))
+                        if (java.nio.file.Files.exists(data)) {
+                            def t_idx  = java.nio.file.Files.getLastModifiedTime(idx)
+                            def t_data = java.nio.file.Files.getLastModifiedTime(data)
+                            if (t_idx < t_data && one_link(idx) && t_idx.toMillis() >= start_ms) {
+                                def now = java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis())
+                                java.nio.file.Files.setLastModifiedTime(idx, t_data > now ? t_data : now)
+                            } else if (t_idx < t_data) {
+                                kept << idx.toString()
+                            }
+                        }
+                    }
+                }
+            if (kept) {
+                run_log.warn "Index files older than their data file, left as they are: " +
+                    "${kept.take(10).join(', ')}${kept.size() > 10 ? " and ${kept.size() - 10} more" : ''}. " +
+                    "Each may index an earlier version of its file, and samtools and htslib warn on every query of it. " +
+                    "Index the file again (samtools index for a BAM or CRAM, bcftools index for a VCF), " +
+                    "or touch the index when the file was only copied."
+            }
+        }
+        catch( e ) {
+            run_log.warn "Could not check the times of the published index files: ${e}"
+        }
         def ignored = run_info.stats.processes.findAll { r -> r.ignored > 0 }.collect { r -> r.name }
         def failed  = run_info.stats.processes.findAll { r -> r.failed - r.ignored - r.retries > 0 }.collect { r -> r.name }
         if (ignored || failed) {
