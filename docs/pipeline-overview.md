@@ -107,7 +107,7 @@ graph LR
 | 5 | [SV Annotation](05-annotsv.md) | AnnotSV | `ANNOTSV_IMAGE` | If step 4 run |
 | 6 | [ClinVar Screen](06-clinvar-screen.md) | bcftools isec, then the cDNA read check (pysam) | `BCFTOOLS_IMAGE` + `PYPGX_IMAGE` | Yes |
 | 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `PHARMCAT_IMAGE` | Yes |
-| 8 | [HLA Typing](08-hla-typing.md) | T1K | `T1K_IMAGE` | Optional |
+| 8 | [HLA Typing](08-hla-typing.md) | T1K (+ OptiType with `HLA_QC=true`) | `T1K_IMAGE` (+ `OPTITYPE_IMAGE` + `SAMTOOLS_IMAGE`) | Optional |
 | 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | Recommended |
 | 9b | [STR Annotation](09b-stranger.md) | Stranger | `STRANGER_IMAGE` | If step 9 run |
 | 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `TELOMEREHUNTER_IMAGE` | Optional |
