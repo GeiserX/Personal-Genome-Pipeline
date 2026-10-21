@@ -792,6 +792,15 @@ def parascopy_section(work, schema):
     check("parascopy: a quality under 20 is not resolved and gets no carrier reading",
           "smn1" in pd and pd["smn1"]["cn"] is None and pd["smn1"]["text"] == "1 (quality 15, filter PASS), not resolved"
           and pd["reading"].startswith("SMN1 not resolved"), pd)
+    # A short row (fewer fields than the header) is skipped, not a crash.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS + "chr5\n"
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
+    try:
+        pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    except TypeError as e:
+        pd = {"error": repr(e)}
+    check("parascopy: a short row is skipped and the next row still read",
+          (pd.get("smn1") or {}).get("cn") == 2, pd)
     put(f"{d}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr5\t1\t2\t4\n")
     ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
     check("parascopy: a table without the psCN columns is unreadable", ps.get("state") == "unreadable", ps)
@@ -829,6 +838,12 @@ def parascopy_section(work, schema):
     check("not checked: Paraphase without an hba row keeps HBA1/HBA2 as not assessed",
           "not checked" not in txt
           and any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: an hba row for HBA1 alone keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
 
 
 def main():

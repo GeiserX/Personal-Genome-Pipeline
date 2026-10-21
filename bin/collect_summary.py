@@ -615,7 +615,7 @@ def parascopy_cn_at(rows, chrom, pos):
     for r in rows:
         try:
             regions = [(r["chrom"], int(r["start"]) + 1, int(r["end"]))]
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):  # TypeError: a short row (None fields)
             continue
         for h in (r.get("homologous_regions") or "*").split(","):
             m = re.match(r"^([^:]+):(\d+)-(\d+)", h.strip())
@@ -2265,7 +2265,8 @@ def collect(sample, sample_dir, declared_sex=None):
                     for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED])
         # Step 35b on a region subset (--paraphase_regions) may leave hba out
-        + ([] if any(g["region"] == "hba" for g in sections["paralogs"]["data"].get("genes", []))
+        + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
+                                      if g["region"] == "hba"}
            else [HBA_NOT_ASSESSED]),
     }
     return summary
