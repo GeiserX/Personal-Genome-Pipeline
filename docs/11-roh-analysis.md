@@ -38,7 +38,7 @@ For chip data (no `FORMAT/PL`), the script adds `-G30`.
 
 ## Output
 - `${SAMPLE}/vcf/${SAMPLE}_roh.txt` — bcftools roh output: per-site states (`ST` lines) and segments (`RG` lines)
-- `${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt` — the autosomal segments with **5 Mb or more outside the centromere and heterochromatin bands** (chrom, start, end, `length_bp` and `length_mb` of the part outside the bands, `masked_bp` of the part inside). The script and the Nextflow module write the same file with the same threshold and bands.
+- `${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt` — the autosomal segments with **5 Mb or more outside the centromere and heterochromatin bands** (chrom, start, end, and `length_bp` and `length_mb` of the part outside the bands). The script and the Nextflow module write the same file with the same threshold and bands.
 
 ### Centromere and heterochromatin bands
 

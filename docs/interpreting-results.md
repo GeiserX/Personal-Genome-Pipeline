@@ -548,7 +548,7 @@ GATK Mutect2 in mitochondrial mode detects variants with heteroplasmy fractions 
 - Length variants in the D-loop poly-C tracts (m.303-315 and m.16184-16193) in most samples: the reports list them apart and do not count them as heteroplasmy
 
 **When to investigate further:**
-- Heteroplasmic variant at a known disease position: the report lists each heteroplasmic call, and each call ClinVar holds as anything but benign, with its ClinVar class and gnomAD v3.1 frequency (`mito/<sample>_chrM_annotated.tsv`). [MITOMAP](https://www.mitomap.org/) has the curated status; look it up by hand, as it refuses scripted requests
+- Heteroplasmic variant at a known disease position: the report lists each heteroplasmic call, and each call ClinVar classes as anything but benign, with its ClinVar class and gnomAD v3.1 frequency (`mito/<sample>_chrM_annotated.tsv`). [MITOMAP](https://www.mitomap.org/) has the curated status; look it up by hand, as it refuses scripted requests
 - m.3243A>G (MELAS) or m.8344A>G (MERRF) at detectable heteroplasmy levels
 - Any position in MT-ATP6, MT-ND genes with AF >0.10
 

@@ -1769,9 +1769,10 @@ def min_allele(pos, ref, alt):
 
 MITO_ANNOT_COLS = ["chrom", "pos", "ref", "alt", "filter", "af", "clinvar_id", "clinvar_significance",
                    "clinvar_review", "clinvar_condition", "gnomad_af_hom", "gnomad_af_het", "gnomad_max_hl"]
-# ClinVar classes that put a chrM variant in the report's list.
+# ClinVar classes: P/LP are counted; a record whose every class is benign or
+# carries no classification is not listed unless the call is heteroplasmic.
 CLINVAR_PLP = ("Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic")
-CLINVAR_BENIGN = ("Benign", "Likely_benign", "Benign/Likely_benign")
+CLINVAR_BENIGN = ("Benign", "Likely_benign", "Benign/Likely_benign", "not_provided")
 
 
 def clinvar_terms(sig):

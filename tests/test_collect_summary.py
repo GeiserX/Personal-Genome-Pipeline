@@ -912,7 +912,7 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
     out = subprocess.run(["bash", "-c", f'MASKED_BANDS="{collect_summary.MASKED_BANDS}"; OUTPUT="$1"; {awk}', "_",
                           f"{d}/vcf/S_roh.txt"], capture_output=True, text=True)
     check("ROH: step 11's summary awk lists the segments the report lists",
-          out.returncode == 0 and out.stdout == "chr2\t10000001\t17000000\t7000000\t7.0\t0\n", (out.stdout, out.stderr))
+          out.returncode == 0 and out.stdout == "chr2\t10000001\t17000000\t7000000\t7.0\n", (out.stdout, out.stderr))
 
     # Telomere: 40 and 4,000 intratelomeric reads at 30x (620 M reads of 150 bp).
     head = ("PID\tsample\ttotal_reads\tread_lengths\trepeat_threshold_set\trepeat_threshold_used\tintratel_reads\t"
@@ -1002,7 +1002,7 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
     cv = "##fileformat=VCFv4.1\n##fileDate=2026-10-05\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
     write_tabixed_vcf(f"{work}/rsec/clinvar/clinvar_chr.vcf.gz", cv, [
         ["chr1\t100\t1\tC\tT\t.\t.\tCLNSIG=Benign"],
-        ["chrM\t73\t9\tA\tG\t.\t.\tCLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNDN=not_provided",
+        ["chrM\t73\t9\tA\tG\t.\t.\tCLNSIG=not_provided;CLNREVSTAT=no_classification_provided;CLNDN=not_provided",
          "chrM\t302\t8\tA\tAC\t.\t.\tCLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNDN=not_provided",
          "chrM\t3243\t7\tA\tG\t.\t.\tCLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel;CLNDN=MELAS",
          "chrM\t16189\t6\tT\tA\t.\t.\tCLNSIG=Uncertain_significance;CLNREVSTAT=criteria_provided,_single_submitter;"
@@ -1034,7 +1034,7 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
           ma.get("clinvar_plp") == 1 and "ClinVar pathogenic or likely pathogenic: 1" in txt
           and "chrM:3243 A>G  AF 0.3  ClinVar Pathogenic (reviewed_by_expert_panel; MELAS)  gnomAD AF hom 0.00002, het 0.0003"
           in txt and "<td>MELAS</td>" in html and "fileDate 2026-10-05" not in txt and "2026-10-05" in txt, txt)
-    check("mito: the homoplasmic benign m.73A>G is not listed; the filtered m.9000 is not either",
+    check("mito: the homoplasmic m.73A>G with no ClinVar class is not listed; the filtered m.9000 is not either",
           not any(v["pos"] in ("73", "9000") for v in ma["variants"]), ma["variants"])
     errs = validate.validate(schema, json.loads(json.dumps(summ)))
     check("report sections: the summary validates", not errs, errs)

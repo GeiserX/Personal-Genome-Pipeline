@@ -58,7 +58,7 @@ The last stage (`bin/collect_summary.py mito-annotate`, in `PYTHON_IMAGE`) write
 - ClinVar's record of the same allele from `clinvar/clinvar_chr.vcf.gz`, the ClinVar file `setup.sh` installs: `clinvar_id`, `clinvar_significance` (CLNSIG), `clinvar_review` (CLNREVSTAT) and `clinvar_condition` (CLNDN);
 - gnomAD v3.1's chrM sites of the same allele (`gnomad_mito/`, pinned in `versions.env`): `gnomad_af_hom` (the share of gnomAD's samples with the allele at 95% or more), `gnomad_af_het` (at 10% to 95%) and `gnomad_max_hl` (the highest level gnomAD saw).
 
-Alleles are matched by position, REF and ALT after the bases they share are trimmed, so Mutect2's multi-allelic indels meet ClinVar's and gnomAD's single-allele records. A file that is not installed leaves its columns `.`, and the table's first lines say which. The reports list each PASS call that is heteroplasmic, or that ClinVar holds as anything but benign, with these columns, and count the ClinVar pathogenic or likely pathogenic ones.
+Alleles are matched by position, REF and ALT after the bases they share are trimmed, so Mutect2's multi-allelic indels meet ClinVar's and gnomAD's single-allele records. A file that is not installed leaves its columns `.`, and the table's first lines say which. The reports list each PASS call that is heteroplasmic, or that ClinVar classes as anything but benign (a record with no classification, `not_provided`, does not count), with these columns, and count the ClinVar pathogenic or likely pathogenic ones.
 
 Step 13's VEP annotates the main VCF, whose chrM records come from the nuclear caller: a heteroplasmic call only Mutect2 makes has no VEP record, so this step annotates its own calls. The Nextflow `MITO_VARIANTS` does not annotate yet; its reports say so.
 

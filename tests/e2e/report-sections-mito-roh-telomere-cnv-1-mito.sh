@@ -69,9 +69,33 @@ check "the report names the annotation and both sources" \
 check "the report counts ClinVar P/LP chrM calls" has '^  ClinVar pathogenic or likely pathogenic: [0-9]+$' "$TXT"
 check "the ROH section says autosomes only and no population AFs" has 'No population allele frequencies were used' "$TXT"
 S11="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
-check "step 11's summary has the masked_bp column" has $'^chrom\tstart\tend\tlength_bp\tlength_mb\tmasked_bp$' "$(cat "$S11" 2>/dev/null)"
-if grep -q '^## Telomere' <<< "$TXT"; then
-  check "the telomere section gives the intratelomeric read count" has '^  Intratelomeric reads: ' "$TXT"
-fi
+check "step 11's summary keeps its columns" has $'^chrom\tstart\tend\tlength_bp\tlength_mb$' "$(cat "$S11" 2>/dev/null)"
+
+# --- 5. the telomere read floor on TelomereHunter's real summary -------------------
+# Step 10 on a copy of the sample (the BAM hard-linked), as bash-step-10 runs
+# it. The slice has no telomeric read, so the report must warn.
+TS="${SAMPLE}telfloor"
+mkdir -p "${GENOME_DIR}/${TS}/aligned"
+ln -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${GENOME_DIR}/${TS}/aligned/${TS}_sorted.bam"
+ln -f "${GENOME_DIR}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" "${GENOME_DIR}/${TS}/aligned/${TS}_sorted.bam.bai"
+run_step 10-telomere-hunter.sh "$TS"
+check_step_exit 10-telomere-hunter.sh
+head -n 2 "${GENOME_DIR}/${TS}/telomere/${TS}/${TS}/${TS}_summary.tsv" 2>/dev/null | cut -f1-11
+TEL=$(python3 - "${REPO}/bin" "${GENOME_DIR}/${TS}" "$TS" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import collect_summary, render_report
+s = collect_summary.collect(sys.argv[3], sys.argv[2])
+d = s["sections"]["telomere"]["data"]
+print(f"reads={d.get('intratelomeric_reads')} depth={d.get('depth')} floor={d.get('read_floor')} low={d.get('low_reads')}")
+print(render_report.text_report(s))
+PY
+)
+grep -E '^reads=|Intratelomeric|WARNING' <<< "$TEL"
+check "the summary reads TelomereHunter's intratel_reads, total_reads and read_length" \
+  has '^reads=[0-9]+ depth=[0-9.]+ floor=[0-9]+ low=(True|False)$' "$TEL"
+check "the slice's telomeric reads are under the floor, and the report warns" \
+  has '^  WARNING: too few telomeric reads for a stable estimate' "$TEL"
+in_genome "$BCFTOOLS_IMAGE" rm -rf "$TS"
 
 finish

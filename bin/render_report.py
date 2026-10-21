@@ -1134,7 +1134,7 @@ def mito_lines(d):
         lines.append(f"Annotation ({a['source']}): ClinVar {a.get('clinvar') or 'unknown'}; gnomAD {a.get('gnomad') or 'unknown'}")
         lines.append(f"ClinVar pathogenic or likely pathogenic: {a.get('clinvar_plp', 0)}")
         if a.get("variants"):
-            lines.append("Heteroplasmic, or in ClinVar and not benign:")
+            lines.append("Heteroplasmic, or in ClinVar with a class other than benign:")
             lines += [f"  {mito_variant_text(v)}" for v in a["variants"]]
     elif a.get("note"):
         lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
