@@ -77,7 +77,7 @@ Two positions further apart than a read pair spans (about 500 bp for short reads
 
 The step writes `${SAMPLE}_compound_het_pairs.tsv`, one row per pair: GENE, CHROM, POS_1, REF_1, ALT_1, POS_2, REF_2, ALT_2, DISTANCE, PHASE, CIS_READS, TRANS_READS, PHASE_NOTE. CIS_READS and TRANS_READS are the reads or read pairs that show the two variants on the same copy and on different copies. The per-variant TSV gets a PHASE column after GT: `trans` when the variant is in trans with at least one partner, else `unknown` when one of its pairs is unknown, else `cis`. The HTML and text reports count the pairs by phase and list the first 20 trans ones by name.
 
-In a Nextflow run the `COMPHET_PHASE` process does the same (same script, `PYPGX_IMAGE`) after `SLIVAR`, on its compound-het VCF and the sample's BAM; a sample without a BAM gets every pair `unknown`. It publishes `slivar/<id>_compound_het_pairs.tsv`. The Nextflow report still shows only the prioritized count for this step, as before.
+In a Nextflow run the `COMPHET_PHASE` process does the same (same script, `PYPGX_IMAGE`) after `SLIVAR`, on its compound-het VCF and the sample's BAM; a sample without a BAM gets every pair `unknown`. It publishes `slivar/<id>_compound_het_pairs.tsv`. The Nextflow report still shows only the prioritized count for this step: `HTML_REPORT` has a place for the pairs table, but the annotation workflow does not pass it on yet.
 
 **Important:** `cis` and `unknown` pairs are not two-hit findings. A `trans` pair is a candidate worth a look in a gene that fits your health history, and confirming it still needs a clinical test.
 

@@ -118,6 +118,16 @@ Checks:
      (PGP_IMPACT, PGP_TX, PGP_FREQ, PGP_CALL), drops the common one with
      keep=noncommon, and agrees with the summary on every record.
 
+ 25. step 35's Parascopy table gets a section of its own: SMN1 and SMN2 at
+     exon 7 from the paralog-specific copy number (from the row's own region
+     or its homologous one), the aggregate copy number there and the SMA
+     reading (two copies, one copy a carrier, a quality under 20 not
+     resolved), in both reports, with HBA1/HBA2 listed as not assessed; a
+     folder with neither step 35 nor step 35b prints "Paralog copy number:
+     not checked (neither step 35 nor step 35b ran)" in both reports, a failed
+     step 35 is named in that line, and Paraphase alone leaves the line out;
+     a table without the psCN columns is unreadable.
+
 Run: python3 tests/test_collect_summary.py
 """
 import gzip
@@ -734,6 +744,125 @@ def comphet_phase_section(work, schema):
           "Phase from the reads: 1 trans, 0 cis, 0 unknown of 1 pairs" in txt and "unphased single-sample data" not in txt, txt)
     check("comphet phase: the Nextflow summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
           validate.validate(schema, json.loads(json.dumps(summ))))
+
+
+SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+            "homologous_regions\n")
+
+
+def parascopy_section(work, schema):
+    """Step 35's own section, and the not-checked line without steps 35 and 35b."""
+    d = os.path.join(work, "parascopy", "S")
+    # A row over SMN1 exon 7 (chr5:70951946) whose homologous region holds
+    # SMN2 exon 7 (chr5:70076526), and a row elsewhere in the locus.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70925378\t70934928\tSMN1\tPASS\t4\t80\tPASS\t2,2\t40,40\tchr5:70049961-70059504:+\n"
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
+    summ, txt, html = render(d)
+    # .get: without the section (its SECTIONS entry removed) every check fails, none crashes
+    ps = summ["sections"].get("parascopy") or {"state": "missing", "step": None, "data": {}}
+    pd = ps["data"]
+    check("parascopy: its own section, step 35, read", ps["state"] == "ok" and ps["step"] == "35", ps)
+    check("parascopy: SMN1 2 and SMN2 2 at exon 7, agCN 4 there",
+          ((pd.get("smn1") or {}).get("cn"), (pd.get("smn2") or {}).get("cn"), pd.get("agcn"), pd.get("agcn_qual"))
+          == (2, 2, "4", "60"), pd)
+    check("parascopy: two SMN1 copies read as not a carrier, 2+0 not ruled out",
+          pd.get("reading", "").startswith("two SMN1 copies: not a carrier") and "2+0" in pd.get("reading", ""), pd)
+    check("parascopy: the text report has the section with both genes and the reading",
+          "## SMN1/SMN2 Copy Number (Parascopy, short reads)" in txt
+          and "  SMN1 copies: 2 (quality 33, filter PASS)\n" in txt
+          and "  SMN2 copies: 2 (quality 30, filter PASS)\n" in txt
+          and "  SMN1 and SMN2 together (agCN) at exon 7: 4 (quality 60, filter PASS)\n" in txt
+          and "  Reading: two SMN1 copies: not a carrier" in txt and "not checked" not in txt, txt)
+    card_s = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("parascopy: the HTML card has both genes, the reading and the short-read note",
+          ">SMN1 copies<" in card_s and "2 (quality 33, filter PASS)" in card_s and ">SMN2 copies<" in card_s
+          and "not a carrier by copy number" in card_s and "HBA1/HBA2 and CYP21A2 have no Parascopy" in card_s
+          and "Not checked" not in html, card_s)
+    check("parascopy: HBA1/HBA2 listed as not assessed without step 35b",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"])
+          and "HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads" in txt, summ["not_assessed"])
+    check("parascopy: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    # One SMN1 copy, the row written from SMN2's side: SMN1 is the second psCN.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70075495\t70077900\tSMN1\tPASS\t3\t50\tPASS\t2,1\t25,28\tchr5:70950921-70953320:+\n")
+    summ, txt, _ = render(d)
+    pd = (summ["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: from SMN2's row, SMN1 1 and SMN2 2, read as a carrier",
+          ((pd.get("smn1") or {}).get("cn"), (pd.get("smn2") or {}).get("cn")) == (1, 2)
+          and pd.get("reading") == "one SMN1 copy: the pattern of an SMA carrier"
+          and "  Reading: one SMN1 copy: the pattern of an SMA carrier\n" in txt, pd)
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t3\t35\tPASS\t1,2\t15,16\tchr5:70075496-70077900:+\n")
+    pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: a quality under 20 is not resolved and gets no carrier reading",
+          "smn1" in pd and pd["smn1"]["cn"] is None and pd["smn1"]["text"] == "1 (quality 15, filter PASS), not resolved"
+          and pd["reading"].startswith("SMN1 not resolved"), pd)
+    # No row over SMN1 exon 7: the reading says so, not "not resolved".
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70925378\t70934928\tSMN1\tPASS\t4\t80\tPASS\t2,2\t40,40\tchr5:70049961-70059504:+\n")
+    pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: no row over exon 7 gets that reason as its reading",
+          pd.get("reading") == "no row of step 35's table covers SMN1 exon 7: no carrier reading", pd)
+    # A short row (fewer fields than the header) is skipped, not a crash.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS + "chr5\n"
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
+    try:
+        pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    except TypeError as e:
+        pd = {"error": repr(e)}
+    check("parascopy: a short row is skipped and the next row still read",
+          (pd.get("smn1") or {}).get("cn") == 2, pd)
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr5\t1\t2\t4\n")
+    ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
+    check("parascopy: a table without the psCN columns is unreadable", ps.get("state") == "unreadable", ps)
+
+    # Neither step 35 nor step 35b: the not-checked line in both reports.
+    n = os.path.join(work, "noparalog", "S")
+    put(f"{n}/vcf/S.vcf.gz", VCF_HEAD + "chr1\t1\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n", gz=True)
+    summ, txt, html = render(n)
+    line = "Paralog copy number: not checked (neither step 35 nor step 35b ran)"
+    check("not checked: the text report says so when neither paralog step ran",
+          f"## Paralog Copy Number\n---\n  {line}\n" in txt, txt)
+    card_n = html.split("<h2>Paralog Copy Number</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("not checked: the HTML report has the card with the same line",
+          "Not checked" in card_n and line in card_n, card_n)
+    check("not checked: both steps under Steps Not Run",
+          "SMN1/SMN2 copy number (Parascopy, short reads)" in summ["not_run"]
+          and "Paralog genes (Paraphase, PacBio HiFi)" in summ["not_run"], summ["not_run"])
+    put(f"{n}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - 60}\nstep\t35\tfailed (exit 1)\n")
+    _, txt, _ = render(n)
+    check("not checked: a failed step 35 is named",
+          "Paralog copy number: not checked (step 35 failed, step 35b not run)" in txt, txt)
+    os.remove(f"{n}/logs/run_status.tsv")
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\nhba\tHBA2\t2\tcalled\t.\t4\t90\t31\n")
+    summ, txt, html = render(n)
+    check("not checked: Paraphase alone leaves the line out, and HBA is no longer listed as not assessed",
+          "not checked" not in txt and "Not checked" not in html and "HBA2: 2 (called)" in txt
+          and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), txt)
+    # Step 35b on a region subset (smn1 only): HBA1/HBA2 stays not assessed.
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "smn1\tSMN1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, txt, _ = render(n)
+    check("not checked: Paraphase without an hba row keeps HBA1/HBA2 as not assessed",
+          "not checked" not in txt
+          and any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: an hba row for HBA1 alone keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\nhba\tHBA2\t.\tno call\t.\t.\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: HBA2 with no call keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
 
 
 def main():
@@ -1432,6 +1561,7 @@ def main():
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
+        parascopy_section(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

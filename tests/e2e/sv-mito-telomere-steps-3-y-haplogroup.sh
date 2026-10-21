@@ -2,8 +2,8 @@
 # Step 37 (Yleaf) reads the sex step 16 infers. On the fixture's slices
 # indexcov reads HG002 as female (case 34), so the step skips HG002 with one
 # line. Two copies of the sample (the BAM hard-linked) carry an indexcov .ped
-# of a male and of a female sample: the male one runs Yleaf on the chrY slice
-# (chrY:2.7-3.0 Mb) and must write a haplogroup or say "insufficient
+# of a male and of a female sample: the male one runs Yleaf on the chrY slices
+# (six stretches from 2.7 to 20.7 Mb) and must write a haplogroup or say "insufficient
 # markers"; the female one is skipped.
 . "$(dirname "$0")/lib.sh"
 
