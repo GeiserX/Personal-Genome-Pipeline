@@ -844,6 +844,12 @@ def parascopy_section(work, schema):
     summ, _, _ = render(n)
     check("not checked: an hba row for HBA1 alone keeps HBA1/HBA2 as not assessed",
           any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\nhba\tHBA2\t.\tno call\t.\t.\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: HBA2 with no call keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
 
 
 def main():

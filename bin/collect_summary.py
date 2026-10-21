@@ -110,7 +110,7 @@ NOT_ASSESSED = [
     "Variants of uncertain significance (not interpreted)",
 ]
 
-# Added to NOT_ASSESSED unless step 35b (Paraphase, PacBio HiFi) gave a result:
+# Added to NOT_ASSESSED unless step 35b (Paraphase, PacBio HiFi) called both HBA1 and HBA2:
 # Parascopy's models (step 35) have none for the alpha-globin genes.
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads: Parascopy has no "
                     "model for them, so only step 35b on a PacBio HiFi BAM assesses them")
@@ -2266,7 +2266,7 @@ def collect(sample, sample_dir, declared_sex=None):
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED])
         # Step 35b on a region subset (--paraphase_regions) may leave hba out
         + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
-                                      if g["region"] == "hba"}
+                                      if g["region"] == "hba" and g["status"] == "called"}
            else [HBA_NOT_ASSESSED]),
     }
     return summary
