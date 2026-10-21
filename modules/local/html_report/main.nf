@@ -50,12 +50,12 @@ process HTML_REPORT {
     for f in input/*; do
         case "\$(basename "\$f")" in
             sample.vcf.gz) ;;
-            ${id}_clinvar_hits.vcf)                       place clinvar "\$f" ;;
+            ${id}_clinvar_hits.vcf|${id}_clinvar_cdna_check.tsv) place clinvar "\$f" ;;
             ${id}.report.json|${id}.report.html)          place pharmcat "\$f" ;;
             ${id}_phenotypes.tsv|${id}_cpic_recommendations.txt) place cpic "\$f" ;;
             ${id}_clinical.vcf.gz)                        place clinical "\$f" ;;
             ${id}.cpsr.grch38.html)                       place cpsr "\$f" ;;
-            ${id}_prioritized.vcf.gz)                     place slivar "\$f" ;;
+            ${id}_prioritized.vcf.gz|${id}_compound_het_pairs.tsv) place slivar "\$f" ;;
             ${id}_roh.txt)                                place roh "\$f" ;;
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
             ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
@@ -73,7 +73,7 @@ process HTML_REPORT {
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
             ${id}_cnvs.txt)                               place cnvpytor "\$f" ;;
             ${id}_sv_consensus.vcf.gz)                    place sv_merged "\$f" ;;
-            ${id}_pypgx_summary.tsv|${id}_pharmcat_comparison.tsv) place pypgx "\$f" ;;
+            ${id}_pypgx_summary.tsv|${id}_pharmcat_comparison.tsv|${id}_cyp2d6_depth_check.tsv) place pypgx "\$f" ;;
             indexcov)                                     ln -s "\$(readlink -f "\$f")" "\$S/indexcov" ;;
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;
             ${id}_pgx_consensus.tsv)                      place pgx_consensus "\$f" ;;
