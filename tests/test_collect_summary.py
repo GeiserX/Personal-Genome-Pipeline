@@ -821,6 +821,14 @@ def parascopy_section(work, schema):
     check("not checked: Paraphase alone leaves the line out, and HBA is no longer listed as not assessed",
           "not checked" not in txt and "Not checked" not in html and "HBA2: 2 (called)" in txt
           and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), txt)
+    # Step 35b on a region subset (smn1 only): HBA1/HBA2 stays not assessed.
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "smn1\tSMN1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, txt, _ = render(n)
+    check("not checked: Paraphase without an hba row keeps HBA1/HBA2 as not assessed",
+          "not checked" not in txt
+          and any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
 
 
 def main():

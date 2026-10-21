@@ -82,7 +82,7 @@ On the CI fixture the step takes 8 seconds: one thread, the background depth ove
 ## What Is and Is Not Assessed
 
 - **Assessed:** the copy number of SMN1 and SMN2, together and, where possible, each.
-- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; and CYP21A2 and HBA1/HBA2, for which Parascopy has no model. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. HBA1/HBA2 copy number on short reads, the 3.7 kb and 4.2 kb alpha-thalassaemia deletions first, needs another method, such as a depth check over the two deletion spans against their flanks; none is built yet. A PacBio HiFi BAM gets all of these from step 35b.
+- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; and CYP21A2 and HBA1/HBA2, for which Parascopy has no model. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. HBA1/HBA2 copy number on short reads, the 3.7 kb and 4.2 kb alpha-thalassaemia deletions first, needs another method, such as a depth check over the two deletion spans against their flanks; none is built yet. A PacBio HiFi BAM gets the genes above from step 35b.
 
 ## In the Reports
 

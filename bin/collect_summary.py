@@ -2264,7 +2264,9 @@ def collect(sample, sample_dir, declared_sex=None):
         "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
                     for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
         "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED])
-        + ([] if sections["paralogs"]["state"] in ("ok", "stale") else [HBA_NOT_ASSESSED]),
+        # Step 35b on a region subset (--paraphase_regions) may leave hba out
+        + ([] if any(g["region"] == "hba" for g in sections["paralogs"]["data"].get("genes", []))
+           else [HBA_NOT_ASSESSED]),
     }
     return summary
 
