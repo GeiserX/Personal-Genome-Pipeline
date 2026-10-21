@@ -78,4 +78,6 @@ About a second, measured in three 30-40x WGS runs ([runtime](hardware-requiremen
   | `not_resolved` | fewer than 3 reads carry a run | the motif is not resolved |
   | `not_checked` | no BAM, or the Nextflow pipeline (its STRANGER process gets no BAM) | confirm the flag with repeat-primed PCR |
 
+  A rerun of the script keeps an existing table unless it is `not_checked`, so a BAM added later gets counted.
+
   The count reads the motif; it does not size a long expansion, and a heterozygous AAGGG allele is a carrier state, not CANVAS. CI checks it on made-up reads (`tests/test_rfc1_motif.py`, `tests/e2e/expansions-and-rfc1-1-motif.sh`); how it does on real carriers, whose reads the aligner may clip or misplace differently, has not been measured. Confirm any `pathogenic_motif` or `uncertain_motif` with motif-aware, flanking-PCR or repeat-primed-PCR testing, and only if cerebellar-ataxia/neuropathy/vestibular symptoms are present.

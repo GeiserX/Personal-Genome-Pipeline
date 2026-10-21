@@ -86,8 +86,12 @@ fi
 RFC1_FLAG=$(awk -F'\t' '!/^#/ && $8 ~ /(^|;)REPID=RFC1(;|$)/ && $8 ~ /(^|;)STR_STATUS=[^;]*(pre|full)_mutation/ {print "yes"; exit}' "$OUT_VCF")
 if [ -z "$RFC1_FLAG" ]; then
   rm -f "$MOTIF_TSV"
-elif [ -z "$STRANGER_RAN" ] && [ -s "$MOTIF_TSV" ] && [ "$MOTIF_TSV" -nt "$OUT_VCF" ]; then
+elif [ -z "$STRANGER_RAN" ] && [ -s "$MOTIF_TSV" ] && [ "$MOTIF_TSV" -nt "$OUT_VCF" ] \
+     && ! grep -q $'\tnot_checked\t' "$MOTIF_TSV"; then
+  # A not_checked table (no BAM last time) is redone, so a BAM that appeared
+  # since gets counted.
   echo "RFC1 motif count already exists: ${MOTIF_TSV}"
+  echo "Delete to re-run: rm ${MOTIF_TSV}"
 else
   if [ -f "$BAM" ] && [ -f "${BAM}.bai" ]; then
     MOTIF_ARGS=(--bam "$(cpath "$BAM")")
