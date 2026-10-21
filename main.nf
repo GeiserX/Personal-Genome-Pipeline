@@ -570,6 +570,12 @@ workflow {
     // the HLA types, an agreed CYP2D6 call and MT-RNR1 from the chrM calls
     // as outside calls
     // ═══════════════════════════════════════════════════════════════════
+    // Opt-in (--medications): the user's own list of the drugs taken, never a
+    // default. CPIC_LOOKUP checks it for CYP2D6 and CYP2C19 inhibitors.
+    ch_medications = params.medications
+        ? Channel.value(file(params.medications, checkIfExists: true))
+        : Channel.value([])
+    ch_inhibitors  = Channel.value(file("${projectDir}/assets/pgx_inhibitors.tsv", checkIfExists: true))
     PGX(
         ch_vcf,
         ch_reference,
@@ -582,7 +588,9 @@ workflow {
         BAM_ANALYSIS.out.hla_alleles,
         ch_cyrius_install,
         ch_gencode_exons,
-        BAM_ANALYSIS.out.mito_vcf
+        BAM_ANALYSIS.out.mito_vcf,
+        ch_medications,
+        ch_inhibitors
     )
 
     // ═══════════════════════════════════════════════════════════════════
