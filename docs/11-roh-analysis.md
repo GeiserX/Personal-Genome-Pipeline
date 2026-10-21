@@ -38,13 +38,19 @@ For chip data (no `FORMAT/PL`), the script adds `-G30`.
 
 ## Output
 - `${SAMPLE}/vcf/${SAMPLE}_roh.txt` — bcftools roh output: per-site states (`ST` lines) and segments (`RG` lines)
-- `${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt` — the autosomal segments of **5 Mb or more** (chrom, start, end, length in bp and Mb). The script and the Nextflow module write the same file with the same threshold.
+- `${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt` — the autosomal segments with **5 Mb or more outside the centromere and heterochromatin bands** (chrom, start, end, `length_bp` and `length_mb` of the part outside the bands, `masked_bp` of the part inside). The script and the Nextflow module write the same file with the same threshold and bands.
+
+### Centromere and heterochromatin bands
+
+Few markers map in GRCh38's centromeres (cytoband stain `acen`), its large heterochromatin blocks (`gvar`, such as 1q12, 9q12 and 16q11.2) and the acrocentric stalks (`stalk`), so `bcftools roh` reads long homozygous runs there that are artefacts. The script, the Nextflow module and the reports take the part of each segment that lies in one of these bands out of its length; a segment wholly inside one counts as nothing. The bands are the `acen`, `gvar` and `stalk` rows of UCSC's `cytoBand.hg38.txt` (the file `setup.sh` installs for step 10), neighbouring rows merged into one span around each centromere (two on chrY), written into `scripts/11-roh-analysis.sh`, `modules/local/roh/main.nf` and `bin/collect_summary.py` as the same line (a unit test checks they agree). On chr1 the span is 121.7-143.2 Mb, on chr9 42.2-61.5 Mb, on chr18 15.4-21.5 Mb.
+
+The reports count autosomes only: Segments, Total and Largest leave out chrX and chrY (a man's single X reads as one long run), and the part of each segment in a band. They say how much was left out.
 
 ## Interpretation
 
 ### Total ROH and parental relationship
 
-When parents are related, a child is autozygous (both copies from the same ancestor) over a fraction F of the genome, the inbreeding coefficient. The expected total of long ROH is F times the length of the autosomes, about 2,900 Mb. The table counts **autosomal segments of 5 Mb or more** (the ones the script prints), leaving out the centromeric artifacts listed below. Shorter segments come mostly from distant shared ancestry and population history, not from the parents' relationship.
+When parents are related, a child is autozygous (both copies from the same ancestor) over a fraction F of the genome, the inbreeding coefficient. The expected total of long ROH is F times the length of the autosomes, about 2,900 Mb. The table counts **autosomal segments of 5 Mb or more** (the ones the script prints), without their part in the centromere and heterochromatin bands above. Shorter segments come mostly from distant shared ancestry and population history, not from the parents' relationship.
 
 | Parents' relationship | F | Expected total of ROH segments of 5 Mb or more |
 |---|---|---|
@@ -64,7 +70,7 @@ grep '^RG' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt" \
   | awk '$3 ~ /^chr[0-9]+$/ && $6 >= 5000000 {sum += $6; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}'
 ```
 
-Subtract any segment that lies in one of the centromeric regions below.
+That sums the raw segments; the summary file already has the band parts taken out, so `awk -F'\t' 'NR > 3 {sum += $4; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"` gives the total the table means.
 
 ### Single segments
 
@@ -78,11 +84,7 @@ Subtract any segment that lies in one of the centromeric regions below.
 ## Important Notes
 - The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode
 - `--AF-dflt 0.4` sets a default allele frequency when population AF data is unavailable — suitable for single-sample WGS
-- Not done yet: a population allele-frequency file (`--AF-file`, for example from gnomAD) would replace that one default value with real frequencies per site and give better segment edges. Neither the script nor the module uses one today.
-- **Known false-positive regions** (centromeric/pericentromeric, always appear as ROH in WGS):
-  - chr1: 125-143 MB
-  - chr9: 42-60 MB
-  - chr18: 15-20 MB
-- These centromeric artifacts should be excluded when calculating total ROH burden
+- No population allele frequencies are used, and the reports say so: read the total and the short segments as rough, the long segments are the signal. A population allele-frequency file (`--AF-file`, for example from gnomAD) would replace the one default value with real frequencies per site and give better segment edges; neither the script nor the module uses one today, and its effect on the total has not been measured.
+- The centromere and heterochromatin bands (above) are taken out of every count; the step and the reports do it, so there is nothing to subtract by hand
 - A single large ROH (>20 MB) confined to one chromosome may indicate uniparental disomy — verify with SNP array or parental samples
 - ROH within known disease gene regions warrants checking for homozygous pathogenic variants
