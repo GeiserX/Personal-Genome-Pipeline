@@ -672,8 +672,9 @@ def read_medications(path):
     with open(path) as f:
         for line in f:
             text = line.split("#", 1)[0].strip()
-            if text:
-                out.append((text, norm_drug(re.split(r"[\s,;]+", text)[0])))
+            name = norm_drug(re.split(r"[\s,;]+", text.strip(" \t,;"))[0]) if text else ""
+            if name:
+                out.append((text, name))
     return out
 
 

@@ -208,6 +208,13 @@ def phenoconversion_checks(work):
     check("phenoconversion: the docs line says it is an aid for the clinician",
           "an aid for your clinician, not advice" in sec, sec)
 
+    # 8b'. a line that starts with a separator still names its drug
+    _, rec, rows, _ = run_report(work, "PHENOSEP", pheno_report(), medications=", paroxetine\n;\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: ', paroxetine' is read as paroxetine",
+          got.get("CYP2D6", [""] * 5)[4:] == ["Poor Metabolizer (phenoconverted by paroxetine)"]
+          and "Not in the inhibitor table" not in section(rec), (got.get("CYP2D6"), section(rec)))
+
     # 8c. moderate: activity score x 0.5; without a score nothing is converted
     _, rec, rows, _ = run_report(work, "PHENOMOD", pheno_report("2.0"), medications="duloxetine\n")
     got = {r[0]: r for r in rows}
