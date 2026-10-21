@@ -2,7 +2,8 @@
 # The bash leg of the parity check (scripts/ci/parity-diff.sh): the single
 # step scripts on the fixture reads, as sample HG002P: 01b (fastp), 02
 # (minimap2, markdup), 03 (DeepVariant, male), 06, 08 and 36 (T1K's HLA types
-# as PharmCAT's outside calls), 07, 11 and 25. The next case runs the
+# as PharmCAT's outside calls), 20 (chrM calls, PharmCAT's MT-RNR1 call, as
+# the pipeline's PHARMCAT reads MITO_VARIANTS'), 07, 11 and 25. The next case runs the
 # Nextflow pipeline on the same reads under the same sample name; the E2E
 # workflow then compares the two.
 #
@@ -37,6 +38,8 @@ run_step 08-hla-typing.sh "$P"
 check_step_exit 08-hla-typing.sh
 run_step 36-pgx-consensus.sh "$P"
 check_step_exit 36-pgx-consensus.sh
+run_step 20-mtoolbox.sh "$P"
+check_step_exit 20-mtoolbox.sh
 run_step 07-pharmacogenomics.sh "$P"
 check_step_exit 07-pharmacogenomics.sh
 run_step 11-roh-analysis.sh "$P"

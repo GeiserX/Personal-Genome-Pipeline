@@ -36,6 +36,12 @@ Checks:
      takes the genotype PharmCAT read at the *3 (-1639) position as a
      labelled single-position fallback, and a position with no genotype is
      'not callable'.
+  7. an MT-RNR1 outside call (step 07 makes it from step 20's chrM calls) is
+     not checked against step 36's consensus table, which never lists it:
+     with a table that passes CYP2D6 only, MT-RNR1 stays called, gets its
+     drug list and no stale warning, while an unconfirmed CYP2D6 outside call
+     is still held back; `step36-outside` lists the step 36 genes the report
+     calls from an outside call and never MT-RNR1.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -75,14 +81,22 @@ def dip(a1, a2, phen):
                                   "label": f"{a1}/{a2}", "phenotypes": [phen]}]}
 
 
-def run_report(work, name, data, pypgx=None):
-    """Run the cpic-report command; returns (exit code, recommendations, phenotypes rows, comparison rows)."""
+def run_report(work, name, data, pypgx=None, consensus=None):
+    """Run the cpic-report command; returns (exit code, recommendations, phenotypes rows, comparison rows).
+    consensus: rows (Gene, Result, Outside_call) of a step 36 table to pass."""
     d = os.path.join(work, name)
     os.makedirs(d)
     rep = os.path.join(d, "report.json")
     with open(rep, "w") as f:
         json.dump(data, f)
     args = ["cpic-report", "--sample", name, "--report", rep, "--outdir", d]
+    if consensus is not None:
+        cp = os.path.join(d, "consensus.tsv")
+        with open(cp, "w") as f:
+            f.write("Gene\tResult\tOutside_call\tReason\tEvidence\n")
+            for g, res, out in consensus:
+                f.write(f"{g}\t{res}\t{out}\ttest\ttest\n")
+        args += ["--consensus", cp]
     comp = os.path.join(d, "comparison.tsv")
     if pypgx is not None:
         p = os.path.join(d, "pypgx.tsv")
@@ -457,6 +471,43 @@ def main():
                                            variants=[{"dbSnpId": "rs2108622", "call": "C/T"}])}}
         rc, rec, _, _ = run_report(work, "CYP4F2CALLED", called)
         check("CYP4F2 called by PharmCAT: no fallback section", fb not in rec, rec[-1200:])
+
+        # 7. MT-RNR1 from step 20's chrM calls next to step 36's consensus
+        def outside(gene, a1, a2, phen, drugs):
+            g = dip(a1, a2, phen) if a2 else {"sourceDiplotypes": [
+                {"allele1": {"name": a1}, "allele2": None, "label": a1, "phenotypes": [phen]}]}
+            return dict(g, callSource="OUTSIDE", relatedDrugs=[{"name": n} for n in drugs])
+        mito = {"genes": {
+            "MT-RNR1": outside("MT-RNR1", "m.1555A>G", None,
+                               "increased risk of aminoglycoside-induced hearing loss", ["amikacin", "gentamicin"]),
+            "CYP2D6": outside("CYP2D6", "*1", "*4", "Intermediate Metabolizer", ["codeine"])}}
+        rc, rec, rows, _ = run_report(work, "MTRNR1CONS", mito, consensus=[("CYP2D6", "*1/*1", "yes")])
+        check("MT-RNR1 outside call, consensus without it: exits 0", rc == 0, rc)
+        check("MT-RNR1 outside call, consensus without it: stays called and non-normal",
+              ["MT-RNR1", "m.1555A>G", "increased risk of aminoglycoside-induced hearing loss", "non-normal"] in rows, rows)
+        check("MT-RNR1 outside call, consensus without it: listed with its drugs",
+              "  MT-RNR1 -- " in rec and "amikacin" in block(rec, "MT-RNR1") and "gentamicin" in block(rec, "MT-RNR1"),
+              block(rec, "MT-RNR1") or rec[:1500])
+        check("MT-RNR1 outside call, consensus without it: no stale warning for MT-RNR1",
+              "outside call MT-RNR1" not in rec, rec[-1500:])
+        check("control: the CYP2D6 outside call the consensus passes as another diplotype is still held back",
+              "WARNING: PharmCAT's report has the outside call CYP2D6 *1/*4" in rec
+              and "  CYP2D6 -- " not in rec.split("Affected Medications:", 1)[-1].split("Calls From Other Tools", 1)[0],
+              rec[-1500:])
+        rep = os.path.join(work, "MTRNR1CONS", "report.json")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = pgx_parse.main(["step36-outside", "--report", rep])
+        check("step36-outside lists CYP2D6 and not MT-RNR1", rc == 0 and out.getvalue().split() == ["CYP2D6"],
+              (rc, out.getvalue()))
+        only = os.path.join(work, "MTRNR1ONLY.json")
+        with open(only, "w") as f:
+            json.dump({"genes": {"MT-RNR1": mito["genes"]["MT-RNR1"]}}, f)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = pgx_parse.main(["step36-outside", "--report", only])
+        check("step36-outside lists nothing for a report whose only outside call is MT-RNR1",
+              rc == 0 and out.getvalue() == "", (rc, out.getvalue()))
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
