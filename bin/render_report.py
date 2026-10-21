@@ -687,9 +687,10 @@ def text_report(s):
             w(f"  Not sized from short reads, so not counted as normal: {len(d['unsized'])} ({', '.join(d['unsized'])})")
         if d.get("intermediate"):
             w(f"  In an intermediate range (bin/str_intermediate_ranges.tsv): {', '.join(d['intermediate'])}")
-        if d.get("loci"):
+        rows = str_rows(d)
+        if rows:
             w("  Every locus (key loci first): repeat count, Stranger status, notes")
-            for locus, count, status, notes in str_rows(d):
+            for locus, count, status, notes in rows:
                 w(f"    {locus:<8} {count:<10} {status or '-'}" + (f"  {notes}" if notes else ""))
         if any(l.get("rfc1_motif") for l in d.get("flagged") or []):
             w(f"  {RFC1_NOTE}")
@@ -863,7 +864,8 @@ RFC1_NOTE = ("RFC1: Stranger's catalog sizes the degenerate AARRG unit and flags
 
 
 def str_count(l):
-    """The repeat count of a locus: an in-repeat allele as >= the lower end of its interval."""
+    """The repeat count of a locus: an in-repeat allele as >= the lower end of
+    its interval, or 'not sized' without one."""
     counts = l["repeat_count"].split("/")
     sizing = (l.get("allele_sizing") or "").split("/")
     cis = (l.get("ci") or "").split("/")
@@ -872,7 +874,9 @@ def str_count(l):
         z = sizing[i] if i < len(sizing) else ""
         ci = cis[i] if len(cis) == len(counts) else (cis[0] if len(cis) == 1 else "")
         lo = ci.split("-")[0] if ci else ""
-        out.append(f">={lo}" if z == "in_repeat" and lo.isdigit() else c)
+        if z == "in_repeat":
+            c = f">={lo}" if lo.isdigit() else "not sized"
+        out.append(c)
     return "/".join(out)
 
 
@@ -901,7 +905,7 @@ def str_rows(d):
     rows = [(l["locus"], str_count(l), str_status(l), str_notes(l)) for l in d.get("loci") or []]
     have = {r[0] for r in rows}
     missing = [(k["locus"], "not in output", "", "") for k in d.get("key_loci") or [] if k["locus"] not in have]
-    return missing + rows if rows else []
+    return missing + rows
 
 
 def rfc1_text(m):

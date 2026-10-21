@@ -1137,6 +1137,14 @@ def main():
               card_z.count("<tr><td>") == 10 and "size not determined (flanking reads only)" in card_z, card_z)
         check("every-locus summary validates", not validate.validate(schema, json.loads(json.dumps(summ_z))),
               validate.validate(schema, json.loads(json.dumps(summ_z))))
+        check("text: an in-repeat allele without an interval prints 'not sized', not its point estimate",
+              render_report.str_count({"repeat_count": "/".join(["20", "300"]), "allele_sizing": "sized/in_repeat",
+                                       "ci": "."}) == "20/not sized")
+        e = os.path.join(work, "str3", "S")
+        put(f"{e}/expansion_hunter/S_eh.vcf", VCF_HEAD)
+        txt_e = render(e)[1]
+        check("text: a VCF without records still lists the five key loci as not in output",
+              all(f"{k:<8} not in output" in txt_e for k in collect_summary.EH_LOCI), txt_e)
         put(f"{z}/expansion_hunter/S_rfc1_motif.tsv", open(f"{z}/expansion_hunter/S_rfc1_motif.tsv").read(), age_days=3)
         zd2 = render(z)[0]["sections"]["expansions"]["data"]
         check("RFC1: a motif table older than Stranger's output is not read",

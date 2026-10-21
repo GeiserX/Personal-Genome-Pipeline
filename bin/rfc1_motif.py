@@ -17,9 +17,11 @@ whose repeat part did not align is clipped there), and the whole sequence
 of two kinds of read the aligner did not place in the repeat: an unmapped
 read placed at its mate's position within FETCH_PAD bases of the repeat,
 and the mate of a read there when that mate is mapped somewhere else
-(mate rescue). It finds the
-longest run of one pentamer repeated in tandem in those bases, and when
-the run has at least MIN_UNITS units it counts the read for that motif.
+(mate rescue). It finds the longest run of one pentamer repeated in
+tandem in those bases, and when the run is longer than the reference
+allele (more than its 11 units, and at least MIN_UNITS) it counts the read
+for that motif. A read across an unexpanded allele is not counted, so the
+reads of a reference allele cannot outvote those of an expanded one.
 A motif is named by its known form whatever its rotation and strand
 (AAGGG, GGGAA and CCCTT are one motif). Duplicate, secondary,
 supplementary and QC-failed alignments are not counted.
@@ -185,23 +187,28 @@ def read_segments(reads, lo, hi, mate_of=None, softclip=True, fetched=None):
             yield mkey, mate.query_sequence or ""
 
 
-def count_motifs(segments):
+def min_units(start, end):
+    """Units a run needs to count: more than the reference allele of [start, end)."""
+    return max(MIN_UNITS, (end - start) // 5 + 1)
+
+
+def count_motifs(segments, units_min=MIN_UNITS):
     counts = {}
     for _, bases in segments:
         motif, units = longest_run(bases)
-        if motif and units >= MIN_UNITS:
+        if motif and units >= units_min:
             counts[motif] = counts.get(motif, 0) + 1
     return counts
 
 
-def verdict(counts):
+def verdict(counts, units_min=MIN_UNITS):
     """(dominant_motif, dominant_class, dominant_share, shares, verdict, note)."""
     total = sum(counts.values())
     order = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     shares = ",".join(f"{m}={c / total:.2f}" for m, c in order) if total else "."
     if total < MIN_READS:
         return (".", ".", ".", shares, "not_resolved",
-                f"{total} read(s) carry {MIN_UNITS} or more repeat units at RFC1, fewer than {MIN_READS}: "
+                f"{total} read(s) carry {units_min} or more repeat units at RFC1, fewer than {MIN_READS}: "
                 "the motif is not resolved; confirm the flag with repeat-primed PCR if symptoms fit")
     dom, n = order[0]
     cls = KNOWN.get(dom, "unknown")
@@ -263,11 +270,12 @@ def check(bam_path, vcf, skip=None, softclip=True, mates=True):
         flo, fhi = max(0, start - FETCH_PAD), end + FETCH_PAD
         try:
             counts = count_motifs(read_segments(bam.fetch(chrom, flo, fhi), lo, hi,
-                                                mate_of if mates else None, softclip, (flo, fhi)))
+                                                mate_of if mates else None, softclip, (flo, fhi)),
+                                  min_units(start, end))
         finally:
             other.close()
     total = sum(counts.values())
-    return head + [str(total)] + list(verdict(counts))
+    return head + [str(total)] + list(verdict(counts, min_units(start, end)))
 
 
 def main(argv=None):

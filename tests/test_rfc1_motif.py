@@ -8,8 +8,9 @@ Every case is a set of made-up reads at the GRCh38 RFC1 repeat
   pathogenic  AAGGG reads of four kinds: soft-clipped next to the repeat,
               unmapped and placed at their mate's position, mates mapped to
               another contig (mate rescue), and reverse-strand CCCTT reads
-              across the repeat; plus three reads of the reference allele:
-              pathogenic_motif, with AAGGG and AAAAG shares
+              across the repeat; three reads of an expanded AAAAG allele;
+              and eight reads across an unexpanded (AAAAG)11 allele, which
+              are not counted: pathogenic_motif, with AAGGG and AAAAG shares
   mixed       AAAAG and AAAGG reads only: benign_motif, both shares listed
   acagg       ACAGG reads: pathogenic_motif
   unknown     AAGAG reads (not a known benign or pathogenic motif):
@@ -135,7 +136,10 @@ def case(kind):
             elsewhere[a.query_name] = b
         at += [Read(f"pr{i}", CHROM, START - 40, "150M", revcomp(LEFT[-40:] + "AAGGG" * 22), reverse=True)
                for i in range(2)]
-        at += [spanning(f"ref{i}", "AAAAG", 11) for i in range(3)]
+        at += [spanning(f"aaaag{i}", "AAAAG", 20) for i in range(3)]
+        # Not counted: reads across an unexpanded (AAAAG)11 allele, and one
+        # across 12 AAGGG units would be (more than the reference's 11).
+        at += [spanning(f"ref{i}", "AAAAG", 11) for i in range(8)]
         # Not counted: a duplicate, a secondary and a QC-failed alignment.
         at.append(clipped("pc0", "AAGGG", read1=True))  # the same read again
         at.append(Read("dup", CHROM, START - 60, "60M90S", LEFT[-60:] + "AAGGG" * 18, dup=True))
@@ -160,8 +164,9 @@ def run_plain(kind, softclip=True, mates=True):
     at, elsewhere = case(kind)
     lo, hi = START - rm.FLANK, END + rm.FLANK
     mate_of = (lambda r: elsewhere.get(r.query_name)) if mates else None
-    counts = rm.count_motifs(rm.read_segments(at, lo, hi, mate_of, softclip))
-    return counts, rm.verdict(counts)
+    units = rm.min_units(START, END)
+    counts = rm.count_motifs(rm.read_segments(at, lo, hi, mate_of, softclip), units)
+    return counts, rm.verdict(counts, units)
 
 
 def part1():
@@ -180,8 +185,13 @@ def part1():
     expect_true("benign: the note says the flag is not supported", "the flag is not supported" in v[5], v[5])
 
     counts, v = run_plain("pathogenic")
-    expect("pathogenic: 13 AAGGG reads (6 clipped, 2 placed unmapped, 3 rescued mates, 2 reverse) and 3 AAAAG",
-           counts, {"AAGGG": 13, "AAAAG": 3})
+    expect("pathogenic: 13 AAGGG reads (6 clipped, 2 placed unmapped, 3 rescued mates, 2 reverse) and 3 expanded "
+           "AAAAG; the 8 reference-allele reads are not counted", counts, {"AAGGG": 13, "AAAAG": 3})
+    at, _ = case("pathogenic")
+    lo, hi = START - rm.FLANK, END + rm.FLANK
+    expect("control: with a 4-unit floor the 8 reference-allele reads would count",
+           rm.count_motifs(rm.read_segments(at, lo, hi, None, True), rm.MIN_UNITS).get("AAAAG"), 3 + 8)
+    expect("the floor is one unit more than the reference allele", rm.min_units(START, END), 12)
     expect("pathogenic: pathogenic_motif", v[4], "pathogenic_motif")
     expect("pathogenic: the shares of both motifs", v[3], "AAGGG=0.81,AAAAG=0.19")
     expect_true("pathogenic: the note asks for repeat-primed PCR", "repeat-primed PCR" in v[5], v[5])
