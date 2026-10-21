@@ -39,7 +39,14 @@ Checks:
      not normal is listed (also outside the five key loci), a record
      without a status is counted apart, not flagged; a Stranger file older
      than ExpansionHunter's is not read and both reports say to rerun step
-     9b; a stale card says Stale, not Complete;
+     9b; a stale card says Stale, not Complete; 12b: every locus is a row
+     with the catalog's normal maximum, a FLANKING-only call says 'size not
+     determined (flanking reads only)' and never normal while the same
+     counts on spanning reads stay normal, an interval that reaches the
+     pathogenic minimum or one spanning read is low confidence, HTT 30 is
+     in its intermediate range with the GeneReviews citation, and the RFC1
+     flag carries step 9b's motif verdict unless that table is older than
+     Stranger's output;
  13. HLA: each allele keeps its own T1K quality; a one-allele row
      ('.', 0, -1) is not low confidence; a quality of 0 or below is, and on
      HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
@@ -110,6 +117,16 @@ Checks:
      and 31 and their modules run, tags the same records the same way
      (PGP_IMPACT, PGP_TX, PGP_FREQ, PGP_CALL), drops the common one with
      keep=noncommon, and agrees with the summary on every record.
+
+ 25. step 35's Parascopy table gets a section of its own: SMN1 and SMN2 at
+     exon 7 from the paralog-specific copy number (from the row's own region
+     or its homologous one), the aggregate copy number there and the SMA
+     reading (two copies, one copy a carrier, a quality under 20 not
+     resolved), in both reports, with HBA1/HBA2 listed as not assessed; a
+     folder with neither step 35 nor step 35b prints "Paralog copy number:
+     not checked (neither step 35 nor step 35b ran)" in both reports, a failed
+     step 35 is named in that line, and Paraphase alone leaves the line out;
+     a table without the psCN columns is unreadable.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -729,6 +746,125 @@ def comphet_phase_section(work, schema):
           validate.validate(schema, json.loads(json.dumps(summ))))
 
 
+SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+            "homologous_regions\n")
+
+
+def parascopy_section(work, schema):
+    """Step 35's own section, and the not-checked line without steps 35 and 35b."""
+    d = os.path.join(work, "parascopy", "S")
+    # A row over SMN1 exon 7 (chr5:70951946) whose homologous region holds
+    # SMN2 exon 7 (chr5:70076526), and a row elsewhere in the locus.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70925378\t70934928\tSMN1\tPASS\t4\t80\tPASS\t2,2\t40,40\tchr5:70049961-70059504:+\n"
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
+    summ, txt, html = render(d)
+    # .get: without the section (its SECTIONS entry removed) every check fails, none crashes
+    ps = summ["sections"].get("parascopy") or {"state": "missing", "step": None, "data": {}}
+    pd = ps["data"]
+    check("parascopy: its own section, step 35, read", ps["state"] == "ok" and ps["step"] == "35", ps)
+    check("parascopy: SMN1 2 and SMN2 2 at exon 7, agCN 4 there",
+          ((pd.get("smn1") or {}).get("cn"), (pd.get("smn2") or {}).get("cn"), pd.get("agcn"), pd.get("agcn_qual"))
+          == (2, 2, "4", "60"), pd)
+    check("parascopy: two SMN1 copies read as not a carrier, 2+0 not ruled out",
+          pd.get("reading", "").startswith("two SMN1 copies: not a carrier") and "2+0" in pd.get("reading", ""), pd)
+    check("parascopy: the text report has the section with both genes and the reading",
+          "## SMN1/SMN2 Copy Number (Parascopy, short reads)" in txt
+          and "  SMN1 copies: 2 (quality 33, filter PASS)\n" in txt
+          and "  SMN2 copies: 2 (quality 30, filter PASS)\n" in txt
+          and "  SMN1 and SMN2 together (agCN) at exon 7: 4 (quality 60, filter PASS)\n" in txt
+          and "  Reading: two SMN1 copies: not a carrier" in txt and "not checked" not in txt, txt)
+    card_s = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("parascopy: the HTML card has both genes, the reading and the short-read note",
+          ">SMN1 copies<" in card_s and "2 (quality 33, filter PASS)" in card_s and ">SMN2 copies<" in card_s
+          and "not a carrier by copy number" in card_s and "HBA1/HBA2 and CYP21A2 have no Parascopy" in card_s
+          and "Not checked" not in html, card_s)
+    check("parascopy: HBA1/HBA2 listed as not assessed without step 35b",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"])
+          and "HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads" in txt, summ["not_assessed"])
+    check("parascopy: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    # One SMN1 copy, the row written from SMN2's side: SMN1 is the second psCN.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70075495\t70077900\tSMN1\tPASS\t3\t50\tPASS\t2,1\t25,28\tchr5:70950921-70953320:+\n")
+    summ, txt, _ = render(d)
+    pd = (summ["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: from SMN2's row, SMN1 1 and SMN2 2, read as a carrier",
+          ((pd.get("smn1") or {}).get("cn"), (pd.get("smn2") or {}).get("cn")) == (1, 2)
+          and pd.get("reading") == "one SMN1 copy: the pattern of an SMA carrier"
+          and "  Reading: one SMN1 copy: the pattern of an SMA carrier\n" in txt, pd)
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t3\t35\tPASS\t1,2\t15,16\tchr5:70075496-70077900:+\n")
+    pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: a quality under 20 is not resolved and gets no carrier reading",
+          "smn1" in pd and pd["smn1"]["cn"] is None and pd["smn1"]["text"] == "1 (quality 15, filter PASS), not resolved"
+          and pd["reading"].startswith("SMN1 not resolved"), pd)
+    # No row over SMN1 exon 7: the reading says so, not "not resolved".
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70925378\t70934928\tSMN1\tPASS\t4\t80\tPASS\t2,2\t40,40\tchr5:70049961-70059504:+\n")
+    pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: no row over exon 7 gets that reason as its reading",
+          pd.get("reading") == "no row of step 35's table covers SMN1 exon 7: no carrier reading", pd)
+    # A short row (fewer fields than the header) is skipped, not a crash.
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS + "chr5\n"
+        + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
+    try:
+        pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    except TypeError as e:
+        pd = {"error": repr(e)}
+    check("parascopy: a short row is skipped and the next row still read",
+          (pd.get("smn1") or {}).get("cn") == 2, pd)
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr5\t1\t2\t4\n")
+    ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
+    check("parascopy: a table without the psCN columns is unreadable", ps.get("state") == "unreadable", ps)
+
+    # Neither step 35 nor step 35b: the not-checked line in both reports.
+    n = os.path.join(work, "noparalog", "S")
+    put(f"{n}/vcf/S.vcf.gz", VCF_HEAD + "chr1\t1\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n", gz=True)
+    summ, txt, html = render(n)
+    line = "Paralog copy number: not checked (neither step 35 nor step 35b ran)"
+    check("not checked: the text report says so when neither paralog step ran",
+          f"## Paralog Copy Number\n---\n  {line}\n" in txt, txt)
+    card_n = html.split("<h2>Paralog Copy Number</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("not checked: the HTML report has the card with the same line",
+          "Not checked" in card_n and line in card_n, card_n)
+    check("not checked: both steps under Steps Not Run",
+          "SMN1/SMN2 copy number (Parascopy, short reads)" in summ["not_run"]
+          and "Paralog genes (Paraphase, PacBio HiFi)" in summ["not_run"], summ["not_run"])
+    put(f"{n}/logs/run_status.tsv", f"meta\tstarted_epoch\t{time.time() - 60}\nstep\t35\tfailed (exit 1)\n")
+    _, txt, _ = render(n)
+    check("not checked: a failed step 35 is named",
+          "Paralog copy number: not checked (step 35 failed, step 35b not run)" in txt, txt)
+    os.remove(f"{n}/logs/run_status.tsv")
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\nhba\tHBA2\t2\tcalled\t.\t4\t90\t31\n")
+    summ, txt, html = render(n)
+    check("not checked: Paraphase alone leaves the line out, and HBA is no longer listed as not assessed",
+          "not checked" not in txt and "Not checked" not in html and "HBA2: 2 (called)" in txt
+          and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), txt)
+    # Step 35b on a region subset (smn1 only): HBA1/HBA2 stays not assessed.
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "smn1\tSMN1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, txt, _ = render(n)
+    check("not checked: Paraphase without an hba row keeps HBA1/HBA2 as not assessed",
+          "not checked" not in txt
+          and any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: an hba row for HBA1 alone keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+    put(f"{n}/paralogs/S_paraphase_copy_number.tsv",
+        "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+        "hba\tHBA1\t2\tcalled\t.\t4\t90\t31\nhba\tHBA2\t.\tno call\t.\t.\t90\t31\n")
+    summ, _, _ = render(n)
+    check("not checked: HBA2 with no call keeps HBA1/HBA2 as not assessed",
+          any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+
+
 def main():
     work = tempfile.mkdtemp()
     schema = json.load(open(os.path.join(REPO, "tests", "schema", "summary.schema.json")))
@@ -1071,7 +1207,8 @@ def main():
         check("Stranger: read when it is there", summ_x["sections"]["expansions"]["source"]
               == "expansion_hunter/S_eh_stranger.vcf" and ed.get("stranger") is True, summ_x["sections"]["expansions"])
         check("Stranger: the full_mutation outside the five key loci is listed, the normal one is not",
-              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation"}], ed)
+              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation",
+                                     "sizing": "unknown"}], ed)
         check("Stranger: a record without STR_STATUS is counted apart, not flagged", ed.get("no_status") == 1, ed)
         check("Stranger: the five key loci stay listed", [k["locus"] for k in ed["key_loci"]] == collect_summary.EH_LOCI, ed)
         check("Stranger: both reports list LOCUS_B full_mutation and the short-read caveat",
@@ -1095,6 +1232,97 @@ def main():
         card_eh = html_x3.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
         check("Repeat card of a stale result says Stale, not Complete",
               "Stale" in card_eh and "Complete" not in card_eh, card_eh)
+
+        # 12b. every catalog locus, sizing from SO/ADSP/REPCI, the
+        # intermediate ranges of bin/str_intermediate_ranges.tsv and the RFC1
+        # motif count: ten loci, Stranger's INFO fields as it writes them
+        z = os.path.join(work, "str2", "S")
+        fmt = "GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC"
+
+        def strec(rep, cn, so, ci, adsp, st, nmax="20", pmin="40"):
+            # Per-allele values come as tuples, joined here: scripts/ci/check-personal-data.sh
+            # reads a literal count pair beside a gene name as a genotype.
+            cn, ci, adsp = ("/".join(map(str, x)) if isinstance(x, tuple) else x for x in (cn, ci, adsp))
+            return (f"chr1\t{100 + len(rep)}\t.\tC\t<STR50>\t.\tPASS\tEND=200;REPID={rep};VARID={rep};"
+                    f"STR_STATUS={st};STR_NORMAL_MAX={nmax};STR_PATHOLOGIC_MIN={pmin}\t{fmt}\t"
+                    f"1/2:{so}:{cn}:{ci}:{adsp}:0/0:0/0:30.0\n")
+        span2 = "SPANNING/SPANNING"
+        recs = [strec("HTT", (17, 30), span2, ("17-17", "30-30"), (12, 9), "normal", "26", "40"),
+                strec("FMR1", "30", "SPANNING", "30-30", "14", "normal", "44", "201"),
+                strec("C9ORF72", (2, 8), span2, ("2-2", "8-8"), (10, 11), "normal", "24", "30"),
+                strec("ATXN1", (29, 31), span2, ("29-29", "31-31"), (8, 7), "normal", "35", "39"),
+                strec("DMPK", (5, 40), span2, ("5-5", "40-40"), (15, 6), "pre_mutation", "34", "50"),
+                strec("LOCUS_FL", (15, 60), "FLANKING/FLANKING", ("0-119", "4-507"), (0, 0), "normal"),
+                strec("LOCUS_SP", (15, 60), span2, ("15-15", "60-60"), (5, 5), "normal", "100", "200"),
+                strec("LOCUS_LOW", (12, 18), span2, ("12-12", "16-45"), (6, 1), "normal"),
+                strec("LOCUS_NC", ".", ".", ".", ".", "normal"),
+                strec("RFC1", (100, 150), "INREPEAT/INREPEAT", ("80-120", "130-170"), (0, 0), "full_mutation", "11", "12")]
+        put(f"{z}/expansion_hunter/S_eh.vcf", VCF_HEAD + "".join(recs), age_days=2)
+        put(f"{z}/expansion_hunter/S_eh_stranger.vcf", VCF_HEAD + "".join(recs), age_days=1)
+        put(f"{z}/expansion_hunter/S_rfc1_motif.tsv",
+            "locus\tchrom\tstart\tend\trepeat_reads\tdominant_motif\tdominant_class\tdominant_share\tmotif_shares"
+            "\tverdict\tnote\nRFC1\tchr4\t39348425\t39348479\t24\tAAAAG\tbenign\t0.92\tAAAAG=0.92,AAAGG=0.08"
+            "\tbenign_motif\tmotif AAAAG (benign) in 22 of 24 repeat reads (92%): the flag is not supported\n")
+        summ_z, txt_z, html_z = render(z)
+        zd = summ_z["sections"]["expansions"]["data"]
+        zl = {l["locus"]: l for l in zd.get("loci", [])}
+        check("every locus: ten records give ten rows, the five key loci first",
+              [l["locus"] for l in zd.get("loci", [])][:5] == collect_summary.EH_LOCI and len(zl) == 10, zd.get("loci"))
+        check("every locus: the catalog's normal maximum from STR_NORMAL_MAX", zl.get("HTT", {}).get("normal_max") == "26",
+              zl.get("HTT"))
+        check("sizing: a FLANKING-only call is flanking_only, not sized", zl.get("LOCUS_FL", {}).get("sizing") == "flanking_only",
+              zl.get("LOCUS_FL"))
+        check("sizing: the same counts on spanning reads are sized", zl.get("LOCUS_SP", {}).get("sizing") == "sized",
+              zl.get("LOCUS_SP"))
+        check("sizing: one spanning read, or an interval reaching the pathogenic minimum, is low_confidence",
+              zl.get("LOCUS_LOW", {}).get("allele_sizing") == "sized/low_confidence"
+              and zl["LOCUS_LOW"]["sizing"] == "low_confidence", zl.get("LOCUS_LOW"))
+        check("sizing: in-repeat reads only is in_repeat; no count is no_call",
+              (zl.get("RFC1", {}).get("sizing"), zl.get("LOCUS_NC", {}).get("sizing")) == ("in_repeat", "no_call"), zl)
+        check("unsized: listed apart, never with the sized normal loci",
+              zd.get("unsized") == ["LOCUS_FL", "LOCUS_LOW", "LOCUS_NC", "RFC1"], zd.get("unsized"))
+        fl_line = [line for line in txt_z.splitlines() if line.strip().startswith("LOCUS_FL ")]
+        check("text: the FLANKING-only locus says 'size not determined (flanking reads only)', not normal",
+              len(fl_line) == 1 and fl_line[0].split()[2] != "normal"
+              and "not sized  size not determined (flanking reads only)" in fl_line[0], fl_line)
+        sp_line = [line for line in txt_z.splitlines() if line.strip().startswith("LOCUS_SP ")]
+        check("text: the spanning locus keeps its normal status", len(sp_line) == 1 and sp_line[0].split()[2] == "normal"
+              and "size not determined" not in sp_line[0], sp_line)
+        check("intermediate: HTT 30 is in 27-35 with its label and citation; DMPK 40 in 35-49; FMR1 30 and ATXN1 none",
+              (zl["HTT"]["zone"], zl["DMPK"]["zone"], zl["FMR1"]["zone"], zl["ATXN1"]["zone"]) == ("27-35", "35-49", "", "")
+              and "may expand in offspring" in zl["HTT"]["zone_label"] and "NBK1305" in zl["HTT"]["zone_citation"], zl["HTT"])
+        htt_line = [line for line in txt_z.splitlines() if line.strip().startswith("HTT ")]
+        check("text: the HTT line prints the range, its label and the GeneReviews link",
+              len(htt_line) == 1 and "27-35: intermediate (not disease-causing; may expand in offspring)" in htt_line[0]
+              and "https://www.ncbi.nlm.nih.gov/books/NBK1305/" in htt_line[0], htt_line)
+        check("text and HTML: the intermediate list names HTT and DMPK",
+              "In an intermediate range (bin/str_intermediate_ranges.tsv): HTT, DMPK" in txt_z
+              and "In an intermediate range" in html_z and "HTT, DMPK" in html_z, zd.get("intermediate"))
+        check("RFC1: the flagged item carries the benign motif verdict",
+              [f.get("rfc1_motif", {}).get("verdict") for f in zd.get("flagged", []) if f["locus"] == "RFC1"]
+              == ["benign_motif"], zd.get("flagged"))
+        check("RFC1: both reports print the verdict, and the count as a lower bound",
+              "RFC1 motif count: benign_motif: motif AAAAG (benign) in 22 of 24 repeat reads (92%): the flag is not "
+              "supported" in txt_z and "RFC1 motif count: benign_motif" in html_z
+              and ">=80/>=130" in txt_z and "<td>&gt;=80/&gt;=130</td>" in html_z, txt_z)
+        card_z = html_z.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("HTML: one row per locus with the FLANKING note",
+              card_z.count("<tr><td>") == 10 and "size not determined (flanking reads only)" in card_z, card_z)
+        check("every-locus summary validates", not validate.validate(schema, json.loads(json.dumps(summ_z))),
+              validate.validate(schema, json.loads(json.dumps(summ_z))))
+        check("text: an in-repeat allele without an interval prints 'not sized', not its point estimate",
+              render_report.str_count({"repeat_count": "/".join(["20", "300"]), "allele_sizing": "sized/in_repeat",
+                                       "ci": "."}) == "20/not sized")
+        e = os.path.join(work, "str3", "S")
+        put(f"{e}/expansion_hunter/S_eh.vcf", VCF_HEAD)
+        txt_e = render(e)[1]
+        check("text: a VCF without records still lists the five key loci as not in output",
+              all(f"{k:<8} not in output" in txt_e for k in collect_summary.EH_LOCI), txt_e)
+        put(f"{z}/expansion_hunter/S_rfc1_motif.tsv", open(f"{z}/expansion_hunter/S_rfc1_motif.tsv").read(), age_days=3)
+        zd2 = render(z)[0]["sections"]["expansions"]["data"]
+        check("RFC1: a motif table older than Stranger's output is not read",
+              [f.get("rfc1_motif", {}).get("verdict") for f in zd2.get("flagged", []) if f["locus"] == "RFC1"]
+              == ["not_checked"], zd2.get("flagged"))
 
         # 13. HLA quality per allele
         q = os.path.join(work, "hla", "S")
@@ -1333,6 +1561,7 @@ def main():
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
+        parascopy_section(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

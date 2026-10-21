@@ -99,7 +99,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35b", "37", "40", "41", "42", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -109,6 +109,11 @@ NOT_ASSESSED = [
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
     "Variants of uncertain significance (not interpreted)",
 ]
+
+# Added to NOT_ASSESSED unless step 35b (Paraphase, PacBio HiFi) called both HBA1 and HBA2:
+# Parascopy's models (step 35) have none for the alpha-globin genes.
+HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads: Parascopy has no "
+                    "model for them, so only step 35b on a PacBio HiFi BAM assesses them")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -594,6 +599,79 @@ def sec_paralogs(d, s):
                "variants": variants,
                "smn1": {"paraphase": smn1, "parascopy": parascopy,
                         "agree": paraphase_report.compare_smn1(smn1, parascopy)}}
+
+
+# SMN2 exon 7, c.840 (the base that tells SMN2 from SMN1), GRCh38 1-based;
+# SMN1's is paraphase_report.SMN1_EXON7.
+SMN2_EXON7 = ("chr5", 70076526)
+
+
+def parascopy_cn_at(rows, chrom, pos):
+    """The copy number at one position from step 35's table: the
+    paralog-specific value (psCN) of the row, or of its homologous region,
+    that holds the position, with the row's aggregate value (agCN). As
+    paraphase_report.parascopy_smn1: cn is None unless psCN's filter is PASS
+    and its quality at least 20 (Parascopy's threshold)."""
+    for r in rows:
+        try:
+            regions = [(r["chrom"], int(r["start"]) + 1, int(r["end"]))]
+        except (KeyError, ValueError, TypeError):  # TypeError: a short row (None fields)
+            continue
+        for h in (r.get("homologous_regions") or "*").split(","):
+            m = re.match(r"^([^:]+):(\d+)-(\d+)", h.strip())
+            if m:
+                regions.append((m.group(1), int(m.group(2)), int(m.group(3))))
+        idx = next((i for i, (c, b, e) in enumerate(regions) if c == chrom and b <= pos <= e), None)
+        if idx is None:
+            continue
+        cns = (r.get("psCN") or "").split(",")
+        quals = (r.get("psCN_qual") or "").split(",")
+        cn_txt = cns[idx] if idx < len(cns) else "?"
+        q_txt = quals[idx] if idx < len(quals) else "*"
+        filt = r.get("psCN_filter") or "."
+        try:
+            q = float(q_txt)
+        except ValueError:
+            q = None
+        ok = filt == "PASS" and q is not None and q >= 20 and cn_txt.isdigit()
+        return {"cn": int(cn_txt) if ok else None,
+                "text": f"{cn_txt} (quality {q_txt}, filter {filt})" + ("" if ok else ", not resolved"),
+                "agcn": r.get("agCN") or ".", "agcn_qual": r.get("agCN_qual") or ".",
+                "agcn_filter": r.get("agCN_filter") or "."}
+    return {"cn": None, "text": "no row covers exon 7", "agcn": ".", "agcn_qual": ".", "agcn_filter": "."}
+
+
+def smn_reading(smn1):
+    """What an SMN1 copy number means for SMA, in one line."""
+    if smn1 is None:
+        return "SMN1 not resolved (quality under 20 or filter not PASS): no carrier reading"
+    if smn1 == 0:
+        return "no SMN1 copy: the pattern of spinal muscular atrophy (SMA) itself"
+    if smn1 == 1:
+        return "one SMN1 copy: the pattern of an SMA carrier"
+    if smn1 == 2:
+        return ("two SMN1 copies: not a carrier by copy number; a 2+0 carrier (both copies on one chromosome) "
+                "cannot be ruled out")
+    return f"{smn1} SMN1 copies: not a carrier by copy number"
+
+
+def sec_parascopy(d, s):
+    """Step 35 (Parascopy, short reads): SMN1 and SMN2 copy number at exon 7,
+    the aggregate copy number of the pair there, and the SMA reading."""
+    p = first_existing(d, [f"paralogs/{s}_smn_copy_number.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if rows and not {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
+                         "psCN_filter column")
+    smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
+    smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+    return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
+               "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
+               "rows": len(rows),
+               "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
+                           if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
 
 
 def sec_hla(d, s):
@@ -1226,6 +1304,81 @@ def sec_sv_consensus(d, s):
     return p, {"consensus": t}
 
 
+STR_RANGES_TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "str_intermediate_ranges.tsv")
+# How well ExpansionHunter sized an allele, from its FORMAT SO, ADSP and
+# REPCI fields, worst first; a locus takes the worst of its alleles.
+STR_SIZING = ["no_call", "flanking_only", "in_repeat", "low_confidence", "sized", "unknown"]
+STR_MIN_SPANNING = 2
+
+
+def str_ranges(path=STR_RANGES_TSV):
+    """bin/str_intermediate_ranges.tsv by locus (tests/test_str_ranges.py checks it)."""
+    rows, head = {}, None
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            c = line.rstrip("\n").split("\t")
+            if head is None:
+                head = c
+                continue
+            r = dict(zip(head, c))
+            rows[r["locus"]] = r
+    return rows
+
+
+def str_int(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def str_allele_sizing(so, adsp, ci, cn, path_min):
+    """One allele's sizing: sized, low_confidence (fewer than
+    STR_MIN_SPANNING spanning reads, or a confidence interval that reaches
+    the catalog's pathogenic minimum from below it), in_repeat (in-repeat
+    reads only: longer than a read), flanking_only, no_call, or unknown
+    (no SO field)."""
+    if str_int(cn) is None:
+        return "no_call"
+    if not so or so == ".":
+        return "unknown"
+    if so == "FLANKING":
+        return "flanking_only"
+    if so == "INREPEAT":
+        return "in_repeat"
+    hi = str_int(ci.split("-")[-1]) if ci else None
+    if (str_int(adsp) is not None and str_int(adsp) < STR_MIN_SPANNING) or (
+            path_min is not None and hi is not None and str_int(cn) < path_min <= hi):
+        return "low_confidence"
+    return "sized"
+
+
+def str_field(fmt, val, key):
+    return val[fmt.index(key)] if key in fmt and fmt.index(key) < len(val) else ""
+
+
+def str_split(x, n):
+    """A per-allele FORMAT value as n parts; one value serves every allele."""
+    parts = x.split("/") if x else []
+    return parts if len(parts) == n else (parts * n if len(parts) == 1 else [""] * n)
+
+
+def rfc1_motif_row(d, s, after):
+    """Step 9b's RFC1 motif count (bin/rfc1_motif.py), unless it is older than
+    the Stranger file it was made from."""
+    p = first_existing(d, [f"expansion_hunter/{s}_rfc1_motif.tsv"])
+    if not p or (after and os.path.getmtime(p) < os.path.getmtime(after)):
+        return None
+    rows = read_tsv(p)
+    if not rows:
+        return None
+    r = rows[0]
+    return {k: r.get(k, ".") for k in ("verdict", "note", "dominant_motif", "dominant_class",
+                                       "dominant_share", "motif_shares", "repeat_reads")}
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -1239,30 +1392,61 @@ def sec_expansions(d, s):
     p = st or eh
     if not p:
         return None, {}
-    loci, tested, flagged, no_status = {}, 0, [], 0
+    ranges = str_ranges()
+    rfc1 = rfc1_motif_row(d, s, st) if st else None
+    loci, tested, flagged, no_status = [], 0, [], 0
     for r in vcf_records(p):
         if len(r) < 10:
             continue
         tested += 1
         info = info_map(r[7])
-        rep = info.get("REPID") or info.get("VARID") or ""
+        rep = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
         fmt = r[8].split(":")
         val = r[9].split(":")
-        repcn = val[fmt.index("REPCN")] if "REPCN" in fmt and fmt.index("REPCN") < len(val) else ""
-        if rep in EH_LOCI and rep not in loci:
-            loci[rep] = repcn or "."
+        repcn = str_field(fmt, val, "REPCN")
+        counts = repcn.split("/") if repcn and repcn != "." else []
+        n = max(len(counts), 1)
+        path_min = str_int(info.get("STR_PATHOLOGIC_MIN"))
+        sizing = [str_allele_sizing(so, ad, ci, cn, path_min) for so, ad, ci, cn in
+                  zip(str_split(str_field(fmt, val, "SO"), n), str_split(str_field(fmt, val, "ADSP"), n),
+                      str_split(str_field(fmt, val, "REPCI"), n), counts or ["."])]
+        status = [x for x in info.get("STR_STATUS", "").split(",") if x and x != "."] if st else []
+        # Stranger writes '.' where its catalog has no value.
+        item = {"locus": rep, "repeat_count": repcn or ".", "status": ",".join(status),
+                "normal_max": info.get("STR_NORMAL_MAX", "").strip("."),
+                "pathologic_min": info.get("STR_PATHOLOGIC_MIN", "").strip("."),
+                "support": str_field(fmt, val, "SO"), "adsp": str_field(fmt, val, "ADSP"),
+                "ci": str_field(fmt, val, "REPCI"), "sizing": min(sizing, key=STR_SIZING.index),
+                "allele_sizing": "/".join(sizing), "zone": "", "zone_label": "", "zone_citation": ""}
+        rng = ranges.get(rep)
+        sized = [str_int(c) for c, z in zip(counts, sizing) if z in ("sized", "unknown") and str_int(c) is not None]
+        if rng and any(int(rng["intermediate_min"]) <= c <= int(rng["intermediate_max"]) for c in sized):
+            item.update(zone=f"{rng['intermediate_min']}-{rng['intermediate_max']}", zone_label=rng["label"],
+                        zone_citation=rng["citation"])
+        if rep == "RFC1" and st and any(x != "normal" for x in status):
+            item["rfc1_motif"] = rfc1 or {"verdict": "not_checked",
+                                          "note": "no motif count beside Stranger's output (step 9b runs it "
+                                                  "with the sample's BAM): confirm the flag with repeat-primed PCR"}
+        loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
-            status = [x for x in info.get("STR_STATUS", "").split(",") if x and x != "."]
             if not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
-                flagged.append({"locus": rep or f"{r[0]}:{r[1]}", "repeat_count": repcn or ".",
-                                "status": ",".join(status)})
-    out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": loci.get(k, "not in output")}
-                                           for k in EH_LOCI],
-           "stranger": bool(st), "stranger_outdated": outdated}
+                f = {"locus": item["locus"], "repeat_count": item["repeat_count"], "status": item["status"],
+                     "sizing": item["sizing"]}
+                if "rfc1_motif" in item:
+                    f["rfc1_motif"] = item["rfc1_motif"]
+                flagged.append(f)
+    by = {l["locus"]: l for l in loci}
+    # Every locus, the five key loci first, then by name.
+    loci.sort(key=lambda l: (EH_LOCI.index(l["locus"]) if l["locus"] in EH_LOCI else len(EH_LOCI), l["locus"]))
+    out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": by[k]["repeat_count"] if k in by
+                                            else "not in output"} for k in EH_LOCI],
+           "loci": loci, "stranger": bool(st), "stranger_outdated": outdated,
+           "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
+           "intermediate": [l["locus"] for l in loci if l["zone"]]}
     if st:
         out.update(flagged=flagged, no_status=no_status)
     return p, out
@@ -1996,6 +2180,7 @@ SECTIONS = [
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),
     ("cyrius", "Cyrius (CYP2D6)", "21", sec_cyrius),
+    ("parascopy", "SMN1/SMN2 copy number (Parascopy, short reads)", "35", sec_parascopy),
     ("paralogs", "Paralog genes (Paraphase, PacBio HiFi)", "35b", sec_paralogs),
     ("hla", "HLA typing (T1K)", "08", sec_hla),
     ("prs", "Polygenic risk scores", "25", sec_prs),
@@ -2186,7 +2371,11 @@ def collect(sample, sample_dir, declared_sex=None):
         # a VCF never does, so it is no step left undone.
         "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
                     for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
-        "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
+        "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED])
+        # Step 35b on a region subset (--paraphase_regions) may leave hba out
+        + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
+                                      if g["region"] == "hba" and g["status"] == "called"}
+           else [HBA_NOT_ASSESSED]),
     }
     return summary
 

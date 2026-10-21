@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Step 02a (BWA-MEM2) on a mini reference: the fixture's regions cut out of the
-# fixture reference, about 7 Mb, small enough for bwa-mem2 index on a runner
+# fixture reference, about 8.4 Mb, small enough for bwa-mem2 index on a runner
 # (GRCh38 needs about 90 GB of RAM). Checks that the index is built under a
 # temporary prefix and renamed whole, and that the BAM is sorted, has its
 # duplicates marked and is renamed into place with nothing left behind.
