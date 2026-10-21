@@ -58,7 +58,7 @@ need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: $
 optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 35 35b 37 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 33 35 35b 37 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}") TOOL_OF[${1%% *}]=$2; printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -115,6 +115,10 @@ plan "17 CPSR" cpsr "$(need "${G}/vep_cache/homo_sapiens/${PCGR_VEP_CACHE_RELEAS
 plan "18 CNVpytor" cnvpytor "$(need "${G}/reference/cnvpytor/gc_hg38.pytor")" && NF+=(--cnvpytor_resources "${G}/reference/cnvpytor")
 plan "05 AnnotSV" annotsv "$(need "${G}/annotsv_annotations/Annotations_Human/Genes/GRCh38")" && NF+=(--annotsv_annotations "${G}/annotsv_annotations")
 plan "32 pypgx" pypgx "$(need "${G}/reference/pypgx-bundle")" && NF+=(--pypgx_bundle "${G}/reference/pypgx-bundle")
+# Step 33 (sample identity, sex from the reads, nuclear contamination) with the two files setup.sh installs.
+SQ="${G}/reference/somalier/sites.hg38.vcf.gz" VB="${G}/reference/verifybamid2" VP=1000g.phase3.100k.b38.vcf.gz.dat
+plan "33 Sample identity and QC" sample_qc "$(need "$SQ" "${VB}/${VP}.UD" "${VB}/${VP}.mu" "${VB}/${VP}.bed")" \
+  && NF+=(--somalier_sites "$SQ" --verifybamid2_panel "$VB")
 CY="${G}/tools/cyrius-${CYRIUS_VERSION}" PS="${G}/reference/parascopy-${PARASCOPY_DATA_VERSION}"
 CYSTAMP="python=${PYTHON_IMAGE} lock=$(_digest sha256 "${SCRIPT_DIR}/cyrius-constraints.txt")"
 # Step 21 runs when setup.sh --cyrius installed this version (whoever ran it accepted Cyrius's non-commercial licence).
@@ -183,11 +187,13 @@ rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker 
 # run when ExpansionHunter failed.
 # tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
 # (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
-# extraction and haplocheck are step 12's, T1K's index build and the KIR pass (KIR=true) are step 08's; indexcov is step 16.
+# extraction and haplocheck are step 12's, T1K's index build and the KIR pass (KIR=true) are step 08's, somalier's and
+# VerifyBamID2's are step 33's (sample_qc); indexcov is step 16.
 tool_of() {
   local p=${1##*:} t best=""; p=${p,,}
   case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
-    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing) echo hla_typing; return ;; esac
+    mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing) echo hla_typing; return ;;
+    somalier|somalier_relate|verifybamid2) echo sample_qc; return ;; esac
   for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
   echo "${best:-$p}"
 }

@@ -1835,11 +1835,15 @@ def sec_clinical(d, s):
 def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
-        # The Nextflow report gets the prioritized VCF: the count only.
+        # The Nextflow report gets the prioritized VCF: the count, plus the
+        # phase when COMPHET_PHASE's pairs table sits beside it. HTML_REPORT
+        # does not stage that table yet (it needs a main.nf input).
         v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
         if not v:
             return None, {}
-        return v, {"prioritized": sum(1 for _ in vcf_records(v))}
+        out = {"prioritized": sum(1 for _ in vcf_records(v))}
+        out.update(comphet_phase(os.path.join(os.path.dirname(v), f"{s}_compound_het_pairs.tsv")))
+        return v, out
     rows = read_tsv(p)
     out = {"prioritized": len(rows)}
     # Step 31's frequency tier: prioritized for the compound-het search, not rare.
@@ -1850,7 +1854,32 @@ def sec_slivar(d, s):
         crow = read_tsv(ch)
         out["compound_het_variants"] = len(crow)
         out["compound_het_genes"] = len({r.get("GENE") for r in crow if r.get("GENE")})
+    out.update(comphet_phase(os.path.join(os.path.dirname(p), f"{s}_compound_het_pairs.tsv")))
     return p, out
+
+
+# The trans pairs the report lists by name; the rest are counted.
+COMPHET_TRANS_SHOWN = 20
+
+
+def comphet_phase(path):
+    """Step 31's pairs table (bin/comphet_phase.py): the pairs by phase from
+    the reads, and the trans ones (both copies of the gene hit) by name. A run
+    from before the table has none of these keys."""
+    if not os.path.isfile(path):
+        return {}
+    rows = read_tsv(path)
+    phase = {k: sum(1 for r in rows if r.get("PHASE") == k) for k in ("trans", "cis", "unknown")}
+
+    def n(x):
+        return int(x) if (x or "").isdigit() else 0
+    trans = [{"gene": r.get("GENE", ""),
+              "variants": f"{r.get('CHROM')}:{r.get('POS_1')} {r.get('REF_1')}>{r.get('ALT_1')} + "
+                          f"{r.get('CHROM')}:{r.get('POS_2')} {r.get('REF_2')}>{r.get('ALT_2')}",
+              "reads": f"{r.get('TRANS_READS')} of {n(r.get('TRANS_READS')) + n(r.get('CIS_READS'))}"}
+             for r in rows if r.get("PHASE") == "trans"]
+    return {"compound_het_pairs": len(rows), "compound_het_phase": phase,
+            "compound_het_trans": trans[:COMPHET_TRANS_SHOWN]}
 
 
 def sec_coverage(d, s):

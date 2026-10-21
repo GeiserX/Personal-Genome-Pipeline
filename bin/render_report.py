@@ -441,6 +441,37 @@ def traits_html(d, sample):
     return body
 
 
+COMPHET_NOTE = ("A pair can hit both copies of the gene only in trans. cis: one copy carries both variants. "
+                "unknown: fewer than 2 reads or read pairs cover both positions, the reads disagree, or there is no BAM; "
+                "the pairs table gives the reason. A parent's genome or long reads can phase it. "
+                "Every pair: slivar/<sample>_compound_het_pairs.tsv")
+
+
+def comphet_phase_text(d):
+    """Step 31's phase of the compound-het pairs, as text lines."""
+    ph = d["compound_het_phase"]
+    lines = [f"  Phase from the reads: {ph.get('trans', 0)} trans, {ph.get('cis', 0)} cis, "
+             f"{ph.get('unknown', 0)} unknown of {d.get('compound_het_pairs', 0)} pairs"]
+    for x in d.get("compound_het_trans") or []:
+        lines.append(f"    {x['gene']:<8} {x['variants']}  in trans on {x['reads']} reads or read pairs")
+    if ph.get("trans", 0) > len(d.get("compound_het_trans") or []):
+        lines.append(f"    ... {ph['trans'] - len(d['compound_het_trans'])} more in the pairs table")
+    return lines + [f"  ({COMPHET_NOTE})"]
+
+
+def comphet_phase_html(d):
+    """The same, for the slivar card."""
+    ph = d["compound_het_phase"]
+    out = [stat("Pairs in trans / cis / unknown", f"{ph.get('trans', 0)} / {ph.get('cis', 0)} / {ph.get('unknown', 0)}")]
+    trans = d.get("compound_het_trans") or []
+    if trans:
+        out += ["    <table>", "      <tr><th>Gene</th><th>Pair in trans</th><th>Reads</th></tr>"]
+        out += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['variants'])}</td><td>{E(x['reads'])}</td></tr>"
+                for x in trans]
+        out.append("    </table>")
+    return out + [small_note(COMPHET_NOTE)]
+
+
 def text_report(s):
     S = s["sections"]
     out = []
@@ -784,6 +815,10 @@ def text_report(s):
             w(f"  Frequency unknown (prioritized, not counted as rare): {d['frequency_unknown']}")
         if "compound_het_variants" in d:
             w(f"  Compound het candidates: {d['compound_het_variants']} variants across {d['compound_het_genes']} genes")
+        if "compound_het_phase" in d:
+            for line in comphet_phase_text(d):
+                w(line)
+        elif "compound_het_variants" in d:
             w("  (Candidates only: unphased single-sample data. See docs/31-slivar.md)")
         w("")
 
@@ -1269,6 +1304,8 @@ def html_report(s):
         sl_body.append(stat("Frequency unknown (not rare)", sl["frequency_unknown"]))
     if "compound_het_variants" in sl:
         sl_body.append(stat("Compound het candidates", f"{sl['compound_het_variants']} variants, {sl['compound_het_genes']} genes"))
+    if "compound_het_phase" in sl:
+        sl_body += comphet_phase_html(sl)
     a(card(S["slivar"], "Variant Prioritization (slivar)", sl_body))
 
     if S["prs"]["state"] in ("ok", "stale"):
