@@ -923,6 +923,52 @@
              },
              "status": {
               "type": "string"
+             },
+             "sizing": {
+              "enum": [
+               "no_call",
+               "flanking_only",
+               "in_repeat",
+               "low_confidence",
+               "sized",
+               "unknown"
+              ]
+             },
+             "rfc1_motif": {
+              "type": "object",
+              "required": [
+               "verdict",
+               "note"
+              ],
+              "properties": {
+               "verdict": {
+                "enum": [
+                 "benign_motif",
+                 "pathogenic_motif",
+                 "uncertain_motif",
+                 "not_resolved",
+                 "not_checked"
+                ]
+               },
+               "note": {
+                "type": "string"
+               },
+               "dominant_motif": {
+                "type": "string"
+               },
+               "dominant_class": {
+                "type": "string"
+               },
+               "dominant_share": {
+                "type": "string"
+               },
+               "motif_shares": {
+                "type": "string"
+               },
+               "repeat_reads": {
+                "type": "string"
+               }
+              }
              }
             }
            }
@@ -930,6 +976,118 @@
           "no_status": {
            "type": "integer",
            "minimum": 0
+          },
+          "loci": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "locus",
+             "repeat_count",
+             "status",
+             "normal_max",
+             "support",
+             "ci",
+             "sizing",
+             "zone"
+            ],
+            "properties": {
+             "locus": {
+              "type": "string"
+             },
+             "repeat_count": {
+              "type": "string"
+             },
+             "status": {
+              "type": "string"
+             },
+             "normal_max": {
+              "type": "string"
+             },
+             "pathologic_min": {
+              "type": "string"
+             },
+             "support": {
+              "type": "string"
+             },
+             "adsp": {
+              "type": "string"
+             },
+             "ci": {
+              "type": "string"
+             },
+             "sizing": {
+              "enum": [
+               "no_call",
+               "flanking_only",
+               "in_repeat",
+               "low_confidence",
+               "sized",
+               "unknown"
+              ]
+             },
+             "allele_sizing": {
+              "type": "string"
+             },
+             "zone": {
+              "type": "string"
+             },
+             "zone_label": {
+              "type": "string"
+             },
+             "zone_citation": {
+              "type": "string"
+             },
+             "rfc1_motif": {
+              "type": "object",
+              "required": [
+               "verdict",
+               "note"
+              ],
+              "properties": {
+               "verdict": {
+                "enum": [
+                 "benign_motif",
+                 "pathogenic_motif",
+                 "uncertain_motif",
+                 "not_resolved",
+                 "not_checked"
+                ]
+               },
+               "note": {
+                "type": "string"
+               },
+               "dominant_motif": {
+                "type": "string"
+               },
+               "dominant_class": {
+                "type": "string"
+               },
+               "dominant_share": {
+                "type": "string"
+               },
+               "motif_shares": {
+                "type": "string"
+               },
+               "repeat_reads": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "unsized": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "intermediate": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
           }
          }
         }

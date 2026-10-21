@@ -39,7 +39,14 @@ Checks:
      not normal is listed (also outside the five key loci), a record
      without a status is counted apart, not flagged; a Stranger file older
      than ExpansionHunter's is not read and both reports say to rerun step
-     9b; a stale card says Stale, not Complete;
+     9b; a stale card says Stale, not Complete; 12b: every locus is a row
+     with the catalog's normal maximum, a FLANKING-only call says 'size not
+     determined (flanking reads only)' and never normal while the same
+     counts on spanning reads stay normal, an interval that reaches the
+     pathogenic minimum or one spanning read is low confidence, HTT 30 is
+     in its intermediate range with the GeneReviews citation, and the RFC1
+     flag carries step 9b's motif verdict unless that table is older than
+     Stranger's output;
  13. HLA: each allele keeps its own T1K quality; a one-allele row
      ('.', 0, -1) is not low confidence; a quality of 0 or below is, and on
      HLA-A or HLA-B the reports say the gene is not passed to PharmCAT;
@@ -1071,7 +1078,8 @@ def main():
         check("Stranger: read when it is there", summ_x["sections"]["expansions"]["source"]
               == "expansion_hunter/S_eh_stranger.vcf" and ed.get("stranger") is True, summ_x["sections"]["expansions"])
         check("Stranger: the full_mutation outside the five key loci is listed, the normal one is not",
-              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation"}], ed)
+              ed.get("flagged") == [{"locus": "LOCUS_B", "repeat_count": "20/75", "status": "full_mutation",
+                                     "sizing": "unknown"}], ed)
         check("Stranger: a record without STR_STATUS is counted apart, not flagged", ed.get("no_status") == 1, ed)
         check("Stranger: the five key loci stay listed", [k["locus"] for k in ed["key_loci"]] == collect_summary.EH_LOCI, ed)
         check("Stranger: both reports list LOCUS_B full_mutation and the short-read caveat",
@@ -1095,6 +1103,97 @@ def main():
         card_eh = html_x3.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
         check("Repeat card of a stale result says Stale, not Complete",
               "Stale" in card_eh and "Complete" not in card_eh, card_eh)
+
+        # 12b. every catalog locus, sizing from SO/ADSP/REPCI, the
+        # intermediate ranges of bin/str_intermediate_ranges.tsv and the RFC1
+        # motif count: ten loci, Stranger's INFO fields as it writes them
+        z = os.path.join(work, "str2", "S")
+        fmt = "GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC"
+
+        def strec(rep, cn, so, ci, adsp, st, nmax="20", pmin="40"):
+            # Per-allele values come as tuples, joined here: scripts/ci/check-personal-data.sh
+            # reads a literal count pair beside a gene name as a genotype.
+            cn, ci, adsp = ("/".join(map(str, x)) if isinstance(x, tuple) else x for x in (cn, ci, adsp))
+            return (f"chr1\t{100 + len(rep)}\t.\tC\t<STR50>\t.\tPASS\tEND=200;REPID={rep};VARID={rep};"
+                    f"STR_STATUS={st};STR_NORMAL_MAX={nmax};STR_PATHOLOGIC_MIN={pmin}\t{fmt}\t"
+                    f"1/2:{so}:{cn}:{ci}:{adsp}:0/0:0/0:30.0\n")
+        span2 = "SPANNING/SPANNING"
+        recs = [strec("HTT", (17, 30), span2, ("17-17", "30-30"), (12, 9), "normal", "26", "40"),
+                strec("FMR1", "30", "SPANNING", "30-30", "14", "normal", "44", "201"),
+                strec("C9ORF72", (2, 8), span2, ("2-2", "8-8"), (10, 11), "normal", "24", "30"),
+                strec("ATXN1", (29, 31), span2, ("29-29", "31-31"), (8, 7), "normal", "35", "39"),
+                strec("DMPK", (5, 40), span2, ("5-5", "40-40"), (15, 6), "pre_mutation", "34", "50"),
+                strec("LOCUS_FL", (15, 60), "FLANKING/FLANKING", ("0-119", "4-507"), (0, 0), "normal"),
+                strec("LOCUS_SP", (15, 60), span2, ("15-15", "60-60"), (5, 5), "normal", "100", "200"),
+                strec("LOCUS_LOW", (12, 18), span2, ("12-12", "16-45"), (6, 1), "normal"),
+                strec("LOCUS_NC", ".", ".", ".", ".", "normal"),
+                strec("RFC1", (100, 150), "INREPEAT/INREPEAT", ("80-120", "130-170"), (0, 0), "full_mutation", "11", "12")]
+        put(f"{z}/expansion_hunter/S_eh.vcf", VCF_HEAD + "".join(recs), age_days=2)
+        put(f"{z}/expansion_hunter/S_eh_stranger.vcf", VCF_HEAD + "".join(recs), age_days=1)
+        put(f"{z}/expansion_hunter/S_rfc1_motif.tsv",
+            "locus\tchrom\tstart\tend\trepeat_reads\tdominant_motif\tdominant_class\tdominant_share\tmotif_shares"
+            "\tverdict\tnote\nRFC1\tchr4\t39348425\t39348479\t24\tAAAAG\tbenign\t0.92\tAAAAG=0.92,AAAGG=0.08"
+            "\tbenign_motif\tmotif AAAAG (benign) in 22 of 24 repeat reads (92%): the flag is not supported\n")
+        summ_z, txt_z, html_z = render(z)
+        zd = summ_z["sections"]["expansions"]["data"]
+        zl = {l["locus"]: l for l in zd.get("loci", [])}
+        check("every locus: ten records give ten rows, the five key loci first",
+              [l["locus"] for l in zd.get("loci", [])][:5] == collect_summary.EH_LOCI and len(zl) == 10, zd.get("loci"))
+        check("every locus: the catalog's normal maximum from STR_NORMAL_MAX", zl.get("HTT", {}).get("normal_max") == "26",
+              zl.get("HTT"))
+        check("sizing: a FLANKING-only call is flanking_only, not sized", zl.get("LOCUS_FL", {}).get("sizing") == "flanking_only",
+              zl.get("LOCUS_FL"))
+        check("sizing: the same counts on spanning reads are sized", zl.get("LOCUS_SP", {}).get("sizing") == "sized",
+              zl.get("LOCUS_SP"))
+        check("sizing: one spanning read, or an interval reaching the pathogenic minimum, is low_confidence",
+              zl.get("LOCUS_LOW", {}).get("allele_sizing") == "sized/low_confidence"
+              and zl["LOCUS_LOW"]["sizing"] == "low_confidence", zl.get("LOCUS_LOW"))
+        check("sizing: in-repeat reads only is in_repeat; no count is no_call",
+              (zl.get("RFC1", {}).get("sizing"), zl.get("LOCUS_NC", {}).get("sizing")) == ("in_repeat", "no_call"), zl)
+        check("unsized: listed apart, never with the sized normal loci",
+              zd.get("unsized") == ["LOCUS_FL", "LOCUS_LOW", "LOCUS_NC", "RFC1"], zd.get("unsized"))
+        fl_line = [line for line in txt_z.splitlines() if line.strip().startswith("LOCUS_FL ")]
+        check("text: the FLANKING-only locus says 'size not determined (flanking reads only)', not normal",
+              len(fl_line) == 1 and fl_line[0].split()[2] != "normal"
+              and "not sized  size not determined (flanking reads only)" in fl_line[0], fl_line)
+        sp_line = [line for line in txt_z.splitlines() if line.strip().startswith("LOCUS_SP ")]
+        check("text: the spanning locus keeps its normal status", len(sp_line) == 1 and sp_line[0].split()[2] == "normal"
+              and "size not determined" not in sp_line[0], sp_line)
+        check("intermediate: HTT 30 is in 27-35 with its label and citation; DMPK 40 in 35-49; FMR1 30 and ATXN1 none",
+              (zl["HTT"]["zone"], zl["DMPK"]["zone"], zl["FMR1"]["zone"], zl["ATXN1"]["zone"]) == ("27-35", "35-49", "", "")
+              and "may expand in offspring" in zl["HTT"]["zone_label"] and "NBK1305" in zl["HTT"]["zone_citation"], zl["HTT"])
+        htt_line = [line for line in txt_z.splitlines() if line.strip().startswith("HTT ")]
+        check("text: the HTT line prints the range, its label and the GeneReviews link",
+              len(htt_line) == 1 and "27-35: intermediate (not disease-causing; may expand in offspring)" in htt_line[0]
+              and "https://www.ncbi.nlm.nih.gov/books/NBK1305/" in htt_line[0], htt_line)
+        check("text and HTML: the intermediate list names HTT and DMPK",
+              "In an intermediate range (bin/str_intermediate_ranges.tsv): HTT, DMPK" in txt_z
+              and "In an intermediate range" in html_z and "HTT, DMPK" in html_z, zd.get("intermediate"))
+        check("RFC1: the flagged item carries the benign motif verdict",
+              [f.get("rfc1_motif", {}).get("verdict") for f in zd.get("flagged", []) if f["locus"] == "RFC1"]
+              == ["benign_motif"], zd.get("flagged"))
+        check("RFC1: both reports print the verdict, and the count as a lower bound",
+              "RFC1 motif count: benign_motif: motif AAAAG (benign) in 22 of 24 repeat reads (92%): the flag is not "
+              "supported" in txt_z and "RFC1 motif count: benign_motif" in html_z
+              and ">=80/>=130" in txt_z and "<td>&gt;=80/&gt;=130</td>" in html_z, txt_z)
+        card_z = html_z.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+        check("HTML: one row per locus with the FLANKING note",
+              card_z.count("<tr><td>") == 10 and "size not determined (flanking reads only)" in card_z, card_z)
+        check("every-locus summary validates", not validate.validate(schema, json.loads(json.dumps(summ_z))),
+              validate.validate(schema, json.loads(json.dumps(summ_z))))
+        check("text: an in-repeat allele without an interval prints 'not sized', not its point estimate",
+              render_report.str_count({"repeat_count": "/".join(["20", "300"]), "allele_sizing": "sized/in_repeat",
+                                       "ci": "."}) == "20/not sized")
+        e = os.path.join(work, "str3", "S")
+        put(f"{e}/expansion_hunter/S_eh.vcf", VCF_HEAD)
+        txt_e = render(e)[1]
+        check("text: a VCF without records still lists the five key loci as not in output",
+              all(f"{k:<8} not in output" in txt_e for k in collect_summary.EH_LOCI), txt_e)
+        put(f"{z}/expansion_hunter/S_rfc1_motif.tsv", open(f"{z}/expansion_hunter/S_rfc1_motif.tsv").read(), age_days=3)
+        zd2 = render(z)[0]["sections"]["expansions"]["data"]
+        check("RFC1: a motif table older than Stranger's output is not read",
+              [f.get("rfc1_motif", {}).get("verdict") for f in zd2.get("flagged", []) if f["locus"] == "RFC1"]
+              == ["not_checked"], zd2.get("flagged"))
 
         # 13. HLA quality per allele
         q = os.path.join(work, "hla", "S")

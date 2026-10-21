@@ -1226,6 +1226,81 @@ def sec_sv_consensus(d, s):
     return p, {"consensus": t}
 
 
+STR_RANGES_TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "str_intermediate_ranges.tsv")
+# How well ExpansionHunter sized an allele, from its FORMAT SO, ADSP and
+# REPCI fields, worst first; a locus takes the worst of its alleles.
+STR_SIZING = ["no_call", "flanking_only", "in_repeat", "low_confidence", "sized", "unknown"]
+STR_MIN_SPANNING = 2
+
+
+def str_ranges(path=STR_RANGES_TSV):
+    """bin/str_intermediate_ranges.tsv by locus (tests/test_str_ranges.py checks it)."""
+    rows, head = {}, None
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            c = line.rstrip("\n").split("\t")
+            if head is None:
+                head = c
+                continue
+            r = dict(zip(head, c))
+            rows[r["locus"]] = r
+    return rows
+
+
+def str_int(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def str_allele_sizing(so, adsp, ci, cn, path_min):
+    """One allele's sizing: sized, low_confidence (fewer than
+    STR_MIN_SPANNING spanning reads, or a confidence interval that reaches
+    the catalog's pathogenic minimum from below it), in_repeat (in-repeat
+    reads only: longer than a read), flanking_only, no_call, or unknown
+    (no SO field)."""
+    if str_int(cn) is None:
+        return "no_call"
+    if not so or so == ".":
+        return "unknown"
+    if so == "FLANKING":
+        return "flanking_only"
+    if so == "INREPEAT":
+        return "in_repeat"
+    hi = str_int(ci.split("-")[-1]) if ci else None
+    if (str_int(adsp) is not None and str_int(adsp) < STR_MIN_SPANNING) or (
+            path_min is not None and hi is not None and str_int(cn) < path_min <= hi):
+        return "low_confidence"
+    return "sized"
+
+
+def str_field(fmt, val, key):
+    return val[fmt.index(key)] if key in fmt and fmt.index(key) < len(val) else ""
+
+
+def str_split(x, n):
+    """A per-allele FORMAT value as n parts; one value serves every allele."""
+    parts = x.split("/") if x else []
+    return parts if len(parts) == n else (parts * n if len(parts) == 1 else [""] * n)
+
+
+def rfc1_motif_row(d, s, after):
+    """Step 9b's RFC1 motif count (bin/rfc1_motif.py), unless it is older than
+    the Stranger file it was made from."""
+    p = first_existing(d, [f"expansion_hunter/{s}_rfc1_motif.tsv"])
+    if not p or (after and os.path.getmtime(p) < os.path.getmtime(after)):
+        return None
+    rows = read_tsv(p)
+    if not rows:
+        return None
+    r = rows[0]
+    return {k: r.get(k, ".") for k in ("verdict", "note", "dominant_motif", "dominant_class",
+                                       "dominant_share", "motif_shares", "repeat_reads")}
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -1239,30 +1314,61 @@ def sec_expansions(d, s):
     p = st or eh
     if not p:
         return None, {}
-    loci, tested, flagged, no_status = {}, 0, [], 0
+    ranges = str_ranges()
+    rfc1 = rfc1_motif_row(d, s, st) if st else None
+    loci, tested, flagged, no_status = [], 0, [], 0
     for r in vcf_records(p):
         if len(r) < 10:
             continue
         tested += 1
         info = info_map(r[7])
-        rep = info.get("REPID") or info.get("VARID") or ""
+        rep = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
         fmt = r[8].split(":")
         val = r[9].split(":")
-        repcn = val[fmt.index("REPCN")] if "REPCN" in fmt and fmt.index("REPCN") < len(val) else ""
-        if rep in EH_LOCI and rep not in loci:
-            loci[rep] = repcn or "."
+        repcn = str_field(fmt, val, "REPCN")
+        counts = repcn.split("/") if repcn and repcn != "." else []
+        n = max(len(counts), 1)
+        path_min = str_int(info.get("STR_PATHOLOGIC_MIN"))
+        sizing = [str_allele_sizing(so, ad, ci, cn, path_min) for so, ad, ci, cn in
+                  zip(str_split(str_field(fmt, val, "SO"), n), str_split(str_field(fmt, val, "ADSP"), n),
+                      str_split(str_field(fmt, val, "REPCI"), n), counts or ["."])]
+        status = [x for x in info.get("STR_STATUS", "").split(",") if x and x != "."] if st else []
+        # Stranger writes '.' where its catalog has no value.
+        item = {"locus": rep, "repeat_count": repcn or ".", "status": ",".join(status),
+                "normal_max": info.get("STR_NORMAL_MAX", "").strip("."),
+                "pathologic_min": info.get("STR_PATHOLOGIC_MIN", "").strip("."),
+                "support": str_field(fmt, val, "SO"), "adsp": str_field(fmt, val, "ADSP"),
+                "ci": str_field(fmt, val, "REPCI"), "sizing": min(sizing, key=STR_SIZING.index),
+                "allele_sizing": "/".join(sizing), "zone": "", "zone_label": "", "zone_citation": ""}
+        rng = ranges.get(rep)
+        sized = [str_int(c) for c, z in zip(counts, sizing) if z in ("sized", "unknown") and str_int(c) is not None]
+        if rng and any(int(rng["intermediate_min"]) <= c <= int(rng["intermediate_max"]) for c in sized):
+            item.update(zone=f"{rng['intermediate_min']}-{rng['intermediate_max']}", zone_label=rng["label"],
+                        zone_citation=rng["citation"])
+        if rep == "RFC1" and st and any(x != "normal" for x in status):
+            item["rfc1_motif"] = rfc1 or {"verdict": "not_checked",
+                                          "note": "no motif count beside Stranger's output (step 9b runs it "
+                                                  "with the sample's BAM): confirm the flag with repeat-primed PCR"}
+        loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
-            status = [x for x in info.get("STR_STATUS", "").split(",") if x and x != "."]
             if not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
-                flagged.append({"locus": rep or f"{r[0]}:{r[1]}", "repeat_count": repcn or ".",
-                                "status": ",".join(status)})
-    out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": loci.get(k, "not in output")}
-                                           for k in EH_LOCI],
-           "stranger": bool(st), "stranger_outdated": outdated}
+                f = {"locus": item["locus"], "repeat_count": item["repeat_count"], "status": item["status"],
+                     "sizing": item["sizing"]}
+                if "rfc1_motif" in item:
+                    f["rfc1_motif"] = item["rfc1_motif"]
+                flagged.append(f)
+    by = {l["locus"]: l for l in loci}
+    # Every locus, the five key loci first, then by name.
+    loci.sort(key=lambda l: (EH_LOCI.index(l["locus"]) if l["locus"] in EH_LOCI else len(EH_LOCI), l["locus"]))
+    out = {"records": tested, "key_loci": [{"locus": k, "repeat_count": by[k]["repeat_count"] if k in by
+                                            else "not in output"} for k in EH_LOCI],
+           "loci": loci, "stranger": bool(st), "stranger_outdated": outdated,
+           "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
+           "intermediate": [l["locus"] for l in loci if l["zone"]]}
     if st:
         out.update(flagged=flagged, no_status=no_status)
     return p, out

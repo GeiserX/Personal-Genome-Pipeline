@@ -6,7 +6,10 @@
     full_mutation), disease name, OMIM number, and repeat-size thresholds from
     Stranger's bundled GRCh38 catalog.
 
-    Equivalent to: scripts/09b-stranger.sh
+    Equivalent to: scripts/09b-stranger.sh, except the RFC1 motif count
+    (bin/rfc1_motif.py): it reads the sample's BAM, which this process does
+    not get, so a Nextflow report shows an RFC1 flag as not checked
+    (docs/09b-stranger.md).
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
