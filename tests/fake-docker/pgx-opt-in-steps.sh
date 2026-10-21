@@ -61,6 +61,10 @@ case "$args" in
       exit 1
     fi
     put "${@: -1}${@: -2:1}.tsv" 'Sample\tGenotype\tFilter\nsample1\tNone\tNot_assigned_to_haplotypes\n' ;;
+  *"pgx_parse.py step36-outside"*)
+    # The real lister on the report: it reads only the JSON, so it runs here.
+    python3 "$(host_path /pgp-bin/pgx_parse.py)" step36-outside --report "$(host_path "$(opt --report)")"
+    exit $? ;;
   *"pgx_outside_calls.py pypgx-summary"*)
     # Step 32's summary, at the path it names with --out.
     put "$(opt --out)" \
@@ -164,11 +168,32 @@ run_expect 0 cpic-no-outside "${SCRIPTS}/27-cpic-lookup.sh" sample1
 if grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus'; then
   fail "step 27 passed a consensus table that does not exist for a report without outside calls"
 fi
-printf '{"genes": {"HLA-B": {"callSource": "OUTSIDE"}}}\n' > "$REPORT_JSON"
+# outside_report GENE LABEL: a report whose only gene is an outside call of GENE.
+outside_report() {
+  printf '{"genes": {"%s": {"callSource": "OUTSIDE", "sourceDiplotypes": [{"label": "%s", "phenotypes": ["n/a"], "allele1": {"name": "%s"}, "allele2": null}]}}}\n' \
+    "$1" "$2" "$2" > "$REPORT_JSON"
+}
+outside_report HLA-B '*57:01'
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 cpic-stale-outside "${SCRIPTS}/27-cpic-lookup.sh" sample1
 grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus /genome/sample1/pgx_consensus/sample1_pgx_consensus.tsv' \
   || fail "step 27 did not pass step 36's missing table for a report with outside calls: $(grep pgx_parse "$FAKE_DOCKER_LOG")"
-output_has cpic-stale-outside "PharmCAT's report has outside calls, but step 36's consensus is missing"
+output_has cpic-stale-outside "PharmCAT's report has outside calls from step 36 \\(HLA-B\\), but step 36's consensus is missing"
+# MT-RNR1's outside call comes from step 20's chrM calls (step 07), never from
+# step 36: it does not ask for step 36 or pass its missing table.
+outside_report MT-RNR1 m.1555A\>G
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 cpic-mtrnr1-outside "${SCRIPTS}/27-cpic-lookup.sh" sample1
+if grep 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" | grep -q -- '--consensus'; then
+  fail "step 27 passed step 36's missing table for a report whose only outside call is MT-RNR1"
+fi
+output_lacks cpic-mtrnr1-outside "consensus is missing"
+# A report the lister cannot read still reaches the parser, which writes the
+# PARSING FAILED report, instead of stopping the step before it.
+printf 'not json\n' > "$REPORT_JSON"
+: > "$FAKE_DOCKER_LOG"
+run_expect 0 cpic-unreadable-report "${SCRIPTS}/27-cpic-lookup.sh" sample1
+grep -q 'pgx_parse.py cpic-report' "$FAKE_DOCKER_LOG" \
+  || fail "step 27 stopped before the parser on a report step36-outside cannot read"
 
 echo "Cyrius installs hash-locked with network and runs without; step 07 passes only non-empty outside calls."

@@ -617,9 +617,10 @@ def sec_hla(d, s):
             # Step 36's rule (bin/pgx_outside_calls.py): an allele quality of 0 or
             # below withholds the whole gene; only HLA-A and HLA-B reach PharmCAT.
             low = any(hla_quality(q) <= 0 for q in quals)
-            loci.append({"gene": c[0], "alleles": alleles, "quality": quals, "low_confidence": low,
-                         "withheld_from_pharmcat": low and c[0] in pgx_outside_calls.HLA_GENES})
-    return p, {"loci": loci}
+            loci.append(hla_locus_extras({"gene": c[0], "alleles": alleles, "quality": quals, "low_confidence": low,
+                                          "withheld_from_pharmcat": low and c[0] in pgx_outside_calls.HLA_GENES},
+                                         c[1] if len(c) > 1 else ""))
+    return p, {"loci": loci, "derived": hla_derived(loci)}
 
 
 def hla_quality(q):
@@ -628,6 +629,121 @@ def hla_quality(q):
         return float(q)
     except ValueError:
         return -1.0
+
+
+# --- HLA: candidate caps, the HFE label, the DQ haplotypes and the allele table ---
+# Rules in docs/08-hla-typing.md "What the report derives". The allele table is
+# bin/hla_alleles.tsv (in bin/ because the report containers mount only bin/).
+
+HLA_ALLELES_TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hla_alleles.tsv")
+HLA_MAX_CANDIDATES = 3   # a quality-0 allele with more candidates is "no confident call"
+HLA_HFE_LABEL = ("T1K sequence allele, not the HFE C282Y/H63D genotype: that genotype comes from the "
+                 "variant calls (ClinVar section)")
+
+
+def hla_name(x):
+    """'HLA-DQB1*02:01:01' or 'DQB1*02:01:01' -> 'DQB1*02:01:01'; 'HLA-DQB1' -> 'DQB1'."""
+    return x.strip()[4:] if x.strip().startswith("HLA-") else x.strip()
+
+
+def hla_candidates(allele):
+    """T1K's allele field: one allele, or equally likely candidates separated by commas."""
+    return [a for a in (hla_name(x) for x in allele.split(",")) if a]
+
+
+def hla_locus_extras(locus, n_diff):
+    """Cap a quality-0 candidate list to HLA_MAX_CANDIDATES (the full list stays
+    in the TSV), count the candidates, mark one homozygous call and label the
+    HFE row."""
+    counts, kept = [], []
+    for a, q in zip(locus["alleles"], locus["quality"] + [""] * len(locus["alleles"])):
+        cands = hla_candidates(a)
+        counts.append(len(cands))
+        kept.append(",".join(cands[:HLA_MAX_CANDIDATES]) if hla_quality(q) <= 0 and len(cands) > HLA_MAX_CANDIDATES
+                    else a)
+    locus["alleles"] = kept
+    locus["candidates"] = counts
+    # T1K writes one allele and '. 0 -1' for a homozygous gene (or a second allele it did not see).
+    locus["one_allele_type"] = n_diff.strip() == "1" and len(kept) == 1
+    if hla_name(locus["gene"]) == "HFE":
+        locus["label"] = HLA_HFE_LABEL
+    return locus
+
+
+def hla_match(allele, group):
+    """'yes' when every candidate of the allele is in the group (B*57:01 holds
+    B*57:01:01:02), 'no' when none is, 'mixed' when only some are."""
+    hits = [c == group or c.startswith(group + ":") for c in hla_candidates(allele)]
+    return "yes" if hits and all(hits) else ("mixed" if any(hits) else "no")
+
+
+def hla_read_table(path=HLA_ALLELES_TSV):
+    """bin/hla_alleles.tsv as a list of dicts (tests/test_hla_report.py checks its schema)."""
+    rows, head = [], None
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            c = line.rstrip("\n").split("\t")
+            if head is None:
+                head = c
+                continue
+            rows.append(dict(zip(head, c)))
+    return rows
+
+
+def hla_derived(loci, table=None):
+    """The DQ haplotypes, the DQB1*02 dose and each table allele present or absent."""
+    by = {}
+    for l in loci:
+        by.setdefault(hla_name(l["gene"]), l)
+
+    def usable(gene):
+        l = by.get(gene)
+        if not l or not l["alleles"]:
+            return None, f"HLA-{gene} not typed"
+        if l["low_confidence"]:
+            return None, f"HLA-{gene} low confidence"
+        return l, ""
+
+    def carries(l, group):
+        """'yes', 'no' or 'mixed' over both alleles of a locus."""
+        m = [hla_match(a, group) for a in l["alleles"]]
+        return "yes" if "yes" in m else ("mixed" if "mixed" in m else "no")
+
+    def both(a, b):
+        return "present" if a == b == "yes" else ("absent" if "no" in (a, b) else "uncertain")
+
+    dqa, ra = usable("DQA1")
+    dqb, rb = usable("DQB1")
+    coeliac = {"status": "not_determined", "reason": "; ".join(r for r in (ra, rb) if r),
+               "dq2_5": None, "dq2_5_phase": None, "dq2_2": None, "dq8": None, "dqb1_02_dose": None}
+    if dqb:
+        m = [hla_match(a, "DQB1*02") for a in dqb["alleles"]]
+        if "mixed" not in m:
+            n = m.count("yes")
+            coeliac["dqb1_02_dose"] = 2 * n if dqb["one_allele_type"] else n
+    if dqa and dqb:
+        coeliac.update(status="derived", reason="")
+        coeliac["dq2_5"] = both(carries(dqa, "DQA1*05"), carries(dqb, "DQB1*02"))
+        coeliac["dq2_2"] = both(carries(dqa, "DQA1*02:01"), carries(dqb, "DQB1*02:02"))
+        coeliac["dq8"] = both(carries(dqa, "DQA1*03"), carries(dqb, "DQB1*03:02"))
+        if coeliac["dq2_5"] == "present":
+            drb1, why = usable("DRB1")
+            dr3 = carries(drb1, "DRB1*03") if drb1 else None
+            coeliac["dq2_5_phase"] = ("likely cis (DRB1*03 present)" if dr3 == "yes"
+                                      else "possible trans (no DRB1*03)" if dr3 == "no"
+                                      else f"phase unknown ({why or 'DRB1*03 uncertain'})")
+    alleles = []
+    for r in (hla_read_table() if table is None else table):
+        gene = r["allele"].split("*")[0]
+        l, why = usable(gene)
+        state = carries(l, r["allele"]) if l else None
+        alleles.append({"allele": r["allele"], "kind": r["kind"], "association": r["association"],
+                        "pmids": r["pmids"], "citation": r["citation"],
+                        "state": {"yes": "present", "no": "absent", "mixed": "uncertain", None: "not_determined"}[state],
+                        "reason": why})
+    return {"coeliac": coeliac, "alleles": alleles}
 
 
 def sec_prs(d, s):
