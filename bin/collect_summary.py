@@ -99,7 +99,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35b", "37", "40", "41", "42", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -109,6 +109,11 @@ NOT_ASSESSED = [
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
     "Variants of uncertain significance (not interpreted)",
 ]
+
+# Added to NOT_ASSESSED unless step 35b (Paraphase, PacBio HiFi) gave a result:
+# Parascopy's models (step 35) have none for the alpha-globin genes.
+HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads: Parascopy has no "
+                    "model for them, so only step 35b on a PacBio HiFi BAM assesses them")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -594,6 +599,77 @@ def sec_paralogs(d, s):
                "variants": variants,
                "smn1": {"paraphase": smn1, "parascopy": parascopy,
                         "agree": paraphase_report.compare_smn1(smn1, parascopy)}}
+
+
+# SMN2 exon 7, c.840 (the base that tells SMN2 from SMN1), GRCh38 1-based;
+# SMN1's is paraphase_report.SMN1_EXON7.
+SMN2_EXON7 = ("chr5", 70076526)
+
+
+def parascopy_cn_at(rows, chrom, pos):
+    """The copy number at one position from step 35's table: the
+    paralog-specific value (psCN) of the row, or of its homologous region,
+    that holds the position, with the row's aggregate value (agCN). As
+    paraphase_report.parascopy_smn1: cn is None unless psCN's filter is PASS
+    and its quality at least 20 (Parascopy's threshold)."""
+    for r in rows:
+        try:
+            regions = [(r["chrom"], int(r["start"]) + 1, int(r["end"]))]
+        except (KeyError, ValueError):
+            continue
+        for h in (r.get("homologous_regions") or "*").split(","):
+            m = re.match(r"^([^:]+):(\d+)-(\d+)", h.strip())
+            if m:
+                regions.append((m.group(1), int(m.group(2)), int(m.group(3))))
+        idx = next((i for i, (c, b, e) in enumerate(regions) if c == chrom and b <= pos <= e), None)
+        if idx is None:
+            continue
+        cns = (r.get("psCN") or "").split(",")
+        quals = (r.get("psCN_qual") or "").split(",")
+        cn_txt = cns[idx] if idx < len(cns) else "?"
+        q_txt = quals[idx] if idx < len(quals) else "*"
+        filt = r.get("psCN_filter") or "."
+        try:
+            q = float(q_txt)
+        except ValueError:
+            q = None
+        ok = filt == "PASS" and q is not None and q >= 20 and cn_txt.isdigit()
+        return {"cn": int(cn_txt) if ok else None,
+                "text": f"{cn_txt} (quality {q_txt}, filter {filt})" + ("" if ok else ", not resolved"),
+                "agcn": r.get("agCN") or ".", "agcn_qual": r.get("agCN_qual") or ".",
+                "agcn_filter": r.get("agCN_filter") or "."}
+    return {"cn": None, "text": "no row covers exon 7", "agcn": ".", "agcn_qual": ".", "agcn_filter": "."}
+
+
+def smn_reading(smn1):
+    """What an SMN1 copy number means for SMA, in one line."""
+    if smn1 is None:
+        return "SMN1 not resolved (quality under 20 or filter not PASS): no carrier reading"
+    if smn1 == 0:
+        return "no SMN1 copy: the pattern of spinal muscular atrophy (SMA) itself"
+    if smn1 == 1:
+        return "one SMN1 copy: the pattern of an SMA carrier"
+    if smn1 == 2:
+        return ("two SMN1 copies: not a carrier by copy number; a 2+0 carrier (both copies on one chromosome) "
+                "cannot be ruled out")
+    return f"{smn1} SMN1 copies: not a carrier by copy number"
+
+
+def sec_parascopy(d, s):
+    """Step 35 (Parascopy, short reads): SMN1 and SMN2 copy number at exon 7,
+    the aggregate copy number of the pair there, and the SMA reading."""
+    p = first_existing(d, [f"paralogs/{s}_smn_copy_number.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if rows and not {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
+                         "psCN_filter column")
+    smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
+    smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+    return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
+               "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
+               "rows": len(rows), "reading": smn_reading(smn1["cn"])}
 
 
 def sec_hla(d, s):
@@ -1996,6 +2072,7 @@ SECTIONS = [
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),
     ("cyrius", "Cyrius (CYP2D6)", "21", sec_cyrius),
+    ("parascopy", "SMN1/SMN2 copy number (Parascopy, short reads)", "35", sec_parascopy),
     ("paralogs", "Paralog genes (Paraphase, PacBio HiFi)", "35b", sec_paralogs),
     ("hla", "HLA typing (T1K)", "08", sec_hla),
     ("prs", "Polygenic risk scores", "25", sec_prs),
@@ -2186,7 +2263,8 @@ def collect(sample, sample_dir, declared_sex=None):
         # a VCF never does, so it is no step left undone.
         "not_run": [sections[k]["title"] + (f" (step {sections[k]['step']} failed)" if sections[k]["state"] == "failed" else "")
                     for k, *_ in SECTIONS if sections[k]["state"] in ("missing", "failed") and k not in NOT_A_STEP],
-        "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED]),
+        "not_assessed": NOT_ASSESSED + ([] if sections["prs"]["data"].get("adjusted") else [PRS_NOT_ADJUSTED])
+        + ([] if sections["paralogs"]["state"] in ("ok", "stale") else [HBA_NOT_ASSESSED]),
     }
     return summary
 
