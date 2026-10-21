@@ -247,6 +247,17 @@ def phenoconversion_checks(work):
     got = {r[0]: r for r in rows}
     check("control: with the factor set to 1 the NM is not converted to a poor metabolizer",
           not got["CYP2D6"][4].startswith("Poor Metabolizer"), got["CYP2D6"])
+    # 8f. a NaN activity score converts nothing; a table row with a missing cell is reported, not a crash
+    _, rec, rows, _ = run_report(work, "PHENONAN", pheno_report("NaN"), medications="duloxetine\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: a NaN activity score converts nothing",
+          got["CYP2D6"][4] == "not converted: the report gives no activity score", got["CYP2D6"])
+    short = os.path.join(work, "inhibitors-short-row.tsv")
+    with open(short, "w") as out:
+        out.write("Drug\tGene\tStrength\tActivity_score_factor\tClass_source\tRule_source\nparoxetine\n")
+    rc, rec, rows, _ = run_report(work, "PHENOSHORT", pheno_report(), medications="paroxetine\n", inhibitors=short)
+    check("phenoconversion: a table row with no Gene cell is reported as unreadable, the report still written",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
     with contextlib.redirect_stderr(io.StringIO()):
         try:
             pgx_parse.main(["cpic-report", "--sample", "X", "--report", "r.json", "--outdir", work,

@@ -56,6 +56,26 @@ echo "  Output: ${OUTPUT}"
 echo "============================================"
 echo ""
 
+# Opt-in medication list: user input, never a default. The file may sit
+# outside GENOME_DIR, so it is mounted on its own, read-only. Both files
+# are checked here, before any container runs.
+MED_ARGS=()
+MED_MOUNT=()
+if [ -n "${MEDICATIONS:-}" ]; then
+  if [ ! -f "$MEDICATIONS" ] || [ ! -r "$MEDICATIONS" ]; then
+    echo "ERROR: MEDICATIONS=${MEDICATIONS} is not a readable file." >&2
+    exit 1
+  fi
+  MED_HOST="$(cd "$(dirname "$MEDICATIONS")" && pwd)/$(basename "$MEDICATIONS")"
+  echo "Medication list: ${MED_HOST} (phenoconversion of CYP2D6 and CYP2C19)"
+  if [ ! -f "${PGP_ROOT}/assets/pgx_inhibitors.tsv" ]; then
+    echo "ERROR: inhibitor table ${PGP_ROOT}/assets/pgx_inhibitors.tsv not found." >&2
+    exit 1
+  fi
+  MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro")
+  MED_ARGS=(--medications /pgp-med/medications.txt --inhibitors /pgp-assets/pgx_inhibitors.tsv)
+fi
+
 # pypgx (step 32) calls CYP2D6 from read depth, which PharmCAT cannot. Its
 # summary is compared with PharmCAT here rather than in step 32: run-all.sh
 # starts steps 07 and 32 side by side, so step 32 could read a missing or
@@ -94,25 +114,6 @@ elif [ -n "$STEP36_OUTSIDE" ]; then
   PYPGX_ARGS+=(--consensus "$(cpath "$CONSENSUS")")
 else
   echo "No outside-call consensus (step 36 not run): HLA and CYP2D6 from the BAM are not listed."
-fi
-
-# Opt-in medication list: user input, never a default. The file may sit
-# outside GENOME_DIR, so it is mounted on its own, read-only.
-MED_ARGS=()
-MED_MOUNT=()
-if [ -n "${MEDICATIONS:-}" ]; then
-  if [ ! -f "$MEDICATIONS" ] || [ ! -r "$MEDICATIONS" ]; then
-    echo "ERROR: MEDICATIONS=${MEDICATIONS} is not a readable file." >&2
-    exit 1
-  fi
-  MED_HOST="$(cd "$(dirname "$MEDICATIONS")" && pwd)/$(basename "$MEDICATIONS")"
-  echo "Medication list: ${MED_HOST} (phenoconversion of CYP2D6 and CYP2C19)"
-  if [ ! -f "${PGP_ROOT}/assets/pgx_inhibitors.tsv" ]; then
-    echo "ERROR: inhibitor table ${PGP_ROOT}/assets/pgx_inhibitors.tsv not found." >&2
-    exit 1
-  fi
-  MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro")
-  MED_ARGS=(--medications /pgp-med/medications.txt --inhibitors /pgp-assets/pgx_inhibitors.tsv)
 fi
 
 # The parser, the drug lookup and the comparison live in bin/pgx_parse.py, the

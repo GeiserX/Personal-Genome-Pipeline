@@ -45,6 +45,7 @@ three shapes are read.
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import sys
@@ -657,6 +658,8 @@ def read_inhibitors(path):
         lines = [line for line in f if not line.startswith("#")]
     out = {}
     for r in csv.DictReader(lines, delimiter="\t"):
+        if any(r.get(k) is None for k in ("Drug", "Gene", "Strength")):
+            raise ValueError(f"{path}: a row has no Drug, Gene or Strength cell")
         fac = (r.get("Activity_score_factor") or "").strip()
         out[(norm_drug(r["Drug"]), r["Gene"].strip())] = \
             (r["Strength"].strip(), None if fac in ("", "-") else float(fac))
@@ -690,10 +693,13 @@ def cyp2d6_band(score):
 
 
 def _score(value):
+    """An activity score as a number; None when it is missing or not a
+    finite number (a NaN would fall into the ultrarapid band)."""
     try:
-        return float(value)
+        score = float(value)
     except (TypeError, ValueError):
         return None
+    return score if math.isfinite(score) else None
 
 
 def phenoconversion(calls, meds, inhibitors, guidance, related):
