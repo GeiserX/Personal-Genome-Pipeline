@@ -1730,8 +1730,8 @@ def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
         # The Nextflow report gets the prioritized VCF: the count, plus the
-        # phase when COMPHET_PHASE's pairs table sits beside it (a published
-        # output folder).
+        # phase when COMPHET_PHASE's pairs table sits beside it. HTML_REPORT
+        # does not stage that table yet (it needs a main.nf input).
         v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
         if not v:
             return None, {}
