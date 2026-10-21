@@ -222,7 +222,7 @@ echo "couple: shared $(genes_of "$T" shared); pipeline shared $(genes_of "$NT" s
 # the screen stops with exit 1 and would fail the whole run. Red control: the
 # same run on a copy of the repository with the clinvar gate taken out of
 # main.nf schedules it.
-tasks() { find "$1" -name .command.run -exec sed -n "s/^### name: '\(.*\)'\$/\1/p" {} + \
+tasks() { find "$1" -name .command.run -exec sed -n "s/^### name: [\"']\(.*\)[\"']\$/\1/p" {} + \
   | grep -c "$2" || true; }
 stub_run() {  # stub_run DIR: copy the tracked files to DIR and run the stub there
   rm -rf "$1"; mkdir -p "$1"
