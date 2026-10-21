@@ -487,9 +487,11 @@ else
   done
 
   # --- gnomAD v3.1's chrM sites, for step 20's annotation (setup.sh installs them) ---
+  # Missing is a warning, as for the files above: step 20 runs without its
+  # gnomAD columns. A file that is not the pinned one is a failure.
   GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
   if [ ! -s "$GNOMAD_MITO" ]; then
-    fail "gnomAD v3.1 mitochondrial sites (step 20) not found at: ${GNOMAD_MITO}"
+    warn "gnomAD v3.1 mitochondrial sites (step 20 leaves its gnomAD columns empty) not found at: ${GNOMAD_MITO}"
     echo "       Install it: ./scripts/setup.sh ${GENOME_DIR}"
   elif [ "$(_digest sha256 "$GNOMAD_MITO")" != "$GNOMAD_MITO_SHA256" ]; then
     fail "gnomAD v3.1 mitochondrial sites (step 20): ${GNOMAD_MITO} is not the pinned file (sha256 differs from GNOMAD_MITO_SHA256)"

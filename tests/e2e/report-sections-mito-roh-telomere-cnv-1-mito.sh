@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Step 20 annotates its chrM calls with ClinVar and gnomAD v3.1's chrM sites,
-# validate-setup.sh fails without the pinned gnomAD file or with another file
-# under its name, and the text report shows the annotation, the poly-C tract
+# validate-setup.sh warns without the pinned gnomAD file and fails with another
+# file under its name, and the text report shows the annotation, the poly-C tract
 # count, the autosomal ROH lines and the telomere read count.
 #
 # Red first: the earlier step-20 cases ran without the gnomAD file, so the
-# table must say it is not annotated, and validate-setup.sh must fail. Then
-# the pinned file goes in and both turn.
+# table must say it is not annotated, and validate-setup.sh must warn; a
+# file that is not the pinned one must fail. Then the pinned file goes in and
+# both turn.
 . "$(dirname "$0")/lib.sh"
 
 G="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
@@ -24,7 +25,7 @@ head -n 3 "$T"
 check "without the gnomAD file the table says it is not annotated" has $'^# gnomad\tnot annotated' "$(head -n 3 "$T")"
 check_eq "alleles with a gnomAD value without the file" "$(filled 11)" 0
 run_step validate-setup.sh "$SAMPLE"
-check "validate-setup.sh fails without the gnomAD file ($(validate_line))" has '\[FAIL\].*not found at' "$(validate_line)"
+check "validate-setup.sh warns without the gnomAD file ($(validate_line))" has '\[WARN\].*not found at' "$(validate_line)"
 
 # --- 2. another file under its name ---------------------------------------------
 mkdir -p "$(dirname "$G")"
