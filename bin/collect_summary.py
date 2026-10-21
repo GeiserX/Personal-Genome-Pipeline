@@ -1266,8 +1266,8 @@ def str_allele_sizing(so, adsp, ci, cn, path_min):
         return "no_call"
     if not so or so == ".":
         return "unknown"
-    if so == "FLANKING":
-        return "flanking_only"
+    if so == "FLANKING":  # RED CONTROL: read as spanning; reverted in the next commit
+        so = "SPANNING"
     if so == "INREPEAT":
         return "in_repeat"
     hi = str_int(ci.split("-")[-1]) if ci else None

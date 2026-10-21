@@ -7,6 +7,6 @@
 # Only loci whose GeneReviews chapter defines such a range are listed. tests/test_str_ranges.py checks the rows
 # and that docs/interpreting-results.md prints the same ranges.
 locus	intermediate_min	intermediate_max	next_min	next_class	label	citation
-HTT	27	35	36	reduced penetrance	intermediate (not disease-causing; may expand in offspring)	GeneReviews: Huntington Disease, https://www.ncbi.nlm.nih.gov/books/NBK1305/
+HTT	27	36	36	reduced penetrance	intermediate (not disease-causing; may expand in offspring)	GeneReviews: Huntington Disease, https://www.ncbi.nlm.nih.gov/books/NBK1305/
 FMR1	45	54	55	premutation	intermediate (gray zone; not disease-causing; may expand in offspring)	GeneReviews: FMR1 Disorders, https://www.ncbi.nlm.nih.gov/books/NBK1384/
 DMPK	35	49	50	full penetrance	premutation (mutable normal; no symptoms; may expand in offspring)	GeneReviews: Myotonic Dystrophy Type 1, https://www.ncbi.nlm.nih.gov/books/NBK1165/
