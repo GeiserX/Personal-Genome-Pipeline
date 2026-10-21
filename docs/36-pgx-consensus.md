@@ -4,7 +4,7 @@
 
 Decides what the BAM-based callers tell PharmCAT. PharmCAT (step 7) reads a VCF, and from a VCF it types neither the HLA genes nor CYP2D6, so its drug guidance for them (abacavir, carbamazepine, allopurinol, codeine, tramadol, tamoxifen and many more) could never fire. This step writes PharmCAT's [outside-call file](https://pharmcat.org/using/Outside-Call-Format/):
 
-- **HLA-A and HLA-B** from T1K (step 8), cut to two fields (`*57:01`), when every allele has a T1K quality above 0. One allele reads as homozygous, the way T1K reports a homozygous gene.
+- **HLA-A and HLA-B** from T1K (step 8), cut to two fields (`*57:01`), when every allele has a T1K quality above 0. When step 8 also ran OptiType, the opt-in second caller (`HLA_QC=true`, `--hla_qc true` in Nextflow), a gene passes only when both callers give the same pair at two fields; see [step 8](08-hla-typing.md#second-caller-optitype-opt-in). One allele reads as homozygous, the way T1K reports a homozygous gene.
 - **CYP2D6** only when pypgx (step 32) and Cyrius (step 21, once `setup.sh --cyrius` installed it) give the same diplotype **and** the [CYP2D6 depth check](32-pypgx.md#cyp2d6-depth-check) passed. One caller alone, a disagreement, or multi-mapped reads leave CYP2D6 `indeterminate`, and nothing reaches PharmCAT.
 
 It also writes a consensus table that says, for each of the three genes, what every caller said and what was passed on. Step 27 copies it into the CPIC recommendations.
