@@ -703,6 +703,10 @@ def text_report(s):
         d = S["cnvpytor"]["data"]
         w(f"  Total CNVs: {d['total']} ({d['deletions']} deletions, {d['duplications']} duplications)")
         w(f"  Significant (e-val < 0.01): {d['significant']}")
+        filt = cnvpytor_filtered_text(d)
+        if filt:
+            w(f"  Significant after filters: {filt}")
+            w(f"  {CNVPYTOR_NOTE}")
         w("")
     if head("sv_consensus", "SV Consensus Merge"):
         w(f"  Consensus SVs (2+ callers): {S['sv_consensus']['data']['consensus']}")
@@ -742,6 +746,8 @@ def text_report(s):
 
     if head("telomere", "Telomere content (relative, TelomereHunter)"):
         w(f"  Telomere content: {S['telomere']['data']['tel_content']} {TELOMERE_UNIT}")
+        for line in telomere_lines(S["telomere"]["data"]):
+            w(f"  {line}")
         w(f"  {TELOMERE_NOTE}")
         w("")
 
@@ -750,7 +756,9 @@ def text_report(s):
         w(f"  Segments: {d['segments']}  Total: {d['total_mb']} MB  Largest: {d['largest_mb']} MB")
         w(f"  Autosomal ROH > 5MB: {len(d['autosomal_over_5mb'])}")
         for r in d["autosomal_over_5mb"]:
-            w(f"    {r['region']}  {r['mb']}MB")
+            w(f"    {roh_region(r)}")
+        for line in roh_lines(d):
+            w(f"  {line}")
         w("")
 
     if head("haplogroup", "Mitochondrial Haplogroup"):
@@ -778,7 +786,12 @@ def text_report(s):
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
-        w(f"  Heteroplasmic (AF 0.05 to 0.95): {d['heteroplasmic']}")
+        w(f"  Heteroplasmic (AF 0.05 to 0.95, outside the D-loop poly-C tracts): {d['heteroplasmic']}")
+        for line in mito_lines(d):
+            w(f"  {line}")
+        if d.get("polyc_heteroplasmic"):
+            w(f"  {MITO_POLYC_NOTE}")
+        w(f"  {MITO_NOTE}")
         w("")
 
     if head("traits", "Traits Panel (step 42)"):
@@ -1045,6 +1058,89 @@ def bloodtype_body(d):
             + rows + "</table>", small_note(BLOODTYPE_NOTE)]
 
 
+ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
+            "heterochromatin band (GRCh38 cytoband acen, gvar, stalk), where few markers map. No population allele "
+            "frequencies were used (bcftools roh --AF-dflt 0.4): read the total and the short segments as rough; "
+            "the long segments are the signal.")
+CNVPYTOR_NOTE = ("Filtered: e-value below 0.01, under half of the reads with mapping quality 0 (q0) and under half "
+                 "N bases (pN), no overlap with a centromere or heterochromatin band, and no chrY call when the "
+                 "declared sex is female.")
+MITO_POLYC_NOTE = ("Length heteroplasmy in the D-loop poly-C tracts is found in most people and is usually "
+                   "technical; it is listed here and not counted as heteroplasmy.")
+MITO_NOTE = ("ClinVar and gnomAD v3.1 (chrM sites) annotate the calls in step 20. MITOMAP (mitomap.org) has the "
+             "curated disease status of mtDNA variants; it is a manual lookup, as it refuses scripted requests.")
+
+
+def roh_lines(d):
+    """Step 11's lines under the headline, the same in both reports."""
+    lines = []
+    if d.get("masked_mb"):
+        lines.append(f"Left out in centromere and heterochromatin bands: {d['masked_mb']} MB")
+    if d.get("sex_chromosome_segments"):
+        lines.append(f"Segments on chrX/chrY, not counted: {d['sex_chromosome_segments']}")
+    return lines + [ROH_NOTE]
+
+
+def roh_region(r):
+    return f"{r['region']}  {r['mb']}MB" + (f" ({r['masked_mb']} MB in a band left out)" if r.get("masked_mb") else "")
+
+
+def telomere_lines(d):
+    """The read count under the telomere value, and the warning when it is too thin."""
+    if "intratelomeric_reads" not in d:
+        return [f"Intratelomeric reads: not checked ({d['read_check']})"] if d.get("read_check") else []
+    n = f"{d['intratelomeric_reads']:,}"
+    if "read_floor" not in d:
+        return [f"Intratelomeric reads: {n}; {d.get('read_check', 'not checked')}"]
+    lines = [f"Intratelomeric reads: {n} (floor {d['read_floor']:,} at {d['depth']}x)"]
+    if d.get("low_reads"):
+        lines.append("WARNING: too few telomeric reads for a stable estimate; do not compare this value.")
+    return lines
+
+
+def cnvpytor_filtered_text(d):
+    if "significant_filtered" not in d:
+        return None
+    dr = d.get("dropped") or {}
+    parts = [f"{dr[k]} {label}" for k, label in (("q0", "q0 0.5 or more"), ("gap", "over N gaps (pN 0.5 or more)"),
+                                               ("band", "over a centromere or heterochromatin band"),
+                                               ("chry_female", "on chrY of a declared female")) if dr.get(k)]
+    out = f"{d['significant_filtered']}" + (f" (left out: {', '.join(parts)})" if parts else "")
+    if not d.get("declared_sex"):
+        out += "; no declared sex, so chrY calls are kept"
+    return out
+
+
+def mito_variant_text(v):
+    def val(x):
+        return "." if x in (None, "", ".") else x
+    cv = val(v.get("clinvar_significance"))
+    cv = "not in ClinVar" if cv == "." else f"ClinVar {cv} ({val(v.get('clinvar_review'))}; {val(v.get('clinvar_condition'))})"
+    gn = ("not in gnomAD" if val(v.get("gnomad_af_hom")) == "." else
+          f"gnomAD AF hom {v['gnomad_af_hom']}, het {val(v.get('gnomad_af_het'))}")
+    return f"chrM:{v['pos']} {v['ref']}>{v['alt']}  AF {val(v.get('af'))}  {cv}  {gn}" + ("  poly-C tract" if v.get("polyc") else "")
+
+
+def mito_lines(d):
+    """Step 20's lines under the counts, the same in both reports."""
+    lines = []
+    pc = d.get("polyc_heteroplasmic") or []
+    if "polyc_heteroplasmic" in d:
+        lines.append(f"Length heteroplasmy in the D-loop poly-C tracts ({', '.join(d.get('polyc_tracts') or [])}; "
+                     f"common, usually technical): {len(pc)}")
+        lines += [f"  {x['variant']}  AF {x['af']}" for x in pc]
+    a = d.get("annotation") or {}
+    if a.get("source"):
+        lines.append(f"Annotation ({a['source']}): ClinVar {a.get('clinvar') or 'unknown'}; gnomAD {a.get('gnomad') or 'unknown'}")
+        lines.append(f"ClinVar pathogenic or likely pathogenic: {a.get('clinvar_plp', 0)}")
+        if a.get("variants"):
+            lines.append("Heteroplasmic, or in ClinVar and not benign:")
+            lines += [f"  {mito_variant_text(v)}" for v in a["variants"]]
+    elif a.get("note"):
+        lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
+    return lines
+
+
 def stat(label, value):
     return f'    <div class="stat"><span class="label">{E(str(label))}</span><span class="value">{value}</span></div>'
 
@@ -1239,7 +1335,10 @@ def html_report(s):
     sv_body = [stat("Manta SVs (total / PASS)", f"{m.get('total', 'N/A')} / {m.get('pass', 'N/A')}"),
                stat("Delly SVs (total / PASS)", f"{dl.get('total', 'N/A')} / {dl.get('pass', 'N/A')}"),
                stat("CNVpytor CNVs", cn.get("total", "N/A")),
-               stat("Consensus SVs (2+ callers)", sv.get("consensus", "N/A"))]
+               stat("CNVpytor significant (e-val < 0.01)", cn.get("significant", "N/A"))]
+    if cnvpytor_filtered_text(cn):
+        sv_body += [stat("CNVpytor significant after filters", E(cnvpytor_filtered_text(cn))), small_note(CNVPYTOR_NOTE)]
+    sv_body.append(stat("Consensus SVs (2+ callers)", sv.get("consensus", "N/A")))
     notes = [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
              for k in ("manta", "delly", "cnvpytor", "sv_consensus") if stale_note(S[k])]
     a(['  <div class="card">', "    <h2>Structural Variants</h2>"] + notes + sv_body + ["  </div>"])
@@ -1285,7 +1384,9 @@ def html_report(s):
             stat("ROH total", f"{r.get('total_mb', 0):.1f} MB"),
             stat("ROH largest segment", f"{r.get('largest_mb', 0):.1f} MB"),
             stat("Segments", r.get("segments", 0)),
-            stat("Autosomal ROH > 5 MB", len(r.get("autosomal_over_5mb", [])))]))
+            stat("Autosomal ROH > 5 MB", len(r.get("autosomal_over_5mb", [])))]
+           + [small_note(roh_region(x)) for x in r.get("autosomal_over_5mb", [])]
+           + [small_note(x) for x in roh_lines(r)]))
     a(card(S["haplogroup"], "Mitochondrial Haplogroup",
            [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
             stat("Contamination (haplocheck)", E(contamination_text(hg)))]))
@@ -1324,11 +1425,36 @@ def html_report(s):
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
-           [stat("Telomere content", E(str(tl.get("tel_content", ".")))), small_note(TELOMERE_NOTE)]))
+           [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
+           + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
+              for x in telomere_lines(tl)]
+           + [small_note(TELOMERE_NOTE)]))
 
     mi = S["mito"]["data"]
-    a(card(S["mito"], "Mitochondrial Analysis", [stat("chrM variants (PASS)", mi.get("pass")),
-                                                 stat("Heteroplasmic (AF 0.05 to 0.95)", mi.get("heteroplasmic"))]))
+    ma = mi.get("annotation") or {}
+    mito_body = [stat("chrM variants (PASS)", mi.get("pass")),
+                 stat("Heteroplasmic (AF 0.05 to 0.95, outside the D-loop poly-C tracts)", mi.get("heteroplasmic")),
+                 stat("Length heteroplasmy in the D-loop poly-C tracts", len(mi.get("polyc_heteroplasmic") or []))]
+    mito_body += [small_note(f"{x['variant']}  AF {x['af']}") for x in mi.get("polyc_heteroplasmic") or []]
+    if mi.get("polyc_heteroplasmic"):
+        mito_body.append(small_note(MITO_POLYC_NOTE))
+    if ma.get("source"):
+        plp = ma.get("clinvar_plp", 0)
+        mito_body.append(stat("ClinVar pathogenic or likely pathogenic", badge(plp, "yellow" if plp else "gray")))
+        if ma.get("variants"):
+            mito_body.append("    <table><tr>" + "".join(f"<th>{c}</th>" for c in (
+                "Variant", "AF", "ClinVar", "Review", "Condition", "gnomAD AF hom", "gnomAD AF het", "Poly-C tract"))
+                + "</tr>" + "".join(
+                    "<tr>" + "".join(f"<td>{E(str(x))}</td>" for x in (
+                        f"chrM:{v['pos']} {v['ref']}>{v['alt']}", v.get("af"), v.get("clinvar_significance"),
+                        v.get("clinvar_review"), v.get("clinvar_condition"), v.get("gnomad_af_hom"),
+                        v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + "</tr>"
+                    for v in ma["variants"]) + "</table>")
+        mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
+    elif ma.get("note"):
+        mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
+    mito_body.append(small_note(MITO_NOTE))
+    a(card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
 
     cl = S["clinical"]["data"]
     a(card(S["clinical"], "Clinical Variant Filter",

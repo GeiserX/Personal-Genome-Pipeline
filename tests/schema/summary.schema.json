@@ -506,6 +506,42 @@
       }
      ]
     },
+    "telomere": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/section"
+      },
+      {
+       "properties": {
+        "data": {
+         "type": "object",
+         "properties": {
+          "tel_content": {
+           "type": "string"
+          },
+          "intratelomeric_reads": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "depth": {
+           "type": "number"
+          },
+          "read_floor": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "low_reads": {
+           "type": "boolean"
+          },
+          "read_check": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
     "roh": {
      "allOf": [
       {
@@ -527,7 +563,32 @@
            "type": "number"
           },
           "autosomal_over_5mb": {
-           "type": "array"
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "region",
+             "mb"
+            ],
+            "properties": {
+             "region": {
+              "type": "string"
+             },
+             "mb": {
+              "type": "number"
+             },
+             "masked_mb": {
+              "type": "number"
+             }
+            }
+           }
+          },
+          "masked_mb": {
+           "type": "number"
+          },
+          "sex_chromosome_segments": {
+           "type": "integer",
+           "minimum": 0
           }
          }
         }
@@ -555,6 +616,140 @@
           },
           "heteroplasmy_floor": {
            "type": "number"
+          },
+          "polyc_heteroplasmic": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "variant",
+             "af"
+            ],
+            "properties": {
+             "variant": {
+              "type": "string"
+             },
+             "af": {
+              "type": "number"
+             }
+            }
+           }
+          },
+          "polyc_tracts": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "annotation": {
+           "type": "object",
+           "properties": {
+            "source": {
+             "type": "string"
+            },
+            "note": {
+             "type": "string"
+            },
+            "clinvar": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "gnomad": {
+             "type": [
+              "string",
+              "null"
+             ]
+            },
+            "clinvar_plp": {
+             "type": "integer",
+             "minimum": 0
+            },
+            "variants": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "pos",
+               "ref",
+               "alt",
+               "polyc"
+              ],
+              "properties": {
+               "pos": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "ref": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "alt": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "af": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "clinvar_id": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "clinvar_significance": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "clinvar_review": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "clinvar_condition": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "gnomad_af_hom": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "gnomad_af_het": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "gnomad_max_hl": {
+                "type": [
+                 "string",
+                 "null"
+                ]
+               },
+               "polyc": {
+                "type": "boolean"
+               }
+              }
+             }
+            }
+           }
           }
          }
         }
@@ -1359,6 +1554,27 @@
              "type": "number"
             }
            }
+          },
+          "significant_filtered": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "filtered_chry": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "dropped": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+           }
+          },
+          "declared_sex": {
+           "type": [
+            "string",
+            "null"
+           ]
           }
          }
         }
