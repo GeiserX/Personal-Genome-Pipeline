@@ -643,6 +643,18 @@ def text_report(s):
         w(f"  {PARALOG_NOTE}")
         w("")
 
+    if head("parascopy", "SMN1/SMN2 Copy Number (Parascopy, short reads)"):
+        for line in parascopy_lines(S["parascopy"]["data"]):
+            w(f"  {line}")
+        w(f"  {PARASCOPY_NOTE}")
+        w("")
+    unchecked = paralogs_unchecked(S)
+    if unchecked:
+        w("## Paralog Copy Number")
+        w("---")
+        w(f"  {unchecked}")
+        w("")
+
     if head("hla", "HLA Typing (T1K)"):
         for l in S["hla"]["data"]["loci"]:
             w(f"    {l['gene']:<8} {hla_text(l)}")
@@ -699,20 +711,32 @@ def text_report(s):
     if head("expansions", "Repeat Expansions (ExpansionHunter)"):
         d = S["expansions"]["data"]
         w(f"  Loci in output: {d['records']}")
-        for l in d["key_loci"]:
-            w(f"    {l['locus']:<8} {l['repeat_count']}")
         if d.get("stranger_outdated"):
             w("  Stranger's result is older than ExpansionHunter's: rerun step 9b. No locus is marked as normal or expanded.")
         elif not d.get("stranger"):
             w("  Stranger (step 9b) did not run: no locus is marked as normal or expanded.")
         elif d.get("flagged"):
             w(f"  Outside the normal range (Stranger): {len(d['flagged'])}")
+            by = {x["locus"]: x for x in d.get("loci") or []}
             for l in d["flagged"]:
-                w(f"    {l['locus']:<8} {l['repeat_count']}  {l['status']}")
+                w(f"    {l['locus']:<8} {str_count(by.get(l['locus'], l))}  {l['status']}")
+                if l.get("rfc1_motif"):
+                    w(f"      {rfc1_text(l['rfc1_motif'])}")
         else:
             w("  Outside the normal range (Stranger): none")
         if d.get("stranger") and d.get("no_status"):
             w(f"  Loci without a Stranger status (not in its catalog): {d['no_status']}")
+        if d.get("unsized"):
+            w(f"  Not sized from short reads, so not counted as normal: {len(d['unsized'])} ({', '.join(d['unsized'])})")
+        if d.get("intermediate"):
+            w(f"  In an intermediate range (bin/str_intermediate_ranges.tsv): {', '.join(d['intermediate'])}")
+        rows = str_rows(d)
+        if rows:
+            w("  Every locus (key loci first): repeat count, Stranger status, notes")
+            for locus, count, status, notes in rows:
+                w(f"    {locus:<8} {count:<10} {status or '-'}" + (f"  {notes}" if notes else ""))
+        if any(l.get("rfc1_motif") for l in d.get("flagged") or []):
+            w(f"  {RFC1_NOTE}")
         w(f"  {EH_NOTE}")
         w("")
 
@@ -876,6 +900,65 @@ CSS = """
 """
 
 
+STR_SIZING_TEXT = {
+    "flanking_only": "size not determined (flanking reads only)",
+    "in_repeat": "longer than a read (in-repeat reads only): shown as at least the interval's lower end",
+    "low_confidence": "low confidence (fewer than 2 spanning reads, or the interval reaches the disease range)",
+    "no_call": "no call",
+}
+RFC1_NOTE = ("RFC1: Stranger's catalog sizes the degenerate AARRG unit and flags a low count, so the motif "
+             "decides. The motif count reads the reads at the locus; it cannot size a long expansion.")
+
+
+def str_count(l):
+    """The repeat count of a locus: an in-repeat allele as >= the lower end of
+    its interval, or 'not sized' without one."""
+    counts = l["repeat_count"].split("/")
+    sizing = (l.get("allele_sizing") or "").split("/")
+    cis = (l.get("ci") or "").split("/")
+    out = []
+    for i, c in enumerate(counts):
+        z = sizing[i] if i < len(sizing) else ""
+        ci = cis[i] if len(cis) == len(counts) else (cis[0] if len(cis) == 1 else "")
+        lo = ci.split("-")[0] if ci else ""
+        if z == "in_repeat":
+            c = f">={lo}" if lo.isdigit() else "not sized"
+        out.append(c)
+    return "/".join(out)
+
+
+def str_status(l):
+    """Stranger's status, never 'normal' for a locus that was not sized."""
+    st = l.get("status") or ""
+    if st == "normal" and l.get("sizing") not in ("sized", "unknown"):
+        return "not sized"
+    return st
+
+
+def str_notes(l):
+    """What the report says beside a locus: sizing, the catalog's normal maximum, an intermediate range."""
+    out = []
+    if l.get("sizing") in STR_SIZING_TEXT:
+        out.append(STR_SIZING_TEXT[l["sizing"]] + (f", interval {l['ci']}" if l.get("ci") not in (None, "", ".") else ""))
+    if l.get("normal_max"):
+        out.append(f"normal max {l['normal_max']}")
+    if l.get("zone"):
+        out.append(f"{l['zone']}: {l['zone_label']}; {l['zone_citation']}")
+    return "; ".join(out)
+
+
+def str_rows(d):
+    """(locus, count, status, notes) for every locus, key loci first; a key locus missing from the output says so."""
+    rows = [(l["locus"], str_count(l), str_status(l), str_notes(l)) for l in d.get("loci") or []]
+    have = {r[0] for r in rows}
+    missing = [(k["locus"], "not in output", "", "") for k in d.get("key_loci") or [] if k["locus"] not in have]
+    return missing + rows
+
+
+def rfc1_text(m):
+    return f"RFC1 motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+
+
 PARALOG_NOTE = ("Paraphase reads PacBio HiFi reads only. A 'no call' means it saw one haplotype and the depth "
                 "did not settle one copy or two. A research estimate, not a diagnostic test: confirm a result "
                 "(for example an HBA deletion or one SMN1 copy) with a clinical laboratory.")
@@ -903,6 +986,36 @@ def paralog_lines(d):
         out.append(f"Other Paraphase regions: {d['other_regions']} ({d['other_regions_called']} with a call)")
     out.append(f"Variants on phased haplotypes: {sum(d.get('variants', {}).values())}")
     return out
+
+
+PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 only; HBA1/HBA2 and CYP21A2 have no Parascopy "
+                  "model and are not assessed. A quality under 20 or a filter other than PASS leaves a copy "
+                  "unresolved. A research estimate, not a diagnostic test: confirm a result with a clinical "
+                  "laboratory (MLPA or qPCR).")
+
+
+def parascopy_lines(d):
+    """Step 35's lines, the same in both reports."""
+    smn1, smn2 = d.get("smn1") or {}, d.get("smn2") or {}
+    return [f"SMN1 copies: {smn1.get('text', '.')}",
+            f"SMN2 copies: {smn2.get('text', '.')}",
+            f"SMN1 and SMN2 together (agCN) at exon 7: {d.get('agcn', '.')} (quality {d.get('agcn_qual', '.')}, "
+            f"filter {d.get('agcn_filter', '.')})",
+            f"Reading: {d.get('reading', '.')}"]
+
+
+def paralogs_unchecked(S):
+    """'Paralog copy number: not checked (...)' when neither step 35 nor step
+    35b left a result, so a report without them never reads as normal."""
+    states = {k: S.get(k, MISSING)["state"] for k in ("parascopy", "paralogs")}
+    if any(v in ("ok", "stale") for v in states.values()):
+        return None
+    if all(v == "missing" for v in states.values()):
+        why = "neither step 35 nor step 35b ran"
+    else:
+        words = {"missing": "not run", "failed": "failed", "unreadable": "unreadable"}
+        why = ", ".join(f"step {st} {words.get(states[k], states[k])}" for k, st in (("parascopy", "35"), ("paralogs", "35b")))
+    return f"Paralog copy number: not checked ({why})"
 
 
 ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
@@ -1148,15 +1261,20 @@ def html_report(s):
     else:
         fl = eh.get("flagged") or []
         eh_body.append(stat("Outside the normal range (Stranger)", badge(len(fl), "yellow" if fl else "gray")))
-    rows = [(l["locus"], l["repeat_count"], l["status"]) for l in eh.get("flagged") or []]
-    rows += [(l["locus"], l["repeat_count"], "") for l in eh.get("key_loci") or []
-             if l["locus"] not in {r[0] for r in rows}]
+    if eh.get("unsized"):
+        eh_body.append(stat("Not sized from short reads (not counted as normal)", badge(len(eh["unsized"]), "yellow")))
+    if eh.get("intermediate"):
+        eh_body.append(stat("In an intermediate range", badge(", ".join(eh["intermediate"]), "yellow")))
+    for l in eh.get("flagged") or []:
+        if l.get("rfc1_motif"):
+            eh_body.append(small_note(rfc1_text(l["rfc1_motif"])))
+            eh_body.append(small_note(RFC1_NOTE))
+    # Every locus, the five key loci first.
+    rows = str_rows(eh)
     if rows:
-        # The Stranger column only when it flagged a locus: an empty cell is a locus it did not flag.
-        st_col = bool(eh.get("flagged"))
-        eh_body.append("    <table><tr><th>Locus</th><th>Repeat Count</th>" + ("<th>Stranger</th>" if st_col else "")
-                       + "</tr>" + "".join(f"<tr><td>{E(x)}</td><td>{E(str(y))}</td>"
-                                         + (f"<td>{E(z)}</td>" if st_col else "") + "</tr>" for x, y, z in rows)
+        eh_body.append("    <table><tr>" + "".join(f"<th>{c}</th>" for c in ("Locus", "Repeat Count", "Stranger", "Notes"))
+                       + "</tr>"
+                       + "".join("<tr>" + "".join(f"<td>{E(str(x))}</td>" for x in r) + "</tr>" for r in rows)
                        + "</table>")
     eh_body.append(small_note(EH_NOTE))
     a(card(S["expansions"], "Repeat Expansions", eh_body))
@@ -1187,6 +1305,14 @@ def html_report(s):
         body.append(stat("Variants on phased haplotypes", sum(pg.get("variants", {}).values())))
         body.append(small_note(PARALOG_NOTE))
         a(card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
+    if S.get("parascopy", MISSING)["state"] != "missing":
+        a(card(S["parascopy"], "SMN1/SMN2 Copy Number (Parascopy)",
+               [stat("Status", done_badge(S["parascopy"]))]
+               + [stat(*(E(x) for x in line.split(": ", 1))) for line in parascopy_lines(S["parascopy"]["data"])]
+               + [small_note(PARASCOPY_NOTE)]))
+    unchecked = paralogs_unchecked(S)
+    if unchecked:
+        a(card(None, "Paralog Copy Number", [stat("Status", badge("Not checked", "gray")), small_note(unchecked)]))
     if S.get("y_haplogroup", MISSING)["state"] != "missing":
         yh = S["y_haplogroup"]["data"]
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
