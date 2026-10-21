@@ -9,7 +9,8 @@
 #   version  every NAME=VALUE line of versions.env
 #   image    each *_IMAGE reference and the digest Docker resolved it to
 #            ("not pulled" when the image is not on this machine)
-#   data     clinvar_file_date (##fileDate of the ClinVar file), vep_cache,
+#   data     clinvar_file_date (##fileDate of the ClinVar file), gnomad_mito
+#            (step 20's gnomAD chrM sites, installed or not), vep_cache,
 #            pcgr_bundle, cpsr_clinvar_release (the ClinVar release in the PCGR
 #            bundle CPSR uses), pypgx_bundle, ancestry_panel (pgsc_calc's panel,
 #            installed or not), hla_database (the newest IPD-IMGT/HLA release
@@ -94,6 +95,14 @@ for f in clinvar/clinvar_pathogenic_chr.vcf.gz clinvar/clinvar_chr.vcf.gz clinva
   if [ -n "$d" ]; then clinvar_date="${d} (${f})"; break; fi
 done
 row data clinvar_file_date "$clinvar_date"
+
+# Step 20's gnomAD chrM sites: the pinned file (setup.sh) or not installed.
+gnomad_mito="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
+if [ -s "$gnomad_mito" ]; then
+  row data gnomad_mito "gnomAD v3.1 ${GNOMAD_MITO_URL##*/} (setup.sh checked it against sha256 ${GNOMAD_MITO_SHA256})"
+else
+  row data gnomad_mito "not installed (setup.sh installs it)"
+fi
 
 caches=""
 for d in "${GENOME_DIR}"/vep_cache/homo_sapiens/*_GRCh38; do

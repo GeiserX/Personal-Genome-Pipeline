@@ -12,6 +12,12 @@
 # its depth is what such copies could explain at the sample's median autosomal
 # coverage. That median is read from step 16b's mosdepth output, or taken from
 # AUTOSOMAL_COVERAGE; without either the filter marks nothing.
+#
+# Last, each call is annotated with its ClinVar record (clinvar/clinvar_chr.vcf.gz,
+# which setup.sh installs) and with gnomAD v3.1's chrM sites (GNOMAD_MITO_URL in
+# versions.env, which setup.sh installs under gnomad_mito/), into
+# mito/<sample>_chrM_annotated.tsv (bin/collect_summary.py mito-annotate). A
+# missing file leaves its columns '.' and the table says why.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -38,7 +44,7 @@ done
 mkdir -p "$OUTPUT_DIR"
 
 
-echo "[1/5] Extracting chrM reads..."
+echo "[1/6] Extracting chrM reads..."
 run_in --cpus 2 --memory 4g \
   "$SAMTOOLS_IMAGE" \
   bash -c "
@@ -47,7 +53,7 @@ run_in --cpus 2 --memory 4g \
     samtools index /genome/${SAMPLE}/mito/${SAMPLE}_chrM.bam
   "
 
-echo "[2/5] Checking sequence dictionary..."
+echo "[2/6] Checking sequence dictionary..."
 if [ ! -f "$REF_DICT" ]; then
   echo "  Creating sequence dictionary..."
   # The dictionary goes next to the FASTA, so its directory is writable here.
@@ -60,7 +66,7 @@ else
   echo "  Sequence dictionary already exists, skipping."
 fi
 
-echo "[3/5] Running Mutect2 in mitochondrial mode..."
+echo "[3/6] Running Mutect2 in mitochondrial mode..."
 run_in --cpus 4 --memory 8g \
   "$GATK_IMAGE" \
   gatk Mutect2 \
@@ -71,7 +77,7 @@ run_in --cpus 4 --memory 8g \
     --max-mnp-distance 0 \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_mutect2.vcf.gz"
 
-echo "[4/5] Filtering variants..."
+echo "[4/6] Filtering variants..."
 run_in --cpus 2 --memory 4g \
   "$GATK_IMAGE" \
   gatk FilterMutectCalls \
@@ -80,7 +86,7 @@ run_in --cpus 2 --memory 4g \
     --mitochondria-mode \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_mutect2_filtered.vcf.gz"
 
-echo "[5/5] Marking possible NuMTs..."
+echo "[5/6] Marking possible NuMTs..."
 # Median autosomal depth: the depth at which half of the chr1-22 bases are
 # covered at least that deep, from mosdepth's per-chromosome distribution.
 MOSDEPTH_PREFIX="${SAMPLE_DIR}/mosdepth/${SAMPLE}.mosdepth"
@@ -110,10 +116,25 @@ run_in --cpus 2 --memory 4g \
     --autosomal-coverage "$AUTOSOMAL_COVERAGE" \
     -O "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
 
+echo "[6/6] Annotating the calls with ClinVar and gnomAD..."
+CLINVAR_VCF="${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz"
+GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
+[ -s "${CLINVAR_VCF}.tbi" ] || echo "  WARNING: no ${CLINVAR_VCF}.tbi (setup.sh installs ClinVar): no ClinVar columns."
+[ -s "$GNOMAD_MITO" ] || echo "  WARNING: no ${GNOMAD_MITO} (setup.sh installs it): no gnomAD columns."
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+  python3 /pgp-bin/collect_summary.py mito-annotate \
+    --vcf "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" \
+    --clinvar "$(cpath "$CLINVAR_VCF")" \
+    --gnomad "$(cpath "$GNOMAD_MITO")" \
+    --out "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_annotated.tsv"
+
 echo "=== Mitochondrial analysis complete ==="
 echo "Raw calls: ${OUTPUT_DIR}/${SAMPLE}_chrM_mutect2.vcf.gz"
 echo "Filtered (FilterMutectCalls, then possible_numt): ${OUTPUT_DIR}/${SAMPLE}_chrM_filtered.vcf.gz"
+echo "ClinVar and gnomAD per allele: ${OUTPUT_DIR}/${SAMPLE}_chrM_annotated.tsv"
 echo ""
 echo "PASS variants below AF 0.95 (possible heteroplasmy; calls near the ends of the"
-echo "control region, chrM:1-500 and 16000-16569, are less reliable):"
+echo "control region, chrM:1-500 and 16000-16569, are less reliable, and length"
+echo "variants in the D-loop poly-C tracts m.303-315 and m.16184-16193 are common and"
+echo "usually technical, so the reports count them apart):"
 echo "  bcftools query -f '%POS\t%REF\t%ALT\t[%AF]\n' -i 'FILTER=\"PASS\"' ${OUTPUT_DIR}/${SAMPLE}_chrM_filtered.vcf.gz | awk '\$4 < 0.95'"

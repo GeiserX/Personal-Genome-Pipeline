@@ -486,6 +486,18 @@ else
     fi
   done
 
+  # --- gnomAD v3.1's chrM sites, for step 20's annotation (setup.sh installs them) ---
+  GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
+  if [ ! -s "$GNOMAD_MITO" ]; then
+    fail "gnomAD v3.1 mitochondrial sites (step 20) not found at: ${GNOMAD_MITO}"
+    echo "       Install it: ./scripts/setup.sh ${GENOME_DIR}"
+  elif [ "$(_digest sha256 "$GNOMAD_MITO")" != "$GNOMAD_MITO_SHA256" ]; then
+    fail "gnomAD v3.1 mitochondrial sites (step 20): ${GNOMAD_MITO} is not the pinned file (sha256 differs from GNOMAD_MITO_SHA256)"
+    echo "       Delete it and reinstall: ./scripts/setup.sh ${GENOME_DIR}"
+  else
+    pass "gnomAD v3.1 mitochondrial sites (step 20): present"
+  fi
+
   # --- somalier's sites and VerifyBamID2's panel, for step 33 (setup.sh installs them) ---
   QC_MISSING=""
   for f in somalier/sites.hg38.vcf.gz verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat.UD \

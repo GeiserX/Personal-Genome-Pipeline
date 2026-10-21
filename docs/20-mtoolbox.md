@@ -49,7 +49,20 @@ gatk NuMTFilterTool \
   -O chrM_filtered.vcf.gz
 ```
 
-The script runs these steps: `./scripts/20-mtoolbox.sh your_sample`.
+The script runs these steps: `./scripts/20-mtoolbox.sh your_sample`. Then it annotates every call with ClinVar and gnomAD (below).
+
+### ClinVar and gnomAD beside each call
+
+The last stage (`bin/collect_summary.py mito-annotate`, in `PYTHON_IMAGE`) writes `${SAMPLE}_chrM_annotated.tsv`: one row per allele of the filtered VCF, with
+
+- ClinVar's record of the same allele from `clinvar/clinvar_chr.vcf.gz`, the ClinVar file `setup.sh` installs: `clinvar_id`, `clinvar_significance` (CLNSIG), `clinvar_review` (CLNREVSTAT) and `clinvar_condition` (CLNDN);
+- gnomAD v3.1's chrM sites of the same allele (`gnomad_mito/`, pinned in `versions.env`): `gnomad_af_hom` (the share of gnomAD's samples with the allele at 95% or more), `gnomad_af_het` (at 10% to 95%) and `gnomad_max_hl` (the highest level gnomAD saw).
+
+Alleles are matched by position, REF and ALT after the bases they share are trimmed, so Mutect2's multi-allelic indels meet ClinVar's and gnomAD's single-allele records. A file that is not installed leaves its columns `.`, and the table's first lines say which. The reports list each PASS call that is heteroplasmic, or that ClinVar holds as anything but benign, with these columns, and count the ClinVar pathogenic or likely pathogenic ones.
+
+Step 13's VEP annotates the main VCF, whose chrM records come from the nuclear caller: a heteroplasmic call only Mutect2 makes has no VEP record, so this step annotates its own calls. The Nextflow `MITO_VARIANTS` does not annotate yet; its reports say so.
+
+[MITOMAP](https://www.mitomap.org/) has the curated disease status of mtDNA variants. It stays a manual lookup: it answers scripted requests with a 403, so no step reads it, and none of its tables is shipped.
 
 ### NuMTs
 
@@ -60,6 +73,7 @@ NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map
 - `${SAMPLE}_chrM_mutect2_filtered.vcf.gz` — after FilterMutectCalls
 - `${SAMPLE}_chrM_filtered.vcf.gz` — after FilterMutectCalls and NuMTFilterTool, with PASS or the reasons a call failed (`possible_numt` among them); the file the reports and step 12 (haplogroup, haplocheck) read
 - Each variant includes an `AF` (allele fraction) field indicating heteroplasmy level
+- `${SAMPLE}_chrM_annotated.tsv` — each allele of the filtered VCF with its FILTER, AF, ClinVar record and gnomAD v3.1 frequencies (above)
 
 ## Interpreting Heteroplasmy
 | AF Level | Meaning |
@@ -71,6 +85,8 @@ NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map
 
 Count only PASS calls: a call marked `possible_numt` or with another filter is not evidence of heteroplasmy. Calls near the two ends of the control region (about chrM:1-500 and 16,000-16,569) are less reliable: the reference is circular, so reads that span its end align poorly at both edges.
 
+Length variants in the D-loop poly-C tracts (m.303-315 and m.16184-16193), one C more or less, are found in most people and often read as a mix of lengths. The reports list them as "length heteroplasmy in the D-loop poly-C tracts" and leave them out of the heteroplasmic count. A call counts as in a tract when the bases it changes (an indel: the bases after its anchor base) overlap one.
+
 ## Runtime
 1 to 2 minutes per sample through the pipeline, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).
 
@@ -78,7 +94,7 @@ Count only PASS calls: a call marked `possible_numt` or with another filter is n
 - `--mitochondria-mode` disables several filters inappropriate for mtDNA: no germline filtering, adjusted LOD thresholds, handles high copy number.
 - `--max-mnp-distance 0` prevents merging nearby variants into multi-nucleotide polymorphisms.
 - The GATK Docker image is large (~2.2 GB) but well-maintained and versioned.
-- For disease annotation of mitochondrial variants, cross-reference with [MitoMap](https://www.mitomap.org/) or the Ensembl VEP output from step 13.
+- Disease annotation: ClinVar and gnomAD come with the step (`${SAMPLE}_chrM_annotated.tsv`); [MITOMAP](https://www.mitomap.org/) is a manual lookup in a browser, as it refuses scripted requests.
 - Some mitochondrial diseases require heteroplasmy above a tissue-specific threshold (e.g., m.3243A>G MELAS requires >60% in blood).
 
 ## What is not done, and why
