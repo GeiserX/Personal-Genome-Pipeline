@@ -792,6 +792,12 @@ def parascopy_section(work, schema):
     check("parascopy: a quality under 20 is not resolved and gets no carrier reading",
           "smn1" in pd and pd["smn1"]["cn"] is None and pd["smn1"]["text"] == "1 (quality 15, filter PASS), not resolved"
           and pd["reading"].startswith("SMN1 not resolved"), pd)
+    # No row over SMN1 exon 7: the reading says so, not "not resolved".
+    put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
+        + "chr5\t70925378\t70934928\tSMN1\tPASS\t4\t80\tPASS\t2,2\t40,40\tchr5:70049961-70059504:+\n")
+    pd = (collect_summary.collect("S", d)["sections"].get("parascopy") or {}).get("data") or {}
+    check("parascopy: no row over exon 7 gets that reason as its reading",
+          pd.get("reading") == "no row of step 35's table covers SMN1 exon 7: no carrier reading", pd)
     # A short row (fewer fields than the header) is skipped, not a crash.
     put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS + "chr5\n"
         + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")

@@ -669,7 +669,9 @@ def sec_parascopy(d, s):
     smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
-               "rows": len(rows), "reading": smn_reading(smn1["cn"])}
+               "rows": len(rows),
+               "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
+                           if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
 
 
 def sec_hla(d, s):
