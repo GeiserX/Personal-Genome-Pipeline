@@ -258,6 +258,13 @@ def phenoconversion_checks(work):
     rc, rec, rows, _ = run_report(work, "PHENOSHORT", pheno_report(), medications="paroxetine\n", inhibitors=short)
     check("phenoconversion: a table row with no Gene cell is reported as unreadable, the report still written",
           rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
+    nofac = os.path.join(work, "inhibitors-no-factor.tsv")
+    with open(INHIBITORS) as f, open(nofac, "w") as out:
+        for line in f:
+            out.write(line.replace("paroxetine\tCYP2D6\tstrong\t0\t", "paroxetine\tCYP2D6\tstrong\t\t"))
+    rc, rec, rows, _ = run_report(work, "PHENONOFAC", pheno_report(), medications="paroxetine\n", inhibitors=nofac)
+    check("phenoconversion: a CYP2D6 row with an empty factor is reported as unreadable, the report still written",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
     with contextlib.redirect_stderr(io.StringIO()):
         try:
             pgx_parse.main(["cpic-report", "--sample", "X", "--report", "r.json", "--outdir", work,

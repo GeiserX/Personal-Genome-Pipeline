@@ -660,9 +660,15 @@ def read_inhibitors(path):
     for r in csv.DictReader(lines, delimiter="\t"):
         if any(r.get(k) is None for k in ("Drug", "Gene", "Strength")):
             raise ValueError(f"{path}: a row has no Drug, Gene or Strength cell")
+        gene = r["Gene"].strip()
         fac = (r.get("Activity_score_factor") or "").strip()
-        out[(norm_drug(r["Drug"]), r["Gene"].strip())] = \
-            (r["Strength"].strip(), None if fac in ("", "-") else float(fac))
+        factor = None if fac in ("", "-") else _score(fac)
+        if fac not in ("", "-") and factor is None:
+            raise ValueError(f"{path}: {r['Drug'].strip()!r} has a factor that is not a number: {fac!r}")
+        # CYP2D6 rows feed CPIC's activity-score rule, so each needs its factor.
+        if gene == "CYP2D6" and (factor is None or not 0 <= factor <= 1):
+            raise ValueError(f"{path}: CYP2D6 row {r['Drug'].strip()!r} needs a factor from 0 to 1")
+        out[(norm_drug(r["Drug"]), gene)] = (r["Strength"].strip(), factor)
     return out
 
 
