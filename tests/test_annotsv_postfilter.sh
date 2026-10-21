@@ -59,7 +59,7 @@ if [ -s "$C" ]; then
   expect "EXON names the transcript and the exons" "$(col "$C" EXON Exon_edge_detail)" '^NM_900001 \(FIXG1\): exon 1 and exon 3 edges$'
   expect "EXON: the benign-set AF and its source" "$(col "$C" EXON Population_AF) $(col "$C" EXON Population_source)" '^0\.05 fixture_common_loss'
   expect "EXON is common" "$(col "$C" EXON Common)" '^yes$'
-  expect "NEAR, 10 bp inside the intron, is not on exon edges" "$(col "$C" NEAR Exon_edge)" '^no$'
+  expect "NEAR, 10 bp inside the intron, is class 4 and not on exon edges" "$(col "$C" NEAR ACMG_class) $(col "$C" NEAR Exon_edge)" '^4 no$'
   expect "DEL2 and DEL3 are class 4 and not on exon edges" \
     "$(col "$C" DEL2 ACMG_class)$(col "$C" DEL2 Exon_edge) $(col "$C" DEL3 ACMG_class)$(col "$C" DEL3 Exon_edge)" '^4no 4no$'
   expect "every row names its caller" "$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) h[$i] = i; next } { print $h["Caller"] }' "$C" | sort -u | tr '\n' ' ')" '^manta $'

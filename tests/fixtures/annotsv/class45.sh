@@ -18,7 +18,8 @@
 #             the base before exon 3, as the reads of a processed
 #             transcript aligned across both introns look (exon 2 is lost,
 #             1,000 coding bases: a frameshift in an HI gene, class 4);
-#     NEAR    Manta, chr20:1000990-1009000: the same, 10 bp inside intron 1;
+#     NEAR    Manta, chr20:1001010-1009000: the same, starting 10 bp inside
+#             intron 1 (also class 4);
 #     DEL2    Manta and Delly (2 bp apart), chr20:2000001-2450000 over G01-G40
 #             (criterion 3C, class 4);
 #     DEL3    Manta alone, chr20:3000001-3450000 over H01-H40 (class 4).
@@ -83,8 +84,8 @@ _class45_vcf() {
 class45_calls() {
   local dir=$1 s=$2 r
   mkdir -p "${dir}/manta/results/variants" "${dir}/delly"
-  r=$'chr20\t1000990\tNEAR\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=1009000;SVLEN=-8010\tGT\t0/1\n'
-  r+=$'chr20\t1001000\tEXON\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=1009000;SVLEN=-8000\tGT\t0/1\n'
+  r=$'chr20\t1001000\tEXON\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=1009000;SVLEN=-8000\tGT\t0/1\n'
+  r+=$'chr20\t1001010\tNEAR\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=1009000;SVLEN=-7990\tGT\t0/1\n'
   r+=$'chr20\t2000001\tDEL2\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=2450000;SVLEN=-449999\tGT\t0/1\n'
   r+=$'chr20\t3000001\tDEL3\tN\t<DEL>\t500\tPASS\tSVTYPE=DEL;END=3450000;SVLEN=-449999\tGT\t0/1\n'
   _class45_vcf "$s" "$r" > "${dir}/manta/results/variants/diploidSV.vcf"
