@@ -12,13 +12,25 @@ CYP2D6, what each caller said and what reached PharmCAT.
 
   HLA-A, HLA-B  T1K's two alleles (step 08), cut to two fields (*57:01), when
                 both have a quality above 0; one allele reads as homozygous,
-                as T1K reports a homozygous gene.
+                as T1K reports a homozygous gene. With --optitype (OptiType,
+                the opt-in second caller of step 08) the call is passed on
+                only when OptiType gives the same two alleles at two fields;
+                a disagreement or an OptiType no-call leaves the gene
+                'indeterminate' with both calls printed. --require-optitype
+                (the second caller was asked for) withholds both genes when
+                there is no OptiType result.
   CYP2D6        only when pypgx (step 32) and Cyrius (step 21) give the same
                 diplotype and the depth check (bin/cyp2d6_depth_check.py)
                 passed. One caller alone, a disagreement, a failed or missing
                 depth check: 'indeterminate', and nothing reaches PharmCAT.
                 PharmCAT itself calls no CYP2D6 from a VCF (3.4.0 reports it
                 with callSource NONE), so it is not a second caller here.
+
+  pgx_outside_calls.py hla-concordance --t1k T1K_genotype.tsv --optitype RESULT.tsv --out OUT.tsv
+
+writes step 08's concordance table (HLA_QC=true, the HLA_QC Nextflow
+process): for HLA-A, HLA-B and HLA-C the two-field calls of T1K and
+OptiType and whether they agree, by the same rule as above.
 
 A CYP2D6 call of pypgx alone is never passed on. The reports show it as
 'probable (one caller: pypgx)' (probable_cyp2d6) when the depth check passed
@@ -73,7 +85,7 @@ def two_fields(allele, gene):
     return ":".join(name.split(":")[:2])
 
 
-def read_t1k(path):
+def read_t1k(path, genes=HLA_GENES):
     """{gene: [(allele, quality)]} from T1K's genotype TSV: gene, number of
     distinct alleles, then allele, abundance, quality twice ('.', 0, -1 when
     there is no second allele)."""
@@ -81,7 +93,7 @@ def read_t1k(path):
     with open(path) as f:
         for line in f:
             fields = line.rstrip("\n").split("\t")
-            if len(fields) < 5 or fields[0] not in HLA_GENES:
+            if len(fields) < 5 or fields[0] not in genes:
                 continue
             alleles = []
             for i in (2, 5):
@@ -95,24 +107,127 @@ def read_t1k(path):
     return out
 
 
-def hla_row(gene, t1k):
-    """(consensus row, outside-call diplotype or None) for one HLA gene."""
+# OptiType (the opt-in second caller of step 08) types the class I genes.
+OPTITYPE_GENES = ("HLA-A", "HLA-B", "HLA-C")
+NO_OPTITYPE = "the second caller was asked for (HLA_QC), but there is no OptiType result: step 08 did not finish it"
+
+
+def read_optitype(path):
+    """{gene: [two-field allele, ...]} from OptiType's result TSV (an index
+    column, then A1 A2 B1 B2 C1 C2 Reads Objective; alleles as 'A*01:01').
+    A file step 08 wrote instead, a '#' line saying why OptiType did not
+    run, gives {}: no call for any gene."""
+    with open(path) as f:
+        lines = [ln for ln in f if ln.strip() and not ln.startswith("#")]
+    rows = list(csv.reader(lines, delimiter="\t"))
+    if len(rows) < 2:
+        return {}
+    col = {name.strip(): i for i, name in enumerate(rows[0])}
+    out = {}
+    for gene in OPTITYPE_GENES:
+        letter = gene[len("HLA-"):]
+        calls = []
+        for k in (f"{letter}1", f"{letter}2"):
+            i = col.get(k)
+            v = rows[1][i].strip() if i is not None and i < len(rows[1]) else ""
+            if v and v.lower() not in NO_CALL:
+                calls.append(two_fields(v[len(letter):] if v.startswith(letter + "*") else v, gene))
+        if len(calls) == 1:
+            calls *= 2
+        out[gene] = calls
+    return out
+
+
+def t1k_pair(gene, alleles):
+    """T1K's alleles of one gene at two fields, two of them: one allele reads
+    as homozygous."""
+    names = [two_fields(a, gene) for a, _ in alleles]
+    return names * 2 if len(names) == 1 else names
+
+
+def same_pair(a, b):
+    """Two allele pairs are the same pair, in either order."""
+    return len(a) == 2 and sorted(a) == sorted(b)
+
+
+def hla_row(gene, t1k, optitype=None, need_optitype=False):
+    """(consensus row, outside-call diplotype or None) for one HLA gene.
+    optitype: read_optitype's result, or None without one; need_optitype:
+    the second caller was asked for, so no result withholds the gene."""
     if t1k is None:
         return [gene, "not typed", "no", "HLA typing (step 08) did not run", "-"], None
     alleles = t1k.get(gene) or []
     if not alleles:
         return [gene, "not typed", "no", "T1K reported no allele", "-"], None
     evidence = "; ".join(f"{a} (quality {q:g})" for a, q in alleles)
+    if optitype is not None:
+        ot = optitype.get(gene) or []
+        evidence = f"T1K: {evidence}; OptiType: {'/'.join(ot) if ot else 'no call'}"
     if any(q <= 0 for _, q in alleles):
         return [gene, "indeterminate", "no",
                 "T1K gives an allele quality 0 or below (T1K says to ignore it)", evidence], None
-    names = [two_fields(a, gene) for a, _ in alleles]
-    reason = "T1K (step 08)"
-    if len(names) == 1:
-        names *= 2
-        reason += ": one allele, read as homozygous"
+    names = t1k_pair(gene, alleles)
     dip = "/".join(names)
+    if optitype is None and need_optitype:
+        return [gene, "indeterminate", "no", NO_OPTITYPE, evidence], None
+    if optitype is not None:
+        ot = optitype.get(gene) or []
+        if not ot:
+            return [gene, "indeterminate", "no", "OptiType, the second caller, made no call", evidence], None
+        if not same_pair(names, ot):
+            return [gene, "indeterminate", "no", "T1K and OptiType disagree at two fields", evidence], None
+        return [gene, dip, "yes", "T1K and OptiType (step 08), which agree at two fields", evidence], dip
+    reason = "T1K (step 08)"
+    if len(alleles) == 1:
+        reason += ": one allele, read as homozygous"
     return [gene, dip, "yes", reason, evidence], dip
+
+
+CONCORDANCE_HEADER = ["Gene", "T1K", "OptiType", "Agree", "Note"]
+
+
+def concordance_rows(t1k, optitype):
+    """Step 08's concordance table: per class I gene the two-field calls of
+    both callers and whether they agree ('yes', 'no', or 'not compared')."""
+    rows = []
+    for gene in OPTITYPE_GENES:
+        alleles = t1k.get(gene) or []
+        ot = optitype.get(gene) or []
+        t_txt = "/".join(t1k_pair(gene, alleles)) if alleles else "no call"
+        o_txt = "/".join(ot) if ot else "no call"
+        if not alleles or not ot:
+            agree, note = "not compared", "a caller made no call"
+        elif any(q <= 0 for _, q in alleles):
+            agree, note = "not compared", "T1K gives an allele quality 0 or below"
+        elif same_pair(t1k_pair(gene, alleles), ot):
+            agree, note = "yes", "-"
+        else:
+            agree, note = "no", "the callers disagree at two fields"
+        if gene in HLA_GENES and agree != "yes":
+            note += "; step 36 does not pass it to PharmCAT"
+        rows.append([gene, t_txt, o_txt, agree, note])
+    return rows
+
+
+def hla_concordance_main(argv):
+    p = argparse.ArgumentParser(prog="pgx_outside_calls.py hla-concordance",
+                                description="Write step 08's T1K and OptiType concordance table.")
+    p.add_argument("--t1k", required=True, help="T1K genotype TSV")
+    p.add_argument("--optitype", required=True, help="OptiType result TSV")
+    p.add_argument("--out", required=True)
+    a = p.parse_args(argv)
+    try:
+        rows = concordance_rows(read_t1k(a.t1k, OPTITYPE_GENES), read_optitype(a.optitype))
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    with open(a.out, "w", newline="") as f:
+        w = csv.writer(f, delimiter="\t", lineterminator="\n")
+        w.writerow(CONCORDANCE_HEADER)
+        w.writerows(rows)
+    for r in rows:
+        print(f"{r[0]}: T1K {r[1]}, OptiType {r[2]}: agree {r[3]}" + ("" if r[4] == "-" else f" ({r[4]})"))
+    return 0
 
 
 # --- CYP2D6 ------------------------------------------------------------------
@@ -392,10 +507,15 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["pypgx-summary"]:
         return pypgx_summary_main(argv[1:])
+    if argv[:1] == ["hla-concordance"]:
+        return hla_concordance_main(argv[1:])
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--calls", required=True, help="outside-call file to write (PharmCAT -po)")
     p.add_argument("--consensus", required=True, help="consensus table to write")
     p.add_argument("--hla", help="T1K genotype TSV (step 08 / HLA_TYPING)")
+    p.add_argument("--optitype", help="OptiType result TSV (step 08 with HLA_QC=true / HLA_QC)")
+    p.add_argument("--require-optitype", action="store_true",
+                   help="the second HLA caller was asked for: without --optitype, withhold HLA-A and HLA-B")
     p.add_argument("--pypgx", help="pypgx summary TSV (step 32 / PYPGX)")
     p.add_argument("--cyrius", help="Cyrius TSV (step 21 / CYRIUS)")
     p.add_argument("--depth-check", help="CYP2D6 depth check TSV (bin/cyp2d6_depth_check.py)")
@@ -403,9 +523,10 @@ def main(argv=None):
 
     try:
         t1k = read_t1k(args.hla) if args.hla else None
+        optitype = read_optitype(args.optitype) if args.optitype else None
         rows, calls = [], []
         for gene in HLA_GENES:
-            row, dip = hla_row(gene, t1k)
+            row, dip = hla_row(gene, t1k, optitype, args.require_optitype)
             rows.append(row)
             if dip:
                 calls.append((gene, dip))
