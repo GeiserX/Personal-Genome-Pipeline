@@ -58,6 +58,7 @@ docker run --rm \
 - `${SAMPLE}/hla_t1k/database_release.txt` — the IPD-IMGT/HLA release the calls come from (read from `hla.dat`), the T1K version and the GENCODE release of the gene positions
 
 HLA-A and HLA-B go on to PharmCAT: [step 36](36-pgx-consensus.md) cuts them to two fields (`*57:01`) and writes them as PharmCAT's outside calls, so step 7 gives the drug guidance for them (abacavir, allopurinol, carbamazepine, oxcarbazepine, phenytoin and others) and step 27 lists it. When either allele of HLA-A or HLA-B has a T1K quality of 0 or below, step 36 passes neither allele of that gene: the whole gene is withheld from PharmCAT. The report shows each allele's quality, marks such a gene low confidence and says it was not passed to PharmCAT.
+With the opt-in second caller below, step 36 also requires OptiType to give the same two alleles at two fields.
 
 ## KIR Genes (opt-in)
 
@@ -74,6 +75,26 @@ The index is built once per T1K version, IPD-KIR release and GENCODE release (`t
 - `database_release.txt` — the IPD-KIR release (read from `kir.dat`), the T1K version and the GENCODE release.
 
 With Nextflow: `--kir true --kir_dat ${GENOME_DIR}/kir/IPD-KIR_2.15.0/kir.dat` with `hla_typing` in `--tools` (processes `KIR_BUILD` and `KIR_TYPING`); with `run-all.sh`: `KIR=true`. No step interprets the KIR genotypes yet: they matter for transplant matching and some immune conditions, not for drug guidance.
+
+## Second Caller: OptiType (opt-in)
+
+T1K alone decides HLA-A and HLA-B for PharmCAT by default. `HLA_QC=true` adds a second, independent caller for the class I genes: OptiType, `OPTITYPE_IMAGE` (1.5.0, BSD-3-Clause), which types reads against the HLA sequences bundled in its image with integer linear programming (GLPK solver).
+
+```bash
+HLA_QC=true ./scripts/08-hla-typing.sh your_sample
+./scripts/36-pgx-consensus.sh your_sample
+```
+
+After T1K, the step takes the read pairs of HLA-A, HLA-B and HLA-C from the BAM (each gene's span in T1K's coordinate file, 1 kb either side; samtools from `SAMTOOLS_IMAGE`), types them with OptiType and compares the two callers at two fields. Output, in `${SAMPLE}/hla_optitype/`:
+
+- `${SAMPLE}_optitype_result.tsv`: OptiType's result (`A1 A2 B1 B2 C1 C2 Reads Objective`). When the BAM has no read pairs at the three genes, one line that says so instead; when OptiType fails, a line that says that, and the step fails.
+- `${SAMPLE}_hla_concordance.tsv`: per gene (HLA-A, HLA-B, HLA-C) T1K's pair, OptiType's pair and `Agree`: `yes`, `no`, or `not compared` (a caller made no call, or T1K gives an allele quality of 0 or below).
+
+Step 36 reads OptiType's result whenever it exists. HLA-A or HLA-B then reaches PharmCAT only when the two callers give the same pair at two fields, in either order (T1K's single allele counts as homozygous). Otherwise the gene stays `indeterminate` in step 36's table with the reason (`T1K and OptiType disagree at two fields`, or `OptiType, the second caller, made no call`), both calls in the Evidence column, and step 27 says it was not passed on. `HLA_QC=true` on step 36 as well holds both genes back when there is no OptiType result. A run of step 08 without `HLA_QC` removes an older OptiType result, so step 36 never mixes runs. HLA-C is compared but never passed to PharmCAT. The HTML and text reports do not read the concordance table yet; step 36's table and step 27's list do.
+
+With Nextflow: `--hla_qc true` with `hla_typing` in `--tools` (processes `HLA_QC_READS` and `HLA_QC`, published to `<sample>/hla_optitype/`); `PGX_CONSENSUS` then applies the same rule and holds both genes back for a sample without an OptiType result. With `run-all.sh`: `HLA_QC=true`.
+
+OptiType's bundled sequences are an older IPD-IMGT/HLA release than `HLA_DB_RELEASE`, so a rare or recently named allele can make the callers disagree; that keeps the gene out of PharmCAT, which is the intended outcome. CI checks the step on the HG002 fixture: OptiType's HLA-A pair is HG002's published A\*01:01 and A\*26:01, both callers agree at HLA-A and HLA-B, a planted disagreement is held back, and reads simulated from B\*57:01 and B\*07:02 in place of HG002's HLA-B reads are called by both and passed on (`tests/e2e/hla-second-caller-1-bash.sh`, `-2-nextflow.sh`). How often the two agree on a full-depth genome is not measured here.
 
 ## Alternative: HLA-LA
 
