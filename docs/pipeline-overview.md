@@ -5,7 +5,7 @@
 | Category | What It Finds | Steps |
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
-| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels), SMN1/SMN2 copy number (opt-in), a couple's shared carrier risk (opt-in) | 6, 17, 35, 35b, 39 |
+| **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels), SMN1/SMN2 copy number and the alpha-globin gene count (opt-in), a couple's shared carrier risk (opt-in) | 6, 17, 35, 35b, 39 |
 | **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.), with HLA-A/B from T1K (and, with `HLA_QC=true`, only when OptiType agrees) and CYP2D6 only when two callers agree | 7, 21, 27, 32, 36 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
@@ -111,7 +111,7 @@ graph LR
 | 7 | [Pharmacogenomics](07-pharmacogenomics.md) | PharmCAT | `PHARMCAT_IMAGE` | Yes |
 | 8 | [HLA Typing](08-hla-typing.md) | T1K (+ OptiType with `HLA_QC=true`) | `T1K_IMAGE` (+ `OPTITYPE_IMAGE` + `SAMTOOLS_IMAGE`) | Optional |
 | 9 | [STR Expansions](09-str-expansions.md) | ExpansionHunter | `EXPANSIONHUNTER_IMAGE` | Recommended |
-| 9b | [STR Annotation](09b-stranger.md) | Stranger | `STRANGER_IMAGE` | If step 9 run |
+| 9b | [STR Annotation](09b-stranger.md) | Stranger (+ the RFC1 motif count) | `STRANGER_IMAGE` (+ `PYPGX_IMAGE` when Stranger flags RFC1) | If step 9 run |
 | 10 | [Telomere Length](10-telomere-analysis.md) | TelomereHunter | `TELOMEREHUNTER_IMAGE` | Optional |
 | 11 | [ROH Analysis](11-roh-analysis.md) | bcftools roh | `BCFTOOLS_IMAGE` | Recommended |
 | 12 | [Mito Haplogroup](12-mito-haplogroup.md) | haplogrep3 + haplocheck | `HAPLOGREP3_IMAGE` + `HAPLOCHECK_IMAGE` | Optional (reads step 20's calls when they exist) |
@@ -146,7 +146,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 32 | [pypgx Pharmacogenomics](32-pypgx.md) | pypgx | `PYPGX_IMAGE` | Recommended |
 | 33 | [Sample Identity and Contamination](33-sample-qc.md) | somalier + VerifyBamID2 | `SOMALIER_IMAGE` + `VERIFYBAMID2_IMAGE` | Recommended |
 | 34 | [CRAM Archive](34-cram-archive.md) | samtools | `SAMTOOLS_IMAGE` | Optional, when the analysis is done |
-| 35 | [Paralog Genes: SMN1/SMN2](35-paralogs.md) | Parascopy | `PARASCOPY_IMAGE` | Opt-in (`TOOLS=...,parascopy`) |
+| 35 | [Paralog Genes: SMN1/SMN2, HBA1/HBA2](35-paralogs.md) | Parascopy (+ HBA1/HBA2 from depth) | `PARASCOPY_IMAGE` | Opt-in (`TOOLS=...,parascopy`) |
 | 35b | [Paralog Genes from PacBio HiFi Reads](35-paralogs.md#step-35b-paralog-genes-from-pacbio-hifi-reads-paraphase) | Paraphase + Python | `PARAPHASE_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,paraphase`; PacBio HiFi BAMs only) |
 | 36 | [PGx Consensus](36-pgx-consensus.md) | Python | `PYTHON_IMAGE` | Runs with step 7 when step 8, 21 or 32 ran |
 | 37 | [Y-Chromosome Haplogroup](37-y-haplogroup.md) | Yleaf | `YLEAF_IMAGE` | Opt-in (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`; male samples) |

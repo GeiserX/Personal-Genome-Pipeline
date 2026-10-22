@@ -397,6 +397,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 ### Stranger over-flags RFC1 (CANVAS) from short reads — do not read it as a diagnosis
 - **Observed:** Stranger can report RFC1 `STR_STATUS=full_mutation` for a modest expansion (e.g. 51/73 of the degenerate `AARRG` motif). CANVAS requires the **AAGGG** motif specifically, **biallelic**, at **~400–2000+** repeats — short-read ExpansionHunter cannot resolve AAGGG vs the benign AAAAG, and the catalog's `STR_PATHOLOGIC_MIN=12` is not the clinical threshold.
 - **Interpretation:** Treat an RFC1 flag as **uninterpretable from short-read WGS** — confirm with motif-aware/flanking-PCR testing only if clinically indicated. (Documented in `docs/09b-stranger.md`.)
+- **Since then:** ExpansionHunter's count still cannot tell the motifs apart, but when Stranger flags RFC1, step 9b counts the motif in the reads over the repeat (`bin/rfc1_motif.py`) and gives a verdict ([STR Annotation, Notes](09b-stranger.md#notes)).
 
 ## Vendor VCF intake (2026-10)
 
