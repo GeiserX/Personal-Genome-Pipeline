@@ -23,6 +23,23 @@ Checks:
      with the population and the principal components;
   4. --zero-matches: every score unmatched, no sum; --below-threshold: no
      sum, the matched count unknown and the rate from pgscatalog-match's log;
+  4c. a sex-specific score, labelled from the real assets/pgs_scores.tsv
+     (PGS000662, prostate cancer, applies_to male): a sample declared female
+     keeps its sum and loses its percentile, Sex_Check "not applicable to
+     the declared sex", in the table and in both reports; declared male it
+     keeps its percentile; with no sex it keeps it too and both reports name
+     the score in a note. Red control: the same list without its applies_to
+     column gives the female sample a percentile, which the check rejects;
+  4d. strand-ambiguous rows (A/T, C/G): counted and "dropped" by default
+     (pgsc_calc drops them), "kept" with --keep-ambiguous when every other
+     row agrees with the reference, and left out of the file ("dropped,
+     strand check failed") when a row agrees only after a strand flip;
+     --keep-ambiguous without --reference is refused; the Ambiguous column
+     of prs-table says it per score;
+  4e. with a panel, a chrX row prs-format kept that pgsc_calc's match log did
+     not match (the panel lacks it) reads "left out (not matched in the
+     panel run)"; matched, it stays "scored"; partly matched, both counts are
+     named ("1 scored, 2 left out (not matched in the panel run)");
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
      percentiles only then; a score whose chrX rows were left out is named,
@@ -201,9 +218,9 @@ def main():
         check("prs-table exits 0", rc == 0, rc)
         check("prs-table: the columns, Input last", hdr == collect_summary.PRS_COLUMNS and hdr[-1] == "Input", hdr)
         check("prs-table: sum 62 (not 62.0), 2 of 3 matched, no percentile, its chrX row left out",
-              rows[0] == ["Coronary artery disease", "PGS000001", "62", "2", "3", "66.7", "NA", "NA", "1 left out", "gvcf"], rows[0])
+              rows[0] == ["Coronary artery disease", "PGS000001", "62", "2", "3", "66.7", "NA", "NA", "1 left out", "0", "", "", "gvcf"], rows[0])
         check("prs-table: a score pgsc_calc dropped has no sum and its counts; no chrX entry for a score prs-format did not write",
-              rows[1] == ["Trait two", "PGS000002", "NA", "0", "5", "0.0", "NA", "NA", "", "gvcf"], rows[1])
+              rows[1] == ["Trait two", "PGS000002", "NA", "0", "5", "0.0", "NA", "NA", "", "", "", "", "gvcf"], rows[1])
 
         # 3. prs-table with a panel
         pgsc_results(f"{work}/adj", adjusted=True)
@@ -226,7 +243,7 @@ def main():
                                    "--scores", f"{work}/pgs", "--input-kind", "vcf", "--zero-matches", "--out", out])
         hdr, rows = read_rows(out)
         check("prs-table --zero-matches: every score unmatched, Input vcf",
-              rc == 0 and [r[2:6] + r[9:] for r in rows] == [["NA", "0", "3", "0.0", "vcf"], ["NA", "0", "5", "0.0", "vcf"]], rows)
+              rc == 0 and [r[2:6] + r[12:] for r in rows] == [["NA", "0", "3", "0.0", "vcf"], ["NA", "0", "5", "0.0", "vcf"]], rows)
         rc = collect_summary.main(["prs-table", "--sample", "S", "--results", f"{work}/none", "--sampleset", "sample",
                                    "--scores", f"{work}/pgs", "--input-kind", "vcf", "--out", out])
         check("prs-table: no pgsc_calc output and no --zero-matches is an error", rc == 1, rc)
@@ -240,6 +257,140 @@ def main():
         hdr, rows = read_rows(out)
         check("prs-table --below-threshold: no sum, matched NA (not 0), the rate from the log, NA without one",
               rc == 0 and [r[2:6] for r in rows] == [["NA", "NA", "3", "33.3"], ["NA", "NA", "5", "NA"]], rows)
+
+        # 4c. sex-specific scores, from the real score list
+        assets = os.path.join(REPO, "assets", "pgs_scores.tsv")
+        put(f"{work}/sexin/PGS000662_hmPOS_GRCh38.txt.gz", HM.replace("PGS000001", "PGS000662"), gz=True)
+
+        def sex_rows(labels, sex, tag):
+            pgs, res = f"{work}/sex_{tag}/pgs", f"{work}/sex_{tag}/res"
+            rc = collect_summary.main(["prs-format", "--scores", f"{work}/sexin", "--labels", labels,
+                                       "--out", pgs, "--alleles", f"{work}/sex_{tag}/alleles.tsv"])
+            pgsc_results(res, adjusted=True)
+            for f_ in glob.glob(f"{res}/sample/*/*"):
+                if f_.endswith(".gz"):
+                    with gzip.open(f_, "rt") as g:
+                        body = g.read()
+                    put(f_, body.replace("PGS000001", "PGS000662"), gz=True)
+                else:
+                    with open(f_) as g:
+                        body = g.read()
+                    put(f_, body.replace("PGS000001", "PGS000662"))
+            o = f"{work}/sex_{tag}/S_prs_summary.tsv"
+            rc2 = collect_summary.main(["prs-table", "--sample", "S", "--results", res, "--sampleset", "sample",
+                                        "--scores", pgs, "--input-kind", "gvcf", "--panel", "pgsc_1000G_v1",
+                                        "--out", o] + (["--sex", sex] if sex else []))
+            h, r = read_rows(o)
+            return rc, rc2, dict(zip(h, r[0])), o
+
+        rc, rc2, female, f_out = sex_rows(assets, "female", "f")
+        check("4c: prs-format and prs-table exit 0 on PGS000662", rc == 0 and rc2 == 0, (rc, rc2))
+        check("4c: declared female, PGS000662 (male): raw sum kept, no percentile, not applicable",
+              female.get("Score_SUM") == "1.25" and female.get("Percentile") == "NA"
+              and female.get("Applies_To") == "male" and female.get("Sex_Check") == "not applicable to the declared sex",
+              female)
+        _, _, male, m_out = sex_rows(assets, "male", "m")
+        check("4c: declared male, PGS000662: the percentile stays, Sex_Check applies",
+              male.get("Percentile") == "94.4" and male.get("Sex_Check") == "applies", male)
+        _, _, nosex, n_out = sex_rows(assets, "", "n")
+        check("4c: no sex declared, PGS000662: the percentile stays, Sex_Check says no sex was declared",
+              nosex.get("Percentile") == "94.4" and nosex.get("Sex_Check") == "no sex declared", nosex)
+        for tag, src in (("f", f_out), ("n", n_out)):
+            dd = f"{work}/sex_sample_{tag}/S"
+            os.makedirs(f"{dd}/prs", exist_ok=True)
+            shutil.copy(src, f"{dd}/prs/S_prs_summary.tsv")
+            put(f"{dd}/ancestry/S_ancestry.tsv", "key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\npopulation\tEUR\n")
+            sm = collect_summary.collect("S", dd)
+            tx, ht = render_report.text_report(sm), render_report.html_report(sm)
+            if tag == "f":
+                check("4c: declared female: both reports print not applicable for PGS000662, no percentile",
+                      "PGS000662  not applicable to the declared sex (male-specific score)" in tx
+                      and "<td>not applicable to the declared sex (male-specific score)</td>" in ht
+                      and "percentile 94.4" not in tx and "<td>94.4 (EUR)</td>" not in ht, tx)
+            else:
+                check("4c: no sex: both reports keep the percentile and name the score in a note",
+                      "percentile 94.4 (EUR)" in tx and "<td>94.4 (EUR)</td>" in ht
+                      and "No sex was declared, so these sex-specific scores are shown for any sex: PGS000662 (male)." in tx
+                      and "PGS000662 (male)." in ht, tx)
+        # Red control: the score list without its applies_to column.
+        with open(assets, encoding="utf-8") as f_:
+            two = "".join("\t".join(l.rstrip("\n").split("\t")[:2]) + "\n" if not l.startswith("#") else l for l in f_)
+        put(f"{work}/two_columns.tsv", two)
+        _, _, ctl, _ = sex_rows(f"{work}/two_columns.tsv", "female", "ctl")
+        check("4c: control: without applies_to the female sample would get the percentile, which the check above rejects",
+              ctl.get("Percentile") == "94.4" and ctl.get("Sex_Check") == "", ctl)
+
+        # 4d. strand-ambiguous rows against a small reference: chr1 is GAAGCCAT
+        put(f"{work}/ref/ref.fa", ">chr1\nGAAG\nCCAT\n")
+        put(f"{work}/ref/ref.fa.fai", "chr1\t8\t6\t4\t5\n")
+        amb = ("#pgs_id=PGS000003\n#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\tother_allele\teffect_weight\n"
+               "1\t2\tA\tG\t1\n1\t3\tA\tT\t1\n1\t4\tC\tG\t1\n1\t5\tT\tC\t1\n")
+        put(f"{work}/ambin/PGS000003.txt.gz", amb, gz=True)
+        # chr1:7 is A: T/C agrees only on the other strand (A/G)
+        put(f"{work}/flipin/PGS000003.txt.gz", amb + "1\t7\tT\tC\t1\n", gz=True)
+
+        def amb_run(src, tag, extra):
+            out_ = f"{work}/amb_{tag}"
+            rc = collect_summary.main(["prs-format", "--scores", f"{work}/{src}", "--out", out_,
+                                       "--alleles", f"{out_}.alleles"] + extra)
+            if rc:
+                return rc, None, None
+            with gzip.open(f"{out_}/PGS000003.txt.gz", "rt") as g:
+                body = [l.split("\t")[1] for l in g.read().splitlines()[5:]]
+            with open(f"{out_}/score_notes.tsv") as g:
+                notes = g.read().splitlines()
+            return rc, body, notes
+
+        ref = ["--keep-ambiguous", "--reference", f"{work}/ref/ref.fa"]
+        rc, body, notes = amb_run("ambin", "off", [])
+        check("4d: default: the 2 ambiguous rows are written and counted as dropped (pgsc_calc drops them)",
+              rc == 0 and body == ["2", "3", "4", "5"] and notes[1:] == ["PGS000003\t\t2\tdropped"], (rc, body, notes))
+        rc, body, notes = amb_run("ambin", "on", ref)
+        check("4d: --keep-ambiguous, every other row agrees with the reference: kept",
+              rc == 0 and body == ["2", "3", "4", "5"] and notes[1:] == ["PGS000003\t\t2\tkept"], (rc, body, notes))
+        rc, body, notes = amb_run("flipin", "flip", ref)
+        check("4d: --keep-ambiguous, a row that agrees only on the other strand: the ambiguous rows are left out",
+              rc == 0 and body == ["2", "5", "7"] and notes[1:] == ["PGS000003\t\t2\tdropped, strand check failed"],
+              (rc, body, notes))
+        rc, _, _ = amb_run("ambin", "noref", ["--keep-ambiguous"])
+        check("4d: --keep-ambiguous without --reference is refused", rc == 1, rc)
+        put(f"{work}/amb_res/sample/match/sample_summary.csv",
+            "dataset,accession,ambiguous,is_multiallelic,match_flipped,duplicate_best_match,duplicate_ID,match_IDs,match_status,count,score_pass,match_rate\n"
+            "sample,PGS000003,false,false,false,false,false,NA,matched,2,true,0.5\n"
+            "sample,PGS000003,true,false,false,false,false,NA,excluded,2,true,0.5\n")
+        put(f"{work}/amb_res/sample/score/aggregated_scores.txt.gz",
+            "sampleset\tFID\tIID\tPGS\tSUM\tDENOM\nsample\tHG\tHG\tPGS000003\t2\t2\n", gz=True)
+        rc = collect_summary.main(["prs-table", "--sample", "S", "--results", f"{work}/amb_res", "--sampleset", "sample",
+                                   "--scores", f"{work}/amb_off", "--input-kind", "gvcf", "--out", f"{work}/amb.tsv"])
+        h, r = read_rows(f"{work}/amb.tsv")
+        check("4d: prs-table: the Ambiguous column counts them per score", rc == 0 and dict(zip(h, r[0])).get("Ambiguous") == "2 dropped", r)
+
+        # 4e. a chrX row and the panel's intersection: pgsc_calc's match log
+        rc = collect_summary.main(["prs-format", "--scores", f"{work}/in", "--labels", f"{work}/labels.tsv",
+                                   "--out", f"{work}/pgsx_panel", "--alleles", f"{work}/allelesxp.tsv", "--keep-x"])
+        pgsc_results(f"{work}/xpanel", adjusted=True)
+        log = "row_nr,accession,chr_name,chr_position,effect_allele,other_allele,match_status,dataset\n"
+        put(f"{work}/xpanel/sample/match/sample_log.csv.gz", log
+            + "0,PGS000001,1,1100,A,G,matched,sample\n1,PGS000001,X,51000000,A,G,excluded,sample\n", gz=True)
+
+        def chrx_of(res):
+            collect_summary.main(["prs-table", "--sample", "S", "--results", res, "--sampleset", "sample",
+                                  "--scores", f"{work}/pgsx_panel", "--input-kind", "gvcf", "--panel", "pgsc_1000G_v1",
+                                  "--out", f"{work}/xp.tsv"])
+            h, r = read_rows(f"{work}/xp.tsv")
+            return dict(zip(h, r[0])).get("ChrX")
+        got = chrx_of(f"{work}/xpanel")
+        check("4e: panel run, the chrX row excluded by pgsc_calc: left out (not matched in the panel run)",
+              got == "1 left out (not matched in the panel run)", got)
+        put(f"{work}/xpanel/sample/match/sample_log.csv.gz", log
+            + "0,PGS000001,1,1100,A,G,matched,sample\n1,PGS000001,X,51000000,A,G,matched,sample\n", gz=True)
+        got = chrx_of(f"{work}/xpanel")
+        check("4e: panel run, the chrX row matched: scored", got == "1 scored", got)
+        # Three chrX rows, the log matched one: both counts are named.
+        put(f"{work}/pgsx_panel/{collect_summary.CHRX_FILE}", "pgs_id\tchrx_rows\tchrx\nPGS000001\t3\tscored\n")
+        got = chrx_of(f"{work}/xpanel")
+        check("4e: panel run, 1 of 3 chrX rows matched: 1 scored, 2 left out",
+              got == "1 scored, 2 left out (not matched in the panel run)", got)
 
         # 5. the reports
         d = f"{work}/sample_raw/S"

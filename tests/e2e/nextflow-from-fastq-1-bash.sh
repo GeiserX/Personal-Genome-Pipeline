@@ -7,8 +7,8 @@
 # Nextflow pipeline on the same reads under the same sample name; the E2E
 # workflow then compares the two.
 #
-# PRS scores a synthetic file (the nine PGS ids of step 25 so nothing is
-# downloaded): five chr20 sites where HG002 matches the reference (GIAB
+# PRS scores a synthetic file (the PGS ids of assets/pgs_scores.tsv so nothing
+# is downloaded): five chr20 sites where HG002 matches the reference (GIAB
 # v4.2.1 truth, no variant within 200 bp; effect allele = reference base) and
 # three truth SNVs (effect allele = ALT). The next case scores the same file.
 . "$(dirname "$0")/lib.sh"
@@ -85,7 +85,8 @@ check_eq "score sites (5 hom-ref, 3 truth SNVs)" "$(wc -l < "$SITES" | tr -d ' '
 PGS="${E2E_WORK}/parity-pgs"
 rm -rf "$PGS" "${GENOME_DIR}/prs_scores"
 mkdir -p "$PGS" "${GENOME_DIR}/prs_scores"
-for id in PGS000018 PGS000014 PGS000004 PGS000662 PGS000016 PGS000334 PGS000027 PGS000017 PGS000055; do
+# One file per id of assets/pgs_scores.tsv, which step 25 scores.
+for id in $(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${REPO}/assets/pgs_scores.tsv"); do
   { printf '#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\teffect_weight\n'
     awk -F'\t' -v OFS='\t' '{print "20", $2, $3, 2 ^ (NR - 1)}' "$SITES"; } | gzip -c > "${PGS}/${id}.txt.gz"
 done

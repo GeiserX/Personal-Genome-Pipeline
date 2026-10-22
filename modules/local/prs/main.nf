@@ -7,7 +7,10 @@
                      prs-format), labelled from assets/pgs_scores.tsv: once
                      with the chrX rows (set with_x, for samples whose sex the
                      samplesheet gives) and once without (set autosomes), as
-                     the samples of the run need
+                     the samples of the run need. With
+                     --prs_keep_ambiguous it checks each score's alleles
+                     against the reference and keeps the strand-ambiguous
+                     rows of the scores that pass
     PRS_SCORE_SITES  genotypes the score positions (and, with a panel, the
                      panel's) from the gVCF, so a site where the sample
                      matches the reference is a real 0/0; without a gVCF it
@@ -20,7 +23,10 @@
                      samplesheet's sex its plink2 gets the sex (--update-sex),
                      which it needs to read chrX
     PRS_SUMMARY      <id>_prs_summary.tsv (bin/collect_summary.py prs-table),
-                     and with the panel the ancestry table of step 26
+                     a score of the other sex marked not applicable, also
+                     published as <id>_prs_summary.<YYYYMMDD-HHMM>.tsv so a
+                     rerun keeps it, and with the panel the ancestry table
+                     of step 26
 
     Equivalent to: scripts/25-prs.sh (and scripts/26-ancestry.sh)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -34,6 +40,8 @@ process PRS_PREPARE {
     val(score_set)       // with_x: keep the chrX rows; autosomes: drop them
     path(scoring_dir)
     path(labels)
+    path(reference)      // read only with --prs_keep_ambiguous (the strand check)
+    path(reference_fai)  // staged beside the FASTA
 
     output:
     tuple val(score_set), path("pgs"), path("score_alleles.tsv"), emit: scores
@@ -44,8 +52,9 @@ process PRS_PREPARE {
 
     script:
     def keep_x = score_set == 'with_x' ? '--keep-x' : ''
+    def keep_amb = params.prs_keep_ambiguous.toString() == 'true' ? "--keep-ambiguous --reference ${reference}" : ''
     """
-    collect_summary.py prs-format --scores ${scoring_dir} --labels ${labels} --out pgs --alleles score_alleles.tsv ${keep_x}
+    collect_summary.py prs-format --scores ${scoring_dir} --labels ${labels} --out pgs --alleles score_alleles.tsv ${keep_x} ${keep_amb}
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
@@ -153,6 +162,11 @@ process PRS {
     // --pgsc_calc would name nothing.
     def pipeline = params.pgsc_calc ? "${file(params.pgsc_calc).toAbsolutePath()}/main.nf" : 'pgsc_calc-src/main.nf'
     def ancestry = panel ? "--run_ancestry \$(readlink -f ${panel})" : ''
+    // PRS_PREPARE kept the strand-ambiguous rows of the scores that passed
+    // its strand check; pgsc_calc keeps them too. WGS only, as step 25: the
+    // genotypes must come from the sample's gVCF.
+    def keep_amb = params.prs_keep_ambiguous.toString() == 'true' ? '--keep_ambiguous' : ''
+    def amb_refused = keep_amb && input_kind != 'gvcf'
     def labels = task.ext.pipeline_images.tokenize(';').collect { kv ->
         def i = kv.indexOf('=')
         def image = kv.substring(i + 1)
@@ -185,6 +199,10 @@ process PRS {
         "    echo '${task.ext.pipeline_sha256}  pgsc_calc.tar.gz' | \$SUM -c -\n" +
         "    mkdir pgsc_calc-src && tar -xzf pgsc_calc.tar.gz -C pgsc_calc-src --strip-components 1 && rm -f pgsc_calc.tar.gz"
     """
+    if ${amb_refused}; then
+        echo "ERROR: ${meta.id}: --prs_keep_ambiguous needs the sample's gVCF (WGS); this row has only a VCF." >&2
+        exit 1
+    fi
     VCF=\$(readlink -f target/*)
     case "\$VCF" in
         *.vcf.gz) PREFIX=\${VCF%.vcf.gz} ;;
@@ -250,7 +268,7 @@ process PRS {
         -profile ${engine} -c images.config -work-dir work -ansi-log false \\
         --input samplesheet.csv --target_build GRCh38 \\
         --scorefile "\$(readlink -f pgs)/*.txt.gz" \\
-        ${ancestry} \\
+        ${ancestry} ${keep_amb} \\
         --outdir pgsc_calc \\
         --max_cpus ${task.cpus} --max_memory '${task.memory.toGiga()}.GB' > pgsc_calc.log 2>&1 || rc=\$?
     fi
@@ -305,7 +323,7 @@ process PRS_SUMMARY {
     tag "$meta.id"
     label 'process_single'
 
-    publishDir { "${params.outdir}/${meta.id}/prs" }, mode: params.publish_dir_mode, pattern: '*_prs_summary.tsv'
+    publishDir { "${params.outdir}/${meta.id}/prs" }, mode: params.publish_dir_mode, pattern: '*_prs_summary*.tsv'
     publishDir { "${params.outdir}/${meta.id}/ancestry" }, mode: params.publish_dir_mode, pattern: '*_ancestry.tsv'
 
     input:
@@ -314,6 +332,9 @@ process PRS_SUMMARY {
 
     output:
     tuple val(meta), path("${meta.id}_prs_summary.tsv"),             emit: summary
+    // The same table under the time this task wrote it: a rerun publishes
+    // its own beside it and the earlier one stays, as step 25 keeps it.
+    path "${meta.id}_prs_summary.*.tsv",                              emit: dated
     tuple val(meta), path("${meta.id}_ancestry.tsv"), optional: true, emit: ancestry
     path "versions.yml",                                              emit: versions
 
@@ -322,19 +343,22 @@ process PRS_SUMMARY {
 
     script:
     def anc = panel_name ? "--panel '${panel_name}' --ancestry-out ${meta.id}_ancestry.tsv" : ''
+    def sex = meta.sex in ['male', 'female'] ? meta.sex : ''
     """
     FLAGS=()
     if [ -f ${results}/ZERO_MATCHES ]; then FLAGS=(--zero-matches); fi
     if [ -f ${results}/BELOW_THRESHOLD ]; then FLAGS=(--below-threshold ${results}/pgsc_calc.log); fi
     collect_summary.py prs-table --sample ${meta.id} --results ${results} --sampleset sample \\
-        --scores pgs --input-kind ${input_kind} \${FLAGS[@]+"\${FLAGS[@]}"} ${anc} --out ${meta.id}_prs_summary.tsv
+        --scores pgs --input-kind ${input_kind} --sex '${sex}' \${FLAGS[@]+"\${FLAGS[@]}"} ${anc} --out ${meta.id}_prs_summary.tsv
+    cp -p ${meta.id}_prs_summary.tsv ${meta.id}_prs_summary.\$(date -r ${meta.id}_prs_summary.tsv +%Y%m%d-%H%M).tsv
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
-    printf 'Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total\\tMatched_Pct\\tPercentile\\tAncestry_Group\\tChrX\\tInput\\n' > ${meta.id}_prs_summary.tsv
+    printf 'Condition\\tPGS_ID\\tScore_SUM\\tVariants_Matched\\tVariants_Total\\tMatched_Pct\\tPercentile\\tAncestry_Group\\tChrX\\tAmbiguous\\tApplies_To\\tSex_Check\\tInput\\n' > ${meta.id}_prs_summary.tsv
+    cp ${meta.id}_prs_summary.tsv ${meta.id}_prs_summary.20260101-0000.tsv
     if [ -n "${panel_name}" ]; then printf 'key\\tvalue\\nsample\\t%s\\n' ${meta.id} > ${meta.id}_ancestry.tsv; fi
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """

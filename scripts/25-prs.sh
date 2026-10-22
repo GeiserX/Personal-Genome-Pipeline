@@ -21,8 +21,21 @@
 # plink2 gets the sex with the genotypes. Without it they are left out (plink2
 # refuses chrX without a sex), and the summary's ChrX column says so.
 #
+# A score built for one sex (applies_to in assets/pgs_scores.tsv: breast
+# cancer for women, prostate cancer for men) is marked "not applicable to the
+# declared sex" for the other one: its raw sum stays, its percentile goes.
+#
+# A rerun keeps the previous run: every run's summary is also written as
+# <sample>_prs_summary.<YYYYMMDD-HHMM>.tsv, and the previous pgsc_calc folder
+# moves to pgsc_calc.<the same time> before the new one is made.
+#
 # Env: ANCESTRY_PANEL  the panel (default reference/pgsc_calc/${PGSC_PANEL}.tar.zst;
 #                      "none" scores without it even when it is installed)
+#      PRS_KEEP_AMBIGUOUS  true: keep the strand-ambiguous rows (A/T, C/G) of
+#                      each score whose other rows agree with the reference on
+#                      the forward strand (pgsc_calc --keep_ambiguous); a score
+#                      that fails keeps dropping them. Needs the gVCF (WGS).
+#                      Default false: pgsc_calc drops them all.
 #      PGSC_MAX_MEMORY memory pgsc_calc may use, e.g. 12.GB (default: 3/4 of the RAM)
 #      PGSC_CALC_DIR   pgsc_calc's code (default tools/pgsc_calc-${PGSC_CALC_VERSION},
 #                      which setup.sh or this step installs)
@@ -37,6 +50,11 @@ validate_sample "$SAMPLE"
 case "$SEX" in
   ""|male|female) ;;
   *) echo "ERROR: sex must be 'male' or 'female', got '${SEX}'" >&2; exit 1 ;;
+esac
+KEEP_AMBIGUOUS=${PRS_KEEP_AMBIGUOUS:-false}
+case "$KEEP_AMBIGUOUS" in
+  true|false) ;;
+  *) echo "ERROR: PRS_KEEP_AMBIGUOUS must be 'true' or 'false', got '${KEEP_AMBIGUOUS}'" >&2; exit 1 ;;
 esac
 require_image PYTHON_IMAGE BCFTOOLS_IMAGE PLINK2_IMAGE PGSC_UTILS_IMAGE PGSC_FRAPOSA_IMAGE \
   PGSC_PYYAML_IMAGE PGSC_ZSTD_IMAGE PGSC_REPORT_IMAGE
@@ -53,11 +71,18 @@ PANEL_SITES="${PANEL%.tar.zst}_GRCh38_sites.tsv"
 PGSC_CALC_DIR=${PGSC_CALC_DIR:-${GENOME_DIR}/tools/pgsc_calc-${PGSC_CALC_VERSION}}
 # pgsc_calc names a sampleset with letters and digits only; the sample keeps its name inside the VCF.
 SAMPLESET=sample
+RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
 mkdir -p "$OUTDIR" "$SCORING_DIR"
 
 if [ ! -f "$VCF" ]; then
   echo "ERROR: VCF not found: ${VCF}"
   echo "  Run step 3 (DeepVariant) first."
+  exit 1
+fi
+# The strand of an ambiguous pair is known only where the genotypes come from
+# the reads; the gVCF is step 3's, so a VCF alone (chip data, an older run) is refused.
+if $KEEP_AMBIGUOUS && { [ ! -f "$GVCF" ] || [ ! -f "${GVCF}.tbi" ]; }; then
+  echo "ERROR: PRS_KEEP_AMBIGUOUS=true needs step 3's gVCF beside the VCF (${GVCF} and its .tbi): it is for WGS only." >&2
   exit 1
 fi
 for t in nextflow java; do
@@ -83,6 +108,7 @@ echo "  Tool: pgsc_calc ${PGSC_CALC_VERSION}"
 echo "  Sample: ${SAMPLE}"
 echo "  Input:  ${VCF}"
 echo "  Sex:    ${SEX:-not given (chrX rows of the scores are left out)}"
+echo "  Strand-ambiguous rows: $($KEEP_AMBIGUOUS && echo "kept for scores that pass the strand check (PRS_KEEP_AMBIGUOUS)" || echo "dropped")"
 if $USE_PANEL; then
   echo "  Ancestry panel: ${PANEL}"
 else
@@ -136,16 +162,36 @@ done
 # chrX rows (--keep-x); chrY and MT rows are always dropped.
 echo ""
 echo "[2/5] Writing the scores as pgsc_calc reads them..."
-rm -rf "$WORK"
+# >>> previous run (tests/fake-docker/prs-scores-and-run-options-rerun.sh checks it)
+# The previous run is kept under the time of its summary (of its folder when
+# it left none): the summary as <sample>_prs_summary.<YYYYMMDD-HHMM>.tsv,
+# which every run writes at its end and a summary of an older version gets
+# here, and its pgsc_calc folder as pgsc_calc.<the same time>.
+if [ -e "$WORK" ] || [ -f "$RESULTS_FILE" ]; then
+  if [ -f "$RESULTS_FILE" ]; then PREV=$(date -r "$RESULTS_FILE" +%Y%m%d-%H%M); else PREV=$(date -r "$WORK" +%Y%m%d-%H%M); fi
+  if [ -f "$RESULTS_FILE" ] && [ ! -e "${RESULTS_FILE%.tsv}.${PREV}.tsv" ]; then
+    cp -p "$RESULTS_FILE" "${RESULTS_FILE%.tsv}.${PREV}.tsv"
+  fi
+  if [ -e "$WORK" ]; then
+    KEPT="${WORK}.${PREV}"
+    n=1
+    while [ -e "$KEPT" ]; do n=$((n + 1)); KEPT="${WORK}.${PREV}-${n}"; done
+    mv "$WORK" "$KEPT"
+    echo "  The previous run's pgsc_calc folder is kept as ${KEPT}"
+  fi
+fi
+# <<< previous run
 mkdir -p "${WORK}/scores"
 IDS=$(IFS=,; echo "${PGS_IDS[*]}")
 KEEP_X=()
 if [ -n "$SEX" ]; then KEEP_X=(--keep-x); fi
+KEEP_AMB=()
+if $KEEP_AMBIGUOUS; then KEEP_AMB=(--keep-ambiguous --reference "$REF_FASTA_C"); fi
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${SCORE_LIST}:/pgs_scores.tsv:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/collect_summary.py prs-format \
     --scores "$(cpath "$SCORING_DIR")" --ids "$IDS" --labels /pgs_scores.tsv \
     --out "$(cpath "${WORK}/scores")" --alleles "$(cpath "${WORK}/score_alleles.tsv")" \
-    ${KEEP_X[@]+"${KEEP_X[@]}"}
+    ${KEEP_X[@]+"${KEEP_X[@]}"} ${KEEP_AMB[@]+"${KEEP_AMB[@]}"}
 
 # --- 3. The genotypes pgsc_calc scores ---------------------------------------------
 # Both inputs end as target.vcf.gz: the score positions (and with the panel the
@@ -282,8 +328,9 @@ fi
   echo 'docker.runOptions = '"'"'-u $(id -u):$(id -g) --network none'"${MOUNT}'"
 } > "${WORK}/images.config"
 printf 'sampleset,path_prefix,chrom,format\n%s,%s,,vcf\n' "$SAMPLESET" "${WORK}/target" > "${WORK}/samplesheet.csv"
-PANEL_ARGS=()
-if $USE_PANEL; then PANEL_ARGS=(--run_ancestry "$PANEL"); fi
+PGSC_ARGS=()
+if $USE_PANEL; then PGSC_ARGS=(--run_ancestry "$PANEL"); fi
+if $KEEP_AMBIGUOUS; then PGSC_ARGS+=(--keep_ambiguous); fi
 LOG="${WORK}/pgsc_calc.log"
 rc=0
 ZERO=()
@@ -299,7 +346,7 @@ else
       -profile docker -c "${WORK}/images.config" -work-dir "${WORK}/work" -ansi-log false \
       --input "${WORK}/samplesheet.csv" --target_build GRCh38 \
       --scorefile "${WORK}/scores/*.txt.gz" \
-      ${PANEL_ARGS[@]+"${PANEL_ARGS[@]}"} \
+      ${PGSC_ARGS[@]+"${PGSC_ARGS[@]}"} \
       --outdir "${WORK}/results" \
       --max_cpus "$PGSC_CPUS" --max_memory "$PGSC_MAX_MEMORY" ) > "$LOG" 2>&1 || rc=$?
   cat "$LOG"
@@ -329,7 +376,6 @@ fi
 # --- 5. Summary ---------------------------------------------------------------------
 echo ""
 echo "[5/5] Summary..."
-RESULTS_FILE="${OUTDIR}/${SAMPLE}_prs_summary.tsv"
 ANCESTRY_DIR="${GENOME_DIR}/${SAMPLE}/ancestry"
 ANCESTRY_FILE="${ANCESTRY_DIR}/${SAMPLE}_ancestry.tsv"
 rm -f "$RESULTS_FILE"
@@ -342,8 +388,15 @@ fi
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/collect_summary.py prs-table \
     --sample "$SAMPLE" --results "$(cpath "${WORK}/results")" --sampleset "$SAMPLESET" \
-    --scores "$(cpath "${WORK}/scores")" --input-kind "$INPUT_KIND" \
+    --scores "$(cpath "${WORK}/scores")" --input-kind "$INPUT_KIND" --sex "$SEX" \
     ${ZERO[@]+"${ZERO[@]}"} ${ANC_ARGS[@]+"${ANC_ARGS[@]}"} --out "$(cpath "$RESULTS_FILE")"
+# This run's summary under its time too, so the next run keeps it; an earlier
+# summary of the same minute keeps its name and this one gets -2, -3...
+STAMP=$(date -r "$RESULTS_FILE" +%Y%m%d-%H%M)
+DATED="${RESULTS_FILE%.tsv}.${STAMP}.tsv"
+n=1
+while [ -e "$DATED" ] && ! cmp -s "$RESULTS_FILE" "$DATED"; do n=$((n + 1)); DATED="${RESULTS_FILE%.tsv}.${STAMP}-${n}.tsv"; done
+cp -p "$RESULTS_FILE" "$DATED"
 # Kept: pgsc_calc's results (its HTML report, the match log), and its own
 # trace, report and timeline, the only record of its tasks' memory
 # (FORMAT_SCOREFILES, MATCH_VARIANTS, MATCH_COMBINE). They move to
@@ -373,7 +426,7 @@ echo ""
 echo "============================================"
 echo "  Polygenic scores complete: ${SAMPLE}"
 echo ""
-echo "  Summary: ${RESULTS_FILE}"
+echo "  Summary: ${RESULTS_FILE} (also kept as ${SAMPLE}_prs_summary.$(date -r "$RESULTS_FILE" +%Y%m%d-%H%M).tsv)"
 column -t -s $'\t' "$RESULTS_FILE" 2>/dev/null || cat "$RESULTS_FILE"
 if [ -s "$ANCESTRY_FILE" ]; then
   echo "  Ancestry (step 26's table): ${ANCESTRY_FILE}"

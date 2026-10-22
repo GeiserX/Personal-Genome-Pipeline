@@ -880,7 +880,7 @@ Possible causes:
 
 **Symptom:** the PRS step stops after pgsc_calc's first task, `FORMAT_SCOREFILES`, with exit 137, or with `concurrent.futures.process.BrokenProcessPool` in `pgsc_calc.log` (the kernel killed one of its worker processes).
 
-**Cause:** that task reads every scoring file whole. On the nine default scores it needs about 14 to 18 GB on one thread, more on more threads ([step 25, Memory](25-prs.md#memory)). Its container gets pgsc_calc's `--max_memory`.
+**Cause:** that task reads every scoring file whole. On the nine scores measured (the four lipid and blood-pressure scores added since hold about 1,200 rows together) it needs about 14 to 18 GB on one thread, more on more threads ([step 25, Memory](25-prs.md#memory)). Its container gets pgsc_calc's `--max_memory`.
 
 **Fix:**
 1. With `run-all.sh` or Nextflow, `PRS` asks for 24 GB and is retried once with twice that, both capped at `--max_memory`: pass `--max_memory 24.GB` or more when the machine has it.
