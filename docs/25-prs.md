@@ -161,7 +161,7 @@ That run scored PGS000018 alone and fits a 16 GB machine; the default scores nee
 - **Sex_Check**: for those scores, `applies`, `not applicable to the declared sex` or `no sex declared`; empty for the rest.
 - **Input**: `gvcf` when the positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out, the same line names the score and how many rows. A score that does not apply to the declared sex shows "not applicable to the declared sex" in place of its percentile, and when no sex was declared the reports say which scores are for one sex only.
+Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out because no sex was given, the same line names the score and how many rows; rows left out in a panel run show only in the summary's ChrX column. A score that does not apply to the declared sex shows "not applicable to the declared sex" in place of its percentile, and when no sex was declared the reports say which scores are for one sex only.
 
 A raw `Score_SUM` from a run with the panel is not comparable with one from a run without it: with the panel pgsc_calc scores only the variants the panel has too. Compare percentiles, which only a panel run gives.
 

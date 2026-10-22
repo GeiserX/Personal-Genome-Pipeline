@@ -7,8 +7,8 @@
 # Nextflow pipeline on the same reads under the same sample name; the E2E
 # workflow then compares the two.
 #
-# PRS scores a synthetic file (the nine PGS ids of step 25 so nothing is
-# downloaded): five chr20 sites where HG002 matches the reference (GIAB
+# PRS scores a synthetic file (the PGS ids of assets/pgs_scores.tsv so nothing
+# is downloaded): five chr20 sites where HG002 matches the reference (GIAB
 # v4.2.1 truth, no variant within 200 bp; effect allele = reference base) and
 # three truth SNVs (effect allele = ALT). The next case scores the same file.
 . "$(dirname "$0")/lib.sh"
