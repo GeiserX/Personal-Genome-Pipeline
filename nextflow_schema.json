@@ -272,6 +272,18 @@
                     "description": "The exons of GENCODE's basic annotation as a BED, which scripts/setup.sh installs as reference/gencode.v<release>.basic.exons.bed. With clinvar, CLINVAR_CDNA_CHECK reads it for the cDNA read check of the ClinVar hits (without it every hit is not checked); with --pedigree, the couple carrier screen uses deletions over an exon.",
                     "fa_icon": "fas fa-file"
                 },
+                "mito_clinvar": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "The whole ClinVar VCF with chr names, its .tbi beside it, which scripts/setup.sh installs as clinvar/clinvar_chr.vcf.gz. With mito_variants, MITO_VARIANTS_ANNOTATE gives each chrM call its ClinVar record, as step 20 does; without it the ClinVar columns of <id>_chrM_annotated.tsv are '.'.",
+                    "fa_icon": "fas fa-database"
+                },
+                "gnomad_mito": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "gnomAD v3.1's chrM sites VCF (GNOMAD_MITO_URL in versions.env), which scripts/setup.sh installs under gnomad_mito/. With mito_variants, MITO_VARIANTS_ANNOTATE gives each chrM call its gnomAD frequencies, as step 20 does; without it those columns are '.'.",
+                    "fa_icon": "fas fa-database"
+                },
                 "kir": {
                     "type": "boolean",
                     "default": false,

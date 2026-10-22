@@ -60,7 +60,7 @@ The last stage (`bin/collect_summary.py mito-annotate`, in `PYTHON_IMAGE`) write
 
 Alleles are matched by position, REF and ALT after the bases they share are trimmed, so Mutect2's multi-allelic indels meet ClinVar's and gnomAD's single-allele records. A file that is not installed leaves its columns `.`, and the table's first lines say which. The reports list each PASS call that is heteroplasmic, or that ClinVar classes as anything but benign (a record with no classification, `not_provided`, does not count), with these columns, and count the ClinVar pathogenic or likely pathogenic ones.
 
-Step 13's VEP annotates the main VCF, whose chrM records come from the nuclear caller: a heteroplasmic call only Mutect2 makes has no VEP record, so this step annotates its own calls. The Nextflow `MITO_VARIANTS` does not annotate yet; its reports say so.
+Step 13's VEP annotates the main VCF, whose chrM records come from the nuclear caller: a heteroplasmic call only Mutect2 makes has no VEP record, so this step annotates its own calls. In the Nextflow pipeline `MITO_VARIANTS_ANNOTATE` does the same after `MITO_VARIANTS`, with the files of `--mito_clinvar` and `--gnomad_mito`; without them its table names each file as not given and leaves its columns `.`.
 
 [MITOMAP](https://www.mitomap.org/) has the curated disease status of mtDNA variants. It stays a manual lookup: it answers scripted requests with a 403, so no step reads it, and none of its tables is shipped.
 
