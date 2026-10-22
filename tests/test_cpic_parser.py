@@ -42,6 +42,18 @@ Checks:
      drug list and no stale warning, while an unconfirmed CYP2D6 outside call
      is still held back; `step36-outside` lists the step 36 genes the report
      calls from an outside call and never MT-RNR1.
+  8. phenoconversion (opt-in --medications with assets/pgx_inhibitors.tsv):
+     every row of the inhibitor table has the shape the parser reads (gene,
+     strength, CPIC's factor for that strength, an FDA source, a CPIC source
+     for CYP2D6); a strong CYP2D6 inhibitor on the list turns a normal
+     metabolizer into 'Poor Metabolizer (phenoconverted by <drug>)' beside the
+     unchanged genotype phenotype, a moderate one multiplies the activity
+     score by 0.5, a moderate one without an activity score converts nothing,
+     a CYP2C19 inhibitor gets a note and no converted phenotype, a line
+     naming no drug of the table is listed as not checked, and a list that
+     names no drug leaves the phenotypes table byte for byte as without one.
+     Control: the same table with the inhibitor's factor set to 1 must not
+     give a poor metabolizer.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -81,7 +93,12 @@ def dip(a1, a2, phen):
                                   "label": f"{a1}/{a2}", "phenotypes": [phen]}]}
 
 
-def run_report(work, name, data, pypgx=None, consensus=None):
+INHIBITORS = os.path.join(REPO, "assets", "pgx_inhibitors.tsv")
+FDA_TABLE = ("https://www.fda.gov/drugs/drug-interactions-labeling/"
+             "healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems")
+
+
+def run_report(work, name, data, pypgx=None, consensus=None, medications=None, inhibitors=INHIBITORS):
     """Run the cpic-report command; returns (exit code, recommendations, phenotypes rows, comparison rows).
     consensus: rows (Gene, Result, Outside_call) of a step 36 table to pass."""
     d = os.path.join(work, name)
@@ -97,6 +114,11 @@ def run_report(work, name, data, pypgx=None, consensus=None):
             for g, res, out in consensus:
                 f.write(f"{g}\t{res}\t{out}\ttest\ttest\n")
         args += ["--consensus", cp]
+    if medications is not None:
+        mp = os.path.join(d, "medications.txt")
+        with open(mp, "w") as f:
+            f.write(medications)
+        args += ["--medications", mp, "--inhibitors", inhibitors]
     comp = os.path.join(d, "comparison.tsv")
     if pypgx is not None:
         p = os.path.join(d, "pypgx.tsv")
@@ -124,6 +146,140 @@ def block(rec, gene):
             if "Action:" in line:
                 break
     return "\n".join(lines)
+
+
+def pheno_report(nm_score="2.0"):
+    """A synthetic report: CYP2D6 *1/*2 normal metabolizer (activity score
+    nm_score, None for none) and CYP2C19 *1/*1 normal metabolizer."""
+    d6 = dip("*1", "*2", "Normal Metabolizer")
+    d6["sourceDiplotypes"][0]["activityScore"] = nm_score
+    return {"pharmcatVersion": "3.4.0", "genes": {"CYP2D6": d6, "CYP2C19": dip("*1", "*1", "Normal Metabolizer")}}
+
+
+def section(rec):
+    """The phenoconversion section of the recommendations text."""
+    part = rec.split("Medications and Phenoconversion (CYP2D6, CYP2C19):", 1)
+    return part[1].split("Affected Medications:", 1)[0] if len(part) == 2 else ""
+
+
+def phenoconversion_checks(work):
+    # 8a. the inhibitor table
+    with open(INHIBITORS) as f:
+        lines = [line for line in f if not line.startswith("#")]
+    header = lines[0].rstrip("\n").split("\t")
+    check("inhibitors: the header", header == ["Drug", "Gene", "Strength", "Activity_score_factor",
+                                                "Class_source", "Rule_source"], header)
+    rows = [line.rstrip("\n").split("\t") for line in lines[1:] if line.strip()]
+    factor = {("CYP2D6", "strong"): "0", ("CYP2D6", "moderate"): "0.5",
+              ("CYP2C19", "strong"): "-", ("CYP2C19", "moderate"): "-"}
+    bad = [r for r in rows if len(r) != 6 or (r[1], r[2]) not in factor or r[3] != factor[(r[1], r[2])]
+           or r[0] != r[0].strip().lower() or not r[0] or r[4] != FDA_TABLE
+           or r[5] != ("https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/"
+                       if r[1] == "CYP2D6" else "-")]
+    check("inhibitors: every row has a gene, a strength, CPIC's factor for it and its sources", not bad, bad)
+    keys = [(r[0], r[1]) for r in rows]
+    check("inhibitors: no drug twice for one gene", len(keys) == len(set(keys)), keys)
+    for gene in pgx_parse.PHENOCONVERSION_GENES:
+        for st in ("strong", "moderate"):
+            check(f"inhibitors: {gene} has {st} inhibitors", any(r[1] == gene and r[2] == st for r in rows))
+    check("inhibitors: the parser reads the table", len(pgx_parse.read_inhibitors(INHIBITORS)) == len(rows))
+
+    # 8b. a strong CYP2D6 inhibitor, a CYP2C19 inhibitor, a name not in the table
+    rc, rec, rows, _ = run_report(work, "PHENO", pheno_report(),
+                                  medications="Paroxetine 20 mg daily\nfluconazole\nnotadrug\n# a comment\n\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: exits 0", rc == 0, rc)
+    check("phenoconversion: strong CYP2D6 inhibitor turns the NM into 'Poor Metabolizer (phenoconverted by paroxetine)'",
+          got.get("CYP2D6", [""] * 5)[4:] == ["Poor Metabolizer (phenoconverted by paroxetine)"], got.get("CYP2D6"))
+    check("phenoconversion: the genotype phenotype is kept beside it",
+          got.get("CYP2D6", [""] * 5)[2:4] == ["Normal Metabolizer", "normal"], got.get("CYP2D6"))
+    sec = section(rec)
+    check("phenoconversion: a WARNING line with both phenotypes",
+          "WARNING: CYP2D6 genotype phenotype Normal Metabolizer; phenoconverted phenotype "
+          "Poor Metabolizer (phenoconverted by paroxetine)" in sec, sec)
+    check("phenoconversion: CPIC's wording for a strong inhibitor",
+          "the CYP2D6 activity score is adjusted to 0 and the predicted phenotype is a poor metabolizer" in sec, sec)
+    check("phenoconversion: CYP2C19 inhibitor gets a note and no converted phenotype",
+          got.get("CYP2C19", [""] * 5)[4].startswith("not computed: fluconazole")
+          and "CYP2C19 genotype phenotype Normal Metabolizer; on fluconazole (strong CYP2C19 inhibitor)" in sec,
+          (got.get("CYP2C19"), sec))
+    check("phenoconversion: a name not in the table is listed, not dropped",
+          "Not in the inhibitor table: notadrug." in sec, sec)
+    check("phenoconversion: the docs line says it is an aid for the clinician",
+          "an aid for your clinician, not advice" in sec, sec)
+
+    # 8b'. a line that starts with a separator still names its drug
+    _, rec, rows, _ = run_report(work, "PHENOSEP", pheno_report(), medications=", paroxetine\n;\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: ', paroxetine' is read as paroxetine",
+          got.get("CYP2D6", [""] * 5)[4:] == ["Poor Metabolizer (phenoconverted by paroxetine)"]
+          and "Not in the inhibitor table" not in section(rec), (got.get("CYP2D6"), section(rec)))
+
+    # 8c. moderate: activity score x 0.5; without a score nothing is converted
+    _, rec, rows, _ = run_report(work, "PHENOMOD", pheno_report("2.0"), medications="duloxetine\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: moderate inhibitor, AS 2 x 0.5 = 1 is an intermediate metabolizer",
+          got["CYP2D6"][4] == "Intermediate Metabolizer (phenoconverted by duloxetine)"
+          and "activity score 2 x 0.5 = 1" in section(rec), (got["CYP2D6"], section(rec)))
+    check("phenoconversion: a gene without an inhibitor on the list gets '-'", got["CYP2C19"][4] == "-", got["CYP2C19"])
+    _, rec, rows, _ = run_report(work, "PHENONOAS", pheno_report(None), medications="duloxetine\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: moderate inhibitor without an activity score converts nothing",
+          got["CYP2D6"][4] == "not converted: the report gives no activity score", got["CYP2D6"])
+
+    # 8d. a list that names no drug changes nothing
+    _, rec0, _, _ = run_report(work, "PHENONONE", pheno_report())
+    _, rec1, _, _ = run_report(work, "PHENOEMPTY", pheno_report(), medications="# nothing taken\n\n")
+    t0 = open(os.path.join(work, "PHENONONE", "PHENONONE_phenotypes.tsv")).read()
+    t1 = open(os.path.join(work, "PHENOEMPTY", "PHENOEMPTY_phenotypes.tsv")).read()
+    check("phenoconversion: an empty list leaves the phenotypes table as without one", t0 == t1, (t0, t1))
+    check("phenoconversion: an empty list says so and converts nothing",
+          "The medication list names no drug: no phenotype is converted." in section(rec1)
+          and "phenoconverted" not in rec1.replace("PHENOEMPTY", ""), section(rec1))
+    check("phenoconversion: no list, no section", "Medications and Phenoconversion" not in rec0, rec0[:600])
+
+    # 8e. control: the inhibitor's factor set to 1 must not make a poor metabolizer
+    broken = os.path.join(work, "inhibitors-factor-1.tsv")
+    with open(INHIBITORS) as f, open(broken, "w") as out:
+        for line in f:
+            out.write(line.replace("paroxetine\tCYP2D6\tstrong\t0\t", "paroxetine\tCYP2D6\tstrong\t1\t"))
+    _, _, rows, _ = run_report(work, "PHENOBROKEN", pheno_report(), medications="paroxetine\n", inhibitors=broken)
+    got = {r[0]: r for r in rows}
+    check("control: with the factor set to 1 the NM is not converted to a poor metabolizer",
+          not got["CYP2D6"][4].startswith("Poor Metabolizer"), got["CYP2D6"])
+    # 8f. a NaN activity score converts nothing; a table row with a missing cell is reported, not a crash
+    _, rec, rows, _ = run_report(work, "PHENONAN", pheno_report("NaN"), medications="duloxetine\n")
+    got = {r[0]: r for r in rows}
+    check("phenoconversion: a NaN activity score converts nothing",
+          got["CYP2D6"][4] == "not converted: the report gives no activity score", got["CYP2D6"])
+    short = os.path.join(work, "inhibitors-short-row.tsv")
+    with open(short, "w") as out:
+        out.write("Drug\tGene\tStrength\tActivity_score_factor\tClass_source\tRule_source\nparoxetine\n")
+    rc, rec, rows, _ = run_report(work, "PHENOSHORT", pheno_report(), medications="paroxetine\n", inhibitors=short)
+    check("phenoconversion: a table row with no Gene cell is reported as unreadable, the report still written",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
+    blank = os.path.join(work, "inhibitors-blank-gene.tsv")
+    with open(INHIBITORS) as f, open(blank, "w") as out:
+        for line in f:
+            out.write(line.replace("paroxetine\tCYP2D6\t", "paroxetine\t \t"))
+    rc, rec, rows, _ = run_report(work, "PHENOBLANK", pheno_report(), medications="paroxetine\n", inhibitors=blank)
+    check("phenoconversion: a row with a blank Gene cell is reported as unreadable, never read as a known drug",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
+    nofac = os.path.join(work, "inhibitors-no-factor.tsv")
+    with open(INHIBITORS) as f, open(nofac, "w") as out:
+        for line in f:
+            out.write(line.replace("paroxetine\tCYP2D6\tstrong\t0\t", "paroxetine\tCYP2D6\tstrong\t\t"))
+    rc, rec, rows, _ = run_report(work, "PHENONOFAC", pheno_report(), medications="paroxetine\n", inhibitors=nofac)
+    check("phenoconversion: a CYP2D6 row with an empty factor is reported as unreadable, the report still written",
+          rc == 0 and "Could not read the medication list or the inhibitor table" in section(rec), (rc, section(rec)))
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            pgx_parse.main(["cpic-report", "--sample", "X", "--report", "r.json", "--outdir", work,
+                            "--medications", "m.txt"])
+            code = 0
+        except SystemExit as e:
+            code = e.code
+    check("--medications without --inhibitors is refused", code == 2, code)
 
 
 def main():
@@ -508,6 +664,7 @@ def main():
             rc = pgx_parse.main(["step36-outside", "--report", only])
         check("step36-outside lists nothing for a report whose only outside call is MT-RNR1",
               rc == 0 and out.getvalue() == "", (rc, out.getvalue()))
+        phenoconversion_checks(work)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

@@ -302,6 +302,12 @@
                     "description": "Yleaf's data folder (GRCh38 marker positions and haplogroup tree), which `scripts/setup.sh --yleaf-data` installs as reference/yleaf-<version>/data: the Yleaf image ships the code only. Required with y_haplogroup.",
                     "fa_icon": "fas fa-folder"
                 },
+                "medications": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Opt-in: a plain text list of the drugs taken, one per line (the generic name first; '#' starts a comment). With cpic, a strong or moderate CYP2D6 inhibitor on it gives CYP2D6 a phenoconverted phenotype by CPIC's activity-score rule beside the genotype one, and a CYP2C19 inhibitor gets a note (assets/pgx_inhibitors.tsv). Never set by default.",
+                    "fa_icon": "fas fa-pills"
+                },
                 "consumer_sites": {
                     "type": "string",
                     "format": "file-path",

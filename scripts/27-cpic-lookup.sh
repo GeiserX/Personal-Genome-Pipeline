@@ -13,6 +13,12 @@
 # adds the genotype PharmCAT read there, labelled as a single-position
 # fallback, not a PharmCAT call.
 #
+# Opt-in: MEDICATIONS=FILE, a plain text list of the drugs taken (one per
+# line, the generic name first; '#' starts a comment). A strong or moderate
+# CYP2D6 inhibitor on it gives CYP2D6 a phenoconverted phenotype by CPIC's
+# activity-score rule, beside the genotype one; a CYP2C19 inhibitor gets a
+# note. The inhibitors and their sources are in assets/pgx_inhibitors.tsv.
+#
 # Requires: PharmCAT output from step 7. No internet connection needed.
 set -euo pipefail
 
@@ -49,6 +55,26 @@ echo "  Input:  ${PHARMCAT_JSON}"
 echo "  Output: ${OUTPUT}"
 echo "============================================"
 echo ""
+
+# Opt-in medication list: user input, never a default. The file may sit
+# outside GENOME_DIR, so it is mounted on its own, read-only. Both files
+# are checked here, before any container runs.
+MED_ARGS=()
+MED_MOUNT=()
+if [ -n "${MEDICATIONS:-}" ]; then
+  if [ ! -f "$MEDICATIONS" ] || [ ! -r "$MEDICATIONS" ]; then
+    echo "ERROR: MEDICATIONS=${MEDICATIONS} is not a readable file." >&2
+    exit 1
+  fi
+  MED_HOST="$(cd "$(dirname "$MEDICATIONS")" && pwd)/$(basename "$MEDICATIONS")"
+  echo "Medication list: ${MED_HOST} (phenoconversion of CYP2D6 and CYP2C19)"
+  if [ ! -f "${PGP_ROOT}/assets/pgx_inhibitors.tsv" ]; then
+    echo "ERROR: inhibitor table ${PGP_ROOT}/assets/pgx_inhibitors.tsv not found." >&2
+    exit 1
+  fi
+  MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro")
+  MED_ARGS=(--medications /pgp-med/medications.txt --inhibitors /pgp-assets/pgx_inhibitors.tsv)
+fi
 
 # pypgx (step 32) calls CYP2D6 from read depth, which PharmCAT cannot. Its
 # summary is compared with PharmCAT here rather than in step 32: run-all.sh
@@ -96,12 +122,13 @@ fi
 echo "Parsing PharmCAT results..."
 rm -f "$OUTPUT" "${OUTDIR}/${SAMPLE}_phenotypes.tsv"
 RC=0
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" ${MED_MOUNT[@]+"${MED_MOUNT[@]}"} "${PYTHON_IMAGE}" \
   python3 /pgp-bin/pgx_parse.py cpic-report \
     --sample "$SAMPLE" \
     --report "$(cpath "$PHARMCAT_JSON")" \
     --outdir "$(cpath "$OUTDIR")" \
-    ${PYPGX_ARGS[@]+"${PYPGX_ARGS[@]}"} || RC=$?
+    ${PYPGX_ARGS[@]+"${PYPGX_ARGS[@]}"} \
+    ${MED_ARGS[@]+"${MED_ARGS[@]}"} || RC=$?
 
 echo ""
 echo "============================================"
