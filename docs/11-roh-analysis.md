@@ -50,7 +50,7 @@ The reports count autosomes only: Segments, Total and Largest keep chr1 to chr22
 
 ### Total ROH and parental relationship
 
-When parents are related, a child is autozygous (both copies from the same ancestor) over a fraction F of the genome, the inbreeding coefficient. The expected total of long ROH is F times the length of the autosomes, about 2,900 Mb. The table counts **autosomal segments of 5 Mb or more** (the ones the script prints), without their part in the centromere and heterochromatin bands above. Shorter segments come mostly from distant shared ancestry and population history, not from the parents' relationship.
+When parents are related, a child is autozygous (both copies from the same ancestor) over a fraction F of the genome, the inbreeding coefficient. The expected total of long ROH is F times the length of the autosomes, about 2,900 Mb. The table counts **autosomal segments of 5 Mb or more** (the ones the script prints), without their part in the centromere and heterochromatin bands above. Those bands cover about 217 Mb of chr1 to chr22 (7.5% of 2,875 Mb), and the table below uses the full autosomes, so expect a reported total up to about 7.5% under its row. Shorter segments come mostly from distant shared ancestry and population history, not from the parents' relationship.
 
 | Parents' relationship | F | Expected total of ROH segments of 5 Mb or more |
 |---|---|---|
@@ -84,6 +84,7 @@ That sums the raw segments; the summary file already has the band parts taken ou
 ## Important Notes
 - The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode
 - `--AF-dflt 0.4` sets a default allele frequency when population AF data is unavailable — suitable for single-sample WGS
+- bcftools roh reads a site's frequency from INFO/AC and INFO/AN when the record has them, and uses 0.4 only where it does not. DeepVariant writes neither, so on its calls every site uses 0.4. A VCF from another caller may carry them: in a single-sample file they are the sample's own allele counts, not a population's.
 - No population allele frequencies are used, and the reports say so: read the total and the short segments as rough, the long segments are the signal. A population allele-frequency file (`--AF-file`, for example from gnomAD) would replace the one default value with real frequencies per site and give better segment edges; neither the script nor the module uses one today, and its effect on the total has not been measured.
 - The centromere and heterochromatin bands (above) are taken out of every count; the step and the reports do it, so there is nothing to subtract by hand
 - A single large ROH (>20 MB) confined to one chromosome may indicate uniparental disomy — verify with SNP array or parental samples
