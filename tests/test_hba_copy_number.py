@@ -4,7 +4,8 @@
 On `samtools bedcov` tables made up for each case (summed depth = mean depth
 x length), at 30x in the flanks:
   1. no deletion: 30x over HBA2 and HBA1 is four alpha-globin genes;
-  2. a planted -a3.7-like loss (HBA2 at half depth) is three, a silent carrier;
+  2. a planted -a3.7-like loss (HBA2 at half depth) is three, a silent carrier,
+     marked unconfirmed (HG002's real reads count three where it has four);
   3. both genes at half depth (--SEA-like) is two, with the warning that
      depth cannot tell --/aa from -a/-a;
   4. a triplication (HBA2 at 1.5x) is five;
@@ -61,6 +62,10 @@ def main():
     r = run(depths(15, 30))
     check("planted one-gene loss (HBA2 at half depth): three genes, a silent carrier",
           (r["status"], r["alpha_globin_genes"]) == ("called", "3") and "silent carrier" in r["message"], r)
+    check("a count under four says it is unconfirmed; four does not",
+          "unconfirmed" in r["message"] and "needs a clinical test" in r["message"]
+          and "unconfirmed" not in run(depths(30, 30))["message"]
+          and "unconfirmed" not in run(depths(45, 30))["message"], r)
     r = run(depths(15, 15))
     check("both genes at half depth: two, and depth cannot tell --/aa from -a/-a",
           (r["status"], r["alpha_globin_genes"]) == ("called", "2") and "cannot tell these apart" in r["message"], r)

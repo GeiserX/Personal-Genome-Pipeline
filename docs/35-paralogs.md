@@ -100,7 +100,7 @@ with every read counted whatever its mapping quality (duplicates, secondary and 
 | Genes | Reading |
 |---|---|
 | 4 | `aa/aa`, no deletion seen |
-| 3 | one gene lost on one chromosome (`-a/aa`, as `-a3.7` or `-a4.2`): a silent carrier |
+| 3 | one gene lost on one chromosome (`-a/aa`, as `-a3.7` or `-a4.2`): a silent carrier, marked unconfirmed (below) |
 | 2 | alpha-thalassaemia trait: both genes lost on one chromosome (`--/aa`, as `--SEA`) or one on each (`-a/-a`); depth cannot tell these apart, and only the first puts a child at risk of Hb Bart's with a partner who carries the same |
 | 1 | the pattern of HbH disease |
 | 0 | the pattern of Hb Bart's hydrops fetalis |
@@ -112,12 +112,12 @@ Limits:
 
 - It counts genes, not alleles: it cannot say which gene was lost, or whether two losses are on one chromosome or on two.
 - The deletion must remove a gene body: a deletion that removes only regulatory sequence (the HS-40 enhancer) leaves the count at four.
-- The HBA genes are GC-rich, and short-read depth falls at high GC with some library preparations, which pulls the estimate down. The e2e case measures it on one real genome, HG002 at about 30x (see below); its accuracy across real genomes at full depth has not been measured.
+- **It undercounts on the one real genome measured.** HG002 has four genes (Paraphase on its HiFi reads), but on GIAB's Illumina reads at about 30x this check estimates 2.76 and counts three: HBA2 sits at about 13x while HBA1 and the flanks sit at 28x to 31x. Why HBA2 falls has not been worked out (GC content, where the aligner puts reads between the two near-identical genes, or the library). So every count under four carries "unconfirmed: ... needs a clinical test before it means anything" in its message and in the report line. A count of four or more carries no such note, but its accuracy across real genomes has not been measured either.
 
 ## How It Is Tested
 
 - `tests/test_hba_copy_number.py` gives `bin/hba_copy_number.py` made-up depth tables: four genes at even depth, three with HBA2 at half depth, two, a triplication, an estimate between two whole numbers, low flanks and flanks that disagree.
-- The e2e case `paralog-checks-and-doc-fixes-1-hba` writes synthetic 30x reads over chr16:95,001-235,000 for two samples, one with every second read over HBA2 left out (a planted one-gene loss), runs step 35 on each and checks four and three genes. The HBA block of `modules/local/parascopy/main.nf`, cut from the file, then runs on the same BAMs in the same image and must write the same table. Last, the block runs on HG002's real Illumina reads at the cluster, streamed from GIAB's 60x BAM and sampled to about 30x, and must count four, as Paraphase calls on HG002's HiFi reads.
+- The e2e case `paralog-checks-and-doc-fixes-1-hba` writes synthetic 30x reads over chr16:95,001-235,000 for two samples, one with every second read over HBA2 left out (a planted one-gene loss), runs step 35 on each and checks four and three genes. The HBA block of `modules/local/parascopy/main.nf`, cut from the file, then runs on the same BAMs in the same image and must write the same table. Last, the block runs on HG002's real Illumina reads at the cluster, streamed from GIAB's 60x BAM and sampled to about 30x. It pins the count it gets, three, as a known undercount (the truth is four, from Paraphase on HG002's HiFi reads), and checks that the message says unconfirmed. The run's notes record the estimate and the four depths.
 
 ## In the Reports
 

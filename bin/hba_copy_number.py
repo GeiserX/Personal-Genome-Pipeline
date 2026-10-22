@@ -57,9 +57,17 @@ READINGS = {
 }
 
 
+# On HG002, whose HiFi reads show four genes (Paraphase), this check on GIAB's
+# Illumina reads at about 30x counts three: HBA2 at about half the flank depth
+# (the e2e case paralog-checks-and-doc-fixes-1-hba). So a count under four is
+# reported with this note, never as a finding on its own.
+UNDER_FOUR = ("; unconfirmed: on HG002, which has four genes by long reads, this short-read check counts "
+              "three, so a count under four needs a clinical test before it means anything")
+
+
 def reading(n):
     if n in READINGS:
-        return READINGS[n]
+        return READINGS[n] + (UNDER_FOUR if n < 4 else "")
     return f"{n} alpha-globin genes: more than four, a triplication (as aaa/aa)"
 
 
