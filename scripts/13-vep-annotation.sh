@@ -24,8 +24,8 @@
 # "frequency unknown" even for a common allele. Records on a contig the
 # reference lacks are left out (bcftools norm cannot read their bases), and
 # the step says how many contigs that is. A split keeps the AD sum and drops
-# the half whose genotype carries no ALT (0/0). The Nextflow VEP module does not
-# normalise yet (docs/13-vep-annotation.md).
+# the half whose genotype carries no ALT (0/0). The Nextflow VEP_NORM process
+# runs the same normalisation before VEP (docs/13-vep-annotation.md).
 #
 # ClinVar: when clinvar/clinvar_pathogenic_chr.vcf.gz is installed (setup.sh,
 # the file step 06 screens against), VEP also annotates it with --custom: its

@@ -10,7 +10,7 @@
 #   chrT 40 C>A,G   a 0/1 call -> the A record only; the G half is 0/0 and
 #                   never reaches VEP
 #   chrZ 5 A>G      a contig the reference lacks -> left out, and the step says so
-# The Nextflow VEP module does not normalise yet (docs/13-vep-annotation.md).
+# The Nextflow VEP_NORM process runs the same normalisation (docs/13-vep-annotation.md).
 . "$(dirname "$0")/lib.sh"
 
 S=NORM1

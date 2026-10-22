@@ -1937,7 +1937,7 @@ def mito_annotation(d, s, vcf):
     p = first_existing(d, [f"mito/{s}_chrM_annotated.tsv"])
     if not p:
         return {"note": "no annotation table (mito/<id>_chrM_annotated.tsv): step 20 ran before it annotated, "
-                        "or the calls are the Nextflow MITO_VARIANTS', which does not annotate them yet"}
+                        "or the Nextflow MITO_VARIANTS_ANNOTATE task failed (see the Nextflow log)"}
     if os.path.getmtime(p) < os.path.getmtime(vcf):
         return {"note": f"{os.path.relpath(p, d)} is older than the chrM calls: rerun step 20"}
     sources, lines = {}, []
@@ -2271,8 +2271,8 @@ def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
         # The Nextflow report gets the prioritized VCF: the count, plus the
-        # phase when COMPHET_PHASE's pairs table sits beside it. HTML_REPORT
-        # does not stage that table yet (it needs a main.nf input).
+        # phase when COMPHET_PHASE's pairs table sits beside it (HTML_REPORT
+        # stages it there).
         v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
         if not v:
             return None, {}
