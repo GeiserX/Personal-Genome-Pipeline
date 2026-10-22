@@ -20,8 +20,9 @@ Checks:
      carries are left out;
   4. SMN1 from step 35's Parascopy table: from the row holding SMN1 exon 7,
      or from its homologous region on a row in SMN2; a quality under 20 or a
-     filter other than PASS is not a call; the comparison says agree,
-     disagree, or nothing when one side has no call.
+     filter other than PASS is not a call; a row with fewer fields than the
+     header is skipped, or read as not resolved, never a crash; the
+     comparison says agree, disagree, or nothing when one side has no call.
 
 Run: python3 tests/test_paraphase_report.py
 """
@@ -204,6 +205,25 @@ def main():
         with open(p, "w") as f:
             f.write(PARASCOPY_HEAD + "chr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tFewReliable\t2,2\t35,30\t*\n")
         check("a filter other than PASS is not a call", pr.parascopy_smn1(p)["cn"] is None)
+        # A short row (fewer fields than the header, as a cut-off file leaves) is
+        # skipped, not a crash, and the next row is still read; a short row that
+        # does reach SMN1 exon 7 is "not resolved", never a copy number.
+        with open(p, "w") as f:
+            f.write(PARASCOPY_HEAD + "chr5\n" + "chr5\t70925000\n"
+                    + "chr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t2,2\t35,30\t*\n")
+        try:
+            s4 = pr.parascopy_smn1(p)
+        except Exception as e:  # noqa: BLE001 - the crash is what this case catches
+            s4 = {"cn": None, "text": f"crash: {type(e).__name__}: {e}"}
+        check("Parascopy: short rows are skipped and the next row still read", s4["cn"] == 2, s4)
+        with open(p, "w") as f:
+            f.write(PARASCOPY_HEAD + "chr5\t70925000\t70953000\n")
+        try:
+            s5 = pr.parascopy_smn1(p)
+        except Exception as e:  # noqa: BLE001
+            s5 = {"cn": None, "text": f"crash: {type(e).__name__}: {e}"}
+        check("Parascopy: a short row over exon 7 is not resolved, not a crash",
+              s5["cn"] is None and "not resolved" in s5["text"], s5)
         check("compare: agree, disagree, no comparison",
               (pr.compare_smn1(2, s1), pr.compare_smn1(2, s2), pr.compare_smn1(None, s1), pr.compare_smn1(2, s3))
               == ("agree", "disagree", None, None))
