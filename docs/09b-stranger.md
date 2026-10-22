@@ -76,8 +76,10 @@ About a second, measured in three 30-40x WGS runs ([runtime](hardware-requiremen
   | `benign_motif` | otherwise, AAAAG or AAAGG carries at least half of the reads | the flag is not supported |
   | `uncertain_motif` | otherwise, with 3 or more reads | the dominant motif is not a known benign one: confirm if symptoms fit |
   | `not_resolved` | fewer than 3 reads carry a run | the motif is not resolved |
-  | `not_checked` | no BAM, or the Nextflow pipeline (its STRANGER process gets no BAM) | confirm the flag with repeat-primed PCR |
+  | `not_checked` | no BAM | confirm the flag with repeat-primed PCR |
 
   A rerun of the script keeps an existing table unless it is `not_checked`, so a BAM added later gets counted.
+
+  In the Nextflow pipeline, `STRANGER_RFC1` runs the same count after `STRANGER`, in the same image, on the BAM of the samplesheet row (or the one the pipeline aligned), and writes `<sample>/expansion_hunter/<sample>_rfc1_motif.tsv` only when Stranger flags RFC1. `HTML_REPORT` gets the table, so the Nextflow report shows the same verdict as step 24's.
 
   The count reads the motif; it does not size a long expansion, and a heterozygous AAGGG allele is a carrier state, not CANVAS. CI checks it on made-up reads (`tests/test_rfc1_motif.py`, `tests/e2e/expansions-and-rfc1-1-motif.sh`); how it does on real carriers, whose reads the aligner may clip or misplace differently, has not been measured. Confirm any `pathogenic_motif` or `uncertain_motif` with motif-aware, flanking-PCR or repeat-primed-PCR testing, and only if cerebellar-ataxia/neuropathy/vestibular symptoms are present.
