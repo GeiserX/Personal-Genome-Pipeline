@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Step 25 and the PRS processes on HG002's gVCF (case 21), declared male, with
 # the real pgsc_calc:
-#   - strand-ambiguous rows: a synthetic score on the chr20 slice has five
+#   - strand-ambiguous rows: a synthetic score on the chr20 slice has ten
 #     hom-ref rows (effect allele = reference base, the other allele neither
 #     it nor its complement), three hom-ref rows whose other allele is the
 #     complement (A/T, C/G: ambiguous) and three chrX hom-ref rows. By
-#     default the summary says "3 dropped" and pgsc_calc matches 8 of 11;
-#     with PRS_KEEP_AMBIGUOUS=true it says "3 kept", matches all 11 and the
-#     sum grows by exactly 2 x (32 + 64 + 128). One score (PGS000055) also
-#     has a row that agrees with the reference only after a strand flip: it
-#     refuses the flag ("3 dropped, strand check failed", its 3 ambiguous
-#     rows out of the file);
+#     default the summary says "3 dropped" and pgsc_calc matches 13 of 16
+#     (81%, over its 75% minimum); with PRS_KEEP_AMBIGUOUS=true it says
+#     "3 kept", matches all 16 and the sum grows by exactly
+#     2 x (1024 + 2048 + 4096). One score (PGS000055) also has a row that
+#     agrees with the reference only after a strand flip: it refuses the flag
+#     ("3 dropped, strand check failed", its 3 ambiguous rows out of the
+#     file);
 #   - sex: PGS000004 (breast cancer, female) is "not applicable to the
 #     declared sex" with its raw sum and no percentile, PGS000662 (prostate
 #     cancer, male) "applies";
@@ -55,26 +56,26 @@ def base(pos):
     return fh.read(1).decode().upper()
 comp = {"A": "T", "T": "A", "C": "G", "G": "C"}
 homref, p = [], 10_050_000
-while len(homref) < 9 and p < 10_450_000:
+while len(homref) < 14 and p < 10_450_000:
     inside = any(s + 200 < p <= e - 200 for s, e in iv)
     clear = all(abs(v - p) > 200 for v in var)
     b = base(p)
     if inside and clear and b in comp:
         homref.append((p, b))
     p += 7_919
-for i, (p, b) in enumerate(homref[:5]):
+for i, (p, b) in enumerate(homref[:10]):
     other = next(x for x in "ACGT" if x not in (b, comp[b]))
     print(f"20\t{p}\t{b}\t{other}\t{2 ** i}\thomref")
-for (p, b), w in zip(homref[5:8], (32, 64, 128)):
+for (p, b), w in zip(homref[10:13], (1024, 2048, 4096)):
     print(f"20\t{p}\t{b}\t{comp[b]}\t{w}\tambiguous")
 # A row given on the other strand: its alleles are the complements of the
 # reference base and of a third base.
-p, b = homref[8]
+p, b = homref[13]
 third = next(x for x in "ACGT" if x not in (b, comp[b]))
 print(f"20\t{p}\t{comp[b]}\t{comp[third]}\t0.5\tflipped")
 PY
 cat "$SITES"
-check_eq "score sites (5 hom-ref, 3 ambiguous hom-ref, 1 flipped)" "$(wc -l < "$SITES" | tr -d ' ')" 9
+check_eq "score sites (10 hom-ref, 3 ambiguous hom-ref, 1 flipped)" "$(wc -l < "$SITES" | tr -d ' ')" 14
 XR=chrX:73700001-74000000
 bcf query -r "$XR" -f '%POS\t%INFO/END\t[%GT]\n' "${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz" > "${CASE_TMP}/x_blocks.tsv"
 bcf query -r "$XR" -i 'GT="alt"' -f '%POS\n' "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" > "${CASE_TMP}/x_vars.tsv"
@@ -143,8 +144,8 @@ check_step_exit "25-prs.sh male"
 cat "$SUMMARY" 2>/dev/null
 SUM1=$(col "$SUMMARY" PGS000018 Score_SUM)
 check_eq "default: PGS000018's 3 ambiguous rows are dropped" "$(col "$SUMMARY" PGS000018 Ambiguous)" "3 dropped"
-check_eq "default: 11 rows (8 autosomal, 3 chrX)" "$(col "$SUMMARY" PGS000018 Variants_Total)" 11
-check_eq "default: pgsc_calc matched 8 (the ambiguous 3 excluded)" "$(col "$SUMMARY" PGS000018 Variants_Matched)" 8
+check_eq "default: 16 rows (13 autosomal, 3 chrX)" "$(col "$SUMMARY" PGS000018 Variants_Total)" 16
+check_eq "default: pgsc_calc matched 13 (the ambiguous 3 excluded)" "$(col "$SUMMARY" PGS000018 Variants_Matched)" 13
 check_eq "male: PGS000004 (breast cancer) is female-specific" "$(col "$SUMMARY" PGS000004 Applies_To)" female
 check_eq "male: PGS000004 is not applicable to the declared sex" "$(col "$SUMMARY" PGS000004 Sex_Check)" "not applicable to the declared sex"
 check "male: PGS000004 keeps its raw sum" has '^-?[0-9.e+-]+$' "$(col "$SUMMARY" PGS000004 Score_SUM)"
@@ -169,11 +170,11 @@ check_step_exit "25-prs.sh male, PRS_KEEP_AMBIGUOUS=true"
 cat "$SUMMARY" 2>/dev/null
 SUM2=$(col "$SUMMARY" PGS000018 Score_SUM)
 check_eq "keep: PGS000018's 3 ambiguous rows are kept" "$(col "$SUMMARY" PGS000018 Ambiguous)" "3 kept"
-check_eq "keep: pgsc_calc matched all 11" "$(col "$SUMMARY" PGS000018 Variants_Matched)" 11
-check "keep: the sum grew by 2 x (32 + 64 + 128) = 448 (${SUM1:-none} to ${SUM2:-none})" \
-  awk -v a="${SUM1:-x}" -v b="${SUM2:-x}" 'BEGIN { if (a !~ /^-?[0-9.e+-]+$/ || b !~ /^-?[0-9.e+-]+$/) exit 1; d = b - a - 448; exit !(d < 1e-6 && d > -1e-6) }'
+check_eq "keep: pgsc_calc matched all 16" "$(col "$SUMMARY" PGS000018 Variants_Matched)" 16
+check "keep: the sum grew by 2 x (1024 + 2048 + 4096) = 14336 (${SUM1:-none} to ${SUM2:-none})" \
+  awk -v a="${SUM1:-x}" -v b="${SUM2:-x}" 'BEGIN { if (a !~ /^-?[0-9.e+-]+$/ || b !~ /^-?[0-9.e+-]+$/) exit 1; d = b - a - 14336; exit !(d < 1e-6 && d > -1e-6) }'
 check_eq "keep: PGS000055, with a flipped row, refuses the flag" "$(col "$SUMMARY" PGS000055 Ambiguous)" "3 dropped, strand check failed"
-check_eq "keep: PGS000055's ambiguous rows are out of its file (12 - 3)" "$(col "$SUMMARY" PGS000055 Variants_Total)" 9
+check_eq "keep: PGS000055's ambiguous rows are out of its file (17 - 3)" "$(col "$SUMMARY" PGS000055 Variants_Total)" 14
 check "keep: pgsc_calc ran with --keep_ambiguous" grep -q -- '--keep_ambiguous' "${D}/prs/pgsc_calc/nextflow.log"
 check "control: the default run's pgsc_calc had no --keep_ambiguous" bash -c '! grep -q -- --keep_ambiguous "$1"' _ "${D}/prs/pgsc_calc.${STAMP1}/nextflow.log"
 check "rerun: the first run's pgsc_calc folder is kept as pgsc_calc.${STAMP1}" test -s "${D}/prs/pgsc_calc.${STAMP1}/results/sample/match/sample_summary.csv"
@@ -240,7 +241,7 @@ nf_run "$SHEET2" "${GENOME_DIR}/nf-prs-strand-vcf"
 check "nextflow: a VCF-only row with --prs_keep_ambiguous fails the run" test "$NF_RC" -ne 0
 check "nextflow: and says it needs the gVCF" has 'prs_keep_ambiguous needs the sample.s gVCF' "$(cat "$STEP_LOG" "${CASE_TMP}/.nextflow.log" 2>/dev/null)"
 
-printf '#### PRS: strand-ambiguous rows and sex-specific scores\n\nstep 25 default sum %s, keep_ambiguous %s (448 more); Nextflow %s\n\n' \
+printf '#### PRS: strand-ambiguous rows and sex-specific scores\n\nstep 25 default sum %s, keep_ambiguous %s (14336 more); Nextflow %s\n\n' \
   "${SUM1:-none}" "${SUM2:-none}" "$(col "$NFS" PGS000018 Score_SUM)" >> "$E2E_NOTES"
 rm -rf "$SCORES" "${D:?}/prs" "$NF_OUT" "${GENOME_DIR}/nf-prs-strand-vcf" "$WORK"
 finish

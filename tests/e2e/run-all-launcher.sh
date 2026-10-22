@@ -62,9 +62,10 @@ all_cached() { [ "$(status_count "$1" CACHED)" -ge 10 ] && [ "$(status_count "$1
 not_all_cached() { ! all_cached "$1"; }
 # published DIR: the files under DIR, relative, without the launcher's own (inputs, launch directory,
 # logs, manifest, bash reports, the run-to-run delta and its history copies) and the two outputs
-# the direct case makes and run-all.sh does not.
+# the direct case makes and run-all.sh does not. The PRS summary's dated copy is named by the
+# time of its run, so its stamp is masked.
 published() {
-  (cd "$1" && find . -type f | sed 's|^\./||' | LC_ALL=C sort) \
+  (cd "$1" && find . -type f | sed -E 's|^\./||; s/_prs_summary\.[0-9]{8}-[0-9]{4}(-[0-9]+)?\.tsv$/_prs_summary.TIME.tsv/' | LC_ALL=C sort) \
     | grep -vE "^(fastq|nextflow|logs|vep)/|^run_manifest\.tsv$|^summary\.json$|^${P}_report\.(html|txt)$|^${P}_delta\.(html|txt|json)$|^history/"
 }
 

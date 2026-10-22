@@ -52,7 +52,7 @@ process PRS_PREPARE {
 
     script:
     def keep_x = score_set == 'with_x' ? '--keep-x' : ''
-    def keep_amb = params.prs_keep_ambiguous ? "--keep-ambiguous --reference ${reference}" : ''
+    def keep_amb = params.prs_keep_ambiguous.toString() == 'true' ? "--keep-ambiguous --reference ${reference}" : ''
     """
     collect_summary.py prs-format --scores ${scoring_dir} --labels ${labels} --out pgs --alleles score_alleles.tsv ${keep_x} ${keep_amb}
 
@@ -165,8 +165,8 @@ process PRS {
     // PRS_PREPARE kept the strand-ambiguous rows of the scores that passed
     // its strand check; pgsc_calc keeps them too. WGS only, as step 25: the
     // genotypes must come from the sample's gVCF.
-    def keep_amb = params.prs_keep_ambiguous ? '--keep_ambiguous' : ''
-    def amb_refused = params.prs_keep_ambiguous && input_kind != 'gvcf'
+    def keep_amb = params.prs_keep_ambiguous.toString() == 'true' ? '--keep_ambiguous' : ''
+    def amb_refused = keep_amb && input_kind != 'gvcf'
     def labels = task.ext.pipeline_images.tokenize(';').collect { kv ->
         def i = kv.indexOf('=')
         def image = kv.substring(i + 1)
