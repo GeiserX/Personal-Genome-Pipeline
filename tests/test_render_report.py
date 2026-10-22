@@ -37,9 +37,9 @@ Checks:
      --keep-ambiguous without --reference is refused; the Ambiguous column
      of prs-table says it per score;
   4e. with a panel, a chrX row prs-format kept that pgsc_calc's match log did
-     not match (the panel lacks it) reads "left out (not in the ancestry
-     panel)"; matched, it stays "scored"; partly matched, both counts are
-     named ("1 scored, 2 left out (not in the ancestry panel)");
+     not match (the panel lacks it) reads "left out (not matched in the
+     panel run)"; matched, it stays "scored"; partly matched, both counts are
+     named ("1 scored, 2 left out (not matched in the panel run)");
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
      percentiles only then; a score whose chrX rows were left out is named,
@@ -380,8 +380,8 @@ def main():
             h, r = read_rows(f"{work}/xp.tsv")
             return dict(zip(h, r[0])).get("ChrX")
         got = chrx_of(f"{work}/xpanel")
-        check("4e: panel run, the chrX row excluded by pgsc_calc: left out (not in the ancestry panel)",
-              got == "1 left out (not in the ancestry panel)", got)
+        check("4e: panel run, the chrX row excluded by pgsc_calc: left out (not matched in the panel run)",
+              got == "1 left out (not matched in the panel run)", got)
         put(f"{work}/xpanel/sample/match/sample_log.csv.gz", log
             + "0,PGS000001,1,1100,A,G,matched,sample\n1,PGS000001,X,51000000,A,G,matched,sample\n", gz=True)
         got = chrx_of(f"{work}/xpanel")
@@ -390,7 +390,7 @@ def main():
         put(f"{work}/pgsx_panel/{collect_summary.CHRX_FILE}", "pgs_id\tchrx_rows\tchrx\nPGS000001\t3\tscored\n")
         got = chrx_of(f"{work}/xpanel")
         check("4e: panel run, 1 of 3 chrX rows matched: 1 scored, 2 left out",
-              got == "1 scored, 2 left out (not in the ancestry panel)", got)
+              got == "1 scored, 2 left out (not matched in the panel run)", got)
 
         # 5. the reports
         d = f"{work}/sample_raw/S"

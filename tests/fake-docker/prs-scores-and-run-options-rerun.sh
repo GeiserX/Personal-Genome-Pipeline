@@ -94,7 +94,8 @@ docker_log_has '^nextflow .*run .*--keep_ambiguous' "PRS_KEEP_AMBIGUOUS=true did
 # --- a third run in the same minute as an earlier summary ------------------------------------
 # Dated summaries of this minute and the next, unless one is there already:
 # the third run's own dated copy must take a new name, never overwrite them.
-for s in "$(date +%Y%m%d-%H%M)" "$(python3 -c 'import time; print(time.strftime("%Y%m%d-%H%M", time.localtime(time.time() + 60)))')"; do
+# One clock reading for both, so they are two consecutive minutes.
+for s in $(python3 -c 'import time; t = time.time(); print(*(time.strftime("%Y%m%d-%H%M", time.localtime(t + d)) for d in (0, 60)))'); do
   [ -e "${D}/sample1_prs_summary.${s}.tsv" ] || printf 'h\nx\tx\tother\n' > "${D}/sample1_prs_summary.${s}.tsv"
 done
 mapfile -t EARLIER < <(cd "$D" && ls sample1_prs_summary.*.tsv)
