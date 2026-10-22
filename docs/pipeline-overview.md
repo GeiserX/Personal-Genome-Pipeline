@@ -6,7 +6,7 @@
 |---|---|---|
 | **Variant Calling** | SNPs, indels, structural variants, copy number variants | 3, 4, 4b, 18, 19 |
 | **Clinical Screening** | Pathogenic variants, carrier status, cancer predisposition (CPSR panels), SMN1/SMN2 copy number (opt-in), a couple's shared carrier risk (opt-in) | 6, 17, 35, 35b, 39 |
-| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.), with HLA-A/B from T1K and CYP2D6 only when two callers agree | 7, 21, 27, 32, 36 |
+| **Pharmacogenomics** | Drug-gene interactions (23+ genes, CYP2C19, CYP2D6 SV, DPYD, etc.), with HLA-A/B from T1K (and, with `HLA_QC=true`, only when OptiType agrees) and CYP2D6 only when two callers agree | 7, 21, 27, 32, 36 |
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
