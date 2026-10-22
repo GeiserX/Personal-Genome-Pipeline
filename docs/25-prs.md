@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Scores you for 9 common conditions with the PGS Catalog's own calculator, [pgsc_calc](https://github.com/PGScatalog/pgsc_calc). Each polygenic score adds up the small effects of hundreds to millions of variants into one number. With the ancestry reference panel installed, each score is also given as a **percentile**: where your score falls among the reference samples whose genetic ancestry is most similar to yours. Without the panel the step reports the raw sum and says "raw score only", because a raw sum from one person cannot be compared with anyone.
+Scores you for 13 common conditions and traits with the PGS Catalog's own calculator, [pgsc_calc](https://github.com/PGScatalog/pgsc_calc). Each polygenic score adds up the small effects of hundreds to millions of variants into one number. With the ancestry reference panel installed, each score is also given as a **percentile**: where your score falls among the reference samples whose genetic ancestry is most similar to yours. Without the panel the step reports the raw sum and says "raw score only", because a raw sum from one person cannot be compared with anyone.
 
 ## Why
 
@@ -32,9 +32,12 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 ./scripts/setup.sh --ancestry-panel /path/to/genome_dir    # optional: percentiles (about 7 GB)
 ./scripts/25-prs.sh your_name male    # or female: the scores' chrX rows are scored too
 ./scripts/25-prs.sh your_name         # no sex: chrX rows are left out
+PRS_KEEP_AMBIGUOUS=true ./scripts/25-prs.sh your_name male   # opt-in: keep the A/T and C/G rows
 ```
 
 `ANCESTRY_PANEL=none` scores without the panel even when it is installed. `PGSC_MAX_MEMORY` (for example `24.GB`) caps the memory each pgsc_calc task may use; the default is three quarters of the machine's RAM. The default scores need about 14 to 18 GB of it, see [Memory](#memory).
+
+`PRS_KEEP_AMBIGUOUS=true` (Nextflow: `--prs_keep_ambiguous`) keeps each score's strand-ambiguous rows, see [Strand-ambiguous rows](#strand-ambiguous-rows). The default is `false`. It needs step 3's gVCF: the step refuses it on a sample with only the variant VCF, and so does the `PRS` process.
 
 ## Conditions Scored
 
@@ -51,10 +54,18 @@ The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome
 | Body mass index (BMI) | [PGS000027](https://www.pgscatalog.org/score/PGS000027/) | 2,100,302 | Khera et al. 2019, Cell |
 | Inflammatory bowel disease | [PGS000017](https://www.pgscatalog.org/score/PGS000017/) | 6,907,112 | Khera et al. 2018, Nat Genet |
 | Colorectal cancer | [PGS000055](https://www.pgscatalog.org/score/PGS000055/) | 76 | Schmit et al. 2019, J Natl Cancer Inst |
+| Systolic blood pressure | [PGS002257](https://www.pgscatalog.org/score/PGS002257/) | 884 | Evangelou et al. 2018, Nat Genet |
+| LDL cholesterol | [PGS000065](https://www.pgscatalog.org/score/PGS000065/) | 103 | Kuchenbaecker et al. 2019, Nat Commun |
+| HDL cholesterol | [PGS000064](https://www.pgscatalog.org/score/PGS000064/) | 120 | Kuchenbaecker et al. 2019, Nat Commun |
+| Triglycerides (TG) | [PGS000066](https://www.pgscatalog.org/score/PGS000066/) | 101 | Kuchenbaecker et al. 2019, Nat Commun |
+
+The blood pressure score comes from a GWAS of over a million people and has been evaluated by four other publications in the catalog. The three lipid scores come from a study of how lipid loci transfer across ancestries: they were evaluated in five cohorts of three ancestries. All four are GRCh38-harmonised, additive and on the autosomes only.
+
+The third column of the file, `applies_to`, names the sex a score was built for: `female` for PGS000004 (breast cancer), `male` for PGS000662 (prostate cancer), empty for the rest. When you declare the other sex, the score keeps its raw sum and gets no percentile, and its `Sex_Check` says `not applicable to the declared sex`. A percentile of breast cancer for a man, or prostate cancer for a woman, would read as a risk the score was never built to give. Without a declared sex the two scores are reported as usual, with `Sex_Check` `no sex declared` and a line in the reports.
 
 There is no schizophrenia score yet. An earlier version listed PGS000738 as schizophrenia, but that score is for vitiligo; a schizophrenia row comes back only once a score is chosen from the catalog and checked against the API.
 
-To add a score, add a line to `assets/pgs_scores.tsv` with the label the API gives:
+To add a score, add a line to `assets/pgs_scores.tsv` with the label the API gives, and `female` or `male` in the third column when the score is for one sex only:
 
 ```bash
 curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
@@ -71,10 +82,11 @@ Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant
    - **Without a gVCF** (an older run): the variant-only VCF is cut to the same positions, so every site where you match the reference is missing (see below). When not one position is left, pgsc_calc is not started and every score is reported unmatched.
 
    Either way pgsc_calc gets only those positions, a small file to convert: the autosomes, and chrX when you gave the sex.
-4. **pgsc_calc.** With the sex, the step writes it for plink2 (`pgsc_calc/sex/sex.tsv`: the VCF's sample name, 1 for male, 2 for female) and hands it to pgsc_calc's `PLINK2_VCF` conversion as `--update-sex`, beside the arguments pgsc_calc gives that process itself. Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum.
+4. **pgsc_calc.** With the sex, the step writes it for plink2 (`pgsc_calc/sex/sex.tsv`: the VCF's sample name, 1 for male, 2 for female) and hands it to pgsc_calc's `PLINK2_VCF` conversion as `--update-sex`, beside the arguments pgsc_calc gives that process itself. Runs `pgsc_calc` (from `${GENOME_DIR}/tools/pgsc_calc-<release>`, which `setup.sh` or the step itself unpacks from GitHub's archive of the release, checked against `PGSC_CALC_SHA256`) with the images of `versions.env`, offline, its containers without network. With the panel it adds `--run_ancestry`. pgsc_calc matches each score's variants to your genotypes (strand flips, ambiguous A/T and C/G pairs dropped, one best match per variant), scores them with plink2 and, with the panel, projects you onto the panel's principal components and compares your score with the reference group most similar to you. A score that matches under 75% of its variants is dropped by pgsc_calc and gets no sum. With `PRS_KEEP_AMBIGUOUS=true` it adds `--keep_ambiguous`, and the ambiguous pairs are kept where step 2 left them in (see [Strand-ambiguous rows](#strand-ambiguous-rows)).
 5. **Summary.** `bin/collect_summary.py prs-table` reads pgsc_calc's match summary and scores into `${SAMPLE}_prs_summary.tsv`, and with the panel writes step 26's ancestry table. pgsc_calc's work folder is deleted. Its results (its own HTML report, the match log) are kept, and so are its own trace, report and timeline: they move to `pgsc_calc/pipeline_info/` as `execution_trace.txt`, `execution_report.html` and `execution_timeline.html`, without the time of the run in their names, and the rest of that folder (pgsc_calc's DAG) is deleted.
+6. **The previous run is kept.** Before a rerun starts, the previous summary is copied to `${SAMPLE}_prs_summary.<YYYYMMDD-HHMM>.tsv` (the time it was written) and the previous `pgsc_calc/` folder is moved to `pgsc_calc.<the same time>/`, with `-2`, `-3` and so on when that name is taken. Each run also copies its new summary to a dated name. Two runs can then be compared side by side, and nothing is lost when a score update changes the baseline. Delete the old copies yourself when you no longer need them.
 
-The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. The sex is the samplesheet's `sex` column: a row with it is scored on chrX, a row without it on the autosomes, and `PRS_PREPARE` formats the scores once for each of the two that the run needs. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline; without it the `PRS` task fetches the release's archive, checked against `PGSC_CALC_SHA256`. `PRS` publishes pgsc_calc's output folder as `prs/pgsc_calc/`, with the same three files in its `pipeline_info/`.
+The Nextflow pipeline does the same with four processes: `PRS_PREPARE`, `PRS_SCORE_SITES`, `PRS` (pgsc_calc, which runs on the host because it starts its own containers) and `PRS_SUMMARY`. The sex is the samplesheet's `sex` column: a row with it is scored on chrX, a row without it on the autosomes, and `PRS_PREPARE` formats the scores once for each of the two that the run needs. Pass `--ancestry_ref` for the panel and `--pgsc_calc ${GENOME_DIR}/tools/pgsc_calc-<release>` to run offline; without it the `PRS` task fetches the release's archive, checked against `PGSC_CALC_SHA256`. `PRS` publishes pgsc_calc's output folder as `prs/pgsc_calc/`, with the same three files in its `pipeline_info/`. `PRS_SUMMARY` publishes the dated copy of the summary beside the summary, so a rerun keeps the earlier one; the published `prs/pgsc_calc/` folder is replaced by the new run's, as Nextflow publishes over its own files. The bash step moves the old folder aside instead.
 
 Which docker flags pgsc_calc's own containers get: they run as you (`-u` with your user and group ids) and with `--network none`, plus the sex folder's mount, in both entry points. In the pipeline they then get the run's own docker flags: its `docker.runOptions` and the `PRS` process's `containerOptions` (the `process.containerOptions` of the [shared-host config](hardware-requirements.md#a-shared-host), for example `--cpu-shares 256`), less their user (`-u`, `--user`) and network (`--net`, `--network`) flags, which stay the two above. The `PRS` task writes the result into `images.config`, the config it gives pgsc_calc, and prints it to its log. No other setting of the run reaches pgsc_calc's tasks: not its `executor` block, not a `process` setting, not another `docker` setting. pgsc_calc reads its own `nextflow.config`, `images.config` and Nextflow's user config (`$NXF_HOME/config`, by default `~/.nextflow/config`), as any Nextflow run does, and `images.config` sets the `docker.runOptions` above. Step 25 runs outside any Nextflow run, so it has no outer flags to pass.
 
@@ -82,7 +94,9 @@ Which docker flags pgsc_calc's own containers get: they run as you (`-u` with yo
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `ChrX`, `Input` |
+| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `ChrX`, `Ambiguous`, `Applies_To`, `Sex_Check`, `Input` |
+| `${SAMPLE}_prs_summary.<YYYYMMDD-HHMM>.tsv` | The same table under the time it was written, one per run, so a rerun keeps the earlier ones |
+| `pgsc_calc.<YYYYMMDD-HHMM>/` | Step 25 only: the previous run's `pgsc_calc/` folder, moved aside by the rerun |
 | `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored: the score (and panel) positions, from the gVCF or the VCF |
 | `pgsc_calc/results/sample/score/` | pgsc_calc's scores, its HTML report `report.html`, and with the panel the ancestry-adjusted scores and the principal components |
 | `pgsc_calc/results/sample/match/` | pgsc_calc's match log and summary |
@@ -98,7 +112,7 @@ Without the panel, 54 minutes to 1 h 17 min per genome in three measured 30-40x 
 
 ## Memory
 
-Two tasks read nothing but the scoring files, so their memory follows the score list, not the genome, and a GitHub runner can measure it. On the nine default scores (five of them have 1.7 to 6.9 million rows), `tests/test_prs_memory.sh --measure` (the E2E workflow's `prs-memory` job, on dispatch) measured on `ubuntu-latest` (4 CPUs, 16 GB RAM, containers limited to 14.1 GB):
+Two tasks read nothing but the scoring files, so their memory follows the score list, not the genome, and a GitHub runner can measure it. On the nine scores the list had then (five of them have 1.7 to 6.9 million rows), `tests/test_prs_memory.sh --measure` (the E2E workflow's `prs-memory` job, on dispatch) measured on `ubuntu-latest` (4 CPUs, 16 GB RAM, containers limited to 14.1 GB):
 
 | Task | Measured | Pipeline gives it | Step 25 gives it |
 |---|---|---|---|
@@ -117,7 +131,7 @@ pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under
 - **Step 25:** pgsc_calc gets three quarters of the RAM, 24 GB on a 32 GB machine. When one of its tasks is killed for memory the step says so; run it again with a larger `PGSC_MAX_MEMORY`.
 - **A 16 GB machine** caps both at about 12 to 15 GB, under what `FORMAT_SCOREFILES` needs. Docker lets a container swap as much again as its memory limit when the host has swap, which is how the whole pgsc_calc run above finished it with a 15 GB limit on a 16 GB runner; without swap it was killed.
 
-Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list.
+Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list. The figures above were measured on the nine scores before the blood pressure and lipid scores were added. Those four have 101 to 884 rows each, against 1.7 to 6.9 million for the five large ones, so they add very little to the memory or the time of either task; they have not been measured on a whole genome yet.
 
 ## The reference panel on a GitHub-hosted runner
 
@@ -131,26 +145,44 @@ The panel is pgsc_calc's 1000 Genomes database, `pgsc_1000G_v1.tar.zst` (`PGSC_P
 | Memory | 7.3 to 7.6 GB at the peak for the whole machine; the largest task, 6.9 to 7.1 GB (plink2 scoring the panel's own samples, and the panel's variant filter) |
 | Time | 20 to 30 minutes for the run, on 4 CPUs |
 
-That run scored PGS000018 alone and fits a 16 GB machine; the nine default scores need more ([Memory](#memory)). It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on an E2E run dispatched on a branch other than main (or with `PGSC_MEASURE=1`): it adds about 40 minutes, which a dispatched run of main keeps for its other cases.
+That run scored PGS000018 alone and fits a 16 GB machine; the default scores need more ([Memory](#memory)). It does not fit the 14 GB of disk a GitHub-hosted runner guarantees, and the download alone outlasts the pull request test budget, so the panel stays opt-in (`setup.sh --ancestry-panel`), and the tests on every pull request project the fixture sample onto the PGS Catalog's 268 MB synthetic panel instead (`tests/e2e/prs-2-ancestry.sh`). The 1000 Genomes run above repeats on an E2E run dispatched on a branch other than main (or with `PGSC_MEASURE=1`): it adds about 40 minutes, which a dispatched run of main keeps for its other cases.
 
 ## Interpreting Results
 
 - **Score_SUM**: weighted sum of the effect alleles you carry. Higher = more genetic predisposition, but only relative to other people scored the same way.
 - **Variants_Matched**: score variants pgsc_calc matched in your genotypes. `NA` when every score fell under pgsc_calc's 75% match rate: pgsc_calc then stops and publishes no match counts, and `Matched_Pct` is the rate its log gave.
-- **Variants_Total**: variants of the scoring file with a GRCh38 position on the autosomes, plus chrX when the sex was given.
+- **Variants_Total**: variants of the scoring file with a GRCh38 position on the autosomes, plus chrX when the sex was given. Strand-ambiguous rows count unless a failed strand check left them out.
 - **Matched_Pct**: `Variants_Matched / Variants_Total` as a percentage; the step warns below 50%, and pgsc_calc gives no sum below 75%.
-- **Percentile**: with the panel, where your score falls among the reference samples of `Ancestry_Group` (pgsc_calc's empirical percentile, `percentile_MostSimilarPop`). `NA` without the panel.
+- **Percentile**: with the panel, where your score falls among the reference samples of `Ancestry_Group` (pgsc_calc's empirical percentile, `percentile_MostSimilarPop`). `NA` without the panel, and `NA` for a score that does not apply to the declared sex.
 - **Ancestry_Group**: the panel population whose genetic ancestry is most similar to yours (for the 1000 Genomes panel: AFR, AMR, EAS, EUR or SAS). `NA` without the panel.
-- **ChrX**: the score's rows on chrX: `8 scored` with the sex, `8 left out` without it, `0` when it has none.
+- **ChrX**: the score's rows on chrX: `8 scored` with the sex, `8 left out` without it, `0` when it has none. With the panel, `8 left out (not in the ancestry panel)` when pgsc_calc matched none of them, see [chrX and the sex](#chrx-and-the-sex).
+- **Ambiguous**: the score's strand-ambiguous rows (A/T and C/G) and what happened to them: `11 dropped` by default, `11 kept` with `PRS_KEEP_AMBIGUOUS=true`, `11 dropped, strand check failed` when the score's other rows did not agree with the reference. `0` when it has none.
+- **Applies_To**: `female` or `male` for a score built for one sex, empty for the rest.
+- **Sex_Check**: for those scores, `applies`, `not applicable to the declared sex` or `no sex declared`; empty for the rest.
 - **Input**: `gvcf` when the positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out, the same line names the score and how many rows.
+Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out, the same line names the score and how many rows. A score that does not apply to the declared sex shows "not applicable to the declared sex" in place of its percentile, and when no sex was declared the reports say which scores are for one sex only.
+
+A raw `Score_SUM` from a run with the panel is not comparable with one from a run without it: with the panel pgsc_calc scores only the variants the panel has too. Compare percentiles, which only a panel run gives.
 
 ### chrX and the sex
 
-pgsc_calc converts your genotypes with plink2, and plink2 refuses chrX without the sample's sex. So a score's chrX rows are scored only when you give the sex (`./scripts/25-prs.sh your_name male`, or the samplesheet's `sex` column in Nextflow). Without it they are left out of the score: `Variants_Total` does not count them and the sum is the autosomes' alone. Of the nine scores in the list, PGS000662 (prostate cancer) has 8 chrX rows of 269.
+pgsc_calc converts your genotypes with plink2, and plink2 refuses chrX without the sample's sex. So a score's chrX rows are scored only when you give the sex (`./scripts/25-prs.sh your_name male`, or the samplesheet's `sex` column in Nextflow). Without it they are left out of the score: `Variants_Total` does not count them and the sum is the autosomes' alone. Of the 13 scores in the list, PGS000662 (prostate cancer) has 8 chrX rows of 269.
 
 The two runs of the same score are therefore not comparable: with the sex the sum includes the chrX rows' weights, without it they are absent. Compare a sum only with sums made the same way. pgsc_calc's import does not split the pseudoautosomal regions out of chrX (no `--split-par`), so a row there is read with chrX's ploidy for the declared sex. The step does not take the sex from step 16's indexcov call: on a slice or a targeted BAM that call is not reliable (the test fixture reads a male sample as female), and a wrong sex would change the score silently.
+
+With the ancestry panel, pgsc_calc keeps only the score variants that are also in the panel (its match step intersects the two, and the rest are marked `excluded` in the match log). A chrX row the panel lacks is then not scored even with the sex. Step 25 and `PRS_SUMMARY` read the match log in a panel run, and a score whose chrX rows were all excluded says `N left out (not in the ancestry panel)` in its `ChrX` column. The e2e case `tests/e2e/prs-scores-and-run-options-2-panel-chrx.sh` checks this on the PGS Catalog's synthetic panel and records how many chrX variants that panel has; the 1000 Genomes panel has not been checked this way yet.
+
+### Strand-ambiguous rows
+
+A row whose two alleles are A and T, or C and G, reads the same on both strands, so a match cannot tell whether the study reported the forward strand or the reverse. pgsc_calc drops these rows by default, and so does step 25. Some scores lose many rows this way: of the 13, PGS002257 has 135 of 884.
+
+`PRS_KEEP_AMBIGUOUS=true` (Nextflow `--prs_keep_ambiguous`) keeps them, under two conditions:
+
+- **WGS only.** It needs step 3's gVCF, so every score position is genotyped against the reference. With only a variant VCF (or chip data) the step refuses it.
+- **A strand check per score.** `prs-format` reads the reference base at each of the score's other SNV rows. The score passes when at least one row agrees with the reference on the forward strand and none needs a flip. A score that fails keeps its ambiguous rows out (`Ambiguous` says `dropped, strand check failed`), and the step prints the counts.
+
+The check says the score was reported on the forward strand; it does not prove each ambiguous row was. Keep it off when you want to compare with published sums, which mostly drop them too.
 
 ### Hom-ref sites come from the gVCF
 
@@ -176,13 +208,14 @@ Call the sample again with step 3 to get the gVCF. Imputation (step 14) is not n
 
 - Most scores were developed in European-ancestry populations and predict less well for other ancestries, even with an ancestry-adjusted percentile.
 - A score captures only the genetic component. Lifestyle, environment, and family history are often more predictive.
-- Sex-specific conditions (breast cancer, prostate cancer) should be interpreted accordingly.
+- Breast cancer and prostate cancer are scored for everyone, but get a percentile only for the sex they were built for, or when no sex was given.
+- The test fixture is a few slices of one genome: its sums, match rates and percentiles show the code paths work, not what a real genome gives. Real percentiles, and the time and memory of the four new scores on a whole genome, have to come from a real run.
 - Chip data matches far fewer score variants than a genome; most scores then fall under pgsc_calc's 75% match rate and get no sum (see [Using chip data](chip-data-guide.md)).
 
 ## Notes
 
 - Scoring files are cached in `${GENOME_DIR}/prs_scores/`. Delete a file to download it again. A cached file without a `#HmPOS_build=GRCh38` header is deleted and downloaded again.
-- pgsc_calc starts with a fresh work folder each run: it keeps converted genotypes between runs, and an old run's would be scored instead of the current VCF.
+- pgsc_calc starts with a fresh `pgsc_calc/` folder each run: it keeps converted genotypes between runs, and an old run's would be scored instead of the current VCF. Step 25 moves the previous folder to `pgsc_calc.<YYYYMMDD-HHMM>/` rather than deleting it.
 
 ## Maintenance
 
