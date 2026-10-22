@@ -19,7 +19,10 @@
     may be [] when that caller did not run. -bracketedAltMode DEL,DUP,INS
     keeps a breakend pair MANTA left on purpose (a lone inversion junction of
     1 Mb or more) from being read as a whole-span inversion. The class 4 and
-    5 rows are written to their own table, found by column name.
+    5 rows are written to their own table, found by column name, and
+    bin/annotsv_postfilter.py writes each of them with its caller, whether a
+    deletion sits on the exon edges of one transcript of AnnotSV's genes
+    file, and its benign-set frequency (<id>_sv_class4_5_checked.tsv).
 
     Equivalent to: scripts/05-annotsv.sh, which reads the same duphold-filtered
     calls when step 15 wrote them, and Manta's calls (with a note) otherwise.
@@ -39,6 +42,7 @@ process ANNOTSV {
     output:
     tuple val(meta), path("${meta.id}_sv_annotated.tsv"), emit: annotated_tsv
     tuple val(meta), path("${meta.id}_sv_class4_5.tsv"),  emit: class4_5_tsv
+    tuple val(meta), path("${meta.id}_sv_class4_5_checked.tsv"), emit: class4_5_checked
     tuple val(meta), path("${meta.id}_annotsv_input.vcf"), emit: input_vcf
     path "versions.yml",                                  emit: versions
 
@@ -80,6 +84,15 @@ process ANNOTSV {
                  \$c["Annotation_mode"] == "full" && (\$c["ACMG_class"] == "4" || \$c["ACMG_class"] == "5")' \\
         ${meta.id}_sv_annotated.tsv > ${meta.id}_sv_class4_5.tsv
 
+    # Each class 4 or 5 SV with its caller, an exon-edge flag for a deletion
+    # and its benign-set frequency. The support count is step 22's, which the
+    # reports join when they are written.
+    genes=${annotations_dir}/Annotations_Human/Genes/GRCh38/genes.RefSeq.sorted.bed
+    genes_arg=()
+    if [ -s "\$genes" ]; then genes_arg=(--genes "\$genes"); fi
+    annotsv_postfilter.py --class45 ${meta.id}_sv_class4_5.tsv \${genes_arg[@]+"\${genes_arg[@]}"} \\
+        --out ${meta.id}_sv_class4_5_checked.tsv
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         annotsv: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -88,7 +101,7 @@ process ANNOTSV {
 
     stub:
     """
-    touch ${meta.id}_sv_annotated.tsv ${meta.id}_sv_class4_5.tsv ${meta.id}_annotsv_input.vcf
+    touch ${meta.id}_sv_annotated.tsv ${meta.id}_sv_class4_5.tsv ${meta.id}_sv_class4_5_checked.tsv ${meta.id}_annotsv_input.vcf
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

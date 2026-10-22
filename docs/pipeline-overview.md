@@ -49,6 +49,8 @@ graph LR
     BAM --> cnvpytor["CNVpytor<br/><small>CNVs</small>"]
     manta --> duphold["duphold"]
     duphold --> annotsv["AnnotSV"]
+    delly --> annotsv
+    cnvpytor --> annotsv
     manta --> consensus["SV Consensus"]
     delly --> consensus
     cnvpytor --> consensus

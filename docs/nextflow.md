@@ -209,11 +209,12 @@ results/
 │   ├── consumer_export/    # 23andMe-layout and AncestryDNA-layout raw-data zips and the summary table
 │   │                       #   (opt-in: consumer_export)
 │   ├── couple/             # <sample>_couple_carrier.tsv: the couple carrier screen for this partner (--pedigree)
-│   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV;
+│   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV,
+│   │                       #   except a lone inversion junction of 1 Mb or more, kept as its breakend pair;
 │   │                       #   diploidSV.raw.vcf.gz as Manta wrote it (an inversion is two BND records)
 │   ├── sv_duphold/         # Manta SVs with duphold depth tags (optional)
 │   ├── sv_filtered/        # Manta SVs after the duphold depth filter (optional)
-│   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs (optional)
+│   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs, and its class 4-5 SVs with their caller, exon-edge and frequency checks (optional)
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers, SURVIVOR merge (optional)
