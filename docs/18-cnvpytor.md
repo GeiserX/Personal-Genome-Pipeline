@@ -86,6 +86,8 @@ awk -F'\t' '$5 < 0.05 && $3 > 1000' ${SAMPLE}_cnvs.txt
 ```
 The first call is often a low-`level` artifact spanning the chromosome-start N gap (`pN` near 1.0); the `pN`/`q0` columns let you drop such regions.
 
+The reports give two counts. **Significant (e-val < 0.01)** is every call with column 5 below 0.01. **Significant after filters** keeps those of them with `q0` below 0.5 (fewer than half of the reads have mapping quality 0) and `pN` below 0.5 (fewer than half of the bases are N, so not over a gap), that touch no centromere or heterochromatin band (the `acen`, `gvar` and `stalk` bands of GRCh38's cytoband, the spans of [step 11](11-roh-analysis.md#centromere-and-heterochromatin-bands)), and that are not on chrY when the declared sex is female. The report names how many each rule left out; with no declared sex the chrY calls stay, and it says so. The UGT2B17 copy number reads every call, filtered or not.
+
 ## Runtime
 14 to 20 minutes per genome on 4 CPUs, peak memory 1.4-2.7 GB, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)) (CNVpytor is multi-threaded via `-j`).
 

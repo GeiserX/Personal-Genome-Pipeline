@@ -1266,11 +1266,21 @@ def ugt2b17_copy_number(calls, span):
     return dict(out, call=call, note=note, level=level, e_value=ev)
 
 
+# A CNVpytor call is kept in the filtered count when fewer than half of its
+# reads have mapping quality 0 (q0, column 9) and fewer than half of its bases
+# are N (pN, column 10), it touches no centromere or heterochromatin band
+# (MASKED_BANDS), and it is not on chrY of a declared female (collect() takes
+# those out, once the declared sex is known).
+CNV_MAX_Q0 = CNV_MAX_PN = 0.5
+
+
 def sec_cnvpytor(d, s):
     p = first_existing(d, [f"cnvpytor/{s}_cnvs.txt"])
     if not p:
         return None, {}
-    total = dels = dups = sig = 0
+    bands = masked_bands()
+    total = dels = dups = sig = kept = kept_y = 0
+    dropped = {"q0": 0, "gap": 0, "band": 0}
     calls = []
     with open(p, errors="replace") as f:
         for line in f:
@@ -1280,21 +1290,45 @@ def sec_cnvpytor(d, s):
             total += 1
             dels += c[0] == "deletion"
             dups += c[0] == "duplication"
-            try:
-                sig += float(c[4]) < 0.01
-            except (IndexError, ValueError):
-                pass
             m = re.fullmatch(r"(\S+):(\d+)-(\d+)", c[1]) if len(c) > 4 else None
             try:
                 if m:
                     calls.append((c[0], m.group(1), int(m.group(2)), int(m.group(3)), float(c[3]), float(c[4])))
             except ValueError:
                 pass
+            try:
+                if float(c[4]) >= 0.01:
+                    continue
+            except (IndexError, ValueError):
+                continue
+            sig += 1
+            q0, pn = (num(c[8]), num(c[9])) if len(c) > 9 else (None, None)
+            if q0 is not None and q0 >= CNV_MAX_Q0:
+                dropped["q0"] += 1
+            elif pn is not None and pn >= CNV_MAX_PN:
+                dropped["gap"] += 1
+            elif m and masked_overlap(bands, m.group(1), int(m.group(2)), int(m.group(3))):
+                dropped["band"] += 1
+            else:
+                kept += 1
+                kept_y += bool(m) and m.group(1) in ("chrY", "Y")
     span = gencode_gene(d, "UGT2B17")
     ugt = (ugt2b17_copy_number(calls, span) if span else
            {"call": "not assessed", "note": "no GENCODE gene lines beside the results "
             "(reference/gencode.v<N>.basic.genes.gtf, which setup.sh installs) to place the gene"})
-    return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig, "ugt2b17": ugt}
+    return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig,
+               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped, "ugt2b17": ugt}
+
+
+def cnvpytor_sex_filter(data, declared_sex):
+    """Take the chrY calls out of the filtered count of a declared female;
+    with no declared sex they stay, and the data says so."""
+    if "significant_filtered" not in data:
+        return
+    data["declared_sex"] = declared_sex or None
+    if declared_sex == "female":
+        data["dropped"]["chry_female"] = data["filtered_chry"]
+        data["significant_filtered"] -= data["filtered_chry"]
 
 
 def sec_sv_consensus(d, s):
@@ -1495,6 +1529,15 @@ def sec_expansions(d, s):
     return p, out
 
 
+# TelomereHunter's estimate rests on its intratelomeric reads. Below this many
+# per 30x of depth, about 30 times fewer than a typical 30x short-read genome
+# has, the value is too thin to compare (a library or platform problem, or
+# reads too short for its repeat threshold). The floor scales with the depth
+# TelomereHunter itself counted (total_reads x read length / GENOME_BASES).
+TELOMERE_FLOOR_PER_30X = 2000
+GENOME_BASES = 3.1e9
+
+
 def sec_telomere(d, s):
     p = first_existing(d, [f"telomere/{s}/{s}/{s}_summary.tsv", f"telomere/{s}/{s}_summary.tsv",
                            "telomere/**/*_summary.tsv"])
@@ -1507,31 +1550,106 @@ def sec_telomere(d, s):
     head, row = lines[0], lines[1]
     # By header name; older TelomereHunter versions put it in column 11.
     i = head.index("tel_content") if "tel_content" in head else 10
-    return p, {"tel_content": row[i] if i < len(row) else "."}
+    out = {"tel_content": row[i] if i < len(row) else "."}
+
+    def col(*names):
+        for n in names:
+            if n in head and head.index(n) < len(row):
+                return row[head.index(n)]
+        return None
+    # TelomereHunter 1.1.0 names it intratel_reads.
+    intratel = num(col("intratel_reads", "intratelomeric_reads"))
+    total = num(col("total_reads"))
+    lengths = [num(x) for x in re.split(r"[,;| ]+", col("read_lengths", "read_length") or "")]
+    lengths = [x for x in lengths if x]
+    if intratel is None:
+        return p, dict(out, read_check="no intratelomeric read count in the summary")
+    out["intratelomeric_reads"] = int(intratel)
+    if not total or not lengths:
+        return p, dict(out, read_check="depth unknown (no total_reads or read_lengths in the summary): not checked")
+    depth = total * max(lengths) / GENOME_BASES
+    floor = TELOMERE_FLOOR_PER_30X * depth / 30
+    out.update(depth=round(depth, 1), read_floor=int(round(floor)), low_reads=intratel < floor)
+    return p, out
+
+
+# GRCh38's centromeres and heterochromatin: the acen, gvar and stalk rows of
+# UCSC's cytoBand.hg38.txt (the file setup.sh installs as
+# reference/cytoBand.hg38.txt, sha256 e514e48b... in scripts/lib/common.sh),
+# neighbouring rows merged, as chrom:start-end with a 0-based start and an
+# exclusive end. Reads there map badly, so a run of homozygosity or a copy
+# number call over them is mostly an artefact. Regenerate with
+#   gzip -cd cytoBand.txt.gz | awk '$1 ~ /^chr([0-9]+|X|Y)$/ && $5 ~ /^(acen|gvar|stalk)$/' \
+#     | sort -k1,1V -k2,2n | awk '{ if ($1 == c && $2 == e) e = $3; else { if (c != "") printf "%s:%d-%d ", c, s, e;
+#       c = $1; s = $2; e = $3 } } END { print c ":" s "-" e }'
+# scripts/11-roh-analysis.sh and modules/local/roh/main.nf carry the same
+# line (tests/test_collect_summary.py checks that the three agree).
+MASKED_BANDS = ("chr1:121700000-143200000 chr2:91800000-96000000 chr3:87800000-98600000 chr4:48200000-51800000 "
+                "chr5:46100000-51400000 chr6:58500000-62600000 chr7:58100000-62100000 chr8:43200000-47200000 "
+                "chr9:42200000-61500000 chr10:38000000-41600000 chr11:51000000-55800000 chr12:33200000-37800000 "
+                "chr13:0-18900000 chr14:0-18200000 chr15:0-20500000 chr16:35300000-47000000 "
+                "chr17:22700000-27400000 chr18:15400000-21500000 chr19:19900000-31900000 chr20:25700000-30400000 "
+                "chr21:0-13000000 chr22:0-17400000 chrX:58100000-63800000 chrY:10300000-10600000 "
+                "chrY:26600000-57227415")
+
+
+def masked_bands(text=MASKED_BANDS):
+    """{chrom: [(start, end), ...]} of MASKED_BANDS, 0-based, end exclusive."""
+    out = {}
+    for x in text.split():
+        c, _, se = x.partition(":")
+        a, _, b = se.partition("-")
+        out.setdefault(c, []).append((int(a), int(b)))
+    return out
+
+
+def masked_overlap(bands, chrom, start, end):
+    """Bases of the 1-based, inclusive span start-end inside the masked bands."""
+    return sum(max(0, min(end, b) - max(start - 1, a)) for a, b in bands.get(chrom, ()))
 
 
 def sec_roh(d, s):
+    """Step 11's bcftools roh output. Segments on chrX and chrY are left out
+    (a man's single X is one long run), segments on any other contig that is
+    not chr1 to chr22 (chrM, chrEBV, chrUn_*) are not counted, and so is the
+    part of a segment that lies in a centromere or heterochromatin band
+    (MASKED_BANDS), where few markers map. Total, Largest and the list of segments over 5 Mb are of the
+    autosomal length that is left."""
     p = first_existing(d, [f"vcf/{s}_roh.txt", f"roh/{s}_roh.txt", "roh/*_roh.txt"])
     if not p:
         return None, {}
-    total = largest = 0.0
-    segs, big = 0, []
+    bands = masked_bands()
+    total = largest = masked = 0.0
+    segs, sex_segs, big = 0, 0, []
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
             if len(c) < 6 or c[0] != "RG":
                 continue
             try:
-                length = float(c[5])
+                start, end, length = int(c[3]), int(c[4]), float(c[5])
             except ValueError:
+                continue
+            if c[2] in ("chrX", "chrY", "X", "Y"):
+                sex_segs += 1
+                continue
+            if not (c[2].startswith("chr") and c[2][3:] in AUTOSOMES):
+                continue
+            inside = min(length, masked_overlap(bands, c[2], start, end))
+            masked += inside
+            length -= inside
+            if length <= 0:
                 continue
             segs += 1
             total += length
             largest = max(largest, length)
-            if length > 5e6 and c[2] not in ("chrX", "chrY", "X", "Y"):
-                big.append({"region": f"{c[2]}:{c[3]}-{c[4]}", "mb": round(length / 1e6, 1)})
+            if length > 5e6:
+                row = {"region": f"{c[2]}:{c[3]}-{c[4]}", "mb": round(length / 1e6, 1)}
+                if inside:
+                    row["masked_mb"] = round(inside / 1e6, 1)
+                big.append(row)
     return p, {"segments": segs, "total_mb": round(total / 1e6, 1), "largest_mb": round(largest / 1e6, 1),
-               "autosomal_over_5mb": big}
+               "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs}
 
 
 def sec_haplogroup(d, s):
@@ -1664,11 +1782,167 @@ def sec_couple(d, s):
                "one_partner": sum(1 for r in rows if r["result"] == "one_partner")}
 
 
+# The D-loop poly-C tracts (rCRS m.303-315 and m.16184-16193). Length
+# variants there, an extra or missing C, are found in most people, often as a
+# mix of lengths that reads as heteroplasmy; they are counted apart and left
+# out of the heteroplasmic count.
+POLYC_TRACTS = ((303, 315), (16184, 16193))
+
+
+def mito_span(pos, ref, alt):
+    """The rCRS positions a chrM allele changes: an SNV or MNV its own bases,
+    an indel the bases after its anchor base (Mutect2 writes the anchor)."""
+    if len(ref) == len(alt):
+        return pos, pos + len(ref) - 1
+    return pos + 1, pos + max(len(ref) - 1, 1)
+
+
+def in_polyc(pos, ref, alt):
+    lo, hi = mito_span(pos, ref, alt)
+    return any(lo <= b and hi >= a for a, b in POLYC_TRACTS)
+
+
+def min_allele(pos, ref, alt):
+    """(pos, ref, alt) without the bases ref and alt share at the end and then
+    at the start, one base always kept: Mutect2's A>AC of a two-ALT record
+    AC>A,ACC becomes the same key as ClinVar's and gnomAD's."""
+    while len(ref) > 1 and len(alt) > 1 and ref[-1] == alt[-1]:
+        ref, alt = ref[:-1], alt[:-1]
+    while len(ref) > 1 and len(alt) > 1 and ref[0] == alt[0]:
+        ref, alt, pos = ref[1:], alt[1:], pos + 1
+    return pos, ref, alt
+
+
+MITO_ANNOT_COLS = ["chrom", "pos", "ref", "alt", "filter", "af", "clinvar_id", "clinvar_significance",
+                   "clinvar_review", "clinvar_condition", "gnomad_af_hom", "gnomad_af_het", "gnomad_max_hl"]
+# ClinVar classes: P/LP are counted; a record whose every class is benign or
+# carries no classification is not listed unless the call is heteroplasmic.
+CLINVAR_PLP = ("Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic")
+CLINVAR_BENIGN = ("Benign", "Likely_benign", "Benign/Likely_benign", "not_provided")
+
+
+def clinvar_terms(sig):
+    return [t for t in re.split(r"[|,]", sig or "") if t and t != "."]
+
+
+def vcf_file_date(path):
+    with open_text(path) as f:
+        for line in f:
+            if not line.startswith("#"):
+                break
+            if line.startswith("##fileDate="):
+                return line.strip().split("=", 1)[1]
+    return None
+
+
+def mito_annotate(vcf, clinvar=None, gnomad=None):
+    """Step 20's annotation table: each ALT of each record of the chrM VCF,
+    with its ClinVar record (CLNSIG, CLNREVSTAT, CLNDN of the same allele) and
+    gnomAD v3.1's chrM sites (AF_hom, AF_het, max_hl of the same allele).
+    Returns (header lines, rows); a file not given or not there is named in
+    the header and its columns are '.'."""
+    head, cv, gn = [], {}, {}
+    if clinvar and os.path.isfile(clinvar) and os.path.isfile(clinvar + ".tbi"):
+        head.append(f"# clinvar\t{os.path.basename(clinvar)}\t{vcf_file_date(clinvar) or 'fileDate unknown'}")
+    else:
+        head.append(f"# clinvar\tnot annotated\t{'no ' + clinvar + ' with its .tbi' if clinvar else 'no ClinVar file given'}")
+        clinvar = None
+    if gnomad and os.path.isfile(gnomad):
+        head.append(f"# gnomad\t{os.path.basename(gnomad)}\t-")
+        for r in vcf_records(gnomad):
+            if len(r) < 8:
+                continue
+            i = info_map(r[7])
+            for alt in r[4].split(","):
+                gn[min_allele(int(r[1]), r[3], alt)] = (i.get("AF_hom", "."), i.get("AF_het", "."), i.get("max_hl", "."))
+    else:
+        head.append(f"# gnomad\tnot annotated\t{'no ' + gnomad if gnomad else 'no gnomAD chrM file given'}")
+    recs = list(vcf_records(vcf))
+    if clinvar:
+        index = tabix_linear_index(clinvar)
+        chrom = next((c for c in ("chrM", "MT") if c in index), None)
+        wanted = {int(r[1]) for r in recs if len(r) >= 5} | {min_allele(int(r[1]), r[3], a)[0] for r in recs if len(r) >= 5 for a in r[4].split(",")}
+        for pos in sorted(wanted) if chrom else ():
+            # ClinVar's own record can start a base earlier or later than
+            # Mutect2's for the same indel; the alleles decide.
+            for q in (x for x in (pos - 1, pos, pos + 1) if x >= 1):
+                for c in tabix_lines(clinvar, index, chrom, q):
+                    i = info_map(c[7]) if len(c) > 7 else {}
+                    for alt in c[4].split(","):
+                        cv[min_allele(int(c[1]), c[3], alt)] = (c[2], i.get("CLNSIG", "."), i.get("CLNREVSTAT", "."),
+                                                                i.get("CLNDN", "."))
+    rows = []
+    for r in recs:
+        if len(r) < 8:
+            continue
+        fmt = r[8].split(":") if len(r) > 9 else []
+        val = r[9].split(":") if len(r) > 9 else []
+        afs = val[fmt.index("AF")].split(",") if "AF" in fmt and fmt.index("AF") < len(val) else []
+        for k, alt in enumerate(r[4].split(",")):
+            key = min_allele(int(r[1]), r[3], alt)
+            rows.append([r[0], str(key[0]), key[1], key[2], r[6], afs[k] if k < len(afs) else ".",
+                         *cv.get(key, (".", ".", ".", ".")), *gn.get(key, (".", ".", "."))])
+    return head, rows
+
+
+def mito_annotate_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py mito-annotate",
+                                 description="Write step 20's chrM annotation table (ClinVar and gnomAD).")
+    ap.add_argument("--vcf", required=True, help="the filtered chrM VCF (<sample>_chrM_filtered.vcf.gz)")
+    ap.add_argument("--clinvar", default="", help="ClinVar's VCF with chr names, and its .tbi")
+    ap.add_argument("--gnomad", default="", help="gnomAD v3.1's chrM sites VCF")
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args(argv)
+    try:
+        head, rows = mito_annotate(a.vcf, a.clinvar or None, a.gnomad or None)
+    except (Unreadable, OSError, ValueError, struct.error, zlib.error) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("".join(h + "\n" for h in head))
+        f.write("\t".join(MITO_ANNOT_COLS) + "\n")
+        f.write("".join("\t".join(r) + "\n" for r in rows))
+    os.replace(tmp, a.out)
+    for h in head:
+        c = h[2:].split("\t")
+        print(f"  {c[0]}: {c[1]}" + (f" ({c[2]})" if c[2] != "-" else ""))
+    n_cv = sum(r[7] != "." for r in rows)
+    n_gn = sum(r[10] != "." for r in rows)
+    print(f"  {len(rows)} chrM alleles: {n_cv} with a ClinVar record, {n_gn} in gnomAD")
+    return 0
+
+
+def mito_annotation(d, s, vcf):
+    """Step 20's annotation table, as the report lists it, or a note on why
+    there is none."""
+    p = first_existing(d, [f"mito/{s}_chrM_annotated.tsv"])
+    if not p:
+        return {"note": "no annotation table (mito/<id>_chrM_annotated.tsv): step 20 ran before it annotated, "
+                        "or the calls are the Nextflow MITO_VARIANTS', which does not annotate them yet"}
+    if os.path.getmtime(p) < os.path.getmtime(vcf):
+        return {"note": f"{os.path.relpath(p, d)} is older than the chrM calls: rerun step 20"}
+    sources, lines = {}, []
+    with open(p, errors="replace") as f:
+        for line in f:
+            if line.startswith("# "):
+                c = line[2:].rstrip("\n").split("\t")
+                if len(c) >= 3:
+                    sources[c[0]] = (f"not annotated: {c[2]}" if c[1] == "not annotated"
+                                     else c[1] + (f" ({c[2]})" if c[2] != "-" else ""))
+            elif line.strip():
+                lines.append(line)
+    rows = [r for r in csv.DictReader(lines, delimiter="\t") if r.get("filter") == "PASS"]
+    return {"source": os.path.relpath(p, d), "clinvar": sources.get("clinvar"), "gnomad": sources.get("gnomad"),
+            "rows": rows}
+
+
 def sec_mito(d, s):
     p = first_existing(d, [f"mito/{s}_chrM_filtered.vcf.gz"])
     if not p:
         return None, {}
     passed = het = 0
+    polyc = []
     for r in vcf_records(p):
         if len(r) < 10 or r[6] != "PASS":
             continue
@@ -1678,13 +1952,35 @@ def sec_mito(d, s):
         if "AF" not in fmt or fmt.index("AF") >= len(val):
             continue
         try:
-            af = max(float(x) for x in val[fmt.index("AF")].split(",") if x not in ("", "."))
+            afs = [float(x) for x in val[fmt.index("AF")].split(",") if x not in ("", ".")]
+            af = max(afs)
         except ValueError:
             continue
         # Heteroplasmic: 5% to 95%. Below 5% NUMT reads and noise dominate.
-        if 0.05 <= af < 0.95:
+        if not 0.05 <= af < 0.95:
+            continue
+        alts = r[4].split(",")
+        if any(in_polyc(int(r[1]), r[3], a) for a in alts):
+            polyc.append({"variant": f"{r[0]}:{r[1]} {r[3]}>{r[4]}", "af": round(af, 3)})
+        else:
             het += 1
-    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmy_floor": 0.05}
+    ann = mito_annotation(d, s, p)
+    listed, plp = [], 0
+    for r in ann.pop("rows", []):
+        terms = clinvar_terms(r.get("clinvar_significance"))
+        is_plp = any(t in CLINVAR_PLP for t in terms)
+        plp += is_plp
+        try:
+            het_row = 0.05 <= float(r.get("af")) < 0.95
+        except (TypeError, ValueError):
+            het_row = False
+        if is_plp or het_row or (terms and not all(t in CLINVAR_BENIGN for t in terms)):
+            listed.append({k: r.get(k) for k in MITO_ANNOT_COLS if k not in ("chrom", "filter")}
+                          | {"polyc": in_polyc(int(r["pos"]), r["ref"], r["alt"])})
+    if "source" in ann:
+        ann.update(variants=listed, clinvar_plp=plp)
+    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmy_floor": 0.05, "polyc_heteroplasmic": polyc,
+               "polyc_tracts": [f"m.{a}-{b}" for a, b in POLYC_TRACTS], "annotation": ann}
 
 
 def cpsr_cdna_checks(d, s):
@@ -2393,6 +2689,9 @@ def collect(sample, sample_dir, declared_sex=None):
         sections[key] = sec
 
     cyp2d6 = cyp2d6_block(sample, sample_dir, sections)
+    declared = (declared_sex or (status or {}).get("declared_sex") or manifest_value(manifest, "run", "declared_sex")
+                or sections["sample_qc"]["data"].get("declared_sex") or None)
+    cnvpytor_sex_filter(sections["cnvpytor"]["data"], declared)
 
     clinvar_date = manifest_value(manifest, "data", "clinvar_file_date")
     summary = {
@@ -2402,9 +2701,7 @@ def collect(sample, sample_dir, declared_sex=None):
         "run": {
             "status_file": status is not None,
             "started_utc": status["started_utc"] if status else None,
-            "declared_sex": (declared_sex or (status or {}).get("declared_sex")
-                             or manifest_value(manifest, "run", "declared_sex")
-                             or sections["sample_qc"]["data"].get("declared_sex") or None),
+            "declared_sex": declared,
         },
         "databases": {
             "clinvar_release": clinvar_date,
@@ -2466,6 +2763,8 @@ def main(argv=None):
         return prs_format_main(argv[1:])
     if argv[:1] == ["prs-table"]:
         return prs_table_main(argv[1:])
+    if argv[:1] == ["mito-annotate"]:
+        return mito_annotate_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--sample-dir", required=True)

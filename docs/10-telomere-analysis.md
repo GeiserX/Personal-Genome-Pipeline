@@ -64,6 +64,10 @@ TelomereHunter uses `-ibt` (input BAM tumor) for a single-sample analysis. No `-
 - Higher values indicate longer/more abundant telomeres
 - Compare between samples of known age for relative ranking
 
+### Read-count check
+
+The value rests on the intratelomeric reads (`intratel_reads` in TelomereHunter 1.1.0's summary). The reports print that count beside the value and warn "too few telomeric reads for a stable estimate" when it is below 2,000 per 30x of depth. The depth is the one TelomereHunter counted: `total_reads` times the read length (`read_lengths`, the largest when there are several) over 3.1 Gb. A typical 30x short-read genome has tens of thousands of intratelomeric reads, so the floor sits far below that: a sample under it has a library or platform problem, or reads too short for TelomereHunter's repeat threshold, and its value is not comparable. The floor is a first choice, not one fitted to many samples. A summary without `total_reads` or the read length gets the count and no check, and the report says so.
+
 ## Important Notes
 - The container runs as you (`--user "$(id -u):$(id -g)"`), so the outputs are yours. A telomere directory an older version wrote as root has to be taken back first: `sudo chown -R "$(id -u):$(id -g)" "${GENOME_DIR}/${SAMPLE}/telomere"`.
 - Short-read WGS (150bp reads) systematically underestimates true telomere length because reads cannot span long repetitive regions
