@@ -130,6 +130,7 @@ Checks:
 
 Run: python3 tests/test_collect_summary.py
 """
+import csv
 import gzip
 import json
 import os
@@ -951,6 +952,192 @@ def parascopy_section(work, schema):
           any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
 
 
+def report_sections_mito_roh_telomere_cnv(work, schema):
+    """ROH on autosomes outside the bands, the telomere read floor, CNVpytor's
+    filtered count, the D-loop poly-C tracts and the chrM annotation."""
+    import re as _re
+    # The masked bands: one line in the summary, step 11 and the ROH module.
+    for f in ("scripts/11-roh-analysis.sh", "modules/local/roh/main.nf"):
+        m = _re.search(r'^\s*MASKED_BANDS="([^"]*)"', open(os.path.join(REPO, f)).read(), _re.M)
+        check(f"bands: {f} holds the line of bin/collect_summary.py",
+              m is not None and m.group(1) == collect_summary.MASKED_BANDS, m and m.group(1)[:80])
+
+    # ROH: a 45 Mb chrY segment, an 18 Mb segment in chr1's 1q12 gvar block,
+    # one over chr9's centromere, a 25 Mb chr1 segment with 21.5 Mb in the
+    # band, a clean 7 Mb on chr2, and a 6 Mb segment on a contig that is not
+    # an autosome (a planted length; chrEBV is shorter), which is not counted.
+    d = os.path.join(work, "rsec", "S")
+    roh = ("RG\tS\tchrY\t2781480\t47781479\t45000000\t900\t50\n"
+           "RG\tS\tchrEBV\t1\t6000000\t6000000\t90\t50\n"
+           "RG\tS\tchr1\t125200001\t143200000\t18000000\t300\t50\n"
+           "RG\tS\tchr9\t42300001\t49300000\t7000000\t200\t50\n"
+           "RG\tS\tchr1\t120000001\t145000000\t25000000\t500\t50\n"
+           "RG\tS\tchr2\t10000001\t17000000\t7000000\t900\t50\n")
+    put(f"{d}/vcf/S_roh.txt", roh)
+    summ, txt, html = render(d)
+    r = summ["sections"]["roh"]["data"]
+    check("ROH: Largest and Total come from the clean 7 Mb autosomal segment and the unmasked 3.5 Mb",
+          r["largest_mb"] == 7.0 and r["total_mb"] == 10.5 and r["segments"] == 2, r)
+    check("ROH: the chrY segment, the gvar and acen segments are left out; only chr2 is over 5 Mb",
+          r["autosomal_over_5mb"] == [{"region": "chr2:10000001-17000000", "mb": 7.0}]
+          and r["sex_chromosome_segments"] == 1 and r["masked_mb"] == 46.5, r)
+    check("ROH: both reports say autosomes only, the band part left out and no population AFs",
+          "Left out in centromere and heterochromatin bands: 46.5 MB" in txt
+          and "No population allele frequencies were used" in txt
+          and "Segments on chrX/chrY, not counted: 1" in txt and "No population allele" in html, txt)
+    # Red control: masked_bands() with no bands, so nothing is masked.
+    orig = collect_summary.masked_bands
+    collect_summary.masked_bands = lambda text="": orig("")
+    try:
+        r0 = collect_summary.sec_roh(d, "S")[1]
+    finally:
+        collect_summary.masked_bands = orig
+    check("ROH red control: without the band mask the gvar segment is the largest again",
+          r0["largest_mb"] == 25.0 and len(r0["autosomal_over_5mb"]) == 4, r0)
+    # Step 11's awk on the same file lists the same segments.
+    script = open(os.path.join(REPO, "scripts/11-roh-analysis.sh")).read()
+    awk = script[script.index("  awk -v bands="):script.index('"$OUTPUT"', script.index("  awk -v bands=")) + len('"$OUTPUT"')]
+    out = subprocess.run(["bash", "-c", f'MASKED_BANDS="{collect_summary.MASKED_BANDS}"; OUTPUT="$1"; {awk}', "_",
+                          f"{d}/vcf/S_roh.txt"], capture_output=True, text=True)
+    check("ROH: step 11's summary awk lists the segments the report lists",
+          out.returncode == 0 and out.stdout == "chr2\t10000001\t17000000\t7000000\t7.0\n", (out.stdout, out.stderr))
+
+    # Telomere: 40 and 4,000 intratelomeric reads at 30x (620 M reads of 150 bp).
+    head = ("PID\tsample\ttotal_reads\tread_lengths\trepeat_threshold_set\trepeat_threshold_used\tintratel_reads\t"
+            "gc_bins_for_correction\ttotal_reads_with_tel_gc\ttel_content\n")
+    for n, low in ((40, True), (4000, False)):
+        put(f"{d}/telomere/S/S/S_summary.tsv", head + f"S\ttumor\t620000000\t150\tn=7\t10\t{n}\t48-52\t150000000\t1.5\n")
+        summ, txt, html = render(d)
+        t = summ["sections"]["telomere"]["data"]
+        warned = "too few telomeric reads for a stable estimate" in txt
+        check(f"telomere: {n} intratelomeric reads at 30x {'warn' if low else 'do not warn'} (floor 2,000)",
+              t["low_reads"] is low and t["depth"] == 30.0 and t["read_floor"] == 2000 and warned is low
+              and ("too few telomeric reads" in html) is low and f"Intratelomeric reads: {n:,}" in txt, (t, txt))
+    put(f"{d}/telomere/S/S/S_summary.tsv", head + "S\ttumor\t620000000\t150\tn=7\t10\t40\t48-52\t150000000\t1.5\n")
+    saved = collect_summary.TELOMERE_FLOOR_PER_30X
+    collect_summary.TELOMERE_FLOOR_PER_30X = 0
+    try:
+        t0 = collect_summary.sec_telomere(d, "S")[1]
+    finally:
+        collect_summary.TELOMERE_FLOOR_PER_30X = saved
+    check("telomere red control: with the floor at 0 the 40-read sample is not flagged, so the warning comes from it",
+          t0["low_reads"] is False, t0)
+    put(f"{d}/telomere/S/S/S_summary.tsv", "PID\tsample\tintratelomeric_reads\ttel_content\nS\ttumor\t61873\t334\n")
+    t1 = collect_summary.sec_telomere(d, "S")[1]
+    check("telomere: no total_reads or read length gives the count and says the check did not run",
+          t1.get("intratelomeric_reads") == 61873 and "low_reads" not in t1 and "not checked" in t1["read_check"], t1)
+
+    # CNVpytor: a clean deletion, one over chr1's centromere, one with q0 0.8,
+    # one over an N gap (pN 0.9), a clean chrY call, and one not significant.
+    cn = ("deletion\tchr2:10000001-10100000\t100000\t0.4\t1e-9\t1\t1\t1\t0.01\t0\t9\n"
+          "deletion\tchr1:122000001-123000000\t1000000\t0.1\t1e-12\t1\t1\t1\t0.2\t0\t9\n"
+          "duplication\tchr3:1000001-1200000\t200000\t1.8\t1e-6\t1\t1\t1\t0.8\t0\t9\n"
+          "deletion\tchr5:1-100000\t100000\t0.0\t1e-20\t1\t1\t1\t0\t0.9\t0\n"
+          "deletion\tchrY:2800001-2900000\t100000\t0.0\t1e-15\t1\t1\t1\t0.05\t0\t9\n"
+          "deletion\tchr4:1000001-1050000\t50000\t0.6\t0.2\t1\t1\t1\t0\t0\t9\n")
+    put(f"{d}/cnvpytor/S_cnvs.txt", cn)
+    by_sex = {}
+    for sex in ("female", "male", None):
+        summ = collect_summary.collect("S", d, sex)
+        by_sex[sex] = (summ, render_report.text_report(summ), render_report.html_report(summ))
+    f = by_sex["female"][0]["sections"]["cnvpytor"]["data"]
+    check("CNVpytor: a declared female gives significant 5, filtered 1 (q0, gap, band and chrY left out)",
+          f["significant"] == 5 and f["significant_filtered"] == 1
+          and f["dropped"] == {"q0": 1, "gap": 1, "band": 1, "chry_female": 1}, f)
+    check("CNVpytor: a declared male keeps the chrY call (filtered 2)",
+          by_sex["male"][0]["sections"]["cnvpytor"]["data"]["significant_filtered"] == 2)
+    check("CNVpytor: no declared sex keeps the chrY call and says so",
+          by_sex[None][0]["sections"]["cnvpytor"]["data"]["significant_filtered"] == 2
+          and "no declared sex, so chrY calls are kept" in by_sex[None][1], by_sex[None][1])
+    check("CNVpytor: both reports name the filters and give both counts",
+          "Significant (e-val < 0.01): 5" in by_sex["female"][1]
+          and "Significant after filters: 1 (left out: 1 q0 0.5 or more" in by_sex["female"][1]
+          and "on chrY of a declared female" in by_sex["female"][1]
+          and "CNVpytor significant after filters" in by_sex["female"][2], by_sex["female"][1])
+
+    # Mito: a poly-C insertion at m.302 (anchor, changes m.303), an SNV at
+    # m.16189 in the other tract, and the coding m.3243A>G, all heteroplasmic;
+    # plus a homoplasmic m.73A>G.
+    mvcf = VCF_HEAD + ("chrM\t73\t.\tA\tG\t.\tPASS\t.\tGT:AF\t1:0.99\n"
+                       "chrM\t302\t.\tAC\tACC,A\t.\tPASS\t.\tGT:AF\t0/1/2:0.4,0.1\n"
+                       "chrM\t3243\t.\tA\tG\t.\tPASS\t.\tGT:AF\t0/1:0.3\n"
+                       "chrM\t16189\t.\tT\tC\t.\tPASS\t.\tGT:AF\t0/1:0.3\n"
+                       "chrM\t9000\t.\tC\tT\t.\tpossible_numt\t.\tGT:AF\t0/1:0.2\n")
+    put(f"{d}/mito/S_chrM_filtered.vcf.gz", mvcf, gz=True, age_days=1)
+    summ, txt, html = render(d)
+    mi = summ["sections"]["mito"]["data"]
+    check("mito: the two poly-C tract records are listed apart and not counted; m.3243 is heteroplasmic 1",
+          mi["heteroplasmic"] == 1 and [x["variant"] for x in mi["polyc_heteroplasmic"]]
+          == ["chrM:302 AC>ACC,A", "chrM:16189 T>C"] and mi["pass"] == 4, mi)
+    check("mito: both reports show the tract count and the note",
+          "Heteroplasmic (AF 0.05 to 0.95, outside the D-loop poly-C tracts): 1" in txt
+          and "Length heteroplasmy in the D-loop poly-C tracts (m.303-315, m.16184-16193; common, usually technical): 2"
+          in txt and "Length heteroplasmy in the D-loop poly-C tracts" in html, txt)
+    check("mito: no annotation table says so, and why",
+          "ClinVar and gnomAD: not annotated (no annotation table" in txt and "MITO_VARIANTS" in txt, txt)
+    saved = collect_summary.POLYC_TRACTS
+    collect_summary.POLYC_TRACTS = ()
+    try:
+        m0 = collect_summary.sec_mito(d, "S")[1]
+    finally:
+        collect_summary.POLYC_TRACTS = saved
+    check("mito red control: without the tracts the count is 3 again", m0["heteroplasmic"] == 3, m0)
+    check("mito: an SNV just before a tract is not in it, an insertion anchored there is",
+          not collect_summary.in_polyc(302, "A", "G") and collect_summary.in_polyc(302, "A", "AC")
+          and collect_summary.in_polyc(315, "C", "T") and not collect_summary.in_polyc(316, "C", "T"))
+
+    # chrM annotation (step 20): ClinVar with chrM, tabixed; gnomAD's chrM sites.
+    cv = "##fileformat=VCFv4.1\n##fileDate=2026-10-05\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+    write_tabixed_vcf(f"{work}/rsec/clinvar/clinvar_chr.vcf.gz", cv, [
+        ["chr1\t100\t1\tC\tT\t.\t.\tCLNSIG=Benign"],
+        ["chrM\t73\t9\tA\tG\t.\t.\tCLNSIG=not_provided;CLNREVSTAT=no_classification_provided;CLNDN=not_provided",
+         "chrM\t302\t8\tA\tAC\t.\t.\tCLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNDN=not_provided",
+         "chrM\t3243\t7\tA\tG\t.\t.\tCLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel;CLNDN=MELAS",
+         "chrM\t16189\t6\tT\tA\t.\t.\tCLNSIG=Uncertain_significance;CLNREVSTAT=criteria_provided,_single_submitter;"
+         "CLNDN=not_provided"]])
+    put(f"{work}/rsec/gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz",
+        "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+        "chrM\t302\t.\tA\tAC\t.\tPASS\tAN=56434;AF_hom=0.01;AF_het=0.2;max_hl=0.99\n"
+        "chrM\t3243\t.\tA\tG\t.\tPASS\tAN=56434;AF_hom=0.00002;AF_het=0.0003;max_hl=0.9\n", gz=True)
+    out_tsv = f"{d}/mito/S_chrM_annotated.tsv"
+    rc = collect_summary.main(["mito-annotate", "--vcf", f"{d}/mito/S_chrM_filtered.vcf.gz",
+                               "--clinvar", f"{work}/rsec/clinvar/clinvar_chr.vcf.gz",
+                               "--gnomad", f"{work}/rsec/gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz",
+                               "--out", out_tsv])
+    rows = {(r["pos"], r["ref"], r["alt"]): r for r in csv.DictReader(
+        [l for l in open(out_tsv) if not l.startswith("# ")], delimiter="\t")}
+    check("annotate: one row per allele, the multi-allelic indel trimmed to ClinVar's and gnomAD's A>AC",
+          rc == 0 and len(rows) == 6 and ("302", "A", "AC") in rows and ("302", "AC", "A") in rows
+          and rows[("302", "A", "AC")]["gnomad_af_het"] == "0.2" and rows[("302", "A", "AC")]["af"] == "0.4", rows)
+    r3243 = rows.get(("3243", "A", "G"), {})
+    check("annotate: m.3243A>G gets ClinVar's Pathogenic, its review, condition and gnomAD's AF",
+          (r3243.get("clinvar_significance"), r3243.get("clinvar_review"), r3243.get("clinvar_condition"),
+           r3243.get("gnomad_af_hom"), r3243.get("gnomad_af_het")) ==
+          ("Pathogenic", "reviewed_by_expert_panel", "MELAS", "0.00002", "0.0003"), r3243)
+    check("annotate: ClinVar's T>A at m.16189 is another allele, so the T>C call has no ClinVar record",
+          rows[("16189", "T", "C")]["clinvar_significance"] == ".", rows[("16189", "T", "C")])
+    summ, txt, html = render(d)
+    ma = summ["sections"]["mito"]["data"]["annotation"]
+    check("mito: the report counts 1 ClinVar P/LP and lists m.3243A>G with ClinVar and gnomAD",
+          ma.get("clinvar_plp") == 1 and "ClinVar pathogenic or likely pathogenic: 1" in txt
+          and "chrM:3243 A>G  AF 0.3  ClinVar Pathogenic (reviewed_by_expert_panel; MELAS)  gnomAD AF hom 0.00002, het 0.0003"
+          in txt and "<td>MELAS</td>" in html and "fileDate 2026-10-05" not in txt and "2026-10-05" in txt, txt)
+    check("mito: the homoplasmic m.73A>G with no ClinVar class is not listed; the filtered m.9000 is not either",
+          not any(v["pos"] in ("73", "9000") for v in ma["variants"]), ma["variants"])
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("report sections: the summary validates", not errs, errs)
+    rc = collect_summary.main(["mito-annotate", "--vcf", f"{d}/mito/S_chrM_filtered.vcf.gz", "--clinvar",
+                               f"{work}/rsec/none.vcf.gz", "--gnomad", f"{work}/rsec/none.bgz", "--out", out_tsv])
+    summ, txt, _ = render(d)
+    check("annotate: missing ClinVar and gnomAD files leave the columns '.' and the report names them",
+          rc == 0 and summ["sections"]["mito"]["data"]["annotation"]["clinvar_plp"] == 0
+          and "ClinVar not annotated: no " in txt and "gnomAD not annotated: no " in txt, txt)
+    os.utime(out_tsv, (time.time() - 3 * DAY, time.time() - 3 * DAY))
+    summ, txt, _ = render(d)
+    check("mito: an annotation table older than the calls is not read, and the report says to rerun step 20",
+          "older than the chrM calls: rerun step 20" in txt, txt)
+
+
 def main():
     work = tempfile.mkdtemp()
     schema = json.load(open(os.path.join(REPO, "tests", "schema", "summary.schema.json")))
@@ -1649,6 +1836,7 @@ def main():
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
         parascopy_section(work, schema)
+        report_sections_mito_roh_telomere_cnv(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

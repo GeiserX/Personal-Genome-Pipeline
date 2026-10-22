@@ -17,6 +17,9 @@
        step 20 does without step 16b's output.
 
     Equivalent to: scripts/20-mtoolbox.sh
+    Step 20 also annotates the calls with ClinVar and gnomAD
+    (bin/collect_summary.py mito-annotate); this module does not yet,
+    and the reports say so.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 

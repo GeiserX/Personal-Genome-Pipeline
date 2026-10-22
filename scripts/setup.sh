@@ -41,7 +41,8 @@
 #      exclude map, GRCh38 chromosome bands, an IPD-IMGT/HLA release, the
 #      GENCODE gene coordinates T1K needs (~350 MB) and GENCODE's exons for
 #      the cDNA read check of steps 06 and 17, both from one ~80 MB download,
-#      and somalier's sites and VerifyBamID2's marker panel for step 33 (~10 MB)
+#      and somalier's sites and VerifyBamID2's marker panel for step 33 (~10 MB),
+#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked),
 #      plus gnomAD-SV's common SVs (~1.7 GB download, kept as a few MB) and the
 #      MANE Select transcript list
@@ -1391,6 +1392,21 @@ for name in $DATA_FILES; do
     echo "[WARN] Could not install the ${what}. Re-run setup.sh to try again."
   fi
 done
+# gnomAD v3.1's chrM sites (step 20 annotates the calls with them), checked
+# against GNOMAD_MITO_SHA256. A failed download does not stop setup either.
+GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
+if [ -s "$GNOMAD_MITO" ] && [ "$(_digest sha256 "$GNOMAD_MITO")" = "$GNOMAD_MITO_SHA256" ]; then
+  echo "[OK] gnomAD v3.1 mitochondrial sites (step 20) already present (sha256 matches GNOMAD_MITO_SHA256)."
+else
+  if [ -s "$GNOMAD_MITO" ]; then
+    echo "[WARN] ${GNOMAD_MITO} is not the pinned file (sha256 differs from GNOMAD_MITO_SHA256): downloading it again."
+  fi
+  if fetch "$GNOMAD_MITO_URL" "$GNOMAD_MITO" sha256 "$GNOMAD_MITO_SHA256"; then
+    echo "[OK] gnomAD v3.1 mitochondrial sites (step 20): ${GNOMAD_MITO}"
+  else
+    echo "[WARN] Could not install gnomAD's mitochondrial sites. Step 20 runs without its gnomAD columns; re-run setup.sh to try again."
+  fi
+fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
 # Step 25: its scores, pgsc_calc and its plugin (warnings only).
