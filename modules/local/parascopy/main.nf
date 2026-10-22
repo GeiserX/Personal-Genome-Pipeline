@@ -73,8 +73,8 @@ process PARASCOPY {
     rm -rf depth
 
     # HBA1/HBA2 from depth (as scripts/35-paralogs.sh): all MAPQ, then the verdict
-    if hba_copy_number.py bed > hba_regions.bed \
-        && samtools bedcov hba_regions.bed ${bam} > hba_bedcov.tsv \
+    if hba_copy_number.py bed > hba_regions.bed \\
+        && samtools bedcov hba_regions.bed ${bam} > hba_bedcov.tsv \\
         && hba_copy_number.py check --bedcov hba_bedcov.tsv --out ${meta.id}_hba_copy_number.tsv.tmp; then
         mv ${meta.id}_hba_copy_number.tsv.tmp ${meta.id}_hba_copy_number.tsv
     else
@@ -94,7 +94,7 @@ process PARASCOPY {
     mkdir -p ${meta.id}_parascopy
     printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\tpsCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n' \\
         > ${meta.id}_smn_copy_number.tsv
-    printf 'metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\nestimate\t.\nhba2_depth\t0\nhba1_depth\t0\nflank_left_depth\t0\nflank_right_depth\t0\nmessage\tstub\n' \
+    printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmessage\\tstub\\n' \\
         > ${meta.id}_hba_copy_number.tsv
 
     cat <<-END_VERSIONS > versions.yml
