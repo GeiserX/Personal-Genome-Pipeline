@@ -85,7 +85,8 @@ check_eq "score sites (5 hom-ref, 3 truth SNVs)" "$(wc -l < "$SITES" | tr -d ' '
 PGS="${E2E_WORK}/parity-pgs"
 rm -rf "$PGS" "${GENOME_DIR}/prs_scores"
 mkdir -p "$PGS" "${GENOME_DIR}/prs_scores"
-for id in PGS000018 PGS000014 PGS000004 PGS000662 PGS000016 PGS000334 PGS000027 PGS000017 PGS000055; do
+# One file per id of assets/pgs_scores.tsv, which step 25 scores.
+for id in $(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${REPO}/assets/pgs_scores.tsv"); do
   { printf '#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\teffect_weight\n'
     awk -F'\t' -v OFS='\t' '{print "20", $2, $3, 2 ^ (NR - 1)}' "$SITES"; } | gzip -c > "${PGS}/${id}.txt.gz"
 done

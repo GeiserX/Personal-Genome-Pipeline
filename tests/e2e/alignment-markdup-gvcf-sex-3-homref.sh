@@ -45,7 +45,8 @@ cat "$SITES"
 check_eq "hom-ref sites chosen on the chr20 slice" "$(wc -l < "$SITES" | tr -d ' ')" 5
 
 # --- PRS ---------------------------------------------------------------------
-PRS_IDS="PGS000018 PGS000014 PGS000004 PGS000662 PGS000016 PGS000334 PGS000027 PGS000017 PGS000055"
+# The ids of assets/pgs_scores.tsv, which step 25 scores.
+PRS_IDS=$(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${REPO}/assets/pgs_scores.tsv" | tr '\n' ' ')
 mkdir -p "${GENOME_DIR}/prs_scores"
 for id in $PRS_IDS; do
   { printf '#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\teffect_weight\n'
