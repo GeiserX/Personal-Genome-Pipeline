@@ -143,7 +143,8 @@ WRAPPER
 chmod +x "${WRAP}/docker"
 SEEN="${CASE_TMP}/step13_vep_input.vcf.gz"
 rm -f "$SEEN"
-WRAP_VEP_IMAGE="$VEP_IMAGE" WRAP_GENOME="$GD" WRAP_SEEN="$SEEN" GENOME_DIR="$GD" \
+# GENOME_DIR first: scripts/ci/e2e-run.sh reads a line that starts NAME_IMAGE="..." as an image to pull
+GENOME_DIR="$GD" WRAP_VEP_IMAGE="$VEP_IMAGE" WRAP_GENOME="$GD" WRAP_SEEN="$SEEN" \
   REF_FASTA="${GD}/reference/ref.fa" PATH="${WRAP}:${PATH}" run_step 13-vep-annotation.sh "$S"
 check_step_exit 13-vep-annotation.sh
 check "step 13 gave VEP a file" test -s "$SEEN"
@@ -309,7 +310,7 @@ same_sections "${SD}/summary.json" "$NF_SUM" 1 > /dev/null
 CTRL=$?
 check "control: a changed expansions section is told apart" test "$CTRL" != 0
 HTML="${CASE_TMP}/report/results/${S}/${S}_report.html"
-check "the Nextflow HTML report shows the RFC1 motif verdict" grep -q 'pathogenic_motif' "$HTML"
+check "the Nextflow HTML report shows the RFC1 motif verdict" grep -q 'RFC1 motif count: pathogenic_motif' "$HTML"
 check "the Nextflow HTML report has the class 4 and 5 SV card" grep -q 'Structural Variants, Class 4 and 5 (AnnotSV)' "$HTML"
 check "the Nextflow HTML report names the gnomAD chrM file" grep -q 'gnomad\.genomes\.v3\.1\.sites\.chrM\.vcf\.bgz' "$HTML"
 check "the Nextflow HTML report has the CYP2D6 depth-check line" grep -Eq 'CYP2D6 depth check: (ok|unreliable);' "$HTML"
@@ -364,7 +365,8 @@ check_eq "main.nf joins the five tables into the report inputs" "$(grep -cE "$JO
 sed -i -E "/${JOINS}/d" "${CASE_TMP}/stub-control/main.nf"
 sed -i 's/^            VEP_NORM\.out\.vcf,$/            ch_current_vcf,/' "${CASE_TMP}/stub-control/workflows/annotation.nf"
 check_eq "control copy: the joins are gone" "$(grep -cE "$JOINS" "${CASE_TMP}/stub-control/main.nf")" 0
-check_eq "control copy: VEP reads the VCF itself" "$(grep -c '^            ch_current_vcf,$' "${CASE_TMP}/stub-control/workflows/annotation.nf")" 1
+check_eq "the annotation workflow gives VEP VEP_NORM's output" "$(grep -c '^            VEP_NORM\.out\.vcf,$' "${CASE_TMP}/stub/workflows/annotation.nf")" 1
+check_eq "control copy: VEP reads the VCF itself" "$(grep -c '^            VEP_NORM\.out\.vcf,$' "${CASE_TMP}/stub-control/workflows/annotation.nf")" 0
 stub_run stub
 stub_run stub-control
 while read -r new hits got; do
