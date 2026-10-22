@@ -60,6 +60,10 @@ nextflow run main.nf \
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
+#    mito_variants (a default tool) takes --mito_clinvar <clinvar/clinvar_chr.vcf.gz, its .tbi beside it>
+#                                                and --gnomad_mito <gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz>
+#                                                (setup.sh installs both): ClinVar and gnomAD for each chrM call,
+#                                                as step 20 does; without them those columns are '.'
 #    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
 #    --hla_qc true (with hla_typing)           OptiType as a second HLA caller; HLA-A and HLA-B reach PharmCAT
 #                                                only when it agrees with T1K (docs/08-hla-typing.md)
@@ -195,11 +199,12 @@ results/
 │   ├── prs/                # Polygenic risk scores
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
 │   ├── ancestry_fine/      # Fine-grained ancestry: fractions, painting BED and PNG (opt-in: ancestry_fine)
-│   ├── mito/               # Mitochondrial variant calls, the haplogroup from them and haplocheck's contamination check
+│   ├── mito/               # Mitochondrial variant calls with their ClinVar and gnomAD annotation, the haplogroup
+│   │                       #   from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
 │   ├── hla/                # HLA typing
-│   ├── expansion_hunter/   # Repeat expansion calls
+│   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
 │   ├── telomere/           # Telomere length estimation
 │   ├── coverage/           # Coverage statistics (mosdepth)
 │   ├── cyrius/             # CYP2D6 star allele (Cyrius, opt-in) and the CYP2D6 depth check
@@ -226,7 +231,7 @@ results/
 │   ├── history/            # each run's summary.json and run_manifest.tsv, the next delta's baseline (run-all.sh only)
 │   └── *_report.html       # Summary HTML report (published to sample root): QC, ClinVar, PharmCAT, CPIC,
 │                           #   CPSR, clinical filter (with its ACMG SF tier), slivar, ROH, mito haplogroup and haplocheck,
-│                           #   Y haplogroup; "Not run" for a tool not selected
+│                           #   Y haplogroup and every other step that ran; "Not run" for a tool not selected
 ├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
 ├── family/                 # --pedigree: family.vcf.gz (joint call), relationships.tsv, somalier/, family.phased.vcf.gz,
 │                           #   <child>_inheritance.tsv.gz, de_novo.tsv, compound_het.tsv, family_report.md;
@@ -308,10 +313,10 @@ Where a module and its script differ on purpose:
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
 | PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
 | ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
-| Mito variants (20) | extracts the chrM reads with `samtools view` | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`) |
+| Mito variants (20) | extracts the chrM reads with `samtools view`; annotates the calls with `clinvar/clinvar_chr.vcf.gz` and the gnomAD chrM sites under `gnomad_mito/` when they are installed | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`). `MITO_VARIANTS_ANNOTATE` runs the same annotation (`bin/collect_summary.py mito-annotate`) with the files of `--mito_clinvar` and `--gnomad_mito`; without them the table names each file as not given and leaves its columns `.`. `run-all.sh` does not pass the two options yet |
 | AnnotSV (05) | annotates step 15's duphold-filtered calls; without them, or when Manta's calls are newer, Manta's calls, and says so | `ANNOTSV` always reads `DUPHOLD_FILTER`'s output: `annotsv` in `--tools` needs `duphold` and `manta` |
 | Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |
-| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's QC, ClinVar, PharmCAT, CPIC, CPSR, clinical filter, slivar, ROH, mito haplogroup, haplocheck and Y haplogroup steps; the clinical filter and slivar cards show counts only (the module gets their VCFs, not their tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
+| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's steps, among them the cDNA read check of the ClinVar hits, the CYP2D6 depth check, the phased compound-het pairs, the RFC1 motif count, AnnotSV's class 4 and 5 table and the chrM annotation. The clinical filter and slivar cards show counts only, beside slivar's pairs by phase (the module gets their VCFs, not their summary tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
 | Cyrius (21) | runs Cyrius from the install `setup.sh --cyrius` made | the same install, given as `--cyrius_install` (see [Cyrius, opt-in](#cyrius-opt-in)) |
 

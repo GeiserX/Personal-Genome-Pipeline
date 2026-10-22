@@ -2504,9 +2504,6 @@ def sec_read_count(d, s):
 # Sections that are not a step of their own, or not one of one person (the
 # couple screen needs two): no "not run" line without them.
 NOT_A_STEP = {"read_count", "couple"}
-# The Nextflow HTML_REPORT is not given AnnotSV's table, so its report would
-# list AnnotSV as not run after it ran; the AnnotSV section has no such line.
-NOT_A_STEP |= {"annotsv"}
 
 SECTIONS = [
     # key, title, step, reader

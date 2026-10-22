@@ -22,9 +22,11 @@ include { HLA_QC_READS     } from '../modules/local/hla_typing/main'
 include { HLA_QC           } from '../modules/local/hla_typing/main'
 include { EXPANSION_HUNTER } from '../modules/local/expansion_hunter/main'
 include { STRANGER         } from '../modules/local/stranger/main'
+include { STRANGER_RFC1    } from '../modules/local/stranger/main'
 include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
+include { MITO_VARIANTS_ANNOTATE } from '../modules/local/mito_variants/main'
 include { PARASCOPY        } from '../modules/local/parascopy/main'
 include { PARAPHASE_CHECK; PARAPHASE; PARAPHASE_REPORT } from '../modules/local/paraphase/main'
 include { SOMALIER         } from '../modules/local/somalier/main'
@@ -51,6 +53,9 @@ workflow BAM_ANALYSIS {
     ch_parascopy_bed     // channel: val(path) — Parascopy background windows or []
     ch_yleaf_data        // channel: val(path) — Yleaf's data folder (--yleaf_data) or []
     ch_vcf               // channel: [meta, vcf, tbi] — the sample's VCF, for SAMPLE_QC's chrX allele fractions
+    ch_mito_clinvar      // channel: val(path) — whole ClinVar VCF with chr names (--mito_clinvar) or []
+    ch_mito_clinvar_index // channel: val(path) — its .tbi or []
+    ch_gnomad_mito       // channel: val(path) — gnomAD v3.1 chrM sites (--gnomad_mito) or []
 
     main:
     ch_versions = Channel.empty()
@@ -59,9 +64,11 @@ workflow BAM_ANALYSIS {
     ch_hla_alleles      = Channel.empty()
     ch_expansion_vcf    = Channel.empty()
     ch_stranger_vcf     = Channel.empty()
+    ch_rfc1_motif       = Channel.empty()   // [meta, <id>_rfc1_motif.tsv] when Stranger flags RFC1
     ch_telomere_results = Channel.empty()
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
+    ch_mito_annotated   = Channel.empty()   // [meta, <id>_chrM_annotated.tsv]
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_smn_copy_number  = Channel.empty()
@@ -126,11 +133,19 @@ workflow BAM_ANALYSIS {
     // MODULE 2b: Stranger (STR clinical annotation)
     // Gates on: params.tools contains 'stranger'
     // Requires expansion_hunter to also be in params.tools (enforced in main.nf)
+    // STRANGER_RFC1 counts the motif of the reads at RFC1 from the sample's
+    // BAM when Stranger flags RFC1 (step 9b); it writes nothing otherwise.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('stranger')) {
         STRANGER(ch_expansion_vcf)
+        STRANGER_RFC1(
+            STRANGER.out.vcf.map { meta, vcf -> [meta.id, meta, vcf] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
+                .map { id, meta, vcf, bam, bai -> tuple(meta, vcf, bam, bai) }
+        )
         ch_stranger_vcf = STRANGER.out.vcf
-        ch_versions     = ch_versions.mix(STRANGER.out.versions)
+        ch_rfc1_motif   = STRANGER_RFC1.out.motif
+        ch_versions     = ch_versions.mix(STRANGER.out.versions, STRANGER_RFC1.out.versions)
     }
 
     //
@@ -178,8 +193,11 @@ workflow BAM_ANALYSIS {
             ch_reference,
             ch_reference_fai,
             ch_reference_dict        )
-        ch_mito_vcf = MITO_VARIANTS.out.mito_vcf
-        ch_versions = ch_versions.mix(MITO_VARIANTS.out.versions)
+        // Step 20's last stage: ClinVar and gnomAD for each call
+        MITO_VARIANTS_ANNOTATE(MITO_VARIANTS.out.mito_vcf, ch_mito_clinvar, ch_mito_clinvar_index, ch_gnomad_mito)
+        ch_mito_vcf       = MITO_VARIANTS.out.mito_vcf
+        ch_mito_annotated = MITO_VARIANTS_ANNOTATE.out.annotated
+        ch_versions       = ch_versions.mix(MITO_VARIANTS.out.versions, MITO_VARIANTS_ANNOTATE.out.versions)
     }
 
     //
@@ -305,9 +323,11 @@ workflow BAM_ANALYSIS {
     hla_alleles      = ch_hla_alleles
     expansion_vcf    = ch_expansion_vcf
     stranger_vcf     = ch_stranger_vcf
+    rfc1_motif       = ch_rfc1_motif      // [meta, <id>_rfc1_motif.tsv]
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     mito_vcf         = ch_mito_vcf
+    mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     hla_optitype     = ch_hla_optitype    // [meta, <id>_optitype_result.tsv] (--hla_qc)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]

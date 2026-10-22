@@ -105,7 +105,8 @@ workflow SV {
     // with the Delly and CNVpytor calls of the same sample when those ran
     // ([] otherwise)
     //
-    ch_annotsv_tsv = Channel.empty()
+    ch_annotsv_tsv     = Channel.empty()
+    ch_annotsv_checked = Channel.empty()   // [meta, <id>_sv_class4_5_checked.tsv]
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('annotsv') && !params.tools.split(',').collect{it.trim()}.contains('duphold')) {
         error "Tool 'annotsv' requires 'duphold' (and 'manta') output — add both to --tools or remove 'annotsv'."
     }
@@ -116,7 +117,8 @@ workflow SV {
             .filter { row -> row[1] != null }
             .map { meta, sv_vcf, delly_vcf, cnvpytor_vcf -> [meta, sv_vcf, delly_vcf ?: [], cnvpytor_vcf ?: []] }
         ANNOTSV(ch_annotsv_input, ch_annotsv_annotations)
-        ch_annotsv_tsv = ANNOTSV.out.annotated_tsv
+        ch_annotsv_tsv     = ANNOTSV.out.annotated_tsv
+        ch_annotsv_checked = ANNOTSV.out.class4_5_checked
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
     }
 
@@ -145,11 +147,12 @@ workflow SV {
     }
 
     emit:
-    manta_vcf      = ch_manta_vcf
-    delly_vcf      = ch_delly_vcf
-    cnvpytor_calls = ch_cnvpytor_calls
-    duphold_vcf    = ch_duphold_vcf
-    annotsv_tsv    = ch_annotsv_tsv
-    merged_sv      = ch_merged_sv
-    versions       = ch_versions
+    manta_vcf        = ch_manta_vcf
+    delly_vcf        = ch_delly_vcf
+    cnvpytor_calls   = ch_cnvpytor_calls
+    duphold_vcf      = ch_duphold_vcf
+    annotsv_tsv      = ch_annotsv_tsv
+    annotsv_class4_5 = ch_annotsv_checked   // [meta, <id>_sv_class4_5_checked.tsv]
+    merged_sv        = ch_merged_sv
+    versions         = ch_versions
 }

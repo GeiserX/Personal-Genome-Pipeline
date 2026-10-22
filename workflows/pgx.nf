@@ -228,5 +228,6 @@ workflow PGX {
     cpic_recommendations = ch_cpic_recommendations
     cpic_phenotypes      = ch_cpic_phenotypes
     cpic_comparison      = ch_cpic_comparison     // [meta, <id>_pharmcat_comparison.tsv]
+    depth_check          = ch_depth_check         // [meta, <id>_cyp2d6_depth_check.tsv] (pypgx's, else Cyrius's)
     versions             = ch_versions
 }
