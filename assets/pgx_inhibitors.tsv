@@ -1,0 +1,31 @@
+# Strong and moderate inhibitors of CYP2D6 and CYP2C19, read by bin/pgx_parse.py
+# (step 27 and CPIC_LOOKUP) when a medication list is given (MEDICATIONS for
+# step 27, --medications for Nextflow).
+# Drug: the generic name, lower case, as a medication list names it.
+# Strength: strong or moderate, as the FDA's table of clinical CYP inhibitors
+# classes the drug for the gene (Class_source; content current as of 2026-05-29).
+# Activity_score_factor: what CPIC's opioid guideline (Crews et al. 2021,
+# Rule_source) multiplies the CYP2D6 activity score by: 0 for a strong
+# inhibitor (the score is adjusted to 0, a poor metabolizer), 0.5 for a
+# moderate one. '-' for CYP2C19: CPIC has no activity score for it, so a
+# CYP2C19 inhibitor gets a note and no converted phenotype.
+# tests/test_cpic_parser.py checks the shape of every row.
+Drug	Gene	Strength	Activity_score_factor	Class_source	Rule_source
+bupropion	CYP2D6	strong	0	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+fluoxetine	CYP2D6	strong	0	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+paroxetine	CYP2D6	strong	0	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+quinidine	CYP2D6	strong	0	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+terbinafine	CYP2D6	strong	0	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+abiraterone	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+cinacalcet	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+duloxetine	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+lorcaserin	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+mirabegron	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+rolapitant	CYP2D6	moderate	0.5	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/
+fluconazole	CYP2C19	strong	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+fluoxetine	CYP2C19	strong	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+fluvoxamine	CYP2C19	strong	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+ticlopidine	CYP2C19	strong	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+cenobamate	CYP2C19	moderate	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+felbamate	CYP2C19	moderate	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-
+voriconazole	CYP2C19	moderate	-	https://www.fda.gov/drugs/drug-interactions-labeling/healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems	-

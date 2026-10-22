@@ -40,6 +40,8 @@ workflow PGX {
     ch_gencode_exons  // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
     ch_mito_vcf       // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
     ch_hla_optitype   // channel: [meta, <id>_optitype_result.tsv] — HLA_QC's (--hla_qc), the second HLA caller
+    ch_medications    // channel: val(path) — the opt-in medication list (--medications), or []
+    ch_inhibitors     // channel: val(path) — assets/pgx_inhibitors.tsv
 
     main:
     ch_versions    = Channel.empty()
@@ -206,7 +208,7 @@ workflow PGX {
             .join(ch_consensus.map { meta, tsv -> [meta.id, tsv] }, remainder: true)
             .filter { row -> row[1] != null && row[2] != null }
             .map { row -> tuple(row[1], row[2], row[3] ?: [], row[4] ?: []) }
-        CPIC_LOOKUP(ch_cpic_input)
+        CPIC_LOOKUP(ch_cpic_input, ch_medications, ch_inhibitors)
         ch_cpic_recommendations = CPIC_LOOKUP.out.recommendations
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
         // Only with a readable pypgx summary (the output is optional)
