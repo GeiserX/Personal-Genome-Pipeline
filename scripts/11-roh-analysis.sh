@@ -56,7 +56,7 @@ MASKED_BANDS="chr1:121700000-143200000 chr2:91800000-96000000 chr3:87800000-9860
 SUMMARY="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
 {
   echo "# ROH Summary for ${SAMPLE}"
-  echo "# Segments >=5MB on the autosomes chr1 to chr22"
+  echo "# Segments >=5MB on autosomes (excludes chrX/chrY)"
   printf 'chrom\tstart\tend\tlength_bp\tlength_mb\n'
   awk -v bands="$MASKED_BANDS" '
     BEGIN { n = split(bands, b, " "); for (i = 1; i <= n; i++) { split(b[i], x, /[:-]/); c[i] = x[1]; s[i] = x[2]; e[i] = x[3] } }
