@@ -878,9 +878,11 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
 
     # ROH: a 45 Mb chrY segment, an 18 Mb segment in chr1's 1q12 gvar block,
     # one over chr9's centromere, a 25 Mb chr1 segment with 21.5 Mb in the
-    # band, and a clean 7 Mb on chr2.
+    # band, a clean 7 Mb on chr2, and a 6 Mb segment on a contig that is not
+    # an autosome (a planted length; chrEBV is shorter), which is not counted.
     d = os.path.join(work, "rsec", "S")
     roh = ("RG\tS\tchrY\t2781480\t47781479\t45000000\t900\t50\n"
+           "RG\tS\tchrEBV\t1\t6000000\t6000000\t90\t50\n"
            "RG\tS\tchr1\t125200001\t143200000\t18000000\t300\t50\n"
            "RG\tS\tchr9\t42300001\t49300000\t7000000\t200\t50\n"
            "RG\tS\tchr1\t120000001\t145000000\t25000000\t500\t50\n"

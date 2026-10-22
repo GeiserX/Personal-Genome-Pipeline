@@ -1567,9 +1567,10 @@ def masked_overlap(bands, chrom, start, end):
 
 def sec_roh(d, s):
     """Step 11's bcftools roh output. Segments on chrX and chrY are left out
-    (a man's single X is one long run), and so is the part of a segment that
-    lies in a centromere or heterochromatin band (MASKED_BANDS), where few
-    markers map. Total, Largest and the list of segments over 5 Mb are of the
+    (a man's single X is one long run), segments on any other contig that is
+    not chr1 to chr22 (chrM, chrEBV, chrUn_*) are not counted, and so is the
+    part of a segment that lies in a centromere or heterochromatin band
+    (MASKED_BANDS), where few markers map. Total, Largest and the list of segments over 5 Mb are of the
     autosomal length that is left."""
     p = first_existing(d, [f"vcf/{s}_roh.txt", f"roh/{s}_roh.txt", "roh/*_roh.txt"])
     if not p:
@@ -1588,6 +1589,8 @@ def sec_roh(d, s):
                 continue
             if c[2] in ("chrX", "chrY", "X", "Y"):
                 sex_segs += 1
+                continue
+            if not (c[2].startswith("chr") and c[2][3:] in AUTOSOMES):
                 continue
             inside = min(length, masked_overlap(bands, c[2], start, end))
             masked += inside

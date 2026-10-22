@@ -1395,12 +1395,17 @@ done
 # gnomAD v3.1's chrM sites (step 20 annotates the calls with them), checked
 # against GNOMAD_MITO_SHA256. A failed download does not stop setup either.
 GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
-if [ -s "$GNOMAD_MITO" ]; then
-  echo "[OK] gnomAD v3.1 mitochondrial sites (step 20) already present."
-elif fetch "$GNOMAD_MITO_URL" "$GNOMAD_MITO" sha256 "$GNOMAD_MITO_SHA256"; then
-  echo "[OK] gnomAD v3.1 mitochondrial sites (step 20): ${GNOMAD_MITO}"
+if [ -s "$GNOMAD_MITO" ] && [ "$(_digest sha256 "$GNOMAD_MITO")" = "$GNOMAD_MITO_SHA256" ]; then
+  echo "[OK] gnomAD v3.1 mitochondrial sites (step 20) already present (sha256 matches GNOMAD_MITO_SHA256)."
 else
-  echo "[WARN] Could not install gnomAD's mitochondrial sites. Step 20 runs without its gnomAD columns; re-run setup.sh to try again."
+  if [ -s "$GNOMAD_MITO" ]; then
+    echo "[WARN] ${GNOMAD_MITO} is not the pinned file (sha256 differs from GNOMAD_MITO_SHA256): downloading it again."
+  fi
+  if fetch "$GNOMAD_MITO_URL" "$GNOMAD_MITO" sha256 "$GNOMAD_MITO_SHA256"; then
+    echo "[OK] gnomAD v3.1 mitochondrial sites (step 20): ${GNOMAD_MITO}"
+  else
+    echo "[WARN] Could not install gnomAD's mitochondrial sites. Step 20 runs without its gnomAD columns; re-run setup.sh to try again."
+  fi
 fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true

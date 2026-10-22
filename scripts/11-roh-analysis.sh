@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ROH Analysis — Runs of homozygosity (consanguinity screening)
 # Detects long stretches of homozygous DNA that indicate shared ancestry.
-# The summary leaves out chrX/chrY and the part of each segment in a centromere
+# The summary keeps chr1 to chr22 only and leaves out the part of each segment in a centromere
 # or heterochromatin band (MASKED_BANDS below), where few markers map.
 set -euo pipefail
 
@@ -56,11 +56,11 @@ MASKED_BANDS="chr1:121700000-143200000 chr2:91800000-96000000 chr3:87800000-9860
 SUMMARY="${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
 {
   echo "# ROH Summary for ${SAMPLE}"
-  echo "# Segments >=5MB on autosomes (excludes chrX/chrY)"
+  echo "# Segments >=5MB on the autosomes chr1 to chr22"
   printf 'chrom\tstart\tend\tlength_bp\tlength_mb\n'
   awk -v bands="$MASKED_BANDS" '
     BEGIN { n = split(bands, b, " "); for (i = 1; i <= n; i++) { split(b[i], x, /[:-]/); c[i] = x[1]; s[i] = x[2]; e[i] = x[3] } }
-    $1 == "RG" && $3 !~ /chrX|chrY/ {
+    $1 == "RG" && $3 ~ /^chr([1-9]|1[0-9]|2[0-2])$/ {
       m = 0
       for (i = 1; i <= n; i++) if (c[i] == $3) { o = ($5 < e[i] ? $5 : e[i]) - ($4 - 1 > s[i] ? $4 - 1 : s[i]); if (o > 0) m += o }
       if (m > $6) m = $6

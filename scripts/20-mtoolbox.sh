@@ -121,7 +121,11 @@ CLINVAR_VCF="${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz"
 GNOMAD_MITO="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
 [ -s "${CLINVAR_VCF}.tbi" ] || echo "  WARNING: no ${CLINVAR_VCF}.tbi (setup.sh installs ClinVar): no ClinVar columns."
 [ -s "$GNOMAD_MITO" ] || echo "  WARNING: no ${GNOMAD_MITO} (setup.sh installs it): no gnomAD columns."
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+if [ ! -s "${OUTPUT_DIR}/${SAMPLE}_chrM_filtered.vcf.gz" ]; then
+  echo "ERROR: NuMTFilterTool wrote no ${OUTPUT_DIR}/${SAMPLE}_chrM_filtered.vcf.gz" >&2
+  exit 1
+fi
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
   python3 /pgp-bin/collect_summary.py mito-annotate \
     --vcf "/genome/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz" \
     --clinvar "$(cpath "$CLINVAR_VCF")" \

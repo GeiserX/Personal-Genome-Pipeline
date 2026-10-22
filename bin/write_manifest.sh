@@ -99,7 +99,12 @@ row data clinvar_file_date "$clinvar_date"
 # Step 20's gnomAD chrM sites: the pinned file (setup.sh) or not installed.
 gnomad_mito="${GENOME_DIR}/gnomad_mito/${GNOMAD_MITO_URL##*/}"
 if [ -s "$gnomad_mito" ]; then
-  row data gnomad_mito "gnomAD v3.1 ${GNOMAD_MITO_URL##*/} (setup.sh checked it against sha256 ${GNOMAD_MITO_SHA256})"
+  sha=$(_digest sha256 "$gnomad_mito")
+  if [ "$sha" = "$GNOMAD_MITO_SHA256" ]; then
+    row data gnomad_mito "gnomAD v3.1 ${GNOMAD_MITO_URL##*/} (sha256 ${sha}, the pinned file)"
+  else
+    row data gnomad_mito "${GNOMAD_MITO_URL##*/} (sha256 ${sha}, not the pinned GNOMAD_MITO_SHA256)"
+  fi
 else
   row data gnomad_mito "not installed (setup.sh installs it)"
 fi
