@@ -747,6 +747,92 @@ def comphet_phase_section(work, schema):
           validate.validate(schema, json.loads(json.dumps(summ))))
 
 
+ANNOTSV_HEAD = ("AnnotSV_ID\tSV_chrom\tSV_start\tSV_end\tSV_length\tSV_type\tID\tINFO\tAnnotation_mode\tGene_name\t"
+                "B_loss_source\tB_loss_AFmax\tACMG_class\tAnnotSV_ranking_score\n")
+ANNOTSV_ROWS = (
+    "20_1000201_1009800_DEL_1\t20\t1000200\t1009800\t-9600\tDEL\tSV1\tEND=1009800;SVTYPE=DEL;SVCALLER=manta\t"
+    "full\tFIXG1\tgnomAD-SV_v4.1_DEL_fixture\t0.05\t4\t0.92\n"
+    "20_10101000_10102999_DEL_1\t20\t10100999\t10102999\t-2000\tDEL\tSV2\tEND=10102999;SVTYPE=DEL;SVCALLER=manta\t"
+    "full\tG1;G2;G3;G4;G5\t\t\t5\t1.20\n"
+    "20_20000001_20450000_DEL_1\t20\t20000000\t20450000\t-450000\tDEL\tSV3\tEND=20450000;SVTYPE=DEL;SVCALLER=manta\t"
+    "full\tG9\t\t\t4\t0.90\n")
+ANNOTSV_GENES = "20\t1000000\t1010000\t+\tFIXG1\tNM_900001\t1000100\t1009900\t1000000,1006000,1009800,\t1000200,1006100,1010000,\n"
+SV_CONSENSUS = ("##fileformat=VCFv4.1\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmanta\tdelly\n"
+                "chr20\t10101000\tx\tN\t<DEL>\t.\tPASS\tSUPP=2;SUPP_VEC=11;SVTYPE=DEL;END=10103000\tGT\t0/1\t0/1\n")
+
+
+def annotsv_section(work, schema):
+    """24. step 05's class 4-5 table: support from step 22's consensus, the
+    exon-edge flag and the benign-set frequency reach both reports."""
+    import annotsv_postfilter
+    import html as htmlmod
+    d = os.path.join(work, "annotsv", "S")
+    put(f"{d}/annotsv/S_sv_class4_5.tsv", ANNOTSV_HEAD + ANNOTSV_ROWS)
+    put(f"{work}/annotsv/genes.RefSeq.sorted.bed", ANNOTSV_GENES)
+    annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv", "--genes",
+                             f"{work}/annotsv/genes.RefSeq.sorted.bed", "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+    put(f"{d}/sv_merged/S_sv_consensus.vcf.gz", SV_CONSENSUS, gz=True)
+    summ, txt, html_ = render(d)
+    html_ = htmlmod.unescape(html_)
+    sec = summ["sections"]["annotsv"]
+    av = sec["data"]
+    check("annotsv: the section is read", sec["state"] == "ok" and av["count"] == 3, sec)
+    by = {x["sv"]: x for x in av.get("rows", [])}
+    check("annotsv: the two-caller deletion has support 2, manta and delly",
+          (by["20:10100999-10102999"]["support"], by["20:10100999-10102999"]["support_callers"]) == (2, ["manta", "delly"]),
+          by.get("20:10100999-10102999"))
+    check("annotsv: the deletion only Manta made has support 1", by["20:20000000-20450000"]["support"] == 1,
+          by.get("20:20000000-20450000"))
+    check("annotsv: the intron-exact deletion is on exon edges, with its AF and common flag",
+          (by["20:1000200-1009800"]["exon_edge"], by["20:1000200-1009800"]["population_af"],
+           by["20:1000200-1009800"]["common"]) == ("yes", 0.05, True), by.get("20:1000200-1009800"))
+    check("annotsv: the counts", (av["single_caller"], av["exon_edge"], av["common"]) == (2, 1, 1), av)
+    lines = ["Class 4-5 SVs: 3 (single caller: 2; deletions on exon edges: 1; common: 1)",
+             "DEL  20:10100999-10102999  class 5  G1, G2, G3 and 2 more  support: 2 callers (manta, delly)",
+             "DEL  20:20000000-20450000  class 4  G9  support: single caller (manta)",
+             "on exon edges: NM_900001 (FIXG1): exon 1 and exon 3 edges",
+             "benign-set AF 0.05 (gnomAD-SV_v4.1_DEL_fixture), common"]
+    for x in lines:
+        check(f"text report: {x[:60]}", x in txt, txt)
+    for x in ("Structural Variants, Class 4 and 5 (AnnotSV)", "2 callers (manta, delly)", "single caller (manta)",
+              "on exon edges: NM_900001 (FIXG1): exon 1 and exon 3 edges",
+              "Class 4-5 SVs: 3 (single caller: 2; deletions on exon edges: 1; common: 1)"):
+        check(f"HTML report: {x[:60]}", x in html_, x)
+    check("annotsv: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+
+    # red control: an empty consensus gives support 1 to every row
+    put(f"{d}/sv_merged/S_sv_consensus.vcf.gz", SV_CONSENSUS.split("chr20")[0], gz=True)
+    av = render(d)[0]["sections"]["annotsv"]["data"]
+    check("annotsv red control: an empty consensus gives no row support 2",
+          [x["support"] for x in av["rows"]] == [1, 1, 1], [x["support"] for x in av["rows"]])
+    # no consensus: the support is not known, and the reports say so
+    os.remove(f"{d}/sv_merged/S_sv_consensus.vcf.gz")
+    summ, txt, _ = render(d)
+    av = summ["sections"]["annotsv"]["data"]
+    check("annotsv: without step 22 no row has a support, and the text says why",
+          all(x["support"] is None for x in av["rows"]) and "step 22's consensus did not run" in txt
+          and "support: not known (no step 22 consensus)" in txt, txt)
+    check("annotsv: without step 22 the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    # a corrupt consensus: the rows stay, the note names the file
+    put(f"{d}/sv_merged/S_sv_consensus.vcf.gz", "not gzip")
+    sec = render(d)[0]["sections"]["annotsv"]
+    check("annotsv: an unreadable consensus keeps the rows and says so",
+          sec["state"] == "ok" and sec["data"]["count"] == 3 and "could not be read" in (sec["data"]["consensus_note"] or ""),
+          sec)
+    os.remove(f"{d}/sv_merged/S_sv_consensus.vcf.gz")
+    # a table without the checked columns is unreadable; no table: no section, no not-run line
+    put(f"{d}/annotsv/S_sv_class4_5_checked.tsv", ANNOTSV_HEAD + ANNOTSV_ROWS)
+    check("annotsv: a table without the checked columns is unreadable",
+          render(d)[0]["sections"]["annotsv"]["state"] == "unreadable")
+    os.remove(f"{d}/annotsv/S_sv_class4_5_checked.tsv")
+    summ, txt, html_ = render(d)
+    check("annotsv: without the table the section is missing, with no not-run line and no card",
+          summ["sections"]["annotsv"]["state"] == "missing" and not any("AnnotSV" in x for x in summ["not_run"])
+          and "Class 4 and 5 (AnnotSV)" not in txt + html_, summ["not_run"])
+
+
 SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
             "homologous_regions\n")
 
@@ -1748,6 +1834,7 @@ def main():
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
+        annotsv_section(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
     finally:

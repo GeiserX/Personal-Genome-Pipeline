@@ -92,7 +92,24 @@ To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its h
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv` — main annotated output (one row per SV, with ACMG class)
 - Columns include: SV type, coordinates, overlapping genes and the MANE Select transcript (`Tx`), the benign-set frequency (`B_loss_AFmax`, `B_gain_AFmax`), ACMG classification, ClinVar hits, and the input record's `INFO` with its `SVCALLER`
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_class4_5.tsv` — the class 4 and 5 SVs: AnnotSV's header and each one's `full` row. The step finds `ACMG_class` and `Annotation_mode` by name. The command it used to print read columns 120 and 16, but AnnotSV leaves out the columns of annotation files a bundle lacks, so those numbers point at other columns on another bundle
+- `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_class4_5_checked.tsv` — each class 4 and 5 SV with the checks below (`bin/annotsv_postfilter.py`)
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_annotsv_input.vcf` — the VCF AnnotSV read (see What AnnotSV reads)
+
+## Class 4 and 5 checks
+
+AnnotSV gives class 4 or 5 to some calls that are not a rare deletion: a call only one caller made, a "deletion" whose two breakpoints sit on exon edges (the reads of a processed transcript, a retrocopy or cDNA, aligned across an intron), and an SV many people carry. After AnnotSV, the step and the Nextflow `ANNOTSV` write `<sample>_sv_class4_5_checked.tsv`, one row per class 4 or 5 SV with its coordinates, genes, class and score, and:
+
+| Column | What it says |
+|---|---|
+| `Caller` | the caller of the input record (`INFO/SVCALLER`: `manta`, `delly`, `cnvpytor` or `sv_vcf`) |
+| `Exon_edge`, `Exon_edge_detail` | for a deletion, `yes` when its start lies within 5 bp of the end of one exon and its end within 5 bp of the start of a later exon of the same transcript, with the transcript and the two exons; `no` otherwise; `.` for other types. The transcripts are those of AnnotSV's own genes file (`Annotations_Human/Genes/GRCh38/genes.RefSeq.sorted.bed`), so the check needs no other download; without that file the column says `not checked` |
+| `Population_AF`, `Population_source`, `Common` | AnnotSV's benign-set frequency for the SV's type (`B_loss_AFmax` for a deletion, `B_gain_AFmax` for a duplication, `B_ins_AFmax`, `B_inv_AFmax`) and the record it comes from; `Common` is `yes` at 1% or more, AnnotSV's own `-benignAF` default. Empty when no benign record covers the SV |
+
+How many callers saw each SV comes from step 22's consensus (`sv_merged/<sample>_sv_consensus.vcf.gz`), which runs after this step, and beside `ANNOTSV` in Nextflow. So the reports (`bin/collect_summary.py`) join it when they are written: an SV matches the consensus record of the same type whose two breakpoints lie within 1,000 bp of its own, step 22's distance, and its support is that record's `SUPP` with the callers of `SUPP_VEC`. An SV in no consensus record was made by one caller and shows as "single caller". Without the consensus file the support is "not known", never 1. `annotsv_postfilter.py --consensus` adds the same `Support` and `Support_callers` columns to the table.
+
+Both reports list every class 4 and 5 SV in a section of their own, with its support, the exon-edge flag and the frequency. The bash report (`scripts/24-html-report.sh`, which `run-all.sh` runs) reads the table from the sample folder. The Nextflow `HTML_REPORT` is not given this table yet, so a report written by `nextflow run` alone has no such section.
+
+The test data cannot show a real class 4 or 5 call: the checks run on made-up AnnotSV tables and on AnnotSV run over a made-up annotation set. A real call needs the full annotation data and a real genome.
 
 ## ACMG Classification
 | Class | Meaning | Action |

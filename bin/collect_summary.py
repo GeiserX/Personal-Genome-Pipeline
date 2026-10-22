@@ -62,6 +62,7 @@ import pgx_outside_calls  # noqa: E402  step 36's rule for a CYP2D6 call and an 
 import ancestry_fine_report  # noqa: E402  step 26b's group names and painting colours
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
+import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -1338,6 +1339,48 @@ def sec_sv_consensus(d, s):
     return p, {"consensus": t}
 
 
+def sec_annotsv(d, s):
+    """Step 05's class 4 and 5 SVs (annotsv/<s>_sv_class4_5_checked.tsv,
+    bin/annotsv_postfilter.py), each with how many callers support it from
+    step 22's consensus (sv_merged/<s>_sv_consensus.vcf.gz), joined here
+    because step 22 runs after step 05 (and beside ANNOTSV in Nextflow)."""
+    p = first_existing(d, [f"annotsv/{s}_sv_class4_5_checked.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p) if os.path.getsize(p) else []
+    need = {"SV_chrom", "SV_start", "SV_end", "SV_type", "ACMG_class", "Caller", "Exon_edge", "Population_AF", "Common"}
+    if rows and not need <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {sorted(need)}")
+    cons = first_existing(d, [f"sv_merged/{s}_sv_consensus.vcf.gz"])
+    cons_note = None
+    try:
+        support = annotsv_postfilter.consensus_support(rows, cons)
+    except (OSError, EOFError, zlib.error, UnicodeDecodeError) as e:
+        support = annotsv_postfilter.consensus_support(rows, None)
+        cons_note = f"{os.path.basename(cons)} could not be read: {e}"
+        cons = None
+    out = []
+    for r, sp in zip(rows, support):
+        try:
+            af = float(r["Population_AF"]) if r["Population_AF"] else None
+        except ValueError:
+            af = None
+        genes = [g for g in (r.get("Gene_name") or "").split(";") if g]
+        out.append({"sv": f"{r['SV_chrom']}:{r['SV_start']}-{r['SV_end']}", "type": r["SV_type"],
+                    "length": r.get("SV_length") or "", "acmg_class": r["ACMG_class"], "genes": genes,
+                    "caller": r["Caller"], "support": sp["Support"],
+                    "support_callers": sp["Support_callers"].split(",") if sp["Support_callers"] else [],
+                    "exon_edge": r["Exon_edge"], "exon_edge_detail": r.get("Exon_edge_detail") or "",
+                    "population_af": af, "population_source": r.get("Population_source") or "",
+                    "common": r["Common"] == "yes"})
+    return p, {"count": len(out), "rows": out,
+               "consensus": os.path.relpath(cons, d) if cons else None, "consensus_note": cons_note,
+               "single_caller": sum(x["support"] == 1 for x in out),
+               "exon_edge": sum(x["exon_edge"] == "yes" for x in out),
+               "exon_edge_checked": not any(x["exon_edge"] == "not checked" for x in out),
+               "common": sum(x["common"] for x in out)}
+
+
 STR_RANGES_TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "str_intermediate_ranges.tsv")
 # How well ExpansionHunter sized an allele, from its FORMAT SO, ADSP and
 # REPCI fields, worst first; a locus takes the worst of its alleles.
@@ -2461,6 +2504,9 @@ def sec_read_count(d, s):
 # Sections that are not a step of their own, or not one of one person (the
 # couple screen needs two): no "not run" line without them.
 NOT_A_STEP = {"read_count", "couple"}
+# The Nextflow HTML_REPORT is not given AnnotSV's table, so its report would
+# list AnnotSV as not run after it ran; the AnnotSV section has no such line.
+NOT_A_STEP |= {"annotsv"}
 
 SECTIONS = [
     # key, title, step, reader
@@ -2485,6 +2531,7 @@ SECTIONS = [
     ("delly", "Structural variants (Delly)", "19", sec_delly),
     ("cnvpytor", "Copy number (CNVpytor)", "18", sec_cnvpytor),
     ("sv_consensus", "SV consensus merge", "22", sec_sv_consensus),
+    ("annotsv", "Structural variants, class 4 and 5 (AnnotSV)", "05", sec_annotsv),
     ("expansions", "Repeat expansions (ExpansionHunter)", "09", sec_expansions),
     ("telomere", "Telomere content (TelomereHunter)", "10", sec_telomere),
     ("roh", "Runs of homozygosity", "11", sec_roh),

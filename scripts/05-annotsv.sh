@@ -7,7 +7,9 @@
 #   SV_VCF is set, bin/cnvpytor_to_vcf.py adds the Delly (step 19) and
 #   CNVpytor (step 18) deletions and duplications no Manta call covers.
 # Output: *_sv_annotated.tsv (ACMG class 1-5 for each SV),
-#   *_sv_class4_5.tsv (its class 4 and 5 rows) and *_annotsv_input.vcf
+#   *_sv_class4_5.tsv (its class 4 and 5 rows), *_sv_class4_5_checked.tsv
+#   (each of those with its caller, an exon-edge flag for a deletion and its
+#   benign-set frequency, bin/annotsv_postfilter.py) and *_annotsv_input.vcf
 #   (what AnnotSV read, each record with its caller in INFO SVCALLER)
 set -euo pipefail
 
@@ -141,11 +143,29 @@ if [ -s "$TSV" ]; then
   N45=$(($(wc -l < "$CLASS45") - 1))
 else
   echo "WARNING: AnnotSV wrote no ${TSV} (no SV it could annotate)."
-  rm -f "$CLASS45"
+  : > "$CLASS45"
   N45=0
 fi
+
+# The checks a class 4 or 5 call needs (bin/annotsv_postfilter.py): its
+# caller, whether a deletion sits on the exon edges of one transcript of
+# AnnotSV's genes file (a processed transcript aligned across an intron), and
+# the benign-set frequency of its type. How many callers saw it comes from
+# step 22's consensus, which the reports join when they are written.
+CHECKED="${OUTPUT_DIR}/${SAMPLE}_sv_class4_5_checked.tsv"
+GENES_BED="${ANNOTATIONS_DIR}/Annotations_Human/Genes/GRCh38/genes.RefSeq.sorted.bed"
+GENES_ARGS=()
+if [ -s "$GENES_BED" ]; then
+  GENES_ARGS=(--genes "$(cpath "$GENES_BED")")
+else
+  echo "Exon edges: no ${GENES_BED#"$GENOME_DIR"/} in the annotation data, so no deletion is checked against them."
+fi
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${ANNOTSV_IMAGE}" \
+  python3 /pgp-bin/annotsv_postfilter.py --class45 "$(cpath "$CLASS45")" ${GENES_ARGS[@]+"${GENES_ARGS[@]}"} \
+    --out "$(cpath "$CHECKED")"
 
 echo "=== AnnotSV complete ==="
 echo "Input: ${INPUT_VCF}"
 echo "Results: ${TSV}"
 echo "Class 4-5 (pathogenic or likely pathogenic): ${N45} SVs in ${CLASS45}"
+echo "Their caller, exon-edge and population checks: ${CHECKED}"

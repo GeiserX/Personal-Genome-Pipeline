@@ -61,6 +61,8 @@ nextflow run main.nf \
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
 #    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
+#    --hla_qc true (with hla_typing)           OptiType as a second HLA caller; HLA-A and HLA-B reach PharmCAT
+#                                                only when it agrees with T1K (docs/08-hla-typing.md)
 #    With pharmcat, PGX_CONSENSUS gives PharmCAT the HLA types of hla_typing and a CYP2D6 call only when
 #    pypgx and cyrius agree (docs/36-pgx-consensus.md); PharmCAT then waits for those BAM steps.
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,
@@ -209,11 +211,12 @@ results/
 │   ├── consumer_export/    # 23andMe-layout and AncestryDNA-layout raw-data zips and the summary table
 │   │                       #   (opt-in: consumer_export)
 │   ├── couple/             # <sample>_couple_carrier.tsv: the couple carrier screen for this partner (--pedigree)
-│   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV;
+│   ├── manta/              # SV calling (optional): diploidSV.vcf.gz with inversions as SVTYPE=INV,
+│   │                       #   except a lone inversion junction of 1 Mb or more, kept as its breakend pair;
 │   │                       #   diploidSV.raw.vcf.gz as Manta wrote it (an inversion is two BND records)
 │   ├── sv_duphold/         # Manta SVs with duphold depth tags (optional)
 │   ├── sv_filtered/        # Manta SVs after the duphold depth filter (optional)
-│   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs (optional)
+│   ├── annotsv/            # AnnotSV ACMG classification of the filtered SVs, and its class 4-5 SVs with their caller, exon-edge and frequency checks (optional)
 │   ├── delly/              # SV calling (optional)
 │   ├── cnvpytor/           # CNV calling (optional)
 │   ├── sv_merged/          # SV consensus of two or more callers, SURVIVOR merge (optional)

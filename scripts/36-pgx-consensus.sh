@@ -4,7 +4,9 @@
 #
 # PharmCAT (step 07) reads a VCF, and from a VCF it types neither HLA nor
 # CYP2D6. This step writes the outside-call file PharmCAT takes with -po:
-#   HLA-A, HLA-B  T1K's types (step 08), cut to two fields (*57:01)
+#   HLA-A, HLA-B  T1K's types (step 08), cut to two fields (*57:01); after
+#                 step 08 with HLA_QC=true, only when OptiType gives the same
+#                 two alleles at two fields
 #   CYP2D6        only when pypgx (step 32) and Cyrius (step 21, opt-in) give
 #                 the same diplotype and the CYP2D6 depth check passed; one
 #                 caller alone, a disagreement or multi-mapped depth leaves it
@@ -46,6 +48,11 @@ input() {
   fi
 }
 input "HLA types (step 08)" --hla "${S}/hla_t1k/${SAMPLE}_hla_genotype.tsv"
+# OptiType's result exists only after step 08 with HLA_QC=true (which writes
+# it, or a line saying why it could not); HLA_QC=true here too holds HLA-A
+# and HLA-B back when it is missing.
+input "OptiType HLA types (step 08, HLA_QC=true)" --optitype "${S}/hla_optitype/${SAMPLE}_optitype_result.tsv"
+if [[ "${HLA_QC:-false}" =~ ^(true|1)$ ]]; then ARGS+=(--require-optitype); fi
 input "pypgx (step 32)" --pypgx "${S}/pypgx/${SAMPLE}_pypgx_summary.tsv"
 input "Cyrius (step 21)" --cyrius "${S}/cyrius/${SAMPLE}_cyp2d6.tsv"
 # Both CYP2D6 steps write the same depth check; step 32's, else step 21's.

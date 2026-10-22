@@ -129,6 +129,12 @@ workflow {
     if (params.kir && !params.kir_dat) {
         error "--kir needs --kir_dat, IPD-KIR's kir.dat (scripts/setup.sh --kir-data installs it)."
     }
+    // --hla_qc: OptiType, a second HLA caller, checks T1K's HLA-A and HLA-B.
+    // A warning, not a stop: the test_all profile turns it on, and runs of
+    // that profile with a short --tools list must still start.
+    if (params.hla_qc && !tools_list.contains('hla_typing')) {
+        log.warn "--hla_qc does nothing without hla_typing in --tools: OptiType runs as a second caller beside T1K."
+    }
     if (tools_list.contains('parascopy') && !(params.parascopy_population in ['AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
         error "--parascopy_population must be one of AFR, AMR, EAS, EUR, SAS (the 1000 Genomes models), " +
               "got '${params.parascopy_population}'."
@@ -589,6 +595,7 @@ workflow {
         ch_cyrius_install,
         ch_gencode_exons,
         BAM_ANALYSIS.out.mito_vcf,
+        BAM_ANALYSIS.out.hla_optitype,
         ch_medications,
         ch_inhibitors
     )

@@ -472,6 +472,50 @@ def comphet_phase_html(d):
     return out + [small_note(COMPHET_NOTE)]
 
 
+ANNOTSV_NOTE = ("A class 4 or 5 SV made by one caller, a deletion on the exon edges of a transcript (the reads of "
+               "a processed transcript or cDNA aligned across an intron) or one at 1% or more in AnnotSV's benign "
+               "set is unlikely to be a rare pathogenic SV: check the reads before acting on it (docs/05-annotsv.md).")
+
+
+def annotsv_support_text(x):
+    if x["support"] is None:
+        return "not known (no step 22 consensus)"
+    if x["support"] == 1:
+        return f"single caller ({x['caller']})"
+    return f"{x['support']} callers ({', '.join(x['support_callers'])})"
+
+
+def annotsv_genes_text(x):
+    g = x["genes"]
+    return ", ".join(g[:3]) + (f" and {len(g) - 3} more" if len(g) > 3 else "") if g else "no gene"
+
+
+def annotsv_flags(x):
+    """The exon-edge and population flags of one class 4-5 SV, as a list."""
+    out = []
+    if x["exon_edge"] == "yes":
+        out.append("on exon edges: " + x["exon_edge_detail"])
+    elif x["exon_edge"] == "not checked":
+        out.append("exon edges not checked")
+    if x["population_af"] is not None:
+        out.append(f"benign-set AF {x['population_af']:g}" + (f" ({x['population_source']})" if x["population_source"] else "")
+                   + (", common" if x["common"] else ""))
+    return out
+
+
+def annotsv_lines(d):
+    """Step 05's class 4-5 lines, the same in both reports."""
+    head = f"Class 4-5 SVs: {d['count']}"
+    if d["count"]:
+        head += (f" (single caller: {d['single_caller'] if d['consensus'] else 'not known'}; deletions on exon edges: "
+                 f"{d['exon_edge'] if d['exon_edge_checked'] else 'not checked'}; common: {d['common']})")
+    lines = [head]
+    if d["count"] and not d["consensus"]:
+        lines.append(d.get("consensus_note") or "Caller support: step 22's consensus did not run, so how many callers "
+                     "saw each SV is not known.")
+    return lines
+
+
 def text_report(s):
     S = s["sections"]
     out = []
@@ -710,6 +754,18 @@ def text_report(s):
         w("")
     if head("sv_consensus", "SV Consensus Merge"):
         w(f"  Consensus SVs (2+ callers): {S['sv_consensus']['data']['consensus']}")
+        w("")
+    if head("annotsv", "Structural Variants, Class 4 and 5 (AnnotSV)"):
+        d = S["annotsv"]["data"]
+        for line in annotsv_lines(d):
+            w(f"  {line}")
+        for x in d["rows"]:
+            w(f"    {x['type']:<4} {x['sv']}  class {x['acmg_class']}  {annotsv_genes_text(x)}  "
+              f"support: {annotsv_support_text(x)}")
+            for f in annotsv_flags(x):
+                w(f"         {f}")
+        if d["count"]:
+            w(f"  {ANNOTSV_NOTE}")
         w("")
 
     if head("expansions", "Repeat Expansions (ExpansionHunter)"):
@@ -1342,6 +1398,17 @@ def html_report(s):
     notes = [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
              for k in ("manta", "delly", "cnvpytor", "sv_consensus") if stale_note(S[k])]
     a(['  <div class="card">', "    <h2>Structural Variants</h2>"] + notes + sv_body + ["  </div>"])
+    if S.get("annotsv", MISSING)["state"] != "missing":
+        av = S["annotsv"]["data"]
+        body = [stat("Status", done_badge(S["annotsv"]))] + ([small_note(x) for x in annotsv_lines(av)] if av else [])
+        if av.get("rows"):
+            body.append("    <table><tr><th>SV</th><th>Class</th><th>Genes</th><th>Callers</th><th>Checks</th></tr>"
+                        + "".join(f"<tr><td>{E(x['type'] + ' ' + x['sv'])}</td><td>{E(x['acmg_class'])}</td>"
+                                  f"<td>{E(annotsv_genes_text(x))}</td><td>{E(annotsv_support_text(x))}</td>"
+                                  f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td></tr>" for x in av["rows"])
+                        + "</table>")
+            body.append(small_note(ANNOTSV_NOTE))
+        a(card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
 
     cs = S["cpsr"]["data"]
     cpsr_body = [stat("CPSR report", badge("Complete", "green") if cs.get("html_report") else badge("No HTML", "gray"))]
