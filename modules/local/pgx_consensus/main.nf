@@ -9,7 +9,8 @@
     so the copy of them below cannot drift unnoticed.
 
     PGX_CONSENSUS runs bin/pgx_outside_calls.py: PharmCAT's outside-call file
-    (HLA-A and HLA-B from T1K; CYP2D6 only when pypgx and Cyrius agree and the
+    (HLA-A and HLA-B from T1K, with --hla_qc only when OptiType agrees;
+    CYP2D6 only when pypgx and Cyrius agree and the
     depth check passed) and the consensus table that says what each caller
     said. PHARMCAT reads the file with -po.
 
@@ -68,7 +69,7 @@ process PGX_CONSENSUS {
 
     input:
     // each file is [] when its step did not run for the sample
-    tuple val(meta), path(hla_genotype), path(pypgx_summary), path(cyrius_tsv), path(depth_check)
+    tuple val(meta), path(hla_genotype), path(pypgx_summary), path(cyrius_tsv), path(depth_check), path(optitype_result)
 
     output:
     tuple val(meta), path("${meta.id}_outside_calls.tsv"), emit: calls
@@ -84,6 +85,10 @@ process PGX_CONSENSUS {
     if (pypgx_summary) { args << "--pypgx ${pypgx_summary}" }
     if (cyrius_tsv)    { args << "--cyrius ${cyrius_tsv}" }
     if (depth_check)   { args << "--depth-check ${depth_check}" }
+    // --hla_qc: HLA-A and HLA-B pass only when OptiType agrees with T1K;
+    // without its result (HLA_QC did not run for the sample) both are held back
+    if (optitype_result) { args << "--optitype ${optitype_result}" }
+    if (params.hla_qc)   { args << "--require-optitype" }
     """
     pgx_outside_calls.py \\
         --calls ${meta.id}_outside_calls.tsv \\

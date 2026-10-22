@@ -61,6 +61,8 @@ nextflow run main.nf \
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
 #    --kir true (with hla_typing)              + --kir_dat (setup.sh --kir-data; KIR genes, a second T1K pass)
+#    --hla_qc true (with hla_typing)           OptiType as a second HLA caller; HLA-A and HLA-B reach PharmCAT
+#                                                only when it agrees with T1K (docs/08-hla-typing.md)
 #    With pharmcat, PGX_CONSENSUS gives PharmCAT the HLA types of hla_typing and a CYP2D6 call only when
 #    pypgx and cyrius agree (docs/36-pgx-consensus.md); PharmCAT then waits for those BAM steps.
 #    telomere_hunter (a default tool) takes --cytoband <cytoBand.hg38.txt> for GRCh38 bands; without it,

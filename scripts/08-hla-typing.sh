@@ -20,6 +20,13 @@
 # genotypes, as for HLA. Several KIR genes are not on the GRCh38 primary
 # assembly; T1K types them from the reads of the genes that are. A BAM with
 # too few KIR reads gets a genotype file that says so.
+#
+# HLA_QC=true adds an opt-in second HLA caller: OptiType (OPTITYPE_IMAGE) on
+# the reads of HLA-A, HLA-B and HLA-C, and a two-field concordance table of
+# T1K against OptiType, in hla_optitype/. Step 36 then passes HLA-A and HLA-B
+# to PharmCAT only when the two agree. The read regions are each gene's span
+# in T1K's coordinate file, 1 kb either side. OptiType types against the HLA
+# sequences bundled in its image, not HLA_DB_RELEASE.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -54,6 +61,11 @@ rm -f "${OUTPUT_DIR}/${SAMPLE}_hla_genotype.tsv"
 # confirmed; step 36 writes them again.
 rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
   "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+# The second caller's results (HLA_QC=true): step 36 reads OptiType's result
+# whenever it exists, so a run without HLA_QC must not leave an older one.
+QC_DIR="${GENOME_DIR}/${SAMPLE}/hla_optitype"
+OT_RESULT="${QC_DIR}/${SAMPLE}_optitype_result.tsv"
+rm -f "$OT_RESULT" "${QC_DIR}/${SAMPLE}_hla_concordance.tsv"
 
 # The HLA database and the gene coordinates are installed by setup.sh. Without
 # them there is nothing to type against: the step says so and stops without
@@ -147,6 +159,61 @@ RELEASE_LINE=$(grep -m 1 'IPD-IMGT/HLA Release' "$HLA_DAT" | sed 's/^CC *//') ||
 echo "=== T1K complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_hla_genotype.tsv"
 echo "Database: ${OUTPUT_DIR}/database_release.txt ($(head -n 1 "${OUTPUT_DIR}/database_release.txt"))"
+
+# --- OptiType, the second HLA caller (opt-in: HLA_QC=true) ------------------------
+# The same as the HLA_QC_READS and HLA_QC Nextflow processes.
+if [[ "${HLA_QC:-false}" =~ ^(true|1)$ ]]; then
+  echo ""
+  echo "=== OptiType (second HLA caller): ${SAMPLE} ==="
+  mkdir -p "$QC_DIR"
+  # Each class I gene's GRCh38 span, from the coordinates T1K types by.
+  REGIONS=$(awk '/^>HLA-[ABC]\*/ && $3 > 0 {g = substr($1, 2); sub(/\*.*/, "", g)
+      if (!(g in lo) || $3 < lo[g]) lo[g] = $3; if ($4 > hi[g]) hi[g] = $4; c[g] = $2}
+    END {for (g in lo) printf "%s:%d-%d\n", c[g], (lo[g] > 1000 ? lo[g] - 1000 : 1), hi[g] + 1000}' "$COORD_FA" | sort)
+  if [ "$(wc -l <<< "$REGIONS")" -ne 3 ]; then
+    echo "ERROR: ${COORD_FA} gives no GRCh38 span for each of HLA-A, HLA-B and HLA-C: ${REGIONS//$'\n'/ }" >&2
+    exit 1
+  fi
+  echo "Reads of: ${REGIONS//$'\n'/ }"
+  rm -rf "${QC_DIR}/work"
+  mkdir -p "${QC_DIR}/work"
+  # shellcheck disable=SC2016  # $1 to $3 are the inner shell's; $2 splits into one region per word
+  run_in --cpus 2 --memory 2g "${SAMTOOLS_IMAGE}" sh -c '
+    samtools view -u -F 0x900 "$1" $2 \
+      | samtools collate -u -O - "$3/collate" \
+      | samtools fastq -n -1 "$3/hla_R1.fq" -2 "$3/hla_R2.fq" -0 /dev/null -s /dev/null -' sh \
+    "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam" "$(tr '\n' ' ' <<< "$REGIONS")" \
+    "/genome/${SAMPLE}/hla_optitype/work"
+  PAIRS=$(( $(wc -l < "${QC_DIR}/work/hla_R1.fq") / 4 ))
+  echo "Read pairs at HLA-A, HLA-B and HLA-C: ${PAIRS}"
+  if [ "$PAIRS" -eq 0 ]; then
+    # Step 36 reads this as no OptiType call and passes neither gene on.
+    printf '# OptiType not run: no read pairs at HLA-A, HLA-B or HLA-C in this BAM\n' > "$OT_RESULT"
+    echo "OptiType: no reads to type; step 36 will not pass HLA-A or HLA-B to PharmCAT."
+  else
+    RC=0
+    run_in --cpus "${THREADS}" --memory 8g "${OPTITYPE_IMAGE}" \
+      optitype run \
+        -i "/genome/${SAMPLE}/hla_optitype/work/hla_R1.fq" \
+        -i "/genome/${SAMPLE}/hla_optitype/work/hla_R2.fq" \
+        --dna --solver glpk --threads "${THREADS}" \
+        -o "/genome/${SAMPLE}/hla_optitype/work/out" -p "${SAMPLE}" || RC=$?
+    OUT=$(find "${QC_DIR}/work/out" -name "*_result.tsv" 2>/dev/null | head -n 1)
+    if [ "$RC" -ne 0 ] || [ -z "$OUT" ]; then
+      printf '# OptiType failed (exit %s): see the log of step 08\n' "$RC" > "$OT_RESULT"
+      echo "ERROR: OptiType failed (exit ${RC}); step 36 will not pass HLA-A or HLA-B to PharmCAT." >&2
+      exit "$(( RC > 0 ? RC : 1 ))"
+    fi
+    cp "$OUT" "$OT_RESULT"
+    run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+      python3 /pgp-bin/pgx_outside_calls.py hla-concordance \
+        --t1k "/genome/${SAMPLE}/hla_t1k/${SAMPLE}_hla_genotype.tsv" \
+        --optitype "/genome/${SAMPLE}/hla_optitype/${SAMPLE}_optitype_result.tsv" \
+        --out "/genome/${SAMPLE}/hla_optitype/${SAMPLE}_hla_concordance.tsv"
+    echo "Concordance: ${QC_DIR}/${SAMPLE}_hla_concordance.tsv"
+  fi
+  rm -rf "${QC_DIR}/work"
+fi
 
 # --- KIR (opt-in: KIR=true) -------------------------------------------------------
 [[ "${KIR:-false}" =~ ^(true|1)$ ]] || exit 0
