@@ -59,6 +59,9 @@ workflow {
         error "--freemix_warn must be a fraction from 0 up to (not including) 1 (FREEMIX above it is reported " +
               "as possible contamination), got '${params.freemix_warn}'."
     }
+    if (!(params.prs_keep_ambiguous instanceof Boolean)) {
+        error "--prs_keep_ambiguous takes no value (or true / false), got '${params.prs_keep_ambiguous}'."
+    }
     if (params.reference.endsWith('.gz')) {
         error "--reference ${params.reference} is compressed. The tools here need a plain FASTA with a .fai index: " +
               "decompress it (gunzip, or bgzip -d) and run 'samtools faidx' on the result."

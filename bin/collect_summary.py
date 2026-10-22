@@ -33,7 +33,9 @@ other samples somalier finds to be the same person. Both callers stop on the
 sex_check value this writes, so the rule lives here once.
 
   collect_summary.py prs-format --scores DIR --labels assets/pgs_scores.tsv --out DIR --alleles F
+                                [--keep-x] [--keep-ambiguous --reference FASTA]
   collect_summary.py prs-table --sample S --results DIR --sampleset NAME --scores DIR --input-kind gvcf --out F
+                               [--sex male|female]
 
 are the two ends of step 25 (and of the Nextflow PRS_PREPARE and PRS_SUMMARY
 processes) around pgsc_calc: prs-format writes each GRCh38-harmonised PGS
@@ -836,6 +838,10 @@ def sec_prs(d, s):
                      "score": r.get("Score_SUM", ""), "matched": r.get("Variants_Matched", ""),
                      "total": r.get("Variants_Total", ""),
                      "chrx": r.get("ChrX", ""),
+                     # "12 dropped", "12 kept", "12 dropped, strand check failed", "0"; empty in older tables
+                     "ambiguous": r.get("Ambiguous", ""),
+                     # the sex a sex-specific score applies to, and the check against the declared sex
+                     "applies_to": r.get("Applies_To", ""), "sex_check": r.get("Sex_Check", ""),
                      "percentile": "" if pct == "NA" else pct,
                      "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
     data = {"scores": rows,
@@ -854,11 +860,24 @@ def sec_prs(d, s):
 # PRS_PREPARE and PRS_SUMMARY processes run the two commands below, so the
 # score files pgsc_calc reads and the table the reports read are made once.
 
+# Input stays last: readers take it as the last column.
 PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
-               "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Input"]
+               "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Ambiguous", "Applies_To",
+               "Sex_Check", "Input"]
 # prs-format writes it beside the scores: per score, its chrX rows and
 # whether they were kept (scored) or left out (no sex given).
 CHRX_FILE = "chrx_rows.tsv"
+# prs-format writes it beside the scores too: per score, the sex it applies
+# to (applies_to of assets/pgs_scores.tsv) and its strand-ambiguous rows (an
+# A/T or C/G pair) with what happened to them.
+SCORE_NOTES_FILE = "score_notes.tsv"
+SEXES = ("female", "male")
+# Sex_Check of a sex-specific score: the declared sex is the one it applies
+# to, another one (no percentile then), or none was declared.
+SEX_APPLIES = "applies"
+SEX_NOT_APPLICABLE = "not applicable to the declared sex"
+SEX_NOT_DECLARED = "no sex declared"
+COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C"}
 # Columns of a scoring file that make a score non-additive: pgsc_calc scores
 # them, but this pipeline's custom file keeps effect_weight only.
 NON_ADDITIVE = ("dosage_0_weight", "dosage_1_weight", "dosage_2_weight")
@@ -886,21 +905,103 @@ def read_labels(path):
     return out
 
 
+def read_applies_to(path):
+    """ID -> the sex a score applies to, from the optional applies_to column of
+    assets/pgs_scores.tsv: 'female', 'male', or '' for a score of both sexes.
+    Raises Unreadable for any other value."""
+    out = {}
+    if not path:
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((line for line in f if not line.startswith("#")), delimiter="\t"):
+            pid = (r.get("pgs_id") or "").strip()
+            sex = (r.get("applies_to") or "").strip().lower()
+            if not pid:
+                continue
+            if sex and sex not in SEXES:
+                raise Unreadable(f"{os.path.basename(path)}: applies_to of {pid} is '{sex}', expected female, male or empty")
+            out[pid] = sex
+    return out
+
+
+class Fasta:
+    """Bases of an uncompressed FASTA with its .fai, read by seeking."""
+
+    def __init__(self, path):
+        self.idx = {}
+        try:
+            with open(path + ".fai") as f:
+                for line in f:
+                    p = line.rstrip("\n").split("\t")
+                    if len(p) >= 5:
+                        self.idx[p[0]] = tuple(int(x) for x in p[1:5])
+            self.f = open(path, "rb")
+        except (OSError, ValueError) as e:
+            raise Unreadable(f"cannot read the reference {path} and its .fai: {e}")
+        if self.f.read(2) == b"\x1f\x8b":
+            raise Unreadable(f"{path} is compressed; the strand check reads an uncompressed FASTA")
+
+    def base(self, chrom, pos):
+        """The base at 1-based POS of CHROM (with or without chr), upper case;
+        '' when the contig is not in the reference or POS is outside it."""
+        c = self.idx.get(chrom) or self.idx.get("chr" + chrom)
+        if not c or not 1 <= pos <= c[0]:
+            return ""
+        length, offset, bases, width = c
+        i = pos - 1
+        self.f.seek(offset + (i // bases) * width + i % bases)
+        return self.f.read(1).decode("ascii", "replace").upper()
+
+
+def ambiguous_pair(ea, oa):
+    """True for a strand-ambiguous SNV: its two alleles are complements (A/T, C/G)."""
+    return len(ea) == 1 and len(oa) == 1 and COMPLEMENT.get(ea) == oa
+
+
+def strand_check(rows, ref):
+    """Whether a score's alleles are given on the forward strand, so its
+    strand-ambiguous rows can be kept: (passed, rows that agree with the
+    reference, rows that agree only after a strand flip). ROWS are (chrom,
+    pos, effect, other) of the rows written. A row counts when both alleles
+    are single bases and not an ambiguous pair: it agrees when the reference
+    base is one of its alleles, and is flipped when the base is the
+    complement of one of them instead. A score passes with at least one
+    agreeing row and no flipped one; a row whose contig is not in the
+    reference is not counted."""
+    agree = flipped = 0
+    for chrom, pos, ea, oa in rows:
+        if len(ea) != 1 or len(oa) != 1 or ambiguous_pair(ea, oa) or not pos.isdigit():
+            continue
+        b = ref.base(chrom, int(pos))
+        if b not in COMPLEMENT:
+            continue
+        if b in (ea, oa):
+            agree += 1
+        elif b in (COMPLEMENT.get(ea), COMPLEMENT.get(oa)):
+            flipped += 1
+    return agree > 0 and flipped == 0, agree, flipped
+
+
 def single_allele(a):
     a = (a or "").strip().upper()
     return a if a and "/" not in a and a != "." else ""
 
 
-def format_pgs(path, out_dir, label=None, keep_x=False):
+def format_pgs(path, out_dir, label=None, keep_x=False, ref=None):
     """Write the GRCh38-harmonised scoring file PATH as a custom GRCh38 file
     pgsc_calc reads (chr_name and chr_position from hm_chr and hm_pos), and
     return (pgs_id, rows written, rows dropped off the autosomes,
-    [(chrom, pos, allele), ...], chrX rows) with the effect and other alleles
-    of every row written. Chromosomes 1 to 22 are kept, and chrX with keep_x
-    (the sample's sex is known): pgsc_calc converts the sample with plink2,
-    which stops on a chrX record when no sex is given. chrY and MT rows are
-    always dropped. Raises Unreadable for a file that is not harmonised to
-    GRCh38, lacks a column, is not additive or has no row."""
+    [(chrom, pos, allele), ...], chrX rows, ambiguous) with the effect and
+    other alleles of every row written. Chromosomes 1 to 22 are kept, and chrX
+    with keep_x (the sample's sex is known): pgsc_calc converts the sample
+    with plink2, which stops on a chrX record when no sex is given. chrY and
+    MT rows are always dropped. AMBIGUOUS is (strand-ambiguous rows, what
+    happens to them, agreeing rows, flipped rows): without REF they are
+    written and pgsc_calc drops them ("dropped"); with REF (keep_ambiguous)
+    they are written and kept when the score passes strand_check ("kept"),
+    and left out of the file when it does not ("dropped, strand check
+    failed"). Raises Unreadable for a file that is not harmonised to GRCh38,
+    lacks a column, is not additive or has no row."""
     header, cols, rows, alleles = {}, None, [], []
     with open_text(path) as f:
         for line in f:
@@ -934,21 +1035,43 @@ def format_pgs(path, out_dir, label=None, keep_x=False):
     pid = header.get("pgs_id") or pgs_id_of(path)
     trait = (label or header.get("trait_reported") or pid).replace("=", "-").replace("\n", " ")
     out = os.path.join(out_dir, f"{pid}.txt.gz")
-    n = off = nx = 0
-    with gzip.open(out + ".tmp", "wt", encoding="utf-8") as w:
-        w.write(f"#pgs_id={pid}\n#pgs_name={pid}\n#trait_reported={trait}\n#genome_build=GRCh38\n")
-        w.write("chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n")
+    counts = {"off": 0, "x": 0}
+
+    def placed():
+        """(chrom, pos, effect, other, weight) of each row pgsc_calc gets; one
+        pass over ROWS each call, so no second copy of a large score is held."""
+        counts["off"] = counts["x"] = 0
         for r in rows:
             chrom, pos, ea, ew = get(r, "hm_chr"), get(r, "hm_pos"), get(r, "effect_allele").upper(), get(r, "effect_weight")
             if not (chrom and pos and ea and ew):
                 continue   # a row the catalog could not place on GRCh38
             chrom = chrom[3:] if chrom.startswith("chr") else chrom
             if chrom == "X":
-                nx += 1
+                counts["x"] += 1
             if chrom not in AUTOSOMES and not (keep_x and chrom == "X"):
-                off += 1   # chrY, MT, and chrX unless the sex is known: plink2 refuses chrX without it
+                counts["off"] += 1   # chrY, MT, and chrX unless the sex is known: plink2 refuses chrX without it
                 continue
-            oa = single_allele(get(r, "other_allele")) or single_allele(get(r, "hm_inferOtherAllele"))
+            yield chrom, pos, ea, single_allele(get(r, "other_allele")) or single_allele(get(r, "hm_inferOtherAllele")), ew
+
+    agree = flipped = 0
+    amb, drop_amb = "dropped", False
+    if ref is not None:
+        passed, agree, flipped = strand_check(((c, p, ea, oa) for c, p, ea, oa, _ in placed()), ref)
+        if passed:
+            amb = "kept"
+        else:
+            # pgsc_calc's keep_ambiguous applies to every score of the run,
+            # so a score that fails loses its ambiguous rows here.
+            amb, drop_amb = "dropped, strand check failed", True
+    n = n_amb = 0
+    with gzip.open(out + ".tmp", "wt", encoding="utf-8") as w:
+        w.write(f"#pgs_id={pid}\n#pgs_name={pid}\n#trait_reported={trait}\n#genome_build=GRCh38\n")
+        w.write("chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n")
+        for chrom, pos, ea, oa, ew in placed():
+            if ambiguous_pair(ea, oa):
+                n_amb += 1
+                if drop_amb:
+                    continue
             w.write(f"{chrom}\t{pos}\t{ea}\t{oa}\t{ew}\n")
             n += 1
             alleles.append((f"chr{chrom}", pos, ea))
@@ -958,7 +1081,7 @@ def format_pgs(path, out_dir, label=None, keep_x=False):
         os.remove(out + ".tmp")
         raise Unreadable(f"{name} has no autosomal row with hm_chr, hm_pos, effect_allele and effect_weight")
     os.replace(out + ".tmp", out)
-    return pid, n, off, alleles, nx
+    return pid, n, counts["off"], alleles, counts["x"], (n_amb, amb, agree, flipped)
 
 
 def prs_format_main(argv):
@@ -973,7 +1096,21 @@ def prs_format_main(argv):
     ap.add_argument("--keep-x", action="store_true",
                     help="keep the chrX rows (the sample's sex is known and reaches pgsc_calc's plink2); "
                          "without it they are dropped with chrY and MT")
+    ap.add_argument("--keep-ambiguous", action="store_true",
+                    help="pgsc_calc runs with --keep_ambiguous: keep each score's strand-ambiguous rows (A/T, C/G) "
+                         "when its other rows agree with --reference on the forward strand, and leave them out of "
+                         "a score that fails that check")
+    ap.add_argument("--reference", help="the uncompressed GRCh38 FASTA with its .fai, for --keep-ambiguous")
     a = ap.parse_args(argv)
+    if a.keep_ambiguous and not a.reference:
+        print("ERROR: --keep-ambiguous needs --reference, the FASTA the strand check reads", file=sys.stderr)
+        return 1
+    try:
+        applies = read_applies_to(a.labels)
+        ref = Fasta(a.reference) if a.keep_ambiguous else None
+    except (Unreadable, OSError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
     labels = read_labels(a.labels)
     files = sorted(glob.glob(os.path.join(a.scores, "*.txt.gz")) + glob.glob(os.path.join(a.scores, "*.txt")))
     if a.ids:
@@ -988,15 +1125,21 @@ def prs_format_main(argv):
         print(f"ERROR: no scoring file (*.txt.gz or *.txt) in {a.scores}", file=sys.stderr)
         return 1
     os.makedirs(a.out, exist_ok=True)
-    allele_set, chrx = set(), []
+    allele_set, chrx, notes = set(), [], []
     try:
         for p in files:
-            pid, n, off, al, nx = format_pgs(p, a.out, labels.get(pgs_id_of(p)), a.keep_x)
+            pid, n, off, al, nx, (n_amb, amb, agree, flipped) = format_pgs(
+                p, a.out, labels.get(pgs_id_of(p)), a.keep_x, ref)
             allele_set.update(al)
             chrx.append((pid, nx))
+            notes.append((pid, applies.get(pid, ""), n_amb, amb))
             kept = f", {nx} on chrX scored" if a.keep_x and nx else ""
             dropped = f", {off} off the autosomes dropped" if off else ""
-            print(f"  {pid}: {n} GRCh38 rows{kept}{dropped} ({labels.get(pid) or 'label from the file'})")
+            ambig = f", {n_amb} strand-ambiguous {amb}" if n_amb else ""
+            if ref is not None:
+                ambig += f" (strand check: {agree} rows agree with the reference, {flipped} flipped)"
+            sex = f", {applies[pid]} only" if applies.get(pid) else ""
+            print(f"  {pid}: {n} GRCh38 rows{kept}{dropped}{ambig}{sex} ({labels.get(pid) or 'label from the file'})")
     except (Unreadable, OSError, EOFError, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -1004,6 +1147,10 @@ def prs_format_main(argv):
         w.write("pgs_id\tchrx_rows\tchrx\n")
         for pid, nx in chrx:
             w.write(f"{pid}\t{nx}\t{'scored' if a.keep_x else 'left out'}\n")
+    with open(os.path.join(a.out, SCORE_NOTES_FILE), "w") as w:
+        w.write("pgs_id\tapplies_to\tambiguous_rows\tambiguous\n")
+        for pid, sex, n_amb, amb in notes:
+            w.write(f"{pid}\t{sex}\t{n_amb}\t{amb}\n")
 
     def key(t):
         return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
@@ -1031,7 +1178,33 @@ def read_gz_tsv(path):
 BELOW_RE = re.compile(r"Score (\S+) fails minimum matching threshold \(([0-9.]+)% variants match\)")
 
 
-def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, below_log=None):
+def chrx_matched(results, sampleset):
+    """PGS id -> chrX rows pgsc_calc matched, from its match log; None when
+    there is no log. In a run with an ancestry panel pgsc_calc keeps only
+    the variants it found in the panel too (the rest are 'excluded'), so a
+    chrX row the panel lacks is not scored even with the sex."""
+    logs = sorted(glob.glob(os.path.join(results, sampleset, "match", "*_log.csv.gz")))
+    if not logs:
+        return None
+    out = {}
+    for p in logs:
+        with open_text(p) as f:
+            head = next(csv.reader([f.readline()]), [])
+            c = {k: i for i, k in enumerate(head)}
+            if not {"accession", "chr_name", "match_status"} <= set(c):
+                return None
+            for line in f:
+                # Most lines are not on chrX; split only those that may be.
+                if ",X," not in line and ",23," not in line:
+                    continue
+                r = next(csv.reader([line]))
+                if len(r) > max(c.values()) and r[c["chr_name"]] in ("X", "23") and r[c["match_status"]] == "matched":
+                    pid = pgs_id_of(r[c["accession"]])
+                    out[pid] = out.get(pid, 0) + 1
+    return out
+
+
+def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, below_log=None, sex="", panel=False):
     """Rows of the summary table (PRS_COLUMNS) and the ancestry rows (key,
     value), from pgsc_calc's output folder RESULTS for SAMPLESET. Totals and
     labels come from the files prs-format wrote in SCORES_DIR. With
@@ -1040,7 +1213,10 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
     (pgsc_calc stopped because every score matched under its minimum
     overlap, so it published no match summary) no score has a sum, the
     matched count is unknown (NA), and the match rate is read from that log
-    when pgscatalog-match printed it."""
+    when pgscatalog-match printed it. SEX is the declared sex ('' for none):
+    a score that applies to the other sex keeps its sum and loses its
+    percentile. PANEL: pgsc_calc ran with an ancestry panel, so a chrX row
+    counts as scored only when its match log matched it."""
     totals, labels = {}, {}
     for p in sorted(glob.glob(os.path.join(scores_dir, "*.txt.gz"))):
         pid, n = pgs_id_of(p), 0
@@ -1054,11 +1230,21 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
     if not totals:
         raise Unreadable(f"no formatted scoring file in {scores_dir}")
     # "8 scored", "8 left out" or "0"; empty for scores formatted before the file existed
-    chrx = {}
+    chrx, chrx_scored = {}, set()
     if os.path.isfile(os.path.join(scores_dir, CHRX_FILE)):
         for r in read_tsv(os.path.join(scores_dir, CHRX_FILE)):
             n = r.get("chrx_rows", "")
             chrx[r.get("pgs_id", "")] = f"{n} {r.get('chrx', '')}" if n not in ("", "0") else n
+            if n not in ("", "0") and r.get("chrx") == "scored":
+                chrx_scored.add(r.get("pgs_id", ""))
+    # "" for a score of both sexes; empty for scores formatted before the file existed
+    applies, ambig = {}, {}
+    if os.path.isfile(os.path.join(scores_dir, SCORE_NOTES_FILE)):
+        for r in read_tsv(os.path.join(scores_dir, SCORE_NOTES_FILE)):
+            pid, n = r.get("pgs_id", ""), r.get("ambiguous_rows", "")
+            applies[pid] = r.get("applies_to", "")
+            ambig[pid] = f"{n} {r.get('ambiguous', '')}" if n not in ("", "0") else n
+    sex = (sex or "").lower()
     matched, sums, pct, group = {}, {}, {}, {}
     pops, rate = {}, {}
     if below_log:
@@ -1097,16 +1283,27 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
             pops = target[0]
             for pid in sums:
                 group[pid] = pops.get("MostSimilarPop") or "NA"
+        if panel and chrx_scored:
+            # chrX rows given to pgsc_calc that none of its matches kept
+            xm = chrx_matched(results, sampleset)
+            if xm is not None:
+                for pid in chrx_scored:
+                    if not xm.get(pid):
+                        chrx[pid] = f"{chrx[pid].split()[0]} left out (not in the ancestry panel)"
     rows = []
     for pid in sorted(totals):
         m, t = matched.get(pid, 0), totals[pid]
+        a = applies.get(pid, "")
+        check = "" if not a else (SEX_NOT_DECLARED if not sex else (SEX_APPLIES if sex == a else SEX_NOT_APPLICABLE))
+        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, input_kind]
         if below_log:
-            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA",
-                         chrx.get(pid, ""), input_kind])
+            rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA"] + extra)
             continue
+        # A score of the other sex keeps its raw sum and gets no percentile:
+        # a percentile for an organ the person does not have reads as a risk.
+        p = "NA" if check == SEX_NOT_APPLICABLE else pct.get(pid, "NA")
         rows.append([labels.get(pid, pid), pid, sums.get(pid, "NA"), str(m), str(t),
-                     f"{100 * m / t:.1f}" if t else "0.0", pct.get(pid, "NA"), group.get(pid, "NA"),
-                     chrx.get(pid, ""), input_kind])
+                     f"{100 * m / t:.1f}" if t else "0.0", p, group.get(pid, "NA")] + extra)
     ancestry = []
     if pops:
         pcs = sorted((k for k in pops if k.startswith("PC") and k[2:].isdigit()), key=lambda k: int(k[2:]))
@@ -1133,11 +1330,14 @@ def prs_table_main(argv):
                     help="pgsc_calc stopped because no score variant is in the sample's genotypes")
     ap.add_argument("--below-threshold", metavar="LOG",
                     help="pgsc_calc stopped because every score matched under its minimum overlap; LOG is its console output")
+    ap.add_argument("--sex", default="", choices=["", "male", "female"],
+                    help="the declared sex: a score that applies to the other one gets no percentile")
     ap.add_argument("--out", required=True)
     ap.add_argument("--ancestry-out", help="written when pgsc_calc ran with the panel: PCs and population")
     a = ap.parse_args(argv)
     try:
-        rows, ancestry = prs_table(a.results, a.sampleset, a.scores, a.input_kind, a.zero_matches, a.below_threshold)
+        rows, ancestry = prs_table(a.results, a.sampleset, a.scores, a.input_kind, a.zero_matches, a.below_threshold,
+                                   a.sex, bool(a.panel))
     except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -1154,6 +1354,10 @@ def prs_table_main(argv):
         os.replace(a.ancestry_out + ".tmp", a.ancestry_out)
     for r in rows:
         extra = f", percentile {r[6]} among {r[7]}" if r[6] != "NA" else ""
+        if r[11] == SEX_NOT_APPLICABLE:
+            extra = f", {r[10]}-specific: {SEX_NOT_APPLICABLE}, no percentile"
+        elif r[11] == SEX_NOT_DECLARED:
+            extra += f", {r[10]}-specific score: {SEX_NOT_DECLARED}"
         if r[3] == "NA":
             print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
         else:

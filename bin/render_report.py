@@ -355,9 +355,33 @@ def prs_chrx_note(d):
             "Give the sex to score them (docs/25-prs.md).")
 
 
+PRS_NOT_APPLICABLE = "not applicable to the declared sex"
+
+
+def prs_percentile(r):
+    """The percentile cell of a PRS row in both reports: the percentile with
+    its group, 'not applicable to the declared sex' for a score of the other
+    sex (it has no percentile), or '' when there is none."""
+    if r.get("sex_check") == PRS_NOT_APPLICABLE:
+        return f"{PRS_NOT_APPLICABLE} ({r.get('applies_to') or 'sex'}-specific score)"
+    if r.get("percentile"):
+        return f"{r['percentile']} ({r.get('group') or 'group unknown'})"
+    return ""
+
+
+def prs_sex_note(d):
+    """A sentence naming the sex-specific scores when no sex was declared, else ''."""
+    named = [f"{r['pgs_id']} ({r['applies_to']})" for r in d.get("scores", [])
+             if r.get("sex_check") == "no sex declared" and r.get("applies_to")]
+    if not named:
+        return ""
+    return (f" No sex was declared, so these sex-specific scores are shown for any sex: {', '.join(named)}. "
+            "Give the sex to mark a score of the other sex not applicable (docs/25-prs.md).")
+
+
 def prs_note(d):
     """The line under the PRS scores, in both reports: what the numbers can be compared with."""
-    x = prs_chrx_note(d)
+    x = prs_chrx_note(d) + prs_sex_note(d)
     if d.get("adjusted"):
         anc = d.get("ancestry") or {}
         group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
@@ -713,8 +737,8 @@ def text_report(s):
     if head("prs", "Polygenic Risk Scores"):
         d = S["prs"]["data"]
         for r in d["scores"]:
-            pct = (f"  percentile {r['percentile']} ({r.get('group') or 'group unknown'})"
-                   if r.get("percentile") else "")
+            pct = prs_percentile(r)
+            pct = f"  {pct}" if r.get("sex_check") == PRS_NOT_APPLICABLE else (f"  percentile {pct}" if pct else "")
             w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
         w("  " + prs_note(d))
         w("")
@@ -1429,7 +1453,7 @@ def html_report(s):
         d = S["prs"]["data"]
         rows = "".join(f"<tr><td>{E(x['condition'])}</td><td>{E(x['pgs_id'])}</td><td>{E(x['score'])}</td>"
                        f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
-                       f"<td>{E(x['percentile'] + ' (' + (x.get('group') or 'group unknown') + ')') if x.get('percentile') else 'raw score only'}</td></tr>\n"
+                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td></tr>\n"
                        for x in d["scores"])
         a(card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
                ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
