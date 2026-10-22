@@ -390,8 +390,13 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
     --sample "$SAMPLE" --results "$(cpath "${WORK}/results")" --sampleset "$SAMPLESET" \
     --scores "$(cpath "${WORK}/scores")" --input-kind "$INPUT_KIND" --sex "$SEX" \
     ${ZERO[@]+"${ZERO[@]}"} ${ANC_ARGS[@]+"${ANC_ARGS[@]}"} --out "$(cpath "$RESULTS_FILE")"
-# This run's summary under its time too, so the next run keeps it.
-cp -p "$RESULTS_FILE" "${RESULTS_FILE%.tsv}.$(date -r "$RESULTS_FILE" +%Y%m%d-%H%M).tsv"
+# This run's summary under its time too, so the next run keeps it; an earlier
+# summary of the same minute keeps its name and this one gets -2, -3...
+STAMP=$(date -r "$RESULTS_FILE" +%Y%m%d-%H%M)
+DATED="${RESULTS_FILE%.tsv}.${STAMP}.tsv"
+n=1
+while [ -e "$DATED" ] && ! cmp -s "$RESULTS_FILE" "$DATED"; do n=$((n + 1)); DATED="${RESULTS_FILE%.tsv}.${STAMP}-${n}.tsv"; done
+cp -p "$RESULTS_FILE" "$DATED"
 # Kept: pgsc_calc's results (its HTML report, the match log), and its own
 # trace, report and timeline, the only record of its tasks' memory
 # (FORMAT_SCOREFILES, MATCH_VARIANTS, MATCH_COMBINE). They move to

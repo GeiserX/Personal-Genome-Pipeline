@@ -8,8 +8,8 @@
 # for PGS000662 (prostate cancer, which has chrX rows in the real score) and
 # checks that the summary's ChrX column says what the log shows: "3 scored"
 # when the three chrX rows were matched, "3 left out (not in the ancestry
-# panel)" when they were not, and Variants_Matched counts them only in the
-# first case. It also counts the panel's own chrX variants and writes both to
+# panel)" when none were, both counts when some were, and Variants_Matched
+# counts only the matched ones. It also counts the panel's own chrX variants and writes both to
 # the notes.
 #   - the declared sex with the panel: PGS000004 (breast cancer) gets no
 #     percentile ("not applicable to the declared sex"), PGS000018 gets one;
@@ -105,7 +105,9 @@ check "pgsc_calc's match log was read (${MATCH_LOG:-none})" has '^[0-9]+$' "$X_M
 case "$X_MATCHED" in
   3) check_eq "chrX rows matched through the panel: the summary says scored" "$CHRX" "3 scored" ;;
   0) check_eq "chrX rows not in the panel: the summary says so" "$CHRX" "3 left out (not in the ancestry panel)" ;;
-  *) fail "chrX rows matched in the log: ${X_MATCHED}, expected 0 or 3" ;;
+  1|2) check_eq "some chrX rows in the panel: the summary names both counts" "$CHRX" \
+         "${X_MATCHED} scored, $((3 - X_MATCHED)) left out (not in the ancestry panel)" ;;
+  *) fail "chrX rows matched in the log: ${X_MATCHED}, expected 0 to 3" ;;
 esac
 AUTO_MATCHED=$(python3 - "${MATCH_LOG:-/dev/null}" <<'PY3'
 import csv, gzip, sys

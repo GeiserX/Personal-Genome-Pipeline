@@ -38,7 +38,8 @@ Checks:
      of prs-table says it per score;
   4e. with a panel, a chrX row prs-format kept that pgsc_calc's match log did
      not match (the panel lacks it) reads "left out (not in the ancestry
-     panel)"; matched, it stays "scored";
+     panel)"; matched, it stays "scored"; partly matched, both counts are
+     named ("1 scored, 2 left out (not in the ancestry panel)");
   5. both reports: a percentile with its group when there is one, the
      "Raw score only" line when there is none, and the not-assessed line about
      percentiles only then; a score whose chrX rows were left out is named,
@@ -385,6 +386,11 @@ def main():
             + "0,PGS000001,1,1100,A,G,matched,sample\n1,PGS000001,X,51000000,A,G,matched,sample\n", gz=True)
         got = chrx_of(f"{work}/xpanel")
         check("4e: panel run, the chrX row matched: scored", got == "1 scored", got)
+        # Three chrX rows, the log matched one: both counts are named.
+        put(f"{work}/pgsx_panel/{collect_summary.CHRX_FILE}", "pgs_id\tchrx_rows\tchrx\nPGS000001\t3\tscored\n")
+        got = chrx_of(f"{work}/xpanel")
+        check("4e: panel run, 1 of 3 chrX rows matched: 1 scored, 2 left out",
+              got == "1 scored, 2 left out (not in the ancestry panel)", got)
 
         # 5. the reports
         d = f"{work}/sample_raw/S"

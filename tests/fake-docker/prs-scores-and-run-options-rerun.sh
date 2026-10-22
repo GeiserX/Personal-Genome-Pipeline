@@ -91,6 +91,21 @@ docker_log_has 'prs-format .*--keep-ambiguous --reference /genome/reference/GRCh
   "PRS_KEEP_AMBIGUOUS=true did not reach prs-format with the reference"
 docker_log_has '^nextflow .*run .*--keep_ambiguous' "PRS_KEEP_AMBIGUOUS=true did not reach pgsc_calc"
 
+# --- a third run in the same minute as an earlier summary ------------------------------------
+# Dated summaries of this minute and the next, unless one is there already:
+# the third run's own dated copy must take a new name, never overwrite them.
+for s in "$(date +%Y%m%d-%H%M)" "$(python3 -c 'import time; print(time.strftime("%Y%m%d-%H%M", time.localtime(time.time() + 60)))')"; do
+  [ -e "${D}/sample1_prs_summary.${s}.tsv" ] || printf 'h\nx\tx\tother\n' > "${D}/sample1_prs_summary.${s}.tsv"
+done
+mapfile -t EARLIER < <(cd "$D" && ls sample1_prs_summary.*.tsv)
+BEFORE=$(cd "$D" && cksum "${EARLIER[@]}")
+RUN_TAG=third run_expect 0 third "${SCRIPTS}/25-prs.sh" sample1
+AFTER=$(cd "$D" && cksum "${EARLIER[@]}")
+[ "$BEFORE" = "$AFTER" ] || fail "the third run overwrote an earlier dated summary: ${BEFORE} / ${AFTER}"
+THIRD=$(for f in "$D"/sample1_prs_summary.*.tsv; do if [ "$(summary "$f")" = third ]; then echo "$f"; fi; done)
+[[ "$THIRD" =~ sample1_prs_summary\.[0-9]{8}-[0-9]{4}-[0-9]+\.tsv$ ]] \
+  || fail "the third run's dated copy did not take a -N name beside the earlier one of its minute: ${THIRD:-none}"
+
 # --- refusals --------------------------------------------------------------------------------
 mv "${G}/sample1/vcf/sample1.g.vcf.gz" "${CASE_WORK}/gvcf.hidden"
 : > "$FAKE_DOCKER_LOG"

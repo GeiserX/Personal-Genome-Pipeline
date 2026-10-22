@@ -1284,12 +1284,17 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
             for pid in sums:
                 group[pid] = pops.get("MostSimilarPop") or "NA"
         if panel and chrx_scored:
-            # chrX rows given to pgsc_calc that none of its matches kept
+            # chrX rows given to pgsc_calc that its matches did not keep:
+            # "3 left out (not in the ancestry panel)" for all of them,
+            # "1 scored, 2 left out (not in the ancestry panel)" for some
             xm = chrx_matched(results, sampleset)
             if xm is not None:
                 for pid in chrx_scored:
-                    if not xm.get(pid):
-                        chrx[pid] = f"{chrx[pid].split()[0]} left out (not in the ancestry panel)"
+                    n_x, got = int(chrx[pid].split()[0]), xm.get(pid, 0)
+                    if not got:
+                        chrx[pid] = f"{n_x} left out (not in the ancestry panel)"
+                    elif got < n_x:
+                        chrx[pid] = f"{got} scored, {n_x - got} left out (not in the ancestry panel)"
     rows = []
     for pid in sorted(totals):
         m, t = matched.get(pid, 0), totals[pid]
