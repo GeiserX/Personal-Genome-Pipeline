@@ -113,7 +113,7 @@ workflow CLINICAL {
             ch_prs_rows = ch_prs_input.gvcf.map { row -> [row[1], row[4], row[5], 'gvcf'] }
                 .mix(ch_prs_input.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] })
                 .map { meta, f, idx, kind -> [meta.sex ? 'with_x' : 'autosomes', meta, f, idx, kind] }
-            PRS_PREPARE(ch_prs_rows.map { row -> row[0] }.unique(), ch_pgs_scoring, ch_pgs_labels)
+            PRS_PREPARE(ch_prs_rows.map { row -> row[0] }.unique(), ch_pgs_scoring, ch_pgs_labels, ch_reference, ch_reference_fai)
             ch_prs_sets = ch_prs_rows.combine(PRS_PREPARE.out.scores, by: 0)
             ch_sample_pgs = ch_prs_sets.map { _set, meta, _f, _idx, _kind, pgs, _alleles -> [meta.id, pgs] }
             // Both are cut to the score (and panel) positions: a small file

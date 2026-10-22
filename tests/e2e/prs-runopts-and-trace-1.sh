@@ -142,7 +142,8 @@ check "control: containers without the labels are counted as unlabelled" \
   test "$(labelled "${CASE_TMP}/events_unlabelled.tsv")" -eq 0
 
 check_info "nextflow" "${NF_OUT}/${P}/prs/pgsc_calc/pipeline_info"
-check_eq "PRS scores in the summary" "$(awk 'NR > 1' "${NF_OUT}/${P}/prs/${P}_prs_summary.tsv" 2>/dev/null | wc -l | tr -d ' ')" 9
+check_eq "PRS scores in the summary (one per id of assets/pgs_scores.tsv)" "$(awk 'NR > 1' "${NF_OUT}/${P}/prs/${P}_prs_summary.tsv" 2>/dev/null | wc -l | tr -d ' ')" \
+  "$(awk -F'\t' '$1 ~ /^PGS[0-9]+$/' "${REPO}/assets/pgs_scores.tsv" | wc -l | tr -d ' ')"
 
 # --- step 25 ---------------------------------------------------------------------------
 # A copy of HG002P's VCF and gVCF under another label, so HG002P's own

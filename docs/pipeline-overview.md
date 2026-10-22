@@ -15,7 +15,7 @@
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel, admixture fractions and a chromosome painting against an 80-population panel (opt-in) | 11, 12, 26, 26b, 37 |
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
-| **Polygenic Risk** | Scores for 9 common conditions (CAD, T2D, cancers, etc.) with pgsc_calc; a percentile among the most similar ancestry group with the panel installed | 25 |
+| **Polygenic Risk** | Scores for 13 common conditions and traits (CAD, T2D, cancers, blood pressure, lipids, etc.) with pgsc_calc; a percentile among the most similar ancestry group with the panel installed | 25 |
 | **Quality Control** | Adapter trimming, coverage statistics, aggregated QC report, sex check, sample identity and contamination, SV filtering | 1b, 15, 16, 16b, 28, 33 |
 | **Storage** | Alignments kept as a checked CRAM, about half the size of the BAM | 34 |
 | **Traits** | Lactase persistence, caffeine, alcohol flush, bitter taste, earwax, pigmentation, APOE and other replicated variants, each row citing its primary paper | 42 |

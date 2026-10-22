@@ -19,8 +19,9 @@
 #   scripts/ci/check-pgs-labels.sh --self-test
 #
 # Reads the score list (a "PGS000018<TAB>Coronary artery disease" line per
-# score) and the two map formats step 25 used before it: "PGS000018|Coronary
-# artery disease" entries and the older ["coronary_artery_disease"]="PGS000018".
+# score; a third column, applies_to, is not read) and the two map formats step
+# 25 used before it: "PGS000018|Coronary artery disease" entries and the older
+# ["coronary_artery_disease"]="PGS000018".
 # Prints a Markdown table on stdout. Exit 0 when every label matches, 1 when a
 # label is wrong, an ID is unknown, the API answers empty or not at all, or the
 # file holds no PGS ID (an empty check is a failure, never a pass).
@@ -125,6 +126,15 @@ self_test() {
   if [ "$rc" -eq 0 ] || ! grep -q '| PGS000020 .*| MISMATCH |' <<<"$out" \
      || ! grep -q '| PGS000018 .*| ok |' <<<"$out"; then
     echo "SELF-TEST FAIL: the score list format was not read or not judged:"; echo "$out"; fail=1
+  fi
+
+  # Control 1c: with the applies_to column after the label, the label is
+  # still the second column (a wrong one fails, a right one passes).
+  printf 'pgs_id\ttrait_reported\tapplies_to\nPGS000662\tProstate cancer\tmale\nPGS000020\tInflammatory bowel disease\t\n' > "${d}/sex.tsv"
+  rc=0; out=$(check_file "${d}/sex.tsv" 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q '| PGS000020 | Inflammatory bowel disease | .*| MISMATCH |' <<<"$out" \
+     || ! grep -q '| PGS000662 | Prostate cancer | Prostate cancer | ok |' <<<"$out"; then
+    echo "SELF-TEST FAIL: the label was not read as the second column beside applies_to:"; echo "$out"; fail=1
   fi
 
   # Control 2: the older associative-array format is read too.

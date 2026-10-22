@@ -3,13 +3,20 @@
 # reports it; scripts/ci/check-pgs-labels.sh compares the two, so an id
 # cannot be printed under the wrong disease. setup.sh downloads each score's
 # GRCh38-harmonised file into <genome_dir>/prs_scores/.
-pgs_id	trait_reported
-PGS000018	Coronary artery disease
-PGS000014	Type 2 diabetes (T2D)
-PGS000004	Breast cancer
-PGS000662	Prostate cancer
-PGS000016	Atrial fibrillation
-PGS000334	Late-onset Alzheimer’s disease
-PGS000027	Body mass index (BMI)
-PGS000017	Inflammatory bowel disease
-PGS000055	Colorectal cancer
+# applies_to names the sex a score was built for (female or male; empty for
+# both). A sample declared as the other sex keeps the score's raw sum in the
+# summary, marked "not applicable to the declared sex", with no percentile.
+pgs_id	trait_reported	applies_to
+PGS000018	Coronary artery disease	
+PGS000014	Type 2 diabetes (T2D)	
+PGS000004	Breast cancer	female
+PGS000662	Prostate cancer	male
+PGS000016	Atrial fibrillation	
+PGS000334	Late-onset Alzheimer’s disease	
+PGS000027	Body mass index (BMI)	
+PGS000017	Inflammatory bowel disease	
+PGS000055	Colorectal cancer	
+PGS002257	Systolic blood pressure	
+PGS000065	LDL cholesterol	
+PGS000064	HDL cholesterol	
+PGS000066	Triglycerides (TG)	
