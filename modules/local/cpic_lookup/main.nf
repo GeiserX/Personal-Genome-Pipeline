@@ -13,6 +13,10 @@
     PharmCAT has no single result for CYP4F2 or VKORC1, whose warfarin rule
     rests on one position, it adds the genotype PharmCAT read there, labelled
     as a single-position fallback, not a PharmCAT call.
+    With --medications (opt-in, a list the user gives) and
+    assets/pgx_inhibitors.tsv, a strong or moderate CYP2D6 inhibitor on the
+    list gives CYP2D6 a phenoconverted phenotype by CPIC's activity-score
+    rule, beside the genotype one; a CYP2C19 inhibitor gets a note.
     Fails when the report yields no gene.
 
     Equivalent to: scripts/27-cpic-lookup.sh
@@ -32,6 +36,9 @@ process CPIC_LOOKUP {
     // pypgx_summary is [] when pypgx is not in --tools; consensus is [] when
     // PGX_CONSENSUS did not run for the sample
     tuple val(meta), path(pharmcat_json), path(pypgx_summary), path(consensus)
+    // medications is [] without --medications; inhibitors is assets/pgx_inhibitors.tsv
+    path(medications)
+    path(inhibitors)
 
     output:
     tuple val(meta), path("${meta.id}_cpic_recommendations.txt"), emit: recommendations
@@ -45,13 +52,15 @@ process CPIC_LOOKUP {
     script:
     def pypgx_args = pypgx_summary ? "--pypgx ${pypgx_summary} --comparison ${meta.id}_pharmcat_comparison.tsv" : ''
     def consensus_args = consensus ? "--consensus ${consensus}" : ''
+    def medication_args = medications ? "--medications ${medications} --inhibitors ${inhibitors}" : ''
     """
     pgx_parse.py cpic-report \\
         --sample ${meta.id} \\
         --report ${pharmcat_json} \\
         --outdir . \\
         ${pypgx_args} \\
-        ${consensus_args}
+        ${consensus_args} \\
+        ${medication_args}
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
