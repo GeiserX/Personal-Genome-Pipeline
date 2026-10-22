@@ -10,7 +10,7 @@
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
     into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
-    cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, traits/, couple/, ...); a step that did
+    cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, annotsv/, traits/, couple/, ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
     name is the user's. indexcov's folder becomes indexcov/ itself (the
@@ -66,13 +66,14 @@ process HTML_REPORT {
             ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
             ${id}_ancestry_fine.tsv|${id}_painting.png)   place ancestry_fine "\$f" ;;
             ${id})                                        place telomere "\$f" ;;
-            ${id}_chrM_filtered.vcf.gz)                   place mito "\$f" ;;
+            ${id}_chrM_filtered.vcf.gz|${id}_chrM_annotated.tsv) place mito "\$f" ;;
             ${id}_hla_genotype.tsv)                       place hla_t1k "\$f" ;;
-            ${id}_eh.vcf|${id}_eh_stranger.vcf)           place expansion_hunter "\$f" ;;
+            ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv) place expansion_hunter "\$f" ;;
             diploidSV.vcf.gz)                             place manta "\$f" ;;
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
             ${id}_cnvs.txt)                               place cnvpytor "\$f" ;;
             ${id}_sv_consensus.vcf.gz)                    place sv_merged "\$f" ;;
+            ${id}_sv_class4_5_checked.tsv)                place annotsv "\$f" ;;
             ${id}_pypgx_summary.tsv|${id}_pharmcat_comparison.tsv|${id}_cyp2d6_depth_check.tsv) place pypgx "\$f" ;;
             indexcov)                                     ln -s "\$(readlink -f "\$f")" "\$S/indexcov" ;;
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;

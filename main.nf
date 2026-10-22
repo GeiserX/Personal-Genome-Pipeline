@@ -548,6 +548,14 @@ workflow {
     // the cDNA read check of CLINVAR_SCREEN's hits, and the couple screen's
     // deletions over an exon
     ch_gencode_exons  = Channel.value(params.gencode_exons ? file(params.gencode_exons, checkIfExists: true) : [])
+    // Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): the
+    // whole ClinVar VCF with chr names, its .tbi beside it (setup.sh installs
+    // clinvar/clinvar_chr.vcf.gz), and gnomAD v3.1's chrM sites (setup.sh
+    // installs gnomad_mito/, GNOMAD_MITO_URL in versions.env). Without them
+    // the table names the missing file and leaves its columns '.'.
+    ch_mito_clinvar       = Channel.value(params.mito_clinvar ? file(params.mito_clinvar, checkIfExists: true) : [])
+    ch_mito_clinvar_index = Channel.value(params.mito_clinvar ? file("${params.mito_clinvar}.tbi", checkIfExists: true) : [])
+    ch_gnomad_mito        = Channel.value(params.gnomad_mito ? file(params.gnomad_mito, checkIfExists: true) : [])
 
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 1: BAM_ANALYSIS — HLA (and KIR), STR, telomere, coverage,
@@ -568,7 +576,10 @@ workflow {
         ch_parascopy_data,
         ch_parascopy_bed,
         ch_yleaf_data,
-        ch_vcf
+        ch_vcf,
+        ch_mito_clinvar,
+        ch_mito_clinvar_index,
+        ch_gnomad_mito
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -765,6 +776,7 @@ workflow {
         .join(PGX.out.cpic_recommendations.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.clinical_vcf.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ANNOTATION.out.comphet_pairs.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
@@ -781,14 +793,18 @@ workflow {
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.mito_annotated.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.hla_alleles.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.expansion_vcf.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.stranger_vcf.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.rfc1_motif.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.manta_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.delly_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.cnvpytor_calls.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.merged_sv.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(SV.out.annotsv_class4_5.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pypgx_summary.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.depth_check.map             { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cyrius_results.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pgx_consensus.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_comparison.map         { meta, f -> [meta.id, f] }, remainder: true)

@@ -822,14 +822,15 @@ def annotsv_section(work, schema):
           sec["state"] == "ok" and sec["data"]["count"] == 3 and "could not be read" in (sec["data"]["consensus_note"] or ""),
           sec)
     os.remove(f"{d}/sv_merged/S_sv_consensus.vcf.gz")
-    # a table without the checked columns is unreadable; no table: no section, no not-run line
+    # a table without the checked columns is unreadable; no table: no section, and a not-run line,
+    # as for any step (the Nextflow HTML_REPORT gets the table too)
     put(f"{d}/annotsv/S_sv_class4_5_checked.tsv", ANNOTSV_HEAD + ANNOTSV_ROWS)
     check("annotsv: a table without the checked columns is unreadable",
           render(d)[0]["sections"]["annotsv"]["state"] == "unreadable")
     os.remove(f"{d}/annotsv/S_sv_class4_5_checked.tsv")
     summ, txt, html_ = render(d)
-    check("annotsv: without the table the section is missing, with no not-run line and no card",
-          summ["sections"]["annotsv"]["state"] == "missing" and not any("AnnotSV" in x for x in summ["not_run"])
+    check("annotsv: without the table the section is missing, listed as not run, with no card",
+          summ["sections"]["annotsv"]["state"] == "missing" and any("AnnotSV" in x for x in summ["not_run"])
           and "Class 4 and 5 (AnnotSV)" not in txt + html_, summ["not_run"])
 
 

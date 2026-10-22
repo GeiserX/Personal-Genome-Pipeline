@@ -3,7 +3,7 @@
     ANNOTATION — Variant annotation, enrichment, prioritization, and clinical filtering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Sequential pipeline:
-      VEP → VCFANNO → VCFANNO_INDEX → SLIVAR_PRIORITIZE → SLIVAR → COMPHET_PHASE  (sequential dependency)
+      VEP_NORM → VEP → VCFANNO → VCFANNO_INDEX → SLIVAR_PRIORITIZE → SLIVAR → COMPHET_PHASE  (sequential dependency)
                                     → CLINICAL_FILTER  (branches from VCFANNO output)
 
     Each module is gated on params.tools containing the tool name.
@@ -11,6 +11,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
+include { VEP_NORM        } from '../modules/local/vep/main'
 include { VEP             } from '../modules/local/vep/main'
 include { VCFANNO         } from '../modules/local/vcfanno/main'
 include { VCFANNO_INDEX   } from '../modules/local/vcfanno/main'
@@ -54,12 +55,16 @@ workflow ANNOTATION {
     // STEP 1: VEP — Ensembl Variant Effect Predictor
     // Adds consequence, SIFT, PolyPhen, gnomAD AF, ClinVar, regulatory annotations;
     // with --clinvar also that file's CLNSIG as ClinVar_CLNSIG (VEP --custom),
-    // which CLINICAL_FILTER's ClinVar tier reads before the cache's CLIN_SIG
+    // which CLINICAL_FILTER's ClinVar tier reads before the cache's CLIN_SIG.
+    // VEP_NORM first splits and left-aligns the PASS records, as step 13
+    // does, so an indel finds its gnomAD and ClinVar record.
     //
     ch_vep_vcf = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vep')) {
+        VEP_NORM(ch_current_vcf, ch_reference, ch_reference_fai)
+        ch_versions = ch_versions.mix(VEP_NORM.out.versions)
         VEP(
-            ch_current_vcf,
+            VEP_NORM.out.vcf,
             ch_reference,
             ch_reference_fai,
             ch_vep_cache,
@@ -117,7 +122,8 @@ workflow ANNOTATION {
     // STEP 3a: SLIVAR_PRIORITIZE (bcftools image) then SLIVAR compound-hets
     // (slivar image). Sequential from VCFANNO (or VEP, or raw VCF)
     //
-    ch_slivar_vcf = Channel.empty()
+    ch_slivar_vcf    = Channel.empty()
+    ch_comphet_pairs = Channel.empty()   // [meta, <id>_compound_het_pairs.tsv]
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('slivar')) {
         if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
             error "slivar requires VEP-annotated input (IMPACT/CSQ fields). Add 'vep' to --tools or remove 'slivar'."
@@ -137,7 +143,8 @@ workflow ANNOTATION {
                 .map { row -> tuple(row[1], row[2], row[3] ? row[3][0] : [], row[3] ? row[3][1] : []) }
         )
         ch_versions  = ch_versions.mix(SLIVAR_PRIORITIZE.out.versions, SLIVAR.out.versions, COMPHET_PHASE.out.versions)
-        ch_slivar_vcf = SLIVAR_PRIORITIZE.out.vcf
+        ch_slivar_vcf    = SLIVAR_PRIORITIZE.out.vcf
+        ch_comphet_pairs = COMPHET_PHASE.out.pairs
     }
 
     //
@@ -157,9 +164,10 @@ workflow ANNOTATION {
     }
 
     emit:
-    vep_vcf      = ch_vep_vcf           // channel: [meta, vcf]
-    enriched_vcf = ch_enriched_vcf      // channel: [meta, vcf]
-    slivar_vcf   = ch_slivar_vcf        // channel: [meta, vcf]
-    clinical_vcf = ch_clinical_vcf      // channel: [meta, vcf]
-    versions     = ch_versions          // channel: versions.yml
+    vep_vcf       = ch_vep_vcf          // channel: [meta, vcf]
+    enriched_vcf  = ch_enriched_vcf     // channel: [meta, vcf]
+    slivar_vcf    = ch_slivar_vcf       // channel: [meta, vcf]
+    comphet_pairs = ch_comphet_pairs    // channel: [meta, <id>_compound_het_pairs.tsv]
+    clinical_vcf  = ch_clinical_vcf     // channel: [meta, vcf]
+    versions      = ch_versions         // channel: versions.yml
 }

@@ -16,10 +16,11 @@
        mosdepth in --tools the depth is 0 and the filter marks nothing, as
        step 20 does without step 16b's output.
 
+    MITO_VARIANTS_ANNOTATE, after it, annotates each call with its ClinVar
+    record and gnomAD v3.1's chrM sites (bin/collect_summary.py
+    mito-annotate), as step 20's last stage does.
+
     Equivalent to: scripts/20-mtoolbox.sh
-    Step 20 also annotates the calls with ClinVar and gnomAD
-    (bin/collect_summary.py mito-annotate); this module does not yet,
-    and the reports say so.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -120,6 +121,57 @@ process MITO_VARIANTS {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         gatk: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+
+/*
+    MITO_VARIANTS_ANNOTATE: each ALT of the filtered chrM calls with its
+    ClinVar record (CLNSIG, CLNREVSTAT, CLNDN of the same allele, from
+    --mito_clinvar, the whole ClinVar VCF with chr names and its .tbi beside
+    it) and gnomAD v3.1's chrM sites (AF_hom, AF_het, max_hl, from
+    --gnomad_mito, the file GNOMAD_MITO_URL in versions.env names), into
+    <id>_chrM_annotated.tsv. A file not given is named in the table's header
+    and its columns are '.', as step 20 does without it.
+
+    Equivalent to: stage 6 of scripts/20-mtoolbox.sh
+*/
+process MITO_VARIANTS_ANNOTATE {
+    tag "$meta.id"
+    label 'process_single'
+
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
+
+    input:
+    tuple val(meta), path(vcf)
+    path(clinvar)        // [] without --mito_clinvar
+    path(clinvar_index)  // staged beside it
+    path(gnomad)         // [] without --gnomad_mito
+
+    output:
+    tuple val(meta), path("${meta.id}_chrM_annotated.tsv"), emit: annotated
+    path "versions.yml",                                     emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    def cv = clinvar ? "--clinvar ${clinvar}" : ''
+    def gn = gnomad ? "--gnomad ${gnomad}" : ''
+    """
+    collect_summary.py mito-annotate --vcf ${vcf} ${cv} ${gn} --out ${meta.id}_chrM_annotated.tsv
+
+    printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
+    """
+
+    stub:
+    """
+    printf 'chrom\\tpos\\tref\\talt\\tfilter\\taf\\tclinvar_id\\tclinvar_significance\\tclinvar_review\\tclinvar_condition\\tgnomad_af_hom\\tgnomad_af_het\\tgnomad_max_hl\\n' > ${meta.id}_chrM_annotated.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
     END_VERSIONS
     """
 }
