@@ -30,10 +30,16 @@ echo "+ ANCESTRY_PANEL_NAME=${PANEL_NAME} scripts/setup.sh --ancestry-panel"
 ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
 check_eq "setup.sh --ancestry-panel exits 0" "${PIPESTATUS[0]}" 0
 check_ge "GRCh38 SNVs in the panel's site list" "$(wc -l < "$PSITES" 2>/dev/null | tr -d ' ')" 1000
-# The panel's own chrX variants (its .pvar.zst: chromosome X or 23).
-PANEL_X=$(tar --zstd -xOf "$PANEL" --wildcards '*.pvar.zst' 2>/dev/null | zstd -dc 2>/dev/null \
-  | awk '!/^#/ && ($1 == "X" || $1 == "23" || $1 == "chrX") {n++} END {print n + 0}')
-echo "chrX variants in the panel's .pvar: ${PANEL_X}"
+# The panel's own chrX variants (its .pvar or .pvar.zst files: chromosome X or 23).
+PVARS=$(tar --zstd -tf "$PANEL" 2>/dev/null | grep -E '\.pvar(\.zst)?$' | tr '\n' ' ')
+echo "variant files in the panel: ${PVARS:-none}"
+PANEL_X=unknown
+if [ -n "$PVARS" ]; then
+  # shellcheck disable=SC2086  # the member names have no spaces
+  PANEL_X=$(tar --zstd -xOf "$PANEL" $PVARS 2>/dev/null | zstd -dcf 2>/dev/null \
+    | awk '!/^#/ && ($1 == "X" || $1 == "23" || $1 == "chrX") {n++} END {print n + 0}')
+fi
+echo "chrX variants in the panel's variant files: ${PANEL_X}"
 
 # --- scores: panel SNVs in the slices, and three chrX hom-ref rows ------------------
 awk -F'\t' -v OFS='\t' 'NR == FNR {s[$1] = s[$1] " " $2 + 1 ":" $3; next}
@@ -109,6 +115,8 @@ case "$X_MATCHED" in
          "${X_MATCHED} scored, $((3 - X_MATCHED)) left out (not in the ancestry panel)" ;;
   *) fail "chrX rows matched in the log: ${X_MATCHED}, expected 0 to 3" ;;
 esac
+# What docs/25-prs.md says of this panel: none of the chrX rows is scored.
+check_eq "${PANEL_NAME}: no chrX row of PGS000662 is matched (as docs/25-prs.md says)" "$X_MATCHED" 0
 AUTO_MATCHED=$(python3 - "${MATCH_LOG:-/dev/null}" <<'PY3'
 import csv, gzip, sys
 try:
