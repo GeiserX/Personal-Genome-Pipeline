@@ -673,7 +673,7 @@ def sec_parascopy(d, s):
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
-               # step 35 wrote no HBA table (an older run, or the check failed)
+               # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
                "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}

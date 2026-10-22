@@ -14,8 +14,8 @@
 # HBA1 and HBA2 (alpha-thalassaemia deletions) have no Parascopy model, so the
 # step counts them from read depth: the depth over both gene bodies against
 # single-copy sequence on each side of the cluster gives the number of
-# alpha-globin genes (bin/hba_copy_number.py). A failure there leaves no HBA
-# table and does not stop the step.
+# alpha-globin genes (bin/hba_copy_number.py). A failure there writes an HBA
+# table that says not assessed, and does not stop the step.
 #
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
 # TOOLS=...,parascopy).
@@ -112,13 +112,15 @@ if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
 else
   rm -f "${HBA_OUT}.tmp"
   echo "WARNING: the HBA1/HBA2 depth check failed; the report lists HBA1/HBA2 as not assessed." >&2
+  printf 'metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\nestimate\t.\nhba2_depth\t.\nhba1_depth\t.\nflank_left_depth\t.\nflank_right_depth\t.\nmessage\t%s\n' \
+    'not assessed: the HBA1/HBA2 depth check failed; see the log of step 35' > "$HBA_OUT"
 fi
 rm -rf "$HBA_WORK"
 
 echo ""
 echo "=== Parascopy complete ==="
 echo "Copy number: ${OUT}"
-[ -f "$HBA_OUT" ] && echo "HBA1/HBA2:   ${HBA_OUT}"
+echo "HBA1/HBA2:   ${HBA_OUT}"
 column -t -s $'\t' "$OUT" 2>/dev/null || cat "$OUT"
 echo ""
 echo "SMN1 sits at chr5:70.92-70.95 Mb and SMN2 at chr5:70.05-70.08 Mb (GRCh38). psCN lists the copy"

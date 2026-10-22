@@ -57,7 +57,7 @@ With Nextflow: `--tools ...,parascopy --parascopy_data ${GENOME_DIR}/reference/p
 1. `parascopy depth`: background read depth of the sample, over Parascopy's GRCh38 windows (or `PARASCOPY_DEPTH_BED`).
 2. `parascopy cn-using models_GRCh38_1KGP/<population>/SMN1.gz`: the copy number of the SMN1/SMN2 locus with those model parameters.
 3. Writes one row per region of the copy-number profile to `${SAMPLE}_smn_copy_number.tsv`.
-4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, and `bin/hba_copy_number.py check` writes `${SAMPLE}_hba_copy_number.tsv`. A failure here prints a warning and leaves no HBA table; the SMN result stands.
+4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, and `bin/hba_copy_number.py check` writes `${SAMPLE}_hba_copy_number.tsv`. A failure here prints a warning and writes a table that says not assessed; the SMN result stands.
 
 ## Output
 
@@ -106,7 +106,7 @@ with every read counted whatever its mapping quality (duplicates, secondary and 
 | 0 | the pattern of Hb Bart's hydrops fetalis |
 | 5 or more | a triplication (`aaa/aa`) |
 
-It says **not assessed**, with the reason, when the mean flank depth is under 8x, when the two flanks differ by more than a factor of 1.5 (a deletion reaching a flank, or uneven coverage), or when the estimate lies more than 0.3 from a whole number.
+It says **not assessed**, with the reason, when either flank's mean depth is under 8x, when the two flanks differ by more than a factor of 1.5 (a deletion reaching a flank, or uneven coverage), or when the estimate lies more than 0.3 from a whole number.
 
 Limits:
 

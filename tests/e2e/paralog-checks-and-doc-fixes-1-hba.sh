@@ -75,12 +75,12 @@ BED="${GENOME_DIR}/${W}/parascopy_windows.bed"
 awk 'BEGIN { for (s = 10050000; s < 10450000; s += 100) printf "chr20\t%d\t%d\n", s, s + 100 }' > "$BED"
 
 # The module's HBA block, as written in the .nf file, made a plain shell
-# script: Groovy's \\ at a line end is the shell's \, ${bam} and ${meta.id}
+# script: Groovy's \\ is the shell's \, ${bam} and ${meta.id}
 # become the sample's BAM and name.
 MOD="${REPO}/modules/local/parascopy/main.nf"
 BLOCK="${CASE_TMP}/module_hba.sh"
 sed -n '/# HBA1\/HBA2 from depth (as scripts\/35-paralogs.sh)/,/rm -f hba_regions.bed hba_bedcov.tsv/p' "$MOD" \
-  | sed 's/\\\\$/\\/' > "$BLOCK"
+  | sed 's/\\\\/\\/g' > "$BLOCK"
 check_ge "the module's HBA block was cut from main.nf" "$(wc -l < "$BLOCK" | tr -d ' ')" 8
 
 hba_value() { awk -F'\t' -v k="$2" '$1 == k {print $2}' "$1" 2>/dev/null; }

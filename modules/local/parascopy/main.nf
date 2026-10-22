@@ -21,7 +21,9 @@
     HBA1 and HBA2 have no Parascopy model: samtools bedcov (in the same
     image) sums the depth over both gene bodies and two single-copy flanks,
     and bin/hba_copy_number.py turns it into a count of alpha-globin genes.
-    A failure there leaves no HBA table and does not fail the task.
+    A failure there writes an HBA table that says not assessed (so a
+    published table from an earlier run is replaced) and does not fail the
+    task.
 
     Equivalent to: scripts/35-paralogs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,7 +45,7 @@ process PARASCOPY {
     output:
     tuple val(meta), path("${meta.id}_smn_copy_number.tsv"), emit: copy_number
     tuple val(meta), path("${meta.id}_parascopy"),           emit: results
-    tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba, optional: true
+    tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba
     path "versions.yml",                                     emit: versions
 
     when:
@@ -80,6 +82,8 @@ process PARASCOPY {
     else
         rm -f ${meta.id}_hba_copy_number.tsv.tmp
         echo "WARNING: the HBA1/HBA2 depth check failed; the report lists HBA1/HBA2 as not assessed." >&2
+        printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t.\\nhba1_depth\\t.\\nflank_left_depth\\t.\\nflank_right_depth\\t.\\nmessage\\t%s\\n' \\
+            'not assessed: the HBA1/HBA2 depth check failed; see the log of step 35' > ${meta.id}_hba_copy_number.tsv
     fi
     rm -f hba_regions.bed hba_bedcov.tsv
 
