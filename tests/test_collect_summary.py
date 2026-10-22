@@ -122,7 +122,11 @@ Checks:
      exon 7 from the paralog-specific copy number (from the row's own region
      or its homologous one), the aggregate copy number there and the SMA
      reading (two copies, one copy a carrier, a quality under 20 not
-     resolved), in both reports, with HBA1/HBA2 listed as not assessed; a
+     resolved), in both reports, with HBA1/HBA2 listed as not assessed
+     without step 35's HBA table; with it, the count of alpha-globin genes
+     from depth is a line of the section in both reports, and a called count
+     (four, or a planted three) takes HBA1/HBA2 off the not-assessed list
+     while a 'not assessed' one keeps it there; a
      folder with neither step 35 nor step 35b prints "Paralog copy number:
      not checked (neither step 35 nor step 35b ran)" in both reports, a failed
      step 35 is named in that line, and Paraphase alone leaves the line out;
@@ -865,11 +869,42 @@ def parascopy_section(work, schema):
     card_s = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
     check("parascopy: the HTML card has both genes, the reading and the short-read note",
           ">SMN1 copies<" in card_s and "2 (quality 33, filter PASS)" in card_s and ">SMN2 copies<" in card_s
-          and "not a carrier by copy number" in card_s and "HBA1/HBA2 and CYP21A2 have no Parascopy" in card_s
+          and "not a carrier by copy number" in card_s and "CYP21A2 has no Parascopy model" in card_s
+          and "counts the alpha-globin genes together from read depth" in card_s
           and "Not checked" not in html, card_s)
-    check("parascopy: HBA1/HBA2 listed as not assessed without step 35b",
+    check("parascopy: HBA1/HBA2 listed as not assessed without step 35's HBA table or step 35b",
           any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"])
-          and "HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads" in txt, summ["not_assessed"])
+          and "HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count" in txt
+          and "HBA1 and HBA2 together" not in txt, summ["not_assessed"])
+    # Step 35's HBA table (bin/hba_copy_number.py): four genes, then a planted three.
+    hba_head = "metric\tvalue\nstatus\tcalled\nalpha_globin_genes\t"
+    put(f"{d}/paralogs/S_hba_copy_number.tsv", hba_head + "4\nestimate\t4.02\nhba2_depth\t30.1\n"
+        "hba1_depth\t30.2\nflank_left_depth\t30.0\nflank_right_depth\t30.0\n"
+        "message\tfour alpha-globin genes (aa/aa): no deletion seen\n")
+    summ, txt, html = render(d)
+    pd = (summ["sections"].get("parascopy") or {}).get("data") or {}
+    card_s = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
+    line = ("HBA1 and HBA2 together (alpha-globin genes, from depth): 4 (four alpha-globin genes (aa/aa): "
+            "no deletion seen; estimate 4.02)")
+    check("parascopy: four alpha-globin genes from depth, in both reports, HBA off the not-assessed list",
+          (pd.get("hba") or {}).get("alpha_globin_genes") == "4" and f"  {line}\n" in txt
+          and ">HBA1 and HBA2 together (alpha-globin genes, from depth)<" in card_s and "estimate 4.02" in card_s
+          and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), (pd.get("hba"), txt))
+    put(f"{d}/paralogs/S_hba_copy_number.tsv", hba_head + "3\nestimate\t3.01\nhba2_depth\t15.0\n"
+        "hba1_depth\t30.1\nflank_left_depth\t30.0\nflank_right_depth\t30.0\n"
+        "message\tthree alpha-globin genes: one gene lost on one chromosome (-a/aa, as -a3.7 or -a4.2), "
+        "a silent carrier\n")
+    summ, txt, _ = render(d)
+    check("parascopy: a planted one-gene loss reads as three genes, a silent carrier",
+          "from depth): 3 (three alpha-globin genes: one gene lost on one chromosome" in txt
+          and "a silent carrier; estimate 3.01)" in txt, txt)
+    put(f"{d}/paralogs/S_hba_copy_number.tsv", "metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\n"
+        "message\tnot assessed: flank depth under 8x (2.0x and 2.1x), too low to compare\n")
+    summ, txt, _ = render(d)
+    check("parascopy: an HBA count not assessed says why and keeps HBA1/HBA2 not assessed",
+          "from depth): not assessed: flank depth under 8x" in txt
+          and any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), txt)
+    os.remove(f"{d}/paralogs/S_hba_copy_number.tsv")
     check("parascopy: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
           validate.validate(schema, json.loads(json.dumps(summ))))
     # One SMN1 copy, the row written from SMN2's side: SMN1 is the second psCN.

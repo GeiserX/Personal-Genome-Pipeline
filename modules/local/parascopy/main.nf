@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    PARASCOPY — copy number of SMN1 and SMN2 (opt-in: --tools parascopy)
+    PARASCOPY — copy number of SMN1 and SMN2, HBA1/HBA2 from depth (opt-in: --tools parascopy)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     SMN1 and SMN2 are near-identical copies: short reads cannot be placed on
     one of them, and no VCF-based step sees an SMN1 copy-number loss, the
@@ -17,6 +17,11 @@
     --parascopy_depth_bed (windows of one size) for a BAM that covers only
     part of the genome, without GC stratification (--no-gc): a few regions
     rarely span the GC range Parascopy's GC model needs, and it stops on them.
+
+    HBA1 and HBA2 have no Parascopy model: samtools bedcov (in the same
+    image) sums the depth over both gene bodies and two single-copy flanks,
+    and bin/hba_copy_number.py turns it into a count of alpha-globin genes.
+    A failure there leaves no HBA table and does not fail the task.
 
     Equivalent to: scripts/35-paralogs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -38,6 +43,7 @@ process PARASCOPY {
     output:
     tuple val(meta), path("${meta.id}_smn_copy_number.tsv"), emit: copy_number
     tuple val(meta), path("${meta.id}_parascopy"),           emit: results
+    tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba, optional: true
     path "versions.yml",                                     emit: versions
 
     when:
@@ -66,6 +72,17 @@ process PARASCOPY {
     } > ${meta.id}_smn_copy_number.tsv
     rm -rf depth
 
+    # HBA1/HBA2 from depth (as scripts/35-paralogs.sh): all MAPQ, then the verdict
+    if hba_copy_number.py bed > hba_regions.bed \
+        && samtools bedcov hba_regions.bed ${bam} > hba_bedcov.tsv \
+        && hba_copy_number.py check --bedcov hba_bedcov.tsv --out ${meta.id}_hba_copy_number.tsv.tmp; then
+        mv ${meta.id}_hba_copy_number.tsv.tmp ${meta.id}_hba_copy_number.tsv
+    else
+        rm -f ${meta.id}_hba_copy_number.tsv.tmp
+        echo "WARNING: the HBA1/HBA2 depth check failed; the report lists HBA1/HBA2 as not assessed." >&2
+    fi
+    rm -f hba_regions.bed hba_bedcov.tsv
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         parascopy: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -77,6 +94,8 @@ process PARASCOPY {
     mkdir -p ${meta.id}_parascopy
     printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\tpsCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n' \\
         > ${meta.id}_smn_copy_number.tsv
+    printf 'metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\nestimate\t.\nhba2_depth\t0\nhba1_depth\t0\nflank_left_depth\t0\nflank_right_depth\t0\nmessage\tstub\n' \
+        > ${meta.id}_hba_copy_number.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
