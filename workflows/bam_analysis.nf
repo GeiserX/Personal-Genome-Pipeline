@@ -72,6 +72,7 @@ workflow BAM_ANALYSIS {
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_smn_copy_number  = Channel.empty()
+    ch_hba_copy_number  = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
     ch_paraphase_vars   = Channel.empty()
     ch_sample_qc        = Channel.empty()
@@ -208,6 +209,7 @@ workflow BAM_ANALYSIS {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('parascopy')) {
         PARASCOPY(ch_bam, ch_reference, ch_reference_fai, ch_parascopy_data, ch_parascopy_bed)
         ch_smn_copy_number = PARASCOPY.out.copy_number
+        ch_hba_copy_number = PARASCOPY.out.hba
         ch_versions        = ch_versions.mix(PARASCOPY.out.versions)
     }
 
@@ -331,6 +333,7 @@ workflow BAM_ANALYSIS {
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     hla_optitype     = ch_hla_optitype    // [meta, <id>_optitype_result.tsv] (--hla_qc)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
+    hba_copy_number  = ch_hba_copy_number // [meta, <id>_hba_copy_number.tsv]
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
     paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
