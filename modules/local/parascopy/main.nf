@@ -20,7 +20,10 @@
 
     HBA1 and HBA2 have no Parascopy model: samtools bedcov (in the same
     image) sums the depth over both gene bodies and two single-copy flanks,
-    and bin/hba_copy_number.py turns it into a count of alpha-globin genes.
+    over all reads and over reads of MAPQ 1 or more, and
+    bin/hba_copy_number.py turns it into a count of alpha-globin genes (not
+    assessed when no read over the genes has MAPQ 0: the aligner then left
+    out the reads that fit both genes).
     A failure there writes an HBA table that says not assessed (so a
     published table from an earlier run is replaced) and does not fail the
     task.
@@ -74,18 +77,20 @@ process PARASCOPY {
     } > ${meta.id}_smn_copy_number.tsv
     rm -rf depth
 
-    # HBA1/HBA2 from depth (as scripts/35-paralogs.sh): all MAPQ, then the verdict
+    # HBA1/HBA2 from depth (as scripts/35-paralogs.sh): all MAPQ and MAPQ 1 or more, then the verdict
     if hba_copy_number.py bed > hba_regions.bed \\
         && samtools bedcov hba_regions.bed ${bam} > hba_bedcov.tsv \\
-        && hba_copy_number.py check --bedcov hba_bedcov.tsv --out ${meta.id}_hba_copy_number.tsv.tmp; then
+        && samtools bedcov -Q 1 hba_regions.bed ${bam} > hba_bedcov_q1.tsv \\
+        && hba_copy_number.py check --bedcov hba_bedcov.tsv --bedcov-mapq1 hba_bedcov_q1.tsv \\
+            --out ${meta.id}_hba_copy_number.tsv.tmp; then
         mv ${meta.id}_hba_copy_number.tsv.tmp ${meta.id}_hba_copy_number.tsv
     else
         rm -f ${meta.id}_hba_copy_number.tsv.tmp
         echo "WARNING: the HBA1/HBA2 depth check failed; the report lists HBA1/HBA2 as not assessed." >&2
-        printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t.\\nhba1_depth\\t.\\nflank_left_depth\\t.\\nflank_right_depth\\t.\\nmessage\\t%s\\n' \\
+        printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t.\\nhba1_depth\\t.\\nflank_left_depth\\t.\\nflank_right_depth\\t.\\nmapq0_share\\t.\\nmessage\\t%s\\n' \\
             'not assessed: the HBA1/HBA2 depth check failed; see the log of step 35' > ${meta.id}_hba_copy_number.tsv
     fi
-    rm -f hba_regions.bed hba_bedcov.tsv
+    rm -f hba_regions.bed hba_bedcov.tsv hba_bedcov_q1.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -98,7 +103,7 @@ process PARASCOPY {
     mkdir -p ${meta.id}_parascopy
     printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\tpsCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n' \\
         > ${meta.id}_smn_copy_number.tsv
-    printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmessage\\tstub\\n' \\
+    printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmapq0_share\\t0\\nmessage\\tstub\\n' \\
         > ${meta.id}_hba_copy_number.tsv
 
     cat <<-END_VERSIONS > versions.yml
