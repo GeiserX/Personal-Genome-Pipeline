@@ -96,7 +96,9 @@ OUT="${OUTDIR}/${SAMPLE}_smn_copy_number.tsv"
 mv "${OUT}.tmp" "$OUT"
 
 # HBA1/HBA2 from depth (as the PARASCOPY module): samtools bedcov over the
-# regions bin/hba_copy_number.py prints, all MAPQ, then its verdict.
+# regions bin/hba_copy_number.py prints, all MAPQ and MAPQ 1 or more (a BAM
+# with no MAPQ 0 read over the genes left out the reads that fit both), then
+# its verdict.
 HBA_OUT="${OUTDIR}/${SAMPLE}_hba_copy_number.tsv"
 HBA_WORK="${OUTDIR}/hba_depth.part"
 rm -rf "$HBA_OUT" "$HBA_WORK"
@@ -105,14 +107,16 @@ if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
      python3 /pgp-bin/hba_copy_number.py bed > "${HBA_WORK}/regions.bed" \
    && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
      samtools bedcov "$(cpath "${HBA_WORK}/regions.bed")" "$(cpath "$BAM")" > "${HBA_WORK}/bedcov.tsv" \
+   && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+     samtools bedcov -Q 1 "$(cpath "${HBA_WORK}/regions.bed")" "$(cpath "$BAM")" > "${HBA_WORK}/bedcov_q1.tsv" \
    && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
      python3 /pgp-bin/hba_copy_number.py check --bedcov "$(cpath "${HBA_WORK}/bedcov.tsv")" \
-       --out "$(cpath "${HBA_OUT}.tmp")"; then
+       --bedcov-mapq1 "$(cpath "${HBA_WORK}/bedcov_q1.tsv")" --out "$(cpath "${HBA_OUT}.tmp")"; then
   mv "${HBA_OUT}.tmp" "$HBA_OUT"
 else
   rm -f "${HBA_OUT}.tmp"
   echo "WARNING: the HBA1/HBA2 depth check failed; the report lists HBA1/HBA2 as not assessed." >&2
-  printf 'metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\nestimate\t.\nhba2_depth\t.\nhba1_depth\t.\nflank_left_depth\t.\nflank_right_depth\t.\nmessage\t%s\n' \
+  printf 'metric\tvalue\nstatus\tnot assessed\nalpha_globin_genes\t.\nestimate\t.\nhba2_depth\t.\nhba1_depth\t.\nflank_left_depth\t.\nflank_right_depth\t.\nmapq0_share\t.\nmessage\t%s\n' \
     'not assessed: the HBA1/HBA2 depth check failed; see the log of step 35' > "$HBA_OUT"
 fi
 rm -rf "$HBA_WORK"

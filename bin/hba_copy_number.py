@@ -3,8 +3,10 @@
 
 Parascopy's pinned models have none for the alpha-globin genes, so step 35
 counts them from read depth instead. HBA1 and HBA2 are near-identical, so
-short reads cannot be placed on one of them; but every read from either
-lands on one of the two, so the depth over both gene bodies together, against
+short reads cannot be placed on one of them; but an aligner that reports
+every read puts each read from either on one of the two (with mapping
+quality 0 where it fits both equally), so the depth over both gene bodies
+together, against
 single-copy sequence on each side of the cluster, counts the alpha-globin
 genes: four on a genome without a deletion (aa/aa), three with one gene lost
 on one chromosome (-a3.7 or -a4.2), two with both lost on one chromosome
@@ -12,16 +14,20 @@ on one chromosome (-a3.7 or -a4.2), two with both lost on one chromosome
 
   hba_copy_number.py bed
       print the regions (GRCh38, 0-based BED, name in column 4) to stdout
-  hba_copy_number.py check --bedcov BEDCOV.tsv --out HBA.tsv
+  hba_copy_number.py check --bedcov BEDCOV.tsv --bedcov-mapq1 BEDCOV_Q1.tsv --out HBA.tsv
       read `samtools bedcov` over those regions (chrom, start, end, name,
-      summed depth; all MAPQ, duplicates left out) and write HBA.tsv
-      (metric<TAB>value: status, alpha_globin_genes, estimate, the depths and
-      the message). Exit 0 whatever the status; 2 on unreadable input.
+      summed depth; all MAPQ, duplicates left out) and `samtools bedcov -Q 1`
+      over the same regions (reads of MAPQ 1 or more only), and write HBA.tsv
+      (metric<TAB>value: status, alpha_globin_genes, estimate, the depths,
+      mapq0_share and the message). Exit 0 whatever the status; 2 on
+      unreadable input.
 
 status is 'called' or 'not assessed'. The estimate is
 2 x (HBA2 depth + HBA1 depth) / flank depth. It is called only when it lies
 within 0.3 of a whole number, the flanks reach MIN_FLANK_DEPTH and agree
-with each other; otherwise the message says why not. Standard library only:
+with each other, and (unless the estimate rounds to 0) reads of MAPQ 0 make
+up at least MIN_MAPQ0_SHARE of the depth over the two genes; otherwise the
+message says why not. Standard library only:
 it runs in the Parascopy image and under tests/test_hba_copy_number.py.
 """
 import argparse
@@ -45,6 +51,15 @@ MIN_FLANK_DEPTH = 8.0
 MAX_FLANK_RATIO = 1.5
 # An estimate further than this from a whole number is not called.
 MAX_OFF = 0.3
+# Part of the gene-body depth from reads of MAPQ 0 under which the BAM is
+# taken to leave out the reads that fit HBA1 and HBA2 equally. The reference
+# holds both genes, so an aligner that reports such reads gives them MAPQ 0
+# whatever the sample carries: on HG002's reads about 18% to 30% of the depth
+# over each gene with BWA-MEM or minimap2. GIAB's novoalign BAM of HG002 has
+# none (novoalign leaves a read with several equally good places unaligned
+# unless told otherwise), and over HBA2 it holds about half the depth: the
+# count comes out three where HG002 has four.
+MIN_MAPQ0_SHARE = 0.02
 
 READINGS = {
     0: "no alpha-globin gene: the pattern of Hb Bart's hydrops fetalis (--/--)",
@@ -57,12 +72,11 @@ READINGS = {
 }
 
 
-# On HG002, whose HiFi reads show four genes (Paraphase), this check on GIAB's
-# Illumina reads at about 30x counts three: HBA2 at about half the flank depth
-# (the e2e case paralog-checks-and-doc-fixes-1-hba). So a count under four is
+# The count has been checked on one real genome only, HG002 (four genes; the
+# e2e case paralog-checks-and-doc-fixes-1-hba). So a count under four is
 # reported with this note, never as a finding on its own.
-UNDER_FOUR = ("; unconfirmed: on HG002, which has four genes by long reads, this short-read check counts "
-              "three, so a count under four needs a clinical test before it means anything")
+UNDER_FOUR = ("; unconfirmed: this short-read count has been checked on one real genome only (HG002, four "
+              "genes), so a count under four needs a clinical test before it means anything")
 
 
 def reading(n):
@@ -92,12 +106,16 @@ def read_bedcov(path):
     return means
 
 
-def assess(m):
-    """The result dict for the mean depths of read_bedcov."""
+def assess(m, q1):
+    """The result dict for the mean depths of read_bedcov: m over every
+    read, q1 over reads of MAPQ 1 or more."""
     left, right = m["flank_left"], m["flank_right"]
     flank = (left + right) / 2
+    genes = m["HBA2"] + m["HBA1"]
+    share = 1 - (q1["HBA2"] + q1["HBA1"]) / genes if genes > 0 else 0.0
     out = {"hba2_depth": round(m["HBA2"], 2), "hba1_depth": round(m["HBA1"], 2),
            "flank_left_depth": round(left, 2), "flank_right_depth": round(right, 2),
+           "mapq0_share": f"{share:.3f}",
            "estimate": ".", "alpha_globin_genes": ".", "status": "not assessed"}
     if min(left, right) < MIN_FLANK_DEPTH:
         out["message"] = (f"not assessed: flank depth under {MIN_FLANK_DEPTH:g}x "
@@ -110,6 +128,13 @@ def assess(m):
     est = 2 * (m["HBA2"] + m["HBA1"]) / flank
     n = round(est)
     out["estimate"] = f"{est:.2f}"
+    # With no gene left there is no read to judge the aligner by.
+    if n >= 1 and share < MIN_MAPQ0_SHARE:
+        out["message"] = (f"not assessed: reads of mapping quality 0 make up {100 * share:.1f}% of the depth "
+                          "over HBA1 and HBA2, so the aligner left out the reads that fit both genes (as "
+                          "novoalign does by default) and the count would come out low; realign with "
+                          "minimap2 (step 02) or BWA-MEM")
+        return out
     if abs(est - n) > MAX_OFF:
         out["message"] = (f"not assessed: the estimate {est:.2f} lies between {int(est)} and {int(est) + 1} "
                           "alpha-globin genes")
@@ -119,12 +144,12 @@ def assess(m):
 
 
 ORDER = ("status", "alpha_globin_genes", "estimate", "hba2_depth", "hba1_depth",
-         "flank_left_depth", "flank_right_depth", "message")
+         "flank_left_depth", "flank_right_depth", "mapq0_share", "message")
 
 
 def check(args):
     try:
-        res = assess(read_bedcov(args.bedcov))
+        res = assess(read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1))
     except (OSError, ValueError, KeyError, ZeroDivisionError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -137,7 +162,8 @@ def check(args):
         print(f"ERROR: cannot write {args.out}: {e}", file=sys.stderr)
         return 2
     print(f"HBA1/HBA2: {res['message']} (estimate {res['estimate']}; HBA2 {res['hba2_depth']}x, "
-          f"HBA1 {res['hba1_depth']}x, flanks {res['flank_left_depth']}x and {res['flank_right_depth']}x)")
+          f"HBA1 {res['hba1_depth']}x, flanks {res['flank_left_depth']}x and {res['flank_right_depth']}x; "
+          f"MAPQ 0 share over the genes {res['mapq0_share']})")
     return 0
 
 
@@ -147,6 +173,7 @@ def main(argv=None):
     sub.add_parser("bed", help="print the regions")
     c = sub.add_parser("check", help="judge samtools bedcov over the regions")
     c.add_argument("--bedcov", required=True)
+    c.add_argument("--bedcov-mapq1", required=True, help="samtools bedcov -Q 1 over the same regions")
     c.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     if args.cmd == "bed":
