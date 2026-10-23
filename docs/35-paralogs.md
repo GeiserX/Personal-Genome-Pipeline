@@ -1,4 +1,4 @@
-# Step 35: Paralog Genes, SMN1 and SMN2 Copy Number (Parascopy)
+# Step 35: Paralog Genes, SMN1 and SMN2 Copy Number (Parascopy), HBA1/HBA2 from Depth
 
 > **OPT-IN:** a default run leaves this step out. Run it by name (`TOOLS=...,parascopy` for `run-all.sh`, `--tools ...,parascopy` for Nextflow) after installing its data once with `./scripts/setup.sh --parascopy-data ${GENOME_DIR}`.
 
@@ -7,6 +7,8 @@
 ## What This Does
 
 Estimates how many copies of SMN1 and SMN2 the genome carries, from the short-read BAM, with [Parascopy](https://github.com/tprodanov/parascopy). For each stretch of the SMN1/SMN2 locus it reports the aggregate copy number of the two genes together (agCN) and, where the few sequence differences between them allow, the copy number of each (psCN), each with a quality.
+
+It also counts the alpha-globin genes (HBA1 and HBA2 together) from read depth, for the alpha-thalassaemia deletions, because Parascopy has no model for them. See [HBA1 and HBA2 from depth](#hba1-and-hba2-from-depth) below.
 
 ## Why
 
@@ -55,6 +57,7 @@ With Nextflow: `--tools ...,parascopy --parascopy_data ${GENOME_DIR}/reference/p
 1. `parascopy depth`: background read depth of the sample, over Parascopy's GRCh38 windows (or `PARASCOPY_DEPTH_BED`).
 2. `parascopy cn-using models_GRCh38_1KGP/<population>/SMN1.gz`: the copy number of the SMN1/SMN2 locus with those model parameters.
 3. Writes one row per region of the copy-number profile to `${SAMPLE}_smn_copy_number.tsv`.
+4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, and `bin/hba_copy_number.py check` writes `${SAMPLE}_hba_copy_number.tsv`. A failure here prints a warning and writes a table that says not assessed; the SMN result stands.
 
 ## Output
 
@@ -63,6 +66,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 | File | Contents |
 |---|---|
 | `${SAMPLE}_smn_copy_number.tsv` | One row per region: `chrom`, `start`, `end`, `locus`, `agCN_filter`, `agCN`, `agCN_qual`, `psCN_filter`, `psCN`, `psCN_qual`, `homologous_regions` |
+| `${SAMPLE}_hba_copy_number.tsv` | `metric`, `value`: `status` (`called` or `not assessed`), `alpha_globin_genes`, `estimate`, `hba2_depth`, `hba1_depth`, `flank_left_depth`, `flank_right_depth`, `message` |
 | `${SAMPLE}_parascopy/` | Parascopy's own output: `res.samples.bed.gz`, `res.paralog.bed.gz`, `psvs.vcf.gz` and the rest ([described upstream](https://github.com/tprodanov/parascopy/blob/main/docs/cn_output.md)) |
 
 ## Runtime
@@ -82,13 +86,44 @@ On the CI fixture the step takes 8 seconds: one thread, the background depth ove
 ## What Is and Is Not Assessed
 
 - **Assessed:** the copy number of SMN1 and SMN2, together and, where possible, each.
-- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; and CYP21A2 and HBA1/HBA2, for which Parascopy has no model. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. HBA1/HBA2 copy number on short reads, the 3.7 kb and 4.2 kb alpha-thalassaemia deletions first, needs another method, such as a depth check over the two deletion spans against their flanks; none is built yet. A PacBio HiFi BAM gets the genes above from step 35b.
+- **Assessed:** the number of alpha-globin genes, HBA1 and HBA2 together, from read depth (below).
+- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; CYP21A2, for which Parascopy has no model; and which HBA gene or which chromosome lost a copy. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. A PacBio HiFi BAM gets the genes above from step 35b.
+
+## HBA1 and HBA2 from Depth
+
+HBA1 and HBA2 are near-identical, so a short read from one may be placed on the other. But every read from either lands on one of the two. So the depth over both gene bodies together, against single-copy sequence on each side of the cluster, counts the genes: `bin/hba_copy_number.py` computes
+
+    estimate = 2 x (depth over HBA2 + depth over HBA1) / mean flank depth
+
+with every read counted whatever its mapping quality (duplicates, secondary and unmapped reads left out, as `samtools bedcov` does). The regions (GRCh38) are the MANE Select gene bodies of HBA2 (chr16:172,876-173,710) and HBA1 (chr16:176,680-177,522), and two 40 kb flanks, chr16:100,001-140,000 and chr16:190,001-230,000, outside the `--SEA` deletion and away from the HBZ and HBM genes.
+
+| Genes | Reading |
+|---|---|
+| 4 | `aa/aa`, no deletion seen |
+| 3 | one gene lost on one chromosome (`-a/aa`, as `-a3.7` or `-a4.2`): a silent carrier, marked unconfirmed (below) |
+| 2 | alpha-thalassaemia trait: both genes lost on one chromosome (`--/aa`, as `--SEA`) or one on each (`-a/-a`); depth cannot tell these apart, and only the first puts a child at risk of Hb Bart's with a partner who carries the same |
+| 1 | the pattern of HbH disease |
+| 0 | the pattern of Hb Bart's hydrops fetalis |
+| 5 or more | a triplication (`aaa/aa`) |
+
+It says **not assessed**, with the reason, when either flank's mean depth is under 8x, when the two flanks differ by more than a factor of 1.5 (a deletion reaching a flank, or uneven coverage), or when the estimate lies more than 0.3 from a whole number.
+
+Limits:
+
+- It counts genes, not alleles: it cannot say which gene was lost, or whether two losses are on one chromosome or on two.
+- The deletion must remove a gene body: a deletion that removes only regulatory sequence (the HS-40 enhancer) leaves the count at four.
+- **It undercounts on the one real genome measured.** HG002 has four genes (Paraphase on its HiFi reads), but on GIAB's Illumina reads at about 30x this check estimates 2.76 and counts three: HBA2 sits at about 13x while HBA1 and the flanks sit at 28x to 31x. Why HBA2 falls has not been worked out (GC content, where the aligner puts reads between the two near-identical genes, or the library). So every count under four carries "unconfirmed: ... needs a clinical test before it means anything" in its message and in the report line. A count of four or more carries no such note, but its accuracy across real genomes has not been measured either.
+
+## How It Is Tested
+
+- `tests/test_hba_copy_number.py` gives `bin/hba_copy_number.py` made-up depth tables: four genes at even depth, three with HBA2 at half depth, two, a triplication, an estimate between two whole numbers, low flanks and flanks that disagree.
+- The e2e case `paralog-checks-and-doc-fixes-1-hba` writes synthetic 30x reads over chr16:95,001-235,000 for two samples, one with every second read over HBA2 left out (a planted one-gene loss), runs step 35 on each and checks four and three genes. The HBA block of `modules/local/parascopy/main.nf`, cut from the file, then runs on the same BAMs in the same image and must write the same table. Last, the block runs on HG002's real Illumina reads at the cluster, streamed from GIAB's 60x BAM and sampled to about 30x. It pins the count it gets, three, as a known undercount (the truth is four, from Paraphase on HG002's HiFi reads), and checks that the message says unconfirmed. The run's notes record the estimate and the four depths.
 
 ## In the Reports
 
-Both reports (step 24 and the Nextflow `HTML_REPORT`) read `${SAMPLE}_smn_copy_number.tsv` into a section of its own, **SMN1/SMN2 Copy Number (Parascopy, short reads)**. It shows the copy number of SMN1 and of SMN2 at exon 7 (the row of the table, or its homologous region, that holds chr5:70,951,946 for SMN1 and chr5:70,076,526 for SMN2), with quality and filter; the two together (agCN) there; and a one-line reading: no SMN1 copy is the pattern of SMA, one copy that of a carrier, two copies is not a carrier by copy number with a 2+0 carrier not ruled out. A copy with a quality under 20 or a filter other than `PASS` is shown as not resolved and gets no reading, and a table with no row over SMN1 exon 7 says that instead of a reading. With step 35b's table too, the Paraphase section also sets the two tools' SMN1 side by side.
+Both reports (step 24 and the Nextflow `HTML_REPORT`) read `${SAMPLE}_smn_copy_number.tsv` into a section of its own, **SMN1/SMN2 Copy Number (Parascopy, short reads)**. It shows the copy number of SMN1 and of SMN2 at exon 7 (the row of the table, or its homologous region, that holds chr5:70,951,946 for SMN1 and chr5:70,076,526 for SMN2), with quality and filter; the two together (agCN) there; and a one-line reading: no SMN1 copy is the pattern of SMA, one copy that of a carrier, two copies is not a carrier by copy number with a 2+0 carrier not ruled out. A copy with a quality under 20 or a filter other than `PASS` is shown as not resolved and gets no reading, and a table with no row over SMN1 exon 7 says that instead of a reading. With step 35b's table too, the Paraphase section also sets the two tools' SMN1 side by side. When `${SAMPLE}_hba_copy_number.tsv` is there, the section adds one line, `HBA1 and HBA2 together (alpha-globin genes, from depth)`, with the count, its reading and the estimate, or the reason it was not assessed. The Nextflow `PARASCOPY` task writes the same table to the same folder, but `HTML_REPORT` does not read it yet, so a Nextflow report lists HBA1/HBA2 as not assessed (see [Nextflow](nextflow.md)).
 
-When neither step 35 nor step 35b left a result, both reports print `Paralog copy number: not checked (neither step 35 nor step 35b ran)`, naming a step that failed instead, so a missing check never reads as a normal result. Unless step 35b called both HBA1 and HBA2 (a run limited to other regions with `--paraphase_regions` has neither, and a `no call` row does not count), the "Not Assessed" list also names HBA1/HBA2 copy number from short reads.
+When neither step 35 nor step 35b left a result, both reports print `Paralog copy number: not checked (neither step 35 nor step 35b ran)`, naming a step that failed instead, so a missing check never reads as a normal result. Unless step 35's depth count made a call, or step 35b called both HBA1 and HBA2 (a run limited to other regions with `--paraphase_regions` has neither, and a `no call` row does not count), the "Not Assessed" list also names HBA1/HBA2 copy number.
 
 ## Notes
 
@@ -127,7 +162,7 @@ Every other region gets one row with its copy number.
 
 Paraphase is written for HiFi reads: a read of 10 kb or more spans the few differences between the copies, so the copies can be told apart. Short reads cannot do that, which is why step 35 uses Parascopy. Its licence (the PacBio Software License Agreement, from Paraphase 3.3.0 on) also allows it only on data from a PacBio instrument. So the step reads the BAM header first and stops unless every read group says `PL:PACBIO`. Step 02b with `PLATFORM=hifi` writes such a BAM, as PacBio's pbmm2 does.
 
-On a short-read genome these genes stay where step 35 leaves them: SMN1 and SMN2 from Parascopy, the others not assessed.
+On a short-read genome these genes stay where step 35 leaves them: SMN1 and SMN2 from Parascopy, HBA1 and HBA2 counted together from depth, the others not assessed.
 
 ### Tool
 

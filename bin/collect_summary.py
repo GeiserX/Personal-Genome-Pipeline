@@ -113,10 +113,10 @@ NOT_ASSESSED = [
     "Variants of uncertain significance (not interpreted)",
 ]
 
-# Added to NOT_ASSESSED unless step 35b (Paraphase, PacBio HiFi) called both HBA1 and HBA2:
-# Parascopy's models (step 35) have none for the alpha-globin genes.
-HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions) from short reads: Parascopy has no "
-                    "model for them, so only step 35b on a PacBio HiFi BAM assesses them")
+# Added to NOT_ASSESSED unless step 35's depth count (bin/hba_copy_number.py,
+# short reads) or step 35b (Paraphase, PacBio HiFi, both genes) made a call.
+HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
+                    "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -670,11 +670,29 @@ def sec_parascopy(d, s):
                          "psCN_filter column")
     smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
     smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+    hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
+               # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
+               # step 35 wrote no HBA table (a run from before the check)
+               "hba": read_hba(hp) if os.path.isfile(hp) else None,
                "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
+
+
+def read_hba(path):
+    """Step 35's HBA table (metric, value) as a dict; a table without a
+    status row reads as not assessed, with that reason."""
+    out = {}
+    with open(path, errors="replace") as f:
+        for line in f:
+            c = line.rstrip("\n").split("\t", 1)
+            if len(c) == 2 and c[0] != "metric":
+                out[c[0]] = c[1]
+    if out.get("status") not in ("called", "not assessed"):
+        out = {"status": "not assessed", "message": f"not assessed: {os.path.basename(path)} has no status row"}
+    return out
 
 
 def sec_hla(d, s):
@@ -2128,7 +2146,7 @@ def mito_annotation(d, s, vcf):
     p = first_existing(d, [f"mito/{s}_chrM_annotated.tsv"])
     if not p:
         return {"note": "no annotation table (mito/<id>_chrM_annotated.tsv): step 20 ran before it annotated, "
-                        "or the calls are the Nextflow MITO_VARIANTS', which does not annotate them yet"}
+                        "or the Nextflow MITO_VARIANTS_ANNOTATE task failed (see the Nextflow log)"}
     if os.path.getmtime(p) < os.path.getmtime(vcf):
         return {"note": f"{os.path.relpath(p, d)} is older than the chrM calls: rerun step 20"}
     sources, lines = {}, []
@@ -2462,8 +2480,8 @@ def sec_slivar(d, s):
     p = first_existing(d, [f"slivar/{s}_slivar_summary.tsv"])
     if not p:
         # The Nextflow report gets the prioritized VCF: the count, plus the
-        # phase when COMPHET_PHASE's pairs table sits beside it. HTML_REPORT
-        # does not stage that table yet (it needs a main.nf input).
+        # phase when COMPHET_PHASE's pairs table sits beside it (HTML_REPORT
+        # stages it there).
         v = first_existing(d, [f"slivar/{s}_prioritized.vcf.gz"])
         if not v:
             return None, {}
@@ -2925,6 +2943,7 @@ def collect(sample, sample_dir, declared_sex=None):
         # Step 35b on a region subset (--paraphase_regions) may leave hba out
         + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
                                       if g["region"] == "hba" and g["status"] == "called"}
+           or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
            else [HBA_NOT_ASSESSED]),
     }
     return summary

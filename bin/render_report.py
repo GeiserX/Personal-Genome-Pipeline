@@ -1081,10 +1081,12 @@ def paralog_lines(d):
     return out
 
 
-PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 only; HBA1/HBA2 and CYP21A2 have no Parascopy "
-                  "model and are not assessed. A quality under 20 or a filter other than PASS leaves a copy "
-                  "unresolved. A research estimate, not a diagnostic test: confirm a result with a clinical "
-                  "laboratory (MLPA or qPCR).")
+PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 only; CYP21A2 has no Parascopy model and is not "
+                  "assessed. A quality under 20 or a filter other than PASS leaves a copy unresolved. HBA1 and "
+                  "HBA2 have no Parascopy model either: step 35 counts the alpha-globin genes together from read "
+                  "depth against flanking sequence, which cannot say which gene or which chromosome lost a copy. "
+                  "A research estimate, not a diagnostic test: confirm a result with a clinical laboratory (MLPA "
+                  "or qPCR; gap-PCR for alpha-thalassaemia).")
 
 
 def parascopy_lines(d):
@@ -1094,7 +1096,16 @@ def parascopy_lines(d):
             f"SMN2 copies: {smn2.get('text', '.')}",
             f"SMN1 and SMN2 together (agCN) at exon 7: {d.get('agcn', '.')} (quality {d.get('agcn_qual', '.')}, "
             f"filter {d.get('agcn_filter', '.')})",
-            f"Reading: {d.get('reading', '.')}"]
+            f"Reading: {d.get('reading', '.')}"] + ([hba_line(d["hba"])] if d.get("hba") else [])
+
+
+def hba_line(h):
+    """Step 35's HBA1/HBA2 count from depth, one line."""
+    if h.get("status") == "called":
+        value = f"{h.get('alpha_globin_genes', '.')} ({h.get('message', '.')}; estimate {h.get('estimate', '.')})"
+    else:
+        value = h.get("message", "not assessed")
+    return f"HBA1 and HBA2 together (alpha-globin genes, from depth): {value}"
 
 
 def paralogs_unchecked(S):

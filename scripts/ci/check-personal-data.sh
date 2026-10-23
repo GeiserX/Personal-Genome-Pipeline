@@ -62,6 +62,11 @@ CONTRIBUTING.md                               (`/mnt/user/`, `/home/username/`, 
 modules/local/cyrius/main.nf                  ${prefix}\\t*1/*1\\tPASS
 tests/fake-docker/reports-stale-step.sh       sample1\t*1/*1\tPASS
 tests/test_collect_summary.py                 S\t*1/*4\tPASS
+tests/test_collect_summary.py                 strec("HTT", "17/30"
+tests/test_collect_summary.py                 strec("C9ORF72", "2/8"
+tests/test_collect_summary.py                 strec("ATXN1", "29/31"
+tests/test_collect_summary.py                 strec("DMPK", "5/40"
+tests/test_collect_summary.py                 strec("RFC1", "100/150"
 tests/smoke/commands.tsv                      HTT at 19/45 repeats
 tests/smoke/commands.tsv                      ATXN3 at 22/24 repeats
 '

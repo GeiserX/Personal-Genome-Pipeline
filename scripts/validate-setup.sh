@@ -416,32 +416,41 @@ else
     fi
   fi
 
-  # --- ClinVar chr-prefixed VCF ---
+  # --- ClinVar (step 06 needs it; steps 13 and 20 annotate with it when it is there) ---
+  # Required for a default run and for a TOOLS list that names clinvar; with
+  # TOOLS (run-all.sh's step list) and no clinvar in it, a missing file is a WARN.
   CLINVAR="${GENOME_DIR}/clinvar/clinvar_chr.vcf.gz"
-  if [ -f "$CLINVAR" ]; then
-    pass "ClinVar VCF (chr-prefixed): present"
-  else
-    # Check if raw ClinVar exists but chr-prefixed version is missing
-    if [ -f "${GENOME_DIR}/clinvar/clinvar.vcf.gz" ]; then
-      warn "ClinVar raw VCF found but chr-prefixed version missing."
-      echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
-    else
-      fail "ClinVar VCF not found at: ${CLINVAR}"
-      echo "       Download and prepare it — see docs/00-reference-setup.md"
-    fi
-  fi
-
-  # --- ClinVar pathogenic subset (required by step 6) ---
   CLINVAR_PATH="${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz"
-  if [ -f "$CLINVAR_PATH" ]; then
-    pass "ClinVar pathogenic subset: present"
+  if [ -n "${TOOLS:-}" ] && [[ ",${TOOLS// /}," != *",clinvar,"* ]] \
+     && { [ ! -f "$CLINVAR" ] || [ ! -f "$CLINVAR_PATH" ]; }; then
+    warn "ClinVar not installed (${CLINVAR#"${GENOME_DIR}"/} or ${CLINVAR_PATH#"${GENOME_DIR}"/}): TOOLS (${TOOLS}) has no clinvar, so step 06 does not run; steps 13 and 20 annotate without ClinVar."
+    echo "       To add it: ./scripts/setup.sh ${GENOME_DIR}"
   else
+    # --- ClinVar chr-prefixed VCF ---
     if [ -f "$CLINVAR" ]; then
-      fail "ClinVar chr-prefixed found but pathogenic subset missing (step 6 will fail)."
-      echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
+      pass "ClinVar VCF (chr-prefixed): present"
     else
-      fail "ClinVar pathogenic subset not found (step 6 will fail)."
-      echo "       Download and prepare it — see docs/00-reference-setup.md"
+      # Check if raw ClinVar exists but chr-prefixed version is missing
+      if [ -f "${GENOME_DIR}/clinvar/clinvar.vcf.gz" ]; then
+        warn "ClinVar raw VCF found but chr-prefixed version missing."
+        echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
+      else
+        fail "ClinVar VCF not found at: ${CLINVAR}"
+        echo "       Download and prepare it — see docs/00-reference-setup.md"
+      fi
+    fi
+
+    # --- ClinVar pathogenic subset (required by step 6) ---
+    if [ -f "$CLINVAR_PATH" ]; then
+      pass "ClinVar pathogenic subset: present"
+    else
+      if [ -f "$CLINVAR" ]; then
+        fail "ClinVar chr-prefixed found but pathogenic subset missing (step 6 will fail)."
+        echo "       Run: ./scripts/setup.sh ${GENOME_DIR}  OR  see docs/00-reference-setup.md"
+      else
+        fail "ClinVar pathogenic subset not found (step 6 will fail)."
+        echo "       Download and prepare it — see docs/00-reference-setup.md"
+      fi
     fi
   fi
 

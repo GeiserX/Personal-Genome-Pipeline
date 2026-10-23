@@ -4,7 +4,8 @@
 # validate-setup.sh, writes a one-row samplesheet and starts the Nextflow
 # pipeline (a fake nextflow here, which logs its arguments) with -resume, the
 # --tools list of a default run minus the steps whose data is missing, and
-# the database parameters it found, and the host's CPU count and RAM as the
+# the database parameters it found (ClinVar for step 06 and for the chrM
+# annotation, --mito_clinvar), and the host's CPU count and RAM as the
 # caps, since Nextflow refuses a task that asks for more, and, where this user
 # may hard-link the tasks' root-owned files (root, or fs.protected_hardlinks 0),
 # --publish_dir_mode link (one BAM on disk instead of two). Then the two reports
@@ -47,7 +48,7 @@ NV=$(sed -n 's/^NEXTFLOW_VERSION="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
 want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=${NV} :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
   --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json" \
-  --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
+  --mito_clinvar "${G}/clinvar/clinvar_chr.vcf.gz" --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
 if [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 0 ]; then want+="--publish_dir_mode link "; fi
 [ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
   got:  ${NFLOG}
