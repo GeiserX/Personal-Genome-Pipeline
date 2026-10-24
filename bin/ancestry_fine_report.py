@@ -16,7 +16,8 @@ Standard library only (it runs in the plain python image). Six commands:
       Stops on a sample table given with ANCESTRY_FINE_SAMPLE_MAP that has a
       regional group with 1 to MIN_REFERENCES - 1 reference people, a
       continental group with reference people but fewer than 2 painting
-      references, or a painting reference who is no reference: RFMix fails on
+      references, a painting reference who is no reference, or a reference
+      person without both groups: RFMix fails on
       a group of one, and a smaller group stands for a handful of people.
 
   order --pop FILE --q FILE
@@ -217,10 +218,13 @@ def map_problems(rows, min_references=MIN_REFERENCES):
     """What makes a sample table (rows of six columns, no header) unfit for
     the model: a regional group with some but fewer than min_references
     reference people, a continental group with reference people but fewer
-    than 2 painting references, a painting reference who is no reference."""
-    refs, conts, paint, stray = {}, set(), {}, []
+    than 2 painting references, a painting reference who is no reference, a
+    reference person without both groups."""
+    refs, conts, paint, stray, nogroup = {}, set(), {}, [], []
     for r in rows:
-        if r[4] == "1":
+        if r[4] == "1" and (r[2] in ("-", "") or r[3] in ("-", "")):
+            nogroup.append(r[0])
+        elif r[4] == "1":
             refs[r[3]] = refs.get(r[3], 0) + 1
             conts.add(r[2])
             if r[5] == "1":
@@ -231,7 +235,9 @@ def map_problems(rows, min_references=MIN_REFERENCES):
              for g, n in sorted(refs.items()) if n < min_references]
             + [f"continental group {g} has {paint.get(g, 0)} of the 2 painting references RFMix needs"
                for g in sorted(conts) if paint.get(g, 0) < 2]
-            + ([f"painting references who are no reference people: {len(stray)}, e.g. {stray[0]}"] if stray else []))
+            + ([f"painting references who are no reference people: {len(stray)}, e.g. {stray[0]}"] if stray else [])
+            + ([f"reference people without a continental and a regional group: {len(nogroup)}, e.g. {nogroup[0]}"]
+               if nogroup else []))
 
 
 def check_map_main(a):

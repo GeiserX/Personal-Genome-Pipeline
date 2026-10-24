@@ -143,6 +143,10 @@ expect("check-map: a continental group with references but no painting reference
 stray = [r[:5] + (["1"] if r[0] == "p1" else [r[5]]) for r in rows2]
 expect("check-map: a painting reference who is no reference (a related Papuan)",
        af.map_problems(stray), ["painting references who are no reference people: 1, e.g. p1"])
+nogrp = [r[:3] + (["-"] if r[0] == "y0" else [r[3]]) + r[4:] for r in rows2]
+expect("check-map: a reference person without a regional group",
+       af.map_problems(nogrp), ["regional group WAF has 9 of the 10 reference people it needs",
+                                "reference people without a continental and a regional group: 1, e.g. y0"])
 write(os.path.join(pm, "one.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n"
       + "".join("\t".join(r) + "\n" for r in one))
 raises("check-map: stops on that table", lambda: af.main(["check-map", "--map", os.path.join(pm, "one.tsv")]))
