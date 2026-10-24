@@ -81,13 +81,16 @@ hla_of() {
 check "the Nextflow summary has the OptiType rows" has '"agree": "yes"' "$(hla_of "${R}/summary.json" optitype)"
 check_eq "and they are the bash report's (case hla-second-caller-1)" "$(hla_of "${R}/summary.json" optitype)" \
   "$(hla_of "${E2E_WORK}/hla-qc-bash-summary.json" optitype)"
-# nf_report_has HTML: every concordance row and the KIR result are in the report.
+# nf_report_has HTML: every concordance row and the KIR result are in the report. Each
+# gene's value is matched with its own label, so swapped rows fail.
+html_esc() { python3 -I -c 'import html, sys; print(html.escape(sys.argv[1]))' "$1"; }
 nf_report_has() {
   local g t o a w n=0 ok=0
   while IFS=$'\t' read -r g t o a _; do
     case $a in yes) w=agree ;; no) w=disagree ;; *) w=$a ;; esac
     n=$((n + 1))
-    grep -qF "${g}: T1K vs OptiType" "$1" && grep -qF "${w}: T1K ${t}, OptiType ${o}" "$1" && ok=$((ok + 1))
+    grep -qF "<span class=\"label\">${g}: T1K vs OptiType</span><span class=\"value\">$(html_esc "${w}: T1K ${t}, OptiType ${o}")" "$1" \
+      && ok=$((ok + 1))
   done < <(tail -n +2 "$CONC")
   [ "$n" -eq 3 ] && [ "$ok" -eq 3 ] || return 1
   if grep -q $'^KIR' "$KG"; then

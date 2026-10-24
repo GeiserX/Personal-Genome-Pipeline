@@ -92,7 +92,9 @@ TXT="${CASE_TMP}/${S}_report.txt"
 python3 -I "${REPO}/bin/render_report.py" --summary "${G}/${S}/summary.json" -o "$TXT" >/dev/null
 cp "${G}/${S}/summary.json" "${E2E_WORK}/hla-qc-bash-summary.json" 2>/dev/null   # case hla-second-caller-2 compares the Nextflow one
 sed -n '/OptiType check/,/^$/p' "$TXT"
-# report_has TXT HTML: every row of the concordance table is a line of both reports.
+# report_has TXT HTML: every row of the concordance table is a line of both reports. Each HTML
+# value is matched with its own gene's label, so swapped rows fail.
+html_esc() { python3 -I -c 'import html, sys; print(html.escape(sys.argv[1]))' "$1"; }
 report_has() {
   local g t o a note w x n=0 ok=0
   while IFS=$'\t' read -r g t o a note; do
@@ -101,7 +103,8 @@ report_has() {
     case $note in ''|-) ;; *) x+=" (${note})" ;; esac
     n=$((n + 1))
     grep -qF "$(printf '    %-8s ' "$g")${x}" "$1" \
-      && grep -qF "${g}: T1K vs OptiType" "$2" && grep -qF "$x" "$2" && ok=$((ok + 1))
+      && grep -qF "<span class=\"label\">${g}: T1K vs OptiType</span><span class=\"value\">$(html_esc "$x")</span>" "$2" \
+      && ok=$((ok + 1))
   done < <(tail -n +2 "$CONC")
   [ "$n" -eq 3 ] && [ "$ok" -eq 3 ]
 }
