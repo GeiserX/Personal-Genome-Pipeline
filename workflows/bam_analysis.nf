@@ -71,6 +71,7 @@ workflow BAM_ANALYSIS {
     ch_mito_annotated   = Channel.empty()   // [meta, <id>_chrM_annotated.tsv]
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
+    ch_hla_concordance  = Channel.empty()   // [meta, <id>_hla_concordance.tsv] when OptiType typed reads
     ch_smn_copy_number  = Channel.empty()
     ch_hba_copy_number  = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
@@ -111,8 +112,9 @@ workflow BAM_ANALYSIS {
                     .join(HLA_TYPING.out.hla_alleles.map { meta, f -> [meta.id, f] })
                     .map { id, meta, r1, r2, f -> tuple(meta, r1, r2, f) }
             )
-            ch_hla_optitype = HLA_QC.out.result
-            ch_versions     = ch_versions.mix(HLA_QC_READS.out.versions, HLA_QC.out.versions)
+            ch_hla_optitype    = HLA_QC.out.result
+            ch_hla_concordance = HLA_QC.out.concordance
+            ch_versions        = ch_versions.mix(HLA_QC_READS.out.versions, HLA_QC.out.versions)
         }
     }
 
@@ -332,6 +334,7 @@ workflow BAM_ANALYSIS {
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     hla_optitype     = ch_hla_optitype    // [meta, <id>_optitype_result.tsv] (--hla_qc)
+    hla_concordance  = ch_hla_concordance // [meta, <id>_hla_concordance.tsv] (--hla_qc, reads typed)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     hba_copy_number  = ch_hba_copy_number // [meta, <id>_hba_copy_number.tsv]
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]

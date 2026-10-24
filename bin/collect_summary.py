@@ -719,7 +719,69 @@ def sec_hla(d, s):
             loci.append(hla_locus_extras({"gene": c[0], "alleles": alleles, "quality": quals, "low_confidence": low,
                                           "withheld_from_pharmcat": low and c[0] in pgx_outside_calls.HLA_GENES},
                                          c[1] if len(c) > 1 else ""))
-    return p, {"loci": loci, "derived": hla_derived(loci)}
+    out = {"loci": loci, "derived": hla_derived(loci)}
+    ot, kir = hla_optitype(d, s), kir_genotypes(d, s)
+    if ot is not None:
+        out["optitype"] = ot
+    if kir is not None:
+        out["kir"] = kir
+    return p, out
+
+
+def first_comment(path):
+    """The first '#' line of a file step 08 wrote instead of a result, without the '#'."""
+    with open(path, errors="replace") as f:
+        for line in f:
+            if line.startswith("#"):
+                return line.lstrip("#").strip()
+    return ""
+
+
+def hla_optitype(d, s):
+    """Step 08's second HLA caller (HLA_QC=true): per class I gene the row of
+    its concordance table (pgx_outside_calls.py hla-concordance), or, when
+    there is no table, why OptiType's result file says it did not run. None
+    when OptiType was not asked for."""
+    conc = first_existing(d, [f"hla_optitype/{s}_hla_concordance.tsv"])
+    res = first_existing(d, [f"hla_optitype/{s}_optitype_result.tsv"])
+    if not conc and not res:
+        return None
+    if not conc:
+        return {"genes": [], "reason": first_comment(res) or "no concordance table: step 08 did not compare the callers"}
+    genes = []
+    with open(conc, errors="replace") as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            if (r.get("Gene") or "").strip():
+                genes.append({"gene": r["Gene"].strip(), "t1k": (r.get("T1K") or "").strip(),
+                              "optitype": (r.get("OptiType") or "").strip(), "agree": (r.get("Agree") or "").strip(),
+                              "note": (r.get("Note") or "").strip()})
+    return {"genes": genes, "reason": "" if genes else "the concordance table has no rows"}
+
+
+def kir_genotypes(d, s):
+    """Step 08's KIR pass (KIR=true): the genes T1K gave an allele, with each
+    allele's quality, and the genes it gave none; or the line step 08 wrote
+    for a BAM with too few KIR reads. None when KIR was not typed."""
+    p = first_existing(d, [f"kir_t1k/{s}_kir_genotype.tsv", f"kir/{s}_kir_genotype.tsv"])
+    if not p:
+        return None
+    typed, not_called = [], []
+    with open(p, errors="replace") as f:
+        for line in f:
+            c = line.rstrip("\n").split("\t")
+            if len(c) < 3 or c[0].startswith("#"):
+                continue
+            alleles, quals = [], []
+            for i in (2, 5):
+                if len(c) > i and c[i] not in ("", "."):
+                    alleles.append(c[i])
+                    quals.append(c[i + 2] if len(c) > i + 2 else "")
+            if alleles:
+                typed.append({"gene": c[0], "alleles": alleles, "quality": quals})
+            else:
+                not_called.append(c[0])
+    reason = "" if typed or not_called else (first_comment(p) or "the KIR genotype file has no gene rows")
+    return {"typed": typed, "not_called": not_called, "reason": reason}
 
 
 def hla_quality(q):

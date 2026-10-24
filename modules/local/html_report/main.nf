@@ -10,7 +10,7 @@
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
     into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
-    cpic/, roh/, mito/, telomere/, hla_t1k/, pypgx/, annotsv/, traits/, couple/, ...); a step that did
+    cpic/, roh/, mito/, telomere/, hla_t1k/, hla_optitype/, kir/, pypgx/, annotsv/, traits/, couple/, ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
     name is the user's. indexcov's folder becomes indexcov/ itself (the
@@ -68,6 +68,8 @@ process HTML_REPORT {
             ${id})                                        place telomere "\$f" ;;
             ${id}_chrM_filtered.vcf.gz|${id}_chrM_annotated.tsv) place mito "\$f" ;;
             ${id}_hla_genotype.tsv)                       place hla_t1k "\$f" ;;
+            ${id}_optitype_result.tsv|${id}_hla_concordance.tsv) place hla_optitype "\$f" ;;
+            ${id}_kir_genotype.tsv)                       place kir "\$f" ;;
             ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv) place expansion_hunter "\$f" ;;
             diploidSV.vcf.gz)                             place manta "\$f" ;;
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
