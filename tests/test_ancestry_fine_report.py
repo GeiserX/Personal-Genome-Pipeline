@@ -248,7 +248,7 @@ summ = collect_summary.collect("S", sd)
 txt, html = render_report.text_report(summ), render_report.html_report(summ)
 for kind, doc in (("text", txt), ("HTML", html)):
     expect(f"report: the {kind} report names the group left out",
-           "Left out of the model: Oceania (continental group), Oceania (regional group). The panel has fewer than 10" in doc,
+           "Left out of the model: Oceania (continental and regional group). The panel has fewer than 10" in doc,
            True)
     expect(f"report: the {kind} report names the chromosome not painted", "not painted: RFMix failed on chr19" in doc, True)
 os.remove(os.path.join(paint, "failed.txt"))

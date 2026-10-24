@@ -17,6 +17,7 @@ import argparse
 import html
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -431,7 +432,17 @@ def ancestry_fine_left_out(d):
     """The groups the model leaves out, as one sentence, or ''."""
     if not d.get("left_out"):
         return ""
-    return (f"Left out of the model: {', '.join(r['group'] for r in d['left_out'])}. The panel has fewer than "
+    # One TSV row per level ("Oceania (continental group)"); merge a group the
+    # two levels share into one name, as the step's own summary does.
+    kinds = {}
+    for r in d["left_out"]:
+        m = re.fullmatch(r"(.*) \((.*) group\)", r["group"])
+        name, kind = (m.group(1), m.group(2)) if m else (r["group"], "")
+        kinds.setdefault(name, [])
+        if kind and kind not in kinds[name]:
+            kinds[name].append(kind)
+    names = [f"{n} ({' and '.join(k)} group)" if k else n for n, k in kinds.items()]
+    return (f"Left out of the model: {', '.join(names)}. The panel has fewer than "
             f"{d.get('min_references', 10)} unrelated reference people for it, so its ancestry is spread over the "
             "groups shown.")
 

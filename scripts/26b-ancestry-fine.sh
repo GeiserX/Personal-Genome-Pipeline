@@ -9,8 +9,9 @@
 #   1. genotypes the panel's SNVs from the gVCF (so the sites where you match
 #      the reference count), or from a VCF that holds reference calls;
 #   2. ADMIXTURE projects you on the allele frequencies of the panel's groups
-#      at two levels (6 continental groups, 18 regional ones), and a block
-#      bootstrap of the SNVs gives the spread of each fraction;
+#      at two levels (continental and regional groups; 5 and 17 on the
+#      default panel, which leaves Oceania out), and a block bootstrap of the
+#      SNVs gives the spread of each fraction;
 #   3. Beagle phases your genotypes against the panel;
 #   4. RFMix paints each segment of each haplotype with the continental group
 #      it is most similar to;
