@@ -4,7 +4,10 @@
 # chr22:20-35 Mb (the slices are too short to paint: RFMix needs 5 cM):
 #   - without the panel, step 26b says so in one line and exits 0;
 #   - the panel installs: both ADMIXTURE levels, painting references, and
-#     neither person of the synthetic mix in it;
+#     neither person of the synthetic mix in it. Oceania, which has one
+#     unrelated person in the panel's metadata, is left out of the model at
+#     both levels (5 continental and 17 regional groups), and the install log
+#     and HG002T's report name it;
 #   - HG002 from its gVCF on the slices (cases 21 and 03): the continental
 #     fractions sum to 1, each carries a bootstrap range, and with no
 #     chromosome long enough the step says it painted nothing. Only about a
@@ -12,6 +15,10 @@
 #   - HG002T, HG002's GIAB v4.2.1 genotypes at the panel's SNVs inside GIAB's
 #     confident regions (0/0 where GIAB lists no variant): West Eurasia first
 #     with 70% or more, and the largest share of the painted chr22, half or more;
+#     RFMix's log of chr22 has no zero-size allocation. Red control: RFMix
+#     on the same input with one Oceanian added back to the painting map as
+#     its own group (the map before this rule) logs "requesting zero or
+#     negative size", so that check can fail;
 #   - MIX, a planted person: chr22 below 27.5 Mb and the first half of each
 #     slice from a Yoruba (NA18486), the rest from a Han Chinese (NA18525),
 #     both left out of the panel: Africa and East Asia each 25% to 75%, the
@@ -65,8 +72,12 @@ ANCESTRY_FINE_REGIONS="$REGIONS" ANCESTRY_FINE_EXCLUDE="${A},${B}" \
 check_eq "setup.sh --ancestry-fine-panel exits 0" "${PIPESTATUS[0]}" 0
 T_SETUP=$(( $(date +%s) - T0 ))
 check "the panel is finished (model/DONE)" test -s "${PANEL}/model/DONE"
-check_eq "continental level: 6 groups" "$(awk -F'\t' '$1 == "continent" {print $2}' "${PANEL}/model/levels.tsv" 2>/dev/null)" 6
-check_eq "regional level: 18 groups" "$(awk -F'\t' '$1 == "region" {print $2}' "${PANEL}/model/levels.tsv" 2>/dev/null)" 18
+check_eq "continental level: 5 groups (Oceania left out)" "$(awk -F'\t' '$1 == "continent" {print $2}' "${PANEL}/model/levels.tsv" 2>/dev/null)" 5
+check_eq "regional level: 17 groups (Oceania left out)" "$(awk -F'\t' '$1 == "region" {print $2}' "${PANEL}/model/levels.tsv" 2>/dev/null)" 17
+check "Oceania has no reference person and no painting reference" \
+  awk -F'\t' '$3 == "OCE" && ($5 == 1 || $6 == 1) {bad = 1} END {exit bad}' "${PANEL}/samples.tsv"
+check "the install log names Oceania as left out" \
+  has 'Left out of the model, fewer than 10 unrelated reference people: Oceania \(continental and regional group\)' "$(cat "$STEP_LOG")"
 check_ge "SNVs for ADMIXTURE" "$(wc -l < "${PANEL}/model/ref.bim" 2>/dev/null | tr -d ' ')" 500
 check_ge "painting references" "$(wc -l < "${PANEL}/model/paint_map.tsv" 2>/dev/null | tr -d ' ')" 150
 check "the two people of the mix are not in the panel" \
@@ -162,6 +173,29 @@ check_eq "HG002T: West Eurasia is the largest share of the painting" \
 check "HG002T: half or more of ${LONG_CHR} painted West Eurasia (${PAINT_T:-none})" ge "$PAINT_T" 0.5
 check_ge "HG002T: painted Mb of ${LONG_CHR} on two haplotypes" \
   "$(awk -F'\t' -v c="$LONG_CHR" '$1 == c {t += $3 - $2} END {print int(t / 1e6)}' "${G}/HG002T/ancestry_fine/HG002T_painting.bed" 2>/dev/null)" 20
+check "HG002T: the report says Oceania was left out of the model" \
+  has '^Left out of the model: Oceania \(continental and regional group\)' "$(cat "${G}/HG002T/ancestry_fine/HG002T_ancestry_fine.txt" 2>/dev/null)"
+check "HG002T: and the table has its left_out rows" \
+  awk -F'\t' '$1 == "left_out" && $2 == "OCE" {n++} END {exit n != 2}' "${G}/HG002T/ancestry_fine/HG002T_ancestry_fine.tsv"
+T_LOG="${G}/HG002T/ancestry_fine/work/paint/${LONG_CHR}.log"
+check "HG002T: RFMix painted ${LONG_CHR} with no failure" test ! -e "${G}/HG002T/ancestry_fine/work/paint/failed.txt"
+check "HG002T: RFMix's log of ${LONG_CHR} is there" test -s "$T_LOG"
+check "HG002T: and has no zero-size allocation" lacks 'requesting zero or negative size' "$(cat "$T_LOG" 2>/dev/null)"
+# Red control: the same RFMix run with one Oceanian added back to the painting
+# map as its own group, which is what the map held before the minimum.
+RED_RF="${G}/HG002T/rfmix-red"
+mkdir -p "$RED_RF"
+OCE_ONE=$(awk -F'\t' '$3 == "OCE" {print $1; exit}' "${PANEL}/samples.tsv")
+{ cat "${PANEL}/model/paint_map.tsv"; printf '%s\tOCE\n' "$OCE_ONE"; } > "${RED_RF}/paint_map.tsv"
+echo "+ rfmix on HG002T ${LONG_CHR} with one Oceanian (${OCE_ONE:-none}) as its own group"
+docker run --rm -u "$(id -u):$(id -g)" -v "${G}:/genome" -w /genome "$RFMIX_IMAGE" \
+  rfmix -f "HG002T/ancestry_fine/work/phase/${LONG_CHR}.vcf.gz" -r "reference/ancestry_fine/${ANCESTRY_FINE_PANEL}/panel/${LONG_CHR}.vcf.gz" \
+    -m HG002T/rfmix-red/paint_map.tsv -g "reference/ancestry_fine/${ANCESTRY_FINE_PANEL}/maps/${LONG_CHR}.rfmix.map" \
+    -o HG002T/rfmix-red/out --chromosome="$LONG_CHR" --n-threads=4 --random-seed=1 > "${RED_RF}/rfmix.log" 2>&1
+echo "+ exit $? (a segfault is 139; the zero-size request is logged either way)"
+grep -m 3 'requesting zero' "${RED_RF}/rfmix.log" || true
+check "red: with a one-person group RFMix logs the zero-size allocation" \
+  has 'requesting zero or negative size' "$(cat "${RED_RF}/rfmix.log" 2>/dev/null)"
 
 # --- MIX: half a Yoruba, half a Han Chinese ---------------------------------------------
 # Their genotypes at the panel's SNVs, from the same bucket (the panel holds

@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Estimates which reference groups your genome is most similar to, as fractions with a bootstrap range, at two levels: 6 continental groups and 18 regional ones. It also paints each chromosome: each segment of each of your two copies gets the continental group it is most similar to. Opt-in.
+Estimates which reference groups your genome is most similar to, as fractions with a bootstrap range, at two levels: continental groups and regional ones (5 and 17 on the default panel, which leaves Oceania out; see [The groups](#the-groups)). It also paints each chromosome: each segment of each of your two copies gets the continental group it is most similar to. Opt-in.
 
 Without the panel the step prints one line and exits 0:
 
@@ -40,7 +40,14 @@ The bucket reports a crc32c checksum per file. `versions.env` pins the sha256 of
 
 ### The groups
 
-A group name is ours: a set of reference populations we put together and named, not a nationality. Admixed populations (between continental groups) are in no group and are never a reference: ACB, ASW, CLM, MXL, PEL, PUR, Hazara and Uygur. Related people are no reference either.
+A group name is ours: a set of reference populations we put together and named, not a nationality. Admixed populations (between continental groups) are in no group and are never a reference: ACB, ASW, CLM, MXL, PEL, PUR, Hazara and Uygur. Related people are no reference either: a person is related when gnomAD's metadata flags it (`sample_filters.all_samples_related`).
+
+**A group needs 10 unrelated reference people.** A regional group with fewer leaves the model: its people are no reference at either level and no painting reference. A continental group leaves with it when none of its regional groups is left. The install log and every report name the groups left out. Why 10:
+
+- RFMix fits its CRF weight on people it simulates from `floor(n / 10) + 1` reference people of each group, and leaves those people out of the reference while it does. With one reference person a group then has no reference haplotype at all: RFMix logs `mm::allocate() called at setup_ref_haplotypes():686 (random-forest.cpp) requesting zero or negative size (0)` and can stop with a segmentation fault, on some chromosomes and not others. Two people is RFMix's hard floor.
+- Above that floor, a group is meant to stand for a population. Below 10 people (20 haplotypes), the group's supervised ADMIXTURE frequencies and RFMix's reference are a handful of people's genotypes.
+
+On hgdp1kgp_v2 this leaves out Oceania only: gnomAD flags 29 of its 30 people as related (second-degree or ambiguous, in three small populations), so it has one unrelated person. The next smallest group, Southern Africa, has 12. gnomAD's metadata says which kind of relative each person has but not with whom, so an unrelated subset of the 30 cannot be chosen from it. An Oceanian ancestry is then spread over the groups that are modelled, and the reports say Oceania is not one of them.
 
 | Continental group | Regional groups (reference populations) |
 |---|---|
@@ -49,11 +56,13 @@ A group name is ours: a set of reference populations we put together and named, 
 | Central and South Asia | Central and South Asia (GIH, PJL, BEB, STU, ITU, Balochi, Brahui, Makrani, Pathan, Sindhi, Burusho, Kalash) |
 | East Asia | East Asia (CHB, CHS, CDX, JPT, KHV, Han, NorthernHan, Japanese, Dai, Daur, Hezhen, Lahu, Miao, Mongolian, Naxi, Oroqen, She, Tu, Tujia, Xibo, Yi, Cambodian); Siberia (Yakut) |
 | Americas (Native American) | Americas (Karitiana, Maya, Pima, Surui, Colombian) |
-| Oceania | Oceania (Bougainville, PapuanHighlands, PapuanSepik) |
+| Oceania | Oceania (Bougainville, PapuanHighlands, PapuanSepik); left out of the model on hgdp1kgp_v2, see above |
 
 Europe, the Middle East and North Africa form one continental group: at that level their populations are not well apart, and a painting with them split flips between them along every European or Middle Eastern genome. The regional level splits them.
 
-`ANCESTRY_FINE_SAMPLE_MAP=<file>` installs a `samples.tsv` of your own (the same six columns) and fits the frequencies again; the panel's genotypes are kept.
+`ANCESTRY_FINE_SAMPLE_MAP=<file>` installs a `samples.tsv` of your own (the same six columns) and fits the frequencies again; the panel's genotypes are kept. Your table is used as given, so give every group 10 reference people or more: a group of one makes RFMix fail as above.
+
+The model is fitted again whenever `samples.tsv` changes, so after an update that changes this rule, run `setup.sh --ancestry-fine-panel` once more: it rewrites `samples.tsv` and refits the model, and reuses the panel's genotypes.
 
 ### Not in this panel
 
@@ -85,7 +94,7 @@ The Allen Ancient DNA Resource (AADR, release v66.p1, CC0 1.0 on the [Harvard Da
 2. Writes a one-person ADMIXTURE input on the SNVs ADMIXTURE uses that you have a genotype for (ADMIXTURE stops on a SNV with no genotype, so a missing one is left out), projects it on each level's frequencies, then runs the bootstrap replicates.
 3. Chooses the chromosomes to paint: 100 genotyped SNVs or more spanning 5 cM or more. RFMix stops with a segmentation fault on a span of a few cM; on a whole genome every autosome spans more than 40 cM.
 4. Phases those chromosomes with Beagle against the panel (`impute=false`, `seed=1`).
-5. Paints them with RFMix against 50 unrelated reference people per continental group at most, taken in turn from each population (`ANCESTRY_FINE_PAINT_PER_GROUP` at install), `--random-seed=1`.
+5. Paints them with RFMix against 50 unrelated reference people per continental group at most, taken in turn from each population (`ANCESTRY_FINE_PAINT_PER_GROUP` at install), `--random-seed=1`. When RFMix fails on a chromosome, the step prints the last lines of its log, writes the chromosome to `work/paint/failed.txt` and goes on with the next one; the reports list it as not painted.
 6. Writes the outputs below.
 
 The Nextflow module (`modules/local/ancestry_fine`) runs the same parts as six processes, one per image, and the e2e test checks that it writes the fractions of the bash step.
@@ -94,7 +103,7 @@ The Nextflow module (`modules/local/ancestry_fine`) runs the same parts as six p
 
 | File | Contents |
 |---|---|
-| `ancestry_fine/${SAMPLE}_ancestry_fine.tsv` | one row per group: `level` (`continent`, `region`, or `painting` for the share of the painted genome), `code`, `group`, `fraction`, `se` (bootstrap standard error), `low` and `high` (2.5 and 97.5 percentiles of the bootstrap) |
+| `ancestry_fine/${SAMPLE}_ancestry_fine.tsv` | one row per group: `level` (`continent`, `region`, or `painting` for the share of the painted genome), `code`, `group`, `fraction`, `se` (bootstrap standard error), `low` and `high` (2.5 and 97.5 percentiles of the bootstrap). Also a `left_out` row for each group the model leaves out, and a `not_painted` row for each chromosome RFMix failed on, both with `.` in the number columns |
 | `ancestry_fine/${SAMPLE}_painting.bed` | the painting: chromosome, start, end, haplotype (1 or 2), continental group code |
 | `ancestry_fine/${SAMPLE}_painting.png` | chromosomes 1 to 22 to scale, two bars each, coloured by continental group; grey is not painted |
 | `ancestry_fine/${SAMPLE}_ancestry_fine.txt` | the same in plain text, with what it means |
@@ -110,7 +119,7 @@ Measured in CI only, on the e2e job's reduced panel: the fixture's slices plus c
 |---|---|---|
 | `setup.sh --ancestry-fine-panel` on that panel | 1 min 43 s | 154 MB on disk, 7,789 SNVs of 4,089 people, 1,003 of them for ADMIXTURE |
 | The step on the fixture's slices from a gVCF (no chromosome long enough to paint) | 4 s | 2,136 panel SNVs genotyped |
-| The step with the painting of chr22:20-35 Mb | 1 min 19 s | 100 bootstrap replicates, 236 painting references |
+| The step with the painting of chr22:20-35 Mb | 1 min 19 s | 100 bootstrap replicates, 236 painting references (235 since Oceania left the model) |
 | The same through the Nextflow pipeline, with the HTML report | 1 min 38 s | six processes |
 
 A whole genome has not been run here. Expected, scaled from those numbers: the install reads about 19 GB from gnomAD's bucket and decodes every person's genotypes, a few hours on a fast connection; the step itself is dominated by RFMix, which grows with the number of SNVs and painting references.
@@ -128,13 +137,13 @@ A whole genome has not been run here. Expected, scaled from those numbers: the i
 - Continental-level similarity is well supported. Country-level similarity is supported only where the panel has that country and its neighbours are genetically apart. Below that the step says little.
 - Splits within Iberia are weak for every method; the panel has IBS (Spanish) and Basque only.
 - Greek and Southern Italian ancestry overlap, and the panel has no Greek population at all: a Greek genome is described with Italy, the Levant and the Caucasus.
-- Groups the panel samples poorly (Native American, Oceanian, North African) are estimated less well.
+- Groups the panel samples poorly (Native American, North African) are estimated less well. Oceania is not modelled at all on the default panel (see [The groups](#the-groups)).
 - A population the panel lacks, Ashkenazi Jewish for one, gets no group of its own: its genomes are described with the nearest groups.
 - The painting uses continental groups only; local ancestry within Europe is not reliable with these tools.
 
 ## Notes
 
-- The e2e case (`tests/e2e/ancestry-fine-grained-1.sh`) checks HG002 from its gVCF, HG002's GIAB genotypes on chr22:20-35 Mb, and a planted person whose first half comes from a Yoruba and second half from a Han Chinese person (both left out of the panel): the planted person must come out near half and half with a painting that switches at the junction. A red control in the same case moves every reference person's label to the next group and checks that the HG002 checks then fail. A two-sample gVCF must stop the step and the Nextflow module with the reason and no fractions.
+- The e2e case (`tests/e2e/ancestry-fine-grained-1.sh`) checks HG002 from its gVCF, HG002's GIAB genotypes on chr22:20-35 Mb, and a planted person whose first half comes from a Yoruba and second half from a Han Chinese person (both left out of the panel): the planted person must come out near half and half with a painting that switches at the junction. A red control in the same case moves every reference person's label to the next group and checks that the HG002 checks then fail. The case also checks that Oceania is left out and named, and that RFMix's log of chr22 has no zero-size allocation; its red control runs RFMix on the same input with one Oceanian put back as its own group and finds that allocation in the log. A two-sample gVCF must stop the step and the Nextflow module with the reason and no fractions.
 
 ## Links
 
