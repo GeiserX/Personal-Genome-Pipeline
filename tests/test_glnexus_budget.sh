@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # GLnexus's --mem-gbytes sizes only its RocksDB (block cache and bulk-load
 # write buffers); the alleles it discovers and the unifier's sites are held
-# outside it. With the budget at the container's limit minus 1 GB, GLnexus
-# went past the limit and the kernel killed it (exit 137). Both entry points
-# must give GLnexus at most half its container's memory, by the same rule:
+# outside it, so a budget near the limit leaves no room for them. Both entry
+# points must give GLnexus at most half its container's memory, by the same
+# rule:
 #   scripts/38-family.sh           --mem-gbytes "$((<expr of GLNEXUS_MEM>))"
 #   modules/local/glnexus/main.nf  def mem = <expr of task.memory.toGiga()>
 # This test reads each expression from the source, evaluates it for container
 # limits of 1 to 64 GB, and checks both. It first proves it can fail: the
-# limit-minus-1 rule must be reported.
+# limit-minus-1 rule, and a module under half but out of step with the
+# script, must both be reported.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -65,9 +66,14 @@ if out=$(check "${WORK}/old.sh" "${WORK}/old.nf"); then
 else
   echo "ok:   limit-minus-1 budget reported: $(echo "$out" | head -1)"
 fi
-# Control: one entry point changed alone must be reported.
-if out=$(check "${REPO}/scripts/38-family.sh" "${WORK}/old.nf"); then
+# Control: a module under half but out of step with the script must be
+# reported by the equality check, not the half rule.
+sed 's/^\([[:space:]]*def mem = \).*/\1Math.max(1, (task.memory.toGiga() as int).intdiv(3))/' \
+  "${REPO}/modules/local/glnexus/main.nf" > "${WORK}/third.nf"
+if out=$(check "${REPO}/scripts/38-family.sh" "${WORK}/third.nf"); then
   echo "FAIL: a module out of step with the script was not reported"; FAILS=$((FAILS + 1))
+elif ! printf '%s\n' "$out" | grep -q 'differ'; then
+  echo "FAIL: a module out of step was not reported as differing: $(echo "$out" | head -1)"; FAILS=$((FAILS + 1))
 else
   echo "ok:   module out of step reported: $(echo "$out" | head -1)"
 fi

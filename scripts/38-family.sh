@@ -121,8 +121,8 @@ echo "--- joint call (GLnexus, DeepVariantWGS)"
 rm -rf "${OUT}/glnexus_db"
 # --mem-gbytes sizes only GLnexus's RocksDB (block cache and bulk-load write
 # buffers); the alleles it discovers and the unifier's sites are held outside
-# it. With the container's limit minus 1 GB the container was killed for
-# memory, so GLnexus gets half of GLNEXUS_MEM (the Nextflow GLNEXUS rule too).
+# it, so a budget near the limit leaves no room for them. GLnexus gets half
+# of GLNEXUS_MEM (the Nextflow GLNEXUS rule too).
 run_in --rw "$OUT" --cpus "$THREADS" --memory "${GLNEXUS_MEM}g" "$GLNEXUS_IMAGE" \
   glnexus_cli --config DeepVariantWGS --dir "${OUT_C}/glnexus_db" --threads "$THREADS" \
     --mem-gbytes "$((GLNEXUS_MEM / 2 > 1 ? GLNEXUS_MEM / 2 : 1))" "${GVCFS_C[@]}" > "${OUT}/family.bcf.tmp"
