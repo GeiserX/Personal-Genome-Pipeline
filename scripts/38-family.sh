@@ -27,7 +27,8 @@
 # Env: SOMALIER_SITES  sites VCF (default reference/somalier/sites.hg38.vcf.gz),
 #                      inside GENOME_DIR
 #      THREADS         CPUs of GLnexus (default 8)
-#      GLNEXUS_MEM     memory of GLnexus in GB (default 16)
+#      GLNEXUS_MEM     memory of GLnexus's container in GB (default 16; GLnexus's
+#                      own --mem-gbytes budget is half of it)
 set -euo pipefail
 
 FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv]}
@@ -118,9 +119,13 @@ done
 echo ""
 echo "--- joint call (GLnexus, DeepVariantWGS)"
 rm -rf "${OUT}/glnexus_db"
+# --mem-gbytes sizes only GLnexus's RocksDB (block cache and bulk-load write
+# buffers); the alleles it discovers and the unifier's sites are held outside
+# it, so a budget near the limit leaves no room for them. GLnexus gets half
+# of GLNEXUS_MEM (the Nextflow GLNEXUS rule too).
 run_in --rw "$OUT" --cpus "$THREADS" --memory "${GLNEXUS_MEM}g" "$GLNEXUS_IMAGE" \
   glnexus_cli --config DeepVariantWGS --dir "${OUT_C}/glnexus_db" --threads "$THREADS" \
-    --mem-gbytes "$((GLNEXUS_MEM > 1 ? GLNEXUS_MEM - 1 : 1))" "${GVCFS_C[@]}" > "${OUT}/family.bcf.tmp"
+    --mem-gbytes "$((GLNEXUS_MEM / 2 > 1 ? GLNEXUS_MEM / 2 : 1))" "${GVCFS_C[@]}" > "${OUT}/family.bcf.tmp"
 rm -rf "${OUT}/glnexus_db"
 mv -f "${OUT}/family.bcf.tmp" "${OUT}/family.bcf"
 run_in --rw "$OUT" --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" bcftools view -Oz -o "${OUT_C}/family.vcf.gz" "${OUT_C}/family.bcf"

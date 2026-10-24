@@ -73,7 +73,11 @@ process GLNEXUS {
     script:
     def gl = gvcfs instanceof List ? gvcfs : [gvcfs]
     def links = [ids, gl].transpose().collect { p -> "ln -s \"\$(readlink -f ${p[1]})\" gvcf/${p[0]}.g.vcf.gz" }.join('\n    ')
-    def mem = Math.max(1, (task.memory.toGiga() as int) - 1)
+    // --mem-gbytes sizes only GLnexus's RocksDB (block cache and bulk-load
+    // write buffers); the alleles it discovers and the unifier's sites are
+    // held outside it. Half the task's memory leaves the rest for those, the
+    // same rule as scripts/38-family.sh (tests/test_glnexus_budget.sh).
+    def mem = Math.max(1, (task.memory.toGiga() as int).intdiv(2))
     """
     mkdir gvcf
     ${links}
