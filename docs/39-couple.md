@@ -23,9 +23,11 @@ Before this step a couple had to compare two ClinVar tables by hand ([Multi-Samp
 | Finding | From | Counted when |
 |---|---|---|
 | ClinVar pathogenic or likely pathogenic hit | step 06, `clinvar/<sample>_clinvar_hits.vcf` (required) | the genotype carries the alternate allele and ClinVar's `GENEINFO` names a gene of the carrier list |
-| Deletion | step 19 (Delly), `delly/<sample>_sv.vcf.gz` | `SVTYPE=DEL`, `FILTER` PASS and a per-sample `FT` that is not a failed filter, the genotype carries it, and it removes at least one exon of a listed gene (GENCODE exons) |
+| Deletion | step 19 (Delly), `delly/<sample>_sv.vcf.gz` | `SVTYPE=DEL`, `FILTER` PASS and a per-sample `FT` that is not a failed filter, the genotype carries it, it removes at least one exon of a listed gene (GENCODE exons), and, when it is longer than 1,000 bp, read depth shows the loss (see below) |
 | SMN1 copy number | step 35 (Parascopy), `paralogs/<sample>_smn_copy_number.tsv` | SMN1 exon 7 at 1 copy (a carrier) or 0, with filter PASS and quality 20 or more, by step 35's rule |
 | FMR1 and FXN repeats | step 09 (ExpansionHunter), `expansion_hunter/<sample>_eh.vcf` | an FMR1 allele of 55 CGG or more (a premutation; more than 200 is a full mutation), an FXN allele of 66 GAA or more |
+
+Short-read Delly can mark PASS a long deletion, even one of many megabases, that read depth contradicts, and such a call removes an exon of hundreds of listed genes at once. So a deletion longer than 1,000 bp counts only when Delly's own read-depth copy number (`FORMAT/RDCN`, the depth inside the deletion against its flanks) is below a normal region's copies: 1 on a male's chrX or chrY outside the pseudoautosomal regions, 2 everywhere else. A heterozygous loss reads 1, a homozygous or hemizygous loss 0. A long deletion with RDCN at the normal count or more, or with no estimate (`.` or a negative value, no reads in the flanks), is set aside, and the table of what was assessed gives the count. 1,000 bp is Delly's own line between small and large SVs in its read counts (`indelsize` in Delly's source); a deletion that size or smaller rests on its split reads and read pairs alone. A deletion VCF without the RDCN field (not written by Delly 2.x) is read as before, without the depth check.
 
 Only the ClinVar screen is required. Each of the others is used when its file is there, and the report lists every one that was not.
 
@@ -84,7 +86,7 @@ The report ends with this list, plus the inputs that were missing for each partn
 - SMN1 silent carriers: two copies on one chromosome and none on the other read as two copies;
 - changes in genes with a near-identical copy (HBA1 and HBA2, CYP21A2, GBA1, SMN1), which short reads place poorly, and gene conversions; a deletion there counts only when Delly calls it;
 - repeat expansions other than FMR1 and FXN, and the exact size of a long FMR1 or FXN allele;
-- deletions Delly does not call, duplications, inversions and insertions;
+- deletions Delly does not call, long deletions read depth does not confirm, duplications, inversions and insertions;
 - low-level mosaicism, and whether two changes of one person in one gene sit on the same copy.
 
 A screen that finds no shared gene lowers the chance of a child with one of these conditions; it does not remove it.
