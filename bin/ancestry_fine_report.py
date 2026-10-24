@@ -246,6 +246,9 @@ def check_map_main(a):
     bad = [r for r in rows if len(r) != 6]
     if bad:
         die(f"{a.map}: a row without six columns, e.g. {bad[0]}")
+    bad = [r for r in rows if r[4] not in ("0", "1") or r[5] not in ("0", "1")]
+    if bad:
+        die(f"{a.map}: reference and paint must be 0 or 1, e.g. {bad[0]}")
     problems = map_problems(rows)
     if problems:
         die(f"{a.map}: " + "; ".join(problems))

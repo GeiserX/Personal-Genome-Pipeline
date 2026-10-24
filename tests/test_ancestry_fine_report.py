@@ -153,6 +153,10 @@ raises("check-map: stops on that table", lambda: af.main(["check-map", "--map", 
 write(os.path.join(pm, "short.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\ny0\tYRI\tAFR\n")
 raises("check-map: stops on a row without six columns",
        lambda: af.main(["check-map", "--map", os.path.join(pm, "short.tsv")]))
+write(os.path.join(pm, "flag.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n"
+      + "".join("\t".join(r) + "\n" for r in rows2) + "y10\tYRI\tAFR\tWAF\ttrue\t0\n")
+raises("check-map: stops on a reference flag other than 0 or 1",
+       lambda: af.main(["check-map", "--map", os.path.join(pm, "flag.tsv")]))
 
 # --- order -------------------------------------------------------------------------
 pops = ["EUR", "EUR", "AFR", "EAS", "AFR"]
