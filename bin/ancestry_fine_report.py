@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ancestry_fine_report.py: the Python half of step 26b (fine-grained ancestry).
 
-Standard library only (it runs in the plain python image). Five commands:
+Standard library only (it runs in the plain python image). Six commands:
 
   panel-map --meta TSV --bcf-samples LIST [--exclude IDS] [--paint-per-group N] --out samples.tsv
       The panel's sample table, written once by setup.sh --ancestry-fine-panel:
@@ -11,6 +11,12 @@ Standard library only (it runs in the plain python image). Five commands:
       unrelated people; a smaller group is left out of the model) and whether
       it is one of the painting references (at most N per continental group,
       taken in turn from each population).
+
+  check-map --map samples.tsv
+      Stops on a sample table given with ANCESTRY_FINE_SAMPLE_MAP that has a
+      regional group with 1 to MIN_REFERENCES - 1 reference people, or a
+      continental group with a single painting reference: RFMix fails on a
+      group of one, and a smaller group stands for a handful of people.
 
   order --pop FILE --q FILE
       The group codes in the column order of the .Q (and .P) file
@@ -204,6 +210,32 @@ def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100, min_refer
                     q.pop(0)[5] = "1"
                     taken += 1
     return rows
+
+
+def map_problems(rows, min_references=MIN_REFERENCES):
+    """What makes a sample table (rows of six columns, no header) unfit for
+    the model: a regional group with some but fewer than min_references
+    reference people, a continental group with one painting reference."""
+    refs, paint = {}, {}
+    for r in rows:
+        if r[4] == "1":
+            refs[r[3]] = refs.get(r[3], 0) + 1
+        if r[5] == "1":
+            paint[r[2]] = paint.get(r[2], 0) + 1
+    return ([f"regional group {g} has {n} of the {min_references} reference people it needs"
+             for g, n in sorted(refs.items()) if n < min_references]
+            + [f"continental group {g} has 1 painting reference, RFMix needs 2" for g, n in sorted(paint.items()) if n < 2])
+
+
+def check_map_main(a):
+    with open(a.map) as f:
+        rows = [line.rstrip("\n").split("\t") for line in f][1:]
+    bad = [r for r in rows if len(r) != 6]
+    if bad:
+        die(f"{a.map}: a row without six columns, e.g. {bad[0]}")
+    problems = map_problems(rows)
+    if problems:
+        die(f"{a.map}: " + "; ".join(problems))
 
 
 def panel_map_main(a):
@@ -772,6 +804,8 @@ def main(argv=None):
     p.add_argument("--exclude", default="")
     p.add_argument("--paint-per-group", type=int, default=100)
     p.add_argument("--out", required=True)
+    p = sub.add_parser("check-map")
+    p.add_argument("--map", required=True)
     p = sub.add_parser("order")
     p.add_argument("--pop", required=True)
     p.add_argument("--q", required=True)
@@ -796,7 +830,7 @@ def main(argv=None):
     p.add_argument("--panel", default="")
     p.add_argument("--out", required=True)
     a = ap.parse_args(argv)
-    {"panel-map": panel_map_main, "order": order_main, "sample-bed": sample_bed_main,
+    {"panel-map": panel_map_main, "check-map": check_map_main, "order": order_main, "sample-bed": sample_bed_main,
      "chroms": chroms_main, "report": report_main}[a.cmd](a)
 
 

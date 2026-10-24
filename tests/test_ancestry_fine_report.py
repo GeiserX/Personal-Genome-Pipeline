@@ -125,6 +125,25 @@ expect("panel-map: the install log names the groups left out",
 expect("panel-map: samples.tsv has no Oceanian reference",
        [r.split("\t")[4] for r in open(os.path.join(pm, "samples.tsv")).read().splitlines()[1:] if r.startswith("p0\t")], ["0"])
 
+# --- check-map: a table given with ANCESTRY_FINE_SAMPLE_MAP ------------------------
+# panel-map's own table passes; a group of one reference person, or a
+# continental group with one painting reference, stops the install.
+af.main(["check-map", "--map", os.path.join(pm, "samples.tsv")])
+expect("check-map: panel-map's table passes", af.map_problems(rows2), [])
+one = [r[:] for r in rows2]
+for r in one:
+    if r[0] == "p0":
+        r[4:] = ["1", "1"]
+expect("check-map: one Oceanian put back as reference and painting reference",
+       af.map_problems(one), ["regional group OCE has 1 of the 10 reference people it needs",
+                              "continental group OCE has 1 painting reference, RFMix needs 2"])
+write(os.path.join(pm, "one.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n"
+      + "".join("\t".join(r) + "\n" for r in one))
+raises("check-map: stops on that table", lambda: af.main(["check-map", "--map", os.path.join(pm, "one.tsv")]))
+write(os.path.join(pm, "short.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\ny0\tYRI\tAFR\n")
+raises("check-map: stops on a row without six columns",
+       lambda: af.main(["check-map", "--map", os.path.join(pm, "short.tsv")]))
+
 # --- order -------------------------------------------------------------------------
 pops = ["EUR", "EUR", "AFR", "EAS", "AFR"]
 q = [[1, 0, 0], [0.99, 0.01, 0], [0, 0, 1], [0, 1, 0], [0, 0.02, 0.98]]

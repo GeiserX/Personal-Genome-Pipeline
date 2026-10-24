@@ -651,6 +651,12 @@ install_ancestry_fine_panel() {
     head -n 1 "$smap" | grep -q $'^sample\tpopulation\tcontinent\tregion\treference\tpaint$' \
       || { echo "[WARN] ANCESTRY_FINE_SAMPLE_MAP=${smap} does not start with the header of samples.tsv"; return 1; }
     cp "$smap" "${dir}/samples.tsv.part"
+    if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+          python3 /pgp-bin/ancestry_fine_report.py check-map --map "$(cpath "${dir}/samples.tsv.part")"; then
+      rm -f "${dir}/samples.tsv.part"
+      echo "[WARN] ANCESTRY_FINE_SAMPLE_MAP=${smap} has a group too small to model"
+      return 1
+    fi
   elif ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
         python3 /pgp-bin/ancestry_fine_report.py panel-map --meta "$(cpath "${dir}/meta.tsv")" \
           --bcf-samples "$(cpath "${dir}/bcf_samples.txt")" --exclude "$exclude" \
