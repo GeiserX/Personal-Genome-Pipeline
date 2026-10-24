@@ -7,8 +7,10 @@
 # and html_report (run-all.sh renders the full report with step 24 instead).
 #   1. It publishes the same files as the direct `nextflow run`, and the seven
 #      items of scripts/ci/parity-diff.sh agree with the bash steps' outputs.
-#   2. A second run finds every task in Nextflow's cache (-resume): no task
-#      runs again, and it ends in minutes.
+#   2. A second run starts from the BAM, VCF and gVCF the first one published,
+#      not from the FASTQ its samplesheet named: no FASTP, minimap2 or
+#      DeepVariant task runs. A third run finds every task in Nextflow's cache
+#      (-resume): no task runs again, and it ends in minutes.
 #   3. The reports and logs/run_status.tsv are written.
 #   4. It runs as the guide documents it, without THREADS or --max_memory:
 #      the launcher passes the runner's CPU count and RAM, and Nextflow starts
@@ -19,9 +21,10 @@
 #      the BAM is one file with two names (work/ and aligned/), and no published
 #      file is a symbolic link the direct (copy) run lacks. The second run has
 #      the runner's own setting back (1): run-all.sh passes no link mode.
-# Both comparisons get a negative control in the same run: a planted missing
-# file must be reported, and the first run's trace (tasks COMPLETED) must fail
-# the all-cached check.
+# Each comparison gets a negative control in the same run: a planted missing
+# file must be reported, the first run's trace must show the alignment and
+# calling tasks, and the first run's trace (tasks COMPLETED) must fail the
+# all-cached check.
 # SKIP_VALIDATION=true: the fixture's reference is a slice that validate-setup.sh
 # rejects (case 10); the fake-docker cases check that run-all.sh calls it.
 . "$(dirname "$0")/lib.sh"
@@ -60,6 +63,11 @@ status_count() {
 }
 all_cached() { [ "$(status_count "$1" CACHED)" -ge 10 ] && [ "$(status_count "$1" COMPLETED)" -eq 0 ] && [ "$(status_count "$1" FAILED)" -eq 0 ]; }
 not_all_cached() { ! all_cached "$1"; }
+# upstream_tasks TRACE: the FASTP, minimap2 and DeepVariant tasks the run started (not cached)
+upstream_tasks() {
+  awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
+    $c["status"] != "CACHED" && $c["name"] ~ /(^|:)(FASTP|MINIMAP2_INDEX|ALIGN_MINIMAP2|DEEPVARIANT)( |$)/ {k++} END {print k + 0}' "$1" 2>/dev/null || echo 0
+}
 # published DIR: the files under DIR, relative, without the launcher's own (inputs, launch directory,
 # logs, manifest, bash reports, the run-to-run delta and its history copies) and the two outputs
 # the direct case makes and run-all.sh does not. The PRS summary's dated copy is named by the
@@ -124,7 +132,7 @@ STATUS=$(cat "${G2}/${P}/logs/run_status.tsv" 2>/dev/null)
 check "run_status.tsv records step 07 ok" has $'^step\t07\tok$' "$STATUS"
 check "run_status.tsv records step 13 skipped" has $'^step\t13\tskipped ' "$STATUS"
 
-# --- 2. the second run finds every task cached ---------------------------------------------
+# --- 2. the second run starts from the BAM and VCF, the third finds every task cached ------
 launch second
 NFCMD2=$(grep -m1 -F '$> nextflow run' "${G2}/${P}/nextflow/.nextflow.log" 2>/dev/null || true)
 if [ "$PH" = 1 ]; then
@@ -133,11 +141,20 @@ fi
 check_eq "the second run exits 0" "$RC" 0
 SECOND_TRACE=$(latest_trace)
 check "the second run wrote its own trace" test "${SECOND_TRACE:-}" != "${FIRST_TRACE:-}"
-echo "second run: $(status_count "${SECOND_TRACE:-/dev/null}" CACHED) cached, $(status_count "${SECOND_TRACE:-/dev/null}" COMPLETED) completed, ${SECS}s"
-check "every task of the second run came from the cache" all_cached "${SECOND_TRACE:-/dev/null}"
+RA="${G2}/${P}/aligned/${P}_sorted.bam" RV="${G2}/${P}/vcf/${P}.vcf.gz" RG="${G2}/${P}/vcf/${P}.g.vcf.gz"
+ROW2="${P},,,${RA},${RA}.bai,${RV},${RV}.tbi,male,${RG},${RG}.tbi"
+check_eq "the second run's samplesheet names the BAM, VCF and gVCF the first run published" \
+  "$(sed -n 2p "${G2}/${P}/nextflow/samplesheet.csv")" "$ROW2"
+check_eq "FASTP, minimap2 and DeepVariant tasks the second run started" "$(upstream_tasks "${SECOND_TRACE:-/dev/null}")" 0
+check_ge "negative control: the first run's trace shows them" "$(upstream_tasks "${FIRST_TRACE:-/dev/null}")" 3
+launch third
+check_eq "the third run exits 0" "$RC" 0
+THIRD_TRACE=$(latest_trace)
+check "the third run wrote its own trace" test "${THIRD_TRACE:-}" != "${SECOND_TRACE:-}"
+echo "third run: $(status_count "${THIRD_TRACE:-/dev/null}" CACHED) cached, $(status_count "${THIRD_TRACE:-/dev/null}" COMPLETED) completed, ${SECS}s"
+check "every task of the third run came from the cache" all_cached "${THIRD_TRACE:-/dev/null}"
 check "negative control: the first run's trace fails the all-cached check" not_all_cached "${FIRST_TRACE:-/dev/null}"
-check "the second run takes under 10 minutes (${SECS}s)" test "$SECS" -lt 600
-check_eq "the samplesheet is the same in the second run" "$(sed -n 2p "${G2}/${P}/nextflow/samplesheet.csv")" \
-  "${P},${G2}/${P}/fastq/${P}_R1.fastq.gz,${G2}/${P}/fastq/${P}_R2.fastq.gz,,,,,male"
+check "the third run takes under 10 minutes (${SECS}s)" test "$SECS" -lt 600
+check_eq "the samplesheet is the same in the third run" "$(sed -n 2p "${G2}/${P}/nextflow/samplesheet.csv")" "$ROW2"
 
 finish
