@@ -37,7 +37,10 @@ kir_shown() {
   for f in "$1" "$2"; do
     if grep -q $'^KIR' "${K}/${SAMPLE}_kir_genotype.tsv"; then
       while IFS=$'\t' read -r g _; do grep -qF "${g}*" "$f" || return 1
-      done < <(awk -F'\t' '/^KIR/ && $3 != "."' "${K}/${SAMPLE}_kir_genotype.tsv")
+      done < <(awk -F'\t' '/^KIR/ && (($3 != "" && $3 != ".") || ($6 != "" && $6 != "."))' "${K}/${SAMPLE}_kir_genotype.tsv")
+      g=$(awk -F'\t' '/^KIR/ && ($3 == "" || $3 == ".") && ($6 == "" || $6 == ".") {print $1}' \
+        "${K}/${SAMPLE}_kir_genotype.tsv" | paste -sd, - | sed 's/,/, /g')
+      [ -z "$g" ] || grep -qF "No allele called (absent, or too few reads): ${g}" "$f" || return 1
     else
       grep -qF "$(sed -n '1s/^# *//p' "${K}/${SAMPLE}_kir_genotype.tsv")" "$f" || return 1
     fi

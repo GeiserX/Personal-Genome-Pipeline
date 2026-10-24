@@ -91,7 +91,10 @@ nf_report_has() {
   done < <(tail -n +2 "$CONC")
   [ "$n" -eq 3 ] && [ "$ok" -eq 3 ] || return 1
   if grep -q $'^KIR' "$KG"; then
-    while IFS=$'\t' read -r g _; do grep -qF "${g}*" "$1" || return 1; done < <(awk -F'\t' '/^KIR/ && $3 != "."' "$KG")
+    while IFS=$'\t' read -r g _; do grep -qF "${g}*" "$1" || return 1
+    done < <(awk -F'\t' '/^KIR/ && (($3 != "" && $3 != ".") || ($6 != "" && $6 != "."))' "$KG")
+    g=$(awk -F'\t' '/^KIR/ && ($3 == "" || $3 == ".") && ($6 == "" || $6 == ".") {print $1}' "$KG" | paste -sd, - | sed 's/,/, /g')
+    [ -z "$g" ] || grep -qF "No allele called (absent, or too few reads): ${g}" "$1" || return 1
   else
     grep -qF "$(sed -n '1s/^# *//p' "$KG")" "$1" || return 1
   fi

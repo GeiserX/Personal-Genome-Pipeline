@@ -94,12 +94,14 @@ cp "${G}/${S}/summary.json" "${E2E_WORK}/hla-qc-bash-summary.json" 2>/dev/null  
 sed -n '/OptiType check/,/^$/p' "$TXT"
 # report_has TXT HTML: every row of the concordance table is a line of both reports.
 report_has() {
-  local g t o a w n=0 ok=0
-  while IFS=$'\t' read -r g t o a _; do
+  local g t o a note w x n=0 ok=0
+  while IFS=$'\t' read -r g t o a note; do
     case $a in yes) w=agree ;; no) w=disagree ;; *) w=$a ;; esac
+    x="${w}: T1K ${t}, OptiType ${o}"
+    case $note in ''|-) ;; *) x+=" (${note})" ;; esac
     n=$((n + 1))
-    grep -qF "$(printf '    %-8s ' "$g")${w}: T1K ${t}, OptiType ${o}" "$1" \
-      && grep -qF "${g}: T1K vs OptiType" "$2" && grep -qF "${w}: T1K ${t}, OptiType ${o}" "$2" && ok=$((ok + 1))
+    grep -qF "$(printf '    %-8s ' "$g")${x}" "$1" \
+      && grep -qF "${g}: T1K vs OptiType" "$2" && grep -qF "$x" "$2" && ok=$((ok + 1))
   done < <(tail -n +2 "$CONC")
   [ "$n" -eq 3 ] && [ "$ok" -eq 3 ]
 }
