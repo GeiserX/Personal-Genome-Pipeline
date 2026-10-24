@@ -145,6 +145,8 @@ RA="${G2}/${P}/aligned/${P}_sorted.bam" RV="${G2}/${P}/vcf/${P}.vcf.gz" RG="${G2
 ROW2="${P},,,${RA},${RA}.bai,${RV},${RV}.tbi,male,${RG},${RG}.tbi"
 check_eq "the second run's samplesheet names the BAM, VCF and gVCF the first run published" \
   "$(sed -n 2p "${G2}/${P}/nextflow/samplesheet.csv")" "$ROW2"
+# A trace that is missing, empty or holds only its header would give 0 above for nothing
+check_ge "tasks in the second run's trace" "$(awk 'NR > 1' "${SECOND_TRACE:-/dev/null}" 2>/dev/null | grep -c . || true)" 10
 check_eq "FASTP, minimap2 and DeepVariant tasks the second run started" "$(upstream_tasks "${SECOND_TRACE:-/dev/null}")" 0
 check_ge "negative control: the first run's trace shows them" "$(upstream_tasks "${FIRST_TRACE:-/dev/null}")" 3
 launch third
