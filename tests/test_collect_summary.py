@@ -131,6 +131,15 @@ Checks:
      not checked (neither step 35 nor step 35b ran)" in both reports, a failed
      step 35 is named in that line, and Paraphase alone leaves the line out;
      a table without the psCN columns is unreadable.
+ 26. step 08's opt-in passes in the HLA section: with HLA_QC=true, one line
+     per class I gene from the concordance table pgx_outside_calls.py writes
+     (agree, disagree with both calls, not compared with the reason), and
+     when OptiType did not run, the reason its result file gives; with
+     KIR=true, the KIR genes T1K typed with their alleles and qualities, the
+     genes it called no allele for, and the caveat that no step interprets
+     them, or the 'not typed' line of a BAM with too few KIR reads; bash
+     (hla_optitype/, kir_t1k/) and Nextflow (hla_optitype/, kir/) folders
+     alike, in both reports; without either file there is no such line.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -152,6 +161,7 @@ sys.path.insert(0, os.path.join(REPO, "bin"))
 sys.path.insert(0, os.path.join(REPO, "tests", "schema"))
 import clip_check  # noqa: E402
 import collect_summary  # noqa: E402
+import pgx_outside_calls  # noqa: E402
 import render_report  # noqa: E402
 import validate  # noqa: E402
 
@@ -986,6 +996,91 @@ def parascopy_section(work, schema):
     summ, _, _ = render(n)
     check("not checked: HBA2 with no call keeps HBA1/HBA2 as not assessed",
           any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), summ["not_assessed"])
+
+
+def hla_optitype_kir_section(work, schema):
+    """26. The OptiType agreement per HLA gene and the KIR genes, in both reports."""
+    # Bash folder: the concordance table written by step 08's own writer.
+    b = os.path.join(work, "hlaqc", "S")
+    t1k = ("HLA-A\t2\tHLA-A*01:01:01\t30\t60\tHLA-A*26:01:01\t20\t55\n"
+           "HLA-B\t2\tHLA-B*57:01:01\t30\t60\tHLA-B*08:01:01\t20\t40\n"
+           "HLA-C\t2\tHLA-C*07:01:01\t5\t0\tHLA-C*07:02:01\t5\t30\n")
+    put(f"{b}/hla_t1k/S_hla_genotype.tsv", t1k)
+    put(f"{b}/hla_optitype/S_optitype_result.tsv",
+        "\tA1\tA2\tB1\tB2\tC1\tC2\tReads\tObjective\n0\tA*26:01\tA*01:01\tB*58:01\tB*08:01\tC*07:01\tC*07:02\t900\t880.1\n")
+    rc = pgx_outside_calls.main(["hla-concordance", "--t1k", f"{b}/hla_t1k/S_hla_genotype.tsv",
+                                 "--optitype", f"{b}/hla_optitype/S_optitype_result.tsv",
+                                 "--out", f"{b}/hla_optitype/S_hla_concordance.tsv"])
+    check("26: step 08's writer made the concordance table", rc == 0)
+    put(f"{b}/kir_t1k/S_kir_genotype.tsv",
+        "KIR2DL1\t2\tKIR2DL1*00302\t40\t60\tKIR2DL1*0010101\t30\t35\n"
+        "KIR3DL1\t1\tKIR3DL1*0150201\t50\t50\t.\t0\t-1\n"
+        "KIR2DS1\t0\t.\t0\t-1\t.\t0\t-1\n")
+    summ, txt, html = render(b)
+    h = summ["sections"]["hla"]["data"]
+    ot = {g["gene"]: g for g in (h.get("optitype") or {}).get("genes", [])}
+    check("26: the summary has the three class I genes of the concordance table",
+          list(ot) == ["HLA-A", "HLA-B", "HLA-C"], h.get("optitype"))
+    check("26: HLA-A agrees, HLA-B does not, HLA-C is not compared",
+          [ot.get(g, {}).get("agree") for g in ("HLA-A", "HLA-B", "HLA-C")] == ["yes", "no", "not compared"], ot)
+    kir = h.get("kir") or {}
+    check("26: KIR2DL1 and KIR3DL1 typed, KIR2DS1 with no allele called",
+          [g["gene"] for g in kir.get("typed", [])] == ["KIR2DL1", "KIR3DL1"]
+          and kir.get("not_called") == ["KIR2DS1"], kir)
+    want_txt = ["OptiType check (HLA_QC=true, two fields):",
+                "HLA-A    agree: T1K *01:01/*26:01, OptiType *26:01/*01:01",
+                "HLA-B    disagree: T1K *57:01/*08:01, OptiType *58:01/*08:01 (the callers disagree at two fields; "
+                "step 36 does not pass it to PharmCAT)",
+                "HLA-C    not compared: T1K *07:01/*07:02, OptiType *07:01/*07:02 (T1K gives an allele quality 0 or below)",
+                "KIR genes (T1K, KIR=true):",
+                "KIR2DL1  KIR2DL1*00302 (quality 60) / KIR2DL1*0010101 (quality 35)",
+                "KIR3DL1  KIR3DL1*0150201 (quality 50)",
+                "No allele called (absent, or too few reads): KIR2DS1",
+                getattr(render_report, "KIR_NOTE", "<render_report.KIR_NOTE is missing>")]
+    check("26: the text report has the OptiType line per gene and the KIR block",
+          all(w in txt for w in want_txt), [w for w in want_txt if w not in txt] or txt)
+    card = html.split("<h2>HLA Typing</h2>", 1)[-1].split("<h2>", 1)[0]
+    want_html = ["HLA-A: T1K vs OptiType", "agree: T1K *01:01/*26:01, OptiType *26:01/*01:01",
+                 "HLA-B: T1K vs OptiType", "disagree: T1K *57:01/*08:01, OptiType *58:01/*08:01",
+                 "not compared: T1K *07:01/*07:02", "KIR2DL1", "KIR2DL1*00302 (quality 60) / KIR2DL1*0010101 (quality 35)",
+                 "No allele called (absent, or too few reads): KIR2DS1", getattr(render_report, "KIR_NOTE", "<render_report.KIR_NOTE is missing>")]
+    check("26: the HLA card of the HTML report has the same lines",
+          all(w in card for w in want_html), [w for w in want_html if w not in card] or card)
+    check("26: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))))
+
+    # Nextflow folder: OptiType had no reads, KIR too few reads.
+    n = os.path.join(work, "hlaqc_nf", "S")
+    put(f"{n}/hla/S_hla_genotype.tsv", t1k)
+    put(f"{n}/hla_optitype/S_optitype_result.tsv",
+        "# OptiType not run: no read pairs at HLA-A, HLA-B or HLA-C in this BAM\n")
+    put(f"{n}/kir/S_kir_genotype.tsv",
+        "# KIR not typed: T1K found too few reads at the KIR genes (chr19 leukocyte receptor complex) in this BAM\n")
+    put(f"{n}/kir/database_release.txt", "database: IPD-KIR Release Version 2.15.0\n")
+    summ_n, txt_n, html_n = render(n)
+    hn = summ_n["sections"]["hla"]["data"]
+    check("26: Nextflow folder: no concordance rows, OptiType's own reason kept",
+          (hn.get("optitype") or {}).get("genes") == []
+          and (hn.get("optitype") or {}).get("reason") == "OptiType not run: no read pairs at HLA-A, HLA-B or HLA-C in this BAM",
+          hn.get("optitype"))
+    check("26: Nextflow folder: KIR read from kir/, typed nothing, with the step's reason",
+          (hn.get("kir") or {}).get("typed") == [] and (hn.get("kir") or {}).get("reason", "").startswith(
+              "KIR not typed: T1K found too few reads"), hn.get("kir"))
+    for name, rep in (("text", txt_n), ("HTML", html_n)):
+        check(f"26: Nextflow folder, {name} report: OptiType not compared, with the reason",
+              "not compared: OptiType not run: no read pairs at HLA-A, HLA-B or HLA-C in this BAM" in rep, rep)
+        check(f"26: Nextflow folder, {name} report: KIR not typed, with the reason",
+              "KIR not typed: T1K found too few reads at the KIR genes" in rep, rep)
+    check("26: Nextflow summary validates", not validate.validate(schema, json.loads(json.dumps(summ_n))))
+
+    # Neither opt-in pass ran: nothing about them.
+    z = os.path.join(work, "hlaqc_none", "S")
+    put(f"{z}/hla_t1k/S_hla_genotype.tsv", t1k)
+    summ_z, txt_z, html_z = render(z)
+    hz = summ_z["sections"]["hla"]["data"]
+    check("26: without HLA_QC and KIR the summary has neither block",
+          hz.get("optitype") is None and hz.get("kir") is None, hz)
+    check("26: and neither report mentions OptiType or KIR",
+          not any(w in rep for rep in (txt_z, html_z) for w in ("OptiType", "KIR")), txt_z)
 
 
 def report_sections_mito_roh_telomere_cnv(work, schema):
@@ -1872,6 +1967,7 @@ def main():
         annotsv_section(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
+        hla_optitype_kir_section(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

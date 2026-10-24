@@ -15,6 +15,10 @@
 #     outside-call file, and the check above rejects it;
 #   - HLA_QC=true at step 36 with no OptiType result holds both genes back;
 #   - step 08 again without HLA_QC removes the old OptiType result.
+#   - step 24 and the text report (render_report.py on the same summary)
+#     print one line per gene of the concordance table, both calls named;
+#     red control: a copy of bin/render_report.py with the OptiType block
+#     disabled prints none, and the check rejects it.
 # HG002sp, the positive control: HG002's reads over HLA-B replaced by reads
 # simulated from two known alleles, B*57:01 and B*07:02 (genomic sequences of
 # the pinned hla.dat), aligned with minimap2 as step 02 aligns. Both callers
@@ -79,6 +83,43 @@ check_eq "the table's HLA-B is T1K's pair" "$(awk -F'\t' '$1 == "HLA-B" {print $
   "$(t1k_pair "$GT" HLA-B)"
 cp "$CONC" "${E2E_WORK}/hla-qc-bash-concordance.tsv" 2>/dev/null   # case hla-second-caller-2 compares the Nextflow table
 echo "- HLA second caller on the fixture: $(awk -F'\t' 'NR > 1 {printf "%s T1K %s OptiType %s agree %s; ", $1, $2, $3, $4}' "$CONC" 2>/dev/null)" >> "$E2E_NOTES"
+
+# Both reports: one line per gene of the concordance table.
+run_step 24-html-report.sh "$S"
+check_step_exit 24-html-report.sh
+HTML="${G}/${S}/${S}_report.html"
+TXT="${CASE_TMP}/${S}_report.txt"
+python3 -I "${REPO}/bin/render_report.py" --summary "${G}/${S}/summary.json" -o "$TXT" >/dev/null
+cp "${G}/${S}/summary.json" "${E2E_WORK}/hla-qc-bash-summary.json" 2>/dev/null   # case hla-second-caller-2 compares the Nextflow one
+sed -n '/OptiType check/,/^$/p' "$TXT"
+# report_has TXT HTML: every row of the concordance table is a line of both reports. Each HTML
+# value is matched with its own gene's label, so swapped rows fail.
+html_esc() { python3 -I -c 'import html, sys; print(html.escape(sys.argv[1]))' "$1"; }
+report_has() {
+  local g t o a note w x n=0 ok=0
+  while IFS=$'\t' read -r g t o a note; do
+    case $a in yes) w=agree ;; no) w=disagree ;; *) w=$a ;; esac
+    x="${w}: T1K ${t}, OptiType ${o}"
+    case $note in ''|-) ;; *) x+=" (${note})" ;; esac
+    n=$((n + 1))
+    grep -qF "$(printf '    %-8s ' "$g")${x}" "$1" \
+      && grep -qF "<span class=\"label\">${g}: T1K vs OptiType</span><span class=\"value\">$(html_esc "$x")</span>" "$2" \
+      && ok=$((ok + 1))
+  done < <(tail -n +2 "$CONC")
+  [ "$n" -eq 3 ] && [ "$ok" -eq 3 ]
+}
+not_report_has() { ! report_has "$@"; }
+check "the text report heads the OptiType check" grep -qF 'OptiType check (HLA_QC=true, two fields):' "$TXT"
+check "both reports print each gene's agreement and both calls, as the table says" report_has "$TXT" "$HTML"
+# Red control: the report without its OptiType block.
+BR="${CASE_TMP}/bin_no_optitype"
+rm -rf "$BR"
+cp -R "${REPO}/bin" "$BR"
+sed -i 's/ot = S\["hla"\]\["data"\].get("optitype")/ot = None/; s/if hla.get("optitype") is not None:/if False:/' "${BR}/render_report.py"
+check "the control's mutations applied" test "$(grep -c '^        ot = None$\|^    if False:$' "${BR}/render_report.py")" -eq 2
+python3 -I "${BR}/render_report.py" --summary "${G}/${S}/summary.json" -o "${CASE_TMP}/ctl.txt" -o "${CASE_TMP}/ctl.html" >/dev/null
+check "control: without the OptiType block the check above rejects both reports" \
+  not_report_has "${CASE_TMP}/ctl.txt" "${CASE_TMP}/ctl.html"
 
 run_step 36-pgx-consensus.sh "$S"
 check_step_exit 36-pgx-consensus.sh
