@@ -101,7 +101,7 @@ nextflow run main.nf -resume [same params as before]
 
 The failed tasks and the ones downstream of them run again. A task that was running when the run stopped starts over: DeepVariant is a single task, so a run stopped during it loses that task's progress. Run the pipeline inside tmux or screen, or with nohup, so closing the terminal does not stop it. Nextflow keys an input file by its path, size and modification time, not by its content: a file rewritten in place with the same size and time is not seen as changed.
 
-One change reruns the alignment once: since alignment and duplicate marking became one task (`ALIGN_MINIMAP2`, which no longer writes a `.sam.gz`), the first `-resume` of a run from FASTQ started with an earlier version reuses fastp (and the minimap2 index, when the run built one) but aligns again, and every task after the alignment runs again too.
+One change reruns the alignment once: since alignment and duplicate marking became one task (`ALIGN_MINIMAP2`, which no longer writes a `.sam.gz`), a direct `nextflow run -resume` on the FASTQ samplesheet of a run started with an earlier version reuses fastp (and the minimap2 index, when the run built one) but aligns again, and every task after the alignment runs again too; `run-all.sh` starts the call after such a run, once it ended, from the BAM and VCF it published and does not align again.
 
 One exception, once: Nextflow 26.04 hashes a map input by its keys and values where 25.10 hashed it differently, so the first `-resume` of a work directory written by 25.10 reruns every process that takes the `meta` map, which is every process here. Start a fresh work directory for the first run after the upgrade instead of waiting on a resume that caches nothing.
 

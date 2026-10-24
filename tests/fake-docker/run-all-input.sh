@@ -2,9 +2,12 @@
 # Which input run-all.sh gives the pipeline, and that a rerun gives it the same
 # one: Nextflow's -resume finds a task again only when its inputs are the same
 # files, so the samplesheet of the last run is kept while the files it names
-# exist, even after the pipeline published a BAM and a VCF next to the FASTQ.
+# exist and no input higher in the first-match order has appeared, or while the
+# run that wrote it did not end. Once a run that ended published a BAM and a
+# VCF next to the FASTQ, those are the input.
 #   FASTQ only              -> a FASTQ row
-#   rerun, BAM and VCF now  -> the same FASTQ row
+#   rerun after that run ended, BAM and VCF now
+#                           -> a BAM+VCF row (not aligned or called again)
 #   BAM and VCF             -> a BAM+VCF row (not called again)
 #   VCF of that row removed -> a BAM row (called again, with a gVCF)
 #   nothing                 -> exit 1, nextflow not started
@@ -33,8 +36,11 @@ run_expect 0 fastq "${SCRIPTS}/run-all.sh" s1 female
 want="s1,${G}/s1/fastq/s1_R1.fastq.gz,${G}/s1/fastq/s1_R2.fastq.gz,,,,,female"
 [ "$(row s1)" = "$want" ] || fail "FASTQ row: $(row s1)"
 seed_sample "$G" s1
+# the first run ended: main.nf writes this as a run ends (the fake nextflow does not)
+printf 'process\tsucceeded\tcached\tfailed\tignored\tunfinished\nALIGN_MINIMAP2\t1\t0\t0\t0\t0\n' > "${G}/s1/nextflow/process_status.tsv"
 run_expect 0 rerun "${SCRIPTS}/run-all.sh" s1 female
-[ "$(row s1)" = "$want" ] || fail "the rerun changed the samplesheet: $(row s1)"
+B="${G}/s1/aligned/s1_sorted.bam" V="${G}/s1/vcf/s1.vcf.gz"
+[ "$(row s1)" = "s1,,,${B},${B}.bai,${V},${V}.tbi,female" ] || fail "the rerun kept the FASTQ row over the BAM and VCF: $(row s1)"
 grep -q -- '-resume' <<<"$(grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1)" || fail "the rerun has no -resume"
 [ "$(calls)" -eq 2 ] || fail "nextflow calls: $(calls), expected 2"
 
@@ -87,4 +93,4 @@ n=$(calls)
 run_expect 1 noindex "${SCRIPTS}/run-all.sh" s5 male
 output_has noindex 'ERROR: no input for s5'
 [ "$(calls)" -eq "$n" ] || fail "nextflow started on a BAM and a VCF without their indexes"
-echo "The samplesheet follows the inputs and stays the same across a rerun."
+echo "The samplesheet follows the inputs, and a rerun from the same input keeps it."
