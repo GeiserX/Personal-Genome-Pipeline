@@ -211,6 +211,38 @@ HLA_DERIVED_NOTE = ("Information about alleles, not a diagnosis: each line is an
                     "it does not rule it out. The genotypes are unphased.")
 
 
+KIR_NOTE = ("KIR genotypes as T1K typed them. No step interprets them: they matter for transplant matching and "
+            "some immune conditions, not for drug guidance.")
+OT_AGREE = {"yes": "agree", "no": "disagree"}
+
+
+def hla_optitype_lines(ot):
+    """Step 08's OptiType check, both reports: (gene, line) per class I gene,
+    or one ('', line) with the reason the callers were not compared."""
+    if not ot["genes"]:
+        return [("", f"not compared: {ot['reason']}")]
+    out = []
+    for g in ot["genes"]:
+        line = f"{OT_AGREE.get(g['agree'], g['agree'] or 'not compared')}: T1K {g['t1k']}, OptiType {g['optitype']}"
+        if g["note"] not in ("", "-"):
+            line += f" ({g['note']})"
+        out.append((g["gene"], line))
+    return out
+
+
+def kir_lines(kir):
+    """Step 08's KIR genes, both reports: (gene, alleles) per typed gene, then
+    ('', line) for the genes with no allele, or the reason nothing was typed."""
+    if kir["reason"]:
+        return [("", kir["reason"])]
+    out = [(g["gene"], " / ".join(a + (f" (quality {q})" if q != "" else "")
+                                  for a, q in zip(g["alleles"], g["quality"])))
+           for g in kir["typed"]]
+    if kir["not_called"]:
+        out.append(("", "No allele called (absent, or too few reads): " + ", ".join(kir["not_called"])))
+    return out
+
+
 def hla_derived_lines(d):
     """The derived HLA lines both reports print: the coeliac DQ line, the
     DQB1*02 dose and the allele table (bin/hla_alleles.tsv), present ones first."""
@@ -732,6 +764,17 @@ def text_report(s):
             w(f"  {HLA_DERIVED_NOTE}")
         w(f"  HLA database: {s['databases']['hla_database'] or 'unknown'}")
         w(f"  {HLA_NOTE}")
+        ot = S["hla"]["data"].get("optitype")
+        if ot is not None:
+            w("  OptiType check (HLA_QC=true, two fields):")
+            for g, line in hla_optitype_lines(ot):
+                w(f"    {g:<8} {line}" if g else f"    {line}")
+        kir = S["hla"]["data"].get("kir")
+        if kir is not None:
+            w("  KIR genes (T1K, KIR=true):")
+            for g, line in kir_lines(kir):
+                w(f"    {g:<8} {line}" if g else f"    {line}")
+            w(f"  {KIR_NOTE}")
         w("")
 
     if head("prs", "Polygenic Risk Scores"):
@@ -1419,8 +1462,14 @@ def html_report(s):
     hla_body = [stat(l["gene"], E(hla_text(l))) for l in hla.get("loci", [])]
     if hla.get("derived"):
         hla_body += [small_note(x) for x in hla_derived_lines(hla["derived"])] + [small_note(HLA_DERIVED_NOTE)]
-    a(card(S["hla"], "HLA Typing", hla_body
-           + [stat("HLA database", E(s["databases"]["hla_database"] or "unknown")), small_note(HLA_NOTE)]))
+    hla_body += [stat("HLA database", E(s["databases"]["hla_database"] or "unknown")), small_note(HLA_NOTE)]
+    if hla.get("optitype") is not None:
+        hla_body += [stat(f"{g}: T1K vs OptiType", E(line)) if g else stat("OptiType check", E(line))
+                     for g, line in hla_optitype_lines(hla["optitype"])]
+    if hla.get("kir") is not None:
+        hla_body += [stat(g, E(line)) if g else small_note(line) for g, line in kir_lines(hla["kir"])]
+        hla_body.append(small_note(KIR_NOTE))
+    a(card(S["hla"], "HLA Typing", hla_body))
 
     m, dl, cn, sv = (S[k]["data"] for k in ("manta", "delly", "cnvpytor", "sv_consensus"))
     sv_body = [stat("Manta SVs (total / PASS)", f"{m.get('total', 'N/A')} / {m.get('pass', 'N/A')}"),
