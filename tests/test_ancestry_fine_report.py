@@ -4,7 +4,9 @@
   panel-map    groups from the population, related and grouped-out people
                are no reference, an excluded person is gone, the painting
                references are capped per group and taken in turn from each
-               population, a person without metadata stops it
+               population, a person without metadata stops it; a group of
+               fewer than 10 unrelated people (one Oceanian, three San) is no
+               reference and no painting reference, and is named as left out
   order        the column of each group in a supervised ADMIXTURE .Q, and the
                errors for a K that is not the number of groups or two columns
                of one group
@@ -17,7 +19,9 @@
   report       fractions sorted with the bootstrap spread, neighbouring RFMix
                windows of one group merged into one BED row per haplotype,
                the painted shares, a real PNG of the right size, and the
-               honest-limits text; and a level without a bootstrap has no range
+               honest-limits text; and a level without a bootstrap has no range;
+               a group left out of the model and a chromosome RFMix failed on
+               are named in the table, the text and both pipeline reports
 
 Run: python3 tests/test_ancestry_fine_report.py
 """
@@ -69,7 +73,7 @@ def meta(s, pop, related="false"):
 rows = af.panel_map(
     [meta("y1", "YRI"), meta("y2", "YRI"), meta("y3", "YRI", "true"), meta("m1", "Mandenka"),
      meta("i1", "IBS"), meta("b1", "Basque"), meta("t1", "TSI"), meta("a1", "ASW"), meta("x1", "CHB")],
-    ["y1", "y2", "y3", "m1", "i1", "b1", "t1", "a1", "x1"], exclude={"x1"}, paint_per_group=2)
+    ["y1", "y2", "y3", "m1", "i1", "b1", "t1", "a1", "x1"], exclude={"x1"}, paint_per_group=2, min_references=1)
 by = {r[0]: r for r in rows}
 expect("panel-map: an excluded person is not in the table", "x1" in by, False)
 expect("panel-map: groups from the population (IBS: West Eurasia, Iberia)", by["i1"][2:4], ["WEA", "IBE"])
@@ -81,6 +85,45 @@ expect("panel-map: at most 2 painting references per continental group",
 expect("panel-map: taken in turn from each population (Mandenka before a second YRI)",
        sorted(r[0] for r in rows if r[2] == "AFR" and r[5] == "1"), ["m1", "y1"])
 raises("panel-map: a panel person without metadata stops it", lambda: af.panel_map([meta("y1", "YRI")], ["y1", "zz"]))
+raises("panel-map: a painting cap below the minimum of 10 stops it",
+       lambda: af.panel_map([meta("y1", "YRI")], ["y1"], paint_per_group=9))
+raises("panel-map: a painting cap of 1 stops it even with a minimum of 1",
+       lambda: af.panel_map([meta("y1", "YRI")], ["y1"], paint_per_group=1, min_references=1))
+
+# A group too small to model. In gnomAD's HGDP + 1000 Genomes metadata 29 of
+# the 30 Oceanians are flagged related, which left Oceania one reference
+# person, and RFMix then crashed. Here: 10 unrelated Yoruba, 3 unrelated San
+# (Southern Africa), one unrelated Papuan and two related ones, at the
+# default minimum of 10.
+small = ([meta(f"y{i}", "YRI") for i in range(10)] + [meta(f"s{i}", "San") for i in range(3)]
+         + [meta("p0", "PapuanHighlands"), meta("p1", "Bougainville", "true"), meta("p2", "PapuanSepik", "true")])
+rows2 = af.panel_map(small, [m["s"] for m in small], paint_per_group=50)
+by2 = {r[0]: r for r in rows2}
+expect("panel-map: the minimum is 10 unrelated people per group", af.MIN_REFERENCES, 10)
+expect("panel-map: the one unrelated Oceanian is no reference and no painting reference", by2["p0"][4:], ["0", "0"])
+expect("panel-map: and keeps its groups in the table", by2["p0"][2:4], ["OCE", "OCE"])
+expect("panel-map: a regional group of 3 (San) is no reference", sorted({by2[f"s{i}"][4] for i in range(3)}), ["0"])
+expect("panel-map: Africa keeps its 10 West Africans as references and painting references",
+       sorted({tuple(by2[f"y{i}"][4:]) for i in range(10)}), [("1", "1")])
+codes2 = {"continent": {"AFR"}, "region": {"WAF"}}
+gone2 = af.left_out_groups(rows2, codes2)
+expect("panel-map: the groups left out of the model", gone2, [("continent", "OCE"), ("region", "OCE"), ("region", "SAF")])
+expect("panel-map: named once each, with their level",
+       af.left_out_text(gone2), "Oceania (continental and regional group), Southern Africa (regional group)")
+pm = tempfile.mkdtemp()
+with open(os.path.join(pm, "meta.tsv"), "w") as f:
+    f.write("s\tpopulation\tsample_filters.all_samples_related\n")
+    f.writelines(f"{m['s']}\t{m['population']}\t{m['sample_filters.all_samples_related']}\n" for m in small)
+write(os.path.join(pm, "bcf.txt"), "".join(m["s"] + "\n" for m in small))
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    af.main(["panel-map", "--meta", os.path.join(pm, "meta.tsv"), "--bcf-samples", os.path.join(pm, "bcf.txt"),
+             "--out", os.path.join(pm, "samples.tsv")])
+expect("panel-map: the install log names the groups left out",
+       "Left out of the model, fewer than 10 unrelated reference people: Oceania (continental and regional group), "
+       "Southern Africa (regional group)" in buf.getvalue(), True)
+expect("panel-map: samples.tsv has no Oceanian reference",
+       [r.split("\t")[4] for r in open(os.path.join(pm, "samples.tsv")).read().splitlines()[1:] if r.startswith("p0\t")], ["0"])
 
 # --- order -------------------------------------------------------------------------
 pops = ["EUR", "EUR", "AFR", "EAS", "AFR"]
@@ -147,6 +190,9 @@ expect("chroms: genetic position between two markers", af.cm_at(af.read_map(os.p
 model = os.path.join(tmp, "model")
 os.makedirs(model)
 write(os.path.join(model, "levels.tsv"), "continent\t3\tEAS,WEA,AFR\nregion\t2\tIBE,ITA\n")
+# The panel's samples.tsv, beside model/: an Oceanian the model left out.
+write(os.path.join(tmp, "samples.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n"
+      "i1\tIBS\tWEA\tIBE\t1\t1\nt1\tTSI\tWEA\tITA\t1\t1\np0\tPapuanHighlands\tOCE\tOCE\t0\t0\n")
 adm = os.path.join(tmp, "admixture")
 os.makedirs(adm)
 write(os.path.join(adm, "S_continent.3.Q"), "0.05 0.9 0.05\n")
@@ -157,6 +203,7 @@ os.makedirs(paint)
 write(os.path.join(paint, "chr20.msp.tsv"),
       "#Subpopulation order/codes: AFR=0\tEAS=1\tWEA=2\n#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS.0\tS.1\n"
       "chr20\t1000\t5000\t1\t2\t10\t2\t2\nchr20\t5000\t9000\t2\t3\t10\t2\t0\nchr20\t9000\t11000\t3\t4\t10\t2\t0\n")
+write(os.path.join(paint, "failed.txt"), "chr19\n")   # RFMix failed on chr19; chr20 was still painted
 rep = os.path.join(tmp, "out")
 with contextlib.redirect_stdout(io.StringIO()):
     af.main(["report", "--sample", "S", "--model", model, "--admixture", adm, "--paint", paint,
@@ -185,6 +232,30 @@ expect("report: the text names the group, the fraction and its range",
        "West Eurasia (Europe, Middle East, North Africa)     90%  (80% to 90%)" in text, True)
 expect("report: the text says a name is ours, not a nationality", "not a nationality" in text, True)
 expect("report: and that Greek and Southern Italian overlap", "Greek and" in text and "Southern Italian ancestry" in text, True)
+expect("report: the table names the group left out and the chromosome not painted",
+       [r[:3] for r in table if r[0] in ("left_out", "not_painted")],
+       [["left_out", "OCE", "Oceania (continental group)"], ["left_out", "OCE", "Oceania (regional group)"],
+        ["not_painted", "chr19", "RFMix failed"]])
+expect("report: the text says which group the model left out and why",
+       "Left out of the model: Oceania (continental and regional group). The panel has fewer than 10 unrelated" in text, True)
+expect("report: the text says chr19 was not painted, and chr20 still was",
+       ("Not painted: RFMix failed on chr19" in text, "of chr20:" in text), (True, True))
+# Both pipeline reports (collect_summary.py, then render_report.py) carry them.
+import collect_summary  # noqa: E402
+import render_report  # noqa: E402
+sd = os.path.join(tmp, "S")
+os.makedirs(os.path.join(sd, "ancestry_fine"))
+for name in ("S_ancestry_fine.tsv", "S_painting.png"):
+    with open(os.path.join(rep, name), "rb") as src, open(os.path.join(sd, "ancestry_fine", name), "wb") as dst:
+        dst.write(src.read())
+summ = collect_summary.collect("S", sd)
+txt, html = render_report.text_report(summ), render_report.html_report(summ)
+for kind, doc in (("text", txt), ("HTML", html)):
+    expect(f"report: the {kind} report names the group left out",
+           "Left out of the model: Oceania (continental and regional group). The panel has fewer than 10" in doc,
+           True)
+    expect(f"report: the {kind} report names the chromosome not painted", "not painted: RFMix failed on chr19" in doc, True)
+os.remove(os.path.join(paint, "failed.txt"))
 os.remove(os.path.join(paint, "chr20.msp.tsv"))
 with contextlib.redirect_stdout(io.StringIO()):
     af.main(["report", "--sample", "S", "--model", model, "--admixture", adm, "--paint", paint,

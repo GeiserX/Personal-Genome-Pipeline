@@ -244,6 +244,9 @@ process ANCESTRY_FINE_PAINT {
     task.ext.when == null || task.ext.when
 
     script:
+    // As scripts/26b-ancestry-fine.sh: a chromosome RFMix fails on goes to
+    // paint/failed.txt, which the report lists as not painted, and the next
+    // chromosome is still painted.
     """
     set -euo pipefail
     mkdir -p paint
@@ -252,8 +255,11 @@ process ANCESTRY_FINE_PAINT {
         c=\$(basename "\$f" .vcf.gz)
         rfmix -f "\$f" -r ${panel}/panel/\$c.vcf.gz -m ${panel}/model/paint_map.tsv -g ${panel}/maps/\$c.rfmix.map \\
             -o paint/\$c --chromosome=\$c --n-threads=${task.cpus} --random-seed=1 > paint/\$c.log 2>&1 \\
-            || { tail -n 20 paint/\$c.log; exit 1; }
+            || { tail -n 20 paint/\$c.log >&2; echo "\$c" >> paint/failed.txt; rm -f paint/\$c.msp.tsv; }
     done
+    if [ -s paint/failed.txt ]; then
+        echo "WARNING: RFMix failed on \$(echo \$(cat paint/failed.txt)); the report lists them as not painted" >&2
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

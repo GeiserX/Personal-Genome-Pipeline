@@ -17,6 +17,7 @@ import argparse
 import html
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -459,6 +460,35 @@ def ancestry_fine_spread(r):
     return f" ({share(r['low'])} to {share(r['high'])})" if r.get("low") is not None else ""
 
 
+def ancestry_fine_left_out(d):
+    """The groups the model leaves out, as one sentence, or ''."""
+    if not d.get("left_out"):
+        return ""
+    # One TSV row per level ("Oceania (continental group)"); merge a group the
+    # two levels share into one name, as the step's own summary does.
+    kinds = {}
+    for r in d["left_out"]:
+        m = re.fullmatch(r"(.*) \((.*) group\)", r["group"])
+        name, kind = (m.group(1), m.group(2)) if m else (r["group"], "")
+        kinds.setdefault(name, [])
+        if kind and kind not in kinds[name]:
+            kinds[name].append(kind)
+    names = [f"{n} ({' and '.join(k)} group)" if k else n for n, k in kinds.items()]
+    return (f"Left out of the model: {', '.join(names)}. The panel has fewer than "
+            f"{d.get('min_references', 10)} unrelated reference people for it, so its ancestry is spread over the "
+            "groups shown.")
+
+
+def ancestry_fine_painted(d):
+    """The painted shares, or why there are none, and the chromosomes RFMix failed on."""
+    failed = ", ".join(r["code"] for r in d.get("not_painted", []))
+    if d.get("painting"):
+        text = ", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"])
+    else:
+        text = "none" + ("" if failed else " (no chromosome long enough)")
+    return text + (f"; not painted: RFMix failed on {failed}" if failed else "")
+
+
 def traits_text(d, sample):
     """The traits section of the text report: the rows read, the ones not read,
     and the APOE lines last, after a warning."""
@@ -794,11 +824,10 @@ def text_report(s):
                 w(f"  {title} (fraction, bootstrap range):")
                 for r in rows:
                     w(f"    {r['group']:<50} {share(r['fraction']):>5}{ancestry_fine_spread(r)}")
-        if d.get("painting"):
-            w("  Chromosome painting, share of the painted genome: "
-              + ", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))
-        else:
-            w("  Chromosome painting: none (no chromosome long enough)")
+        if ancestry_fine_left_out(d):
+            w(f"  {ancestry_fine_left_out(d)}")
+        w(("  Chromosome painting, share of the painted genome: " if d.get("painting") else "  Chromosome painting: ")
+          + ancestry_fine_painted(d))
         w(f"  {ANCESTRY_FINE_NOTE}")
         w("")
 
@@ -1656,10 +1685,9 @@ def html_report(s):
                 body += [f"    <h3>{E(title)}</h3>", "    <table>",
                          "      <tr><th>Group</th><th>Fraction</th><th>Bootstrap range</th></tr>",
                          rows.rstrip("\n"), "    </table>"]
-        if d.get("painting"):
-            body.append(stat("Painted genome", E(", ".join(f"{r['group']} {share(r['fraction'])}" for r in d["painting"]))))
-        else:
-            body.append(stat("Painted genome", "none (no chromosome long enough)"))
+        if ancestry_fine_left_out(d):
+            body.append(f"    <p>{E(ancestry_fine_left_out(d))}</p>")
+        body.append(stat("Painted genome", E(ancestry_fine_painted(d))))
         if d.get("painting_png"):
             body.append(f'    <img alt="Chromosome painting: chromosomes 1 to 22, two haplotypes each, coloured by '
                         f'continental group" style="max-width:100%" src="data:image/png;base64,{d["painting_png"]}">')

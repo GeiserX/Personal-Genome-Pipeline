@@ -588,8 +588,8 @@ ancestry_fine_pins() {
 # case uses both, for the fixture's slices and the two people of its
 # synthetic mix. ANCESTRY_FINE_THIN (default 2kb) is the window that keeps
 # one SNV (the e2e case keeps more of its few megabases with 200bp), and
-# ANCESTRY_FINE_PAINT_PER_GROUP (default 50) caps the painting references of
-# each continental group.
+# ANCESTRY_FINE_PAINT_PER_GROUP (default 50, at least 10) caps the painting
+# references of each continental group.
 install_ancestry_fine_panel() {
   local dir=${ANCESTRY_FINE_DIR:-${GENOME_DIR}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}}
   local regions=${ANCESTRY_FINE_REGIONS:-} exclude=${ANCESTRY_FINE_EXCLUDE:-} smap=${ANCESTRY_FINE_SAMPLE_MAP:-}
