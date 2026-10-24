@@ -7,9 +7,10 @@ Standard library only (it runs in the plain python image). Five commands:
       The panel's sample table, written once by setup.sh --ancestry-fine-panel:
       each person of the panel with population, continental and regional group
       (GROUPS below, '-' when in none), whether it is a reference individual
-      (unrelated and in a group) and whether it is one of the painting
-      references (at most N per continental group, taken in turn from each
-      population).
+      (unrelated, in a group, and its regional group has MIN_REFERENCES
+      unrelated people; a smaller group is left out of the model) and whether
+      it is one of the painting references (at most N per continental group,
+      taken in turn from each population).
 
   order --pop FILE --q FILE
       The group codes in the column order of the .Q (and .P) file
@@ -39,7 +40,9 @@ Standard library only (it runs in the plain python image). Five commands:
       The step's outputs from ADMIXTURE's .Q and bootstrap replicates of each
       level and RFMix's .msp.tsv of each chromosome: <S>_ancestry_fine.tsv
       (each group's fraction with its bootstrap standard error and 2.5 to 97.5
-      percentile range, and each group's share of the painted genome),
+      percentile range, each group's share of the painted genome, a left_out
+      row for each group the model leaves out and a not_painted row for each
+      chromosome RFMix failed on, from the paint folder's failed.txt),
       <S>_painting.bed, <S>_painting.png and the plain text <S>_ancestry_fine.txt.
 
 A group name is ours: a set of reference populations we put together and
@@ -124,6 +127,20 @@ CHROM_LEN = [248956422, 242193529, 198295559, 190214555, 181538259, 170805979, 1
              138394717, 133797422, 135086622, 133275309, 114364328, 107043718, 101991189, 90338345,
              83257441, 80373285, 58617616, 64444167, 46709983, 50818468]
 
+# The fewest unrelated reference people a group needs to be modelled. RFMix
+# fits its CRF weight on people it simulates from floor(n / 10) + 1 of each
+# group's references, and leaves those parents out of the reference while it
+# does (select_parents in its gensamples.cpp): a group of one person then has
+# no reference haplotype at all, RFMix asks for a zero-size block
+# ("mm::allocate() ... requesting zero or negative size (0)") and can
+# segfault. Two people is its hard floor. We ask for 10 because a group is
+# meant to stand for a population: below 10 people (20 haplotypes) the
+# supervised ADMIXTURE frequencies and the forest's reference are a handful
+# of people's genotypes. A regional group below it leaves the model, its
+# continental group too when none of its regional groups is left, and the
+# report names them.
+MIN_REFERENCES = 10
+
 # The meta TSV columns read by panel-map.
 META_SAMPLE, META_POP, META_RELATED = "s", "population", "sample_filters.all_samples_related"
 
@@ -139,9 +156,14 @@ def label(level, code):
 
 # --- panel-map ---------------------------------------------------------------------
 
-def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100):
+def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100, min_references=MIN_REFERENCES):
     """Rows (sample, population, continent, region, reference, paint) for each
-    panel sample, in the panel's order."""
+    panel sample, in the panel's order. A person is a reference when unrelated,
+    in a group, and its regional group has min_references unrelated people.
+    Every continental group is the union of its regional groups, so one that
+    keeps any regional group keeps min_references people too, and one that
+    keeps none leaves the model with them (left_out_groups names both kinds
+    in the report)."""
     meta = {r[META_SAMPLE]: r for r in meta_rows}
     missing = [s for s in bcf_samples if s not in meta]
     if missing:
@@ -155,6 +177,13 @@ def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100):
         cont, reg = GROUPS.get(pop, ("-", "-"))
         ref = cont != "-" and r[META_RELATED] == "false"
         rows.append([s, pop, cont, reg, "1" if ref else "0", "0"])
+    n = {}
+    for row in rows:
+        if row[4] == "1":
+            n[row[3]] = n.get(row[3], 0) + 1
+    for row in rows:
+        if row[4] == "1" and n[row[3]] < min_references:
+            row[4] = "0"
     # Painting references: in turn from each population of a continental
     # group, by sample id, until the group has paint_per_group.
     by_group = {}
@@ -191,6 +220,34 @@ def panel_map_main(a):
     write_rows(a.out, ["sample", "population", "continent", "region", "reference", "paint"], rows)
     n_ref = sum(r[4] == "1" for r in rows)
     print(f"{len(rows)} panel samples, {n_ref} reference individuals, {sum(r[5] == '1' for r in rows)} painting references")
+    codes = {level: {r[col] for r in rows if r[4] == "1"} for level, col in (("continent", 2), ("region", 3))}
+    gone = left_out_groups(rows, codes)
+    if gone:
+        print(f"Left out of the model, fewer than {MIN_REFERENCES} unrelated reference people: {left_out_text(gone)}")
+
+
+def left_out_groups(rows, codes):
+    """[(level, code)] of the groups samples.tsv rows have people of but the
+    model (codes: {level: group codes it has}) leaves out."""
+    out = []
+    for level, col in (("continent", 2), ("region", 3)):
+        if level in codes:
+            out += [(level, c) for c in sorted({r[col] for r in rows if r[col] not in ("-", "")})
+                    if c not in codes[level]]
+    return out
+
+
+def left_out_group_names(gone):
+    """Each left-out group as one name: 'Oceania (continental and regional
+    group)' when both levels leave out a group of the same name."""
+    kinds = {}
+    for level, code in gone:
+        kinds.setdefault(label(level, code), []).append("continental" if level == "continent" else "regional")
+    return [f"{name} ({' and '.join(k)} group)" for name, k in kinds.items()]
+
+
+def left_out_text(gone):
+    return ", ".join(left_out_group_names(gone))
 
 
 def write_rows(path, header, rows):
@@ -620,8 +677,12 @@ LIMITS = [
 ]
 
 
-def text_block(sample, panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms):
+def text_block(sample, panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms, gone=(), failed=()):
     out = [f"Fine-grained ancestry of {sample} (step 26b)", f"Reference panel: {panel}; {n_sites}", ""]
+    if gone:
+        out += [f"Left out of the model: {left_out_text(gone)}. The panel has fewer than {MIN_REFERENCES} unrelated",
+                "reference people for it, too few to stand for a population, so the model has no such group and",
+                "any ancestry from it is spread over the groups below.", ""]
     for level in LEVELS:
         rows = [r for r in fr if r["level"] == level]
         if not rows:
@@ -639,8 +700,12 @@ def text_block(sample, panel, fr, n_boot, shares, painted_bp, n_sites, painted_c
                    f"share of the {painted_bp / 1e6:.1f} Mb painted on the two haplotypes")
         for code, sh in sorted(shares.items(), key=lambda kv: -kv[1]):
             out.append(f"  {label('continent', code):<50} {pct(sh):>5}")
-    else:
+    elif not failed:
         out.append("Chromosome painting: none. No chromosome had enough genotyped SNVs spanning 5 cM.")
+    else:
+        out.append("Chromosome painting: none.")
+    if failed:
+        out.append(f"  Not painted: RFMix failed on {', '.join(failed)} (the step's log has its last lines).")
     out.append("")
     return "\n".join(out + LIMITS) + "\n"
 
@@ -656,6 +721,17 @@ def report_main(a):
     rows = painting(a.paint) if a.paint and os.path.isdir(a.paint) else []
     painted_bp, shares = painting_shares(rows)
     painted_chroms = sorted({r[0] for r in rows}, key=chrom_key)
+    failed = []
+    failed_path = os.path.join(a.paint, "failed.txt") if a.paint else ""
+    if failed_path and os.path.isfile(failed_path):
+        with open(failed_path) as f:
+            failed = sorted({line.strip() for line in f if line.strip()}, key=chrom_key)
+    gone = []
+    samples_path = os.path.join(os.path.dirname(os.path.normpath(a.model)), "samples.tsv")
+    if os.path.isfile(samples_path):
+        with open(samples_path) as f:
+            samples = [line.rstrip("\n").split("\t") for line in f][1:]
+        gone = left_out_groups([r for r in samples if len(r) >= 4], {level: set(codes) for level, _, codes in levels})
     n_sites = "."
     stats = os.path.join(a.admixture, f"{a.sample}_sites.txt")
     if os.path.isfile(stats):
@@ -668,12 +744,14 @@ def report_main(a):
              for r in fr]
     table += [["painting", code, label("continent", code), fmt(sh), ".", ".", "."]
               for code, sh in sorted(shares.items(), key=lambda kv: -kv[1])]
+    table += [["left_out", code, left_out_text([(level, code)]), ".", ".", ".", "."] for level, code in gone]
+    table += [["not_painted", c, "RFMix failed", ".", ".", ".", "."] for c in failed]
     write_rows(base + "_ancestry_fine.tsv", ["level", "code", "group", "fraction", "se", "low", "high"], table)
     write_rows(base + "_painting.bed", ["#chrom", "start", "end", "haplotype", "group"], rows)
     with open(base + "_painting.png.tmp", "wb") as f:
         f.write(painting_png(rows))
     os.replace(base + "_painting.png.tmp", base + "_painting.png")
-    text = text_block(a.sample, a.panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms)
+    text = text_block(a.sample, a.panel, fr, n_boot, shares, painted_bp, n_sites, painted_chroms, gone, failed)
     with open(base + "_ancestry_fine.txt.tmp", "w") as f:
         f.write(text)
     os.replace(base + "_ancestry_fine.txt.tmp", base + "_ancestry_fine.txt")

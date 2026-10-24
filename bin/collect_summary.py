@@ -1399,7 +1399,9 @@ def count_vcf(p):
 
 def sec_ancestry_fine(d, s):
     """Step 26b: <s>_ancestry_fine.tsv (level, code, group, fraction, se, low,
-    high; levels continent, region and painting) and the painting picture."""
+    high; levels continent, region and painting, plus left_out for a group the
+    model leaves out and not_painted for a chromosome RFMix failed on) and
+    the painting picture."""
     p = first_existing(d, [f"ancestry_fine/{s}_ancestry_fine.tsv"])
     if not p:
         return None, {}
@@ -1407,7 +1409,8 @@ def sec_ancestry_fine(d, s):
     need = {"level", "code", "group", "fraction", "se", "low", "high"}
     if not rows or not need <= set(rows[0]):
         raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {sorted(need)}")
-    out = {"continent": [], "region": [], "painting": []}
+    out = {"continent": [], "region": [], "painting": [], "left_out": [], "not_painted": [],
+           "min_references": ancestry_fine_report.MIN_REFERENCES}
     for r in rows:
         if r["level"] in out:
             out[r["level"]].append({"code": r["code"], "group": r["group"], "fraction": num(r["fraction"]),

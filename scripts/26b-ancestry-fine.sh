@@ -158,15 +158,21 @@ else
     || { echo "ERROR: Beagle failed (log above)" >&2; exit 1; }
 
   # --- 4. RFMix: the painting --------------------------------------------------------
+  # A chromosome RFMix fails on is named in paint/failed.txt, which the
+  # report lists as not painted, and the next one is still painted: one
+  # failure no longer costs the painting of every later chromosome.
   echo "[4/5] Painting with RFMix ($(wc -l < "${PANEL}/model/paint_map.tsv" | tr -d ' ') reference individuals)..."
   # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
   run_in --cpus "$THREADS" --memory 8g "$RFMIX_IMAGE" bash -euo pipefail -c '
       for c in $4; do
         rfmix -f "$2/phase/$c.vcf.gz" -r "$1/panel/$c.vcf.gz" -m "$1/model/paint_map.tsv" -g "$1/maps/$c.rfmix.map" \
           -o "$2/paint/$c" --chromosome="$c" --n-threads="$3" --random-seed=1 > "$2/paint/$c.log" 2>&1 \
-          || { tail -n 20 "$2/paint/$c.log"; exit 1; }
+          || { tail -n 20 "$2/paint/$c.log"; echo "$c" >> "$2/paint/failed.txt"; rm -f "$2/paint/$c.msp.tsv"; }
       done' _ "$P" "$W" "$THREADS" "$CHROMS" \
     || { echo "ERROR: RFMix failed (log above)" >&2; exit 1; }
+  if [ -s "${WORK}/paint/failed.txt" ]; then
+    echo "WARNING: RFMix failed on $(paste -sd' ' "${WORK}/paint/failed.txt") (last lines above, logs in ${WORK}/paint); the report lists them as not painted" >&2
+  fi
 fi
 
 # --- 5. The report ---------------------------------------------------------------------
