@@ -60,7 +60,7 @@ On hgdp1kgp_v2 this leaves out Oceania only: gnomAD flags 29 of its 30 people as
 
 Europe, the Middle East and North Africa form one continental group: at that level their populations are not well apart, and a painting with them split flips between them along every European or Middle Eastern genome. The regional level splits them.
 
-`ANCESTRY_FINE_SAMPLE_MAP=<file>` installs a `samples.tsv` of your own (the same six columns) and fits the frequencies again; the panel's genotypes are kept. Your table is used as given, so give every regional group with reference people 10 or more, and every continental group at least 2 painting references: the install stops on a table that does not, since a group of one makes RFMix fail as above.
+`ANCESTRY_FINE_SAMPLE_MAP=<file>` installs a `samples.tsv` of your own (the same six columns) and fits the frequencies again; the panel's genotypes are kept. Your table is used as given, so give every regional group with reference people 10 or more, and every continental group with reference people at least 2 painting references, each of them a reference person: the install stops on a table that does not, since a group of one makes RFMix fail as above.
 
 The model is fitted again whenever `samples.tsv` changes, so after an update that changes this rule, run `setup.sh --ancestry-fine-panel` once more: it rewrites `samples.tsv` and refits the model, and reuses the panel's genotypes.
 

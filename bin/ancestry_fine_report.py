@@ -14,9 +14,10 @@ Standard library only (it runs in the plain python image). Six commands:
 
   check-map --map samples.tsv
       Stops on a sample table given with ANCESTRY_FINE_SAMPLE_MAP that has a
-      regional group with 1 to MIN_REFERENCES - 1 reference people, or a
-      continental group with a single painting reference: RFMix fails on a
-      group of one, and a smaller group stands for a handful of people.
+      regional group with 1 to MIN_REFERENCES - 1 reference people, a
+      continental group with reference people but fewer than 2 painting
+      references, or a painting reference who is no reference: RFMix fails on
+      a group of one, and a smaller group stands for a handful of people.
 
   order --pop FILE --q FILE
       The group codes in the column order of the .Q (and .P) file
@@ -215,16 +216,22 @@ def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100, min_refer
 def map_problems(rows, min_references=MIN_REFERENCES):
     """What makes a sample table (rows of six columns, no header) unfit for
     the model: a regional group with some but fewer than min_references
-    reference people, a continental group with one painting reference."""
-    refs, paint = {}, {}
+    reference people, a continental group with reference people but fewer
+    than 2 painting references, a painting reference who is no reference."""
+    refs, conts, paint, stray = {}, set(), {}, []
     for r in rows:
         if r[4] == "1":
             refs[r[3]] = refs.get(r[3], 0) + 1
-        if r[5] == "1":
-            paint[r[2]] = paint.get(r[2], 0) + 1
+            conts.add(r[2])
+            if r[5] == "1":
+                paint[r[2]] = paint.get(r[2], 0) + 1
+        elif r[5] == "1":
+            stray.append(r[0])
     return ([f"regional group {g} has {n} of the {min_references} reference people it needs"
              for g, n in sorted(refs.items()) if n < min_references]
-            + [f"continental group {g} has 1 painting reference, RFMix needs 2" for g, n in sorted(paint.items()) if n < 2])
+            + [f"continental group {g} has {paint.get(g, 0)} of the 2 painting references RFMix needs"
+               for g in sorted(conts) if paint.get(g, 0) < 2]
+            + ([f"painting references who are no reference people: {len(stray)}, e.g. {stray[0]}"] if stray else []))
 
 
 def check_map_main(a):

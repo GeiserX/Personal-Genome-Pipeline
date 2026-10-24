@@ -136,7 +136,13 @@ for r in one:
         r[4:] = ["1", "1"]
 expect("check-map: one Oceanian put back as reference and painting reference",
        af.map_problems(one), ["regional group OCE has 1 of the 10 reference people it needs",
-                              "continental group OCE has 1 painting reference, RFMix needs 2"])
+                              "continental group OCE has 1 of the 2 painting references RFMix needs"])
+nopaint = [r[:5] + ["0"] for r in rows2]
+expect("check-map: a continental group with references but no painting reference",
+       af.map_problems(nopaint), ["continental group AFR has 0 of the 2 painting references RFMix needs"])
+stray = [r[:5] + (["1"] if r[0] == "p1" else [r[5]]) for r in rows2]
+expect("check-map: a painting reference who is no reference (a related Papuan)",
+       af.map_problems(stray), ["painting references who are no reference people: 1, e.g. p1"])
 write(os.path.join(pm, "one.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n"
       + "".join("\t".join(r) + "\n" for r in one))
 raises("check-map: stops on that table", lambda: af.main(["check-map", "--map", os.path.join(pm, "one.tsv")]))
