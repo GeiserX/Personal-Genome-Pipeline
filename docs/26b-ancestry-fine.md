@@ -94,7 +94,7 @@ The Allen Ancient DNA Resource (AADR, release v66.p1, CC0 1.0 on the [Harvard Da
 2. Writes a one-person ADMIXTURE input on the SNVs ADMIXTURE uses that you have a genotype for (ADMIXTURE stops on a SNV with no genotype, so a missing one is left out), projects it on each level's frequencies, then runs the bootstrap replicates.
 3. Chooses the chromosomes to paint: 100 genotyped SNVs or more spanning 5 cM or more. RFMix stops with a segmentation fault on a span of a few cM; on a whole genome every autosome spans more than 40 cM.
 4. Phases those chromosomes with Beagle against the panel (`impute=false`, `seed=1`).
-5. Paints them with RFMix against 50 unrelated reference people per continental group at most, taken in turn from each population (`ANCESTRY_FINE_PAINT_PER_GROUP` at install), `--random-seed=1`. When RFMix fails on a chromosome, the step prints the last lines of its log, writes the chromosome to `work/paint/failed.txt` and goes on with the next one; the reports list it as not painted.
+5. Paints them with RFMix against 50 unrelated reference people per continental group at most, taken in turn from each population (`ANCESTRY_FINE_PAINT_PER_GROUP` at install, at least 10: a lower cap stops the install, since it would undo the minimum of 10 reference people per group), `--random-seed=1`. When RFMix fails on a chromosome, the step prints the last lines of its log, writes the chromosome to `work/paint/failed.txt` and goes on with the next one; the reports list it as not painted.
 6. Writes the outputs below.
 
 The Nextflow module (`modules/local/ancestry_fine`) runs the same parts as six processes, one per image, and the e2e test checks that it writes the fractions of the bash step.

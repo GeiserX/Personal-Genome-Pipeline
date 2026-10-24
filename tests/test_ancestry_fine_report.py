@@ -85,6 +85,10 @@ expect("panel-map: at most 2 painting references per continental group",
 expect("panel-map: taken in turn from each population (Mandenka before a second YRI)",
        sorted(r[0] for r in rows if r[2] == "AFR" and r[5] == "1"), ["m1", "y1"])
 raises("panel-map: a panel person without metadata stops it", lambda: af.panel_map([meta("y1", "YRI")], ["y1", "zz"]))
+raises("panel-map: a painting cap below the minimum of 10 stops it",
+       lambda: af.panel_map([meta("y1", "YRI")], ["y1"], paint_per_group=9))
+raises("panel-map: a painting cap of 1 stops it even with a minimum of 1",
+       lambda: af.panel_map([meta("y1", "YRI")], ["y1"], paint_per_group=1, min_references=1))
 
 # A group too small to model. In gnomAD's HGDP + 1000 Genomes metadata 29 of
 # the 30 Oceanians are flagged related, which left Oceania one reference

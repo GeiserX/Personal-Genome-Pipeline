@@ -164,6 +164,11 @@ def panel_map(meta_rows, bcf_samples, exclude=(), paint_per_group=100, min_refer
     keeps any regional group keeps min_references people too, and one that
     keeps none leaves the model with them (left_out_groups names both kinds
     in the report)."""
+    # The painting references of a group are its RFMix reference, so the cap
+    # must not undo the minimum: a cap of 1 would give every group one person.
+    least = max(2, min_references)
+    if paint_per_group < least:
+        raise ValueError(f"--paint-per-group is {paint_per_group}; each group needs at least {least} painting references")
     meta = {r[META_SAMPLE]: r for r in meta_rows}
     missing = [s for s in bcf_samples if s not in meta]
     if missing:
