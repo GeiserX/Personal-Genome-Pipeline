@@ -12,6 +12,11 @@ Checks:
   3. a Delly deletion over an exon of a gene where the other partner has a
      SNV counts as shared; a deletion inside an intron, one that failed
      Delly's filter and one without the exon list do not;
+     a Delly deletion longer than 1,000 bp counts only when its RDCN (read
+     depth) is below a normal region's copies: a 50 Mb PASS het deletion
+     with RDCN 2 and a 2 kb one without an estimate are set aside, the same
+     50 Mb deletion with RDCN 1 counts, a 600 bp precise one counts on split
+     reads alone, and on a male's chrX RDCN 1 is set aside and RDCN 0 counts;
   4. a homozygous hit gives 1 in 2, two het hits in one partner say the
      chance can be higher;
   5. X-linked: a female's FMR1 premutation (ExpansionHunter) gives sons 1 in
@@ -93,6 +98,12 @@ def hit(gene, gt="0/1", off=0, gid="1", rev="criteria_provided,_multiple_submitt
 
 def deletion(chrom, start, end, gt="0/1", filt="PASS"):
     return f"{chrom}\t{start}\tDEL0\tN\t<DEL>\t.\t{filt}\tSVTYPE=DEL;END={end}\tGT:FT\t{gt}:PASS\n"
+
+
+def deldepth(chrom, start, end, rdcn, gt="0/1", precise="IMPRECISE"):
+    """A Delly 2.x deletion with its read-depth copy number (FORMAT RDCN)."""
+    return (f"{chrom}\t{start}\tDEL1\tN\t<DEL>\t.\tPASS\t{precise};SVTYPE=DEL;END={end}\t"
+            f"GT:FT:RDCN\t{gt}:PASS:{rdcn}\n")
 
 
 def eh(locus, alleles):
@@ -223,6 +234,45 @@ def main():
         check("an SMN1 call of quality 5 is not a finding and is named as not resolved",
               [r["findings_a"] for r in rows(f"{t}/smnu/couple_A_B.tsv") if r["gene"] == "SMN1"] == ["."]
               and "SMN1 copy number of A: SMN1 copy number 1 (quality 5, filter PASS), not resolved" in md6, md6)
+
+        # 3b. read depth: a long Delly deletion counts only when RDCN shows the loss
+        genes_mid = {g: mid(g) for g in ("GBA1", "PAH", "CFTR", "HBB", "DMD", "OTC")}
+        dexons = put(f"{t}/depth_exons.bed", "".join(
+            f"{c}\t{p - 50}\t{p + 50}\n" for c, p in sorted(genes_mid.values())))
+        mb = 25000000
+        (gc, gp), (pc, pp), (fc, fp) = genes_mid["GBA1"], genes_mid["PAH"], genes_mid["CFTR"]
+        (hc, hp), (dc, dp), (oc, op) = genes_mid["HBB"], genes_mid["DMD"], genes_mid["OTC"]
+        a_depth = put(f"{t}/A_depth.vcf", HEAD
+                      + deldepth(gc, gp - mb, gp + mb, 2)                        # 50 Mb, depth shows 2 copies
+                      + deldepth(pc, pp - mb, pp + mb, 1)                        # 50 Mb, depth shows 1 copy
+                      + deldepth(fc, fp - 300, fp + 300, 2, precise="PRECISE")  # 600 bp, split reads alone
+                      + deldepth(hc, hp - 1000, hp + 1000, "."))                # 2 kb, no depth estimate
+        b_depth = put(f"{t}/B_depth.vcf", HEAD
+                      + deldepth(dc, dp - 1000000, dp + 1000000, 1, gt="1")      # male chrX: 1 copy is normal
+                      + deldepth(oc, op - 2500, op + 2500, 0, gt="1"))           # male chrX: 0 copies, a loss
+        empty_hits = put(f"{t}/none_hits.vcf", HEAD)
+        rc, log = run("screen", "--pedigree", ped, "--genes", GENES, "--par-bed", PAR,
+                      "--clinvar", f"A={empty_hits}", "--clinvar", f"B={empty_hits}",
+                      "--delly", f"A={a_depth}", "--delly", f"B={b_depth}", "--exons", dexons,
+                      "--out-dir", f"{t}/depth")
+        rd = {r["gene"]: r for r in rows(f"{t}/depth/couple_A_B.tsv")} if rc == 0 else {}
+        check("read depth: the screen exits 0", rc == 0, log)
+        check("a 50 Mb PASS het deletion with RDCN 2 over GBA1 is set aside", "GBA1" not in rd, rd.get("GBA1"))
+        check("a 50 Mb PASS het deletion with RDCN 1 over PAH still counts",
+              rd.get("PAH", {}).get("result") == "one_partner"
+              and "(50000.0 kb) het, 1 exon of the gene (Delly)" in rd["PAH"]["findings_a"], rd.get("PAH"))
+        check("a 600 bp precise deletion counts on split reads alone, whatever its RDCN",
+              rd.get("CFTR", {}).get("result") == "one_partner" and "(600 bp) het" in rd["CFTR"]["findings_a"],
+              rd.get("CFTR"))
+        check("a 2 kb deletion without a depth estimate (RDCN .) is set aside", "HBB" not in rd, rd.get("HBB"))
+        check("a male's chrX deletion with RDCN 1 (his normal copy) is set aside", "DMD" not in rd, rd.get("DMD"))
+        check("a male's chrX deletion with RDCN 0 counts, hemizygous",
+              rd.get("OTC", {}).get("result") == "x_linked" and "hemizygous" in rd["OTC"]["findings_b"], rd.get("OTC"))
+        mdd = open(f"{t}/depth/couple_A_B.md").read() if rc == 0 else ""
+        check("the report says how many long deletions read depth set aside",
+              "| A | 0 / 0 | 2 over exons of listed genes; 2 longer than 1000 bp set aside, read depth shows no loss |" in mdd
+              and "| B | 0 / 0 | 1 over exons of listed genes; 1 longer than 1000 bp set aside, read depth shows no loss |" in mdd,
+              mdd)
 
         # 8. red controls
         empty = put(f"{t}/empty.tsv", "# emptied\n" + "\t".join(cr.GENE_COLUMNS) + "\n")
