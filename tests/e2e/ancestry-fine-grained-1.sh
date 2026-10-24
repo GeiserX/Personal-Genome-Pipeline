@@ -310,9 +310,14 @@ NF_TSV="${NF_OUT}/HG002T/ancestry_fine/HG002T_ancestry_fine.tsv"
 check "the module published the fractions table" test -s "$NF_TSV"
 check "its fractions are the bash step's (within 0.01 each)" python3 -I - "$NF_TSV" "${G}/HG002T/ancestry_fine/HG002T_ancestry_fine.tsv" <<'PY'
 import sys
-rows = [{(c[0], c[1]): float(c[3]) for c in (l.rstrip("\n").split("\t") for l in open(p)) if c[0] != "level"} for p in sys.argv[1:]]
-diff = {k: (rows[0].get(k), rows[1].get(k)) for k in set(rows[0]) | set(rows[1])
-        if rows[0].get(k) is None or rows[1].get(k) is None or abs(rows[0][k] - rows[1][k]) > 0.01}
+# Keyed by level, code and group: a left_out row (fraction ".") has the same
+# code at both levels and differs by its group text.
+rows = [{(c[0], c[1], c[2]): c[3] for c in (l.rstrip("\n").split("\t") for l in open(p)) if c[0] != "level"} for p in sys.argv[1:]]
+def same(a, b):
+    if a is None or b is None or (a == ".") != (b == "."):
+        return False
+    return a == b if a == "." else abs(float(a) - float(b)) <= 0.01
+diff = {k: (rows[0].get(k), rows[1].get(k)) for k in set(rows[0]) | set(rows[1]) if not same(rows[0].get(k), rows[1].get(k))}
 print("differences:", diff or "none")
 sys.exit(1 if diff else 0)
 PY
