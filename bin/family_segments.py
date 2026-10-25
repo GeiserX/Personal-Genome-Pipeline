@@ -323,8 +323,11 @@ def write_files(rows_by_child, lengths, out_dir):
                 {"parent and grandparents": "the parent's copy, told by a sequenced grandparent",
                  "parent": "from the sequenced parent",
                  "other copy": "the copy not from the sequenced parent"}[r["basis"]], r["discordant"])
+            # DNA Painter reads Side and Ancestor from the first row of each Group, and Ancestor
+            # takes only 1 (a known ancestor), so each grandparent (or parent) is a group of its own.
+            known = r["ancestor"] != "." or r["parent"] != "."
             w.writerow([r["chrom"][3:], r["start"], r["end"], "", r["sites"], "%s from %s" % (child, who), "",
-                        r["parent"], r["side"], note, "", r["ancestor"] if r["ancestor"] != "." else ""])
+                        who, r["side"], note, "", "1" if known else ""])
         with open(os.path.join(out_dir, "%s_dnapainter.csv" % child), "w") as f:
             f.write(buf.getvalue())
         with open(os.path.join(out_dir, "%s_segments.svg" % child), "w") as f:

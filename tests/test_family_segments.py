@@ -179,8 +179,12 @@ def test_trio(d):
     check("DNA Painter CSV: a row per segment", len(body) == len(rows), (len(body), len(rows)))
     check("DNA Painter CSV: chromosomes without 'chr', sides maternal or paternal",
           all(x[0] in ("1", "2", "X") and x[8] in ("maternal", "paternal") for x in body))
-    check("DNA Painter CSV: the grandparent is the Ancestor of the first chr1 segment",
-          any(x[0] == "1" and x[11] == "gpa" for x in body))
+    first1 = next((x for x in body if x[0] == "1"), None)
+    check("DNA Painter CSV: the first chr1 segment is in the grandparent's group, marked a known ancestor",
+          first1 is not None and first1[7] == "gpa" and first1[11] == "1", first1)
+    check("DNA Painter CSV: the other grandparent has a group of its own",
+          any(x[7] == "gma" and x[11] == "1" for x in body), body)
+    check("DNA Painter CSV: Ancestor is only 1 or empty", all(x[11] in ("1", "") for x in body), body)
     try:
         svg = ET.parse(os.path.join(out, "kid_segments.svg")).getroot()
         bars = [e for e in svg.iter() if e.tag.endswith("rect") and e.get("class") == "seg"]
