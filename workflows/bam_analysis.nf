@@ -34,6 +34,7 @@ include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
 include { VERIFYBAMID2     } from '../modules/local/verifybamid2/main'
 include { Y_POSITIONS; Y_PILEUP; Y_HAPLOGROUP } from '../modules/local/y_haplogroup/main'
+include { Y_STR } from '../modules/local/y_str/main'
 
 workflow BAM_ANALYSIS {
 
@@ -78,6 +79,8 @@ workflow BAM_ANALYSIS {
     ch_paraphase_vars   = Channel.empty()
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
+    ch_y_str            = Channel.empty()   // [meta, <id>_y_str.tsv] (y_str, male samples)
+    ch_y_str_csv        = Channel.empty()   // [meta, <id>_y_str.csv]
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
     ch_mosdepth_regions = Channel.empty()   // [meta, regions.bed.gz] when mosdepth runs
 
@@ -323,6 +326,26 @@ workflow BAM_ANALYSIS {
         ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions, Y_HAPLOGROUP.out.versions)
     }
 
+    //
+    // MODULE 9: Y-STR repeat counts (HipSTR), opt-in: 'y_str' in --tools
+    // Male samples only, on the sex INDEXCOV has checked, as for MODULE 8.
+    //
+    if (params.tools && params.tools.split(',').collect{it.trim()}.contains('y_str')) {
+        ch_ystr_bam = ch_bam.filter { meta, bam, bai ->
+            if (meta.sex == 'male') {
+                return true
+            }
+            log.info "Sample '${meta.id}': y_str skipped: the sample is ${meta.sex ?: 'of no declared sex'}, " +
+                     "and Y-STRs need a male sample."
+            return false
+        }
+        Y_STR(ch_ystr_bam, ch_reference, ch_reference_fai,
+              Channel.value(file("${projectDir}/assets/ystr_panel.tsv", checkIfExists: true)))
+        ch_y_str     = Y_STR.out.table
+        ch_y_str_csv = Y_STR.out.csv
+        ch_versions  = ch_versions.mix(Y_STR.out.versions)
+    }
+
     emit:
     hla_alleles      = ch_hla_alleles
     expansion_vcf    = ch_expansion_vcf
@@ -341,5 +364,7 @@ workflow BAM_ANALYSIS {
     paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     y_haplogroup     = ch_y_haplogroup    // [meta, <id>_y_haplogroup.txt]
+    y_str            = ch_y_str           // [meta, <id>_y_str.tsv]
+    y_str_csv        = ch_y_str_csv       // [meta, <id>_y_str.csv]
     versions         = ch_versions
 }
