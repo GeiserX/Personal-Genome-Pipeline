@@ -334,9 +334,11 @@ install_yleaf_data() {
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
          "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
     # Yleaf's own data is in place, so step 37 still runs: it says the
-    # current tree is not installed and writes Yleaf's result only.
+    # current tree is not installed and writes Yleaf's result only. An older
+    # tree from an earlier pin goes too, so no step places on tables that
+    # versions.env no longer names.
     echo "[WARN] Could not download the current Y tree (${label}); step 37 will place the sample on Yleaf's tree only. Run this again to retry."
-    rm -rf "${yt}.part"
+    rm -rf "${yt}.part" "$yt"
     return 0
   fi
   printf '%s\n' "$want" > "${yt}.part/version.txt"
