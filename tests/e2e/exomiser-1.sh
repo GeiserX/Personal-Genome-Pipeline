@@ -225,6 +225,7 @@ fi
 # --- 5. main.nf, stub ---------------------------------------------------------------------
 ST="${REPO}/assets/stub"
 # stub_run NAME ARGS...: main.nf -profile test_all -stub on a one-sample sheet; sets RC, LOG and DIR
+# (--kir false: the profile turns KIR on, which needs hla_typing in --tools)
 stub_run() {
   DIR="${CASE_TMP}/stub-$1"
   shift
@@ -233,7 +234,7 @@ stub_run() {
     "${ST}/sample.bam" "${ST}/sample.bam.bai" "${ST}/sample.vcf.gz" "${ST}/sample.vcf.gz.tbi" > "${DIR}/samplesheet.csv"
   echo "+ nextflow run main.nf -profile test_all -stub $*"
   ( cd "$DIR" && nextflow run "${REPO}/main.nf" -profile test_all -stub -ansi-log false \
-      -work-dir "${DIR}/work" --input "${DIR}/samplesheet.csv" --outdir "${DIR}/out" "$@" ) > "${DIR}/run.log" 2>&1
+      -work-dir "${DIR}/work" --input "${DIR}/samplesheet.csv" --outdir "${DIR}/out" --kir false "$@" ) > "${DIR}/run.log" 2>&1
   RC=$?
   LOG=$(cat "${DIR}/run.log")
   echo "$LOG" | tail -n 30
@@ -244,7 +245,7 @@ if command -v nextflow >/dev/null; then
   check "the EXOMISER task ran" has 'EXOMISER \(S1\)' "$LOG"
   check "the top table is published" test -e "${DIR}/out/S1/exomiser/S1_exomiser_top.tsv"
   check "and the terms" test -e "${DIR}/out/S1/exomiser/S1_exomiser_terms.tsv"
-  REP=$(grep -l "name: 'HTML_REPORT" "${DIR}"/work/*/*/.command.run 2>/dev/null | head -n 1)
+  REP=$(grep -l "^### name: [\"']HTML_REPORT (" "${DIR}"/work/*/*/.command.run 2>/dev/null | head -n 1)
   check "HTML_REPORT received the top table" test -n "$REP" -a -e "$(dirname "${REP:-/x}")/S1_exomiser_top.tsv"
 
   stub_run off --tools exomiser,html_report --exomiser_data "${ST}/db"
