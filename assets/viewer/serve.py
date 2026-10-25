@@ -8,7 +8,7 @@ serves exactly these, and nothing else from the disk:
   /viewer.js      the page's script, from this folder
   /igv.min.js     the pinned igv.js release pgp-view.sh checked by sha256
   /config.json    the reference, the tracks and the start locus (build_config)
-  /data/<n>/<name>  the n-th file of the config: the reference FASTA and its
+  /data/<n>/<name>  (name percent-encoded in the URL) the n-th file of the config: the reference FASTA and its
                   .fai, the BAM or CRAM and its index, the VCF and the SV VCF
                   and their .tbi
 
@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 
 BIND = "127.0.0.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -79,7 +80,7 @@ def build_config(sample, fasta, reads=None, vcf=None, sv_vcf=None, locus=None):
 
     def url(path):
         files.append(os.path.abspath(path))
-        return f"data/{len(files) - 1}/{os.path.basename(path)}"
+        return f"data/{len(files) - 1}/{urllib.parse.quote(os.path.basename(path))}"
 
     fai = fasta + ".fai"
     if not os.path.isfile(fasta) or not os.path.isfile(fai):
@@ -160,7 +161,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         host = re.sub(r":[0-9]+$", "", self.headers.get("Host") or "")
         if host not in ALLOWED_HOSTS:
             return None, "the Host header must be 127.0.0.1 or localhost"
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        # The config percent-encodes each file name (a space, '#' or '?' in
+        # it), so the browser asks for the encoded form; the routes hold the
+        # plain name.
+        path = urllib.parse.unquote(self.path.split("?", 1)[0].split("#", 1)[0])
         return self.server.routes.get(path), None
 
     def _serve(self):
