@@ -51,6 +51,8 @@ Yleaf downloads the whole hg38 FASTA on its first run unless its config file nam
 | `y_haplogroup/positions.txt` | the marker positions the pileup was made at |
 | `y_haplogroup/${SAMPLE}_chrY.bam` and `.bai` | the BAM's chrY reads only, the file the services below read; the Nextflow pipeline publishes the same file there (`Y_PILEUP`) |
 
+The chrY BAM is written on every male run. Expect it to be about 1 to 2 percent of the analysis BAM, so a few hundred megabytes to a gigabyte on a 30x genome. That is an estimate from chrY's share of the reads; we have not measured it on a full genome. If you do not need it, delete it and its `.bai`.
+
 `Hg` is `NA` when too few markers had reads for a call; the step then prints `Y haplogroup: insufficient markers` with the marker count, and both reports say "insufficient markers".
 
 With a call, both reports add the links of the next section, built from the branch name (for `R-M269*(xR-L23)`, Yleaf's mark for "R-M269 but none of these sub-branches", the links use `R-M269`).
