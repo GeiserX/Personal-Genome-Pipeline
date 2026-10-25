@@ -13,6 +13,12 @@
 # Output: y_haplogroup/<sample>_y_haplogroup.txt, Yleaf's prediction table
 # (Hg, Hg_marker, Total_reads, Valid_markers, QC-score). Hg NA means too few
 # markers had reads to call one (the step says so).
+# Yleaf 3.2.1's tree is YFull v10.01. The step also places the sample on the
+# current YFull YTree (setup.sh --yleaf-data installs it in <data>/ytree) with
+# bin/y_tree_place.py: y_haplogroup/<sample>_y_tree.txt (the terminal branch,
+# with the tree it comes from) and <sample>_y_tree_path.tsv (derived,
+# ancestral and no-call counts per level). Without that folder the step says
+# so and writes Yleaf's result only.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -28,6 +34,7 @@ PED="${S}/indexcov/indexcov-indexcov.ped"
 OUTDIR="${S}/y_haplogroup"
 OUT="${OUTDIR}/${SAMPLE}_y_haplogroup.txt"
 YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
+YTREE="${YDATA}/ytree"
 
 echo "=== Y haplogroup (Yleaf): ${SAMPLE} ==="
 if [ ! -s "${YDATA}/hg38/new_positions.txt" ]; then
@@ -50,7 +57,9 @@ if [ "$SEX" != male ]; then
 fi
 
 mkdir -p "$OUTDIR"
-rm -rf "${OUTDIR}/yleaf" "$OUT"
+rm -rf "${OUTDIR}/yleaf" "$OUT" "${OUTDIR}/${SAMPLE}_y_tree.txt" "${OUTDIR}/${SAMPLE}_y_tree_path.tsv"
+TREE=false
+[ -s "${YTREE}/version.txt" ] && TREE=true
 # The Yleaf image has no samtools, and Yleaf downloads the whole hg38 FASTA
 # unless its read-only config names one: bin/yleaf_run.py writes Yleaf's
 # marker positions, SAMTOOLS_IMAGE makes the pileup Yleaf would make, and
@@ -59,16 +68,31 @@ O=$(cpath "$OUTDIR")
 echo "[1/3] Yleaf's Y marker positions..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
   python3 /pgp-bin/yleaf_run.py positions --data "$(cpath "$YDATA")" "${O}/positions.txt"
+if $TREE; then
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
+    python3 /pgp-bin/y_tree_place.py positions --tree-dir "$(cpath "$YTREE")" "${O}/tree_positions.txt"
+fi
 echo "[2/3] Pileup at those positions (samtools)..."
 run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
   'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"' \
   _ "$(cpath "$BAM")" "$O"
+if $TREE; then
+  run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
+    'samtools mpileup -l "$2/tree_positions.txt" -AQ20q1 "$1" > "$2/tree_pileup.txt"' _ "$(cpath "$BAM")" "$O"
+fi
 echo "[3/3] Yleaf..."
 echo "Reference: ${REF_FASTA}"
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$YLEAF_IMAGE" \
   python3 /pgp-bin/yleaf_run.py predict --data "$(cpath "$YDATA")" --bam "$(cpath "$BAM")" --reference "$REF_FASTA_C" \
     --idxstats "${O}/idxstats.txt" --pileup "${O}/pileup.txt" --out "${O}/yleaf"
 rm -f "${OUTDIR}/idxstats.txt" "${OUTDIR}/pileup.txt"
+TREE_LINE="Current tree: not installed (${YTREE}); run scripts/setup.sh --yleaf-data ${GENOME_DIR} to add it"
+if $TREE; then
+  TREE_LINE=$(run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$YLEAF_IMAGE" \
+    python3 /pgp-bin/y_tree_place.py place --tree-dir "$(cpath "$YTREE")" --pileup "${O}/tree_pileup.txt" \
+      --sample "$SAMPLE" --out-prefix "${O}/${SAMPLE}")
+  rm -f "${OUTDIR}/tree_positions.txt" "${OUTDIR}/tree_pileup.txt"
+fi
 
 PRED="${OUTDIR}/yleaf/hg_prediction.hg"
 if [ ! -s "$PRED" ] || [ "$(grep -c . "$PRED")" -lt 2 ]; then
@@ -84,4 +108,7 @@ if [ "$HG" = NA ]; then
 else
   echo "Y haplogroup: ${HG} (${MARKERS} markers, QC-score ${QC})"
 fi
+echo "  (Yleaf ${YLEAF_DATA_VERSION}, on its own tree, YFull v10.01)"
+echo "$TREE_LINE"
 echo "Results: ${OUT}"
+if $TREE; then echo "Current tree: ${OUTDIR}/${SAMPLE}_y_tree.txt, per level: ${OUTDIR}/${SAMPLE}_y_tree_path.tsv"; fi
