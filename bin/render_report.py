@@ -935,6 +935,10 @@ def text_report(s):
         w(f"  {BLOODTYPE_NOTE}")
         w("")
 
+    if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
+        out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -1210,6 +1214,32 @@ def contamination_text(d):
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
+             "a call here is not a diagnosis. A call is a change in a CHIP gene's published classes, found by "
+             "Mutect2 without a matched normal; one at a VAF of 35% or more is left out as possibly inherited. "
+             "docs/49-chip.md says how to read it.")
+
+
+def chip_lines(d, sample):
+    """The CHIP section: the calls, the detection limit at this depth, the genes too shallow to read."""
+    out = []
+    for c in d.get("calls", []):
+        out.append(f"{c['gene']} {c['protein_change']}: VAF {c['vaf']} ({c['alt_reads']} of {c['depth']} reads), {c['note']}")
+    if not d.get("calls"):
+        out.append("No CHIP call.")
+    if d.get("median_limit") is not None:
+        out.append(f"Detection limit: a clone of VAF about {d['median_limit'] * 100:.0f}% or more is found 8 times "
+                   f"in 10 at this depth (median {d['median_depth']:.0f}x over the genes' coding exons). CHIP starts "
+                   "at a VAF of 2%: smaller clones are likely missed, so no call does not rule one out.")
+    else:
+        out.append("No CHIP gene has the depth to find a clone: no result either way.")
+    if d.get("not_covered"):
+        out.append(f"Too shallow or not on the reference: {', '.join(d['not_covered'])}.")
+    out.append(f"{d.get('other', 0)} other protein changes listed, not counted: chip/{sample}_chip.tsv.")
+    out.append(CHIP_NOTE)
+    return out
 
 
 def bloodtype_body(d):
@@ -1604,6 +1634,12 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("chip", MISSING)["state"] != "missing":
+        ch = S["chip"]["data"]   # the card shows its body only for a section that was read
+        a(card(S["chip"], "Clonal Haematopoiesis (CHIP)",
+               [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
+               + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
+               + [small_note(CHIP_NOTE)], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)

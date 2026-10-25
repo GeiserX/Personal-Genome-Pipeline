@@ -104,7 +104,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), chip (clonal haematopoiesis from the BAM; needs --chip_gff)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
@@ -336,6 +336,24 @@
                     "type": "string",
                     "format": "file-path",
                     "description": "The 23andMe v5 site table (GRCh37 and GRCh38 positions), which `scripts/setup.sh --consumer-sites` builds as reference/consumer/23andme_v5_sites_dbsnp<build>.tsv.gz. Required with consumer_export.",
+                    "fa_icon": "fas fa-file"
+                },
+                "chip_gff": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Ensembl's GRCh38 gene annotation, which `scripts/setup.sh --chip-data` installs as reference/ensembl/Homo_sapiens.GRCh38.<release>.chr.gff3.gz: chip takes each CHIP gene's MANE Select transcript from it. Required with chip.",
+                    "fa_icon": "fas fa-file"
+                },
+                "chip_germline_resource": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "chip: gnomAD's AF-only germline resource for Mutect2 (somatic/af-only-gnomad.hg38.vcf.gz, .tbi beside it; optional). Without it inherited variants are left out by their VAF only.",
+                    "fa_icon": "fas fa-file"
+                },
+                "chip_pon": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "chip: a Mutect2 panel of normals (somatic/1000g_pon.hg38.vcf.gz, .tbi beside it; optional).",
                     "fa_icon": "fas fa-file"
                 },
                 "parascopy_population": {
