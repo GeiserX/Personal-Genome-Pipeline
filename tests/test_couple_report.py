@@ -270,8 +270,8 @@ def main():
               rd.get("OTC", {}).get("result") == "x_linked" and "hemizygous" in rd["OTC"]["findings_b"], rd.get("OTC"))
         mdd = open(f"{t}/depth/couple_A_B.md").read() if rc == 0 else ""
         check("the report says how many long deletions read depth set aside",
-              "| A | 0 / 0 | 2 over exons of listed genes; 2 longer than 1000 bp set aside, read depth shows no loss |" in mdd
-              and "| B | 0 / 0 | 1 over exons of listed genes; 1 longer than 1000 bp set aside, read depth shows no loss |" in mdd,
+              "| A | 0 / 0 | 2 over exons of listed genes; 2 longer than 1000 bp set aside, read depth does not confirm the loss |" in mdd
+              and "| B | 0 / 0 | 1 over exons of listed genes; 1 longer than 1000 bp set aside, read depth does not confirm the loss |" in mdd,
               mdd)
 
         # 8. red controls

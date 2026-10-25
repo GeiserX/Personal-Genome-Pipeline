@@ -207,7 +207,8 @@ def clinvar_findings(path, genes, sex, par):
 
 def delly_findings(path, index, exons, sex, par):
     """PASS Delly deletions that remove at least one exon of a gene of the list,
-    and the count of long ones set aside because read depth shows no loss."""
+    and the count of long ones set aside because read depth
+    does not confirm the loss (RDCN at the normal count or more, or no estimate)."""
     out, no_loss = [], 0
     for r in collect_summary.vcf_records(path):
         if len(r) < 10 or r[6] != "PASS":
@@ -487,7 +488,7 @@ def cmd_screen(a):
                 d, no_loss = delly_findings(delly[s], index, exons, sexes[s], par)
                 info["delly"] = "%d over exons of listed genes" % len(d)
                 if no_loss:
-                    info["delly"] += "; %d longer than %d bp set aside, read depth shows no loss" % (
+                    info["delly"] += "; %d longer than %d bp set aside, read depth does not confirm the loss" % (
                         no_loss, DEPTH_MIN_SIZE)
                 f += d
             if s in smn:
