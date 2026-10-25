@@ -92,8 +92,8 @@ check "and it names Vindija among the genomes it matches" \
 check "the segment lists the protein-coding genes it crosses" \
   awk -F'\t' -v f="$W_FROM" -v t="$W_TO" 'NR > 1 && $5 == "Neanderthal" && $2 < t && $3 > f && $8 ~ /[A-Z]/ {ok = 1} END {exit !ok}' \
   "${G}/${P}/archaic/${P}_archaic_segments.tsv"
-check_ge "the plant adds Neanderthal sequence to HG002's (bp)" \
-  "$(( $(kv "$P" neanderthal_bp) - $(kv "$H" neanderthal_bp) ))" 1
+NP=$(kv "$P" neanderthal_bp) NH=$(kv "$H" neanderthal_bp)
+check_ge "the plant adds Neanderthal sequence to HG002's (bp)" "$(( ${NP:-0} - ${NH:-0} ))" 1
 
 run_step generate-report.sh "$P"
 check_step_exit "generate-report.sh ($P)"

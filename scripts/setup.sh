@@ -1144,12 +1144,15 @@ install_archaic() {
     # The sites to keep: the 1000 Genomes SNVs, and every position where one of
     # the three genomes has a non-reference call. Then each genome's called
     # genotypes at them. The downloads have no index: -T (targets) streams
-    # through a file, where -R would need one.
+    # through a file, where -R would need one. They have no ##contig lines
+    # either, so they are read as text only: htslib adds the contig while it
+    # parses, but a BCF stream (-Ou) carries the header written before that
+    # and the next reader stops on "Invalid CONTIG id".
     # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
     if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
           r=(); [ ! -s "$4" ] || r=(-T "$4")
           for g in Altai Vindija33.19 Denisova; do
-            bcftools view "${r[@]}" -i "GT=\"alt\"" -Ou "$1/$g.chr$2.vcf.gz" | bcftools query -f "%POS\n"
+            bcftools query "${r[@]}" -i "GT=\"alt\"" -f "%POS\n" "$1/$g.chr$2.vcf.gz"
           done > "$3/nonref.pos"
           { cut -f1 "$3/modern.tsv"; cat "$3/nonref.pos"; } | sort -nu | awk -v c="$2" "{print c \"\t\" \$1}" > "$3/keep.tsv"
           for g in Altai Vindija33.19 Denisova; do
