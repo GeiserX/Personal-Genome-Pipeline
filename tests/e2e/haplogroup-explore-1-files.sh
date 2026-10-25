@@ -65,6 +65,8 @@ copy() {  # copy NAME SEX_CODE: a copy of the sample with an indexcov .ped of th
 # other_contigs BAM: reads mapped to a contig other than chrY (idxstats, through the index)
 other_contigs() { sam idxstats "$1" 2>/dev/null | awk -F'\t' '$1 != "chrY" { n += $3 } END { print n + 0 }'; }
 
+# Yleaf's marker tables, which the image does not ship (setup.sh --yleaf-data).
+check "Yleaf's marker tables install" "${REPO}/scripts/setup.sh" --yleaf-data "$G"
 XM="${SAMPLE}xm"
 copy "$XM" 1
 run_step 37-y-haplogroup.sh "$XM"
@@ -97,8 +99,9 @@ check "HG002's text report links its mtDNA branch on Discover (${HG:-none})" \
 check "and on YFull's MTree" has "^  YFull MTree: https://www\.yfull\.com/mtree/${HG_Q}/\$" "$TXT"
 check "and no Y branch (its Y step was skipped)" lacks 'discover\.familytreedna\.com/y-dna/|yfull\.com/tree/' "$TXT"
 
-YHG=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next } NR == 2 { print $c["Hg"] }' \
-  "${G}/${XM}/y_haplogroup/${XM}_y_haplogroup.txt" 2>/dev/null)
+YT="${G}/${XM}/y_haplogroup/${XM}_y_haplogroup.txt"
+check_eq "the male copy has Yleaf's table (a header and one row)" "$(grep -c . "$YT" 2>/dev/null || true)" 2
+YHG=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next } NR == 2 { print $c["Hg"] }' "$YT" 2>/dev/null)
 run_step generate-report.sh "$XM"
 check_step_exit generate-report.sh
 TXT=$(cat "${G}/${XM}/${XM}_report.txt" 2>/dev/null)
@@ -118,7 +121,6 @@ if command -v nextflow >/dev/null; then
   printf 'sample,sex,vcf,vcf_index,bam,bam_index\n%s,male,%s,%s,%s,%s\n' "$SAMPLE" \
     "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" "${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz.tbi" \
     "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" "${G}/${SAMPLE}/aligned/${SAMPLE}_sorted.bam.bai" > "$SHEET"
-  check "Yleaf's marker tables install" "${REPO}/scripts/setup.sh" --yleaf-data "$G"
   echo "+ nextflow run main.nf -profile docker (mito_haplogroup, y_haplogroup)"
   (
     cd "$CASE_TMP" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
