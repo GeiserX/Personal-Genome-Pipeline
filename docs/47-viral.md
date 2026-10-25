@@ -15,7 +15,7 @@ The reads a human alignment leaves unmapped are already in the BAM and nothing e
 ## Tool
 
 - samtools to take the reads out of the BAM and to measure the depths
-- minimap2 (`-ax sr`) to realign them to the viral genomes
+- minimap2 (`-ax sr --frag=no`) to realign them to the viral genomes
 - `bin/viral_report.py` (standard library Python) for the calls
 
 ## Docker Image
@@ -56,7 +56,7 @@ With `run-all.sh`: `TOOLS=...,viral`; a run lists step 47 only when `TOOLS` name
 ## How it works
 
 1. The reads with the unmapped flag (`samtools view -f 4`), which includes a read unmapped beside a mapped mate, and the reads mapped to chrEBV, the EBV genome the GRCh38 analysis set carries. `samtools fastq` leaves out secondary and supplementary records, so each read is realigned once.
-2. minimap2 aligns them to the viral genomes as single reads, with no secondary alignments.
+2. minimap2 aligns them to the viral genomes as single reads (`--frag=no`, so two mates that sit next to each other in the FASTQ are not paired), with no secondary alignments.
 3. `samtools coverage` gives the reads per viral genome, and `samtools depth -aa` the depth at every base, zero included.
 4. `samtools coverage` over the sample's BAM gives the human depth: chr1 to chr22, over the bases with at least one read. Both coverages count duplicates and leave out unmapped, secondary and QC-failed reads, so the two depths are measured the same way.
 

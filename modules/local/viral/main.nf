@@ -48,7 +48,7 @@ process VIRAL_READS {
         samtools view -@ ${task.cpus} -u -F 4 ${bam} chrEBV | samtools fastq - >> ${p}_unmapped.fq
     fi
     samtools coverage --ff UNMAP,SECONDARY,QCFAIL ${bam} > ${p}_human_coverage.tsv
-    minimap2 -ax sr --secondary=no -t ${task.cpus} -o ${p}_viral.sam ${viral_ref} ${p}_unmapped.fq
+    minimap2 -ax sr --frag=no --secondary=no -t ${task.cpus} -o ${p}_viral.sam ${viral_ref} ${p}_unmapped.fq
     samtools sort -o ${p}_viral_reads.bam ${p}_viral.sam
     samtools index ${p}_viral_reads.bam
     samtools coverage --ff UNMAP,SECONDARY,QCFAIL ${p}_viral_reads.bam > ${p}_viral_coverage.tsv

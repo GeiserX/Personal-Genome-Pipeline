@@ -67,7 +67,7 @@ echo "  reads to realign: $(( $(wc -l < "${P}_unmapped.fq") / 4 ))"
 
 echo "[2/4] minimap2 against the viral genomes..."
 run_in --cpus "$THREADS" --memory 4g "$MINIMAP2_IMAGE" \
-  minimap2 -ax sr --secondary=no -t "$THREADS" -o "${O}_viral.sam" "$V" "${O}_unmapped.fq"
+  minimap2 -ax sr --frag=no --secondary=no -t "$THREADS" -o "${O}_viral.sam" "$V" "${O}_unmapped.fq"
 
 echo "[3/4] Sort, coverage and depth over each viral genome (samtools)..."
 # shellcheck disable=SC2016
