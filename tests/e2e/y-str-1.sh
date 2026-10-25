@@ -9,7 +9,8 @@
 #     absent markers not callable, and most single regions called high;
 #   - an independent count from the reads: for every high call, the length of
 #     the repeat in the reads that span it with 10 bases on each side
-#     (reference length plus the CIGAR's insertions minus its deletions there)
+#     (reference length plus the CIGAR's insertions minus its deletions there
+#     or in those 10 bases, where an aligner can left-align a repeat's indel)
 #     gives the same count in at least 90% of the markers;
 #   - a planted change: the same reads with four bases (one AGAT repeat) cut
 #     out of DYS393 in every read that spans it give DYS393 one repeat fewer,
@@ -114,7 +115,9 @@ check_eq "CSV and table agree on DYS393" "$(awk -F, '$1 == "DYS393" {print $2}' 
 check_eq "DYS393 is called high" "$(col "$H" DYS393 confidence)" high
 
 # The reads' own count: spanning reads (10 bases of flank each side), the region's
-# length plus the CIGAR's insertions minus its deletions inside it; the modal
+# length plus the CIGAR's insertions minus its deletions inside it or its 10-base
+# flanks (an aligner left-aligns an indel in a repeat, which can put it a base or
+# two before the region's first base, as at DYS426 in HG002's reads); the modal
 # length gives the count with the same rounding as the step (reference copies
 # rounded half up, plus the length change in whole and partial repeats).
 dk "$SAMTOOLS_IMAGE" samtools view -q 20 -F 0xF04 "${T}/win.bam" > "${T}/win.sam"
@@ -144,10 +147,10 @@ for line in open(sys.argv[3]):
             if op in "M=X":
                 ref += n
             elif op in "DN":
-                if s <= ref <= e + 1:
+                if s - 10 <= ref <= e + 10:
                     diff -= n
                 ref += n
-            elif op == "I" and s <= ref <= e + 1:
+            elif op == "I" and s - 10 <= ref <= e + 10:
                 diff += n
         lens[m][diff] += 1
 for line in open(sys.argv[2]):
@@ -207,7 +210,10 @@ sample "$P" "${T}/planted.bam" 1
 step "$P"
 C0=$(col "$H" DYS393 count) C1=$(col "$P" DYS393 count)
 check "planted: DYS393 has one repeat fewer (${C0} -> ${C1})" test -n "$C0" -a -n "$C1" -a "$C1" = "$((C0 - 1))" 2>/dev/null
-check_eq "planted: DYS393 still called high" "$(col "$P" DYS393 confidence)" high
+# Only the reads that span DYS393 with a plain match keep it (6 at this depth on
+# HG002's single Y), fewer than the 10 a high call needs, so the call is low and says so.
+check_eq "planted: DYS393 is low on the few reads left" "$(col "$P" DYS393 confidence)" low
+check "planted: its note names the read count" has '[0-9]+ reads, fewer than 10' "$(col "$P" DYS393 note)"
 # Reads dropped over DYS393 can take their mates' support from a marker nearby, so
 # the check is on the counts, not on the confidence.
 join -t $'\t' <(awk -F'\t' 'NR > 1 && $5 == "high" && $3 != "DYS393" {print $3 "\t" $4}' "$OUT" | sort) \
@@ -227,7 +233,7 @@ check "and gets no output" test ! -e "${G}/${F}/y_str"
 python3 "${REPO}/bin/render_report.py" --sample "$H" --sample-dir "${G}/${H}" --json "${T}/summary.json" \
   -o "${T}/report.txt" -o "${T}/report.html" > /dev/null
 TXT=$(cat "${T}/report.txt" 2>/dev/null) HTML=$(cat "${T}/report.html" 2>/dev/null)
-check "text report: the Y-STR section" has '^## Y-STR Markers \(HipSTR\) \(step 45\)$' "$TXT"
+check "text report: the Y-STR section" has '^## Y-STR Markers \(HipSTR\)$' "$TXT"
 check "text report: DYS393 with its count" has "^  Y-12 +DYS393 +${C0} +\\(high\\)$" "$TXT"
 check "HTML report: the Y-STR card" has '<h2>Y-STR Markers \(HipSTR\)</h2>' "$HTML"
 check "HTML report: the DYS393 row" has "<td>DYS393</td><td>${C0}</td><td>high</td>" "$HTML"
