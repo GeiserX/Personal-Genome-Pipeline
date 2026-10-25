@@ -17,6 +17,8 @@
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
+#   HPO=HP:0001250,HP:0001263 (the symptoms as HPO ids: step 48 ranks the variants that could explain them with Exomiser,
+#   after setup.sh --exomiser-data);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
@@ -160,6 +162,14 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
+# Step 48 (Exomiser) runs when HPO names the symptoms, against the data setup.sh --exomiser-data installs.
+ED="${G}/reference/exomiser-${EXOMISER_DATA_VERSION}"
+if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
+  if plan "48 Exomiser (HPO terms)" exomiser "$([ -n "${HPO:-}" ] || echo 'HPO not set: HPO=HP:0001250,...'; [ -z "${HPO:-}" ] \
+       || need "${ED}/${EXOMISER_DATA_VERSION}_hg38" "${ED}/${EXOMISER_DATA_VERSION}_phenotype")"; then
+    NF+=(--hpo "$HPO" --exomiser_data "$ED")
+  fi
+else KNOWN+=" exomiser"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.

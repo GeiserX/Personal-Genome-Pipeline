@@ -12,6 +12,7 @@
 #        ./scripts/setup.sh --ancestry-fine-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
+#        ./scripts/setup.sh --exomiser-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -22,7 +23,9 @@
 #                                            panel plus its images (step 26b),
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
-#                                            raw-data export (step 40)
+#                                            raw-data export (step 40), Exomiser's
+#                                            hg38 and phenotype data plus its image
+#                                            (step 48)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -76,7 +79,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--exomiser-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -101,7 +104,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --exomiser-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -128,6 +131,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --exomiser-data"
+  echo "                Install Exomiser ${EXOMISER_DATA_VERSION:-}'s hg38 and phenotype data (step 48: about 37 GB to download, 58 GB"
+  echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -311,6 +317,45 @@ install_yleaf_data() {
   rm -rf "$dest"
   mv "${dest}.part" "$dest"
   echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+}
+
+# install_exomiser_data: Exomiser's hg38 and phenotype data of release
+# EXOMISER_DATA_VERSION (step 48) into reference/exomiser-<release>/, the
+# folder Exomiser reads as its data directory. Each archive is checked against
+# its sha256 in versions.env, unpacked with Python's zipfile (no unzip on the
+# host needed), and deleted. A folder is moved into place only once whole.
+install_exomiser_data() {
+  local dest="${GENOME_DIR}/reference/exomiser-${EXOMISER_DATA_VERSION}" part sha zip
+  if [ -d "${dest}/${EXOMISER_DATA_VERSION}_hg38" ] && [ -d "${dest}/${EXOMISER_DATA_VERSION}_phenotype" ]; then
+    echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} data (step 48) already present: ${dest}"
+    return 0
+  fi
+  mkdir -p "$dest"
+  while read -r part sha; do
+    [ -d "${dest}/${EXOMISER_DATA_VERSION}_${part}" ] && continue
+    zip="${dest}/${EXOMISER_DATA_VERSION}_${part}.zip"
+    echo "Downloading Exomiser's ${EXOMISER_DATA_VERSION}_${part}.zip (resumes when run again)..."
+    if ! fetch "https://g-879a9f.f5dc97.75bc.dn.glob.us/data/${EXOMISER_DATA_VERSION}_${part}.zip" "$zip" sha256 "$sha"; then
+      echo "[WARN] Could not download Exomiser's ${part} data. Step 48 needs it; run: $0 --exomiser-data ${GENOME_DIR}"
+      return 1
+    fi
+    rm -rf "${dest}/unpack.part"
+    # shellcheck disable=SC2016  # $1 and $2 expand in the container's shell
+    if ! run_in --rw "$dest" --cpus 1 --memory 2g "$PYTHON_IMAGE" bash -euo pipefail -c \
+        'python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$1" "$2"' \
+        _ "$(cpath "$zip")" "$(cpath "${dest}/unpack.part")" \
+        || [ ! -d "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" ]; then
+      rm -rf "${dest}/unpack.part"
+      echo "[WARN] Could not unpack ${zip}; it is kept: run this command again."
+      return 1
+    fi
+    mv "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" "${dest}/${EXOMISER_DATA_VERSION}_${part}"
+    rm -rf "${dest}/unpack.part" "$zip"
+  done <<EOF2
+hg38 ${EXOMISER_HG38_SHA256}
+phenotype ${EXOMISER_PHENOTYPE_SHA256}
+EOF2
+  echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} hg38 and phenotype data (step 48): ${dest}"
 }
 
 # install_consumer_sites: the site table of the raw-data export (step 40). The
@@ -1072,6 +1117,7 @@ case "$OPT_IN" in
   kir-data) install_kir_data; exit $? ;;
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
+  exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
 esac
