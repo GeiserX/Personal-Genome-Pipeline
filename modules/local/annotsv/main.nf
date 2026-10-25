@@ -16,7 +16,10 @@
     interval, which counts the anchor base, is as long as the change) and bin/cnvpytor_to_vcf.py adds the Delly (PASS) and
     CNVpytor (e-val < 0.01, q0 < 0.5) deletions and duplications no Manta
     call covers, each record with its caller in INFO SVCALLER; either input
-    may be [] when that caller did not run. -bracketedAltMode DEL,DUP,INS
+    may be [] when that caller did not run. A Delly call longer than 1,000 bp
+    also needs its read-depth copy number (FORMAT RDCN) to show the change,
+    judged against 1 copy on a male's chrX and chrY outside the PARs
+    (assets/par_grch38.bed, meta.sex) and 2 elsewhere. -bracketedAltMode DEL,DUP,INS
     keeps a breakend pair MANTA left on purpose (a lone inversion junction of
     1 Mb or more) from being read as a whole-span inversion. The class 4 and
     5 rows are written to their own table, found by column name, and
@@ -38,6 +41,7 @@ process ANNOTSV {
     input:
     tuple val(meta), path(sv_vcf), path(delly_vcf), path(cnvpytor_vcf)  // delly_vcf, cnvpytor_vcf: VCF or []
     path(annotations_dir)
+    path(par_bed)        // assets/par_grch38.bed
 
     output:
     tuple val(meta), path("${meta.id}_sv_annotated.tsv"), emit: annotated_tsv
@@ -50,7 +54,7 @@ process ANNOTSV {
     task.ext.when == null || task.ext.when
 
     script:
-    def delly_arg    = delly_vcf    ? "--delly ${delly_vcf}"       : ''
+    def delly_arg    = delly_vcf    ? "--delly ${delly_vcf} --sex '${meta.sex ?: ''}' --par-bed ${par_bed}" : ''
     def cnvpytor_arg = cnvpytor_vcf ? "--cnvpytor ${cnvpytor_vcf}" : ''
     """
     for f in ${annotations_dir}/mane_select_refseq.txt \\
