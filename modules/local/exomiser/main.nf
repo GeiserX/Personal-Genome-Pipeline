@@ -47,7 +47,7 @@ process EXOMISER_PREPARE {
     for o in ${exomiser_data}/*_phenotype/hp.obo ${exomiser_data}/*_phenotype/phenix/hp.obo; do
         if [ -s "\$o" ]; then obo="\$o"; break; fi
     done
-    exomiser_report.py prepare --hpo '${hpo}' \${obo:+--obo "\$obo"} --sample ${meta.id} --vcf ${vcf} \\
+    exomiser_report.py prepare --hpo '${hpo}' \${obo:+--obo "\$obo"} --sample ${meta.id} --vcf "${vcf}" \\
         --assembly ${params.exomiser_assembly} --out-dir results --analysis ${meta.id}_analysis.yml \\
         --terms ${meta.id}_exomiser_terms.tsv
 
