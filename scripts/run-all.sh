@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, consumer_export and bloodtype run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, consumer_export, bloodtype and ancient run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -160,6 +160,13 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
+# Step 44 (ancient populations) is opt-in and listed only when TOOLS names it; it reads the gVCF and the panel
+# setup.sh --ancient-panel builds (DONE is written last). ANCIENT_PANEL_DIR picks another panel.
+AN=${ANCIENT_PANEL_DIR:-${G}/reference/ancient/aadr_${AADR_VERSION}}
+if [[ ",${T// /}," == *",ancient,"* ]]; then
+  plan "44 Ancient populations" ancient "$(if [ -n "$fv" ] && [ -z "$GROW" ]; then echo "no gVCF: ${GV#"$G"/}"; else need "${AN}/DONE"; fi)" \
+    && NF+=(--ancient_panel "$AN")
+else KNOWN+=" ancient"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.

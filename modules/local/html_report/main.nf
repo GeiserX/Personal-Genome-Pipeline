@@ -83,6 +83,7 @@ process HTML_REPORT {
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
             ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
+            ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac

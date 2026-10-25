@@ -35,6 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,6 +83,7 @@ workflow {
         'consumer_export',
         'bloodtype',
         'traits',
+        'ancient',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -110,6 +112,7 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['ancient',          'ancient_panel',      '--ancient_panel'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -514,6 +517,14 @@ workflow {
         error "ERROR: --ancestry_fine_panel ${params.ancestry_fine_panel} is not a finished panel (no model/DONE); run scripts/setup.sh --ancestry-fine-panel <genome_dir> again."
     }
 
+    // Step 44's panel folder (setup.sh --ancient-panel): its DONE is written
+    // last, once its axes were checked, so a folder without it is an install
+    // that stopped.
+    ch_ancient_panel = Channel.value(params.ancient_panel ? file(params.ancient_panel, checkIfExists: true) : [])
+    if (params.ancient_panel && !workflow.stubRun && !file("${params.ancient_panel}/DONE").exists()) {
+        error "ERROR: --ancient_panel ${params.ancient_panel} is not a finished panel (no DONE); run scripts/setup.sh --ancient-panel <genome_dir> again."
+    }
+
     // ExpansionHunter variant catalog
     ch_expansion_catalog = Channel.value(params.expansion_catalog ? file(params.expansion_catalog, checkIfExists: true) : [])
 
@@ -683,6 +694,34 @@ workflow {
         ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS.out.versions)
     }
 
+    // ─── Ancient populations (opt-in: ancient, step 44) ─────────────────
+    // The sample projected onto the panel's present-day West Eurasian PCs,
+    // beside the AADR's ancient people, from the gVCF only: a sample without
+    // one is skipped with a warning. Equivalent to scripts/44-ancient.sh.
+    ch_ancient          = Channel.empty()
+    ch_ancient_info     = Channel.empty()
+    ch_ancient_svg      = Channel.empty()
+    ch_ancient_versions = Channel.empty()
+    if (tools_list.contains('ancient')) {
+        ch_vcf
+            .map { meta, _vcf, _idx -> [meta.id, meta] }
+            .join(ch_gvcf.map { meta, _gvcf, _gidx -> [meta.id, true] }, remainder: true)
+            .filter { _id, meta, has_gvcf -> meta != null && !has_gvcf }
+            .subscribe { id, _meta, _has_gvcf ->
+                log.warn "ancient skipped for ${id}: it reads the gVCF, and the samplesheet row has none " +
+                         "(add the gvcf and gvcf_index columns, or start from the BAM or FASTQ)."
+            }
+        ANCIENT_SITES(ch_gvcf, ch_ancient_panel, ch_reference, ch_reference_fai)
+        ANCIENT_GENO(ANCIENT_SITES.out.genotypes, ch_ancient_panel)
+        ANCIENT_PCA(ANCIENT_GENO.out.merged, ch_ancient_panel)
+        ANCIENT_REPORT(ANCIENT_PCA.out.evec, ch_ancient_panel)
+        ch_ancient          = ANCIENT_REPORT.out.table
+        ch_ancient_info     = ANCIENT_REPORT.out.info
+        ch_ancient_svg      = ANCIENT_REPORT.out.svg
+        ch_ancient_versions = ANCIENT_SITES.out.versions.mix(ANCIENT_GENO.out.versions, ANCIENT_PCA.out.versions,
+                                                             ANCIENT_REPORT.out.versions)
+    }
+
     // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
     // The CRAM of every BAM, checked against it, published beside it; a row
     // given as CRAM already has one. The BAM is never deleted here.
@@ -820,6 +859,9 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient.map                      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient_info.map                 { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -849,7 +891,8 @@ workflow {
             ch_cram_versions,
             ch_family_versions,
             ch_traits_versions,
-            ch_bloodtype_versions
+            ch_bloodtype_versions,
+            ch_ancient_versions
         )
         .map { f -> f.text }
         .unique()
