@@ -21,7 +21,8 @@ Checks:
   6. prepare picks the MANE Select transcript of a synthetic Ensembl GFF3 (not
      the other one), renames the contigs (2 -> chr2), pads the coding exons by
      10 bases, leaves out a contig the reference lacks, and stops on a gene
-     with no MANE Select transcript; the report command writes both tables.
+     with no MANE Select transcript; the report command writes both tables;
+  7. the summary reader and the report lines show the call and the limit.
 
 Run: python3 tests/test_chip_report.py
 """
@@ -205,6 +206,21 @@ with tempfile.TemporaryDirectory() as d:
     dl = open(dout).read().splitlines() if p3.returncode == 0 else []
     check("the depth table has DNMT3A at 30x and JAK2 not on the reference",
           len(dl) == 3 and "\t30.0\t" in dl[1] and dl[2].endswith("not_on_reference"), dl)
+
+    # 7. the reports read the two tables (bin/collect_summary.py sec_chip, bin/render_report.py chip_lines)
+    import collect_summary as cs  # noqa: E402
+    import render_report as rr  # noqa: E402
+    os.makedirs(os.path.join(d, "S", "chip"))
+    for f in (out, dout):
+        os.replace(f, os.path.join(d, "S", "chip", os.path.basename(f)))
+    _, sec = cs.sec_chip(os.path.join(d, "S"), "S")
+    check("sec_chip reads the chip call and the median limit",
+          [c["protein_change"] for c in sec.get("calls", [])] == ["R882H"] and abs(sec["median_limit"] - 0.137) < 0.001
+          and sec["not_covered"] == ["JAK2"], sec)
+    text = "\n".join(rr.chip_lines(sec, "S"))
+    check("the report lines show the call, the limit and the uncovered gene",
+          "DNMT3A R882H: VAF 0.130 (6 of 46 reads)" in text and "about 14% or more" in text and "JAK2" in text, text)
+    check("no call reads 'No CHIP call.'", "No CHIP call." in rr.chip_lines({"calls": [], "median_limit": None}, "S"))
 
 print(f"\n{'All checks passed' if FAILS == 0 else f'{FAILS} check(s) failed'}")
 sys.exit(1 if FAILS else 0)
