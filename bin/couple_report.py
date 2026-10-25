@@ -46,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect_summary  # noqa: E402  ClinVar hit rows and stars, as both reports read them
 import family_report  # noqa: E402  the pedigree rules of step 38
 import paraphase_report  # noqa: E402  step 35's SMN1 rule
+import cnvpytor_to_vcf  # noqa: E402  the read-depth rule for long Delly calls, as step 05 applies it
 
 GENE_COLUMNS = ("gene", "chrom", "start", "end", "inheritance", "lists", "condition")
 TABLE_COLUMNS = ("gene", "inheritance", "lists", "condition", "result", "offspring_risk",
@@ -58,12 +59,9 @@ REPEATS = {"FMR1": (55, "CGG"), "FXN": (66, "GAA")}
 FMR1_FULL = 201
 SVTYPE = re.compile(r"(?:^|;)SVTYPE=([^;]+)")
 END = re.compile(r"(?:^|;)END=(\d+)")
-# A Delly deletion longer than this needs read depth to agree: its FORMAT RDCN
-# (Delly's read-depth copy number) must be below the copies a normal region
-# has. 1,000 bp is Delly's own line between small and large SVs in its read
-# counts (src/delly.h, indelsize). Short-read Delly can mark PASS a long
-# deletion whose RDCN shows no loss; a short one rests on split reads alone.
-DEPTH_MIN_SIZE = 1000
+# A Delly deletion longer than 1,000 bp needs read depth (FORMAT RDCN) to show
+# the loss: bin/cnvpytor_to_vcf.py holds the rule, which step 05 applies too.
+DEPTH_MIN_SIZE = cnvpytor_to_vcf.DEPTH_MIN_SIZE
 # A structural variant is 50 bp or longer. A shorter Delly deletion is the
 # small-variant caller's call, and counts here only through ClinVar.
 SV_MIN_SIZE = 50
@@ -298,14 +296,10 @@ def delly_findings(path, index, exons, sex, par, benign=None):
         # PARs, 2 elsewhere). A missing or negative RDCN (no reads in the
         # flanks) is no evidence of a loss. A VCF without the RDCN field (not
         # Delly 2.x) is read as before.
-        if size > DEPTH_MIN_SIZE and "RDCN" in fmt:
-            i = fmt.index("RDCN")
-            cn = vals[i] if i < len(vals) else "."
-            normal = 1 if chrom in ("chrX", "chrY") and sex == "male" and not in_par else 2
-            if not (cn.isdigit() and int(cn) < normal):
-                if over_exon(chrom, pos, end):
-                    skip["no_loss"] += 1
-                continue
+        if cnvpytor_to_vcf.delly_depth_contradicts("DEL", chrom, pos, end, fmt, vals, sex, in_par):
+            if over_exon(chrom, pos, end):
+                skip["no_loss"] += 1
+            continue
         # The deleted bases POS+1 to END are the 0-based [POS, END).
         if benign is not None and common_match(benign, chrom, pos, end):
             if over_exon(chrom, pos, end):
