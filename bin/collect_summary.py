@@ -2014,6 +2014,28 @@ def sec_bloodtype(d, s):
     return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
 
 
+def sec_archaic(d, s):
+    """Step 43's summary (archaic/<id>_archaic.tsv, bin/archaic_report.py): the
+    Neanderthal and Denisovan shares and segment counts, the analysed span and
+    the ten longest segments."""
+    p = first_existing(d, [f"archaic/{s}_archaic.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"]: r.get("value", "") for r in read_tsv(p) if r.get("key")}
+    out = {"population": data.get("population", "."),
+           "longest": [data[k] for k in sorted((k for k in data if re.fullmatch(r"longest_[0-9]+", k)),
+                                               key=lambda k: int(k.split("_")[1]))]}
+    for k in ("neanderthal_segments", "neanderthal_bp", "denisovan_segments", "denisovan_bp", "analysed_bp"):
+        if not re.fullmatch(r"[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        out[k] = int(data[k])
+    for k in ("neanderthal_percent", "denisovan_percent"):
+        if not re.fullmatch(r"[0-9]+\.[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no percentage for {k}")
+        out[k] = data[k]
+    return p, out
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2830,6 +2852,7 @@ SECTIONS = [
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
+    ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
