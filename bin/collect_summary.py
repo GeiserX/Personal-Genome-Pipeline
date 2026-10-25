@@ -65,6 +65,7 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
+import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -2018,7 +2019,7 @@ def sec_chip(d, s):
     """Step 49's tables (chip/<id>_chip.tsv and chip/<id>_chip_depth.tsv, bin/chip_report.py):
     the CHIP calls, how many other protein changes were listed and not counted,
     and the depth and detection limit per gene with their median over the
-    covered genes."""
+    covered genes. The limit is the one at the median depth, as step 49 prints it."""
     p = first_existing(d, [f"chip/{s}_chip.tsv"])
     dp = first_existing(d, [f"chip/{s}_chip_depth.tsv"])
     if not p or not dp:
@@ -2037,11 +2038,10 @@ def sec_chip(d, s):
     if covered:
         n = len(covered)
         med = covered[n // 2] if n % 2 else (covered[n // 2 - 1] + covered[n // 2]) / 2
-    lims = [float(r["detection_limit_vaf"]) for r in depth if r["status"] == "covered"]
     return p, {"calls": chip, "other": len(calls) - len(chip),
                "genes": [{k: r.get(k) or "." for k in ("gene", "mean_depth", "detection_limit_vaf", "status")}
                          for r in depth],
-               "median_depth": med, "median_limit": sorted(lims)[len(lims) // 2] if lims else None,
+               "median_depth": med, "median_limit": chip_report.detection_limit(med) if med is not None else None,
                "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
 
 

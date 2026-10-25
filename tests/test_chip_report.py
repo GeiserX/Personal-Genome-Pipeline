@@ -220,6 +220,15 @@ with tempfile.TemporaryDirectory() as d:
     text = "\n".join(rr.chip_lines(sec, "S"))
     check("the report lines show the call, the limit and the uncovered gene",
           "DNMT3A R882H: VAF 0.130 (6 of 46 reads)" in text and "about 14% or more" in text and "JAK2" in text, text)
+    # With an even count of covered genes the median depth is the mean of the two
+    # middle depths, and the reported limit must be the one at that depth.
+    os.makedirs(os.path.join(d, "E", "chip"))
+    write(os.path.join(d, "E", "chip"), "E_chip.tsv", "\t".join(cr.OUT_COLUMNS) + "\n")
+    write(os.path.join(d, "E", "chip"), "E_chip_depth.tsv", "gene\tmean_depth\tdetection_limit_vaf\tstatus\n" + "".join(
+        f"G{x}\t{x}.0\t{cr.detection_limit(x):.4f}\tcovered\n" for x in (20, 30, 60, 80)))
+    _, sec4 = cs.sec_chip(os.path.join(d, "E"), "E")
+    check("with 4 covered genes (20, 30, 60, 80x) the limit is the one at the median 45x",
+          sec4.get("median_depth") == 45 and abs(sec4["median_limit"] - cr.detection_limit(45)) < 1e-9, sec4)
     check("no call reads 'No CHIP call.'", "No CHIP call." in rr.chip_lines({"calls": [], "median_limit": None}, "S"))
 
 print(f"\n{'All checks passed' if FAILS == 0 else f'{FAILS} check(s) failed'}")
