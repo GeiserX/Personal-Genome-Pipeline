@@ -129,7 +129,7 @@ process ANCIENT_REPORT {
     tag "$meta.id"
     label 'process_single'
 
-    publishDir { "${params.outdir}/${meta.id}/ancient" }, mode: params.publish_dir_mode, pattern: "${meta.id}_ancient*"
+    publishDir { "${params.outdir}/${meta.id}/ancient" }, mode: params.publish_dir_mode, pattern: '*_ancient*'
 
     input:
     tuple val(meta), path(evec), path(stats)
