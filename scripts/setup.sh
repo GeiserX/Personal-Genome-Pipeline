@@ -320,13 +320,14 @@ install_yleaf_data() {
     echo "[OK] Current Y tree (${label}, step 37) already present."
     return 0
   fi
-  local raw="https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38"
   rm -rf "${yt}.part"
   mkdir -p "${yt}.part"
   if ! fetch "https://raw.githubusercontent.com/YFullTeam/YTree/${YTREE_COMMIT}/current_tree.json" \
          "${yt}.part/current_tree.json" sha256 "$YTREE_SHA256" \
-     || ! fetch "${raw}/ftdna_positions_hg38.txt" "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
-     || ! fetch "${raw}/new_positions.txt" "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
+     || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/ftdna_positions_hg38.txt" \
+         "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
+     || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
+         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
     # Yleaf's own data is in place, so step 37 still runs: it says the
     # current tree is not installed and writes Yleaf's result only.
     echo "[WARN] Could not download the current Y tree (${label}); step 37 will place the sample on Yleaf's tree only. Run this again to retry."
