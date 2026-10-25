@@ -362,8 +362,9 @@ def test_delly_depth(w):
     check("male: the PAR deletion with RDCN 1 is added", "DEL_par1" in ids, ids)
     check("male: the summary counts the 4 calls set aside",
           "delly: 5 PASS DEL/DUP calls, 5 added, and 4 PASS calls longer than 1000 bp set aside" in err, err)
-    check("male: the input VCF's header states the same", '##svcallers_added="Callers beside manta: delly: 5 PASS' in out
-          and out.index("##svcallers_added=") < out.index("#CHROM"), out[:400])
+    check("male: the input VCF's header states the same, set-aside count included",
+          '##svcallers_added="Callers beside manta: delly: 5 PASS DEL/DUP calls, 5 added, and 4 PASS calls '
+          'longer than 1000 bp set aside' in out and out.index("##svcallers_added=") < out.index("#CHROM"), out[:400])
 
     rc, ids, _, err = added("--sex", "female", "--par-bed", PAR_BED)
     check("female: the chrX duplication with RDCN 2 is set aside", "DUP_x2" not in ids, ids)
