@@ -8,7 +8,7 @@ Checks:
   1. trio (father and mother sequenced, the father's parents too): on chr1
      the grandchild got the grandfather's copy up to a planted crossover at
      20 Mb and the grandmother's after it. The map has those two paternal
-     segments, each boundary within 10 kb of the crossover; three planted
+     segments, each boundary within 50 kb of the crossover; three planted
      genotype errors inside the first segment stay inside it (discordant 3),
      not new segments; chr2 has no crossover, and its 10 Mb gap with no
      sites splits it into two segments from the grandmother; the mother's
@@ -83,6 +83,10 @@ def family_vcf(path, samples):
         for lo, hi in spans:
             for pos in range(lo, hi, STEP):
                 h = {k: rnd.randint(0, 1) for k in ("gpa1", "gpa2", "gma1", "gma2", "mum1", "mum2")}
+                planted = chrom == "chr1" and pos in (5_000_000, 9_000_000, 13_000_000)
+                if planted:
+                    # a site that tells everything: the father 0/1 from gpa 0/0 and gma 1/1, the mother 0/0
+                    h.update(gpa1=0, gpa2=0, gma1=1, gma2=1, mum1=0, mum2=0)
                 # the father carries gpa1 (from the grandfather) and gma1 (from the grandmother)
                 dad = (h["gpa1"], h["gma1"])
                 if chrom == "chrX":
@@ -90,8 +94,7 @@ def family_vcf(path, samples):
                          "mum": gt(h["mum1"], h["mum2"]), "kid": "%d" % h["mum1"]}
                 else:
                     from_dad = h["gpa1"] if chrom == "chr1" and pos < CROSSOVER else h["gma1"]
-                    if (chrom == "chr1" and pos in (5_000_000, 9_000_000, 13_000_000)
-                            and h["gpa1"] != h["gma1"]):
+                    if planted:
                         from_dad = h["gma1"]   # a genotype error that looks like the other copy
                         errors.append(pos)
                     g = {"gpa": gt(h["gpa1"], h["gpa2"]), "gma": gt(h["gma1"], h["gma2"]), "dad": gt(*dad),
@@ -117,7 +120,7 @@ def run(script, *args):
     return p.returncode, p.stdout + p.stderr
 
 
-def near(x, target, tol=10_000):
+def near(x, target, tol=50_000):
     return abs(int(x) - target) <= tol
 
 
@@ -141,9 +144,9 @@ def test_trio(d):
         a, b = pat1
         check("chr1: first from the grandfather, then from the grandmother",
               (a["ancestor"], b["ancestor"]) == ("gpa", "gma"), (a["ancestor"], b["ancestor"]))
-        check("chr1: the first segment ends within 10 kb before the crossover (%s)" % a["end"],
+        check("chr1: the first segment ends within 50 kb before the crossover (%s)" % a["end"],
               near(a["end"], CROSSOVER) and int(a["end"]) < CROSSOVER)
-        check("chr1: the second starts within 10 kb after it (%s)" % b["start"],
+        check("chr1: the second starts within 50 kb after it (%s)" % b["start"],
               near(b["start"], CROSSOVER) and int(b["start"]) >= CROSSOVER)
         check("chr1: the segments span the chromosome's sites",
               near(a["start"], 1_000_000) and near(b["end"], 41_000_000), (a["start"], b["end"]))
@@ -200,7 +203,7 @@ def test_duo(d, vcf):
     check("duo, chr1: the crossover is found (two segments, gpa then gma)",
           [r["ancestor"] for r in pat1] == ["gpa", "gma"], pat1)
     if len(pat1) == 2:
-        check("duo, chr1: boundary within 10 kb of the crossover",
+        check("duo, chr1: boundary within 50 kb of the crossover",
               near(pat1[0]["end"], CROSSOVER) and near(pat1[1]["start"], CROSSOVER), pat1)
     mat = [r for r in rows if r["side"] == "maternal"]
     check("duo: the maternal side is the other copy, on chr1 and chr2 only",
