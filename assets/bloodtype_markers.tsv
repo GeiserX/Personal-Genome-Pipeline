@@ -9,10 +9,18 @@
 #   fbc0864d7c1365aace98900d6b86b51b700a6f63a63b5769b7fe28e5e55bea56). Every position and REF
 #   was checked against Ensembl GRCh38 and its dbSNP id. The HPA rows come from dbSNP through
 #   Ensembl GRCh38: that RBCeq2 database lists the HPA variants at their GRCh37 positions.
+#   The neutrophil antigens (HNA-1, -3, -4, -5) are not in RBCeq2: their variants are the
+#   ISBT HNA allele table's (Flesch et al. 2016, doi:10.1111/trf.13575), each mapped to
+#   GRCh38 through Ensembl VEP on the gene's transcript, which also checked the REF base
+#   (2026-10-25). dbSNP places some FCGR3B ids on FCGR3A, its near copy: the positions here
+#   are FCGR3B's (exon 3, minus strand, so ref and alt are the complement of the c. bases).
 # kind region: read depth for the RhD copy number: the RHD gene, its ten exons (Ensembl
 #   ENST00000328664) and two flanks outside the common RHD deletion (RHD*01N.01).
 # caveat: why a short-read call at that site is less certain (confidence low in the table).
-chrom	start	end	kind	system	name	ref	alt	ref_means	alt_means	hgvs	rsid	caveat
+# meaning: for the platelet and neutrophil antigens, what lacking one of them means, written
+#   into the note of the system's row when the genome predicts the person lacks it. It is
+#   information about the antigen, not advice.
+chrom	start	end	kind	system	name	ref	alt	ref_means	alt_means	hgvs	rsid	caveat	meaning
 chr9	133257520	133257521	site	ABO	ABO_261	T	TC	O.01 (c.261delG)	no c.261delG	ABO c.261delG	rs8176719	
 chr9	133255928	133255929	site	ABO	ABO_802	C	T	not O.02	O.02	ABO c.802G>A	rs41302905	
 chr9	133255927	133255928	site	ABO	ABO_803	C	G	A	B	ABO c.803G>C	rs8176747	
@@ -35,12 +43,22 @@ chr19	44812187	44812188	site	Lutheran	LU_230	G	A	Lub	Lua	BCAM c.230G>A	rs2839965
 chr17	44251252	44251253	site	Diego	DI_2561	G	A	Dib	Dia	SLC4A1 c.2561C>T	rs2285644	
 chr12	14840504	14840505	site	Dombrock	DO_793	C	T	Dob	Doa	ART4 c.793G>A	rs11276	
 chr7	30912042	30912043	site	Colton	CO_134	C	T	Coa	Cob	AQP1 c.134C>T	rs28362692	
-chr17	47283363	47283364	site	HPA-1	HPA1_176	T	C	1a	1b	ITGB3 c.176T>C	rs5918	
-chr17	4933085	4933086	site	HPA-2	HPA2_482	C	T	2a	2b	GP1BA c.482C>T	rs6065	
-chr17	44375696	44375697	site	HPA-3	HPA3_2621	A	C	3a	3b	ITGA2B c.2621T>G	rs5911	
-chr17	47284586	47284587	site	HPA-4	HPA4_506	G	A	4a	4b	ITGB3 c.506G>A	rs5917	
-chr5	53062926	53062927	site	HPA-5	HPA5_1600	G	A	5a	5b	ITGA2 c.1600G>A	rs1801106	
-chr6	73783708	73783709	site	HPA-15	HPA15_2108	A	C	15b	15a	CD109 c.2108C>A	rs10455097	
+chr17	47283363	47283364	site	HPA-1	HPA1_176	T	C	1a	1b	ITGB3 c.176T>C	rs5918		HPA-1a is the platelet antigen most often behind FNAIT and post-transfusion purpura in white populations: an HPA-1a-negative (HPA-1b/1b) mother can make anti-HPA-1a against an HPA-1a-positive baby; a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr17	4933085	4933086	site	HPA-2	HPA2_482	C	T	2a	2b	GP1BA c.482C>T	rs6065		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr17	44375696	44375697	site	HPA-3	HPA3_2621	A	C	3a	3b	ITGA2B c.2621T>G	rs5911		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr17	47284586	47284587	site	HPA-4	HPA4_506	G	A	4a	4b	ITGB3 c.506G>A	rs5917		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr5	53062926	53062927	site	HPA-5	HPA5_1600	G	A	5a	5b	ITGA2 c.1600G>A	rs1801106		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr17	47292421	47292422	site	HPA-6	HPA6_1544	G	A	6a	6b	ITGB3 c.1544G>A	rs13306487		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr6	73783708	73783709	site	HPA-15	HPA15_2108	A	C	15b	15a	CD109 c.2108C>A	rs10455097		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
+chr1	161629988	161629989	site	HNA-1	FCGR3B_108	G	C	1b	1a	FCGR3B c.108G>C	rs200688856	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr1	161629982	161629983	site	HNA-1	FCGR3B_114	A	G	1b	1a	FCGR3B c.114C>T	rs527909462	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr1	161629902	161629903	site	HNA-1	FCGR3B_194	T	C	1a	1b	FCGR3B c.194A>G	rs448740	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr1	161629863	161629864	site	HNA-1	FCGR3B_233	G	T	no 1c	1c	FCGR3B c.233C>A	rs5030738	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr1	161629852	161629853	site	HNA-1	FCGR3B_244	T	C	1b	1a	FCGR3B c.244G>A	rs147574249	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr1	161629780	161629781	site	HNA-1	FCGR3B_316	T	C	1b	1a	FCGR3B c.316G>A	rs2290834	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr19	10631493	10631494	site	HNA-3	HNA3_461	A	G	3b	3a	SLC44A2 c.461G>A	rs2288904		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr16	31265489	31265490	site	HNA-4	HNA4_230	G	A	4a	4b	ITGAM c.230G>A	rs1143679		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chr16	30506719	30506720	site	HNA-5	HNA5_2372	G	C	5a	5b	ITGAL c.2372G>C	rs2230433		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
 chr1	25199999	25260000	region	RhD	RHD_FLANK_UP					flank 12 kb upstream of RHD, outside the RHD deletion		
 chr1	25334999	25360000	region	RhD	RHD_FLANK_DOWN					flank downstream of RHD (TMEM50A), outside the RHD deletion		
 chr1	25272392	25330445	region	RhD	RHD_GENE					RHD, first to last base (ENST00000328664)		

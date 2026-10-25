@@ -2,9 +2,9 @@
 
 ## What This Does
 
-Predicts the red cell and platelet antigens the genome encodes: ABO (with A1 and A2), RhD, RhCE (C/c, E/e), Kell (K/k, Kp, Js), Duffy (with the GATA-box variant), Kidd, MNS (M/N, S/s), Lutheran, Diego, Dombrock, Colton, and the platelet antigens HPA-1, -2, -3, -4, -5 and -15. Opt-in, and the last optional step.
+Predicts the red cell, platelet and neutrophil antigens the genome encodes: ABO (with A1 and A2), RhD, RhCE (C/c, E/e), Kell (K/k, Kp, Js), Duffy (with the GATA-box variant), Kidd, MNS (M/N, S/s), Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1, -2, -3, -4, -5, -6 and -15, and the neutrophil antigens HNA-1 (a, b, c), HNA-3, HNA-4 and HNA-5. Opt-in, and the last optional step.
 
-The result is a prediction from the DNA, not a serological typing. It is information about the sample, and the table states only what the variants predict.
+The result is a prediction from the DNA, not a serological typing. It is information about the sample, and the table states only what the variants predict. For a platelet or neutrophil antigen the genome predicts the person lacks, the row's note also says what lacking it means (see [What a platelet or neutrophil antigen means](#what-a-platelet-or-neutrophil-antigen-means)). That is information about the antigen, not advice.
 
 ## Why
 
@@ -16,6 +16,8 @@ Most blood group antigens differ by one known variant, so the genome predicts th
 - samtools `bedcov` for the read depth over the marker sites and RHD
 
 The variants and the antigens they define are the ISBT allele definitions, as RBCeq2 2.4.4 packages them (database v2.5.1, MIT licence, Australian Red Cross Lifeblood). The table's header names the release and the checksum of the file they were read from. Each position and REF base was checked against Ensembl GRCh38 and its dbSNP id. The HPA positions come from dbSNP through Ensembl, because that RBCeq2 database lists them at their GRCh37 positions.
+
+The neutrophil antigens are not in RBCeq2. Their variants are those of the ISBT HNA allele table (Flesch et al. 2016, Transfusion 56:1477, https://doi.org/10.1111/trf.13575). Each was mapped to GRCh38 with Ensembl VEP on the gene's transcript, which also checks the REF base (2026-10-25). dbSNP places some FCGR3B variant ids on FCGR3A, its near copy (rs447536, for one, maps to FCGR3A on GRCh38), so the FCGR3B positions in the table are FCGR3B's own, in exon 3.
 
 Why not run RBCeq2 or bloodTyper itself: RBCeq2 is on PyPI only, with no Bioconda package and no container image, and its README says it does not type RH from ordinary short-read calls (it needs long reads or a caller that writes copy numbers). bloodTyper is on neither PyPI nor Bioconda; the one Docker Hub image is a personal upload. A small table applied in the pinned Python image needs no new image and reads RhD from depth.
 
@@ -48,7 +50,9 @@ With `run-all.sh`: `TOOLS=...,bloodtype`. It is opt-in and needs no data, so a r
 | Kell | c.578C>T (K/k), c.841C>T (Kp), c.1790T>C (Js) | the same |
 | Duffy | c.125G>A (Fya/Fyb), c.-67T>C (GATA box), c.265C>T (FY*X) | The GATA box stops expression on red cells; with no phase it is placed on a Fyb chromosome first, where it usually lies (FY*02N.01). FY*X gives a weak Fyb (`b+w`) |
 | Kidd, MNS, Lutheran, Diego, Dombrock, Colton | one variant each pair (c.838G>A; c.59T>C and c.143C>T; c.230G>A; c.2561C>T; c.793G>A; c.134C>T) | one allele per copy |
-| HPA-1, -2, -3, -4, -5, -15 | ITGB3 c.176T>C, GP1BA c.482C>T, ITGA2B c.2621T>G, ITGB3 c.506G>A, ITGA2 c.1600G>A, CD109 c.2108C>A | one allele per copy; GRCh38 carries HPA-15b |
+| HPA-1, -2, -3, -4, -5, -6, -15 | ITGB3 c.176T>C, GP1BA c.482C>T, ITGA2B c.2621T>G, ITGB3 c.506G>A, ITGA2 c.1600G>A, ITGB3 c.1544G>A, CD109 c.2108C>A | one allele per copy; GRCh38 carries HPA-15b. HPA-6b is a low-frequency antigen, written HPA-6bw in the ISBT table |
+| HNA-1 | FCGR3B c.108G>C, c.114C>T, c.244G>A, c.316G>A (a or b); c.194A>G (checked); c.233C>A (c) | FCGR3B\*01 (HNA-1a) and \*02 (HNA-1b) differ at five bases. GRCh38 carries the \*02 base at four of them and the \*01 base at c.194, so the copies of HNA-1a are counted on the four, which must agree (else not determined), and c.194 is only checked: a c.194 that does not match is named in the note. FCGR3B\*03 (HNA-1c) is \*02 with c.233C>A and carries HNA-1b too. Confidence is always low: FCGR3B and FCGR3A are near copies, and FCGR3B has from none to four or more copies, which the step does not count |
+| HNA-3, -4, -5 | SLC44A2 c.461G>A, ITGAM c.230G>A, ITGAL c.2372G>C | one allele per copy; GRCh38 carries HNA-3b |
 
 A site the VCF has no record for is the reference allele when the BAM has at least 8 reads there at MAPQ 20, and not determined below that. Without the BAM it is read as reference, and the confidence says so. The step leaves out of `samtools bedcov` the rows on a contig the BAM has no `@SQ` line for (a BAM cut to a few chromosomes), because `bedcov` would stop on them. Those sites then have no depth row: the ones with no VCF record are not determined, and RhD is not determined without chr1. A record at a site whose REF is not the table's REF is a no call, because it says nothing about the table's ALT; the one exception is a 0/0 call over a longer REF that starts with the table's REF, which is the reference allele.
 
@@ -67,15 +71,24 @@ Confidence:
 - **low**: a site in a region where short reads are unreliable, named in the note (RHCE exon 2 for C/c, which is RHD-like on a C allele; GYPA, GYPB and GYPE, which are near copies), markers that disagree, or another allele at a site
 - **not determined**: a needed site had no call or too few reads; RhD without the BAM, with flanks under 10x, or with the hybrid pattern
 
-Both reports show the table as their "Blood Groups (predicted)" section.
+Both reports show the table as their "Blood Groups (predicted)" section: system, phenotype, genotype and confidence. The note, with the meaning, is in the TSV.
+
+## What a platelet or neutrophil antigen means
+
+When the genome predicts a person lacks one of these antigens (both copies carry the other allele, for example HPA-1b/1b), the note of that row starts with `lacks HPA-1a:` and the meaning from the table's `meaning` column:
+
+- **Platelet antigens (HPA).** A person can make antibodies to a platelet antigen they lack, after a pregnancy or a transfusion. Those antibodies cause fetal and neonatal alloimmune thrombocytopenia (FNAIT: the mother's antibodies destroy the baby's platelets), post-transfusion purpura and refractoriness to platelet transfusions. HPA-1a is the antigen most often behind FNAIT and post-transfusion purpura in white populations, so an HPA-1a-negative (HPA-1b/1b) mother can make anti-HPA-1a against an HPA-1a-positive baby. Source: Curtis and McFarland, Human platelet antigens 2013, Vox Sanguinis 106:93, https://doi.org/10.1111/vox.12085
+- **Neutrophil antigens (HNA).** The same holds for the antigens on neutrophils: antibodies after a pregnancy or a transfusion cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI). Sources: Flesch et al. 2016 (above) and Esmaeili et al. 2022, J Immunol Res 2022:4387555, https://doi.org/10.1155/2022/4387555
+
+Lacking an antigen is common (most people lack HPA-1b, for example). It means a person could make that antibody in those situations, not that they have it.
 
 ## Runtime
 
-Not measured on a whole genome. The step reads the VCF once, line by line, and samtools reads the BAM at 41 small regions.
+Not measured on a whole genome. The step reads the VCF once, line by line, and samtools reads the BAM at 51 small regions.
 
 ## Notes
 
 - RhD here is the number of RHD copies, not their kind: weak D and partial D (RHD missense alleles) are not assessed, and neither are the RHD-CE-D hybrids that keep exons 3 to 7. The common RhD-negative allele, the deletion of the whole gene (RHD*01N.01), is what the depth sees.
 - Phase is not read. ABO assumes A and B sit on different chromosomes, Duffy places the GATA box on Fyb first.
-- Rare and null alleles outside the table (for example Kidd's Jk(a-b-) alleles, ABO's weak subgroups, cis-AB) are not assessed.
+- Rare and null alleles outside the table (for example Kidd's Jk(a-b-) alleles, ABO's weak subgroups, cis-AB) are not assessed. Neither are HNA-2 (CD177), HNA-1d and HNA-1null (no FCGR3B gene), or the HPA antigens other than HPA-1 to -6 and -15.
 - On the e2e fixture the case reads HG002's reads at the marker sites from GIAB's 60x BAM and HG002's genotypes from GIAB's v4.2.1 benchmark, because the fixture's slices hold none of these genes. Those published calls give O (no c.261 insertion), and so do the reads on their own (under 10% of them carry the insertion there); the reads give two RHD copies (D+). A copy of the same reads without any RHD read gives D-, and with half of them D+ with one copy deleted.

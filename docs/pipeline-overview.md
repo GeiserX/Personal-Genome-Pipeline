@@ -11,7 +11,7 @@
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
 | **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at the 31 loci of ExpansionHunter's bundled catalog | 9, 9b |
-| **Blood Groups** | ABO, RhD, RhCE, Kell, Duffy, Kidd, MNS, Lutheran, Diego, Dombrock, Colton and the platelet antigens HPA-1 to -5 and -15, predicted from the genome (opt-in) | 41 |
+| **Blood Groups** | ABO, RhD, RhCE, Kell, Duffy, Kidd, MNS, Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1 to -6 and -15 and the neutrophil antigens HNA-1, -3, -4 and -5, predicted from the genome (opt-in) | 41 |
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel, admixture fractions and a chromosome painting against an 80-population panel (opt-in) | 11, 12, 26, 26b, 37 |
 | **Telomere Length** | Relative telomere content estimation from WGS reads | 10 |
 | **Mitochondrial** | Heteroplasmy detection, mitochondrial disease variants | 12, 20 |
