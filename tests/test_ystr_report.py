@@ -20,6 +20,9 @@ plants), runs the script on assets/ystr_panel.tsv, and checks the table:
   5. the CSV: one row per marker in the panel's order, the count and the
      confidence
   6. a damaged input: a VCF with two samples, a panel out of order
+  7. the reports: bin/collect_summary.py reads the table (counts per
+     confidence) and refuses one with an unknown confidence; the HTML card of
+     bin/render_report.py lists the called markers only, with the note
 
 Run: python3 tests/test_ystr_report.py
 """
@@ -216,6 +219,37 @@ with open(PANEL) as f, open(bad, "w") as g:
     g.writelines(head + [body[1], body[0]] + body[2:])
 p = run({}, panel=bad, want_rc=1)
 check("6 a panel out of order stops", "order column" in p.stderr, True)
+
+# --- 7. the reports -----------------------------------------------------------------------
+import collect_summary as cs  # noqa: E402
+import render_report as rr  # noqa: E402
+
+sd = os.path.join(TMP, "sample")
+os.makedirs(os.path.join(sd, "y_str"))
+v = vcf({"DYS393": good("4"), "DYS390": ("0", "0", "0.6", "20", "0", "0")})
+yr.main(["report", "--panel", PANEL, "--vcf", v, "--tsv", os.path.join(sd, "y_str", "S1_y_str.tsv"),
+         "--csv", os.path.join(sd, "y_str", "S1_y_str.csv")])
+path, data = cs.sec_y_str(sd, "S1")
+check("7 collect_summary finds the table", os.path.basename(path or ""), "S1_y_str.tsv")
+check("7 counts per confidence", (data["high"], data["low"], data["not_callable"], data["no_call"]),
+      (1, 1, sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) + 1,
+       111 - 2 - sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) - 1))
+check("7 the markers keep their order", [x["marker"] for x in data["markers"]], names)
+check("7 a sample without the step has no section", cs.sec_y_str(TMP, "nobody"), (None, {}))
+html = "\n".join(rr.ystr_body(data))
+check("7 the card lists DYS393 at 13", "<td>DYS393</td><td>13</td><td>high</td>" in html, True)
+check("7 the card lists the low call too", "<td>DYS390</td><td>24</td><td>low</td>" in html, True)
+check("7 and leaves out markers without a count", "DYS464a" in html, False)
+check("7 the card carries the convention note", "fixed number of repeats" in html, True)
+with open(os.path.join(sd, "y_str", "S1_y_str.tsv")) as f:
+    t = f.read().replace("\thigh\t", "\tgreat\t", 1)
+with open(os.path.join(sd, "y_str", "S1_y_str.tsv"), "w") as f:
+    f.write(t)
+try:
+    cs.sec_y_str(sd, "S1")
+    check("7 an unknown confidence is unreadable", "read", "Unreadable")
+except cs.Unreadable:
+    check("7 an unknown confidence is unreadable", "Unreadable", "Unreadable")
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

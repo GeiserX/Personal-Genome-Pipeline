@@ -1,0 +1,139 @@
+# Y-STR panel of step 45: the 111 markers of FamilyTreeDNA's Y-111 test, in FamilyTreeDNA's order.
+# Sources, read 2026-10-25:
+#   order, names and panels: FamilyTreeDNA Help Center, "Y-STR Results Guide",
+#     https://help.familytreedna.com/hc/en-us/articles/4408063356303-Y-STR-Results-Guide
+#     (the live page refuses scripted requests; read through the Internet Archive copy of 2026-04-13,
+#     https://web.archive.org/web/20260413211616/https://help.familytreedna.com/hc/en-us/articles/4408063356303-Y-STR-Results-Guide;
+#     its Panel 3 list prints DYS456 twice, the twelve loci 26-37 are as below)
+#   regions (GRCh38, 1-based, inclusive), motif length and reference copies: HipSTR-references
+#     human/all_annot_markers.hg38.fixed.bed at commit cc9275210a10911721015ce908f30a12e4ea44ca (MIT),
+#     https://github.com/HipSTR-Tool/HipSTR-references/blob/cc9275210a10911721015ce908f30a12e4ea44ca/human/all_annot_markers.hg38.fixed.bed
+#     sha256 d5b91757c7de756ada8a940cb5588e6f51aa79513ae6ce8cb4f1b9df63df9e61; the Y-STR marker set of
+#     Willems et al. 2016 (PMID 27126583) and HipSTR (Willems et al. 2017, PMID 28436466)
+#   motif: NIST STRBase repeat structure, https://strbase.nist.gov/api/loci (seqPattern)
+# Columns:
+#   order    position in FamilyTreeDNA's list (1-111)
+#   panel    the smallest FamilyTreeDNA test that has the marker (Y-12, Y-25, Y-37, Y-67, Y-111)
+#   marker   FamilyTreeDNA's name; the copies of a multi-copy marker are a, b, c, d
+#   kind     single    one HipSTR region
+#            parts     several HipSTR regions of one locus; the count is their sum
+#            multicopy the repeat lies in two or more copies of duplicated (palindromic) Y sequence:
+#                      short reads cannot tell the copies apart, so it is not called
+#            absent    no region for it in the HipSTR marker set, so it is not called
+#   regions  chrom:start-end/motif length/reference copies/HipSTR name, ';' between parts; '.' when none
+#   motif    STRBase repeat structure, '.' when STRBase has none
+#   offset   whole repeats to add to reach FamilyTreeDNA's count; '.' when no published value was found
+#            (none was, for any marker, on 2026-10-25: see docs/45-y-str.md)
+#   note     what the count covers, '.' for nothing to add
+order	panel	marker	kind	regions	motif	offset	note
+1	Y-12	DYS393	single	chrY:3263111-3263158/4/12/DYS393	[AGAT]n	.	.
+2	Y-12	DYS390	single	chrY:15163067-15163162/4/24/DYS390	[TAGA]n CAGA [TAGA]n [CAGA]n	.	.
+3	Y-12	DYS19	single	chrY:9684380-9684443/4/16/DYS19/DYS394	[TCTA]n ccta [TCTA]n	.	.
+4	Y-12	DYS391	single	chrY:11982089-11982132/4/11/DYS391	[TCTA]n	.	.
+5	Y-12	DYS385a	multicopy	.	[TTTC]n	.	.
+6	Y-12	DYS385b	multicopy	.	[TTTC]n	.	.
+7	Y-12	DYS426	single	chrY:17022970-17023005/3/12/DYS426	.	.	.
+8	Y-12	DYS388	single	chrY:12635604-12635639/3/12/DYS388	.	.	.
+9	Y-12	DYS439	absent	.	[GATA]n	.	.
+10	Y-12	DYS389I	single	chrY:12500448-12500495/4/12/DYS389I	.	.	.
+11	Y-12	DYS392	single	chrY:20471987-20472025/3/13/DYS392	[ATA]n	.	.
+12	Y-12	DYS389II	parts	chrY:12500448-12500516/4/17.25/DYS389II.1;chrY:12500564-12500611/4/12/DYS389II.2	[TAGA]n [CAGA]n N48 [TAGA]n [CAGA]n	.	FamilyTreeDNA reports DYS389II as the sum total of DYS389I and DYS389II; the two regions span the whole locus (DYS389II.1 starts where DYS389I starts), so this count covers DYS389I too
+13	Y-25	DYS458	single	chrY:7999839-7999902/4/16/DYS458	[GAAA]n	.	.
+14	Y-25	DYS459a	multicopy	.	.	.	.
+15	Y-25	DYS459b	multicopy	.	.	.	.
+16	Y-25	DYS455	single	chrY:7043528-7043571/4/11/DYS455	.	.	.
+17	Y-25	DYS454	single	chrY:8356115-8356158/4/11/DYS454	.	.	.
+18	Y-25	DYS447	absent	.	.	.	.
+19	Y-25	DYS437	absent	.	[TCTA]n [TCTG]n [TCTA]n	.	.
+20	Y-25	DYS448	parts	chrY:22218923-22218996/6/12.3333/DYS448.1;chrY:22219031-22219078/6/8/DYS448.2	[AGAGAT]n [atagag]2 [agatag]3 [atag]2 agaa [AGAGAT]n	.	.
+21	Y-25	DYS449	parts	chrY:8349973-8350033/4/15.25/DYS449.1;chrY:8350056-8350139/4/21/DYS449.2	[TTCT]n N22 [TTCT]n N12 [TTCT]n	.	.
+22	Y-25	DYS464a	multicopy	.	.	.	.
+23	Y-25	DYS464b	multicopy	.	.	.	.
+24	Y-25	DYS464c	multicopy	.	.	.	.
+25	Y-25	DYS464d	multicopy	.	.	.	.
+26	Y-37	DYS460	single	chrY:18888954-18888993/4/10/DYS460	[CTAT]n	.	.
+27	Y-37	Y-GATA-H4	single	chrY:16631635-16631756/4/30.5/Y-GATA-H4	[TCTA]n	.	.
+28	Y-37	YCAIIa	multicopy	.	.	.	.
+29	Y-37	YCAIIb	multicopy	.	.	.	.
+30	Y-37	DYS456	single	chrY:4402919-4402978/4/15/DYS456	[AGAT]n	.	.
+31	Y-37	DYS607	single	chrY:16302502-16302577/4/19/DYS607	.	.	.
+32	Y-37	DYS576	single	chrY:7185318-7185385/4/17/DYS576	[AAAG]n	.	.
+33	Y-37	DYS570	single	chrY:6993190-6993257/4/17/DYS570	[TTTC]n	.	.
+34	Y-37	CDYa	multicopy	.	.	.	.
+35	Y-37	CDYb	multicopy	.	.	.	.
+36	Y-37	DYS442	single	chrY:12649170-12649229/4/15/DYS442	.	.	.
+37	Y-37	DYS438	single	chrY:12825899-12825948/5/10/DYS438	[TTTTC]n	.	.
+38	Y-67	DYS531	single	chrY:8598154-8598197/4/11/DYS531	.	.	.
+39	Y-67	DYS578	single	chrY:20400678-20400713/4/9/DYS578	.	.	.
+40	Y-67	DYF395S1a	multicopy	.	.	.	.
+41	Y-67	DYF395S1b	multicopy	.	.	.	.
+42	Y-67	DYS590	single	chrY:8687939-8687978/5/8/DYS590	.	.	.
+43	Y-67	DYS537	single	chrY:17246970-17247009/4/10/DYS537	.	.	.
+44	Y-67	DYS641	single	chrY:14022416-14022455/4/10/DYS641	.	.	.
+45	Y-67	DYS472	single	chrY:14396604-14396627/3/8/DYS472	.	.	.
+46	Y-67	DYF406S1	single	chrY:21681709-21681748/4/10/DYF406S1	.	.	.
+47	Y-67	DYS511	single	chrY:15193043-15193078/4/9/DYS511	.	.	.
+48	Y-67	DYS425	single	chrY:18041622-18041651/3/10/DYS425	.	.	.
+49	Y-67	DYS413a	multicopy	.	.	.	.
+50	Y-67	DYS413b	multicopy	.	.	.	.
+51	Y-67	DYS557	single	chrY:21072786-21072889/4/26/DYS557	.	.	.
+52	Y-67	DYS594	single	chrY:19494951-19495000/5/10/DYS594	.	.	.
+53	Y-67	DYS436	single	chrY:13091948-13091983/3/12/DYS436	.	.	.
+54	Y-67	DYS490	single	chrY:3575724-3575759/3/12/DYS490	.	.	.
+55	Y-67	DYS534	single	chrY:16281076-16281155/4/20/DYS534	.	.	.
+56	Y-67	DYS450	parts	chrY:8258259-8258303/5/9/DYS450.1;chrY:8258317-8258341/5/5/DYS450.2	.	.	.
+57	Y-67	DYS444	single	chrY:17114310-17114365/4/14/DYS444	.	.	.
+58	Y-67	DYS481	single	chrY:8558337-8558402/3/22/DYS481	[CTT]n	.	.
+59	Y-67	DYS520	single	chrY:7862390-7862473/4/21/DYS520	.	.	.
+60	Y-67	DYS446	single	chrY:3263417-3263486/5/14/DYS446	.	.	.
+61	Y-67	DYS617	single	chrY:16969638-16969673/3/12/DYS617	.	.	.
+62	Y-67	DYS568	single	chrY:8954511-8954553/4/10.75/DYS568	.	.	.
+63	Y-67	DYS487	single	chrY:9046133-9046171/3/13/DYS487	.	.	.
+64	Y-67	DYS572	single	chrY:3811619-3811658/4/10/DYS572	.	.	.
+65	Y-67	DYS640	single	chrY:15752341-15752384/4/11/DYS640	.	.	.
+66	Y-67	DYS492	single	chrY:15302456-15302491/3/12/DYS492	.	.	.
+67	Y-67	DYS565	single	chrY:14414849-14414896/4/12/DYS565	.	.	.
+68	Y-111	DYS710	absent	.	.	.	.
+69	Y-111	DYS485	single	chrY:19937748-19937795/3/16/DYS485	.	.	.
+70	Y-111	DYS632	single	chrY:13797171-13797214/4/11/DYS632	.	.	.
+71	Y-111	DYS495	single	chrY:12899390-12899434/3/15/DYS495	.	.	.
+72	Y-111	DYS540	single	chrY:16453355-16453416/4/15.5/DYS540	.	.	.
+73	Y-111	DYS714	single	chrY:19985849-19985978/5/26/DYS714	.	.	.
+74	Y-111	DYS716	absent	.	.	.	.
+75	Y-111	DYS717	single	chrY:15201365-15201444/5/16/DYS717	.	.	.
+76	Y-111	DYS505	single	chrY:3772790-3772837/4/12/DYS505	[TCCT]n	.	.
+77	Y-111	DYS556	single	chrY:20439570-20439613/4/11/DYS556	.	.	.
+78	Y-111	DYS549	single	chrY:19358338-19358389/4/13/DYS549	[GATA]n	.	.
+79	Y-111	DYS589	single	chrY:22339546-22339610/5/13/DYS589	.	.	.
+80	Y-111	DYS522	single	chrY:7547584-7547623/4/10/DYS522	[ATAG]n	.	.
+81	Y-111	DYS494	single	chrY:19224282-19224311/3/10/DYS494	.	.	.
+82	Y-111	DYS533	single	chrY:16281349-16281396/4/12/DYS533	[TATC]n	.	.
+83	Y-111	DYS636	single	chrY:20472971-20473014/4/11/DYS636	.	.	.
+84	Y-111	DYS575	single	chrY:7568216-7568255/4/10/DYS575	.	.	.
+85	Y-111	DYS638	single	chrY:15533611-15533654/4/11/DYS638	.	.	.
+86	Y-111	DYS462	single	chrY:19155161-19155204/4/11/DYS462	.	.	.
+87	Y-111	DYS452	single	chrY:19458592-19458746/5/31/DYS452	.	.	.
+88	Y-111	DYS445	single	chrY:19930716-19930763/4/12/DYS445	.	.	.
+89	Y-111	Y-GATA-A10	single	chrY:16607009-16607060/4/13/Y-GATA-A10	.	.	.
+90	Y-111	DYS463	single	chrY:7775468-7775577/5/22/DYS463	.	.	.
+91	Y-111	DYS441	absent	.	.	.	.
+92	Y-111	Y-GGAAT-1B07	absent	.	.	.	.
+93	Y-111	DYS525	single	chrY:7208814-7208853/4/10/DYS525	.	.	.
+94	Y-111	DYS712	absent	.	.	.	.
+95	Y-111	DYS593	single	chrY:16473882-16473956/5/15/DYS593	.	.	.
+96	Y-111	DYS650	absent	.	.	.	.
+97	Y-111	DYS532	parts	chrY:8511042-8511078/4/9.25/DYS532.1;chrY:8511088-8511163/4/19/DYS532.2	.	.	.
+98	Y-111	DYS715	absent	.	.	.	.
+99	Y-111	DYS504	parts	chrY:3035197-3035264/4/17/DYS504.1;chrY:3035272-3035283/4/3/DYS504.2	.	.	.
+100	Y-111	DYS513	single	chrY:15329870-15329953/4/21/DYS513	.	.	.
+101	Y-111	DYS561	single	chrY:14452471-14452528/4/14.5/DYS561	.	.	.
+102	Y-111	DYS552	parts	chrY:11981554-11981613/4/15/DYS552.1;chrY:11981654-11981689/4/9/DYS552.2	.	.	.
+103	Y-111	DYS726	absent	.	.	.	.
+104	Y-111	DYS635	single	chrY:12258860-12258951/4/23/DYS635	[TAGA]n [TACA]n [TAGA]n [TACA]n [TAGA]n [TACA]n [TAGA]n	.	.
+105	Y-111	DYS587	single	chrY:15916828-15916912/5/17/DYS587	.	.	.
+106	Y-111	DYS643	single	chrY:15314132-15314186/5/11/DYS643	[CTTTT]n	.	.
+107	Y-111	DYS497	single	chrY:16053588-16053629/3/14/DYS497	.	.	.
+108	Y-111	DYS510	parts	chrY:15188021-15188088/4/17/DYS510.1;chrY:15188102-15188119/4/4.5/DYS510.2;chrY:15188127-15188138/4/3/DYS510.3	.	.	.
+109	Y-111	DYS434	single	chrY:12345804-12345839/4/9/DYS434	.	.	.
+110	Y-111	DYS461	single	chrY:18888808-18888851/4/11/DYS461	[TCTG]n [TCTA]n	.	.
+111	Y-111	DYS435	single	chrY:12384503-12384538/4/9/DYS435	.	.	.
