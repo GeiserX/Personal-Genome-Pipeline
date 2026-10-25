@@ -292,6 +292,10 @@ Your mitochondrial haplogroup traces your maternal ancestry lineage. It's determ
 
 Mitochondrial haplogroups have weak associations with some diseases (Parkinson's, diabetes, longevity), but these are population-level statistics, not individual predictions. The main clinical value is in step 20 (GATK Mutect2 mitochondrial mode), which detects disease-causing mitochondrial variants and heteroplasmy.
 
+### Exploring Your Branch
+
+Both reports link your haplogroup to FamilyTreeDNA Discover (free, no upload) and to YFull's tree. Discover shows the branch's age, where its testers live and the ancient DNA samples on it. For the Y haplogroup of step 37 the reports add the same two links. The free and paid routes, what each one takes and what an upload shares: [step 12](12-mito-haplogroup.md#explore-your-branch-further) and [step 37](37-y-haplogroup.md#explore-your-branch-further). The pipeline never uploads anything.
+
 ---
 
 ## VEP Annotation (Step 13)
