@@ -49,7 +49,7 @@ In the Nextflow pipeline (`y_str` in `--tools`) the `Y_STR` process runs for the
 ./scripts/45-y-str.sh your_name
 ```
 
-With `run-all.sh`: `TOOLS=...,y_str` (opt-in; a female sample is listed as skipped). There is no data to install.
+With `run-all.sh`: `TOOLS=...,y_str` (opt-in: a default run does not list it; with `y_str` named, a female sample is listed as skipped). There is no data to install.
 
 Inside one container the step writes HipSTR's region file from the table, then runs:
 

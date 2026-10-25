@@ -160,8 +160,9 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
-# Step 45 (Y-STR repeat counts) is opt-in and reads chrY, so a female sample is skipped.
-plan "45 Y-STR markers (HipSTR)" y_str "$(optin y_str || [ "$SEX" = male ] || echo 'female sample: no Y chromosome')" || true
+# Step 45 (Y-STR repeat counts) is opt-in and listed only when TOOLS names it; it reads chrY, so a female sample is skipped.
+if [[ ",${T// /}," == *",y_str,"* ]]; then plan "45 Y-STR markers (HipSTR)" y_str "$([ "$SEX" = male ] || echo 'female sample: no Y chromosome')" || true
+else KNOWN+=" y_str"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.
