@@ -2014,6 +2014,44 @@ def sec_bloodtype(d, s):
     return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
 
 
+# The two LPA risk variants of assets/traits.tsv (rsid -> its alt, the allele
+# that goes with a high Lp(a)); tests/test_lpa_kiv2.py checks they agree.
+LPA_RISK_ALLELES = {"rs10455872": "G", "rs3798220": "C"}
+
+
+def sec_lpa(d, s):
+    """Step 46's KIV-2 count (lpa/<id>_lpa_kiv2.tsv, bin/lpa_kiv2.py), with
+    step 42's two LPA risk variants when the traits table is there, and
+    whether either points to a genetically high Lp(a)."""
+    p = first_existing(d, [f"lpa/{s}_lpa_kiv2.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in ("estimated", "too little depth", "not assessed"):
+        raise Unreadable(f"{os.path.basename(p)} has no status row (estimated, too little depth or not assessed)")
+    data = {k: kv.get(k) or "." for k in ("status", "kiv2_copies", "ci95_low", "ci95_high", "class",
+                                          "kiv2_depth", "flank_depth", "mapq0_share", "message", "advice")}
+    variants = []
+    t = first_existing(d, [f"traits/{s}_traits.tsv"])
+    for r in (read_tsv(t) if t else []):
+        alt = LPA_RISK_ALLELES.get(r.get("rsid"))
+        if not alt:
+            continue
+        called = r.get("status") == "called"
+        n = re.split(r"[/|]", r.get("genotype") or "").count(alt) if called else None
+        variants.append({"rsid": r["rsid"], "genotype": r.get("genotype") or ".", "status": r.get("status") or ".",
+                         "risk_alleles": n})
+    risk = sum(v["risk_alleles"] for v in variants if v["risk_alleles"] is not None)
+    reasons = ([f"{risk} risk allele{'s' if risk != 1 else ''} at rs10455872 and rs3798220"] if risk else []) \
+        + (["a low KIV-2 repeat count"] if data["class"] == "low" else [])
+    data.update(variants=variants, risk_alleles=risk, flag="high" if reasons else ".",
+                flag_text=("Genetic signs of a high Lp(a): " + " and ".join(reasons) + ". Measure Lp(a) in blood."
+                           if reasons else
+                           "No genetic sign of a high Lp(a) from these markers. They explain only part of it: "
+                           "the KIV-2 count explained 21% to 27% of the variation in a Danish population study."))
+    return p, data
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2828,6 +2866,7 @@ SECTIONS = [
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
+    ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
