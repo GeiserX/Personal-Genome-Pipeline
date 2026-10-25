@@ -5,7 +5,9 @@
     The chrM calls haplogrep3 reads are MITO_VARIANTS' Mutect2 calls when
     mito_variants ran for the sample (their PASS records, one allele per
     record), else the chrM records of the sample's
-    VCF; MITO_EXTRACT_CHRM writes either. MITO_HAPLOGROUP classifies them with haplogrep3;
+    VCF; MITO_EXTRACT_CHRM writes either, and <id>_chrM.fasta, the
+    sample's mtDNA sequence (the file YFull's mtDNA analysis reads; nothing
+    is uploaded). MITO_HAPLOGROUP classifies them with haplogrep3;
     HAPLOCHECK looks for a second haplogroup in the Mutect2 allele fractions
     (contamination).
 
@@ -17,13 +19,18 @@ process MITO_EXTRACT_CHRM {
     tag "$meta.id"
     label 'process_single'
 
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode, pattern: "*_chrM.fasta"
+
     input:
     // source: 'mutect2' (MITO_VARIANTS' chrM calls, index not needed) or
     // 'vcf' (the sample's VCF with its index)
     tuple val(meta), path(vcf), path(vcf_index), val(source)
+    path(reference)
+    path(reference_fai)
 
     output:
     tuple val(meta), path("*_chrM.vcf.gz"), path("*_chrM.vcf.gz.tbi"), emit: chrm_vcf
+    tuple val(meta), path("${meta.id}_chrM.fasta"),                    emit: fasta
     path "versions.yml",                                                emit: versions
 
     when:
@@ -33,9 +40,20 @@ process MITO_EXTRACT_CHRM {
     def extract = source == 'mutect2'
         ? "bcftools view -f PASS ${vcf} | bcftools norm -m-any -Oz -o ${meta.id}_chrM.vcf.gz"
         : "bcftools view -r chrM ${vcf} -Oz -o ${meta.id}_chrM.vcf.gz"
+    // The FASTA, as in scripts/12-mito-haplogroup.sh: the reference chrM with
+    // the majority alleles (Mutect2 AF >= 0.5, or a homozygous VCF call); -H A
+    // writes the ALT of a kept call, never an IUPAC code.
+    def keep = source == 'mutect2' ? 'FMT/AF>=0.5' : 'GT="AA"'
     """
     ${extract}
     bcftools index -t ${meta.id}_chrM.vcf.gz
+
+    read -r LEN OFF LB LW < <(awk -F'\\t' '\$1 == "chrM" { print \$2, \$3, \$4, \$5 }' ${reference_fai}) || true
+    [ -n "\${LEN:-}" ] || { echo "ERROR: no chrM in ${reference_fai}" >&2; exit 1; }
+    { echo ">chrM"; dd if="\$(readlink -f ${reference})" bs=1 skip="\$OFF" count="\$((LEN + (LEN + LB - 1) / LB * (LW - LB)))" status=none; } > chrM_ref.fa
+    bcftools consensus -f chrM_ref.fa -H A -i '${keep}' ${meta.id}_chrM.vcf.gz \
+        | awk -v n="${meta.id}_chrM" 'NR == 1 { print ">" n; next } 1' > ${meta.id}_chrM.fasta
+    rm -f chrM_ref.fa
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -47,6 +65,7 @@ process MITO_EXTRACT_CHRM {
     """
     touch ${meta.id}_chrM.vcf.gz
     touch ${meta.id}_chrM.vcf.gz.tbi
+    printf '>${meta.id}_chrM\nN\n' > ${meta.id}_chrM.fasta
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

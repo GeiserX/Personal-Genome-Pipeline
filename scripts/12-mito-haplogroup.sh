@@ -4,7 +4,9 @@
 # Input: step 20's Mutect2 chrM calls (mito/<sample>_chrM_filtered.vcf.gz)
 #        when they exist, else the chrM records of the step 03 VCF
 # Output: mito/<sample>_haplogroup.txt (haplogrep3), and with the Mutect2
-#         calls mito/<sample>_haplocheck.txt (haplocheck)
+#         calls mito/<sample>_haplocheck.txt (haplocheck); mito/<sample>_chrM.fasta,
+#         the sample's mtDNA sequence, the file YFull's mtDNA analysis reads
+#         (docs/12-mito-haplogroup.md lists the routes; nothing is uploaded)
 #
 # Mutect2 in mitochondrial mode is the caller made for chrM: it reports each
 # allele's fraction, so haplogrep3 sees heteroplasmies and haplocheck can look
@@ -23,10 +25,11 @@ MUTECT2="${GENOME_DIR}/${SAMPLE}/mito/${SAMPLE}_chrM_filtered.vcf.gz"
 OUTPUT_DIR="${GENOME_DIR}/${SAMPLE}/mito"
 CHRM="${OUTPUT_DIR}/${SAMPLE}_chrM_for_haplogroup.vcf.gz"
 CHECK="${OUTPUT_DIR}/${SAMPLE}_haplocheck.txt"
+FASTA="${OUTPUT_DIR}/${SAMPLE}_chrM.fasta"
 
 echo "=== Mitochondrial Haplogroup: ${SAMPLE} ==="
 mkdir -p "$OUTPUT_DIR"
-rm -f "$CHECK" "${CHECK%.txt}.html"
+rm -f "$CHECK" "${CHECK%.txt}.html" "$FASTA"
 
 # Step 1: the chrM calls haplogrep3 reads
 if [ -f "$MUTECT2" ]; then
@@ -67,6 +70,25 @@ if [ "$SOURCE" = Mutect2 ]; then
   [ -s "$CHECK" ] || { echo "ERROR: haplocheck wrote no report (${CHECK})" >&2; exit 1; }
 fi
 
+# Step 4: the mtDNA sequence as FASTA: the reference chrM (the rCRS in GRCh38)
+# with the sample's majority alleles: Mutect2 calls at an allele fraction of
+# 0.5 or more, or homozygous calls of the step 03 VCF. A position without a
+# call reads as the reference (-H A: the ALT of a kept call, never an IUPAC
+# code). chrM is cut out of the reference through its .fai.
+read -r MLEN MOFF MLB MLW < <(awk -F'\t' '$1 == "chrM" { print $2, $3, $4, $5 }' "${REF_FASTA}.fai" 2>/dev/null) || true
+if [ -n "${MLEN:-}" ] && [ -f "$REF_FASTA" ]; then
+  echo "Writing the mtDNA sequence (FASTA)..."
+  if [ "$SOURCE" = Mutect2 ]; then KEEP='FMT/AF>=0.5'; else KEEP='GT="AA"'; fi
+  run_in --cpus 1 --memory 1g "${BCFTOOLS_IMAGE}" bash -euo pipefail -c \
+    '{ echo ">chrM"; dd if="$1" bs=1 skip="$2" count="$3" status=none; } > "$4.ref.fa"
+     bcftools consensus -f "$4.ref.fa" -H A -i "$5" "$6" | awk -v n="$7" "NR == 1 { print \">\" n; next } 1" > "$4"
+     rm -f "$4.ref.fa"' \
+    _ "$REF_FASTA_C" "$MOFF" "$((MLEN + (MLEN + MLB - 1) / MLB * (MLW - MLB)))" "$(cpath "$FASTA")" "$KEEP" \
+    "$(cpath "$CHRM")" "${SAMPLE}_chrM"
+else
+  echo "mtDNA FASTA: not written (no chrM in ${REF_FASTA}.fai)"
+fi
+
 echo "=== Haplogrep3 complete ==="
 echo "Results: ${OUTPUT_DIR}/${SAMPLE}_haplogroup.txt (from ${SOURCE} calls)"
 if [ -f "${OUTPUT_DIR}/${SAMPLE}_haplogroup.txt" ]; then
@@ -84,5 +106,6 @@ if [ -s "$CHECK" ]; then
 else
   echo "Contamination (haplocheck): not checked (needs step 20's Mutect2 calls)"
 fi
+[ -s "$FASTA" ] && echo "mtDNA sequence for YFull or FamilyTreeDNA Discover: ${FASTA} (nothing is uploaded; docs/12-mito-haplogroup.md lists the routes)"
 echo ""
 echo "Quality > 0.9 = high confidence. Common European: H, U, J, T, K, V, W, X"
