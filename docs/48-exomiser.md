@@ -81,7 +81,7 @@ HPO=HP:0001156,HP:0001363 EXOMISER_FAMILY=my_family EXOMISER_UNAFFECTED=mother,f
 | `exomiser/${SAMPLE}_exomiser_terms.tsv` | the terms searched: `hpo_id`, `label`, `given_as` |
 | `exomiser/${SAMPLE}_exomiser.variants.tsv`, `.genes.tsv`, `.html` | Exomiser's own files, for the top 50 genes |
 
-The scores run from 0 to 1. The phenotype score is how well the gene's known diseases and models match the terms; the variant score is how rare and damaging its variants look; the Exomiser score combines both with a model trained on solved cases of the 100,000 Genomes Project ([Exomiser 15.1.0, Interpreting the Results](https://exomiser.readthedocs.io/en/15.1.0/result_interpretation.html)). A gene can appear once per mode of inheritance.
+The scores run from 0 to 1. The phenotype score is how well the gene's known diseases and models match the terms; the variant score is how rare and damaging its variants look; the Exomiser score combines both with a model trained on solved cases of the 100,000 Genomes Project ([Exomiser 15.1.0, Interpreting the Results](https://exomiser.readthedocs.io/en/15.1.0/result_interpretation.html)). A gene can appear once per mode of inheritance. The p-value is Exomiser's estimate against random scores it draws afresh on every run ([CombinedScorePvalueCalculator](https://github.com/exomiser/Exomiser/blob/15.1.0/exomiser-core/src/main/java/org/monarchinitiative/exomiser/core/analysis/score/CombinedScorePvalueCalculator.java)), so it changes slightly between two runs of the same VCF and terms; the scores and the ranks do not.
 
 The ACMG class is Exomiser's automatic, partial use of the ACMG/AMP variant classification standard ([Richards et al. 2015, Genetics in Medicine](https://doi.org/10.1038/gim.2015.30)): it applies the criteria its data can decide, and Exomiser's documentation says it is not a substitute for a clinical geneticist's classification ([ACMG Assignment](https://exomiser.readthedocs.io/en/15.1.0/acmg_assignment.html)).
 
@@ -89,7 +89,7 @@ Both reports show the top ranks as their "Symptom-Driven Ranking (Exomiser)" sec
 
 ## Runtime
 
-Not measured on a whole genome here. In CI, one run on Exomiser's test release takes EXOMISER_CI_TIME (see Notes).
+Not measured on a whole genome here. In CI (a 4-core GitHub runner, `EXOMISER_MEM=6`), one run of step 48 on Exomiser's test release took 24 to 30 seconds, for the Pfeiffer exome alone and for its family of four alike (see Notes). The full hg38 release reads far more data, so expect longer.
 
 ## Notes
 
