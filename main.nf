@@ -35,6 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,11 +83,33 @@ workflow {
         'consumer_export',
         'bloodtype',
         'traits',
+        'exomiser',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
         error "unknown tool${unknown_tools.size() > 1 ? 's' : ''} ${unknown_tools.join(', ')} in --tools. " +
               "Known tools: ${known_tools.join(', ')}."
+    }
+
+    // exomiser (step 48) runs when --hpo names the symptoms; naming it in
+    // --tools without them stops the run.
+    if (params.hpo && !tools_list.contains('exomiser')) {
+        tools_list << 'exomiser'
+    }
+    if (tools_list.contains('exomiser')) {
+        def hpo_terms = params.hpo ? params.hpo.toString().split(/[,\s]+/).findAll { it } : []
+        if (!hpo_terms) {
+            error "Tool 'exomiser' ranks variants against a person's symptoms: give them with --hpo as HPO ids " +
+                  "(--hpo HP:0001250,HP:0001263; https://hpo.jax.org)."
+        }
+        def bad_terms = hpo_terms.findAll { !(it ==~ /HP:[0-9]{7}/) }
+        if (bad_terms) {
+            error "--hpo: ${bad_terms.join(', ')} ${bad_terms.size() > 1 ? 'are not HPO ids' : 'is not an HPO id'}: " +
+                  "an HPO id is HP: and seven digits, e.g. HP:0001250 (Seizure)."
+        }
+        if (!(params.exomiser_assembly in ['hg38', 'hg19'])) {
+            error "--exomiser_assembly must be hg38 or hg19, got '${params.exomiser_assembly}'."
+        }
     }
 
     // Fail-fast: stop when enabled tools lack required databases
@@ -110,6 +133,7 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['exomiser',         'exomiser_data',      '--exomiser_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -760,6 +784,37 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Symptom-driven ranking (exomiser, step 48: --hpo) ──────────────
+    // Exomiser on the VCF of the one sample the --hpo terms describe
+    // (--exomiser_proband, or the only sample). Equivalent to
+    // scripts/48-exomiser.sh without its family mode, which is bash-only.
+    ch_exomiser          = Channel.empty()
+    ch_exomiser_terms    = Channel.empty()
+    ch_exomiser_versions = Channel.empty()
+    if (tools_list.contains('exomiser')) {
+        def proband = params.exomiser_proband ?: (seen_samples.size() == 1 ? seen_samples.first() : null)
+        if (!proband) {
+            error "--hpo describes one person and the samplesheet has ${seen_samples.size()} samples: name the one " +
+                  "with --exomiser_proband (${seen_samples.join(', ')})."
+        }
+        if (!seen_samples.contains(proband)) {
+            error "--exomiser_proband ${proband} is not a sample of ${params.input} (${seen_samples.join(', ')})."
+        }
+        ch_exomiser_data = Channel.value(file(params.exomiser_data, checkIfExists: true))
+        EXOMISER_PREPARE(
+            ch_vcf.filter { meta, _vcf, _idx -> meta.id == proband }.map { meta, vcf, _idx -> [meta, vcf] },
+            Channel.value(params.hpo.toString().split(/[,\s]+/).findAll { it }.join(',')),
+            ch_exomiser_data
+        )
+        EXOMISER(EXOMISER_PREPARE.out.analysis, ch_exomiser_data)
+        EXOMISER_REPORT(
+            EXOMISER.out.variants.join(EXOMISER_PREPARE.out.terms)
+        )
+        ch_exomiser          = EXOMISER_REPORT.out.top
+        ch_exomiser_terms    = EXOMISER_PREPARE.out.terms
+        ch_exomiser_versions = EXOMISER_PREPARE.out.versions.mix(EXOMISER.out.versions, EXOMISER_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -820,6 +875,8 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser.map                     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -849,7 +906,8 @@ workflow {
             ch_cram_versions,
             ch_family_versions,
             ch_traits_versions,
-            ch_bloodtype_versions
+            ch_bloodtype_versions,
+            ch_exomiser_versions
         )
         .map { f -> f.text }
         .unique()
