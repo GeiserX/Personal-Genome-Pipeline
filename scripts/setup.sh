@@ -315,8 +315,13 @@ install_yleaf_data() {
     echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
   fi
 
-  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)"
-  if [ -s "${yt}/version.txt" ] && grep -qxF "$(printf 'tree\t%s' "$label")" "${yt}/version.txt"; then
+  # version.txt names every pin (releases, commits, sha256), so a re-pin of
+  # any of them, at the same tree release too, installs the tables again.
+  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want
+  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s' \
+    "$label" "$YTREE_POSITIONS_VERSION" "$YTREE_COMMIT" "$YTREE_SHA256" \
+    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256")"
+  if [ -s "${yt}/version.txt" ] && [ "$(cat "${yt}/version.txt")" = "$want" ]; then
     echo "[OK] Current Y tree (${label}, step 37) already present."
     return 0
   fi
@@ -334,8 +339,7 @@ install_yleaf_data() {
     rm -rf "${yt}.part"
     return 0
   fi
-  printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\n' "$label" "$YTREE_POSITIONS_VERSION" \
-    > "${yt}.part/version.txt"
+  printf '%s\n' "$want" > "${yt}.part/version.txt"
   rm -rf "$yt"
   mv "${yt}.part" "$yt"
   echo "[OK] Current Y tree (${label}) and Yleaf ${YTREE_POSITIONS_VERSION}'s SNP positions (step 37): ${yt}"
