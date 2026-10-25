@@ -136,11 +136,11 @@ if command -v nextflow >/dev/null; then
   check_eq "MITO_EXTRACT_CHRM publishes one FASTA record" "$(grep -c '^>' "$NFA" 2>/dev/null || true)" 1
   check_ge "of mtDNA length" "$(grep -v '^>' "$NFA" 2>/dev/null | tr -d '\n' | wc -c | tr -d ' ')" 16500
   # Without mito_variants its input is the VCF's chrM records: the kept
-  # calls are the homozygous ones.
-  bcf view -H -i 'GT="AA"' -r chrM "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
+  # calls are the haploid and homozygous ALT ones.
+  bcf view -H -i 'GT="A" || GT="AA"' -r chrM "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
     | awk -F'\t' '{ if (length($4) != 1 || length($5) != 1) exit; print $2 "\t" $4 "\t" $5 }' > "${CASE_TMP}/snvs_vcf.tsv"
-  check_ge "homozygous chrM SNVs to check" "$(grep -c . "${CASE_TMP}/snvs_vcf.tsv" || true)" 1
-  check "carrying the ALT of each homozygous SNV" alt_at "$NFA" "${CASE_TMP}/snvs_vcf.tsv"
+  check_ge "haploid or homozygous ALT chrM SNVs to check" "$(grep -c . "${CASE_TMP}/snvs_vcf.tsv" || true)" 1
+  check "carrying the ALT of each of them" alt_at "$NFA" "${CASE_TMP}/snvs_vcf.tsv"
   check "control: the reference chrM does not" eval '! alt_at "${CASE_TMP}/ref_chrM.fa" "${CASE_TMP}/snvs_vcf.tsv"'
   NFY="nf-explore/${SAMPLE}/y_haplogroup/${SAMPLE}_chrY.bam"
   check "Y_PILEUP publishes the chrY BAM" nonempty "$NFY"

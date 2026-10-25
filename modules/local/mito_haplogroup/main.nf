@@ -41,9 +41,9 @@ process MITO_EXTRACT_CHRM {
         ? "bcftools view -f PASS ${vcf} | bcftools norm -m-any -Oz -o ${meta.id}_chrM.vcf.gz"
         : "bcftools view -r chrM ${vcf} -Oz -o ${meta.id}_chrM.vcf.gz"
     // The FASTA, as in scripts/12-mito-haplogroup.sh: the reference chrM with
-    // the majority alleles (Mutect2 AF >= 0.5, or a homozygous VCF call); -H A
+    // the majority alleles (Mutect2 AF >= 0.5, or a haploid or homozygous ALT call of the VCF); -H A
     // writes the ALT of a kept call, never an IUPAC code.
-    def keep = source == 'mutect2' ? 'FMT/AF>=0.5' : 'GT="AA"'
+    def keep = source == 'mutect2' ? 'FMT/AF>=0.5' : 'GT="A" || GT="AA"'
     """
     ${extract}
     bcftools index -t ${meta.id}_chrM.vcf.gz

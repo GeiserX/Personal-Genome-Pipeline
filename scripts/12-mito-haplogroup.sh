@@ -72,13 +72,13 @@ fi
 
 # Step 4: the mtDNA sequence as FASTA: the reference chrM (the rCRS in GRCh38)
 # with the sample's majority alleles: Mutect2 calls at an allele fraction of
-# 0.5 or more, or homozygous calls of the step 03 VCF. A position without a
+# 0.5 or more, or the haploid or homozygous ALT calls of the step 03 VCF. A position without a
 # call reads as the reference (-H A: the ALT of a kept call, never an IUPAC
 # code). chrM is cut out of the reference through its .fai.
 read -r MLEN MOFF MLB MLW < <(awk -F'\t' '$1 == "chrM" { print $2, $3, $4, $5 }' "${REF_FASTA}.fai" 2>/dev/null) || true
 if [ -n "${MLEN:-}" ] && [ -f "$REF_FASTA" ]; then
   echo "Writing the mtDNA sequence (FASTA)..."
-  if [ "$SOURCE" = Mutect2 ]; then KEEP='FMT/AF>=0.5'; else KEEP='GT="AA"'; fi
+  if [ "$SOURCE" = Mutect2 ]; then KEEP='FMT/AF>=0.5'; else KEEP='GT="A" || GT="AA"'; fi
   run_in --cpus 1 --memory 1g "${BCFTOOLS_IMAGE}" bash -euo pipefail -c \
     '{ echo ">chrM"; dd if="$1" bs=1 skip="$2" count="$3" status=none; } > "$4.ref.fa"
      bcftools consensus -f "$4.ref.fa" -H A -i "$5" "$6" | awk -v n="$7" "NR == 1 { print \">\" n; next } 1" > "$4"

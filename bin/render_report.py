@@ -1309,7 +1309,7 @@ def mito_lines(d):
 
 
 EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
-                "which steps 12 and 37 write beside this result, and what an upload shares.")
+                "which steps 12 and 37 write when they run, and what an upload shares.")
 
 
 def explore_lines(d):

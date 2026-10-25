@@ -65,7 +65,7 @@ docker run --rm --network none -v "${GENOME_DIR}:/genome" "${HAPLOCHECK_IMAGE}" 
 
 Both reports (step 24 and the text report) show the haplogroup and the contamination status, or "not checked" when the input was the step 03 VCF, and the links of the next section built from the haplogroup.
 
-The FASTA is the reference chrM (the rCRS, in GRCh38) with the sample's majority alleles applied: the Mutect2 calls with an allele fraction of 0.5 or more, or the homozygous calls of the step 03 VCF. A position without a call reads as the reference, so the FASTA is only as complete as the chrM calls. A heteroplasmy below 0.5 is not in it.
+The FASTA is the reference chrM (the rCRS, in GRCh38) with the sample's majority alleles applied: the Mutect2 calls with an allele fraction of 0.5 or more, or the haploid and homozygous ALT calls of the step 03 VCF. A position without a call reads as the reference, so the FASTA is only as complete as the chrM calls. A heteroplasmy below 0.5 is not in it.
 
 ## Explore your branch further
 
@@ -75,8 +75,8 @@ A haplogroup is a branch of the maternal family tree. The routes below are free 
 
 | Route | Cost | What you send | What you get | Checked 2026-10-25 |
 |---|---|---|---|---|
-| FamilyTreeDNA Discover, `https://discover.familytreedna.com/mtdna/<haplogroup>` | free, no account | nothing: you look the branch up | the branch's age, the countries its testers name, ancient DNA samples on it, a migration map | the page loads its data from `https://discover.familytreedna.com/resources/mtdna/<haplogroup>.json`, which answered for `H5a7` with no login; its search (`/HaplogroupSearchMt/<name>`) found `H5a7` exactly |
-| YFull MTree, `https://www.yfull.com/mtree/<haplogroup>/` | free to browse | nothing | the branch on YFull's mtDNA tree, with its age estimates | `/mtree/H5a7/` answers 200 |
+| FamilyTreeDNA Discover, `https://discover.familytreedna.com/mtdna/<haplogroup>` | free, no account | no file: the haplogroup name goes in the link | the branch's age, the countries its testers name, ancient DNA samples on it, a migration map | the page loads its data from `https://discover.familytreedna.com/resources/mtdna/<haplogroup>.json`, which answered for `H5a7` with no login; its search (`/HaplogroupSearchMt/<name>`) found `H5a7` exactly |
+| YFull MTree, `https://www.yfull.com/mtree/<haplogroup>/` | free to browse | no file: the haplogroup name goes in the link | the branch on YFull's mtDNA tree, with its age estimates | `/mtree/H5a7/` answers 200 |
 | Decoding Us Navigator, `https://decoding-us.com/download` | free | nothing: the app runs on your computer and reads your BAM or CRAM | haplogroup placement and coverage metrics; you choose later whether to publish anonymised summaries | an alpha (v0.1.0-beta.1, 2026-09-03); its mtDNA tree is on T2T-CHM13 coordinates, not the rCRS names haplogrep3 uses; we have not run it on a GRCh38 BAM |
 | YFull mtDNA analysis | free after a paid YFull Y analysis (step 37) | the FASTA above | your branch on the MTree, your mutations against the rCRS and the RSRS | YFull's FAQ says it analyses FASTA files of the full mtDNA sequence; its order page says the free mtDNA analysis opens only after payment for the Y. We found no mtDNA-only order on its site |
 
