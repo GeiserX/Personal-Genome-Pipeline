@@ -76,7 +76,7 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 
 The most immediately useful multi-sample analysis: checking whether both partners carry pathogenic variants in the **same recessive gene**. If so, each child has a 25% chance of being affected.
 
-[Step 39](39-couple.md) does this for two partners of a pedigree: the recessive genes where both carry a change, counting ClinVar hits, Delly deletions over an exon (a long one only when read depth shows the loss), SMN1 copy loss and FMR1 and FXN expansions, the X-linked findings, and what the screen does not see. The cross-check below is the same comparison by hand, for ClinVar hits only.
+[Step 39](39-couple.md) does this for two partners of a pedigree: the recessive genes where both carry a change, counting ClinVar hits, Delly deletions of 50 bp or more over an exon (a long one only when read depth shows the loss, and none that matches a common deletion of AnnotSV's benign set), SMN1 copy loss and FMR1 and FXN expansions, the X-linked findings, and what the screen does not see. The cross-check below is the same comparison by hand, for ClinVar hits only.
 
 ### Quick Cross-Check
 
