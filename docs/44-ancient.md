@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Places your genome on a principal component analysis (PCA) of present-day West Eurasians, the same axes onto which about 11,000 ancient West Eurasians of the Allen Ancient DNA Resource (AADR) are projected, and lists the ancient groups that sit nearest to you, with their dates and places. It also draws PC1 against PC2 with every ancient person coloured by age and you marked. Opt-in.
+Places your genome on a principal component analysis (PCA) of present-day West Eurasians, the same axes onto which about 10,600 ancient West Eurasians of the Allen Ancient DNA Resource (AADR) are projected, and lists the ancient groups that sit nearest to you, with their dates and places. It also draws PC1 against PC2 with every ancient person coloured by age and you marked. Opt-in.
 
 Closeness on a PCA is genetic similarity, not descent. A genome near an ancient group resembles it on these axes; that does not mean you descend from those people, and two very different histories can land on the same spot. The step does not fit qpAdm models of ancestry proportions: that needs chosen source and outgroup populations and f-statistics, and it is out of scope here.
 
