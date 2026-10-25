@@ -1187,7 +1187,7 @@ install_archaic() {
     if [ "$n" -lt 1 ]; then echo "[WARN] chr${c} of the table has no row"; rm -f "${dir}/chr${c}.tsv.gz.part"; return 1; fi
     mv "${dir}/chr${c}.tsv.gz.part" "${dir}/chr${c}.tsv.gz"
     echo "$stamp" > "${dir}/chr${c}.stamp"
-    echo "  chr${c}: ${n} sites ($(grep -vc '^#' "${wk}/rejected.vcf" 2>/dev/null || echo 0) not lifted)"
+    echo "  chr${c}: ${n} sites ($(awk '!/^#/ {n++} END {print n+0}' "${wk}/rejected.vcf" 2>/dev/null || echo 0) not lifted)"
     for v in $genomes; do rm -f "${dir}/download/${v%%:*}.chr${c}.vcf.gz"; done
     rm -rf "$wk"
   done
