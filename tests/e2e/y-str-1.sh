@@ -5,13 +5,18 @@
 # GIAB's 60x GRCh38 BAM, the file the fixture is cut from. Then:
 #   - the table's regions are repeats in the reference: each region's sequence,
 #     read from the fixture FASTA, repeats with the panel's motif length;
+#   - the eight markers HipSTR wrote no record for when the close-set parts
+#     were genotyped one by one (DYS19, DYS389II, DYS448, DYS425, DYS450,
+#     DYS532, DYS504, DYS510) each get a count, or a not callable row, or a
+#     note quoting the reason from HipSTR's log; no record goes without one;
 #   - the step writes 111 rows in FamilyTreeDNA's order, the multi-copy and
 #     absent markers not callable, and most single regions called high;
 #   - an independent count from the reads: for every high call, the length of
 #     the repeat in the reads that span it with 10 bases on each side
 #     (reference length plus the CIGAR's insertions minus its deletions there
 #     or in those 10 bases, where an aligner can left-align a repeat's indel)
-#     gives the same count in at least 90% of the markers;
+#     gives the same count in at least 90% of the markers, and in every span
+#     marker (one region over close-set parts) called high;
 #   - a planted change: the same reads with four bases (one AGAT repeat) cut
 #     out of DYS393 in every read that spans it give DYS393 one repeat fewer,
 #     and leave the other called markers as they were;
@@ -32,11 +37,12 @@ retry() { local i; for i in 1 2 3 4; do "$@" && return 0; [ "$i" -lt 4 ] && { ec
 
 # --- the panel against the reference ---------------------------------------------------
 python3 "${REPO}/bin/ystr_report.py" bed --panel "$PANEL" --out "${T}/regions.bed"
-check_eq "HipSTR regions in the panel" "$(grep -c . "${T}/regions.bed")" 93
+check_eq "HipSTR regions in the panel" "$(grep -c . "${T}/regions.bed")" 86
 awk -F'\t' '{print $1 ":" $2 "-" $3}' "${T}/regions.bed" > "${T}/regions.txt"
 dk "$SAMTOOLS_IMAGE" samtools faidx -r "${T}/regions.txt" "$REF" > "${T}/regions.fa"
 # periodic REGIONS.BED REGIONS.FA: how many regions repeat with their motif length
-# (at least 80% of the bases equal to the base one motif further on).
+# (at least 75% of the bases equal to the base one motif further on; a span
+# marker's region carries the few bases between its parts, 78% at DYS510).
 periodic() {
   python3 -I - "$1" "$2" <<'PY'
 import sys
@@ -54,11 +60,11 @@ for c in bed:
     s, p = seqs.get(f"{c[0]}:{c[1]}-{c[2]}", ""), int(c[3])
     if len(s) == int(c[2]) - int(c[1]) + 1 and len(s) > p:
         same = sum(1 for i in range(len(s) - p) if s[i] == s[i + p])
-        ok += same >= 0.8 * (len(s) - p)
+        ok += same >= 0.75 * (len(s) - p)
 print(ok)
 PY
 }
-check_eq "every region is a repeat of its motif length in the reference" "$(periodic "${T}/regions.bed" "${T}/regions.fa")" 93
+check_eq "every region is a repeat of its motif length in the reference" "$(periodic "${T}/regions.bed" "${T}/regions.fa")" 86
 awk -F'\t' 'BEGIN {OFS = "\t"} {print $1, $2, $3, 1}' "${T}/regions.bed" > "${T}/shifted.bed"
 check_eq "control: the same check with a motif length of 1 finds no region" \
   "$(periodic "${T}/shifted.bed" "${T}/regions.fa")" 0
@@ -99,6 +105,8 @@ step "$H"
 echo "step 45 on HG002's 60x reads at the regions: ${SECONDS} s"
 OUT="${G}/${H}/y_str/${H}_y_str.tsv"
 cat "$OUT" 2>/dev/null
+# HipSTR's log goes with the case logs, so a region without a record can be read up.
+cp "${G}/${H}/y_str/${H}_y_str.log" "${E2E_WORK}/logs/${CASE_NAME}.hipstr.log" 2>/dev/null || true
 check_eq "a row per marker" "$(awk 'END {print NR - 1}' "$OUT" 2>/dev/null)" 111
 check_eq "rows in FamilyTreeDNA's order (the panel's)" \
   "$(awk -F'\t' 'NR > 1 {print $3}' "$OUT" 2>/dev/null | md5sum)" "$(awk -F'\t' '!/^#/ && $1 != "order" {print $3}' "$PANEL" | md5sum)"
@@ -107,7 +115,29 @@ check_eq "multi-copy and absent markers are not callable" \
   "$(awk -F'\t' 'NR > 1 && $5 == "not callable" && $10 ~ /multi-copy|no region/' "$OUT" 2>/dev/null | wc -l | tr -d ' ')" 27
 check "DYS464a: not callable from short reads" has '^not callable from short reads: a multi-copy' "$(col "$H" DYS464a note)"
 HIGH=$(awk -F'\t' 'NR > 1 && $5 == "high"' "$OUT" 2>/dev/null | wc -l | tr -d ' ')
-check_ge "markers called with high confidence at 60x (of 83 callable)" "$HIGH" 60
+check_ge "markers called with high confidence at 60x (of 81 callable)" "$HIGH" 60
+# The eight markers that had no record while their close-set parts went to HipSTR
+# one by one (or, for DYS19 and DYS425, a single region): a count, a not callable
+# row with its reason, or the reason HipSTR's log gives.
+for m in DYS19 DYS389II DYS448 DYS425 DYS450 DYS532 DYS504 DYS510; do
+  c=$(col "$H" "$m" count) k=$(col "$H" "$m" confidence) n=$(col "$H" "$m" note)
+  echo "  ${m}: count '${c}', ${k}, ${n}"
+  check "${m}: a count, or the reason it has none" \
+    test -n "$c" -o \( "$k" = "not callable" -a -n "$n" \) -o -n "$(printf '%s' "$n" | grep 'its log: ')"
+done
+check "DYS389II's span (164 bp) is not callable from 150 bp reads" has '^not callable from short reads: a 164 bp repeat' \
+  "$(col "$H" DYS389II note)"
+check_eq "every region without a record carries the reason from HipSTR's log" \
+  "$(awk -F'\t' 'NR > 1 && $10 ~ /no record/ && $10 !~ /its log: /' "$OUT" 2>/dev/null | wc -l | tr -d ' ')" 0
+NOREC=$(awk -F'\t' 'NR > 1 && $10 ~ /no record/' "$OUT" 2>/dev/null | wc -l | tr -d ' ')
+echo "  regions without a record: ${NOREC}"
+if [ "$NOREC" -gt 0 ]; then
+  : > "${T}/empty.log"
+  python3 "${REPO}/bin/ystr_report.py" report --panel "$PANEL" --vcf "${G}/${H}/y_str/${H}_y_str.vcf.gz" \
+    --log "${T}/empty.log" --tsv "${T}/nolog.tsv" --csv "${T}/nolog.csv" > /dev/null
+  check_eq "control: with an empty log, those rows name no reason" \
+    "$(awk -F'\t' 'NR > 1 && $10 ~ /its log gives no reason/' "${T}/nolog.tsv" 2>/dev/null | wc -l | tr -d ' ')" "$NOREC"
+fi
 check "the step prints the tally" has '^Y-STR markers: [0-9]+ high, [0-9]+ low, [0-9]+ no call, [0-9]+ not callable$' "$(cat "$STEP_LOG")"
 CSV="${G}/${H}/y_str/${H}_y_str.csv"
 check_eq "CSV: header and a row per marker" "$(head -n 1 "$CSV" 2>/dev/null)/$(awk 'END {print NR}' "$CSV" 2>/dev/null)" "marker,value,confidence/112"
@@ -126,11 +156,14 @@ import collections, re, sys
 regions = {}
 for line in open(sys.argv[1]):
     c = line.rstrip("\n").split("\t")
-    if line.startswith("#") or c[0] == "order" or c[3] != "single":
+    if line.startswith("#") or c[0] == "order" or c[3] not in ("single", "span"):
         continue
-    where, period, copies, _name = c[4].split("/", 3)
-    s, e = (int(x) for x in where.split(":")[1].split("-"))
-    regions[c[2]] = (s, e, int(period), int(float(copies) + 0.5))
+    # A span marker: one region from its first part's start to its last part's end,
+    # its parts' copies each rounded half up.
+    parts = [x.split("/", 3) for x in c[4].split(";")]
+    s = int(parts[0][0].split(":")[1].split("-")[0])
+    e = int(parts[-1][0].split(":")[1].split("-")[1])
+    regions[c[2]] = (s, e, int(parts[0][1]), sum(int(float(x[2]) + 0.5) for x in parts), c[3])
 lens = collections.defaultdict(collections.Counter)
 for line in open(sys.argv[3]):
     f = line.split("\t")
@@ -139,7 +172,7 @@ for line in open(sys.argv[3]):
     pos = int(f[3])
     ops = [(int(n), op) for n, op in re.findall(r"(\d+)([MIDNSHP=X])", f[5])]
     end = pos + sum(n for n, op in ops if op in "MDN=X") - 1
-    for m, (s, e, p, rc) in regions.items():
+    for m, (s, e, p, rc, _k) in regions.items():
         if pos > s - 10 or end < e + 10:
             continue
         ref, diff = pos, 0
@@ -156,16 +189,18 @@ for line in open(sys.argv[3]):
 for line in open(sys.argv[2]):
     c = line.rstrip("\n").split("\t")
     if c[2] in regions and c[4] == "high" and lens[c[2]]:
-        s, e, p, rc = regions[c[2]]
+        s, e, p, rc, kind = regions[c[2]]
         diff, n = lens[c[2]].most_common(1)[0]
         whole, rest = divmod(diff, p)
-        print(f"{c[2]}\t{c[3]}\t{rc + whole}{'.' + str(rest) if rest else ''}\t{n}")
+        print(f"{c[2]}\t{c[3]}\t{rc + whole}{'.' + str(rest) if rest else ''}\t{n}\t{kind}")
 PY
 N_CMP=$(grep -c . "${T}/readcount.tsv" || true)
 N_SAME=$(awk -F'\t' '$2 == $3' "${T}/readcount.tsv" | wc -l | tr -d ' ')
 awk -F'\t' '$2 != $3 {print "  differs: " $0}' "${T}/readcount.tsv"
 check_ge "high calls with spanning reads to compare" "$N_CMP" 50
 check "the reads' own count agrees in at least 90% of them (${N_SAME} of ${N_CMP})" test $((N_SAME * 10)) -ge $((N_CMP * 9))
+awk -F'\t' '$5 == "span" {print "  span: " $0}' "${T}/readcount.tsv"
+check_eq "and in every span marker called high" "$(awk -F'\t' '$5 == "span" && $2 != $3' "${T}/readcount.tsv" | wc -l | tr -d ' ')" 0
 
 # --- planted: one AGAT repeat cut out of DYS393 -------------------------------------------
 P="${SAMPLE}ysp"

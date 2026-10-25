@@ -8,14 +8,19 @@ Two commands, both run in HIPSTR_IMAGE (its Python, standard library only):
       markers, one line each, sorted by position.
 
   ystr_report.py report --panel assets/ystr_panel.tsv --vcf <id>_y_str.vcf.gz \
-      --tsv <id>_y_str.tsv --csv <id>_y_str.csv [--read-length 150]
-      One row per panel marker, in the panel's order.
+      --tsv <id>_y_str.tsv --csv <id>_y_str.csv [--log <id>_y_str.log] [--read-length 150]
+      One row per panel marker, in the panel's order. With HipSTR's log, a
+      region HipSTR wrote no record for carries the reason the log gives.
 
 How a count is made. HipSTR writes, per region, GB: the base pairs the call
 differs from the reference allele. The reference copies of a region are the
 panel's (rounded to whole repeats: the region edges of the marker set are
 not always on a repeat boundary; halves round up). A region's count is those copies plus
-GB / motif length. A marker of several parts is the sum of its parts. When
+GB / motif length. A marker of several parts is the sum of its parts. A span
+marker is one HipSTR region from its first part's start to its last part's
+end: HipSTR genotypes each region alone, and on these close-set parts it
+wrote no record for one part on real reads, so the step asks for the whole
+locus at once; its count is its parts' reference copies plus that region's GB. When
 the base pairs left over are not a whole repeat, the count carries them after
 a dot, the usual notation of a partial repeat (11.2: eleven repeats and two
 bases). The panel's offset, when it gives one, is added last.
@@ -64,7 +69,7 @@ def read_panel(path):
         if len(c) != len(need):
             raise PanelError(f"{path}: row {n} has {len(c)} fields, not {len(need)}")
         r = dict(zip(need, c))
-        if r["kind"] not in ("single", "parts", "multicopy", "absent"):
+        if r["kind"] not in ("single", "parts", "span", "multicopy", "absent"):
             raise PanelError(f"{path}: {r['marker']}: unknown kind {r['kind']}")
         regs = []
         if r["regions"] != ".":
@@ -76,8 +81,8 @@ def read_panel(path):
                     regs.append((chrom, start, end, int(period), float(copies), name))
                 except ValueError:
                     raise PanelError(f"{path}: {r['marker']}: unreadable region {part}")
-        if (r["kind"] in ("single", "parts")) != bool(regs) or (r["kind"] == "single" and len(regs) != 1) \
-                or (r["kind"] == "parts" and len(regs) < 2):
+        if (r["kind"] in ("single", "parts", "span")) != bool(regs) or (r["kind"] == "single" and len(regs) != 1) \
+                or (r["kind"] in ("parts", "span") and len(regs) < 2):
             raise PanelError(f"{path}: {r['marker']}: kind {r['kind']} with {len(regs)} regions")
         if len({p for _c, _s, _e, p, _n, _m in regs}) > 1:
             raise PanelError(f"{path}: {r['marker']}: parts with different motif lengths")
@@ -86,6 +91,14 @@ def read_panel(path):
                 r["offset"] = int(r["offset"])
             except ValueError:
                 raise PanelError(f"{path}: {r['marker']}: offset {r['offset']} is not a whole number")
+        if r["kind"] == "span":
+            if len({c for c, *_x in regs}) > 1 or any(b[1] <= a[2] for a, b in zip(regs, regs[1:])):
+                raise PanelError(f"{path}: {r['marker']}: span parts not in order on one chromosome")
+            # One region over the whole locus, named after the marker; its copies are the
+            # parts' (each rounded, halves up), the repeats the bases between them leave out.
+            r["parts"] = regs
+            regs = [(regs[0][0], regs[0][1], regs[-1][2], regs[0][3],
+                     float(sum(int(x[4] + 0.5) for x in regs)), r["marker"])]
         r["regions"] = regs
         rows.append(r)
     orders = [int(r["order"]) for r in rows]
@@ -125,6 +138,30 @@ def read_calls(path):
     if samples is None:
         raise PanelError(f"{path}: no #CHROM header line")
     return calls
+
+
+LOG_REASONS = ("Skipping", "Aborting", "Stutter model training failed", "Haplotype construction failed",
+               "Retraining stutter model training failed")
+
+
+def read_log(path):
+    """HipSTR's reason per region: {(chrom, 1-based start, end): first reason line}.
+
+    HipSTR logs "Processing region <chrom> <0-based start> <end>" before each
+    region, then, when it gives up on one, a line from LOG_REASONS."""
+    why, cur = {}, None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("Processing region "):
+                c = line.split()
+                try:
+                    cur = (c[2], int(c[3]) + 1, int(c[4]))
+                except (IndexError, ValueError):
+                    cur = None
+            elif cur and cur not in why and line.startswith(LOG_REASONS):
+                why[cur] = line
+    return why
 
 
 def number(v, kind=float):
@@ -169,7 +206,7 @@ def count_text(ref_copies, bp, period, offset):
     return f"{n}.{rest}" if rest else str(n)
 
 
-def marker_row(r, calls, read_length):
+def marker_row(r, calls, read_length, log=None):
     row = {"order": r["order"], "panel": r["panel"], "marker": r["marker"], "count": "", "confidence": "",
            "reads": "", "stutter_reads": "", "flank_indel_reads": "", "q": "", "note": ""}
     notes = [] if r["note"] == "." else [r["note"]]
@@ -191,8 +228,13 @@ def marker_row(r, calls, read_length):
     for chrom, start, end, p, copies, name in r["regions"]:
         fmt = calls.get(name)
         if fmt is None:
-            row.update(confidence="no call", note="; ".join(notes + [f"HipSTR wrote no record for {name}: "
-                                                                     "too few reads, or a region it skipped"]))
+            if log is None:
+                why = f"HipSTR wrote no record for {name}; see HipSTR's log"
+            elif (chrom, start, end) in log:
+                why = f"HipSTR wrote no record for {name}; its log: {log[(chrom, start, end)]}"
+            else:
+                why = f"HipSTR wrote no record for {name}, and its log gives no reason"
+            row.update(confidence="no call", note="; ".join(notes + [why]))
             return row
         got, why = part_call(fmt, p)
         if got is None:
@@ -217,7 +259,8 @@ def marker_row(r, calls, read_length):
 def report(args):
     panel = read_panel(args.panel)
     calls = read_calls(args.vcf)
-    rows = [marker_row(r, calls, args.read_length) for r in panel]
+    log = read_log(args.log) if args.log else None
+    rows = [marker_row(r, calls, args.read_length, log) for r in panel]
     with open(args.tsv, "w", encoding="utf-8") as f:
         f.write("\t".join(TSV_COLUMNS) + "\n")
         for row in rows:
@@ -244,6 +287,7 @@ def main(argv=None):
     r.add_argument("--vcf", required=True)
     r.add_argument("--tsv", required=True)
     r.add_argument("--csv", required=True)
+    r.add_argument("--log", help="HipSTR's --log file, for the reason a region has no record")
     r.add_argument("--read-length", type=int, default=150)
     args = ap.parse_args(argv)
     try:

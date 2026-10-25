@@ -24,7 +24,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 `assets/ystr_panel.tsv` holds one row per marker, in FamilyTreeDNA's order. Its header names each source:
 
 - **Order, names and panels**: FamilyTreeDNA's "Y-STR Results Guide" (https://help.familytreedna.com/hc/en-us/articles/4408063356303-Y-STR-Results-Guide), read on 2026-10-25 through the Internet Archive copy of 2026-04-13, because the live page refuses scripted requests.
-- **Regions** (GRCh38, the motif length and the reference copies): the Y-STR set HipSTR's authors annotated, `human/all_annot_markers.hg38.fixed.bed` of HipSTR-references at a fixed commit (MIT licence). Some markers are several regions there (DYS389II, DYS448, DYS449, DYS450, DYS504, DYS510, DYS532, DYS552); their count is the sum of the parts.
+- **Regions** (GRCh38, the motif length and the reference copies): the Y-STR set HipSTR's authors annotated, `human/all_annot_markers.hg38.fixed.bed` of HipSTR-references at a fixed commit (MIT licence). Some markers are several regions there (DYS389II, DYS448, DYS449, DYS450, DYS504, DYS510, DYS532, DYS552); the table keeps those parts as the source gives them.
 - **Motif**: NIST STRBase's repeat structure, where it has one.
 
 The 111 markers fall into four kinds:
@@ -32,9 +32,12 @@ The 111 markers fall into four kinds:
 | Kind | Markers | What the step does |
 |---|---|---|
 | single region | 76 | HipSTR genotypes it |
-| several regions | 8 | HipSTR genotypes each part; the count is their sum |
+| several regions | 2: DYS449, DYS552 | HipSTR genotypes each part; the count is their sum |
+| span | 6: DYS389II, DYS448, DYS450, DYS504, DYS510, DYS532 | HipSTR genotypes one region from the first part's start to the last part's end; the count is the parts' reference copies plus the change HipSTR finds. DYS389II (164 bp) and DYS448 (156 bp) are longer than 150 bp reads can span, so from such reads they are not callable |
 | multi-copy | 16: DYS385a/b, DYS459a/b, DYS464a-d, YCAIIa/b, CDYa/b, DYF395S1a/b, DYS413a/b | not called. Their copies lie in duplicated, palindromic Y sequence, and short reads cannot tell one copy from another |
 | no region | 11: DYS439, DYS447, DYS437, DYS710, DYS716, DYS441, Y-GGAAT-1B07, DYS712, DYS650, DYS715, DYS726 | not called: the marker set has no region for them |
+
+Why the span markers are one region: HipSTR 0.7 genotypes every region on its own. When the parts of these six went to it one by one, on HG002's 60x reads it wrote no record for one part of each, though their neighbours had 25 to 70 reads, so none of the six got a count. Their parts lie 7 to 47 bp apart, or overlap another marker's region (DYS389II starts where DYS389I starts). DYS449 and DYS552, whose parts it did call, stay as parts.
 
 ## Input
 
@@ -81,23 +84,23 @@ Confidence:
 |---|---|
 | `high` | HipSTR's own haploid filters pass (posterior at least 0.9, at most 15% of the reads with a stutter artifact and at most 15% with an indel in the flanks), and at least 10 reads were used |
 | `low` | a call that fails one of those; the note says which |
-| `no call` | HipSTR wrote no genotype for the marker or for one of its parts (too few reads, or a filter) |
-| `not callable` | multi-copy, no region, or a repeat longer than 150 bp reads can span with 10 bases on each side (DYS452, 155 bp in the reference) |
+| `no call` | HipSTR wrote no genotype for the marker or for one of its parts. When it wrote no record at all, the note quotes the reason from HipSTR's log, such as `Skipping locus with too few reads`, or `Aborting genotyping of the locus as the sequence downstream of the repeat is too repetitive for accurate genotyping` when the bases beside the repeat are themselves repetitive |
+| `not callable` | multi-copy, no region, or a repeat longer than 150 bp reads can span with 10 bases on each side (DYS452, 155 bp in the reference, and the DYS389II and DYS448 spans) |
 
 Both reports get a Y-STR section: the number of markers per confidence and every called marker with its count.
 
 ## Comparing with FamilyTreeDNA
 
 - **A count can differ from FamilyTreeDNA's by a fixed number of repeats.** Labs do not all count the same repeat blocks of a marker, and the region edges of the marker set are not always the edges a lab counts. FamilyTreeDNA does not publish its conventions marker by marker, and we found no published table of the offsets between these regions and FamilyTreeDNA's counts (searched 2026-10-25), so the table's `offset` column is empty and no count is adjusted. A difference that is the same for every man of a project is a convention, not a mutation. The safe comparison is with a relative or project member who also has a genome, or with one known FamilyTreeDNA result of the same man.
-- FamilyTreeDNA reports DYS389II as the sum total of DYS389I and DYS389II (its guide says so). The two regions of DYS389II here span the whole locus, the DYS389I stretch included, so this count covers both too.
+- FamilyTreeDNA reports DYS389II as the sum total of DYS389I and DYS389II (its guide says so). The DYS389II span here starts where DYS389I starts, so its count would cover both too. At 164 bp it is longer than 150 bp reads can span, so from such reads DYS389II is not callable; DYS389I is.
 - FamilyTreeDNA lists DYS385, DYS459, DYS464, YCAII, CDY, DYF395S1 and DYS413 as two or four values; those are the not callable rows here.
 
 ## Runtime
 
-Seconds to a few minutes: HipSTR reads 93 short regions of chrY.
+Seconds to a few minutes: HipSTR reads 86 short regions of chrY.
 
 ## Notes
 
 - Short reads at 30x put about 15 reads on each Y region (one copy). A repeat near the read length gets fewer reads that span it, so its call is `low` or `no call` more often.
 - HipSTR is built for Illumina short reads; long-read BAMs are not tested here.
-- The e2e case reads HG002's reads at every region from GIAB's 60x BAM, and checks the step against the Nextflow process on the fixture's own BAM.
+- The e2e case reads HG002's reads at every region from GIAB's 60x BAM, checks each high call, the span markers included, against a count made from the reads themselves, keeps HipSTR's log with the case logs, and checks the step against the Nextflow process on the fixture's own BAM.

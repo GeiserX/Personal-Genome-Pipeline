@@ -43,7 +43,7 @@ process Y_STR {
     HipSTR --bams ${bam} --fasta ${reference} --regions regions.bed --str-vcf ${meta.id}_y_str.vcf.gz \\
         --bam-samps ${meta.id} --bam-libs ${meta.id} --haploid-chrs chrY --def-stutter-model --min-reads 5 \\
         --max-str-len 150 --output-filters --log ${meta.id}_y_str.log
-    ystr_report.py report --panel ${panel} --vcf ${meta.id}_y_str.vcf.gz \\
+    ystr_report.py report --panel ${panel} --vcf ${meta.id}_y_str.vcf.gz --log ${meta.id}_y_str.log \\
         --tsv ${meta.id}_y_str.tsv --csv ${meta.id}_y_str.csv
 
     cat <<-END_VERSIONS > versions.yml

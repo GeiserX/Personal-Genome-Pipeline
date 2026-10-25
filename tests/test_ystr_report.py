@@ -286,8 +286,8 @@ yr.main(["report", "--panel", PANEL, "--vcf", v, "--tsv", os.path.join(sd, "y_st
 path, data = cs.sec_y_str(sd, "S1")
 check("7 collect_summary finds the table", os.path.basename(path or ""), "S1_y_str.tsv")
 check("7 counts per confidence", (data["high"], data["low"], data["not_callable"], data["no_call"]),
-      (1, 1, sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) + 1,
-       111 - 2 - sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) - 1))
+      (1, 1, sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) + 3,  # + DYS452, DYS389II, DYS448: too long
+       111 - 2 - sum(1 for r in panel if r["kind"] in ("multicopy", "absent")) - 3))
 check("7 the markers keep their order", [x["marker"] for x in data["markers"]], names)
 check("7 a sample without the step has no section", cs.sec_y_str(TMP, "nobody"), (None, {}))
 html = "\n".join(rr.ystr_body(data))

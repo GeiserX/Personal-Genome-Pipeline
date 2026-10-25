@@ -62,7 +62,7 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" -
       --bam-samps "$4" --bam-libs "$4" --haploid-chrs chrY --def-stutter-model --min-reads 5 \
       --max-str-len 150 --output-filters --log "$1/$4_y_str.log"
     python3 /pgp-bin/ystr_report.py report --panel /pgp-assets/ystr_panel.tsv --vcf "$1/$4_y_str.vcf.gz" \
-      --tsv "$1/$4_y_str.tsv" --csv "$1/$4_y_str.csv"' \
+      --log "$1/$4_y_str.log" --tsv "$1/$4_y_str.tsv" --csv "$1/$4_y_str.csv"' \
   _ "$O" "$(cpath "$BAM")" "$REF_FASTA_C" "$SAMPLE"
 rm -f "${OUTDIR}/regions.bed"
 

@@ -16,7 +16,10 @@
 #   panel    the smallest FamilyTreeDNA test that has the marker (Y-12, Y-25, Y-37, Y-67, Y-111)
 #   marker   FamilyTreeDNA's name; the copies of a multi-copy marker are a, b, c, d
 #   kind     single    one HipSTR region
-#            parts     several HipSTR regions of one locus; the count is their sum
+#            parts     several HipSTR regions of one locus, genotyped one by one; the count is their sum
+#            span      several HipSTR regions of one locus that lie close together; HipSTR genotypes one
+#                      region from the first part's start to the last part's end, and the count is the
+#                      parts' reference copies (each rounded, halves up) plus that region's change
 #            multicopy the repeat lies in two or more copies of duplicated (palindromic) Y sequence:
 #                      short reads cannot tell the copies apart, so it is not called
 #            absent    no region for it in the HipSTR marker set, so it is not called
@@ -37,7 +40,7 @@ order	panel	marker	kind	regions	motif	offset	note
 9	Y-12	DYS439	absent	.	[GATA]n	.	.
 10	Y-12	DYS389I	single	chrY:12500448-12500495/4/12/DYS389I	.	.	.
 11	Y-12	DYS392	single	chrY:20471987-20472025/3/13/DYS392	[ATA]n	.	.
-12	Y-12	DYS389II	parts	chrY:12500448-12500516/4/17.25/DYS389II.1;chrY:12500564-12500611/4/12/DYS389II.2	[TAGA]n [CAGA]n N48 [TAGA]n [CAGA]n	.	FamilyTreeDNA reports DYS389II as the sum total of DYS389I and DYS389II; the two regions span the whole locus (DYS389II.1 starts where DYS389I starts), so this count covers DYS389I too
+12	Y-12	DYS389II	span	chrY:12500448-12500516/4/17.25/DYS389II.1;chrY:12500564-12500611/4/12/DYS389II.2	[TAGA]n [CAGA]n N48 [TAGA]n [CAGA]n	.	FamilyTreeDNA reports DYS389II as the sum total of DYS389I and DYS389II; the span starts where DYS389I starts, so this count covers DYS389I too
 13	Y-25	DYS458	single	chrY:7999839-7999902/4/16/DYS458	[GAAA]n	.	.
 14	Y-25	DYS459a	multicopy	.	.	.	.
 15	Y-25	DYS459b	multicopy	.	.	.	.
@@ -45,7 +48,7 @@ order	panel	marker	kind	regions	motif	offset	note
 17	Y-25	DYS454	single	chrY:8356115-8356158/4/11/DYS454	.	.	.
 18	Y-25	DYS447	absent	.	.	.	.
 19	Y-25	DYS437	absent	.	[TCTA]n [TCTG]n [TCTA]n	.	.
-20	Y-25	DYS448	parts	chrY:22218923-22218996/6/12.3333/DYS448.1;chrY:22219031-22219078/6/8/DYS448.2	[AGAGAT]n [atagag]2 [agatag]3 [atag]2 agaa [AGAGAT]n	.	.
+20	Y-25	DYS448	span	chrY:22218923-22218996/6/12.3333/DYS448.1;chrY:22219031-22219078/6/8/DYS448.2	[AGAGAT]n [atagag]2 [agatag]3 [atag]2 agaa [AGAGAT]n	.	.
 21	Y-25	DYS449	parts	chrY:8349973-8350033/4/15.25/DYS449.1;chrY:8350056-8350139/4/21/DYS449.2	[TTCT]n N22 [TTCT]n N12 [TTCT]n	.	.
 22	Y-25	DYS464a	multicopy	.	.	.	.
 23	Y-25	DYS464b	multicopy	.	.	.	.
@@ -81,7 +84,7 @@ order	panel	marker	kind	regions	motif	offset	note
 53	Y-67	DYS436	single	chrY:13091948-13091983/3/12/DYS436	.	.	.
 54	Y-67	DYS490	single	chrY:3575724-3575759/3/12/DYS490	.	.	.
 55	Y-67	DYS534	single	chrY:16281076-16281155/4/20/DYS534	.	.	.
-56	Y-67	DYS450	parts	chrY:8258259-8258303/5/9/DYS450.1;chrY:8258317-8258341/5/5/DYS450.2	.	.	.
+56	Y-67	DYS450	span	chrY:8258259-8258303/5/9/DYS450.1;chrY:8258317-8258341/5/5/DYS450.2	.	.	.
 57	Y-67	DYS444	single	chrY:17114310-17114365/4/14/DYS444	.	.	.
 58	Y-67	DYS481	single	chrY:8558337-8558402/3/22/DYS481	[CTT]n	.	.
 59	Y-67	DYS520	single	chrY:7862390-7862473/4/21/DYS520	.	.	.
@@ -122,9 +125,9 @@ order	panel	marker	kind	regions	motif	offset	note
 94	Y-111	DYS712	absent	.	.	.	.
 95	Y-111	DYS593	single	chrY:16473882-16473956/5/15/DYS593	.	.	.
 96	Y-111	DYS650	absent	.	.	.	.
-97	Y-111	DYS532	parts	chrY:8511042-8511078/4/9.25/DYS532.1;chrY:8511088-8511163/4/19/DYS532.2	.	.	.
+97	Y-111	DYS532	span	chrY:8511042-8511078/4/9.25/DYS532.1;chrY:8511088-8511163/4/19/DYS532.2	.	.	.
 98	Y-111	DYS715	absent	.	.	.	.
-99	Y-111	DYS504	parts	chrY:3035197-3035264/4/17/DYS504.1;chrY:3035272-3035283/4/3/DYS504.2	.	.	.
+99	Y-111	DYS504	span	chrY:3035197-3035264/4/17/DYS504.1;chrY:3035272-3035283/4/3/DYS504.2	.	.	.
 100	Y-111	DYS513	single	chrY:15329870-15329953/4/21/DYS513	.	.	.
 101	Y-111	DYS561	single	chrY:14452471-14452528/4/14.5/DYS561	.	.	.
 102	Y-111	DYS552	parts	chrY:11981554-11981613/4/15/DYS552.1;chrY:11981654-11981689/4/9/DYS552.2	.	.	.
@@ -133,7 +136,7 @@ order	panel	marker	kind	regions	motif	offset	note
 105	Y-111	DYS587	single	chrY:15916828-15916912/5/17/DYS587	.	.	.
 106	Y-111	DYS643	single	chrY:15314132-15314186/5/11/DYS643	[CTTTT]n	.	.
 107	Y-111	DYS497	single	chrY:16053588-16053629/3/14/DYS497	.	.	.
-108	Y-111	DYS510	parts	chrY:15188021-15188088/4/17/DYS510.1;chrY:15188102-15188119/4/4.5/DYS510.2;chrY:15188127-15188138/4/3/DYS510.3	.	.	.
+108	Y-111	DYS510	span	chrY:15188021-15188088/4/17/DYS510.1;chrY:15188102-15188119/4/4.5/DYS510.2;chrY:15188127-15188138/4/3/DYS510.3	.	.	.
 109	Y-111	DYS434	single	chrY:12345804-12345839/4/9/DYS434	.	.	.
 110	Y-111	DYS461	single	chrY:18888808-18888851/4/11/DYS461	[TCTG]n [TCTA]n	.	.
 111	Y-111	DYS435	single	chrY:12384503-12384538/4/9/DYS435	.	.	.
