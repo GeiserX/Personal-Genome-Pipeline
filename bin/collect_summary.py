@@ -1976,10 +1976,6 @@ def sec_haplogroup(d, s):
     r = rows[0] if rows else {}
     hg = (r.get("Haplogroup") or (list(r.values())[1] if len(r) > 1 else "") or "").strip('"')
     out = {"haplogroup": hg or ".", "explore": haplogroup_explore("mt", hg)}
-    # The mtDNA sequence as FASTA (step 12, MITO_EXTRACT_CHRM), the file YFull's mtDNA analysis reads.
-    fa = first_existing(d, [f"mito/{s}_chrM.fasta"])
-    if fa:
-        out["share_files"] = [os.path.relpath(fa, d)]
     # haplocheck (step 12 with step 20's Mutect2 calls): a second haplogroup
     # in the allele fractions is another person's DNA in the sample.
     hc = first_existing(d, [f"mito/{s}_haplocheck.txt"])
@@ -2001,14 +1997,9 @@ def sec_y_haplogroup(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no Hg column or no sample row")
     r = rows[0]
     hg = (r.get("Hg") or "").strip()
-    out = {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
-           "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or ".",
-           "explore": haplogroup_explore("y", hg)}
-    # The Y reads only (step 37, Y_PILEUP), the file YFull's Y analysis and the BAM projects read.
-    bam = first_existing(d, [f"y_haplogroup/{s}_chrY.bam"])
-    if bam:
-        out["share_files"] = [os.path.relpath(bam, d)]
-    return p, out
+    return p, {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
+               "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or ".",
+               "explore": haplogroup_explore("y", hg)}
 
 
 def sec_consumer_export(d, s):

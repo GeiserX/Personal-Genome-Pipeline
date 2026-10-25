@@ -1279,23 +1279,20 @@ def mito_lines(d):
     return lines
 
 
-EXPLORE_NOTE = "Nothing is uploaded by this pipeline: an upload shares that file with the service."
+EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
+                "which steps 12 and 37 write beside this result, and what an upload shares.")
 
 
 def explore_lines(d):
     """Where to explore a haplogroup further, the same in both reports: the
-    links built from the branch name, and the files written for those services."""
+    links built from the branch name, then the note."""
     lines = [f"{x['name']}: {x['url']}" for x in d.get("explore", [])]
-    if lines and d.get("share_files"):
-        lines.append("Files for those services: " + ", ".join(d["share_files"]) + ". " + EXPLORE_NOTE)
-    return lines
+    return lines + [EXPLORE_NOTE] if lines else []
 
 
 def explore_html(d):
     rows = [stat(x["name"], f'<a href="{E(x["url"])}">{E(x["url"])}</a>') for x in d.get("explore", [])]
-    if rows and d.get("share_files"):
-        rows.append(small_note("Files for those services: " + ", ".join(d["share_files"]) + ". " + EXPLORE_NOTE))
-    return rows
+    return rows + [small_note(EXPLORE_NOTE)] if rows else []
 
 
 def stat(label, value):
