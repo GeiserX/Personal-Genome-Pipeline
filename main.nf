@@ -35,6 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,6 +83,7 @@ workflow {
         'consumer_export',
         'bloodtype',
         'traits',
+        'archaic',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -110,6 +112,7 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['archaic',          'archaic_data',       '--archaic_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -760,6 +763,30 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Archaic ancestry (opt-in: archaic, step 43) ────────────────────
+    // IBDmix against the Altai and Vindija Neanderthals and the Altai
+    // Denisovan, from the VCF and the table setup.sh --archaic builds; the
+    // genes of the segments come from --hla_genes (GENCODE's gene lines).
+    // Equivalent to scripts/43-archaic.sh.
+    ch_archaic          = Channel.empty()
+    ch_archaic_versions = Channel.empty()
+    if (tools_list.contains('archaic')) {
+        if (!workflow.stubRun && !file("${params.archaic_data}/DONE").exists()) {
+            error "ERROR: --archaic_data ${params.archaic_data} is not a finished archaic table (no DONE); run scripts/setup.sh --archaic <genome_dir> again."
+        }
+        if (!(params.archaic_pop in ['ALL', 'AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
+            error "--archaic_pop must be ALL, AFR, AMR, EAS, EUR or SAS, got '${params.archaic_pop}'."
+        }
+        ARCHAIC_GENOTYPES(
+            ch_vcf.map { meta, vcf, idx -> [meta, vcf] },
+            Channel.value(file(params.archaic_data, checkIfExists: true))
+        )
+        ARCHAIC_IBDMIX(ARCHAIC_GENOTYPES.out.genotypes)
+        ARCHAIC_REPORT(ARCHAIC_IBDMIX.out.segments, ch_hla_genes)
+        ch_archaic          = ARCHAIC_REPORT.out.summary
+        ch_archaic_versions = ARCHAIC_GENOTYPES.out.versions.mix(ARCHAIC_IBDMIX.out.versions, ARCHAIC_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -820,6 +847,7 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_archaic.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -849,7 +877,8 @@ workflow {
             ch_cram_versions,
             ch_family_versions,
             ch_traits_versions,
-            ch_bloodtype_versions
+            ch_bloodtype_versions,
+            ch_archaic_versions
         )
         .map { f -> f.text }
         .unique()
