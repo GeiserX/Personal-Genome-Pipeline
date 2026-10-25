@@ -154,6 +154,7 @@ def test_trio(d):
               a["discordant"] == "3" and b["discordant"] == "0", (a["discordant"], b["discordant"]))
         check("chr1: basis is the parent and the grandparents", a["basis"] == "parent and grandparents", a["basis"])
     pat2 = [r for r in rows if r["side"] == "paternal" and r["chrom"] == "chr2"]
+    check("chr2, paternal: exactly two segments", len(pat2) == 2, pat2)
     check("chr2, paternal: two segments split by the gap, both from the grandmother",
           [(r["ancestor"], near(r["start"], s), near(r["end"], e)) for r, (s, e) in
            zip(pat2, ((1_000_000, 11_000_000), (21_000_000, 31_000_000)))]
@@ -209,6 +210,10 @@ def test_duo(d, vcf):
     check("duo: the maternal side is the other copy, on chr1 and chr2 only",
           mat and all(r["basis"] == "other copy" and r["parent"] == "mum" for r in mat)
           and {r["chrom"] for r in mat} == {"chr1", "chr2"}, mat)
+    want = [("chr1", 1_000_000, 41_000_000), ("chr2", 1_000_000, 11_000_000), ("chr2", 21_000_000, 31_000_000)]
+    check("duo: the other copy covers chr1 and the two chr2 stretches, ends within 50 kb",
+          len(mat) == 3 and all(r["chrom"] == c and near(r["start"], s) and near(r["end"], e)
+                                for r, (c, s, e) in zip(mat, want)), mat)
 
 
 def test_report(d, vcf, members):
