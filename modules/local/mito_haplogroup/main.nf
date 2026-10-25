@@ -65,7 +65,7 @@ process MITO_EXTRACT_CHRM {
     """
     touch ${meta.id}_chrM.vcf.gz
     touch ${meta.id}_chrM.vcf.gz.tbi
-    printf '>${meta.id}_chrM\nN\n' > ${meta.id}_chrM.fasta
+    printf '>${meta.id}_chrM\\nN\\n' > ${meta.id}_chrM.fasta
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
