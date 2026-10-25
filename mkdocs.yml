@@ -204,6 +204,7 @@ nav:
           - "Step 34: CRAM Archive": 34-cram-archive.md
   - Guides:
       - Interpreting Your Results: interpreting-results.md
+      - "Genome Viewer: See the Reads Behind a Finding": viewer.md
       - Multi-Sample Comparison Guide: multi-sample.md
       - Long-Read Sequencing Guide: long-read-guide.md
       - Whole Exome Sequencing (WES) Guide: wes-guide.md

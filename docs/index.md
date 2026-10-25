@@ -112,6 +112,7 @@ graph LR
 ## Guides and reference
 
 - [Interpreting your results](interpreting-results.md): what each report means and what to do with it.
+- [Genome viewer](viewer.md): open any finding in igv.js with your own reads, served from your computer only.
 - [Multi-sample comparison](multi-sample.md): partners, siblings, parents; carrier overlap and shared variants.
 - [Long-read sequencing](long-read-guide.md): Nanopore and PacBio HiFi entry paths and which steps change.
 - [Whole exome sequencing](wes-guide.md): what an exome can and cannot feed into the pipeline.
