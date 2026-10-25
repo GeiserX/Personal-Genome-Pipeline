@@ -249,6 +249,8 @@ def check_map_main(a):
     bad = [r for r in rows if r[4] not in ("0", "1") or r[5] not in ("0", "1")]
     if bad:
         die(f"{a.map}: reference and paint must be 0 or 1, e.g. {bad[0]}")
+    if not any(r[4] == "1" for r in rows):
+        die(f"{a.map}: no reference person")
     problems = map_problems(rows)
     if problems:
         die(f"{a.map}: " + "; ".join(problems))

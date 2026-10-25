@@ -157,6 +157,9 @@ write(os.path.join(pm, "flag.tsv"), "sample\tpopulation\tcontinent\tregion\trefe
       + "".join("\t".join(r) + "\n" for r in rows2) + "y10\tYRI\tAFR\tWAF\ttrue\t0\n")
 raises("check-map: stops on a reference flag other than 0 or 1",
        lambda: af.main(["check-map", "--map", os.path.join(pm, "flag.tsv")]))
+write(os.path.join(pm, "empty.tsv"), "sample\tpopulation\tcontinent\tregion\treference\tpaint\n")
+raises("check-map: stops on a table with no reference person (header only)",
+       lambda: af.main(["check-map", "--map", os.path.join(pm, "empty.tsv")]))
 
 # --- order -------------------------------------------------------------------------
 pops = ["EUR", "EUR", "AFR", "EAS", "AFR"]
