@@ -24,7 +24,17 @@ Checks:
      with e-val >= 0.01 or q0 >= 0.5, and LOH, are left out; the CNVpytor
      deletion and duplication nobody else has are added, with their
      genotype; every record names its caller, the output is sorted; the
-     control: Manta's file alone lacks the CNVpytor deletion.
+     control: Manta's file alone lacks the CNVpytor deletion;
+  4. cnvpytor_to_vcf.py, Delly's read depth (FORMAT RDCN): a 50 Mb PASS
+     deletion with RDCN 2 is set aside and one with RDCN 1 added, a long
+     duplication with RDCN 2 set aside and one with RDCN 3 added, a short
+     precise deletion with RDCN 2 added, a long one with RDCN -1 set aside;
+     on chrX outside the PARs a deletion with RDCN 1 is set aside for a
+     male and added with no sex, a duplication with RDCN 2 added for a male
+     and set aside for a female; in the PAR a male's RDCN 1 deletion is
+     added; the summary and the ##svcallers_added header count what was set
+     aside; the control: every planted call is PASS DEL or DUP, so without
+     the depth check each would be added.
 
 Run: python3 tests/test_annotsv_sv_inputs.py
 """
@@ -290,12 +300,83 @@ def test_extra_callers(w):
           rc == 0 and "none given" in err and [info(r).get("SVCALLER") for r in records(out)] == ["sv_vcf"] * 2, err)
 
 
+DELLY_FMT = "GT:GL:GQ:FT:RCL:RC:RCR:RDCN:DR:DV:RR:RV"
+
+
+def delly_rdcn(chrom, pos, rid, kind, end, rdcn, precise=False):
+    flag = "PRECISE" if precise else "IMPRECISE"
+    return ("{0}\t{1}\t{2}\tN\t<{3}>\t60\tPASS\t{4};SVTYPE={3};END={5}\t" + DELLY_FMT +
+            "\t0/1:-10,0,-10:40:PASS:100:100:100:{6}:10:10:0:0\n").format(chrom, pos, rid, kind, flag, end, rdcn)
+
+
+DEPTH = "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\n" + "".join([
+    delly_rdcn("chr20", 5000000, "DEL_rd2", "DEL", 55000000, "2"),        # 50 Mb, no loss: set aside
+    delly_rdcn("chr1", 10000000, "DEL_rd1", "DEL", 60000000, "1"),        # 50 Mb, one copy: added
+    delly_rdcn("chr1", 100000000, "DUP_rd2", "DUP", 100500000, "2"),      # no gain: set aside
+    delly_rdcn("chr1", 120000000, "DUP_rd3", "DUP", 120500000, "3"),      # a gain: added
+    delly_rdcn("chr1", 150000000, "DEL_short", "DEL", 150000500, "2", precise=True),  # 500 bp: added
+    delly_rdcn("chr1", 160000000, "DEL_rdneg", "DEL", 161000000, "-1"),   # no estimate: set aside
+    delly_rdcn("chrX", 50000000, "DEL_x1", "DEL", 51000000, "1"),         # male: normal, set aside
+    delly_rdcn("chrX", 60000000, "DUP_x2", "DUP", 60500000, "2"),         # male: a gain; female: none
+    delly_rdcn("chrX", 1000000, "DEL_par1", "DEL", 1500000, "1"),         # PAR: a loss for anyone
+])
+PAR_BED = os.path.join(REPO, "assets", "par_grch38.bed")
+
+
+def test_delly_depth(w):
+    base, delly = os.path.join(w, "base.vcf"), os.path.join(w, "delly_rdcn.vcf.gz")
+    with open(base, "w") as f:
+        f.write(BASE)
+    with gzip.open(delly, "wt") as f:
+        f.write(DEPTH)
+    planted = records(DEPTH)
+    check("control: every planted Delly call is PASS DEL or DUP",
+          all(r[6] == "PASS" and r[4] in ("<DEL>", "<DUP>") for r in planted) and len(planted) == 9)
+
+    def added(*extra):
+        rc, out, err = run("cnvpytor_to_vcf.py", "--base", base, "--delly", delly, *extra)
+        ids = {r[2] for r in records(out) if info(r).get("SVCALLER") == "delly"}
+        check("cnvpytor_to_vcf.py {0}exits 0 and adds Delly calls".format(" ".join(extra[:2]) + " " if extra else ""),
+              rc == 0 and ids, err)
+        return rc, ids, out, err
+
+    # No sex and no PAR file first: the arguments step 05 gave before.
+    rc, ids, _, err = added()
+    check("no sex: the 50 Mb deletion with RDCN 2 is set aside", "DEL_rd2" not in ids, ids)
+    check("no sex: the duplication with RDCN 2 is set aside", "DUP_rd2" not in ids, ids)
+    check("no sex: the long deletion with RDCN -1 is set aside", "DEL_rdneg" not in ids, ids)
+    check("no sex: the deletion with RDCN 1, the duplication with RDCN 3 and the short call are added",
+          {"DEL_rd1", "DUP_rd3", "DEL_short"} <= ids, ids)
+    check("no sex: the chrX deletion with RDCN 1 is added", "DEL_x1" in ids, ids)
+    check("no sex: the chrX duplication with RDCN 2 is added", "DUP_x2" in ids, ids)
+
+    rc, ids, out, err = added("--sex", "male", "--par-bed", PAR_BED)
+    check("male: the 50 Mb deletion with RDCN 2 is set aside", "DEL_rd2" not in ids, ids)
+    check("male: the 50 Mb deletion with RDCN 1 is added", "DEL_rd1" in ids, ids)
+    check("male: the duplication with RDCN 2 is set aside", "DUP_rd2" not in ids, ids)
+    check("male: the duplication with RDCN 3 is added", "DUP_rd3" in ids, ids)
+    check("male: the short precise deletion with RDCN 2 is added", "DEL_short" in ids, ids)
+    check("male: the long deletion with RDCN -1 is set aside", "DEL_rdneg" not in ids, ids)
+    check("male: the chrX deletion with RDCN 1 is set aside (one copy is his normal)", "DEL_x1" not in ids, ids)
+    check("male: the chrX duplication with RDCN 2 is added", "DUP_x2" in ids, ids)
+    check("male: the PAR deletion with RDCN 1 is added", "DEL_par1" in ids, ids)
+    check("male: the summary counts the 4 calls set aside",
+          "delly: 5 PASS DEL/DUP calls, 5 added, and 4 PASS calls longer than 1000 bp set aside" in err, err)
+    check("male: the input VCF's header states the same", '##svcallers_added="Callers beside manta: delly: 5 PASS' in out
+          and out.index("##svcallers_added=") < out.index("#CHROM"), out[:400])
+
+    rc, ids, _, err = added("--sex", "female", "--par-bed", PAR_BED)
+    check("female: the chrX duplication with RDCN 2 is set aside", "DUP_x2" not in ids, ids)
+    check("female: the chrX deletion with RDCN 1 is added", "DEL_x1" in ids, ids)
+
+
 def main():
     w = tempfile.mkdtemp()
     try:
         test_inv_filter(w)
         test_svlen(w)
         test_extra_callers(w)
+        test_delly_depth(w)
     finally:
         shutil.rmtree(w)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else "{0} FAILED".format(FAILS))
