@@ -35,6 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -81,6 +82,7 @@ workflow {
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
         'consumer_export',
         'bloodtype',
+        'lpa',
         'traits',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
@@ -760,6 +762,19 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Lp(a): LPA KIV-2 repeat count (opt-in: lpa) ────────────────────
+    // Read depth over the KIV-2 exons against single-copy LPA exons, for each
+    // sample with a BAM. Equivalent to scripts/46-lpa.sh.
+    ch_lpa          = Channel.empty()
+    ch_lpa_versions = Channel.empty()
+    if (tools_list.contains('lpa')) {
+        LPA_REGIONS()
+        LPA_DEPTH(ch_bam, LPA_REGIONS.out.bed)
+        LPA(LPA_DEPTH.out.depth)
+        ch_lpa          = LPA.out.table
+        ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -820,6 +835,7 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -849,7 +865,8 @@ workflow {
             ch_cram_versions,
             ch_family_versions,
             ch_traits_versions,
-            ch_bloodtype_versions
+            ch_bloodtype_versions,
+            ch_lpa_versions
         )
         .map { f -> f.text }
         .unique()
