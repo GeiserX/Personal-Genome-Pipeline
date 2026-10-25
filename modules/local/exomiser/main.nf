@@ -74,8 +74,11 @@ process EXOMISER {
     cpus 4
     memory { 16.GB * task.attempt }
     time { 12.h * task.attempt }
-    // The image's entrypoint is bash, which would read Nextflow's command as a script to run.
-    containerOptions '--entrypoint ""'
+    // The image's entrypoint is bash, which would read Nextflow's command as a
+    // script to run. A process's containerOptions replaces the docker
+    // profile's '--network none', so it is repeated here: Exomiser reads only
+    // its data folder. Singularity runs the command without the entrypoint.
+    containerOptions { workflow.containerEngine == 'singularity' ? '' : '--entrypoint "" --network none' }
 
     publishDir { "${params.outdir}/${meta.id}/exomiser" }, mode: params.publish_dir_mode,
         saveAs: { f -> f.startsWith('results/') ? f.substring(8) : null }
