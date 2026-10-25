@@ -103,14 +103,18 @@ def parse_query(q):
 # --- resolve ------------------------------------------------------------------
 
 def sites_rsid(path, rsid):
-    """(chrom, pos38, ref38) rows of the consumer site table for RSID."""
+    """(chrom, pos38, ref38) rows of the consumer site table for RSID.
+    The table (bin/export_consumer.py) opens with "## key: value" lines and a
+    "#rsid ..." column line."""
     out = []
     with open_text(path) as f:
         head = None
         for line in f:
+            if line.startswith("##") or not line.strip():
+                continue
             c = line.rstrip("\n").split("\t")
             if head is None:
-                head = {k: i for i, k in enumerate(c)}
+                head = {k.lstrip("#"): i for i, k in enumerate(c)}
                 if not {"rsid", "chrom", "pos38", "ref38"} <= set(head):
                     raise ValueError(f"{path}: not a consumer site table (columns {', '.join(c)})")
                 continue

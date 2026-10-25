@@ -50,6 +50,9 @@ require_image BCFTOOLS_IMAGE PYTHON_IMAGE
 S="${GENOME_DIR}/${SAMPLE}"
 REF_DIR=${REF_DIR:-${GENOME_DIR}/reference}
 REF_DIR=${REF_DIR%/}
+# docker -v needs an absolute host path; a relative REF_DIR would be read as
+# a volume name.
+if [ -d "$REF_DIR" ]; then REF_DIR=$(cd "$REF_DIR" && pwd); fi
 
 GVCF="${S}/vcf/${SAMPLE}.g.vcf.gz"
 if [ ! -s "$GVCF" ]; then
