@@ -1977,6 +1977,24 @@ def sec_y_haplogroup(d, s):
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
 
 
+def sec_y_str(d, s):
+    """Step 45's table (y_str/<id>_y_str.tsv, bin/ystr_report.py): one row per
+    FamilyTreeDNA marker with its count and confidence, and the counts per
+    confidence."""
+    p = first_existing(d, [f"y_str/{s}_y_str.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = ("order", "panel", "marker", "count", "confidence")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
+    keep = [{k: r.get(k) or "" for k in need} for r in rows]
+    counts = {c: sum(1 for r in keep if r["confidence"] == c) for c in ("high", "low", "no call", "not callable")}
+    if sum(counts.values()) != len(keep):
+        raise Unreadable(f"{os.path.basename(p)} has a confidence other than high, low, no call or not callable")
+    return p, {"markers": keep, **{k.replace(" ", "_"): v for k, v in counts.items()}}
+
+
 def sec_consumer_export(d, s):
     """Step 40's summary table (key, value): how many chip sites got a genotype."""
     p = first_existing(d, [f"consumer_export/{s}_consumer_export.tsv"])
@@ -2826,6 +2844,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("y_str", "Y-STR markers (HipSTR)", "45", sec_y_str),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("mito", "Mitochondrial variants", "20", sec_mito),
