@@ -55,6 +55,12 @@ REPEATS = {"FMR1": (55, "CGG"), "FXN": (66, "GAA")}
 FMR1_FULL = 201
 SVTYPE = re.compile(r"(?:^|;)SVTYPE=([^;]+)")
 END = re.compile(r"(?:^|;)END=(\d+)")
+# A Delly deletion longer than this needs read depth to agree: its FORMAT RDCN
+# (Delly's read-depth copy number) must be below the copies a normal region
+# has. 1,000 bp is Delly's own line between small and large SVs in its read
+# counts (src/delly.h, indelsize). Short-read Delly can mark PASS a long
+# deletion whose RDCN shows no loss; a short one rests on split reads alone.
+DEPTH_MIN_SIZE = 1000
 
 
 def die(lines, code=2):
@@ -200,8 +206,10 @@ def clinvar_findings(path, genes, sex, par):
 
 
 def delly_findings(path, index, exons, sex, par):
-    """PASS Delly deletions that remove at least one exon of a gene of the list."""
-    out = []
+    """PASS Delly deletions that remove at least one exon of a gene of the list,
+    and the count of long ones set aside because read depth
+    does not confirm the loss (RDCN at the normal count or more, or no estimate)."""
+    out, no_loss = [], 0
     for r in collect_summary.vcf_records(path):
         if len(r) < 10 or r[6] != "PASS":
             continue
@@ -214,20 +222,35 @@ def delly_findings(path, index, exons, sex, par):
             continue
         gt = vals[0] if fmt and fmt[0] == "GT" else ""
         chrom, pos, end = r[0], int(r[1]), int(e.group(1))
-        z = zygosity(gt, chrom, sex, family_report.in_par(par, chrom, pos))
+        in_par = family_report.in_par(par, chrom, pos)
+        z = zygosity(gt, chrom, sex, in_par)
         if z is None:
             continue
+        size = end - pos
+        # Read depth must show the loss for a long deletion: RDCN below the
+        # copies a normal region has (1 on a male's chrX or chrY outside the
+        # PARs, 2 elsewhere). A missing or negative RDCN (no reads in the
+        # flanks) is no evidence of a loss. A VCF without the RDCN field (not
+        # Delly 2.x) is read as before.
+        if size > DEPTH_MIN_SIZE and "RDCN" in fmt:
+            i = fmt.index("RDCN")
+            cn = vals[i] if i < len(vals) else "."
+            normal = 1 if chrom in ("chrX", "chrY") and sex == "male" and not in_par else 2
+            if not (cn.isdigit() and int(cn) < normal):
+                if any(exons_hit(exons, chrom, max(pos, gs - 1), min(end, ge))
+                       for gs, ge, _ in index.overlapping(chrom, pos + 1, end)):
+                    no_loss += 1
+                continue
         # The deleted bases are POS+1 to END (POS is the base before them).
         for gs, ge, g in index.overlapping(chrom, pos + 1, end):
             n = exons_hit(exons, chrom, max(pos, gs - 1), min(end, ge))
             if not n:
                 continue
-            size = end - pos
             text = "deletion %s:%d-%d (%s) %s, %d exon%s of the gene (Delly)" % (
                 chrom, pos + 1, end, ("%.1f kb" % (size / 1000.0)) if size >= 1000 else "%d bp" % size,
                 z, n, "" if n == 1 else "s")
             out.append(finding(g, text, 1 if z == "het" else 2))
-    return out
+    return out, no_loss
 
 
 def eh_findings(path, genes):
@@ -365,7 +388,8 @@ RESIDUAL = [
     "poorly, and a gene conversion is not seen. A deletion there counts only when Delly calls it.",
     "Repeat expansions other than FMR1 and FXN, and the exact size of a long FMR1 or FXN allele: short reads do "
     "not span it.",
-    "Deletions Delly does not call, duplications, inversions and insertions.",
+    "Deletions Delly does not call, deletions longer than %d bp that read depth (Delly's RDCN) does not confirm, "
+    "duplications, inversions and insertions." % DEPTH_MIN_SIZE,
     "Low-level mosaicism, and whether two changes of one person in one gene sit on the same copy.",
 ]
 COUNSEL = ("This is a screen, not a diagnosis, and not medical advice. Before acting on a result, or on its "
@@ -461,8 +485,11 @@ def cmd_screen(a):
                 gaps.append("Deletions of %s: Delly ran, but without the GENCODE exon list a deletion cannot be "
                             "placed on exons." % s)
             else:
-                d = delly_findings(delly[s], index, exons, sexes[s], par)
+                d, no_loss = delly_findings(delly[s], index, exons, sexes[s], par)
                 info["delly"] = "%d over exons of listed genes" % len(d)
+                if no_loss:
+                    info["delly"] += "; %d longer than %d bp set aside, read depth does not confirm the loss" % (
+                        no_loss, DEPTH_MIN_SIZE)
                 f += d
             if s in smn:
                 m, txt = smn_finding(smn[s], genes)
