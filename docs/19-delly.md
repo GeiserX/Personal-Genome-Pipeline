@@ -78,9 +78,9 @@ docker run --rm \
 
 ## Output
 - `${SAMPLE}_sv.bcf` / `${SAMPLE}_sv.vcf.gz` — SV calls in VCF format
-
-Each call carries Delly's read-depth copy number in `FORMAT/RDCN`. Short-read Delly can mark PASS a long deletion or duplication whose RDCN shows no change, so the steps that read these calls check it: a call longer than 1,000 bp joins AnnotSV's input ([step 5](05-annotsv.md#what-annotsv-reads)) and the couple screen ([step 39](39-couple.md)) only when RDCN is below the normal copies for a deletion, or above them for a duplication. A Delly VCF without the RDCN field (not written by Delly 2.x) is read as before, with no depth check. The normal copies on chrX and chrY come from the sex given to those steps (step 5's second argument, step 39's pedigree, or the samplesheet in the Nextflow pipeline).
 - Each SV has type (DEL, DUP, INV, BND, INS), quality, genotype, and supporting read counts
+
+Each call carries Delly's read-depth copy number in `FORMAT/RDCN`. Short-read Delly can mark PASS a long deletion or duplication whose RDCN shows no change, so the steps that read these calls check it: a deletion or duplication longer than 1,000 bp joins AnnotSV's input ([step 5](05-annotsv.md#what-annotsv-reads)) only when RDCN is below the normal copies for a deletion, or above them for a duplication. The couple screen ([step 39](39-couple.md)) reads Delly deletions only, and keeps a long one only when RDCN is below the normal copies. A Delly VCF without the RDCN field (not written by Delly 2.x) is read as before, with no depth check. The normal copies on chrX and chrY come from the sex given to those steps (step 5's second argument, step 39's pedigree, or the samplesheet in the Nextflow pipeline).
 
 ## Filtering
 ```bash
