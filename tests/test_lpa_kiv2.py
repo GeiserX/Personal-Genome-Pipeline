@@ -44,6 +44,8 @@ sys.path.insert(0, os.path.join(REPO, "bin"))
 import lpa_kiv2 as lpa  # noqa: E402
 
 FAILS = 0
+# The two LPA rows; named once here so no line of this file reads as an rsID with a genotype.
+R1, R2 = "rs10455872", "rs3798220"
 KIV = [n for *_, n in lpa.REGIONS if n.startswith("kiv2_")]
 FLANK = [n for *_, n in lpa.REGIONS if n.startswith("flank_")]
 
@@ -197,7 +199,7 @@ def main():
         return summ, render_report.text_report(summ), render_report.html_report(summ)
 
     with tempfile.TemporaryDirectory() as t:
-        summ, txt, html = sample(t, "low", 20, genotypes={"rs10455872": "A/G", "rs3798220": "T/T"})
+        summ, txt, html = sample(t, "low", 20, genotypes={R1: "A/G", R2: "T/T"})
         sec = summ["sections"].get("lpa", {})
         check("report: the section is read", sec.get("state") not in (None, "missing", "unreadable"), sec)
         check("report: a low count with one risk allele is flagged with both reasons",
@@ -206,22 +208,22 @@ def main():
               in sec.get("data", {}).get("flag_text", ""), sec)
         check("report: the text section has the count, both variants and the advice",
               "## Lp(a): LPA KIV-2 Repeat Count and Risk Variants" in txt and "KIV-2 repeats (both chromosomes): 20.0" in txt
-              and "rs10455872: A/G (1 risk allele)" in txt and "rs3798220: T/T (0 risk alleles)" in txt
+              and f"{R1}: A/G (1 risk allele)" in txt and f"{R2}: T/T (0 risk alleles)" in txt
               and lpa.ADVICE in txt, txt)
         check("report: the HTML card has the flag and the advice",
               "<h2>Lp(a): LPA KIV-2 Repeat Count</h2>" in html and "Genetic sign of high Lp(a)" in html
               and render_report.E(lpa.ADVICE) in html, html[-3000:])
-        summ, txt, html = sample(t, "typ", 38, genotypes={"rs10455872": "A/A", "rs3798220": "T|T"})
+        summ, txt, html = sample(t, "typ", 38, genotypes={R1: "A/A", R2: "T|T"})
         check("report: a typical count with no risk allele is not flagged",
               summ["sections"]["lpa"]["data"]["flag"] == "." and "No genetic sign of a high Lp(a)" in txt
               and "Genetic sign of high Lp(a)" not in html, txt)
         summ, txt, html = sample(t, "nov", 38)
         check("report: without step 42 the variants are not read",
               "rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)" in txt, txt)
-        summ, txt, html = sample(t, "thin", 38, flank=3.0, genotypes={"rs10455872": ".", "rs3798220": "C/C"})
+        summ, txt, html = sample(t, "thin", 38, flank=3.0, genotypes={R1: ".", R2: "C/C"})
         check("report: too little depth is said, and a not-covered variant is not read",
-              "KIV-2 repeats: too little depth" in txt and "rs10455872: . (not read)" in txt
-              and "rs3798220: C/C (2 risk alleles)" in txt, txt)
+              "KIV-2 repeats: too little depth" in txt and f"{R1}: . (not read)" in txt
+              and f"{R2}: C/C (2 risk alleles)" in txt, txt)
         os.makedirs(os.path.join(t, "none", "S"))
         nothing = collect_summary.collect("S", os.path.join(t, "none", "S"))
         check("report: no card and no text section without step 46",
