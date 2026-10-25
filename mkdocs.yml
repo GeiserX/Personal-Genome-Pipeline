@@ -194,6 +194,7 @@ nav:
           - "Step 40: Raw-Data Export (23andMe Layout)": 40-export-consumer.md
           - "Step 41: Blood Groups (predicted)": 41-bloodtype.md
           - "Step 42: Traits Panel": 42-traits.md
+          - "Step 46: Lp(a), the LPA KIV-2 Repeat Count": 46-lpa.md
       - Quality control and reports:
           - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
           - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md
