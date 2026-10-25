@@ -36,8 +36,8 @@ check "the FASTA is small (under 20 kB)" test "$(wc -c < "$FA" 2>/dev/null || ec
 
 # The first kept SNV before any kept indel: its position in the FASTA is its
 # position on chrM, so the FASTA base there must be the ALT.
-bcf view -H -i 'FMT/AF>=0.5' "${SAMPLE}/mito/${SAMPLE}_chrM_for_haplogroup.vcf.gz" 2>/dev/null \
-  | awk -F'\t' '{ if (length($4) != 1 || length($5) != 1) exit; print $2 "\t" $4 "\t" $5 }' > "${CASE_TMP}/snvs.tsv"
+bcf view -H -m2 -M2 -v snps -i 'FMT/AF>=0.5' "${SAMPLE}/mito/${SAMPLE}_chrM_for_haplogroup.vcf.gz" 2>/dev/null \
+  | awk -F'\t' '{ print $2 "\t" $4 "\t" $5 }' > "${CASE_TMP}/snvs.tsv"
 sam faidx "reference/${REF##*/}" chrM 2>/dev/null > "${CASE_TMP}/ref_chrM.fa"
 echo "kept SNVs before the first kept indel: $(grep -c . "${CASE_TMP}/snvs.tsv" || true)"
 check_ge "kept SNVs to check" "$(grep -c . "${CASE_TMP}/snvs.tsv" || true)" 1
@@ -137,8 +137,8 @@ if command -v nextflow >/dev/null; then
   check_ge "of mtDNA length" "$(grep -v '^>' "$NFA" 2>/dev/null | tr -d '\n' | wc -c | tr -d ' ')" 16500
   # Without mito_variants its input is the VCF's chrM records: the kept
   # calls are the haploid and homozygous ALT ones.
-  bcf view -H -i 'GT="A" || GT="AA"' -r chrM "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
-    | awk -F'\t' '{ if (length($4) != 1 || length($5) != 1) exit; print $2 "\t" $4 "\t" $5 }' > "${CASE_TMP}/snvs_vcf.tsv"
+  bcf view -H -m2 -M2 -v snps -i 'GT="A" || GT="AA"' -r chrM "${SAMPLE}/vcf/${SAMPLE}.vcf.gz" 2>/dev/null \
+    | awk -F'\t' '{ print $2 "\t" $4 "\t" $5 }' > "${CASE_TMP}/snvs_vcf.tsv"
   check_ge "haploid or homozygous ALT chrM SNVs to check" "$(grep -c . "${CASE_TMP}/snvs_vcf.tsv" || true)" 1
   check "carrying the ALT of each of them" alt_at "$NFA" "${CASE_TMP}/snvs_vcf.tsv"
   check "control: the reference chrM does not" eval '! alt_at "${CASE_TMP}/ref_chrM.fa" "${CASE_TMP}/snvs_vcf.tsv"'
