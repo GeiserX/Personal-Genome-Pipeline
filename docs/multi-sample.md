@@ -46,6 +46,12 @@ In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree
 
    When step 23 (the clinical filter) ran for a child, every pair of its candidate variants the child carries heterozygous in one gene is listed in `compound_het.tsv`: `in trans` when one came from each parent (both copies of the gene are hit), `in cis` when both came from one parent, `unknown` when the genotypes do not tell.
 
+5. **The chromosome map.** For each child with a sequenced parent, `bin/family_segments.py` (run by the report) maps the stretches of each chromosome the child got from that parent. It reads the joint VCF's genotypes at the sites where the parent is heterozygous and the genotypes give the allele passed on. When one of that parent's own parents is sequenced too, each such site also says which of the parent's two copies was passed on, the grandfather's or the grandmother's, and a switch from one to the other along a chromosome is a crossover. Without a sequenced grandparent the stretches say only "from this parent". With one parent sequenced, the child's other copy is written over the same stretches as the copy that did not come from the sequenced parent.
+
+   Isolated sites that point to the other copy are genotype errors or short gene conversions: a run of them becomes a segment of its own only with 20 sites or more over 500 kb or more; a shorter run is absorbed and counted in the segment's `discordant` column. A stretch with no informative site for 5 Mb (a centromere, a gap of the reference) is split there, and a stretch with fewer than 20 informative sites is left out. A segment starts and ends at its first and last informative site, so a crossover lies somewhere in the space between two segments. Autosomes are mapped, and chrX outside the pseudoautosomal regions from the mother only (a father passes his single X whole to a daughter, and none to a son). A section of `family_report.md` counts each child's segments, Mb and crossovers per parent.
+
+   `<child>_dnapainter.csv` holds the same segments in the import format of [DNA Painter](https://dnapainter.com/help/import) (`Chr,Start,End,cM,SNPs,Match,Confidence,Group,Side,Notes,Colour,Ancestor`; `Side` is `paternal` or `maternal`, `Ancestor` the grandparent when one is known). Positions are GRCh38. DNA Painter's import page names no genome build, and matches imported from testing companies usually carry build 37 positions, so a segment here and a match from such a company are offset by the difference between the builds. `cM` is left empty: no genetic map is used. Importing needs a DNA Painter subscription.
+
 Two members marked as partners also get the couple carrier screen of [step 39](39-couple.md): `scripts/39-couple.sh`, or in the Nextflow pipeline the `COUPLE_CARRIER` process of the family workflow (with `clinvar` in `--tools`).
 
 ### Outputs
@@ -60,6 +66,9 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 | `relationships.tsv` | each pair: declared relationship, expected and measured relatedness, opposite homozygotes, sites, verdict and reason |
 | `family.phased.vcf.gz` (+ `.tbi`) | WhatsHap's phasing (only when a child has both parents sequenced) |
 | `<child>_inheritance.tsv.gz` | allele from each parent, site by site |
+| `<child>_segments.tsv` | the chromosome map: child, side, parent, chrom, start, end, length_bp, sites, discordant, ancestor (the grandparent, or `.`), basis (`parent and grandparents`, `parent`, or `other copy`) |
+| `<child>_dnapainter.csv` | the same segments for DNA Painter's import (GRCh38 positions) |
+| `<child>_segments.svg` | the map drawn: per chromosome, the copy from the father above the copy from the mother |
 | `de_novo.tsv`, `compound_het.tsv` | as above |
 | `family_report.md` | all of it in words, pair by pair and child by child |
 
@@ -67,7 +76,8 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 
 - The gVCFs must be DeepVariant's: the GLnexus preset reads DeepVariant's fields.
 - No reads are used for phasing, so an all-heterozygous trio site stays unphased, and a duo is phased only where the genotypes tell.
-- The relatedness is one number per pair for the whole genome. Shared segments (where two people share a stretch of DNA) are not reported.
+- The relatedness is one number per pair for the whole genome. The chromosome map covers a child and its parents (and grandparents); stretches shared by other relatives, such as siblings or cousins, are not reported.
+- The chromosome map needs informative sites: a crossover is placed only between two of them, and with short reads and no sequenced grandparent nothing tells the parent's two copies apart. No genetic map is used, so lengths are in bases, not centimorgans. Two siblings with no sequenced grandparent are not compared with each other.
 - Runtime on whole genomes has not been measured yet; the CI test runs it on 2.45 Mb of the GIAB Ashkenazi trio.
 
 ---
