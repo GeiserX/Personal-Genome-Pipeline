@@ -61,8 +61,26 @@ docker run --rm --network none -v "${GENOME_DIR}:/genome" "${HAPLOCHECK_IMAGE}" 
 | `mito/${SAMPLE}_haplogroup.txt` | haplogrep3's haplogroup and quality |
 | `mito/${SAMPLE}_haplocheck.txt` | haplocheck's report (Mutect2 input only): `Contamination Status` (`YES`, `NO` or `ND`, not determined), `Contamination Level`, the major and minor haplogroups it found |
 | `mito/${SAMPLE}_chrM_for_haplogroup.vcf.gz` | the chrM calls both tools read |
+| `mito/${SAMPLE}_chrM.fasta` | the mtDNA sequence, the file the services below read (about 17 kB). The Nextflow pipeline publishes the same file there (`MITO_EXTRACT_CHRM`) |
 
-Both reports (step 24 and the text report) show the haplogroup and the contamination status, or "not checked" when the input was the step 03 VCF.
+Both reports (step 24 and the text report) show the haplogroup and the contamination status, or "not checked" when the input was the step 03 VCF, and the links of the next section built from the haplogroup.
+
+The FASTA is the reference chrM (the rCRS, in GRCh38) with the sample's majority alleles applied: the Mutect2 calls with an allele fraction of 0.5 or more, or the homozygous calls of the step 03 VCF. A position without a call reads as the reference, so the FASTA is only as complete as the chrM calls. A heteroplasmy below 0.5 is not in it.
+
+## Explore your branch further
+
+A haplogroup is a branch of the maternal family tree. The routes below are free first. Each was checked on its own pages on 2026-10-25; prices and policies change, so read the service's page before you send anything.
+
+**This pipeline never uploads anything.** An upload shares the file with that service, under its own terms. An mtDNA sequence is your maternal line, and through it your mother's, siblings' and maternal relatives' too.
+
+| Route | Cost | What you send | What you get | Checked 2026-10-25 |
+|---|---|---|---|---|
+| FamilyTreeDNA Discover, `https://discover.familytreedna.com/mtdna/<haplogroup>` | free, no account | nothing: you look the branch up | the branch's age, the countries its testers name, ancient DNA samples on it, a migration map | the page loads its data from `https://discover.familytreedna.com/resources/mtdna/<haplogroup>.json`, which answered for `H5a7` with no login; its search (`/HaplogroupSearchMt/<name>`) found `H5a7` exactly |
+| YFull MTree, `https://www.yfull.com/mtree/<haplogroup>/` | free to browse | nothing | the branch on YFull's mtDNA tree, with its age estimates | `/mtree/H5a7/` answers 200 |
+| Decoding Us Navigator, `https://decoding-us.com/download` | free | nothing: the app runs on your computer and reads your BAM or CRAM | haplogroup placement and coverage metrics; you choose later whether to publish anonymised summaries | an alpha (v0.1.0-beta.1, 2026-09-03); its mtDNA tree is on T2T-CHM13 coordinates, not the rCRS names haplogrep3 uses; we have not run it on a GRCh38 BAM |
+| YFull mtDNA analysis | free after a paid YFull Y analysis (step 37) | the FASTA above | your branch on the MTree, your mutations against the rCRS and the RSRS | YFull's FAQ says it analyses FASTA files of the full mtDNA sequence; its order page says the free mtDNA analysis opens only after payment for the Y. We found no mtDNA-only order on its site |
+
+Names differ between trees. haplogrep3 uses PhyloTree 17 names (`phylotree-fu-rcrs@1.2`); FamilyTreeDNA Discover uses its own Mitotree (release 2026.10.07 on the day we checked), and YFull its MTree, which started from PhyloTree 17. If a link shows no page, type the haplogroup into the service's search: Discover offers the nearest branch it has.
 
 ## Runtime
 4 to 22 seconds for the chrM extraction, haplogrep3 and haplocheck together, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)).

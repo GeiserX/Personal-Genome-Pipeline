@@ -49,8 +49,33 @@ Yleaf downloads the whole hg38 FASTA on its first run unless its config file nam
 | `y_haplogroup/${SAMPLE}_y_haplogroup.txt` | Yleaf's prediction: `Hg` (the haplogroup), `Hg_marker`, `Total_reads`, `Valid_markers` (Y markers with haplogroup information and enough reads), `QC-score` |
 | `y_haplogroup/yleaf/` | Yleaf's working files: the markers it read with their alleles and its log |
 | `y_haplogroup/positions.txt` | the marker positions the pileup was made at |
+| `y_haplogroup/${SAMPLE}_chrY.bam` and `.bai` | the BAM's chrY reads only, the file the services below read; the Nextflow pipeline publishes the same file there (`Y_PILEUP`) |
 
 `Hg` is `NA` when too few markers had reads for a call; the step then prints `Y haplogroup: insufficient markers` with the marker count, and both reports say "insufficient markers".
+
+With a call, both reports add the links of the next section, built from the branch name (for `R-M269*(xR-L23)`, Yleaf's mark for "R-M269 but none of these sub-branches", the links use `R-M269`).
+
+## Explore your branch further
+
+A haplogroup is a branch of the paternal family tree. Other people's tests tell you more about that branch: how old it is, where its men live today, which ancient remains carry it. The routes below are free first. Each was checked on its own pages on 2026-10-25; prices and policies change, so read the service's page before you send anything.
+
+**This pipeline never uploads anything.** An upload shares the file with that service, under its own terms. A BAM of chrY tells a service your paternal line and nothing about your other chromosomes, but it is still your DNA, and through the paternal line it is your father's, brothers' and sons' too.
+
+| Route | Cost | What you send | What you get | Checked 2026-10-25 |
+|---|---|---|---|---|
+| FamilyTreeDNA Discover, `https://discover.familytreedna.com/y-dna/<branch>` | free, no account | nothing: you look the branch up | the branch's age (when it formed, and its most recent common ancestor), the countries its testers name, ancient DNA samples on it, a migration map, its sub-branches | the page loads its data from `https://discover.familytreedna.com/resources/y-dna/<branch>.json`, which answered for `R-M269` with no login; its search (`/HaplogroupSearch/<name>`) found `R-M269` exactly |
+| YFull YTree, `https://www.yfull.com/tree/<branch>/` | free to browse | nothing | the branch on YFull's tree, with its age estimates and the samples placed under it | `/tree/R-M269/` answers 200, a branch YFull does not have answers 404 |
+| Decoding Us Navigator, `https://decoding-us.com/download` | free | nothing: the app runs on your computer | haplogroup placement and coverage metrics from your BAM or CRAM; you choose later whether to publish anonymised summaries | the site says it accepts no file uploads and that raw data never leaves your computer; the Navigator is an alpha (v0.1.0-beta.1, 2026-09-03). Its trees are built on T2T-CHM13; we have not run it on a GRCh38 BAM |
+| YFull Y analysis, `https://www.yfull.com/order/` | €44 plus VAT, paid after the analysis | a link to a shared BAM or CRAM (YFull does not accept FASTQ; a VCF only for Big Y) | your terminal branch, your novel SNPs, STRs, age estimates, and comparison with YFull's samples; the mtDNA analysis is then free in the same account | YFull's pages do not say whether a BAM with chrY only is enough; we have not tried it |
+
+The two volunteer projects older guides name:
+
+- **James Kane's YDNA Warehouse**: `ydna-warehouse.org` now redirects to Decoding Us (the row above).
+- **Alex Williamson's The Big Tree**: `thebigtree.org` had no DNS record on 2026-10-25, so we could not check whether it takes uploads. Treat it as unavailable.
+
+Names differ between trees. Yleaf names branches the YFull way; FamilyTreeDNA keeps its own tree. If Discover shows no page for your branch, type the branch name, or the SNP after the dash, into Discover's search: it offers the nearest branch it has (a search for YFull's `A0-T` returns FamilyTreeDNA's `A-L1098`).
+
+**Private SNPs**, the Y mutations you carry that are on no public tree, are what would place you below your branch, next to the men closest to you. This pipeline does not list them yet: that needs the callable regions of chrY and a public SNP list beyond the markers Yleaf ships. YFull's analysis reports them as novel SNPs.
 
 ## Runtime
 
