@@ -20,7 +20,9 @@ Checks:
   4. in a headless Chrome the page starts igv.js on that config (status
      "ready", nothing blocked by the policy) and igv.js reads the BAM and its
      index by range; skipped without Chrome, except in CI;
-  5. the HTML report links each ClinVar hit to the viewer at its position.
+  5. the HTML report links each ClinVar hit, each mitochondrial variant and
+     each secondary-findings variant to the viewer at its position; a file
+     name with a space, '#' or '?' is served from its percent-encoded URL.
 """
 
 import gzip
@@ -34,6 +36,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -288,6 +291,23 @@ def main():
         check("server: a path it does not serve is 404", code == 404 and code2 == 404, (code, code2))
         code, _, _ = get(f"{base}/config.json", {"Host": "attacker.example:8765"})
         check("server: a foreign Host header is 403", code == 403, code)
+        # a file name with a space, '#' and '?' (a REF_FASTA the user named so)
+        odd = f"{work}/odd"
+        os.makedirs(odd)
+        shutil.copy(fa, f"{odd}/my ref#1?.fasta")
+        shutil.copy(fa + ".fai", f"{odd}/my ref#1?.fasta.fai")
+        ocfg, ofiles = serve.build_config("S", f"{odd}/my ref#1?.fasta")
+        osrv = serve.make_server(ocfg, ofiles, igv, 0, quiet=True)
+        threading.Thread(target=osrv.serve_forever, daemon=True).start()
+        try:
+            obase = f"http://127.0.0.1:{osrv.server_address[1]}"
+            code, _, body = get(f"{obase}/{ocfg['reference']['fastaURL']}", {"Range": "bytes=0-4"})
+            check("server: a file name with a space, '#' or '?' is served from its encoded URL",
+                  ocfg["reference"]["fastaURL"] == "data/0/my%20ref%231%3F.fasta" and code == 206 and body == b">chr1",
+                  (ocfg["reference"]["fastaURL"], code, body))
+        finally:
+            osrv.shutdown()
+            osrv.server_close()
 
         # 4. the page in a headless browser
         chrome = find_chrome()
@@ -329,6 +349,19 @@ def main():
         check("report: the ClinVar hit links to the viewer at its position",
               'href="http://127.0.0.1:8765/#chr1:451"' in html and "scripts/pgp-view.sh" in html,
               [l for l in html.splitlines() if "ClinVar" in l][:5])
+        summ = collect_summary.collect("S", d)
+        for k in ("mito", "clinical"):
+            summ["sections"][k]["state"] = "ok"
+        summ["sections"]["mito"]["data"]["annotation"] = {
+            "source": "synthetic", "variants": [{"pos": 3243, "ref": "A", "alt": "G"}]}
+        summ["sections"]["clinical"]["data"]["acmg_sf"] = {
+            "version": "v3.3",
+            "clinvar_hits": [{"gene": "GENEC", "variant": "chr2:120 A>G", "genotype": "0/1", "significance": "Pathogenic"}],
+            "high_impact": [{"gene": "GENED", "variant": "chr1:2000 C>T", "genotype": "0/1", "consequence": "stop_gained"}]}
+        html = render_report.html_report(summ)
+        want = [f'href="http://127.0.0.1:8765/#{x}"' for x in ("chrM:3244", "chr2:120", "chr1:2000")]
+        check("report: the mito and secondary-findings variants link to the viewer at their positions",
+              all(w in html for w in want), [l for l in html.splitlines() if "8765" in l][:5])
     finally:
         if proc and proc.poll() is None:
             proc.terminate()
