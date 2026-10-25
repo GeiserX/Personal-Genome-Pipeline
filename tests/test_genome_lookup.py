@@ -26,10 +26,12 @@ Checks:
 
 Run: python3 tests/test_genome_lookup.py
 """
+import atexit
 import gzip
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -97,7 +99,11 @@ GTF = "\n".join([
     'chr7\tHAVANA\tgene\t640\t660\t.\t-\t.\tgene_id "ENSG2"; gene_type "lncRNA"; gene_name "GENEZ"; level 2;',
 ]) + "\n"
 
-SITES = "rsid\tchrom\tpos37\tref37\tpos38\tref38\tstrand\nrs2002\t7\t140\tA\t150\tA\t+\nrs3003\tMT\t73\tA\t73\tA\t+\n"
+# The layout bin/export_consumer.py writes: "## key: value" lines, then a
+# "#rsid ..." column line, then the sites.
+SITES = ("## consumer sites: synthetic\n## template_sites: 2\n## kept: 2\n## dropped: 0\n"
+         "#rsid\tchrom\tpos37\tref37\tpos38\tref38\tstrand\n"
+         "rs2002\t7\t140\tA\t150\tA\t+\nrs3003\tMT\t73\tA\t73\tA\t+\n")
 
 SUMMARY = {"sections": {
     "pharmcat": {"title": "PharmCAT", "step": "07", "state": "ok",
@@ -122,6 +128,7 @@ def run_report(**kw):
 
 def main():
     tmp = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, tmp, True)
     p = lambda n: os.path.join(tmp, n)  # noqa: E731
     with gzip.open(p("g.vcf.gz"), "wt") as f:
         f.write(GVCF)
