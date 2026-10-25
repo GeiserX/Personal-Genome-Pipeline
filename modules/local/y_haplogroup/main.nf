@@ -11,7 +11,9 @@
     three processes, as in scripts/37-y-haplogroup.sh (bin/yleaf_run.py
     says why):
       Y_POSITIONS   Yleaf's GRCh38 marker positions (Yleaf image, once)
-      Y_PILEUP      samtools idxstats and the pileup at those positions
+      Y_PILEUP      samtools idxstats and the pileup at those positions, and
+                    <id>_chrY.bam (+ .bai), the chrY reads only: the file
+                    YFull and the Y-DNA projects read. Nothing is uploaded.
       Y_HAPLOGROUP  Yleaf on that pileup, offline; Hg NA means too few Y
                     markers had reads to call a haplogroup
     Each process also does the same for the current YFull YTree in
@@ -70,6 +72,8 @@ process Y_PILEUP {
     tag "$meta.id"
     label 'process_single'
 
+    publishDir { "${params.outdir}/${meta.id}/y_haplogroup" }, mode: params.publish_dir_mode, pattern: "*_chrY.bam*"
+
     input:
     tuple val(meta), path(bam), path(bai)
     path(positions)
@@ -78,6 +82,7 @@ process Y_PILEUP {
     output:
     tuple val(meta), path(bam), path(bai), path("${meta.id}_idxstats.txt"), path("${meta.id}_y_pileup.txt"),
           path("${meta.id}_y_tree_pileup.txt"),                                                              emit: pileup
+    tuple val(meta), path("${meta.id}_chrY.bam"), path("${meta.id}_chrY.bam.bai"),                           emit: chry_bam
     path "versions.yml",                                                                                     emit: versions
 
     when:
@@ -93,6 +98,8 @@ process Y_PILEUP {
     else
         touch ${meta.id}_y_tree_pileup.txt
     fi
+    samtools view -b -o ${meta.id}_chrY.bam ${bam} chrY
+    samtools index ${meta.id}_chrY.bam
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -102,7 +109,7 @@ process Y_PILEUP {
 
     stub:
     """
-    touch ${meta.id}_idxstats.txt ${meta.id}_y_pileup.txt ${meta.id}_y_tree_pileup.txt
+    touch ${meta.id}_idxstats.txt ${meta.id}_y_pileup.txt ${meta.id}_y_tree_pileup.txt ${meta.id}_chrY.bam ${meta.id}_chrY.bam.bai
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

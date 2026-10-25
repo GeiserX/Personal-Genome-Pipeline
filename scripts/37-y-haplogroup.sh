@@ -12,7 +12,9 @@
 #
 # Output: y_haplogroup/<sample>_y_haplogroup.txt, Yleaf's prediction table
 # (Hg, Hg_marker, Total_reads, Valid_markers, QC-score). Hg NA means too few
-# markers had reads to call one (the step says so).
+# markers had reads to call one (the step says so). Also
+# y_haplogroup/<sample>_chrY.bam (+ .bai): the BAM's chrY reads only, the file
+# YFull and the Y-DNA projects read (docs/37-y-haplogroup.md). Nothing is uploaded.
 # Yleaf 3.2.1's tree is YFull v10.01. The step also places the sample on the
 # current YFull YTree (setup.sh --yleaf-data installs it in <data>/ytree) with
 # bin/y_tree_place.py: y_haplogroup/<sample>_y_tree.txt (the terminal branch,
@@ -33,6 +35,7 @@ BAM="${S}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
 PED="${S}/indexcov/indexcov-indexcov.ped"
 OUTDIR="${S}/y_haplogroup"
 OUT="${OUTDIR}/${SAMPLE}_y_haplogroup.txt"
+CHRY="${OUTDIR}/${SAMPLE}_chrY.bam"
 YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 YTREE="${YDATA}/ytree"
 
@@ -57,7 +60,7 @@ if [ "$SEX" != male ]; then
 fi
 
 mkdir -p "$OUTDIR"
-rm -rf "${OUTDIR}/yleaf" "$OUT" "${OUTDIR}/${SAMPLE}_y_tree.txt" "${OUTDIR}/${SAMPLE}_y_tree_path.tsv"
+rm -rf "${OUTDIR}/yleaf" "$OUT" "${OUTDIR}/${SAMPLE}_y_tree.txt" "${OUTDIR}/${SAMPLE}_y_tree_path.tsv" "$CHRY" "${CHRY}.bai"
 TREE=false
 [ -s "${YTREE}/version.txt" ] && TREE=true
 # The Yleaf image has no samtools, and Yleaf downloads the whole hg38 FASTA
@@ -72,10 +75,11 @@ if $TREE; then
   run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
     python3 /pgp-bin/y_tree_place.py positions --tree-dir "$(cpath "$YTREE")" "${O}/tree_positions.txt"
 fi
-echo "[2/3] Pileup at those positions (samtools)..."
+echo "[2/3] Pileup at those positions, and the chrY reads as their own BAM (samtools)..."
 run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
-  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"' \
-  _ "$(cpath "$BAM")" "$O"
+  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"
+   samtools view -b -o "$3" "$1" chrY && samtools index "$3"' \
+  _ "$(cpath "$BAM")" "$O" "$(cpath "$CHRY")"
 if $TREE; then
   run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
     'samtools mpileup -l "$2/tree_positions.txt" -AQ20q1 "$1" > "$2/tree_pileup.txt"' _ "$(cpath "$BAM")" "$O"
@@ -112,3 +116,4 @@ echo "  (Yleaf ${YLEAF_DATA_VERSION}, on its own tree, YFull v10.01)"
 echo "$TREE_LINE"
 echo "Results: ${OUT}"
 if $TREE; then echo "Current tree: ${OUTDIR}/${SAMPLE}_y_tree.txt, per level: ${OUTDIR}/${SAMPLE}_y_tree_path.tsv"; fi
+echo "Y reads for YFull or a Y-DNA project: ${CHRY} (nothing is uploaded; docs/37-y-haplogroup.md lists the routes)"
