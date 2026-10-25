@@ -157,13 +157,19 @@ def csq_format(header_lines):
 
 
 class Vcf:
-    """A VCF read once: its header, CSQ field names, first sample, records."""
+    """A VCF read once: its header, CSQ field names, first sample, records.
 
-    def __init__(self, path):
+    With chrom, start and end, only the records that overlap that region
+    (reference blocks by their END) are kept, so a whole unindexed genome
+    streams through in bounded memory; the reports filter on the same rule.
+    """
+
+    def __init__(self, path, chrom=None, start=None, end=None):
         self.path = path
         self.header = []
         self.samples = []
         self.records = []
+        want = norm_chrom(chrom) if chrom is not None else None
         with open_text(path) as f:
             for line in f:
                 if line.startswith("##"):
@@ -172,7 +178,16 @@ class Vcf:
                     self.samples = line.rstrip("\n").split("\t")[9:]
                 else:
                     c = line.rstrip("\n").split("\t")
-                    if len(c) >= 8:
+                    if len(c) < 8:
+                        continue
+                    if want is not None:
+                        if norm_chrom(c[0]) != want or not c[1].isdigit() or int(c[1]) > end:
+                            continue
+                        r = Record(c)
+                        if r.end < start:
+                            continue
+                        self.records.append(r)
+                    else:
                         self.records.append(Record(c))
         self.csq = csq_format(self.header)
 
@@ -579,8 +594,9 @@ def report_gene(a, gvcf, ann):
 
 
 def report(a):
-    gvcf = Vcf(a.gvcf)
-    ann = Vcf(a.annotated) if a.annotated else None
+    region = (a.chrom, a.start, a.end)
+    gvcf = Vcf(a.gvcf, *region)
+    ann = Vcf(a.annotated, *region) if a.annotated else None
     if a.kind == "site":
         report_site(a, gvcf, ann)
     else:

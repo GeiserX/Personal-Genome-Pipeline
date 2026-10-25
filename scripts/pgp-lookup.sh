@@ -99,7 +99,8 @@ trap 'rm -rf "$TMP"' EXIT
 # slice VCF OUT REGION: the records of VCF that overlap REGION (reference
 # blocks by their END), with the header. Without a .tbi, or when bcftools
 # cannot read the region, the whole file is passed on instead: slower, the
-# same answer, because the report skips records outside the region.
+# same answer, because the report streams it and keeps only the records that
+# overlap the region, so memory stays small even on a whole genome.
 slice() {
   local vcf=$1 out=$2 region=$3
   if [ -s "${vcf}.tbi" ] || [ -s "${vcf}.csi" ]; then

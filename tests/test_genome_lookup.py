@@ -19,7 +19,10 @@ Checks:
      gene at the same span), the share of bases with a call, and the reports
      that mention the gene (a section that did not run is not read); without
      an annotated VCF the gVCF's own alt calls are listed;
-  5. the command line resolves and reports end to end.
+  5. the command line resolves and reports end to end;
+  6. a region given to Vcf keeps only the records that overlap it (a
+     reference block by its END, a deletion by its span), so a whole file
+     read without an index stays in bounded memory.
 
 Run: python3 tests/test_genome_lookup.py
 """
@@ -227,6 +230,20 @@ def main():
     nos.pop("summary")
     rc, out = run_report(query="GENEA", kind="gene", start=90, end=700, **nos)
     check("without summary.json the answer says how to get one", "no summary.json for this sample" in out, out)
+
+    # 6. a region keeps only the records that overlap it, so an unindexed
+    # whole genome read whole stays in bounded memory
+    def kept(path, chrom, start, end):
+        return [r.pos for r in gl.Vcf(path, chrom, start, end).records]
+    check("region: a reference block is kept by its END", kept(p("g.vcf.gz"), "chr7", 150, 150) == [100],
+          kept(p("g.vcf.gz"), "chr7", 150, 150))
+    check("region: a deletion is kept by the bases it spans", kept(p("g.vcf.gz"), "7", 503, 503) == [500],
+          kept(p("g.vcf.gz"), "7", 503, 503))
+    check("region: a gap keeps nothing", kept(p("g.vcf.gz"), "chr7", 300, 399) == [],
+          kept(p("g.vcf.gz"), "chr7", 300, 399))
+    check("region: another contig keeps nothing", kept(p("g.vcf.gz"), "chr8", 1, 1000) == [],
+          kept(p("g.vcf.gz"), "chr8", 1, 1000))
+    check("region: no region keeps every record", len(gl.Vcf(p("g.vcf.gz")).records) == 7)
 
     # 5. command line
     r = subprocess.run([sys.executable, SCRIPT, "resolve", "--query", "rs2002", "--sites", p("sites.tsv.gz")],

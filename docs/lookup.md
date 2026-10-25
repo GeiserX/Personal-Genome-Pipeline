@@ -87,7 +87,7 @@ Two ClinVar lines can appear. `ClinVar (pipeline's ClinVar file)` comes from the
 
 ## Runtime
 
-A site or a gene takes a few seconds with indexed files: bcftools reads only the region, and a container starts for each pass. An rsID that is in neither the site table nor the pipeline tables makes the command read the whole annotated VCF once, which takes minutes on a whole genome. A file without a `.tbi` index is read whole too, with a note; `bcftools index -t` makes it fast.
+A site or a gene takes a few seconds with indexed files: bcftools reads only the region, and a container starts for each pass. An rsID that is in neither the site table nor the pipeline tables makes the command read the whole annotated VCF once, which takes minutes on a whole genome. A file without a `.tbi` index is streamed whole, with a note: the answer is the same and only the records in the region are kept in memory, but on a whole genome it takes minutes. `bcftools index -t` makes it fast.
 
 ## Notes
 
