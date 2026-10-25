@@ -538,6 +538,13 @@ def structural(d, rng):
                      f"{min(1, p * 9):.4e}\t{rng.uniform(0, 0.5):.4f}\t{rng.uniform(0, 0.1):.4f}\t{rng.randint(0, 9)}")
     put(os.path.join(d, "cnvpytor", f"{SAMPLE}_cnvs.txt"), "\n".join(lines) + "\n")
 
+    # Step 05's class 4 and 5 SVs, checked (bin/annotsv_postfilter.py's
+    # columns): none, as in most genomes.
+    import annotsv_postfilter
+    cols = ["SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Gene_name", "ACMG_class"]
+    put(os.path.join(d, "annotsv", f"{SAMPLE}_sv_class4_5_checked.tsv"),
+        "\t".join(cols + annotsv_postfilter.ADDED) + "\n")
+
 
 # --- repeats, telomeres, ROH, mitochondria, Y: steps 09, 10, 11, 12, 20, 37 --------------
 
@@ -750,6 +757,12 @@ def paralogs(d):
     os.makedirs(out, exist_ok=True)
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_copy_number.tsv"), pr.CN_HEADER, pr.cn_table(data))
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_variants.tsv"), pr.VARIANT_HEADER, [])
+    # Step 35 (Parascopy, short reads): two SMN1 and two SMN2 copies at exon 7,
+    # in the columns of its <s>_smn_copy_number.tsv.
+    put(os.path.join(out, f"{SAMPLE}_smn_copy_number.tsv"),
+        "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+        "homologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t2,2\t33,30\t"
+        "chr5:70049000-70077000:-\n")
 
 
 def couple(d, rng):
