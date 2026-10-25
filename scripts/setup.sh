@@ -132,7 +132,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --ancient-panel"
   echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
-  echo "                deleted once built; ~1 GB kept; needs about 8 GB of free RAM) and pull EIGENSOFT; then exit."
+  echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -413,10 +413,10 @@ consumer_sites_pin_check() {
 #   DONE, written last, once a second smartpca run on moderns.* alone gives
 #        the same axes, which is how step 44 runs.
 # smartpca holds the whole genotype file in memory (7.1 GB for the 23,089
-# people of v66.p1), so the install needs about 8 GB of free RAM. The AADR
-# downloads (7.3 GB) are deleted once the panel is built; the panel keeps
-# about 1 GB. ANCIENT_SOURCE_DIR=<folder> takes the four files (.anno, .ind,
-# .snp, .geno) from that folder instead, unchecked (the tests' synthetic panel).
+# people of v66.p1), so the install gives it a 12 GB container and needs that
+# much free RAM. The AADR downloads (7.3 GB) are deleted once the panel is
+# built. ANCIENT_SOURCE_DIR=<folder> takes the four files (.anno, .ind, .snp,
+# .geno) from that folder instead, unchecked (the tests' synthetic panel).
 HG19_TO_HG38_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
 install_ancient_panel() {
   local base="${GENOME_DIR}/reference/ancient" dir part raw chain e url md5 f src=${ANCIENT_SOURCE_DIR:-}

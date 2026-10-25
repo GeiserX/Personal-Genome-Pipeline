@@ -23,7 +23,7 @@ Most people who look at their ancestry want to know where they fall among ancien
 ## Input
 
 - `${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz` with its `.tbi`: the gVCF of [step 3](03-variant-calling.md). A site where you match the reference reads as a real genotype and a site without reads stays missing; a variant-only VCF cannot tell those apart. The gVCF must hold one sample.
-- The panel `setup.sh --ancient-panel` builds in `reference/ancient/aadr_<release>/` (`ANCIENT_PANEL_DIR` picks another folder, `ANCIENT_PANEL_DIR=none` skips the step). Without it the step prints one line saying so and exits 0.
+- The panel `setup.sh --ancient-panel` builds in `reference/ancient/aadr_<release>/` (`ANCIENT_PANEL_DIR` picks another folder inside `GENOME_DIR`, `ANCIENT_PANEL_DIR=none` skips the step). Without it the step prints one line saying so and exits 0.
 
 In the Nextflow pipeline (`ancient` in `--tools`, with `--ancient_panel <folder>`) the processes `ANCIENT_SITES`, `ANCIENT_GENO`, `ANCIENT_PCA` and `ANCIENT_REPORT` run the same commands for every sample with a gVCF; a sample without one is skipped with a warning. `run-all.sh` lists the step only when `TOOLS` names `ancient`, and passes the panel when its `DONE` file exists.
 
@@ -32,11 +32,11 @@ In the Nextflow pipeline (`ancient` in `--tools`, with `--ancient_panel <folder>
 `scripts/setup.sh --ancient-panel <genome_dir>` builds it once:
 
 1. Downloads the AADR release `AADR_VERSION` (v66.p1, 1240K) from Harvard Dataverse: the `.anno`, `.ind`, `.snp` and the 7.1 GB `.geno`, each checked against the md5 Dataverse publishes (`AADR_*_MD5` in `versions.env`). UCSC's hg19ToHg38 chain is checked against `HG19_TO_HG38_CHAIN_SHA256`.
-2. Chooses the people. The axes come from 41 present-day groups of Europe, the Caucasus and the Near East (shotgun diploid genomes of the 1000 Genomes Project, HGDP and SGDP, about 850 people; North African groups and groups with recent East Eurasian ancestry are left out). The projected people are the ancient ones the AADR's own assessment passes, dated, with at least 100,000 of the 1240K sites covered, between latitudes 25 and 75 and longitudes -25 and 75, one entry per individual (the one with most sites).
-3. Lifts the 1240K sites from GRCh37 to GRCh38 and keeps the autosomal sites one of whose two alleles is the GRCh38 reference base; a site the chain places twice, or on another chromosome, is dropped. On v66.p1 that keeps about 1.15 million of the 1.23 million sites.
+2. Chooses the people. The axes come from 41 present-day groups of Europe, the Caucasus and the Near East (shotgun diploid genomes of the 1000 Genomes Project, HGDP and SGDP, about 820 people; North African groups and groups with recent East Eurasian ancestry are left out). The projected people are the ancient ones the AADR's own assessment passes, dated, with at least 100,000 of the 1240K sites covered, between latitudes 25 and 75 and longitudes -25 and 75, one entry per individual (the one with most sites).
+3. Lifts the 1240K sites from GRCh37 to GRCh38 and keeps the autosomal sites one of whose two alleles is the GRCh38 reference base; a site the chain places twice, or on another chromosome, is dropped.
 4. Runs smartpca on the whole release with the present-day groups as the population list and every ancient person projected (`panel.evec`), then runs it again on the present-day people alone, as step 44 does, and stops if any of the 10 axes of the two runs correlate below 0.999 up to sign.
 
-`ANCIENT_SOURCE_DIR=<dir>` copies the four AADR files from a folder instead of downloading them (not checked), and `ANCIENT_CHAIN=<file inside GENOME_DIR>` uses another chain file. The download is deleted once the panel is built; what stays is about 1.1 GB.
+`ANCIENT_SOURCE_DIR=<dir>` copies the four AADR files from a folder instead of downloading them (not checked), and `ANCIENT_CHAIN=<file inside GENOME_DIR>` uses another chain file. The download is deleted once the panel is built.
 
 ## How Step 44 Works
 
@@ -68,7 +68,7 @@ Both reports have an Ancient Populations section: the ten nearest groups, the ca
 ## Runtime
 
 - Setup: the 7.1 GB download, then convertf and two smartpca runs over the whole release. smartpca holds the packed genotypes of every person in memory, about 7 GB, so the setup container gets 12 GB.
-- Step 44: minutes. bcftools reads the gVCF at about 1.15 million sites through its index, and smartpca works on about 850 people plus you; it gets 8 GB.
+- Step 44: minutes. bcftools reads the gVCF at the panel's sites through its index, and smartpca works on about 820 people plus you; it gets 8 GB.
 
 ## Notes
 

@@ -53,7 +53,9 @@ echo "============================================"
 for f in "$GVCF" "${GVCF}.tbi" "$REF_FASTA" "${REF_FASTA}.fai"; do
   [ -f "$f" ] || { echo "ERROR: File not found: ${f}. Step 44 reads the gVCF of step 3 (a variant-only VCF cannot tell a reference match from a site without reads)." >&2; exit 1; }
 done
-P=$(cpath "$PANEL") W=$(cpath "$WORK") O=$(cpath "$OUTDIR")
+P=$(cpath "$PANEL")
+W=$(cpath "$WORK")
+O=$(cpath "$OUTDIR")
 mkdir -p "$WORK"
 rm -f "${OUTDIR}/${SAMPLE}"_ancient*
 
@@ -95,7 +97,7 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$PYTHON_IMAGE" \
     --ancients "${P}/ancients.tsv" --sample "$SAMPLE" --release "$RELEASE" --stats "${W}/stats.tsv" \
     --out-tsv "${O}/${SAMPLE}_ancient.tsv" --out-info "${O}/${SAMPLE}_ancient_info.tsv" \
     --out-txt "${O}/${SAMPLE}_ancient.txt" --out-svg "${O}/${SAMPLE}_ancient_pca.svg"
-# The merged genotypes are as large as the panel's (about 1 GB): not kept.
+# The merged genotypes are as large as the panel's: not kept.
 rm -f "${WORK}/merged.geno"
 echo ""
 echo "Results: ${OUTDIR}/ (the plot: ${SAMPLE}_ancient_pca.svg)"
