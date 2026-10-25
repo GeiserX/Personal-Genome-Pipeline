@@ -159,8 +159,17 @@ FAM=pfeiffer-family
 P=ISDBM322017
 rm -rf "${GENOME_DIR:?}/${FAM}" "${GENOME_DIR:?}/${P}"
 mkdir -p "${GENOME_DIR}/${FAM}"
-cp "${F}/Pfeiffer-quartet.vcf.gz" "${GENOME_DIR}/${FAM}/raw.vcf.gz"
-bcf view -Oz -o "${FAM}/family.vcf.gz" "${FAM}/raw.vcf.gz" && bcf index -t "${FAM}/family.vcf.gz"
+# Exomiser's quartet plants the FGFR2 variant with no reads behind it (AD 1,0
+# in the proband), so its allele-balance filter, part of the exome preset,
+# drops it. A DeepVariant call of a real de novo carries its reads: give the
+# planted record those, the proband 12 reference and 13 alternate reads.
+gzip -dc "${F}/Pfeiffer-quartet.vcf.gz" | awk -F'\t' -v OFS='\t' '
+  /^#CHROM/ {for (i = 10; i <= NF; i++) if ($i == "ISDBM322017") p = i}
+  !/^#/ && $1 == "10" && $2 == "123256215" {
+    for (i = 10; i <= NF; i++) $i = (i == p ? "0/1:12,13:25:99:300,0,300" : "0/0:25,0:25:75:0,75,900"); n++}
+  {print} END {exit !(p && n == 1)}' > "${GENOME_DIR}/${FAM}/raw.vcf"
+check "the planted FGFR2 record of the quartet gets its reads" test "${PIPESTATUS[1]}" = 0
+bcf view -Oz -o "${FAM}/family.vcf.gz" "${FAM}/raw.vcf" && bcf index -t "${FAM}/family.vcf.gz"
 awk -v OFS='\t' 'BEGIN {print "sample", "sex", "father", "mother", "partner"}
   !/^#/ && NF >= 6 {print $2, ($5 == 1 ? "male" : $5 == 2 ? "female" : "unknown"), ($3 == "0" ? "" : $3), ($4 == "0" ? "" : $4), ""}' \
   "${F}/Pfeiffer-quartet.ped" > "${GENOME_DIR}/${FAM}/pedigree.tsv"
@@ -186,6 +195,11 @@ check "the proband named unaffected: the step stops (exit ${STEP_RC})" test "$ST
 check "and says why" grep -q 'it cannot be unaffected' "$STEP_LOG"
 
 # --- 4. the modules, in a small workflow --------------------------------------------------
+# no_pvalue FILE: FILE without its p-value column (p_value, or Exomiser's P-VALUE).
+no_pvalue() {
+  awk -F'\t' -v OFS='\t' 'NR == 1 {for (i = 1; i <= NF; i++) if ($i == "p_value" || $i == "P-VALUE") c = i}
+    {o = ""; for (i = 1; i <= NF; i++) if (i != c) o = o (o == "" ? "" : OFS) $i; print o}' "$1"
+}
 if command -v nextflow >/dev/null; then
   NP="${CASE_TMP}/project"
   rm -rf "$NP" && mkdir -p "$NP"
@@ -214,9 +228,18 @@ NFCONF
   NF_RC=${PIPESTATUS[0]}
   check_eq "nextflow run exits 0" "$NF_RC" 0
   [ "$NF_RC" = 0 ] || grep -E 'Error executing process|Command exit status|Command error' -A 8 "${CASE_TMP}/.nextflow.log" | head -60
-  for f in "${S}_exomiser_top.tsv" "${S}_exomiser.txt" "${S}_exomiser_terms.tsv" "${S}_exomiser.genes.tsv"; do
+  for f in "${S}_exomiser.txt" "${S}_exomiser_terms.tsv"; do
     check "the module's ${f} is step 48's, byte for byte" cmp -s "${CASE_TMP}/bash-out/${f}" "${CASE_TMP}/nf-out/${S}/exomiser/${f}"
   done
+  # Exomiser draws the random scores behind its p-value afresh on every run
+  # (CombinedScorePvalueCalculator), so the two tables match without it.
+  for f in "${S}_exomiser_top.tsv" "${S}_exomiser.genes.tsv"; do
+    check "the module's ${f} is step 48's but for the p-value" \
+      cmp -s <(no_pvalue "${CASE_TMP}/bash-out/${f}") <(no_pvalue "${CASE_TMP}/nf-out/${S}/exomiser/${f}")
+  done
+  check "and the p-value column was there to take out" \
+    test "$(no_pvalue "${CASE_TMP}/bash-out/${S}_exomiser.genes.tsv" | head -n 1 | awk -F'\t' '{print NF}')" \
+    -lt "$(head -n 1 "${CASE_TMP}/bash-out/${S}_exomiser.genes.tsv" | awk -F'\t' '{print NF}')"
   check "the module publishes Exomiser's HTML" test -s "${CASE_TMP}/nf-out/${S}/exomiser/${S}_exomiser.html"
 else
   fail "nextflow is not on PATH"
@@ -225,7 +248,9 @@ fi
 # --- 5. main.nf, stub ---------------------------------------------------------------------
 ST="${REPO}/assets/stub"
 # stub_run NAME ARGS...: main.nf -profile test_all -stub on a one-sample sheet; sets RC, LOG and DIR
-# (--kir false: the profile turns KIR on, which needs hla_typing in --tools)
+# The profile turns KIR on, which needs hla_typing in --tools: a params file
+# turns it off (on the command line, --kir false arrives as a string and stays on).
+echo '{"kir": false}' > "${CASE_TMP}/no-kir.json"
 stub_run() {
   DIR="${CASE_TMP}/stub-$1"
   shift
@@ -234,7 +259,7 @@ stub_run() {
     "${ST}/sample.bam" "${ST}/sample.bam.bai" "${ST}/sample.vcf.gz" "${ST}/sample.vcf.gz.tbi" > "${DIR}/samplesheet.csv"
   echo "+ nextflow run main.nf -profile test_all -stub $*"
   ( cd "$DIR" && nextflow run "${REPO}/main.nf" -profile test_all -stub -ansi-log false \
-      -work-dir "${DIR}/work" --input "${DIR}/samplesheet.csv" --outdir "${DIR}/out" --kir false "$@" ) > "${DIR}/run.log" 2>&1
+      -work-dir "${DIR}/work" --input "${DIR}/samplesheet.csv" --outdir "${DIR}/out" -params-file "${CASE_TMP}/no-kir.json" "$@" ) > "${DIR}/run.log" 2>&1
   RC=$?
   LOG=$(cat "${DIR}/run.log")
   echo "$LOG" | tail -n 30
