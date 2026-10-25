@@ -220,6 +220,16 @@ def test_duo(d, vcf):
                                 for r, (c, s, e) in zip(mat, want)), mat)
 
 
+def test_no_par(d, vcf, members):
+    out = os.path.join(d, "nopar")
+    rc, log = run(SEGMENTS, "--members", members, "--vcf", vcf, "--out-dir", out)
+    check("no --par-bed: exits 0", rc == 0, log)
+    path = os.path.join(out, "kid_segments.tsv")
+    rows = read_tsv(path) if os.path.exists(path) else []
+    check("no --par-bed: chrX is left out, the autosomes are still mapped",
+          rows and not [r for r in rows if r["chrom"] == "chrX"], rows)
+
+
 def test_report(d, vcf, members):
     rel = write(os.path.join(d, "relationships.tsv"),
                 "sample_a\tsample_b\tdeclared\texpected_relatedness\trelatedness\tibs0_rate\tsites\tverdict\treason\n")
@@ -248,6 +258,7 @@ def main():
         if res:
             vcf, members = res
             test_duo(d, vcf)
+            test_no_par(d, vcf, members)
             test_report(d, vcf, members)
         else:
             check("the trio map ran", False)

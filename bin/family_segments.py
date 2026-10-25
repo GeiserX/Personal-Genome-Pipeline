@@ -22,7 +22,7 @@ error, a gene conversion) is absorbed and counted as discordant. A stretch
 with no site for MAX_GAP bases (a centromere, a gap of the reference) is
 split there, since nothing is known inside it. Autosomes, and chrX outside
 the pseudoautosomal regions from the mother only: a father passes his one X
-whole to a daughter and none to a son.
+whole to a daughter and none to a son. Without --par-bed chrX is left out.
 
 Writes, per child:
   <child>_segments.tsv     child, side, parent, chrom, start, end, length_bp,
@@ -122,7 +122,8 @@ def collect(members, vcf, par):
             if chrom not in CHROMS:
                 continue
             pos = int(c[1])
-            if chrom == "chrX" and fr.in_par(par, chrom, pos):
+            # without a PAR file the pseudoautosomal sites cannot be told apart, so chrX is left out
+            if chrom == "chrX" and (not par or fr.in_par(par, chrom, pos)):
                 continue
             fmt = c[8].split(":")
             if "GT" not in fmt:
