@@ -45,7 +45,8 @@ Step 05 and the Nextflow `ANNOTSV` stop with a pointer to `--annotsv-data` when 
 AnnotSV classifies only the records of the one VCF it is given. The step builds that VCF, `annotsv/<sample>_annotsv_input.vcf`, in two passes inside the AnnotSV image:
 
 - **The net length change** (`bin/sv_svlen_fix.py`). Manta writes a deletion that also inserts a few bases with its REF and ALT sequences, `END` at the last deleted base and `SVLEN` as the deleted length. AnnotSV measures the overlapped coding sequence over `POS-1..END`, so REF 137 bp with ALT 2 bp read as 137 deleted coding bases: `Frameshift` "yes" and criterion 2E-1 (+0.90, class 4), although the change is -135 bp and keeps the frame. For every record whose REF and ALT are both sequence, the script sets `SVLEN` to `len(ALT) - len(REF)` and, for a net deletion, `END` to `POS - 1 + len(REF) - len(ALT)`: one base less than AnnotSV's own default `END` (`POS + len(REF) - len(ALT)`), so that its `POS-1..END` interval, which counts the anchor base, is as long as the net change. The old values stay in `ORIG_SVLEN` and `ORIG_END`. Symbolic records (`<DEL>`) and breakends pass unchanged.
-- **The other callers' calls** (`bin/cnvpytor_to_vcf.py`). A large deletion that CNVpytor (step 18) or Delly (step 19) calls, but Manta calls as something else or misses, got no class before. The script adds Delly's PASS deletions and duplications, then CNVpytor's with e-val (`pytorP1`) below 0.01 and a fraction of mapping-quality-0 reads (`pytorQ0`) below 0.5, each only when no record already in the file has the same type on the same chromosome with a reciprocal overlap of at least half the longer call. A deletion both of them call is added once, as Delly's. CNVpytor's copy-neutral LOH calls are left out. Each file is used when it exists, and the step says when one is missing.
+- **The other callers' calls** (`bin/cnvpytor_to_vcf.py`). A large deletion that CNVpytor (step 18) or Delly (step 19) calls, but Manta calls as something else or misses, got no class before. The script adds Delly's PASS deletions and duplications that read depth does not contradict (below), then CNVpytor's with e-val (`pytorP1`) below 0.01 and a fraction of mapping-quality-0 reads (`pytorQ0`) below 0.5, each only when no record already in the file has the same type on the same chromosome with a reciprocal overlap of at least half the longer call. A deletion both of them call is added once, as Delly's. CNVpytor's copy-neutral LOH calls are left out. Each file is used when it exists, and the step says when one is missing.
+- **Read depth for long Delly calls.** Short-read Delly can mark PASS a long deletion or duplication, even one of many megabases, whose read depth shows no change, and AnnotSV then classes it as the loss or gain of every gene it spans. So a Delly call longer than 1,000 bp joins the input only when Delly's own read-depth copy number (`FORMAT/RDCN`) agrees: below a normal region's copies for a deletion, above them for a duplication. The normal is 1 on a male's chrX or chrY outside the pseudoautosomal regions (`assets/par_grch38.bed`) and 2 everywhere else. With no sex given, a stretch of chrX or chrY outside them counts 1 and 2 as normal, so there a deletion needs RDCN 0 or 1 and a duplication 2 or more: give the sex (the second argument, or the samplesheet's `sex` column) for the strict check. A long call with no estimate (`.` or a negative RDCN, no reads in the flanks) is set aside too. A call of 1,000 bp or less rests on its split reads and read pairs alone, and a Delly VCF without the RDCN field is read as before. The couple screen of [step 39](39-couple.md) uses the same rule, from the same code. The step's log line `Callers beside manta: ...`, repeated in the input VCF's `##svcallers_added` header line, counts the Delly calls set aside.
 
 Every record names its caller in `INFO/SVCALLER` (`manta`, `delly` or `cnvpytor`), which AnnotSV copies into its `INFO` column. With `SV_VCF` set, that file alone is annotated, after the length pass, with `SVCALLER=sv_vcf`.
 
@@ -55,21 +56,23 @@ The step 22 consensus is not AnnotSV's input: it keeps only the calls two caller
 
 ## Command
 ```bash
-./scripts/05-annotsv.sh your_sample
+./scripts/05-annotsv.sh your_sample female   # or male; leave it out if the sex is not known
 ```
 
 What the script runs:
 
 ```bash
 source versions.env   # from the repository root
+SEX=female   # or male; empty when the sex is not known
 # The input is step 15's filtered calls; without them, Manta's
 # /genome/${SAMPLE}/manta/results/variants/diploidSV.vcf.gz
 docker run --rm --user "$(id -u):$(id -g)" \
   -v ${GENOME_DIR}:/genome -v "$PWD/bin:/pgp-bin:ro" \
+  -v "$PWD/assets/par_grch38.bed:/pgp/par_grch38.bed:ro" \
   "${ANNOTSV_IMAGE}" \
   bash -c 'python3 /pgp-bin/sv_svlen_fix.py "$1" | python3 /pgp-bin/cnvpytor_to_vcf.py --base - --base-name manta "${@:2}"' \
   _ /genome/${SAMPLE}/duphold/${SAMPLE}_sv_filtered.vcf.gz \
-    --delly /genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz \
+    --delly /genome/${SAMPLE}/delly/${SAMPLE}_sv.vcf.gz --sex "${SEX}" --par-bed /pgp/par_grch38.bed \
     --cnvpytor /genome/${SAMPLE}/cnvpytor/${SAMPLE}_cnvs.vcf.gz \
   > ${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_annotsv_input.vcf
 docker run --rm --user "$(id -u):$(id -g)" \
