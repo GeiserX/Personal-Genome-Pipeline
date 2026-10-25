@@ -359,7 +359,7 @@ def main():
             "clinvar_hits": [{"gene": "GENEC", "variant": "chr2:120 A>G", "genotype": "0/1", "significance": "Pathogenic"}],
             "high_impact": [{"gene": "GENED", "variant": "chr1:2000 C>T", "genotype": "0/1", "consequence": "stop_gained"}]}
         html = render_report.html_report(summ)
-        want = [f'href="http://127.0.0.1:8765/#{x}"' for x in ("chrM:3244", "chr2:120", "chr1:2000")]
+        want = [f'href="http://127.0.0.1:8765/#{x}"' for x in ("chrM:3243", "chr2:120", "chr1:2000")]
         check("report: the mito and secondary-findings variants link to the viewer at their positions",
               all(w in html for w in want), [l for l in html.splitlines() if "8765" in l][:5])
     finally:
