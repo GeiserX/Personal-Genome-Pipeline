@@ -888,11 +888,15 @@ def text_report(s):
         d = S["haplogroup"]["data"]
         w(f"  Haplogroup: {d['haplogroup']}")
         w(f"  Contamination (haplocheck): {contamination_text(d)}")
+        for line in explore_lines(d):
+            w(f"  {line}")
         w("")
 
     if head("y_haplogroup", "Y-Chromosome Haplogroup (Yleaf)"):
         d = S["y_haplogroup"]["data"]
         w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
+        for line in explore_lines(d):
+            w(f"  {line}")
         w("")
 
     if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
@@ -1275,6 +1279,25 @@ def mito_lines(d):
     return lines
 
 
+EXPLORE_NOTE = "Nothing is uploaded by this pipeline: an upload shares that file with the service."
+
+
+def explore_lines(d):
+    """Where to explore a haplogroup further, the same in both reports: the
+    links built from the branch name, and the files written for those services."""
+    lines = [f"{x['name']}: {x['url']}" for x in d.get("explore", [])]
+    if lines and d.get("share_files"):
+        lines.append("Files for those services: " + ", ".join(d["share_files"]) + ". " + EXPLORE_NOTE)
+    return lines
+
+
+def explore_html(d):
+    rows = [stat(x["name"], f'<a href="{E(x["url"])}">{E(x["url"])}</a>') for x in d.get("explore", [])]
+    if rows and d.get("share_files"):
+        rows.append(small_note("Files for those services: " + ", ".join(d["share_files"]) + ". " + EXPLORE_NOTE))
+    return rows
+
+
 def stat(label, value):
     return f'    <div class="stat"><span class="label">{E(str(label))}</span><span class="value">{value}</span></div>'
 
@@ -1540,7 +1563,7 @@ def html_report(s):
            + [small_note(x) for x in roh_lines(r)]))
     a(card(S["haplogroup"], "Mitochondrial Haplogroup",
            [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
-            stat("Contamination (haplocheck)", E(contamination_text(hg)))]))
+            stat("Contamination (haplocheck)", E(contamination_text(hg)))] + explore_html(hg)))
     if S.get("paralogs", MISSING)["state"] != "missing":
         pg = S["paralogs"]["data"]
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['copy_number'])}</td><td>{E(g['status'])}</td>"
@@ -1569,7 +1592,7 @@ def html_report(s):
         yh = S["y_haplogroup"]["data"]
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
-                stat("QC-score", E(str(yh.get("qc_score", "."))))]))
+                stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))

@@ -1941,6 +1941,33 @@ def sec_roh(d, s):
                "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs}
 
 
+# Pages that show more of a called branch, free and with no upload. The URL
+# patterns were checked live on 2026-10-25 (docs/37-y-haplogroup.md,
+# "Explore your branch further"): FamilyTreeDNA Discover answers its own
+# HaplogroupSearch for R-M269 and H5a7, and YFull's tree pages answer 200 for
+# a branch it has and 404 for one it does not.
+EXPLORE_DOCS = "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/"
+
+
+def haplogroup_explore(kind, hg):
+    """[{name, url}] for a called branch: kind 'y' (Yleaf, e.g. R-M269 or
+    R-M269*(xR-L23)) or 'mt' (haplogrep3, e.g. H5a7). Empty when there is no call."""
+    from urllib.parse import quote
+    hg = (hg or "").strip()
+    if kind == "y":
+        hg = hg.split("*", 1)[0]   # Yleaf's paragroup mark: the branch is the name before '*'
+    if not hg or hg in (".", "NA", "insufficient markers"):
+        return []
+    q = quote(hg, safe="")
+    if kind == "y":
+        return [{"name": "FamilyTreeDNA Discover (free, no upload)", "url": f"https://discover.familytreedna.com/y-dna/{q}"},
+                {"name": "YFull YTree", "url": f"https://www.yfull.com/tree/{q}/"},
+                {"name": "More routes, and the files to share", "url": EXPLORE_DOCS + "37-y-haplogroup.md#explore-your-branch-further"}]
+    return [{"name": "FamilyTreeDNA Discover (free, no upload)", "url": f"https://discover.familytreedna.com/mtdna/{q}"},
+            {"name": "YFull MTree", "url": f"https://www.yfull.com/mtree/{q}/"},
+            {"name": "More routes, and the files to share", "url": EXPLORE_DOCS + "12-mito-haplogroup.md#explore-your-branch-further"}]
+
+
 def sec_haplogroup(d, s):
     p = first_existing(d, [f"mito/{s}_haplogroup.txt"])
     if not p:
@@ -1948,7 +1975,11 @@ def sec_haplogroup(d, s):
     rows = read_tsv(p)
     r = rows[0] if rows else {}
     hg = (r.get("Haplogroup") or (list(r.values())[1] if len(r) > 1 else "") or "").strip('"')
-    out = {"haplogroup": hg or "."}
+    out = {"haplogroup": hg or ".", "explore": haplogroup_explore("mt", hg)}
+    # The mtDNA sequence as FASTA (step 12, MITO_EXTRACT_CHRM), the file YFull's mtDNA analysis reads.
+    fa = first_existing(d, [f"mito/{s}_chrM.fasta"])
+    if fa:
+        out["share_files"] = [os.path.relpath(fa, d)]
     # haplocheck (step 12 with step 20's Mutect2 calls): a second haplogroup
     # in the allele fractions is another person's DNA in the sample.
     hc = first_existing(d, [f"mito/{s}_haplocheck.txt"])
@@ -1970,8 +2001,14 @@ def sec_y_haplogroup(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no Hg column or no sample row")
     r = rows[0]
     hg = (r.get("Hg") or "").strip()
-    return p, {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
-               "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or "."}
+    out = {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
+           "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or ".",
+           "explore": haplogroup_explore("y", hg)}
+    # The Y reads only (step 37, Y_PILEUP), the file YFull's Y analysis and the BAM projects read.
+    bam = first_existing(d, [f"y_haplogroup/{s}_chrY.bam"])
+    if bam:
+        out["share_files"] = [os.path.relpath(bam, d)]
+    return p, out
 
 
 def sec_consumer_export(d, s):
