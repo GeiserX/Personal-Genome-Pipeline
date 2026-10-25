@@ -17,6 +17,11 @@ Checks:
      with RDCN 2 and a 2 kb one without an estimate are set aside, the same
      50 Mb deletion with RDCN 1 counts, a 600 bp precise one counts on split
      reads alone, and on a male's chrX RDCN 1 is set aside and RDCN 0 counts;
+     a Delly deletion shorter than 50 bp is not counted, nor one matching a
+     common deletion of AnnotSV's benign set (1% or more, 50% reciprocal
+     overlap); a 5 kb one with no common match, one inside a much longer
+     common record and one matching a record below 1% still count; without
+     the benign set the common one counts and the report says so;
   4. a homozygous hit gives 1 in 2, two het hits in one partner say the
      chance can be higher;
   5. X-linked: a female's FMR1 premutation (ExpansionHunter) gives sons 1 in
@@ -273,6 +278,60 @@ def main():
               "| A | 0 / 0 | 2 over exons of listed genes; 2 longer than 1000 bp set aside, read depth does not confirm the loss |" in mdd
               and "| B | 0 / 0 | 1 over exons of listed genes; 1 longer than 1000 bp set aside, read depth does not confirm the loss |" in mdd,
               mdd)
+
+        # 3c. length and frequency: a Delly deletion shorter than 50 bp is the
+        # small-variant caller's; one matching a common deletion of AnnotSV's
+        # benign set (1% or more, 50% reciprocal overlap) is no carrier finding.
+        cmid = {g: mid(g) for g in ("ASPA", "HEXA", "SMPD1", "MCOLN1", "GJB2")}
+        cexons = put(f"{t}/common_exons.bed", "".join(
+            f"{c}\t{p - 50}\t{p + 50}\n" for c, p in sorted(cmid.values())))
+        (ac, ap), (hc, hp), (sc, sp) = cmid["ASPA"], cmid["HEXA"], cmid["SMPD1"]
+        (mc, mp), (jc, jp) = cmid["MCOLN1"], cmid["GJB2"]
+        a_len = put(f"{t}/A_len.vcf", HEAD
+                    + deldepth(ac, ap - 15, ap + 15, 2, precise="PRECISE")    # 30 bp over an ASPA exon
+                    + deldepth(hc, hp - 2500, hp + 2500, 1)                   # 5 kb, a common deletion
+                    + deldepth(sc, sp - 2500, sp + 2500, 1)                   # 5 kb, no common match
+                    + deldepth(mc, mp - 2500, mp + 2500, 1)                   # 5 kb inside a 20 kb common one
+                    + deldepth(jc, jp - 2500, jp + 2500, 1))                  # 5 kb, a rare benign record
+        # The benign set as AnnotSV writes it: chromosome without "chr", 0-based
+        # start, source, coordinates, frequency.
+        benign = put(f"{t}/benign_Loss_SV_GRCh38.sorted.bed", "".join(
+            f"{c[3:]}\t{s}\t{e}\tgnomAD-SV_fixture\t{c[3:]}:{s}-{e}\t{af}\n" for c, s, e, af in sorted((
+                (hc, hp - 2400, hp + 2700, "0.3100"),        # the HEXA deletion, breakpoints 100-200 bp off
+                (mc, mp - 10000, mp + 10000, "0.2000"),      # covers MCOLN1's deletion, 25% of itself
+                (jc, jp - 2500, jp + 2500, "0.0040")))))     # GJB2's exactly, but below 1%
+        common_args = ["screen", "--pedigree", ped, "--genes", GENES, "--par-bed", PAR,
+                       "--clinvar", f"A={empty_hits}", "--clinvar", f"B={empty_hits}",
+                       "--delly", f"A={a_len}", "--exons", cexons]
+        rc, log = run(*common_args, "--benign-sv", benign, "--out-dir", f"{t}/common")
+        rc_ = {r["gene"]: r for r in rows(f"{t}/common/couple_A_B.tsv")} if rc == 0 else {}
+        mdc = open(f"{t}/common/couple_A_B.md").read() if rc == 0 else ""
+        check("common: the screen exits 0", rc == 0, log)
+        check("a 30 bp PASS Delly deletion over an ASPA exon is not reported", "ASPA" not in rc_, rc_.get("ASPA"))
+        check("a 5 kb deletion matching a common benign deletion (HEXA) is not reported", "HEXA" not in rc_,
+              rc_.get("HEXA"))
+        check("a 5 kb RDCN-supported deletion with no common match (SMPD1) is still reported",
+              rc_.get("SMPD1", {}).get("result") == "one_partner" and "(5.0 kb) het" in rc_["SMPD1"]["findings_a"],
+              rc_.get("SMPD1"))
+        check("a 5 kb deletion inside a 20 kb common one (25% of it) is still reported (MCOLN1)",
+              rc_.get("MCOLN1", {}).get("result") == "one_partner", rc_.get("MCOLN1"))
+        check("a benign record below 1% does not set a deletion aside (GJB2)",
+              rc_.get("GJB2", {}).get("result") == "one_partner", rc_.get("GJB2"))
+        check("the report counts what was set aside and says the frequency filter was on",
+              "| A | 0 / 0 | 3 over exons of listed genes; 1 shorter than 50 bp set aside; 1 set aside as common deletions |" in mdc
+              and "a deletion matching one of 1% or more in AnnotSV's benign set (2 records, 50% reciprocal overlap) is set aside" in mdc,
+              mdc)
+        rc, log = run(*common_args, "--out-dir", f"{t}/nobenign")
+        rn = {r["gene"]: r for r in rows(f"{t}/nobenign/couple_A_B.tsv")} if rc == 0 else {}
+        mdn = open(f"{t}/nobenign/couple_A_B.md").read() if rc == 0 else ""
+        check("without a benign set the 30 bp deletion is still not reported", rc == 0 and "ASPA" not in rn, (rc, log))
+        check("red: without a benign set the common HEXA deletion is reported",
+              rn.get("HEXA", {}).get("result") == "one_partner", rn.get("HEXA"))
+        check("without a benign set the report says the frequency filter was off",
+              "Common deletions: not filtered, no benign SV set was given" in mdn
+              and "Common deletions of A: not filtered" in mdn, mdn)
+        rc, log = run(*common_args, "--benign-sv", f"{t}/no_such.bed", "--out-dir", f"{t}/nobed")
+        check("a --benign-sv file that is not there stops the screen (exit 2)", rc == 2 and "no_such.bed" in log, (rc, log))
 
         # 8. red controls
         empty = put(f"{t}/empty.tsv", "# emptied\n" + "\t".join(cr.GENE_COLUMNS) + "\n")
