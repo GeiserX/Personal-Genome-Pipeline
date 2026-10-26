@@ -35,6 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
 
 /*
@@ -84,6 +85,7 @@ workflow {
         'bloodtype',
         'traits',
         'y_str',
+        'viral',
         'chip',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
@@ -113,6 +115,7 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['viral',            'viral_ref',          '--viral_ref'],
         ['chip',             'chip_gff',           '--chip_gff'],
     ]
 
@@ -764,6 +767,20 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
+    // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
+    // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
+    // unmapped reads to read and is left out. Equivalent to scripts/47-viral.sh.
+    ch_viral          = Channel.empty()
+    ch_viral_versions = Channel.empty()
+    if (tools_list.contains('viral')) {
+        ch_viral_ref = Channel.value(file(params.viral_ref, checkIfExists: true))
+        VIRAL_READS(ch_bam, ch_viral_ref)
+        VIRAL_REPORT(VIRAL_READS.out.coverage, ch_viral_ref)
+        ch_viral          = VIRAL_REPORT.out.table
+        ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
+    }
+
     // ─── Clonal haematopoiesis (opt-in: chip, step 49) ───────────────────
     // Mutect2 tumour-only on the coding exons of the CHIP genes'
     // MANE Select transcripts, from the BAM; a sample without one is
@@ -864,6 +881,7 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
@@ -896,6 +914,7 @@ workflow {
             ch_family_versions,
             ch_traits_versions,
             ch_bloodtype_versions,
+            ch_viral_versions,
             ch_chip_versions
         )
         .map { f -> f.text }
