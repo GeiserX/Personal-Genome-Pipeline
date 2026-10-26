@@ -24,8 +24,10 @@ image.
       every site of the joint VCF where the genotypes tell
       (<child>_inheritance.tsv.gz), de novo candidates when both parents
       are sequenced (de_novo.tsv), and pairs of candidate variants in one
-      gene in trans or in cis (compound_het.tsv). family_report.md says it
-      in words, pair by pair and child by child.
+      gene in trans or in cis (compound_het.tsv), and the chromosome map of
+      bin/family_segments.py (<child>_segments.tsv, <child>_dnapainter.csv,
+      <child>_segments.svg). family_report.md says it in words, pair by
+      pair and child by child.
 """
 import argparse
 import gzip
@@ -704,7 +706,11 @@ def cmd_report(a):
             f.write("\t".join(row) + "\n")
     for ch in children:
         ch.fh.close()
-    write_markdown(a, members, rels, children, comp, cands)
+    # The chromosome map: which stretches each child got from each parent
+    # (bin/family_segments.py), from the joint VCF's genotypes
+    import family_segments
+    seg = family_segments.run(members, a.vcf, par, a.out_dir)
+    write_markdown(a, members, rels, children, comp, cands, seg)
 
 
 def de_novo_row(ch, c, fmt, cvals, call, gi, alleles, novel, sexchr):
@@ -733,7 +739,7 @@ def pct(k, n):
     return "%.1f%%" % (100.0 * k / n) if n else "-"
 
 
-def write_markdown(a, members, rels, children, comp, cands):
+def write_markdown(a, members, rels, children, comp, cands, seg=()):
     L = ["# Family analysis", ""]
     seq = sorted(s for s, m in members.items() if m["sequenced"])
     others = sorted(s for s, m in members.items() if not m["sequenced"])
@@ -797,6 +803,7 @@ def write_markdown(a, members, rels, children, comp, cands):
         L.append("Pairs of the clinical filter's candidate variants a child carries heterozygous in one gene: "
                  "%d; in trans (one from each parent, both copies of the gene hit) %d, in cis (both from one "
                  "parent) %d, origin unknown %d (`compound_het.tsv`)." % (len(comp), t, c_, len(comp) - t - c_))
+    L += list(seg)
     with open(os.path.join(a.out_dir, "family_report.md"), "w") as f:
         f.write("\n".join(L) + "\n")
     print("\n".join(L))

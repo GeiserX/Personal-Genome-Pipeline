@@ -16,6 +16,11 @@
                     YFull and the Y-DNA projects read. Nothing is uploaded.
       Y_HAPLOGROUP  Yleaf on that pileup, offline; Hg NA means too few Y
                     markers had reads to call a haplogroup
+    Each process also does the same for the current YFull YTree in
+    <yleaf_data>/ytree (bin/y_tree_place.py): its SNP positions, a second
+    pileup at them, and the placement, published as <id>_y_tree.txt and
+    <id>_y_tree_path.tsv. Without that folder (an install older than this
+    step's current tree) the three say so and Yleaf's result stands alone.
 
     Equivalent to: scripts/37-y-haplogroup.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -28,8 +33,9 @@ process Y_POSITIONS {
     path(yleaf_data)   // --yleaf_data: reference/yleaf-<release>/data (setup.sh --yleaf-data)
 
     output:
-    path "y_positions.txt", emit: positions
-    path "versions.yml",    emit: versions
+    path "y_positions.txt",      emit: positions
+    path "y_tree_positions.txt", emit: tree_positions   // empty without <yleaf_data>/ytree
+    path "versions.yml",         emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -37,6 +43,12 @@ process Y_POSITIONS {
     script:
     """
     yleaf_run.py positions --data ${yleaf_data} y_positions.txt
+    if [ -s ${yleaf_data}/ytree/version.txt ]; then
+        y_tree_place.py positions --tree-dir ${yleaf_data}/ytree y_tree_positions.txt
+    else
+        echo "Current tree: not installed (${yleaf_data}/ytree); run scripts/setup.sh --yleaf-data to add it"
+        touch y_tree_positions.txt
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -47,6 +59,7 @@ process Y_POSITIONS {
     stub:
     """
     printf 'chrY\\t2781480\\n' > y_positions.txt
+    touch y_tree_positions.txt
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -64,9 +77,11 @@ process Y_PILEUP {
     input:
     tuple val(meta), path(bam), path(bai)
     path(positions)
+    path(tree_positions)
 
     output:
-    tuple val(meta), path(bam), path(bai), path("${meta.id}_idxstats.txt"), path("${meta.id}_y_pileup.txt"), emit: pileup
+    tuple val(meta), path(bam), path(bai), path("${meta.id}_idxstats.txt"), path("${meta.id}_y_pileup.txt"),
+          path("${meta.id}_y_tree_pileup.txt"),                                                              emit: pileup
     tuple val(meta), path("${meta.id}_chrY.bam"), path("${meta.id}_chrY.bam.bai"),                           emit: chry_bam
     path "versions.yml",                                                                                     emit: versions
 
@@ -78,6 +93,11 @@ process Y_PILEUP {
     """
     samtools idxstats ${bam} > ${meta.id}_idxstats.txt
     samtools mpileup -l ${positions} -AQ20q1 ${bam} > ${meta.id}_y_pileup.txt
+    if [ -s ${tree_positions} ]; then
+        samtools mpileup -l ${tree_positions} -AQ20q1 ${bam} > ${meta.id}_y_tree_pileup.txt
+    else
+        touch ${meta.id}_y_tree_pileup.txt
+    fi
     samtools view -b -o ${meta.id}_chrY.bam ${bam} chrY
     samtools index ${meta.id}_chrY.bam
 
@@ -89,7 +109,7 @@ process Y_PILEUP {
 
     stub:
     """
-    touch ${meta.id}_idxstats.txt ${meta.id}_y_pileup.txt ${meta.id}_chrY.bam ${meta.id}_chrY.bam.bai
+    touch ${meta.id}_idxstats.txt ${meta.id}_y_pileup.txt ${meta.id}_y_tree_pileup.txt ${meta.id}_chrY.bam ${meta.id}_chrY.bam.bai
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -105,12 +125,13 @@ process Y_HAPLOGROUP {
     publishDir { "${params.outdir}/${meta.id}/y_haplogroup" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(bam), path(bai), path(idxstats), path(pileup)
+    tuple val(meta), path(bam), path(bai), path(idxstats), path(pileup), path(tree_pileup)
     path(reference)
     path(yleaf_data)
 
     output:
-    tuple val(meta), path("${meta.id}_y_haplogroup.txt"), emit: haplogroup
+    tuple val(meta), path("${meta.id}_y_haplogroup.txt"),                                  emit: haplogroup
+    tuple val(meta), path("${meta.id}_y_tree.txt"), path("${meta.id}_y_tree_path.tsv"),    emit: tree, optional: true
     path "versions.yml",                                  emit: versions
 
     when:
@@ -121,6 +142,12 @@ process Y_HAPLOGROUP {
     yleaf_run.py predict --data ${yleaf_data} --bam ${bam} --reference "\$(readlink -f ${reference})" \\
         --idxstats ${idxstats} --pileup ${pileup} --out yleaf
     cp yleaf/hg_prediction.hg ${meta.id}_y_haplogroup.txt
+    if [ -s ${yleaf_data}/ytree/version.txt ]; then
+        y_tree_place.py place --tree-dir ${yleaf_data}/ytree --pileup ${tree_pileup} \\
+            --sample ${meta.id} --out-prefix ${meta.id}
+    else
+        echo "Current tree: not installed (${yleaf_data}/ytree); run scripts/setup.sh --yleaf-data to add it"
+    fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -131,6 +158,7 @@ process Y_HAPLOGROUP {
     stub:
     """
     printf 'Sample_name\\tHg\\tHg_marker\\tTotal_reads\\tValid_markers\\tQC-score\\tQC-1\\tQC-2\\tQC-3\\n${meta.id}\\tNA\\t\\t0\\t0\\t0\\t0\\t0\\t0\\n' > ${meta.id}_y_haplogroup.txt
+    touch ${meta.id}_y_tree.txt ${meta.id}_y_tree_path.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
