@@ -15,6 +15,15 @@ It opens at the locus you give. The HTML report (step 24) links to the viewer un
 
 A variant call is a summary of the reads. Before you act on a finding, look at the reads under it: how many there are, how many carry the change, whether they are low-quality or mapped at MAPQ 0 (common in genes with a close copy elsewhere, such as PMS2 or CYP2D6), and whether they all start at the same place (a sign of PCR duplicates). Several report notes say "check the reads". This is where you do that.
 
+## Tool
+
+- **igv.js** 3.8.10 (`IGV_JS_VERSION` in `scripts/pgp-view.sh`, checked against a pinned sha256) draws the reads and variants in the browser.
+- **`assets/viewer/serve.py`** (Python standard library) serves the page and the sample's files on `127.0.0.1`.
+
+## Docker Image
+
+None. The viewer runs on the host's `python3`, so it needs no image and no port publishing.
+
 ## Command
 
 ```bash
