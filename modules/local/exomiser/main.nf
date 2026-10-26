@@ -167,7 +167,7 @@ process EXOMISER_REPORT {
 
     stub:
     """
-    printf 'rank\\tgene\\n' > ${meta.id}_exomiser_top.tsv
+    printf 'rank\\tgene\\tmoi\\texomiser_score\\tphenotype_score\\tvariant_score\\tp_value\\tvariant\\tgenotype\\tconsequence\\thgvs\\tacmg\\tacmg_evidence\\tdisease\\tclinvar\\tmax_frequency\\n' > ${meta.id}_exomiser_top.tsv
     printf 'Symptoms searched: HP:0001250.\\n' > ${meta.id}_exomiser.txt
 
     cat <<-END_VERSIONS > versions.yml
