@@ -84,6 +84,7 @@ process HTML_REPORT {
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
             ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
+            ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;

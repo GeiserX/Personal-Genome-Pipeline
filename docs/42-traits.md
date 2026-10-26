@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, and the APOE ε2/ε3/ε4 alleles. Each row names the primary paper it comes from. On by default.
+Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, and the APOE ε2/ε3/ε4 alleles. Each row names the primary paper it comes from. On by default.
 
 ## Why
 
@@ -62,6 +62,7 @@ Both reports have a Traits section: every row with its genotype, reading, note a
 | Vitamin D level | rs2282679 in GC, the vitamin D binding protein gene | 20541252 |
 | Bilirubin, Gilbert syndrome genotype | rs887829 (UGT1A1) | 19414484, 37456363 |
 | Nicotine breakdown | rs1801272 (CYP2A6*2) | 2322567, 9827545 |
+| Lp(a) level | rs10455872, rs3798220 (LPA); [step 46](46-lpa.md) adds the KIV-2 repeat count, and the report's Lp(a) section reads the three together | 20032323, 36036785, 29973585 |
 | APOE ε2/ε3/ε4 | rs429358, rs7412 | 8346443, 9343467 |
 
 Variants whose effect allele the papers we could read did not state were left out, among them SLC24A4 rs12896399 and TYR rs1393350 of the eye-colour panels.
@@ -80,7 +81,7 @@ The APOE line combines rs429358 (Cys112Arg) and rs7412 (Arg158Cys) into the ε2,
 
 ## Runtime
 
-Seconds: bcftools reads the gVCF at the table's positions through its index, and the table has 33 rows.
+Seconds: bcftools reads the gVCF at the table's positions through its index, and the table has 35 rows.
 
 ## Notes
 
