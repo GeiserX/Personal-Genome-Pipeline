@@ -2054,7 +2054,11 @@ def sec_viral(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
     keep = [{k: r[k] or "." for k in need + ("human_depth", "note")} for r in rows]
     ici = [r["virus"] for r in keep if r["call"] == "inherited integrated HHV-6 likely"]
-    return p, {"hhv6": f"inherited integrated {ici[0]} likely" if ici else "no integrated HHV-6",
+    # No read on chr1 to chr22 leaves no human depth, so integration was never assessed.
+    hhv6 = (f"inherited integrated {ici[0]} likely" if ici
+            else "not assessed (no human depth)" if keep[0]["human_depth"] == "."
+            else "no integrated HHV-6")
+    return p, {"hhv6": hhv6,
                "human_depth": keep[0]["human_depth"],
                "found": [r for r in keep if r["call"] != "not found"], "genomes": len(keep)}
 

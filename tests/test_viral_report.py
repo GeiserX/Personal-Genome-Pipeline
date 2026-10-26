@@ -20,7 +20,7 @@ checks the rows it writes:
      a coverage file that is not samtools coverage output; a genome with no
      position at all in the depth file has no read, and is not found
   8. collect_summary.py's viral section and render_report.py's text block
-     read the table
+     read the table; with no human depth the HHV-6 line says not assessed
 
 Run: python3 tests/test_viral_report.py
 """
@@ -218,6 +218,17 @@ with tempfile.TemporaryDirectory() as d:
         check("8 a table without its columns is unreadable", "read", "Unreadable")
     except cs.Unreadable:
         check("8 a table without its columns is unreadable", "Unreadable", "Unreadable")
+
+# 8. the summary's HHV-6 line without a human depth, and with one but no integration
+for human, want in (([("chrX", 1000, 1000, 30.0)], "not assessed (no human depth)"),
+                    (None, "no integrated HHV-6")):
+    with tempfile.TemporaryDirectory() as d:
+        write_inputs(d, {EBV: flat(1)}, {EBV: 30}, human=human)
+        os.makedirs(f"{d}/S/viral")
+        vr.main(["--sample", "S", "--viral-fasta", f"{d}/v.fa", "--viral-coverage", f"{d}/vcov.tsv",
+                 "--viral-depth", f"{d}/vdepth.tsv", "--human-coverage", f"{d}/hcov.tsv",
+                 "--out", f"{d}/S/viral/S_viral.tsv"])
+        check(f"8 the summary's HHV-6 line reads {want!r}", cs.sec_viral(f"{d}/S", "S")[1]["hhv6"], want)
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")
