@@ -1338,6 +1338,28 @@ def mito_lines(d):
     return lines
 
 
+# scripts/pgp-view.sh serves the genome viewer here (PGP_VIEW_PORT's default);
+# the part after '#' is the locus it opens at.
+VIEWER_URL = "http://127.0.0.1:8765/"
+
+
+def viewer_links(sites):
+    """One line under a findings table: each (chrom, pos, label) as a link that
+    opens the reads at chrom:pos in the local genome viewer. Empty for none."""
+    links = [f'<a href="{VIEWER_URL}#{E(str(c))}:{E(str(p))}" target="_blank" rel="noopener noreferrer">{E(str(t))}</a>'
+             for c, p, t in sites if c and p]
+    if not links:
+        return []
+    return ['    <p class="viewer">See the reads in the genome viewer on this computer (start it first: '
+            "scripts/pgp-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
+
+
+def variant_site(variant):
+    """(chrom, pos) of a "chrom:pos ref>alt" text, (None, None) for any other."""
+    m = re.match(r"^([A-Za-z0-9._-]+):([0-9]+) ", variant or "")
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
 EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
                 "which steps 12 and 37 write when they run, and what an upload shares.")
 
@@ -1684,6 +1706,7 @@ def html_report(s):
                         v.get("clinvar_review"), v.get("clinvar_condition"), v.get("gnomad_af_hom"),
                         v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + "</tr>"
                     for v in ma["variants"]) + "</table>")
+            mito_body += viewer_links(("chrM", v["pos"], f"chrM:{v['pos']}") for v in ma["variants"])
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
@@ -1706,7 +1729,10 @@ def html_report(s):
                         f"<td>{E(x['consequence'] + high_marks(x, '; '))}</td></tr>\n" for x in sf["high_impact"])
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
-                rows.rstrip("\n"), "    </table>", f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
+                rows.rstrip("\n"), "    </table>"]
+               + viewer_links((*variant_site(x["variant"]), f"{x['gene']} {x['variant'].split(' ')[0]}")
+                              for x in sf["clinvar_hits"] + sf["high_impact"])
+               + [f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
     sl_body = [stat("Prioritized variants", sl.get("prioritized"))]
@@ -1786,7 +1812,9 @@ def html_report(s):
                 + ("<th>gnomAD frequency</th>" if freq else "")
                 + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
-               + ["      " + x for x in rows] + ["    </table>"], full=True))
+               + ["      " + x for x in rows] + ["    </table>"]
+               + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
+               full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]
     lists += (['    <ul class="plain">'] + [f"      <li>{E(t)}</li>" for t in s["not_run"]] + ["    </ul>"]
