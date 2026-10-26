@@ -840,10 +840,25 @@ def bloodtype(d):
     names = [s for s, _ in bloodtype_report.SYSTEMS]
     if [r[0] for r in BLOODTYPE] != names:
         raise SystemExit(f"BLOODTYPE lists {[r[0] for r in BLOODTYPE]}, step 41 writes {names}")
+    # A platelet or neutrophil antigen the phenotype lacks gets the marker table's
+    # meaning at the head of the note, as bin/bloodtype_report.py's meaning() writes it.
+    sites, _ = bloodtype_report.read_markers(os.path.join(REPO, "assets", "bloodtype_markers.tsv"))
+    means = {}
+    for r in sites.values():
+        if r.get("meaning"):
+            means.setdefault(r["system"], r["meaning"])
+    rows = []
+    for system, phenotype, genotype, conf, note in BLOODTYPE:
+        lacks = re.findall(r"([a-z])-", phenotype.partition("(")[2])
+        if system in means and lacks:
+            prefix, num = system.split("-")
+            head = f"lacks {', '.join(f'{prefix}-{num}{a}' for a in lacks)}: {means[system]}"
+            note = "; ".join([head] + ([note] if note else []))
+        rows.append((system, phenotype, genotype, conf, note))
     os.makedirs(os.path.join(d, "bloodtype"), exist_ok=True)
     bloodtype_report.write_tsv(os.path.join(d, "bloodtype", f"{SAMPLE}_bloodtype.tsv"),
                                bloodtype_report.TABLE_HEADER,
-                               [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in BLOODTYPE])
+                               [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in rows])
 
 
 # Step 42: copies of each row's alt allele, a common European set; the
