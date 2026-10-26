@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-pgp-status="loading">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:,">
+<title>Genome viewer</title>
+<style>
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { padding: 8px 16px; background: #1f2937; color: #f9fafb; font-size: 14px; }
+  header code { color: #93c5fd; }
+  #error { display: none; margin: 16px; padding: 12px; background: #fee2e2; color: #7f1d1d; }
+  #igv { margin: 8px; }
+</style>
+</head>
+<body>
+<header>Personal Genome Pipeline viewer, sample <code id="sample">?</code>: served from this computer only.
+  Type a locus such as <code>chr1:12000-13000</code> in the box.</header>
+<div id="error"></div>
+<div id="igv"></div>
+<script src="igv.min.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>
