@@ -76,9 +76,15 @@ process EXOMISER {
     time { 12.h * task.attempt }
     // The image's entrypoint is bash, which would read Nextflow's command as a
     // script to run. A process's containerOptions replaces the docker
-    // profile's '--network none', so it is repeated here: Exomiser reads only
-    // its data folder. Singularity runs the command without the entrypoint.
-    containerOptions { workflow.containerEngine == 'singularity' ? '' : '--entrypoint "" --network none' }
+    // profile's '--network none', so it is repeated here (Exomiser reads only
+    // its data folder), unless the run's docker.runOptions already sets a
+    // network: Docker refuses the flag twice. Singularity runs the command
+    // without the entrypoint.
+    containerOptions {
+        def run_options = ((nextflow.Global.session?.config?.docker as Map)?.runOptions ?: '').toString()
+        workflow.containerEngine == 'singularity' ? '' :
+            '--entrypoint ""' + (run_options.contains('--net') ? '' : ' --network none')
+    }
 
     publishDir { "${params.outdir}/${meta.id}/exomiser" }, mode: params.publish_dir_mode,
         saveAs: { f -> f.startsWith('results/') ? f.substring(8) : null }
