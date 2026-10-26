@@ -320,7 +320,7 @@ workflow BAM_ANALYSIS {
             return false
         }
         Y_POSITIONS(ch_yleaf_data)
-        Y_PILEUP(ch_y_bam, Y_POSITIONS.out.positions.first())
+        Y_PILEUP(ch_y_bam, Y_POSITIONS.out.positions.first(), Y_POSITIONS.out.tree_positions.first())
         Y_HAPLOGROUP(Y_PILEUP.out.pileup, ch_reference, ch_yleaf_data)
         ch_y_haplogroup = Y_HAPLOGROUP.out.haplogroup
         ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions, Y_HAPLOGROUP.out.versions)
