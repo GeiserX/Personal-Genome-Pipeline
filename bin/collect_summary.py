@@ -102,7 +102,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -2102,6 +2102,27 @@ def sec_lpa(d, s):
     return p, data
 
 
+def sec_viral(d, s):
+    """Step 47's table (viral/<id>_viral.tsv, bin/viral_report.py): one row per
+    viral genome; the HHV-6 line and the genomes with reads (phiX included)."""
+    p = first_existing(d, [f"viral/{s}_viral.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = ("virus", "accession", "reads", "breadth", "relative_depth", "copies_per_cell", "call")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
+    keep = [{k: r[k] or "." for k in need + ("human_depth", "note")} for r in rows]
+    ici = [r["virus"] for r in keep if r["call"] == "inherited integrated HHV-6 likely"]
+    # No read on chr1 to chr22 leaves no human depth, so integration was never assessed.
+    hhv6 = (f"inherited integrated {ici[0]} likely" if ici
+            else "not assessed (no human depth)" if keep[0]["human_depth"] == "."
+            else "no integrated HHV-6")
+    return p, {"hhv6": hhv6,
+               "human_depth": keep[0]["human_depth"],
+               "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2920,6 +2941,7 @@ SECTIONS = [
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
+    ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),

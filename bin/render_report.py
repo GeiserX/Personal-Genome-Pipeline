@@ -968,6 +968,11 @@ def text_report(s):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
+    if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
+        for line in viral_lines(S["viral"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
         d = S["cpsr"]["data"]
         if d.get("html_report"):
@@ -1277,6 +1282,33 @@ def lpa_lines(d):
     out.append(d.get("flag_text", "."))
     out.append(d.get("advice", "."))
     return out
+
+
+VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
+              "genomes. Not a test for an infection: most adults carry herpesviruses that stay in their cells, and "
+              "reagents carry viral DNA too. HHV-6 integration follows Liu et al. 2020 (depth over the viral genome "
+              "at 0.30 of the human depth or more). Every genome: viral/<sample>_viral.tsv.")
+
+
+def viral_lines(d):
+    """Step 47's lines, the same in both reports: the HHV-6 call, then each genome with reads."""
+    lines = [f"HHV-6: {d.get('hhv6', '.')}"]
+    for x in d.get("found", []):
+        copies = "" if x["copies_per_cell"] == "." else f", {x['copies_per_cell']} copies per cell"
+        lines.append(f"{x['virus']}: {x['call']} ({x['reads']} reads, {float(x['breadth']):.0%} of the genome{copies})")
+    if not d.get("found"):
+        lines.append(f"No read on any of the {d.get('genomes', 0)} viral genomes.")
+    return lines + [VIRAL_NOTE]
+
+
+def viral_body(d):
+    """The viral DNA card: the HHV-6 call, a row per genome with reads, the note."""
+    rows = "".join(f"<tr><td>{E(x['virus'])}</td><td>{E(x['call'])}</td><td>{E(x['reads'])}</td>"
+                   f"<td>{E(x['breadth'])}</td><td>{E(x['relative_depth'])}</td><td>{E(x['copies_per_cell'])}</td></tr>"
+                   for x in d.get("found", []))
+    table = ("    <table><tr><th>Virus</th><th>Call</th><th>Reads</th><th>Breadth</th><th>Depth / human</th>"
+             "<th>Copies per cell</th></tr>" + rows + "</table>") if rows else small_note("No read on any viral genome.")
+    return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
 
 
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
@@ -1709,6 +1741,8 @@ def html_report(s):
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
                ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
+    if S.get("viral", MISSING)["state"] != "missing":
+        a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
