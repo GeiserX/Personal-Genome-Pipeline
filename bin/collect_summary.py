@@ -2060,7 +2060,7 @@ def sec_viral(d, s):
             else "no integrated HHV-6")
     return p, {"hhv6": hhv6,
                "human_depth": keep[0]["human_depth"],
-               "found": [r for r in keep if r["call"] != "not found"], "genomes": len(keep)}
+               "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
 
 
 def sec_traits(d, s):

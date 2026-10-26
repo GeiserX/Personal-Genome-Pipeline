@@ -20,7 +20,8 @@ checks the rows it writes:
      a coverage file that is not samtools coverage output; a genome with no
      position at all in the depth file has no read, and is not found
   8. collect_summary.py's viral section and render_report.py's text block
-     read the table; with no human depth the HHV-6 line says not assessed
+     read the table; with no human depth the HHV-6 line says not assessed and
+     the text leaves out copies per cell; a genome with 1 to 9 reads is listed
 
 Run: python3 tests/test_viral_report.py
 """
@@ -228,7 +229,23 @@ for human, want in (([("chrX", 1000, 1000, 30.0)], "not assessed (no human depth
         vr.main(["--sample", "S", "--viral-fasta", f"{d}/v.fa", "--viral-coverage", f"{d}/vcov.tsv",
                  "--viral-depth", f"{d}/vdepth.tsv", "--human-coverage", f"{d}/hcov.tsv",
                  "--out", f"{d}/S/viral/S_viral.tsv"])
-        check(f"8 the summary's HHV-6 line reads {want!r}", cs.sec_viral(f"{d}/S", "S")[1]["hhv6"], want)
+        data = cs.sec_viral(f"{d}/S", "S")[1]
+        check(f"8 the summary's HHV-6 line reads {want!r}", data["hhv6"], want)
+        if human:
+            check("8 no human depth: the text line leaves out copies per cell", rr.viral_lines(data)[1],
+                  "Human gammaherpesvirus 4: viral DNA found (30 reads, 100% of the genome)")
+
+# 8. under 10 reads is "not found" but still listed with its reads, never "No read"
+with tempfile.TemporaryDirectory() as d:
+    write_inputs(d, {HCV: lambda i: 1 if i < 50 else 0}, {HCV: 5})
+    os.makedirs(f"{d}/S/viral")
+    vr.main(["--sample", "S", "--viral-fasta", f"{d}/v.fa", "--viral-coverage", f"{d}/vcov.tsv",
+             "--viral-depth", f"{d}/vdepth.tsv", "--human-coverage", f"{d}/hcov.tsv",
+             "--out", f"{d}/S/viral/S_viral.tsv"])
+    data = cs.sec_viral(f"{d}/S", "S")[1]
+    check("8 a genome with 5 reads is listed", [(x["virus"], x["call"], x["reads"]) for x in data["found"]],
+          [("Hepatitis C virus genotype 1", vr.CALL_NONE, "5")])
+    check("8 and the text does not say no read", any(ln.startswith("No read") for ln in rr.viral_lines(data)), False)
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

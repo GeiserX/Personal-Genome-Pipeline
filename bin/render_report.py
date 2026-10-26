@@ -1240,8 +1240,8 @@ def viral_lines(d):
     """Step 47's lines, the same in both reports: the HHV-6 call, then each genome with reads."""
     lines = [f"HHV-6: {d.get('hhv6', '.')}"]
     for x in d.get("found", []):
-        lines.append(f"{x['virus']}: {x['call']} ({x['reads']} reads, {float(x['breadth']):.0%} of the genome, "
-                     f"{x['copies_per_cell']} copies per cell)")
+        copies = "" if x["copies_per_cell"] == "." else f", {x['copies_per_cell']} copies per cell"
+        lines.append(f"{x['virus']}: {x['call']} ({x['reads']} reads, {float(x['breadth']):.0%} of the genome{copies})")
     if not d.get("found"):
         lines.append(f"No read on any of the {d.get('genomes', 0)} viral genomes.")
     return lines + [VIRAL_NOTE]
