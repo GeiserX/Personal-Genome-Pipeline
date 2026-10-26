@@ -23,9 +23,11 @@ Borrowed, not rewritten:
     from made-up somalier, VerifyBamID2 and pgsc_calc files;
   - step 33's mosaic rows come from bin/mosaic_sex_loss.py, step 26b's painting
     from bin/ancestry_fine_report.py, step 35b's table from
-    bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
-    from bin/traits_report.py, each fed made-up inputs; steps 02, 40 and 41's
-    tables are written here in their writers' columns.
+    bin/paraphase_report.py, step 35's HBA1/HBA2 table from
+    bin/hba_copy_number.py, step 39's from bin/couple_report.py and step 42's
+    from bin/traits_report.py, each fed made-up inputs; steps 02, 05, 35 (its
+    SMN1/SMN2 rows), 40 and 41's tables are written here in their writers'
+    columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
 Paraphase card (a PacBio HiFi step, though the invented reads are short) and
@@ -750,6 +752,32 @@ def paralogs(d):
     os.makedirs(out, exist_ok=True)
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_copy_number.tsv"), pr.CN_HEADER, pr.cn_table(data))
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_variants.tsv"), pr.VARIANT_HEADER, [])
+    parascopy(out)
+
+
+def parascopy(out):
+    """Step 35 (Parascopy, short reads): the SMN1/SMN2 row of its table in the
+    columns step 35 keeps from Parascopy's res.samples.bed, two copies of
+    each gene at exon 7, and the HBA1/HBA2 table from bin/hba_copy_number.py's
+    own assess() on made-up depths: four alpha-globin genes."""
+    import hba_copy_number as hba
+    # SMN1 exon 7 (chr5:70,951,946) in the row, SMN2's (chr5:70,076,526) in its homologous region.
+    put(os.path.join(out, f"{SAMPLE}_smn_copy_number.tsv"),
+        "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\thomologous_regions\n"
+        "chr5\t70950999\t70952500\tSMN1\tPASS\t4\t62.18\tPASS\t2,2\t41.07,41.07\tchr5:70075580-70077081\n")
+    depth = {"flank_left": 31.2, "HBA2": 30.9, "HBA1": 30.1, "flank_right": 30.4}
+    res = hba.assess(depth, {k: v * (0.76 if k.startswith("HBA") else 0.98) for k, v in depth.items()})
+    put(os.path.join(out, f"{SAMPLE}_hba_copy_number.tsv"),
+        "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in hba.ORDER))
+
+
+def annotsv(d):
+    """Step 05's checked class 4 and 5 table, in bin/annotsv_postfilter.py's
+    columns, with no SV in it: DEMO-001 has no class 4 or 5 structural
+    variant, so the card shows the count (0) instead of 'Not run'."""
+    import annotsv_postfilter as ap
+    cols = ["AnnotSV_ID", "SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Gene_name", "ACMG_class"] + ap.ADDED
+    put(os.path.join(d, "annotsv", f"{SAMPLE}_sv_class4_5_checked.tsv"), "\t".join(cols) + "\n")
 
 
 def couple(d, rng):
@@ -878,6 +906,7 @@ def make(a):
              ("pgx", lambda r: pgx(d, a.genome_dir, r)), ("prs", lambda r: prs(d, a.genome_dir, r)),
              ("coverage", lambda r: coverage(d, r)), ("sample_qc", lambda r: sample_qc(d)),
              ("reads", lambda r: reads(d, r)), ("structural", lambda r: structural(d, r)),
+             ("annotsv", lambda r: annotsv(d)),
              ("repeats", lambda r: repeats_and_more(d, r)), ("clinical", lambda r: clinical(d, r)),
              # after "reads" and "sample_qc", whose files these two read
              ("read_count", lambda r: read_count(d)), ("mosaic", lambda r: mosaic(d, r)),
