@@ -123,6 +123,7 @@ WHATSHAP_PED         WHATSHAP_IMAGE
 Y_HAPLOGROUP         YLEAF_IMAGE
 Y_PILEUP             SAMTOOLS_IMAGE
 Y_POSITIONS          YLEAF_IMAGE
+Y_STR                HIPSTR_IMAGE
 '
 
 # Processes that run on the host, because they start a pinned pipeline of

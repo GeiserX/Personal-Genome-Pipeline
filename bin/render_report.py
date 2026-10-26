@@ -944,6 +944,15 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("y_str", "Y-STR Markers (HipSTR)"):
+        d = S["y_str"]["data"]
+        w(f"  {ystr_counts(d)}")
+        for x in d["markers"]:
+            if x["count"]:
+                w(f"  {x['panel']:<6} {x['marker']:<13} {x['count']:<6} ({x['confidence']})")
+        w(f"  {YSTR_NOTE}")
+        w("")
+
     if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
         for line in consumer_export_lines(S["consumer_export"]["data"]):
             w(f"  {line}")
@@ -1233,6 +1242,27 @@ def contamination_text(d):
     return f"{word} (level {d.get('contamination_level', '.')})"
 
 
+YSTR_NOTE = ("Repeat counts read from the genome with HipSTR, in FamilyTreeDNA's Y-111 order. A count can "
+             "differ from FamilyTreeDNA's by a fixed number of repeats at some markers, as labs count some repeat "
+             "blocks differently: compare with a known result before trusting a difference. Multi-copy markers and "
+             "repeats longer than the reads are not called. Every marker, with its reads and notes, is in "
+             "y_str/<sample>_y_str.tsv; y_str/<sample>_y_str.csv is the same list for a spreadsheet.")
+
+
+def ystr_counts(d):
+    return (f"Markers called: {d['high']} high and {d['low']} low confidence of {len(d['markers'])}; "
+            f"{d['no_call']} no call, {d['not_callable']} not callable from short reads")
+
+
+def ystr_body(d):
+    """The Y-STR card: the counts, then every called marker in FamilyTreeDNA's order."""
+    rows = "".join(f"<tr><td>{E(x['panel'])}</td><td>{E(x['marker'])}</td><td>{E(x['count'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("markers", []) if x["count"])
+    return [f"    <p>{E(ystr_counts(d))}</p>",
+            "    <table><tr><th>Panel</th><th>Marker</th><th>Repeats</th><th>Confidence</th></tr>" + rows + "</table>",
+            small_note(YSTR_NOTE)]
+
+
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
@@ -1328,6 +1358,28 @@ def mito_lines(d):
     elif a.get("note"):
         lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
     return lines
+
+
+# scripts/pgp-view.sh serves the genome viewer here (PGP_VIEW_PORT's default);
+# the part after '#' is the locus it opens at.
+VIEWER_URL = "http://127.0.0.1:8765/"
+
+
+def viewer_links(sites):
+    """One line under a findings table: each (chrom, pos, label) as a link that
+    opens the reads at chrom:pos in the local genome viewer. Empty for none."""
+    links = [f'<a href="{VIEWER_URL}#{E(str(c))}:{E(str(p))}" target="_blank" rel="noopener noreferrer">{E(str(t))}</a>'
+             for c, p, t in sites if c and p]
+    if not links:
+        return []
+    return ['    <p class="viewer">See the reads in the genome viewer on this computer (start it first: '
+            "scripts/pgp-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
+
+
+def variant_site(variant):
+    """(chrom, pos) of a "chrom:pos ref>alt" text, (None, None) for any other."""
+    m = re.match(r"^([A-Za-z0-9._-]+):([0-9]+) ", variant or "")
+    return (m.group(1), m.group(2)) if m else (None, None)
 
 
 EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
@@ -1641,6 +1693,10 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
+    if S.get("y_str", MISSING)["state"] != "missing":
+        ys = S["y_str"]
+        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+               full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
@@ -1672,6 +1728,7 @@ def html_report(s):
                         v.get("clinvar_review"), v.get("clinvar_condition"), v.get("gnomad_af_hom"),
                         v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + "</tr>"
                     for v in ma["variants"]) + "</table>")
+            mito_body += viewer_links(("chrM", v["pos"], f"chrM:{v['pos']}") for v in ma["variants"])
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
@@ -1694,7 +1751,10 @@ def html_report(s):
                         f"<td>{E(x['consequence'] + high_marks(x, '; '))}</td></tr>\n" for x in sf["high_impact"])
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
-                rows.rstrip("\n"), "    </table>", f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
+                rows.rstrip("\n"), "    </table>"]
+               + viewer_links((*variant_site(x["variant"]), f"{x['gene']} {x['variant'].split(' ')[0]}")
+                              for x in sf["clinvar_hits"] + sf["high_impact"])
+               + [f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
     sl_body = [stat("Prioritized variants", sl.get("prioritized"))]
@@ -1790,7 +1850,9 @@ def html_report(s):
                 + ("<th>gnomAD frequency</th>" if freq else "")
                 + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
-               + ["      " + x for x in rows] + ["    </table>"], full=True))
+               + ["      " + x for x in rows] + ["    </table>"]
+               + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
+               full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]
     lists += (['    <ul class="plain">'] + [f"      <li>{E(t)}</li>" for t in s["not_run"]] + ["    </ul>"]

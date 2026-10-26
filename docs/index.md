@@ -112,6 +112,7 @@ graph LR
 ## Guides and reference
 
 - [Interpreting your results](interpreting-results.md): what each report means and what to do with it.
+- [Genome viewer](viewer.md): open any finding in igv.js with your own reads, served from your computer only.
 - [Look up a variant, an rsID or a gene](lookup.md): your genotype at one site or every variant in one gene, with what the reports say about it.
 - [Multi-sample comparison](multi-sample.md): partners, siblings, parents; carrier overlap and shared variants.
 - [Long-read sequencing](long-read-guide.md): Nanopore and PacBio HiFi entry paths and which steps change.
