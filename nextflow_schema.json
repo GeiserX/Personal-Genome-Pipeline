@@ -323,7 +323,7 @@
                 "yleaf_data": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Yleaf's data folder (GRCh38 marker positions and haplogroup tree), which `scripts/setup.sh --yleaf-data` installs as reference/yleaf-<version>/data: the Yleaf image ships the code only. Required with y_haplogroup.",
+                    "description": "Yleaf's data folder (GRCh38 marker positions and haplogroup tree), which `scripts/setup.sh --yleaf-data` installs as reference/yleaf-<version>/data: the Yleaf image ships the code only. Its ytree/ subfolder, from the same command, holds the current YFull YTree the step also places the sample on. Required with y_haplogroup.",
                     "fa_icon": "fas fa-folder"
                 },
                 "medications": {
