@@ -44,6 +44,8 @@ SEX=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) { h = $i; sub(/^#/, "", h)
   c { s = $c } END { print (s == 1 ? "male" : s == 2 ? "female" : "unknown") }' "$PED")
 if [ "$SEX" != male ]; then
   echo "Step 45 skipped: indexcov infers ${SEX} from the reads (${PED#"$S"/}); Y-STRs need a Y chromosome."
+  # A table from an earlier run of this sample would reach the reports as current.
+  rm -f "$TSV" "${OUTDIR}/${SAMPLE}_y_str."{csv,vcf.gz,log}
   exit 0
 fi
 

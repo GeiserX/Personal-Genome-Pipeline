@@ -263,6 +263,9 @@ sample "$F" "${T}/win.bam" 2
 step "$F"
 check "a female sample is skipped with one line" has '^Step 45 skipped: indexcov infers female from the reads' "$(cat "$STEP_LOG")"
 check "and gets no output" test ! -e "${G}/${F}/y_str"
+mkdir -p "${G}/${F}/y_str" && : > "${G}/${F}/y_str/${F}_y_str.tsv"
+step "$F"
+check "a table left from an earlier run is removed when the step skips" test ! -e "${G}/${F}/y_str/${F}_y_str.tsv"
 
 # --- both reports -------------------------------------------------------------------------
 python3 "${REPO}/bin/render_report.py" --sample "$H" --sample-dir "${G}/${H}" --json "${T}/summary.json" \

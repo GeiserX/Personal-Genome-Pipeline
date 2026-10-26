@@ -46,7 +46,7 @@ Two single-region markers come back as `no call` on HG002's 60x reads, and the n
 ## Input
 
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other BAM steps), and the reference with its `.fai`
-- `${SAMPLE}/indexcov/indexcov-indexcov.ped` from step 16: the sex indexcov infers from the reads. The step runs only when it is male, as step 37 does. A female or undetermined sample is skipped with one line and exit 0.
+- `${SAMPLE}/indexcov/indexcov-indexcov.ped` from step 16: the sex indexcov infers from the reads. The step runs only when it is male, as step 37 does. A female or undetermined sample is skipped with one line and exit 0, and a Y-STR table left from an earlier run of that sample is removed, so the reports do not show it.
 
 In the Nextflow pipeline (`y_str` in `--tools`) the `Y_STR` process runs for the rows whose samplesheet sex is male; `INDEXCOV` has checked that sex against the reads.
 
