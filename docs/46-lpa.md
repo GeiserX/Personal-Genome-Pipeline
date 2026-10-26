@@ -77,7 +77,7 @@ The count is not made when:
 | Status | When |
 |---|---|
 | `too little depth` | the single-copy exons have under 10x |
-| `not assessed` | reads of MAPQ 0 make up under 20% of the depth over the KIV-2 block (the aligner left out the reads that fit several copies), or the BAM has no chr6 |
+| `not assessed` | reads of MAPQ 0 make up under 20% of the depth over the KIV-2 block (the aligner left out the reads that fit several copies), the KIV-2 depth is too low for any repeat count, or the BAM has no chr6 |
 
 ## Output
 

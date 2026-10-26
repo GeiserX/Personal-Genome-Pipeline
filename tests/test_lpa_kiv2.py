@@ -132,6 +132,10 @@ def main():
     check("a quarter of the depth from MAPQ 0: estimated", r["status"] == "estimated", r)
     r = lpa.assess({}, {})
     check("no chr6: not assessed", r["status"] == "not assessed" and "no chr6" in r["message"], r)
+    r = lpa.assess(depths(-1.5), q1(depths(-1.5)))
+    check("KIV-2 depth under the floor of any count: not assessed, never a negative count",
+          r["status"] == "not assessed" and r["kiv2_copies"] == "." and "too little for any repeat count" in r["message"],
+          r)
 
     # 5. CLI
     out = subprocess.run([sys.executable, SCRIPT, "bed"], capture_output=True, text=True)
@@ -156,6 +160,10 @@ def main():
         tab = dict(x.split("\t", 1) for x in open(o).read().splitlines()[1:])
         check("estimate: two empty tables (no chr6) exit 0, not assessed",
               out.returncode == 0 and tab.get("status") == "not assessed", (out, tab))
+        bedcov(a, depths(20))
+        out = subprocess.run(cli, capture_output=True, text=True)
+        check("estimate: an empty MAPQ 1 table beside a full one exits 2",
+              out.returncode == 2 and "is empty but the other table is not" in out.stderr, out)
         bedcov(a, depths(20))
         with open(a, "a") as f:
             f.write("chr6\t1\t100\tother\t500\n")
@@ -224,6 +232,10 @@ def main():
         check("report: too little depth is said, and a not-covered variant is not read",
               "KIV-2 repeats: too little depth" in txt and f"{R1}: . (not read)" in txt
               and f"{R2}: C/C (2 risk alleles)" in txt, txt)
+        summ, txt, html = sample(t, "thin0", 38, flank=3.0)
+        check("report: no count and no variant read is not determined, never a negative result",
+              summ["sections"]["lpa"]["data"]["flag"] == "." and "Not determined" in txt
+              and "No genetic sign" not in txt, txt)
         os.makedirs(os.path.join(t, "none", "S"))
         nothing = collect_summary.collect("S", os.path.join(t, "none", "S"))
         check("report: no card and no text section without step 46",

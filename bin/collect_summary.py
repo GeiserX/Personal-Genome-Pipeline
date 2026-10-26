@@ -2090,11 +2090,15 @@ def sec_lpa(d, s):
     risk = sum(v["risk_alleles"] for v in variants if v["risk_alleles"] is not None)
     reasons = ([f"{risk} risk allele{'s' if risk != 1 else ''} at rs10455872 and rs3798220"] if risk else []) \
         + (["a low KIV-2 repeat count"] if data["class"] == "low" else [])
+    read = data["status"] == "estimated" or any(v["risk_alleles"] is not None for v in variants)
     data.update(variants=variants, risk_alleles=risk, flag="high" if reasons else ".",
                 flag_text=("Genetic signs of a high Lp(a): " + " and ".join(reasons) + ". Measure Lp(a) in blood."
                            if reasons else
                            "No genetic sign of a high Lp(a) from these markers. They explain only part of it: "
-                           "the KIV-2 count explained 21% to 27% of the variation in a Danish population study."))
+                           "the KIV-2 count explained 21% to 27% of the variation in a Danish population study."
+                           if read else
+                           "Not determined: neither the KIV-2 count nor the two risk variants could be read. "
+                           "Measure Lp(a) in blood."))
     return p, data
 
 

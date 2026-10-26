@@ -179,6 +179,10 @@ def assess(m, q1):
         return out
     total = BLOCK_PAIRS * 2 * kdepth / fdepth          # N + 2
     est = total - SINGLE_COPY_PAIRS
+    if est <= 0:
+        out["message"] = (f"not assessed: the KIV-2 exons have {kdepth:.1f}x against {fdepth:.1f}x over the "
+                          "single-copy exons, too little for any repeat count (a deletion or a mapping problem)")
+        return out
     rel = math.sqrt(_cv([m[n] for *_, n in kiv]) ** 2 / len(kiv) + _cv([m[n] for *_, n in fl]) ** 2 / len(fl))
     lo = max(0.0, total * math.exp(-Z95 * rel) - SINGLE_COPY_PAIRS)
     hi = total * math.exp(Z95 * rel) - SINGLE_COPY_PAIRS
@@ -195,7 +199,11 @@ ORDER = ("status", "kiv2_copies", "ci95_low", "ci95_high", "class", "kiv2_depth"
 
 def estimate(args):
     try:
-        res = assess(read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1))
+        m, q1 = read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1)
+        if bool(m) != bool(q1):
+            raise ValueError(f"{args.bedcov_mapq1 if m else args.bedcov} is empty but the other table is not: "
+                             "both must cover the regions, or both be empty (no chr6)")
+        res = assess(m, q1)
     except (OSError, ValueError, KeyError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
