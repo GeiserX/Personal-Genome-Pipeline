@@ -290,8 +290,9 @@ if command -v nextflow >/dev/null; then
   check "the EXOMISER task ran" has 'EXOMISER \(S1\)' "$LOG"
   check "the top table is published" test -e "${DIR}/out/S1/exomiser/S1_exomiser_top.tsv"
   check "and the terms" test -e "${DIR}/out/S1/exomiser/S1_exomiser_terms.tsv"
-  REP=$(grep -l "^### name: [\"']HTML_REPORT (" "${DIR}"/work/*/*/.command.run 2>/dev/null | head -n 1)
-  check "HTML_REPORT received the top table" test -n "$REP" -a -e "$(dirname "${REP:-/x}")/S1_exomiser_top.tsv"
+  # The task is REPORTING:HTML_REPORT; it stages its inputs under input/.
+  REP=$(grep -l "^### name: [\"'].*HTML_REPORT (" "${DIR}"/work/*/*/.command.run 2>/dev/null | head -n 1)
+  check "HTML_REPORT received the top table" test -n "$REP" -a -e "$(dirname "${REP:-/x}")/input/S1_exomiser_top.tsv"
 
   stub_run off --tools exomiser,html_report --exomiser_data "${ST}/db"
   check "--tools exomiser without --hpo: the run stops (exit ${RC})" test "$RC" -ne 0
