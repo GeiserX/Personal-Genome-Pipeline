@@ -24,8 +24,9 @@ Borrowed, not rewritten:
   - step 33's mosaic rows come from bin/mosaic_sex_loss.py, step 26b's painting
     from bin/ancestry_fine_report.py, step 35b's table from
     bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
-    from bin/traits_report.py, each fed made-up inputs; steps 02, 40 and 41's
-    tables are written here in their writers' columns.
+    from bin/traits_report.py, each fed made-up inputs; step 45's rows come
+    from bin/ystr_report.py's marker_row with made-up counts; steps 02, 40 and
+    41's tables are written here in their writers' columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
 Paraphase card (a PacBio HiFi step, though the invented reads are short) and
@@ -857,6 +858,23 @@ TRAIT_ALT_COPIES = {
 }
 
 
+def y_str(d, rng):
+    """Step 45: one row per marker of assets/ystr_panel.tsv from bin/ystr_report.py's
+    marker_row, so the multi-copy, absent and too-long markers read not callable
+    as in a real run; every other marker gets a made-up count at confidence high."""
+    import ystr_report
+    rows = []
+    for r in ystr_report.read_panel(os.path.join(REPO, "assets", "ystr_panel.tsv")):
+        row = ystr_report.marker_row(r, {}, 150)
+        if row["confidence"] == "no call":
+            row.update(count=str(rng.randint(10, 30)), confidence="high", reads=str(rng.randint(18, 34)),
+                       stutter_reads="0", flank_indel_reads="0", q="0.99", note=".")
+        rows.append(row)
+    put(os.path.join(d, "y_str", f"{SAMPLE}_y_str.tsv"),
+        "\t".join(ystr_report.TSV_COLUMNS) + "\n"
+        + "".join("\t".join(row[k] for k in ystr_report.TSV_COLUMNS) + "\n" for row in rows))
+
+
 def traits(d):
     """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
@@ -904,7 +922,8 @@ def make(a):
              ("read_count", lambda r: read_count(d)), ("mosaic", lambda r: mosaic(d, r)),
              ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
-             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d))]
+             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
+             ("y_str", lambda r: y_str(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
