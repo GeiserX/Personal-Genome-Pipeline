@@ -19,7 +19,8 @@ Exomiser 15's TsvVariantResultsWriter. The cases:
      words with the note; a header-only file gives no rank and says so; a
      missing column and a short line stop it
   5. the summary section and both reports show the ranking (collect_summary.py
-     and render_report.py)
+     and render_report.py); the module's -stub table has the same columns and
+     reads as no gene
 
 Run: python3 tests/test_exomiser_report.py
 """
@@ -331,6 +332,19 @@ def case_reports():
             check("summary: a table without its columns is unreadable", False, "no error")
         except cs.Unreadable:
             check("summary: a table without its columns is unreadable", True)
+        # The -stub table of EXOMISER_REPORT reads as "no gene passed", not unreadable.
+        import re
+        import exomiser_report as er
+        nf = open(os.path.join(REPO, "modules", "local", "exomiser", "main.nf")).read()
+        m = re.search(r"printf '([^']*)' > \$\{meta\.id\}_exomiser_top\.tsv", nf.split("stub:")[-1])
+        head = m.group(1).replace("\\\\t", "\t").replace("\\\\n", "\n") if m else ""
+        check("stub: the top table carries the report's columns", head == "\t".join(er.OUT_HEADER) + "\n", repr(head))
+        write(bad, head)
+        try:
+            _, data = cs.sec_exomiser(os.path.join(d, "S1"), "S1")
+            check("stub: the summary reads it as no gene", data.get("genes") == [], str(data))
+        except cs.Unreadable as e:
+            check("stub: the summary reads it as no gene", False, str(e))
 
 
 if __name__ == "__main__":
