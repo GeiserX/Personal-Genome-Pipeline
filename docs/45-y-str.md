@@ -39,6 +39,10 @@ The 111 markers fall into four kinds:
 
 Why the span markers are one region: HipSTR 0.7 genotypes every region on its own. When the parts of these six went to it one by one, on HG002's 60x reads it wrote no record for one part of each, though their neighbours had 25 to 70 reads, so none of the six got a count. Their parts lie 7 to 47 bp apart, or overlap another marker's region (DYS389II starts where DYS389I starts). DYS449 and DYS552, whose parts it did call, stay as parts.
 
+As one region, DYS450, DYS504, DYS510 and DYS532 get a count on HG002's 60x reads, and the reads' own count agrees for each that reads span. DYS389II and DYS448 become longer than 150 bp reads can span, so they are not callable from such reads.
+
+Two single-region markers come back as `no call` on HG002's 60x reads, and the note says why from HipSTR's log: DYS19 (`Aborting genotyping of the locus as the sequence downstream of the repeat is too repetitive for accurate genotyping`) and DYS425 (`Skipping locus with too few reads: TOTAL=0`).
+
 ## Input
 
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other BAM steps), and the reference with its `.fai`
