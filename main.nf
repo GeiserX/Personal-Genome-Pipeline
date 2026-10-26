@@ -789,6 +789,8 @@ workflow {
         ARCHAIC_REPORT(ARCHAIC_IBDMIX.out.segments, ch_hla_genes)
         ch_archaic          = ARCHAIC_REPORT.out.summary
         ch_archaic_versions = ARCHAIC_GENOTYPES.out.versions.mix(ARCHAIC_IBDMIX.out.versions, ARCHAIC_REPORT.out.versions)
+    }
+
     // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
     // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
     // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
@@ -896,7 +898,7 @@ workflow {
             ch_family_versions,
             ch_traits_versions,
             ch_bloodtype_versions,
-            ch_archaic_versions
+            ch_archaic_versions,
             ch_viral_versions
         )
         .map { f -> f.text }
