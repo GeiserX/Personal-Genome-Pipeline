@@ -29,6 +29,7 @@ Run: python3 tests/test_family_segments.py
 import csv
 import os
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -243,8 +244,10 @@ def test_report(d, vcf, members):
     md = open(os.path.join(outs[0], "family_report.md")).read() if os.path.exists(
         os.path.join(outs[0], "family_report.md")) else ""
     check("family_report.md has a Chromosome map section", "## Chromosome map" in md)
+    line = next((x for x in md.splitlines() if x.startswith("- kid: from the father (dad)")), "")
+    count = re.search(r"; (\d+) crossovers?,", line)
     check("the section counts kid's one paternal crossover",
-          "kid: from the father (dad)" in md and "1 crossover" in md, md[md.find("## Chromosome map"):][:1500])
+          count is not None and count.group(1) == "1", line or md[md.find("## Chromosome map"):][:1500])
     names = ("kid_segments.tsv", "kid_dnapainter.csv", "kid_segments.svg", "dad_segments.tsv")
     for n in names:
         a, b = (os.path.join(o, n) for o in outs)
