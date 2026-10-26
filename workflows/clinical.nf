@@ -199,7 +199,9 @@ workflow CLINICAL {
             }
         MITO_EXTRACT_CHRM(
             ch_mito_in.mutect2.map { row -> [row[1], row[4], [], 'mutect2'] }
-                .mix(ch_mito_in.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] })
+                .mix(ch_mito_in.vcf.map { row -> [row[1], row[2], row[3], 'vcf'] }),
+            ch_reference,
+            ch_reference_fai
         )
         MITO_HAPLOGROUP(MITO_EXTRACT_CHRM.out.chrm_vcf)
         // haplocheck needs Mutect2's allele fractions: the samples it called only
