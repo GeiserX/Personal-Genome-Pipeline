@@ -25,7 +25,8 @@ Borrowed, not rewritten:
     from bin/ancestry_fine_report.py, step 35b's table from
     bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
     from bin/traits_report.py, each fed made-up inputs; step 45's rows come
-    from bin/ystr_report.py's marker_row with made-up counts; steps 02, 40 and
+    from bin/ystr_report.py's marker_row and step 47's from
+    bin/viral_report.py's build_rows, with made-up counts; steps 02, 40 and
     41's tables are written here in their writers' columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
@@ -890,6 +891,25 @@ def y_str(d, rng):
         + "".join("\t".join(row[k] for k in ystr_report.TSV_COLUMNS) + "\n" for row in rows))
 
 
+def viral(d):
+    """Step 47: bin/viral_report.py's build_rows on made-up coverage: the lab's
+    phiX control, a few Epstein-Barr reads, no HHV-6, at a human depth of 31."""
+    import csv
+    import viral_report as vr
+    genomes = [("NC_001664.4", "Human herpesvirus 6A, complete genome", 159378, 0, (0.0, 0.0, 0)),
+               ("NC_000898.1", "Human herpesvirus 6B, complete genome", 162114, 0, (0.0, 0.0, 0)),
+               ("NC_007605.1", "Human gammaherpesvirus 4, complete genome", 171823, 7, (0.0041, 0.006, 0)),
+               ("NC_001422.1", "Escherichia phage phiX174, complete genome", 5386, 1412, (1.0, 38.2, 37))]
+    rows = vr.build_rows([(a, t) for a, t, *_ in genomes],
+                         {a: {"reads": n, "length": ln} for a, _, ln, n, _ in genomes},
+                         {a: dep for a, *_, dep in genomes}, 31.0)
+    os.makedirs(os.path.join(d, "viral"), exist_ok=True)
+    with open(os.path.join(d, "viral", f"{SAMPLE}_viral.tsv"), "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=vr.HEADER, delimiter="\t", lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
+
+
 def traits(d):
     """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
@@ -938,7 +958,7 @@ def make(a):
              ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
              ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
-             ("y_str", lambda r: y_str(d, r))]
+             ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
