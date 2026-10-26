@@ -928,6 +928,15 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("y_str", "Y-STR Markers (HipSTR)"):
+        d = S["y_str"]["data"]
+        w(f"  {ystr_counts(d)}")
+        for x in d["markers"]:
+            if x["count"]:
+                w(f"  {x['panel']:<6} {x['marker']:<13} {x['count']:<6} ({x['confidence']})")
+        w(f"  {YSTR_NOTE}")
+        w("")
+
     if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
         for line in consumer_export_lines(S["consumer_export"]["data"]):
             w(f"  {line}")
@@ -1209,6 +1218,27 @@ def contamination_text(d):
     word = {"YES": "YES, two mtDNA haplogroups in the reads (another person's DNA?)", "NO": "no",
             "ND": "not determined"}.get(s, s)
     return f"{word} (level {d.get('contamination_level', '.')})"
+
+
+YSTR_NOTE = ("Repeat counts read from the genome with HipSTR, in FamilyTreeDNA's Y-111 order. A count can "
+             "differ from FamilyTreeDNA's by a fixed number of repeats at some markers, as labs count some repeat "
+             "blocks differently: compare with a known result before trusting a difference. Multi-copy markers and "
+             "repeats longer than the reads are not called. Every marker, with its reads and notes, is in "
+             "y_str/<sample>_y_str.tsv; y_str/<sample>_y_str.csv is the same list for a spreadsheet.")
+
+
+def ystr_counts(d):
+    return (f"Markers called: {d['high']} high and {d['low']} low confidence of {len(d['markers'])}; "
+            f"{d['no_call']} no call, {d['not_callable']} not callable from short reads")
+
+
+def ystr_body(d):
+    """The Y-STR card: the counts, then every called marker in FamilyTreeDNA's order."""
+    rows = "".join(f"<tr><td>{E(x['panel'])}</td><td>{E(x['marker'])}</td><td>{E(x['count'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("markers", []) if x["count"])
+    return [f"    <p>{E(ystr_counts(d))}</p>",
+            "    <table><tr><th>Panel</th><th>Marker</th><th>Repeats</th><th>Confidence</th></tr>" + rows + "</table>",
+            small_note(YSTR_NOTE)]
 
 
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
@@ -1641,6 +1671,10 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
+    if S.get("y_str", MISSING)["state"] != "missing":
+        ys = S["y_str"]
+        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+               full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
