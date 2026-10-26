@@ -26,13 +26,16 @@ plants), runs the script on assets/ystr_panel.tsv, and checks the table:
   6. a damaged input: a VCF with two samples, a panel out of order
   7. the reports: bin/collect_summary.py reads the table (counts per
      confidence) and refuses one with an unknown confidence; the HTML card of
-     bin/render_report.py lists the called markers only, with the note
+     bin/render_report.py lists the called markers only, with the note, and
+     the HTML report shows an unreadable table as Unreadable
 
 Run: python3 tests/test_ystr_report.py
 """
+import atexit
 import csv
 import gzip
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,6 +58,7 @@ def check(name, got, want):
 
 
 TMP = tempfile.mkdtemp(prefix="ystr-test-")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)
 FORMAT = "GT:GB:Q:PQ:DP:DSNP:PSNP:PDP:GLDIFF:DSTUTTER:DFLANKINDEL"
 
 
@@ -304,6 +308,12 @@ try:
     check("7 an unknown confidence is unreadable", "read", "Unreadable")
 except cs.Unreadable:
     check("7 an unknown confidence is unreadable", "Unreadable", "Unreadable")
+try:
+    page = rr.html_report(cs.collect("S1", sd))
+except (KeyError, TypeError) as e:
+    page = f"{type(e).__name__}: {e}"
+check("7 the HTML report renders an unreadable Y-STR table as such",
+      "<h2>Y-STR Markers (HipSTR)</h2>" in page and "Unreadable" in page, True)
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

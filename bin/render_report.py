@@ -1650,7 +1650,9 @@ def html_report(s):
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
     if S.get("y_str", MISSING)["state"] != "missing":
-        a(card(S["y_str"], "Y-STR Markers (HipSTR)", ystr_body(S["y_str"]["data"]), full=True))
+        ys = S["y_str"]
+        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+               full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
