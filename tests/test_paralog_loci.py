@@ -14,7 +14,10 @@ populations' lists are the same file).
      read;
   3. controls: a catalog naming a model not on the list (GBA1.gz, where the
      model file is GBA.gz), a bad region, a repeated table name and a catalog
-     without the SMN1 row are each refused.
+     without the SMN1 row are each refused;
+  4. the report reader (bin/collect_summary.py): a not-assessed SMN table
+     from step 35 gives a reading that names the reason, and a called one
+     still reads as before.
 
 Run: python3 tests/test_paralog_loci.py
 """
@@ -22,6 +25,7 @@ import hashlib
 import os
 import re
 import sys
+import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = os.path.join(REPO, "assets", "parascopy_models_v1.7.txt")
@@ -117,6 +121,28 @@ def main():
         check(f"control: {desc} is refused", bool(problems([head, smn, row], models)))
     check("control: a catalog without the SMN1 row is refused",
           bool(problems([head, "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tgba\ts\n"], models)))
+
+    # 4. the report reader on step 35's tables
+    sys.path.insert(0, os.path.join(REPO, "bin"))
+    import collect_summary  # noqa: E402
+    head11 = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+              "homologous_regions\n")
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "paralogs"))
+        t = os.path.join(d, "paralogs", "S_smn_copy_number.tsv")
+        with open(t, "w") as f:
+            f.write(head11 + ".\t.\t.\tSMN1\tnot assessed: no read over chr5:70951946-70951946\t.\t.\t.\t.\t.\t.\n")
+        _, data = collect_summary.sec_parascopy(d, "S")
+        check("report: a not-assessed SMN table reads as not assessed, with the reason",
+              data["reading"] == "SMN1 and SMN2 not assessed: no read over chr5:70951946-70951946: no carrier reading"
+              and data["smn1"]["cn"] is None, data.get("reading"))
+        with open(t, "w") as f:
+            f.write(head11 + "chr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t1,3\t35,30\t"
+                    "chr5:70049000-70077000:-\n")
+        _, data = collect_summary.sec_parascopy(d, "S")
+        check("report: a called SMN table still reads one SMN1 copy as a carrier",
+              data["smn1"]["cn"] == 1 and "carrier" in data["reading"] and "not assessed" not in data["reading"],
+              data.get("reading"))
 
     if FAILS:
         print(f"{FAILS} check(s) failed")

@@ -46,7 +46,7 @@ case "$*" in
   "parascopy depth"*)
     FLAG=-o; mkdir -p "$(host_path "$(arg "$@")")" ;;
   "parascopy cn-using"*)
-    model=$2
+    model=$3
     case "$model" in *"/${FAKE_CN_FAIL:-none}") echo "fake parascopy: failed on ${model}" >&2; exit 1 ;; esac
     FLAG=-o; o=$(host_path "$(arg "$@")"); mkdir -p "$o"
     name=$(basename "$model" .gz)

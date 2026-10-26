@@ -8,6 +8,8 @@
 
 Estimates how many copies of SMN1 and SMN2 the genome carries, from the short-read BAM, with [Parascopy](https://github.com/tprodanov/parascopy). For each stretch of the SMN1/SMN2 locus it reports the aggregate copy number of the two genes together (agCN) and, where the few sequence differences between them allow, the copy number of each (psCN), each with a quality.
 
+The loci come from a catalog, `assets/paralog_loci.tsv`: one row per Parascopy model, and the step runs Parascopy once per row. Today the catalog has one row, SMN1 and SMN2. See [The paralog catalog](#the-paralog-catalog) below.
+
 It also counts the alpha-globin genes (HBA1 and HBA2 together) from read depth, for the alpha-thalassaemia deletions, because Parascopy has no model for them. See [HBA1 and HBA2 from depth](#hba1-and-hba2-from-depth) below.
 
 ## Why
@@ -48,6 +50,7 @@ Parascopy needs a BAM aligned to a reference without ALT contigs, which is the p
 | Variable | Default | Meaning |
 |---|---|---|
 | `PARASCOPY_POPULATION` | `EUR` | Whose model parameters to use: AFR, AMR, EAS, EUR or SAS. Pick the one closest to the sample's ancestry. |
+| `PARALOG_LOCI` | `assets/paralog_loci.tsv` | The catalog of loci to run (bash step only; the Nextflow module reads the file in the repository). |
 | `PARASCOPY_DEPTH_BED` | Parascopy's GRCh38 windows | Background windows (BED, every window the same size) for a BAM that covers only part of the genome. The depth is then not stratified by GC content (`--no-gc`): a few regions rarely span the GC range Parascopy's GC model needs, and it stops on them. The e2e test uses 100 bp windows over its chr20 slice. |
 
 With Nextflow: `--tools ...,parascopy --parascopy_data ${GENOME_DIR}/reference/parascopy-1.7`, and `--parascopy_population`, `--parascopy_depth_bed` for the two variables.
@@ -55,8 +58,8 @@ With Nextflow: `--tools ...,parascopy --parascopy_data ${GENOME_DIR}/reference/p
 ## What the Script Does Internally
 
 1. `parascopy depth`: background read depth of the sample, over Parascopy's GRCh38 windows (or `PARASCOPY_DEPTH_BED`).
-2. `parascopy cn-using models_GRCh38_1KGP/<population>/SMN1.gz`: the copy number of the SMN1/SMN2 locus with those model parameters.
-3. Writes one row per region of the copy-number profile to `${SAMPLE}_smn_copy_number.tsv`.
+2. For each row of the catalog: `samtools view -c` counts the reads over the row's region, then `parascopy cn-using models_GRCh38_1KGP/<population>/<model>` gives the copy number of the locus with those model parameters. A row whose model is not installed, whose region has no read, or on which Parascopy fails is not assessed: its table holds one row that says so, with the reason, and the other rows still run.
+3. Writes one row per region of each locus profile to `${SAMPLE}_<table>_copy_number.tsv` (`${SAMPLE}_smn_copy_number.tsv` for the SMN1 row).
 4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, once over every read and once over reads of mapping quality 1 or more (`-Q 1`), and `bin/hba_copy_number.py check` writes `${SAMPLE}_hba_copy_number.tsv`. A failure here prints a warning and writes a table that says not assessed; the SMN result stands.
 
 ## Output
@@ -65,9 +68,10 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_smn_copy_number.tsv` | One row per region: `chrom`, `start`, `end`, `locus`, `agCN_filter`, `agCN`, `agCN_qual`, `psCN_filter`, `psCN`, `psCN_qual`, `homologous_regions` |
+| `${SAMPLE}_smn_copy_number.tsv` | One row per region: `chrom`, `start`, `end`, `locus`, `agCN_filter`, `agCN`, `agCN_qual`, `psCN_filter`, `psCN`, `psCN_qual`, `homologous_regions`. A locus that was not assessed has one row with `.` in every column except `locus` (the model name) and `agCN_filter` (`not assessed: <reason>`) |
+| `${SAMPLE}_<table>_copy_number.tsv` | The same, for every other catalog row (none in the catalog today) |
 | `${SAMPLE}_hba_copy_number.tsv` | `metric`, `value`: `status` (`called` or `not assessed`), `alpha_globin_genes`, `estimate`, `hba2_depth`, `hba1_depth`, `flank_left_depth`, `flank_right_depth`, `mapq0_share` (the part of the depth over the two genes from reads of mapping quality 0), `message` |
-| `${SAMPLE}_parascopy/` | Parascopy's own output: `res.samples.bed.gz`, `res.paralog.bed.gz`, `psvs.vcf.gz` and the rest ([described upstream](https://github.com/tprodanov/parascopy/blob/main/docs/cn_output.md)) |
+| `${SAMPLE}_parascopy/<table>/` | Parascopy's own output for each catalog row (`smn/` for SMN1): `res.samples.bed.gz`, `res.paralog.bed.gz`, `psvs.vcf.gz` and the rest ([described upstream](https://github.com/tprodanov/parascopy/blob/main/docs/cn_output.md)) |
 
 ## Runtime
 
@@ -87,7 +91,27 @@ On the CI fixture the step takes 8 seconds: one thread, the background depth ove
 
 - **Assessed:** the copy number of SMN1 and SMN2, together and, where possible, each.
 - **Assessed:** the number of alpha-globin genes, HBA1 and HBA2 together, from read depth (below).
-- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which are not wired in yet for short reads; CYP21A2, for which Parascopy has no model; and which HBA gene or which chromosome lost a copy. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. A PacBio HiFi BAM gets the genes above from step 35b.
+- **Not assessed:** the "2+0" arrangement above; small variants inside SMN1 (a minority of SMA, and they need the reads placed on SMN1, which short reads cannot do reliably); GBA/GBAP1, PMS2, NCF1, STRC and the other paralog genes Parascopy has models for, which have no catalog row yet; CYP21A2, for which Parascopy has no model; and which HBA gene or which chromosome lost a copy. The pinned data (version 1.7) holds 167 models per population, and none covers the alpha-globin locus on chr16 or CYP21A2. A PacBio HiFi BAM gets the genes above from step 35b.
+
+## The Paralog Catalog
+
+`assets/paralog_loci.tsv` lists the loci step 35 runs, one row per Parascopy model. Its columns:
+
+| Column | Meaning |
+|---|---|
+| `model` | the model file in `models_GRCh38_1KGP/<population>/`, for example `SMN1.gz` |
+| `genes` | the genes the model's region holds |
+| `region` | the region of interest, GRCh38 `chrom:start-end` (1-based); a BAM with no read there gets the row not assessed, and Parascopy does not run on it |
+| `reading` | what the copy number there means, per value |
+| `pscn_reliable` | `yes` when the copy number of each copy (psCN) can be trusted there, `no` when only the copies together (agCN) can |
+| `tag` | `carrier`, `SF` (secondary finding), `PGx` or `trait` |
+| `cross_check` | another engine that calls the same locus (`paraphase` on HiFi reads), or `none` |
+| `table` | the name in `${SAMPLE}_<table>_copy_number.tsv` and `${SAMPLE}_parascopy/<table>/` |
+| `source` | where the reading comes from |
+
+The SMN1 row (`SMN1.gz`, region chr5:70,951,946, SMN1 exon 7, table `smn`) is the only row today. A new locus is a new row for a model already in the pinned data; it needs no code change. The reports read the SMN table only, so a new row's table is written and published but not yet shown in either report.
+
+`assets/parascopy_models_v1.7.txt` is the model list of the pinned data: the `list.txt` of `models_GRCh38_1KGP_v1.7.tar.gz` (Zenodo record 15019940, archive sha256 `2e9be08b69936f13a49d52c7764f2414beac27a99b95e0c48b2e2ccafbb8c846`), 167 models, the same for the five populations. `tests/test_paralog_loci.py` refuses a catalog row whose model is not on that list: the gene GBA1, for example, has the model `GBA.gz`, not `GBA1.gz`.
 
 ## HBA1 and HBA2 from Depth
 
@@ -118,13 +142,16 @@ Limits:
 
 ## How It Is Tested
 
+- `tests/test_paralog_loci.py` checks the model list (167 names, its sha256) and every catalog row (a model on the list, a GRCh38 region, a table name used once, the SMN1 row), and that planted faults are refused: a model not on the list, a bad region, a repeated table name, a catalog without the SMN1 row. It also checks that the report reads a not-assessed SMN table as not assessed, with the reason.
+- `tests/fake-docker/paralog-catalog-loop.sh` runs the step on a catalog of three rows against a fake Docker: three `parascopy cn-using` calls with the right model files, in order, one table each; another population's files with `PARASCOPY_POPULATION`; no call and a not-assessed table for a region without reads, a model that is not installed and a Parascopy run that fails, while the other rows run; a bad row stops the step before any container.
+- The e2e case `paralog-catalog-1-gba` adds a GBA row (`GBA.gz`) to a copy of the catalog and runs the step on the fixture's slice plus GIAB's HG002 reads over GBA1 and GBAP1, sampled to about 30x: the GBA table must hold an integer agCN with its quality. On the fixture's slice alone, which has no read at GBA1, the same row must be not assessed. The case also checks that the committed model list is the installed `list.txt` of each population, that the SMN table is byte for byte what one `parascopy cn-using` of `SMN1.gz` writes, as the step did before the catalog, and that the loop of the Nextflow module, cut from the file, writes the same two tables in the same image.
 - `tests/test_hba_copy_number.py` gives `bin/hba_copy_number.py` made-up depth tables: four genes at even depth, three with HBA2 at half depth, two, a triplication, an estimate between two whole numbers, low flanks, flanks that disagree, and no read of mapping quality 0 over the genes (the depths of the novoalign BAM, and a clean three), which must be not assessed.
 - The e2e case `paralog-checks-and-doc-fixes-1-hba` writes synthetic 30x reads over chr16:95,001-235,000 for two samples, one with every second read over HBA2 left out (a planted one-gene loss), runs step 35 on each and checks four and three genes. A synthetic read whose bases occur more than once in that stretch gets mapping quality 0, as an aligner gives it. The HBA block of `modules/local/parascopy/main.nf`, cut from the file, then runs on the same BAMs in the same image and must write the same table. Last, the block runs on HG002's real Illumina reads at the cluster, three ways: GIAB's 60x novoalign BAM sampled to about 30x must be not assessed, naming the missing mapping quality 0 reads; Google's 35x NovaSeq BWA-MEM BAM must count four; and the same reads realigned with `minimap2 -a -x sr` to chr16:1-300,000 must count four. The truth is four, from Paraphase on HG002's HiFi reads. The run's notes record each estimate, the four depths and the share of mapping quality 0.
 - The e2e case `hba-short-read-accuracy-1-nf-report` runs the Nextflow `HTML_REPORT` with and without an HBA table and checks the HBA line and the not-assessed list, then stub-runs every tool and checks that `main.nf` passes the table to each `HTML_REPORT` task that got the SMN table, against a copy of the pipeline with that join removed.
 
 ## In the Reports
 
-Both reports (step 24 and the Nextflow `HTML_REPORT`) read `${SAMPLE}_smn_copy_number.tsv` into a section of its own, **SMN1/SMN2 Copy Number (Parascopy, short reads)**. It shows the copy number of SMN1 and of SMN2 at exon 7 (the row of the table, or its homologous region, that holds chr5:70,951,946 for SMN1 and chr5:70,076,526 for SMN2), with quality and filter; the two together (agCN) there; and a one-line reading: no SMN1 copy is the pattern of SMA, one copy that of a carrier, two copies is not a carrier by copy number with a 2+0 carrier not ruled out. A copy with a quality under 20 or a filter other than `PASS` is shown as not resolved and gets no reading, and a table with no row over SMN1 exon 7 says that instead of a reading. With step 35b's table too, the Paraphase section also sets the two tools' SMN1 side by side. When `${SAMPLE}_hba_copy_number.tsv` is there, the section adds one line, `HBA1 and HBA2 together (alpha-globin genes, from depth)`, with the count, its reading and the estimate, or the reason it was not assessed. The Nextflow `PARASCOPY` task writes the same table to the same folder, and `HTML_REPORT` reads it the same way.
+Both reports (step 24 and the Nextflow `HTML_REPORT`) read `${SAMPLE}_smn_copy_number.tsv` into a section of its own, **SMN1/SMN2 Copy Number (Parascopy, short reads)**. It shows the copy number of SMN1 and of SMN2 at exon 7 (the row of the table, or its homologous region, that holds chr5:70,951,946 for SMN1 and chr5:70,076,526 for SMN2), with quality and filter; the two together (agCN) there; and a one-line reading: no SMN1 copy is the pattern of SMA, one copy that of a carrier, two copies is not a carrier by copy number with a 2+0 carrier not ruled out. A copy with a quality under 20 or a filter other than `PASS` is shown as not resolved and gets no reading, a table with no row over SMN1 exon 7 says that instead of a reading, and a table that says not assessed gives that reason instead. With step 35b's table too, the Paraphase section also sets the two tools' SMN1 side by side. When `${SAMPLE}_hba_copy_number.tsv` is there, the section adds one line, `HBA1 and HBA2 together (alpha-globin genes, from depth)`, with the count, its reading and the estimate, or the reason it was not assessed. The Nextflow `PARASCOPY` task writes the same table to the same folder, and `HTML_REPORT` reads it the same way.
 
 When neither step 35 nor step 35b left a result, both reports print `Paralog copy number: not checked (neither step 35 nor step 35b ran)`, naming a step that failed instead, so a missing check never reads as a normal result. Unless step 35's depth count made a call, or step 35b called both HBA1 and HBA2 (a run limited to other regions with `--paraphase_regions` has neither, and a `no call` row does not count), the "Not Assessed" list also names HBA1/HBA2 copy number.
 

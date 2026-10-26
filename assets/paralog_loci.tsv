@@ -17,4 +17,3 @@
 # tests/test_paralog_loci.py checks every row against the model list.
 model	genes	region	reading	pscn_reliable	tag	cross_check	table	source
 SMN1.gz	SMN1,SMN2	chr5:70951946-70951946	psCN of SMN1 at exon 7 (c.840): 0 = the pattern of SMA; 1 = an SMA carrier; 2 or more = not a carrier by copy number (a 2+0 carrier is not ruled out)	yes	carrier	paraphase	smn	Prodanov and Bansal 2022, PMID 35680869
-GBA1.gz	GBA1,GBAP1	chr1:155234452-155244699	agCN of GBA1 and GBAP1 together: 4 = no deletion or duplication seen	no	carrier	paraphase	gba	Prodanov and Bansal 2022, PMID 35680869
