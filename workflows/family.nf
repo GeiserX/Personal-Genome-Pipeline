@@ -15,7 +15,8 @@
                       on a pair that disagrees (a sample swap)
       WHATSHAP_PED    phase the children of complete trios by inheritance
       FAMILY_REPORT   allele origin per child, de novo candidates (both
-                      parents sequenced), compound heterozygotes, the report
+                      parents sequenced), compound heterozygotes, the
+                      chromosome map of each child, the report
       COUPLE_CARRIER  the carrier screen of two partners (step 39): only
                       when the pedigree marks two members as partners and
                       main.nf hands their ClinVar hits over

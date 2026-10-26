@@ -127,7 +127,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                stored, hours on a home connection), and its images; then exit. Step 26b runs ADMIXTURE,"
   echo "                free for academic use, and RFMix, free for academic research use only: any other use,"
   echo "                a personal one included, needs a licence from Stanford."
-  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree (step 37, ~15 MB), pull its image and exit."
+  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree and the current YFull tree (step 37, ~75 MB), pull its image and exit."
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
@@ -293,30 +293,64 @@ install_kir_data() {
 # install_yleaf_data: the yleaf/data folder of Yleaf YLEAF_DATA_VERSION (step
 # 37): its GRCh38 marker positions and haplogroup tree. The biocontainer of
 # YLEAF_IMAGE installs the code only. GitHub's archive of the tag, checked
-# against YLEAF_DATA_SHA256.
+# against YLEAF_DATA_SHA256. Then the current Y tree beside it, in data/ytree
+# (bin/y_tree_place.py): YFull's YTree YTREE_VERSION and the GRCh38 SNP tables
+# of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256. A
+# failed download of the current tree is a warning, not a failure.
 install_yleaf_data() {
   local dest="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}" tgz
   if [ -s "${dest}/data/hg38/new_positions.txt" ] && [ -s "${dest}/data/hg_prediction_tables/tree.json" ]; then
     echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables (step 37) already present."
+  else
+    tgz="${dest}.tar.gz"
+    if ! fetch "https://github.com/genid/Yleaf/archive/refs/tags/${YLEAF_DATA_VERSION}.tar.gz" "$tgz" sha256 "$YLEAF_DATA_SHA256"; then
+      echo "[WARN] Could not download Yleaf ${YLEAF_DATA_VERSION}."
+      return 1
+    fi
+    rm -rf "${dest}.part"
+    mkdir -p "${dest}.part"
+    tar -xzf "$tgz" -C "${dest}.part" --strip-components 2 "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data"
+    rm -f "$tgz"
+    if [ ! -s "${dest}.part/data/hg38/new_positions.txt" ]; then
+      echo "[WARN] The Yleaf ${YLEAF_DATA_VERSION} archive has no yleaf/data/hg38/new_positions.txt."
+      rm -rf "${dest}.part"
+      return 1
+    fi
+    rm -rf "$dest"
+    mv "${dest}.part" "$dest"
+    echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+  fi
+
+  # version.txt names every pin (releases, commits, sha256), so a re-pin of
+  # any of them, at the same tree release too, installs the tables again.
+  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want
+  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s' \
+    "$label" "$YTREE_POSITIONS_VERSION" "$YTREE_COMMIT" "$YTREE_SHA256" \
+    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256")"
+  if [ -s "${yt}/version.txt" ] && [ "$(cat "${yt}/version.txt")" = "$want" ]; then
+    echo "[OK] Current Y tree (${label}, step 37) already present."
     return 0
   fi
-  tgz="${dest}.tar.gz"
-  if ! fetch "https://github.com/genid/Yleaf/archive/refs/tags/${YLEAF_DATA_VERSION}.tar.gz" "$tgz" sha256 "$YLEAF_DATA_SHA256"; then
-    echo "[WARN] Could not download Yleaf ${YLEAF_DATA_VERSION}."
-    return 1
+  rm -rf "${yt}.part"
+  mkdir -p "${yt}.part"
+  if ! fetch "https://raw.githubusercontent.com/YFullTeam/YTree/${YTREE_COMMIT}/current_tree.json" \
+         "${yt}.part/current_tree.json" sha256 "$YTREE_SHA256" \
+     || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/ftdna_positions_hg38.txt" \
+         "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
+     || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
+         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
+    # Yleaf's own data is in place, so step 37 still runs: it says the
+    # current tree is not installed and writes Yleaf's result only. An older
+    # tree from an earlier pin goes too, so no step places on tables that
+    # versions.env no longer names.
+    echo "[WARN] Could not download the current Y tree (${label}); step 37 will place the sample on Yleaf's tree only. Run this again to retry."
+    rm -rf "${yt}.part" "$yt"
+    return 0
   fi
-  rm -rf "${dest}.part"
-  mkdir -p "${dest}.part"
-  tar -xzf "$tgz" -C "${dest}.part" --strip-components 2 "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data"
-  rm -f "$tgz"
-  if [ ! -s "${dest}.part/data/hg38/new_positions.txt" ]; then
-    echo "[WARN] The Yleaf ${YLEAF_DATA_VERSION} archive has no yleaf/data/hg38/new_positions.txt."
-    rm -rf "${dest}.part"
-    return 1
-  fi
-  rm -rf "$dest"
-  mv "${dest}.part" "$dest"
-  echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+  printf '%s\n' "$want" > "${yt}.part/version.txt"
+  rm -rf "$yt"
+  mv "${yt}.part" "$yt"
+  echo "[OK] Current Y tree (${label}) and Yleaf ${YTREE_POSITIONS_VERSION}'s SNP positions (step 37): ${yt}"
 }
 
 # install_exomiser_data: Exomiser's hg38 and phenotype data of release
