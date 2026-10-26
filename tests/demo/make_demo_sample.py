@@ -543,9 +543,8 @@ def structural(d, rng):
     # Step 05's class 4 and 5 SVs, checked (bin/annotsv_postfilter.py's
     # columns): none, as in most genomes.
     import annotsv_postfilter
-    cols = ["SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Gene_name", "ACMG_class"]
     put(os.path.join(d, "annotsv", f"{SAMPLE}_sv_class4_5_checked.tsv"),
-        "\t".join(cols + annotsv_postfilter.ADDED) + "\n")
+        "\t".join(annotsv_postfilter.KEEP + annotsv_postfilter.ADDED) + "\n")
 
 
 # --- repeats, telomeres, ROH, mitochondria, Y: steps 09, 10, 11, 12, 20, 37 --------------
