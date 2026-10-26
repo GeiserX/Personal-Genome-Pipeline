@@ -241,6 +241,26 @@ NFCONF
     test "$(no_pvalue "${CASE_TMP}/bash-out/${S}_exomiser.genes.tsv" | head -n 1 | awk -F'\t' '{print NF}')" \
     -lt "$(head -n 1 "${CASE_TMP}/bash-out/${S}_exomiser.genes.tsv" | awk -F'\t' '{print NF}')"
   check "the module publishes Exomiser's HTML" test -s "${CASE_TMP}/nf-out/${S}/exomiser/${S}_exomiser.html"
+
+  # The EXOMISER task's own containerOptions replace the docker profile's
+  # --network none: the module adds it back, once. Docker refuses the flag
+  # twice, so with it already in docker.runOptions (the run above) the module
+  # leaves it out; with plain runOptions (this stub run) the module adds it.
+  # nets WORK: how often the EXOMISER task's docker command says --network none.
+  nets() {
+    local r
+    r=$(grep -l "^### name: [\"']EXOMISER (" "$1"/*/*/.command.run 2>/dev/null | head -n 1)
+    [ -n "$r" ] && grep -o -- '--network none' "$r" | wc -l | tr -d ' '
+  }
+  check_eq "network none in docker.runOptions: the EXOMISER container gets it once" "$(nets "${CASE_TMP}/work")" 1
+  sed "s/^docker.runOptions = .*/docker.runOptions = '--user $(id -u):$(id -g)'/" "${NP}/nextflow.config" > "${NP}/plain.config"
+  check "the plain config has no network flag" sh -c "! grep -q -- '--net' '${NP}/plain.config'"
+  ( cd "$CASE_TMP" && nextflow run "${NP}/main.nf" -stub -ansi-log false -c "${REPO}/conf/containers.config" \
+      -c "${NP}/plain.config" -work-dir "${CASE_TMP}/work-plain" ) > "${CASE_TMP}/plain.log" 2>&1
+  check_eq "plain docker.runOptions: the stub run exits 0" "$?" 0
+  check_eq "and the module gives the EXOMISER container --network none" "$(nets "${CASE_TMP}/work-plain")" 1
+  check "with the entrypoint emptied" grep -q -- '--entrypoint ""' \
+    "$(grep -l "^### name: [\"']EXOMISER (" "${CASE_TMP}"/work-plain/*/*/.command.run 2>/dev/null | head -n 1)"
 else
   fail "nextflow is not on PATH"
 fi
@@ -282,5 +302,5 @@ if command -v nextflow >/dev/null; then
 fi
 
 # 4.7 GB of data and the work folders: no later case reads them.
-rm -rf "${GENOME_DIR:?}/${FAM}" "${GENOME_DIR:?}/${P}" "${D:?}" "${CASE_TMP}/work" "${CASE_TMP}"/stub-*/work
+rm -rf "${GENOME_DIR:?}/${FAM}" "${GENOME_DIR:?}/${P}" "${D:?}" "${CASE_TMP}/work" "${CASE_TMP}/work-plain" "${CASE_TMP}"/stub-*/work
 finish
