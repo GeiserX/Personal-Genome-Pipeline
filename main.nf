@@ -36,6 +36,7 @@ include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
+include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,6 +85,8 @@ workflow {
         'bloodtype',
         'traits',
         'archaic',
+        'y_str',
+        'viral',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -113,6 +116,7 @@ workflow {
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
         ['archaic',          'archaic_data',       '--archaic_data'],
+        ['viral',            'viral_ref',          '--viral_ref'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -785,6 +789,18 @@ workflow {
         ARCHAIC_REPORT(ARCHAIC_IBDMIX.out.segments, ch_hla_genes)
         ch_archaic          = ARCHAIC_REPORT.out.summary
         ch_archaic_versions = ARCHAIC_GENOTYPES.out.versions.mix(ARCHAIC_IBDMIX.out.versions, ARCHAIC_REPORT.out.versions)
+    // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
+    // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
+    // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
+    // unmapped reads to read and is left out. Equivalent to scripts/47-viral.sh.
+    ch_viral          = Channel.empty()
+    ch_viral_versions = Channel.empty()
+    if (tools_list.contains('viral')) {
+        ch_viral_ref = Channel.value(file(params.viral_ref, checkIfExists: true))
+        VIRAL_READS(ch_bam, ch_viral_ref)
+        VIRAL_REPORT(VIRAL_READS.out.coverage, ch_viral_ref)
+        ch_viral          = VIRAL_REPORT.out.table
+        ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -813,6 +829,7 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_str.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
@@ -848,6 +865,7 @@ workflow {
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_archaic.map                      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -879,6 +897,7 @@ workflow {
             ch_traits_versions,
             ch_bloodtype_versions,
             ch_archaic_versions
+            ch_viral_versions
         )
         .map { f -> f.text }
         .unique()

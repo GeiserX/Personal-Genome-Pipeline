@@ -928,6 +928,15 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("y_str", "Y-STR Markers (HipSTR)"):
+        d = S["y_str"]["data"]
+        w(f"  {ystr_counts(d)}")
+        for x in d["markers"]:
+            if x["count"]:
+                w(f"  {x['panel']:<6} {x['marker']:<13} {x['count']:<6} ({x['confidence']})")
+        w(f"  {YSTR_NOTE}")
+        w("")
+
     if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
         for line in consumer_export_lines(S["consumer_export"]["data"]):
             w(f"  {line}")
@@ -958,6 +967,9 @@ def text_report(s):
         for line in archaic_lines(S["archaic"]["data"]):
             w(f"  {line}")
         w(f"  {ARCHAIC_NOTE}")
+    if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
+        for line in viral_lines(S["viral"]["data"]):
+            w(f"  {line}")
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -1217,6 +1229,27 @@ def contamination_text(d):
     return f"{word} (level {d.get('contamination_level', '.')})"
 
 
+YSTR_NOTE = ("Repeat counts read from the genome with HipSTR, in FamilyTreeDNA's Y-111 order. A count can "
+             "differ from FamilyTreeDNA's by a fixed number of repeats at some markers, as labs count some repeat "
+             "blocks differently: compare with a known result before trusting a difference. Multi-copy markers and "
+             "repeats longer than the reads are not called. Every marker, with its reads and notes, is in "
+             "y_str/<sample>_y_str.tsv; y_str/<sample>_y_str.csv is the same list for a spreadsheet.")
+
+
+def ystr_counts(d):
+    return (f"Markers called: {d['high']} high and {d['low']} low confidence of {len(d['markers'])}; "
+            f"{d['no_call']} no call, {d['not_callable']} not callable from short reads")
+
+
+def ystr_body(d):
+    """The Y-STR card: the counts, then every called marker in FamilyTreeDNA's order."""
+    rows = "".join(f"<tr><td>{E(x['panel'])}</td><td>{E(x['marker'])}</td><td>{E(x['count'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("markers", []) if x["count"])
+    return [f"    <p>{E(ystr_counts(d))}</p>",
+            "    <table><tr><th>Panel</th><th>Marker</th><th>Repeats</th><th>Confidence</th></tr>" + rows + "</table>",
+            small_note(YSTR_NOTE)]
+
+
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
@@ -1247,6 +1280,33 @@ def bloodtype_body(d):
     return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
             "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
             + rows + "</table>", small_note(BLOODTYPE_NOTE)]
+
+
+VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
+              "genomes. Not a test for an infection: most adults carry herpesviruses that stay in their cells, and "
+              "reagents carry viral DNA too. HHV-6 integration follows Liu et al. 2020 (depth over the viral genome "
+              "at 0.30 of the human depth or more). Every genome: viral/<sample>_viral.tsv.")
+
+
+def viral_lines(d):
+    """Step 47's lines, the same in both reports: the HHV-6 call, then each genome with reads."""
+    lines = [f"HHV-6: {d.get('hhv6', '.')}"]
+    for x in d.get("found", []):
+        copies = "" if x["copies_per_cell"] == "." else f", {x['copies_per_cell']} copies per cell"
+        lines.append(f"{x['virus']}: {x['call']} ({x['reads']} reads, {float(x['breadth']):.0%} of the genome{copies})")
+    if not d.get("found"):
+        lines.append(f"No read on any of the {d.get('genomes', 0)} viral genomes.")
+    return lines + [VIRAL_NOTE]
+
+
+def viral_body(d):
+    """The viral DNA card: the HHV-6 call, a row per genome with reads, the note."""
+    rows = "".join(f"<tr><td>{E(x['virus'])}</td><td>{E(x['call'])}</td><td>{E(x['reads'])}</td>"
+                   f"<td>{E(x['breadth'])}</td><td>{E(x['relative_depth'])}</td><td>{E(x['copies_per_cell'])}</td></tr>"
+                   for x in d.get("found", []))
+    table = ("    <table><tr><th>Virus</th><th>Call</th><th>Reads</th><th>Breadth</th><th>Depth / human</th>"
+             "<th>Copies per cell</th></tr>" + rows + "</table>") if rows else small_note("No read on any viral genome.")
+    return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
 
 
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
@@ -1665,6 +1725,10 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
+    if S.get("y_str", MISSING)["state"] != "missing":
+        ys = S["y_str"]
+        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+               full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
@@ -1676,6 +1740,8 @@ def html_report(s):
                [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
                + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)[2:]] + [small_note(ARCHAIC_NOTE)]
                if S["archaic"]["state"] in ("ok", "stale") else []))
+    if S.get("viral", MISSING)["state"] != "missing":
+        a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)

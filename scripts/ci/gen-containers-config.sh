@@ -118,10 +118,13 @@ VCF_PRECHECK         BCFTOOLS_IMAGE
 VEP                  VEP_IMAGE
 VEP_NORM             BCFTOOLS_IMAGE
 VERIFYBAMID2         VERIFYBAMID2_IMAGE
+VIRAL_READS          MINIMAP2_SAMTOOLS_IMAGE
+VIRAL_REPORT         PYTHON_IMAGE
 WHATSHAP_PED         WHATSHAP_IMAGE
 Y_HAPLOGROUP         YLEAF_IMAGE
 Y_PILEUP             SAMTOOLS_IMAGE
 Y_POSITIONS          YLEAF_IMAGE
+Y_STR                HIPSTR_IMAGE
 '
 
 # Processes that run on the host, because they start a pinned pipeline of

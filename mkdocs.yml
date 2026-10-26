@@ -195,6 +195,8 @@ nav:
           - "Step 41: Blood Groups (predicted)": 41-bloodtype.md
           - "Step 42: Traits Panel": 42-traits.md
           - "Step 43: Archaic Ancestry (Neanderthal and Denisovan)": 43-archaic.md
+          - "Step 45: Y-STR Markers": 45-y-str.md
+          - "Step 47: Viral DNA in the Unmapped Reads": 47-viral.md
       - Quality control and reports:
           - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
           - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md

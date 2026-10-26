@@ -59,6 +59,7 @@ process HTML_REPORT {
             ${id}_roh.txt)                                place roh "\$f" ;;
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
             ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
+            ${id}_y_str.tsv)                              place y_str "\$f" ;;
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_smn_copy_number.tsv|${id}_hba_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
@@ -84,6 +85,7 @@ process HTML_REPORT {
             ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
             ${id}_archaic.tsv)                            place archaic "\$f" ;;
+            ${id}_viral.tsv)                              place viral "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
