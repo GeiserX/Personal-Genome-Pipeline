@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, consumer_export, bloodtype and lpa run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype and lpa run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -61,7 +61,7 @@ need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: $
 optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 33 35 35b 37 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 33 35 35b 37 45 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}") TOOL_OF[${1%% *}]=$2; printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -162,6 +162,9 @@ if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype 
 if [[ ",${T// /}," == *",lpa,"* ]]; then plan "46 Lp(a) KIV-2 count" lpa "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" lpa"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
+# Step 45 (Y-STR repeat counts) is opt-in and listed only when TOOLS names it; it reads chrY, so a female sample is skipped.
+if [[ ",${T// /}," == *",y_str,"* ]]; then plan "45 Y-STR markers (HipSTR)" y_str "$([ "$SEX" = male ] || echo 'female sample: no Y chromosome')" || true
+else KNOWN+=" y_str"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.
@@ -201,12 +204,12 @@ rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker 
 # unfinished. 'not finished': the pipeline stopped before that. Stranger reads ExpansionHunter's calls, so it does not
 # run when ExpansionHunter failed.
 # tool_of PROCESS: the selected tool the process belongs to, by name: the tool's own (PRS: prs) or the tool's plus _<part>
-# (PRS_SUMMARY, CPIC_LOOKUP: cpic). Yleaf's three are Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
+# (PRS_SUMMARY, CPIC_LOOKUP: cpic). Y_STR is step 45's, Yleaf's three are the other Y_*, the SV merge's SURVIVOR_*, the mito haplogroup's chrM
 # extraction and haplocheck are step 12's, T1K's index build, the KIR pass (KIR=true) and OptiType (HLA_QC=true) are step 08's, somalier's and
 # VerifyBamID2's are step 33's (sample_qc); indexcov is step 16.
 tool_of() {
   local p=${1##*:} t best=""; p=${p,,}
-  case "$p" in y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
+  case "$p" in y_str) echo y_str; return ;; y_*) echo y_haplogroup; return ;; survivor_*) echo survivor_merge; return ;;
     mito_extract_chrm|haplocheck) echo mito_haplogroup; return ;; t1k_build|kir_build|kir_typing|hla_qc|hla_qc_reads) echo hla_typing; return ;;
     somalier|somalier_relate|verifybamid2) echo sample_qc; return ;; esac
   for t in "${SEL[@]}" indexcov; do if [[ "$p" == "$t" || "$p" == "${t}_"* ]] && [ "${#t}" -gt "${#best}" ]; then best=$t; fi; done
