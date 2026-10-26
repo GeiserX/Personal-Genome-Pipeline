@@ -18,8 +18,12 @@
 #   - a planted Mendelian violation (one of HG004's heterozygous calls that
 #     HG002 inherited, turned into a reference block in a copy of her gVCF)
 #     is a de novo candidate of the pipeline's run, and not of the clean run;
+#   - the chromosome map: HG002's segments from each parent, as a table and
+#     a DNA Painter CSV that parse (a broken copy of the CSV fails the parse),
+#     and the report's section about them;
 #   - parity: step 38 and the pipeline write the same relationships,
-#     inheritance table, de novo list and joint and phased records;
+#     inheritance table, segments, DNA Painter CSV, de novo list and joint
+#     and phased records;
 #   - a single-sample run without --pedigree publishes the same files as main
 #     does, after dropping the lines that hold a date or a command line; a
 #     planted difference shows that the comparison sees one.
@@ -173,6 +177,49 @@ grep -A3 '^De novo' "$MD" 2>/dev/null | head -n 3
 DN_CLEAN=$(awk 'END {print NR - 1}' "${FAM}/de_novo.tsv" 2>/dev/null)
 echo "family: de novo candidates of the clean trio ${DN_CLEAN}, HG002 phased hets ${PH_N}, agreement ${PH_AGREE}/${PH_INF}" >> "$E2E_NOTES"
 
+# The chromosome map. No grandparent is sequenced, so every segment is
+# "from this parent"; each slice is a block of its own (slices sit on
+# different chromosomes).
+SEG="${FAM}/HG002_segments.tsv"
+CSV="${FAM}/HG002_dnapainter.csv"
+head -n 4 "$SEG" 2>/dev/null
+# seg_parse TSV CSV: segments per side, after checking both files' shape
+seg_parse() {
+  python3 - "$1" "$2" <<'PY'
+import csv, sys
+tsv, dp = sys.argv[1:]
+with open(tsv) as f:
+    head = f.readline().rstrip("\n").split("\t")
+    rows = [dict(zip(head, l.rstrip("\n").split("\t"))) for l in f]
+assert head[:6] == ["child", "side", "parent", "chrom", "start", "end"], head
+for r in rows:
+    assert r["side"] in ("paternal", "maternal") and r["chrom"].startswith("chr"), r
+    assert 0 < int(r["start"]) <= int(r["end"]) and int(r["sites"]) >= 20, r
+with open(dp, newline="") as f:
+    c = list(csv.reader(f))
+assert c[0] == ["Chr", "Start", "End", "cM", "SNPs", "Match", "Confidence", "Group", "Side", "Notes", "Colour",
+                "Ancestor"], c[0]
+assert len(c) - 1 == len(rows), (len(c) - 1, len(rows))
+for x, r in zip(c[1:], rows):
+    assert [x[0], x[1], x[2], x[8]] == [r["chrom"][3:], r["start"], r["end"], r["side"]], (x, r)
+print(sum(r["side"] == "paternal" for r in rows), sum(r["side"] == "maternal" for r in rows))
+PY
+}
+SEGN=$(seg_parse "$SEG" "$CSV" 2>"${CASE_TMP}/seg.log")
+check_eq "HG002's segments table and DNA Painter CSV parse and agree" "$?" 0
+cat "${CASE_TMP}/seg.log"
+read -r SEG_P SEG_M <<< "${SEGN:-0 0}"
+check_ge "HG002 segments from the father" "${SEG_P:-0}" 5
+check_ge "HG002 segments from the mother" "${SEG_M:-0}" 5
+check_eq "no segment from the father on chrX (HG002 is a son)" \
+  "$(awk -F'\t' '$2 == "paternal" && $4 == "chrX"' "$SEG" 2>/dev/null | wc -l | tr -d ' ')" 0
+sed '1s/^Chr,/Chromosome,/' "$CSV" > "${CASE_TMP}/broken_dnapainter.csv" 2>/dev/null
+seg_parse "$SEG" "${CASE_TMP}/broken_dnapainter.csv" > /dev/null 2>&1
+check "the parse fails on a copy of the CSV with a broken header" test "$?" -ne 0
+check "HG002's map is drawn" has '<svg' "$(head -c 200 "${FAM}/HG002_segments.svg" 2>/dev/null)"
+check "the report has the chromosome map section" has 'HG002: from the father \(HG003\): [0-9]+ stretches' "$(cat "$MD" 2>/dev/null)"
+echo "family: HG002 segments from the father ${SEG_P}, from the mother ${SEG_M}" >> "$E2E_NOTES"
+
 run_step 38-family.sh trio_swapped "${F}/pedigree_swapped.tsv"
 check "step 38, HG002 and HG003 swapped: it stops (exit ${STEP_RC})" test "$STEP_RC" -eq 1
 check "and names a pair that disagrees" has 'HG003 and HG004: declared parent-child \(first degree\), but somalier measures (unrelated|third degree)' "$(cat "$STEP_LOG")"
@@ -210,7 +257,7 @@ nf_family() {
 nf_family clean "${F}/pedigree.tsv"
 check_eq "pipeline, the trio: exit" "$RC" 0
 NF="${OUT}/family"
-cmp_items=(relationships.tsv HG002_inheritance.tsv.gz de_novo.tsv)
+cmp_items=(relationships.tsv HG002_inheritance.tsv.gz HG002_segments.tsv HG002_dnapainter.csv de_novo.tsv)
 for f in "${cmp_items[@]}"; do
   check "parity: ${f} of step 38 and of the pipeline are the same bytes" cmp -s "${FAM}/${f}" "${NF}/${f}"
 done

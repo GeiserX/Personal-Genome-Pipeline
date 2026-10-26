@@ -14,6 +14,10 @@
 #   relationships.tsv      each pair's declared and measured relatedness, verdict
 #   family.phased.vcf.gz   WhatsHap's phasing by inheritance (complete trios only)
 #   <child>_inheritance.tsv.gz  the allele from each parent, site by site
+#   <child>_segments.tsv   the chromosome map: the stretches from each parent
+#                          (and from which grandparent, when one is sequenced)
+#   <child>_dnapainter.csv the same stretches in DNA Painter's import format
+#   <child>_segments.svg   the map drawn
 #   de_novo.tsv            de novo candidates (children with both parents sequenced)
 #   compound_het.tsv       pairs of a child's clinical-filter candidates (step 23)
 #                          in one gene, in trans or in cis
@@ -173,7 +177,7 @@ for s in "${MEMBERS[@]}"; do
   c="${GENOME_DIR}/${s}/clinical/${s}_clinical.vcf.gz"
   [ -f "$c" ] && CANDS+=(--candidates "${s}=/genome/${s}/clinical/${s}_clinical.vcf.gz")
 done
-rm -f "${OUT}"/*_inheritance.tsv.gz
+rm -f "${OUT}"/*_inheritance.tsv.gz "${OUT}"/*_segments.tsv "${OUT}"/*_dnapainter.csv "${OUT}"/*_segments.svg
 "${PY[@]}" report --members "${OUT_C}/members.tsv" --relationships "${OUT_C}/relationships.tsv" \
   --vcf "${OUT_C}/family.vcf.gz" ${PHASED[@]+"${PHASED[@]}"} ${CANDS[@]+"${CANDS[@]}"} \
   --par-bed /pgp/par_grch38.bed --out-dir "$OUT_C"
