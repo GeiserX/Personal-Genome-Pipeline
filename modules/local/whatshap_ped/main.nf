@@ -14,7 +14,10 @@
     each parent at every site where the genotypes tell; de novo candidates
     when both parents are sequenced; compound heterozygotes in trans or in
     cis among the child's clinical-filter candidates (step 23's VCF, when
-    clinical_filter ran); and family_report.md.
+    clinical_filter ran); the chromosome map of each child (which stretches
+    came from which parent, and from which grandparent when one is
+    sequenced; bin/family_segments.py), as a table, a DNA Painter CSV and
+    an SVG; and family_report.md.
 
     Equivalent to: scripts/38-family.sh (its last two stages)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,6 +85,9 @@ process FAMILY_REPORT {
 
     output:
     path "*_inheritance.tsv.gz", emit: inheritance, optional: true
+    path "*_segments.tsv",       emit: segments, optional: true
+    path "*_dnapainter.csv",     emit: dnapainter, optional: true
+    path "*_segments.svg",       emit: segments_svg, optional: true
     path "de_novo.tsv",          emit: de_novo
     path "compound_het.tsv",     emit: compound_het
     path "family_report.md",     emit: report
