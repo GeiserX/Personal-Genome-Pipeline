@@ -1,0 +1,20 @@
+# paralog_loci.tsv: the loci step 35 (scripts/35-paralogs.sh, Nextflow PARASCOPY) runs Parascopy on.
+# One row per Parascopy model; the step runs `parascopy cn-using` once per row, on short reads.
+# Columns:
+#   model          file name of the model in Parascopy's pinned data (models_GRCh38_1KGP/<population>/),
+#                  one of assets/parascopy_models_v1.7.txt (that data's list.txt)
+#   genes          the genes the model's region holds, comma separated
+#   region         region of interest, GRCh38 chrom:start-end (1-based, inclusive); a BAM with no read
+#                  there gets the row "not assessed" and no Parascopy run
+#   reading        what the copy number there means, per value
+#   pscn_reliable  yes or no: whether the copy number of each copy (psCN) can be trusted there, or only
+#                  the copies together (agCN)
+#   tag            carrier, SF (secondary finding), PGx or trait
+#   cross_check    another engine that calls the same locus (paraphase on HiFi reads), or none
+#   table          the table's name: <sample>_<table>_copy_number.tsv under paralogs/, and Parascopy's own
+#                  files under paralogs/<sample>_parascopy/<table>/
+#   source         where the reading comes from
+# tests/test_paralog_loci.py checks every row against the model list.
+model	genes	region	reading	pscn_reliable	tag	cross_check	table	source
+SMN1.gz	SMN1,SMN2	chr5:70951946-70951946	psCN of SMN1 at exon 7 (c.840): 0 = the pattern of SMA; 1 = an SMA carrier; 2 or more = not a carrier by copy number (a 2+0 carrier is not ruled out)	yes	carrier	paraphase	smn	Prodanov and Bansal 2022, PMID 35680869
+GBA1.gz	GBA1,GBAP1	chr1:155234452-155244699	agCN of GBA1 and GBAP1 together: 4 = no deletion or duplication seen	no	carrier	paraphase	gba	Prodanov and Bansal 2022, PMID 35680869
