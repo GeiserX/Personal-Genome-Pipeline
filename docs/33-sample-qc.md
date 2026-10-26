@@ -107,7 +107,7 @@ The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in i
 | Result | Meaning | What to do |
 |---|---|---|
 | Sex check `ok` | somalier's sex matches yours | Nothing |
-| Sex check `mismatch` | The reads say the other sex | Check the sample's origin first. A sex-chromosome aneuploidy (47,XXY, 45,X) is the other explanation; then `SEX_CHECK=warn` |
+| Sex check `mismatch` | The reads say the other sex | Check the sample's origin first. A sex-chromosome aneuploidy (47,XXY, 45,X) is the other explanation: the reports name it when the copy numbers say so (below); then `SEX_CHECK=warn` |
 | Sex `unknown` | Fewer than 11 chrX sites have a genotype, or allele balance looks like more than one person | Nothing on a targeted or sliced BAM; on a whole genome, look at FREEMIX |
 | FREEMIX below 0.01 | Clean | Nothing |
 | FREEMIX 0.01 to 0.03 | Trace contamination, usual for a library | Nothing |
@@ -116,6 +116,16 @@ The HTML report (step 24) shows the inferred sex, FREEMIX and any duplicate in i
 | `mosaic_call not_detected` | The 95% range does not put a loss of the Y (or of one X) above 10% of the cells; the estimate itself can be higher when the range is wide | Nothing; a smaller loss cannot be told from noise at 30x |
 | `mosaic_call detected` | The low end of the 95% range is above 10%: a share of the blood cells lost the Y, or one X | Nothing follows from it alone. It is a population-level marker, not a diagnosis; a doctor would test blood cells directly if it ever mattered |
 | `mosaic_call gain` | More depth than one Y or two X | An extra copy (47,XYY, 47,XXX) or a gain; it is not a loss |
+| Sex chromosomes `47,XXY` (or `47,XYY`, `47,XXX`, `45,X`) in the report | The chrX and chrY copy numbers are whole numbers other than 46,XX and 46,XY | See "Sex-chromosome karyotype" below |
+
+### Sex-chromosome karyotype
+
+Both reports name the karyotype the sex-chromosome copy numbers point to, in the Quality Control block, from each source that has them:
+
+- **indexcov** (step 16): `CNchrX` and `CNchrY` of its `.ped`, a copy number from depth over the whole chromosome.
+- **somalier** (this step): `x_depth_ratio` and `y_depth_ratio`, the chrX and chrY depth at its sites over the autosomal depth. One copy reads 0.5, so the copy number is twice the ratio.
+
+Each copy number is rounded to the nearest whole number when it lies within 0.3 of it, and the karyotype is written as 44 autosomes plus the copies: chrX 2 and chrY 1 is **47,XXY** (Klinefelter syndrome), chrX 1 and chrY 2 is **47,XYY**, chrX 3 and chrY 0 is **47,XXX**, chrX 1 and chrY 0 is **45,X** (Turner syndrome); other whole numbers are named the same way (48,XXYY). 46,XX and 46,XY name nothing, and so does a copy number more than 0.3 from a whole number: a mosaic (45,X/46,XX), the mosaic loss above, a mixed sample or a noisy run. The 0.3 is our threshold. The label is a pointer, not a diagnosis: a mixed or swapped sample can give the same numbers. Confirm with a karyotype or a chromosomal microarray.
 
 ## Runtime
 Both tools read the BAM only at their sites (17,766 for somalier, 100,000 for VerifyBamID2), not the whole file. The mosaic estimate reads step 16b's windows file and, for a woman, the VCF once each; it has not been timed on a whole genome. On CI's fixture slices one run of the step takes a few seconds (six runs of it and the HG001 stream took 58 seconds on one e2e run); a whole genome has not been timed here.
