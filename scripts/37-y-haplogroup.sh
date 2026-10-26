@@ -12,7 +12,9 @@
 #
 # Output: y_haplogroup/<sample>_y_haplogroup.txt, Yleaf's prediction table
 # (Hg, Hg_marker, Total_reads, Valid_markers, QC-score). Hg NA means too few
-# markers had reads to call one (the step says so).
+# markers had reads to call one (the step says so). Also
+# y_haplogroup/<sample>_chrY.bam (+ .bai): the BAM's chrY reads only, the file
+# YFull and the Y-DNA projects read (docs/37-y-haplogroup.md). Nothing is uploaded.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -27,6 +29,7 @@ BAM="${S}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
 PED="${S}/indexcov/indexcov-indexcov.ped"
 OUTDIR="${S}/y_haplogroup"
 OUT="${OUTDIR}/${SAMPLE}_y_haplogroup.txt"
+CHRY="${OUTDIR}/${SAMPLE}_chrY.bam"
 YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 
 echo "=== Y haplogroup (Yleaf): ${SAMPLE} ==="
@@ -50,7 +53,7 @@ if [ "$SEX" != male ]; then
 fi
 
 mkdir -p "$OUTDIR"
-rm -rf "${OUTDIR}/yleaf" "$OUT"
+rm -rf "${OUTDIR}/yleaf" "$OUT" "$CHRY" "${CHRY}.bai"
 # The Yleaf image has no samtools, and Yleaf downloads the whole hg38 FASTA
 # unless its read-only config names one: bin/yleaf_run.py writes Yleaf's
 # marker positions, SAMTOOLS_IMAGE makes the pileup Yleaf would make, and
@@ -59,10 +62,11 @@ O=$(cpath "$OUTDIR")
 echo "[1/3] Yleaf's Y marker positions..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
   python3 /pgp-bin/yleaf_run.py positions --data "$(cpath "$YDATA")" "${O}/positions.txt"
-echo "[2/3] Pileup at those positions (samtools)..."
+echo "[2/3] Pileup at those positions, and the chrY reads as their own BAM (samtools)..."
 run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
-  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"' \
-  _ "$(cpath "$BAM")" "$O"
+  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"
+   samtools view -b -o "$3" "$1" chrY && samtools index "$3"' \
+  _ "$(cpath "$BAM")" "$O" "$(cpath "$CHRY")"
 echo "[3/3] Yleaf..."
 echo "Reference: ${REF_FASTA}"
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$YLEAF_IMAGE" \
@@ -85,3 +89,4 @@ else
   echo "Y haplogroup: ${HG} (${MARKERS} markers, QC-score ${QC})"
 fi
 echo "Results: ${OUT}"
+echo "Y reads for YFull or a Y-DNA project: ${CHRY} (nothing is uploaded; docs/37-y-haplogroup.md lists the routes)"
