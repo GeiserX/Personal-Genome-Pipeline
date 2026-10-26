@@ -12,6 +12,7 @@
 #        ./scripts/setup.sh --ancestry-fine-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
+#        ./scripts/setup.sh --viral-data <genome_dir>
 #        ./scripts/setup.sh --exomiser-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
@@ -23,7 +24,8 @@
 #                                            panel plus its images (step 26b),
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
-#                                            raw-data export (step 40), Exomiser's
+#                                            raw-data export (step 40), the
+#                                            viral genomes of step 47, Exomiser's
 #                                            hg38 and phenotype data plus its image
 #                                            (step 48)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
@@ -79,7 +81,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--exomiser-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--exomiser-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -104,7 +106,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --exomiser-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --exomiser-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -131,6 +133,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
   echo "  --exomiser-data"
   echo "                Install Exomiser ${EXOMISER_DATA_VERSION:-}'s hg38 and phenotype data (step 48: about 37 GB to download, 58 GB"
   echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
@@ -351,6 +354,24 @@ install_yleaf_data() {
   rm -rf "$yt"
   mv "${yt}.part" "$yt"
   echo "[OK] Current Y tree (${label}) and Yleaf ${YTREE_POSITIONS_VERSION}'s SNP positions (step 37): ${yt}"
+}
+
+# install_viral_data: the viral genomes of step 47, VIRAL_REF_ACCESSIONS in
+# that order as one FASTA from NCBI's E-utilities, checked against
+# VIRAL_REF_SHA256. minimap2 indexes a file this small in a second at each run.
+install_viral_data() {
+  local dest="${GENOME_DIR}/reference/viral-${VIRAL_REF_VERSION}/viral_genomes.fa"
+  if [ -s "$dest" ] && [ "$(_digest sha256 "$dest")" = "$VIRAL_REF_SHA256" ]; then
+    echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47) already present."
+    return 0
+  fi
+  rm -f "$dest"
+  if ! fetch "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&rettype=fasta&retmode=text&id=${VIRAL_REF_ACCESSIONS}" \
+      "$dest" sha256 "$VIRAL_REF_SHA256"; then
+    echo "[WARN] Could not install the viral genomes of step 47 (NCBI E-utilities)."
+    return 1
+  fi
+  echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
 }
 
 # install_exomiser_data: Exomiser's hg38 and phenotype data of release
@@ -1151,6 +1172,7 @@ case "$OPT_IN" in
   kir-data) install_kir_data; exit $? ;;
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
+  viral-data) install_viral_data; exit $? ;;
   exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
