@@ -294,6 +294,7 @@ check "the VCF of step 03 is there" test -s "${V}.tbi"
 printf 'sample,sex,vcf,vcf_index,bam,bam_index\n%s,male,%s,%s,%s,%s\n' "$N" "$V" "${V}.tbi" \
   "${G}/${N}/aligned/${N}_sorted.bam" "${G}/${N}/aligned/${N}_sorted.bam.bai" > "$SHEET"
 NF_OUT="${G}/nf-y-str"
+rm -rf "${G:?}/nf-y-str"  # so files an earlier run published cannot pass the checks below
 echo "+ nextflow run main.nf -profile docker --tools y_str,html_report"
 ( cd "$T" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -work-dir "${E2E_WORK}/nf-work-y-str" \
     --input "$SHEET" --reference "$REF" --tools y_str,html_report \
