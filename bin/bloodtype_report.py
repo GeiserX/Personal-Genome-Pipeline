@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bloodtype_report.py: the red cell and platelet antigens one genome predicts.
+"""bloodtype_report.py: the red cell, platelet and neutrophil antigens one genome predicts.
 
   bloodtype_report.py --sample S --vcf S.vcf.gz --markers assets/bloodtype_markers.tsv
                       [--depth S_bloodtype_depth.tsv]
@@ -8,9 +8,12 @@
 reads the sample's genotype at each defining variant of assets/bloodtype_markers.tsv
 and writes one row per blood group system: ABO (with A1 and A2), RhD, RhCE (C/c,
 E/e), Kell (K/k, Kp, Js), Duffy (with the GATA-box variant), Kidd, MNS (M/N, S/s),
-Lutheran, Diego, Dombrock, Colton, and the platelet antigens HPA-1 to -5 and -15.
-Columns: system, phenotype, genotype, confidence, note. It is a prediction from
-the DNA, not a serological typing. The evidence file has one row per site and per
+Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1 to -6 and -15,
+and the neutrophil antigens HNA-1 (a, b, c), HNA-3, HNA-4 and HNA-5. Columns:
+system, phenotype, genotype, confidence, note. For a platelet or neutrophil
+antigen the genome predicts the person lacks, the note adds the table's
+meaning column: what lacking it means. It is a prediction from the DNA, not a
+serological typing. The evidence file has one row per site and per
 RhD depth region: what the VCF and the reads said.
 
 --depth is samtools bedcov -Q 20 -j over the same table (scripts/41-bloodtype.sh
@@ -72,7 +75,11 @@ PAIRS = {
     "HPA3_2621": ("HPA-3", "HPA-3(a{3a}b{3b})"),
     "HPA4_506": ("HPA-4", "HPA-4(a{4a}b{4b})"),
     "HPA5_1600": ("HPA-5", "HPA-5(a{5a}b{5b})"),
+    "HPA6_1544": ("HPA-6", "HPA-6(a{6a}b{6b})"),
     "HPA15_2108": ("HPA-15", "HPA-15(a{15a}b{15b})"),
+    "HNA3_461": ("HNA-3", "HNA-3(a{3a}b{3b})"),
+    "HNA4_230": ("HNA-4", "HNA-4(a{4a}b{4b})"),
+    "HNA5_2372": ("HNA-5", "HNA-5(a{5a}b{5b})"),
 }
 # The systems in report order. ABO, RhD and Duffy have rules of their own; the
 # others are their two-allele sites.
@@ -82,10 +89,17 @@ SYSTEMS = [
     ("MNS", ["GYPA_59", "GYPB_143"]), ("Lutheran", ["LU_230"]), ("Diego", ["DI_2561"]),
     ("Dombrock", ["DO_793"]), ("Colton", ["CO_134"]),
     ("HPA-1", ["HPA1_176"]), ("HPA-2", ["HPA2_482"]), ("HPA-3", ["HPA3_2621"]),
-    ("HPA-4", ["HPA4_506"]), ("HPA-5", ["HPA5_1600"]), ("HPA-15", ["HPA15_2108"]),
+    ("HPA-4", ["HPA4_506"]), ("HPA-5", ["HPA5_1600"]), ("HPA-6", ["HPA6_1544"]), ("HPA-15", ["HPA15_2108"]),
+    ("HNA-1", None), ("HNA-3", ["HNA3_461"]), ("HNA-4", ["HNA4_230"]), ("HNA-5", ["HNA5_2372"]),
 ]
+# HNA-1 (FCGR3B): FCGR3B*01 (HNA-1a) and *02 (HNA-1b) differ at c.108, c.114, c.194,
+# c.244 and c.316; *03 (HNA-1c) is *02 with c.233C>A and carries HNA-1b as well.
+# GRCh38 carries the *02 base at four of the five and the *01 base at c.194, so the
+# call counts HNA-1a on the four and only checks c.194.
+HNA1_SITES = ["FCGR3B_108", "FCGR3B_114", "FCGR3B_244", "FCGR3B_316"]
 SPECIAL_SITES = {"ABO_261", "ABO_802", "ABO_803", "ABO_796", "ABO_1061",
-                 "RHD_PSI_DUP", "RHD_PSI_609", "FY_125", "FY_GATA", "FY_265"}
+                 "RHD_PSI_DUP", "RHD_PSI_609", "FY_125", "FY_GATA", "FY_265",
+                 *HNA1_SITES, "FCGR3B_194", "FCGR3B_233"}
 
 
 class InputError(Exception):
@@ -300,8 +314,55 @@ def system_pairs(system, names, S):
         return unknown(system, missing)
     conf = level_of(used) if not missing else "low"
     extra = [f"{s.row['hgvs']}: {s.status}" + (f" ({s.note})" if s.note else "") for s in missing]
+    lacks = [s.row["ref_means"] if s.n == 2 else s.row["alt_means"] for s in used if s.n in (0, 2)]
     return {"system": system, "phenotype": " ".join(parts), "genotype": " ".join(genos),
-            "confidence": conf, "note": notes_of(used, extra)}
+            "confidence": conf, "note": notes_of(used, extra + meaning(system, lacks, used))}
+
+
+def meaning(system, lacks, used):
+    """The table's meaning column for the antigens the person lacks, as a note part:
+    'lacks HPA-1a: <meaning>'. Only rows with a meaning (HPA, HNA) give one."""
+    text = next((s.row.get("meaning") for s in used if s.row.get("meaning")), "")
+    if not text or not lacks:
+        return []
+    prefix = system.split("-")[0] + "-"
+    return [f"lacks {', '.join(prefix + a for a in lacks)}: {text}"]
+
+
+def system_hna1(S):
+    used = [S[n] for n in HNA1_SITES]
+    missing = [s for s in used if s.n is None]
+    if missing:
+        return unknown("HNA-1", missing)
+    counts = {s.n for s in used}
+    if len(counts) > 1:
+        return unknown("HNA-1", [], "the FCGR3B markers do not agree on HNA-1a or HNA-1b ("
+                       + ", ".join(f"{s.row['hgvs']} x{s.n}" for s in used)
+                       + "): an FCGR3A read placed on FCGR3B, an extra FCGR3B copy, or a rare allele; "
+                       + used[0].caveat)
+    n_a = counts.pop()
+    n_b = 2 - n_a
+    s233, s194 = S["FCGR3B_233"], S["FCGR3B_194"]
+    extra = []
+    n_c = s233.n
+    if n_c is None:
+        extra.append(f"HNA-1c not determined ({s233.row['hgvs']}: {s233.status})")
+    else:
+        used.append(s233)
+    if s194.n is not None and 2 - s194.n != n_a:
+        extra.append(f"{s194.row['hgvs']} (x{s194.n}) does not match the other FCGR3B markers")
+    if n_c and n_c > n_b:
+        extra.append("HNA-1c with no HNA-1b allele left for it: often an extra FCGR3B copy carrying FCGR3B*03")
+    n_c2 = min(n_c or 0, n_b)
+    # Without c.233 an HNA-1b allele may be *02 or *03 (*03 is *02 with c.233C>A).
+    b_allele = "FCGR3B*02" if n_c is not None else "FCGR3B*02 or *03"
+    alleles = ["FCGR3B*01"] * n_a + [b_allele] * (n_b - n_c2) + ["FCGR3B*03"] * n_c2
+    c_txt = "" if n_c is None else f"c{sign(n_c > 0)}"
+    lacks = [x for x, has in (("1a", n_a > 0), ("1b", n_b > 0 or bool(n_c)), ("1c", bool(n_c)))
+             if not has and not (x == "1c" and n_c is None)]
+    return {"system": "HNA-1", "phenotype": f"HNA-1(a{sign(n_a > 0)}b{sign(n_b > 0 or bool(n_c))}{c_txt})",
+            "genotype": "/".join(alleles), "confidence": level_of(used),
+            "note": notes_of(used, extra + meaning("HNA-1", lacks, used))}
 
 
 def system_abo(S):
@@ -441,6 +502,8 @@ def predict(S, depth, regions):
             rows.append(system_rhd(S, depth, regions))
         elif system == "Duffy":
             rows.append(system_duffy(S))
+        elif system == "HNA-1":
+            rows.append(system_hna1(S))
         else:
             rows.append(system_pairs(system, names, S))
     return rows
