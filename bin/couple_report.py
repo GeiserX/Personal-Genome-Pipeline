@@ -46,6 +46,10 @@ import paraphase_report  # noqa: E402  step 35's SMN1 rule
 import cnvpytor_to_vcf  # noqa: E402  the read-depth rule for long Delly calls, as step 05 applies it
 
 GENE_COLUMNS = ("gene", "chrom", "start", "end", "inheritance", "lists", "condition")
+# The severity column (alleles that are not a full loss of function,
+# collect_summary.parse_alleles reads it) is optional, so a list written
+# before it still reads.
+SEVERITY_COLUMN = "severity"
 TABLE_COLUMNS = ("gene", "inheritance", "lists", "condition", "result", "offspring_risk",
                  "partner_a", "findings_a", "partner_b", "findings_b", "explanation")
 # Repeat loci of the carrier list ExpansionHunter's catalog sizes: the
@@ -91,8 +95,9 @@ def read_genes(path):
             vals = line.split("\t")
             if header is None:
                 header = vals
-                if tuple(header) != GENE_COLUMNS:
-                    die(["%s: the header must be %s" % (path, "\t".join(GENE_COLUMNS))])
+                if tuple(header) not in (GENE_COLUMNS, GENE_COLUMNS + (SEVERITY_COLUMN,)):
+                    die(["%s: the header must be %s, optionally followed by %s"
+                         % (path, "\t".join(GENE_COLUMNS), SEVERITY_COLUMN)])
                 continue
             if len(vals) != len(header):
                 die(["%s line %d: %d fields, the header has %d" % (path, n, len(vals), len(header))])
@@ -100,6 +105,11 @@ def read_genes(path):
             if r["inheritance"] not in ("AR", "XL") or not r["start"].isdigit() or not r["end"].isdigit():
                 die(["%s line %d: inheritance must be AR or XL, start and end whole numbers" % (path, n)])
             r["start"], r["end"] = int(r["start"]), int(r["end"])
+            try:
+                r["alleles"] = collect_summary.parse_alleles(r.get(SEVERITY_COLUMN, "."), kinds=True)
+            except ValueError as e:
+                die(["%s line %d: %s" % (path, n, e)])
+            r.setdefault(SEVERITY_COLUMN, ".")
             genes[r["gene"]] = r
     if not genes:
         die(["%s holds no gene: the screen would find nothing. Restore assets/carrier_genes.tsv." % path])
@@ -182,8 +192,10 @@ def stars_text(n):
     return "%d star%s" % (n, "" if n == 1 else "s")
 
 
-def clinvar_findings(path, genes, sex, par):
-    """Step 06's hits in genes of the list, and the count of all hits."""
+def clinvar_findings(path, genes, sex, par, aside=None):
+    """Step 06's hits in genes of the list, and the count of all hits. A hit
+    the list marks as a hypomorph or pseudodeficiency allele (its severity
+    column) is no carrier finding: it goes to aside as a text."""
     out, total = [], 0
     for r in collect_summary.vcf_records(path):
         if len(r) < 8:
@@ -195,6 +207,12 @@ def clinvar_findings(path, genes, sex, par):
         if z is None:
             continue
         for g in h["gene"].split(","):
+            sev = genes[g]["alleles"].get((h["chrom"], h["pos"], h["ref"], h["alt"])) if g in genes else None
+            if sev:
+                if aside is not None:
+                    aside.append("%s:%d %s>%s %s in %s: %s, a %s allele" % (
+                        h["chrom"], h["pos"], h["ref"], h["alt"], z, g, sev["name"], sev["kind"]))
+                continue
             if g in genes:
                 ident = "" if r[2] in (".", "") else ", ClinVar %s" % r[2]
                 text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], z,
@@ -469,8 +487,11 @@ def cmd_screen(a):
             continue
         found, assessed, gaps = {}, {}, []
         for s in (x, y):
-            f, total = clinvar_findings(clinvar[s], genes, sexes[s], par)
+            aside = []
+            f, total = clinvar_findings(clinvar[s], genes, sexes[s], par, aside)
             info = {"clinvar": "%d / %d" % (len(f), total)}
+            for x in aside:
+                gaps.append("Set aside for %s, not a carrier finding on its own: %s." % (s, x))
             if s not in delly:
                 info["delly"] = "not assessed (no Delly calls, step 19)"
                 gaps.append("Deletions of %s: no Delly calls (step 19)." % s)
@@ -562,8 +583,11 @@ def cmd_genes(a):
                 continue
             panel.append(line.rstrip("\r\n").split("\t"))
     cols, panel = panel[0], [dict(zip(panel[0], r)) for r in panel[1:] if r and r[0]]
-    if tuple(cols) != GENE_COLUMNS:
-        die(["%s: the header must be %s" % (a.table, "\t".join(GENE_COLUMNS))])
+    if tuple(cols) not in (GENE_COLUMNS, GENE_COLUMNS + (SEVERITY_COLUMN,)):
+        die(["%s: the header must be %s, optionally followed by %s"
+             % (a.table, "\t".join(GENE_COLUMNS), SEVERITY_COLUMN)])
+    # The severity cell is written by hand: every gene keeps its own.
+    severity = {r["gene"]: r.get(SEVERITY_COLUMN) or "." for r in panel}
     panel = [r for r in panel if "ACMG" in r["lists"] or "ACOG" in r["lists"]]
     gtf, release = gencode_genes(a.gtf)
     upper = {g.upper(): g for g in gtf}
@@ -630,12 +654,16 @@ def cmd_genes(a):
         "#             inheritance (Orphadata en_product6 and en_product9_ages of %s, CC BY 4.0," % date6,
         "#             https://www.orphadata.com), with a disease-causing germline association that",
         "#             Orphanet assessed; condition: the first such disorder by name",
+        "# severity: alleles of the gene that are not a full loss of function, separated by \";\": each is",
+        "#   hypomorph or pseudodeficiency, then chrom:pos:ref:alt (GRCh38), then a name; \".\" for none. Such",
+        "#   an allele never makes a carrier finding on its own (the couple screen, step 39, and the",
+        "#   carrier list of the sample report).",
         "# Rebuilt with: couple_report.py genes (docs/39-couple.md says how).",
     ]
     with open(a.out, "w", encoding="utf-8") as f:
-        f.write("\n".join(head) + "\n" + "\t".join(GENE_COLUMNS) + "\n")
+        f.write("\n".join(head) + "\n" + "\t".join(GENE_COLUMNS + (SEVERITY_COLUMN,)) + "\n")
         for g in sorted(rows, key=lambda g: (PRIMARY.index(rows[g]["chrom"]), int(rows[g]["start"]), g)):
-            f.write("\t".join(rows[g][k] for k in GENE_COLUMNS) + "\n")
+            f.write("\t".join([rows[g][k] for k in GENE_COLUMNS] + [severity.get(g, ".")]) + "\n")
     print("%d genes: %d ACMG or ACOG, %d Orphanet" % (len(rows), len(panel), len(rows) - len(panel)))
 
 
