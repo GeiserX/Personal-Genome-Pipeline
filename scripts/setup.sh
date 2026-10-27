@@ -398,8 +398,11 @@ install_exomiser_data() {
   while read -r part sha; do
     [ -d "${dest}/${EXOMISER_DATA_VERSION}_${part}" ] && continue
     zip="${dest}/${EXOMISER_DATA_VERSION}_${part}.zip"
-    echo "Downloading Exomiser's ${EXOMISER_DATA_VERSION}_${part}.zip (resumes when run again)..."
-    if ! fetch "https://g-879a9f.f5dc97.75bc.dn.glob.us/data/${EXOMISER_DATA_VERSION}_${part}.zip" "$zip" sha256 "$sha"; then
+    # A zip kept by an unpack that failed is used again once its sha256 still matches.
+    if [ -f "$zip" ] && [ "$(_digest sha256 "$zip")" = "$sha" ]; then
+      echo "Using the checked ${zip##*/} kept from the last run."
+    elif echo "Downloading Exomiser's ${EXOMISER_DATA_VERSION}_${part}.zip (resumes when run again)..." \
+        && ! fetch "https://g-879a9f.f5dc97.75bc.dn.glob.us/data/${EXOMISER_DATA_VERSION}_${part}.zip" "$zip" sha256 "$sha"; then
       echo "[WARN] Could not download Exomiser's ${part} data. Step 48 needs it; run: $0 --exomiser-data ${GENOME_DIR}"
       return 1
     fi
