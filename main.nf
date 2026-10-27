@@ -886,7 +886,7 @@ workflow {
             EXOMISER.out.variants.join(EXOMISER_PREPARE.out.terms)
         )
         ch_exomiser          = EXOMISER_REPORT.out.top
-        ch_exomiser_terms    = EXOMISER_PREPARE.out.terms
+        ch_exomiser_terms    = EXOMISER_REPORT.out.terms
         ch_exomiser_versions = EXOMISER_PREPARE.out.versions.mix(EXOMISER.out.versions, EXOMISER_REPORT.out.versions)
     }
 

@@ -23,7 +23,9 @@ process EXOMISER_PREPARE {
     tag "$meta.id"
     label 'process_single'
 
-    publishDir { "${params.outdir}/${meta.id}/exomiser" }, mode: params.publish_dir_mode, pattern: '*_terms.tsv'
+    // The terms are published by EXOMISER_REPORT, beside the ranking made
+    // from them: published here, a rerun with other terms whose EXOMISER task
+    // fails would leave the old ranking under the new terms.
 
     input:
     tuple val(meta), path(vcf)
@@ -149,6 +151,7 @@ process EXOMISER_REPORT {
     output:
     tuple val(meta), path("${meta.id}_exomiser_top.tsv"), emit: top
     tuple val(meta), path("${meta.id}_exomiser.txt"),     emit: text
+    tuple val(meta), path("${meta.id}_exomiser_terms.tsv", includeInputs: true), emit: terms
     path "versions.yml",                                  emit: versions
 
     when:
