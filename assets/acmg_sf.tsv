@@ -1,0 +1,114 @@
+# acmg_sf.tsv: the ACMG SF v3.3 secondary-findings genes and the reporting rule of each
+# (bin/collect_summary.py acmg_sf_tier). One row per gene, 84 rows. Source: Lee et al., ACMG SF v3.3
+# list for reporting of secondary findings in clinical exome and genome sequencing, Genet Med
+# 2025;27(8):101454 (PMID 40568962, doi:10.1016/j.gim.2025.101454), Table 1 and its footnotes, read
+# 2026-10-27. HGNC ids from rest.genenames.org on 2026-10-27; GRCh38 positions from Ensembl.
+# Columns:
+#   gene, hgnc_id   the HGNC symbol and id
+#   inheritance     AD, AR, SD (semidominant) or XL, as Table 1 gives it
+#   report_if       when a P/LP variant (ClinVar, or a rare HIGH-impact record) is a secondary finding:
+#                     any             one variant is enough
+#                     biallelic       two variants: a homozygote, or two different variants even when
+#                                     their phase is unknown (Table 1 footnote a)
+#                     hom_variant     only a variant of the variants column, homozygous
+#                     hemizygous      a hemizygous or homozygous variant, or two heterozygous ones; a
+#                                     single heterozygous variant is not reported
+#                     het_female_too  any variant, heterozygous females included
+#   variants        report_if hom_variant: the only variants that count, as chrom:pos:ref:alt (GRCh38)
+#                   and a name; "." for every other gene
+#   sv_cn           yes: an AnnotSV class 4 or 5 structural variant or copy change over the gene is a
+#                   finding too (step 05); no: small variants only
+#   sv_regions      other regions whose class 4 or 5 deletion counts for this gene, as chrom:start-end
+#                   (1-based) and a name; "."
+#   severity        alleles that do not count as a full loss of function, separated by ";": each is
+#                   hypomorph or pseudodeficiency, then chrom:pos:ref:alt, then a name. A
+#                   pseudodeficiency allele is set aside; a hypomorph allele counts, but the finding says
+#                   partial, not profound. "." for none
+#   sf_version      the ACMG SF list version that added the gene (Table 1)
+#   table_text      Table 1's "Variants to report" text
+#   note            what Table 1's footnotes add, shown with the finding; "."
+gene	hgnc_id	inheritance	report_if	variants	sv_cn	sv_regions	severity	sf_version	table_text	note
+APC	HGNC:583	AD	any	.	no	.	.	1.0	All P and LP	.
+RET	HGNC:9967	AD	any	.	no	.	.	1.0	All P and LP	.
+BRCA1	HGNC:1100	AD	any	.	yes	.	.	1.0	All P and LP	.
+BRCA2	HGNC:1101	AD	any	.	yes	.	.	1.0	All P and LP	.
+PALB2	HGNC:26144	AD	any	.	no	.	.	3.0	All P and LP	.
+SDHD	HGNC:10683	AD	any	.	no	.	.	1.0	All P and LP	.
+SDHAF2	HGNC:26034	AD	any	.	no	.	.	1.0	All P and LP	.
+SDHC	HGNC:10682	AD	any	.	no	.	.	1.0	All P and LP	.
+SDHB	HGNC:10681	AD	any	.	no	.	.	1.0	All P and LP	.
+MAX	HGNC:6913	AD	any	.	no	.	.	3.0	All P and LP	.
+TMEM127	HGNC:26038	AD	any	.	no	.	.	3.0	All P and LP	.
+BMPR1A	HGNC:1076	AD	any	.	no	.	.	2.0	All P and LP	.
+SMAD4	HGNC:6770	AD	any	.	no	.	.	2.0	All P and LP	.
+TP53	HGNC:11998	AD	any	.	no	.	.	1.0	All P and LP	.
+MLH1	HGNC:7127	AD	any	.	yes	.	.	1.0	All P and LP	.
+MSH2	HGNC:7325	AD	any	.	yes	chr2:47385166-47387020 EPCAM exons 8 and 9, the 3' end (ENST00000263735)	.	1.0	All P and LP	A deletion of the 3' end of EPCAM silences MSH2 and counts as an MSH2 finding.
+MSH6	HGNC:7329	AD	any	.	no	.	.	1.0	All P and LP	.
+PMS2	HGNC:9122	AD	any	.	no	.	.	1.0	All P and LP	.
+MEN1	HGNC:7010	AD	any	.	no	.	.	1.0	All P and LP	.
+MUTYH	HGNC:7527	AR	biallelic	.	no	.	.	1.0	P and LP (2 variants)	.
+NF2	HGNC:7773	AD	any	.	no	.	.	1.0	All P and LP	.
+STK11	HGNC:11389	AD	any	.	no	.	.	1.0	All P and LP	.
+PTEN	HGNC:9588	AD	any	.	no	.	.	1.0	All P and LP	.
+RB1	HGNC:9884	AD	any	.	no	.	.	1.0	All P and LP	.
+TSC1	HGNC:12362	AD	any	.	no	.	.	1.0	All P and LP	.
+TSC2	HGNC:12363	AD	any	.	no	.	.	1.0	All P and LP	.
+VHL	HGNC:12687	AD	any	.	no	.	.	1.0	All P and LP	.
+WT1	HGNC:12796	AD	any	.	no	.	.	1.0	All P and LP	.
+FBN1	HGNC:3603	AD	any	.	no	.	.	1.0	All P and LP	.
+TGFBR1	HGNC:11772	AD	any	.	no	.	.	1.0	All P and LP	.
+TGFBR2	HGNC:11773	AD	any	.	no	.	.	1.0	All P and LP	.
+SMAD3	HGNC:6769	AD	any	.	no	.	.	1.0	All P and LP	.
+ACTA2	HGNC:130	AD	any	.	no	.	.	1.0	All P and LP	.
+MYH11	HGNC:7569	AD	any	.	no	.	.	1.0	All P and LP	.
+PKP2	HGNC:9024	AD	any	.	no	.	.	1.0	All P and LP	.
+DSP	HGNC:3052	AD	any	.	no	.	.	1.0	All P and LP	.
+DSC2	HGNC:3036	AD	any	.	no	.	.	1.0	All P and LP	.
+TMEM43	HGNC:28472	AD	any	.	no	.	.	1.0	All P and LP	.
+DSG2	HGNC:3049	AD	any	.	no	.	.	1.0	All P and LP	.
+RYR2	HGNC:10484	AD	any	.	no	.	.	1.0	All P and LP	.
+CASQ2	HGNC:1513	AR	biallelic	.	no	.	.	3.0	P and LP (2 variants)	.
+TRDN	HGNC:12261	AR	biallelic	.	no	.	.	3.0	P and LP (2 variants)	.
+TNNT2	HGNC:11949	AD	any	.	no	.	.	1.0	All P and LP (See text)	.
+LMNA	HGNC:6636	AD	any	.	no	.	.	1.0	All P and LP (See text)	SF v3.3 footnote e: report a P/LP missense variant only with case evidence of cardiac disease; not applied here.
+FLNC	HGNC:3756	AD	any	.	no	.	.	3.0	All P and LP (See text)	.
+TTN	HGNC:12403	AD	any	.	no	.	.	3.0	All P and LP (See text)	SF v3.3 footnote f: only truncating TTN variants are reported; check that the variant truncates the protein.
+BAG3	HGNC:939	AD	any	.	no	.	.	3.1	All P and LP (See text)	.
+DES	HGNC:2770	AD	any	.	no	.	.	3.1	All P and LP (See text)	.
+RBM20	HGNC:27424	AD	any	.	no	.	.	3.1	All P and LP (See text)	.
+TNNC1	HGNC:11943	AD	any	.	no	.	.	3.1	All P and LP (See text)	.
+PLN	HGNC:9080	AD	any	.	no	.	.	3.3	All P and LP (See text)	.
+COL3A1	HGNC:2201	AD	any	.	no	.	.	1.0	All P and LP	.
+LDLR	HGNC:6547	SD	any	.	yes	.	.	1.0	All P and LP	.
+APOB	HGNC:603	AD	any	.	no	.	.	1.0	All P and LP	.
+PCSK9	HGNC:20001	AD	any	.	no	.	.	1.0	All P and LP	.
+MYH7	HGNC:7577	AD	any	.	no	.	.	1.0	All P and LP	.
+MYBPC3	HGNC:7551	AD	any	.	no	.	.	1.0	All P and LP	.
+TNNI3	HGNC:11947	AD	any	.	no	.	.	1.0	All P and LP	.
+TPM1	HGNC:12010	AD	any	.	no	.	.	1.0	All P and LP	.
+MYL3	HGNC:7584	AD	any	.	no	.	.	1.0	All P and LP	.
+ACTC1	HGNC:143	AD	any	.	no	.	.	1.0	All P and LP	.
+PRKAG2	HGNC:9386	AD	any	.	no	.	.	1.0	All P and LP	.
+MYL2	HGNC:7583	AD	any	.	no	.	.	1.0	All P and LP	.
+KCNQ1	HGNC:6294	AD	any	.	no	.	.	1.0	All P and LP	.
+KCNH2	HGNC:6251	AD	any	.	no	.	.	1.0	All P and LP	.
+SCN5A	HGNC:10593	AD	any	.	no	.	.	1.0	All P and LP	.
+CALM1	HGNC:1442	AD	any	.	no	.	.	3.2	All P and LP	.
+CALM2	HGNC:1445	AD	any	.	no	.	.	3.2	All P and LP	.
+CALM3	HGNC:1449	AD	any	.	no	.	.	3.2	All P and LP	.
+BTD	HGNC:1122	AR	biallelic	.	no	.	hypomorph chr3:15645186:G:C p.Asp444His (p.Asp424His on NM_001370658.1), partial biotinidase deficiency	3.0	P and LP (2 variants)	.
+CYP27A1	HGNC:2605	AR	biallelic	.	no	.	.	3.3	P and LP (2 variants)	.
+GLA	HGNC:4296	XL	het_female_too	.	no	.	.	1.0	All hemi, het, homozygous P and LP	.
+HFE	HGNC:4886	AR	hom_variant	chr6:26092913:G:A p.Cys282Tyr (NM_000410.4 c.845G>A)	no	.	.	3.0	HFE p.C282Y homozygotes only	.
+OTC	HGNC:8512	XL	het_female_too	.	no	.	.	2.0	All hemi, het, homozygous P and LP	.
+GAA	HGNC:4065	AR	biallelic	.	no	.	.	3.0	P and LP (2 variants)	.
+ABCD1	HGNC:61	XL	hemizygous	.	no	.	.	3.3	All hemi, homozygous or two het. P and/or LP	SF v3.3 footnote k: a single heterozygous P/LP variant is not reported.
+ACVRL1	HGNC:175	AD	any	.	no	.	.	3.0	All P and LP	.
+ENG	HGNC:3349	AD	any	.	no	.	.	3.0	All P and LP	.
+TTR	HGNC:12405	AD	any	.	no	.	.	3.1	All P and LP	.
+RYR1	HGNC:10483	AD	any	.	no	.	.	1.0	All P and LP	.
+CACNA1S	HGNC:1397	AD	any	.	no	.	.	1.0	All P and LP	.
+HNF1A	HGNC:11621	AD	any	.	no	.	.	3.0	All P and LP	.
+RPE65	HGNC:10294	AR	biallelic	.	no	.	.	3.0	P and LP (2 variants)	.
+ATP7B	HGNC:870	AR	biallelic	.	no	.	.	2.0	P and LP (2 variants)	.

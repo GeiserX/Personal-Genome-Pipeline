@@ -123,21 +123,18 @@ PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was
 
 EH_LOCI = ["HTT", "FMR1", "C9ORF72", "ATXN1", "DMPK"]
 
-# ACMG SF v3.3 (Lee et al., Genet Med 2025;27(8)): the 84 genes in which the
-# ACMG recommends reporting pathogenic and likely pathogenic variants found
-# by chance, as ClinGen lists them (search.clinicalgenome.org/kb/genes/acmgsf).
-# A new list version means a new set here and a new ACMG_SF_VERSION.
+# ACMG SF v3.3 (Lee et al., Genet Med 2025;27(8):101454): the 84 genes in which
+# the ACMG recommends reporting pathogenic and likely pathogenic variants found
+# by chance, and the reporting rule of each gene (Table 1), are the rows of
+# assets/acmg_sf.tsv. A new list version means new rows there and a new
+# ACMG_SF_VERSION. The sample's carrier list reads assets/carrier_genes.tsv.
+# Both are read from ASSETS_DIR: the repository's assets/ folder beside bin/,
+# or the folder render_report.py --assets names (the containers of step 24 and
+# of HTML_REPORT mount bin/ only).
 ACMG_SF_VERSION = "ACMG SF v3.3"
-ACMG_SF_GENES = frozenset([
-    "ABCD1", "ACTA2", "ACTC1", "ACVRL1", "APC", "APOB", "ATP7B", "BAG3", "BMPR1A", "BRCA1", "BRCA2",
-    "BTD", "CACNA1S", "CALM1", "CALM2", "CALM3", "CASQ2", "COL3A1", "CYP27A1", "DES", "DSC2",
-    "DSG2", "DSP", "ENG", "FBN1", "FLNC", "GAA", "GLA", "HFE", "HNF1A", "KCNH2", "KCNQ1", "LDLR",
-    "LMNA", "MAX", "MEN1", "MLH1", "MSH2", "MSH6", "MUTYH", "MYBPC3", "MYH11", "MYH7", "MYL2",
-    "MYL3", "NF2", "OTC", "PALB2", "PCSK9", "PKP2", "PLN", "PMS2", "PRKAG2", "PTEN", "RB1", "RBM20",
-    "RET", "RPE65", "RYR1", "RYR2", "SCN5A", "SDHAF2", "SDHB", "SDHC", "SDHD", "SMAD3", "SMAD4",
-    "STK11", "TGFBR1", "TGFBR2", "TMEM127", "TMEM43", "TNNC1", "TNNI3", "TNNT2", "TP53", "TPM1",
-    "TRDN", "TSC1", "TSC2", "TTN", "TTR", "VHL", "WT1",
-])
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+SF_REPORT_IF = ("any", "biallelic", "hom_variant", "hemizygous", "het_female_too")
+SEVERITY_KINDS = ("hypomorph", "pseudodeficiency")
 
 
 class Unreadable(Exception):
@@ -451,7 +448,8 @@ def sec_clinvar(d, s):
     sure = [x for x in rows if not x["low_confidence"]]
     by = {str(k): sum(1 for x in sure if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
     data = {"count": len(sure), "by_stars": by, "hits": rows, "low_confidence": len(rows) - len(sure),
-            "call_floor": floor, "frequency": clinvar_frequencies(d, s, rows)}
+            "call_floor": floor, "frequency": clinvar_frequencies(d, s, rows),
+            "carrier": carrier_list_or_note(p)}
     # The cDNA read check, on each hit when step 06 wrote it.
     cdna = clinvar_cdna_checks(d, s)
     if cdna is not None:
@@ -2586,9 +2584,189 @@ def csq_high_impact_genes(path):
     return out
 
 
+# --- the ACMG SF rules and the carrier list (assets/) --------------------------
+
+_ASSETS = {}
+
+
+def asset_rows(name):
+    """The rows of assets/<name> (comment lines left out), read once."""
+    p = os.path.join(ASSETS_DIR, name)
+    if p in _ASSETS:
+        return _ASSETS[p]
+    if not os.path.isfile(p):
+        raise Unreadable(f"{name} is not in {ASSETS_DIR}: the report needs the repository's assets/ folder "
+                         "(render_report.py --assets)")
+    with open(p, encoding="utf-8") as f:
+        rows = list(csv.DictReader((x for x in f if not x.startswith("#")), delimiter="\t", quoting=csv.QUOTE_NONE))
+    _ASSETS[p] = rows
+    return rows
+
+
+def allele_key(locus):
+    """'chr6:26092913:G:A' -> ('chr6', 26092913, 'G', 'A')."""
+    c, pos, ref, alt = locus.split(":")
+    return (c, int(pos), ref, alt)
+
+
+def parse_alleles(text, kinds=False):
+    """The variants or severity cell of assets/acmg_sf.tsv and
+    assets/carrier_genes.tsv: '.' or entries separated by ';', each
+    '[kind ]chrom:pos:ref:alt name'. {key: {'kind', 'name'}}."""
+    out = {}
+    for e in (text or ".").split(";"):
+        e = e.strip()
+        if e in ("", "."):
+            continue
+        parts = e.split(" ", 2 if kinds else 1)
+        kind = parts.pop(0) if kinds else None
+        if kinds and kind not in SEVERITY_KINDS:
+            raise ValueError(f"severity '{kind}' is not one of {', '.join(SEVERITY_KINDS)}: {e}")
+        out[allele_key(parts[0])] = {"kind": kind, "name": parts[1] if len(parts) > 1 else parts[0]}
+    return out
+
+
+def acmg_sf_rules():
+    """{gene: rule} of assets/acmg_sf.tsv."""
+    rules = {}
+    for n, r in enumerate(asset_rows("acmg_sf.tsv"), 1):
+        try:
+            g = r["gene"]
+            if r["report_if"] not in SF_REPORT_IF or r["sv_cn"] not in ("yes", "no"):
+                raise ValueError(f"report_if must be one of {', '.join(SF_REPORT_IF)}, sv_cn yes or no")
+            if r["sv_cn"] == "yes" and r["report_if"] not in ("any", "het_female_too"):
+                raise ValueError("sv_cn yes needs a rule that one variant meets (any, het_female_too)")
+            regions = []
+            for e in (r["sv_regions"] or ".").split(";"):
+                e = e.strip()
+                if e not in ("", "."):
+                    loc, _, name = e.partition(" ")
+                    c, _, span = loc.partition(":")
+                    a, _, b = span.partition("-")
+                    regions.append((c, int(a), int(b), name or loc))
+            variants = parse_alleles(r["variants"])
+            if r["report_if"] == "hom_variant" and not variants:
+                raise ValueError("report_if hom_variant needs its variants")
+            if g in rules:
+                raise ValueError("the gene is on two rows")
+            rules[g] = {"inheritance": r["inheritance"], "report_if": r["report_if"], "variants": variants,
+                        "sv_cn": r["sv_cn"] == "yes", "sv_regions": regions,
+                        "severity": parse_alleles(r["severity"], kinds=True),
+                        "table_text": r["table_text"], "note": None if r["note"] in ("", ".") else r["note"]}
+        except (KeyError, ValueError, TypeError) as e:
+            raise Unreadable(f"acmg_sf.tsv row {n}: {e}") from e
+    if not rules:
+        raise Unreadable("acmg_sf.tsv has no gene")
+    return rules
+
+
+def carrier_genes():
+    """{gene: row} of assets/carrier_genes.tsv, the severity cell parsed."""
+    out = {}
+    for n, r in enumerate(asset_rows("carrier_genes.tsv"), 1):
+        try:
+            out[r["gene"]] = {"inheritance": r["inheritance"], "lists": r["lists"], "condition": r["condition"],
+                              "severity": parse_alleles(r.get("severity"), kinds=True)}
+        except (KeyError, ValueError, TypeError) as e:
+            raise Unreadable(f"carrier_genes.tsv row {n}: {e}") from e
+    return out
+
+
+def allele_copies(gt):
+    """(alt copies, called copies) of a GT: '0/1' (1, 2), '1/1' (2, 2), '1' (1, 1)."""
+    a = [x for x in re.split(r"[/|]", gt or "") if x not in (".", "")]
+    return sum(1 for x in a if x != "0"), len(a)
+
+
+def zygosity_word(copies, ploidy):
+    if not copies:
+        return "unknown"
+    if ploidy == 1:
+        return "hemizygous"
+    return "hom" if copies >= 2 else "het"
+
+
+def sf_verdicts(gene, rule, alleles):
+    """Which of a gene's variants the ACMG rule reports. alleles: {key:
+    (copies, ploidy)} of the gene's distinct small variants, structural ones
+    keyed by their span. {key: None (reported) or the reason it is not}, and
+    the partial-deficiency note of a reported gene with a hypomorph allele."""
+    sev = rule["severity"]
+    out, kept = {}, {}
+    for k, cp in alleles.items():
+        if sev.get(k, {}).get("kind") == "pseudodeficiency":
+            out[k] = f"{sev[k]['name']}: a pseudodeficiency allele, not counted"
+        else:
+            kept[k] = cp
+    n = sum(c for c, _ in kept.values())
+    ri = rule["report_if"]
+    if ri in ("any", "het_female_too"):
+        ok = {k: True for k in kept}
+    elif ri == "biallelic":
+        ok = {k: n >= 2 for k in kept}
+    elif ri == "hemizygous":
+        hemi = any(p == 1 for _, p in kept.values())
+        ok = {k: hemi or n >= 2 for k in kept}
+    else:  # hom_variant
+        ok = {k: k in rule["variants"] and c >= 2 and p == 2 for k, (c, p) in kept.items()}
+    for k, good in ok.items():
+        if good:
+            out[k] = None
+        elif ri == "hom_variant":
+            out[k] = f"{gene} is reported only for: {rule['table_text']}"
+        elif ri == "hemizygous":
+            out[k] = f"one heterozygous variant; {gene} is reported for {rule['table_text']}"
+        else:
+            out[k] = f"one heterozygous variant; {gene} is reported with {rule['table_text']}"
+    partial = None
+    hypo = [sev[k]["name"] for k, why in out.items() if why is None and sev.get(k, {}).get("kind") == "hypomorph"]
+    if hypo:
+        partial = (f"partial, not profound: {'; '.join(hypo)} is a hypomorph allele, so the deficiency it causes "
+                   "is partial")
+    return out, partial
+
+
+def sf_structural(d, s, rules):
+    """Step 05's class 4 and 5 SVs (AnnotSV) in genes whose rule allows them
+    (sv_cn yes), and the class 4 or 5 deletions over a gene's sv_regions (the
+    3' end of EPCAM for MSH2). Common SVs are left out. (rows, checked, note)."""
+    try:
+        p, data = sec_annotsv(d, s)
+    except (Unreadable, OSError, ValueError, KeyError) as e:
+        return [], False, f"the AnnotSV table could not be read: {e}"
+    if not p:
+        return [], False, None
+    out = []
+    for x in data["rows"]:
+        if x["common"] or str(x["acmg_class"]) not in ("4", "5"):
+            continue
+        chrom, _, span = x["sv"].partition(":")
+        a, _, b = span.partition("-")
+        chrom = chrom if chrom.startswith("chr") else "chr" + chrom
+        hits = {}
+        for g in x["genes"]:
+            if g in rules and rules[g]["sv_cn"]:
+                hits[g] = None
+        for g, rule in rules.items():
+            for c, rs, re_, name in rule["sv_regions"]:
+                if (x["type"] == "DEL" and c == chrom and a.isdigit() and b.isdigit()
+                        and int(a) <= re_ and int(b) >= rs and g not in hits):
+                    hits[g] = name
+        for g, via in sorted(hits.items()):
+            out.append({"gene": g, "variant": f"{x['type']} {chrom}:{a}-{b}", "acmg_class": str(x["acmg_class"]),
+                        "caller": x["caller"], "support": x["support"], "via": via,
+                        "key": ("sv", chrom, a, b, x["type"])})
+    return out, True, None
+
+
 def acmg_sf_tier(d, s, clinical_vcf):
-    """The variants in ACMG SF genes: the ClinVar P/LP hits of step 6, and the
-    clinical filter's rare HIGH-impact records."""
+    """The variants that are ACMG secondary findings by the rule of their gene
+    (assets/acmg_sf.tsv): the ClinVar P/LP hits of step 6, the clinical
+    filter's rare HIGH-impact records, and step 05's class 4 and 5 SVs in the
+    genes whose rule allows them. A variant in an SF gene that its rule does
+    not report (one MUTYH variant, a heterozygous HFE p.C282Y) is listed
+    under not_reported with the reason."""
+    rules = acmg_sf_rules()
     clinvar, high = [], []
     hits = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if hits:
@@ -2597,11 +2775,14 @@ def acmg_sf_tier(d, s, clinical_vcf):
             if len(r) < 8:
                 continue
             row = clinvar_row(r, floor)
-            on = [g for g in row["gene"].split(",") if g in ACMG_SF_GENES]
-            if on:
-                clinvar.append({"gene": ",".join(on), "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
-                                "genotype": row["genotype"], "significance": row["significance"], "stars": row["stars"],
-                                "low_confidence": row["low_confidence"]})
+            copies, ploidy = allele_copies(r[9].split(":")[0] if len(r) > 9 else "")
+            for g in row["gene"].split(","):
+                if g in rules:
+                    clinvar.append({"gene": g, "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
+                                    "genotype": row["genotype"], "significance": row["significance"],
+                                    "stars": row["stars"], "low_confidence": row["low_confidence"],
+                                    "key": (row["chrom"], row["pos"], row["ref"], row["alt"]),
+                                    "copies": copies, "ploidy": ploidy})
     if clinical_vcf:
         # A common record is in the clinical VCF through the ClinVar tier,
         # not as a rare HIGH impact; one of unknown frequency is listed and
@@ -2610,21 +2791,98 @@ def acmg_sf_tier(d, s, clinical_vcf):
             if x["frequency"] == "common":
                 continue
             for g, cons in sorted(x["genes"].items()):
-                if g in ACMG_SF_GENES:
+                if g in rules:
                     gt = x["genotype"]
+                    copies, ploidy = allele_copies(gt)
                     zyg = {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
                     high.append({"gene": g, "variant": f"{c}:{pos} {ref}>{alt}", "genotype": zyg, "consequence": cons,
                                  "transcript": x["transcript"], "frequency": x["frequency"],
                                  "frequency_unknown": x["frequency"] == "unknown",
                                  "weak_call": x["weak"], "call_note": "; ".join(x["why"]) or None,
-                                 "gq": x["gq"], "dp": x["dp"], "ad": x["ad"]})
+                                 "gq": x["gq"], "dp": x["dp"], "ad": x["ad"],
+                                 "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy})
+    svs, sv_checked, sv_note = sf_structural(d, s, rules)
+    # One verdict per gene, over its distinct variants: a ClinVar hit that is
+    # also a HIGH-impact record is one variant.
+    alleles = {}
+    for x in clinvar + high:
+        alleles.setdefault(x["gene"], {}).setdefault(x["key"], (max(x["copies"], 1), x["ploidy"] or 2))
+    for x in svs:
+        alleles.setdefault(x["gene"], {}).setdefault(x["key"], (1, 2))
+    verdict = {g: sf_verdicts(g, rules[g], a) for g, a in alleles.items()}
+    reported = {"clinvar": [], "high": [], "sv": []}
+    not_reported = []
+    for kind, rows, source in (("clinvar", clinvar, "ClinVar"), ("high", high, "HIGH impact"), ("sv", svs, "AnnotSV")):
+        for x in rows:
+            why, partial = verdict[x["gene"]][0][x["key"]], verdict[x["gene"]][1]
+            rule = rules[x["gene"]]
+            for k in ("key", "copies", "ploidy"):
+                x.pop(k, None)
+            if why is None:
+                x.update(rule=rule["table_text"], rule_note=rule["note"], severity=partial)
+                reported[kind].append(x)
+            else:
+                not_reported.append({"gene": x["gene"], "variant": x["variant"], "genotype": x.get("genotype"),
+                                     "source": source, "reason": why})
+    high = reported["high"]
     sure = [x for x in high if not (x["weak_call"] or x["frequency_unknown"])]
-    return {"version": ACMG_SF_VERSION, "genes_on_list": len(ACMG_SF_GENES),
-            "clinvar_hits": clinvar, "clinvar_checked": bool(hits),
+    return {"version": ACMG_SF_VERSION, "genes_on_list": len(rules), "rules": "assets/acmg_sf.tsv",
+            "clinvar_hits": reported["clinvar"], "clinvar_checked": bool(hits),
             "high_impact": high, "high_impact_checked": bool(clinical_vcf),
             "high_impact_rare": len(sure),
             "high_impact_weak": sum(1 for x in high if x["weak_call"]),
-            "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"])}
+            "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"]),
+            "structural": reported["sv"], "structural_checked": sv_checked, "structural_note": sv_note,
+            "not_reported": not_reported}
+
+
+def carrier_list(p):
+    """The sample's own carrier list: the ClinVar hits of step 6 (p) in the
+    genes of assets/carrier_genes.tsv, one person, no partner needed. An
+    allele the list marks hypomorph or pseudodeficiency is set aside, never a
+    carrier finding on its own."""
+    genes = carrier_genes()
+    carriers, aside = [], []
+    for r in vcf_records(p):
+        if len(r) < 8:
+            continue
+        row = clinvar_row(r)
+        copies, ploidy = allele_copies(r[9].split(":")[0] if len(r) > 9 else "")
+        key = (row["chrom"], row["pos"], row["ref"], row["alt"])
+        for g in row["gene"].split(","):
+            if g not in genes:
+                continue
+            x = genes[g]
+            item = {"gene": g, "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
+                    "genotype": zygosity_word(copies, ploidy), "significance": row["significance"],
+                    "stars": row["stars"], "inheritance": x["inheritance"], "condition": x["condition"]}
+            sev = x["severity"].get(key)
+            if sev:
+                item.update(kind=sev["kind"], name=sev["name"])
+                aside.append(item)
+            else:
+                carriers.append(item)
+    return {"genes_on_list": len(genes), "list": "assets/carrier_genes.tsv",
+            "carriers": carriers, "set_aside": aside}
+
+
+def acmg_sf_or_note(d, s, clinical_vcf):
+    """acmg_sf_tier, or the reason it could not run (a missing or broken
+    assets/acmg_sf.tsv), which both reports print: the clinical counts stay."""
+    try:
+        return acmg_sf_tier(d, s, clinical_vcf)
+    except Unreadable as e:
+        return {"version": ACMG_SF_VERSION, "unavailable": str(e), "clinvar_hits": [], "high_impact": [],
+                "structural": [], "not_reported": []}
+
+
+def carrier_list_or_note(p):
+    """carrier_list, or the reason it could not run, which both reports print:
+    the ClinVar hits stay."""
+    try:
+        return carrier_list(p)
+    except Unreadable as e:
+        return {"unavailable": str(e)}
 
 
 def sec_clinical(d, s):
@@ -2635,13 +2893,13 @@ def sec_clinical(d, s):
         # the count only (one record per variant, as in the table).
         if not v:
             return None, {}
-        return v, {"variants": sum(1 for _ in vcf_records(v)), "acmg_sf": acmg_sf_tier(d, s, v)}
+        return v, {"variants": sum(1 for _ in vcf_records(v)), "acmg_sf": acmg_sf_or_note(d, s, v)}
     rows = read_tsv(p)
     by = {}
     for r in rows:
         by[r.get("IMPACT") or "."] = by.get(r.get("IMPACT") or ".", 0) + 1
     genes = sorted({r.get("GENE") for r in rows if r.get("GENE") not in (None, "", ".")})
-    out = {"variants": len(rows), "by_impact": by, "genes": len(genes), "acmg_sf": acmg_sf_tier(d, s, v)}
+    out = {"variants": len(rows), "by_impact": by, "genes": len(genes), "acmg_sf": acmg_sf_or_note(d, s, v)}
     # Step 23's tier and call check columns; a table written before them has neither.
     if rows and "FREQ_TIER" in rows[0]:
         out["frequency_unknown"] = sum(1 for r in rows if r.get("FREQ_TIER") == "unknown")
