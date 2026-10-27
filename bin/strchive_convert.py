@@ -10,7 +10,8 @@ only its own, so one file serves both, and steps 09 and 9b cannot disagree
 on the loci. This writes that file: one entry per ExpansionHunter locus.
 
   strchive_convert.py --eh STRchive-disease-loci-<v>.hg38.expansionhunter.json \\
-                      --loci STRchive-loci-<v>.json --release <v> --out catalog.json
+                      --loci STRchive-loci-<v>.json --release <v> --out catalog.json \\
+                      [--ranges str_ranges.tsv]
 
 Each entry:
   LocusId        the gene in capitals (HTT, FMR1, C9ORF72, RFC1), the names
@@ -50,6 +51,13 @@ Each entry:
                  these when its pathogenic motif is not a rotation of its
                  reference motif.
 
+--ranges also writes the size ranges as a table, one row per entry: locus
+(the LocusId), source_id (STRchive's id), normal_max and pathogenic_min
+(the entry's NormalMax and PathologicMin, empty where it has none),
+intermediate_min and intermediate_max (STRchive's own, as published, empty
+where it gives none) and no_thresholds (the entry's NoThresholds).
+tests/test_str_ranges.py checks it against the catalog.
+
 One correction to STRchive's motif classes: at RFC1 STRchive lists AAAGG as
 pathogenic, and its own notes say why: AAAGG expansions of 600 or more units
 are seen in CANVAS, while 100 to 380 units are seen in unaffected people
@@ -57,7 +65,7 @@ are seen in CANVAS, while 100 to 380 units are seen in unaffected people
 keeps AAAGG benign, as Cortese et al. 2019 (PMID 30926972) classed it.
 STRchive's AAAGGG is six bases long and is not counted at a five-base locus.
 
-Exits 2, writing nothing, when an ExpansionHunter locus has no STRchive
+Exits 2, writing nothing (neither file), when an ExpansionHunter locus has no STRchive
 record, two loci get one name, or the pathogenic repeat of a locus cannot be
 told.
 """
@@ -216,12 +224,40 @@ def convert(eh, loci, release):
     return out
 
 
+RANGE_COLUMNS = ["locus", "source_id", "normal_max", "intermediate_min", "intermediate_max", "pathogenic_min",
+                 "no_thresholds"]
+
+
+def ranges(cat, loci, release):
+    """The --ranges table as text: one row per catalog entry."""
+    by = {r["id"]: r for r in loci}
+
+    def cell(x):
+        return "" if x is None else str(x)
+    lines = [f"# STRchive {release} repeat ranges, one row per ExpansionHunter locus (bin/strchive_convert.py)",
+             "\t".join(RANGE_COLUMNS)]
+    for e in cat:
+        r = by[e["SourceId"]]
+        lines.append("\t".join([e["LocusId"], e["SourceId"], cell(e.get("NormalMax")), cell(r.get("intermediate_min")),
+                                cell(r.get("intermediate_max")), cell(e.get("PathologicMin")),
+                                e.get("NoThresholds", "")]))
+    return "\n".join(lines) + "\n"
+
+
+def write(path, text):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--eh", required=True, help="STRchive's ExpansionHunter catalog (JSON)")
     ap.add_argument("--loci", required=True, help="STRchive's loci file (JSON)")
     ap.add_argument("--release", required=True, help="the STRchive release, written into SourceDisplay")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--ranges", help="also write the size ranges of each locus to this TSV")
     a = ap.parse_args(argv)
     try:
         with open(a.eh) as f:
@@ -229,14 +265,13 @@ def main(argv=None):
         with open(a.loci) as f:
             loci = json.load(f)
         cat = convert(eh, loci, a.release)
+        table = ranges(cat, loci, a.release) if a.ranges else None
     except (OSError, ValueError, KeyError, Bad) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
-    tmp = a.out + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cat, f, indent=1)
-        f.write("\n")
-    os.replace(tmp, a.out)
+    if table is not None:
+        write(a.ranges, table)
+    write(a.out, json.dumps(cat, indent=1) + "\n")
     graded = sum("NormalMax" in e for e in cat)
     print(f"STRchive {a.release}: {len(cat)} loci, {graded} with Stranger thresholds, "
           f"{sum('PathogenicMotifs' in e for e in cat)} read by motif: {a.out}")

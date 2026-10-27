@@ -399,7 +399,8 @@ install_chip_data() {
 # install_strchive_data: STRchive's ExpansionHunter catalog and loci file
 # (STRCHIVE_VERSION), each checked against its sha256 in versions.env, joined
 # by bin/strchive_convert.py into reference/strchive-<version>/catalog.json,
-# the catalog steps 09 and 9b and the pipeline use by default. A file that
+# the catalog steps 09 and 9b and the pipeline use by default, and
+# str_ranges.tsv beside it, the size ranges of each locus. A file that
 # fails its check is removed and nothing is converted; the steps then use
 # the catalogs inside their images. catalog.stamp names the inputs and the
 # converter, so a changed one converts again.
@@ -410,7 +411,7 @@ install_strchive_data() {
   local loci_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-loci-${STRCHIVE_VERSION}.json"
   local eh=${eh_url##*/} loci=${loci_url##*/}
   stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
-  if [ -s "${dir}/catalog.json" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
+  if [ -s "${dir}/catalog.json" ] && [ -s "${dir}/str_ranges.tsv" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
     echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
     return 0
   fi
@@ -423,11 +424,12 @@ install_strchive_data() {
       return 1
     fi
   done
-  rm -f "${dir}/catalog.json" "${dir}/catalog.stamp"
+  rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv" "${dir}/catalog.stamp"
   if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
        --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
-       --out "$(cpath "${dir}/catalog.json")" || [ ! -s "${dir}/catalog.json" ]; then
-    rm -f "${dir}/catalog.json"
+       --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" \
+       || [ ! -s "${dir}/catalog.json" ] || [ ! -s "${dir}/str_ranges.tsv" ]; then
+    rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv"
     echo "[WARN] Could not convert the STRchive ${STRCHIVE_VERSION} catalog (bin/strchive_convert.py). Steps 09 and 9b use the catalogs inside their images."
     return 1
   fi

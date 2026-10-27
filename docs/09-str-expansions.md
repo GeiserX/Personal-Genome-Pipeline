@@ -37,15 +37,20 @@ What the converter writes for each locus:
 - **The motifs** of the eleven loci where the motif decides, not the size: RFC1, the FAME loci (SAMD12, STARD7, YEATS2, MARCHF6, RAPGEF2, TNRC6A, RAI1), SCA31 (BEAN1), SCA37 (DAB1) and aFTLD-U (GOLGA8A). Step 9b counts them in the reads ([step 9b](09b-stranger.md)).
 
 ## Key Disease Thresholds
-| Disease | Gene | Repeat Unit | Normal | Pathogenic |
-|---|---|---|---|---|
-| Huntington's | HTT | CAG | <27 | >35 |
-| Fragile X | FMR1 | CGG | <45 | ≥55 (premutation) / >200 (full) |
-| Friedreich's Ataxia | FXN | GAA | <33 | >66 |
-| ALS/FTD | C9ORF72 | GGCCCC | <24 | >30 |
-| Myotonic Dystrophy 1 | DMPK | CTG | <35 | >50 |
-| SCA1 | ATXN1 | CAG | <33 | >39 |
-| SCA2 | ATXN2 | CAG | <22 | >33 |
+
+The thresholds step 9b grades with on the STRchive v2.28.0 catalog, in repeat units: Stranger calls a count up to the normal maximum `normal`, one in the pre-mutation band `pre_mutation`, and one from the full-mutation minimum `full_mutation`. `tests/test_str_ranges.py` checks every row against the catalog. With `EH_CATALOG=bundled`, step 9b uses Stranger's bundled catalog, whose thresholds differ at some loci.
+
+| Disease | Gene | Repeat Unit | Normal | Pre-mutation | Full mutation |
+|---|---|---|---|---|---|
+| Huntington's | HTT | CAG | ≤26 | 27-35 | ≥36 |
+| Fragile X | FMR1 | CGG | ≤44 | 45-200 | ≥201 |
+| Friedreich's Ataxia | FXN | GAA | ≤33 | 34-55 | ≥56 |
+| ALS/FTD | C9ORF72 | GGCCCC | ≤23 | 24-30 | ≥31 |
+| Myotonic Dystrophy 1 | DMPK | CTG | ≤34 | 35-49 | ≥50 |
+| SCA1 | ATXN1 | CAG | ≤35 | 36-38 | ≥39 |
+| SCA2 | ATXN2 | CAG | ≤28 | 29-34 | ≥35 |
+
+Stranger's pre-mutation band is everything between the two thresholds; it is wider than a clinical intermediate range at some loci. At FMR1 it covers both the gray zone and the premutation below. `setup.sh` also writes `reference/strchive-<version>/str_ranges.tsv`, one row per locus with these two thresholds and STRchive's own intermediate range.
 
 ## FMR1 Clinical Zones
 

@@ -135,10 +135,12 @@ fi
 
 # The other loci whose motif decides (catalog fields PathogenicMotifs): one
 # row per locus Stranger flags, with the catalog's motifs. Only with a
-# catalog that names motifs, and again whenever Stranger ran.
+# catalog that names motifs, and again whenever Stranger ran; a not_checked
+# table (no BAM last time) is redone, as RFC1's is.
 if [ "${#CAT_ARGS[@]}" -eq 0 ]; then
   rm -f "$OTHER_TSV"
-elif [ -n "$STRANGER_RAN" ] || [ ! -e "$OTHER_TSV" ] || [ "$OUT_VCF" -nt "$OTHER_TSV" ]; then
+elif [ -n "$STRANGER_RAN" ] || [ ! -e "$OTHER_TSV" ] || [ "$OUT_VCF" -nt "$OTHER_TSV" ] \
+     || grep -q $'\tnot_checked\t' "$OTHER_TSV"; then
   if [ -f "$BAM" ] && [ -f "${BAM}.bai" ]; then
     MOTIF_ARGS=(--bam "$(cpath "$BAM")")
   else
