@@ -65,6 +65,9 @@ APOE_ALLELES = {APOE_E4_SITE: ("T", "C"), APOE_E2_SITE: ("C", "T")}
 # Rules whose line also goes into the traits table, where the reports read it
 # (they fold the APOE lines away). Every other rule's line is in --rules-out.
 TRAITS_TABLE_RULES = ("APOE",)
+# The rules table beside the traits table in the repository, for report()'s callers
+# that give none; the command line always takes --rules.
+DEFAULT_RULES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "genotype_rules.tsv")
 MAX_RULE_SITES = 8   # the completeness check walks 3^sites genotypes
 NOT_COVERED = "No genotype at this position in the gVCF (no reads, or a no-call): not read."
 OTHER_ALLELE = "An allele this table does not describe at this position: not read."
@@ -465,18 +468,27 @@ def rule_line(rule, recs, phased):
     return dict(line, phase=phase, result=c["label"], status="called", reading=c["reading"])
 
 
-def report(rows, recs, rules=None, phased=None):
-    """(traits output rows, rule lines): one traits row per table row, with the line of each
-    rule of TRAITS_TABLE_RULES right after its last site row; and one line per rule."""
-    lines = [rule_line(r, recs, phased) for r in (rules or {}).values()]
+def rule_lines(rules, recs, phased=None):
+    """One output line per rule, in the order of the rules table."""
+    return [rule_line(r, recs, phased) for r in rules.values()]
+
+
+def report(rows, recs, rules=None, phased=None, lines=None):
+    """The traits output rows: one per table row, with the line of each rule of
+    TRAITS_TABLE_RULES right after its last site row. rules defaults to
+    DEFAULT_RULES; lines, rule_lines' output, is computed when not given."""
+    if rules is None:
+        rules = read_rules(DEFAULT_RULES)
+    if lines is None:
+        lines = rule_lines(rules, recs, phased)
     after = {}
     for rid in TRAITS_TABLE_RULES:
-        rule = (rules or {}).get(rid)
+        rule = rules.get(rid)
         if rule:
             members = {s["rsid"] for s in rule["sites"]}
             last = max((i for i, r in enumerate(rows) if r["rsid"] in members), default=None)
             if last is not None:
-                after[last] = next(l for l in lines if l["rule"] == rid)
+                after[last] = next(ln for ln in lines if ln["rule"] == rid)
     out = []
     for i, r in enumerate(rows):
         gt, status, reading = call(r, recs.get((r["chrom"], r["pos"]), []))
@@ -484,11 +496,12 @@ def report(rows, recs, rules=None, phased=None):
                     "trait": r["trait"], "genotype": gt, "status": status, "reading": reading,
                     "ancestry": r["ancestry"], "note": r["note"], "pmids": r["pmids"]})
         if i in after:
-            l = after[i]
-            out.append({"rsid": l["rsids"].replace(",", "+"), "gene": l["gene"], "chrom": l["chrom"],
-                        "pos": l["pos"], "trait": l["trait"], "genotype": l["result"], "status": l["status"],
-                        "reading": l["reading"], "ancestry": l["ancestry"], "note": l["note"], "pmids": l["pmids"]})
-    return out, lines
+            ln = after[i]
+            out.append({"rsid": ln["rsids"].replace(",", "+"), "gene": ln["gene"], "chrom": ln["chrom"],
+                        "pos": ln["pos"], "trait": ln["trait"], "genotype": ln["result"], "status": ln["status"],
+                        "reading": ln["reading"], "ancestry": ln["ancestry"], "note": ln["note"],
+                        "pmids": ln["pmids"]})
+    return out
 
 
 def write_tsv(path, out, columns=OUT_COLUMNS):
@@ -547,7 +560,9 @@ def main(argv=None):
                 print(f"ERROR: {e}", file=sys.stderr)
             return 1
         phased = read_phased(a.phased) if a.phased else None
-        out, lines = report(rows, read_genotypes(a.genotypes), rules, phased)
+        recs = read_genotypes(a.genotypes)
+        lines = rule_lines(rules, recs, phased)
+        out = report(rows, recs, rules, phased, lines)
     except (TableError, OSError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -559,7 +574,7 @@ def main(argv=None):
     print(f"{a.sample}: {len(rows)} table rows; " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
           + f" (APOE line included). Written: {a.out}")
     print(f"{a.sample}: {len(lines)} genotype rules; "
-          + ", ".join(f"{l['rule']} {l['result'] if l['status'] == 'called' else l['status']}" for l in lines)
+          + ", ".join(f"{ln['rule']} {ln['result'] if ln['status'] == 'called' else ln['status']}" for ln in lines)
           + f". Written: {a.rules_out}")
     return 0
 

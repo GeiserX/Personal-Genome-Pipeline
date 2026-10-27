@@ -21,6 +21,7 @@ Checks:
      describe, the line is byte for byte the line the hand code of main
      (6056452) wrote, by its sha256; it comes right after the second APOE row,
      once; control: one changed character in a reading changes the hash;
+     report() without rules reads the repository's rules table;
   6. the rules table passes the schema check, and planted problems are each
      caught: a missing and an extra combination line, a haplotype allele that
      is neither ref nor alt, diplotypes out of haplotype order, a site that
@@ -234,11 +235,11 @@ def main():
         lines = [(r4["chrom"], r4["pos"], "T", g4.split("/")[1], g4)]
         if g2 != ".":
             lines.append((r2["chrom"], r2["pos"], "C", "T", g2))
-        out, _ = tr.report(rows, recs(*lines), rules)
+        out = tr.report(rows, recs(*lines), rules)
         line = apoe_line(out)
         check(f"APOE line byte for byte as before: rs429358 {g4}, rs7412 {g2} -> {line['genotype']} {line['status']}",
               line_hash(line) == want, line)
-    out, _ = tr.report(rows, recs((r4["chrom"], r4["pos"], "T", "C", "T/C"), (r2["chrom"], r2["pos"], "C", "T", "C/T")),
+    out = tr.report(rows, recs((r4["chrom"], r4["pos"], "T", "C", "T/C"), (r2["chrom"], r2["pos"], "C", "T", "C/T")),
                        rules)
     check("APOE e2/e4: says it could also be the rare e1/e3", "e1/e3" in apoe_line(out)["reading"], apoe_line(out))
     ids = [o["rsid"] for o in out]
@@ -247,13 +248,15 @@ def main():
     check("APOE: one line only", ids.count("rs429358+rs7412") == 1, ids)
     changed = dict(rules["APOE"], combinations=[dict(x, reading=x["reading"].replace("e3/e3.", "e3/e3!"))
                                                 for x in rules["APOE"]["combinations"]])
-    out, _ = tr.report(rows, recs((r4["chrom"], r4["pos"], "T", "C", "T/C"), (r2["chrom"], r2["pos"], "C", "T", "C/C")),
+    out = tr.report(rows, recs((r4["chrom"], r4["pos"], "T", "C", "T/C"), (r2["chrom"], r2["pos"], "C", "T", "C/C")),
                        dict(rules, APOE=changed))
     check("control: one changed character in an APOE reading changes the hash",
           line_hash(apoe_line(out)) != APOE_GOLDEN[("T/C", "C/C")], apoe_line(out))
     e4 = apoe_line(tr.report(rows, recs((r4["chrom"], r4["pos"], "T", "C", "C/C"),
-                                        (r2["chrom"], r2["pos"], "C", "T", "C/C")), rules)[0])
+                                        (r2["chrom"], r2["pos"], "C", "T", "C/C")), rules))
     check("APOE e4/e4: a risk factor, not a diagnosis", "not a diagnosis" in e4["reading"], e4)
+    check("report() without rules reads assets/genotype_rules.tsv (other tests call it so)",
+          line_hash(apoe_line(tr.report(rows, {}))) == line_hash(apoe_line(tr.report(rows, {}, rules))), rows[:0])
 
     # 6. the rules table's schema
     errs = tr.check_rules(rules, rows)
@@ -292,7 +295,7 @@ def main():
 
     # 7. the rules on synthetic gVCF records
     def rule(rid, *lines, phased=None):
-        return next(l for l in tr.report(rows, recs(*lines), rules, phased)[1] if l["rule"] == rid)
+        return next(x for x in tr.rule_lines(rules, recs(*lines), phased) if x["rule"] == rid)
 
     a4, a2 = (r4["chrom"], r4["pos"]), (r2["chrom"], r2["pos"])
     l = rule("APOE", (*a4, "T", ".", "T/T", "37"), (*a2, "C", ".", "C/C", "41"))

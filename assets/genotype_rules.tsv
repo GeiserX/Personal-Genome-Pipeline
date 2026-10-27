@@ -34,7 +34,7 @@ combination	APOE	e1/e2	e1/e2	A pair with the rare e1 allele: not read.
 combination	APOE	e1/e1	e1/e1	A pair with the rare e1 allele: not read.
 rule	TAS2R38	TAS2R38	Bitter taste haplotype (TAS2R38, PTC and PROP)	yes	no	The three TAS2R38 sites of the traits table read together: PAV (Pro49, Ala262, Val296) is the taster form and AVI (Ala49, Val262, Ile296) the non-taster form. Kim 2003 found five haplotypes worldwide; this rule reads the two common ones, and a copy with another (AAV, AAI, PVI or a rarer one) is not read. TAS2R38 lies on the minus strand, so the alleles here are the complement of the codon bases.	12595690,15723792
 site	TAS2R38	rs713598	chr7	141973545	C	G
-site	TAS2R38	rs1726866	chr7	141972905	A	G
+site	TAS2R38	rs1726866	chr7	141972905	G	A
 site	TAS2R38	rs10246939	chr7	141972804	T	C
 haplotype	TAS2R38	PAV	G,G,C
 haplotype	TAS2R38	AVI	C,A,T

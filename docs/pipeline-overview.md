@@ -156,7 +156,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 39 | [Couple Carrier Screen](39-couple.md) | Python | `PYTHON_IMAGE` | Opt-in (a pedigree marking two samples as partners; after step 6 for both) |
 | 40 | [Raw-Data Export](40-export-consumer.md) | Python | `PYTHON_IMAGE` | Opt-in (`TOOLS=...,consumer_export`, after `setup.sh --consumer-sites`; needs the gVCF) |
 | 41 | [Blood Groups (predicted)](41-bloodtype.md) | samtools + Python | `SAMTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,bloodtype`; RhD needs the BAM) |
-| 42 | [Traits Panel](42-traits.md) | bcftools + Python | `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` | Recommended (reads the gVCF of step 3) |
+| 42 | [Traits Panel](42-traits.md) | bcftools + Python + WhatsHap | `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` + `WHATSHAP_IMAGE` | Recommended (reads the gVCF of step 3; WhatsHap phases from the BAM when a rule needs it) |
 | 45 | [Y-STR Markers](45-y-str.md) | HipSTR | `HIPSTR_IMAGE` | Opt-in (`TOOLS=...,y_str`; male samples) |
 | 46 | [Lp(a): LPA KIV-2 Repeat Count](46-lpa.md) | samtools + Python | `SAMTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,lpa`; needs the BAM) |
 | 47 | [Viral DNA in the Unmapped Reads](47-viral.md) | samtools + minimap2 + Python | `SAMTOOLS_IMAGE` + `MINIMAP2_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,viral`, after `setup.sh --viral-data`; needs the BAM) |
