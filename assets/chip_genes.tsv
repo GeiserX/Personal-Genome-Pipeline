@@ -1,0 +1,25 @@
+# assets/chip_genes.tsv: the CHIP genes of step 49 and the variant classes it counts (docs/49-chip.md).
+# Hand-curated from the papers in the pmids column. Codons and exons are those of the gene's MANE
+# Select transcript in Ensembl's annotation (ENSEMBL_GFF_RELEASE in versions.env), which step 49
+# picks by its MANE_Select tag.
+# truncating: which protein-truncating changes (frameshift, stop gained, splice donor or acceptor)
+#   count: all, none, or exons:A-B (the exon of the change, numbered on that transcript).
+# missense: which missense changes count, comma separated: none, all, a codon with its reference
+#   residue (R882: any change of that residue), one exact change (V617F), a codon range (102-292)
+#   or exons:A-B.
+# A change outside these classes is listed as other_change, not counted.
+# bin/chip_report.py check-table checks the schema; tests/test_chip_report.py runs it.
+gene	truncating	missense	note	pmids
+DNMT3A	all	R882	The most common CHIP gene. R882 is the hotspot of DNMT3A in acute myeloid leukaemia; other missense changes are listed, not counted.	25426837;21067377
+TET2	all	none	Second most common CHIP gene. Truncating changes only; missense changes are listed, not counted.	25426837;19474426
+ASXL1	all	none	Third most common CHIP gene. Truncating changes only.	25426837;19388938
+JAK2	none	V617F	V617F only, the change behind most myeloproliferative neoplasms.	25426837;15858187
+TP53	all	102-292	Missense changes count in the DNA-binding core domain, residues 102 to 292.	25426837;8023157
+PPM1D	exons:6-6	none	Truncating changes in the last exon (6), where the mosaic and clonal ones cluster.	23242139;29954749
+SF3B1	none	K700	K700, the hotspot of SF3B1.	21995386;23335386
+SRSF2	none	P95	P95, the hotspot of SRSF2.	21909114;23335386
+U2AF1	none	S34,Q157	S34 and Q157, the two hotspots of U2AF1.	22158538;23335386
+CBL	none	exons:8-9	Missense changes in exons 8 and 9, the linker and RING finger.	19620960;19276253
+GNB1	none	K57	K57, the myeloid hotspot of GNB1.	25485910
+IDH1	none	R132	R132, the hotspot of IDH1.	19657110;26016821
+IDH2	none	R140,R172	R140 and R172, the two hotspots of IDH2.	20171147;26016821

@@ -13,6 +13,7 @@
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --megane-kmers <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
@@ -25,7 +26,8 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            viral genomes of step 47, MEGAnE's
+#                                            viral genomes of step 47, Ensembl's
+#                                            gene annotation (step 49), MEGAnE's
 #                                            k-mer set of the reference plus its
 #                                            image (step 50)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
@@ -81,7 +83,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--megane-kmers|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--chip-data|--megane-kmers|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -106,7 +108,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --megane-kmers | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --chip-data | --megane-kmers | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -134,6 +136,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
+  echo "                transcripts; ~110 MB) and exit."
   echo "  --megane-kmers"
   echo "                Build MEGAnE's k-mer set of the reference for step 50 (Alu, L1 and SVA insertions; ~1.8 GB,"
   echo "                about 10 minutes, and about 16 bytes of RAM per reference base: ~50 GB for GRCh38), pull its"
@@ -373,6 +377,24 @@ install_viral_data() {
     return 1
   fi
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
+}
+
+# install_chip_data: Ensembl ENSEMBL_GFF_RELEASE's GRCh38 GFF3 (step 49 reads
+# the CHIP genes' MANE Select transcripts from it), checked against
+# ENSEMBL_GFF_SHA256. A file that is there with another sha256 is downloaded again.
+install_chip_data() {
+  local name="Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
+  local dest="${GENOME_DIR}/reference/ensembl/${name}"
+  if [ -s "$dest" ] && [ "$(_digest sha256 "$dest")" = "$ENSEMBL_GFF_SHA256" ]; then
+    echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49) already present."
+    return 0
+  fi
+  rm -f "$dest"
+  if ! fetch "https://ftp.ensembl.org/pub/release-${ENSEMBL_GFF_RELEASE}/gff3/homo_sapiens/${name}" "$dest" sha256 "$ENSEMBL_GFF_SHA256"; then
+    echo "[WARN] Could not download Ensembl ${ENSEMBL_GFF_RELEASE}'s gene annotation. Step 49 needs it; run setup.sh --chip-data again."
+    return 1
+  fi
+  echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49): ${dest}"
 }
 
 # megane_kmers_path: where step 50 reads MEGAnE's k-mer set of REF_FASTA, the
@@ -1181,6 +1203,7 @@ case "$OPT_IN" in
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  chip-data) install_chip_data; exit $? ;;
   megane-kmers) ensure_image MEGANE_IMAGE 50 && install_megane_kmers; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
