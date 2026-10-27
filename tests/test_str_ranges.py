@@ -9,6 +9,11 @@ Checks every row:
   - a label and a GeneReviews citation with its NCBI Bookshelf URL;
   - docs/interpreting-results.md prints the same range in the locus's row
     of its table, so the docs and the report cannot disagree;
+  - the range sits between the NormalMax and the PathologicMin of the
+    STRchive catalog steps 09 and 9b run on (bin/strchive_convert.py, built
+    by tests/test_str_catalog.py from the pinned files), so a count the
+    report calls intermediate is one Stranger calls pre_mutation, never
+    normal or full_mutation; a planted row outside it is caught (the control);
 and that bin/collect_summary.py reads the file (str_ranges) as written.
 
 Run: python3 tests/test_str_ranges.py
@@ -19,7 +24,9 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
+sys.path.insert(0, os.path.join(REPO, "tests"))
 import collect_summary  # noqa: E402
+import test_str_catalog  # noqa: E402
 
 TSV = os.path.join(REPO, "bin", "str_intermediate_ranges.tsv")
 DOC = os.path.join(REPO, "docs", "interpreting-results.md")
@@ -83,6 +90,17 @@ def main():
         row = docs.get(d["locus"].upper(), "")
         check(f"{d['locus']}: docs/interpreting-results.md prints {lo}-{hi} in its row",
               bool(re.search(rf"(?<![\d-]){lo}-{hi}(?![\d-])", row)), row.strip())
+    cat = {e["LocusId"]: e for e in test_str_catalog.build_catalog()[0]}
+
+    def inside(locus, lo, hi):
+        e = cat.get(locus, {})
+        return "NormalMax" in e and e["NormalMax"] < lo and hi < e["PathologicMin"]
+    for r in body:
+        if len(r) == len(COLUMNS) and r[1].isdigit() and r[2].isdigit():
+            e = cat.get(r[0], {})
+            check(f"{r[0]}: {r[1]}-{r[2]} lies above STRchive's normal maximum ({e.get('NormalMax')}) and below its "
+                  f"pathogenic minimum ({e.get('PathologicMin')})", inside(r[0], int(r[1]), int(r[2])), e)
+    check("control: a planted HTT range of 20-35 is outside STRchive's pre-mutation band", not inside("HTT", 20, 35))
     got = collect_summary.str_ranges(TSV)
     check("collect_summary.str_ranges reads every row", sorted(got) == sorted(loci), sorted(got))
     if FAILS:
