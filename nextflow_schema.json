@@ -104,7 +104,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), ancient (needs --ancient_panel; samples with a gVCF), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), y_str (Y-STR repeat counts, male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), lpa (the LPA KIV-2 repeat count; needs the BAM), vntyper (MUC1 VNTR frameshifts behind ADTKD-MUC1; needs the BAM), viral (viral DNA in the unmapped reads; needs --viral_ref and a BAM), chip (clonal haematopoiesis from the BAM; needs --chip_gff)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), ancient (needs --ancient_panel; samples with a gVCF), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), y_str (Y-STR repeat counts, male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), lpa (the LPA KIV-2 repeat count; needs the BAM), vntyper (MUC1 VNTR frameshifts behind ADTKD-MUC1; needs the BAM), viral (viral DNA in the unmapped reads; needs --viral_ref and a BAM), chip (clonal haematopoiesis from the BAM; needs --chip_gff), archaic (needs --archaic_data)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
@@ -337,6 +337,19 @@
                     "format": "file-path",
                     "description": "Opt-in: a plain text list of the drugs taken, one per line (the generic name first; '#' starts a comment). With cpic, a strong or moderate CYP2D6 inhibitor on it gives CYP2D6 a phenoconverted phenotype by CPIC's activity-score rule beside the genotype one, and a CYP2C19 inhibitor gets a note (assets/pgx_inhibitors.tsv). Never set by default.",
                     "fa_icon": "fas fa-pills"
+                },
+                "archaic_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Step 43's table: the folder setup.sh --archaic builds (reference/archaic/<ARCHAIC_DATA_VERSION>): the Altai and Vindija Neanderthal and Altai Denisovan genotypes with 1000 Genomes frequencies, lifted to GRCh38. Required with archaic.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "archaic_pop": {
+                    "type": "string",
+                    "default": "ALL",
+                    "enum": ["ALL", "AFR", "AMR", "EAS", "EUR", "SAS"],
+                    "description": "archaic: the 1000 Genomes group whose allele frequencies IBDmix scores your genome against.",
+                    "fa_icon": "fas fa-globe"
                 },
                 "consumer_sites": {
                     "type": "string",
