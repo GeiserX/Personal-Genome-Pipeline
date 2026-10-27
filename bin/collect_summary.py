@@ -65,6 +65,7 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
+import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -2151,6 +2152,36 @@ def sec_viral(d, s):
                "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
 
 
+def sec_chip(d, s):
+    """Step 49's tables (chip/<id>_chip.tsv and chip/<id>_chip_depth.tsv, bin/chip_report.py):
+    the CHIP calls, how many other protein changes were listed and not counted,
+    and the depth and detection limit per gene with their median over the
+    covered genes. The limit is the one at the median depth, as step 49 prints it."""
+    p = first_existing(d, [f"chip/{s}_chip.tsv"])
+    dp = first_existing(d, [f"chip/{s}_chip_depth.tsv"])
+    if not p or not dp:
+        return None, {}
+    calls, depth = read_tsv(p), read_tsv(dp)
+    need = ("gene", "protein_change", "vaf", "alt_reads", "depth", "status", "note")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        head = f.readline().rstrip("\n").split("\t")
+    if any(k not in head for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    if not depth or not {"gene", "mean_depth", "detection_limit_vaf", "status"} <= set(depth[0]):
+        raise Unreadable(f"{os.path.basename(dp)} has no gene, mean_depth, detection_limit_vaf and status columns, or no row")
+    chip = [{k: r.get(k) or "." for k in need} for r in calls if r.get("status") == "chip"]
+    covered = sorted(float(r["mean_depth"]) for r in depth if r["status"] == "covered")
+    med = None
+    if covered:
+        n = len(covered)
+        med = covered[n // 2] if n % 2 else (covered[n // 2 - 1] + covered[n // 2]) / 2
+    return p, {"calls": chip, "other": len(calls) - len(chip),
+               "genes": [{k: r.get(k) or "." for k in ("gene", "mean_depth", "detection_limit_vaf", "status")}
+                         for r in depth],
+               "median_depth": med, "median_limit": chip_report.detection_limit(med) if med is not None else None,
+               "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2971,6 +3002,7 @@ SECTIONS = [
     ("traits", "Traits panel", "42", sec_traits),
     ("ancient", "Ancient populations (AADR PCA)", "44", sec_ancient),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
+    ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),

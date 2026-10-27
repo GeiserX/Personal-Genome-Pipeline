@@ -14,6 +14,7 @@
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --chip-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -25,8 +26,9 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            AADR panel of step 44
-#                                            viral genomes of step 47
+#                                            AADR panel of step 44, the
+#                                            viral genomes of step 47, Ensembl's
+#                                            gene annotation (step 49)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -80,7 +82,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -105,7 +107,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -136,6 +138,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
   echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
+  echo "                transcripts; ~110 MB) and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -371,6 +375,24 @@ install_viral_data() {
     return 1
   fi
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
+}
+
+# install_chip_data: Ensembl ENSEMBL_GFF_RELEASE's GRCh38 GFF3 (step 49 reads
+# the CHIP genes' MANE Select transcripts from it), checked against
+# ENSEMBL_GFF_SHA256. A file that is there with another sha256 is downloaded again.
+install_chip_data() {
+  local name="Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
+  local dest="${GENOME_DIR}/reference/ensembl/${name}"
+  if [ -s "$dest" ] && [ "$(_digest sha256 "$dest")" = "$ENSEMBL_GFF_SHA256" ]; then
+    echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49) already present."
+    return 0
+  fi
+  rm -f "$dest"
+  if ! fetch "https://ftp.ensembl.org/pub/release-${ENSEMBL_GFF_RELEASE}/gff3/homo_sapiens/${name}" "$dest" sha256 "$ENSEMBL_GFF_SHA256"; then
+    echo "[WARN] Could not download Ensembl ${ENSEMBL_GFF_RELEASE}'s gene annotation. Step 49 needs it; run setup.sh --chip-data again."
+    return 1
+  fi
+  echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49): ${dest}"
 }
 
 # install_consumer_sites: the site table of the raw-data export (step 40). The
@@ -1256,6 +1278,7 @@ case "$OPT_IN" in
   consumer-sites) install_consumer_sites; exit $? ;;
   ancient-panel) install_ancient_panel; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  chip-data) install_chip_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
 esac

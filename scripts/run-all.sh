@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa and viral run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, viral and chip run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -61,7 +61,7 @@ need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: $
 optin() { [[ ",${T// /}," == *",$1,"* ]] && return 1; echo "opt-in: add $1 to TOOLS"; }  # prints why it is skipped
 plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   local r=${3:-} t=${TOOLS:-}; KNOWN+=" $2"
-  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 33 35 35b 37 45 " != *" ${1%% *} "* ]] || r="no BAM"
+  [[ -n "$NOBAM" || " 16 16b 10 20 21 04 19 15 22 08 09 09b 18 05 28 32 33 35 35b 37 45 49 " != *" ${1%% *} "* ]] || r="no BAM"
   [ -z "$t" ] || [[ ",${t// /}," == *",$2,"* ]] || r=${r:-not in TOOLS}
   if [ -z "$r" ]; then SEL+=("$2") RUNS+=("${1%% *}") TOOL_OF[${1%% *}]=$2; printf '  %-28s runs\n' "$1"; return 0; fi
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
@@ -160,6 +160,11 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 46 (Lp(a), the LPA KIV-2 count) is opt-in and listed only when TOOLS names it; it reads the BAM.
 if [[ ",${T// /}," == *",lpa,"* ]]; then plan "46 Lp(a) KIV-2 count" lpa "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" lpa"; fi
+# Step 49 (CHIP) is opt-in and listed only when TOOLS names it: Mutect2 on the BAM, with step 29's gnomAD and panel of normals when installed.
+CG="${G}/reference/ensembl/Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
+if [[ ",${T// /}," == *",chip,"* ]]; then plan "49 CHIP (clonal blood cells)" chip "$(need "$CG")" && NF+=(--chip_gff "$CG") \
+  && for r in chip_germline_resource:af-only-gnomad chip_pon:1000g_pon; do f="${G}/somatic/${r#*:}.hg38.vcf.gz"; [ ! -e "${f}.tbi" ] || arg "--${r%%:*}" "$f"; done
+else KNOWN+=" chip"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
 # Step 44 (ancient populations) is opt-in and listed only when TOOLS names it; it reads the gVCF and the panel
