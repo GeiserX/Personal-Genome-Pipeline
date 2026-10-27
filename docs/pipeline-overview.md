@@ -21,7 +21,7 @@
 | **Storage** | Alignments kept as a checked CRAM, about half the size of the BAM | 34 |
 | **Clonal Haematopoiesis** | Acquired low-VAF mutations of the blood in DNMT3A, TET2, ASXL1, JAK2 and 9 other CHIP genes, with the detection limit at the sample's depth (opt-in) | 49 |
 | **Traits** | Lactase persistence, caffeine, alcohol flush, bitter taste, earwax, pigmentation, APOE and other replicated variants, each row citing its primary paper | 42 |
-| **Archaic Ancestry** | The Neanderthal and Denisovan share and the segments carried, with IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan (opt-in) | 43 |
+| **Archaic Ancestry** | The Neanderthal and Denisovan shares and the segments carried, with IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan (opt-in) | 43 |
 | **Viral DNA** | Inherited integrated HHV-6 and the DNA of 23 human viruses (herpesviruses, HPV, HBV, HIV-1, polyomaviruses and others) in the reads that do not map to the human genome, with phiX as the lab control (opt-in) | 47 |
 
 ## Pipeline Overview
