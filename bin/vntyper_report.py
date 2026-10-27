@@ -31,7 +31,7 @@ CALLS = ("High_Precision*", "High_Precision", "Low_Precision")
 # configuration.md, "Coverage thresholds"): confirmed positive GRCh38 exomes
 # downsampled and re-run, 42 samples at nine fractions each. Rows: lowest
 # mean depth over the VNTR, detected runs, runs.
-SENSITIVITY = [(100.0, 160, 161), (50.0, 95, 108), (0.0, 48, 109)]
+SENSITIVITY = [(100.0, 150, 161), (50.0, 95, 108), (0.0, 48, 109)]
 SENSITIVITY_SOURCE = ("VNtyper 2.0.47's downsampling of 42 confirmed positive GRCh38 exomes "
                       "(repeated runs, not independent tests)")
 
