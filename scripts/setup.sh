@@ -382,19 +382,21 @@ install_viral_data() {
 # the catalogs inside their images. catalog.stamp names the inputs and the
 # converter, so a changed one converts again.
 install_strchive_data() {
-  local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" name sha stamp
-  local base="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}"
-  local eh="STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json" loci="STRchive-loci-${STRCHIVE_VERSION}.json"
+  local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" url name sha stamp
+  # Whole URLs, one per line, so scripts/ci/check-links.sh asks each one.
+  local eh_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json"
+  local loci_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-loci-${STRCHIVE_VERSION}.json"
+  local eh=${eh_url##*/} loci=${loci_url##*/}
   stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
   if [ -s "${dir}/catalog.json" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
     echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
     return 0
   fi
-  for name in "${eh}|${STRCHIVE_EH_SHA256}" "${loci}|${STRCHIVE_LOCI_SHA256}"; do
-    sha=${name#*|} name=${name%%|*}
+  for url in "${eh_url}|${STRCHIVE_EH_SHA256}" "${loci_url}|${STRCHIVE_LOCI_SHA256}"; do
+    sha=${url#*|} url=${url%%|*} name=${url##*/}
     [ -s "${dir}/${name}" ] && [ "$(_digest sha256 "${dir}/${name}")" = "$sha" ] && continue
     rm -f "${dir}/${name}"
-    if ! fetch "${base}/${name}" "${dir}/${name}" sha256 "$sha"; then
+    if ! fetch "$url" "${dir}/${name}" sha256 "$sha"; then
       echo "[WARN] Could not install STRchive's ${name}. Steps 09 and 9b use the catalogs inside their images; re-run setup.sh to try again."
       return 1
     fi
