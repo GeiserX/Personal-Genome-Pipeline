@@ -18,7 +18,27 @@ Checks:
      unknown (None), not 1;
   5. red control: with an empty consensus (header only) the two-caller
      deletion has support 1, so the support-2 check above can fail;
-  6. the command line writes the table, and --consensus adds the support.
+  6. the command line writes the table, and --consensus adds the support;
+  7. the rule table and the depth check, through the command line with
+     assets/sv_rule_regions.tsv (each check reads the written table, so on a
+     postfilter without them every check fails with what it got):
+     an in-frame deletion inside DSPP's coding tandem repeat is class 3 and
+     the same deletion reaching 254 bp past the repeat stays class 4; a
+     deletion inside IGH is class 3, one 66% inside it too, and one 39%
+     inside it stays; a
+     deletion inside the MHC is class 3; a class 5 deletion on the
+     pseudogene RHEBP1, which AnnotSV names RHEB (its alias), is not mapped
+     to RHEB and is class 3, while one on RHEB itself stays RHEB and 5; two
+     Manta deletions at one place, DHFFC 0.95 and 0.5: the first is class 3
+     (no depth support), the second stays 4; a duplication with DHBFC 1.1
+     is class 3; Delly RDCN 2 on a deletion is no support, RDCN 1 is; on
+     chrX a duplication with RDCN 2 counts; a record with no depth value is
+     "not checked" and keeps its class; a CNVpytor call has support; the
+     summary line counts the rows moved to class 3;
+  8. red controls: without --rules the DSPP and IGH deletions stay class 4;
+     and the rule table itself: every row has a known rule, IGH lies on
+     chr14 between 105.5 and 107 Mb, the MHC is GRCh38's 28,510,120 to
+     33,480,577, and there are at least 2,000 coding tandem repeats.
 
 Run: python3 tests/test_annotsv_postfilter.py
 """
@@ -74,6 +94,125 @@ CONSENSUS = CONS_HEAD + (
     "chr20\t10101000\tMantaDEL:1\tN\t<DEL>\t.\tPASS\tSUPP=2;SUPP_VEC=11;SVLEN=-2000;SVTYPE=DEL;SVMETHOD=SURVIVOR1.0.7;"
     "CHR2=chr20;END=10103000;STRANDS=+-\tGT\t0/1\t0/1\n"
     "chr20\t20000010\tMantaDUP:2\tN\t<DUP>\t.\tPASS\tSUPP=2;SUPP_VEC=11;SVLEN=450000;SVTYPE=DUP;END=20450010\tGT\t0/1\t0/1\n")
+
+
+RULES_TSV = os.path.join(REPO, "assets", "sv_rule_regions.tsv")
+HEAD7 = ["AnnotSV_ID", "SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Samples_ID", "ID", "INFO", "FORMAT",
+         "S1", "Annotation_mode", "Gene_name", "B_loss_AFmax", "ACMG_class", "AnnotSV_ranking_score"]
+
+
+def row7(i, chrom, start, end, t, cls, caller, gene, fmt="GT", sample="0/1"):
+    length = end - start if t != "DEL" else start - end
+    v = [f"{chrom}_{start}_{end}_{t}_1", chrom, str(start), str(end), str(length), t, "S1", i,
+         f"END={end};SVTYPE={t};SVCALLER={caller}", fmt, sample, "full", gene, "", str(cls), "0.99"]
+    return "\t".join(v) + "\n"
+
+
+ROWS7 = "".join([
+    row7("TR_IN", "4", 87614600, 87615500, "DEL", 4, "manta", "DSPP", "GT:DHFFC", "0/1:0.45"),
+    row7("TR_OUT", "4", 87614600, 87616700, "DEL", 4, "manta", "DSPP", "GT:DHFFC", "0/1:0.45"),
+    row7("IGH_IN", "14", 106000000, 106100000, "DEL", 4, "manta", "IGHV3-23", "GT:DHFFC", "0/1:0.5"),
+    row7("IGH_EDGE", "14", 105400000, 105700000, "DEL", 4, "manta", "TMEM121", "GT:DHFFC", "0/1:0.5"),
+    row7("IGH_MOST", "14", 105550000, 105650000, "DEL", 4, "manta", "IGHA2", "GT:DHFFC", "0/1:0.5"),
+    row7("MHC_IN", "6", 31000000, 31100000, "DEL", 4, "manta", "HLA-C", "GT:DHFFC", "0/1:0.5"),
+    row7("ALIAS", "10", 46634800, 46635600, "DEL", 5, "manta", "RHEB", "GT:DHFFC", "0/1:0.3"),
+    row7("REAL", "7", 151470000, 151480000, "DEL", 5, "manta", "RHEB", "GT:DHFFC", "0/1:0.3"),
+    row7("D_LOW", "20", 40000000, 40300000, "DEL", 4, "manta", "G7", "GT:DHFFC", "0/1:0.95"),
+    row7("D_OK", "20", 40000000, 40300000, "DEL", 4, "manta", "G8", "GT:DHFFC", "0/1:0.5"),
+    row7("DUP_LOW", "20", 41000000, 41300000, "DUP", 4, "manta", "G9", "GT:DHBFC", "0/1:1.1"),
+    row7("DELLY2", "20", 42000000, 42300000, "DEL", 4, "delly", "G10", "GT:RDCN", "0/1:2"),
+    row7("DELLY1", "20", 43000000, 43300000, "DEL", 4, "delly", "G11", "GT:RDCN", "0/1:1"),
+    row7("XDUP", "X", 50000000, 50300000, "DUP", 4, "delly", "G12", "GT:RDCN", "0/1:2"),
+    row7("NODEPTH", "20", 44000000, 44300000, "DEL", 4, "manta", "G13"),
+    row7("CNV", "20", 45000000, 45300000, "DEL", 4, "cnvpytor", "G14"),
+])
+# RHEB as AnnotSV's genes file would name it: once on the pseudogene RHEBP1
+# (chr10, the region of the rule table) and once on RHEB itself (chr7).
+GENES7 = ("10\t46634910\t46635466\t+\tRHEB\tNM_990001\t46634910\t46635466\t46634910,\t46635466,\n"
+          "7\t151466000\t151520000\t-\tRHEB\tNM_005614\t151466100\t151519900\t151466000,151519000,\t151467000,151520000,\n")
+
+
+def run7(work, name, with_rules=True):
+    """{ID: written row} of the command line on ROWS7, {} when it failed."""
+    c45 = os.path.join(work, name + ".tsv")
+    with open(c45, "w") as f:
+        f.write("\t".join(HEAD7) + "\n" + ROWS7)
+    genes = os.path.join(work, name + "_genes.bed")
+    with open(genes, "w") as f:
+        f.write(GENES7)
+    dst = os.path.join(work, name + "_checked.tsv")
+    cmd = [sys.executable, os.path.join(REPO, "bin", "annotsv_postfilter.py"), "--class45", c45, "--genes", genes,
+           "--out", dst] + (["--rules", RULES_TSV] if with_rules else [])
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0 or not os.path.isfile(dst):
+        print(f"  (the command failed: {p.stderr.strip()[-300:]})")
+        return {}, p.stderr
+    with open(dst) as f:
+        return {r["ID"]: r for r in csv.DictReader(f, delimiter="\t")}, p.stderr
+
+
+def rules_section(work):
+    got, err = run7(work, "rules")
+
+    def col(i, c):
+        return got.get(i, {}).get(c)
+
+    # the region rules
+    check("an in-frame deletion inside DSPP's coding tandem repeat is class 3, not likely pathogenic",
+          (col("TR_IN", "ACMG_class"), col("TR_IN", "AnnotSV_class"), col("TR_IN", "Rule")) == ("3", "4", "tandem_repeat"),
+          got.get("TR_IN"))
+    check("the same deletion reaching 254 bp past the repeat stays class 4",
+          (col("TR_OUT", "ACMG_class"), col("TR_OUT", "Rule")) == ("4", ""), got.get("TR_OUT"))
+    check("a deletion inside IGH is class 3 (V(D)J)",
+          (col("IGH_IN", "ACMG_class"), col("IGH_IN", "Rule")) == ("3", "ig_tr_locus"), got.get("IGH_IN"))
+    check("a deletion 39% inside IGH stays class 4", col("IGH_EDGE", "ACMG_class") == "4", got.get("IGH_EDGE"))
+    check("a deletion 66% inside IGH is class 3 (gnomAD-SV's rule: over half)", col("IGH_MOST", "ACMG_class") == "3",
+          got.get("IGH_MOST"))
+    check("a deletion inside the MHC is class 3",
+          (col("MHC_IN", "ACMG_class"), col("MHC_IN", "Rule")) == ("3", "mhc"), got.get("MHC_IN"))
+    check("a class 5 deletion on the pseudogene RHEBP1 is not mapped to RHEB",
+          (col("ALIAS", "Gene_name"), col("ALIAS", "ACMG_class"), col("ALIAS", "Rule")) == ("RHEBP1", "3", "gene_alias"),
+          got.get("ALIAS"))
+    check("a class 5 deletion on RHEB itself stays RHEB and class 5",
+          (col("REAL", "Gene_name"), col("REAL", "ACMG_class"), col("REAL", "Rule")) == ("RHEB", "5", ""), got.get("REAL"))
+
+    # the depth check
+    check("a Manta deletion with DHFFC 0.95 has no depth support and is class 3",
+          (col("D_LOW", "Depth_support"), col("D_LOW", "ACMG_class"), col("D_LOW", "Rule")) == ("no", "3", "no_depth_support"),
+          got.get("D_LOW"))
+    check("the same deletion with DHFFC 0.5 stays class 4",
+          (col("D_OK", "Depth_support"), col("D_OK", "ACMG_class")) == ("yes", "4"), got.get("D_OK"))
+    check("a duplication with DHBFC 1.1 is class 3",
+          (col("DUP_LOW", "Depth_support"), col("DUP_LOW", "ACMG_class")) == ("no", "3"), got.get("DUP_LOW"))
+    check("Delly RDCN 2 on a deletion: no support; RDCN 1: support",
+          (col("DELLY2", "Depth_support"), col("DELLY1", "Depth_support")) == ("no", "yes"),
+          (got.get("DELLY2"), got.get("DELLY1")))
+    check("a chrX duplication with RDCN 2 counts (the sex is not known here)", col("XDUP", "Depth_support") == "yes",
+          got.get("XDUP"))
+    check("no depth value: not checked, class kept",
+          (col("NODEPTH", "Depth_support"), col("NODEPTH", "ACMG_class")) == ("not checked", "4"), got.get("NODEPTH"))
+    check("a CNVpytor call has depth support", col("CNV", "Depth_support") == "yes", got.get("CNV"))
+    moved = sorted(i for i, r in got.items() if r["ACMG_class"] != r["AnnotSV_class"])
+    want = sorted(["TR_IN", "IGH_IN", "IGH_MOST", "MHC_IN", "ALIAS", "D_LOW", "DUP_LOW", "DELLY2"])
+    check("exactly the eight rows above are moved to class 3", moved == want, moved)
+    check("the summary line counts them", "moved to class 3: 8; depth support no: 3, not checked: 1" in err, err)
+
+    # 8. red controls
+    plain, _ = run7(work, "norules", with_rules=False)
+    check("red control: without --rules the DSPP and IGH deletions stay class 4",
+          (plain.get("TR_IN", {}).get("ACMG_class"), plain.get("IGH_IN", {}).get("ACMG_class")) == ("4", "4"),
+          (plain.get("TR_IN"), plain.get("IGH_IN")))
+    with open(RULES_TSV) as f:
+        table = [line.rstrip("\n").split("\t") for line in f if not line.startswith("#")]
+    rules = {r[3] for r in table}
+    check("the rule table: every row has 7 columns and a known rule",
+          all(len(r) == 7 for r in table) and rules == {"tandem_repeat", "ig_tr_locus", "mhc", "gene_alias"}, rules)
+    igh = [r for r in table if r[3] == "ig_tr_locus" and r[5] == "IGH"]
+    check("the rule table: IGH on chr14 between 105.5 and 107 Mb",
+          len(igh) == 1 and igh[0][0] == "chr14" and 105_500_000 < int(igh[0][1]) < int(igh[0][2]) < 107_000_000, igh)
+    check("the rule table: the MHC is GRCh38's 28,510,120-33,480,577",
+          [r[:3] for r in table if r[3] == "mhc"] == [["chr6", "28510119", "33480577"]])
+    check("the rule table: at least 2,000 coding tandem repeats", sum(r[3] == "tandem_repeat" for r in table) >= 2000)
 
 
 def main():
@@ -162,6 +301,9 @@ def main():
             lines = f.read().splitlines()
         check("an empty class 4 and 5 table gives a header and no row",
               p.returncode == 0 and len(lines) == 1, (p.stderr, lines))
+
+        # 7 and 8. the rule table and the depth check
+        rules_section(work)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
