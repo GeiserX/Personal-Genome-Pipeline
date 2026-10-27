@@ -25,9 +25,10 @@ Borrowed, not rewritten:
     from bin/ancestry_fine_report.py, step 35b's table from
     bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
     from bin/traits_report.py, each fed made-up inputs; step 45's rows come
-    from bin/ystr_report.py's marker_row and step 47's from
-    bin/viral_report.py's build_rows, with made-up counts; steps 02, 40 and
-    41's tables are written here in their writers' columns.
+    from bin/ystr_report.py's marker_row, step 46's from bin/lpa_kiv2.py's
+    assess and step 47's from bin/viral_report.py's build_rows, with made-up
+    counts; steps 02, 40 and 41's tables are written here in their writers'
+    columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
 Paraphase card (a PacBio HiFi step, though the invented reads are short) and
@@ -870,6 +871,7 @@ TRAIT_ALT_COPIES = {
     "rs17822931": 0, "rs10427255": 1, "rs1815739": 1, "rs12913832": 1, "rs1800407": 0, "rs16891982": 2,
     "rs1426654": 0, "rs12203592": 0, "rs1805007": 0, "rs1805008": 0, "rs1805009": 0, "rs3827760": 0,
     "rs1801133": 1, "rs601338": 1, "rs2282679": 1, "rs887829": 1, "rs1801272": 0, "rs429358": 0, "rs7412": 0,
+    "rs10455872": 0, "rs3798220": 0,
 }
 
 
@@ -907,6 +909,20 @@ def viral(d):
         w = csv.DictWriter(f, fieldnames=vr.HEADER, delimiter="\t", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
+
+
+def lpa(d, rng):
+    """Step 46: bin/lpa_kiv2.py's assess on made-up depths, about 37 KIV-2
+    repeats at a flank depth near 31, half the KIV-2 depth at MAPQ 0."""
+    import lpa_kiv2
+    m, q1 = {}, {}
+    for *_, name in lpa_kiv2.REGIONS:
+        m[name] = rng.uniform(83, 90) if name.startswith("kiv2_") else rng.uniform(29.5, 32.5)
+        q1[name] = m[name] * (0.5 if name.startswith("kiv2_") else 0.98)
+    res = lpa_kiv2.assess(m, q1)
+    res["advice"] = lpa_kiv2.ADVICE
+    put(os.path.join(d, "lpa", f"{SAMPLE}_lpa_kiv2.tsv"),
+        "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in lpa_kiv2.ORDER))
 
 
 def traits(d):
@@ -957,7 +973,8 @@ def make(a):
              ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
              ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
-             ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d))]
+             ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
+             ("lpa", lambda r: lpa(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
