@@ -12,6 +12,7 @@
 #        ./scripts/setup.sh --ancestry-fine-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
+#        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
 #        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
@@ -26,6 +27,7 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
+#                                            AADR panel of step 44, the
 #                                            viral genomes of step 47, Ensembl's
 #                                            gene annotation (step 49), MoChA's
 #                                            phasing panel plus its images (step 51)
@@ -82,7 +84,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--chip-data|--mocha-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--mocha-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -107,7 +109,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --chip-data | --mocha-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --mocha-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -134,6 +136,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --ancient-panel"
+  echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
+  echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
   echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
   echo "                transcripts; ~110 MB) and exit."
@@ -471,6 +476,128 @@ consumer_sites_pin_check() {
     echo "[WARN] Site table of step 40 $2: $1 differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
     echo "       It was built by another version of bin/export_consumer.py build-sites. Step 40 uses it; to rebuild it, remove it and run this command again."
   fi
+}
+
+# --- Step 44: the ancient populations panel (opt-in) ---------------------------------
+# The Allen Ancient DNA Resource's 1240K files (AADR_VERSION, by Dataverse file
+# id, each checked against the md5 Dataverse publishes) become the panel of
+# step 44 in reference/ancient/aadr_<release>:
+#   panel.ind, poplist.txt, ancients.tsv  who builds the axes (the present-day
+#        West Eurasians of bin/ancient_report.py's MODERN_GROUPS) and who is
+#        projected (dated West Eurasians with 100,000 sites or more);
+#   sites_grch38.tsv  the autosomal sites on GRCh38 (UCSC's hg19ToHg38 chain,
+#        each kept only when one of its alleles is the GRCh38 base);
+#   moderns.geno/.snp/.ind  the present-day people in EIGENSTRAT text, which
+#        step 44 adds the person to;
+#   panel.evec, panel.eval  smartpca's axes with the ancient people projected
+#        (lsqproject), read by step 44's report;
+#   DONE, written last, once a second smartpca run on moderns.* alone gives
+#        the same axes, which is how step 44 runs.
+# smartpca holds the whole genotype file in memory (7.1 GB for the 23,089
+# people of v66.p1), so the install gives it a 12 GB container and needs that
+# much free RAM. The AADR downloads (7.3 GB) are deleted once the panel is
+# built. ANCIENT_SOURCE_DIR=<folder> takes the four files (.anno, .ind, .snp,
+# .geno) from that folder instead, unchecked (the tests' synthetic panel).
+HG19_TO_HG38_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+install_ancient_panel() {
+  local base="${GENOME_DIR}/reference/ancient" dir part raw chain e url md5 f src=${ANCIENT_SOURCE_DIR:-}
+  dir="${base}/aadr_${AADR_VERSION}" part="${base}/.aadr_${AADR_VERSION}.part" raw="${base}/raw_${AADR_VERSION}"
+  chain="${GENOME_DIR}/reference/liftover/hg19ToHg38.over.chain.gz"
+  if [ -s "${dir}/DONE" ]; then
+    echo "[OK] ancient populations panel AADR ${AADR_VERSION} (step 44) already present: ${dir}"
+    return 0
+  fi
+  for f in "$REF_FASTA" "${REF_FASTA}.fai"; do
+    [ -s "$f" ] || { echo "[WARN] ${f} is missing: install the reference first (${0} ${GENOME_DIR})."; return 1; }
+  done
+  echo "Installing the ancient populations panel, AADR ${AADR_VERSION} 1240K (step 44) in ${dir}"
+  ensure_image EIGENSOFT_IMAGE 44 || return 1
+  mkdir -p "$raw"
+  for e in anno ind snp geno; do
+    f="${raw}/aadr.${e}"
+    if [ -n "$src" ]; then
+      cp "$(compgen -G "${src}/*.${e}" | head -n 1)" "$f" 2>/dev/null \
+        || { echo "[WARN] ANCIENT_SOURCE_DIR=${src} has no .${e} file."; return 1; }
+      continue
+    fi
+    [ -s "$f" ] && continue
+    # One URL per file, spelled out so scripts/ci/check-links.sh asks each pinned id.
+    case "$e" in
+      anno) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_ANNO_ID}" md5=$AADR_ANNO_MD5 ;;
+      ind) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_IND_ID}" md5=$AADR_IND_MD5 ;;
+      snp) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_SNP_ID}" md5=$AADR_SNP_MD5 ;;
+      geno) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_GENO_ID}" md5=$AADR_GENO_MD5 ;;
+    esac
+    [ "$e" != geno ] || echo "  Downloading the AADR genotypes (7.1 GB; an interrupted download resumes)..."
+    if ! fetch "$url" "$f" md5 "$md5"; then
+      echo "[WARN] Could not download the AADR ${AADR_VERSION} .${e} file; run: $0 --ancient-panel ${GENOME_DIR}"
+      return 1
+    fi
+  done
+  if [ -n "${ANCIENT_CHAIN:-}" ]; then
+    chain=$ANCIENT_CHAIN
+  elif [ ! -s "$chain" ] && ! fetch "$HG19_TO_HG38_CHAIN_URL" "$chain" sha256 "$HG19_TO_HG38_CHAIN_SHA256"; then
+    echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --ancient-panel ${GENOME_DIR}"
+    return 1
+  fi
+  rm -rf "$part"
+  mkdir -p "$part"
+  local P R C
+  P=$(cpath "$part") R=$(cpath "$raw")
+  C=$(cpath "$chain") || { echo "[WARN] the chain file ${chain} must be inside GENOME_DIR."; return 1; }
+  echo "  [1/5] Choosing the present-day reference people and the ancient people to project..."
+  echo "  [2/5] Placing the 1240K sites on GRCh38..."
+  # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+  if ! run_in --rw "$part" -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$PYTHON_IMAGE" \
+         bash -euo pipefail -c '
+           python3 /pgp-bin/ancient_report.py select --anno "$1/aadr.anno" --ind "$1/aadr.ind" \
+             --out-ind "$2/panel.ind" --poplist "$2/poplist.txt" --ancients "$2/ancients.tsv"
+           python3 /pgp-bin/ancient_report.py lift --snp "$1/aadr.snp" --chain "$3" --fasta "$4" --out "$2/sites_grch38.tsv"' \
+         _ "$R" "$P" "$C" "$REF_FASTA_C"; then
+    echo "[WARN] Could not choose the panel's people or place its sites (the lines above say why)."
+    return 1
+  fi
+  # The parameter files name container paths; EIGENSOFT reads one per run.
+  printf '%s\n' "genotypename: ${R}/aadr.geno" "snpname: ${R}/aadr.snp" "indivname: ${P}/panel.ind" \
+    "poplistname: ${P}/poplist.txt" "outputformat: EIGENSTRAT" "genooutfilename: ${P}/moderns.geno" \
+    "snpoutfilename: ${P}/moderns.snp" "indoutfilename: ${P}/moderns.ind" "hashcheck: NO" > "${part}/convertf.par"
+  ancient_smartpca_par "${R}/aadr.geno" "${R}/aadr.snp" "${P}/panel.ind" "${P}/poplist.txt" "${P}/panel" > "${part}/panel.par"
+  ancient_smartpca_par "${P}/moderns.geno" "${P}/moderns.snp" "${P}/moderns.ind" "${P}/poplist.txt" "${P}/check" > "${part}/check.par"
+  echo "  [3/5] The present-day people in EIGENSTRAT format (convertf)..."
+  echo "  [4/5] The axes, with the ancient people projected (smartpca, lsqproject)..."
+  echo "  [5/5] The same axes again from the present-day people alone, as step 44 runs..."
+  # shellcheck disable=SC2016  # $1 belongs to the inner shell
+  if ! run_in --rw "$part" --cpus "$THREADS" --memory 12g "$EIGENSOFT_IMAGE" sh -euc '
+         convertf -p "$1/convertf.par" > "$1/convertf.log"
+         smartpca -p "$1/panel.par" > "$1/panel.log"
+         smartpca -p "$1/check.par" > "$1/check.log"' _ "$P"; then
+    tail -n 20 "${part}"/*.log 2>/dev/null || true
+    echo "[WARN] EIGENSOFT failed on the AADR files (logs in ${part}); run: $0 --ancient-panel ${GENOME_DIR}"
+    return 1
+  fi
+  if ! run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$PYTHON_IMAGE" \
+         python3 /pgp-bin/ancient_report.py align --panel-evec "${P}/panel.evec" --run-evec "${P}/check.evec"; then
+    echo "[WARN] The two smartpca runs on the same present-day people gave different axes (logs in ${part})."
+    return 1
+  fi
+  rm -f "${part}/check.evec" "${part}/check.eval"
+  printf 'release\t%s\nsites_grch38\t%s\nbuilt\t%s\n' "$AADR_VERSION" "$(($(wc -l < "${part}/sites_grch38.tsv") - 1))" \
+    "$(date -u '+%Y-%m-%d')" > "${part}/DONE"
+  rm -rf "$dir"
+  mv "$part" "$dir"
+  rm -rf "$raw"
+  echo "[OK] ancient populations panel AADR ${AADR_VERSION} (step 44): ${dir} ($(wc -l < "${dir}/moderns.ind" | tr -d ' ') present-day people, $(($(wc -l < "${dir}/ancients.tsv") - 1)) ancient people)"
+}
+
+# ancient_smartpca_par GENO SNP IND POPLIST OUT: the smartpca parameters of
+# setup.sh and step 44 (scripts/44-ancient.sh writes the same lines): axes from
+# the present-day groups of POPLIST, everyone else projected by least squares
+# (lsqproject, for samples with missing sites), no outlier removal, so both
+# runs build their axes from the same people.
+ancient_smartpca_par() {
+  printf '%s\n' "genotypename: $1" "snpname: $2" "indivname: $3" "poplistname: $4" \
+    "evecoutname: $5.evec" "evaloutname: $5.eval" "lsqproject: YES" "numoutevec: 10" \
+    "numoutlieriter: 0" "hashcheck: NO" "numthreads: ${THREADS}"
 }
 
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------
@@ -1237,6 +1364,7 @@ case "$OPT_IN" in
   kir-data) install_kir_data; exit $? ;;
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
+  ancient-panel) install_ancient_panel; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
   chip-data) install_chip_data; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
