@@ -4,8 +4,9 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Three-phase process from BAM:
     1. Prepare depth-of-coverage and control statistics for SV genes
-    2. Call BAM-based genes (CYP2D6, CYP2A6, GSTM1, GSTT1) with SV detection
-    3. Call VCF-based genes (~19 additional pharmacogenes)
+    2. Call the bam genes of assets/pgx_genes.tsv (the 13 genes pypgx 0.26.0
+       has a copy-number model for) with SV detection
+    3. Call its vcf genes from the VCF
 
     CYP2D6 copy number comes from read depth: the depth CYP2D6_DEPTH measured
     is judged first (bin/cyp2d6_depth_check.py), and when the reads there are
@@ -16,8 +17,9 @@
     The summary is bin/pgx_outside_calls.py pypgx-summary, as in the bash
     step: the defining variants of each call looked up in the VCF, a call
     resting on one below the GQ floor (task.ext.gq_floor, default 20) marked
-    'low-confidence: check the reads', and GSTT1 'not callable on this
-    reference' on a BAM without its ALT contig.
+    'low-confidence: check the reads', and a gene the table marks
+    callable_without_alt=no (GSTT1) 'not callable on this reference' on a BAM
+    without its ALT contig.
 
     Equivalent to: scripts/32-pypgx.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -45,8 +47,21 @@ process PYPGX {
     task.ext.when == null || task.ext.when
 
     script:
-    def bam_genes = "CYP2D6 CYP2A6 GSTM1 GSTT1"
-    def vcf_genes = "CYP1A2 CYP2B6 CYP2C9 CYP2C19 CYP3A4 CYP3A5 CYP4F2 DPYD TPMT NUDT15 UGT1A1 SLCO1B1 VKORC1 NAT2 COMT MTHFR ABCB1 G6PD IFNL3"
+    // The gene table scripts/32-pypgx.sh reads: gene, mode (bam|vcf),
+    // callable_without_alt (yes|no), alt_contig, second_caller,
+    // pharmcat_outside_call. The lists land in this script, so a changed
+    // table changes the task hash.
+    def pgx_rows = file("${projectDir}/assets/pgx_genes.tsv", checkIfExists: true).readLines()
+        .findAll { line -> line && !line.startsWith('#') && !line.startsWith('gene\t') }
+        .collect { line -> line.split('\t') as List }
+    def bad_rows = pgx_rows.findAll { r -> r.size() != 6 || !(r[0] ==~ /[A-Za-z0-9-]+/) || !(r[1] in ['bam', 'vcf']) || !(r[2] in ['yes', 'no']) || (r[2] == 'no' && !(r[3] ==~ /[A-Za-z0-9_.-]+/)) || (r[2] == 'no' && r[3] == '.') }
+    if (bad_rows || pgx_rows.collect { r -> r[0] }.unique().size() != pgx_rows.size()) {
+        error "assets/pgx_genes.tsv has malformed rows or a gene twice: ${bad_rows.collect { r -> r.join(' ') }}"
+    }
+    def bam_genes = pgx_rows.findAll { r -> r[1] == 'bam' }.collect { r -> r[0] }.join(' ')
+    def vcf_genes = pgx_rows.findAll { r -> r[1] == 'vcf' }.collect { r -> r[0] }.join(' ')
+    // "GENE:CONTIG" for each bam gene that needs an ALT contig
+    def alt_needs = pgx_rows.findAll { r -> r[1] == 'bam' && r[2] == 'no' }.collect { r -> "${r[0]}:${r[3]}" }.join(' ')
     def gq_floor = task.ext.gq_floor != null ? task.ext.gq_floor : 20
     """
     OUTBASE="${meta.id}_pypgx_results"
@@ -78,27 +93,33 @@ process PYPGX {
     SUCCEEDED=0
     BAM_GENES="${bam_genes}"
 
-    # GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a
-    # reference without ALT contigs (the default) has no such contig, and
-    # depth preparation then fails for every SV gene. Leave GSTT1 out in that
+    # A gene the table marks callable_without_alt=no lies on an ALT contig of
+    # GRCh38 (GSTT1 on chr22_KI270879v1_alt). A BAM aligned to a reference
+    # without ALT contigs (the default) has no such contig, and depth
+    # preparation then fails for every SV gene. Leave such a gene out in that
     # case: the summary says it is not callable on this reference, as
     # scripts/32-pypgx.sh does.
     NOT_CALLABLE=""
-    rc=0
-    python3 -c "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 3)" ${bam} || rc=\$?
-    if [ "\$rc" = 3 ]; then
-      echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 is not callable on this reference and is skipped"
-      BAM_GENES="CYP2D6 CYP2A6 GSTM1"
-      NOT_CALLABLE="--not-callable GSTT1"
-    elif [ "\$rc" != 0 ]; then
-      echo "ERROR: could not read the contigs of ${bam} (exit \$rc)" >&2
-      exit 1
-    fi
+    for NEED in ${alt_needs}; do
+      G=\${NEED%%:*} C=\${NEED#*:}
+      rc=0
+      python3 -c "import pysam, sys; sys.exit(0 if sys.argv[2] in pysam.AlignmentFile(sys.argv[1]).references else 3)" ${bam} "\$C" || rc=\$?
+      if [ "\$rc" = 3 ]; then
+        echo "NOTICE: the BAM has no \$C contig (reference without ALT contigs); \$G is not callable on this reference and is skipped"
+        BAM_GENES=\$(echo "\$BAM_GENES" | tr ' ' '\\n' | grep -vxF "\$G" | paste -sd ' ' - || true)
+        NOT_CALLABLE="\$NOT_CALLABLE --not-callable \$G"
+      elif [ "\$rc" != 0 ]; then
+        echo "ERROR: could not read the contigs of ${bam} (exit \$rc)" >&2
+        exit 1
+      fi
+    done
 
     # Phase 1: Prepare depth of coverage for SV genes
     echo "--- Preparing depth of coverage for SV genes: \${BAM_GENES} ---"
     DOC_OK=true
-    if ! pypgx prepare-depth-of-coverage \\
+    if [ -z "\$BAM_GENES" ]; then
+      DOC_OK=false
+    elif ! pypgx prepare-depth-of-coverage \\
       "\$DOC" ${bam} --assembly GRCh38 --genes \$BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed"
       for GENE in \$BAM_GENES; do FAILED="\${FAILED} \${GENE}"; done
