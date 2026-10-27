@@ -16,7 +16,9 @@
 #      pathogenic_motif; the same with TTTTA reads at SAMD12 gives
 #      benign_motif.
 #   5. STRANGER and STRANGER_RFC1 in Nextflow, given the same catalog, write
-#      step 9b's two motif tables byte for byte.
+#      step 9b's records (INFO keys sorted: Stranger orders the catalog's
+#      keys through a Python set, so their order changes from run to run)
+#      and its two motif tables byte for byte.
 #   Control: step 9b on the same made-up sample with STRANGER_REPEATS=bundled
 #      writes no STRchive source and no table of the other motif loci.
 # What this cannot show: reads of a real carrier at any of the 82 loci; the
@@ -199,8 +201,17 @@ NF
   check_eq "nextflow run of STRANGER and STRANGER_RFC1 exits 0" "$rc" 0
   [ "$rc" = 0 ] || grep -E 'ERROR|Error executing process|Command error' -A 8 "${CASE_TMP}/nf.log" | head -40
   NF_DIR="${CASE_TMP}/nf/results/${P}/expansion_hunter"
-  check "STRANGER grades as step 9b, byte for byte" \
-    cmp -s <(grep -v '^#' "${GENOME_DIR}/${P}/expansion_hunter/${P}_eh_stranger.vcf") <(grep -v '^#' "${NF_DIR}/${P}_eh_stranger.vcf")
+  records() {  # records <vcf>: the records with their INFO keys sorted
+    python3 -c 'import sys
+for line in open(sys.argv[1]):
+    if not line.startswith("#"):
+        f = line.rstrip("\n").split("\t")
+        f[7] = ";".join(sorted(f[7].split(";")))
+        print("\t".join(f))' "$1"
+  }
+  check_ge "step 9b graded records to compare" "$(records "${GENOME_DIR}/${P}/expansion_hunter/${P}_eh_stranger.vcf" | grep -c 'STR_STATUS=')" 2
+  check "STRANGER grades as step 9b, the same records" \
+    cmp -s <(records "${GENOME_DIR}/${P}/expansion_hunter/${P}_eh_stranger.vcf") <(records "${NF_DIR}/${P}_eh_stranger.vcf")
   check "STRANGER_RFC1 writes step 9b's RFC1 table, byte for byte" cmp -s "$R_TAB" "${NF_DIR}/${P}_rfc1_motif.tsv"
   check "and its table of the other motif loci" cmp -s "$O_TAB" "${NF_DIR}/${P}_str_motifs.tsv"
 else
