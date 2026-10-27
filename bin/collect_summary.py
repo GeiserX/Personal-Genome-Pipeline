@@ -448,8 +448,7 @@ def sec_clinvar(d, s):
     sure = [x for x in rows if not x["low_confidence"]]
     by = {str(k): sum(1 for x in sure if x["stars"] == k) for k in (4, 3, 2, 1, 0)}
     data = {"count": len(sure), "by_stars": by, "hits": rows, "low_confidence": len(rows) - len(sure),
-            "call_floor": floor, "frequency": clinvar_frequencies(d, s, rows),
-            "carrier": carrier_list_or_note(p)}
+            "call_floor": floor, "frequency": clinvar_frequencies(d, s, rows)}
     # The cDNA read check, on each hit when step 06 wrote it.
     cdna = clinvar_cdna_checks(d, s)
     if cdna is not None:
@@ -2146,6 +2145,16 @@ def sec_traits(d, s):
     return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
 
 
+def sec_carrier(d, s):
+    """The sample's own carrier list (carrier_list) from step 06's ClinVar
+    hits; its own section, so the ClinVar section reads the same whether or
+    not the assets folder is there."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
+    if not p:
+        return None, {}
+    return p, carrier_list_or_note(p)
+
+
 def sec_couple(d, s):
     """Step 39's couple table (couple/<id>_couple_carrier.tsv, bin/couple_report.py):
     the partner, the shared and X-linked genes with the chance for a child, and
@@ -3162,7 +3171,7 @@ def sec_read_count(d, s):
 
 # Sections that are not a step of their own, or not one of one person (the
 # couple screen needs two): no "not run" line without them.
-NOT_A_STEP = {"read_count", "couple"}
+NOT_A_STEP = {"read_count", "couple", "carrier"}
 
 SECTIONS = [
     # key, title, step, reader
@@ -3174,6 +3183,7 @@ SECTIONS = [
     ("variants", "Variant calling", "03", sec_variants),
     ("clinvar", "ClinVar screen", "06", sec_clinvar),
     ("couple", "Couple carrier screen", "39", sec_couple),
+    ("carrier", "Carrier list", "06", sec_carrier),
     ("pharmcat", "PharmCAT", "07", sec_pharmcat),
     ("cpic", "CPIC drug-gene recommendations", "27", sec_cpic),
     ("pypgx", "pypgx", "32", sec_pypgx),

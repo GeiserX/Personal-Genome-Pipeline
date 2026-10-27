@@ -702,10 +702,12 @@ def text_report(s):
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
-        if d.get("carrier"):
-            for line in carrier_lines(d["carrier"]):
-                w(f"  {line}")
-            w(f"  {CARRIER_NOTE}")
+        w("")
+
+    if head("carrier", "Carrier List (this sample)"):
+        for line in carrier_lines(S["carrier"]["data"]):
+            w(f"  {line}")
+        w(f"  {CARRIER_NOTE}")
         w("")
 
     if head("couple", "Couple Carrier Screen (step 39)"):
@@ -1615,9 +1617,9 @@ def html_report(s):
     if clinvar_freq_line(c):
         cv_body.insert(-1, small_note(clinvar_freq_line(c)))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
-    if c.get("carrier"):
-        a(card(S["clinvar"], "Carrier List (this sample)",
-               [f"    <p>{E(line)}</p>" for line in carrier_lines(c["carrier"])]
+    if S.get("carrier", MISSING)["state"] in ("ok", "stale"):
+        a(card(S["carrier"], "Carrier List (this sample)",
+               [f"    <p>{E(line)}</p>" for line in carrier_lines(S["carrier"]["data"])]
                + [f"    <p>{E(CARRIER_NOTE)}</p>"], full=True))
     if S.get("couple", MISSING)["state"] != "missing":
         a(card(S["couple"], "Couple Carrier Screen",

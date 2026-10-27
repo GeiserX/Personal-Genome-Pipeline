@@ -220,7 +220,7 @@ def main():
                                      hit("chr15", 72350584, "G", "A", "HEXA", "0/1"),
                                      hit("chr15", 72346579, "G", "GGATA", "HEXA", "0/1")])
         summ = collect_summary.collect("S", d)
-        car = summ["sections"]["clinvar"]["data"].get("carrier") or {}
+        car = summ["sections"].get("carrier", {}).get("data") or {}
         lines = {(x["gene"], x["variant"]) for x in car.get("carriers", [])}
         check("carrier list: one sample, no partner, a CFTR carrier line", ("CFTR", "chr7:117559590 ATCT>A") in lines, car)
         check("carrier list: the HEXA pseudodeficiency allele makes no carrier line",
@@ -267,7 +267,8 @@ def main():
         check("no assets: the ClinVar hits stay", cv["state"] == "ok" and cv["data"]["count"] == 4, cv["state"])
         check("no assets: both lists say why they were not made",
               "acmg_sf.tsv" in (cl["data"].get("acmg_sf") or {}).get("unavailable", "")
-              and "carrier_genes.tsv" in (cv["data"].get("carrier") or {}).get("unavailable", ""), (cl, cv["data"].get("carrier")))
+              and "carrier_genes.tsv" in summ["sections"]["carrier"]["data"].get("unavailable", ""),
+              (cl, summ["sections"]["carrier"]))
         txt = render_report.text_report(summ)
         check("no assets: the text report says so", "Secondary findings: not assessed" in txt
               and "Carrier list: not made" in txt)
