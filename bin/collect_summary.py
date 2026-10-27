@@ -3178,7 +3178,7 @@ def collect(sample, sample_dir, declared_sex=None):
            else [HBA_NOT_ASSESSED])
         + ([] if sections["vntyper"]["state"] == "ok"
            and sections["vntyper"]["data"].get("status") in ("positive", "possible", "negative")
-           else []),
+           else [VNTYPER_NOT_ASSESSED]),
     }
     return summary
 
