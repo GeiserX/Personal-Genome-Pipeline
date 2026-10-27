@@ -53,7 +53,7 @@ hide:
 - **Small variants:** SNPs and indels with DeepVariant; structural and copy-number variants with Manta, Delly and CNVpytor merged into one consensus set.
 - **Clinical screening:** known pathogenic variants from ClinVar, cancer predisposition panels with CPSR, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritisation of rare deleterious variants.
 - **Pharmacogenomics:** PharmCAT and pypgx star alleles across 23 genes, CYP2D6 structural alleles with Cyrius, CPIC dosing recommendations.
-- **Ancestry and lineage:** mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry placement against the 1000 Genomes panel (optional download), polygenic risk scores for 13 conditions and traits.
+- **Ancestry and lineage:** mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry placement against the 1000 Genomes panel (optional download), the Neanderthal and Denisovan segments you carry (optional download), polygenic risk scores for 13 conditions and traits.
 - **Everything else the reads hold:** clonal haematopoiesis (CHIP) in the blood, with the detection limit at your depth (opt-in), HLA type, repeat expansions at the 31 loci of ExpansionHunter's catalog (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
@@ -70,7 +70,7 @@ One page per step, grouped by stage. The step number is the script name and the 
 - **Clinical screening and annotation:** [6 ClinVar screen](06-clinvar-screen.md), [13 VEP](13-vep-annotation.md), [17 CPSR](17-cpsr.md), [23 clinical filter](23-clinical-filter.md), [29 somatic Mutect2 (opt-in)](29-mutect2-somatic.md), [30 vcfanno](30-vcfanno.md), [31 slivar](31-slivar.md).
 - **Pharmacogenomics:** [7 PharmCAT](07-pharmacogenomics.md), [21 Cyrius](21-cyrius.md), [27 CPIC lookup](27-cpic-lookup.md), [32 pypgx](32-pypgx.md).
 - **HLA, repeats and telomeres:** [8 HLA typing](08-hla-typing.md), [9 ExpansionHunter](09-str-expansions.md), [9b Stranger](09b-stranger.md), [10 TelomereHunter](10-telomere-analysis.md).
-- **Ancestry, risk and mitochondria:** [11 ROH](11-roh-analysis.md), [12 mitochondrial haplogroup](12-mito-haplogroup.md), [14 imputation prep](14-imputation-prep.md), [20 mitochondrial variants](20-mtoolbox.md), [25 polygenic risk scores](25-prs.md), [26 ancestry](26-ancestry.md), [26b fine-grained ancestry](26b-ancestry-fine.md).
+- **Ancestry, risk and mitochondria:** [11 ROH](11-roh-analysis.md), [12 mitochondrial haplogroup](12-mito-haplogroup.md), [14 imputation prep](14-imputation-prep.md), [20 mitochondrial variants](20-mtoolbox.md), [25 polygenic risk scores](25-prs.md), [26 ancestry](26-ancestry.md), [26b fine-grained ancestry](26b-ancestry-fine.md), [44 ancient populations](44-ancient.md).
 - **Quality control and reports:** [16 indexcov](16-indexcov.md), [16b mosdepth](16b-mosdepth.md), [24 HTML report](24-html-report.md), [28 MultiQC](28-multiqc.md).
 
 Alternative callers for benchmarking (BWA-MEM2, GATK HaplotypeCaller, FreeBayes, Strelka2, TIDDIT) are scripts without a page of their own; [Variant caller benchmarking](benchmarking.md) covers how to run and compare them.
