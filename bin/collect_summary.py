@@ -102,7 +102,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "50", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -117,6 +117,10 @@ NOT_ASSESSED = [
 # short reads) or step 35b (Paraphase, PacBio HiFi, both genes) made a call.
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
                     "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
+
+# Added to NOT_ASSESSED unless step 50 (opt-in, MEGAnE) wrote its tables.
+MEI_NOT_ASSESSED = ("Mobile element insertions (Alu, L1 and SVA, the FKTN, TAF1 and BBS1 SVA insertions among them): "
+                    "not looked for (step 50, MEGAnE, is opt-in)")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -2123,6 +2127,30 @@ def sec_viral(d, s):
                "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
 
 
+def sec_mei(d, s):
+    """Step 50's tables (mei/<id>_mei.tsv and _mei_sites.tsv, bin/mei_report.py):
+    the insertions MEGAnE calls, counted per element, and every row of the
+    known-site catalog with seen, not seen or not callable."""
+    p = first_existing(d, [f"mei/{s}_mei_sites.tsv"])
+    if not p:
+        return None, {}
+    sites = read_tsv(p)
+    need = ("gene", "element", "condition", "inheritance", "status", "mean_depth", "call")
+    if not sites or any(k not in sites[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
+    cp = os.path.join(os.path.dirname(p), f"{s}_mei.tsv")
+    if not os.path.isfile(cp):
+        raise Unreadable(f"{os.path.basename(cp)} is missing beside {os.path.basename(p)}")
+    calls = read_tsv(cp)
+    if calls and any(k not in calls[0] for k in ("chrom", "pos", "element", "copies")):
+        raise Unreadable(f"{os.path.basename(cp)} lacks a column of chrom, pos, element, copies")
+    counts = {}
+    for c in calls:
+        counts[c["element"]] = counts.get(c["element"], 0) + 1
+    return p, {"calls": len(calls), "by_element": dict(sorted(counts.items())),
+               "sites": [{k: r[k] or "." for k in need} for r in sites]}
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2942,6 +2970,7 @@ SECTIONS = [
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
+    ("mei", "Mobile element insertions (MEGAnE)", "50", sec_mei),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
@@ -3121,7 +3150,8 @@ def collect(sample, sample_dir, declared_sex=None):
         + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
-           else [HBA_NOT_ASSESSED]),
+           else [HBA_NOT_ASSESSED])
+        + ([] if sections["mei"]["state"] in ("ok", "stale") else [MEI_NOT_ASSESSED]),
     }
     return summary
 

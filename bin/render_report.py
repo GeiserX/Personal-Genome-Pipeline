@@ -973,6 +973,11 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("mei", "Mobile Element Insertions (step 50)"):
+        for line in mei_lines(S["mei"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
         d = S["cpsr"]["data"]
         if d.get("html_report"):
@@ -1309,6 +1314,36 @@ def viral_body(d):
     table = ("    <table><tr><th>Virus</th><th>Call</th><th>Reads</th><th>Breadth</th><th>Depth / human</th>"
              "<th>Copies per cell</th></tr>" + rows + "</table>") if rows else small_note("No read on any viral genome.")
     return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
+
+
+MEI_NOTE = ("Alu, L1 and SVA copies the genome carries and the reference does not, found and genotyped by "
+            "MEGAnE (Kojima et al. 2023) from short read pairs. Most are common and harmless; the catalog rows are "
+            "insertions known to cause disease. Not callable: too few reads in that window to tell. Not seen is "
+            "not proof of absence: short reads find an SVA's edges, not its body. Every call: mei/<sample>_mei.tsv.")
+
+
+def mei_lines(d):
+    """Step 50's lines, the same in both reports: the calls per element, then each catalog row."""
+    by = d.get("by_element") or {}
+    counts = ", ".join(f"{k} {v}" for k, v in by.items()) or "none"
+    lines = [f"Insertions called: {d.get('calls', 0)} ({counts})"]
+    for x in d.get("sites", []):
+        call = "" if x["call"] == "." else f", {x['call']}"
+        lines.append(f"{x['gene']} {x['element']} ({x['condition']}; {x['inheritance']}): {x['status']}"
+                     f" (depth {x['mean_depth']}{call})")
+    return lines + [MEI_NOTE]
+
+
+def mei_body(d):
+    """The mobile element card: the calls per element, a row per catalog insertion, the note."""
+    by = d.get("by_element") or {}
+    counts = ", ".join(f"{k} {v}" for k, v in by.items()) or "none"
+    rows = "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['element'])}</td><td>{E(x['condition'])}</td>"
+                   f"<td>{E(x['inheritance'])}</td><td>{E(x['status'])}</td><td>{E(x['mean_depth'])}</td>"
+                   f"<td>{E(x['call'])}</td></tr>" for x in d.get("sites", []))
+    table = ("    <table><tr><th>Gene</th><th>Element</th><th>Condition</th><th>Inheritance</th><th>Status</th>"
+             "<th>Depth</th><th>Call</th></tr>" + rows + "</table>")
+    return [stat("Insertions called", E(f"{d.get('calls', 0)} ({counts})")), table, small_note(MEI_NOTE)]
 
 
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
@@ -1743,6 +1778,8 @@ def html_report(s):
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
+    if S.get("mei", MISSING)["state"] != "missing":
+        a(card(S["mei"], "Mobile Element Insertions", mei_body(S["mei"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
