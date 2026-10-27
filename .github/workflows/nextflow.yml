@@ -160,12 +160,15 @@ jobs:
       # FASTQ and BAM-only rows (the two DEEPVARIANT gives a gVCF). It is given
       # here and not in conf/test_all.config, because other runs of the profile
       # bring their own samplesheet, which the stub pedigree does not name.
+      # --hpo turns on exomiser (step 48) for the one sample it names, for the
+      # same reason here too.
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
-            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv
+            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv \
+            --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db
 
       # The stub samplesheet has four samples with alignments (one aligned
       # from FASTQ, one given as CRAM): the T1K index is built once for all of
