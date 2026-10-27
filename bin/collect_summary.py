@@ -103,7 +103,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "48", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -2089,6 +2089,28 @@ def sec_bloodtype(d, s):
     return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
 
 
+def sec_archaic(d, s):
+    """Step 43's summary (archaic/<id>_archaic.tsv, bin/archaic_report.py): the
+    Neanderthal and Denisovan shares and segment counts, the analysed span and
+    the ten longest segments."""
+    p = first_existing(d, [f"archaic/{s}_archaic.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"]: r.get("value") or "" for r in read_tsv(p) if r.get("key")}  # a short row: None
+    out = {"population": data.get("population", "."),
+           "longest": [data[k] for k in sorted((k for k in data if re.fullmatch(r"longest_[0-9]+", k)),
+                                               key=lambda k: int(k.split("_")[1]))]}
+    for k in ("neanderthal_segments", "neanderthal_bp", "denisovan_segments", "denisovan_bp", "analysed_bp"):
+        if not re.fullmatch(r"[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        out[k] = int(data[k])
+    for k in ("neanderthal_percent", "denisovan_percent"):
+        if not re.fullmatch(r"[0-9]+\.[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no percentage for {k}")
+        out[k] = data[k]
+    return p, out
+
+
 # The two LPA risk variants of assets/traits.tsv (rsid -> its alt, the allele
 # that goes with a high Lp(a)); tests/test_lpa_kiv2.py checks they agree.
 LPA_RISK_ALLELES = {"rs10455872": "G", "rs3798220": "C"}
@@ -3033,6 +3055,7 @@ SECTIONS = [
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
+    ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
     ("ancient", "Ancient populations (AADR PCA)", "44", sec_ancient),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
     ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),

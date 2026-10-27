@@ -1030,6 +1030,10 @@ def text_report(s):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
+    if head("archaic", "Archaic Ancestry (IBDmix, step 43)"):
+        for line in archaic_lines(S["archaic"]["data"]):
+            w(f"  {line}")
+        w(f"  {ARCHAIC_NOTE}")
     if head("ancient", "Ancient Populations (AADR PCA, step 44)"):
         for line in ancient_lines(S["ancient"]["data"]):
             w(f"  {line}")
@@ -1326,6 +1330,24 @@ def ystr_body(d):
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+ARCHAIC_NOTE = ("An estimate from IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan: "
+                "a segment counts when either copy carries it, and part of what any person gets is old shared "
+                "ancestry, not gene flow (Africans get some too). Every segment: archaic/<sample>_archaic_segments.tsv; "
+                "docs/43-archaic.md says where the numbers end.")
+
+
+def archaic_lines(d):
+    """Step 43's lines, the same in both reports."""
+    mb = lambda bp: f"{bp / 1e6:.1f} Mb"
+    lines = [f"Neanderthal: {d['neanderthal_percent']}% ({mb(d['neanderthal_bp'])} in {d['neanderthal_segments']} segments)",
+             f"Denisovan: {d['denisovan_percent']}% ({mb(d['denisovan_bp'])} in {d['denisovan_segments']} segments)",
+             f"Analysed: {mb(d['analysed_bp'])} of the autosomes; modern frequencies: 1000 Genomes {d.get('population', '.')}"]
+    if d.get("longest"):
+        lines.append("Longest segments:")
+        lines += [f"  {x}" for x in d["longest"]]
+    return lines
 
 
 CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
@@ -1834,6 +1856,12 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("archaic", MISSING)["state"] != "missing":
+        ah = S["archaic"]["data"]
+        a(card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
+               [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
+               + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)] + [small_note(ARCHAIC_NOTE)]
+               if S["archaic"]["state"] in ("ok", "stale") else []))
     if S.get("lpa", MISSING)["state"] != "missing":
         lp = S["lpa"]["data"]
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
