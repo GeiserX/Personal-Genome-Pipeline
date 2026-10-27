@@ -575,6 +575,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** with so few reads one of its read lists is empty, and the code indexes it anyway.
 - **Fix:** the image test builds the k-mer set and checks the options; the call is tested on all of chr20 in the e2e case `mei-1`.
 
+### MEGAnE's image has no `ps`, and every Nextflow task in it stops
+- **Failed:** the MEI process exited 1 within seconds with "Command 'ps' required by nextflow to collect task metrics cannot be found"; the bash step on the same BAM ran.
+- **Why:** with a trace, report or timeline on, Nextflow's task wrapper lists the task's processes with `ps -e -o pid= -o ppid=` to measure its memory, and checks for `ps` first. MEGAnE's image does not have it, and it is the only image there is.
+- **Fix:** `modules/local/mei/resources/usr/bin/ps` prints those two columns from `/proc`. It is a module binary (`nextflow.enable.moduleBinaries = true`), so it is on the PATH of the three tasks of `modules/local/mei` only.
+
 ### The staphb samtools image cannot read a BAM over https
 - **Failed:** streaming the GIAB BAM's chr20 with `SAMTOOLS_IMAGE` failed with libcurl error 60.
 - **Why:** the image has no CA certificate bundle.
