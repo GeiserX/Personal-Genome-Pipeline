@@ -11,6 +11,15 @@ family VCF PHASED/<chrom>.vcf.gz, hap-ibd's segments IBD/<chrom>.ibd.gz and
 the PLINK genetic map MAPS/<chrom>.map. hap-ibd reports a segment per pair of
 haplotypes; here the segments of one pair of people are merged into the
 stretches they share (one copy or both), as consumer DNA sites show them.
+A phasing error breaks hap-ibd's segments, and a piece shorter than its
+2 cM seed between two breaks is lost. Two people who share a copy are never
+opposite homozygotes (one 0/0, the other 1/1) bar a genotype error, so two
+stretches of a pair are joined when the markers between them hold at most
+one opposite homozygote, and a pair's first and last stretch reach the
+chromosome's first and last marker on the same test. The Browning lab's
+merge-ibd-segments joins segments by the same test in gaps under 0.6 cM;
+here a gap has no length limit, since two unrelated people are opposite
+homozygotes at several percent of the panel's common SNVs.
 
 Writes:
   D/ibd_segments.tsv  one row per shared stretch: sample_a, sample_b, chrom,
@@ -41,6 +50,8 @@ PAIR_COLUMNS = ("sample_a", "sample_b", "declared", "expected_relatedness", "seg
 SEGMENT_COLUMNS = ("sample_a", "sample_b", "chrom", "start", "end", "cm", "ibd2_cm")
 # hap-ibd's default min-output: shorter segments are not reported.
 MIN_OUTPUT_CM = 2.0
+# Opposite homozygotes allowed between two stretches that are joined.
+MAX_DISCORD = 1
 # Share of the first-degree pair's genome in both copies above which the
 # pair reads as full siblings (about 25%) rather than parent and child (0%).
 SIBLING_MIN_IBD2 = 0.10
@@ -90,20 +101,54 @@ class Map:
         return self.cm[i - 1] + (self.cm[i] - self.cm[i - 1]) * (pos - b0) / (b1 - b0)
 
 
-def vcf_span(path):
-    """Sample names and the first and last position of a VCF."""
-    samples, first, last = None, None, None
+def dosage(gt):
+    a = gt.split(":", 1)[0].replace("|", "/").split("/")
+    return sum(int(x) for x in a) if len(a) == 2 and all(x in ("0", "1") for x in a) else -1
+
+
+def read_phased(path):
+    """Sample names, marker positions and each sample's ALT count per marker
+    (-1 when not 0/1 alleles) of a phased VCF."""
+    samples, pos, dos = None, [], None
     with gzip.open(path, "rt") as f:
         for line in f:
             if line.startswith("#CHROM"):
                 samples = line.rstrip("\r\n").split("\t")[9:]
+                dos = [[] for _ in samples]
             elif not line.startswith("#"):
-                p = int(line.split("\t", 2)[1])
-                first = p if first is None else first
-                last = p
+                if samples is None:
+                    die("%s has no #CHROM line before its records" % path)
+                c = line.rstrip("\r\n").split("\t")
+                pos.append(int(c[1]))
+                for i, g in enumerate(c[9:9 + len(samples)]):
+                    dos[i].append(dosage(g))
     if samples is None:
         die("%s has no #CHROM line" % path)
-    return samples, first, last
+    return samples, pos, dict(zip(samples, dos))
+
+
+def opposite_homozygotes(pos, dx, dy, a, b):
+    """Markers strictly between positions a and b where one is 0/0 and the other 1/1."""
+    i, j = bisect.bisect_right(pos, a), bisect.bisect_left(pos, b)
+    return sum(1 for k in range(i, j) if {dx[k], dy[k]} == {0, 2})
+
+
+def stitch(iv, pos, dx, dy):
+    """Join stretches with at most MAX_DISCORD opposite homozygotes between
+    them, and reach the first and last marker on the same test."""
+    if not iv:
+        return iv
+    out = [list(iv[0])]
+    for s, e in iv[1:]:
+        if opposite_homozygotes(pos, dx, dy, out[-1][1], s) <= MAX_DISCORD:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    if opposite_homozygotes(pos, dx, dy, pos[0] - 1, out[0][0]) <= MAX_DISCORD:
+        out[0][0] = min(out[0][0], pos[0])
+    if opposite_homozygotes(pos, dx, dy, out[-1][1], pos[-1] + 1) <= MAX_DISCORD:
+        out[-1][1] = max(out[-1][1], pos[-1])
+    return [tuple(x) for x in out]
 
 
 def read_ibd(path, chrom):
@@ -200,17 +245,18 @@ def f2(x):
 
 def build(a):
     chroms = [c.strip() for c in open(a.chroms) if c.strip()]
-    samples, glen, by_pair, maps = None, {}, {}, {}
+    samples, glen, by_pair, maps, geno = None, {}, {}, {}, {}
     for c in chroms:
         maps[c] = Map(os.path.join(a.maps, c + ".map"))
-        s, first, last = vcf_span(os.path.join(a.phased, c + ".vcf.gz"))
+        s, pos, dos = read_phased(os.path.join(a.phased, c + ".vcf.gz"))
         if samples is None:
             samples = s
         elif s != samples:
             die("%s.vcf.gz has the samples %s, %s.vcf.gz %s" % (c, ",".join(s), chroms[0], ",".join(samples)))
-        if first is None:
+        if not pos:
             die("%s.vcf.gz has no marker" % c)
-        glen[c] = maps[c].at(last) - maps[c].at(first)
+        geno[c] = (pos, dos)
+        glen[c] = maps[c].at(pos[-1]) - maps[c].at(pos[0])
         for x, y, ha, hb, s0, e0 in read_ibd(os.path.join(a.ibd, c + ".ibd.gz"), c):
             if x not in s or y not in s:
                 die("%s.ibd.gz names %s and %s; the phased VCF holds %s" % (c, x, y, ",".join(s)))
@@ -229,8 +275,9 @@ def build(a):
                 if not segs:
                     continue
                 m = maps[c]
+                pos, dos = geno[c]
                 two = ibd2(segs)
-                for s0, e0 in union([(s, e) for _, _, s, e in segs]):
+                for s0, e0 in stitch(union([(s, e) for _, _, s, e in segs]), pos, dos[x], dos[y]):
                     cm = m.at(e0) - m.at(s0)
                     cm2 = sum(m.at(e) - m.at(s) for s, e in intersect([(s0, e0)], two))
                     segments.append((x, y, c, s0, e0, cm, cm2))
@@ -282,8 +329,10 @@ def write(a, chroms, glen, total, pairs, segments):
                      % (p["sample_a"], p["sample_b"], p["declared"], p["shared_cm"], 100 * p["shared_fraction"],
                         p["longest_cm"], p["segments"], p["ibd2_cm"], p["degree"]))
         L += ["", "Every stretch is in ibd_segments.tsv (chromosome, start, end, cM, and the cM where both "
-                  "copies are shared). A parent and child share one copy along the whole genome; full siblings "
-                  "share both copies over about a quarter of it."]
+                  "copies are shared). Two stretches a phasing error split are joined when the markers between "
+                  "them hold at most one opposite homozygote (one 0/0, the other 1/1), which two people who share "
+                  "a copy never are bar a genotype error. A parent and child share one copy along the whole "
+                  "genome; full siblings share both copies over about a quarter of it."]
     with open(os.path.join(a.out_dir, "ibd_report.md"), "w") as f:
         f.write("\n".join(L) + "\n")
 

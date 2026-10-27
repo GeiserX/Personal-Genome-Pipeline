@@ -12,7 +12,8 @@ a pedigree, runs the script, and checks what it writes:
      shared fraction 1, nothing in both copies, first degree (parent-child)
   3. full siblings: both copies shared over a quarter of the map is IBD2,
      relatedness from (IBD1 / 4 + IBD2 / 2), first degree (full siblings)
-  4. a short segment only, written in hap-ibd's other sample order: distant;
+  4. a short segment only, written in hap-ibd's other sample order, with
+     opposite homozygotes on both sides: distant;
      a pair with no segment: no shared segment; a member without a pedigree
      row: not in the pedigree
   5. two chromosomes: the analysed map is the sum of first to last marker of
@@ -22,6 +23,9 @@ a pedigree, runs the script, and checks what it writes:
      a row on another chromosome, a sample the phased VCF does not hold, a
      map row without its bp column
   8. no chromosome phased: headers only, and the report says so
+  9. stretches broken by phasing: two joined across a gap with no opposite
+     homozygote, not across one with two; a stretch reaches the chromosome's
+     first and last marker across one opposite homozygote, not across three
 
 Run: python3 tests/test_ibd_report.py
 """
@@ -51,8 +55,12 @@ def check(name, got, want):
         FAILS.append(name)
 
 
-def write_chrom(d, chrom, samples, first, last, ibd_rows, map_end):
-    """1 cM per Mb from 0 to map_end Mb; markers every Mb from first to last Mb."""
+GT = {0: "0|0", 1: "0|1", 2: "1|1"}
+
+
+def write_chrom(d, chrom, samples, first, last, ibd_rows, map_end, dos=lambda s, mb: 1):
+    """1 cM per Mb from 0 to map_end Mb; markers every Mb from first to last Mb;
+    dos(sample, Mb) is the sample's ALT count there."""
     for sub in ("maps", "phased", "ibd"):
         os.makedirs(os.path.join(d, sub), exist_ok=True)
     with open(os.path.join(d, "maps", chrom + ".map"), "w") as f:
@@ -61,7 +69,7 @@ def write_chrom(d, chrom, samples, first, last, ibd_rows, map_end):
     with gzip.open(os.path.join(d, "phased", chrom + ".vcf.gz"), "wt") as f:
         f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" + "\t".join(samples) + "\n")
         for i in range(first, last + 1):
-            f.write(f"{chrom}\t{i * MB}\t.\tA\tG\t.\tPASS\t.\tGT\t" + "\t".join("0|1" for _ in samples) + "\n")
+            f.write(f"{chrom}\t{i * MB}\t.\tA\tG\t.\tPASS\t.\tGT\t" + "\t".join(GT[dos(s, i)] for s in samples) + "\n")
     with gzip.open(os.path.join(d, "ibd", chrom + ".ibd.gz"), "wt") as f:
         for r in ibd_rows:
             f.write("\t".join(str(x) for x in r) + "\n")
@@ -87,6 +95,8 @@ def table(path):
 
 
 SAMPLES = ["A", "B", "C", "D"]
+# D is 1/1 where A, B and C are 0/0, except over its short segment with B
+DOS1 = lambda s, mb: (1 if 10 <= mb <= 13 else 2) if s == "D" else 0  # noqa: E731
 CHR1 = [("A", 1, "B", 1, "chr1", 1 * MB, 50 * MB, 49.0),      # parent-child, then the
         ("A", 1, "B", 2, "chr1", 50 * MB, 99 * MB, 49.0),     # parent's other haplotype
         ("A", 1, "C", 1, "chr1", 1 * MB, 99 * MB, 98.0),      # siblings: one copy everywhere,
@@ -95,7 +105,7 @@ CHR1 = [("A", 1, "B", 1, "chr1", 1 * MB, 50 * MB, 49.0),      # parent-child, th
 
 
 with tempfile.TemporaryDirectory() as d:
-    write_chrom(d, "chr1", SAMPLES, 1, 99, CHR1, 100)
+    write_chrom(d, "chr1", SAMPLES, 1, 99, CHR1, 100, DOS1)
     r, out = run(d, ["chr1"])
     check("1 chromosome: exit 0", r.returncode, 0)
     if r.returncode:
@@ -140,7 +150,7 @@ with tempfile.TemporaryDirectory() as d:
     check("6 the report says one chromosome is a rough estimate", "rough estimate" in md, True)
     check("6 the report names what was analysed", "Analysed: 1 chromosome (chr1), 98.0 cM" in md, True)
 
-    write_chrom(d, "chr2", SAMPLES, 2, 49, [("B", 2, "A", 2, "chr2", 2 * MB, 49 * MB, 47.0)], 50)
+    write_chrom(d, "chr2", SAMPLES, 2, 49, [("B", 2, "A", 2, "chr2", 2 * MB, 49 * MB, 47.0)], 50, DOS1)
     r, out = run(d, ["chr1", "chr2"])
     check("5 two chromosomes: exit 0", r.returncode, 0)
     _, pairs = table(os.path.join(out, "ibd_pairs.tsv"))
@@ -148,6 +158,35 @@ with tempfile.TemporaryDirectory() as d:
     check("5 two chromosomes: the analysed map is the sum (98 + 47 cM)", ab["analysed_cm"], "145.00")
     check("5 two chromosomes: A and B, two stretches, all of it shared",
           (ab["segments"], ab["shared_cm"], ab["longest_cm"], ab["shared_fraction"]), ("2", "145.00", "98.00", "1.0000"))
+
+# 9. P and Q: 1-30 and 35-60 Mb joined (nothing between), 70-99 Mb not (Q is
+# 1/1 at 62 and 66 Mb); P and R: 5-50 Mb, R 1/1 at 1-3 and 51-99 Mb, so no
+# reach to the ends; P and S: 3-97 Mb reaches 1 and 99 Mb, S 1/1 at 99 Mb only.
+def dos9(s, mb):
+    if s == "Q":
+        return 2 if mb in (62, 66) else 0
+    if s == "R":
+        return 2 if mb <= 3 or mb >= 51 else 0
+    if s == "S":
+        return 2 if mb == 99 else 0
+    return 0
+
+
+with tempfile.TemporaryDirectory() as d:
+    write_chrom(d, "chr3", ["P", "Q", "R", "S"], 1, 99,
+                [("P", 1, "Q", 1, "chr3", 1 * MB, 30 * MB, 29.0), ("P", 1, "Q", 2, "chr3", 35 * MB, 60 * MB, 25.0),
+                 ("P", 1, "Q", 1, "chr3", 70 * MB, 99 * MB, 29.0), ("P", 2, "R", 1, "chr3", 5 * MB, 50 * MB, 45.0),
+                 ("P", 2, "S", 2, "chr3", 3 * MB, 97 * MB, 94.0)], 100, dos9)
+    r, out = run(d, ["chr3"], "sample\tsex\tfather\tmother\tpartner\nP\tmale\t.\t.\t.\n")
+    check("9 stitching: exit 0", r.returncode, 0)
+    _, segs = table(os.path.join(out, "ibd_segments.tsv"))
+    check("9 stitching: the stretches", [(x["sample_a"], x["sample_b"], x["start"], x["end"]) for x in segs],
+          [("P", "Q", str(1 * MB), str(60 * MB)), ("P", "Q", str(70 * MB), str(99 * MB)),
+           ("P", "R", str(5 * MB), str(50 * MB)), ("P", "S", str(1 * MB), str(99 * MB))])
+    _, pairs = table(os.path.join(out, "ibd_pairs.tsv"))
+    pq = {(p["sample_a"], p["sample_b"]): p for p in pairs}["P", "Q"]
+    check("9 stitching: P and Q, two stretches, 88 cM, longest 59", (pq["segments"], pq["shared_cm"], pq["longest_cm"]),
+          ("2", "88.00", "59.00"))
 
 for name, rows, mapline in (
         ("a hap-ibd row with 7 columns", [("A", 1, "B", 1, "chr1", MB, 5 * MB)], None),

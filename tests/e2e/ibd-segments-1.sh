@@ -141,7 +141,7 @@ run_step 38-family.sh ibd_trio "${G}/ibd_trio/pedigree.tsv"
 check_step_exit 38-family.sh
 echo "ibd-segments: step 38 shared segments on chr20 of the trio $(( $(date +%s) - T0 )) s" >> "$E2E_NOTES"
 D="${G}/ibd_trio"
-cat "${D}/ibd_pairs.tsv" 2>/dev/null
+cat "${D}/ibd_pairs.tsv" "${D}/ibd_segments.tsv" 2>/dev/null
 check_eq "ibd_pairs.tsv header" "$(head -n 1 "${D}/ibd_pairs.tsv" 2>/dev/null)" "$PAIRS_HEAD"
 check_eq "ibd_segments.tsv header" "$(head -n 1 "${D}/ibd_segments.tsv" 2>/dev/null)" "$SEGS_HEAD"
 check_eq "one pairs row per pair of the three" "$(awk 'NR > 1' "${D}/ibd_pairs.tsv" 2>/dev/null | cut -f1,2 | tr '\t\n' '- ')" "HG002-HG003 HG002-HG004 HG003-HG004 "
@@ -180,7 +180,7 @@ echo "ibd-segments: HG002-HG003 $(pval "$D" HG002 HG003 shared_fraction), HG002-
 run_step 38-family.sh ibd_swap "${G}/ibd_swap/pedigree.tsv"
 check_step_exit "38-family.sh (HG005 as the mother)"
 X="${G}/ibd_swap"
-cat "${X}/ibd_pairs.tsv" 2>/dev/null
+cat "${X}/ibd_pairs.tsv" "${X}/ibd_segments.tsv" 2>/dev/null
 check "HG002 and the planted HG004 share under 5% of chr20 ($(pval "$X" HG002 HG004 shared_fraction))" \
   lt "$(pval "$X" HG002 HG004 shared_fraction)" 0.05
 check "the 95% parent-child check fails on that pair" not parent_child "$X" HG002 HG004
