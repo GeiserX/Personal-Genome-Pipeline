@@ -12,8 +12,8 @@
 #   2. Nextflow: HTML_REPORT on the sample's ClinVar hits and clinical VCF,
 #      with the two assets staged as main.nf stages them, applies the rules,
 #      and its carrier list equals the bash one. Control: the same task
-#      without the assets says "unavailable". And the full main.nf run of
-#      case 60 (ClinVar on) made the carrier list, so main.nf stages them.
+#      without the assets says "unavailable". And main.nf itself, run with
+#      ClinVar and the report, made the carrier list, so main.nf stages them.
 . "$(dirname "$0")/lib.sh"
 
 SD="${GENOME_DIR}/${SAMPLE}"
@@ -126,10 +126,30 @@ PY
 NH=$(cat "${CASE_TMP}/report/results/${SAMPLE}/${SAMPLE}_report.html" 2>/dev/null)
 check "the Nextflow HTML has the carrier list card" has 'Carrier List \(this sample\)' "$NH"
 
-# The full main.nf run of case 60 (ClinVar on, no clinical filter): main.nf
-# stages the assets, so its carrier list is made.
-check "case 60's main.nf run made the carrier list (main.nf stages the assets)" \
-  python3 - "${GENOME_DIR}/nf-results/${SAMPLE}/summary.json" <<'PY'
+# main.nf itself on a VCF-only sheet with ClinVar and the report: main.nf
+# stages the assets for HTML_REPORT, so its carrier list is made.
+MN="${CASE_TMP}/mainnf"
+rm -rf "$MN"
+mkdir -p "$MN/run"
+printf 'sample,vcf,vcf_index\n%s,%s,%s\n' "$SAMPLE" "${SD}/vcf/${SAMPLE}.vcf.gz" "${SD}/vcf/${SAMPLE}.vcf.gz.tbi" \
+  > "${MN}/sheet.csv"
+echo "+ nextflow run main.nf --tools clinvar,html_report"
+(
+  cd "${MN}/run" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
+    -work-dir "${CASE_TMP}/work-mainnf" \
+    --input "${MN}/sheet.csv" --reference "${GENOME_DIR}/reference/GRCh38_no_alt_analysis_set.fasta" \
+    --tools clinvar,html_report \
+    --clinvar "${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz" \
+    --clinvar_index "${GENOME_DIR}/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi" \
+    --outdir "${MN}/results" --max_cpus 4 --max_memory 14.GB
+) > "${MN}/nextflow.log" 2>&1
+MRC=$?
+check_eq "nextflow run main.nf (clinvar,html_report) exits 0" "$MRC" 0
+[ "$MRC" = 0 ] || grep -E 'ERROR|Error executing process|Command error' -A 8 "${MN}/nextflow.log" | head -40
+# No clinical VCF in this run, so no clinical section: the carrier list
+# shows the staging (main.nf passes both assets in one list).
+check "main.nf's report made the carrier list (main.nf stages the assets)" \
+  python3 - "${MN}/results/${SAMPLE}/summary.json" <<'PY2'
 import json, sys
 try:
     c = json.load(open(sys.argv[1]))["sections"]["carrier"]
@@ -139,7 +159,7 @@ print(f"  carrier: state {c['state']}, genes_on_list {c['data'].get('genes_on_li
       f"unavailable {c['data'].get('unavailable')!r}")
 sys.exit(0 if c["state"] == "ok" and (c["data"].get("genes_on_list") or 0) > 0
          and "unavailable" not in c["data"] else 1)
-PY
+PY2
 
 nf_report no-assets 0
 NA_SUM="${CASE_TMP}/no-assets/results/${SAMPLE}/summary.json"
