@@ -37,6 +37,7 @@ include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
+include { MEI_DEPTH; MEI; MEI_REPORT } from './modules/local/mei/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -87,6 +88,7 @@ workflow {
         'traits',
         'y_str',
         'viral',
+        'mei',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -116,6 +118,7 @@ workflow {
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
         ['viral',            'viral_ref',          '--viral_ref'],
+        ['mei',              'megane_kmers',       '--megane_kmers'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -793,6 +796,25 @@ workflow {
         ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
     }
 
+    // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
+    // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
+    // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
+    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
+    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    ch_mei          = Channel.empty()
+    ch_mei_versions = Channel.empty()
+    if (tools_list.contains('mei')) {
+        def mk = file(params.megane_kmers, checkIfExists: true)
+        ch_megane_kmers = Channel.value([mk, file(mk.toString().replaceFirst(/\.mk$/, '.mi'), checkIfExists: true)])
+        ch_mei_sites = Channel.value(file("${projectDir}/assets/mei_sites.tsv", checkIfExists: true))
+        MEI_DEPTH(ch_bam, ch_mei_sites)
+        MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
+            ch_reference, ch_reference_fai, ch_megane_kmers)
+        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        ch_mei          = MEI_REPORT.out.tables
+        ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -856,6 +878,8 @@ workflow {
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_mei.map                          { meta, calls, sites -> [meta.id, calls] }, remainder: true)
+        .join(ch_mei.map                          { meta, calls, sites -> [meta.id, sites] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -887,7 +911,8 @@ workflow {
             ch_traits_versions,
             ch_bloodtype_versions,
             ch_lpa_versions,
-            ch_viral_versions
+            ch_viral_versions,
+            ch_mei_versions
         )
         .map { f -> f.text }
         .unique()

@@ -1,0 +1,9 @@
+# Known disease-causing mobile element insertions (step 50, bin/mei_report.py). One row per insertion.
+# GRCh38 coordinates, 1-based. site: the base after which the element is inserted, from the ClinVar record
+# (GRCh38 location, or its HGVS mapped with Ensembl variant_recoder, or its RefSeqGene sequence found on
+# chrX); start and end: site -/+ 500 bp, where a call of the same element counts as this insertion.
+# Checked 2026-10-27 against ClinVar, PubMed and Ensembl.
+gene	chrom	start	end	site	element	inheritance	condition	clinvar	pmid
+FKTN	chr9	105639156	105640156	105639656	SVA	autosomal recessive	Fukuyama congenital muscular dystrophy (3' UTR insertion)	3199	9690476
+TAF1	chrX	71439993	71440993	71440493	SVA	X-linked	X-linked dystonia-parkinsonism (intron 32 insertion)	9862	29474918
+BBS1	chr11	66526182	66527182	66526682	SVA	autosomal recessive	Bardet-Biedl syndrome 1 (coding insertion, c.1214_1215insSVA)	981241	33169370
