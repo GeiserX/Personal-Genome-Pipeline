@@ -950,6 +950,60 @@ def chip(d, rng):
         + "".join("\t".join(x[c] for c in chip_report.DEPTH_COLUMNS) + "\n" for x in rows))
 
 
+def archaic(d, rng):
+    """Step 43: bin/archaic_report.py's key/value summary, with made-up shares
+    near the published non-African range and five made-up longest segments."""
+    analysed = 2_870_000_000
+    nea_n, den_n = rng.randint(420, 520), rng.randint(2, 6)
+    nea_bp, den_bp = int(analysed * rng.uniform(0.017, 0.021)), int(analysed * rng.uniform(0.0002, 0.0006))
+    rows = [("sample", SAMPLE), ("method", "IBDmix"),
+            ("archaic_genomes", "Altai Neanderthal, Vindija 33.19 Neanderthal, Altai Denisovan"),
+            ("population", "EUR"), ("min_lod", "4"), ("min_length_bp", "50000"), ("analysed_bp", analysed),
+            ("analysed_chromosomes", 22), ("analysed_sites", rng.randint(5_500_000, 6_500_000)),
+            ("genes", "GENCODE protein-coding"),
+            ("neanderthal_segments", nea_n), ("neanderthal_bp", nea_bp),
+            ("neanderthal_percent", f"{100 * nea_bp / analysed:.2f}"),
+            ("denisovan_segments", den_n), ("denisovan_bp", den_bp),
+            ("denisovan_percent", f"{100 * den_bp / analysed:.2f}")]
+    segs = [("chr1", "Neanderthal"), ("chr3", "Neanderthal"), ("chr6", "Neanderthal"),
+            ("chr9", "Neanderthal"), ("chr12", "Denisovan")]
+    longest = []
+    for i, (c, anc) in enumerate(segs, 1):
+        s = rng.randint(10_000_000, 90_000_000)
+        n = int(rng.uniform(0.9, 1.3 - 0.08 * i) * 1e6)
+        who = "Altai Denisovan" if anc == "Denisovan" else "Altai/Vindija"
+        longest.append((f"longest_{i}", f"{c}:{s}-{s + n} {anc} {n / 1e6:.2f} Mb ({who}); genes: none"))
+    put(os.path.join(d, "archaic", f"{SAMPLE}_archaic.tsv"),
+        "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in rows + longest))
+
+
+def ancient(d, rng):
+    """Step 44: bin/ancient_report.py's nearest-group table and info table,
+    made-up distances over a few AADR-style group labels; no plot."""
+    groups = [("England_BellBeaker", "2450-2000 BCE", "United Kingdom", "Amesbury Down"),
+              ("Germany_CordedWare", "2900-2350 BCE", "Germany", "Esperstedt"),
+              ("Spain_BellBeaker", "2500-2000 BCE", "Spain", "Camino de las Yeseras"),
+              ("Czechia_EBA_Unetice", "2200-1700 BCE", "Czech Republic", "Moravia"),
+              ("Hungary_LBA", "1500-1100 BCE", "Hungary", "Tiszafüred"),
+              ("Italy_Imperial_Rome", "1-300 CE", "Italy", "Rome"),
+              ("Sweden_Viking", "800-1050 CE", "Sweden", "Sigtuna"),
+              ("France_Neolithic", "4500-3000 BCE", "France", "Gurgy"),
+              ("Turkey_Neolithic", "6500-6000 BCE", "Turkey", "Barcın"),
+              ("Russia_Yamnaya_Samara", "3300-2700 BCE", "Russia", "Samara")]
+    dist = 0.0
+    lines = ["rank\tgroup\tn\tdistance\tpc1\tpc2\tdate_bp\tdates\tcountry\tlocality\n"]
+    for i, (g, dates, country, loc) in enumerate(groups, 1):
+        dist += rng.uniform(0.002, 0.012)
+        lines.append(f"{i}\t{g}\t{rng.randint(3, 40)}\t{dist:.5f}\t{rng.uniform(-0.02, 0.02):.5f}\t"
+                     f"{rng.uniform(-0.02, 0.02):.5f}\t{rng.randint(1000, 8500)}\t{dates}\t{country}\t{loc}\n")
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient.tsv"), "".join(lines))
+    info = [("release", "v62.0"), ("sites_used", rng.randint(520_000, 560_000)), ("panel_sites", 597_573),
+            ("present_day_people", 819), ("ancient_people", 4_210), ("ancient_groups", 612),
+            ("pcs_in_distance", 4), ("pc1", "0.01234"), ("pc2", "-0.00456")]
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient_info.tsv"),
+        "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in info))
+
+
 def traits(d):
     """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
@@ -999,7 +1053,8 @@ def make(a):
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
              ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
              ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
-             ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r))]
+             ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
+             ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
