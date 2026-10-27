@@ -13,7 +13,7 @@ Most blood group antigens differ by one known variant, so the genome predicts th
 ## Tool
 
 - `bin/bloodtype_report.py` (standard library Python), applying the marker table `assets/bloodtype_markers.tsv`
-- samtools `bedcov` for the read depth over the marker sites and RHD
+- samtools `bedcov` for the read depth over the marker sites and RHD; the RHD regions are the RHD row of `bin/cn_loci.tsv`, and `bin/copy_number.py` turns their depth into the copy number (see [Copy number from depth](cn-loci.md))
 
 The variants and the antigens they define are the ISBT allele definitions, as RBCeq2 2.4.4 packages them (database v2.5.1, MIT licence, Australian Red Cross Lifeblood). The table's header names the release and the checksum of the file they were read from. Each position and REF base was checked against Ensembl GRCh38 and its dbSNP id. The HPA positions come from dbSNP through Ensembl, because that RBCeq2 database lists them at their GRCh37 positions.
 
@@ -36,7 +36,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags.
 ./scripts/41-bloodtype.sh your_name
 ```
 
-With `run-all.sh`: `TOOLS=...,bloodtype`. It is opt-in and needs no data, so a run lists step 41 only when `TOOLS` names it. In the Nextflow pipeline: `bloodtype` in `--tools` (processes `BLOODTYPE_DEPTH` and `BLOODTYPE`).
+With `run-all.sh`: `TOOLS=...,bloodtype`. It is opt-in and needs no data, so a run lists step 41 only when `TOOLS` names it. In the Nextflow pipeline: `bloodtype` in `--tools` (processes `BLOODTYPE_REGIONS`, `BLOODTYPE_DEPTH` and `BLOODTYPE`).
 
 ## How each system is read
 
