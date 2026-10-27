@@ -109,7 +109,15 @@ echo "[3/4] MoChA (bcftools +mocha, ${MOCHA_VERSION})..."
 run_in --cpus 2 --memory 8g "$MOCHA_IMAGE" bash -euo pipefail -c '
     w=$1; chroms=$(paste -sd, "$w/phased_chroms.txt")
     if [ "$2" = beagle ]; then
-      f=(); for c in $(cat "$w/phased_chroms.txt"); do f+=("$w/phase/$c.vcf.gz"); done
+      # Beagle writes no ##contig lines and concat refuses records on an
+      # undeclared contig: give each Beagle VCF the contig lines of prep.bcf.
+      bcftools view -h "$w/prep.bcf" | grep "^##contig=" > "$w/contigs.hdr"
+      f=(); for c in $(cat "$w/phased_chroms.txt"); do
+        { bcftools view -h "$w/phase/$c.vcf.gz" | grep "^##" | grep -v "^##contig="
+          cat "$w/contigs.hdr"; bcftools view -h "$w/phase/$c.vcf.gz" | grep "^#CHROM"; } > "$w/phase/$c.hdr"
+        bcftools reheader -h "$w/phase/$c.hdr" -o "$w/phase/$c.ctg.vcf.gz" "$w/phase/$c.vcf.gz"
+        f+=("$w/phase/$c.ctg.vcf.gz")
+      done
       bcftools concat --no-version -Ob -o "$w/phased_gt.bcf" "${f[@]}"
       bcftools index -f "$w/phased_gt.bcf"
       bcftools annotate --no-version -a "$w/phased_gt.bcf" -c FMT/GT -r "$chroms" -Ob -o "$w/phased.bcf" "$w/prep.bcf"

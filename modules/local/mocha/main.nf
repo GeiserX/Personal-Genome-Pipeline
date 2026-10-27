@@ -137,7 +137,15 @@ process MOCHA_CALL {
     """
     set -euo pipefail
     chroms=\$(paste -sd, ${phase}/chroms.txt)
-    f=(); for c in \$(cat ${phase}/chroms.txt); do f+=("${phase}/\$c.vcf.gz"); done
+    # Beagle writes no ##contig lines and concat refuses records on an
+    # undeclared contig: give each Beagle VCF the contig lines of prep.bcf.
+    bcftools view -h ${prep} | grep '^##contig=' > contigs.hdr
+    f=(); for c in \$(cat ${phase}/chroms.txt); do
+        { bcftools view -h ${phase}/\$c.vcf.gz | grep '^##' | grep -v '^##contig='
+          cat contigs.hdr; bcftools view -h ${phase}/\$c.vcf.gz | grep '^#CHROM'; } > \$c.hdr
+        bcftools reheader -h \$c.hdr -o \$c.ctg.vcf.gz ${phase}/\$c.vcf.gz
+        f+=("\$c.ctg.vcf.gz")
+    done
     bcftools concat --no-version -Ob -o phased_gt.bcf "\${f[@]}"
     bcftools index -f phased_gt.bcf
     bcftools annotate --no-version -a phased_gt.bcf -c FMT/GT -r "\$chroms" -Ob -o phased.bcf ${prep}
@@ -148,7 +156,7 @@ process MOCHA_CALL {
       \$1 != c { if (c != "") print c, a, b, n, h, ph; c = \$1; a = \$2; n = h = ph = 0 }
       { b = \$2; n++; if (\$3 ~ /^(0[|\\/]1|1[|\\/]0)\$/) { h++; if (\$3 ~ /[|]/) ph++ } }
       END { if (c != "") print c, a, b, n, h, ph }' > ${p}_mocha_sites.tsv
-    rm -f phased_gt.bcf phased_gt.bcf.csi phased.bcf phased.bcf.csi
+    rm -f phased_gt.bcf phased_gt.bcf.csi phased.bcf phased.bcf.csi contigs.hdr chr*.hdr chr*.ctg.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
