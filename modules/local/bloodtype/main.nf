@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    BLOODTYPE — Blood group antigens (red cell and platelet) predicted from the genome
+    BLOODTYPE — Blood group antigens (red cell, platelet, neutrophil) predicted from the genome
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Opt-in ('bloodtype' in --tools). Three processes, as in scripts/41-bloodtype.sh:
       BLOODTYPE_REGIONS bin/copy_number.py bed --locus RHD, once: RHD, its
