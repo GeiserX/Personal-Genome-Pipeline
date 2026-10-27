@@ -281,6 +281,7 @@ if ibd_panel_ok; then
   require_image BEAGLE_IMAGE HAP_IBD_IMAGE
   ibd_segments || exit 1
 else
+  rm -rf "${OUT}/ibd" "${OUT}"/ibd_pairs.tsv "${OUT}"/ibd_segments.tsv "${OUT}"/ibd_report.md
   echo ""
   echo "Shared segments skipped: no phasing panel at ${IBD_PANEL} (install it with ./scripts/setup.sh --ancestry-fine-panel ${GENOME_DIR})."
 fi
