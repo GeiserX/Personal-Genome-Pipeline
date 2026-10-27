@@ -12,8 +12,9 @@
 #     a BAM whose header lacks the gene's ALT contig and not for one that has
 #     it, and not printed when the column says yes;
 #  4. the PYPGX module reads the same table and spells no gene list;
-#  5. the reports: every bam gene's copy-number call is in the PGx copy number
-#     block, and a not-callable gene gets its not-assessable line.
+#  5. the reports: every bam gene has a row in the PGx copy number block (its
+#     call, or why there is none), and a not-callable gene gets its
+#     not-assessable line (two planted summaries must be reported).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -196,43 +197,72 @@ grep -qF 'file("${projectDir}/assets/pgx_genes.tsv"' "$NF" || bad "the PYPGX mod
 if grep -qE '"(CYP[0-9A-Z]+ ){2,}' "$NF"; then bad "the PYPGX module spells a gene list"; else ok "the PYPGX module spells no gene list"; fi
 
 # --- 5. the reports ------------------------------------------------------------
+# A summary with every gene of the table: GSTT1 not callable, CYP2E1 failed in
+# pypgx, every other bam gene with a copy-number call. Every bam gene must have
+# a row in the PGx copy number block (its call, or "not called: pypgx failed"),
+# and GSTT1 its not-assessable line. Two planted summaries must be reported: one
+# where GSTT1 reads as called (no not-assessable line), and one where a bam
+# gene's row says VCF (it drops out of the block).
 python3 - "$REPO" "$CAT" <<'PY' || FAILS=$((FAILS + 1))
 import os, sys, tempfile
 repo, cat = sys.argv[1], sys.argv[2]
 sys.path.insert(0, os.path.join(repo, "bin"))
 import collect_summary, render_report
 rows = [l.rstrip("\n").split("\t") for l in open(cat) if l.strip() and not l.startswith("#")][1:]
+bam = [g for g, mode, *_ in rows if mode == "bam"]
 hdr = ["Gene", "Diplotype", "Phenotype", "CNV_call", "Source", "Status", "Defining_variants", "Min_GQ",
        "Weakest_variant", "Defining_filter", "Quality"]
-lines = []
-for g, mode, *_ in rows:
-    if g == "GSTT1":
-        lines.append([g, "N/A", "N/A", "N/A", "BAM", "not callable on this reference"] + ["N/A"] * 5)
-    else:
-        lines.append([g, "*1/*1", "Normal Metabolizer", f"CNV-{g}" if mode == "bam" else "N/A", mode.upper(), "called"]
-                     + ["none", "N/A", "N/A", "N/A", "N/A"])
-with tempfile.TemporaryDirectory() as d:
-    os.makedirs(os.path.join(d, "pypgx"))
-    with open(os.path.join(d, "pypgx", "s1_pypgx_summary.tsv"), "w") as f:
-        f.write("\n".join("\t".join(r) for r in [hdr] + lines) + "\n")
-    _, data = collect_summary.sec_pypgx(d, "s1")
-# The pypgx rows of the block (gene, text); UGT2B17's CNVpytor row may sit beside them
-cn = {g: t for g, t in render_report.pgx_copy_number({"pypgx": {"state": "ok", "data": data}})
-      if t.endswith("(pypgx, read depth)")}
-text = "\n".join(render_report.pypgx_lines(data))
-bad = []
-for g, mode, *_ in rows:
-    if mode != "bam":
-        continue
-    if g == "GSTT1":
-        if "Not assessable on this reference: GSTT1" not in text:
-            bad.append("GSTT1 has no not-assessable line")
-    elif cn.get(g) != f"CNV-{g} (pypgx, read depth)":
-        bad.append(f"{g}: copy-number block says {cn.get(g)!r}")
+
+
+def summary(gstt1_status="not callable on this reference", vcf_source_for=None):
+    lines = []
+    for g, mode, *_ in rows:
+        src = "VCF" if g == vcf_source_for else mode.upper()
+        if g == "GSTT1":
+            lines.append([g, "N/A", "N/A", "N/A", src, gstt1_status] + ["N/A"] * 5)
+        elif g == "CYP2E1":
+            lines.append([g, "FAILED", "N/A", "N/A", src, "failed"] + ["N/A"] * 5)
+        else:
+            lines.append([g, "*1/*1", "Normal Metabolizer", f"CNV-{g}" if mode == "bam" else "N/A", src, "called"]
+                         + ["none", "N/A", "N/A", "N/A", "N/A"])
+    return lines
+
+
+def problems(lines):
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "pypgx"))
+        with open(os.path.join(d, "pypgx", "s1_pypgx_summary.tsv"), "w") as f:
+            f.write("\n".join("\t".join(r) for r in [hdr] + lines) + "\n")
+        _, data = collect_summary.sec_pypgx(d, "s1")
+    # The pypgx rows of the block (gene, text); UGT2B17's CNVpytor row may sit beside them
+    cn = {g: t for g, t in render_report.pgx_copy_number({"pypgx": {"state": "ok", "data": data}})
+          if t.endswith("(pypgx, read depth)")}
+    text = "\n".join(render_report.pypgx_lines(data))
+    bad = []
+    for g in bam:
+        want = ("not called: pypgx failed" if g == "CYP2E1" else f"CNV-{g}") + " (pypgx, read depth)"
+        if g == "GSTT1":
+            if "Not assessable on this reference: GSTT1" not in text:
+                bad.append("GSTT1 has no not-assessable line")
+        elif cn.get(g) != want:
+            bad.append(f"{g}: copy-number block says {cn.get(g)!r}, not {want!r}")
+    return bad
+
+
+bad = problems(summary())
 for b in bad:
     print("FAIL:", b)
 if not bad:
-    print(f"ok: the reports show the copy-number call of {sum(1 for r in rows if r[1] == 'bam') - 1} bam genes and GSTT1's not-assessable line")
+    print(f"ok: the reports show the copy-number call of {len(bam) - 2} bam genes, CYP2E1's failed call "
+          "and GSTT1's not-assessable line")
+for name, planted in (("GSTT1 read as called", summary(gstt1_status="no call")),
+                      ("SLC22A2's row says VCF", summary(vcf_source_for="SLC22A2"))):
+    got = problems(planted)
+    if got:
+        print(f"ok: control, {name} reported: {'; '.join(got)}")
+    else:
+        print(f"FAIL: control, {name} passed")
+        bad.append(name)
 sys.exit(1 if bad else 0)
 PY
 
