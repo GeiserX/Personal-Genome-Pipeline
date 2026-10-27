@@ -31,6 +31,9 @@
 #                                            viral genomes of step 47, Ensembl's
 #                                            gene annotation (step 49), MoChA's
 #                                            phasing panel plus its images (step 51)
+#        ./scripts/setup.sh --archaic <genome_dir>
+#                                            the archaic genomes and 1000 Genomes
+#                                            frequencies of step 43, as one table
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -84,7 +87,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--mocha-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -109,7 +112,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --mocha-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -136,6 +139,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --archaic     Build the archaic table of step 43: the Altai and Vindija Neanderthals and the Altai Denisovan"
+  echo "                (MPI-EVA, ~165 GB read one chromosome at a time) with 1000 Genomes frequencies, lifted to GRCh38"
+  echo "                (only the table is kept; hours on a home connection); then exit."
   echo "  --ancient-panel"
   echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
   echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
@@ -1338,6 +1344,159 @@ ensure_image() {
   keep_image "$img"
 }
 
+# --- Step 43: the archaic data (opt-in) ----------------------------------------------
+# The snpAD genotypes of three high-coverage archaic genomes (Prüfer et al.
+# 2017, the Vindija 33.19 Neanderthal, with the Altai Neanderthal and the
+# Altai Denisovan genotyped the same way), one GRCh37 file per chromosome and
+# genome on MPI-EVA's server; the 1000 Genomes phase 3 sites file (GRCh37),
+# whose allele frequencies stand for the modern population; UCSC's
+# hg19ToHg38 chain. Each archaic file is checked against the md5 its folder's
+# md5sums.txt lists, and each md5sums.txt against the sha256 in versions.env.
+ARCHAIC_URL=https://cdna.eva.mpg.de/neandertal/Vindija/VCF
+ARCHAIC_1KG_SITES_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
+ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+
+# install_archaic: the table of step 43 in reference/archaic/ARCHAIC_DATA_VERSION
+# (ARCHAIC_DIR: another folder inside GENOME_DIR), one chrN.tsv.gz per
+# autosome, GRCh38: position, REF, ALT, the ALT count of the Altai, Vindija
+# and Denisova genomes (9: not called there) and the 1000 Genomes ALT
+# frequency of all and of each continental group. The rows are the 1000
+# Genomes biallelic SNVs where an archaic genome was called, and the sites
+# where one of the three carries a non-reference allele: the sites IBDmix's
+# own generate_gt would keep from the same files. Per chromosome: the three
+# archaic files are downloaded (about 165 GB in all, 13 GB at most at a time)
+# and deleted once the chromosome is built, so an interrupted install
+# resumes at the chromosome it stopped in. The 1000 Genomes file (1.5 GB) is
+# deleted at the end. ARCHAIC_REGIONS (a GRCh37 BED, chromosomes named 1 to
+# 22) keeps only those regions: the e2e case builds a slice of chr22 with it.
+install_archaic() {
+  local dir=${ARCHAIC_DIR:-${GENOME_DIR}/reference/archaic/${ARCHAIC_DATA_VERSION}}
+  local regions=${ARCHAIC_REGIONS:-} rstamp=all chroms="" c g v k stamp wk n
+  local genomes="Altai:Altai Vindija33.19:Vindija Denisova:Denisova"
+  cpath "$dir" >/dev/null || return 1
+  echo "Installing the archaic data ${ARCHAIC_DATA_VERSION} (step 43) in ${dir}"
+  for v in BCFTOOLS_IMAGE PICARD_IMAGE PYTHON_IMAGE IBDMIX_IMAGE; do ensure_image "$v" 43 || return 1; done
+  [ -s "$REF_DICT" ] || { echo "[WARN] ${REF_DICT} is missing: run $0 ${GENOME_DIR} first (it writes the sequence dictionary)"; return 1; }
+  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work"
+  for v in "Altai|${ARCHAIC_ALTAI_MD5SUMS_SHA256}" "Vindija33.19|${ARCHAIC_VINDIJA_MD5SUMS_SHA256}" "Denisova|${ARCHAIC_DENISOVA_MD5SUMS_SHA256}"; do
+    IFS='|' read -r g k <<< "$v"
+    [ -s "${dir}/md5/${g}.txt" ] && [ "$(_digest sha256 "${dir}/md5/${g}.txt")" = "$k" ] && continue
+    if ! fetch "${ARCHAIC_URL}/${g}/md5sums.txt" "${dir}/md5/${g}.txt" sha256 "$k"; then
+      echo "[WARN] The md5 list of ${g} at ${ARCHAIC_URL}/${g}/ is not the one versions.env pins: read what changed before moving the pin."
+      return 1
+    fi
+  done
+  if ! { [ -s "${dir}/hg19ToHg38.over.chain.gz" ] && [ "$(_digest sha256 "${dir}/hg19ToHg38.over.chain.gz")" = "$ARCHAIC_CHAIN_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_CHAIN_URL" "${dir}/hg19ToHg38.over.chain.gz" sha256 "$ARCHAIC_CHAIN_SHA256"; then
+    echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
+  if [ -n "$regions" ]; then
+    [ -s "$regions" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} is not a file"; return 1; }
+    cp "$regions" "${dir}/regions.bed"
+    rstamp=$(_digest sha256 "${dir}/regions.bed")
+    chroms=$(awk '$1 ~ /^([1-9]|1[0-9]|2[0-2])$/ {print $1}' "${dir}/regions.bed" | sort -un | tr '\n' ' ')
+  else
+    rm -f "${dir}/regions.bed"
+    chroms=$(seq 1 22 | tr '\n' ' ')
+  fi
+  [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
+  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
+  local have=1
+  for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
+  if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] archaic data ${ARCHAIC_DATA_VERSION} (step 43): ${dir}"
+    return 0
+  fi
+  rm -f "${dir}/DONE"
+  local sites="${dir}/download/1kg_sites.vcf.gz"
+  for c in $chroms; do
+    [ -s "${dir}/chr${c}.tsv.gz" ] && [ "$(cat "${dir}/chr${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
+    if [ ! -s "${sites}.tbi" ]; then
+      fetch "$ARCHAIC_1KG_SITES_URL" "$sites" md5 "$ARCHAIC_1KG_SITES_MD5" \
+        || { echo "[WARN] Could not download the 1000 Genomes sites file; run: $0 --archaic ${GENOME_DIR}"; return 1; }
+      run_in --rw "$dir" "$BCFTOOLS_IMAGE" bcftools index -t -f "$(cpath "$sites")" \
+        || { echo "[WARN] Could not index ${sites}"; return 1; }
+    fi
+    wk="${dir}/work/${c}"
+    rm -rf "$wk"; mkdir -p "$wk"
+    if [ -n "$regions" ]; then awk -v c="$c" '$1 == c' "${dir}/regions.bed" > "${wk}/regions.bed"; fi
+    echo "  chr${c}: the 1000 Genomes SNVs and their frequencies..."
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+          r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
+          bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
+            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"' \
+          _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
+      echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
+    fi
+    for v in $genomes; do
+      g=${v%%:*}
+      fetch "${ARCHAIC_URL}/${g}/chr${c}_mq25_mapab100.vcf.gz" "${dir}/download/${g}.chr${c}.vcf.gz" md5 "file://${dir}/md5/${g}.txt" \
+        || { echo "[WARN] Could not download chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
+    done
+    echo "  chr${c}: the archaic genotypes at those SNVs and at every archaic non-reference site..."
+    # The sites to keep: the 1000 Genomes SNVs, and every position where one of
+    # the three genomes has a non-reference call. Then each genome's called
+    # genotypes at them. The downloads have no index: -T (targets) streams
+    # through a file, where -R would need one. They have no ##contig lines
+    # either, so they are read as text only: htslib adds the contig while it
+    # parses, but a BCF stream (-Ou) carries the header written before that
+    # and the next reader stops on "Invalid CONTIG id".
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+          r=(); [ ! -s "$4" ] || r=(-T "$4")
+          for g in Altai Vindija33.19 Denisova; do
+            bcftools query "${r[@]}" -i "GT=\"alt\"" -f "%POS\n" "$1/$g.chr$2.vcf.gz"
+          done > "$3/nonref.pos"
+          { cut -f1 "$3/modern.tsv"; cat "$3/nonref.pos"; } | sort -nu | awk -v c="$2" "{print c \"\t\" \$1}" > "$3/keep.tsv"
+          for g in Altai Vindija33.19 Denisova; do
+            bcftools query -T "$3/keep.tsv" -i "GT!=\"mis\"" -f "%POS\t%REF\t%ALT\t[%GT]\n" "$1/$g.chr$2.vcf.gz" > "$3/$g.tsv"
+          done' _ "$(cpath "${dir}/download")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
+      echo "[WARN] Could not read the archaic genotypes of chr${c}"; return 1
+    fi
+    if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+          python3 /pgp-bin/archaic_report.py table --chrom "$c" --modern "$(cpath "${wk}/modern.tsv")" \
+            --archaic "Altai=$(cpath "${wk}/Altai.tsv")" --archaic "Vindija=$(cpath "${wk}/Vindija33.19.tsv")" \
+            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" --out "$(cpath "${wk}/hg19.vcf")"; then
+      echo "[WARN] Could not merge chr${c}"; return 1
+    fi
+    echo "  chr${c}: lifting to GRCh38 (Picard LiftoverVcf, UCSC's chain)..."
+    if ! run_in --rw "$dir" --cpus 2 --memory 10g "$PICARD_IMAGE" java -Xmx8g -jar /usr/picard/picard.jar LiftoverVcf \
+          I="$(cpath "${wk}/hg19.vcf")" O="$(cpath "${wk}/hg38.vcf")" CHAIN="$(cpath "${dir}/hg19ToHg38.over.chain.gz")" \
+          R="$REF_FASTA_C" REJECT="$(cpath "${wk}/rejected.vcf")" WARN_ON_MISSING_CONTIG=true \
+          TMP_DIR="$(cpath "$wk")" > "${wk}/liftover.log" 2>&1; then
+      tail -n 20 "${wk}/liftover.log"
+      echo "[WARN] Picard could not lift chr${c}"; return 1
+    fi
+    # The rows that land on the same chromosome, once per position.
+    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    if ! { printf 'chrom\tpos\tref\talt\tAltai\tVindija\tDenisova\tAF_ALL\tAF_AFR\tAF_AMR\tAF_EAS\tAF_EUR\tAF_SAS\n'
+           run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
+             'bcftools query -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
+             _ "$(cpath "${wk}/hg38.vcf")" "$c" | awk -F'\t' '!seen[$2]++'
+         } | gzip -c > "${dir}/chr${c}.tsv.gz.part"; then
+      echo "[WARN] Could not write chr${c} of the table"; return 1
+    fi
+    n=$(gzip -dc "${dir}/chr${c}.tsv.gz.part" | awk 'END {print NR - 1}')
+    if [ "$n" -lt 1 ]; then echo "[WARN] chr${c} of the table has no row"; rm -f "${dir}/chr${c}.tsv.gz.part"; return 1; fi
+    mv "${dir}/chr${c}.tsv.gz.part" "${dir}/chr${c}.tsv.gz"
+    echo "$stamp" > "${dir}/chr${c}.stamp"
+    echo "  chr${c}: ${n} sites ($(awk '!/^#/ {n++} END {print n+0}' "${wk}/rejected.vcf" 2>/dev/null || echo 0) not lifted)"
+    for v in $genomes; do rm -f "${dir}/download/${v%%:*}.chr${c}.vcf.gz"; done
+    rm -rf "$wk"
+  done
+  # A table of other chromosomes left by an earlier install with other regions goes.
+  for v in "${dir}"/chr*.tsv.gz; do
+    [ -e "$v" ] || continue
+    c=$(basename "$v" .tsv.gz); c=${c#chr}
+    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp"
+  done
+  rm -rf "${dir}/download" "${dir}/work"
+  echo "$stamp" > "${dir}/DONE"
+  echo "[OK] archaic data ${ARCHAIC_DATA_VERSION} (step 43): ${dir} ($(echo "$chroms" | wc -w | tr -d ' ') chromosomes)"
+}
+
 # install_vep_cache_opt_in: the VEP cache step 13 and the Nextflow VEP read,
 # installed before the first run; without it run-all.sh skips VEP, vcfanno,
 # the clinical filter and slivar. The tarball (~26 GB) and the unpacked tree
@@ -1370,6 +1529,7 @@ case "$OPT_IN" in
   mocha-data) install_mocha_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
+  archaic) install_archaic; exit $? ;;
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
