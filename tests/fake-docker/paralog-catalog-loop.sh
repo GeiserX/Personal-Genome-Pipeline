@@ -133,4 +133,11 @@ printf 'GBA.gz\tGBA1\tchr1:1-2 x\tx\tno\tcarrier\tnone\tgba2\ts\n' >> "$L"
 : > "$FAKE_DOCKER_LOG"
 PARALOG_LOCI="$L" run_expect 1 bad-row "${SCRIPTS}/35-paralogs.sh" sample1
 [ "$(calls)" = 0 ] || fail "a bad catalog row still ran Parascopy"
+# a table name ".." would point the step's clean-up at the paralogs directory
+sed -i.bak '$d' "$L" && rm -f "${L}.bak"
+printf 'GBA.gz\tGBA1\tchr1:1-2\tx\tno\tcarrier\tnone\t..\ts\n' >> "$L"
+: > "$FAKE_DOCKER_LOG"
+PARALOG_LOCI="$L" run_expect 1 dotdot-table "${SCRIPTS}/35-paralogs.sh" sample1
+[ "$(calls)" = 0 ] || fail "a table named .. still ran Parascopy"
+[ -d "$OUT" ] || fail "the paralogs directory is gone"
 echo "paralog-catalog-loop: all checks passed"

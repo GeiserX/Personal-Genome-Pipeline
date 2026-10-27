@@ -80,7 +80,9 @@ if [ -z "$SPECS" ]; then
   exit 1
 fi
 while IFS= read -r spec; do
-  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr[0-9XY]+:[0-9]+-[0-9]+\|[A-Za-z0-9._-]+$ ]]; then
+  # The table name starts with a letter or digit and has no dot, so it is
+  # never "." or ".." in a path the step removes.
+  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr[0-9XY]+:[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
     echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table); see tests/test_paralog_loci.py." >&2
     exit 1
   fi

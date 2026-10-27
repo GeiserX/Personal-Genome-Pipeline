@@ -71,10 +71,12 @@ def problems(lines, models):
             out.append(f"row {n}: pscn_reliable {c['pscn_reliable']}")
         if c["tag"] not in TAGS:
             out.append(f"row {n}: tag {c['tag']}")
-        # model, region and table reach a shell loop and file names
-        for k in ("model", "region", "table"):
-            if not re.fullmatch(r"[A-Za-z0-9._:-]+", c[k]):
-                out.append(f"row {n}: {k} {c[k]!r} has a character the step cannot pass")
+        # model, region and table reach a shell loop and file names: the
+        # patterns of scripts/35-paralogs.sh (a table is never "." or "..")
+        for k, pat in (("model", r"[A-Za-z0-9._-]+\.gz"), ("region", r"chr[0-9XY]+:[0-9]+-[0-9]+"),
+                       ("table", r"[A-Za-z0-9][A-Za-z0-9_-]*")):
+            if not re.fullmatch(pat, c[k]):
+                out.append(f"row {n}: {k} {c[k]!r} is not what the step accepts")
         if c["table"] in tables or c["table"] in ("hba", "paraphase"):
             out.append(f"row {n}: table {c['table']} is used twice")
         tables.add(c["table"])
@@ -115,6 +117,8 @@ def main():
         "a region that ends before it starts": "GBA.gz\tGBA1\tchr1:20-10\tx\tno\tcarrier\tnone\tgba\ts\n",
         "a repeated table name": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tsmn\ts\n",
         "a table name with a space": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tg a\ts\n",
+        "a table name the step refuses (gba:2)": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tgba:2\ts\n",
+        "a table name that is a path (..)": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\t..\ts\n",
         "an unknown tag": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcancer\tnone\tgba\ts\n",
     }
     for desc, row in planted.items():
