@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient and viral run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa and viral run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -158,6 +158,8 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
   && NF+=(--consumer_sites "$CS")
 # Step 41 (blood groups) is opt-in and listed only when TOOLS names it; without a BAM its RhD is not determined.
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
+# Step 46 (Lp(a), the LPA KIV-2 count) is opt-in and listed only when TOOLS names it; it reads the BAM.
+if [[ ",${T// /}," == *",lpa,"* ]]; then plan "46 Lp(a) KIV-2 count" lpa "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" lpa"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
 # Step 44 (ancient populations) is opt-in and listed only when TOOLS names it; it reads the gVCF and the panel

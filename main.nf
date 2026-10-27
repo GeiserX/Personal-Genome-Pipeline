@@ -36,6 +36,7 @@ include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
+include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 
 /*
@@ -83,6 +84,7 @@ workflow {
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
         'consumer_export',
         'bloodtype',
+        'lpa',
         'traits',
         'ancient',
         'y_str',
@@ -803,6 +805,19 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Lp(a): LPA KIV-2 repeat count (opt-in: lpa) ────────────────────
+    // Read depth over the KIV-2 exons against single-copy LPA exons, for each
+    // sample with a BAM. Equivalent to scripts/46-lpa.sh.
+    ch_lpa          = Channel.empty()
+    ch_lpa_versions = Channel.empty()
+    if (tools_list.contains('lpa')) {
+        LPA_REGIONS()
+        LPA_DEPTH(ch_bam, LPA_REGIONS.out.bed)
+        LPA(LPA_DEPTH.out.depth)
+        ch_lpa          = LPA.out.table
+        ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
+    }
+
     // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
     // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
     // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
@@ -881,6 +896,7 @@ workflow {
         .join(ch_ancient.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient_info.map                 { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
@@ -913,6 +929,7 @@ workflow {
             ch_traits_versions,
             ch_bloodtype_versions,
             ch_ancient_versions,
+            ch_lpa_versions,
             ch_viral_versions
         )
         .map { f -> f.text }
