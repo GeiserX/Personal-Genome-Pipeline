@@ -241,6 +241,12 @@ def assess(row, m, q1=None):
     if not m or any(n not in m for n, *_ in tg + ct):
         b["reason"] = "no_data"
         return b
+    for n, *_ in ct:
+        rest = [c for c in ct if c[0] != n]
+        if m[n] == 0 and rest and _combine(row["control_depth"], rest, m) >= row["_min_control"] > 0:
+            raise BrokenControl(f"BROKEN_CONTROL: control segment {n} of {row['locus']} has no read while the "
+                                f"other controls have {_combine(row['control_depth'], rest, m):.1f}x; check its "
+                                "coordinates in bin/cn_loci.tsv (or the sample lacks that stretch)")
     T, C = _combine(row["target_depth"], tg, m), _combine(row["control_depth"], ct, m)
     tq = _combine(row["target_depth"], tg, {n: q1.get(n, 0.0) for n, *_ in tg})
     share = 1 - tq / T if T > 0 else 0.0
@@ -258,9 +264,14 @@ def assess(row, m, q1=None):
     est = total - row["_offset"]
     b.update(total=total, estimate=est,
              details={n: row["_scale"] * m[n] / C for n, *_ in row["_details"] if n in m})
-    # With no copy left there is no read to judge the aligner by.
-    if row["_mapq0_min"] is not None and round(total) >= 1 and share < row["_mapq0_min"]:
+    # With no copy left there is no read to judge the aligner by (a row with
+    # an offset has a floor of its own below, after this guard).
+    no_copy = row["_offset"] == 0 and round(est) == 0
+    if row["_mapq0_min"] is not None and not no_copy and share < row["_mapq0_min"]:
         b["reason"] = "low_mapq0_share"
+        return b
+    if row["_mapq0_max"] is not None and share > row["_mapq0_max"]:
+        b["reason"] = "high_mapq0_share"
         return b
     if row["_offset"] > 0 and est <= 0:
         b["reason"] = "below_floor"
