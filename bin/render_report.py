@@ -976,6 +976,8 @@ def text_report(s):
         for line in archaic_lines(S["archaic"]["data"]):
             w(f"  {line}")
         w(f"  {ARCHAIC_NOTE}")
+        w("")
+
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
         for line in viral_lines(S["viral"]["data"]):
             w(f"  {line}")
