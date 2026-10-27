@@ -547,3 +547,35 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** the nextflow (26.10) job, which runs the newest 26.10.x release, counted 0 T1K_BUILD, HLA_TYPING, INDEXCOV and DEEPVARIANT tasks on every branch from 2026-10-20, although the run's log shows them completed.
 - **Why:** each task's `.command.run` starts with a YAML header. Up to 26.10.2 Nextflow wrote `### name: 'X'`; 26.10.3 writes `### name: "X"` (BashWrapperBuilder now renders the values as YAML double-quoted strings). The counts matched single quotes only.
 - **Fix:** every reader of that header (four steps in `.github/workflows/nextflow.yml` and `tests/e2e/couple-carrier-1.sh`) accepts either quote, so the pinned release and the newest one both count.
+
+## Mobile element insertions with MEGAnE (2026-10)
+
+### MEGAnE stops on a BAM that lacks one of its GRCh38 contigs
+- **Failed:** `call_genotype_38` on a BAM of chr20 alone stopped with "Chromosomes ... were NOT found" before reading a read.
+- **Why:** the wrapper passes `-mainchr` with its own list of every GRCh38 contig, ALT contigs included, and MEGAnE refuses a BAM that misses any of them. A BAM aligned to the no-ALT analysis set has none of the ALT contigs.
+- **Fix:** step 50 writes the list from the BAM's header (chr1 to chr22, chrX, chrY as the BAM names them) and passes it as `-mainchr` after the wrapper's own, so it wins.
+
+### MEGAnE stops when chrX is missing, unless told the sample has no sex chromosomes
+- **Failed:** with that list, a chr20-only BAM stopped with "Sex chromosome {'chrX', 'X'} was NOT found".
+- **Why:** MEGAnE measures the depth of chrX to genotype it against the autosomes.
+- **Fix:** when the BAM has no chrX, step 50 passes `-no_sex_chr`, which reads every chromosome as an autosome.
+
+### MEGAnE refuses a `.fai` that is not newer than its FASTA
+- **Failed:** MEGAnE stops with "Fasta index ... was older than fasta" when the `.fai` is not strictly newer than the FASTA, which a copied or unpacked reference can be (MEGAnE's `scripts/setup.py`).
+- **Why:** MEGAnE checks that the index was written after the FASTA. A Nextflow task stages both as links, which carry the times of the files they point to.
+- **Fix:** step 50 and the MEI process give MEGAnE a link to the FASTA with a fresh copy of the `.fai` beside it.
+
+### On one chromosome MEGAnE writes `MEI_final_failed_genotyped.vcf`, not the percentile VCF
+- **Failed:** on HG002's chr20 the step found no `MEI_final_percentile_genotyped.vcf`, the file MEGAnE's log recommends for one sample, although the run ended with exit 0.
+- **Why:** MEGAnE fits the read support of its candidates to set its filter thresholds and needs at least three clean candidates for the fit. One chromosome gave fewer, so it logged "Cannot automatically determine thresholds" and wrote its calls under fixed thresholds to `MEI_final_failed_genotyped.vcf`.
+- **Fix:** step 50 reads the percentile VCF and falls back to that file with a warning. A whole genome gives the percentile VCF.
+
+### MEGAnE crashes on a few hundred kilobases of reads
+- **Failed:** on the image test's 500 kb slice, `call_genotype_38` stopped with an IndexError in `process_mapped_seq.py` (`check_true_pos`).
+- **Why:** with so few reads one of its read lists is empty, and the code indexes it anyway.
+- **Fix:** the image test builds the k-mer set and checks the options; the call is tested on all of chr20 in the e2e case `mei-1`.
+
+### The staphb samtools image cannot read a BAM over https
+- **Failed:** streaming the GIAB BAM's chr20 with `SAMTOOLS_IMAGE` failed with libcurl error 60.
+- **Why:** the image has no CA certificate bundle.
+- **Fix:** the e2e case mounts the runner's `/etc/ssl/certs` and sets `CURL_CA_BUNDLE`, as the LPA case does.
