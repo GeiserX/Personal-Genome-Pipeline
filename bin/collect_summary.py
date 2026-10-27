@@ -65,6 +65,7 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
+import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -2082,6 +2083,48 @@ def sec_archaic(d, s):
     return p, out
 
 
+# The two LPA risk variants of assets/traits.tsv (rsid -> its alt, the allele
+# that goes with a high Lp(a)); tests/test_lpa_kiv2.py checks they agree.
+LPA_RISK_ALLELES = {"rs10455872": "G", "rs3798220": "C"}
+
+
+def sec_lpa(d, s):
+    """Step 46's KIV-2 count (lpa/<id>_lpa_kiv2.tsv, bin/lpa_kiv2.py), with
+    step 42's two LPA risk variants when the traits table is there, and
+    whether either points to a genetically high Lp(a)."""
+    p = first_existing(d, [f"lpa/{s}_lpa_kiv2.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in ("estimated", "too little depth", "not assessed"):
+        raise Unreadable(f"{os.path.basename(p)} has no status row (estimated, too little depth or not assessed)")
+    data = {k: kv.get(k) or "." for k in ("status", "kiv2_copies", "ci95_low", "ci95_high", "class",
+                                          "kiv2_depth", "flank_depth", "mapq0_share", "message", "advice")}
+    variants = []
+    t = first_existing(d, [f"traits/{s}_traits.tsv"])
+    for r in (read_tsv(t) if t else []):
+        alt = LPA_RISK_ALLELES.get(r.get("rsid"))
+        if not alt:
+            continue
+        called = r.get("status") == "called"
+        n = re.split(r"[/|]", r.get("genotype") or "").count(alt) if called else None
+        variants.append({"rsid": r["rsid"], "genotype": r.get("genotype") or ".", "status": r.get("status") or ".",
+                         "risk_alleles": n})
+    risk = sum(v["risk_alleles"] for v in variants if v["risk_alleles"] is not None)
+    reasons = ([f"{risk} risk allele{'s' if risk != 1 else ''} at rs10455872 and rs3798220"] if risk else []) \
+        + (["a low KIV-2 repeat count"] if data["class"] == "low" else [])
+    read = data["status"] == "estimated" or any(v["risk_alleles"] is not None for v in variants)
+    data.update(variants=variants, risk_alleles=risk, flag="high" if reasons else ".",
+                flag_text=("Genetic signs of a high Lp(a): " + " and ".join(reasons) + ". Measure Lp(a) in blood."
+                           if reasons else
+                           "No genetic sign of a high Lp(a) from these markers. They explain only part of it: "
+                           "the KIV-2 count explained 21% to 27% of the variation in a Danish population study."
+                           if read else
+                           "Not determined: neither the KIV-2 count nor the two risk variants could be read. "
+                           "Measure Lp(a) in blood."))
+    return p, data
+
+
 def sec_viral(d, s):
     """Step 47's table (viral/<id>_viral.tsv, bin/viral_report.py): one row per
     viral genome; the HHV-6 line and the genomes with reads (phiX included)."""
@@ -2101,6 +2144,36 @@ def sec_viral(d, s):
     return p, {"hhv6": hhv6,
                "human_depth": keep[0]["human_depth"],
                "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
+
+
+def sec_chip(d, s):
+    """Step 49's tables (chip/<id>_chip.tsv and chip/<id>_chip_depth.tsv, bin/chip_report.py):
+    the CHIP calls, how many other protein changes were listed and not counted,
+    and the depth and detection limit per gene with their median over the
+    covered genes. The limit is the one at the median depth, as step 49 prints it."""
+    p = first_existing(d, [f"chip/{s}_chip.tsv"])
+    dp = first_existing(d, [f"chip/{s}_chip_depth.tsv"])
+    if not p or not dp:
+        return None, {}
+    calls, depth = read_tsv(p), read_tsv(dp)
+    need = ("gene", "protein_change", "vaf", "alt_reads", "depth", "status", "note")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        head = f.readline().rstrip("\n").split("\t")
+    if any(k not in head for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    if not depth or not {"gene", "mean_depth", "detection_limit_vaf", "status"} <= set(depth[0]):
+        raise Unreadable(f"{os.path.basename(dp)} has no gene, mean_depth, detection_limit_vaf and status columns, or no row")
+    chip = [{k: r.get(k) or "." for k in need} for r in calls if r.get("status") == "chip"]
+    covered = sorted(float(r["mean_depth"]) for r in depth if r["status"] == "covered")
+    med = None
+    if covered:
+        n = len(covered)
+        med = covered[n // 2] if n % 2 else (covered[n // 2 - 1] + covered[n // 2]) / 2
+    return p, {"calls": chip, "other": len(calls) - len(chip),
+               "genes": [{k: r.get(k) or "." for k in ("gene", "mean_depth", "detection_limit_vaf", "status")}
+                         for r in depth],
+               "median_depth": med, "median_limit": chip_report.detection_limit(med) if med is not None else None,
+               "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
 
 
 def sec_traits(d, s):
@@ -2918,10 +2991,12 @@ SECTIONS = [
     ("y_str", "Y-STR markers (HipSTR)", "45", sec_y_str),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
+    ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
+    ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
