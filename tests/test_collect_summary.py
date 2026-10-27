@@ -1343,7 +1343,10 @@ def roh_upd_karyotype(work, schema):
     ped = "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\nS\tS\t-9\t-9\t{s}\t-9\t{x}\t{y}\n"
     qc = "key\tvalue\nsample\tS\ninferred_sex\tunknown\nx_depth_ratio\t{x}\ny_depth_ratio\t{y}\n"
     for x, y, want in ((2.04, 0.97, "47,XXY"), (0.98, 1.95, "47,XYY"), (2.9, 0.02, "47,XXX"), (1.03, 0.05, "45,X"),
-                       (1.98, 0.03, None), (1.01, 0.99, None), (1.5, 0.0, None)):
+                       (2.02, 1.97, "48,XXYY"), (1.98, 0.03, None), (1.01, 0.99, None), (1.5, 0.0, None),
+                       # Implausible whole numbers name nothing: indexcov on a slice can read chrY at
+                       # about 4, and a degenerate run at 100000.
+                       (1.98, 3.91, None), (1.95, 100000.0, None), (6.0, 0.0, None), (1.0, 3.0, None)):
         put(f"{k}/indexcov/indexcov-indexcov.ped", ped.format(s=1 if y > 0.5 else 2, x=x, y=y))
         put(f"{k}/qc/S_sample_qc.tsv", qc.format(x=f"{x / 2:.2f}", y=f"{y / 2:.2f}"))
         summ, txt, html = render(k)
