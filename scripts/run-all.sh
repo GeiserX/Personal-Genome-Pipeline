@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, lpa, viral and chip run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, viral and chip run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -172,6 +172,13 @@ plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF
 AR=${ARCHAIC_DIR:-${G}/reference/archaic/${ARCHAIC_DATA_VERSION}}
 plan "43 Archaic ancestry (IBDmix)" archaic "$(if [ "$AR" = none ]; then echo 'ARCHAIC_DIR=none'; else need "${AR}/DONE"; fi)" \
   && NF+=(--archaic_data "$AR" --archaic_pop "${ARCHAIC_POP:-ALL}") && { [[ " ${NF[*]} " == *" --hla_genes "* ]] || [ ! -s "$GT" ] || NF+=(--hla_genes "$GT"); }
+# Step 44 (ancient populations) is opt-in and listed only when TOOLS names it; it reads the gVCF and the panel
+# setup.sh --ancient-panel builds (DONE is written last). ANCIENT_PANEL_DIR picks another panel.
+AN=${ANCIENT_PANEL_DIR:-${G}/reference/ancient/aadr_${AADR_VERSION}}
+if [[ ",${T// /}," == *",ancient,"* ]]; then
+  plan "44 Ancient populations" ancient "$(if [ -n "$fv" ] && [ -z "$GROW" ]; then echo "no gVCF: ${GV#"$G"/}"; else need "${AN}/DONE"; fi)" \
+    && NF+=(--ancient_panel "$AN")
+else KNOWN+=" ancient"; fi
 # Step 45 (Y-STR repeat counts) is opt-in and listed only when TOOLS names it; it reads chrY, so a female sample is skipped.
 if [[ ",${T// /}," == *",y_str,"* ]]; then plan "45 Y-STR markers (HipSTR)" y_str "$([ "$SEX" = male ] || echo 'female sample: no Y chromosome')" || true
 else KNOWN+=" y_str"; fi
