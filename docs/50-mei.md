@@ -73,11 +73,11 @@ Both reports show the count per element and the catalog in their "Mobile element
 
 ## Runtime
 
-On HG002's chr20 at 30x (13 million reads) on a 4-CPU GitHub runner, MEGAnE took 23 minutes with the unmapped reads in the BAM, 21 of them in its search of the unmapped reads against the whole genome. MEGAnE's authors give about an hour for a 30x genome on 4 threads. The step asks for 16 GB of memory for MEGAnE. Not measured here on a whole genome.
+On HG002's chr20 at 30x (13 million mapped reads) on a 4-CPU GitHub runner, MEGAnE took 23 minutes with the unmapped reads in the BAM, 21 of them in its search of the unmapped reads against the whole genome, and 2.5 to 3 minutes with them dropped (AMD EPYC 7763 and Intel Xeon Platinum 8573C runners). MEGAnE's authors give about an hour for a 30x genome on 4 threads. The step asks for 16 GB of memory for MEGAnE. Not measured here on a whole genome.
 
 ## Validation
 
-The e2e case `tests/e2e/mei-1.sh` runs the step on HG002's chr20: the reads of chr20 in GIAB's 60x novoalign BAM, half the pairs (30x), realigned with minimap2 to chr20 alone, and the k-mer set of that chromosome. Its Alu calls are scored against the GIAB v5.0q insertions of HG002 on chr20 (RepeatMasker SINE/Alu, interspersed, 250 to 400 bp, inside the benchmark regions): recall must be at least 0.70 and precision at least 0.80, within 100 bp. With every read pair near a GIAB Alu insertion removed, the recall check fails. `tests/test_mei_report.py` plants an SVA in the FKTN window of a synthetic MEGAnE VCF and checks it is seen, and not seen without it.
+The e2e case `tests/e2e/mei-1.sh` runs the step on HG002's chr20: the reads of chr20 in GIAB's 60x novoalign BAM, half the pairs (30x), realigned with minimap2 to chr20 alone, the unmapped reads dropped (so the case fits a runner's time), and the k-mer set of that chromosome. Its Alu calls are scored against the GIAB v5.0q insertions of HG002 on chr20 (RepeatMasker SINE/Alu, interspersed, 250 to 400 bp, inside the benchmark regions): recall must be at least 0.70 and precision at least 0.80, within 100 bp. On 2026-10-27 it found 12 of the 15 insertions (0.80), and 13 of its 15 Alu calls inside the benchmark regions matched a GIAB insertion (0.87); with the unmapped reads kept, the same 12 of 15 and 13 of 15. With every read pair within 1 kb of a GIAB Alu insertion removed, it found 0 of 15 and the recall check failed. `tests/test_mei_report.py` plants an SVA in the FKTN window of a synthetic MEGAnE VCF and checks it is seen, and not seen without it.
 
 ## Notes
 

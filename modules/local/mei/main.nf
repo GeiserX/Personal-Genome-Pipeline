@@ -11,6 +11,9 @@
       MEI_REPORT  bin/mei_report.py: the calls, and the catalog as seen / not
                   seen / not callable
 
+    MEGAnE's image has no ps, which Nextflow's task wrapper needs:
+    resources/usr/bin/ps here gives the MEI task one (a module binary).
+
     Equivalent to: scripts/50-mei.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
