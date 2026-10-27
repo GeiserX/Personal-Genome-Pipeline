@@ -978,8 +978,10 @@ def archaic(d, rng):
 
 
 def ancient(d, rng):
-    """Step 44: bin/ancient_report.py's nearest-group table and info table,
-    made-up distances over a few AADR-style group labels; no plot."""
+    """Step 44: bin/ancient_report.py's nearest-group table, info table and
+    PC plot (its own svg_plot), made-up distances and PCs over a few
+    AADR-style group labels."""
+    import ancient_report
     groups = [("England_BellBeaker", "2450-2000 BCE", "United Kingdom", "Amesbury Down"),
               ("Germany_CordedWare", "2900-2350 BCE", "Germany", "Esperstedt"),
               ("Spain_BellBeaker", "2500-2000 BCE", "Spain", "Camino de las Yeseras"),
@@ -990,16 +992,26 @@ def ancient(d, rng):
               ("France_Neolithic", "4500-3000 BCE", "France", "Gurgy"),
               ("Turkey_Neolithic", "6500-6000 BCE", "Turkey", "Barcın"),
               ("Russia_Yamnaya_Samara", "3300-2700 BCE", "Russia", "Samara")]
-    dist = 0.0
+    person = (0.01234, -0.00456)
+    dist, nearest = 0.0, []
     lines = ["rank\tgroup\tn\tdistance\tpc1\tpc2\tdate_bp\tdates\tcountry\tlocality\n"]
     for i, (g, dates, country, loc) in enumerate(groups, 1):
         dist += rng.uniform(0.002, 0.012)
-        lines.append(f"{i}\t{g}\t{rng.randint(3, 40)}\t{dist:.5f}\t{rng.uniform(-0.02, 0.02):.5f}\t"
-                     f"{rng.uniform(-0.02, 0.02):.5f}\t{rng.randint(1000, 8500)}\t{dates}\t{country}\t{loc}\n")
+        pc1, pc2 = person[0] + rng.uniform(-dist, dist), person[1] + rng.uniform(-dist, dist)
+        nearest.append({"group": g, "pc1": pc1, "pc2": pc2})
+        lines.append(f"{i}\t{g}\t{rng.randint(3, 40)}\t{dist:.5f}\t{pc1:.5f}\t"
+                     f"{pc2:.5f}\t{rng.randint(1000, 8500)}\t{dates}\t{country}\t{loc}\n")
     put(os.path.join(d, "ancient", f"{SAMPLE}_ancient.tsv"), "".join(lines))
+    panel = {f"m{i}": ("present", (rng.gauss(0.0, 0.03), rng.gauss(0.0, 0.025))) for i in range(300)}
+    ancients = {}
+    for i in range(200):
+        panel[f"a{i}"] = (ancient_report.ANCIENT_LABEL, (rng.gauss(0.005, 0.035), rng.gauss(0.0, 0.03)))
+        ancients[f"a{i}"] = {"date_bp": str(rng.randint(500, 9000))}
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient_pca.svg"),
+        ancient_report.svg_plot(person, panel, ancients, SAMPLE, nearest))
     info = [("release", "v62.0"), ("sites_used", rng.randint(520_000, 560_000)), ("panel_sites", 597_573),
             ("present_day_people", 819), ("ancient_people", 4_210), ("ancient_groups", 612),
-            ("pcs_in_distance", 4), ("pc1", "0.01234"), ("pc2", "-0.00456")]
+            ("pcs_in_distance", 4), ("pc1", f"{person[0]:.5f}"), ("pc2", f"{person[1]:.5f}")]
     put(os.path.join(d, "ancient", f"{SAMPLE}_ancient_info.tsv"),
         "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in info))
 
