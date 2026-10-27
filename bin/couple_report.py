@@ -62,8 +62,9 @@ END = re.compile(r"(?:^|;)END=(\d+)")
 # A Delly deletion longer than 1,000 bp needs read depth (FORMAT RDCN) to show
 # the loss: bin/cnvpytor_to_vcf.py holds the rule, which step 05 applies too.
 DEPTH_MIN_SIZE = cnvpytor_to_vcf.DEPTH_MIN_SIZE
-# A structural variant is 50 bp or longer. A shorter Delly deletion is the
-# small-variant caller's call, and counts here only through ClinVar.
+# A structural variant is 50 bp or longer. A shorter Delly deletion is left
+# to the small-variant caller, and counts here only through ClinVar; one that
+# caller misses is missed.
 SV_MIN_SIZE = 50
 # A deletion many people carry is no carrier finding. AnnotSV's benign loss
 # set (benign_Loss_SV_GRCh38.sorted.bed, with gnomAD-SV's common deletions
@@ -454,8 +455,8 @@ RESIDUAL = [
     "not span it.",
     "Deletions Delly does not call, deletions longer than %d bp that read depth (Delly's RDCN) does not confirm, "
     "duplications, inversions and insertions." % DEPTH_MIN_SIZE,
-    "Delly deletions shorter than %d bp: the small-variant caller calls those, and they count only when ClinVar "
-    "lists them." % SV_MIN_SIZE,
+    "Delly deletions shorter than %d bp: they count only when the small-variant caller also calls them and ClinVar "
+    "lists them, so one it misses is missed here." % SV_MIN_SIZE,
     "With AnnotSV's benign set, a deletion that matches a common one there (1%% or more, %d%% reciprocal overlap) "
     "is not counted: a rare pathogenic deletion at the same place as a common one is missed." % int(COMMON_OVERLAP * 100),
     "Low-level mosaicism, and whether two changes of one person in one gene sit on the same copy.",
