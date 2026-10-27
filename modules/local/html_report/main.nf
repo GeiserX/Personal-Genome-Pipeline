@@ -86,6 +86,7 @@ process HTML_REPORT {
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
             ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
+            ${id}_mocha.tsv|${id}_mocha_summary.tsv)      place mosaic "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
