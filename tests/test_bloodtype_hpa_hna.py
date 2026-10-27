@@ -13,8 +13,9 @@ runs the script and checks the rows it writes:
   3. the meaning: a person who lacks an antigen gets the table's meaning in the
      note (HPA-1b/1b: FNAIT and anti-HPA-1a), a person with both antigens none
   4. HNA-1: FCGR3B*01 and *02 from the four markers, *03 (HNA-1c, which carries
-     HNA-1b too), markers that disagree (not determined), c.194 that disagrees
-     (a note), and the confidence is always low (FCGR3A, copy number)
+     HNA-1b too), c.233 with no call (*02 or *03), markers that disagree (not
+     determined), c.194 that disagrees (a note), and the confidence is always
+     low (FCGR3A, copy number)
 
 Run: python3 tests/test_bloodtype_hpa_hna.py
 """
@@ -164,6 +165,10 @@ check("4 HNA-1c on an FCGR3B*02: HNA-1(a-b+c+), FCGR3B*02/FCGR3B*03",
 ac = run([rec(n, "1/1") for n in A4] + [rec("FCGR3B_194", "1/1"), rec("FCGR3B_233", "0/1")])
 check("4 HNA-1c with two FCGR3B*01: b+ (FCGR3B*03 carries HNA-1b) and the extra-copy note",
       (cell(ac, "HNA-1", "phenotype"), "extra FCGR3B copy" in cell(ac, "HNA-1", "note")), ("HNA-1(a+b+c+)", True))
+nc = run([rec("FCGR3B_233", "./."), rec("FCGR3B_194", "1/1")])
+check("4 c.233 with no call: the HNA-1b alleles read *02 or *03, HNA-1c not determined",
+      (cell(nc, "HNA-1", "phenotype"), cell(nc, "HNA-1", "genotype"), "HNA-1c not determined" in cell(nc, "HNA-1", "note")),
+      ("HNA-1(a-b+)", "FCGR3B*02 or *03/FCGR3B*02 or *03", True))
 mixed = run([rec("FCGR3B_108", "1/1"), rec("FCGR3B_114", "0/1")])
 check("4 markers that disagree: not determined", cell(mixed, "HNA-1", "phenotype"), "not determined")
 check("4 and the note says why", "do not agree on HNA-1a or HNA-1b" in cell(mixed, "HNA-1", "note"), True)
