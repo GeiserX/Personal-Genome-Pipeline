@@ -354,7 +354,9 @@ def system_hna1(S):
     if n_c and n_c > n_b:
         extra.append("HNA-1c with no HNA-1b allele left for it: often an extra FCGR3B copy carrying FCGR3B*03")
     n_c2 = min(n_c or 0, n_b)
-    alleles = ["FCGR3B*01"] * n_a + ["FCGR3B*02"] * (n_b - n_c2) + ["FCGR3B*03"] * n_c2
+    # Without c.233 an HNA-1b allele may be *02 or *03 (*03 is *02 with c.233C>A).
+    b_allele = "FCGR3B*02" if n_c is not None else "FCGR3B*02 or *03"
+    alleles = ["FCGR3B*01"] * n_a + [b_allele] * (n_b - n_c2) + ["FCGR3B*03"] * n_c2
     c_txt = "" if n_c is None else f"c{sign(n_c > 0)}"
     lacks = [x for x, has in (("1a", n_a > 0), ("1b", n_b > 0 or bool(n_c)), ("1c", bool(n_c)))
              if not has and not (x == "1c" and n_c is None)]
