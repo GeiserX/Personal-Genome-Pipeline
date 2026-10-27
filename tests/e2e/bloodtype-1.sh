@@ -102,7 +102,7 @@ H="${SAMPLE}bt"
 sample "$H" "${T}/truth.vcf.gz" "${T}/win.bam"
 step "$H"
 cat "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null
-check_eq "a row per system" "$(awk 'END {print NR - 1}' "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null)" 17
+check_eq "a row per system" "$(awk 'END {print NR - 1}' "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null)" 22
 check_eq "ABO: GIAB has no c.261 insertion, both alleles O.01" "$(cell "$H" ABO phenotype)/$(cell "$H" ABO genotype)" "O/O.01/O.01"
 check_eq "RhD: two RHD copies by depth" "$(cell "$H" RhD phenotype)" "D+"
 check "RhD genotype RHD/RHD" has '^RHD/RHD \(RHD copies by read depth (1\.[5-9]|2\.[0-4])' "$(cell "$H" RhD genotype)"
