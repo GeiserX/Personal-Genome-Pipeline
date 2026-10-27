@@ -36,6 +36,7 @@ include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
+include { VNTYPER } from './modules/local/vntyper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 
 /*
@@ -84,6 +85,7 @@ workflow {
         'consumer_export',
         'bloodtype',
         'lpa',
+        'vntyper',
         'traits',
         'y_str',
         'viral',
@@ -779,6 +781,17 @@ workflow {
         ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
     }
 
+    // ─── MUC1 VNTR frameshifts (opt-in: vntyper, step 52) ───────────────
+    // VNtyper on each sample with a BAM: the ADTKD-MUC1 frameshifts no
+    // standard caller sees. Equivalent to scripts/52-vntyper.sh.
+    ch_vntyper          = Channel.empty()
+    ch_vntyper_versions = Channel.empty()
+    if (tools_list.contains('vntyper')) {
+        VNTYPER(ch_bam)
+        ch_vntyper          = VNTYPER.out.table
+        ch_vntyper_versions = VNTYPER.out.versions
+    }
+
     // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
     // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
     // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
@@ -855,6 +868,7 @@ workflow {
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_vntyper.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
@@ -887,6 +901,7 @@ workflow {
             ch_traits_versions,
             ch_bloodtype_versions,
             ch_lpa_versions,
+            ch_vntyper_versions,
             ch_viral_versions
         )
         .map { f -> f.text }
