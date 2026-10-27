@@ -992,6 +992,8 @@ def text_report(s):
         for line in ancient_lines(S["ancient"]["data"]):
             w(f"  {line}")
         w(f"  {ANCIENT_NOTE} Plot: ancient/{s['sample']}_ancient_pca.svg")
+        w("")
+
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
         for line in viral_lines(S["viral"]["data"]):
             w(f"  {line}")
