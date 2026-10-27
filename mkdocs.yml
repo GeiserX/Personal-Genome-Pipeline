@@ -197,6 +197,7 @@ nav:
           - "Step 45: Y-STR Markers": 45-y-str.md
           - "Step 46: Lp(a), the LPA KIV-2 Repeat Count": 46-lpa.md
           - "Step 47: Viral DNA in the Unmapped Reads": 47-viral.md
+          - "Step 49: Clonal Haematopoiesis (CHIP)": 49-chip.md
           - "Step 52: MUC1 VNTR Frameshifts (VNtyper)": 52-vntyper.md
       - Quality control and reports:
           - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
