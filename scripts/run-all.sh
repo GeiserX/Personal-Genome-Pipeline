@@ -19,7 +19,8 @@
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
-#   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
+#   always 100 bootstrap replicates; none: skip), ARCHAIC_DIR and ARCHAIC_POP (--archaic_data and --archaic_pop,
+#   step 43; ARCHAIC_DIR=none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
 #   the single steps; the panels and pgsc_calc are passed when installed.
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
@@ -167,6 +168,10 @@ if [[ ",${T// /}," == *",chip,"* ]]; then plan "49 CHIP (clonal blood cells)" ch
 else KNOWN+=" chip"; fi
 # Step 42 reads the gVCF only: DeepVariant writes one for a FASTQ or BAM row, a BAM+VCF row has one when it lies beside the VCF.
 plan "42 Traits panel" traits "$([ -z "$fv" ] || [ -n "$GROW" ] || echo "no gVCF: ${GV#"$G"/}")" || true
+# Step 43 against the table setup.sh --archaic builds (DONE is written last); the genes of its segments come from GENCODE.
+AR=${ARCHAIC_DIR:-${G}/reference/archaic/${ARCHAIC_DATA_VERSION}}
+plan "43 Archaic ancestry (IBDmix)" archaic "$(if [ "$AR" = none ]; then echo 'ARCHAIC_DIR=none'; else need "${AR}/DONE"; fi)" \
+  && NF+=(--archaic_data "$AR" --archaic_pop "${ARCHAIC_POP:-ALL}") && { [[ " ${NF[*]} " == *" --hla_genes "* ]] || [ ! -s "$GT" ] || NF+=(--hla_genes "$GT"); }
 # Step 44 (ancient populations) is opt-in and listed only when TOOLS names it; it reads the gVCF and the panel
 # setup.sh --ancient-panel builds (DONE is written last). ANCIENT_PANEL_DIR picks another panel.
 AN=${ANCIENT_PANEL_DIR:-${G}/reference/ancient/aadr_${AADR_VERSION}}

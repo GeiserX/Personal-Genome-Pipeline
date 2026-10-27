@@ -53,7 +53,7 @@ hide:
 - **Small variants:** SNPs and indels with DeepVariant; structural and copy-number variants with Manta, Delly and CNVpytor merged into one consensus set.
 - **Clinical screening:** known pathogenic variants from ClinVar, cancer predisposition panels with CPSR, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritisation of rare deleterious variants.
 - **Pharmacogenomics:** PharmCAT and pypgx star alleles across 23 genes, CYP2D6 structural alleles with Cyrius, CPIC dosing recommendations.
-- **Ancestry and lineage:** mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry placement against the 1000 Genomes panel (optional download), polygenic risk scores for 13 conditions and traits.
+- **Ancestry and lineage:** mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry placement against the 1000 Genomes panel (optional download), the Neanderthal and Denisovan segments you carry (optional download), polygenic risk scores for 13 conditions and traits.
 - **Everything else the reads hold:** clonal haematopoiesis (CHIP) in the blood, with the detection limit at your depth (opt-in), HLA type, repeat expansions at the 31 loci of ExpansionHunter's catalog (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
