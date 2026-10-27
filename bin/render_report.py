@@ -928,6 +928,15 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("y_str", "Y-STR Markers (HipSTR)"):
+        d = S["y_str"]["data"]
+        w(f"  {ystr_counts(d)}")
+        for x in d["markers"]:
+            if x["count"]:
+                w(f"  {x['panel']:<6} {x['marker']:<13} {x['count']:<6} ({x['confidence']})")
+        w(f"  {YSTR_NOTE}")
+        w("")
+
     if head("consumer_export", "Raw-Data Export (23andMe v5 layout)"):
         for line in consumer_export_lines(S["consumer_export"]["data"]):
             w(f"  {line}")
@@ -937,6 +946,15 @@ def text_report(s):
         for x in S["bloodtype"]["data"]["systems"]:
             w(f"  {x['system']:<9} {x['phenotype']:<34} {x['genotype']:<28} ({x['confidence']})")
         w(f"  {BLOODTYPE_NOTE}")
+        w("")
+
+    if head("lpa", "Lp(a): LPA KIV-2 Repeat Count and Risk Variants"):
+        for line in lpa_lines(S["lpa"]["data"]):
+            w(f"  {line}")
+        w("")
+
+    if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
+        out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
         w("")
 
     if head("mito", "Mitochondrial Variants (Mutect2)"):
@@ -952,6 +970,11 @@ def text_report(s):
 
     if head("traits", "Traits Panel (step 42)"):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
+        w("")
+
+    if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
+        for line in viral_lines(S["viral"]["data"]):
+            w(f"  {line}")
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -1211,9 +1234,56 @@ def contamination_text(d):
     return f"{word} (level {d.get('contamination_level', '.')})"
 
 
+YSTR_NOTE = ("Repeat counts read from the genome with HipSTR, in FamilyTreeDNA's Y-111 order. A count can "
+             "differ from FamilyTreeDNA's by a fixed number of repeats at some markers, as labs count some repeat "
+             "blocks differently: compare with a known result before trusting a difference. Multi-copy markers and "
+             "repeats longer than the reads are not called. Every marker, with its reads and notes, is in "
+             "y_str/<sample>_y_str.tsv; y_str/<sample>_y_str.csv is the same list for a spreadsheet.")
+
+
+def ystr_counts(d):
+    return (f"Markers called: {d['high']} high and {d['low']} low confidence of {len(d['markers'])}; "
+            f"{d['no_call']} no call, {d['not_callable']} not callable from short reads")
+
+
+def ystr_body(d):
+    """The Y-STR card: the counts, then every called marker in FamilyTreeDNA's order."""
+    rows = "".join(f"<tr><td>{E(x['panel'])}</td><td>{E(x['marker'])}</td><td>{E(x['count'])}</td>"
+                   f"<td>{E(x['confidence'])}</td></tr>" for x in d.get("markers", []) if x["count"])
+    return [f"    <p>{E(ystr_counts(d))}</p>",
+            "    <table><tr><th>Panel</th><th>Marker</th><th>Repeats</th><th>Confidence</th></tr>" + rows + "</table>",
+            small_note(YSTR_NOTE)]
+
+
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
+             "a call here is not a diagnosis. A call is a change in a CHIP gene's published classes, found by "
+             "Mutect2 without a matched normal; one at a VAF of 35% or more is left out as possibly inherited. "
+             "docs/49-chip.md says how to read it.")
+
+
+def chip_lines(d, sample):
+    """The CHIP section: the calls, the detection limit at this depth, the genes too shallow to read."""
+    out = []
+    for c in d.get("calls", []):
+        out.append(f"{c['gene']} {c['protein_change']}: VAF {c['vaf']} ({c['alt_reads']} of {c['depth']} reads), {c['note']}")
+    if not d.get("calls"):
+        out.append("No CHIP call.")
+    if d.get("median_limit") is not None:
+        out.append(f"Detection limit: a clone of VAF about {d['median_limit'] * 100:.0f}% or more is found 8 times "
+                   f"in 10 at this depth (median {d['median_depth']:.0f}x over the genes' coding exons). CHIP starts "
+                   "at a VAF of 2%: smaller clones are likely missed, so no call does not rule one out.")
+    else:
+        out.append("No CHIP gene has the depth to find a clone: no result either way.")
+    if d.get("not_covered"):
+        out.append(f"Too shallow or not on the reference: {', '.join(d['not_covered'])}.")
+    out.append(f"{d.get('other', 0)} other protein changes listed, not counted: chip/{sample}_chip.tsv.")
+    out.append(CHIP_NOTE)
+    return out
 
 
 def bloodtype_body(d):
@@ -1223,6 +1293,52 @@ def bloodtype_body(d):
     return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
             "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
             + rows + "</table>", small_note(BLOODTYPE_NOTE)]
+
+
+def lpa_lines(d):
+    """Step 46's count with its interval, step 42's two LPA risk variants,
+    the flag and the advice: the lines of the text section and the card."""
+    if d.get("status") == "estimated":
+        out = [f"KIV-2 repeats (both chromosomes): {d['kiv2_copies']} (95% interval {d['ci95_low']} to "
+               f"{d['ci95_high']}), {d['class']}"]
+    else:
+        out = [f"KIV-2 repeats: {d.get('status', '.')}"]
+    out.append(f"  {d.get('message', '.')}")
+    for v in d.get("variants", []):
+        n = v["risk_alleles"]
+        out.append(f"{v['rsid']}: {v['genotype']} ({'not read' if n is None else str(n) + ' risk allele' + ('s' if n != 1 else '')})")
+    if not d.get("variants"):
+        out.append("rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)")
+    out.append(d.get("flag_text", "."))
+    out.append(d.get("advice", "."))
+    return out
+
+
+VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
+              "genomes. Not a test for an infection: most adults carry herpesviruses that stay in their cells, and "
+              "reagents carry viral DNA too. HHV-6 integration follows Liu et al. 2020 (depth over the viral genome "
+              "at 0.30 of the human depth or more). Every genome: viral/<sample>_viral.tsv.")
+
+
+def viral_lines(d):
+    """Step 47's lines, the same in both reports: the HHV-6 call, then each genome with reads."""
+    lines = [f"HHV-6: {d.get('hhv6', '.')}"]
+    for x in d.get("found", []):
+        copies = "" if x["copies_per_cell"] == "." else f", {x['copies_per_cell']} copies per cell"
+        lines.append(f"{x['virus']}: {x['call']} ({x['reads']} reads, {float(x['breadth']):.0%} of the genome{copies})")
+    if not d.get("found"):
+        lines.append(f"No read on any of the {d.get('genomes', 0)} viral genomes.")
+    return lines + [VIRAL_NOTE]
+
+
+def viral_body(d):
+    """The viral DNA card: the HHV-6 call, a row per genome with reads, the note."""
+    rows = "".join(f"<tr><td>{E(x['virus'])}</td><td>{E(x['call'])}</td><td>{E(x['reads'])}</td>"
+                   f"<td>{E(x['breadth'])}</td><td>{E(x['relative_depth'])}</td><td>{E(x['copies_per_cell'])}</td></tr>"
+                   for x in d.get("found", []))
+    table = ("    <table><tr><th>Virus</th><th>Call</th><th>Reads</th><th>Breadth</th><th>Depth / human</th>"
+             "<th>Copies per cell</th></tr>" + rows + "</table>") if rows else small_note("No read on any viral genome.")
+    return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
 
 
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
@@ -1306,6 +1422,28 @@ def mito_lines(d):
     elif a.get("note"):
         lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
     return lines
+
+
+# scripts/pgp-view.sh serves the genome viewer here (PGP_VIEW_PORT's default);
+# the part after '#' is the locus it opens at.
+VIEWER_URL = "http://127.0.0.1:8765/"
+
+
+def viewer_links(sites):
+    """One line under a findings table: each (chrom, pos, label) as a link that
+    opens the reads at chrom:pos in the local genome viewer. Empty for none."""
+    links = [f'<a href="{VIEWER_URL}#{E(str(c))}:{E(str(p))}" target="_blank" rel="noopener noreferrer">{E(str(t))}</a>'
+             for c, p, t in sites if c and p]
+    if not links:
+        return []
+    return ['    <p class="viewer">See the reads in the genome viewer on this computer (start it first: '
+            "scripts/pgp-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
+
+
+def variant_site(variant):
+    """(chrom, pos) of a "chrom:pos ref>alt" text, (None, None) for any other."""
+    m = re.match(r"^([A-Za-z0-9._-]+):([0-9]+) ", variant or "")
+    return (m.group(1), m.group(2)) if m else (None, None)
 
 
 EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
@@ -1619,11 +1757,28 @@ def html_report(s):
         a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
+    if S.get("y_str", MISSING)["state"] != "missing":
+        ys = S["y_str"]
+        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+               full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
         a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("lpa", MISSING)["state"] != "missing":
+        lp = S["lpa"]["data"]
+        a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
+               ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
+               + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
+    if S.get("viral", MISSING)["state"] != "missing":
+        a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
+    if S.get("chip", MISSING)["state"] != "missing":
+        ch = S["chip"]["data"]   # the card shows its body only for a section that was read
+        a(card(S["chip"], "Clonal Haematopoiesis (CHIP)",
+               [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
+               + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
+               + [small_note(CHIP_NOTE)], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
@@ -1650,6 +1805,7 @@ def html_report(s):
                         v.get("clinvar_review"), v.get("clinvar_condition"), v.get("gnomad_af_hom"),
                         v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + "</tr>"
                     for v in ma["variants"]) + "</table>")
+            mito_body += viewer_links(("chrM", v["pos"], f"chrM:{v['pos']}") for v in ma["variants"])
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
@@ -1672,7 +1828,10 @@ def html_report(s):
                         f"<td>{E(x['consequence'] + high_marks(x, '; '))}</td></tr>\n" for x in sf["high_impact"])
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
-                rows.rstrip("\n"), "    </table>", f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
+                rows.rstrip("\n"), "    </table>"]
+               + viewer_links((*variant_site(x["variant"]), f"{x['gene']} {x['variant'].split(' ')[0]}")
+                              for x in sf["clinvar_hits"] + sf["high_impact"])
+               + [f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
     sl_body = [stat("Prioritized variants", sl.get("prioritized"))]
@@ -1752,7 +1911,9 @@ def html_report(s):
                 + ("<th>gnomAD frequency</th>" if freq else "")
                 + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
-               + ["      " + x for x in rows] + ["    </table>"], full=True))
+               + ["      " + x for x in rows] + ["    </table>"]
+               + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
+               full=True))
 
     lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]
     lists += (['    <ul class="plain">'] + [f"      <li>{E(t)}</li>" for t in s["not_run"]] + ["    </ul>"]

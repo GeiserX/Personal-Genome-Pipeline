@@ -35,6 +35,9 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
+include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
+include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -81,7 +84,11 @@ workflow {
         'sample_qc', 'cram_archive', 'parascopy', 'paraphase', 'y_haplogroup', 'html_report', 'multiqc',
         'consumer_export',
         'bloodtype',
+        'lpa',
         'traits',
+        'y_str',
+        'viral',
+        'chip',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -110,6 +117,8 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['viral',            'viral_ref',          '--viral_ref'],
+        ['chip',             'chip_gff',           '--chip_gff'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -445,11 +454,11 @@ workflow {
     ch_bam = UPSTREAM.out.bam
 
     // ─── Sequence dictionary ────────────────────────────────────────────
-    // Only MITO_VARIANTS (GATK) reads the sequence dictionary
+    // Only MITO_VARIANTS and CHIP_MUTECT2 (GATK) read the sequence dictionary
     ch_reference_dict = Channel.value([])
-    if (tools_list.contains('mito_variants')) {
+    if (tools_list.contains('mito_variants') || tools_list.contains('chip')) {
         if (!(params.reference ==~ /.*\.(fasta|fa|fna)$/)) {
-            error "mito_variants needs the reference's .dict next to it, found by replacing the FASTA extension; " +
+            error "mito_variants and chip need the reference's .dict next to it, found by replacing the FASTA extension; " +
                   "--reference ${params.reference} does not end in .fasta, .fa or .fna."
         }
         ch_reference_dict = Channel.value(
@@ -760,6 +769,72 @@ workflow {
         ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
     }
 
+    // ─── Lp(a): LPA KIV-2 repeat count (opt-in: lpa) ────────────────────
+    // Read depth over the KIV-2 exons against single-copy LPA exons, for each
+    // sample with a BAM. Equivalent to scripts/46-lpa.sh.
+    ch_lpa          = Channel.empty()
+    ch_lpa_versions = Channel.empty()
+    if (tools_list.contains('lpa')) {
+        LPA_REGIONS()
+        LPA_DEPTH(ch_bam, LPA_REGIONS.out.bed)
+        LPA(LPA_DEPTH.out.depth)
+        ch_lpa          = LPA.out.table
+        ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
+    }
+
+    // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
+    // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
+    // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
+    // unmapped reads to read and is left out. Equivalent to scripts/47-viral.sh.
+    ch_viral          = Channel.empty()
+    ch_viral_versions = Channel.empty()
+    if (tools_list.contains('viral')) {
+        ch_viral_ref = Channel.value(file(params.viral_ref, checkIfExists: true))
+        VIRAL_READS(ch_bam, ch_viral_ref)
+        VIRAL_REPORT(VIRAL_READS.out.coverage, ch_viral_ref)
+        ch_viral          = VIRAL_REPORT.out.table
+        ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
+    }
+
+    // ─── Clonal haematopoiesis (opt-in: chip, step 49) ───────────────────
+    // Mutect2 tumour-only on the coding exons of the CHIP genes'
+    // MANE Select transcripts, from the BAM; a sample without one is
+    // skipped with a warning. Equivalent to scripts/49-chip.sh.
+    ch_chip          = Channel.empty()
+    ch_chip_depth    = Channel.empty()
+    ch_chip_versions = Channel.empty()
+    if (tools_list.contains('chip')) {
+        ch_chip_genes = Channel.value(file("${projectDir}/assets/chip_genes.tsv", checkIfExists: true))
+        // gnomAD's AF-only germline resource and a panel of normals, each with its .tbi beside it
+        def germ = params.chip_germline_resource
+        def pon  = params.chip_pon
+        def chip_germline       = germ ? file(germ, checkIfExists: true) : []
+        def chip_germline_index = germ ? file("${germ}.tbi", checkIfExists: true) : []
+        def chip_pon            = pon ? file(pon, checkIfExists: true) : []
+        def chip_pon_index      = pon ? file("${pon}.tbi", checkIfExists: true) : []
+        ch_vcf
+            .map { meta, _vcf, _idx -> [meta.id, meta] }
+            .join(ch_bam.map { meta, _bam, _bai -> [meta.id, true] }, remainder: true)
+            .filter { _id, meta, has_bam -> meta != null && !has_bam }
+            .subscribe { id, _meta, _has_bam ->
+                log.warn "chip skipped for ${id}: Mutect2 reads the BAM, and the samplesheet row has none."
+            }
+        CHIP_PREPARE(Channel.value(file(params.chip_gff, checkIfExists: true)), ch_chip_genes, ch_reference_fai)
+        CHIP_MUTECT2(ch_bam, CHIP_PREPARE.out.bed, ch_reference, ch_reference_fai, ch_reference_dict,
+                     chip_germline, chip_germline_index, chip_pon, chip_pon_index)
+        CHIP_ANNOTATE(
+            CHIP_MUTECT2.out.vcf.map { meta, vcf -> [meta.id, meta, vcf] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
+                .map { _id, meta, vcf, bam, bai -> [meta, vcf, bam, bai] },
+            CHIP_PREPARE.out.gff, CHIP_PREPARE.out.bed, ch_reference, ch_reference_fai
+        )
+        CHIP_REPORT(CHIP_ANNOTATE.out.tables, ch_chip_genes, CHIP_PREPARE.out.gff, CHIP_PREPARE.out.bed)
+        ch_chip          = CHIP_REPORT.out.chip
+        ch_chip_depth    = CHIP_REPORT.out.depth
+        ch_chip_versions = CHIP_PREPARE.out.versions.mix(CHIP_MUTECT2.out.versions, CHIP_ANNOTATE.out.versions,
+                                                         CHIP_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -786,6 +861,7 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_str.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
@@ -820,6 +896,10 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
@@ -849,7 +929,10 @@ workflow {
             ch_cram_versions,
             ch_family_versions,
             ch_traits_versions,
-            ch_bloodtype_versions
+            ch_bloodtype_versions,
+            ch_lpa_versions,
+            ch_viral_versions,
+            ch_chip_versions
         )
         .map { f -> f.text }
         .unique()

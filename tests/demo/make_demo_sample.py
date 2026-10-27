@@ -23,10 +23,12 @@ Borrowed, not rewritten:
     from made-up somalier, VerifyBamID2 and pgsc_calc files;
   - step 33's mosaic rows come from bin/mosaic_sex_loss.py, step 26b's painting
     from bin/ancestry_fine_report.py, step 35b's table from
-    bin/paraphase_report.py, step 35's HBA1/HBA2 table from
-    bin/hba_copy_number.py, step 39's from bin/couple_report.py and step 42's
-    from bin/traits_report.py, each fed made-up inputs; steps 02, 05, 35 (its
-    SMN1/SMN2 rows), 40 and 41's tables are written here in their writers'
+    bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
+    from bin/traits_report.py, each fed made-up inputs; step 45's rows come
+    from bin/ystr_report.py's marker_row, step 46's from bin/lpa_kiv2.py's
+    assess, step 35's HBA1/HBA2 table from bin/hba_copy_number.py's assess,
+    step 49's depth rows from bin/chip_report.py's detection_limit and
+    step 47's from bin/viral_report.py's build_rows, with made-up counts; steps 02, 40 and 41's tables are written here in their writers'
     columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
@@ -540,6 +542,12 @@ def structural(d, rng):
                      f"{min(1, p * 9):.4e}\t{rng.uniform(0, 0.5):.4f}\t{rng.uniform(0, 0.1):.4f}\t{rng.randint(0, 9)}")
     put(os.path.join(d, "cnvpytor", f"{SAMPLE}_cnvs.txt"), "\n".join(lines) + "\n")
 
+    # Step 05's class 4 and 5 SVs, checked (bin/annotsv_postfilter.py's
+    # columns): none, as in most genomes.
+    import annotsv_postfilter
+    put(os.path.join(d, "annotsv", f"{SAMPLE}_sv_class4_5_checked.tsv"),
+        "\t".join(annotsv_postfilter.KEEP + annotsv_postfilter.ADDED) + "\n")
+
 
 # --- repeats, telomeres, ROH, mitochondria, Y: steps 09, 10, 11, 12, 20, 37 --------------
 
@@ -752,32 +760,19 @@ def paralogs(d):
     os.makedirs(out, exist_ok=True)
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_copy_number.tsv"), pr.CN_HEADER, pr.cn_table(data))
     pr.write_tsv(os.path.join(out, f"{SAMPLE}_paraphase_variants.tsv"), pr.VARIANT_HEADER, [])
-    parascopy(out)
-
-
-def parascopy(out):
-    """Step 35 (Parascopy, short reads): the SMN1/SMN2 row of its table in the
-    columns step 35 keeps from Parascopy's res.samples.bed, two copies of
-    each gene at exon 7, and the HBA1/HBA2 table from bin/hba_copy_number.py's
-    own assess() on made-up depths: four alpha-globin genes."""
-    import hba_copy_number as hba
-    # SMN1 exon 7 (chr5:70,951,946) in the row, SMN2's (chr5:70,076,526) in its homologous region.
+    # Step 35 (Parascopy, short reads): two SMN1 and two SMN2 copies at exon 7,
+    # in the columns of its <s>_smn_copy_number.tsv.
     put(os.path.join(out, f"{SAMPLE}_smn_copy_number.tsv"),
-        "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\thomologous_regions\n"
-        "chr5\t70950999\t70952500\tSMN1\tPASS\t4\t62.18\tPASS\t2,2\t41.07,41.07\tchr5:70075580-70077081\n")
+        "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+        "homologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t2,2\t33,30\t"
+        "chr5:70049000-70077000:-\n")
+    # Step 35's HBA1/HBA2 table: bin/hba_copy_number.py's own assess() on
+    # made-up depths, four alpha-globin genes.
+    import hba_copy_number as hba
     depth = {"flank_left": 31.2, "HBA2": 30.9, "HBA1": 30.1, "flank_right": 30.4}
     res = hba.assess(depth, {k: v * (0.76 if k.startswith("HBA") else 0.98) for k, v in depth.items()})
     put(os.path.join(out, f"{SAMPLE}_hba_copy_number.tsv"),
         "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in hba.ORDER))
-
-
-def annotsv(d):
-    """Step 05's checked class 4 and 5 table, in bin/annotsv_postfilter.py's
-    columns, with no SV in it: DEMO-001 has no class 4 or 5 structural
-    variant, so the card shows the count (0) instead of 'Not run'."""
-    import annotsv_postfilter as ap
-    cols = ["AnnotSV_ID", "SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Gene_name", "ACMG_class"] + ap.ADDED
-    put(os.path.join(d, "annotsv", f"{SAMPLE}_sv_class4_5_checked.tsv"), "\t".join(cols) + "\n")
 
 
 def couple(d, rng):
@@ -837,7 +832,15 @@ BLOODTYPE = [
     ("HPA-3", "HPA-3(a+b+)", "3a/3b", "high", ""),
     ("HPA-4", "HPA-4(a+b-)", "4a/4a", "high", ""),
     ("HPA-5", "HPA-5(a+b-)", "5a/5a", "high", ""),
+    ("HPA-6", "HPA-6(a+b-)", "6a/6a", "high", ""),
     ("HPA-15", "HPA-15(a+b+)", "15a/15b", "high", ""),
+    ("HNA-1", "HNA-1(a+b+c-)", "FCGR3B*01/FCGR3B*02", "low",
+     "FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): "
+     "short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) "
+     "is not assessed"),
+    ("HNA-3", "HNA-3(a+b-)", "3a/3a", "high", ""),
+    ("HNA-4", "HNA-4(a+b-)", "4a/4a", "high", ""),
+    ("HNA-5", "HNA-5(a+b-)", "5a/5a", "high", ""),
 ]
 
 
@@ -846,10 +849,25 @@ def bloodtype(d):
     names = [s for s, _ in bloodtype_report.SYSTEMS]
     if [r[0] for r in BLOODTYPE] != names:
         raise SystemExit(f"BLOODTYPE lists {[r[0] for r in BLOODTYPE]}, step 41 writes {names}")
+    # A platelet or neutrophil antigen the phenotype lacks gets the marker table's
+    # meaning at the head of the note, as bin/bloodtype_report.py's meaning() writes it.
+    sites, _ = bloodtype_report.read_markers(os.path.join(REPO, "assets", "bloodtype_markers.tsv"))
+    means = {}
+    for r in sites.values():
+        if r.get("meaning"):
+            means.setdefault(r["system"], r["meaning"])
+    rows = []
+    for system, phenotype, genotype, conf, note in BLOODTYPE:
+        lacks = re.findall(r"([a-z])-", phenotype.partition("(")[2])
+        if system in means and lacks:
+            prefix, num = system.split("-")
+            head = f"lacks {', '.join(f'{prefix}-{num}{a}' for a in lacks)}: {means[system]}"
+            note = "; ".join([head] + ([note] if note else []))
+        rows.append((system, phenotype, genotype, conf, note))
     os.makedirs(os.path.join(d, "bloodtype"), exist_ok=True)
     bloodtype_report.write_tsv(os.path.join(d, "bloodtype", f"{SAMPLE}_bloodtype.tsv"),
                                bloodtype_report.TABLE_HEADER,
-                               [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in BLOODTYPE])
+                               [dict(zip(bloodtype_report.TABLE_HEADER, r)) for r in rows])
 
 
 # Step 42: copies of each row's alt allele, a common European set; the
@@ -861,7 +879,75 @@ TRAIT_ALT_COPIES = {
     "rs17822931": 0, "rs10427255": 1, "rs1815739": 1, "rs12913832": 1, "rs1800407": 0, "rs16891982": 2,
     "rs1426654": 0, "rs12203592": 0, "rs1805007": 0, "rs1805008": 0, "rs1805009": 0, "rs3827760": 0,
     "rs1801133": 1, "rs601338": 1, "rs2282679": 1, "rs887829": 1, "rs1801272": 0, "rs429358": 0, "rs7412": 0,
+    "rs10455872": 0, "rs3798220": 0,
 }
+
+
+def y_str(d, rng):
+    """Step 45: one row per marker of assets/ystr_panel.tsv from bin/ystr_report.py's
+    marker_row, so the multi-copy, absent and too-long markers read not callable
+    as in a real run; every other marker gets a made-up count at confidence high."""
+    import ystr_report
+    rows = []
+    for r in ystr_report.read_panel(os.path.join(REPO, "assets", "ystr_panel.tsv")):
+        row = ystr_report.marker_row(r, {}, 150)
+        if row["confidence"] == "no call":
+            row.update(count=str(rng.randint(10, 30)), confidence="high", reads=str(rng.randint(18, 34)),
+                       stutter_reads="0", flank_indel_reads="0", q="0.99", note=".")
+        rows.append(row)
+    put(os.path.join(d, "y_str", f"{SAMPLE}_y_str.tsv"),
+        "\t".join(ystr_report.TSV_COLUMNS) + "\n"
+        + "".join("\t".join(row[k] for k in ystr_report.TSV_COLUMNS) + "\n" for row in rows))
+
+
+def viral(d):
+    """Step 47: bin/viral_report.py's build_rows on made-up coverage: the lab's
+    phiX control, a few Epstein-Barr reads, no HHV-6, at a human depth of 31."""
+    import csv
+    import viral_report as vr
+    genomes = [("NC_001664.4", "Human herpesvirus 6A, complete genome", 159378, 0, (0.0, 0.0, 0)),
+               ("NC_000898.1", "Human herpesvirus 6B, complete genome", 162114, 0, (0.0, 0.0, 0)),
+               ("NC_007605.1", "Human gammaherpesvirus 4, complete genome", 171823, 7, (0.0041, 0.006, 0)),
+               ("NC_001422.1", "Escherichia phage phiX174, complete genome", 5386, 1412, (1.0, 38.2, 37))]
+    rows = vr.build_rows([(a, t) for a, t, *_ in genomes],
+                         {a: {"reads": n, "length": ln} for a, _, ln, n, _ in genomes},
+                         {a: dep for a, *_, dep in genomes}, 31.0)
+    os.makedirs(os.path.join(d, "viral"), exist_ok=True)
+    with open(os.path.join(d, "viral", f"{SAMPLE}_viral.tsv"), "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=vr.HEADER, delimiter="\t", lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
+
+
+def lpa(d, rng):
+    """Step 46: bin/lpa_kiv2.py's assess on made-up depths, about 37 KIV-2
+    repeats at a flank depth near 31, half the KIV-2 depth at MAPQ 0."""
+    import lpa_kiv2
+    m, q1 = {}, {}
+    for *_, name in lpa_kiv2.REGIONS:
+        m[name] = rng.uniform(83, 90) if name.startswith("kiv2_") else rng.uniform(29.5, 32.5)
+        q1[name] = m[name] * (0.5 if name.startswith("kiv2_") else 0.98)
+    res = lpa_kiv2.assess(m, q1)
+    res["advice"] = lpa_kiv2.ADVICE
+    put(os.path.join(d, "lpa", f"{SAMPLE}_lpa_kiv2.tsv"),
+        "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in lpa_kiv2.ORDER))
+
+
+def chip(d, rng):
+    """Step 49: no CHIP call, and one depth row per gene of assets/chip_genes.tsv
+    at a made-up mean depth near 31, with bin/chip_report.py's own detection limit."""
+    import chip_report
+    table = chip_report.read_table(os.path.join(REPO, "assets", "chip_genes.tsv"))
+    rows = []
+    for r in table:
+        mean = rng.uniform(29.0, 33.0)
+        rows.append({"gene": r["gene"], "transcript": "", "chrom": "", "coding_bases": str(rng.randint(1500, 7000)),
+                     "mean_depth": f"{mean:.1f}", "detection_limit_vaf": f"{chip_report.detection_limit(mean):.3f}",
+                     "status": "covered"})
+    put(os.path.join(d, "chip", f"{SAMPLE}_chip.tsv"), "\t".join(chip_report.OUT_COLUMNS) + "\n")
+    put(os.path.join(d, "chip", f"{SAMPLE}_chip_depth.tsv"),
+        "\t".join(chip_report.DEPTH_COLUMNS) + "\n"
+        + "".join("\t".join(x[c] for c in chip_report.DEPTH_COLUMNS) + "\n" for x in rows))
 
 
 def traits(d):
@@ -906,13 +992,14 @@ def make(a):
              ("pgx", lambda r: pgx(d, a.genome_dir, r)), ("prs", lambda r: prs(d, a.genome_dir, r)),
              ("coverage", lambda r: coverage(d, r)), ("sample_qc", lambda r: sample_qc(d)),
              ("reads", lambda r: reads(d, r)), ("structural", lambda r: structural(d, r)),
-             ("annotsv", lambda r: annotsv(d)),
              ("repeats", lambda r: repeats_and_more(d, r)), ("clinical", lambda r: clinical(d, r)),
              # after "reads" and "sample_qc", whose files these two read
              ("read_count", lambda r: read_count(d)), ("mosaic", lambda r: mosaic(d, r)),
              ("ancestry_fine", lambda r: ancestry_fine(d, r)), ("paralogs", lambda r: paralogs(d)),
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
-             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d))]
+             ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
+             ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
+             ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")

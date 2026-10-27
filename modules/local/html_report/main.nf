@@ -10,7 +10,7 @@
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
     into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
-    cpic/, roh/, mito/, telomere/, hla_t1k/, hla_optitype/, kir/, pypgx/, annotsv/, traits/, couple/, ...); a step that did
+    cpic/, roh/, mito/, telomere/, hla_t1k/, hla_optitype/, kir/, pypgx/, annotsv/, traits/, chip/, couple/, ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
     name is the user's. indexcov's folder becomes indexcov/ itself (the
@@ -59,6 +59,7 @@ process HTML_REPORT {
             ${id}_roh.txt)                                place roh "\$f" ;;
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
             ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
+            ${id}_y_str.tsv)                              place y_str "\$f" ;;
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_smn_copy_number.tsv|${id}_hba_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
@@ -83,6 +84,9 @@ process HTML_REPORT {
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
             ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
+            ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
+            ${id}_viral.tsv)                              place viral "\$f" ;;
+            ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac

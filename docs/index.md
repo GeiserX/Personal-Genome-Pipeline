@@ -54,7 +54,7 @@ hide:
 - **Clinical screening:** known pathogenic variants from ClinVar, cancer predisposition panels with CPSR, VEP annotation with CADD, SpliceAI, REVEL and AlphaMissense, and slivar prioritisation of rare deleterious variants.
 - **Pharmacogenomics:** PharmCAT and pypgx star alleles across 23 genes, CYP2D6 structural alleles with Cyrius, CPIC dosing recommendations.
 - **Ancestry and lineage:** mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry placement against the 1000 Genomes panel (optional download), polygenic risk scores for 13 conditions and traits.
-- **Everything else the reads hold:** HLA type, repeat expansions at the 31 loci of ExpansionHunter's catalog (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
+- **Everything else the reads hold:** clonal haematopoiesis (CHIP) in the blood, with the detection limit at your depth (opt-in), HLA type, repeat expansions at the 31 loci of ExpansionHunter's catalog (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
   ![The step 24 HTML report: cards for quality control, mosaic loss of chromosome Y or X, variant calling, ClinVar, the couple carrier screen, pharmacogenomics, CPIC, CYP2D6 across callers, HLA typing, structural variants, cancer predisposition, repeat expansions, runs of homozygosity, the mitochondrial haplogroup, paralog genes, the Y haplogroup, the raw-data export, blood groups, telomere length, mitochondrial variants, the clinical filter and slivar, then the polygenic risk scores table and the fine-grained ancestry tables with the chromosome painting](images/demo-html-report.png){ loading=lazy }
@@ -112,6 +112,7 @@ graph LR
 ## Guides and reference
 
 - [Interpreting your results](interpreting-results.md): what each report means and what to do with it.
+- [Genome viewer](viewer.md): open any finding in igv.js with your own reads, served from your computer only.
 - [Look up a variant, an rsID or a gene](lookup.md): your genotype at one site or every variant in one gene, with what the reports say about it.
 - [Multi-sample comparison](multi-sample.md): partners, siblings, parents; carrier overlap and shared variants.
 - [Long-read sequencing](long-read-guide.md): Nanopore and PacBio HiFi entry paths and which steps change.
