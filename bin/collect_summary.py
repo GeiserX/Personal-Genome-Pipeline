@@ -2096,7 +2096,7 @@ def sec_archaic(d, s):
     p = first_existing(d, [f"archaic/{s}_archaic.tsv"])
     if not p:
         return None, {}
-    data = {r["key"]: r.get("value", "") for r in read_tsv(p) if r.get("key")}
+    data = {r["key"]: r.get("value") or "" for r in read_tsv(p) if r.get("key")}  # a short row: None
     out = {"population": data.get("population", "."),
            "longest": [data[k] for k in sorted((k for k in data if re.fullmatch(r"longest_[0-9]+", k)),
                                                key=lambda k: int(k.split("_")[1]))]}

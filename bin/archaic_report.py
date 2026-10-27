@@ -202,6 +202,9 @@ def cmd_table(a):
     print(f"{chrom}: {rows} rows", file=sys.stderr)
 
 
+# setup.sh --archaic stamps its table with the sha256 of everything above this
+# section, so an edit below it does not rebuild the table (about 165 GB of downloads).
+
 # --- genotypes (step 43) ----------------------------------------------------------
 
 def pseudo_columns(n):

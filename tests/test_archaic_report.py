@@ -191,6 +191,12 @@ try:
     check("a damaged summary is unreadable, not a share", False)
 except cs.Unreadable:
     check("a damaged summary is unreadable, not a share", True)
+write(f"{sdir}/archaic/S1_archaic.tsv", "key\tvalue\nneanderthal_segments\n")
+try:
+    cs.sec_archaic(sdir, "S1")
+    check("a row cut after its key is unreadable, not a crash", False)
+except cs.Unreadable:
+    check("a row cut after its key is unreadable, not a crash", True)
 check("no file: the section is missing", cs.sec_archaic(f"{TMP}/nowhere", "S1") == (None, {}))
 
 # --- 4. the real IBDmix -------------------------------------------------------------

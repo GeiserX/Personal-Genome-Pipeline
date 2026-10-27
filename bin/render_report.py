@@ -1814,7 +1814,7 @@ def html_report(s):
         ah = S["archaic"]["data"]
         a(card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
                [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
-               + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)[2:]] + [small_note(ARCHAIC_NOTE)]
+               + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)] + [small_note(ARCHAIC_NOTE)]
                if S["archaic"]["state"] in ("ok", "stale") else []))
     if S.get("lpa", MISSING)["state"] != "missing":
         lp = S["lpa"]["data"]
