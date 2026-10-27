@@ -12,7 +12,8 @@ two sha256), downloaded once into a cache directory (STRCHIVE_DIR, default
      STRchive id; the report's key loci keep their names (HTT, FMR1,
      C9ORF72, ATXN1, DMPK, RFC1); the thresholds of HTT, FMR1 and the FAME
      locus SAMD12; the loci without thresholds and why; and a planted extra
-     ExpansionHunter locus with no STRchive record stops it (exit 2);
+     ExpansionHunter locus with no STRchive record stops it (exit 2, and
+     neither the catalog nor the ranges table is written);
   3. bin/rfc1_motif.py on the catalog's motifs: every RFC1 case of
      tests/test_rfc1_motif.py gives the same verdict with the catalog's RFC1
      motifs and locus as with the built-in ones; at SAMD12 (FAME1) reads
@@ -96,10 +97,12 @@ def files():
 
 
 def build_catalog():
-    """The converted catalog (list of entries) and its path, in a temp file."""
+    """The converted catalog (list of entries) and its path, in a temp file; the
+    ranges table (--ranges) is str_ranges.tsv beside it."""
     rel, eh, loci = files()
     out = os.path.join(tempfile.mkdtemp(), "catalog.json")
-    rc = sc.main(["--eh", eh, "--loci", loci, "--release", rel, "--out", out])
+    rc = sc.main(["--eh", eh, "--loci", loci, "--release", rel, "--out", out,
+                  "--ranges", os.path.join(os.path.dirname(out), "str_ranges.tsv")])
     if rc != 0:
         raise SystemExit("FAIL the converter failed on the pinned files")
     return json.load(open(out)), out
@@ -159,10 +162,10 @@ def part_convert(rel, eh, loci, cat, cat_path):
         planted = os.path.join(tmp, "eh.json")
         json.dump(src + [{"LocusId": "PLANTED_GENE", "LocusStructure": "(CAG)*",
                           "ReferenceRegion": "chr1:1000-1030", "VariantType": "Repeat"}], open(planted, "w"))
-        out = os.path.join(tmp, "out.json")
-        rc = sc.main(["--eh", planted, "--loci", loci, "--release", rel, "--out", out])
-        check("control: a planted ExpansionHunter locus with no STRchive record stops the converter (exit 2, no file)",
-              rc == 2 and not os.path.exists(out), rc)
+        out, rng = os.path.join(tmp, "out.json"), os.path.join(tmp, "ranges.tsv")
+        rc = sc.main(["--eh", planted, "--loci", loci, "--release", rel, "--out", out, "--ranges", rng])
+        check("control: a planted ExpansionHunter locus with no STRchive record stops the converter (exit 2, "
+              "no catalog and no ranges table)", rc == 2 and not os.path.exists(out) and not os.path.exists(rng), rc)
 
 
 # --- 3. the motif count on the catalog --------------------------------------------------
