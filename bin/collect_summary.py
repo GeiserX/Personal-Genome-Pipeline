@@ -118,6 +118,11 @@ NOT_ASSESSED = [
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
                     "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
 
+# Added to NOT_ASSESSED unless step 52 (VNtyper) gave a positive, possible or
+# negative reading: no other step can see a frameshift inside the MUC1 VNTR.
+VNTYPER_NOT_ASSESSED = ("MUC1 VNTR frameshifts (ADTKD-MUC1): step 52 (VNtyper, opt-in) gave no reading; "
+                        "no standard caller sees them")
+
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
 
@@ -2102,6 +2107,22 @@ def sec_lpa(d, s):
     return p, data
 
 
+VNTYPER_STATUSES = ("positive", "possible", "negative", "not assessed")
+
+
+def sec_vntyper(d, s):
+    """Step 52's table (vntyper/<id>_vntyper.tsv, bin/vntyper_report.py):
+    VNtyper's MUC1 VNTR reading with its depth and sensitivity line."""
+    p = first_existing(d, [f"vntyper/{s}_vntyper.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in VNTYPER_STATUSES:
+        raise Unreadable(f"{os.path.basename(p)} has no status row ({', '.join(VNTYPER_STATUSES)})")
+    return p, {k: kv.get(k) or "." for k in ("status", "confidence", "variant", "flag", "alt_depth",
+                                             "vntr_mean_depth", "coverage_qc", "sensitivity", "message", "advice")}
+
+
 def sec_viral(d, s):
     """Step 47's table (viral/<id>_viral.tsv, bin/viral_report.py): one row per
     viral genome; the HHV-6 line and the genomes with reads (phiX included)."""
@@ -2939,6 +2960,7 @@ SECTIONS = [
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
+    ("vntyper", "MUC1 VNTR frameshifts (VNtyper)", "52", sec_vntyper),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
@@ -3121,7 +3143,10 @@ def collect(sample, sample_dir, declared_sex=None):
         + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
-           else [HBA_NOT_ASSESSED]),
+           else [HBA_NOT_ASSESSED])
+        + ([] if sections["vntyper"]["state"] == "ok"
+           and sections["vntyper"]["data"].get("status") in ("positive", "possible", "negative")
+           else [VNTYPER_NOT_ASSESSED]),
     }
     return summary
 

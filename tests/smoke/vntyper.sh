@@ -2,7 +2,8 @@
 # VNTYPER_IMAGE row: what step 52 runs, on VNtyper's own public test data
 # (tests/smoke/vntyper_testdata.py fetches two BAMs out of its Zenodo archive):
 # a sample with a MUC1 VNTR frameshift and one without. The image's samtools
-# indexes them, then VNtyper runs with the step's flags from /opt/vntyper,
+# indexes them, then VNtyper runs with the step's flags (and no IGV view in its HTML)
+# from /opt/vntyper,
 # the folder its config.json paths are relative to.
 set -e
 python3 /smoke/vntyper_testdata.py /out/data positive.bam negative.bam
@@ -15,18 +16,15 @@ for s in positive negative; do
   echo "== ${s}: coverage/coverage_summary.tsv"; cat "/out/${s}/coverage/coverage_summary.tsv"
 done
 # A BAM with the same header and no read over MUC1, as a genome slice without
-# chr1:155 Mb gives: what VNtyper writes then, and its exit code.
+# chr1:155 Mb gives: VNtyper stops with exit 1 and names the empty read
+# layout, which bin/vntyper_report.py turns into "no read over MUC1".
 samtools view -b -o /out/data/empty.bam /out/data/negative.bam chr1:1-1000 && samtools index /out/data/empty.bam
 rc=0
 (cd /opt/vntyper && vntyper pipeline --bam /out/data/empty.bam -o /out/empty --sample-name empty \
    --threads 2 --fast-mode --reference-assembly hg38 --report-igv off) > /out/empty.log 2>&1 || rc=$?
 echo "$rc" > empty_rc.txt
-echo "== empty: exit ${rc}"; tail -n 30 /out/empty.log
-ls -R /out/empty 2>/dev/null | head -40
-cat /out/empty/kestrel/kestrel_result.tsv /out/empty/coverage/coverage_summary.tsv 2>/dev/null || true
+echo "== empty: exit ${rc}"; grep -m1 "FASTQ layout" /out/empty.log || true
 vntyper --version > version.txt 2>&1
-ls -R /out/positive | head -60
-python3 -c "import json; d = json.load(open('/out/positive/pipeline_summary.json')); print(sorted(d)); print(json.dumps(d, indent=1)[:4000])"
 # calls.tsv: sample, Kestrel's confidence, the variant's name, the mean depth
 # over the VNTR and VNtyper's coverage verdict.
 python3 - <<'PY'

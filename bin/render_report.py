@@ -953,6 +953,11 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("vntyper", "MUC1 VNTR Frameshifts (ADTKD-MUC1, VNtyper)"):
+        for line in vntyper_lines(S["vntyper"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -1280,6 +1285,19 @@ def lpa_lines(d):
     if not d.get("variants"):
         out.append("rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)")
     out.append(d.get("flag_text", "."))
+    out.append(d.get("advice", "."))
+    return out
+
+
+def vntyper_lines(d):
+    """Step 52's reading: the result, the call, the depth with its
+    sensitivity, and the advice; the lines of the text section and the card."""
+    out = [f"Result: {d.get('status', '.')}", d.get("message", ".")]
+    if d.get("variant", ".") != ".":
+        out.append(f"Variant: {d['variant']} (Kestrel confidence {d.get('confidence', '.')}, "
+                   f"{d.get('alt_depth', '.')} k-mer paths for the variant)")
+    out.append(f"VNtyper's coverage check: {d.get('coverage_qc', '.')}")
+    out.append(d.get("sensitivity", "."))
     out.append(d.get("advice", "."))
     return out
 
@@ -1741,6 +1759,12 @@ def html_report(s):
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
                ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
+    if S.get("vntyper", MISSING)["state"] != "missing":
+        vn = S["vntyper"]["data"]
+        a(card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
+               ([stat("Result", badge(vn.get("status", "."), {"positive": "red", "possible": "yellow",
+                                                              "negative": "green"}.get(vn.get("status"), "gray")))])
+               + [f"    <p>{E(line)}</p>" for line in vntyper_lines(vn)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
