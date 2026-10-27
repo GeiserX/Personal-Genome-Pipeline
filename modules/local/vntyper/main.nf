@@ -34,10 +34,17 @@ process VNTYPER {
 
     script:
     """
+    # VNtyper refuses to write its log inside the folder of its input BAM (both
+    # the link's folder and the file's), and Nextflow stages the BAM in the task
+    # folder, where run/ goes: the BAM is linked from a folder of its own.
     W=\$PWD
+    mkdir -p in
+    ln -s "\$W/${bam}" in/${bam}
+    ln -s "\$W/${bai}" in/${bai}
     rc=0
-    ( cd /opt/vntyper && vntyper pipeline --bam "\$W/${bam}" -o "\$W/run" --sample-name ${meta.id} --threads ${task.cpus} \\
+    ( cd /opt/vntyper && vntyper pipeline --bam "\$W/in/${bam}" -o "\$W/run" --sample-name ${meta.id} --threads ${task.cpus} \\
         --fast-mode --reference-assembly hg38 ) > ${meta.id}_vntyper.log 2>&1 || rc=\$?
+    [ "\$rc" -eq 0 ] || { echo "WARNING: VNtyper exited \$rc; last lines of its log:" >&2; tail -n 20 ${meta.id}_vntyper.log >&2; }
     mkdir -p run
     vntyper_report.py --run-dir run --exit-code \$rc --log ${meta.id}_vntyper.log --out ${meta.id}_vntyper.tsv
 

@@ -94,7 +94,7 @@ cp "${T}/.nextflow.log" "${E2E_WORK}/logs/${CASE_NAME}.nextflow.log" 2>/dev/null
 a="${G}/${P}/vntyper/${P}_vntyper.tsv" b="${NF_OUT}/${P}/vntyper/${P}_vntyper.tsv"
 check "Nextflow wrote ${P}_vntyper.tsv" test -s "$b"
 check "Nextflow's ${P}_vntyper.tsv is the bash step's" cmp -s "$a" "$b"
-cmp -s "$a" "$b" || diff "$a" "$b" | head -20
+cmp -s "$a" "$b" || { diff "$a" "$b" | head -20; tail -n 20 "${NF_OUT}/${P}/vntyper/${P}_vntyper.log"; }
 check "control: the comparison sees a difference" bash -c '! cmp -s "$1" "$2"' _ \
   "${G}/${N}/vntyper/${N}_vntyper.tsv" "$b"
 HTML=$(find "$NF_OUT" -name "${P}_report.html" | head -n 1)
