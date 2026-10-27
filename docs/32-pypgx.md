@@ -59,13 +59,13 @@ The genes come from one table, `assets/pgx_genes.tsv`, one row per gene, read by
 | callable_without_alt | `yes` or `no` | `no`: the gene lies on an ALT contig of GRCh38, so a BAM aligned to the default no-ALT reference cannot hold it (GSTT1, see Limitations) |
 | alt_contig | a contig name or `.` | the contig a `no` row needs; the step looks for it in the BAM header |
 | second_caller | `cyrius`, `pharmcat` or `none` | the other tool in this pipeline that calls the gene |
-| pharmcat_outside_call | `yes` or `no` | `yes`: [step 36](36-pgx-consensus.md) can pass this gene's call to PharmCAT (CYP2D6, only when pypgx and Cyrius agree) |
+| pharmcat_outside_call | `yes` or `no` | a record, not a switch: `yes` marks the gene whose call [step 36](36-pgx-consensus.md) can pass to PharmCAT (CYP2D6, only when pypgx and Cyrius agree). Step 36 decides that in its own code and does not read this column, so changing it changes nothing |
 
 A malformed row (another mode, a gene twice, a `no` row without its contig) stops the step before any container runs. `PGX_GENES=/path/to/table.tsv ./scripts/32-pypgx.sh your_name` runs the script with another table.
 
 ### BAM-based genes (structural variation detection)
 
-A gene is a `bam` row when pypgx can call copy number for it: its own gene table (`pypgx/api/data/gene-table.csv` at the pinned tag, `PYPGX_BUNDLE_VERSION` in `versions.env`) marks it `SV=TRUE`, and the pypgx-bundle has its copy-number model (`cnv/GRCh38/<gene>.zip`). In 0.26.0 there are 13 such genes, and every one is a `bam` row. `tests/test_pypgx_genes.sh` reads that gene table and fails when a `bam` row has `SV=FALSE` (SLC28A3, a pypgx target gene with no copy-number model, stays a `vcf` gene) or when an `SV=TRUE` gene is not a `bam` row. Depth is prepared once for all of them, and each is called with `--depth-of-coverage` and `--variants`.
+A gene is a `bam` row when pypgx can call copy number for it: its own gene table (`pypgx/api/data/gene-table.csv` at the pinned tag, `PYPGX_BUNDLE_VERSION` in `versions.env`) marks it `SV=TRUE`, and the pypgx-bundle has its copy-number model (`cnv/GRCh38/<gene>.zip`). In 0.26.0 there are 13 such genes, and every one is a `bam` row. `tests/test_pypgx_genes.sh` reads that gene table and fails when a `bam` row has `SV=FALSE` (SLC28A3, a pypgx target gene with no copy-number model, could only be a `vcf` row; it is not in the table) or when an `SV=TRUE` gene is not a `bam` row. Depth is prepared once for all of them, and each is called with `--depth-of-coverage` and `--variants`.
 
 The structural variants named below are the ones pypgx's own gene pages at tag 0.26.0 list from real NGS studies (pypgx's SV names in brackets, which is what the `CNV_call` column shows).
 

@@ -55,6 +55,9 @@ process PYPGX {
         .findAll { line -> line && !line.startsWith('#') && !line.startsWith('gene\t') }
         .collect { line -> line.split('\t') as List }
     def bad_rows = pgx_rows.findAll { r -> r.size() != 6 || !(r[0] ==~ /[A-Za-z0-9-]+/) || !(r[1] in ['bam', 'vcf']) || !(r[2] in ['yes', 'no']) || (r[2] == 'no' && !(r[3] ==~ /[A-Za-z0-9_.-]+/)) || (r[2] == 'no' && r[3] == '.') }
+    if (pgx_rows.isEmpty()) {
+        error "assets/pgx_genes.tsv lists no gene"
+    }
     if (bad_rows || pgx_rows.collect { r -> r[0] }.unique().size() != pgx_rows.size()) {
         error "assets/pgx_genes.tsv has malformed rows or a gene twice: ${bad_rows.collect { r -> r.join(' ') }}"
     }

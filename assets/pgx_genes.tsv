@@ -13,8 +13,9 @@
 #   summary row says "not callable on this reference".
 # alt_contig: the contig a callable_without_alt=no gene needs; . otherwise.
 # second_caller: the other tool in this pipeline that calls the gene; none otherwise.
-# pharmcat_outside_call: yes = step 36 (bin/pgx_outside_calls.py) can pass this gene's call to
-#   PharmCAT as an outside call (CYP2D6, only when pypgx and Cyrius agree); no otherwise.
+# pharmcat_outside_call: a record, not a switch: yes = step 36 (bin/pgx_outside_calls.py) can pass
+#   this gene's call to PharmCAT as an outside call (CYP2D6, only when pypgx and Cyrius agree); no
+#   otherwise. Step 36 decides that in its own code and does not read this column.
 gene	mode	callable_without_alt	alt_contig	second_caller	pharmcat_outside_call
 CYP2D6	bam	yes	.	cyrius	yes
 CYP2A6	bam	yes	.	none	no
