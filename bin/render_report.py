@@ -948,6 +948,15 @@ def text_report(s):
         w(f"  {BLOODTYPE_NOTE}")
         w("")
 
+    if head("lpa", "Lp(a): LPA KIV-2 Repeat Count and Risk Variants"):
+        for line in lpa_lines(S["lpa"]["data"]):
+            w(f"  {line}")
+        w("")
+
+    if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
+        out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -1251,6 +1260,32 @@ BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antig
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
 
 
+CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
+             "a call here is not a diagnosis. A call is a change in a CHIP gene's published classes, found by "
+             "Mutect2 without a matched normal; one at a VAF of 35% or more is left out as possibly inherited. "
+             "docs/49-chip.md says how to read it.")
+
+
+def chip_lines(d, sample):
+    """The CHIP section: the calls, the detection limit at this depth, the genes too shallow to read."""
+    out = []
+    for c in d.get("calls", []):
+        out.append(f"{c['gene']} {c['protein_change']}: VAF {c['vaf']} ({c['alt_reads']} of {c['depth']} reads), {c['note']}")
+    if not d.get("calls"):
+        out.append("No CHIP call.")
+    if d.get("median_limit") is not None:
+        out.append(f"Detection limit: a clone of VAF about {d['median_limit'] * 100:.0f}% or more is found 8 times "
+                   f"in 10 at this depth (median {d['median_depth']:.0f}x over the genes' coding exons). CHIP starts "
+                   "at a VAF of 2%: smaller clones are likely missed, so no call does not rule one out.")
+    else:
+        out.append("No CHIP gene has the depth to find a clone: no result either way.")
+    if d.get("not_covered"):
+        out.append(f"Too shallow or not on the reference: {', '.join(d['not_covered'])}.")
+    out.append(f"{d.get('other', 0)} other protein changes listed, not counted: chip/{sample}_chip.tsv.")
+    out.append(CHIP_NOTE)
+    return out
+
+
 def bloodtype_body(d):
     """The blood group card: one row per system, then what the prediction is."""
     rows = "".join(f"<tr><td>{E(x['system'])}</td><td>{E(x['phenotype'])}</td><td>{E(x['genotype'])}</td>"
@@ -1258,6 +1293,25 @@ def bloodtype_body(d):
     return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
             "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
             + rows + "</table>", small_note(BLOODTYPE_NOTE)]
+
+
+def lpa_lines(d):
+    """Step 46's count with its interval, step 42's two LPA risk variants,
+    the flag and the advice: the lines of the text section and the card."""
+    if d.get("status") == "estimated":
+        out = [f"KIV-2 repeats (both chromosomes): {d['kiv2_copies']} (95% interval {d['ci95_low']} to "
+               f"{d['ci95_high']}), {d['class']}"]
+    else:
+        out = [f"KIV-2 repeats: {d.get('status', '.')}"]
+    out.append(f"  {d.get('message', '.')}")
+    for v in d.get("variants", []):
+        n = v["risk_alleles"]
+        out.append(f"{v['rsid']}: {v['genotype']} ({'not read' if n is None else str(n) + ' risk allele' + ('s' if n != 1 else '')})")
+    if not d.get("variants"):
+        out.append("rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)")
+    out.append(d.get("flag_text", "."))
+    out.append(d.get("advice", "."))
+    return out
 
 
 VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
@@ -1712,8 +1766,19 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("lpa", MISSING)["state"] != "missing":
+        lp = S["lpa"]["data"]
+        a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
+               ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
+               + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
+    if S.get("chip", MISSING)["state"] != "missing":
+        ch = S["chip"]["data"]   # the card shows its body only for a section that was read
+        a(card(S["chip"], "Clonal Haematopoiesis (CHIP)",
+               [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
+               + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
+               + [small_note(CHIP_NOTE)], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)

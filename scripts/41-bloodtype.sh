@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# 41-bloodtype.sh — Blood group antigens (red cell and platelet) predicted from the genome
+# 41-bloodtype.sh — Blood group antigens (red cell, platelet, neutrophil) predicted from the genome
 # Usage: ./scripts/41-bloodtype.sh <sample_name>
 #
 # Opt-in. Reads the sample's genotype at the defining variants of ABO (A1, A2,
 # B, O), RhCE, Kell, Duffy (with the GATA box), Kidd, MNS, Lutheran, Diego,
-# Dombrock, Colton and the platelet antigens HPA-1 to -5 and -15
-# (assets/bloodtype_markers.tsv), and RhD from read depth: the common
+# Dombrock, Colton, the platelet antigens HPA-1 to -6 and -15 and the
+# neutrophil antigens HNA-1, -3, -4 and -5 (assets/bloodtype_markers.tsv),
+# and RhD from read depth: the common
 # RhD-negative allele deletes the whole RHD gene, which a VCF does not show.
 # bin/bloodtype_report.py applies the rules; it is the same code as the
 # BLOODTYPE Nextflow processes. A prediction from the DNA, not a serological
