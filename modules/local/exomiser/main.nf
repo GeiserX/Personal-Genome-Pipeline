@@ -146,19 +146,22 @@ process EXOMISER_REPORT {
     publishDir { "${params.outdir}/${meta.id}/exomiser" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(variants), path(terms)
+    tuple val(meta), path(variants), path(terms, stageAs: 'searched_terms.tsv')
 
     output:
     tuple val(meta), path("${meta.id}_exomiser_top.tsv"), emit: top
     tuple val(meta), path("${meta.id}_exomiser.txt"),     emit: text
-    tuple val(meta), path("${meta.id}_exomiser_terms.tsv", includeInputs: true), emit: terms
+    tuple val(meta), path("${meta.id}_exomiser_terms.tsv"), emit: terms
     path "versions.yml",                                  emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
+    // The terms are copied, not passed on as the staged link: a link
+    // published with publish_dir_mode link breaks once work/ is cleaned.
     """
+    cp ${terms} ${meta.id}_exomiser_terms.tsv
     exomiser_report.py report --sample ${meta.id} --variants ${variants} --terms ${terms} \\
         --out ${meta.id}_exomiser_top.tsv --text ${meta.id}_exomiser.txt
 
@@ -170,6 +173,7 @@ process EXOMISER_REPORT {
 
     stub:
     """
+    cp ${terms} ${meta.id}_exomiser_terms.tsv
     printf 'rank\\tgene\\tmoi\\texomiser_score\\tphenotype_score\\tvariant_score\\tp_value\\tvariant\\tgenotype\\tconsequence\\thgvs\\tacmg\\tacmg_evidence\\tdisease\\tclinvar\\tmax_frequency\\n' > ${meta.id}_exomiser_top.tsv
     printf 'Symptoms searched: HP:0001250.\\n' > ${meta.id}_exomiser.txt
 
