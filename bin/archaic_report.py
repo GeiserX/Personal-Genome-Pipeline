@@ -399,11 +399,13 @@ def read_genes(path):
 
 
 def genes_in(genes, chrom, start, end):
-    """The names of the genes overlapping [start, end), once each, in order."""
+    """The names of the genes overlapping [start, end), once each, in order.
+    IBDmix's start is the segment's first site and its end the next site, past
+    the segment (its README, --inclusive-end); a GTF gene is [s, e], 1-based."""
     name = chrom if str(chrom).startswith("chr") else f"chr{chrom}"
     seen = []
     for s, e, n in sorted(genes.get(name, [])):
-        if s <= end and e >= start + 1 and n not in seen:
+        if s < end and e >= start and n not in seen:
             seen.append(n)
     return seen
 

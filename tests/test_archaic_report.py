@@ -197,6 +197,9 @@ try:
     check("a row cut after its key is unreadable, not a crash", False)
 except cs.Unreadable:
     check("a row cut after its key is unreadable, not a crash", True)
+genes = {"chr22": [(90, 100, "ENDS_AT_START"), (100, 120, "INSIDE"), (200, 210, "STARTS_AT_END"), (50, 99, "BEFORE")]}
+check("genes: a segment [100, 200) takes a gene ending at its first site, not one starting at its end",
+      ar.genes_in(genes, "22", 100, 200) == ["ENDS_AT_START", "INSIDE"], ar.genes_in(genes, "22", 100, 200))
 check("no file: the section is missing", cs.sec_archaic(f"{TMP}/nowhere", "S1") == (None, {}))
 
 # --- 4. the real IBDmix -------------------------------------------------------------

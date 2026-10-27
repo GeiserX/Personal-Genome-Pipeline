@@ -1312,8 +1312,11 @@ install_archaic() {
     rm -f "${dir}/regions.bed"
     chroms=$(seq 1 22 | tr '\n' ' ')
   fi
+  [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
   stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
-  if [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
+  local have=1
+  for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
+  if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
     echo "[OK] archaic data ${ARCHAIC_DATA_VERSION} (step 43): ${dir}"
     return 0
   fi
