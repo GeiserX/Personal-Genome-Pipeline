@@ -2,8 +2,9 @@
 # It sits in bin/ because bin/ is the only repository folder every container mounts (the bash steps
 # mount it as /pgp-bin, Nextflow puts it on each task's PATH), as bin/str_intermediate_ranges.tsv.
 # docs/cn-loci.md explains every column and how to add a locus; tests/test_copy_number.py checks
-# every row and that no row's targets or controls overlap a gene the pinned Parascopy data models
-# (assets/parascopy_models_v1.7.txt), unless cross_check names that model.
+# every row and that no row's targets or controls overlap any region (main or paralog copy) of a
+# model the pinned Parascopy data holds (assets/parascopy_models_v1.7.txt), except RHD (RHCE's
+# model) and UGT2B17 (UGT2B15's), the two exemptions the test names.
 #
 # Coordinates are GRCh38 (no-ALT analysis set) in BED form: 0-based start, end exclusive, as
 # samtools bedcov reads them. targets, controls, details: NAME:start-end[:label], separated by ";",

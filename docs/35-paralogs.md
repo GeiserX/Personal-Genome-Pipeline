@@ -91,7 +91,7 @@ On the CI fixture the step takes 8 seconds: one thread, the background depth ove
 
 ## HBA1 and HBA2 from Depth
 
-HBA1 and HBA2 are near-identical, so a short read from one may be placed on the other. But an aligner that reports every read puts each read from either on one of the two, with mapping quality 0 where it fits both equally. So the depth over both gene bodies together, against single-copy sequence on each side of the cluster, counts the genes: `bin/hba_copy_number.py` computes
+HBA1 and HBA2 are near-identical, so a short read from one may be placed on the other. But an aligner that reports every read puts each read from either on one of the two, with mapping quality 0 where it fits both equally. So the depth over both gene bodies together, against single-copy sequence on each side of the cluster, counts the genes: the HBA row of `bin/cn_loci.tsv`, run by `bin/copy_number.py` ([the locus catalog](cn-loci.md)), computes
 
     estimate = 2 x (depth over HBA2 + depth over HBA1) / mean flank depth
 

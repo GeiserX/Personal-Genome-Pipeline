@@ -5,9 +5,10 @@ copy-number locus.
   1. the catalog: every row loads with its columns checked; a broken row
      (a bad kind, a segment without a span, a class call without an
      interval, a reused segment name) is refused;
-  2. one owner per locus: no row's targets or controls overlap a gene the
-     pinned Parascopy data models (assets/parascopy_models_v1.7.txt), unless
-     cross_check names that model; a planted AMY1C row is caught;
+  2. one owner per locus: no row's targets or controls overlap any region
+     (main or paralog copy) of a model the pinned Parascopy data holds
+     (assets/parascopy_models_v1.7.txt), except the pairs EXEMPT lists; a
+     planted AMY1C row and a planted row on C4A's copy (C4B) are caught;
   3. parity: the depths of tests/test_hba_copy_number.py and
      tests/test_lpa_kiv2.py give, through the engine, the very tables the
      code before the engine wrote (GOLD, frozen from it);
@@ -165,22 +166,31 @@ def bedcov(path, prow, depth):
             f.write(f"{c}\t{s}\t{e}\t{n}\t{round(depth[n] * (e - s))}\n")
 
 
+# The only rows allowed to overlap a Parascopy model, each for a stated reason.
+# A new pair here needs the same: a cross_check in the catalog does not exempt a row.
+EXEMPT = {
+    # Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a
+    # depth row; RHCE's model holds RHD as a paralog copy and is its cross-check.
+    ("RHD", "RHCE"),
+    # The row only records the thresholds the report applies to CNVpytor's level;
+    # UGT2B15's model holds stretches of UGT2B17 as paralog copies. Owner moves to pypgx.
+    ("UGT2B17", "UGT2B15"),
+}
+
+
 def overlaps(loc_row, models):
-    """[(model, segment)] of a parsed row's targets and controls that overlap a model region."""
+    """[(model, segment)] of a parsed row's targets and controls that overlap any
+    region of a model (1-based, both ends included, against 0-based segments)."""
     hits = []
     for n, s, e, _ in loc_row["_targets"] + loc_row["_controls"]:
-        for name, (c, ms, me) in models.items():
-            if c == loc_row["chrom"] and s < me and ms - 1 < e:
+        for name, regs in models.items():
+            if any(c == loc_row["chrom"] and s < me and ms - 1 < e for c, ms, me, _ in regs):
                 hits.append((name, n))
     return hits
 
 
 def owner_violations(cat, models):
-    out = []
-    for loc, r in cat.items():
-        allowed = {x.split(":", 1)[1] for x in r["cross_check"].split(",") if x.startswith("parascopy:")}
-        out += [(loc, m, seg) for m, seg in overlaps(r, models) if m not in allowed]
-    return out
+    return [(loc, m, seg) for loc, r in cat.items() for m, seg in overlaps(r, models) if (loc, m) not in EXEMPT]
 
 
 def main():
@@ -236,26 +246,43 @@ def main():
         for line in f:
             if line.startswith("#") or not line.strip():
                 continue
-            name, reg = line.split()
+            name, reg, what = line.split()
             c, span = reg.split(":")
             s, e = span.split("-")
-            models[name] = (c, int(s), int(e))
+            models.setdefault(name, []).append((c, int(s), int(e), what))
     check("Parascopy model list: 167 models, AMY1C, C4A, CFH, CFHR4, FCGR3A, CHRNA7, APOBEC3A, GYPA, RHCE among them",
           len(models) == 167 and {"AMY1C", "C4A", "CFH", "CFHR4", "FCGR3A", "CHRNA7", "APOBEC3A", "GYPA", "RHCE"}
           <= set(models), len(models))
+    check("Parascopy model list: one main region per model, and the paralog copies (over 1,000 regions in all)",
+          all(sum(w == "main" for *_, w in r) == 1 and all(w in ("main", "copy") for *_, w in r)
+              for r in models.values()) and sum(len(r) for r in models.values()) > 1000,
+          sum(len(r) for r in models.values()))
     for loc, r in cat.items():
         for x in r["cross_check"].split(","):
             if x.startswith("parascopy:"):
                 check(f"catalog {loc}: cross_check {x} is a pinned model", x.split(":", 1)[1] in models, x)
     v = owner_violations(cat, models)
     check("owner: no row counts a gene a pinned Parascopy model owns", not v, v)
+    stale = [x for x in EXEMPT if x[0] not in cat or x[1] not in {m for m, _ in overlaps(cat[x[0]], models)}]
+    check("owner: every exemption is still needed (its row overlaps its model)", not stale, stale)
     planted = dict(cat)
     planted["AMY1"] = cn.parse_row(row(locus="AMY1", chrom="chr1", targets="AMY1C:103745500-103760000",
                                        controls="amy_l:103000000-103010000;amy_r:104000000-104010000"))
     v = owner_violations(planted, models)
     check("owner: a planted AMY1C row is caught", v == [("AMY1", "AMY1C", "AMY1C")], v)
-    check("owner: RHD and its flanks lie outside every model's main region (RHCE, its cross-check, counts RHD as a copy)",
-          overlaps(cat["RHD"], models) == [], overlaps(cat["RHD"], models))
+    planted = dict(cat)
+    planted["C4B"] = cn.parse_row(row(locus="C4B", chrom="chr6", targets="C4B:32014800-32035400",
+                                      controls="c4_l:31000000-31010000;c4_r:33500000-33510000"))
+    v = owner_violations(planted, models)
+    check("owner: a planted row on C4A's paralog copy (C4B) is caught", v == [("C4B", "C4A", "C4B")], v)
+    planted = dict(cat)
+    planted["GYPA"] = cn.parse_row(row(locus="GYPA", chrom="chr4", cross_check="parascopy:GYPA",
+                                       targets="GYPA_T:144140000-144150000",
+                                       controls="gy_l:140000000-140010000;gy_r:150000000-150010000"))
+    v = owner_violations(planted, models)
+    check("owner: naming the model in cross_check does not exempt a row", ("GYPA", "GYPA", "GYPA_T") in v, v)
+    check("owner: RHD overlaps RHCE's model only (a paralog copy), the exempt pair",
+          {m for m, _ in overlaps(cat["RHD"], models)} == {"RHCE"}, overlaps(cat["RHD"], models))
 
     # 3. parity with the code before the engine
     for (h2, h1, left, right, share), want in GOLD["hba"]:
@@ -293,6 +320,15 @@ def main():
                           bedcov=".", targets="seg1:50000-50500;seg2:50500-51000"))
     b = cn.assess(iv, {"fl_a": 20.0, "fl_b": 40.0, "seg1": 45.0, "seg2": 45.0})
     check("interval row: pooled 45x over pooled 30x controls is 3 copies", (b["status"], b["copies"]) == ("called", 3), b)
+    b = cn.assess(cat["RHD"], {n: 30.0 for *_, n in cn.regions(cat["RHD"])})
+    check("a row without a MAPQ 0 guard, given no MAPQ >= 1 depths, reports no MAPQ 0 share",
+          b["status"] == "called" and b["mapq0_share"] is None, b)
+    try:
+        cn.assess(g, m)
+        got = "no error"
+    except ValueError as e:
+        got = str(e)
+    check("a row with a MAPQ 0 guard, given no MAPQ >= 1 depths, is refused", "MAPQ >= 1 depths are needed" in got, got)
 
     # 5. a broken control
     bad = {"fl_a": 0.0, "fl_b": 30.0, "TESTG": 30.0}
@@ -349,6 +385,17 @@ def main():
                              capture_output=True, text=True)
         check("call: a row with a MAPQ 0 guard needs --bedcov-mapq1", out.returncode == 2 and "--bedcov-mapq1" in out.stderr,
               out)
+        empty = os.path.join(t, "empty.tsv")
+        open(empty, "w").close()
+        for loc, key in (("HBA", "alpha_globin_genes"), ("LPA_KIV2", "kiv2_copies")):
+            if os.path.exists(tab):
+                os.remove(tab)
+            out = subprocess.run([sys.executable, SCRIPT, "call", "--locus", loc, "--bedcov", empty,
+                                  "--bedcov-mapq1", empty, "--table", tab], capture_output=True, text=True)
+            tab_rows = dict(x.split("\t", 1) for x in open(tab).read().splitlines()[1:]) if os.path.exists(tab) else {}
+            check(f"call {loc} on two empty tables (no reads on the contig): exit 0, not assessed",
+                  out.returncode == 0 and tab_rows.get("status") == "not assessed" and tab_rows.get(key) == "."
+                  and "no chr" in tab_rows.get("message", ""), (out, tab_rows))
 
     # 7. the wiring
     def read(p):

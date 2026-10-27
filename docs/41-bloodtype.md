@@ -58,7 +58,7 @@ A site the VCF has no record for is the reference allele when the BAM has at lea
 |---|---|
 | `bloodtype/${SAMPLE}_bloodtype.tsv` | one row per system: `system`, `phenotype` (for example `O`, `D+`, `Fy(a+b-)`, `K-k+ Kp(a-b+) Js(a-b+)`), `genotype` (the alleles, for example `O.01/O.01`, `RHD/RHD deleted (RHD copies by read depth 0.91)`), `confidence`, `note` |
 | `bloodtype/${SAMPLE}_bloodtype_evidence.tsv` | one row per site (status: called, covered, assumed, low depth or no call; alt copies; read depth) and per RHD region (mean depth and copies) |
-| `bloodtype/${SAMPLE}_bloodtype_depth.tsv` | samtools `bedcov -Q 20 -j` over the marker table (with a BAM) |
+| `bloodtype/${SAMPLE}_bloodtype_depth.tsv` | samtools `bedcov -Q 20 -j` over the marker sites and the RHD regions of `bin/cn_loci.tsv`, as a 4-column BED (chrom, start, end, name) plus the depth sum (with a BAM) |
 
 Confidence:
 

@@ -14,7 +14,7 @@ The control segments carry two copies on a diploid genome, so `scale` turns the 
 
 Before it calls, the engine checks, in this order:
 
-1. **No data**: both bedcov tables are empty (the BAM has no reads on that contig): not assessed.
+1. **No data**: both bedcov tables are empty (the BAM has no reads on that contig): not assessed, with exit code 0.
 2. **Broken control**: a control segment has no read while the other controls have at least the row's minimum depth. The engine stops with `BROKEN_CONTROL` and exit code 3. Either the row's coordinates are wrong, or the sample lacks that stretch. A number from such a run would mean nothing.
 3. **Control depth** under `min_control_depth`: not assessed. With `control_depth` `flanks`, each flank must reach it.
 4. **Flanks disagree** by more than `max_control_ratio` (`flanks` only): not assessed. A deletion that reaches one flank would skew the ratio.
@@ -61,9 +61,14 @@ Then the row's `call` column decides:
 
 ## One owner per locus
 
-A gene gets a row only when no pinned caller already counts it. The pinned Parascopy data (version 1.7) models 167 genes, among them AMY1C, C4A, CFH, CFHR4, FCGR3A, CHRNA7, APOBEC3A and GYPA. Parascopy owns those, so the engine never gets a row for them. `assets/parascopy_models_v1.7.txt` lists each model's region, and `tests/test_copy_number.py` fails when a row's targets or controls overlap one, unless the row's `cross_check` names that model. A planted AMY1C row shows the check catching it.
+A gene gets a row only when no pinned caller already counts it. The pinned Parascopy data (version 1.7) models 167 genes, among them AMY1C, C4A, CFH, CFHR4, FCGR3A, CHRNA7, APOBEC3A and GYPA. Parascopy owns those, so the engine never gets a row for them. A model covers its main region and the paralog copies it counts with it: C4A's model also covers C4B. `assets/parascopy_models_v1.7.txt` lists every one of those regions, and `tests/test_copy_number.py` fails when a row's targets or controls overlap one. Naming the model in `cross_check` does not lift that. Planted rows on AMY1C and on C4B show the check catching them.
 
-RHD is an exception on purpose. Step 41 runs without Parascopy, which is opt-in, and the engine reads only RHD and its flanks, outside every Parascopy model. Parascopy's RHCE model also covers RHD, as one of RHCE's copies, so `cross_check` names it as a second opinion, not a second owner.
+Two rows are exempt on purpose, and the test lists them by name:
+
+- **RHD**: RHCE's model holds most of RHD as one of its paralog copies. Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a depth row. `cross_check` names RHCE as a second opinion, not a second owner.
+- **UGT2B17**: UGT2B15's model holds stretches of UGT2B17 as paralog copies. The row only records the thresholds the report applies to CNVpytor's level; the engine does not count it from bedcov.
+
+The test also fails when an exemption no longer matches an overlap, so the list cannot go stale.
 
 ## Adding a locus
 
@@ -75,6 +80,6 @@ RHD is an exception on purpose. Step 41 runs without Parascopy, which is opt-in,
 
 ## How it is tested
 
-- `tests/test_copy_number.py` checks every row and refuses broken ones. It runs the owner check with a planted AMY1C row. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
+- `tests/test_copy_number.py` checks every row and refuses broken ones. It runs the owner check with planted AMY1C and C4B rows. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
 - The fake-docker case `cn-engine-calls` runs steps 35, 41 and 46 with made-up depths. Each step calls `copy_number.py` once for its regions, step 35 and 46 once more for the call, and none calls the old per-gene scripts. A control exon with no read fails step 46 with `BROKEN_CONTROL`.
-- The e2e case `cn-engine-1-parity` runs steps 41 and 46 and the HBA block of step 35 on HG002's real reads at the three loci, at full depth and at an eighth of it. Each table must be byte for byte what the code before the engine wrote.
+- The e2e case `cn-engine-1-parity` runs steps 41 and 46 and the HBA block of step 35 on HG002's real reads at the three loci, at full depth and at an eighth of it. The code before the engine is fetched by its commit, 6056452, so the comparison still means something after this change is on main. The LPA and HBA tables and the RhD rows of step 41's table and evidence file must be byte for byte what it wrote.
