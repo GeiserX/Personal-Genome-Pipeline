@@ -14,6 +14,9 @@
 */
 
 nextflow.enable.dsl = 2
+// Module-scoped tools in modules/local/<module>/resources/usr/bin (the MoChA
+// image needs a ps for the task metrics).
+nextflow.enable.moduleBinaries = true
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
