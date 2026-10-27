@@ -6,7 +6,7 @@
 #     dbSNP's VCF of the pinned build holds today; controls: a rules copy with
 #     rs1726866's ref and alt swapped fails, naming it, and a copy of the
 #     script whose pinned table differs from dbSNP fails the online compare;
-#   - TAS2R38 on a made-up chr7 (N everywhere except a 2.6 kb window around the
+#   - TAS2R38 on a made-up chr7 of GRCh38's length (N everywhere except a 2.6 kb window around the
 #     gene, its three sites carrying the GRCh38 bases), one gVCF heterozygous at
 #     the three sites, four samples:
 #       GRSPAN    read pairs that span the three sites, from PAV and AVI copies
@@ -62,7 +62,7 @@ python3 - "$RD" "$G" <<'PY'
 import random, sys
 rd, g = sys.argv[1], sys.argv[2]
 random.seed(42)
-LEN, W0, W1 = 141975000, 141972000, 141974600   # chr7 length; the window [W0, W1), 1-based
+LEN, W0, W1 = 159345973, 141972000, 141974600   # GRCh38 chr7 length; the window [W0, W1), 1-based
 S3, S2, S1 = 141972804, 141972905, 141973545     # rs10246939 (T), rs1726866 (G), rs713598 (C)
 REF = {S3: "T", S2: "G", S1: "C"}
 win = [random.choice("ACGT") for _ in range(W1 - W0)]
@@ -157,7 +157,7 @@ sam(f"{g}/GRNOSPAN/aligned/GRNOSPAN.sam", singles(PAV, "pav") + singles(AVI, "av
 PY
 check "the synthetic chr7 was written" test -s "${RD}/chr7.fa"
 sam faidx reference-genotype-rules/chr7.fa
-check_eq "chr7.fa.fai: one contig of 141975000 bases" "$(cut -f1,2 "${RD}/chr7.fa.fai" 2>/dev/null | tr '\t' ' ')" "chr7 141975000"
+check_eq "chr7.fa.fai: one contig of GRCh38 chr7's length" "$(cut -f1,2 "${RD}/chr7.fa.fai" 2>/dev/null | tr '\t' ' ')" "chr7 159345973"
 for s in GRSPAN GRSWAP GRNOSPAN GRREF; do
   in_genome "$BCFTOOLS_IMAGE" bash -c "bcftools view -Oz -o '${s}/vcf/${s}.g.vcf.gz' '${s}/vcf/${s}.g.vcf' && bcftools index -t '${s}/vcf/${s}.g.vcf.gz'"
   check "${s}: the gVCF is indexed" test -s "${G}/${s}/vcf/${s}.g.vcf.gz.tbi"
