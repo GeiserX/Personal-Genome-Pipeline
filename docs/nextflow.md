@@ -60,6 +60,8 @@ nextflow run main.nf \
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
+#    --tools '...,archaic'                     + --archaic_data (setup.sh --archaic), --archaic_pop, --hla_genes for the
+#                                                genes of each segment (docs/43-archaic.md)
 #    mito_variants (a default tool) takes --mito_clinvar <clinvar/clinvar_chr.vcf.gz, its .tbi beside it>
 #                                                and --gnomad_mito <gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz>
 #                                                (setup.sh installs both): ClinVar and gnomAD for each chrM call,
@@ -203,6 +205,7 @@ results/
 │   │                       #   from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
+│   ├── archaic/            # Neanderthal and Denisovan share and segments (IBDmix, opt-in: archaic)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
 │   ├── telomere/           # Telomere length estimation
@@ -300,6 +303,7 @@ The pipeline and the scripts run the same commands at the same tool releases, so
 | sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
 | y_haplogroup | Yleaf's prediction table; on the same hardening run |
 | traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF |
+| archaic | `<sample>_archaic.tsv`, `<sample>_archaic_segments.tsv` and `<sample>_archaic.txt`, byte for byte; in case `archaic-ancestry-1`, which runs step 43 and `--tools archaic` on the same VCF and table |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 

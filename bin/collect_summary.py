@@ -104,7 +104,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -1491,6 +1491,34 @@ def sec_ancestry_fine(d, s):
     return p, out
 
 
+def sec_ancient(d, s):
+    """Step 44: ancient/<s>_ancient.tsv (the nearest ancient groups on the AADR
+    panel's PCs), <s>_ancient_info.tsv (release, sites used, people, the
+    sample's PC1 and PC2) and the plot, which travels in the summary so the
+    HTML report shows it from the summary alone."""
+    p = first_existing(d, [f"ancient/{s}_ancient.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = {"rank", "group", "n", "distance", "dates", "country", "locality"}
+    if not rows or not need <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {sorted(need)}")
+    info = {}
+    ip = first_existing(d, [f"ancient/{s}_ancient_info.tsv"])
+    if ip:
+        info = {r.get("key"): r.get("value") for r in read_tsv(ip)}
+    out = {"nearest": [{k: r[k] for k in ("rank", "group", "n", "distance", "dates", "country", "locality")} for r in rows],
+           "release": info.get("release") or ".", "sites_used": info.get("sites_used") or ".",
+           "panel_sites": info.get("panel_sites") or ".", "ancient_people": info.get("ancient_people") or ".",
+           "ancient_groups": info.get("ancient_groups") or ".", "present_day_people": info.get("present_day_people") or ".",
+           "plot_svg": None}
+    svg = first_existing(d, [f"ancient/{s}_ancient_pca.svg"])
+    if svg and os.path.getsize(svg) < 3_000_000:
+        with open(svg, "rb") as f:
+            out["plot_svg"] = base64.b64encode(f.read()).decode()
+    return p, out
+
+
 def sec_manta(d, s):
     p = first_existing(d, ["manta/results/variants/diploidSV.vcf.gz", "manta/*diploidSV.vcf.gz",
                            "manta/**/diploidSV.vcf.gz"])
@@ -2054,6 +2082,28 @@ def sec_bloodtype(d, s):
                 "confidence": r["confidence"] or "."} for r in rows]
     by = {x["system"]: x["phenotype"] for x in systems}
     return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
+
+
+def sec_archaic(d, s):
+    """Step 43's summary (archaic/<id>_archaic.tsv, bin/archaic_report.py): the
+    Neanderthal and Denisovan shares and segment counts, the analysed span and
+    the ten longest segments."""
+    p = first_existing(d, [f"archaic/{s}_archaic.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"]: r.get("value") or "" for r in read_tsv(p) if r.get("key")}  # a short row: None
+    out = {"population": data.get("population", "."),
+           "longest": [data[k] for k in sorted((k for k in data if re.fullmatch(r"longest_[0-9]+", k)),
+                                               key=lambda k: int(k.split("_")[1]))]}
+    for k in ("neanderthal_segments", "neanderthal_bp", "denisovan_segments", "denisovan_bp", "analysed_bp"):
+        if not re.fullmatch(r"[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        out[k] = int(data[k])
+    for k in ("neanderthal_percent", "denisovan_percent"):
+        if not re.fullmatch(r"[0-9]+\.[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no percentage for {k}")
+        out[k] = data[k]
+    return p, out
 
 
 # The two LPA risk variants of assets/traits.tsv (rsid -> its alt, the allele
@@ -2967,6 +3017,8 @@ SECTIONS = [
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
+    ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
+    ("ancient", "Ancient populations (AADR PCA)", "44", sec_ancient),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
     ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
