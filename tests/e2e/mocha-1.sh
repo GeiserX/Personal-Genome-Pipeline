@@ -8,8 +8,8 @@
 #   - setup.sh --mocha-data with MOCHA_REGIONS cut to the fixture's chr20 slice:
 #     the 1000 Genomes chr20 file is checked against the release's md5 and cut,
 #     the genetic map of chr20 unpacked, the folder under 200 MB;
-#   - HG002 (case 21's VCF) phased by Beagle on that slice: phased hets, and no
-#     mosaic call reported;
+#   - HG002 (case 21's VCF) phased by Beagle on that slice: phased hets, MoChA
+#     makes no call and none is reported;
 #   - MOSAIC, a synthetic phased VCF on chr16, chr19, chr20 and chr22 at 30x
 #     (REF bases from the fixture reference) with a 20 Mb CN-LOH on 20p from
 #     the telomere in 15% of the cells (the haplotype balance 0.575 instead of
@@ -30,6 +30,7 @@ nrep() { reported "$1" | grep -c . || true; }
 between() { awk -v x="${1:-}" -v lo="$2" -v hi="$3" 'BEGIN {exit !(x ~ /^[0-9.]+$/ && x + 0 >= lo && x + 0 <= hi)}'; }
 differs() { [ -n "$1" ] && [ "$1" != "$2" ]; }
 not_same() { ! cmp -s "$1" "$2"; }
+status_ok() { [ "$1" = assessed ] || { [ "$1" = "not assessed" ] && [ -n "$2" ]; }; }
 retry() { local i; for i in 1 2 3 4; do "$@" && return 0; [ "$i" -lt 4 ] && sleep $((i * 15)); done; return 1; }
 show() { echo "--- $1"; cat "${G}/$1/mosaic/$1_mocha_summary.tsv" "${G}/$1/mosaic/$1_mocha.tsv" \
   "${G}/$1/mosaic/$1_mocha_calls_raw.tsv" "${G}/$1/mosaic/$1_mocha_stats.tsv" "${G}/$1/mosaic/$1_mocha_sites.tsv" 2>/dev/null; }
@@ -76,7 +77,12 @@ show "$SAMPLE"
 check_eq "HG002: phased by Beagle" "$(summ "$SAMPLE" phasing)" beagle
 check_eq "HG002: MoChA read chr20, the panel's one chromosome" "$(summ "$SAMPLE" chromosomes)" chr20
 check_ge "HG002: phased heterozygous sites" "$(summ "$SAMPLE" phased_het_sites)" 100
-check_eq "HG002: assessed" "$(summ "$SAMPLE" status)" assessed
+# 500 kb hold about 500 hets, too few for the genome-wide BAF autocorrelation
+# MoChA's sample filter reads, so the status may be either state (with a
+# reason); MoChA's own call count is what must be zero.
+check "HG002: a status with its reason ($(summ "$SAMPLE" status), baf_auto $(summ "$SAMPLE" baf_auto))" \
+  status_ok "$(summ "$SAMPLE" status)" "$(summ "$SAMPLE" message)"
+check_eq "HG002 chr20: MoChA made no call" "$(summ "$SAMPLE" calls_mocha)" 0
 check_eq "HG002 chr20: no mosaic call reported" "$(nrep "$SAMPLE")" 0
 echo "mocha: HG002 chr20 slice: $(summ "$SAMPLE" het_sites) hets ($(summ "$SAMPLE" phased_het_sites) phased)," \
   "depth $(summ "$SAMPLE" depth)x, floor $(summ "$SAMPLE" floor), $(summ "$SAMPLE" calls_mocha) MoChA calls" >> "$E2E_NOTES"
@@ -156,6 +162,7 @@ check "MOSAIC: and ends at 19 to 21 Mb ($(cut -f3 <<< "$ROW"))" between "$(cut -
 check "MOSAIC: cell fraction 0.10 to 0.20 ($(cut -f7 <<< "$ROW"))" between "$(cut -f7 <<< "$ROW")" 0.10 0.20
 check_eq "MOSAIC0 (no shift): no call reported" "$(nrep MOSAIC0)" 0
 check "red control: the one-call check fails on MOSAIC0" test "$(nrep MOSAIC0)" != 1
+check "red control: the no-MoChA-call check on HG002 fails on MOSAIC ($(summ MOSAIC calls_mocha))" differs "$(summ MOSAIC calls_mocha)" 0
 echo "mocha: MOSAIC planted CN-LOH chr20:1-20000000 at 0.15: $(cut -f1-7 <<< "$ROW" | tr '\t' ' ');" \
   "floor $(summ MOSAIC floor), depth $(summ MOSAIC depth)x; MOSAIC0 $(summ MOSAIC0 calls_mocha) MoChA calls" >> "$E2E_NOTES"
 
