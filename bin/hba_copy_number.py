@@ -72,6 +72,10 @@ def read_bedcov(path):
 def table(b):
     """([(metric, value)], summary line) of the engine's HBA block."""
     r, m = row(), b["depths"]
+    if b["reason"] == "no_data":
+        out = {k: "." for k in ORDER}
+        out.update(status="not assessed", message="not assessed: the BAM has no chr16 reads, so HBA1 and HBA2 have none")
+        return [(k, out[k]) for k in ORDER], f"HBA1/HBA2: {out['message']}"
     left, right = m.get("flank_left"), m.get("flank_right")
     share = b["mapq0_share"]
     out = {"hba2_depth": round(m["HBA2"], 2), "hba1_depth": round(m["HBA1"], 2),

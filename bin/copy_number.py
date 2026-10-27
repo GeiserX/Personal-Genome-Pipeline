@@ -228,12 +228,16 @@ def reading(row, key):
 
 def assess(row, m, q1=None):
     """The locus's block for mean depths m (every read) and q1 (reads of
-    MAPQ >= 1, or None for a row without a MAPQ 0 guard).
+    MAPQ >= 1, or None for a row without a MAPQ 0 guard; mapq0_share is then
+    None).
 
     status is 'called' or 'not assessed'; reason names the guard that
     stopped it: no_data, low_control_depth, controls_disagree,
     low_mapq0_share, high_mapq0_share, below_floor, between_counts."""
-    q1 = q1 if q1 is not None else {}
+    guarded = q1 is not None
+    if not guarded and (row["_mapq0_min"] is not None or row["_mapq0_max"] is not None):
+        raise ValueError(f"{row['locus']} has a MAPQ 0 guard: the MAPQ >= 1 depths are needed")
+    q1 = q1 if guarded else {}
     tg, ct = row["_targets"], row["_controls"]
     b = {"locus": row["locus"], "status": "not assessed", "reason": None, "estimate": None, "total": None,
          "copies": None, "ci95": None, "class": None, "target_depth": None, "control_depth": None,
@@ -249,7 +253,8 @@ def assess(row, m, q1=None):
                                 "coordinates in bin/cn_loci.tsv (or the sample lacks that stretch)")
     T, C = _combine(row["target_depth"], tg, m), _combine(row["control_depth"], ct, m)
     tq = _combine(row["target_depth"], tg, {n: q1.get(n, 0.0) for n, *_ in tg})
-    share = 1 - tq / T if T > 0 else 0.0
+    # The MAPQ 0 share is known only when the MAPQ >= 1 pass was given.
+    share = (1 - tq / T if T > 0 else 0.0) if guarded else None
     b.update(target_depth=T, control_depth=C, mapq0_share=share)
     low = min(m[n] for n, *_ in ct) if row["control_depth"] == "flanks" else C
     if low < row["_min_control"]:
