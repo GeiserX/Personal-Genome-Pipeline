@@ -236,6 +236,9 @@ def part_motifs(cat_path):
 
 
 # --- 4. Stranger on the catalog -----------------------------------------------------------
+FMT = "GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC"
+
+
 def stranger(tmp, catalog, records):
     """STR_STATUS per record id from STRANGER_IMAGE on a VCF of (id, chrom, pos, end, count) records."""
     head = [line for line in open(os.path.join(REPO, "tests", "smoke", "stranger_input.vcf.in")) if line.startswith("##")]
@@ -247,8 +250,8 @@ def stranger(tmp, catalog, records):
         f.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
         for i, (rid, chrom, pos, end, n) in enumerate(records):
             f.write(f"{chrom}\t{pos}\t{rid}.{i}\tA\t<STR{n}>\t.\tPASS\tSVTYPE=STR;END={end};REF=1;RL=3;RU=CAG;"
-                    f"VARID={rid};REPID={rid}\tGT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC\t1/1:SPANNING/SPANNING:"
-                    f"{n}/{n}:{n}-{n}/{n}-{n}:20/20:0/0:0/0:30.0\n")
+                    f"VARID={rid};REPID={rid}\t{FMT}\t"
+                    f"1/1:SPANNING/SPANNING:{n}/{n}:{n}-{n}/{n}-{n}:20/20:0/0:0/0:30.0\n")
     # Without a catalog: the GRCh38 catalog Stranger bundles, as step 9b passes it.
     run = (["stranger", "--repeats-file", f"/w/{os.path.basename(catalog)}", "/w/in.vcf"] if catalog else
            ["sh", "-c", 'exec stranger --repeats-file "$(python -c \'import os, stranger; print(os.path.join('

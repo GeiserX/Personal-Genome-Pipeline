@@ -105,12 +105,13 @@ head += [f'##ALT=<ID=STR{a},Description="Allele comprised of {a} repeat units">\
 head += ["##contig=<ID=chr1,length=248956422>\n", "##contig=<ID=chr4,length=190214555>\n",
          "##contig=<ID=chr8,length=145138636>\n"]
 fmt = "GT:SO:REPCN:REPCI:ADSP:ADFL:ADIR:LC"
+expanded = "1/2:INREPEAT/INREPEAT:100/150:80-120/130-170:0/0:2/2:20/20:30.0"  # two long alleles
 with open(vcf, "w") as fh:
     fh.writelines(head)
     fh.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
     # The catalog's RFC1 record is its AAGGG repeat, and SAMD12's its TGAAA one.
     fh.write(f"chr4\t39348480\tRFC1\tA\t<STR100>,<STR150>\t.\tPASS\tSVTYPE=STR;END=39348483;REF=0;RL=4;RU=AAGGG;"
-             f"VARID=RFC1;REPID=RFC1\t{fmt}\t1/2:INREPEAT/INREPEAT:100/150:80-120/130-170:0/0:2/2:20/20:30.0\n")
+             f"VARID=RFC1;REPID=RFC1\t{fmt}\t{expanded}\n")
     fh.write(f"chr8\t118366913\tSAMD12\tA\t<STR40>\t.\tPASS\tSVTYPE=STR;END=118366918;REF=1;RL=6;RU=TGAAA;"
              f"VARID=SAMD12;REPID=SAMD12\t{fmt}\t0/1:SPANNING/INREPEAT:1/40:1-1/30-50:10/0:2/2:0/10:30.0\n")
 at, elsewhere = t.case("pathogenic")
