@@ -948,6 +948,11 @@ def text_report(s):
         w(f"  {BLOODTYPE_NOTE}")
         w("")
 
+    if head("lpa", "Lp(a): LPA KIV-2 Repeat Count and Risk Variants"):
+        for line in lpa_lines(S["lpa"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -1258,6 +1263,25 @@ def bloodtype_body(d):
     return [stat("ABO", E(d.get("abo", "."))), stat("RhD", E(d.get("rhd", "."))),
             "    <table><tr><th>System</th><th>Predicted phenotype</th><th>Genotype</th><th>Confidence</th></tr>"
             + rows + "</table>", small_note(BLOODTYPE_NOTE)]
+
+
+def lpa_lines(d):
+    """Step 46's count with its interval, step 42's two LPA risk variants,
+    the flag and the advice: the lines of the text section and the card."""
+    if d.get("status") == "estimated":
+        out = [f"KIV-2 repeats (both chromosomes): {d['kiv2_copies']} (95% interval {d['ci95_low']} to "
+               f"{d['ci95_high']}), {d['class']}"]
+    else:
+        out = [f"KIV-2 repeats: {d.get('status', '.')}"]
+    out.append(f"  {d.get('message', '.')}")
+    for v in d.get("variants", []):
+        n = v["risk_alleles"]
+        out.append(f"{v['rsid']}: {v['genotype']} ({'not read' if n is None else str(n) + ' risk allele' + ('s' if n != 1 else '')})")
+    if not d.get("variants"):
+        out.append("rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)")
+    out.append(d.get("flag_text", "."))
+    out.append(d.get("advice", "."))
+    return out
 
 
 VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
@@ -1712,6 +1736,11 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("lpa", MISSING)["state"] != "missing":
+        lp = S["lpa"]["data"]
+        a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
+               ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
+               + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     a(card(S["telomere"], "Telomere content (relative)",
