@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    BLOODTYPE — Blood group antigens (red cell and platelet) predicted from the genome
+    BLOODTYPE — Blood group antigens (red cell, platelet, neutrophil) predicted from the genome
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Opt-in ('bloodtype' in --tools). Two processes, as in scripts/41-bloodtype.sh:
       BLOODTYPE_DEPTH  samtools bedcov -Q 20 -j over assets/bloodtype_markers.tsv,
