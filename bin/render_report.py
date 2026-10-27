@@ -56,6 +56,22 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+ANCIENT_NOTE = ("Closeness on this PCA is genetic similarity, not descent: a genome near an ancient group shares "
+                "ancestry with it and does not descend from those people. qpAdm models are not part of step 44; "
+                "docs/44-ancient.md says how to read the plot.")
+
+
+def ancient_lines(d):
+    """Step 44's lines, the same in both reports."""
+    lines = [f"AADR {d.get('release', '.')}: {d.get('sites_used', '.')} of {d.get('panel_sites', '.')} sites used; "
+             f"axes from {d.get('present_day_people', '.')} present-day West Eurasians, "
+             f"{d.get('ancient_people', '.')} ancient people in {d.get('ancient_groups', '.')} groups projected.",
+             "Nearest ancient groups:"]
+    lines += [f"  {r['rank']:>2}. {r['group']} ({r['dates']}, {r['country']}; {r['n']} people)"
+              for r in (d.get("nearest") or [])[:10]]
+    return lines
+
+
 COUPLE_NOTE = ("A screen, not a diagnosis: the couple report (couple_<a>_<b>.md in the family folder) lists the "
                "genes, variant types and repeats it does not see. See a genetic counsellor before acting on a "
                "result, or on its absence (docs/39-couple.md).")
@@ -975,6 +991,12 @@ def text_report(s):
 
     if head("traits", "Traits Panel (step 42)"):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
+        w("")
+
+    if head("ancient", "Ancient Populations (AADR PCA, step 44)"):
+        for line in ancient_lines(S["ancient"]["data"]):
+            w(f"  {line}")
+        w(f"  {ANCIENT_NOTE} Plot: ancient/{s['sample']}_ancient_pca.svg")
         w("")
 
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
@@ -1902,6 +1924,22 @@ def html_report(s):
     tr_sec = S.get("traits", MISSING)
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
+
+    if S.get("ancient", MISSING)["state"] != "missing":
+        d = S["ancient"]["data"]
+        lines = ancient_lines(d)
+        rows = "".join(f"<tr><td>{E(str(r['rank']))}</td><td>{E(r['group'])}</td><td>{E(r['dates'])}</td>"
+                       f"<td>{E(r['country'])}</td><td>{E(r['locality'])}</td><td>{E(str(r['n']))}</td></tr>\n"
+                       for r in (d.get("nearest") or [])[:10])
+        body = [f"    <p>{E(lines[0])}</p>", "    <table>",
+                "      <tr><th>#</th><th>Ancient group</th><th>Dates</th><th>Country</th><th>Place</th><th>People</th></tr>",
+                rows.rstrip("\n"), "    </table>"]
+        if d.get("plot_svg"):
+            # An <img> of the SVG: shown, never run as part of the page.
+            body.append('    <img alt="PC1 against PC2: present-day West Eurasians in grey, ancient people coloured by '
+                        f'age, the sample marked" style="max-width:100%" src="data:image/svg+xml;base64,{d["plot_svg"]}">')
+        body.append(f"    <p>{E(ANCIENT_NOTE)}</p>")
+        a(card(S["ancient"], "Ancient Populations", body, full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"
