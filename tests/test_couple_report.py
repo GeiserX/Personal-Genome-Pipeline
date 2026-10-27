@@ -282,17 +282,20 @@ def main():
         # 3c. length and frequency: a Delly deletion shorter than 50 bp is the
         # small-variant caller's; one matching a common deletion of AnnotSV's
         # benign set (1% or more, 50% reciprocal overlap) is no carrier finding.
-        cmid = {g: mid(g) for g in ("ASPA", "HEXA", "SMPD1", "MCOLN1", "GJB2")}
+        cmid = {g: mid(g) for g in ("ASPA", "HEXA", "SMPD1", "MCOLN1", "GJB2", "TPP1", "GALC")}
         cexons = put(f"{t}/common_exons.bed", "".join(
             f"{c}\t{p - 50}\t{p + 50}\n" for c, p in sorted(cmid.values())))
         (ac, ap), (hc, hp), (sc, sp) = cmid["ASPA"], cmid["HEXA"], cmid["SMPD1"]
         (mc, mp), (jc, jp) = cmid["MCOLN1"], cmid["GJB2"]
+        (tc, tp), (lc, lp) = cmid["TPP1"], cmid["GALC"]
         a_len = put(f"{t}/A_len.vcf", HEAD
                     + deldepth(ac, ap - 15, ap + 15, 2, precise="PRECISE")    # 30 bp over an ASPA exon
                     + deldepth(hc, hp - 2500, hp + 2500, 1)                   # 5 kb, a common deletion
                     + deldepth(sc, sp - 2500, sp + 2500, 1)                   # 5 kb, no common match
                     + deldepth(mc, mp - 2500, mp + 2500, 1)                   # 5 kb inside a 20 kb common one
-                    + deldepth(jc, jp - 2500, jp + 2500, 1))                  # 5 kb, a rare benign record
+                    + deldepth(jc, jp - 2500, jp + 2500, 1)                   # 5 kb, a rare benign record
+                    + deldepth(tc, tp - 25, tp + 24, 2, precise="PRECISE")    # 49 bp, one short of an SV
+                    + deldepth(lc, lp - 25, lp + 25, 2, precise="PRECISE"))   # 50 bp, the smallest SV
         # The benign set as AnnotSV writes it: chromosome without "chr", 0-based
         # start, source, coordinates, frequency.
         benign = put(f"{t}/benign_Loss_SV_GRCh38.sorted.bed", "".join(
@@ -308,6 +311,10 @@ def main():
         mdc = open(f"{t}/common/couple_A_B.md").read() if rc == 0 else ""
         check("common: the screen exits 0", rc == 0, log)
         check("a 30 bp PASS Delly deletion over an ASPA exon is not reported", "ASPA" not in rc_, rc_.get("ASPA"))
+        check("a 49 bp PASS Delly deletion over a TPP1 exon is not reported", "TPP1" not in rc_, rc_.get("TPP1"))
+        check("a 50 bp PASS Delly deletion over a GALC exon is reported",
+              rc_.get("GALC", {}).get("result") == "one_partner" and "(50 bp) het" in rc_["GALC"]["findings_a"],
+              rc_.get("GALC"))
         check("a 5 kb deletion matching a common benign deletion (HEXA) is not reported", "HEXA" not in rc_,
               rc_.get("HEXA"))
         check("a 5 kb RDCN-supported deletion with no common match (SMPD1) is still reported",
@@ -318,7 +325,7 @@ def main():
         check("a benign record below 1% does not set a deletion aside (GJB2)",
               rc_.get("GJB2", {}).get("result") == "one_partner", rc_.get("GJB2"))
         check("the report counts what was set aside and says the frequency filter was on",
-              "| A | 0 / 0 | 3 over exons of listed genes; 1 shorter than 50 bp set aside; 1 set aside as common deletions |" in mdc
+              "| A | 0 / 0 | 4 over exons of listed genes; 2 shorter than 50 bp set aside; 1 set aside as common deletions |" in mdc
               and "a deletion matching one of 1% or more in AnnotSV's benign set (2 records, 50% reciprocal overlap) is set aside" in mdc,
               mdc)
         rc, log = run(*common_args, "--out-dir", f"{t}/nobenign")
