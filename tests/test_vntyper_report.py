@@ -22,7 +22,8 @@ coverage/coverage_summary.tsv as one header and one data line):
   6. both reports: the card and the text section carry the result, the
      variant and the sensitivity line; the list of what was not assessed
      names the MUC1 VNTR when step 52 did not run or gave no reading, and not
-     when it read positive or negative; no card without step 52's table;
+     when it read positive or negative; no card without step 52's table; a
+     table older than a run-all.sh run that did not run step 52 is stale;
   7. control: a copy of the script that calls every Kestrel call positive
      fails case 2, so these checks can fail.
 
@@ -33,6 +34,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(REPO, "bin", "vntyper_report.py")
@@ -169,6 +171,13 @@ def main():
         s, txt, html = sample("thin", NEG, mean="20.00", qc="FAIL")
         check("6. not assessed keeps the MUC1 VNTR on the not-assessed list", line in s["not_assessed"],
               s["not_assessed"])
+        sd = os.path.join(t, "s", "pos", "S")
+        os.makedirs(os.path.join(sd, "logs"))
+        with open(os.path.join(sd, "logs", "run_status.tsv"), "w") as f:
+            f.write(f"meta\tstarted_epoch\t{time.time() + 60}\nstep\t11\tok\n")
+        s = collect_summary.collect("S", sd)
+        check("6. a run-all.sh run that did not run step 52 marks an older table stale, still not assessed",
+              s["sections"]["vntyper"]["state"] == "stale" and line in s["not_assessed"], s["sections"]["vntyper"])
         os.makedirs(os.path.join(t, "none", "S"))
         s = collect_summary.collect("S", os.path.join(t, "none", "S"))
         check("6. without step 52 the MUC1 VNTR is listed as not assessed, with no card and no text section",
