@@ -86,7 +86,8 @@ process PARASCOPY {
     parascopy depth -i ${bam}::${meta.id} -f ${reference} ${background} -o depth -@ ${task.cpus}
     header() { printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\tpsCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n'; }
     mkdir -p ${meta.id}_parascopy
-    for spec in ${loci}; do
+    loci='${loci}'  # model|region|table per row; quoted, as | would start a pipe
+    for spec in \$loci; do
         model=\${spec%%|*} rest=\${spec#*|}
         region=\${rest%%|*} name=\${rest#*|}
         out=${meta.id}_\${name}_copy_number.tsv
@@ -141,7 +142,8 @@ process PARASCOPY {
     def loci = paralogSpecs()
     """
     mkdir -p ${meta.id}_parascopy
-    for spec in ${loci}; do
+    loci='${loci}'  # model|region|table per row; quoted, as | would start a pipe
+    for spec in \$loci; do
         printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\tpsCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n' \\
             > ${meta.id}_\${spec##*|}_copy_number.tsv
     done
