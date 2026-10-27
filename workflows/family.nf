@@ -17,6 +17,9 @@
       FAMILY_REPORT   allele origin per child, de novo candidates (both
                       parents sequenced), compound heterozygotes, the
                       chromosome map of each child, the report
+      FAMILY_IBD_*    the DNA each pair shares by descent (Beagle against
+                      step 26b's panel, then hap-ibd): only with
+                      --ancestry_fine_panel
       COUPLE_CARRIER  the carrier screen of two partners (step 39): only
                       when the pedigree marks two members as partners and
                       main.nf hands their ClinVar hits over
@@ -34,6 +37,7 @@ include { FAMILY_PREPARE; GLNEXUS; GLNEXUS_VCF } from '../modules/local/glnexus/
 include { FAMILY_RELATE; FAMILY_CHECK         } from '../modules/local/somalier/main'
 include { WHATSHAP_PED; FAMILY_REPORT         } from '../modules/local/whatshap_ped/main'
 include { COUPLE_CARRIER                      } from '../modules/local/couple/main'
+include { FAMILY_IBD_SITES; FAMILY_IBD_PHASE; FAMILY_IBD_SEGMENTS; FAMILY_IBD_REPORT } from '../modules/local/ibd/main'
 
 workflow FAMILY {
 
@@ -49,6 +53,8 @@ workflow FAMILY {
                       //   table, named <id>_*; empty when the pedigree marks no partners
     ch_carrier_genes  // channel: val(path) — assets/carrier_genes.tsv
     ch_exons          // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
+    ch_ibd_panel      // channel: val(path) — step 26b's panel folder (--ancestry_fine_panel); empty without it,
+                      //   and then no shared-segment task runs
 
     main:
     // One list of the members, sorted by id, so every task sees them in
@@ -78,6 +84,14 @@ workflow FAMILY {
         ch_par_bed
     )
 
+    // The shared segments: the joint call phased against the panel, then
+    // hap-ibd, after the relationship check.
+    FAMILY_IBD_SITES(GLNEXUS_VCF.out.vcf, ch_ibd_panel, FAMILY_CHECK.out.relationships)
+    FAMILY_IBD_PHASE(FAMILY_IBD_SITES.out.sites, ch_ibd_panel)
+    FAMILY_IBD_SEGMENTS(FAMILY_IBD_PHASE.out.phased, FAMILY_IBD_SITES.out.sites, ch_ibd_panel)
+    FAMILY_IBD_REPORT(ch_pedigree, FAMILY_IBD_SITES.out.sites, FAMILY_IBD_PHASE.out.phased,
+                      FAMILY_IBD_SEGMENTS.out.segments, ch_ibd_panel)
+
     // The couple screen reads each partner's own step outputs, not the joint
     // call: one task for every couple of the pedigree, once those are all
     // there. No output (no partners) means no task.
@@ -89,7 +103,9 @@ workflow FAMILY {
     ch_versions = Channel.empty().mix(
         FAMILY_PREPARE.out.versions, GLNEXUS.out.versions, GLNEXUS_VCF.out.versions,
         FAMILY_RELATE.out.versions, FAMILY_CHECK.out.versions, WHATSHAP_PED.out.versions,
-        FAMILY_REPORT.out.versions, COUPLE_CARRIER.out.versions
+        FAMILY_REPORT.out.versions, COUPLE_CARRIER.out.versions,
+        FAMILY_IBD_SITES.out.versions, FAMILY_IBD_PHASE.out.versions, FAMILY_IBD_SEGMENTS.out.versions,
+        FAMILY_IBD_REPORT.out.versions
     )
 
     emit:
