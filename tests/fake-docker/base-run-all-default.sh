@@ -64,10 +64,12 @@ output_has run-all 'NOTE: starting from the existing VCF, with no gVCF with its 
 # installed), vcfanno, clinical filter and slivar (need VEP), ancestry (needs
 # PRS), fine-grained ancestry (its panel not installed), Cyrius (not
 # installed: setup.sh --cyrius), Parascopy, Paraphase, the Y haplogroup and the
-# raw-data export (opt-in: only with TOOLS naming them), and the traits panel (it reads the gVCF, and this row has none).
+# raw-data export (opt-in: only with TOOLS naming them), the traits panel (it reads the gVCF, and this row has none)
+# and archaic ancestry (its table not installed).
 [ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
-[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 19 ] || fail "not 19 steps skipped"
+[ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 20 ] || fail "not 20 steps skipped"
 output_has run-all '^  33 Sample identity and QC +skipped +\(data not installed: reference/somalier/sites\.hg38\.vcf\.gz\)$'
+output_has run-all '^  43 Archaic ancestry \(IBDmix\) +skipped +\(data not installed: reference/archaic/snpad2016-1kgp3-v1/DONE\)$'
 output_has run-all '^  42 Traits panel +skipped +\(no gVCF: sample1/vcf/sample1\.g\.vcf\.gz\)$'
 output_has run-all '^  26 Ancestry \(pgsc_calc\) +skipped +\(needs PRS\)$'
 output_has run-all '^  26b Fine-grained ancestry +skipped +\(data not installed: reference/ancestry_fine/hgdp1kgp_v2/model/DONE\)$'
