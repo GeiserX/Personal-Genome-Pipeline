@@ -523,13 +523,22 @@ def sec_pypgx(d, s):
     cyp_row = next((r for r in rows if r.get("Gene") == "CYP2D6"), None)
     cyp = (cyp_row or {}).get("Diplotype", "")
     out = {"genes_total": len(rows), "genes_called": len(called), "cyp2d6": cyp or "not called"}
-    # pypgx's copy-number call from read depth, BAM-based genes only; 'N/A'
-    # (a VCF gene, GSTT1 without its contig, CYP2D6 after a failed depth check)
-    # is none.
-    out["cnv_call"] = {r["Gene"]: r["CNV_call"].strip() for r in rows
-                       if (r.get("Source") or "").strip().upper() == "BAM"
-                       and (r.get("CNV_call") or "").strip() not in ("", ".")
-                       and not r["CNV_call"].strip().startswith("N/A")}
+    # pypgx's copy-number call from read depth, one entry per BAM-based gene
+    # (a VCF gene has none). A gene not callable on this reference gets its
+    # own line below instead; one without a call ('N/A': pypgx failed, or
+    # CYP2D6 after a failed depth check) says so, so no gene drops out.
+    out["cnv_call"] = {}
+    for r in rows:
+        status = (r.get("Status") or "").strip()
+        if (r.get("Source") or "").strip().upper() != "BAM" or status == pgx_outside_calls.NOT_CALLABLE:
+            continue
+        v = (r.get("CNV_call") or "").strip()
+        if v not in ("", ".") and not v.startswith("N/A"):
+            out["cnv_call"][r["Gene"]] = v
+        elif status.lower() == "failed" or (r.get("Diplotype") or "").strip().upper() == "FAILED":
+            out["cnv_call"][r["Gene"]] = "not called: pypgx failed"
+        else:
+            out["cnv_call"][r["Gene"]] = "not called: pypgx gave no copy-number call"
     out["not_callable"] = [r["Gene"] for r in rows
                            if (r.get("Status") or "").strip() == pgx_outside_calls.NOT_CALLABLE]
     out["low_gq"] = [{"gene": r["Gene"], "diplotype": (r.get("Diplotype") or "").strip(),
