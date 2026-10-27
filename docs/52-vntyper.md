@@ -14,12 +14,12 @@ Short reads from inside the repeat fit every unit equally well and map with mapp
 
 ## Tool
 
-- VNtyper 2.0.47 (BSD-3-Clause, https://github.com/hassansaei/VNtyper), `vntyper pipeline` on the BAM with `--fast-mode` and `--reference-assembly hg38`
+- VNtyper, the release `VNTYPER_IMAGE` pins (2.0.47 today; BSD-3-Clause, https://github.com/hassansaei/VNtyper), `vntyper pipeline` on the BAM with `--fast-mode` and `--reference-assembly hg38`
 - `bin/vntyper_report.py` (standard library Python, run with the image's Python) for the reading
 
 ## Docker Image
 
-- `VNTYPER_IMAGE`: the publisher's image on ghcr.io, `ghcr.io/hassansaei/vntyper:2.0.47`. It carries VNtyper's own reference data (its MUC1 motifs and the indexes it realigns against), so the step installs nothing. The image is about 3 GB compressed. Docker Hub's `saei/vntyper` stops at 2.0.3, and Biocontainers has no build.
+- `VNTYPER_IMAGE`: the publisher's image, `ghcr.io/hassansaei/vntyper`, at the release `versions.env` pins. It carries VNtyper's own reference data (its MUC1 motifs and the indexes it realigns against), so the step installs nothing. The image is about 3 GB compressed. Docker Hub's `saei/vntyper` stops at 2.0.3, and Biocontainers has no build.
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tags. The line is marked optional, so `setup.sh` does not pull it: the first run of the step does.
 
