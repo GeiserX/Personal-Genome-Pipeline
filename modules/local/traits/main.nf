@@ -56,7 +56,7 @@ process TRAITS_SITES {
       awk -F'\\t' '\$1 == "site" { print \$4 "\\t" \$5 }' ${rules}; } | LC_ALL=C sort -k1,1 -k2,2n -u > sites.tsv
     bcftools convert --gvcf2vcf -f ${reference} -R sites.tsv -Ou ${gvcf} \\
         | bcftools view -T sites.tsv --trim-alt-alleles -i 'GT!="mis"' -Ou \\
-        | bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%TGT]\\t[%GQ]\\n' > ${meta.id}_traits_genotypes.tsv
+        | bcftools query -u -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%TGT]\\t[%GQ]\\n' > ${meta.id}_traits_genotypes.tsv
     rm -f sites.tsv
 
     printf '"%s":\\n    bcftools: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml

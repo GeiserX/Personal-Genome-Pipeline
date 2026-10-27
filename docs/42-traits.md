@@ -22,7 +22,7 @@ These are the results most people find easiest to read, and the pipeline had no 
 
 - `${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz` with its `.tbi`: the gVCF of [step 3](03-variant-calling.md). A gVCF holds reference blocks, so a position where you match the reference reads as ref/ref, and a position with no reads has no record and reads as "not covered". A variant-only VCF cannot tell those two apart, so the step does not read one. The gVCF must hold one sample: a gVCF with several sample columns stops the step with the count.
 - `assets/traits.tsv`: the table, and `assets/genotype_rules.tsv`: the rules.
-- `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other steps), optional: WhatsHap reads it when a rule needs phase. Without it such a rule is read only when at most one of its sites is heterozygous.
+- `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other steps), optional: WhatsHap reads it when a rule needs phase. Without it, or when WhatsHap fails (step 42 prints a warning and goes on, as `TRAITS_PHASE` does in Nextflow), such a rule is read only when at most one of its sites is heterozygous.
 
 In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the processes `TRAITS_SITES` and `TRAITS` run for every sample with a gVCF, and `TRAITS_PHASE` (WhatsHap) for every such sample with a BAM: one DeepVariant wrote (FASTQ, BAM or CRAM rows) or one the samplesheet gives in its `gvcf` and `gvcf_index` columns. A sample without one is skipped with a warning. From an existing VCF, `run-all.sh` passes a gVCF on only for a sample with a BAM and a VCF whose gVCF lies beside the VCF; any other sample that starts from a VCF gets step 42 listed as skipped, with the reason. A failed traits task is skipped and the run goes on, as for the other report-only tools.
 
@@ -37,7 +37,7 @@ In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the p
 | File | Contents |
 |---|---|
 | `traits/${SAMPLE}_traits.tsv` | one row per table row, then the APOE line: `rsid`, `gene`, `chrom`, `pos`, `trait`, `genotype` (reference allele first), `status`, `reading`, `ancestry`, `note`, `pmids` |
-| `traits/${SAMPLE}_genotype_rules.tsv` | one line per rule: `rule`, `gene`, `trait`, `rsids`, `chrom`, `pos`, `genotypes` (one per site, reference allele first), `gq` (the GQ of each site's record, a reference block's own GQ for a homozygous reference site), `phase`, `result`, `status`, `reading`, `ancestry`, `note`, `pmids` |
+| `traits/${SAMPLE}_genotype_rules.tsv` | one line per rule: `rule`, `gene`, `trait`, `rsids`, `chrom`, `pos`, `genotypes` (one per site, reference allele first), `gq` (the GQ of each site's record, a reference block's own GQ for a homozygous reference site, `.` when the gVCF header has no FORMAT/GQ), `phase`, `result`, `status`, `reading`, `ancestry`, `note`, `pmids` |
 | `traits/${SAMPLE}_traits_genotypes.tsv` | what bcftools read at the table's positions and the rule sites: chromosome, position, REF, ALT, the genotype as bases and its GQ |
 
 `status` is `called`, `not_covered` (no genotype at the position, from no reads or a no-call: not read) or `other_allele` (an allele the table does not describe, or an indel starting at the position: not read). A record with a missing allele (a no-call or a half call such as `./T`) is dropped by the genotype filter, so its position reads as `not_covered`. A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.

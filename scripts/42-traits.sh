@@ -79,7 +79,7 @@ run_in --cpus 1 --memory 2g "$BCFTOOLS_IMAGE" \
     [ "$n" -eq 1 ] || { echo "ERROR: $3 holds $n samples; step 42 reads a one-sample gVCF (keep one with bcftools view -s <sample>)." >&2; exit 1; }
     bcftools convert --gvcf2vcf -f "$1" -R "$2" -Ou "$3" \
       | bcftools view -T "$2" --trim-alt-alleles -i "GT!=\"mis\"" -Ou \
-      | bcftools query -f "%CHROM\t%POS\t%REF\t%ALT\t[%TGT]\t[%GQ]\n"' \
+      | bcftools query -u -f "%CHROM\t%POS\t%REF\t%ALT\t[%TGT]\t[%GQ]\n"' \
   _ "${REF_FASTA_C}" "$(cpath "$SITES")" "$(cpath "$GVCF")" > "${GENOTYPES}.tmp" \
   || { rm -f "${GENOTYPES}.tmp" "$SITES"; echo "ERROR: step 42 could not genotype ${GVCF} at the table's positions (the line above says why)." >&2; exit 1; }
 mv -f "${GENOTYPES}.tmp" "$GENOTYPES"
@@ -100,9 +100,17 @@ if [ -f "$BAM" ] && [ -f "${BAM}.bai" ]; then
         : > "$5"
       fi' \
     _ "$(cpath "$GENOTYPES")" "$SAMPLE" "$(cpath "$PHASE_IN")" "${REF_FASTA_C}" "$(cpath "$PHASED")" "$(cpath "$BAM")" \
-    || { rm -f "$PHASE_IN" "$PHASED"; echo "ERROR: step 42 could not phase the rule sites from ${BAM} (the lines above say why)." >&2; exit 1; }
+    && PHASE_OK=1 || PHASE_OK=0
   rm -f "$PHASE_IN"
-  PHASE_ARGS=(--phased "$(cpath "$PHASED")")
+  if [ "$PHASE_OK" = 1 ]; then
+    PHASE_ARGS=(--phased "$(cpath "$PHASED")")
+  else
+    # Same as Nextflow, where TRAITS_PHASE may fail and TRAITS still runs:
+    # the traits table is still written, and the rules read unphased.
+    rm -f "$PHASED"
+    echo "WARNING: step 42 could not phase the rule sites from ${BAM} (the lines above say why); the rules read unphased." >&2
+    PHASE_ARGS=()
+  fi
 else
   echo "  No BAM (${BAM} with its .bai): a rule that needs phase reads only when at most one of its sites is heterozygous."
   PHASE_ARGS=()

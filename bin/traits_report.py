@@ -446,7 +446,7 @@ def rule_line(rule, recs, phased):
             blocks = {(phased or {}).get((sites[i]["chrom"], sites[i]["pos"]), (None, None, None))[2] for i in het}
             if None in blocks or len(blocks) != 1:
                 why = ("no read or read pair covered them together"
-                       if phased is not None else "no phasing ran (it needs the BAM)")
+                       if phased is not None else "no phasing ran (no BAM, or phasing failed)")
                 return dict(line, phase="unphased", result=".", status="unphased",
                             reading=f"Heterozygous at {len(het)} of the {len(sites)} sites, and {why}, so which "
                                     "alleles share a copy is not known: not read.")
