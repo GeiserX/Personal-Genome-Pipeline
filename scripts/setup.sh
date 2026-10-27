@@ -13,6 +13,7 @@
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --megane-kmers <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -24,7 +25,9 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            viral genomes of step 47
+#                                            viral genomes of step 47, MEGAnE's
+#                                            k-mer set of the reference plus its
+#                                            image (step 50)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -78,7 +81,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--megane-kmers|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -103,7 +106,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --megane-kmers | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -131,6 +134,10 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --megane-kmers"
+  echo "                Build MEGAnE's k-mer set of the reference for step 50 (Alu, L1 and SVA insertions; ~1.8 GB,"
+  echo "                about 10 minutes, and about 16 bytes of RAM per reference base: ~50 GB for GRCh38), pull its"
+  echo "                image (~6.4 GB) and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -366,6 +373,52 @@ install_viral_data() {
     return 1
   fi
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
+}
+
+# megane_kmers_path: where step 50 reads MEGAnE's k-mer set of REF_FASTA, the
+# path scripts/50-mei.sh and run-all.sh build the same way (MEGANE_KMERS
+# overrides it): reference/megane/<reference file name without extension>.mk,
+# with MEGAnE's .mi count file beside it.
+megane_kmers_path() {
+  local n
+  n=$(basename "$REF_FASTA"); n=${n%.gz}; n=${n%.*}
+  printf '%s\n' "${MEGANE_KMERS:-${GENOME_DIR}/reference/megane/${n}.mk}"
+}
+
+# install_megane_kmers: MEGAnE's build_kmerset on the reference (step 50):
+# every 32-mer seen more than once in it, which MEGAnE uses to drop reads
+# that map to many places. It is built from the reference itself, so a new
+# reference needs a new set; one newer than the reference is kept. The
+# builder holds two 8-byte k-mers per reference base in memory and sorts
+# them in one thread: about 50 GB for GRCh38 (MEGAnE's own figure: 48 GB).
+install_megane_kmers() {
+  local mk dir need have
+  mk=$(megane_kmers_path); dir=$(dirname "$mk")
+  if [ ! -s "$REF_FASTA" ] || [ ! -s "${REF_FASTA}.fai" ]; then
+    echo "[WARN] Step 50's k-mer set is built from the reference, and ${REF_FASTA} (with its .fai) is not there yet: run ./scripts/setup.sh ${GENOME_DIR} first."
+    return 1
+  fi
+  if [ -s "$mk" ] && [ -s "${mk%.mk}.mi" ] && [ "$mk" -nt "$REF_FASTA" ]; then
+    echo "[OK] MEGAnE k-mer set (step 50) already present: ${mk}"
+    return 0
+  fi
+  need=$(awk '{ b += $2 } END { printf "%d", b * 16 / 1e9 + 4 }' "${REF_FASTA}.fai")
+  have=$("$CONTAINER_ENGINE" info --format '{{.MemTotal}}' 2>/dev/null | awk '{ printf "%d", $1 / 1e9 }')
+  if [ -n "$have" ] && [ "$have" -gt 0 ] && [ "$have" -lt "$need" ]; then
+    echo "[WARN] MEGAnE's k-mer set of this reference needs about ${need} GB of RAM and ${CONTAINER_ENGINE} has ${have} GB."
+    echo "       Build it on a machine with more memory (./scripts/setup.sh --megane-kmers <genome_dir> there) and copy ${dir#"$GENOME_DIR"/}/ here."
+    return 1
+  fi
+  mkdir -p "$dir"
+  echo "Building MEGAnE's k-mer set of $(basename "$REF_FASTA") (step 50; about 10 minutes, about ${need} GB of RAM)..."
+  rm -f "$mk" "${mk%.mk}.mi"
+  if ! run_in --rw "$dir" --memory "${need}g" "$MEGANE_IMAGE" build_kmerset -fa "$REF_FASTA_C" \
+      -prefix "$(basename "${mk%.mk}")" -outdir "$(cpath "$dir")" || [ ! -s "$mk" ] || [ ! -s "${mk%.mk}.mi" ]; then
+    rm -f "$mk" "${mk%.mk}.mi"
+    echo "[WARN] Could not build MEGAnE's k-mer set (step 50); its log is ${dir}/megane_build_kmer_set.log."
+    return 1
+  fi
+  echo "[OK] MEGAnE k-mer set (step 50, $(cat "${mk%.mk}.mi") repeated 32-mers): ${mk}"
 }
 
 # install_consumer_sites: the site table of the raw-data export (step 40). The
@@ -1128,6 +1181,7 @@ case "$OPT_IN" in
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  megane-kmers) ensure_image MEGANE_IMAGE 50 && install_megane_kmers; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
 esac

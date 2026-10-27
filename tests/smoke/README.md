@@ -80,3 +80,7 @@ at the planted deletion), `vcf_field`, `tsv_cell`, `tsv_count`, `csv_cell`,
   flag step 17 passes.
 - AnnotSV annotates only in the monthly and dispatched runs (5.3 GB of data).
   A pull request that changes it gets a warning to start the workflow by hand.
+- MEGAnE builds its k-mer set of `mini.fa` and prints the options step 50
+  passes. Its call needs a whole chromosome (on 500 kb it stops with an
+  IndexError in its own code), so the call is tested by the e2e case
+  `tests/e2e/mei-1.sh` on HG002's chr20.
