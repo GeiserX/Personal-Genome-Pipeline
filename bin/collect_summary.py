@@ -2797,17 +2797,25 @@ def sec_coverage(d, s):
 KARYOTYPE_TOL = 0.3
 
 
+# The sex-chromosome aneuploidies named, by (chrX, chrY) copies. Any other pair of
+# whole numbers (chrY 4, chrX 6, a degenerate 100000) names nothing: in a run it is
+# far more often depth noise or a broken input than a karyotype.
+KARYOTYPES = {(1, 0): "45,X", (2, 1): "47,XXY", (1, 2): "47,XYY", (3, 0): "47,XXX",
+              (2, 2): "48,XXYY", (3, 1): "48,XXXY", (4, 0): "48,XXXX",
+              (4, 1): "49,XXXXY", (5, 0): "49,XXXXX"}
+
+
 def karyotype(cn_x, cn_y, tol=KARYOTYPE_TOL):
-    """The sex-chromosome karyotype the two copy numbers name, such as
-    47,XXY, 47,XYY, 47,XXX or 45,X; None for 46,XX and 46,XY, for a missing
-    value, for a value between whole numbers, and for no chrX at all."""
+    """The sex-chromosome karyotype the two copy numbers name, one of
+    KARYOTYPES; None for 46,XX and 46,XY, for a missing value, for a value
+    between whole numbers, and for any pair of copies not in KARYOTYPES."""
     x, y = num(cn_x), num(cn_y)
-    if x is None or y is None:
+    if x is None or y is None or not (-1 < x < 10 and -1 < y < 10):   # also keeps inf from round()
         return None
     rx, ry = int(round(x)), int(round(y))
-    if abs(x - rx) > tol or abs(y - ry) > tol or rx < 1 or ry < 0 or (rx, ry) in ((2, 0), (1, 1)):
+    if abs(x - rx) > tol or abs(y - ry) > tol:
         return None
-    return f"{44 + rx + ry},{'X' * rx}{'Y' * ry}"
+    return KARYOTYPES.get((rx, ry))
 
 
 def sec_sex_check(d, s):

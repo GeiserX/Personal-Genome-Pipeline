@@ -78,7 +78,7 @@ That sums the raw segments; the summary file already has the band parts taken ou
 
 In uniparental disomy (UPD) both copies of a chromosome come from one parent. When they are two copies of the same parental chromosome (isodisomy), that chromosome reads as one long run of homozygosity, or a few, while the rest of the genome has few long runs. Nakka et al. 2019 (PMID 31607426) found 675 cases of UPD this way, from runs of homozygosity and segments shared with relatives, among 4,400,363 23andMe research participants and 431,094 UK Biobank participants.
 
-The reports flag a chromosome when its segments over 5 Mb (band parts left out) add up to at least 20 Mb **and** to more than half of all such autosomal runs. Both numbers are our thresholds, not a published cut-off: 20 Mb is the long-standing sign above, and the share rule keeps out a child of related parents, whose runs spread over many chromosomes. The flag says "may": a run that long can also be chance in a child of related parents.
+The reports flag a chromosome when its segments over 5 Mb (band parts left out) add up to at least 20 Mb **and** to more than half of all such autosomal runs. Both numbers are our thresholds, not a published cut-off: 20 Mb is the long-standing sign (see the >20 MB note under [Important Notes](#important-notes)), and the share rule keeps out a child of related parents, whose runs spread over many chromosomes. The flag says "may": a run that long can also be chance in a child of related parents.
 
 A flagged chromosome is looked up in `assets/imprinted_regions.tsv`, the chromosomes where UPD from one parent causes an imprinting disorder (overview: Eggermann et al. 2023, Nat Rev Dis Primers, PMID 37386011). A row with a region applies only when a run on that chromosome overlaps it; the others apply to the whole chromosome.
 
@@ -106,7 +106,7 @@ What this cannot tell, and the reports say so:
 | <1 Mb | Common, population-level background |
 | 1-5 Mb | Distant shared ancestry; many of them is typical of population isolates |
 | 5-10 Mb | Counted in the total above; a few can occur even when the parents are not related |
-| >10 Mb | Recent shared ancestry; possible uniparental disomy if confined to one chromosome |
+| >10 Mb | Recent shared ancestry; possible uniparental disomy if confined to one chromosome (the reports flag one chromosome from 20 Mb, see above) |
 
 ## Important Notes
 - The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode

@@ -1363,7 +1363,9 @@ def roh_lines(d):
 
 
 KARYOTYPE_NOTE = ("Named from the copy number of chrX and chrY in the reads. A mixed sample or a sample swap can "
-                  "give the same numbers, and a mosaic gives numbers between whole ones and no name. Confirm with "
+                  "give the same numbers. A mosaic in about 30 to 70% of the cells gives numbers between whole ones "
+                  "and no name; one in more of the cells can round to a whole number and be named (a Y lost in 75% "
+                  "of the cells reads 45,X). Confirm with "
                   "a karyotype or a chromosomal microarray (docs/33-sample-qc.md).")
 
 
