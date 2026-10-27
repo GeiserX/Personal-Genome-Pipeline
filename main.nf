@@ -836,6 +836,8 @@ workflow {
         ch_chip_depth    = CHIP_REPORT.out.depth
         ch_chip_versions = CHIP_PREPARE.out.versions.mix(CHIP_MUTECT2.out.versions, CHIP_ANNOTATE.out.versions,
                                                          CHIP_REPORT.out.versions)
+    }
+
     // ─── Mosaic chromosomal alterations (opt-in: mocha, step 51) ───────
     // The VCF's heterozygous SNVs phased with Beagle against the panel of
     // --mocha_data (setup.sh --mocha-data), then MoChA on chr1 to chr22 and

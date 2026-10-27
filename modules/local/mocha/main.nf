@@ -35,7 +35,7 @@ process MOCHA_PREP {
     task.ext.when == null || task.ext.when
 
     script:
-    def auto = (1..22).collect { "chr${it}" }.join(',')
+    def auto = (1..22).collect { n -> "chr${n}" }.join(',')
     """
     set -euo pipefail
     bcftools view --no-version -f PASS,. -m2 -M2 -v snps -t ${auto} -Ou ${vcf} \\
