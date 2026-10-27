@@ -170,6 +170,11 @@ echo "+ nextflow run main.nf -profile docker --tools mocha,html_report"
     --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --tools mocha,html_report \
     --mocha_data "$MD" --outdir "$NF_OUT" --max_cpus 4 --max_memory 14.GB ) 2>&1 | tee "$STEP_LOG"
 check_eq "nextflow run exits 0" "${PIPESTATUS[0]}" 0
+cp "${T}/.nextflow.log" "${E2E_WORK}/logs/${CASE_NAME}.nextflow.log" 2>/dev/null || true
+# A failed task's own error, for diagnosis (report-only tasks fail without stopping the run).
+while read -r x; do
+  [ "$(cat "$x")" = 0 ] || { echo "--- failed task ${x%/.exitcode}"; tail -n 30 "${x%/.exitcode}/.command.err"; }
+done < <(find "${E2E_WORK}/nf-work-mocha" -name .exitcode 2>/dev/null)
 A="${G}/${SAMPLE}/mosaic/${SAMPLE}_mocha.tsv" B="${NF_OUT}/${SAMPLE}/mosaic/${SAMPLE}_mocha.tsv"
 check "Nextflow wrote ${SAMPLE}_mocha.tsv" test -s "$B"
 check "Nextflow's ${SAMPLE}_mocha.tsv is the bash step's" cmp -s "$A" "$B"

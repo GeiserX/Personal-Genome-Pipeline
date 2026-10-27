@@ -911,7 +911,7 @@ import sys, zipfile
 z, out = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(z) as f:
     for c in sys.argv[3:]:
-        open(f"{out}/{c}.map", "w").write(f.read(f"chr_in_chrom_field/plink.{c}.GRCh38.map").decode())
+        open(f"{out}/{c}.map", "w").write(f.read(f"chr_in_chrom_field/plink.chr{c}.GRCh38.map").decode())
 ' "$(cpath "$map")" "$(cpath "${dir}/maps")" $chroms; then
     echo "[WARN] Could not unpack the genetic map"
     return 1
