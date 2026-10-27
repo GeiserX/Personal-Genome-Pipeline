@@ -58,9 +58,12 @@ Rule_detail says why:
                      its RDCN (a deletion needs 0 or 1 copies, a duplication
                      3 or more, or 2 or more on chrX and chrY, where the sex
                      is not known here); a CNVpytor call is a read-depth call,
-                     so yes. "not checked" when the record has no such value
-                     (step 15 did not run); "." for other types. "no" moves
-                     the call to class 3 (rule no_depth_support).
+                     so yes. A Delly call step 05 added (FORMAT GT only)
+                     over 1,000 bp is yes: cnvpytor_to_vcf.py set aside the
+                     ones whose RDCN does not show the change. "not checked"
+                     when the record has no such value (step 15 did not run,
+                     a Delly call of 1,000 bp or less); "." for other types.
+                     "no" moves the call to class 3 (rule no_depth_support).
   --rules            assets/sv_rule_regions.tsv (scripts/ci/build-sv-rule-
                      regions.sh writes it), one region per row:
     tandem_repeat    an SV that lies inside a coding tandem repeat (each
@@ -234,6 +237,11 @@ def depth_support(row, caller):
         sex_chrom = chrom_key(row.get("SV_chrom", "")).upper() in ("X", "Y")
         yes = rdcn <= 1 if t == "DEL" else rdcn >= (2 if sex_chrom else 3)
         return ("yes" if yes else "no"), f"Delly RDCN {rdcn:g}"
+    if caller == "delly" and rdcn is None and length > DELLY_DEPTH_BP:
+        # Step 05 adds a Delly call through cnvpytor_to_vcf.py, which keeps
+        # FORMAT GT only, after it has set aside every call over 1,000 bp
+        # whose RDCN does not show the change.
+        return "yes", "RDCN checked when step 05 added the call (bin/cnvpytor_to_vcf.py)"
     return "not checked", "no duphold or Delly depth value in the record"
 
 

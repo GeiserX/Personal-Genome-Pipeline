@@ -33,7 +33,9 @@ Checks:
      (no depth support), the second stays 4; a duplication with DHBFC 1.1
      is class 3; Delly RDCN 2 on a deletion is no support, RDCN 1 is; on
      chrX a duplication with RDCN 2 counts; a record with no depth value is
-     "not checked" and keeps its class; a CNVpytor call has support; the
+     "not checked" and keeps its class; a CNVpytor call has support; a
+     Delly call with FORMAT GT only (as step 05 adds it) has support over
+     1,000 bp and is "not checked" at 800 bp; the
      summary line counts the rows moved to class 3;
   8. red controls: without --rules the DSPP and IGH deletions stay class 4;
      and the rule table itself: every row has a known rule, IGH lies on
@@ -125,6 +127,8 @@ ROWS7 = "".join([
     row7("XDUP", "X", 50000000, 50300000, "DUP", 4, "delly", "G12", "GT:RDCN", "0/1:2"),
     row7("NODEPTH", "20", 44000000, 44300000, "DEL", 4, "manta", "G13"),
     row7("CNV", "20", 45000000, 45300000, "DEL", 4, "cnvpytor", "G14"),
+    row7("DELLY_GT", "20", 46000000, 46300000, "DEL", 4, "delly", "G15"),
+    row7("DELLY_SHORT", "20", 47000000, 47000800, "DEL", 4, "delly", "G16"),
 ])
 # RHEB as AnnotSV's genes file would name it: once on the pseudogene RHEBP1
 # (chr10, the region of the rule table) and once on RHEB itself (chr7).
@@ -192,10 +196,15 @@ def rules_section(work):
     check("no depth value: not checked, class kept",
           (col("NODEPTH", "Depth_support"), col("NODEPTH", "ACMG_class")) == ("not checked", "4"), got.get("NODEPTH"))
     check("a CNVpytor call has depth support", col("CNV", "Depth_support") == "yes", got.get("CNV"))
+    check("a Delly call step 05 added (FORMAT GT only) over 1,000 bp passed its RDCN gate there: support",
+          (col("DELLY_GT", "Depth_support"), col("DELLY_GT", "ACMG_class")) == ("yes", "4"), got.get("DELLY_GT"))
+    check("the same call of 800 bp had no RDCN gate: not checked, class kept",
+          (col("DELLY_SHORT", "Depth_support"), col("DELLY_SHORT", "ACMG_class")) == ("not checked", "4"),
+          got.get("DELLY_SHORT"))
     moved = sorted(i for i, r in got.items() if r["ACMG_class"] != r["AnnotSV_class"])
     want = sorted(["TR_IN", "IGH_IN", "IGH_MOST", "MHC_IN", "ALIAS", "D_LOW", "DUP_LOW", "DELLY2"])
     check("exactly the eight rows above are moved to class 3", moved == want, moved)
-    check("the summary line counts them", "moved to class 3: 8; depth support no: 3, not checked: 1" in err, err)
+    check("the summary line counts them", "moved to class 3: 8; depth support no: 3, not checked: 2" in err, err)
 
     # 8. red controls
     plain, _ = run7(work, "norules", with_rules=False)
