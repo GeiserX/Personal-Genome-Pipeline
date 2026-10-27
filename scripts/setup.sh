@@ -13,6 +13,7 @@
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --mocha-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -24,7 +25,8 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            viral genomes of step 47
+#                                            viral genomes of step 47, MoChA's
+#                                            phasing panel plus its images (step 51)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -78,7 +80,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--mocha-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -103,7 +105,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --mocha-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -131,6 +133,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~70 GB read,"
+  echo "                ~15 GB kept) and the genetic map, pull its images and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -833,6 +837,90 @@ open(f"{out}/{c}.rfmix.map", "w").write("".join(f"{r[0]}\t{r[3]}\t{r[2]}\n" for 
   echo "[OK] fine-grained ancestry panel ${ANCESTRY_FINE_PANEL} (step 26b): ${dir} ($(wc -l < "${dir}/model/ref.bim" | tr -d ' ') SNVs for ADMIXTURE, $(wc -l < "${dir}/model/paint_map.tsv" | tr -d ' ') painting references)"
 }
 
+# install_mocha_data: the phasing panel of step 51 in
+# reference/mocha-MOCHA_PANEL_VERSION (MOCHA_DATA: another folder inside
+# GENOME_DIR). For each of chr1 to chr22 the 1000 Genomes high-coverage phased
+# panel's VCF is downloaded, checked against the md5 of the release's manifest
+# (itself checked against MOCHA_PANEL_MANIFEST_SHA256), cut to its biallelic
+# SNVs seen at least twice with their genotypes only (panel/chrN.vcf.gz, what
+# Beagle reads) and deleted. maps/chrN.map is the GRCh38 genetic map of step 26b.
+# About 70 GB is read and about 15 GB kept; a chromosome done is kept by a
+# rerun. MOCHA_REGIONS (a BED file) keeps only those regions and the
+# chromosomes they name: the e2e case uses it for the fixture's chr20 slice.
+install_mocha_data() {
+  local dir=${MOCHA_DATA:-${GENOME_DIR}/reference/mocha-${MOCHA_PANEL_VERSION}}
+  local regions=${MOCHA_REGIONS:-} chroms="" c e f md5 stamp rstamp=all
+  cpath "$dir" >/dev/null || return 1
+  echo "Installing MoChA's phasing panel ${MOCHA_PANEL_VERSION} (step 51) in ${dir}"
+  for c in MOCHA_IMAGE BEAGLE_IMAGE; do ensure_image "$c" 51 || return 1; done
+  mkdir -p "${dir}/panel" "${dir}/maps" "${dir}/raw"
+  if ! { [ -s "${dir}/manifest.txt" ] && [ "$(_digest sha256 "${dir}/manifest.txt")" = "$MOCHA_PANEL_MANIFEST_SHA256" ]; } \
+     && ! fetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "${dir}/manifest.txt" sha256 "$MOCHA_PANEL_MANIFEST_SHA256"; then
+    echo "[WARN] Could not read the panel's manifest (${MOCHA_PANEL_URL}); run: $0 --mocha-data ${GENOME_DIR}"
+    return 1
+  fi
+  if [ -n "$regions" ]; then
+    [ -s "$regions" ] || { echo "[WARN] MOCHA_REGIONS=${regions} is not a file"; return 1; }
+    cp "$regions" "${dir}/regions.bed"
+    rstamp=$(_digest sha256 "${dir}/regions.bed")
+    chroms=$(awk '$1 ~ /^chr([1-9]|1[0-9]|2[0-2])$/ {sub(/^chr/, "", $1); print $1}' "${dir}/regions.bed" | sort -un | sed 's/^/chr/' | tr '\n' ' ')
+  else
+    rm -f "${dir}/regions.bed"
+    for c in $(seq 1 22); do chroms+="chr${c} "; done
+  fi
+  stamp="manifest=${MOCHA_PANEL_MANIFEST_SHA256} regions=${rstamp} bcftools=${MOCHA_IMAGE}"
+  [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && { echo "[OK] MoChA's phasing panel (step 51) already installed: ${dir}"; return 0; }
+  rm -f "${dir}/DONE"
+  for c in $chroms; do
+    [ -s "${dir}/panel/${c}.vcf.gz.tbi" ] && [ "$(cat "${dir}/panel/${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
+    f="1kGP_high_coverage_Illumina.${c}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+    for e in "" .tbi; do
+      md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "${dir}/manifest.txt")
+      [ -n "$md5" ] || { echo "[WARN] ${f}${e} is not in the panel's manifest"; return 1; }
+      [ -s "${dir}/raw/${f}${e}" ] && [ "$(_digest md5 "${dir}/raw/${f}${e}")" = "$md5" ] && continue
+      fetch "${MOCHA_PANEL_URL}/${f}${e}" "${dir}/raw/${f}${e}" md5 "$md5" \
+        || { echo "[WARN] Could not download ${f}${e}; run: $0 --mocha-data ${GENOME_DIR}"; return 1; }
+    done
+    echo "  ${c}: the biallelic SNVs seen twice or more, genotypes only..."
+    # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+    if ! run_in --rw "$dir" "$MOCHA_IMAGE" bash -euo pipefail -c '
+          r=(); [ -z "$3" ] || r=(-R "$3")
+          bcftools view --no-version "${r[@]}" -m2 -M2 -v snps -c 2 -Ou "$1" \
+            | bcftools annotate --no-version -x ID,QUAL,FILTER,INFO,^FMT/GT -Oz -o "$2.part"
+          bcftools index -f -t "$2.part"
+          mv "$2.part.tbi" "$2.tbi"; mv "$2.part" "$2"' \
+          _ "$(cpath "${dir}/raw/${f}")" "$(cpath "${dir}/panel/${c}.vcf.gz")" "$([ -z "$regions" ] || cpath "${dir}/regions.bed")"; then
+      echo "[WARN] Could not cut ${c} of the panel"
+      return 1
+    fi
+    echo "$stamp" > "${dir}/panel/${c}.stamp"
+    rm -f "${dir}/raw/${f}" "${dir}/raw/${f}.tbi"
+  done
+  # The genetic map: the PLINK GRCh38 map of step 26b, from its host or the mirror.
+  local map="${dir}/maps/plink.GRCh38.map.zip"
+  if ! { [ -s "$map" ] && [ "$(_digest sha256 "$map")" = "$ANCESTRY_FINE_MAP_SHA256" ]; }; then
+    fetch "$ANCESTRY_FINE_MAP_URL" "$map" sha256 "$ANCESTRY_FINE_MAP_SHA256" \
+      || { rm -f "${map}.part"; echo "  Trying the mirror: ${ANCESTRY_FINE_MAP_MIRROR_URL}"
+           fetch "$ANCESTRY_FINE_MAP_MIRROR_URL" "$map" sha256 "$ANCESTRY_FINE_MAP_SHA256"; } \
+      || { echo "[WARN] Could not download the genetic map; run: $0 --mocha-data ${GENOME_DIR}"; return 1; }
+  fi
+  # SC2016: no shell variables, the python reads sys.argv; SC2086: one argument per chromosome.
+  # shellcheck disable=SC2016,SC2086
+  if ! run_in --rw "$dir" "$PYTHON_IMAGE" python3 -c '
+import sys, zipfile
+z, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(z) as f:
+    for c in sys.argv[3:]:
+        open(f"{out}/{c}.map", "w").write(f.read(f"chr_in_chrom_field/plink.{c}.GRCh38.map").decode())
+' "$(cpath "$map")" "$(cpath "${dir}/maps")" $chroms; then
+    echo "[WARN] Could not unpack the genetic map"
+    return 1
+  fi
+  rmdir "${dir}/raw" 2>/dev/null || true
+  echo "$stamp" > "${dir}/DONE"
+  echo "[OK] MoChA's phasing panel (step 51, ${chroms% }): ${dir} ($(du -sh "$dir" | cut -f1))"
+}
+
 # pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
 # FETCH_WAIT seconds apart (default 5, then 10, ...), the knobs fetch uses.
 # Docker's own message goes to the terminal: a rate limit (toomanyrequests)
@@ -1128,6 +1216,7 @@ case "$OPT_IN" in
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  mocha-data) install_mocha_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
 esac
