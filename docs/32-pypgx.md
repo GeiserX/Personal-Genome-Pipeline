@@ -50,7 +50,7 @@ The bundle version must match the pypgx version (`0.26.0`). The script validates
 
 ## Gene List
 
-The genes come from one table, [`assets/pgx_genes.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgx_genes.tsv), one row per gene, read by this script and by the Nextflow `PYPGX` module. Adding a gene is adding a row. Its columns:
+The genes come from one table, `assets/pgx_genes.tsv`, one row per gene, read by this script and by the Nextflow `PYPGX` module. Adding a gene is adding a row. Its columns:
 
 | Column | Values | What it does |
 |---|---|---|
