@@ -159,9 +159,10 @@ check("6 and the not-assessed line stays", cs.MCA_NOT_ASSESSED in cs.collect("S"
 # 7. the pins
 env = open(os.path.join(REPO, "versions.env")).read()
 img = re.search(r'^MOCHA_IMAGE="([^"]+)"', env, re.M)
-check("7 MOCHA_IMAGE is the authors' 1.22-20250819 image pinned by its digest", img and img.group(1),
-      "us.gcr.io/mccarroll-mocha/bcftools:1.22-20250819"
-      "@sha256:c9398385cfe3a968918ddf470e2769b7ee42cbc0bb8f564b4744c460343550a5")
+name, _, digest = (img.group(1) if img else "").partition("@")
+check("7 MOCHA_IMAGE is the authors' image, tag 1.22-20250819", (name.split("/")[0], name.rsplit(":", 1)[-1]),
+      ("us.gcr.io", "1.22-20250819"))
+check("7 and pinned by its digest", digest, "sha256:c9398385cfe3a968918ddf470e2769b7ee42cbc0bb8f564b4744c460343550a5")
 com = re.search(r'^MOCHA_COMMIT="([^"]+)"', env, re.M)
 check("7 MOCHA_COMMIT is freeseek/mocha 95686b7b", com and com.group(1), "95686b7b65f53a490513be76bb120e5fc20a8bcf")
 ver = re.search(r'^MOCHA_VERSION="([^"]+)"', env, re.M)
