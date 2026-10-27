@@ -17,7 +17,7 @@
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
-#   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
+#   REF_FASTA, EH_CATALOG (a file, or bundled), MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
 #   the single steps; the panels and pgsc_calc are passed when installed.
@@ -67,9 +67,14 @@ plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
 }
 arg() { [ ! -e "$2" ] || NF+=("$1" "$2"); }  # arg --param FILE: pass FILE when it exists
-CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" A="${G}/annotations" CAT=${EH_CATALOG:-${G}/reference/expansionhunter_variant_catalog.json}
-# Step 09 reads the catalog inside its image; the pipeline takes it as a file.
-[ -n "${EH_CATALOG:-}" ] || [ -s "$CAT" ] || { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
+CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" A="${G}/annotations" CAT=${EH_CATALOG:-}
+# The catalog of steps 09 and 9b: STRchive's when setup.sh built it, as step 09
+# picks it; EH_CATALOG=bundled or no STRchive file: the one inside the image,
+# which step 09 reads there and the pipeline takes as a file.
+STRCHIVE_CAT="${G}/reference/strchive-${STRCHIVE_VERSION}/catalog.json"
+if [ -z "$CAT" ] && [ -s "$STRCHIVE_CAT" ]; then CAT=$STRCHIVE_CAT; fi
+if [ -z "$CAT" ] || [ "$CAT" = bundled ]; then CAT="${G}/reference/expansionhunter_variant_catalog.json"; fi
+[ "${EH_CATALOG:-bundled}" != bundled ] || [ "$CAT" = "$STRCHIVE_CAT" ] || [ -s "$CAT" ] || { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
   > "${CAT}.tmp" && [ -s "${CAT}.tmp" ] && mv "${CAT}.tmp" "$CAT"; } || rm -f "${CAT}.tmp"
 VEPW=$(need "${G}/vep_cache/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt") SCORES=()
 for s in whole_genome_SNVs.tsv.gz:cadd_snv gnomad.genomes.r4.0.indel.tsv.gz:cadd_indel spliceai_scores.raw.snv.hg38.vcf.gz:spliceai_snv \

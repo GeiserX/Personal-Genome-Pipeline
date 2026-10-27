@@ -10,7 +10,7 @@
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
-| **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at the 31 loci of ExpansionHunter's bundled catalog | 9, 9b |
+| **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at STRchive's 82 disease loci | 9, 9b |
 | **Blood Groups** | ABO, RhD, RhCE, Kell, Duffy, Kidd, MNS, Lutheran, Diego, Dombrock, Colton and the platelet antigens HPA-1 to -5 and -15, predicted from the genome (opt-in) | 41 |
 | **Lp(a)** | A genetically high Lp(a): the LPA KIV-2 repeat count from read depth and the risk variants rs10455872 and rs3798220 (opt-in; needs the BAM) | 46 |
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup and Y-STR repeat counts in FamilyTreeDNA's order (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel, admixture fractions and a chromosome painting against an 80-population panel (opt-in) | 11, 12, 26, 26b, 37, 45 |

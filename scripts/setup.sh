@@ -13,6 +13,7 @@
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --strchive-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -24,7 +25,9 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            viral genomes of step 47
+#                                            viral genomes of step 47, the
+#                                            STRchive catalog of steps 09 and 9b
+#                                            (also part of a full setup)
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -44,7 +47,8 @@
 #      GENCODE gene coordinates T1K needs (~350 MB) and GENCODE's exons for
 #      the cDNA read check of steps 06 and 17, both from one ~80 MB download,
 #      and somalier's sites and VerifyBamID2's marker panel for step 33 (~10 MB),
-#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB)
+#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB), and the
+#      STRchive repeat catalog of steps 09 and 9b (~0.5 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked),
 #      plus gnomAD-SV's common SVs (~1.7 GB download, kept as a few MB) and the
 #      MANE Select transcript list
@@ -78,7 +82,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--strchive-data|--vep-cache|--annotsv-data)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -103,7 +107,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --strchive-data | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -131,6 +135,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --strchive-data"
+  echo "                Install only the STRchive ${STRCHIVE_VERSION:-} repeat catalog of steps 09 and 9b (~0.5 MB) and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -366,6 +372,43 @@ install_viral_data() {
     return 1
   fi
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
+}
+
+# install_strchive_data: STRchive's ExpansionHunter catalog and loci file
+# (STRCHIVE_VERSION), each checked against its sha256 in versions.env, joined
+# by bin/strchive_convert.py into reference/strchive-<version>/catalog.json,
+# the catalog steps 09 and 9b and the pipeline use by default. A file that
+# fails its check is removed and nothing is converted; the steps then use
+# the catalogs inside their images. catalog.stamp names the inputs and the
+# converter, so a changed one converts again.
+install_strchive_data() {
+  local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" name sha stamp
+  local base="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}"
+  local eh="STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json" loci="STRchive-loci-${STRCHIVE_VERSION}.json"
+  stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
+  if [ -s "${dir}/catalog.json" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
+    return 0
+  fi
+  for name in "${eh}|${STRCHIVE_EH_SHA256}" "${loci}|${STRCHIVE_LOCI_SHA256}"; do
+    sha=${name#*|} name=${name%%|*}
+    [ -s "${dir}/${name}" ] && [ "$(_digest sha256 "${dir}/${name}")" = "$sha" ] && continue
+    rm -f "${dir}/${name}"
+    if ! fetch "${base}/${name}" "${dir}/${name}" sha256 "$sha"; then
+      echo "[WARN] Could not install STRchive's ${name}. Steps 09 and 9b use the catalogs inside their images; re-run setup.sh to try again."
+      return 1
+    fi
+  done
+  rm -f "${dir}/catalog.json" "${dir}/catalog.stamp"
+  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
+       --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
+       --out "$(cpath "${dir}/catalog.json")" || [ ! -s "${dir}/catalog.json" ]; then
+    rm -f "${dir}/catalog.json"
+    echo "[WARN] Could not convert the STRchive ${STRCHIVE_VERSION} catalog (bin/strchive_convert.py). Steps 09 and 9b use the catalogs inside their images."
+    return 1
+  fi
+  printf '%s\n' "$stamp" > "${dir}/catalog.stamp"
+  echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b): ${dir}/catalog.json"
 }
 
 # install_consumer_sites: the site table of the raw-data export (step 40). The
@@ -1128,6 +1171,7 @@ case "$OPT_IN" in
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  strchive-data) install_strchive_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
 esac
@@ -1471,6 +1515,7 @@ else
 fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
+install_strchive_data || true
 # Step 25: its scores, pgsc_calc and its plugin (warnings only).
 install_prs
 
