@@ -2,7 +2,7 @@
 """bloodtype_report.py: the red cell and platelet antigens one genome predicts.
 
   bloodtype_report.py --sample S --vcf S.vcf.gz --markers assets/bloodtype_markers.tsv
-                      [--depth S_bloodtype_depth.tsv]
+                      [--depth S_bloodtype_depth.tsv] [--cn-loci bin/cn_loci.tsv]
                       --out S_bloodtype.tsv --evidence S_bloodtype_evidence.tsv
 
 reads the sample's genotype at each defining variant of assets/bloodtype_markers.tsv
@@ -13,8 +13,10 @@ Columns: system, phenotype, genotype, confidence, note. It is a prediction from
 the DNA, not a serological typing. The evidence file has one row per site and per
 RhD depth region: what the VCF and the reads said.
 
---depth is samtools bedcov -Q 20 -j over the same table (scripts/41-bloodtype.sh
-and the BLOODTYPE_DEPTH process make it from the BAM). It gives:
+--depth is samtools bedcov -Q 20 -j over the table's sites and the RHD row of
+bin/cn_loci.tsv (scripts/41-bloodtype.sh and the BLOODTYPE_DEPTH process make
+it from the BAM; `copy_number.py bed --locus RHD` prints that row's regions,
+and bin/copy_number.py turns their depth into the copy number). It gives:
   - RhD. The common RhD-negative allele (RHD*01N.01) deletes the whole RHD gene,
     which a VCF does not show. RHD depth over the depth of its two flanks gives
     the copy number (0, 1, 2); exons 3 to 7 without RHD reads in a gene that is
@@ -42,8 +44,9 @@ import gzip
 import re
 import sys
 
+import copy_number as cn
+
 MIN_DEPTH = 8          # reads (MAPQ >= 20) before a site missing from the VCF counts as reference
-RHD_MIN_FLANK = 10     # mean flank depth below which the RHD copy number is not estimated
 RHD_HYBRID_EXONS = (3, 4, 5, 6, 7)   # the exons an RHD-CE(3-7)-D hybrid takes from RHCE
 TABLE_HEADER = ["system", "phenotype", "genotype", "confidence", "note"]
 EVIDENCE_HEADER = ["system", "name", "variant", "rsid", "chrom", "pos", "ref", "alt",
@@ -100,9 +103,19 @@ def norm_chrom(c):
     return "chrM" if c in ("MT", "M") else "chr" + c
 
 
-def read_markers(path):
-    """Sites and regions of the marker table, by name, in table order."""
-    sites, regions = {}, {}
+def rhd_regions(cn_loci=None):
+    """The RhD depth regions (the RHD row of bin/cn_loci.tsv: flanks, gene,
+    exons), by name, shaped as marker rows."""
+    row = cn.load_catalog(cn_loci)["RHD"]
+    return {n: {"chrom": row["chrom"], "start": s, "end": e, "kind": "region", "system": "RhD", "name": n,
+                "hgvs": label, "ref": "", "alt": "", "rsid": ""}
+            for n, s, e, label in row["_controls"] + row["_targets"] + row["_details"]}
+
+
+def read_markers(path, cn_loci=None):
+    """Sites of the marker table and the RhD regions of the catalog, by
+    name, in table order."""
+    sites, regions = {}, rhd_regions(cn_loci)
     with open(path) as f:
         lines = [ln for ln in f if not ln.startswith("#") and ln.strip()]
     rows = list(csv.DictReader(lines, delimiter="\t"))
@@ -113,10 +126,9 @@ def read_markers(path):
         if r["kind"] == "site":
             r["pos"] = r["end"]
             sites[r["name"]] = r
-        elif r["kind"] == "region":
-            regions[r["name"]] = r
         else:
-            raise InputError(f"{path}: row {r['name']} has kind '{r['kind']}' (site or region)")
+            raise InputError(f"{path}: row {r['name']} has kind '{r['kind']}' (site; the RhD depth regions "
+                             "are the RHD row of bin/cn_loci.tsv)")
     return sites, regions
 
 
@@ -204,18 +216,19 @@ def genotype_site(site, ref, alts, filt, alleles):
 
 
 def read_depth(path):
-    """samtools bedcov output over the marker table: mean depth by row name."""
+    """samtools bedcov output over the marker sites (name in column 6) and the
+    RHD regions (a 4-column BED, name in column 4): mean depth by name."""
     depth = {}
     with open(path) as f:
         for line in f:
             c = line.rstrip("\n").split("\t")
-            if len(c) < 7 or c[0].startswith("#"):
+            if len(c) < 5 or c[0].startswith("#"):
                 continue
             try:
                 start, end, total = int(c[1]), int(c[2]), float(c[-1])
             except ValueError:
                 continue
-            depth[c[5]] = total / max(end - start, 1)
+            depth[c[5] if len(c) >= 7 else c[3]] = total / max(end - start, 1)
     return depth
 
 
@@ -372,34 +385,38 @@ def system_duffy(S):
             "confidence": level_of(used), "note": notes_of(used, extra)}
 
 
-def rhd_copies(depth, regions):
-    """(copies of the gene, {exon: copies}, flank depth) from bedcov means, or None."""
-    up, down = regions["RHD_FLANK_UP"], regions["RHD_FLANK_DOWN"]
-    lu, ld = up["end"] - up["start"], down["end"] - down["start"]
-    if "RHD_FLANK_UP" not in depth or "RHD_FLANK_DOWN" not in depth or "RHD_GENE" not in depth:
+def rhd_copies(depth, regions, cn_loci=None):
+    """(copies of the gene, {exon: copies}, flank depth) from bedcov means, or None
+    (bin/copy_number.py on the RHD row; cn.BrokenControl when a flank has no read
+    while the other has the depth the row needs)."""
+    b = cn.assess(cn.load_catalog(cn_loci)["RHD"], {n: depth[n] for n in regions if n in depth})
+    if b["reason"] == "no_data":
         return None
-    flank = (depth["RHD_FLANK_UP"] * lu + depth["RHD_FLANK_DOWN"] * ld) / (lu + ld)
-    if flank < RHD_MIN_FLANK:
-        return None, {}, flank
-    exons = {int(n[len("RHD_EX"):]): 2 * depth[n] / flank for n in regions if n.startswith("RHD_EX") and n in depth}
-    return 2 * depth["RHD_GENE"] / flank, exons, flank
+    if b["reason"] == "low_control_depth":
+        return None, {}, b["control_depth"]
+    exons = {int(n[len("RHD_EX"):]): c for n, c in b["details"].items()}
+    return b["estimate"], exons, b["control_depth"]
 
 
-def system_rhd(S, depth, regions):
+def system_rhd(S, depth, regions, cn_loci=None):
     if depth is None:
         return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
                 "note": "needs the BAM: the common RhD-negative allele (RHD*01N.01) deletes the whole RHD gene, "
                         "which a VCF does not show"}
-    est = rhd_copies(depth, regions)
+    try:
+        est = rhd_copies(depth, regions, cn_loci)
+    except cn.BrokenControl as e:
+        return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
+                "note": str(e)}
     if est is None:
         return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
                 "note": "no read depth over RHD and its flanks (the BAM has no "
                         f"{regions['RHD_GENE']['chrom']} contig)"}
     if est[0] is None:
         return {"system": "RhD", "phenotype": NOT_DETERMINED, "genotype": ".", "confidence": NOT_DETERMINED,
-                "note": f"too few reads beside RHD ({est[2]:.1f}x) for a copy number (at least {RHD_MIN_FLANK}x)"}
+                "note": f"too few reads beside RHD ({est[2]:.1f}x) for a copy number (at least {rhd_min_flank(cn_loci)}x)"}
     copies, exons, _ = est
-    call = 0 if copies < 0.5 else (1 if copies < 1.5 else 2)
+    call = cn.cut_copies(copies, cn.load_catalog(cn_loci)["RHD"]["_call"][1])
     sd, s609 = S["RHD_PSI_DUP"], S["RHD_PSI_609"]
     used, extra = [], []
     n_psi = 0
@@ -432,13 +449,19 @@ def system_rhd(S, depth, regions):
             "confidence": conf, "note": notes_of(used, extra)}
 
 
-def predict(S, depth, regions):
+def rhd_min_flank(cn_loci=None):
+    """The RHD row's minimum flank depth, written as the old constant was (10)."""
+    v = cn.load_catalog(cn_loci)["RHD"]["_min_control"]
+    return int(v) if v == int(v) else v
+
+
+def predict(S, depth, regions, cn_loci=None):
     rows = []
     for system, names in SYSTEMS:
         if system == "ABO":
             rows.append(system_abo(S))
         elif system == "RhD":
-            rows.append(system_rhd(S, depth, regions))
+            rows.append(system_rhd(S, depth, regions, cn_loci))
         elif system == "Duffy":
             rows.append(system_duffy(S))
         else:
@@ -456,7 +479,7 @@ def write_tsv(path, header, rows):
             w.writerow([r.get(h, "") for h in header])
 
 
-def evidence_rows(S, depth, regions):
+def evidence_rows(S, depth, regions, cn_loci=None):
     rows = []
     for s in S.values():
         r = s.row
@@ -464,15 +487,18 @@ def evidence_rows(S, depth, regions):
                      "chrom": r["chrom"], "pos": r["pos"], "ref": r["ref"], "alt": r["alt"], "status": s.status,
                      "alt_copies": "." if s.n is None else s.n,
                      "depth": "." if s.depth is None else f"{s.depth:.1f}", "note": s.note})
-    est = rhd_copies(depth, regions) if depth is not None else None
+    try:
+        est = rhd_copies(depth, regions, cn_loci) if depth is not None else None
+    except cn.BrokenControl:
+        est = None
     flank = est[2] if est else None
     for name, r in regions.items():
         d = (depth or {}).get(name)
-        cn = f"{2 * d / flank:.2f}" if d is not None and flank and not name.startswith("RHD_FLANK") else "."
+        cpy = f"{2 * d / flank:.2f}" if d is not None and flank and not name.startswith("RHD_FLANK") else "."
         rows.append({"system": r["system"], "name": name, "variant": r["hgvs"], "chrom": r["chrom"],
                      "pos": f"{r['start'] + 1}-{r['end']}", "status": "depth" if d is not None else "no depth",
-                     "alt_copies": cn, "depth": "." if d is None else f"{d:.1f}",
-                     "note": "copies = 2 x depth / flank depth" if cn != "." else ""})
+                     "alt_copies": cpy, "depth": "." if d is None else f"{d:.1f}",
+                     "note": "copies = 2 x depth / flank depth" if cpy != "." else ""})
     return rows
 
 
@@ -481,21 +507,22 @@ def main(argv=None):
     ap.add_argument("--sample", required=True)
     ap.add_argument("--vcf", required=True)
     ap.add_argument("--markers", required=True)
-    ap.add_argument("--depth", help="samtools bedcov -Q 20 -j over the marker table, from the BAM")
+    ap.add_argument("--depth", help="samtools bedcov -Q 20 -j over the marker sites and the RHD regions, from the BAM")
+    ap.add_argument("--cn-loci", help="the copy-number catalog (default: bin/cn_loci.tsv beside this script)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--evidence", required=True)
     a = ap.parse_args(argv)
     try:
-        sites, regions = read_markers(a.markers)
+        sites, regions = read_markers(a.markers, a.cn_loci)
         S = read_vcf(a.vcf, sites)
         depth = read_depth(a.depth) if a.depth else None
-    except (InputError, OSError) as e:
+    except (InputError, OSError, cn.CatalogError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     apply_depth(S, depth)
-    rows = predict(S, depth, regions)
+    rows = predict(S, depth, regions, a.cn_loci)
     write_tsv(a.out, TABLE_HEADER, rows)
-    write_tsv(a.evidence, EVIDENCE_HEADER, evidence_rows(S, depth, regions))
+    write_tsv(a.evidence, EVIDENCE_HEADER, evidence_rows(S, depth, regions, a.cn_loci))
     print(f"Blood groups of {a.sample}, predicted from the genome (not a serological typing):")
     for r in rows:
         print(f"  {r['system']:<9} {r['phenotype']:<34} {r['confidence']}")
