@@ -91,13 +91,15 @@ process PARASCOPY {
         model=\${spec%%|*} rest=\${spec#*|}
         region=\${rest%%|*} name=\${rest#*|}
         out=${meta.id}_\${name}_copy_number.tsv
-        reason="" reads=0
+        reason="" reads=x
         if [ -f "\$models/\$model" ]; then
-            reads=\$(samtools view -c -F 0x904 ${bam} "\$region") || reads=0
+            reads=\$(samtools view -c -F 0x904 ${bam} "\$region") || reads=x
         fi
         if [ ! -f "\$models/\$model" ]; then
             reason="no model \$model in the installed Parascopy data (${params.parascopy_population})"
-        elif ! [ "\$reads" -gt 0 ] 2>/dev/null; then
+        elif ! [ "\$reads" -ge 0 ] 2>/dev/null; then
+            reason="could not count reads over \$region (samtools failed)"
+        elif [ "\$reads" -eq 0 ]; then
             reason="no read over \$region"
         elif parascopy cn-using "\$models/\$model" -i ${bam}::${meta.id} -f ${reference} \\
                 -t ${parascopy_data}/homology_table/GRCh38.bed.gz -d depth -o ${meta.id}_parascopy/\$name -@ ${task.cpus}; then
@@ -112,7 +114,9 @@ process PARASCOPY {
         fi
         echo "WARNING: \$model: not assessed: \$reason" >&2
         rm -rf ${meta.id}_parascopy/\$name
-        { header; printf '.\\t.\\t.\\t%s\\t%s\\t.\\t.\\t.\\t.\\t.\\t.\\n' "\${model%.gz}" "not assessed: \$reason"; } > "\$out"
+        chrom=\${region%%:*} span=\${region#*:}
+        { header; printf '%s\\t%s\\t%s\\t%s\\t%s\\t.\\t.\\t%s\\t.\\t.\\t.\\n' "\$chrom" "\$((\${span%-*} - 1))" "\${span#*-}" \\
+            "\${model%.gz}" "not assessed: \$reason" "not assessed: \$reason"; } > "\$out"
     done
     rm -rf depth
     # end of the paralog loci

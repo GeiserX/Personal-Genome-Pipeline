@@ -15,15 +15,19 @@ populations' lists are the same file).
   3. controls: a catalog naming a model not on the list (GBA1.gz, where the
      model file is GBA.gz), a bad region, a repeated table name and a catalog
      without the SMN1 row are each refused;
-  4. the report reader (bin/collect_summary.py): a not-assessed SMN table
-     from step 35 gives a reading that names the reason, and a called one
-     still reads as before.
+  4. the report readers: the not-assessed row step 35 writes (its own lines,
+     cut from scripts/35-paralogs.sh and run) gives a reading that names the
+     reason in bin/collect_summary.py, and in bin/paraphase_report.py and
+     bin/couple_report.py (the Paraphase side-by-side and the couple screen),
+     and a called table still reads as before. Control: the old row with "."
+     for its place is not found over SMN1 exon 7 there.
 
 Run: python3 tests/test_paralog_loci.py
 """
 import hashlib
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -134,12 +138,32 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, "paralogs"))
         t = os.path.join(d, "paralogs", "S_smn_copy_number.tsv")
-        with open(t, "w") as f:
-            f.write(head11 + ".\t.\t.\tSMN1\tnot assessed: no read over chr5:70951946-70951946\t.\t.\t.\t.\t.\t.\n")
+        # the lines of step 35 that write a not-assessed table, run as they are
+        with open(os.path.join(REPO, "scripts", "35-paralogs.sh")) as f:
+            src = f.read()
+        m = re.search(r"\n(  chrom=\$\{region%%:\*\}.*?\n  \} > \"\$out\"\n)", src, re.S)
+        check("step 35 holds the lines that write a not-assessed table", m is not None)
+        reason = "no read over chr5:70951946-70951946"
+        snippet = ("header() { printf 'chrom\\tstart\\tend\\tlocus\\tagCN_filter\\tagCN\\tagCN_qual\\t"
+                   "psCN_filter\\tpsCN\\tpsCN_qual\\thomologous_regions\\n'; }\n" + (m.group(1) if m else "false\n"))
+        subprocess.run(["bash", "-c", snippet], check=False, env=dict(
+            os.environ, region="chr5:70951946-70951946", model="SMN1.gz", reason=reason, out=t))
+        import paraphase_report  # noqa: E402
+        import couple_report  # noqa: E402
         _, data = collect_summary.sec_parascopy(d, "S")
         check("report: a not-assessed SMN table reads as not assessed, with the reason",
-              data["reading"] == "SMN1 and SMN2 not assessed: no read over chr5:70951946-70951946: no carrier reading"
+              data["reading"] == f"SMN1 and SMN2 not assessed: {reason}: no carrier reading"
               and data["smn1"]["cn"] is None, data.get("reading"))
+        p = paraphase_report.parascopy_smn1(t)
+        check("Paraphase side-by-side: a not-assessed SMN table gives no SMN1 copy number, with the reason",
+              p["cn"] is None and reason in p["text"], p)
+        found, txt = couple_report.smn_finding(t, {"SMN1"})
+        check("couple screen: a not-assessed SMN table is a gap that names the reason, not a carrier",
+              found == [] and reason in txt and "not resolved" in txt, txt)
+        with open(t, "w") as f:
+            f.write(head11 + f".\t.\t.\tSMN1\tnot assessed: {reason}\t.\t.\t.\t.\t.\t.\n")
+        check("control: the old not-assessed row, with . for its place, loses the reason there",
+              reason not in paraphase_report.parascopy_smn1(t)["text"])
         with open(t, "w") as f:
             f.write(head11 + "chr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t1,3\t35,30\t"
                     "chr5:70049000-70077000:-\n")

@@ -79,13 +79,17 @@ if [ -z "$SPECS" ]; then
   echo "ERROR: ${LOCI} has no locus row." >&2
   exit 1
 fi
+declare -A SEEN=([hba]=1 [paraphase]=1)  # tables other steps write
 while IFS= read -r spec; do
   # The table name starts with a letter or digit and has no dot, so it is
-  # never "." or ".." in a path the step removes.
-  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr[0-9XY]+:[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
-    echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table); see tests/test_paralog_loci.py." >&2
+  # never "." or ".." in a path the step removes. It is used once, and never
+  # hba or paraphase, or one table would overwrite another.
+  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr[0-9XY]+:[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+     || [ -n "${SEEN[${spec##*|}]:-}" ]; then
+    echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table, a table name used once and not hba or paraphase); see tests/test_paralog_loci.py." >&2
     exit 1
   fi
+  SEEN[${spec##*|}]=1
 done <<<"$SPECS"
 BACKGROUND=(-g GRCh38)
 if [ -n "${PARASCOPY_DEPTH_BED:-}" ]; then
@@ -113,15 +117,17 @@ for spec in $SPECS; do
   # A row is not assessed when its model is not installed, when the BAM has
   # no read over its region (a BAM of part of the genome), or when Parascopy
   # fails on it; the other rows still run.
-  reason="" reads=0
+  reason="" reads=x
   if [ -f "${MODELS}/${model}" ]; then
     # primary alignments only: no unmapped (0x4), secondary or supplementary
     reads=$(run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
-      samtools view -c -F 0x904 "$(cpath "$BAM")" "$region") || reads=0
+      samtools view -c -F 0x904 "$(cpath "$BAM")" "$region") || reads=x
   fi
   if [ ! -f "${MODELS}/${model}" ]; then
     reason="no model ${model} in the installed Parascopy data (${POP})"
-  elif ! [[ "$reads" =~ ^[0-9]+$ ]] || [ "$reads" -eq 0 ]; then
+  elif ! [[ "$reads" =~ ^[0-9]+$ ]]; then
+    reason="could not count reads over ${region} (samtools failed)"
+  elif [ "$reads" -eq 0 ]; then
     reason="no read over ${region}"
   elif run_in --cpus "${THREADS}" --memory 8g "${PARASCOPY_IMAGE}" \
          parascopy cn-using "$(cpath "${MODELS}/${model}")" \
@@ -144,7 +150,14 @@ for spec in $SPECS; do
   fi
   echo "WARNING: ${model}: not assessed: ${reason}" >&2
   rm -rf "${WORK:?}/${name}"
-  { header; printf '.\t.\t.\t%s\tnot assessed: %s\t.\t.\t.\t.\t.\t.\n' "${model%.gz}" "$reason"; } > "$out"
+  # One row over the catalog region (BED start), both filters "not assessed:
+  # <reason>", so a reader of the position (SMN1 exon 7) finds it and its reason.
+  chrom=${region%%:*} span=${region#*:}
+  {
+    header
+    printf '%s\t%s\t%s\t%s\tnot assessed: %s\t.\t.\tnot assessed: %s\t.\t.\t.\n' \
+      "$chrom" "$((${span%-*} - 1))" "${span#*-}" "${model%.gz}" "$reason" "$reason"
+  } > "$out"
 done
 for t in "${TABLES[@]}"; do mv "${WORK}/${t}" "${OUTDIR}/${t}"; done
 rm -rf "${OUTDIR}/depth.part" "${OUTDIR}/${SAMPLE}_parascopy"
