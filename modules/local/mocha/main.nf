@@ -8,9 +8,10 @@
                     AD, a genotype under 10 reads or GQ 20 set missing, INFO/GC
                     from the reference (bcftools +mochatools)
       MOCHA_PHASE   Beagle against the panel, one chromosome at a time (those
-                    the panel has)
+                    the panel has), with the panel's cnps.bed alongside
       MOCHA_CALL    the phased genotypes onto the prepared sites, MoChA
-                    (bcftools +mocha), and the per-chromosome site counts
+                    (bcftools +mocha, the common germline CNVs as --cnp), and
+                    the per-chromosome site counts
       MOCHA_REPORT  bin/mocha_report.py: the calls above the floor
 
     Equivalent to: scripts/51-mocha.sh
@@ -72,7 +73,7 @@ process MOCHA_PHASE {
 
     input:
     tuple val(meta), path(phase_in), path(phase_in_tbi), path(chroms)
-    path(mocha_data)   // reference/mocha-<version>: panel/chrN.vcf.gz and maps/chrN.map
+    path(mocha_data)   // reference/mocha-<version>: panel/chrN.vcf.gz, maps/chrN.map and cnps.bed
 
     output:
     tuple val(meta), path("phase"), emit: phased
@@ -87,6 +88,8 @@ process MOCHA_PHASE {
     """
     set -euo pipefail
     mkdir -p phase
+    [ -f ${mocha_data}/cnps.bed ] || { echo "ERROR: ${mocha_data}/cnps.bed not found: the panel is older than its CNV list (rerun setup.sh --mocha-data)" >&2; exit 1; }
+    cp ${mocha_data}/cnps.bed phase/cnps.bed
     for c in \$(cat ${chroms}); do
         [ -s ${mocha_data}/panel/\$c.vcf.gz ] || continue
         beagle -Xmx${heap}g gt=${phase_in} chrom=\$c ref=${mocha_data}/panel/\$c.vcf.gz map=${mocha_data}/maps/\$c.map \\
@@ -106,6 +109,7 @@ process MOCHA_PHASE {
     """
     mkdir -p phase
     echo chr20 > phase/chroms.txt
+    touch phase/cnps.bed
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         beagle: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -150,7 +154,7 @@ process MOCHA_CALL {
     bcftools index -f phased_gt.bcf
     bcftools annotate --no-version -a phased_gt.bcf -c FMT/GT -r "\$chroms" -Ob -o phased.bcf ${prep}
     bcftools index -f phased.bcf
-    bcftools +mocha --genome GRCh38 --no-version --mhc chr6:27518932-33480487 --kir chr19:54071493-54992731 \\
+    bcftools +mocha --genome GRCh38 --no-version --mhc chr6:27518932-33480487 --kir chr19:54071493-54992731 --cnp ${phase}/cnps.bed \\
       --calls ${p}_mocha_calls_raw.tsv --stats ${p}_mocha_stats.tsv --log ${p}_mocha.log phased.bcf
     bcftools query -f '%CHROM\\t%POS[\\t%GT]\\n' phased.bcf | awk -F '\\t' -v OFS='\\t' '
       \$1 != c { if (c != "") print c, a, b, n, h, ph; c = \$1; a = \$2; n = h = ph = 0 }

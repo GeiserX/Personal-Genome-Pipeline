@@ -28,6 +28,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags. 
 
 - `panel/chrN.vcf.gz`: the 1000 Genomes high-coverage phased panel of 3,202 people (release 20220422, EBI), one chromosome at a time. Each file is checked against the md5 of the release's manifest, and the manifest against `MOCHA_PANEL_MANIFEST_SHA256`. Only the biallelic SNVs seen twice or more are kept, with genotypes only; the downloaded file is then deleted.
 - `maps/chrN.map`: the PLINK GRCh38 genetic map of step 26b (`ANCESTRY_FINE_MAP_URL`, its mirror and its sha256).
+- `cnps.bed`: the panel's common germline deletions and duplications, MoChA's `--cnp` list. Each chromosome file gives its structural variants seen twice or more and over 10 kb (`SVTYPE` CNV, DEL or DUP) before it is deleted, the recipe of the MoChA README (GRCh38, "List of common germline duplications and deletions"). A panel installed before this list existed is rebuilt by a rerun of `--mocha-data`.
 
 The 22 downloads come to about 30 GB (29.8 GB by the server's sizes on 2026-10-27). They are fetched one at a time and each is deleted once cut, so what stays on disk is much smaller. `MOCHA_REGIONS=<bed>` keeps only the regions of a BED file (the e2e case cuts the panel to one 500 kb slice of chr20 this way). `MOCHA_DATA` overrides the folder.
 
@@ -35,7 +36,7 @@ The 22 downloads come to about 30 GB (29.8 GB by the server's sizes on 2026-10-2
 
 - `${SAMPLE}/vcf/${SAMPLE}.vcf.gz` with its `.tbi`, with GT, AD, DP and GQ (DeepVariant writes all four)
 - the panel above
-- `MOCHA_PHASED_VCF=<file inside GENOME_DIR>`: a VCF already phased (GT with `|`), read instead; no Beagle run and no panel needed
+- `MOCHA_PHASED_VCF=<file inside GENOME_DIR>`: a VCF already phased (GT with `|`), read instead; no Beagle run and no panel needed. The bash step only (`scripts/51-mocha.sh`); the Nextflow processes always phase with Beagle. Without the panel folder's `cnps.bed`, MoChA then runs with no `--cnp` list and says so
 
 ## Command
 
@@ -50,7 +51,7 @@ With `run-all.sh`: `TOOLS=...,mocha`; a run lists step 51 only when `TOOLS` name
 
 1. The VCF's biallelic PASS SNVs on chr1 to chr22. A genotype under 10 reads or with GQ under 20 is set missing, as the MoChA README does for WGS. `mochatools` adds the GC content around each site from the reference.
 2. Beagle phases the genotypes against the panel, one chromosome at a time (`impute=false`, `seed=1`). A chromosome the panel lacks is left out.
-3. The phased genotypes go back onto the sites of step 1, and MoChA runs in its WGS mode (allele depths from AD) with `--genome GRCh38`. The MHC and KIR regions are left out of its model.
+3. The phased genotypes go back onto the sites of step 1, and MoChA runs in its WGS mode (allele depths from AD) with `--genome GRCh38` and `cnps.bed` as `--cnp`. The MHC and KIR regions are left out of its model.
 4. `bin/mocha_report.py` reads MoChA's tables and decides which calls are reported.
 
 A call is reported when all of these hold:
@@ -89,6 +90,6 @@ Not measured on a whole genome. Beagle's phasing of the 22 chromosomes takes mos
 - Research result, not a diagnosis. An mCA in blood is common with age and most carriers never get a blood cancer. A clinical test for clonal blood cells is done in a clinical laboratory.
 - Blood only. The method assumes the DNA comes from blood cells; saliva holds a mix of cells, which changes what a cell fraction means.
 - A constitutional event (one every cell carries, such as a germline deletion) has a cell fraction near 1 and is left out by MoChA's filter; this step is not a test for those.
-- A germline copy-number polymorphism is left out by type. Short events (under a few Mb) are hard to tell from these and are reported only when MoChA's filter keeps them.
+- A germline copy-number polymorphism is left out by type: MoChA types a call over a region of `cnps.bed` as `CNP_Loss` or `CNP_Gain`. A germline CNV missing from that list (rare, or under 10 kb) gets no such type. Short events (under a few Mb) are hard to tell from these and are reported only when MoChA's filter keeps them.
 - Calls are labelled by chromosome arm, not by gene: an mCA spans millions of bases.
 - The e2e case (`tests/e2e/mocha-1.sh`) runs the step on HG002's chr20 slice (MoChA makes no call; with about 500 heterozygous sites the sample filter can mark the slice not assessed, since the BAF autocorrelation it reads is meant for a whole genome), and on a synthetic phased VCF with a 20 Mb CN-LOH on 20p in 15% of the cells (one CN-LOH call, cell fraction 0.10 to 0.20) beside the same VCF with no shift (no call). Nothing in the case is a finding about the fixture's sample.

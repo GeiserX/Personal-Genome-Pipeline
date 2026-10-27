@@ -23,7 +23,8 @@ A call is reported when all of these hold:
   - it is on chr1 to chr22 (mosaic loss of Y and of X are step 33's);
   - MoChA's own filter of the UK Biobank callset keeps it (README of
     freeseek/mocha, "Filter callset"): not a germline copy-number polymorphism
-    (type CNP_*); a BAF deviation under 0.1, or heterozygous sites closer than
+    (type CNP_*, which MoChA gives only to a call over a region of its --cnp
+    list, the panel's common germline CNVs of setup.sh --mocha-data); a BAF deviation under 0.1, or heterozygous sites closer than
     200 kb (N50), or a phase-concordance LOD over 10, so a constitutional
     event is left out; a BAF deviation standard error, or a BAF-and-phase LOD
     over 10; and not a likely germline duplication (relative coverage 2.1 or

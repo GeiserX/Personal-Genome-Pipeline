@@ -15,9 +15,11 @@
 #
 # Input:  vcf/<sample>.vcf.gz with .tbi, with GT, AD, DP and GQ (DeepVariant
 #         writes all four); reference/mocha-<MOCHA_PANEL_VERSION>/ (setup.sh
-#         --mocha-data; MOCHA_DATA overrides, inside GENOME_DIR)
+#         --mocha-data; MOCHA_DATA overrides, inside GENOME_DIR), whose
+#         cnps.bed (the panel's common germline CNVs) is MoChA's --cnp list
 #         MOCHA_PHASED_VCF=<file inside GENOME_DIR>: a VCF already phased (GT
-#         with '|'), read instead of the sample's; no Beagle run, no panel needed
+#         with '|'), read instead of the sample's; no Beagle run, no panel
+#         needed (without the folder's cnps.bed MoChA runs with no --cnp list)
 # Output: mosaic/<sample>_mocha.tsv          one row per MoChA call, reported or not and why
 #         mosaic/<sample>_mocha_summary.tsv  status, depth, heterozygous sites, the floor
 #         mosaic/<sample>_mocha_calls_raw.tsv, _mocha_stats.tsv  MoChA's own tables
@@ -48,9 +50,16 @@ MHC=chr6:27518932-33480487 KIR=chr19:54071493-54992731
 
 echo "=== Mosaic chromosomal alterations (MoChA): ${SAMPLE} ==="
 for f in "$VCF" "${VCF}.tbi"; do [ -f "$f" ] || { echo "ERROR: File not found: ${f}" >&2; exit 1; }; done
-if [ "$PHASING" = beagle ] && [ ! -s "${DATA}/DONE" ]; then
-  echo "ERROR: MoChA's phasing panel not found: ${DATA}/DONE (run: ./scripts/setup.sh --mocha-data ${GENOME_DIR})" >&2
+if [ "$PHASING" = beagle ] && { [ ! -s "${DATA}/DONE" ] || [ ! -f "${DATA}/cnps.bed" ]; }; then
+  echo "ERROR: MoChA's phasing panel not found or older than its CNV list: ${DATA}/DONE and cnps.bed (run: ./scripts/setup.sh --mocha-data ${GENOME_DIR})" >&2
   exit 1
+fi
+CNP=""
+if [ -f "${DATA}/cnps.bed" ]; then
+  CNP=$(cpath "${DATA}/cnps.bed")
+  echo "Common germline CNVs (--cnp): ${DATA}/cnps.bed ($(grep -c . "${DATA}/cnps.bed" || true) regions)"
+else
+  echo "[WARN] No ${DATA}/cnps.bed: MoChA runs with no --cnp list, so a short common germline CNV can be reported as mosaic"
 fi
 echo "VCF: ${VCF}$([ "$PHASING" = input ] && echo ' (already phased: no Beagle run)')"
 [ "$PHASING" = input ] || echo "Phasing panel: ${DATA}"
@@ -105,7 +114,7 @@ SITES_AWK='$1 != c { if (c != "") print c, a, b, n, h, ph; c = $1; a = $2; n = h
   { b = $2; n++; if ($3 ~ /^(0[|\/]1|1[|\/]0)$/) { h++; if ($3 ~ /[|]/) ph++ } }
   END { if (c != "") print c, a, b, n, h, ph }'
 echo "[3/4] MoChA (bcftools +mocha, ${MOCHA_VERSION})..."
-# shellcheck disable=SC2016  # $1 to $6 belong to the inner bash
+# shellcheck disable=SC2016  # $1 to $7 belong to the inner bash
 run_in --cpus 2 --memory 8g "$MOCHA_IMAGE" bash -euo pipefail -c '
     w=$1; chroms=$(paste -sd, "$w/phased_chroms.txt")
     if [ "$2" = beagle ]; then
@@ -125,11 +134,12 @@ run_in --cpus 2 --memory 8g "$MOCHA_IMAGE" bash -euo pipefail -c '
       bcftools view --no-version -r "$chroms" -Ob -o "$w/phased.bcf" "$w/prep.bcf"
     fi
     bcftools index -f "$w/phased.bcf"
-    bcftools +mocha --genome GRCh38 --no-version --mhc "$4" --kir "$5" \
+    cnp=(); [ -z "$7" ] || cnp=(--cnp "$7")
+    bcftools +mocha --genome GRCh38 --no-version --mhc "$4" --kir "$5" "${cnp[@]}" \
       --calls "$3_mocha_calls_raw.tsv" --stats "$3_mocha_stats.tsv" --log "$w/mocha.log" "$w/phased.bcf"
     bcftools query -f "%CHROM\t%POS[\t%GT]\n" "$w/phased.bcf" | awk -F "\t" -v OFS="\t" "$6" > "$3_mocha_sites.tsv"
     grep -i -m 1 "^mocha [0-9]" "$w/mocha.log" > "$w/mocha_version.txt" || true' \
-  _ "$WC" "$PHASING" "$O" "$MHC" "$KIR" "$SITES_AWK"
+  _ "$WC" "$PHASING" "$O" "$MHC" "$KIR" "$SITES_AWK" "$CNP"
 echo "  $(cat "${W}/mocha_version.txt")"
 
 echo "[4/4] Calls above the floor (bin/mocha_report.py)..."

@@ -998,9 +998,11 @@ open(f"{out}/{c}.rfmix.map", "w").write("".join(f"{r[0]}\t{r[3]}\t{r[2]}\n" for 
 # panel's VCF is downloaded, checked against the md5 of the release's manifest
 # (itself checked against MOCHA_PANEL_MANIFEST_SHA256), cut to its biallelic
 # SNVs seen at least twice with their genotypes only (panel/chrN.vcf.gz, what
-# Beagle reads) and deleted. maps/chrN.map is the GRCh38 genetic map of step 26b.
-# About 70 GB is read and about 15 GB kept; a chromosome done is kept by a
-# rerun. MOCHA_REGIONS (a BED file) keeps only those regions and the
+# Beagle reads) and deleted. Before it is deleted, its common germline
+# deletions and duplications go to panel/chrN.cnp.bed (the MoChA README's
+# GRCh38 recipe: AC>1, over 10 kb, SVTYPE CNV, DEL or DUP), joined into
+# cnps.bed, the --cnp list of step 51. maps/chrN.map is the GRCh38 genetic map
+# of step 26b. About 30 GB is read; a chromosome done is kept by a rerun. MOCHA_REGIONS (a BED file) keeps only those regions and the
 # chromosomes they name: the e2e case uses it for the fixture's chr20 slice.
 install_mocha_data() {
   local dir=${MOCHA_DATA:-${GENOME_DIR}/reference/mocha-${MOCHA_PANEL_VERSION}}
@@ -1023,11 +1025,12 @@ install_mocha_data() {
     rm -f "${dir}/regions.bed"
     for c in $(seq 1 22); do chroms+="chr${c} "; done
   fi
-  stamp="manifest=${MOCHA_PANEL_MANIFEST_SHA256} regions=${rstamp} bcftools=${MOCHA_IMAGE}"
+  stamp="manifest=${MOCHA_PANEL_MANIFEST_SHA256} regions=${rstamp} bcftools=${MOCHA_IMAGE} cnp=1"
   [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && { echo "[OK] MoChA's phasing panel (step 51) already installed: ${dir}"; return 0; }
   rm -f "${dir}/DONE"
   for c in $chroms; do
-    [ -s "${dir}/panel/${c}.vcf.gz.tbi" ] && [ "$(cat "${dir}/panel/${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
+    [ -s "${dir}/panel/${c}.vcf.gz.tbi" ] && [ -e "${dir}/panel/${c}.cnp.bed" ] \
+      && [ "$(cat "${dir}/panel/${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
     f="1kGP_high_coverage_Illumina.${c}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
     for e in "" .tbi; do
       md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "${dir}/manifest.txt")
@@ -1036,15 +1039,18 @@ install_mocha_data() {
       fetch "${MOCHA_PANEL_URL}/${f}${e}" "${dir}/raw/${f}${e}" md5 "$md5" \
         || { echo "[WARN] Could not download ${f}${e}; run: $0 --mocha-data ${GENOME_DIR}"; return 1; }
     done
-    echo "  ${c}: the biallelic SNVs seen twice or more, genotypes only..."
-    # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+    echo "  ${c}: the biallelic SNVs seen twice or more, genotypes only, and the common CNVs..."
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
     if ! run_in --rw "$dir" "$MOCHA_IMAGE" bash -euo pipefail -c '
           r=(); [ -z "$3" ] || r=(-R "$3")
+          bcftools query "${r[@]}" -i "AC>1 && END-POS+1>10000 && (SVTYPE==\"CNV\" || SVTYPE==\"DEL\" || SVTYPE==\"DUP\")" \
+            -f "%CHROM\t%POS0\t%END\t%SVTYPE\n" "$1" > "$4.part"
           bcftools view --no-version "${r[@]}" -m2 -M2 -v snps -c 2 -Ou "$1" \
             | bcftools annotate --no-version -x ID,QUAL,FILTER,INFO,^FMT/GT -Oz -o "$2.part"
           bcftools index -f -t "$2.part"
-          mv "$2.part.tbi" "$2.tbi"; mv "$2.part" "$2"' \
-          _ "$(cpath "${dir}/raw/${f}")" "$(cpath "${dir}/panel/${c}.vcf.gz")" "$([ -z "$regions" ] || cpath "${dir}/regions.bed")"; then
+          mv "$4.part" "$4"; mv "$2.part.tbi" "$2.tbi"; mv "$2.part" "$2"' \
+          _ "$(cpath "${dir}/raw/${f}")" "$(cpath "${dir}/panel/${c}.vcf.gz")" "$([ -z "$regions" ] || cpath "${dir}/regions.bed")" \
+          "$(cpath "${dir}/panel/${c}.cnp.bed")"; then
       echo "[WARN] Could not cut ${c} of the panel"
       return 1
     fi
@@ -1071,9 +1077,10 @@ with zipfile.ZipFile(z) as f:
     echo "[WARN] Could not unpack the genetic map"
     return 1
   fi
+  for c in $chroms; do cat "${dir}/panel/${c}.cnp.bed"; done > "${dir}/cnps.bed.part" && mv "${dir}/cnps.bed.part" "${dir}/cnps.bed"
   rmdir "${dir}/raw" 2>/dev/null || true
   echo "$stamp" > "${dir}/DONE"
-  echo "[OK] MoChA's phasing panel (step 51, ${chroms% }): ${dir} ($(du -sh "$dir" | cut -f1))"
+  echo "[OK] MoChA's phasing panel (step 51, ${chroms% }): ${dir} ($(du -sh "$dir" | cut -f1), $(wc -l < "${dir}/cnps.bed" | tr -d ' ') common CNVs)"
 }
 
 # pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
