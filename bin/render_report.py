@@ -56,6 +56,22 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+ANCIENT_NOTE = ("Closeness on this PCA is genetic similarity, not descent: a genome near an ancient group shares "
+                "ancestry with it and does not descend from those people. qpAdm models are not part of step 44; "
+                "docs/44-ancient.md says how to read the plot.")
+
+
+def ancient_lines(d):
+    """Step 44's lines, the same in both reports."""
+    lines = [f"AADR {d.get('release', '.')}: {d.get('sites_used', '.')} of {d.get('panel_sites', '.')} sites used; "
+             f"axes from {d.get('present_day_people', '.')} present-day West Eurasians, "
+             f"{d.get('ancient_people', '.')} ancient people in {d.get('ancient_groups', '.')} groups projected.",
+             "Nearest ancient groups:"]
+    lines += [f"  {r['rank']:>2}. {r['group']} ({r['dates']}, {r['country']}; {r['n']} people)"
+              for r in (d.get("nearest") or [])[:10]]
+    return lines
+
+
 COUPLE_NOTE = ("A screen, not a diagnosis: the couple report (couple_<a>_<b>.md in the family folder) lists the "
                "genes, variant types and repeats it does not see. See a genetic counsellor before acting on a "
                "result, or on its absence (docs/39-couple.md).")
@@ -972,6 +988,16 @@ def text_report(s):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
+    if head("archaic", "Archaic Ancestry (IBDmix, step 43)"):
+        for line in archaic_lines(S["archaic"]["data"]):
+            w(f"  {line}")
+        w(f"  {ARCHAIC_NOTE}")
+    if head("ancient", "Ancient Populations (AADR PCA, step 44)"):
+        for line in ancient_lines(S["ancient"]["data"]):
+            w(f"  {line}")
+        w(f"  {ANCIENT_NOTE} Plot: ancient/{s['sample']}_ancient_pca.svg")
+        w("")
+
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
         for line in viral_lines(S["viral"]["data"]):
             w(f"  {line}")
@@ -1263,6 +1289,24 @@ def ystr_body(d):
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+ARCHAIC_NOTE = ("An estimate from IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan: "
+                "a segment counts when either copy carries it, and part of what any person gets is old shared "
+                "ancestry, not gene flow (Africans get some too). Every segment: archaic/<sample>_archaic_segments.tsv; "
+                "docs/43-archaic.md says where the numbers end.")
+
+
+def archaic_lines(d):
+    """Step 43's lines, the same in both reports."""
+    mb = lambda bp: f"{bp / 1e6:.1f} Mb"
+    lines = [f"Neanderthal: {d['neanderthal_percent']}% ({mb(d['neanderthal_bp'])} in {d['neanderthal_segments']} segments)",
+             f"Denisovan: {d['denisovan_percent']}% ({mb(d['denisovan_bp'])} in {d['denisovan_segments']} segments)",
+             f"Analysed: {mb(d['analysed_bp'])} of the autosomes; modern frequencies: 1000 Genomes {d.get('population', '.')}"]
+    if d.get("longest"):
+        lines.append("Longest segments:")
+        lines += [f"  {x}" for x in d["longest"]]
+    return lines
 
 
 CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
@@ -1801,6 +1845,12 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("archaic", MISSING)["state"] != "missing":
+        ah = S["archaic"]["data"]
+        a(card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
+               [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
+               + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)] + [small_note(ARCHAIC_NOTE)]
+               if S["archaic"]["state"] in ("ok", "stale") else []))
     if S.get("lpa", MISSING)["state"] != "missing":
         lp = S["lpa"]["data"]
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
@@ -1915,6 +1965,22 @@ def html_report(s):
     tr_sec = S.get("traits", MISSING)
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
+
+    if S.get("ancient", MISSING)["state"] != "missing":
+        d = S["ancient"]["data"]
+        lines = ancient_lines(d)
+        rows = "".join(f"<tr><td>{E(str(r['rank']))}</td><td>{E(r['group'])}</td><td>{E(r['dates'])}</td>"
+                       f"<td>{E(r['country'])}</td><td>{E(r['locality'])}</td><td>{E(str(r['n']))}</td></tr>\n"
+                       for r in (d.get("nearest") or [])[:10])
+        body = [f"    <p>{E(lines[0])}</p>", "    <table>",
+                "      <tr><th>#</th><th>Ancient group</th><th>Dates</th><th>Country</th><th>Place</th><th>People</th></tr>",
+                rows.rstrip("\n"), "    </table>"]
+        if d.get("plot_svg"):
+            # An <img> of the SVG: shown, never run as part of the page.
+            body.append('    <img alt="PC1 against PC2: present-day West Eurasians in grey, ancient people coloured by '
+                        f'age, the sample marked" style="max-width:100%" src="data:image/svg+xml;base64,{d["plot_svg"]}">')
+        body.append(f"    <p>{E(ANCIENT_NOTE)}</p>")
+        a(card(S["ancient"], "Ancient Populations", body, full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"
