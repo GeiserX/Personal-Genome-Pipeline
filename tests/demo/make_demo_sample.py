@@ -26,8 +26,9 @@ Borrowed, not rewritten:
     bin/paraphase_report.py, step 39's from bin/couple_report.py and step 42's
     from bin/traits_report.py, each fed made-up inputs; step 45's rows come
     from bin/ystr_report.py's marker_row, step 46's from bin/lpa_kiv2.py's
-    assess and step 47's from bin/viral_report.py's build_rows, with made-up
-    counts; steps 02, 40 and 41's tables are written here in their writers'
+    assess, step 35's HBA1/HBA2 table from bin/hba_copy_number.py's assess,
+    step 49's depth rows from bin/chip_report.py's detection_limit and
+    step 47's from bin/viral_report.py's build_rows, with made-up counts; steps 02, 40 and 41's tables are written here in their writers'
     columns.
 
 DEMO-001 carries every section, so every card is in the pictures: also the
@@ -765,6 +766,13 @@ def paralogs(d):
         "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
         "homologous_regions\nchr5\t70925000\t70953000\tSMN1\tPASS\t4\t40\tPASS\t2,2\t33,30\t"
         "chr5:70049000-70077000:-\n")
+    # Step 35's HBA1/HBA2 table: bin/hba_copy_number.py's own assess() on
+    # made-up depths, four alpha-globin genes.
+    import hba_copy_number as hba
+    depth = {"flank_left": 31.2, "HBA2": 30.9, "HBA1": 30.1, "flank_right": 30.4}
+    res = hba.assess(depth, {k: v * (0.76 if k.startswith("HBA") else 0.98) for k, v in depth.items()})
+    put(os.path.join(out, f"{SAMPLE}_hba_copy_number.tsv"),
+        "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in hba.ORDER))
 
 
 def couple(d, rng):
@@ -925,6 +933,89 @@ def lpa(d, rng):
         "metric\tvalue\n" + "".join(f"{k}\t{res[k]}\n" for k in lpa_kiv2.ORDER))
 
 
+def chip(d, rng):
+    """Step 49: no CHIP call, and one depth row per gene of assets/chip_genes.tsv
+    at a made-up mean depth near 31, with bin/chip_report.py's own detection limit."""
+    import chip_report
+    table = chip_report.read_table(os.path.join(REPO, "assets", "chip_genes.tsv"))
+    rows = []
+    for r in table:
+        mean = rng.uniform(29.0, 33.0)
+        rows.append({"gene": r["gene"], "transcript": "", "chrom": "", "coding_bases": str(rng.randint(1500, 7000)),
+                     "mean_depth": f"{mean:.1f}", "detection_limit_vaf": f"{chip_report.detection_limit(mean):.3f}",
+                     "status": "covered"})
+    put(os.path.join(d, "chip", f"{SAMPLE}_chip.tsv"), "\t".join(chip_report.OUT_COLUMNS) + "\n")
+    put(os.path.join(d, "chip", f"{SAMPLE}_chip_depth.tsv"),
+        "\t".join(chip_report.DEPTH_COLUMNS) + "\n"
+        + "".join("\t".join(x[c] for c in chip_report.DEPTH_COLUMNS) + "\n" for x in rows))
+
+
+def archaic(d, rng):
+    """Step 43: bin/archaic_report.py's key/value summary, with made-up shares
+    near the published non-African range and five made-up longest segments."""
+    analysed = 2_870_000_000
+    nea_n, den_n = rng.randint(420, 520), rng.randint(2, 6)
+    nea_bp, den_bp = int(analysed * rng.uniform(0.017, 0.021)), int(analysed * rng.uniform(0.0002, 0.0006))
+    rows = [("sample", SAMPLE), ("method", "IBDmix"),
+            ("archaic_genomes", "Altai Neanderthal, Vindija 33.19 Neanderthal, Altai Denisovan"),
+            ("population", "EUR"), ("min_lod", "4"), ("min_length_bp", "50000"), ("analysed_bp", analysed),
+            ("analysed_chromosomes", 22), ("analysed_sites", rng.randint(5_500_000, 6_500_000)),
+            ("genes", "GENCODE protein-coding"),
+            ("neanderthal_segments", nea_n), ("neanderthal_bp", nea_bp),
+            ("neanderthal_percent", f"{100 * nea_bp / analysed:.2f}"),
+            ("denisovan_segments", den_n), ("denisovan_bp", den_bp),
+            ("denisovan_percent", f"{100 * den_bp / analysed:.2f}")]
+    segs = [("chr1", "Neanderthal"), ("chr3", "Neanderthal"), ("chr6", "Neanderthal"),
+            ("chr9", "Neanderthal"), ("chr12", "Denisovan")]
+    longest = []
+    for i, (c, anc) in enumerate(segs, 1):
+        s = rng.randint(10_000_000, 90_000_000)
+        n = int(rng.uniform(0.9, 1.3 - 0.08 * i) * 1e6)
+        who = "Altai Denisovan" if anc == "Denisovan" else "Altai/Vindija"
+        longest.append((f"longest_{i}", f"{c}:{s}-{s + n} {anc} {n / 1e6:.2f} Mb ({who}); genes: none"))
+    put(os.path.join(d, "archaic", f"{SAMPLE}_archaic.tsv"),
+        "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in rows + longest))
+
+
+def ancient(d, rng):
+    """Step 44: bin/ancient_report.py's nearest-group table, info table and
+    PC plot (its own svg_plot), made-up distances and PCs over a few
+    AADR-style group labels."""
+    import ancient_report
+    groups = [("England_BellBeaker", "2450-2000 BCE", "United Kingdom", "Amesbury Down"),
+              ("Germany_CordedWare", "2900-2350 BCE", "Germany", "Esperstedt"),
+              ("Spain_BellBeaker", "2500-2000 BCE", "Spain", "Camino de las Yeseras"),
+              ("Czechia_EBA_Unetice", "2200-1700 BCE", "Czech Republic", "Moravia"),
+              ("Hungary_LBA", "1500-1100 BCE", "Hungary", "Tiszafüred"),
+              ("Italy_Imperial_Rome", "1-300 CE", "Italy", "Rome"),
+              ("Sweden_Viking", "800-1050 CE", "Sweden", "Sigtuna"),
+              ("France_Neolithic", "4500-3000 BCE", "France", "Gurgy"),
+              ("Turkey_Neolithic", "6500-6000 BCE", "Turkey", "Barcın"),
+              ("Russia_Yamnaya_Samara", "3300-2700 BCE", "Russia", "Samara")]
+    person = (0.01234, -0.00456)
+    dist, nearest = 0.0, []
+    lines = ["rank\tgroup\tn\tdistance\tpc1\tpc2\tdate_bp\tdates\tcountry\tlocality\n"]
+    for i, (g, dates, country, loc) in enumerate(groups, 1):
+        dist += rng.uniform(0.002, 0.012)
+        pc1, pc2 = person[0] + rng.uniform(-dist, dist), person[1] + rng.uniform(-dist, dist)
+        nearest.append({"group": g, "pc1": pc1, "pc2": pc2})
+        lines.append(f"{i}\t{g}\t{rng.randint(3, 40)}\t{dist:.5f}\t{pc1:.5f}\t"
+                     f"{pc2:.5f}\t{rng.randint(1000, 8500)}\t{dates}\t{country}\t{loc}\n")
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient.tsv"), "".join(lines))
+    panel = {f"m{i}": ("present", (rng.gauss(0.0, 0.03), rng.gauss(0.0, 0.025))) for i in range(300)}
+    ancients = {}
+    for i in range(200):
+        panel[f"a{i}"] = (ancient_report.ANCIENT_LABEL, (rng.gauss(0.005, 0.035), rng.gauss(0.0, 0.03)))
+        ancients[f"a{i}"] = {"date_bp": str(rng.randint(500, 9000))}
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient_pca.svg"),
+        ancient_report.svg_plot(person, panel, ancients, SAMPLE, nearest))
+    info = [("release", "v62.0"), ("sites_used", rng.randint(520_000, 560_000)), ("panel_sites", 597_573),
+            ("present_day_people", 819), ("ancient_people", 4_210), ("ancient_groups", 612),
+            ("pcs_in_distance", 4), ("pc1", f"{person[0]:.5f}"), ("pc2", f"{person[1]:.5f}")]
+    put(os.path.join(d, "ancient", f"{SAMPLE}_ancient_info.tsv"),
+        "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in info))
+
+
 def traits(d):
     """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
@@ -974,7 +1065,8 @@ def make(a):
              ("couple", lambda r: couple(d, r)), ("consumer_export", lambda r: consumer_export(d)),
              ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
              ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
-             ("lpa", lambda r: lpa(d, r))]
+             ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
+             ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")

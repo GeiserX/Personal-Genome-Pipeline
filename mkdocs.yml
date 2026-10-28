@@ -169,6 +169,7 @@ nav:
           - "Step 23: Clinical Variant Filter": 23-clinical-filter.md
           - "Step 35 and 35b: Paralog Genes (Parascopy, Paraphase)": 35-paralogs.md
           - "Step 39: Couple Carrier Screen": 39-couple.md
+          - "Step 48: Symptom-Driven Variant Ranking (Exomiser)": 48-exomiser.md
           - "Step 29: Somatic Variant Calling (Mutect2 Tumor-Only) [EXPERIMENTAL]": 29-mutect2-somatic.md
           - "Step 30: Annotation Enrichment (vcfanno)": 30-vcfanno.md
           - "Step 31: Variant Prioritization (slivar)": 31-slivar.md
