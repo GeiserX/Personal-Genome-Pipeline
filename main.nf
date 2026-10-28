@@ -824,7 +824,9 @@ workflow {
             ch_par_bed,
             ch_couple_outputs,
             Channel.value(file("${projectDir}/assets/carrier_genes.tsv", checkIfExists: true)),
-            ch_gencode_exons
+            ch_gencode_exons,
+            // The shared segments phase against step 26b's panel: no panel, no task
+            params.ancestry_fine_panel ? ch_ancestry_fine_panel : Channel.empty()
         )
         ch_family_versions = FAMILY.out.versions
         // <id>_couple_carrier.tsv: the id is the name without its 19-character suffix
