@@ -62,6 +62,9 @@ nextflow run main.nf \
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
 #    --tools '...,archaic'                     + --archaic_data (setup.sh --archaic), --archaic_pop, --hla_genes for the
 #                                                genes of each segment (docs/43-archaic.md)
+#    --hpo HP:0001250,HP:0001263               + --exomiser_data (setup.sh --exomiser-data): Exomiser ranks the
+#                                                variants against these symptoms; --exomiser_proband names
+#                                                the sample when there are several (docs/48-exomiser.md)
 #    mito_variants (a default tool) takes --mito_clinvar <clinvar/clinvar_chr.vcf.gz, its .tbi beside it>
 #                                                and --gnomad_mito <gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz>
 #                                                (setup.sh installs both): ClinVar and gnomAD for each chrM call,
