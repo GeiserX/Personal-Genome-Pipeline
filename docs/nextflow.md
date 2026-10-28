@@ -218,7 +218,7 @@ results/
 │   ├── kir/                # KIR genotypes and the IPD-KIR release (--kir)
 │   ├── paralogs/           # SMN1/SMN2 copy number (Parascopy, opt-in) and HBA1/HBA2 from depth; Paraphase's copy number and variant
 │   │                       #   tables and its own folder (opt-in: paraphase, PacBio HiFi BAMs only)
-│   ├── traits/             # <sample>_traits.tsv and <sample>_traits_genotypes.tsv: the traits panel (traits)
+│   ├── traits/             # <sample>_traits.tsv, <sample>_genotype_rules.tsv and <sample>_traits_genotypes.tsv: the traits panel (traits)
 │   ├── consumer_export/    # 23andMe-layout and AncestryDNA-layout raw-data zips and the summary table
 │   │                       #   (opt-in: consumer_export)
 │   ├── couple/             # <sample>_couple_carrier.tsv: the couple carrier screen for this partner (--pedigree)
@@ -305,7 +305,7 @@ The pipeline and the scripts run the same commands at the same tool releases, so
 | prs | each score's sum, matched variant count and input (gVCF or VCF) |
 | sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
 | y_haplogroup | Yleaf's prediction table; on the same hardening run |
-| traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF |
+| traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF. `<sample>_genotype_rules.tsv` with WhatsHap's phase from a BAM, byte for byte, in case `genotype-rules-1-phase` |
 | archaic | `<sample>_archaic.tsv`, `<sample>_archaic_segments.tsv` and `<sample>_archaic.txt`, byte for byte; in case `archaic-ancestry-1`, which runs step 43 and `--tools archaic` on the same VCF and table |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
