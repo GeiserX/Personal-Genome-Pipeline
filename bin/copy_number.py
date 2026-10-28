@@ -264,7 +264,7 @@ def assess(row, m, q1=None):
     share = (1 - tq / T if T > 0 else 0.0) if guarded else None
     b.update(target_depth=T, control_depth=C, mapq0_share=share)
     low = min(m[n] for n, *_ in ct) if row["control_depth"] == "flanks" else C
-    if low < row["_min_control"]:
+    if low < row["_min_control"] or C <= 0:
         b["reason"] = "low_control_depth"
         return b
     if row["control_depth"] == "flanks" and row["_max_ratio"] is not None and len(ct) > 1:

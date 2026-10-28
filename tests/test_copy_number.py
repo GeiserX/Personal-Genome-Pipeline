@@ -218,6 +218,9 @@ def main():
             want = {"low", "typical", "high"} if mode == "class" else {str(i) for i in range(int(len(vals) + 1))} \
                 if mode == "cut" else None
             check(f"catalog {loc}: a reading for every call", want is None or want <= set(readings), readings)
+    ug = cat["UGT2B17"]["_readings"]
+    check("catalog UGT2B17: a reading for 0, 1, 2 copies and for a duplication",
+          all(ug.get(k) for k in ("0", "1", "2", "dup")), ug)
     with tempfile.TemporaryDirectory() as t:
         p = os.path.join(t, "c.tsv")
         for desc, kw, err in (("a bad kind", {"kind": "exon"}, "kind"),
@@ -333,6 +336,14 @@ def main():
     m = {"fl_a": 30.0, "fl_b": 30.0, "TESTG": 37.5}
     b = cn.assess(g, m, m)
     check("synthetic: 2.5 copies is between counts", b["reason"] == "between_counts", b)
+    z = cn.parse_row(row(min_control_depth="."))
+    try:
+        b = cn.assess(z, {"fl_a": 0.0, "fl_b": 0.0, "TESTG": 30.0}, {"fl_a": 0.0, "fl_b": 0.0, "TESTG": 30.0})
+        got = b["reason"]
+    except ZeroDivisionError as e:
+        got = f"ZeroDivisionError: {e}"
+    check("synthetic: no control depth with no minimum set is low_control_depth, not a crash",
+          got == "low_control_depth", got)
     iv = cn.parse_row(row(kind="interval", target_depth="pooled", control_depth="pooled", mapq0_max=".",
                           bedcov=".", targets="seg1:50000-50500;seg2:50500-51000"))
     b = cn.assess(iv, {"fl_a": 20.0, "fl_b": 40.0, "seg1": 45.0, "seg2": 45.0})
