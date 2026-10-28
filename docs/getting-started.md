@@ -147,7 +147,7 @@ When the run starts from an existing VCF, the pipeline does not read a gVCF besi
 | `ALIGN_DIR=dir` | takes the BAM from `<sample>/dir/` instead of `aligned/` | the samplesheet's `bam` |
 | `TOOLS=a,b` | runs only these steps, by their `--tools` names; an unknown name stops it with exit 2 | `--tools` |
 | `REF_FASTA=path` | another reference inside `GENOME_DIR` (see [Realigning](realignment.md)) | `--reference` |
-| `EH_CATALOG=file` | another ExpansionHunter catalog; by default the one inside the ExpansionHunter image, copied once to `reference/expansionhunter_variant_catalog.json` | `--expansion_catalog` |
+| `EH_CATALOG=file` | another ExpansionHunter catalog; by default STRchive's 82 loci (`reference/strchive-<version>/catalog.json`, from `setup.sh`), else, or with `EH_CATALOG=bundled`, the one inside the ExpansionHunter image, copied once to `reference/expansionhunter_variant_catalog.json` | `--expansion_catalog` |
 | `MANTA_CALL_REGIONS=file` | a bgzipped BED of the regions Manta calls | `--manta_call_regions` |
 | `ANCESTRY_PANEL=file`, `PGSC_CALC_DIR=dir` | another ancestry panel (step 26 and the percentiles of step 25), another pgsc_calc checkout; both are passed when `setup.sh` installed them, and `ANCESTRY_PANEL=none` scores without the panel | `--ancestry_ref`, `--pgsc_calc` |
 | `ANCESTRY_FINE_DIR=dir` | another fine-grained ancestry panel (step 26b); passed when `setup.sh --ancestry-fine-panel` installed it, and `ANCESTRY_FINE_DIR=none` skips the step | `--ancestry_fine_panel` |

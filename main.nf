@@ -33,6 +33,7 @@ include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
+include { TRAITS_PHASE } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
 include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
@@ -724,10 +725,27 @@ workflow {
                 log.warn "traits skipped for ${id}: it reads the gVCF, and the samplesheet row has none " +
                          "(add the gvcf and gvcf_index columns, or start from the BAM or FASTQ)."
             }
-        TRAITS_SITES(ch_gvcf, ch_traits_table, ch_reference, ch_reference_fai)
-        TRAITS(TRAITS_SITES.out.genotypes, ch_traits_table)
+        // assets/genotype_rules.tsv reads several sites together (APOE,
+        // TAS2R38); TRAITS_PHASE phases the rule sites that need it from the
+        // BAM, and a sample without a BAM gets [] for the phase.
+        ch_traits_rules = Channel.value(file("${projectDir}/assets/genotype_rules.tsv", checkIfExists: true))
+        TRAITS_SITES(ch_gvcf, ch_traits_table, ch_traits_rules, ch_reference, ch_reference_fai)
+        ch_traits_genotypes = TRAITS_SITES.out.genotypes.map { meta, g -> [meta.id, meta, g] }
+        TRAITS_PHASE(
+            ch_traits_genotypes
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
+                .map { _id, meta, g, bam, bai -> [meta, g, bam, bai] },
+            ch_traits_rules, ch_reference, ch_reference_fai
+        )
+        TRAITS(
+            ch_traits_genotypes
+                .join(TRAITS_PHASE.out.phased.map { meta, f -> [meta.id, f] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> [row[1], row[2], row[3] ?: []] },
+            ch_traits_table, ch_traits_rules
+        )
         ch_traits          = TRAITS.out.traits
-        ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS.out.versions)
+        ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS_PHASE.out.versions, TRAITS.out.versions)
     }
 
     // ─── Ancient populations (opt-in: ancient, step 44) ─────────────────
@@ -968,6 +986,9 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
+    // The ACMG SF rules and the carrier list the report applies (bin/ is the
+    // only repository folder a task sees).
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -1031,7 +1052,7 @@ workflow {
         .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
-        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
+        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null } + report_assets] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
