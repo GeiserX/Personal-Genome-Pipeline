@@ -1,0 +1,43 @@
+# assets/genotype_rules.tsv: the genotype rules of step 42 (docs/42-traits.md#genotype-rules).
+# A rule reads several sites together: the two haplotypes their genotypes make give one result.
+# Hand-curated from the primary papers in the pmids column; no text is taken from SNPedia or any
+# other database. GRCh38: ref is the GRCh38 base and alt the other allele the rule reads, both on
+# the plus strand as in dbSNP's GRCh38 record, also for a gene on the minus strand.
+# scripts/ci/check-rule-alleles.sh checks every site against dbSNP; bin/traits_report.py
+# --check-rules checks the rest (tests/test_traits_report.py runs both).
+# Four kinds of line, tab separated, each with its own columns:
+#   rule         <rule> gene trait needs_phase ancestry note pmids
+#   site         <rule> rsid chrom pos ref alt          (one per site, in the order the haplotypes use)
+#   haplotype    <rule> name alleles                    (one base per site, comma separated)
+#   combination  <rule> diplotypes label reading
+# diplotypes: two haplotype names in the order of their haplotype lines, joined by /; when the
+# genotypes allow several diplotypes, all of them in that order, joined by |.
+# needs_phase yes: with two or more heterozygous sites the result needs to know which alleles sit
+# on the same copy (WhatsHap, from the reads); without that the rule is unphased, not read.
+# needs_phase no: the combination line is the one of every diplotype the genotypes allow.
+# ancestry: yes when the reading depends on ancestry (the note says how).
+rule	APOE	APOE	APOE alleles (e2, e3, e4)	no	yes	Odds ratios from a meta-analysis of people of European descent (Farrer 1997); the e4 effect was weaker in African American and Hispanic people and stronger in Japanese people. Step 25's Alzheimer's score (PGS000334) includes the same two sites; docs/42-traits.md says why step 06 does not list APOE.	8346443,9343467
+site	APOE	rs429358	chr19	44908684	T	C
+site	APOE	rs7412	chr19	44908822	C	T
+haplotype	APOE	e1	C,T
+haplotype	APOE	e2	T,T
+haplotype	APOE	e3	T,C
+haplotype	APOE	e4	C,C
+combination	APOE	e3/e3	e3/e3	e3/e3, the most common pair: the reference group for Alzheimer's risk.
+combination	APOE	e2/e3	e2/e3	e2/e3: odds of Alzheimer's disease about 0.6 times those of e3/e3.
+combination	APOE	e2/e2	e2/e2	e2/e2: odds of Alzheimer's disease about 0.6 times those of e3/e3 (not significant in that study).
+combination	APOE	e3/e4	e3/e4	One e4: odds of late-onset Alzheimer's disease about 3.2 times those of e3/e3. A risk factor, not a diagnosis.
+combination	APOE	e1/e3|e2/e4	e2/e4	e2/e4: odds of Alzheimer's disease about 2.6 times those of e3/e3. Without phase this pair could also be the rare e1/e3. A risk factor, not a diagnosis.
+combination	APOE	e4/e4	e4/e4	Two e4: odds of late-onset Alzheimer's disease about 14.9 times those of e3/e3, the highest. Still a risk factor, not a diagnosis.
+combination	APOE	e1/e4	e1/e4	A pair with the rare e1 allele: not read.
+combination	APOE	e1/e2	e1/e2	A pair with the rare e1 allele: not read.
+combination	APOE	e1/e1	e1/e1	A pair with the rare e1 allele: not read.
+rule	TAS2R38	TAS2R38	Bitter taste haplotype (TAS2R38, PTC and PROP)	yes	no	The three TAS2R38 sites of the traits table read together: PAV (Pro49, Ala262, Val296) is the taster form and AVI (Ala49, Val262, Ile296) the non-taster form. Kim 2003 found five haplotypes worldwide; this rule reads the two common ones, and a copy with another (AAV, AAI, PVI or a rarer one) is not read. TAS2R38 lies on the minus strand, so the alleles here are the complement of the codon bases.	12595690,15723792
+site	TAS2R38	rs713598	chr7	141973545	C	G
+site	TAS2R38	rs1726866	chr7	141972905	G	A
+site	TAS2R38	rs10246939	chr7	141972804	T	C
+haplotype	TAS2R38	PAV	G,G,C
+haplotype	TAS2R38	AVI	C,A,T
+combination	TAS2R38	PAV/PAV	PAV/PAV	Two copies of PAV, the taster form: in Bufe 2005 this group rated PTC and PROP the most bitter.
+combination	TAS2R38	PAV/AVI	PAV/AVI	One PAV and one AVI copy: a taster. In Bufe 2005 this group recognised PTC and PROP as bitter at concentrations close to those of PAV/PAV; how bitter they rated them lay between the two homozygous groups and varied widely.
+combination	TAS2R38	AVI/AVI	AVI/AVI	Two copies of AVI, the non-taster form: in Bufe 2005 the AVI receptor did not respond to PTC, and this group recognised PTC as bitter only at far higher concentrations. PROP responses varied more.
