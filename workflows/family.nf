@@ -81,9 +81,13 @@ workflow FAMILY {
     // The couple screen reads each partner's own step outputs, not the joint
     // call: one task for every couple of the pedigree, once those are all
     // there. No output (no partners) means no task.
+    // Common deletions: AnnotSV's benign loss set (with gnomAD-SV's common
+    // deletions, setup.sh --annotsv-data), when --annotsv_annotations holds it.
+    def benign = params.annotsv_annotations ?
+        file("${params.annotsv_annotations}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/benign_Loss_SV_GRCh38.sorted.bed") : null
     COUPLE_CARRIER(
         ch_pedigree, ch_ids, ch_sexes, ch_couple_outputs.collect(sort: true),
-        ch_carrier_genes, ch_exons, ch_par_bed
+        ch_carrier_genes, ch_exons, Channel.value(benign && benign.exists() ? benign : []), ch_par_bed
     )
 
     ch_versions = Channel.empty().mix(
