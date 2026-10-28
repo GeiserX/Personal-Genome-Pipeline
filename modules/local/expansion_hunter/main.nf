@@ -24,7 +24,7 @@ process EXPANSION_HUNTER {
     tuple val(meta), path(bam), path(bai)
     path(reference)
     path(reference_fai)
-    path(variant_catalog)
+    path(variant_catalog, stageAs: 'input_catalog.json')   // never the name of the copy below
 
     output:
     tuple val(meta), path("*.vcf"),    emit: vcf
