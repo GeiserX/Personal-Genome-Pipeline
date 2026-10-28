@@ -86,8 +86,11 @@ process HTML_REPORT {
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
             ${id}_traits.tsv)                             place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
+            ${id}_archaic.tsv)                            place archaic "\$f" ;;
+            ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
             ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
+            ${id}_exomiser_top.tsv|${id}_exomiser_terms.tsv) place exomiser "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             acmg_sf.tsv|carrier_genes.tsv)                mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;

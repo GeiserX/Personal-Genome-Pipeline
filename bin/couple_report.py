@@ -6,12 +6,15 @@ same command. Standard library only, so it runs in the plain python image.
   couple_report.py screen --pedigree P.tsv --genes assets/carrier_genes.tsv
                           --clinvar ID=HITS.vcf ... [--delly ID=SV.vcf.gz ...]
                           [--eh ID=EH.vcf ...] [--smn ID=SMN.tsv ...]
-                          [--exons EXONS.bed] [--declared-sex ID=SEX ...] --out-dir D
+                          [--exons EXONS.bed] [--benign-sv BENIGN_LOSS.bed]
+                          [--declared-sex ID=SEX ...] --out-dir D
       For every two samples the pedigree marks as partners and that both have
       a ClinVar screen (step 06's <id>_clinvar_hits.vcf), collects each
       partner's carrier findings in the genes of the carrier list: ClinVar
-      pathogenic and likely pathogenic hits, Delly deletions that remove an
-      exon (with --exons), SMN1 copy number (Parascopy, step 35) and the FMR1
+      pathogenic and likely pathogenic hits, Delly deletions of 50 bp or more
+      that remove an exon (with --exons) and do not match a common deletion
+      of AnnotSV's benign set (with --benign-sv), SMN1 copy number
+      (Parascopy, step 35) and the FMR1
       and FXN repeats (ExpansionHunter, step 09). It writes, per couple A and
       B (sorted by name):
         D/couple_A_B.tsv          one row per gene where either partner has a
@@ -63,6 +66,17 @@ END = re.compile(r"(?:^|;)END=(\d+)")
 # A Delly deletion longer than 1,000 bp needs read depth (FORMAT RDCN) to show
 # the loss: bin/cnvpytor_to_vcf.py holds the rule, which step 05 applies too.
 DEPTH_MIN_SIZE = cnvpytor_to_vcf.DEPTH_MIN_SIZE
+# A structural variant is 50 bp or longer. A shorter Delly deletion is left
+# to the small-variant caller, and counts here only through ClinVar; one that
+# caller misses is missed.
+SV_MIN_SIZE = 50
+# A deletion many people carry is no carrier finding. AnnotSV's benign loss
+# set (benign_Loss_SV_GRCh38.sorted.bed, with gnomAD-SV's common deletions
+# merged in by setup.sh) gives each record a frequency; a record of 1% or
+# more (AnnotSV's own -benignAF default) is common. A Delly deletion matches
+# one when each covers at least half of the other (50% reciprocal overlap).
+COMMON_AF = 0.01
+COMMON_OVERLAP = 0.5
 
 
 def die(lines, code=2):
@@ -168,6 +182,49 @@ def exons_hit(exons, chrom, s0, e0):
     return n
 
 
+def plain_chrom(c):
+    return c[3:] if c.startswith("chr") else c
+
+
+def read_benign(path):
+    """AnnotSV's benign loss BED (chrom, start, end, source, coord, AF):
+    {chrom without 'chr': sorted [(start, end)]} of the records of COMMON_AF
+    or more, and how many. A record without a numeric frequency is not taken
+    as common."""
+    by, n = {}, 0
+    with open(path) as f:
+        for line in f:
+            c = line.rstrip("\r\n").split("\t")
+            if len(c) < 6 or line.startswith(("#", "track")) or not c[1].isdigit() or not c[2].isdigit():
+                continue
+            try:
+                af = float(c[5])
+            except ValueError:
+                continue
+            if af >= COMMON_AF:
+                by.setdefault(plain_chrom(c[0]), []).append((int(c[1]), int(c[2])))
+                n += 1
+    for k in by:
+        by[k].sort()
+    return by, n
+
+
+def common_match(benign, chrom, s0, e0):
+    """True when the 0-based half-open [s0, e0) and a common benign deletion
+    each cover at least COMMON_OVERLAP of the other."""
+    rows = benign.get(plain_chrom(chrom), [])
+    size = e0 - s0
+    # A match is at most size / COMMON_OVERLAP long, so it starts no earlier than that before s0.
+    i = bisect_left(rows, (s0 - int(size / COMMON_OVERLAP) - 1,))
+    while i < len(rows) and rows[i][0] < e0:
+        bs, be = rows[i]
+        ov = min(e0, be) - max(s0, bs)
+        if ov > 0 and ov >= COMMON_OVERLAP * size and ov >= COMMON_OVERLAP * (be - bs):
+            return True
+        i += 1
+    return False
+
+
 # --- findings ----------------------------------------------------------------
 
 def finding(gene, text, copies):
@@ -221,11 +278,17 @@ def clinvar_findings(path, genes, sex, par, aside=None):
     return out, total
 
 
-def delly_findings(path, index, exons, sex, par):
-    """PASS Delly deletions that remove at least one exon of a gene of the list,
-    and the count of long ones set aside because read depth
-    does not confirm the loss (RDCN at the normal count or more, or no estimate)."""
-    out, no_loss = [], 0
+def delly_findings(path, index, exons, sex, par, benign=None):
+    """PASS Delly deletions of SV_MIN_SIZE or more that remove at least one
+    exon of a gene of the list, and the counts of those over such an exon set
+    aside: {"short": below SV_MIN_SIZE, "no_loss": long ones read depth does
+    not confirm (RDCN at the normal count or more, or no estimate), "common":
+    matching a common deletion of the benign set (when one is given)}."""
+    out, skip = [], {"short": 0, "no_loss": 0, "common": 0}
+
+    def over_exon(chrom, pos, end):
+        return any(exons_hit(exons, chrom, max(pos, gs - 1), min(end, ge))
+                   for gs, ge, _ in index.overlapping(chrom, pos + 1, end))
     for r in collect_summary.vcf_records(path):
         if len(r) < 10 or r[6] != "PASS":
             continue
@@ -243,15 +306,23 @@ def delly_findings(path, index, exons, sex, par):
         if z is None:
             continue
         size = end - pos
+        if size < SV_MIN_SIZE:
+            if over_exon(chrom, pos, end):
+                skip["short"] += 1
+            continue
         # Read depth must show the loss for a long deletion: RDCN below the
         # copies a normal region has (1 on a male's chrX or chrY outside the
         # PARs, 2 elsewhere). A missing or negative RDCN (no reads in the
         # flanks) is no evidence of a loss. A VCF without the RDCN field (not
         # Delly 2.x) is read as before.
         if cnvpytor_to_vcf.delly_depth_contradicts("DEL", chrom, pos, end, fmt, vals, sex, in_par):
-            if any(exons_hit(exons, chrom, max(pos, gs - 1), min(end, ge))
-                   for gs, ge, _ in index.overlapping(chrom, pos + 1, end)):
-                no_loss += 1
+            if over_exon(chrom, pos, end):
+                skip["no_loss"] += 1
+            continue
+        # The deleted bases POS+1 to END are the 0-based [POS, END).
+        if benign is not None and common_match(benign, chrom, pos, end):
+            if over_exon(chrom, pos, end):
+                skip["common"] += 1
             continue
         # The deleted bases are POS+1 to END (POS is the base before them).
         for gs, ge, g in index.overlapping(chrom, pos + 1, end):
@@ -262,7 +333,7 @@ def delly_findings(path, index, exons, sex, par):
                 chrom, pos + 1, end, ("%.1f kb" % (size / 1000.0)) if size >= 1000 else "%d bp" % size,
                 z, n, "" if n == 1 else "s")
             out.append(finding(g, text, 1 if z == "het" else 2))
-    return out, no_loss
+    return out, skip
 
 
 def eh_findings(path, genes):
@@ -402,6 +473,10 @@ RESIDUAL = [
     "not span it.",
     "Deletions Delly does not call, deletions longer than %d bp that read depth (Delly's RDCN) does not confirm, "
     "duplications, inversions and insertions." % DEPTH_MIN_SIZE,
+    "Delly deletions shorter than %d bp: they count only when the small-variant caller also calls them and ClinVar "
+    "lists them, so one it misses is missed here." % SV_MIN_SIZE,
+    "With AnnotSV's benign set, a deletion that matches a common one there (1%% or more, %d%% reciprocal overlap) "
+    "is not counted: a rare pathogenic deletion at the same place as a common one is missed." % int(COMMON_OVERLAP * 100),
     "Low-level mosaicism, and whether two changes of one person in one gene sit on the same copy.",
 ]
 COUNSEL = ("This is a screen, not a diagnosis, and not medical advice. Before acting on a result, or on its "
@@ -409,7 +484,7 @@ COUNSEL = ("This is a screen, not a diagnosis, and not medical advice. Before ac
            "can say what a negative screen leaves out for your ancestry.")
 
 
-def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes):
+def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common):
     def sx(s):
         return sexes.get(s) or "sex unknown"
     out = ["# Couple carrier screen: %s and %s" % (a, b), "",
@@ -440,6 +515,8 @@ def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes):
     for s in (a, b):
         x = assessed[s]
         out.append("| %s | %s | %s | %s | %s |" % (s, x["clinvar"], x["delly"], x["smn"], x["eh"]))
+    out.extend(["", "Deletions shorter than %d bp are left to the small-variant caller. Common deletions: %s." % (
+        SV_MIN_SIZE, common)])
     out.extend(["", "## What this screen does not see", ""])
     out.extend("- " + g for g in gaps + RESIDUAL)
     out.extend(["", "A screen that finds no shared gene lowers the chance of a child with one of these conditions; "
@@ -471,6 +548,18 @@ def cmd_screen(a):
             if not os.path.isfile(p):
                 die(["--%s %s: no file %s" % (what, k, p)])
     exons = read_exons(a.exons) if a.exons else None
+    benign, common = None, ("not filtered, no benign SV set was given (AnnotSV's annotations, step 05): a deletion "
+                            "many people carry can show as a finding")
+    if a.benign_sv:
+        if not os.path.isfile(a.benign_sv):
+            die(["--benign-sv: no file %s" % a.benign_sv])
+        benign, n = read_benign(a.benign_sv)
+        if n:
+            common = ("a deletion matching one of 1%% or more in AnnotSV's benign set (%d record%s, "
+                      "%d%% reciprocal overlap) is set aside" % (n, "" if n == 1 else "s", int(COMMON_OVERLAP * 100)))
+        else:
+            benign = None
+            common = "not filtered, the benign SV set holds no deletion of 1% or more"
     par = family_report.read_par(a.par_bed)
     sexes = {s: m["sex"] for s, m in members.items()}
 
@@ -500,11 +589,17 @@ def cmd_screen(a):
                 gaps.append("Deletions of %s: Delly ran, but without the GENCODE exon list a deletion cannot be "
                             "placed on exons." % s)
             else:
-                d, no_loss = delly_findings(delly[s], index, exons, sexes[s], par)
+                d, skip = delly_findings(delly[s], index, exons, sexes[s], par, benign)
                 info["delly"] = "%d over exons of listed genes" % len(d)
-                if no_loss:
+                if skip["short"]:
+                    info["delly"] += "; %d shorter than %d bp set aside" % (skip["short"], SV_MIN_SIZE)
+                if skip["no_loss"]:
                     info["delly"] += "; %d longer than %d bp set aside, read depth does not confirm the loss" % (
-                        no_loss, DEPTH_MIN_SIZE)
+                        skip["no_loss"], DEPTH_MIN_SIZE)
+                if skip["common"]:
+                    info["delly"] += "; %d set aside as common deletions" % skip["common"]
+                if benign is None:
+                    gaps.append("Common deletions of %s: %s." % (s, common))
                 f += d
             if s in smn:
                 m, txt = smn_finding(smn[s], genes)
@@ -528,7 +623,7 @@ def cmd_screen(a):
         write_table(base + ".tsv", rows)
         for s in (x, y):
             write_table(os.path.join(a.out_dir, "%s_couple_carrier.tsv" % s), rows)
-        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes))
+        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common)
         n = {k: sum(1 for r in rows if r["result"] == k) for k in ("shared", "x_linked", "one_partner")}
         print("%s and %s: %d shared gene%s, %d X-linked, %d with one partner only (%s.tsv)" % (
             x, y, n["shared"], "" if n["shared"] == 1 else "s", n["x_linked"], n["one_partner"], base))
@@ -678,6 +773,7 @@ def main(argv=None):
     s.add_argument("--eh", action="append")
     s.add_argument("--smn", action="append")
     s.add_argument("--exons")
+    s.add_argument("--benign-sv")
     s.add_argument("--par-bed")
     s.add_argument("--declared-sex", action="append")
     s.add_argument("--out-dir", required=True)
