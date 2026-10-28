@@ -61,9 +61,12 @@ def _num(row, col, default=None):
     if v == ".":
         return default
     try:
-        return float(v)
+        x = float(v)
     except ValueError:
+        x = math.nan
+    if not math.isfinite(x):
         raise CatalogError(f"{row['locus']}: {col} is {v!r}, not a number or '.'")
+    return x
 
 
 def _segments(row, col):
@@ -101,6 +104,8 @@ def _call(row):
     try:
         vals = [float(x) for x in args.split(",")]
     except ValueError:
+        vals = []
+    if not all(math.isfinite(v) for v in vals):
         vals = []
     if not sep or mode not in ("round", "cut", "class") or not vals \
             or (mode == "round" and len(vals) != 1) or (mode == "class" and len(vals) != 2) \
@@ -189,6 +194,8 @@ def read_bedcov(path, row):
             if len(c) < 5:
                 raise ValueError(f"{path}: expected chrom, start, end, name, depth sum; got {line.strip()!r}")
             chrom, start, end, name = c[0], int(c[1]), int(c[2]), c[3]
+            if (chrom, start, end, name) in seen:
+                raise ValueError(f"{path}: region {name} {chrom}:{start}-{end} appears twice")
             seen.add((chrom, start, end, name))
             means[name] = float(c[4]) / (end - start)
     if seen and seen != set(regions(row)):

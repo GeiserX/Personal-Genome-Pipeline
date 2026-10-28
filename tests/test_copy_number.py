@@ -224,7 +224,10 @@ def main():
                               ("a segment with no span", {"targets": "TESTG:51000-50000"}, "empty span"),
                               ("a class call without an interval", {"call": "class:30,45"}, "needs interval cv"),
                               ("a MAPQ 0 guard with one bedcov pass", {"bedcov": "."}, "two bedcov passes"),
-                              ("a segment name used twice", {"details": "fl_a:1-2"}, "used twice")):
+                              ("a segment name used twice", {"details": "fl_a:1-2"}, "used twice"),
+                              ("a NaN call threshold", {"call": "round:nan"}, "is not round"),
+                              ("an infinite cut threshold", {"call": "cut:0.5,inf"}, "is not round"),
+                              ("a NaN number column", {"mapq0_max": "nan"}, "not a number")):
             write_catalog(p, [row(**kw)])
             try:
                 cn.load_catalog(p)
@@ -239,6 +242,20 @@ def main():
         except cn.CatalogError as e:
             got = str(e)
         check("catalog: one segment name in two loci is refused", "used by two loci" in got, got)
+
+        g0 = cn.parse_row(row())
+        b = os.path.join(t, "dup.bedcov")
+        bedcov(b, g0, {"fl_a": 30.0, "fl_b": 30.0, "TESTG": 30.0})
+        with open(b) as f:
+            first = f.readline()
+        with open(b, "a") as f:
+            f.write(first.rsplit("\t", 1)[0] + "\t0\n")
+        try:
+            cn.read_bedcov(b, g0)
+            got = "read"
+        except ValueError as e:
+            got = str(e)
+        check("bedcov: a region listed twice is refused, not overwritten", "appears twice" in got, got)
 
     # 2. one owner per locus
     models = {}
