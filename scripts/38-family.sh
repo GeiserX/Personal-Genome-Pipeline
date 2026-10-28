@@ -22,6 +22,12 @@
 #   compound_het.tsv       pairs of a child's clinical-filter candidates (step 23)
 #                          in one gene, in trans or in cis
 #   family_report.md       all of it in words
+#   ibd_pairs.tsv          the DNA each pair shares by descent (hap-ibd on the joint
+#                          call phased by Beagle): total and longest cM, share of
+#                          the analysed map, degree; only with the phasing panel
+#   ibd_segments.tsv       each shared stretch: chromosome, start, end, cM
+#   ibd_report.md          the shared segments in words
+#   ibd/                   Beagle's phased VCF and hap-ibd's output, per chromosome
 #
 # The step stops (exit 1) when a pair's measured relatedness disagrees with
 # the pedigree, before any phasing: a sample swap or a wrong pedigree line.
@@ -30,9 +36,17 @@
 #
 # Env: SOMALIER_SITES  sites VCF (default reference/somalier/sites.hg38.vcf.gz),
 #                      inside GENOME_DIR
-#      THREADS         CPUs of GLnexus (default 8)
+#      THREADS         CPUs of GLnexus, Beagle and hap-ibd (default 8)
 #      GLNEXUS_MEM     memory of GLnexus's container in GB (default 16; GLnexus's
 #                      own --mem-gbytes budget is half of it)
+#      ANCESTRY_FINE_DIR  the phased reference panel and genetic maps the shared
+#                      segments need: step 26b's panel folder (setup.sh
+#                      --ancestry-fine-panel; default
+#                      reference/ancestry_fine/<ANCESTRY_FINE_PANEL>). Without
+#                      it, or with none, the step skips the shared segments
+#      FAMILY_IBD_ONLY true: only the shared segments, on the family.vcf.gz an
+#                      earlier run of this step wrote (after installing the
+#                      panel, without joint-calling again)
 set -euo pipefail
 
 FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv]}
@@ -44,27 +58,88 @@ unset SAMPLE
 . "$(dirname "$0")/lib/common.sh"
 # The family name names its folder, so it follows the sample-name rule.
 validate_sample "$FAMILY"
-require_image GLNEXUS_IMAGE BCFTOOLS_IMAGE SOMALIER_IMAGE WHATSHAP_IMAGE PYTHON_IMAGE
+IBD_ONLY=${FAMILY_IBD_ONLY:-false}
+if [ "$IBD_ONLY" = true ]; then
+  require_image BCFTOOLS_IMAGE BEAGLE_IMAGE HAP_IBD_IMAGE PYTHON_IMAGE
+else
+  require_image GLNEXUS_IMAGE BCFTOOLS_IMAGE SOMALIER_IMAGE WHATSHAP_IMAGE PYTHON_IMAGE
+fi
 GLNEXUS_MEM=${GLNEXUS_MEM:-16}
 OUT="${GENOME_DIR}/${FAMILY}"
 OUT_C="/genome/${FAMILY}"
 PEDIGREE=${PEDIGREE:-${OUT}/pedigree.tsv}
 SITES=${SOMALIER_SITES:-${GENOME_DIR}/reference/somalier/sites.hg38.vcf.gz}
 case "$SITES" in /*) ;; *) SITES="${GENOME_DIR}/${SITES}" ;; esac
+IBD_PANEL=${ANCESTRY_FINE_DIR:-${GENOME_DIR}/reference/ancestry_fine/${ANCESTRY_FINE_PANEL}}
+
+# ibd_segments: the DNA each pair of members shares by descent, from
+# ${OUT}/family.vcf.gz. On each autosome with the panel's SNVs and genetic
+# map: the joint call's genotypes at the panel's SNVs (same position and
+# alleles), phased by Beagle against the panel, then hap-ibd's segments, then
+# bin/ibd_report.py's tables. The Nextflow FAMILY_IBD_* processes
+# (modules/local/ibd) run the same commands. Returns 1 when a tool fails.
+ibd_segments() {
+  local P C chroms
+  P=$(cpath "$IBD_PANEL") || return 1
+  C="${OUT_C}/ibd"
+  rm -rf "${OUT}/ibd" "${OUT}"/ibd_pairs.tsv "${OUT}"/ibd_segments.tsv "${OUT}"/ibd_report.md
+  mkdir -p "${OUT}/ibd"
+  echo ""
+  echo "--- shared segments (Beagle against ${IBD_PANEL#"${GENOME_DIR}"/}, then hap-ibd)"
+  # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+  run_in --rw "$OUT" --cpus 2 --memory 4g "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+      for c in $(bcftools index -s "$2/family.vcf.gz" | cut -f1); do
+        case "$c" in chr[1-9]|chr1[0-9]|chr2[0-2]) ;; *) continue ;; esac
+        [ -s "$1/panel/$c.vcf.gz" ] && [ -s "$1/maps/$c.map" ] || continue
+        bcftools isec -n=2 -w1 -r "$c" "$2/family.vcf.gz" "$1/panel/$c.vcf.gz" \
+          | bcftools annotate -x ID,INFO,^FORMAT/GT -Ou \
+          | bcftools +setGT -Oz -o "$3/$c.in.vcf.gz" -- -t . -n . > /dev/null
+        n=$(bcftools view -H "$3/$c.in.vcf.gz" | wc -l)
+        if [ "$n" -ge 100 ]; then echo "$c" >> "$3/chroms.txt"; else rm -f "$3/$c.in.vcf.gz"; fi
+        echo "$c: $n of the panel SNVs in the joint call"
+      done
+      touch "$3/chroms.txt"' _ "$P" "$OUT_C" "$C" || return 1
+  chroms=$(tr '\n' ' ' < "${OUT}/ibd/chroms.txt")
+  if [ -z "$chroms" ]; then
+    echo "No autosome has 100 of the panel's SNVs in the joint call: no shared segments looked for."
+  else
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    run_in --rw "$OUT" --cpus "$THREADS" --memory 8g "$BEAGLE_IMAGE" bash -euo pipefail -c '
+        for c in $4; do
+          beagle -Xmx6g gt="$2/$c.in.vcf.gz" chrom="$c" ref="$1/panel/$c.vcf.gz" map="$1/maps/$c.map" \
+            out="$2/$c" impute=false seed=1 nthreads="$3" > "$2/$c.beagle.out" 2>&1 \
+            || { tail -n 20 "$2/$c.beagle.out"; exit 1; }
+          mv -f "$2/$c.log" "$2/$c.beagle.log"
+        done' _ "$P" "$C" "$THREADS" "$chroms" || { echo "ERROR: Beagle failed (log above)" >&2; return 1; }
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    run_in --rw "$OUT" --cpus "$THREADS" --memory 8g "$HAP_IBD_IMAGE" bash -euo pipefail -c '
+        for c in $4; do
+          hap-ibd -Xmx6g gt="$2/$c.vcf.gz" map="$1/maps/$c.map" out="$2/$c" nthreads="$3" > "$2/$c.hapibd.out" 2>&1 \
+            || { tail -n 20 "$2/$c.hapibd.out"; exit 1; }
+        done' _ "$P" "$C" "$THREADS" "$chroms" || { echo "ERROR: hap-ibd failed (log above)" >&2; return 1; }
+  fi
+  run_in --rw "$OUT" --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+    python3 /pgp-bin/ibd_report.py --pedigree "${OUT_C}/pedigree.tsv" --chroms "${C}/chroms.txt" \
+      --maps "${P}/maps" --phased "$C" --ibd "$C" --out-dir "$OUT_C" || return 1
+  echo "Shared segments: ${OUT}/ibd_pairs.tsv, ${OUT}/ibd_segments.tsv"
+}
 
 echo "=== Step 38: family analysis ==="
 echo "Pedigree: ${PEDIGREE}"
 echo "Somalier sites: ${SITES}"
 echo "Output: ${OUT}/"
 
-for f in "$PEDIGREE" "$REF_FASTA" "${REF_FASTA}.fai" "$SITES"; do
+# The shared segments alone read only the pedigree and the earlier joint call.
+NEED=("$PEDIGREE")
+[ "$IBD_ONLY" = true ] || NEED+=("$REF_FASTA" "${REF_FASTA}.fai" "$SITES")
+for f in "${NEED[@]}"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: File not found: ${f}" >&2
     [ "$f" = "$SITES" ] && echo "  Install it with: ./scripts/setup.sh --sample-qc-data ${GENOME_DIR}" >&2
     exit 1
   fi
 done
-SITES_C=$(cpath "$SITES") || exit 1
+[ "$IBD_ONLY" = true ] || SITES_C=$(cpath "$SITES") || exit 1
 
 # The samples the pedigree names (its sample column; the first non-blank
 # line is the header), and which of them have a gVCF here. Read as
@@ -80,6 +155,7 @@ mapfile -t NAMED < <(awk -F'\t' '
 MEMBERS=()
 for s in ${NAMED[@]+"${NAMED[@]}"}; do
   validate_sample "$s"
+  [ "$IBD_ONLY" = true ] && continue
   g="${GENOME_DIR}/${s}/vcf/${s}.g.vcf.gz"
   if [ -f "$g" ] && [ -f "${g}.tbi" ]; then
     MEMBERS+=("$s")
@@ -97,6 +173,24 @@ done
 if [ -d "${OUT}/vcf" ] || [ -d "${OUT}/aligned" ]; then
   echo "ERROR: ${OUT} holds a sample's vcf/ or aligned/ folder; give the family a name of its own." >&2
   exit 2
+fi
+# The shared segments need the panel's phased SNVs and genetic maps.
+ibd_panel_ok() { [ "$IBD_PANEL" != none ] && [ -s "${IBD_PANEL}/panel/DONE" ] && [ -d "${IBD_PANEL}/maps" ]; }
+if [ "$IBD_ONLY" = true ]; then
+  for f in "${OUT}/family.vcf.gz" "${OUT}/family.vcf.gz.tbi"; do
+    [ -s "$f" ] || { echo "ERROR: FAMILY_IBD_ONLY=true reads ${f}, which an earlier run of this step writes; it is not there." >&2; exit 1; }
+  done
+  if ! ibd_panel_ok; then
+    echo "ERROR: the shared segments need a phasing panel at ${IBD_PANEL} (panel/DONE and maps/)." >&2
+    echo "  Install it with: ./scripts/setup.sh --ancestry-fine-panel ${GENOME_DIR}" >&2
+    exit 1
+  fi
+  [ "$PEDIGREE" -ef "${OUT}/pedigree.tsv" ] || cp -f "$PEDIGREE" "${OUT}/pedigree.tsv"
+  ibd_segments || exit 1
+  echo ""
+  echo "=== Step 38 complete (shared segments only) ==="
+  echo "Shared segments: ${OUT}/ibd_report.md"
+  exit 0
 fi
 if [ "${#MEMBERS[@]}" -lt 2 ]; then
   echo "ERROR: the pedigree names ${#MEMBERS[@]} sample(s) with a gVCF (${MEMBERS[*]:-none}); the family analysis" >&2
@@ -181,6 +275,16 @@ rm -f "${OUT}"/*_inheritance.tsv.gz "${OUT}"/*_segments.tsv "${OUT}"/*_dnapainte
 "${PY[@]}" report --members "${OUT_C}/members.tsv" --relationships "${OUT_C}/relationships.tsv" \
   --vcf "${OUT_C}/family.vcf.gz" ${PHASED[@]+"${PHASED[@]}"} ${CANDS[@]+"${CANDS[@]}"} \
   --par-bed /pgp/par_grch38.bed --out-dir "$OUT_C"
+
+# --- 6. Shared segments (Beagle, hap-ibd), with the phasing panel only ------------------------
+if ibd_panel_ok; then
+  require_image BEAGLE_IMAGE HAP_IBD_IMAGE
+  ibd_segments || exit 1
+else
+  rm -rf "${OUT}/ibd" "${OUT}"/ibd_pairs.tsv "${OUT}"/ibd_segments.tsv "${OUT}"/ibd_report.md
+  echo ""
+  echo "Shared segments skipped: no phasing panel at ${IBD_PANEL} (install it with ./scripts/setup.sh --ancestry-fine-panel ${GENOME_DIR})."
+fi
 
 echo ""
 echo "=== Step 38 complete ==="
