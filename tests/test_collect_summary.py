@@ -1341,14 +1341,14 @@ def roh_upd_karyotype(work, schema):
     # Karyotype from indexcov's copy numbers (step 16) and somalier's depth ratios (step 33).
     k = os.path.join(work, "karyo", "S")
     ped = "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\nS\tS\t-9\t-9\t{s}\t-9\t{x}\t{y}\n"
-    qc = "key\tvalue\nsample\tS\ninferred_sex\tunknown\nx_depth_ratio\t{x}\ny_depth_ratio\t{y}\n"
+    qc = "key\tvalue\nsample\tS\ninferred_sex\tunknown\nx_sites\t{n}\nx_depth_ratio\t{x}\ny_depth_ratio\t{y}\n"
     for x, y, want in ((2.04, 0.97, "47,XXY"), (0.98, 1.95, "47,XYY"), (2.9, 0.02, "47,XXX"), (1.03, 0.05, "45,X"),
                        (2.02, 1.97, "48,XXYY"), (1.98, 0.03, None), (1.01, 0.99, None), (1.5, 0.0, None),
                        # Implausible whole numbers name nothing: indexcov on a slice can read chrY at
                        # about 4, and a degenerate run at 100000.
                        (1.98, 3.91, None), (1.95, 100000.0, None), (6.0, 0.0, None), (1.0, 3.0, None)):
         put(f"{k}/indexcov/indexcov-indexcov.ped", ped.format(s=1 if y > 0.5 else 2, x=x, y=y))
-        put(f"{k}/qc/S_sample_qc.tsv", qc.format(x=f"{x / 2:.2f}", y=f"{y / 2:.2f}"))
+        put(f"{k}/qc/S_sample_qc.tsv", qc.format(n=400, x=f"{x / 2:.2f}", y=f"{y / 2:.2f}"))
         summ, txt, html = render(k)
         got = (summ["sections"]["sex_check"]["data"].get("karyotype"),
                summ["sections"]["sample_qc"]["data"].get("karyotype"))
@@ -1357,6 +1357,19 @@ def roh_upd_karyotype(work, schema):
         shown = [t for t in (txt, html) if "Sex chromosomes" in t]
         check(f"karyotype: both reports {'name ' + want if want else 'say nothing'} for chrX {x}, chrY {y}",
               (len(shown) == 2 and all(want in t for t in shown)) if want else not shown, txt[:200])
+    # somalier's ratios from 10 chrX sites or fewer name nothing: its own sex call needs more.
+    for n in (10, ""):
+        put(f"{k}/qc/S_sample_qc.tsv", qc.format(n=n, x="1.02", y="0.49"))
+        got = collect_summary.sec_sample_qc(k, "S")[1].get("karyotype")
+        check(f"karyotype: somalier's chrX 2.04, chrY 0.98 from x_sites '{n}' names nothing", got is None, got)
+
+    # A run of infinite length makes the ROH file unreadable, not a crash in the band lookup.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t13000000\tinf\t900\t50\n")
+    try:
+        r = collect_summary.sec_roh(d, "S")
+    except collect_summary.Unreadable as e:
+        r = e
+    check("ROH: an RG row of length inf is unreadable", isinstance(r, collect_summary.Unreadable), r)
 
 
 def main():
