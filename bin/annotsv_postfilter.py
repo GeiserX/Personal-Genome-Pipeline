@@ -46,8 +46,49 @@ adds the same two columns here:
                      consensus VCF's sample columns, which step 22 names
                      after the callers), else the SV's own caller
 
+Some class 4 and 5 calls are common or unreliable for a known reason, and
+the table moves them to class 3. ACMG_class is the class after these checks;
+AnnotSV_class keeps AnnotSV's own. Rule names each check that fired and
+Rule_detail says why:
+
+  Depth_support      for a deletion or duplication: yes or no from the
+                     record's own read depth, duphold's DHFFC (a deletion
+                     needs < 0.7) or DHBFC (a duplication needs > 1.3), step
+                     15's thresholds; else, for a Delly call over 1,000 bp,
+                     its RDCN (a deletion needs 0 or 1 copies, a duplication
+                     3 or more, or 2 or more on chrX and chrY, where the sex
+                     is not known here); a CNVpytor call is a read-depth call,
+                     so yes. A Delly call step 05 added (FORMAT GT only)
+                     over 1,000 bp is yes: cnvpytor_to_vcf.py set aside the
+                     ones whose RDCN does not show the change. "not checked"
+                     when the record has no such value (step 15 did not run,
+                     a Delly call of 1,000 bp or less); "." for other types.
+                     "no" moves the call to class 3 (rule no_depth_support).
+  --rules            assets/sv_rule_regions.tsv (scripts/ci/build-sv-rule-
+                     regions.sh writes it), one region per row:
+    tandem_repeat    an SV that lies inside a coding tandem repeat (each
+                     breakpoint within 10 bp of it) is a change in the
+                     repeat's length, which short-read SV callers do not size
+                     and AnnotSV can read as a frameshift: class 3, and the
+                     length is a question for a repeat genotyper;
+    ig_tr_locus      an SV more than half inside IGH, IGK, IGL, TRA, TRB or
+                     TRG: blood cells cut DNA out of these loci when they
+                     rearrange their receptor genes (V(D)J recombination), so
+                     a blood sample carries such deletions without any
+                     inherited change: class 3;
+    mhc              an SV more than half inside the MHC, whose haplotypes
+                     differ by tens of kilobases between people; gnomAD-SV
+                     marks its SVs low confidence (FILTER IGH_MHC_OVERLAP,
+                     over 50% inside IGH or the MHC): class 3;
+    gene_alias       a pseudogene whose HGNC alias or previous symbol is a
+                     disease gene's symbol: when Gene_name lists that symbol
+                     and the SV reaches no transcript of the disease gene in
+                     the genes file (so --genes is needed), Gene_name names
+                     the pseudogene instead, and the class goes to 3 when no
+                     other gene is left.
+
 Usage: annotsv_postfilter.py --class45 CLASS45.tsv [--genes GENES.bed]
-       [--consensus CONSENSUS.vcf.gz] --out CHECKED.tsv
+       [--rules RULES.tsv] [--consensus CONSENSUS.vcf.gz] --out CHECKED.tsv
 """
 import argparse
 import csv
@@ -61,7 +102,14 @@ CONSENSUS_BP = 1000
 AF_COLUMNS = {"DEL": "B_loss", "DUP": "B_gain", "INS": "B_ins", "INV": "B_inv"}
 KEEP = ["AnnotSV_ID", "ID", "SV_chrom", "SV_start", "SV_end", "SV_length", "SV_type", "Gene_name", "ACMG_class",
         "AnnotSV_ranking_score"]
-ADDED = ["Caller", "Exon_edge", "Exon_edge_detail", "Population_AF", "Population_source", "Common"]
+ADDED = ["Caller", "Exon_edge", "Exon_edge_detail", "Population_AF", "Population_source", "Common", "AnnotSV_class",
+         "Depth_support", "Rule", "Rule_detail"]
+DHFFC_MAX = 0.7
+DHBFC_MIN = 1.3
+DELLY_DEPTH_BP = 1000
+REPEAT_SLACK_BP = 10
+LOCUS_FRACTION = 0.5
+RULES = {"tandem_repeat", "ig_tr_locus", "mhc", "gene_alias"}
 SUPPORT = ["Support", "Support_callers"]
 
 
@@ -140,9 +188,134 @@ def population(row):
     return af, (row.get(col + "_source") or "").strip()
 
 
-def check_rows(rows, transcripts=None):
+def sample_format(row):
+    """{FORMAT key: value} of the first sample column, the one after FORMAT
+    in AnnotSV's header; {} when the row has none."""
+    keys = list(row)
+    if "FORMAT" not in keys:
+        return {}
+    i = keys.index("FORMAT") + 1
+    if i >= len(keys) or keys[i] == "Annotation_mode":
+        return {}
+    return dict(zip((row.get("FORMAT") or "").split(":"), (row.get(keys[i]) or "").split(":")))
+
+
+def number(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if x == x else None
+
+
+def sv_span(row):
+    """(start0, end1) of the SV: AnnotSV's SV_start is the base before a
+    deletion, so the deleted bases are SV_start..SV_end-1 0-based. An
+    insertion gets one base."""
+    start, end = int(row["SV_start"]), int(row["SV_end"])
+    return start, max(end, start + 1)
+
+
+def depth_support(row, caller):
+    """(yes|no|not checked|., detail) for a deletion or duplication."""
+    t = sv_type(row)
+    if t not in ("DEL", "DUP"):
+        return ".", ""
+    if caller == "cnvpytor":
+        return "yes", "a read-depth call (CNVpytor)"
+    fmt = sample_format(row)
+    key, ok = ("DHFFC", lambda v: v < DHFFC_MAX) if t == "DEL" else ("DHBFC", lambda v: v > DHBFC_MIN)
+    v = number(fmt.get(key))
+    if v is not None:
+        return ("yes" if ok(v) else "no"), f"duphold {key} {v:g}"
+    rdcn = number(fmt.get("RDCN"))
+    try:
+        length = abs(int(row.get("SV_length") or 0)) or abs(int(row["SV_end"]) - int(row["SV_start"]))
+    except (KeyError, ValueError):
+        length = 0
+    if rdcn is not None and rdcn >= 0 and length > DELLY_DEPTH_BP:
+        sex_chrom = chrom_key(row.get("SV_chrom", "")).upper() in ("X", "Y")
+        yes = rdcn <= 1 if t == "DEL" else rdcn >= (2 if sex_chrom else 3)
+        return ("yes" if yes else "no"), f"Delly RDCN {rdcn:g}"
+    if caller == "delly" and rdcn is None and length > DELLY_DEPTH_BP:
+        # Step 05 adds a Delly call through cnvpytor_to_vcf.py, which keeps
+        # FORMAT GT only, after it has set aside every call over 1,000 bp
+        # whose RDCN does not show the change.
+        return "yes", "RDCN checked when step 05 added the call (bin/cnvpytor_to_vcf.py)"
+    return "not checked", "no duphold or Delly depth value in the record"
+
+
+def read_rules(path, chroms):
+    """{chrom: [(start0, end1, rule, name)]} of the rule table, for the
+    chromosomes in chroms only."""
+    out = {}
+    with open_text(path) as f:
+        for n, line in enumerate(f, 1):
+            if line.startswith("#") or not line.strip():
+                continue
+            c = line.rstrip("\n").split("\t")
+            if len(c) < 6 or c[3] not in RULES:
+                sys.exit(f"ERROR: {path} line {n}: want chrom, start, end, rule ({', '.join(sorted(RULES))}), "
+                         f"action, name, source")
+            if chrom_key(c[0]) in chroms:
+                out.setdefault(chrom_key(c[0]), []).append((int(c[1]), int(c[2]), c[3], c[5]))
+    return out
+
+
+def region_rules(row, rules, transcripts):
+    """([(rule, detail)], new Gene_name or None, downgrade) of the rule table
+    for one row."""
+    try:
+        start, end = sv_span(row)
+    except (KeyError, ValueError):
+        return [], None, False
+    chrom = chrom_key(row.get("SV_chrom", ""))
+    genes = [g for g in (row.get("Gene_name") or "").split(";") if g]
+    hits, seen, remap = [], set(), {}
+    for rs, re_, rule, name in rules.get(chrom, []):
+        if rs >= end + REPEAT_SLACK_BP or re_ <= start - REPEAT_SLACK_BP:
+            continue
+        where = f"{row.get('SV_chrom')}:{rs + 1}-{re_}"
+        if rule == "tandem_repeat" and rule not in seen and start >= rs - REPEAT_SLACK_BP and end <= re_ + REPEAT_SLACK_BP:
+            seen.add(rule)
+            hits.append((rule, f"inside the coding tandem repeat {name} at {where} (TRExplorer): a change in the "
+                               f"repeat's length, which SV callers do not size; read it with a repeat genotyper"))
+        elif rule in ("ig_tr_locus", "mhc") and rule not in seen:
+            frac = (min(end, re_) - max(start, rs)) / (end - start)
+            if frac > LOCUS_FRACTION:
+                seen.add(rule)
+                if rule == "mhc":
+                    hits.append((rule, f"{frac:.0%} inside the MHC ({where}), whose haplotypes differ widely between "
+                                       f"people; gnomAD-SV marks such SVs low confidence (IGH_MHC_OVERLAP)"))
+                else:
+                    hits.append((rule, f"{frac:.0%} inside the {name} locus ({where}), where blood cells cut DNA out "
+                                       f"when they rearrange their receptor genes (V(D)J recombination)"))
+        elif rule == "gene_alias" and transcripts is not None and min(end, re_) > max(start, rs):
+            alias, pseudo, pseudo_id, gene_id = (name.split("|") + ["", "", "", ""])[:4]
+            if alias not in genes or alias in remap:
+                continue
+            real = any(g == alias and te > start and ts < end and not (ts >= rs and te <= re_)
+                       for ts, te, _, g, _, _ in transcripts.get(chrom, []))
+            if not real:
+                remap[alias] = pseudo
+                hits.append((rule, f"{alias} here is the pseudogene {pseudo} ({pseudo_id}), which carries {alias} as "
+                                   f"an alias; the gene {alias} ({gene_id}) lies elsewhere"))
+    new_genes = None
+    downgrade = any(rule != "gene_alias" for rule, _ in hits)
+    if remap:
+        new_genes = ";".join(dict.fromkeys(remap.get(g, g) for g in genes))
+        if all(g in remap for g in genes):
+            downgrade = True
+        else:
+            hits = [(rule, d + ("; the class may rest on the other genes, so it stays" if rule == "gene_alias" else ""))
+                    for rule, d in hits]
+    return hits, new_genes, downgrade
+
+
+def check_rows(rows, transcripts=None, rules=None):
     """The class 4 and 5 rows with the added columns. transcripts None: the
-    genes file was not given, so the exon edges are not checked."""
+    genes file was not given, so the exon edges and gene aliases are not
+    checked. rules: read_rules() of the rule table, or None."""
     out = []
     for r in rows:
         o = {k: r.get(k, "") for k in KEEP}
@@ -161,6 +334,19 @@ def check_rows(rows, transcripts=None):
         o["Population_AF"] = "" if af is None else f"{af:g}"
         o["Population_source"] = src
         o["Common"] = "yes" if af is not None and af >= COMMON_AF else "no"
+        o["AnnotSV_class"] = r.get("ACMG_class", "")
+        o["Depth_support"], depth_detail = depth_support(r, o["Caller"])
+        hits, new_genes, downgrade = region_rules(r, rules or {}, transcripts)
+        if o["Depth_support"] == "no":
+            hits.insert(0, ("no_depth_support", f"read depth does not show the change ({depth_detail})"))
+            downgrade = True
+        if new_genes is not None:
+            o["Gene_name"] = new_genes
+        cls = number(o["AnnotSV_class"])
+        if downgrade and cls is not None and cls > 3:
+            o["ACMG_class"] = "3"
+        o["Rule"] = ";".join(h[0] for h in hits)
+        o["Rule_detail"] = " | ".join(h[1] for h in hits)
         out.append(o)
     return out
 
@@ -230,6 +416,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--class45", required=True, help="the class 4 and 5 table (AnnotSV header, full rows)")
     ap.add_argument("--genes", help="AnnotSV's genes.RefSeq.sorted.bed")
+    ap.add_argument("--rules", help="assets/sv_rule_regions.tsv")
     ap.add_argument("--consensus", help="step 22's consensus VCF")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -241,7 +428,12 @@ def main(argv=None):
         if not os.path.isfile(a.genes):
             sys.exit(f"ERROR: no genes file {a.genes}")
         transcripts = read_transcripts(a.genes, {chrom_key(r.get("SV_chrom", "")) for r in rows})
-    checked = check_rows(rows, transcripts)
+    rules = None
+    if a.rules:
+        if not os.path.isfile(a.rules):
+            sys.exit(f"ERROR: no rule table {a.rules}")
+        rules = read_rules(a.rules, {chrom_key(r.get("SV_chrom", "")) for r in rows})
+    checked = check_rows(rows, transcripts, rules)
     cols = KEEP + ADDED
     if a.consensus:
         for r, s in zip(checked, consensus_support(checked, a.consensus)):
@@ -256,7 +448,11 @@ def main(argv=None):
     edge = sum(r["Exon_edge"] == "yes" for r in checked)
     common = sum(r["Common"] == "yes" for r in checked)
     print(f"Class 4-5 SVs checked: {len(checked)}; deletions on exon edges: "
-          f"{edge if transcripts is not None else 'not checked'}; common (benign-set AF >= 1%): {common}",
+          f"{edge if transcripts is not None else 'not checked'}; common (benign-set AF >= 1%): {common}; "
+          f"moved to class 3: {sum(r['ACMG_class'] != r['AnnotSV_class'] for r in checked)}"
+          f"{'' if rules is not None else ' (no rule table)'}; depth support no: "
+          f"{sum(r['Depth_support'] == 'no' for r in checked)}, not checked: "
+          f"{sum(r['Depth_support'] == 'not checked' for r in checked)}",
           file=sys.stderr)
     return 0
 
