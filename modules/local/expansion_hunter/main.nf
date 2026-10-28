@@ -47,6 +47,10 @@ process EXPANSION_HUNTER {
         --threads ${task.cpus} \\
         ${sex_flag}
 
+    # The catalog that ran, published beside the VCF as step 09 does, so a
+    # later scripts/09b-stranger.sh grades with the same loci and thresholds.
+    cp ${variant_catalog} ${prefix}_eh_catalog.json
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         expansionhunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -56,7 +60,7 @@ process EXPANSION_HUNTER {
     stub:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    touch ${prefix}_eh.vcf ${prefix}_eh.json
+    touch ${prefix}_eh.vcf ${prefix}_eh.json ${prefix}_eh_catalog.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

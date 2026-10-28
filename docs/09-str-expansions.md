@@ -27,7 +27,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 | `bundled` | the 31 bundled loci |
 | a file under `GENOME_DIR` | that file |
 
-The step copies the catalog that ran to `expansion_hunter/<sample>_eh_catalog.json`, so step 9b grades with the same loci and thresholds. `run-all.sh` passes the same file to the pipeline as `--expansion_catalog`.
+The step copies the catalog that ran to `expansion_hunter/<sample>_eh_catalog.json`, so step 9b grades with the same loci and thresholds. `run-all.sh` passes the same file to the pipeline as `--expansion_catalog`, and the pipeline's `EXPANSION_HUNTER` publishes it under the same name.
 
 What the converter writes for each locus:
 

@@ -474,6 +474,8 @@ install_strchive_data() {
     echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
     return 0
   fi
+  # A stale catalog goes first, so a failed refetch leaves none for step 09.
+  rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv" "${dir}/catalog.stamp"
   for url in "${eh_url}|${STRCHIVE_EH_SHA256}" "${loci_url}|${STRCHIVE_LOCI_SHA256}"; do
     sha=${url#*|} url=${url%%|*} name=${url##*/}
     [ -s "${dir}/${name}" ] && [ "$(_digest sha256 "${dir}/${name}")" = "$sha" ] && continue
@@ -483,7 +485,6 @@ install_strchive_data() {
       return 1
     fi
   done
-  rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv" "${dir}/catalog.stamp"
   if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
        --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
        --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" \

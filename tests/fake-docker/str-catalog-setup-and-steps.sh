@@ -10,6 +10,10 @@
 #   2. The real files: setup.sh --strchive-data writes catalog.json with 82
 #      loci through bin/strchive_convert.py in PYTHON_IMAGE, and a second run
 #      downloads nothing and converts nothing.
+#   2b. A catalog whose stamp no longer matches, with a refetch that fails
+#      its sha256 check: setup.sh exits 1 and removes the old catalog.json
+#      and str_ranges.tsv, so step 09 does not run on a catalog setup.sh
+#      says it could not install.
 #   3. Step 09 with no EH_CATALOG runs ExpansionHunter on catalog.json, names
 #      the loci it does not grade (MUC1) and copies the catalog beside the
 #      VCF; step 9b grades with that copy and counts the motif of the
@@ -109,6 +113,15 @@ FAKE_DOWNLOAD_DIR="$SERVED" run_expect 0 setup-again "${SCRIPTS}/setup.sh" --str
 output_has setup-again "already present"
 [ "$(fetches)" -eq 0 ] || fail "the second setup.sh downloaded the STRchive files again"
 [ "$(converts)" -eq 0 ] || fail "the second setup.sh converted again"
+
+# --- 2b. a stale catalog whose refetch fails: setup.sh removes it --------------------------
+echo stale > "${DIR}/catalog.stamp"
+rm -f "${DIR}/${EH_FILE}"
+: > "$FAKE_DOCKER_LOG"
+FAKE_DOWNLOAD_DIR="$BAD" run_expect 1 setup-stale "${SCRIPTS}/setup.sh" --strchive-data "$GENOME_DIR"
+[ ! -e "${DIR}/catalog.json" ] || fail "setup.sh kept the stale catalog.json after its refetch failed, so step 09 would run on it"
+[ ! -e "${DIR}/str_ranges.tsv" ] || fail "setup.sh kept the stale str_ranges.tsv after its refetch failed"
+FAKE_DOWNLOAD_DIR="$SERVED" run_expect 0 setup-restore "${SCRIPTS}/setup.sh" --strchive-data "$GENOME_DIR"
 
 # --- 3. steps 09 and 9b on the STRchive catalog -------------------------------------------------
 EH_DIR="${GENOME_DIR}/sample1/expansion_hunter"
