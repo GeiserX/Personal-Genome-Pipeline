@@ -1337,6 +1337,11 @@ def roh_upd_karyotype(work, schema):
     r = collect_summary.sec_roh(d, "S")[1]
     check("ROH: runs under 5 Mb only give F_ROH 0 and no sign of related parents",
           r.get("f_roh") == 0 and r.get("relationship") == "no sign of related parents", r)
+    # A run of exactly 5 Mb counts, as in step 11's summary (5 Mb or more).
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t15000000\t5000000\t900\t50\n")
+    r = collect_summary.sec_roh(d, "S")[1]
+    check("ROH: a run of exactly 5 Mb counts in F_ROH and the long-run list, as in step 11",
+          r.get("long_mb") == 5.0 and len(r.get("autosomal_over_5mb") or []) == 1, r)
 
     # Karyotype from indexcov's copy numbers (step 16) and somalier's depth ratios (step 33).
     k = os.path.join(work, "karyo", "S")
