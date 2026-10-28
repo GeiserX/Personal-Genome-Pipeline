@@ -89,6 +89,7 @@ process HTML_REPORT {
             ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
             ${id}_vntyper.tsv)                            place vntyper "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
+            ${id}_exomiser_top.tsv|${id}_exomiser_terms.tsv) place exomiser "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;

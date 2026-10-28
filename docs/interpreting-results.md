@@ -830,7 +830,7 @@ A clean result from these steps says nothing about the following. Each needs a d
 - **Mobile-element insertions.** Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions, and no step looks for them.
 - **Methylation and phasing from long reads.** The long-read branch stops at alignment, small variants and structural variants; see the [long-read guide](long-read-guide.md).
 - **Mosaic copy-neutral loss of heterozygosity**, present in only some cells (common in blood with age). Step 11 sees runs of homozygosity that are in every cell; it cannot see a change carried by a fraction of them.
-- **Repeat expansions outside ExpansionHunter's 31 loci**, and accurate sizing of very large expansions.
+- **Repeat expansions outside STRchive's 82 disease loci** (ExpansionHunter's 31 without `setup.sh`'s STRchive catalog), the seven of them whose repeat short reads cannot size or STRchive gives no threshold for, and accurate sizing of very large expansions.
 
 ## Important Caveats
 

@@ -56,6 +56,9 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+EXOMISER_NOTE = ("A ranking to bring to a clinical geneticist, not a diagnosis: a high score means a rare, likely "
+                 "damaging variant in a gene linked to symptoms like these, not that it causes them, and an empty or "
+                 "low list does not rule a genetic cause out. Coding and splice variants only (docs/48-exomiser.md).")
 ANCIENT_NOTE = ("Closeness on this PCA is genetic similarity, not descent: a genome near an ancient group shares "
                 "ancestry with it and does not descend from those people. qpAdm models are not part of step 44; "
                 "docs/44-ancient.md says how to read the plot.")
@@ -503,6 +506,45 @@ def ancestry_fine_painted(d):
     else:
         text = "none" + ("" if failed else " (no chromosome long enough)")
     return text + (f"; not painted: RFMix failed on {failed}" if failed else "")
+
+
+def exomiser_terms(d):
+    return ", ".join(f"{t['label']} ({t['id']})" if t.get("label") else t["id"] for t in d.get("terms", [])) or "."
+
+
+def exomiser_text(d, sample):
+    """The Exomiser section of the text report: the terms, then each rank."""
+    out = [f"  Symptoms searched: {exomiser_terms(d)}"]
+    if not d["genes"]:
+        out.append("  No gene passed Exomiser's filters with a variant that fits a mode of inheritance.")
+    for g in d["genes"]:
+        out.append(f"  {g['rank']}. {g['gene']} ({g['moi']}) score {g['exomiser_score']} (symptom match {g['phenotype_score']})")
+        for v in g["variants"]:
+            out.append(f"       {v['variant']} {v['genotype']} {v['consequence']} {v['hgvs']} ACMG {v['acmg']}"
+                       + (f"; {v['disease']}" if v["disease"] != "." else ""))
+    out.append(f"  {EXOMISER_NOTE} In words: exomiser/{sample}_exomiser.txt")
+    return out
+
+
+def exomiser_html(d, sample):
+    """The Exomiser card's body: one table row per rank and variant."""
+    rows = []
+    for g in d["genes"]:
+        for i, v in enumerate(g["variants"]):
+            lead = (f"<td>{E(g['rank'])}</td><td>{E(g['gene'])}</td><td>{E(g['moi'])}</td><td>{E(g['exomiser_score'])}"
+                    f"</td><td>{E(g['phenotype_score'])}</td>") if i == 0 else "<td></td>" * 5
+            rows.append(f"      <tr>{lead}<td>{E(v['variant'])} {E(v['genotype'])}<br><span style=\"font-size:12px;"
+                        f"color:#666\">{E(v['consequence'])} {E(v['hgvs'])}</span></td><td>{E(v['acmg'])}</td>"
+                        f"<td>{E(v['disease'])}</td></tr>")
+    body = [stat("Symptoms searched", E(exomiser_terms(d)))]
+    if rows:
+        body += ["    <table>", "      <tr><th>Rank</th><th>Gene</th><th>Inheritance</th><th>Score</th>"
+                 "<th>Symptom match</th><th>Variant</th><th>ACMG (Exomiser)</th><th>Linked disease</th></tr>"]
+        body += rows + ["    </table>"]
+    else:
+        body.append(stat("Ranked genes", "none passed Exomiser's filters"))
+    body += [small_note(EXOMISER_NOTE), small_note(f"Exomiser's own report: exomiser/{sample}_exomiser.html")]
+    return body
 
 
 def traits_text(d, sample):
@@ -1006,6 +1048,10 @@ def text_report(s):
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
         for line in viral_lines(S["viral"]["data"]):
             w(f"  {line}")
+        w("")
+
+    if head("exomiser", "Symptom-Driven Ranking (Exomiser, step 48)"):
+        out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -1953,6 +1999,10 @@ def html_report(s):
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
 
+    ex_sec = S.get("exomiser", MISSING)
+    if ex_sec["state"] != "missing":
+        a(card(ex_sec, "Symptom-Driven Ranking (Exomiser)",
+               exomiser_html(ex_sec["data"], s["sample"]) if ex_sec["state"] in ("ok", "stale") else [], full=True))
     if S.get("ancient", MISSING)["state"] != "missing":
         d = S["ancient"]["data"]
         lines = ancient_lines(d)

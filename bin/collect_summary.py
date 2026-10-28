@@ -103,7 +103,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "52", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "52", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -2250,6 +2250,39 @@ def sec_traits(d, s):
     return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
 
 
+def sec_exomiser(d, s):
+    """Step 48's ranking (exomiser/<id>_exomiser_top.tsv, bin/exomiser_report.py):
+    the HPO terms searched, and each rank with its gene, mode of inheritance,
+    scores and contributing variants. A table without rows means no gene
+    passed Exomiser's filters."""
+    p = first_existing(d, [f"exomiser/{s}_exomiser_top.tsv"])
+    if not p:
+        return None, {}
+    with open(p, encoding="utf-8", errors="replace") as f:
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+        f.seek(0)
+        header = f.readline().rstrip("\n").split("\t")
+    need = ("rank", "gene", "moi", "exomiser_score", "phenotype_score", "variant", "genotype", "consequence",
+            "hgvs", "acmg", "disease")
+    if any(k not in header for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    if any(None in r or any(r.get(k) is None for k in need) for r in rows):
+        raise Unreadable(f"{os.path.basename(p)} has a line that does not have one field per column")
+    terms = []
+    tp = os.path.join(os.path.dirname(p), f"{s}_exomiser_terms.tsv")
+    if os.path.isfile(tp):
+        with open(tp, encoding="utf-8", errors="replace") as f:
+            terms = [{"id": r.get("hpo_id", ""), "label": r.get("label", "")}
+                     for r in csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)]
+    genes = []
+    for r in rows:
+        if not genes or genes[-1]["rank"] != r["rank"]:
+            genes.append({k: r[k] for k in ("rank", "gene", "moi", "exomiser_score", "phenotype_score")})
+            genes[-1]["variants"] = []
+        genes[-1]["variants"].append({k: r[k] for k in ("variant", "genotype", "consequence", "hgvs", "acmg", "disease")})
+    return p, {"terms": terms, "genes": genes}
+
+
 def sec_couple(d, s):
     """Step 39's couple table (couple/<id>_couple_carrier.tsv, bin/couple_report.py):
     the partner, the shared and X-linked genes with the chance for a child, and
@@ -3047,6 +3080,7 @@ SECTIONS = [
     ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
     ("ancient", "Ancient populations (AADR PCA)", "44", sec_ancient),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
+    ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),
     ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
