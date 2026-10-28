@@ -139,15 +139,18 @@ workflow BAM_ANALYSIS {
     // MODULE 2b: Stranger (STR clinical annotation)
     // Gates on: params.tools contains 'stranger'
     // Requires expansion_hunter to also be in params.tools (enforced in main.nf)
+    // STRANGER grades with ExpansionHunter's catalog when it carries
+    // Stranger's thresholds (the STRchive one), else with Stranger's GRCh38 one.
     // STRANGER_RFC1 counts the motif of the reads at RFC1 from the sample's
     // BAM when Stranger flags RFC1 (step 9b); it writes nothing otherwise.
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('stranger')) {
-        STRANGER(ch_expansion_vcf)
+        STRANGER(ch_expansion_vcf, ch_expansion_catalog)
         STRANGER_RFC1(
             STRANGER.out.vcf.map { meta, vcf -> [meta.id, meta, vcf] }
                 .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
-                .map { id, meta, vcf, bam, bai -> tuple(meta, vcf, bam, bai) }
+                .map { id, meta, vcf, bam, bai -> tuple(meta, vcf, bam, bai) },
+            ch_expansion_catalog
         )
         ch_stranger_vcf = STRANGER.out.vcf
         ch_rfc1_motif   = STRANGER_RFC1.out.motif

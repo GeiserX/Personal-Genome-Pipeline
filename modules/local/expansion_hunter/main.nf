@@ -4,7 +4,11 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Screens for pathogenic repeat expansions: Huntington's, Fragile X,
     Friedreich's ataxia, ALS/FTD, SCAs, myotonic dystrophy, etc.
-    Uses the bundled GRCh38 variant catalog (31 pathogenic loci).
+    Runs on --expansion_catalog: run-all.sh passes STRchive's 82 disease loci
+    (reference/strchive-<version>/catalog.json, built by setup.sh with
+    bin/strchive_convert.py) when setup.sh installed it, else the 31-locus
+    GRCh38 catalog bundled in the image (EH_CATALOG=bundled picks that one).
+    STRANGER takes the same catalog.
 
     Equivalent to: scripts/09-expansion-hunter.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -20,7 +24,7 @@ process EXPANSION_HUNTER {
     tuple val(meta), path(bam), path(bai)
     path(reference)
     path(reference_fai)
-    path(variant_catalog)
+    path(variant_catalog, stageAs: 'input_catalog.json')   // never the name of the copy below
 
     output:
     tuple val(meta), path("*.vcf"),    emit: vcf
@@ -43,6 +47,10 @@ process EXPANSION_HUNTER {
         --threads ${task.cpus} \\
         ${sex_flag}
 
+    # The catalog that ran, published beside the VCF as step 09 does, so a
+    # later scripts/09b-stranger.sh grades with the same loci and thresholds.
+    cp ${variant_catalog} ${prefix}_eh_catalog.json
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         expansionhunter: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -52,7 +60,7 @@ process EXPANSION_HUNTER {
     stub:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    touch ${prefix}_eh.vcf ${prefix}_eh.json
+    touch ${prefix}_eh.vcf ${prefix}_eh.json ${prefix}_eh_catalog.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

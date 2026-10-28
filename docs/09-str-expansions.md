@@ -7,26 +7,50 @@ Screens for pathogenic repeat expansions — a class of mutations invisible to b
 STR expansions cause ~40 known neurological/neuromuscular diseases including Huntington's, Fragile X, Friedreich's ataxia, ALS/FTD, myotonic dystrophy, and multiple spinocerebellar ataxias.
 
 ## Tool
-- **ExpansionHunter** v5.0.0 (Illumina) — upgraded from v2.5.5. Adds multithreading, improved long-repeat estimation, and a bundled GRCh38 variant catalog (31 pathogenic loci)
+- **ExpansionHunter** v5.0.0 (Illumina): multithreaded, with a bundled GRCh38 variant catalog of 31 pathogenic loci
+- **The catalog: STRchive's 82 disease loci.** STRchive ([Hiatt et al. 2025](https://pubmed.ncbi.nlm.nih.gov/40140942/)) publishes every known disease repeat as an ExpansionHunter catalog, with the benign, intermediate and pathogenic sizes and the motifs of each locus in a second file. `setup.sh` downloads both files of `STRCHIVE_VERSION` (`versions.env`, checked against their sha256) and joins them with `bin/strchive_convert.py` into `reference/strchive-<version>/catalog.json`. A full setup installs it; `./scripts/setup.sh --strchive-data <genome_dir>` installs only it (about 0.5 MB). Without that file the step runs on the 31 bundled loci and says so in its log.
 
 ## Docker Image
 - `EXPANSIONHUNTER_IMAGE`
+- `PYTHON_IMAGE` (setup only) runs the converter
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 - Binary: `ExpansionHunter` (on PATH)
-- GRCh38 catalog: `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json` (31 pathogenic loci)
+- Bundled GRCh38 catalog: `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json` (31 pathogenic loci)
+
+## Which Catalog Runs
+
+| `EH_CATALOG` | Catalog |
+|---|---|
+| unset | `reference/strchive-<version>/catalog.json` when `setup.sh` built it, else the 31 bundled loci |
+| `bundled` | the 31 bundled loci |
+| a file under `GENOME_DIR` | that file |
+
+The step copies the catalog that ran to `expansion_hunter/<sample>_eh_catalog.json`; with the bundled catalog it writes none and removes an older copy. Step 9b grades with that copy when it carries Stranger's thresholds, as STRchive's does, so both steps read the same loci and thresholds; otherwise step 9b uses Stranger's bundled GRCh38 catalog ([step 9b](09b-stranger.md)). `run-all.sh` passes the same file to the pipeline as `--expansion_catalog`, and the pipeline's `EXPANSION_HUNTER` publishes it under the same name.
+
+What the converter writes for each locus:
+
+- **The name** is the gene in capitals (`HTT`, `FMR1`, `C9ORF72`, `RFC1`), the names the bundled catalog uses. Where one gene has two loci the name is STRchive's id (`EIEE1_ARX`, `PRTS_ARX`, `HFG_HOXA13-I` to `-III`). At a locus of several repeats (HTT's CAG and CCG, RFC1's AAAAG and AAGGG) the pathogenic repeat carries the locus name and the others `<name>_<motif>`.
+- **Stranger's thresholds** (`NormalMax`, `PathologicMin`) come from STRchive's `benign_max` and `pathogenic_min`. Where STRchive gives no benign maximum (the FAME loci, SCA31, XDP and the GOLGA8A locus of aFTLD-U), `NormalMax` is the reference allele's unit count, so a longer allele is never called normal.
+- **Seven loci get no thresholds**, so step 9b gives them no status, and the step log lists them as "Not graded": MUC1, CEL, TYMS and PLIN4, whose reference repeat is longer than 300 bases, so no short read spans it; VWA1 and POLG, where STRchive gives no pathogenic size; and MIR7-2, where disease comes from a contraction. ExpansionHunter still writes a record for each.
+- **The motifs** of the eleven loci where the motif decides, not the size: RFC1, the FAME loci (SAMD12, STARD7, YEATS2, MARCHF6, RAPGEF2, TNRC6A, RAI1), SCA31 (BEAN1), SCA37 (DAB1) and aFTLD-U (GOLGA8A). Step 9b counts them in the reads ([step 9b](09b-stranger.md)).
 
 ## Key Disease Thresholds
-| Disease | Gene | Repeat Unit | Normal | Pathogenic |
-|---|---|---|---|---|
-| Huntington's | HTT | CAG | <27 | >35 |
-| Fragile X | FMR1 | CGG | <45 | ≥55 (premutation) / >200 (full) |
-| Friedreich's Ataxia | FXN | GAA | <33 | >66 |
-| ALS/FTD | C9ORF72 | GGCCCC | <24 | >30 |
-| Myotonic Dystrophy 1 | DMPK | CTG | <35 | >50 |
-| SCA1 | ATXN1 | CAG | <33 | >39 |
-| SCA2 | ATXN2 | CAG | <22 | >33 |
+
+The thresholds step 9b grades with on the STRchive v2.28.0 catalog, in repeat units: Stranger calls a count up to the normal maximum `normal`, one in the pre-mutation band `pre_mutation`, and one from the full-mutation minimum `full_mutation`. `tests/test_str_ranges.py` checks every row against the catalog. With `EH_CATALOG=bundled`, step 9b uses Stranger's bundled catalog, whose thresholds differ at some loci.
+
+| Disease | Gene | Repeat Unit | Normal | Pre-mutation | Full mutation |
+|---|---|---|---|---|---|
+| Huntington's | HTT | CAG | ≤26 | 27-35 | ≥36 |
+| Fragile X | FMR1 | CGG | ≤44 | 45-200 | ≥201 |
+| Friedreich's Ataxia | FXN | GAA | ≤33 | 34-55 | ≥56 |
+| ALS/FTD | C9ORF72 | GGCCCC | ≤23 | 24-30 | ≥31 |
+| Myotonic Dystrophy 1 | DMPK | CTG | ≤34 | 35-49 | ≥50 |
+| SCA1 | ATXN1 | CAG | ≤35 | 36-38 | ≥39 |
+| SCA2 | ATXN2 | CAG | ≤28 | 29-34 | ≥35 |
+
+Stranger's pre-mutation band is everything between the two thresholds; it is wider than a clinical intermediate range at some loci. At FMR1 it covers both the gray zone and the premutation below. `setup.sh` also writes `reference/strchive-<version>/str_ranges.tsv`, one row per locus with these two thresholds and STRchive's own intermediate range.
 
 ## FMR1 Clinical Zones
 
@@ -51,7 +75,7 @@ The second argument (`male`/`female`) is **required** — it affects X-linked lo
 ## Notes
 - Uses ExpansionHunter **v5.0.0** (`EXPANSIONHUNTER_IMAGE`)
 - v5 CLI: `--reads`, `--reference`, `--variant-catalog` (JSON file), `--output-prefix` (auto-generates .vcf, .json)
-- The 31-locus GRCh38 variant catalog is bundled inside the container at `/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json`
-- **Why the bundled catalog, not a larger one.** Illumina has published no newer catalog for ExpansionHunter 5.0.0 (its last release, 2021). The larger candidate is Stranger's own GRCh38 catalog, 51 loci with their normal and pathologic thresholds, which would keep step 9b's thresholds in step by construction. It is not used yet: it lacks two of the bundled loci (NIPA1 and NOTCH2NL), and ExpansionHunter has not been run on it here. Switching means passing it with `EH_CATALOG` (the script) and `--expansion_catalog` (the pipeline) after a real run; until then Stranger has thresholds for 29 of the 31 bundled loci, none for NIPA1 and NOTCH2NL.
+- **Why STRchive, not a larger catalog.** STRchive lists the loci with a published disease link, each with the sources of its thresholds. Larger catalogs (tens of thousands of loci) are for research, have no thresholds, and would make step 9b's grades meaningless. Illumina has published no newer catalog than the bundled one (2021).
+- **What the STRchive catalog cannot do.** It does not make long repeats readable: the seven loci above stay ungraded, and an expansion longer than a read is still sized only roughly. The motif count of step 9b reads the motif, never the size.
 - Short-read WGS can reliably detect expansions up to ~150 repeats; very large expansions (>1000) are less accurate
 - **How well each allele was sized.** The VCF's `SO` field says which reads support each allele: `SPANNING` (reads cross the whole repeat, so it is sized), `FLANKING` (reads reach into the repeat from one side only, so the size is not determined) or `INREPEAT` (reads made only of repeat, so the allele is longer than a read). `ADSP` counts the spanning reads and `REPCI` gives the interval. The report uses them: a `FLANKING` or `INREPEAT` allele, one with fewer than 2 spanning reads, or one whose interval reaches the pathogenic minimum is listed as not sized and never as normal ([how the report reads them](interpreting-results.md#str-expansions-step-9))
