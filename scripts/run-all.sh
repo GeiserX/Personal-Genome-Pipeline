@@ -17,6 +17,8 @@
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
+#   HPO=HP:0001250,HP:0001263 (the symptoms as HPO ids: step 48 ranks the variants that could explain them with Exomiser,
+#   after setup.sh --exomiser-data);
 #   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip), ARCHAIC_DIR and ARCHAIC_POP (--archaic_data and --archaic_pop,
@@ -186,6 +188,15 @@ else KNOWN+=" y_str"; fi
 VR=${VIRAL_REF:-${G}/reference/viral-${VIRAL_REF_VERSION}/viral_genomes.fa}
 if [[ ",${T// /}," == *",viral,"* ]]; then plan "47 Viral DNA" viral "$(if [ -z "$NOBAM" ]; then echo 'no BAM'; else need "$VR"; fi)" \
   && NF+=(--viral_ref "$VR") || true; else KNOWN+=" viral"; fi
+# Step 48 (Exomiser) runs when HPO names the symptoms, against the data setup.sh --exomiser-data installs.
+ED="${G}/reference/exomiser-${EXOMISER_DATA_VERSION}"
+if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
+  # A set HPO turns step 48 on even when TOOLS leaves exomiser out, as --hpo does in main.nf.
+  if TOOLS=$([ -n "${HPO:-}" ] && echo exomiser || echo "${TOOLS:-}") plan "48 Exomiser (HPO terms)" exomiser "$([ -n "${HPO:-}" ] || echo 'HPO not set: HPO=HP:0001250,...'; [ -z "${HPO:-}" ] \
+       || need "${ED}/${EXOMISER_DATA_VERSION}_hg38" "${ED}/${EXOMISER_DATA_VERSION}_phenotype")"; then
+    NF+=(--hpo "$HPO" --exomiser_data "$ED")
+  fi
+else KNOWN+=" exomiser"; fi
 # Step 51 (mosaic chromosomal alterations, MoChA) is opt-in and listed only when TOOLS names it; it reads the VCF.
 MD=${MOCHA_DATA:-${G}/reference/mocha-${MOCHA_PANEL_VERSION}}
 if [[ ",${T// /}," == *",mocha,"* ]]; then plan "51 Mosaic alterations (MoChA)" mocha "$(need "${MD}/DONE")" \

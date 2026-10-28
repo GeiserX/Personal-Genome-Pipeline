@@ -42,6 +42,7 @@ include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/lo
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
+include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
 include { MOCHA_PREP; MOCHA_PHASE; MOCHA_CALL; MOCHA_REPORT } from './modules/local/mocha/main'
 
@@ -96,6 +97,7 @@ workflow {
         'ancient',
         'y_str',
         'viral',
+        'exomiser',
         'chip',
         'mocha',
     ]
@@ -103,6 +105,27 @@ workflow {
     if (unknown_tools) {
         error "unknown tool${unknown_tools.size() > 1 ? 's' : ''} ${unknown_tools.join(', ')} in --tools. " +
               "Known tools: ${known_tools.join(', ')}."
+    }
+
+    // exomiser (step 48) runs when --hpo names the symptoms; naming it in
+    // --tools without them stops the run.
+    if (params.hpo && !tools_list.contains('exomiser')) {
+        tools_list << 'exomiser'
+    }
+    if (tools_list.contains('exomiser')) {
+        def hpo_terms = params.hpo ? params.hpo.toString().split(/[,\s]+/).findAll { it } : []
+        if (!hpo_terms) {
+            error "Tool 'exomiser' ranks variants against a person's symptoms: give them with --hpo as HPO ids " +
+                  "(--hpo HP:0001250,HP:0001263; https://hpo.jax.org)."
+        }
+        def bad_terms = hpo_terms.findAll { !(it ==~ /HP:[0-9]{7}/) }
+        if (bad_terms) {
+            error "--hpo: ${bad_terms.join(', ')} ${bad_terms.size() > 1 ? 'are not HPO ids' : 'is not an HPO id'}: " +
+                  "an HPO id is HP: and seven digits, e.g. HP:0001250 (Seizure)."
+        }
+        if (!(params.exomiser_assembly in ['hg38', 'hg19'])) {
+            error "--exomiser_assembly must be hg38 or hg19, got '${params.exomiser_assembly}'."
+        }
     }
 
     // Fail-fast: stop when enabled tools lack required databases
@@ -129,6 +152,7 @@ workflow {
         ['archaic',          'archaic_data',       '--archaic_data'],
         ['ancient',          'ancient_panel',      '--ancient_panel'],
         ['viral',            'viral_ref',          '--viral_ref'],
+        ['exomiser',         'exomiser_data',      '--exomiser_data'],
         ['chip',             'chip_gff',           '--chip_gff'],
         ['mocha',            'mocha_data',         '--mocha_data'],
     ]
@@ -868,6 +892,37 @@ workflow {
         ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
     }
 
+    // ─── Symptom-driven ranking (exomiser, step 48: --hpo) ──────────────
+    // Exomiser on the VCF of the one sample the --hpo terms describe
+    // (--exomiser_proband, or the only sample). Equivalent to
+    // scripts/48-exomiser.sh without its family mode, which is bash-only.
+    ch_exomiser          = Channel.empty()
+    ch_exomiser_terms    = Channel.empty()
+    ch_exomiser_versions = Channel.empty()
+    if (tools_list.contains('exomiser')) {
+        def proband = params.exomiser_proband ?: (seen_samples.size() == 1 ? seen_samples.first() : null)
+        if (!proband) {
+            error "--hpo describes one person and the samplesheet has ${seen_samples.size()} samples: name the one " +
+                  "with --exomiser_proband (${seen_samples.join(', ')})."
+        }
+        if (!seen_samples.contains(proband)) {
+            error "--exomiser_proband ${proband} is not a sample of ${params.input} (${seen_samples.join(', ')})."
+        }
+        ch_exomiser_data = Channel.value(file(params.exomiser_data, checkIfExists: true))
+        EXOMISER_PREPARE(
+            ch_vcf.filter { meta, _vcf, _idx -> meta.id == proband }.map { meta, vcf, _idx -> [meta, vcf] },
+            Channel.value(params.hpo.toString().split(/[,\s]+/).findAll { it }.join(',')),
+            ch_exomiser_data
+        )
+        EXOMISER(EXOMISER_PREPARE.out.analysis, ch_exomiser_data)
+        EXOMISER_REPORT(
+            EXOMISER.out.variants.join(EXOMISER_PREPARE.out.terms)
+        )
+        ch_exomiser          = EXOMISER_REPORT.out.top
+        ch_exomiser_terms    = EXOMISER_REPORT.out.terms
+        ch_exomiser_versions = EXOMISER_PREPARE.out.versions.mix(EXOMISER.out.versions, EXOMISER_REPORT.out.versions)
+    }
+
     // ─── Clonal haematopoiesis (opt-in: chip, step 49) ───────────────────
     // Mutect2 tumour-only on the coding exons of the CHIP genes'
     // MANE Select transcripts, from the BAM; a sample without one is
@@ -997,6 +1052,8 @@ workflow {
         .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser.map                     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_mocha.map                        { meta, f -> [meta.id, f] }, remainder: true)
@@ -1036,6 +1093,7 @@ workflow {
             ch_lpa_versions,
             ch_viral_versions,
             ch_chip_versions,
+            ch_exomiser_versions,
             ch_mocha_versions
         )
         .map { f -> f.text }

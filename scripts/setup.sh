@@ -14,6 +14,7 @@
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --exomiser-data <genome_dir>
 #        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
@@ -29,8 +30,10 @@
 #                                            raw-data export (step 40), the
 #                                            AADR panel of step 44, the
 #                                            viral genomes of step 47, Ensembl's
-#                                            gene annotation (step 49), MoChA's
-#                                            phasing panel plus its images (step 51)
+#                                            gene annotation (step 49), Exomiser's
+#                                            hg38 and phenotype data plus its image
+#                                            (step 48), MoChA's phasing panel plus
+#                                            its images (step 51)
 #        ./scripts/setup.sh --archaic <genome_dir>
 #                                            the archaic genomes and 1000 Genomes
 #                                            frequencies of step 43, as one table
@@ -87,7 +90,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--exomiser-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -112,7 +115,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --exomiser-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -146,6 +149,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
   echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --exomiser-data"
+  echo "                Install Exomiser ${EXOMISER_DATA_VERSION:-}'s hg38 and phenotype data (step 48: about 37 GB to download, 58 GB"
+  echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
   echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
   echo "                transcripts; ~110 MB) and exit."
   echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~30 GB read,"
@@ -385,6 +391,48 @@ install_viral_data() {
     return 1
   fi
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
+}
+
+# install_exomiser_data: Exomiser's hg38 and phenotype data of release
+# EXOMISER_DATA_VERSION (step 48) into reference/exomiser-<release>/, the
+# folder Exomiser reads as its data directory. Each archive is checked against
+# its sha256 in versions.env, unpacked with Python's zipfile (no unzip on the
+# host needed), and deleted. A folder is moved into place only once whole.
+install_exomiser_data() {
+  local dest="${GENOME_DIR}/reference/exomiser-${EXOMISER_DATA_VERSION}" part sha zip
+  if [ -d "${dest}/${EXOMISER_DATA_VERSION}_hg38" ] && [ -d "${dest}/${EXOMISER_DATA_VERSION}_phenotype" ]; then
+    echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} data (step 48) already present: ${dest}"
+    return 0
+  fi
+  mkdir -p "$dest"
+  while read -r part sha; do
+    [ -d "${dest}/${EXOMISER_DATA_VERSION}_${part}" ] && continue
+    zip="${dest}/${EXOMISER_DATA_VERSION}_${part}.zip"
+    # A zip kept by an unpack that failed is used again once its sha256 still matches.
+    if [ -f "$zip" ] && [ "$(_digest sha256 "$zip")" = "$sha" ]; then
+      echo "Using the checked ${zip##*/} kept from the last run."
+    elif echo "Downloading Exomiser's ${EXOMISER_DATA_VERSION}_${part}.zip (resumes when run again)..." \
+        && ! fetch "https://g-879a9f.f5dc97.75bc.dn.glob.us/data/${EXOMISER_DATA_VERSION}_${part}.zip" "$zip" sha256 "$sha"; then
+      echo "[WARN] Could not download Exomiser's ${part} data. Step 48 needs it; run: $0 --exomiser-data ${GENOME_DIR}"
+      return 1
+    fi
+    rm -rf "${dest}/unpack.part"
+    # shellcheck disable=SC2016  # $1 and $2 expand in the container's shell
+    if ! run_in --rw "$dest" --cpus 1 --memory 2g "$PYTHON_IMAGE" bash -euo pipefail -c \
+        'python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$1" "$2"' \
+        _ "$(cpath "$zip")" "$(cpath "${dest}/unpack.part")" \
+        || [ ! -d "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" ]; then
+      rm -rf "${dest}/unpack.part"
+      echo "[WARN] Could not unpack ${zip}; it is kept: run this command again."
+      return 1
+    fi
+    mv "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" "${dest}/${EXOMISER_DATA_VERSION}_${part}"
+    rm -rf "${dest}/unpack.part" "$zip"
+  done <<EOF2
+hg38 ${EXOMISER_HG38_SHA256}
+phenotype ${EXOMISER_PHENOTYPE_SHA256}
+EOF2
+  echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} hg38 and phenotype data (step 48): ${dest}"
 }
 
 # install_chip_data: Ensembl ENSEMBL_GFF_RELEASE's GRCh38 GFF3 (step 49 reads
@@ -1532,6 +1580,7 @@ case "$OPT_IN" in
   consumer-sites) install_consumer_sites; exit $? ;;
   ancient-panel) install_ancient_panel; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   chip-data) install_chip_data; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
