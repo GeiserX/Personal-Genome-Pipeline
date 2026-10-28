@@ -82,6 +82,15 @@ if [ ! -f "$MANTA_VCF" ]; then
   exit 1
 fi
 
+# The rule table ships with the repo. Docker would mount a missing file as an
+# empty directory, so check it here rather than after AnnotSV has run.
+RULES_TSV="${PGP_ROOT}/assets/sv_rule_regions.tsv"
+if [ ! -f "$RULES_TSV" ] || [ ! -s "$RULES_TSV" ]; then
+  echo "ERROR: ${RULES_TSV} not found or empty." >&2
+  echo "  Restore it with git checkout, or rebuild it with scripts/ci/build-sv-rule-regions.sh." >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 # AnnotSV classifies only the records of the VCF it is given. The other
@@ -178,7 +187,7 @@ else
   echo "Exon edges: no ${GENES_BED#"$GENOME_DIR"/} in the annotation data, so no deletion is checked against them."
 fi
 run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
-  -v "${PGP_ROOT}/assets/sv_rule_regions.tsv:/pgp/sv_rule_regions.tsv:ro" "${ANNOTSV_IMAGE}" \
+  -v "${RULES_TSV}:/pgp/sv_rule_regions.tsv:ro" "${ANNOTSV_IMAGE}" \
   python3 /pgp-bin/annotsv_postfilter.py --class45 "$(cpath "$CLASS45")" ${GENES_ARGS[@]+"${GENES_ARGS[@]}"} \
     --rules /pgp/sv_rule_regions.tsv --out "$(cpath "$CHECKED")"
 
