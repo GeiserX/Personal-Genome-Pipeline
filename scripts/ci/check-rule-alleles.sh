@@ -57,7 +57,9 @@ SITES=$(awk -F'\t' '$1 == "site" { print $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 }' "
 # The pinned table: the "#: " lines at the end of this file.
 TABLE=$(sed -n 's/^#: //p' "$0")
 BUILD=$(sed -n 's/^# build //p' <<< "$TABLE")
-if [ "$BUILD" != "$CONSUMER_DBSNP_BUILD" ]; then
+# --print-table is how a new build's table is made, so only the check modes
+# require the table to be of the pinned build.
+if [ "$MODE" != print ] && [ "$BUILD" != "$CONSUMER_DBSNP_BUILD" ]; then
   echo "ERROR: the dbSNP table in $0 is of build '${BUILD}', versions.env pins ${CONSUMER_DBSNP_BUILD}." >&2
   echo "  Refresh it: $0 --print-table, and put each line it prints at the end of this file after \"#: \"." >&2
   exit 1
@@ -119,13 +121,17 @@ echo "${N:-0} rule sites checked against dbSNP ${BUILD} (${RULES#"${ROOT}"/})"
 [ "${N:-0}" -gt 0 ] || { echo "FAIL: no site was checked"; FAILED=1; }
 
 if [ "$MODE" = online ]; then
+  # dbsnp_lines reads only the sites of RULES, so compare it with the table
+  # lines of those sites: a RULES that uses a subset of the table is valid.
+  EXPECTED=$(grep '^# build ' <<< "$TABLE"
+    awk -F'\t' 'NR == FNR { want[$1] = 1; next } !/^#/ && ($1 in want)' <(echo "$SITES") <(echo "$TABLE") | sort -u)
   if ! LIVE=$(dbsnp_lines); then
     echo "FAIL: could not read dbSNP ${BUILD} over HTTPS"; FAILED=1
-  elif [ "$LIVE" = "$(grep -v '^$' <<< "$TABLE")" ]; then
+  elif [ "$LIVE" = "$EXPECTED" ]; then
     echo "ok: the pinned table is what dbSNP ${BUILD} holds for the $(grep -vc '^#' <<< "$LIVE") rule rsIDs"
   else
     echo "FAIL: the pinned table differs from dbSNP ${BUILD} (< pinned, > dbSNP):"
-    diff <(grep -v '^$' <<< "$TABLE") <(echo "$LIVE") || true
+    diff <(echo "$EXPECTED") <(echo "$LIVE") || true
     FAILED=1
   fi
 fi
