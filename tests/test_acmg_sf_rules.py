@@ -24,14 +24,19 @@ Checks:
   7. the carrier list of one sample, with no partner: a heterozygous CFTR hit
      is a carrier line, a HEXA pseudodeficiency allele (c.739C>T) is set
      aside and makes no carrier line, another HEXA hit does; the
-     couple screen sets the same allele aside;
+     couple screen sets the same allele aside, and a whole couple screen run
+     with it writes its table and names it as a gap; a severity entry with
+     a kind and no variant is a ValueError;
   8. both reports print the SF verdicts, the reasons and the carrier list;
+     an SF deletion without step 22's consensus says its caller support is
+     not known; a failed carrier section still shows its HTML card;
   9. without the assets folder the ClinVar hits and the clinical counts stay,
      and both lists say why they were not made.
 """
 import gzip
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -237,6 +242,25 @@ def main():
         check("couple screen: the same pseudodeficiency allele is no carrier finding",
               sorted(x["gene"] for x in f) == ["CFTR", "HEXA"] and len(aside) == 1 and "pseudodeficiency" in aside[0],
               (f, aside))
+        # The whole couple screen, with that set-aside allele in one partner.
+        ped = put(f"{work}/couple/pedigree.tsv", "sample\tsex\tfather\tmother\tpartner\nA\tfemale\t.\t.\tB\n"
+                  "B\tmale\t.\t.\tA\n")
+        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "couple_report.py"), "screen",
+                            "--pedigree", ped, "--genes", os.path.join(REPO, "assets", "carrier_genes.tsv"),
+                            "--clinvar", f"A={d}/clinvar/S_clinvar_hits.vcf",
+                            "--clinvar", f"B={d}/clinvar/S_clinvar_hits.vcf", "--out-dir", f"{work}/couple/out"],
+                           capture_output=True, text=True)
+        md = f"{work}/couple/out/couple_A_B.md"
+        md_text = open(md).read() if os.path.isfile(md) else ""
+        check("couple screen run: a set-aside allele is a gap line, the screen still writes its table",
+              r.returncode == 0 and "Set aside for A, not a carrier finding on its own" in md_text
+              and os.path.isfile(f"{work}/couple/out/couple_A_B.tsv"), (r.returncode, r.stderr[-800:]))
+        try:
+            collect_summary.parse_alleles("hypomorph", kinds=True)
+            err = None
+        except Exception as e:  # noqa: BLE001
+            err = e
+        check("a severity entry with a kind and no variant is a ValueError", isinstance(err, ValueError), repr(err))
 
         # 8. both reports
         d = sample(work, "report", [g396, c282y_het, hit("chr3", 15645186, "G", "C", "BTD", "1/1"),
@@ -253,6 +277,12 @@ def main():
                              ("the carrier list", "Carrier list (")):
             check(f"text report: {what}", needle in txt, [x for x in txt.splitlines() if "ACMG" in x or "Carrier" in x])
             check(f"HTML report: {what}", needle in html.replace("&gt;", ">"))
+        check("without step 22 the SF deletion says its caller support is not known",
+              "caller support not known" in txt and "None caller" not in txt,
+              [x for x in txt.splitlines() if "AnnotSV class" in x])
+        summ["sections"]["carrier"] = dict(summ["sections"]["carrier"], state="failed", data={})
+        check("HTML report: a failed carrier section still shows its card",
+              "Carrier List (this sample)" in render_report.html_report(summ))
 
         # 9. without the assets folder
         keep = collect_summary.ASSETS_DIR

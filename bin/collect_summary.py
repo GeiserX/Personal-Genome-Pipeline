@@ -2742,6 +2742,8 @@ def parse_alleles(text, kinds=False):
         if e in ("", "."):
             continue
         parts = e.split(" ", 2 if kinds else 1)
+        if kinds and len(parts) < 2:
+            raise ValueError(f"severity entry needs a kind and a chrom:pos:ref:alt: {e}")
         kind = parts.pop(0) if kinds else None
         if kinds and kind not in SEVERITY_KINDS:
             raise ValueError(f"severity '{kind}' is not one of {', '.join(SEVERITY_KINDS)}: {e}")

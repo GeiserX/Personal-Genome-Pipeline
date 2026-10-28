@@ -579,8 +579,8 @@ def cmd_screen(a):
             aside = []
             f, total = clinvar_findings(clinvar[s], genes, sexes[s], par, aside)
             info = {"clinvar": "%d / %d" % (len(f), total)}
-            for x in aside:
-                gaps.append("Set aside for %s, not a carrier finding on its own: %s." % (s, x))
+            for note in aside:
+                gaps.append("Set aside for %s, not a carrier finding on its own: %s." % (s, note))
             if s not in delly:
                 info["delly"] = "not assessed (no Delly calls, step 19)"
                 gaps.append("Deletions of %s: no Delly calls (step 19)." % s)

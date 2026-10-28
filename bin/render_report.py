@@ -1324,7 +1324,11 @@ def sf_rows(sf):
              + extra(x)) for x in sf["clinvar_hits"]]
     rows += [(x["gene"], x["variant"], x["genotype"], x["consequence"] + high_marks(x, "; ") + extra(x))
              for x in sf["high_impact"]]
-    rows += [(x["gene"], x["variant"], ".", f"AnnotSV class {x['acmg_class']}, {x['support']} caller(s)"
+    def support(x):
+        if x["support"] is None:
+            return "caller support not known (no step 22 consensus)"
+        return f"single caller ({x['caller']})" if x["support"] == 1 else f"{x['support']} callers"
+    rows += [(x["gene"], x["variant"], ".", f"AnnotSV class {x['acmg_class']}, {support(x)}"
               + (f"; through {x['via']}" if x.get("via") else "") + extra(x)) for x in sf.get("structural", [])]
     return rows
 
@@ -1737,9 +1741,10 @@ def html_report(s):
     if clinvar_freq_line(c):
         cv_body.insert(-1, small_note(clinvar_freq_line(c)))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
-    if S.get("carrier", MISSING)["state"] in ("ok", "stale"):
+    if S.get("carrier", MISSING)["state"] != "missing":
+        car_ok = S["carrier"]["state"] in ("ok", "stale")
         a(card(S["carrier"], "Carrier List (this sample)",
-               [f"    <p>{E(line)}</p>" for line in carrier_lines(S["carrier"]["data"])]
+               [f"    <p>{E(line)}</p>" for line in (carrier_lines(S["carrier"]["data"]) if car_ok else [])]
                + [f"    <p>{E(CARRIER_NOTE)}</p>"], full=True))
     if S.get("couple", MISSING)["state"] != "missing":
         a(card(S["couple"], "Couple Carrier Screen",
