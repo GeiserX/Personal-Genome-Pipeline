@@ -25,7 +25,11 @@
     5 rows are written to their own table, found by column name, and
     bin/annotsv_postfilter.py writes each of them with its caller, whether a
     deletion sits on the exon edges of one transcript of AnnotSV's genes
-    file, and its benign-set frequency (<id>_sv_class4_5_checked.tsv).
+    file, its benign-set frequency, its read-depth support and the class
+    after the rule table assets/sv_rule_regions.tsv, which moves to class 3
+    a call inside a coding tandem repeat, the IG and TR loci or the MHC,
+    one the depth contradicts, and one whose gene symbol is a pseudogene's
+    alias (<id>_sv_class4_5_checked.tsv).
 
     Equivalent to: scripts/05-annotsv.sh, which reads the same duphold-filtered
     calls when step 15 wrote them, and Manta's calls (with a note) otherwise.
@@ -42,6 +46,7 @@ process ANNOTSV {
     tuple val(meta), path(sv_vcf), path(delly_vcf), path(cnvpytor_vcf)  // delly_vcf, cnvpytor_vcf: VCF or []
     path(annotations_dir)
     path(par_bed)        // assets/par_grch38.bed
+    path(sv_rules)       // assets/sv_rule_regions.tsv
 
     output:
     tuple val(meta), path("${meta.id}_sv_annotated.tsv"), emit: annotated_tsv
@@ -88,14 +93,15 @@ process ANNOTSV {
                  \$c["Annotation_mode"] == "full" && (\$c["ACMG_class"] == "4" || \$c["ACMG_class"] == "5")' \\
         ${meta.id}_sv_annotated.tsv > ${meta.id}_sv_class4_5.tsv
 
-    # Each class 4 or 5 SV with its caller, an exon-edge flag for a deletion
-    # and its benign-set frequency. The support count is step 22's, which the
-    # reports join when they are written.
+    # Each class 4 or 5 SV with its caller, an exon-edge flag for a deletion,
+    # its benign-set frequency, its depth support and the class after the
+    # rule table. The support count is step 22's, which the reports join
+    # when they are written.
     genes=${annotations_dir}/Annotations_Human/Genes/GRCh38/genes.RefSeq.sorted.bed
     genes_arg=()
     if [ -s "\$genes" ]; then genes_arg=(--genes "\$genes"); fi
     annotsv_postfilter.py --class45 ${meta.id}_sv_class4_5.tsv \${genes_arg[@]+"\${genes_arg[@]}"} \\
-        --out ${meta.id}_sv_class4_5_checked.tsv
+        --rules ${sv_rules} --out ${meta.id}_sv_class4_5_checked.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
