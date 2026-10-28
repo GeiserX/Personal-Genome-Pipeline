@@ -239,7 +239,7 @@
                 "ancestry_fine_panel": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Step 26b's reference: the folder setup.sh --ancestry-fine-panel writes (reference/ancestry_fine/hgdp1kgp_v2, gnomAD's phased HGDP + 1000 Genomes panel with ADMIXTURE's group frequencies). With ancestry_fine in --tools, ADMIXTURE projects the sample on the panel's groups and RFMix paints its chromosomes. ADMIXTURE is free for academic use and RFMix for academic research use only.",
+                    "description": "Step 26b's reference: the folder setup.sh --ancestry-fine-panel writes (reference/ancestry_fine/hgdp1kgp_v2, gnomAD's phased HGDP + 1000 Genomes panel with ADMIXTURE's group frequencies). With ancestry_fine in --tools, ADMIXTURE projects the sample on the panel's groups and RFMix paints its chromosomes. With --pedigree, the family workflow also phases the joint call against it with Beagle and lists the DNA segments each pair of members shares (hap-ibd). ADMIXTURE is free for academic use and RFMix for academic research use only.",
                     "fa_icon": "fas fa-globe"
                 },
                 "ancient_panel": {

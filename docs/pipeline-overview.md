@@ -10,7 +10,7 @@
 | **Structural Variants** | Deletions, duplications, inversions, translocations (4 callers + consensus) | 4, 4b, 5, 15, 18, 19, 22 |
 | **Functional Annotation** | Impact prediction for every variant (VEP + CADD, SpliceAI, REVEL, AlphaMissense) | 13, 30 |
 | **Variant Prioritization** | Rare deleterious variants, compound hets, gene constraint filtering | 31 |
-| **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at the 31 loci of ExpansionHunter's bundled catalog | 9, 9b |
+| **Repeat Expansions** | Huntington's, Fragile X, ALS and the other disorders at STRchive's 82 disease loci | 9, 9b |
 | **Blood Groups** | ABO, RhD, RhCE, Kell, Duffy, Kidd, MNS, Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1 to -6 and -15 and the neutrophil antigens HNA-1, -3, -4 and -5, predicted from the genome (opt-in) | 41 |
 | **Lp(a)** | A genetically high Lp(a): the LPA KIV-2 repeat count from read depth and the risk variants rs10455872 and rs3798220 (opt-in; needs the BAM) | 46 |
 | **Ancestry & Haplogroups** | Mitochondrial haplogroup (with an mtDNA contamination check), Y-chromosome haplogroup and Y-STR repeat counts in FamilyTreeDNA's order (opt-in), consanguinity check, projection onto a 1000 Genomes reference panel, admixture fractions and a chromosome painting against an 80-population panel (opt-in), the nearest ancient populations on a PCA of the AADR (opt-in) | 11, 12, 26, 26b, 37, 44, 45 |
@@ -155,11 +155,11 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 35b | [Paralog Genes from PacBio HiFi Reads](35-paralogs.md#step-35b-paralog-genes-from-pacbio-hifi-reads-paraphase) | Paraphase + Python | `PARAPHASE_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,paraphase`; PacBio HiFi BAMs only) |
 | 36 | [PGx Consensus](36-pgx-consensus.md) | Python | `PYTHON_IMAGE` | Runs with step 7 when step 8, 21 or 32 ran |
 | 37 | [Y-Chromosome Haplogroup](37-y-haplogroup.md) | Yleaf | `YLEAF_IMAGE` | Opt-in (`TOOLS=...,y_haplogroup`, after `setup.sh --yleaf-data`; male samples) |
-| 38 | [Family Analysis](multi-sample.md#family-analysis-step-38-opt-in) | GLnexus + somalier + WhatsHap | `GLNEXUS_IMAGE` + `SOMALIER_IMAGE` + `WHATSHAP_IMAGE` (with `BCFTOOLS_IMAGE` + `PYTHON_IMAGE`) | Opt-in (a pedigree naming two or more samples, each with a gVCF; after `setup.sh --sample-qc-data`) |
+| 38 | [Family Analysis](multi-sample.md#family-analysis-step-38-opt-in) | GLnexus + somalier + WhatsHap; shared segments: Beagle + hap-ibd | `GLNEXUS_IMAGE` + `SOMALIER_IMAGE` + `WHATSHAP_IMAGE` (with `BCFTOOLS_IMAGE` + `PYTHON_IMAGE`); `BEAGLE_IMAGE` + `HAP_IBD_IMAGE` | Opt-in (a pedigree naming two or more samples, each with a gVCF; after `setup.sh --sample-qc-data`; the shared segments after `setup.sh --ancestry-fine-panel`) |
 | 39 | [Couple Carrier Screen](39-couple.md) | Python | `PYTHON_IMAGE` | Opt-in (a pedigree marking two samples as partners; after step 6 for both) |
 | 40 | [Raw-Data Export](40-export-consumer.md) | Python | `PYTHON_IMAGE` | Opt-in (`TOOLS=...,consumer_export`, after `setup.sh --consumer-sites`; needs the gVCF) |
 | 41 | [Blood Groups (predicted)](41-bloodtype.md) | samtools + Python | `SAMTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,bloodtype`; RhD needs the BAM) |
-| 42 | [Traits Panel](42-traits.md) | bcftools + Python | `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` | Recommended (reads the gVCF of step 3) |
+| 42 | [Traits Panel](42-traits.md) | bcftools + Python + WhatsHap | `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` + `WHATSHAP_IMAGE` | Recommended (reads the gVCF of step 3; WhatsHap phases from the BAM when a rule needs it) |
 | 43 | [Archaic Ancestry](43-archaic.md) | IBDmix + Python | `IBDMIX_IMAGE` + `PYTHON_IMAGE` | Opt-in (runs once `setup.sh --archaic` installed its table) |
 | 44 | [Ancient Populations](44-ancient.md) | smartpca (EIGENSOFT) + bcftools + Python | `EIGENSOFT_IMAGE` + `BCFTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,ancient`, after `setup.sh --ancient-panel`; needs the gVCF) |
 | 45 | [Y-STR Markers](45-y-str.md) | HipSTR | `HIPSTR_IMAGE` | Opt-in (`TOOLS=...,y_str`; male samples) |

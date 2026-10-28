@@ -15,6 +15,7 @@
 #        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
 #        ./scripts/setup.sh --exomiser-data <genome_dir>
+#        ./scripts/setup.sh --strchive-data <genome_dir>
 #        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
@@ -32,7 +33,9 @@
 #                                            viral genomes of step 47, Ensembl's
 #                                            gene annotation (step 49), Exomiser's
 #                                            hg38 and phenotype data plus its image
-#                                            (step 48), MoChA's phasing panel plus
+#                                            (step 48), the STRchive catalog of
+#                                            steps 09 and 9b (also part of a full
+#                                            setup), MoChA's phasing panel plus
 #                                            its images (step 51)
 #        ./scripts/setup.sh --archaic <genome_dir>
 #                                            the archaic genomes and 1000 Genomes
@@ -56,7 +59,8 @@
 #      GENCODE gene coordinates T1K needs (~350 MB) and GENCODE's exons for
 #      the cDNA read check of steps 06 and 17, both from one ~80 MB download,
 #      and somalier's sites and VerifyBamID2's marker panel for step 33 (~10 MB),
-#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB)
+#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB), and the
+#      STRchive repeat catalog of steps 09 and 9b (~0.5 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked),
 #      plus gnomAD-SV's common SVs (~1.7 GB download, kept as a few MB) and the
 #      MANE Select transcript list
@@ -90,7 +94,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--chip-data|--exomiser-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -115,7 +119,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --chip-data | --exomiser-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -154,6 +158,8 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
   echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
   echo "                transcripts; ~110 MB) and exit."
+  echo "  --strchive-data"
+  echo "                Install only the STRchive ${STRCHIVE_VERSION:-} repeat catalog of steps 09 and 9b (~0.5 MB) and exit."
   echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~30 GB read,"
   echo "                one chromosome at a time) and the genetic map, pull its images and exit."
   echo "  --annotsv-data"
@@ -451,6 +457,48 @@ install_chip_data() {
     return 1
   fi
   echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49): ${dest}"
+}
+
+# install_strchive_data: STRchive's ExpansionHunter catalog and loci file
+# (STRCHIVE_VERSION), each checked against its sha256 in versions.env, joined
+# by bin/strchive_convert.py into reference/strchive-<version>/catalog.json,
+# the catalog steps 09 and 9b and the pipeline use by default, and
+# str_ranges.tsv beside it, the size ranges of each locus. A file that
+# fails its check is removed and nothing is converted; the steps then use
+# the catalogs inside their images. catalog.stamp names the inputs and the
+# converter, so a changed one converts again.
+install_strchive_data() {
+  local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" url name sha stamp
+  # Whole URLs, one per line, so scripts/ci/check-links.sh asks each one.
+  local eh_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json"
+  local loci_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-loci-${STRCHIVE_VERSION}.json"
+  local eh=${eh_url##*/} loci=${loci_url##*/}
+  stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
+  if [ -s "${dir}/catalog.json" ] && [ -s "${dir}/str_ranges.tsv" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
+    return 0
+  fi
+  # A stale catalog goes first, so a failed refetch leaves none for step 09.
+  rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv" "${dir}/catalog.stamp"
+  for url in "${eh_url}|${STRCHIVE_EH_SHA256}" "${loci_url}|${STRCHIVE_LOCI_SHA256}"; do
+    sha=${url#*|} url=${url%%|*} name=${url##*/}
+    [ -s "${dir}/${name}" ] && [ "$(_digest sha256 "${dir}/${name}")" = "$sha" ] && continue
+    rm -f "${dir}/${name}"
+    if ! fetch "$url" "${dir}/${name}" sha256 "$sha"; then
+      echo "[WARN] Could not install STRchive's ${name}. Steps 09 and 9b use the catalogs inside their images; re-run setup.sh to try again."
+      return 1
+    fi
+  done
+  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
+       --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
+       --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" \
+       || [ ! -s "${dir}/catalog.json" ] || [ ! -s "${dir}/str_ranges.tsv" ]; then
+    rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv"
+    echo "[WARN] Could not convert the STRchive ${STRCHIVE_VERSION} catalog (bin/strchive_convert.py). Steps 09 and 9b use the catalogs inside their images."
+    return 1
+  fi
+  printf '%s\n' "$stamp" > "${dir}/catalog.stamp"
+  echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b): ${dir}/catalog.json"
 }
 
 # install_consumer_sites: the site table of the raw-data export (step 40). The
@@ -1582,6 +1630,7 @@ case "$OPT_IN" in
   viral-data) install_viral_data; exit $? ;;
   exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   chip-data) install_chip_data; exit $? ;;
+  strchive-data) install_strchive_data; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
@@ -1927,6 +1976,7 @@ else
 fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
+install_strchive_data || true
 # Step 25: its scores, pgsc_calc and its plugin (warnings only).
 install_prs
 
