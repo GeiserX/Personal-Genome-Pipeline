@@ -9,7 +9,9 @@
 #        they are there: Delly's calls (step 19, <sample>/delly/<sample>_sv.vcf.gz),
 #        ExpansionHunter's (step 09, <sample>/expansion_hunter/<sample>_eh.vcf),
 #        Parascopy's SMN1 table (step 35, <sample>/paralogs/<sample>_smn_copy_number.tsv)
-#        and GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed).
+#        GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed)
+#        and AnnotSV's benign loss set (setup.sh --annotsv-data, with gnomAD-SV's
+#        common deletions): a Delly deletion matching a common one is set aside.
 #        Step 38 does not have to run first.
 # Output: $GENOME_DIR/<family_name>/, the family's folder, for each couple A and B:
 #   couple_A_B.tsv   one row per gene of assets/carrier_genes.tsv where either
@@ -27,6 +29,10 @@
 # Env: CARRIER_GENES  the carrier list (default assets/carrier_genes.tsv)
 #      CARRIER_EXONS  exon BED (default the GENCODE exons setup.sh installs),
 #                     inside GENOME_DIR; without it deletions are not used
+#      CARRIER_BENIGN_SV  benign loss BED (default AnnotSV's,
+#                     annotsv_annotations/.../BenignSV/GRCh38/benign_Loss_SV_GRCh38.sorted.bed),
+#                     inside GENOME_DIR; without it common deletions are not
+#                     filtered and the report says so
 set -euo pipefail
 
 FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv]}
@@ -45,6 +51,8 @@ PEDIGREE=${PEDIGREE:-${OUT}/pedigree.tsv}
 GENES=${CARRIER_GENES:-${PGP_ROOT}/assets/carrier_genes.tsv}
 EXONS=${CARRIER_EXONS:-${GENOME_DIR}/reference/gencode.v${GENCODE_RELEASE}.basic.exons.bed}
 case "$EXONS" in /*) ;; *) EXONS="${GENOME_DIR}/${EXONS}" ;; esac
+BENIGN=${CARRIER_BENIGN_SV:-${GENOME_DIR}/annotsv_annotations/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/benign_Loss_SV_GRCh38.sorted.bed}
+case "$BENIGN" in /*) ;; *) BENIGN="${GENOME_DIR}/${BENIGN}" ;; esac
 
 echo "=== Step 39: couple carrier screen ==="
 echo "Pedigree: ${PEDIGREE}"
@@ -94,6 +102,13 @@ if [ -f "$EXONS" ]; then
   echo "Exons: ${EXONS}"
 else
   echo "No exon list at ${EXONS}: deletions are not used (./scripts/setup.sh installs it)."
+fi
+if [ -f "$BENIGN" ]; then
+  BENIGN_C=$(cpath "$BENIGN") || exit 1
+  ARGS+=(--benign-sv "$BENIGN_C")
+  echo "Common deletions: ${BENIGN}"
+else
+  echo "No benign SV set at ${BENIGN}: common deletions are not filtered (./scripts/setup.sh --annotsv-data installs it)."
 fi
 
 mkdir -p "$OUT"
