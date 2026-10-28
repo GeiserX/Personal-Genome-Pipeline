@@ -1933,7 +1933,8 @@ def masked_overlap(bands, chrom, start, end):
 AUTOSOME_BP = 2875001522
 ROH_MIN_BP = 5e6     # the segments F_ROH and the one-chromosome flag count (docs/11-roh-analysis.md)
 # One chromosome carrying most of the long runs: at least UPD_MIN_BP of it in
-# segments over 5 Mb, and more than UPD_SHARE of all such autosomal runs.
+# segments of 5 Mb or more, and more than UPD_SHARE of the length of all such
+# autosomal runs.
 # Our thresholds: a run over 20 Mb on one chromosome is the long-standing sign
 # of isodisomy, and related parents spread their runs over many chromosomes.
 UPD_MIN_BP = 20e6
@@ -2030,7 +2031,7 @@ def sec_roh(d, s):
             segs += 1
             total += length
             largest = max(largest, length)
-            if length > ROH_MIN_BP:
+            if length >= ROH_MIN_BP:
                 pc = per_chrom.setdefault(c[2], [0.0, []])
                 pc[0] += length
                 pc[1].append((start, end))
