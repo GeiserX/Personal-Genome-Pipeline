@@ -6,8 +6,10 @@
     screen (the rule scripts/39-couple.sh runs too) collects each partner's
     findings in the genes of assets/carrier_genes.tsv: ClinVar pathogenic and
     likely pathogenic hits (CLINVAR_SCREEN), Delly deletions over an exon
-    (with --gencode_exons), SMN1 copy number (PARASCOPY) and the FMR1 and FXN
-    repeats (EXPANSION_HUNTER). It writes couple_<a>_<b>.tsv and .md, published
+    of 50 bp or more (with --gencode_exons; one matching a common deletion of
+    AnnotSV's benign loss set is set aside, the set read from
+    --annotsv_annotations when it is there), SMN1 copy number (PARASCOPY) and
+    the FMR1 and FXN repeats (EXPANSION_HUNTER). It writes couple_<a>_<b>.tsv and .md, published
     under <outdir>/family/, and one copy of the table per partner,
     <id>_couple_carrier.tsv, published under <outdir>/<id>/couple/ for that
     partner's report.
@@ -35,6 +37,7 @@ process COUPLE_CARRIER {
     path(outputs, stageAs: 'in/*')
     path(genes, stageAs: 'carrier_genes.tsv')
     path(exons)          // GENCODE exons BED, or [] without --gencode_exons
+    path(benign_sv)      // AnnotSV's benign_Loss_SV_GRCh38.sorted.bed, or [] without --annotsv_annotations
     path(par_bed)
 
     output:
@@ -57,9 +60,10 @@ process COUPLE_CARRIER {
     }.findAll { a -> a }.sort().join(' ')
     def sx = [ids, sexes].transpose().findAll { p -> p[1] }.collect { p -> "--declared-sex ${p[0]}=${p[1]}" }.join(' ')
     def ex = exons ? "--exons ${exons}" : ''
+    def bn = benign_sv ? "--benign-sv ${benign_sv}" : ''
     """
     couple_report.py screen --pedigree pedigree.tsv --genes carrier_genes.tsv --par-bed ${par_bed} \\
-        ${args} ${ex} ${sx} --out-dir .
+        ${args} ${ex} ${bn} ${sx} --out-dir .
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """

@@ -35,6 +35,14 @@ The results go to `$GENOME_DIR/my_family/`, a folder of its own: the family name
 
 In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree pedigree.tsv --somalier_sites <sites.hg38.vcf.gz>`. A person processed earlier is a VCF row with the `gvcf` and `gvcf_index` columns; a row from FASTQ or a BAM is called in the same run and its gVCF is used. The family results go to `<outdir>/family/`.
 
+The shared segments (item 6 below) need the phased reference panel and genetic maps of [step 26b](26b-ancestry-fine.md) (`setup.sh --ancestry-fine-panel`). Step 38 reads them from `ANCESTRY_FINE_DIR` (default `reference/ancestry_fine/<ANCESTRY_FINE_PANEL>`) and skips the segments with one line when they are not there; the Nextflow family workflow runs them when `--ancestry_fine_panel` is given. To add the segments to a family analysed before the panel was installed, without joint-calling again:
+
+```bash
+GENOME_DIR=/path/to/data FAMILY_IBD_ONLY=true ./scripts/38-family.sh my_family
+```
+
+It reads the `family.vcf.gz` and `pedigree.tsv` the earlier run left in `$GENOME_DIR/my_family/`.
+
 ### What it does
 
 1. **Joint call.** GLnexus (`GLNEXUS_IMAGE`, its DeepVariantWGS preset) merges the members' DeepVariant gVCFs into one VCF, `family.vcf.gz`. A site where one person has a variant gets the others' genotypes from their reference blocks, so "not called" and "matches the reference" are told apart. The container gets 16 GB (`GLNEXUS_MEM` in step 38, the `GLNEXUS` process in `conf/base.config`), and GLnexus's own `--mem-gbytes` budget is half of it. That budget sizes only GLnexus's database cache and write buffers; the alleles it discovers and the sites it merges are held outside it. So a budget near the limit leaves no room for them. Whether 16 GB is enough for three whole genomes under the half rule has not been measured yet; when the task is killed for memory, Nextflow retries it once with 32 GB (capped at `--max_memory`), and step 38 takes a larger `GLNEXUS_MEM`.
@@ -51,6 +59,8 @@ In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree
    Isolated sites that point to the other copy are genotype errors or short gene conversions: a run of them becomes a segment of its own only with 20 sites or more over 500 kb or more; a shorter run is absorbed and counted in the segment's `discordant` column. A stretch with no informative site for 5 Mb (a centromere, a gap of the reference) is split there, and a stretch with fewer than 20 informative sites is left out. A segment starts and ends at its first and last informative site, so a crossover lies somewhere in the space between two segments. Autosomes are mapped, and chrX outside the pseudoautosomal regions from the mother only (a father passes his single X whole to a daughter, and none to a son). A section of `family_report.md` counts each child's segments, Mb and crossovers per parent.
 
    `<child>_dnapainter.csv` holds the same segments in the import format of [DNA Painter](https://dnapainter.com/help/import) (`Chr,Start,End,cM,SNPs,Match,Confidence,Group,Side,Notes,Colour,Ancestor`; `Side` is `paternal` or `maternal`; `Group` is the grandparent the segment came from, or the parent when no grandparent is sequenced, so each grandparent is painted as a group of its own; `Ancestor` is `1` when the group names a parent or grandparent, sequenced or not, as DNA Painter's format asks). Positions are GRCh38. DNA Painter's import page names no genome build, and matches imported from testing companies usually carry build 37 positions, so a segment here and a match from such a company are offset by the difference between the builds. `cM` is left empty: no genetic map is used. Importing needs a DNA Painter subscription.
+
+6. **Shared segments.** On each autosome the panel covers, the joint call's genotypes at the panel's SNVs (same position and alleles; the panel keeps at most one common SNV per 2 kb) are phased by Beagle 5.5 (`BEAGLE_IMAGE`; Browning, Zhou and Browning 2018, https://doi.org/10.1016/j.ajhg.2018.07.015) against the panel's phased genotypes. hap-ibd (`HAP_IBD_IMAGE`; Zhou, Browning and Browning 2020, https://doi.org/10.1016/j.ajhg.2020.02.010) then finds the segments each pair of members shares identical by descent, haplotype by haplotype, with its defaults: a segment of 2 cM or more on Beagle's GRCh38 genetic map. `bin/ibd_report.py` merges a pair's segments into the stretches the two share, one copy or both, as consumer DNA sites show them. A phasing error breaks hap-ibd's segments, and a piece shorter than its 2 cM seed between two breaks is lost. Two people who share a copy are never opposite homozygotes (one 0/0, the other 1/1) bar a genotype error, so two stretches of a pair are joined when the markers between them hold at most one opposite homozygote, and a pair's first and last stretch reach the chromosome's first and last marker on the same test. The Browning lab, which wrote hap-ibd, joins segments by the same test with its `merge-ibd-segments` tool, in gaps under 0.6 cM (https://faculty.washington.edu/browning/refined-ibd.html). Here the gap has no length limit: two unrelated people are opposite homozygotes at several percent of the panel's common SNVs, and the panel holds about 200 of them per cM, so a gap of 1 cM or more with at most one is almost always a stretch they share. A shorter gap passes by chance more easily, but it is only ever a gap between stretches hap-ibd already found, or between one of them and the end of the chromosome. Per pair it gives the number of stretches, the total and longest cM, the cM where both copies are shared (IBD2), and the share of the analysed map (the cM between the first and last phased marker of each chromosome). The relatedness is (IBD1 / 4 + IBD2 / 2) / analysed cM, times 2, binned as KING bins it (0.707, 0.354, 0.177, 0.088, plus 0.044 for a fourth degree). A first-degree pair sharing both copies over 10% or more reads as full siblings, otherwise as parent and child. Unlike the relationship check this estimate does not stop the step: compare its `degree` with the `declared` column.
 
 Two members marked as partners also get the couple carrier screen of [step 39](39-couple.md): `scripts/39-couple.sh`, or in the Nextflow pipeline the `COUPLE_CARRIER` process of the family workflow (with `clinvar` in `--tools`).
 
@@ -71,14 +81,19 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 | `<child>_segments.svg` | the map drawn: per chromosome, the copy from the father above the copy from the mother |
 | `de_novo.tsv`, `compound_het.tsv` | as above |
 | `family_report.md` | all of it in words, pair by pair and child by child |
+| `ibd_pairs.tsv` | each pair: declared relationship, expected relatedness, stretches, shared_cm, ibd2_cm, longest_cm, analysed_cm, shared_fraction, relatedness, degree (with the panel only) |
+| `ibd_segments.tsv` | each shared stretch: the pair, chrom, start, end (GRCh38), cm, ibd2_cm |
+| `ibd_report.md` | the shared segments in words |
+| `ibd/` | step 38 only: the genotypes at the panel's SNVs, Beagle's phased VCF and hap-ibd's own output, per chromosome |
 
 ### Limits
 
 - The gVCFs must be DeepVariant's: the GLnexus preset reads DeepVariant's fields.
 - No reads are used for phasing, so an all-heterozygous trio site stays unphased, and a duo is phased only where the genotypes tell.
-- The relatedness is one number per pair for the whole genome. The chromosome map covers a child and its parents (and grandparents); stretches shared by other relatives, such as siblings or cousins, are not reported.
+- somalier's relatedness is one number per pair for the whole genome. The chromosome map covers a child and its parents (and grandparents). Stretches shared by any other pair, such as siblings or cousins, come from the shared segments, which need step 26b's panel.
+- The shared segments see only stretches of 2 cM or more, and only on the chromosomes the panel covers (chr1 to chr22). Phasing errors can split a long stretch into shorter ones, so the count of stretches can be too high and the longest stretch too short. Pairs from one endogamous population share many short stretches by chance. The degree estimate of a pair beyond the third degree is rough, and it is rough for any pair when fewer than the 22 autosomes are analysed.
 - The chromosome map needs informative sites: a crossover is placed only between two of them, and with short reads and no sequenced grandparent nothing tells the parent's two copies apart. No genetic map is used, so lengths are in bases, not centimorgans. Two siblings with no sequenced grandparent are not compared with each other.
-- Runtime on whole genomes has not been measured yet; the CI test runs it on 2.45 Mb of the GIAB Ashkenazi trio.
+- Runtime on whole genomes has not been measured yet; the CI test runs the joint call on 2.45 Mb of the GIAB Ashkenazi trio, and the shared segments on all of chr20 of the same trio (GIAB's benchmark genotypes as the joint call, `FAMILY_IBD_ONLY=true`).
 
 ---
 
@@ -86,7 +101,7 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 
 The most immediately useful multi-sample analysis: checking whether both partners carry pathogenic variants in the **same recessive gene**. If so, each child has a 25% chance of being affected.
 
-[Step 39](39-couple.md) does this for two partners of a pedigree: the recessive genes where both carry a change, counting ClinVar hits, Delly deletions over an exon (a long one only when read depth shows the loss), SMN1 copy loss and FMR1 and FXN expansions, the X-linked findings, and what the screen does not see. The cross-check below is the same comparison by hand, for ClinVar hits only.
+[Step 39](39-couple.md) does this for two partners of a pedigree: the recessive genes where both carry a change, counting ClinVar hits, Delly deletions of 50 bp or more over an exon (a long one only when read depth shows the loss, and none that matches a common deletion of AnnotSV's benign set), SMN1 copy loss and FMR1 and FXN expansions, the X-linked findings, and what the screen does not see. The cross-check below is the same comparison by hand, for ClinVar hits only.
 
 ### Quick Cross-Check
 
@@ -259,7 +274,6 @@ Telomere length (step 10) is most informative when compared between samples of *
 ## What This Pipeline Cannot Do (Yet)
 
 - **Read-backed or statistical phasing** (which variants are on which chromosome copy in one person): step 38 phases a child only by inheritance, from the parents' genotypes; a single person needs read-based phasing (long reads help) or statistical phasing tools like Eagle2/SHAPEIT
-- **Shared segments between relatives** (identity by descent, stretch by stretch): step 38 gives one relatedness number per pair
 - **Comparable polygenic risk scores**: step 25 computes raw scores per person, but turning them into percentiles that can be compared between people needs a matched reference population (see [step 25](25-prs.md))
 - **Ancestry estimates**: one sample at a time. Step 26 projects each sample onto a 1000 Genomes panel and [step 26b](26b-ancestry-fine.md) estimates its admixture fractions and paints its chromosomes; neither compares two samples with each other, so read their outputs side by side
 

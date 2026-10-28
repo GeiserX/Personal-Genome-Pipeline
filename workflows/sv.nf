@@ -117,7 +117,8 @@ workflow SV {
             .filter { row -> row[1] != null }
             .map { meta, sv_vcf, delly_vcf, cnvpytor_vcf -> [meta, sv_vcf, delly_vcf ?: [], cnvpytor_vcf ?: []] }
         ANNOTSV(ch_annotsv_input, ch_annotsv_annotations,
-                Channel.value(file("${projectDir}/assets/par_grch38.bed", checkIfExists: true)))
+                Channel.value(file("${projectDir}/assets/par_grch38.bed", checkIfExists: true)),
+                Channel.value(file("${projectDir}/assets/sv_rule_regions.tsv", checkIfExists: true)))
         ch_annotsv_tsv     = ANNOTSV.out.annotated_tsv
         ch_annotsv_checked = ANNOTSV.out.class4_5_checked
         ch_versions    = ch_versions.mix(ANNOTSV.out.versions)
