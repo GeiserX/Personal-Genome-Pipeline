@@ -52,6 +52,7 @@ import csv
 import glob
 import gzip
 import json
+import math
 import os
 import re
 import struct
@@ -2017,6 +2018,8 @@ def sec_roh(d, s):
                 start, end, length = int(c[3]), int(c[4]), float(c[5])
             except ValueError:
                 continue
+            if not math.isfinite(length):
+                raise Unreadable(f"{os.path.basename(p)} has a run of length {c[5]}")
             if c[2] in ("chrX", "chrY", "X", "Y"):
                 sex_segs += 1
                 continue
@@ -3076,9 +3079,13 @@ def sec_sample_qc(d, s):
             data[r["key"]] = r.get("value", "")
     if "inferred_sex" not in data:
         raise Unreadable(f"{os.path.basename(p)} has no inferred_sex row")
-    # somalier's chrX and chrY depth over the autosomal depth: one copy reads 0.5
+    # somalier's chrX and chrY depth over the autosomal depth: one copy reads 0.5.
+    # Named only from more than 10 chrX sites, the floor somalier's own sex
+    # call needs (somalier_x_sex); a thinner ratio is noise.
     xr, yr = num(data.get("x_depth_ratio")), num(data.get("y_depth_ratio"))
-    data["karyotype"] = karyotype(2 * xr, 2 * yr) if xr is not None and yr is not None else None
+    xs = num(data.get("x_sites"))
+    data["karyotype"] = (karyotype(2 * xr, 2 * yr)
+                         if xr is not None and yr is not None and xs is not None and xs > 10 else None)
     return p, data
 
 

@@ -91,11 +91,11 @@ A flagged chromosome is looked up in `assets/imprinted_regions.tsv`, the chromos
 | 15q11-q13, chr15:20,500,000-33,400,000 (SNRPN, UBE3A) | Prader-Willi syndrome | Angelman syndrome | 22237428, 27615419 |
 | chr20 (20q13.32, GNAS) | Mulchandani-Bhoj-Conlin syndrome (growth failure) | Pseudohypoparathyroidism type 1B | 26248010, 29959430 |
 
-`bin/collect_summary.py` holds the same rows (a unit test checks that the two agree), because the Nextflow report task reads `bin/` but not `assets/`. A flagged chromosome with no row still matters: a recessive variant inside the run is homozygous.
+`bin/collect_summary.py` holds the same rows (a unit test checks that the two agree), because the Nextflow report task reads `bin/` but not `assets/`. A flagged chromosome with no row still matters: a recessive variant inside the run, if there is one, would be homozygous.
 
 What this cannot tell, and the reports say so:
 
-- **Which parent.** A single genome has no parent of origin; both columns are listed. The parents' samples (step 38, the family workflow) or a methylation test of the imprinted region tell which.
+- **Which parent.** A single genome has no parent of origin; both columns are listed. The parents' genotypes (step 38, the family workflow) confirm a UPD and tell which. Where a row applies, a methylation test of its imprinted region tests for that imprinting disorder; on its own it does not prove a UPD, since an imprinting defect gives the same result.
 - **Heterodisomy.** Two different copies from one parent leave no run at all, so it is not detected here. It needs the parents' genotypes.
 - **Mosaic or segmental UPD** that covers only a short stretch, or a share of the cells (common in Beckwith-Wiedemann syndrome), may stay under the thresholds.
 
@@ -114,5 +114,5 @@ What this cannot tell, and the reports say so:
 - bcftools roh reads a site's frequency from INFO/AC and INFO/AN when the record has them, and uses 0.4 only where it does not. DeepVariant writes neither, so on its calls every site uses 0.4. A VCF from another caller may carry them: in a single-sample file they are the sample's own allele counts, not a population's.
 - No population allele frequencies are used, and the reports say so: read the total and the short segments as rough, the long segments are the signal. A population allele-frequency file (`--AF-file`, for example from gnomAD) would replace the one default value with real frequencies per site and give better segment edges; neither the script nor the module uses one today, and its effect on the total has not been measured.
 - The centromere and heterochromatin bands (above) are taken out of every count; the step and the reports do it, so there is nothing to subtract by hand
-- A single large ROH (>20 MB) confined to one chromosome may indicate uniparental disomy; the reports flag it (above). Verify with parental samples or a methylation test
+- A single large ROH (>20 MB) confined to one chromosome may indicate uniparental disomy; the reports flag it (above). Confirm with the parents' genotypes; a methylation test of a listed imprinted region tests for its imprinting disorder
 - ROH within known disease gene regions warrants checking for homozygous pathogenic variants

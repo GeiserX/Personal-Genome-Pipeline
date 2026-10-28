@@ -1446,11 +1446,12 @@ MITO_NOTE = ("ClinVar and gnomAD v3.1 (chrM sites) annotate the calls in step 20
              "curated disease status of mtDNA variants; it is a manual lookup, as it refuses scripted requests.")
 
 
-ROH_UPD_NOTE = ("Runs over most of one chromosome, with few elsewhere, are the sign of isodisomy: both copies "
-                "of that chromosome from one parent. They can also be chance in a child of related parents. Which "
-                "parent gave both copies cannot be told without the parents' samples, and a heterodisomy (two "
-                "different copies from one parent) leaves no runs at all. Confirm with the parents' samples or a "
-                "methylation test of the imprinted region (docs/11-roh-analysis.md).")
+ROH_UPD_NOTE = ("Long runs concentrated on one chromosome, with few elsewhere, are the sign of isodisomy: both "
+                "copies of that chromosome from one parent. They can also be chance in a child of related parents. "
+                "Which parent gave both copies cannot be told without the parents' samples, and a heterodisomy (two "
+                "different copies from one parent) leaves no runs at all. The parents' genotypes confirm a UPD. "
+                "Where an imprinted region is listed, a methylation test of that region tests for its imprinting "
+                "disorder; on its own it does not prove a UPD (docs/11-roh-analysis.md).")
 ROH_F_NOTE = ("F_ROH is the share of the autosomes (outside the bands) in runs over 5 MB. The band is the row of "
               "docs/11-roh-analysis.md's table it is nearest to: an average, and neighbouring rows overlap, so it "
               "is consistent with that relationship, not a proof of it.")
@@ -1471,7 +1472,7 @@ def roh_lines(d):
                          f"{r['paternal_upd']} (PMID {r['pmid']})")
         if not u.get("imprinted"):
             lines.append(f"No imprinting disorder is listed for {u['chrom']} (assets/imprinted_regions.tsv); "
-                         "a recessive variant in the run is homozygous")
+                         "a recessive variant in the run, if there is one, would be homozygous")
         lines.append(ROH_UPD_NOTE)
     if isinstance(d.get("f_roh"), (int, float)):
         lines.append(ROH_F_NOTE)
