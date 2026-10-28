@@ -56,6 +56,25 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+EXOMISER_NOTE = ("A ranking to bring to a clinical geneticist, not a diagnosis: a high score means a rare, likely "
+                 "damaging variant in a gene linked to symptoms like these, not that it causes them, and an empty or "
+                 "low list does not rule a genetic cause out. Coding and splice variants only (docs/48-exomiser.md).")
+ANCIENT_NOTE = ("Closeness on this PCA is genetic similarity, not descent: a genome near an ancient group shares "
+                "ancestry with it and does not descend from those people. qpAdm models are not part of step 44; "
+                "docs/44-ancient.md says how to read the plot.")
+
+
+def ancient_lines(d):
+    """Step 44's lines, the same in both reports."""
+    lines = [f"AADR {d.get('release', '.')}: {d.get('sites_used', '.')} of {d.get('panel_sites', '.')} sites used; "
+             f"axes from {d.get('present_day_people', '.')} present-day West Eurasians, "
+             f"{d.get('ancient_people', '.')} ancient people in {d.get('ancient_groups', '.')} groups projected.",
+             "Nearest ancient groups:"]
+    lines += [f"  {r['rank']:>2}. {r['group']} ({r['dates']}, {r['country']}; {r['n']} people)"
+              for r in (d.get("nearest") or [])[:10]]
+    return lines
+
+
 COUPLE_NOTE = ("A screen, not a diagnosis: the couple report (couple_<a>_<b>.md in the family folder) lists the "
                "genes, variant types and repeats it does not see. See a genetic counsellor before acting on a "
                "result, or on its absence (docs/39-couple.md).")
@@ -487,6 +506,45 @@ def ancestry_fine_painted(d):
     else:
         text = "none" + ("" if failed else " (no chromosome long enough)")
     return text + (f"; not painted: RFMix failed on {failed}" if failed else "")
+
+
+def exomiser_terms(d):
+    return ", ".join(f"{t['label']} ({t['id']})" if t.get("label") else t["id"] for t in d.get("terms", [])) or "."
+
+
+def exomiser_text(d, sample):
+    """The Exomiser section of the text report: the terms, then each rank."""
+    out = [f"  Symptoms searched: {exomiser_terms(d)}"]
+    if not d["genes"]:
+        out.append("  No gene passed Exomiser's filters with a variant that fits a mode of inheritance.")
+    for g in d["genes"]:
+        out.append(f"  {g['rank']}. {g['gene']} ({g['moi']}) score {g['exomiser_score']} (symptom match {g['phenotype_score']})")
+        for v in g["variants"]:
+            out.append(f"       {v['variant']} {v['genotype']} {v['consequence']} {v['hgvs']} ACMG {v['acmg']}"
+                       + (f"; {v['disease']}" if v["disease"] != "." else ""))
+    out.append(f"  {EXOMISER_NOTE} In words: exomiser/{sample}_exomiser.txt")
+    return out
+
+
+def exomiser_html(d, sample):
+    """The Exomiser card's body: one table row per rank and variant."""
+    rows = []
+    for g in d["genes"]:
+        for i, v in enumerate(g["variants"]):
+            lead = (f"<td>{E(g['rank'])}</td><td>{E(g['gene'])}</td><td>{E(g['moi'])}</td><td>{E(g['exomiser_score'])}"
+                    f"</td><td>{E(g['phenotype_score'])}</td>") if i == 0 else "<td></td>" * 5
+            rows.append(f"      <tr>{lead}<td>{E(v['variant'])} {E(v['genotype'])}<br><span style=\"font-size:12px;"
+                        f"color:#666\">{E(v['consequence'])} {E(v['hgvs'])}</span></td><td>{E(v['acmg'])}</td>"
+                        f"<td>{E(v['disease'])}</td></tr>")
+    body = [stat("Symptoms searched", E(exomiser_terms(d)))]
+    if rows:
+        body += ["    <table>", "      <tr><th>Rank</th><th>Gene</th><th>Inheritance</th><th>Score</th>"
+                 "<th>Symptom match</th><th>Variant</th><th>ACMG (Exomiser)</th><th>Linked disease</th></tr>"]
+        body += rows + ["    </table>"]
+    else:
+        body.append(stat("Ranked genes", "none passed Exomiser's filters"))
+    body += [small_note(EXOMISER_NOTE), small_note(f"Exomiser's own report: exomiser/{sample}_exomiser.html")]
+    return body
 
 
 def traits_text(d, sample):
@@ -953,6 +1011,10 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
+        out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
+        w("")
+
     if head("mito", "Mitochondrial Variants (Mutect2)"):
         d = S["mito"]["data"]
         w(f"  PASS variants: {d['pass']}")
@@ -968,9 +1030,23 @@ def text_report(s):
         out.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
+    if head("archaic", "Archaic Ancestry (IBDmix, step 43)"):
+        for line in archaic_lines(S["archaic"]["data"]):
+            w(f"  {line}")
+        w(f"  {ARCHAIC_NOTE}")
+    if head("ancient", "Ancient Populations (AADR PCA, step 44)"):
+        for line in ancient_lines(S["ancient"]["data"]):
+            w(f"  {line}")
+        w(f"  {ANCIENT_NOTE} Plot: ancient/{s['sample']}_ancient_pca.svg")
+        w("")
+
     if head("viral", "Viral DNA in the Unmapped Reads (step 47)"):
         for line in viral_lines(S["viral"]["data"]):
             w(f"  {line}")
+        w("")
+
+    if head("exomiser", "Symptom-Driven Ranking (Exomiser, step 48)"):
+        out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -1254,6 +1330,50 @@ def ystr_body(d):
 BLOODTYPE_NOTE = ("Predicted from the DNA at the variants that define each antigen, not typed from blood. "
                   "RhD comes from the read depth over RHD; weak and partial D are not assessed. "
                   "The evidence for each site is in bloodtype/<sample>_bloodtype_evidence.tsv.")
+
+
+ARCHAIC_NOTE = ("An estimate from IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan: "
+                "a segment counts when either copy carries it, and part of what any person gets is old shared "
+                "ancestry, not gene flow (Africans get some too). Every segment: archaic/<sample>_archaic_segments.tsv; "
+                "docs/43-archaic.md says where the numbers end.")
+
+
+def archaic_lines(d):
+    """Step 43's lines, the same in both reports."""
+    mb = lambda bp: f"{bp / 1e6:.1f} Mb"
+    lines = [f"Neanderthal: {d['neanderthal_percent']}% ({mb(d['neanderthal_bp'])} in {d['neanderthal_segments']} segments)",
+             f"Denisovan: {d['denisovan_percent']}% ({mb(d['denisovan_bp'])} in {d['denisovan_segments']} segments)",
+             f"Analysed: {mb(d['analysed_bp'])} of the autosomes; modern frequencies: 1000 Genomes {d.get('population', '.')}"]
+    if d.get("longest"):
+        lines.append("Longest segments:")
+        lines += [f"  {x}" for x in d["longest"]]
+    return lines
+
+
+CHIP_NOTE = ("Clonal haematopoiesis is common with age and most people with it never get a blood cancer: "
+             "a call here is not a diagnosis. A call is a change in a CHIP gene's published classes, found by "
+             "Mutect2 without a matched normal; one at a VAF of 35% or more is left out as possibly inherited. "
+             "docs/49-chip.md says how to read it.")
+
+
+def chip_lines(d, sample):
+    """The CHIP section: the calls, the detection limit at this depth, the genes too shallow to read."""
+    out = []
+    for c in d.get("calls", []):
+        out.append(f"{c['gene']} {c['protein_change']}: VAF {c['vaf']} ({c['alt_reads']} of {c['depth']} reads), {c['note']}")
+    if not d.get("calls"):
+        out.append("No CHIP call.")
+    if d.get("median_limit") is not None:
+        out.append(f"Detection limit: a clone of VAF about {d['median_limit'] * 100:.0f}% or more is found 8 times "
+                   f"in 10 at this depth (median {d['median_depth']:.0f}x over the genes' coding exons). CHIP starts "
+                   "at a VAF of 2%: smaller clones are likely missed, so no call does not rule one out.")
+    else:
+        out.append("No CHIP gene has the depth to find a clone: no result either way.")
+    if d.get("not_covered"):
+        out.append(f"Too shallow or not on the reference: {', '.join(d['not_covered'])}.")
+    out.append(f"{d.get('other', 0)} other protein changes listed, not counted: chip/{sample}_chip.tsv.")
+    out.append(CHIP_NOTE)
+    return out
 
 
 def bloodtype_body(d):
@@ -1736,6 +1856,12 @@ def html_report(s):
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
         a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+    if S.get("archaic", MISSING)["state"] != "missing":
+        ah = S["archaic"]["data"]
+        a(card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
+               [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
+               + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)] + [small_note(ARCHAIC_NOTE)]
+               if S["archaic"]["state"] in ("ok", "stale") else []))
     if S.get("lpa", MISSING)["state"] != "missing":
         lp = S["lpa"]["data"]
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
@@ -1743,6 +1869,12 @@ def html_report(s):
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
+    if S.get("chip", MISSING)["state"] != "missing":
+        ch = S["chip"]["data"]   # the card shows its body only for a section that was read
+        a(card(S["chip"], "Clonal Haematopoiesis (CHIP)",
+               [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
+               + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
+               + [small_note(CHIP_NOTE)], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
@@ -1842,6 +1974,26 @@ def html_report(s):
     tr_sec = S.get("traits", MISSING)
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
+
+    ex_sec = S.get("exomiser", MISSING)
+    if ex_sec["state"] != "missing":
+        a(card(ex_sec, "Symptom-Driven Ranking (Exomiser)",
+               exomiser_html(ex_sec["data"], s["sample"]) if ex_sec["state"] in ("ok", "stale") else [], full=True))
+    if S.get("ancient", MISSING)["state"] != "missing":
+        d = S["ancient"]["data"]
+        lines = ancient_lines(d)
+        rows = "".join(f"<tr><td>{E(str(r['rank']))}</td><td>{E(r['group'])}</td><td>{E(r['dates'])}</td>"
+                       f"<td>{E(r['country'])}</td><td>{E(r['locality'])}</td><td>{E(str(r['n']))}</td></tr>\n"
+                       for r in (d.get("nearest") or [])[:10])
+        body = [f"    <p>{E(lines[0])}</p>", "    <table>",
+                "      <tr><th>#</th><th>Ancient group</th><th>Dates</th><th>Country</th><th>Place</th><th>People</th></tr>",
+                rows.rstrip("\n"), "    </table>"]
+        if d.get("plot_svg"):
+            # An <img> of the SVG: shown, never run as part of the page.
+            body.append('    <img alt="PC1 against PC2: present-day West Eurasians in grey, ancient people coloured by '
+                        f'age, the sample marked" style="max-width:100%" src="data:image/svg+xml;base64,{d["plot_svg"]}">')
+        body.append(f"    <p>{E(ANCIENT_NOTE)}</p>")
+        a(card(S["ancient"], "Ancient Populations", body, full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"

@@ -65,6 +65,7 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
+import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -102,7 +103,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "47", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -1489,6 +1490,34 @@ def sec_ancestry_fine(d, s):
     return p, out
 
 
+def sec_ancient(d, s):
+    """Step 44: ancient/<s>_ancient.tsv (the nearest ancient groups on the AADR
+    panel's PCs), <s>_ancient_info.tsv (release, sites used, people, the
+    sample's PC1 and PC2) and the plot, which travels in the summary so the
+    HTML report shows it from the summary alone."""
+    p = first_existing(d, [f"ancient/{s}_ancient.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = {"rank", "group", "n", "distance", "dates", "country", "locality"}
+    if not rows or not need <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {sorted(need)}")
+    info = {}
+    ip = first_existing(d, [f"ancient/{s}_ancient_info.tsv"])
+    if ip:
+        info = {r.get("key"): r.get("value") for r in read_tsv(ip)}
+    out = {"nearest": [{k: r[k] for k in ("rank", "group", "n", "distance", "dates", "country", "locality")} for r in rows],
+           "release": info.get("release") or ".", "sites_used": info.get("sites_used") or ".",
+           "panel_sites": info.get("panel_sites") or ".", "ancient_people": info.get("ancient_people") or ".",
+           "ancient_groups": info.get("ancient_groups") or ".", "present_day_people": info.get("present_day_people") or ".",
+           "plot_svg": None}
+    svg = first_existing(d, [f"ancient/{s}_ancient_pca.svg"])
+    if svg and os.path.getsize(svg) < 3_000_000:
+        with open(svg, "rb") as f:
+            out["plot_svg"] = base64.b64encode(f.read()).decode()
+    return p, out
+
+
 def sec_manta(d, s):
     p = first_existing(d, ["manta/results/variants/diploidSV.vcf.gz", "manta/*diploidSV.vcf.gz",
                            "manta/**/diploidSV.vcf.gz"])
@@ -2060,6 +2089,28 @@ def sec_bloodtype(d, s):
     return p, {"systems": systems, "abo": by.get("ABO", "."), "rhd": by.get("RhD", ".")}
 
 
+def sec_archaic(d, s):
+    """Step 43's summary (archaic/<id>_archaic.tsv, bin/archaic_report.py): the
+    Neanderthal and Denisovan shares and segment counts, the analysed span and
+    the ten longest segments."""
+    p = first_existing(d, [f"archaic/{s}_archaic.tsv"])
+    if not p:
+        return None, {}
+    data = {r["key"]: r.get("value") or "" for r in read_tsv(p) if r.get("key")}  # a short row: None
+    out = {"population": data.get("population", "."),
+           "longest": [data[k] for k in sorted((k for k in data if re.fullmatch(r"longest_[0-9]+", k)),
+                                               key=lambda k: int(k.split("_")[1]))]}
+    for k in ("neanderthal_segments", "neanderthal_bp", "denisovan_segments", "denisovan_bp", "analysed_bp"):
+        if not re.fullmatch(r"[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no whole number for {k}")
+        out[k] = int(data[k])
+    for k in ("neanderthal_percent", "denisovan_percent"):
+        if not re.fullmatch(r"[0-9]+\.[0-9]+", data.get(k, "")):
+            raise Unreadable(f"{os.path.basename(p)} has no percentage for {k}")
+        out[k] = data[k]
+    return p, out
+
+
 # The two LPA risk variants of assets/traits.tsv (rsid -> its alt, the allele
 # that goes with a high Lp(a)); tests/test_lpa_kiv2.py checks they agree.
 LPA_RISK_ALLELES = {"rs10455872": "G", "rs3798220": "C"}
@@ -2123,6 +2174,36 @@ def sec_viral(d, s):
                "found": [r for r in keep if r["reads"].isdigit() and int(r["reads"]) > 0], "genomes": len(keep)}
 
 
+def sec_chip(d, s):
+    """Step 49's tables (chip/<id>_chip.tsv and chip/<id>_chip_depth.tsv, bin/chip_report.py):
+    the CHIP calls, how many other protein changes were listed and not counted,
+    and the depth and detection limit per gene with their median over the
+    covered genes. The limit is the one at the median depth, as step 49 prints it."""
+    p = first_existing(d, [f"chip/{s}_chip.tsv"])
+    dp = first_existing(d, [f"chip/{s}_chip_depth.tsv"])
+    if not p or not dp:
+        return None, {}
+    calls, depth = read_tsv(p), read_tsv(dp)
+    need = ("gene", "protein_change", "vaf", "alt_reads", "depth", "status", "note")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        head = f.readline().rstrip("\n").split("\t")
+    if any(k not in head for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    if not depth or not {"gene", "mean_depth", "detection_limit_vaf", "status"} <= set(depth[0]):
+        raise Unreadable(f"{os.path.basename(dp)} has no gene, mean_depth, detection_limit_vaf and status columns, or no row")
+    chip = [{k: r.get(k) or "." for k in need} for r in calls if r.get("status") == "chip"]
+    covered = sorted(float(r["mean_depth"]) for r in depth if r["status"] == "covered")
+    med = None
+    if covered:
+        n = len(covered)
+        med = covered[n // 2] if n % 2 else (covered[n // 2 - 1] + covered[n // 2]) / 2
+    return p, {"calls": chip, "other": len(calls) - len(chip),
+               "genes": [{k: r.get(k) or "." for k in ("gene", "mean_depth", "detection_limit_vaf", "status")}
+                         for r in depth],
+               "median_depth": med, "median_limit": chip_report.detection_limit(med) if med is not None else None,
+               "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -2146,6 +2227,39 @@ def sec_traits(d, s):
     counts = {st: sum(1 for r in keep if r["status"] == st and r["gene"] != "APOE")
               for st in ("called", "not_covered", "other_allele")}
     return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
+
+
+def sec_exomiser(d, s):
+    """Step 48's ranking (exomiser/<id>_exomiser_top.tsv, bin/exomiser_report.py):
+    the HPO terms searched, and each rank with its gene, mode of inheritance,
+    scores and contributing variants. A table without rows means no gene
+    passed Exomiser's filters."""
+    p = first_existing(d, [f"exomiser/{s}_exomiser_top.tsv"])
+    if not p:
+        return None, {}
+    with open(p, encoding="utf-8", errors="replace") as f:
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+        f.seek(0)
+        header = f.readline().rstrip("\n").split("\t")
+    need = ("rank", "gene", "moi", "exomiser_score", "phenotype_score", "variant", "genotype", "consequence",
+            "hgvs", "acmg", "disease")
+    if any(k not in header for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    if any(None in r or any(r.get(k) is None for k in need) for r in rows):
+        raise Unreadable(f"{os.path.basename(p)} has a line that does not have one field per column")
+    terms = []
+    tp = os.path.join(os.path.dirname(p), f"{s}_exomiser_terms.tsv")
+    if os.path.isfile(tp):
+        with open(tp, encoding="utf-8", errors="replace") as f:
+            terms = [{"id": r.get("hpo_id", ""), "label": r.get("label", "")}
+                     for r in csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)]
+    genes = []
+    for r in rows:
+        if not genes or genes[-1]["rank"] != r["rank"]:
+            genes.append({k: r[k] for k in ("rank", "gene", "moi", "exomiser_score", "phenotype_score")})
+            genes[-1]["variants"] = []
+        genes[-1]["variants"].append({k: r[k] for k in ("variant", "genotype", "consequence", "hgvs", "acmg", "disease")})
+    return p, {"terms": terms, "genes": genes}
 
 
 def sec_couple(d, s):
@@ -2941,7 +3055,11 @@ SECTIONS = [
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
+    ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
+    ("ancient", "Ancient populations (AADR PCA)", "44", sec_ancient),
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
+    ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),
+    ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
