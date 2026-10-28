@@ -23,6 +23,7 @@
 | **Traits** | Lactase persistence, caffeine, alcohol flush, bitter taste, earwax, pigmentation, APOE and other replicated variants, each row citing its primary paper | 42 |
 | **Archaic Ancestry** | The Neanderthal and Denisovan shares and the segments carried, with IBDmix against the Altai and Vindija Neanderthals and the Altai Denisovan (opt-in) | 43 |
 | **Viral DNA** | Inherited integrated HHV-6 and the DNA of 23 human viruses (herpesviruses, HPV, HBV, HIV-1, polyomaviruses and others) in the reads that do not map to the human genome, with phiX as the lab control (opt-in) | 47 |
+| **Mobile Elements** | Alu, L1 and SVA insertions the reference lacks, each genotyped as one or two copies, and three SVA insertions known to cause disease (FKTN, TAF1, BBS1) read as seen, not seen or not callable (opt-in; needs the BAM) | 50 |
 
 ## Pipeline Overview
 
