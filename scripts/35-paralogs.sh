@@ -84,10 +84,13 @@ declare -A SEEN=([hba]=1 [paraphase]=1)  # tables other steps write
 while IFS= read -r spec; do
   # The table name starts with a letter or digit and has no dot, so it is
   # never "." or ".." in a path the step removes. It is used once, and never
-  # hba or paraphase, or one table would overwrite another.
-  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr[0-9XY]+:[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+  # hba or paraphase, or one table would overwrite another. The region is on
+  # a GRCh38 chromosome, with 1 <= start <= end.
+  span=${spec#*|} span=${span%|*} span=${span#*:}
+  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr([1-9]|1[0-9]|2[0-2]|X|Y):[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+     || [ "${span%-*}" -lt 1 ] || [ "${span%-*}" -gt "${span#*-}" ] \
      || [ -n "${SEEN[${spec##*|}]:-}" ]; then
-    echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table, a table name used once and not hba or paraphase); see tests/test_paralog_loci.py." >&2
+    echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table: a region chr1-22, X or Y with 1 <= start <= end, a table name used once and not hba or paraphase); see tests/test_paralog_loci.py." >&2
     exit 1
   fi
   SEEN[${spec##*|}]=1
@@ -159,6 +162,12 @@ for spec in $SPECS; do
     printf '%s\t%s\t%s\t%s\tnot assessed: %s\t.\t.\tnot assessed: %s\t.\t.\t.\n' \
       "$chrom" "$((${span%-*} - 1))" "${span#*-}" "${model%.gz}" "$reason" "$reason"
   } > "$out"
+done
+# A table of a row no longer in the catalog would read as this run's result,
+# so it goes; SEEN holds this run's tables and the HBA and Paraphase ones.
+for f in "${OUTDIR}/${SAMPLE}"_*_copy_number.tsv; do
+  n=${f##*/} n=${n#"${SAMPLE}_"} n=${n%_copy_number.tsv}
+  if [ -f "$f" ] && [ -z "${SEEN[$n]:-}" ]; then rm -f "$f"; fi
 done
 for t in "${TABLES[@]}"; do mv "${WORK}/${t}" "${OUTDIR}/${t}"; done
 rm -rf "${OUTDIR}/depth.part" "${OUTDIR}/${SAMPLE}_parascopy"

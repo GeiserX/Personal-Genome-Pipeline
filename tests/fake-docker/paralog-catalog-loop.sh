@@ -11,7 +11,9 @@
 #   - a row whose model file is not installed, and a row whose Parascopy run
 #     fails, are not assessed the same way, and the step still exits 0;
 #   - the catalog in the repository runs its SMN1 row into the table the
-#     reports read.
+#     reports read, and removes the tables of rows it no longer has (not the
+#     HBA or Paraphase ones);
+#   - a catalog row with a bad region stops the step before any container.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 # shellcheck source=../../versions.env
@@ -123,10 +125,18 @@ output_has missing-and-failed 'WARNING: GBA\.gz: not assessed'
 printf 'x\n' > "${D}/models_GRCh38_1KGP/EUR/PMS2.gz"
 
 # --- the catalog in the repository --------------------------------------------------
+# It has only the SMN1 row, so the GBA and PMS2 tables of the runs above go,
+# and the Paraphase table (step 35b) stays.
+printf 'x\n' > "${OUT}/sample1_paraphase_copy_number.tsv"
 : > "$FAKE_DOCKER_LOG"
 run_expect 0 repo-catalog "${SCRIPTS}/35-paralogs.sh" sample1
 grep -q "parascopy cn-using ${M}/EUR/SMN1\.gz " "$FAKE_DOCKER_LOG" || fail "the repository's catalog did not run SMN1"
 [ -s "${OUT}/sample1_smn_copy_number.tsv" ] || fail "the repository's catalog wrote no SMN table"
+for t in gba pms2; do
+  [ ! -e "${OUT}/sample1_${t}_copy_number.tsv" ] || fail "the ${t} table of an earlier catalog is left"
+done
+[ -s "${OUT}/sample1_paraphase_copy_number.tsv" ] || fail "the step removed the Paraphase table"
+[ -s "${OUT}/sample1_hba_copy_number.tsv" ] || fail "no HBA table"
 
 # --- a catalog with a bad row stops the step before any container ---------------------
 printf 'GBA.gz\tGBA1\tchr1:1-2 x\tx\tno\tcarrier\tnone\tgba2\ts\n' >> "$L"
@@ -140,4 +150,12 @@ printf 'GBA.gz\tGBA1\tchr1:1-2\tx\tno\tcarrier\tnone\t..\ts\n' >> "$L"
 PARALOG_LOCI="$L" run_expect 1 dotdot-table "${SCRIPTS}/35-paralogs.sh" sample1
 [ "$(calls)" = 0 ] || fail "a table named .. still ran Parascopy"
 [ -d "$OUT" ] || fail "the paralogs directory is gone"
+# a region off the GRCh38 chromosomes, or with its start past its end
+for r in chr0:1-2 chr5:20-10 chr5:0-10; do
+  sed -i.bak '$d' "$L" && rm -f "${L}.bak"
+  printf 'GBA.gz\tGBA1\t%s\tx\tno\tcarrier\tnone\tgba2\ts\n' "$r" >> "$L"
+  : > "$FAKE_DOCKER_LOG"
+  PARALOG_LOCI="$L" run_expect 1 "region-${r}" "${SCRIPTS}/35-paralogs.sh" sample1
+  [ "$(calls)" = 0 ] || fail "the region ${r} still ran Parascopy"
+done
 echo "paralog-catalog-loop: all checks passed"
