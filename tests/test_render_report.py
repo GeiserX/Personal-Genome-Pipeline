@@ -178,7 +178,7 @@ GOLDEN_TITLES = sorted([
     "Raw-Data Export (23andMe v5 layout)", "Blood Groups (predicted)", "Archaic Ancestry (Neanderthal, Denisovan)",
     "Lp(a): LPA KIV-2 Repeat Count", "Viral DNA in the Unmapped Reads", "Clonal Haematopoiesis (CHIP)",
     "Telomere content (relative)", "Mitochondrial Analysis", "Clinical Variant Filter",
-    "Variant Prioritization (slivar)", "Polygenic Risk Scores", "Fine-Grained Ancestry", "Traits",
+    "Variant Prioritization (slivar)", "Symptom-Driven Ranking (Exomiser)", "Polygenic Risk Scores", "Fine-Grained Ancestry", "Traits",
     "Ancient Populations", "ClinVar Hits (best-reviewed first, 3 of 3)", "Steps Not Run",
     "Not Assessed by This Pipeline"])
 

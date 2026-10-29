@@ -2350,12 +2350,29 @@ def hoist_caveats(lines, meta):
                 out.append(meta)
                 meta = None
             pos = len(out)
-        elif st in notes and pos is not None:
-            out.insert(pos, f'    <p class="caveat">{E(notes[st])}</p>')
-            pos += 1
+        elif pos is not None and (found := notes_in(st, notes)):
+            for n in found:
+                out.insert(pos, f'    <p class="caveat">{E(n)}</p>')
+                pos += 1
         else:
             out.append(line)
     return out
+
+
+def notes_in(line, notes):
+    """The *_NOTE sentences a note line is made of: one, or several joined by
+    spaces (step 11's F_ROH and band notes); [] when it holds anything else."""
+    if line in notes:
+        return [notes[line]]
+    m = re.fullmatch(r'<p class="note">(.*)</p>', line)
+    rest, found = m.group(1) if m else "", []
+    while rest:
+        n = next((n for n in caveat_notes() if rest == E(n) or rest.startswith(E(n) + " ")), None)
+        if n is None:
+            return []
+        found.append(n)
+        rest = rest[len(E(n)) + 1:]
+    return found
 
 
 def step_files(S, sample, sid):
