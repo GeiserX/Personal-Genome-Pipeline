@@ -63,14 +63,39 @@ When parents are related, a child is autozygous (both copies from the same ances
 
 These are averages. Inheritance is random, so one person's total can be well above or below the value for their parents' relationship, and the ranges of neighbouring rows overlap. A total near one row is consistent with it; it does not prove it.
 
-To compute the total from the output:
+Both reports print this as **F_ROH**, the measure of McQuillan et al. 2008 (PMID 18760389): the length of the autosomal segments of 5 Mb or more, without their band parts, divided by the length of chr1 to chr22 without the bands (2,875,001,522 bp less 217,000,000 bp, so 2,658,001,522 bp). Beside it they name the row of the table above whose F is nearest to F_ROH on a log scale: the boundaries are the geometric means of neighbouring rows (for example 1/16 and 1/8 meet at about 0.088), and an F_ROH under 1/128 (about 21 Mb) reads "no sign of related parents". When one chromosome carries most of the runs (next section), there is no band: that chromosome fills F_ROH by itself.
+
+To compute the total the table means from the summary file, which takes the band parts out before it keeps the segments of 5 Mb or more, as the reports do:
 
 ```bash
-grep '^RG' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt" \
-  | awk '$3 ~ /^chr[0-9]+$/ && $6 >= 5000000 {sum += $6; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}'
+awk -F'\t' 'NR > 3 {sum += $4; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}' \
+  "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
 ```
 
-That sums the raw segments; the summary file already has the band parts taken out, so `awk -F'\t' 'NR > 3 {sum += $4; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"` gives the total the table means.
+### One chromosome carrying most of the runs: possible uniparental disomy
+
+In uniparental disomy (UPD) both copies of a chromosome come from one parent. When they are two copies of the same parental chromosome (isodisomy), that chromosome reads as one long run of homozygosity, or a few, while the rest of the genome has few long runs. Nakka et al. 2019 (PMID 31607426) found 675 cases of UPD this way, from runs of homozygosity and segments shared with relatives, among 4,400,363 23andMe research participants and 431,094 UK Biobank participants.
+
+The reports flag a chromosome when its segments of 5 Mb or more (band parts left out) add up to at least 20 Mb **and** to more than half of the length of all such autosomal segments. Both numbers are our thresholds, not a published cut-off: 20 Mb on one chromosome is the long-standing sign of isodisomy (see the uniparental disomy note under [Important Notes](#important-notes)), and the share rule keeps out a child of related parents, whose runs spread over many chromosomes. The flag says "may": a run that long can also be chance in a child of related parents.
+
+A flagged chromosome is looked up in `assets/imprinted_regions.tsv`, the chromosomes where UPD from one parent causes an imprinting disorder (overview: Eggermann et al. 2023, Nat Rev Dis Primers, PMID 37386011). A row with a region applies only when a run on that chromosome overlaps it; the others apply to the whole chromosome.
+
+| Chromosome or region | UPD from the mother | UPD from the father | Source (PMID) |
+|---|---|---|---|
+| chr6 (6q24, PLAGL1, HYMAI) | none known | Transient neonatal diabetes mellitus | 20301706 |
+| chr7 (GRB10 at 7p12, MEST at 7q32) | Silver-Russell syndrome | none known | 27585961 |
+| 11p15, chr11:0-22,000,000 (H19/IGF2, KCNQ1OT1) | Silver-Russell syndrome | Beckwith-Wiedemann syndrome | 29377879, 27585961 |
+| chr14 (14q32.2, DLK1-MEG3) | Temple syndrome | Kagami-Ogata syndrome | 24891339, 26377239 |
+| 15q11-q13, chr15:20,500,000-33,400,000 (SNRPN, UBE3A) | Prader-Willi syndrome | Angelman syndrome | 22237428, 27615419 |
+| chr20 (20q13.32, GNAS) | Mulchandani-Bhoj-Conlin syndrome (growth failure) | Pseudohypoparathyroidism type 1B | 26248010, 29959430 |
+
+`bin/collect_summary.py` holds the same rows (a unit test checks that the two agree), because the Nextflow report task reads `bin/` but not `assets/`. A flagged chromosome with no row still matters: a recessive variant inside the run, if there is one, would be homozygous.
+
+What this cannot tell, and the reports say so:
+
+- **Which parent.** A single genome has no parent of origin; both columns are listed. The parents' genotypes (step 38, the family workflow) confirm a UPD and tell which. Where a row applies, a methylation test of its imprinted region tests for that imprinting disorder; on its own it does not prove a UPD, since an imprinting defect gives the same result.
+- **Heterodisomy.** Two different copies from one parent leave no run at all, so it is not detected here. It needs the parents' genotypes.
+- **Mosaic or segmental UPD** that covers only a short stretch, or a share of the cells (common in Beckwith-Wiedemann syndrome), may stay under the thresholds.
 
 ### Single segments
 
@@ -79,7 +104,7 @@ That sums the raw segments; the summary file already has the band parts taken ou
 | <1 Mb | Common, population-level background |
 | 1-5 Mb | Distant shared ancestry; many of them is typical of population isolates |
 | 5-10 Mb | Counted in the total above; a few can occur even when the parents are not related |
-| >10 Mb | Recent shared ancestry; possible uniparental disomy if confined to one chromosome |
+| >10 Mb | Recent shared ancestry; possible uniparental disomy if confined to one chromosome (the reports flag one chromosome from 20 Mb, see above) |
 
 ## Important Notes
 - The script auto-detects chip data (no FORMAT/PL tag) and adds `-G30` for genotype-only mode
@@ -87,5 +112,5 @@ That sums the raw segments; the summary file already has the band parts taken ou
 - bcftools roh reads a site's frequency from INFO/AC and INFO/AN when the record has them, and uses 0.4 only where it does not. DeepVariant writes neither, so on its calls every site uses 0.4. A VCF from another caller may carry them: in a single-sample file they are the sample's own allele counts, not a population's.
 - No population allele frequencies are used, and the reports say so: read the total and the short segments as rough, the long segments are the signal. A population allele-frequency file (`--AF-file`, for example from gnomAD) would replace the one default value with real frequencies per site and give better segment edges; neither the script nor the module uses one today, and its effect on the total has not been measured.
 - The centromere and heterochromatin bands (above) are taken out of every count; the step and the reports do it, so there is nothing to subtract by hand
-- A single large ROH (>20 MB) confined to one chromosome may indicate uniparental disomy — verify with SNP array or parental samples
+- Long runs concentrated on one chromosome may indicate uniparental disomy; the reports flag a chromosome whose segments of 5 Mb or more add up to at least 20 MB and to more than half of the length of all such autosomal segments (above). Confirm with the parents' genotypes; a methylation test of a listed imprinted region tests for its imprinting disorder
 - ROH within known disease gene regions warrants checking for homozygous pathogenic variants
