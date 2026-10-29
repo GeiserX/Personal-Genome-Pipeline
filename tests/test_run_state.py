@@ -114,6 +114,15 @@ def state_checks(rs, steps):
     p = by_step(build(rs, steps, status(finished=True), pt))
     out["process_status.tsv decides a step without a result"] = (
         p["11"]["state"] == "not finished" and p["27"]["state"] == "done", (p["11"]["state"], p["27"]["state"]))
+    zero = {"succeeded": 0, "cached": 0, "failed": 0, "ignored": 0, "unfinished": 0}
+    pt0 = {"SURVIVOR_PREP": dict(zero, succeeded=3), "SURVIVOR_MERGE": dict(zero),
+           "MITO_EXTRACT_CHRM": dict(zero, succeeded=1), "MITO_HAPLOGROUP": dict(zero, succeeded=1),
+           "HAPLOCHECK": dict(zero)}
+    z = by_step(build(rs, steps, status(finished=True), pt0))
+    z20 = by_step(build(rs, steps, status(finished=True), dict(pt0, MITO_VARIANTS=dict(zero, succeeded=1))))
+    out["a process with no task: not finished, except haplocheck without step 20"] = (
+        z["22"]["state"] == "not finished" and z["12"]["state"] == "done" and z20["12"]["state"] == "not finished",
+        (z["22"]["state"], z["12"]["state"], z20["12"]["state"]))
     r = by_step(build(rs, steps, status("step\t10\tok\nstep\t11\tfailed\n", finished=True)))
     out["run-all.sh's result row wins over the tasks"] = (r["10"]["state"] == "done" and r["11"]["state"] == "failed",
                                                          (r["10"]["state"], r["11"]["state"]))
@@ -264,7 +273,11 @@ def mutants(steps):
         "another sample and untagged tasks are not counted": mutant(is_sample=lambda tag, sample: True),
         "run ended: a planned step without a result is not finished": mutant(run_finished_by_events=lambda ev: False,
                                                                              utc_row=lambda v: None),
-        "process_status.tsv decides a step without a result": mutant(state_from_process_status=lambda rows: None),
+        "process_status.tsv decides a step without a result": mutant(state_from_process_status=lambda rows, ps=None: None),
+        "a process with no task: not finished, except haplocheck without step 20": mutant(
+            no_haplocheck_task_expected=lambda ps: True,
+            state_from_process_status=lambda rows, ps=None: run_state.state_from_process_status(
+                {p: r for p, r in rows.items() if any(r.values())} or rows, ps)),
         "an older file of a planned step: being redone, not stale": mutant(
             build=lambda sample, steps, st, pt, tt, et, ev, sources=None, now=None:
             run_state.build(sample, steps, st, pt, tt, et, ev, None, now)),

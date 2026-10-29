@@ -283,15 +283,27 @@ def state_from_tasks(tasks):
     return "done"
 
 
-def state_from_process_status(rows):
-    """The step from main.nf's end-of-run table (rows of the step's processes that have one)."""
+def no_haplocheck_task_expected(process_status):
+    """HAPLOCHECK gets no task when step 20 did not run or failed (as run-all.sh reads it)."""
+    mv = (process_status or {}).get("MITO_VARIANTS")
+    return mv is None or mv["failed"] + mv["ignored"] > 0
+
+
+def state_from_process_status(rows, process_status=None):
+    """The step from main.nf's end-of-run table. rows: {process: counts} of the step's processes
+    that have a row. A process with no task had not started, so its step is not finished, except
+    HAPLOCHECK when step 20 gave it nothing to check: the mirror of run-all.sh."""
     if not rows:
         return None
-    if any(r["failed"] + r["ignored"] for r in rows):
+    counts = list(rows.values())
+    if any(r["failed"] + r["ignored"] for r in counts):
         return "failed"
-    if any(r["unfinished"] for r in rows):
+    if any(r["unfinished"] for r in counts):
         return "not finished"
-    if any(r["succeeded"] + r["cached"] for r in rows):
+    for p, r in rows.items():
+        if not any(r.values()) and not (p == "HAPLOCHECK" and no_haplocheck_task_expected(process_status)):
+            return "not finished"
+    if any(r["succeeded"] + r["cached"] for r in counts):
         return "done"
     return "not finished"
 
@@ -335,8 +347,8 @@ def build(sample, steps, status=None, process_status=None, trace_tasks=(), ev_ta
         state, reason = from_row(rows.get(s["step"]))
         note = None
         if state in (None, "planned"):
-            ps = [process_status[p] for p in s["processes"] if process_status and p in process_status]
-            live = state_from_process_status(ps) if ps else state_from_tasks(mine)
+            ps = {p: process_status[p] for p in s["processes"] if process_status and p in process_status}
+            live = state_from_process_status(ps, process_status) if ps else state_from_tasks(mine)
             if live:
                 state = live
             elif state == "planned":
