@@ -1027,7 +1027,7 @@ def traits(d):
     for r in rows:
         if r["rsid"] in TRAIT_ALT_COPIES:
             n = TRAIT_ALT_COPIES[r["rsid"]]
-            recs[(r["chrom"], r["pos"])] = [(r["ref"], [r["ref"]] * (2 - n) + [r["alt"]] * n)]
+            recs[(r["chrom"], r["pos"])] = [(r["ref"], [r["ref"]] * (2 - n) + [r["alt"]] * n, "60")]
     os.makedirs(os.path.join(d, "traits"), exist_ok=True)
     traits_report.write_tsv(os.path.join(d, "traits", f"{SAMPLE}_traits.tsv"), traits_report.report(rows, recs))
 
