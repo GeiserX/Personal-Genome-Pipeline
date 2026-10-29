@@ -33,10 +33,15 @@ include { VCF_PRECHECK } from './modules/local/vcf_precheck/main'
 include { CRAM_TO_BAM  } from './modules/local/cram_archive/main'
 include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
+include { TRAITS_PHASE } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
-include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { BLOODTYPE_REGIONS; BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
+include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
+include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
+include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -85,13 +90,38 @@ workflow {
         'bloodtype',
         'lpa',
         'traits',
+        'archaic',
+        'ancient',
         'y_str',
         'viral',
+        'exomiser',
+        'chip',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
         error "unknown tool${unknown_tools.size() > 1 ? 's' : ''} ${unknown_tools.join(', ')} in --tools. " +
               "Known tools: ${known_tools.join(', ')}."
+    }
+
+    // exomiser (step 48) runs when --hpo names the symptoms; naming it in
+    // --tools without them stops the run.
+    if (params.hpo && !tools_list.contains('exomiser')) {
+        tools_list << 'exomiser'
+    }
+    if (tools_list.contains('exomiser')) {
+        def hpo_terms = params.hpo ? params.hpo.toString().split(/[,\s]+/).findAll { it } : []
+        if (!hpo_terms) {
+            error "Tool 'exomiser' ranks variants against a person's symptoms: give them with --hpo as HPO ids " +
+                  "(--hpo HP:0001250,HP:0001263; https://hpo.jax.org)."
+        }
+        def bad_terms = hpo_terms.findAll { !(it ==~ /HP:[0-9]{7}/) }
+        if (bad_terms) {
+            error "--hpo: ${bad_terms.join(', ')} ${bad_terms.size() > 1 ? 'are not HPO ids' : 'is not an HPO id'}: " +
+                  "an HPO id is HP: and seven digits, e.g. HP:0001250 (Seizure)."
+        }
+        if (!(params.exomiser_assembly in ['hg38', 'hg19'])) {
+            error "--exomiser_assembly must be hg38 or hg19, got '${params.exomiser_assembly}'."
+        }
     }
 
     // Fail-fast: stop when enabled tools lack required databases
@@ -115,7 +145,11 @@ workflow {
         ['y_haplogroup',     'yleaf_data',         '--yleaf_data'],
         ['ancestry_fine',    'ancestry_fine_panel', '--ancestry_fine_panel'],
         ['consumer_export',  'consumer_sites',     '--consumer_sites'],
+        ['archaic',          'archaic_data',       '--archaic_data'],
+        ['ancient',          'ancient_panel',      '--ancient_panel'],
         ['viral',            'viral_ref',          '--viral_ref'],
+        ['exomiser',         'exomiser_data',      '--exomiser_data'],
+        ['chip',             'chip_gff',           '--chip_gff'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -451,11 +485,11 @@ workflow {
     ch_bam = UPSTREAM.out.bam
 
     // ─── Sequence dictionary ────────────────────────────────────────────
-    // Only MITO_VARIANTS (GATK) reads the sequence dictionary
+    // Only MITO_VARIANTS and CHIP_MUTECT2 (GATK) read the sequence dictionary
     ch_reference_dict = Channel.value([])
-    if (tools_list.contains('mito_variants')) {
+    if (tools_list.contains('mito_variants') || tools_list.contains('chip')) {
         if (!(params.reference ==~ /.*\.(fasta|fa|fna)$/)) {
-            error "mito_variants needs the reference's .dict next to it, found by replacing the FASTA extension; " +
+            error "mito_variants and chip need the reference's .dict next to it, found by replacing the FASTA extension; " +
                   "--reference ${params.reference} does not end in .fasta, .fa or .fna."
         }
         ch_reference_dict = Channel.value(
@@ -518,6 +552,14 @@ workflow {
     ch_ancestry_fine_panel = Channel.value(params.ancestry_fine_panel ? file(params.ancestry_fine_panel, checkIfExists: true) : [])
     if (params.ancestry_fine_panel && !workflow.stubRun && !file("${params.ancestry_fine_panel}/model/DONE").exists()) {
         error "ERROR: --ancestry_fine_panel ${params.ancestry_fine_panel} is not a finished panel (no model/DONE); run scripts/setup.sh --ancestry-fine-panel <genome_dir> again."
+    }
+
+    // Step 44's panel folder (setup.sh --ancient-panel): its DONE is written
+    // last, once its axes were checked, so a folder without it is an install
+    // that stopped.
+    ch_ancient_panel = Channel.value(params.ancient_panel ? file(params.ancient_panel, checkIfExists: true) : [])
+    if (params.ancient_panel && !workflow.stubRun && !file("${params.ancient_panel}/DONE").exists()) {
+        error "ERROR: --ancient_panel ${params.ancient_panel} is not a finished panel (no DONE); run scripts/setup.sh --ancient-panel <genome_dir> again."
     }
 
     // ExpansionHunter variant catalog
@@ -683,10 +725,55 @@ workflow {
                 log.warn "traits skipped for ${id}: it reads the gVCF, and the samplesheet row has none " +
                          "(add the gvcf and gvcf_index columns, or start from the BAM or FASTQ)."
             }
-        TRAITS_SITES(ch_gvcf, ch_traits_table, ch_reference, ch_reference_fai)
-        TRAITS(TRAITS_SITES.out.genotypes, ch_traits_table)
+        // assets/genotype_rules.tsv reads several sites together (APOE,
+        // TAS2R38); TRAITS_PHASE phases the rule sites that need it from the
+        // BAM, and a sample without a BAM gets [] for the phase.
+        ch_traits_rules = Channel.value(file("${projectDir}/assets/genotype_rules.tsv", checkIfExists: true))
+        TRAITS_SITES(ch_gvcf, ch_traits_table, ch_traits_rules, ch_reference, ch_reference_fai)
+        ch_traits_genotypes = TRAITS_SITES.out.genotypes.map { meta, g -> [meta.id, meta, g] }
+        TRAITS_PHASE(
+            ch_traits_genotypes
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
+                .map { _id, meta, g, bam, bai -> [meta, g, bam, bai] },
+            ch_traits_rules, ch_reference, ch_reference_fai
+        )
+        TRAITS(
+            ch_traits_genotypes
+                .join(TRAITS_PHASE.out.phased.map { meta, f -> [meta.id, f] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> [row[1], row[2], row[3] ?: []] },
+            ch_traits_table, ch_traits_rules
+        )
         ch_traits          = TRAITS.out.traits
-        ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS.out.versions)
+        ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS_PHASE.out.versions, TRAITS.out.versions)
+    }
+
+    // ─── Ancient populations (opt-in: ancient, step 44) ─────────────────
+    // The sample projected onto the panel's present-day West Eurasian PCs,
+    // beside the AADR's ancient people, from the gVCF only: a sample without
+    // one is skipped with a warning. Equivalent to scripts/44-ancient.sh.
+    ch_ancient          = Channel.empty()
+    ch_ancient_info     = Channel.empty()
+    ch_ancient_svg      = Channel.empty()
+    ch_ancient_versions = Channel.empty()
+    if (tools_list.contains('ancient')) {
+        ch_vcf
+            .map { meta, _vcf, _idx -> [meta.id, meta] }
+            .join(ch_gvcf.map { meta, _gvcf, _gidx -> [meta.id, true] }, remainder: true)
+            .filter { _id, meta, has_gvcf -> meta != null && !has_gvcf }
+            .subscribe { id, _meta, _has_gvcf ->
+                log.warn "ancient skipped for ${id}: it reads the gVCF, and the samplesheet row has none " +
+                         "(add the gvcf and gvcf_index columns, or start from the BAM or FASTQ)."
+            }
+        ANCIENT_SITES(ch_gvcf, ch_ancient_panel, ch_reference, ch_reference_fai)
+        ANCIENT_GENO(ANCIENT_SITES.out.genotypes, ch_ancient_panel)
+        ANCIENT_PCA(ANCIENT_GENO.out.merged, ch_ancient_panel)
+        ANCIENT_REPORT(ANCIENT_PCA.out.evec, ch_ancient_panel)
+        ch_ancient          = ANCIENT_REPORT.out.table
+        ch_ancient_info     = ANCIENT_REPORT.out.info
+        ch_ancient_svg      = ANCIENT_REPORT.out.svg
+        ch_ancient_versions = ANCIENT_SITES.out.versions.mix(ANCIENT_GENO.out.versions, ANCIENT_PCA.out.versions,
+                                                             ANCIENT_REPORT.out.versions)
     }
 
     // ─── CRAM archive (opt-in: cram_archive) ────────────────────────────
@@ -737,7 +824,9 @@ workflow {
             ch_par_bed,
             ch_couple_outputs,
             Channel.value(file("${projectDir}/assets/carrier_genes.tsv", checkIfExists: true)),
-            ch_gencode_exons
+            ch_gencode_exons,
+            // The shared segments phase against step 26b's panel: no panel, no task
+            params.ancestry_fine_panel ? ch_ancestry_fine_panel : Channel.empty()
         )
         ch_family_versions = FAMILY.out.versions
         // <id>_couple_carrier.tsv: the id is the name without its 19-character suffix
@@ -753,7 +842,8 @@ workflow {
     ch_bloodtype_versions = Channel.empty()
     if (tools_list.contains('bloodtype')) {
         ch_bloodtype_markers = Channel.value(file("${projectDir}/assets/bloodtype_markers.tsv", checkIfExists: true))
-        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers)
+        BLOODTYPE_REGIONS()
+        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers, BLOODTYPE_REGIONS.out.bed)
         BLOODTYPE(
             ch_vcf
                 .map { meta, vcf, idx -> [meta.id, meta, vcf] }
@@ -763,7 +853,31 @@ workflow {
             ch_bloodtype_markers
         )
         ch_bloodtype          = BLOODTYPE.out.table
-        ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
+        ch_bloodtype_versions = BLOODTYPE_REGIONS.out.versions.mix(BLOODTYPE_DEPTH.out.versions, BLOODTYPE.out.versions)
+    }
+
+    // ─── Archaic ancestry (opt-in: archaic, step 43) ────────────────────
+    // IBDmix against the Altai and Vindija Neanderthals and the Altai
+    // Denisovan, from the VCF and the table setup.sh --archaic builds; the
+    // genes of the segments come from --hla_genes (GENCODE's gene lines).
+    // Equivalent to scripts/43-archaic.sh.
+    ch_archaic          = Channel.empty()
+    ch_archaic_versions = Channel.empty()
+    if (tools_list.contains('archaic')) {
+        if (!workflow.stubRun && !file("${params.archaic_data}/DONE").exists()) {
+            error "ERROR: --archaic_data ${params.archaic_data} is not a finished archaic table (no DONE); run scripts/setup.sh --archaic <genome_dir> again."
+        }
+        if (!(params.archaic_pop in ['ALL', 'AFR', 'AMR', 'EAS', 'EUR', 'SAS'])) {
+            error "--archaic_pop must be ALL, AFR, AMR, EAS, EUR or SAS, got '${params.archaic_pop}'."
+        }
+        ARCHAIC_GENOTYPES(
+            ch_vcf.map { meta, vcf, idx -> [meta, vcf] },
+            Channel.value(file(params.archaic_data, checkIfExists: true))
+        )
+        ARCHAIC_IBDMIX(ARCHAIC_GENOTYPES.out.genotypes)
+        ARCHAIC_REPORT(ARCHAIC_IBDMIX.out.segments, ch_hla_genes)
+        ch_archaic          = ARCHAIC_REPORT.out.summary
+        ch_archaic_versions = ARCHAIC_GENOTYPES.out.versions.mix(ARCHAIC_IBDMIX.out.versions, ARCHAIC_REPORT.out.versions)
     }
 
     // ─── Lp(a): LPA KIV-2 repeat count (opt-in: lpa) ────────────────────
@@ -793,6 +907,76 @@ workflow {
         ch_viral_versions = VIRAL_READS.out.versions.mix(VIRAL_REPORT.out.versions)
     }
 
+    // ─── Symptom-driven ranking (exomiser, step 48: --hpo) ──────────────
+    // Exomiser on the VCF of the one sample the --hpo terms describe
+    // (--exomiser_proband, or the only sample). Equivalent to
+    // scripts/48-exomiser.sh without its family mode, which is bash-only.
+    ch_exomiser          = Channel.empty()
+    ch_exomiser_terms    = Channel.empty()
+    ch_exomiser_versions = Channel.empty()
+    if (tools_list.contains('exomiser')) {
+        def proband = params.exomiser_proband ?: (seen_samples.size() == 1 ? seen_samples.first() : null)
+        if (!proband) {
+            error "--hpo describes one person and the samplesheet has ${seen_samples.size()} samples: name the one " +
+                  "with --exomiser_proband (${seen_samples.join(', ')})."
+        }
+        if (!seen_samples.contains(proband)) {
+            error "--exomiser_proband ${proband} is not a sample of ${params.input} (${seen_samples.join(', ')})."
+        }
+        ch_exomiser_data = Channel.value(file(params.exomiser_data, checkIfExists: true))
+        EXOMISER_PREPARE(
+            ch_vcf.filter { meta, _vcf, _idx -> meta.id == proband }.map { meta, vcf, _idx -> [meta, vcf] },
+            Channel.value(params.hpo.toString().split(/[,\s]+/).findAll { it }.join(',')),
+            ch_exomiser_data
+        )
+        EXOMISER(EXOMISER_PREPARE.out.analysis, ch_exomiser_data)
+        EXOMISER_REPORT(
+            EXOMISER.out.variants.join(EXOMISER_PREPARE.out.terms)
+        )
+        ch_exomiser          = EXOMISER_REPORT.out.top
+        ch_exomiser_terms    = EXOMISER_REPORT.out.terms
+        ch_exomiser_versions = EXOMISER_PREPARE.out.versions.mix(EXOMISER.out.versions, EXOMISER_REPORT.out.versions)
+    }
+
+    // ─── Clonal haematopoiesis (opt-in: chip, step 49) ───────────────────
+    // Mutect2 tumour-only on the coding exons of the CHIP genes'
+    // MANE Select transcripts, from the BAM; a sample without one is
+    // skipped with a warning. Equivalent to scripts/49-chip.sh.
+    ch_chip          = Channel.empty()
+    ch_chip_depth    = Channel.empty()
+    ch_chip_versions = Channel.empty()
+    if (tools_list.contains('chip')) {
+        ch_chip_genes = Channel.value(file("${projectDir}/assets/chip_genes.tsv", checkIfExists: true))
+        // gnomAD's AF-only germline resource and a panel of normals, each with its .tbi beside it
+        def germ = params.chip_germline_resource
+        def pon  = params.chip_pon
+        def chip_germline       = germ ? file(germ, checkIfExists: true) : []
+        def chip_germline_index = germ ? file("${germ}.tbi", checkIfExists: true) : []
+        def chip_pon            = pon ? file(pon, checkIfExists: true) : []
+        def chip_pon_index      = pon ? file("${pon}.tbi", checkIfExists: true) : []
+        ch_vcf
+            .map { meta, _vcf, _idx -> [meta.id, meta] }
+            .join(ch_bam.map { meta, _bam, _bai -> [meta.id, true] }, remainder: true)
+            .filter { _id, meta, has_bam -> meta != null && !has_bam }
+            .subscribe { id, _meta, _has_bam ->
+                log.warn "chip skipped for ${id}: Mutect2 reads the BAM, and the samplesheet row has none."
+            }
+        CHIP_PREPARE(Channel.value(file(params.chip_gff, checkIfExists: true)), ch_chip_genes, ch_reference_fai)
+        CHIP_MUTECT2(ch_bam, CHIP_PREPARE.out.bed, ch_reference, ch_reference_fai, ch_reference_dict,
+                     chip_germline, chip_germline_index, chip_pon, chip_pon_index)
+        CHIP_ANNOTATE(
+            CHIP_MUTECT2.out.vcf.map { meta, vcf -> [meta.id, meta, vcf] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, bam, bai] })
+                .map { _id, meta, vcf, bam, bai -> [meta, vcf, bam, bai] },
+            CHIP_PREPARE.out.gff, CHIP_PREPARE.out.bed, ch_reference, ch_reference_fai
+        )
+        CHIP_REPORT(CHIP_ANNOTATE.out.tables, ch_chip_genes, CHIP_PREPARE.out.gff, CHIP_PREPARE.out.bed)
+        ch_chip          = CHIP_REPORT.out.chip
+        ch_chip_depth    = CHIP_REPORT.out.depth
+        ch_chip_versions = CHIP_PREPARE.out.versions.mix(CHIP_MUTECT2.out.versions, CHIP_ANNOTATE.out.versions,
+                                                         CHIP_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -803,6 +987,9 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
+    // The ACMG SF rules and the carrier list the report applies (bin/ is the
+    // only repository folder a task sees).
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -854,11 +1041,19 @@ workflow {
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_archaic.map                      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient.map                      { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient_info.map                 { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser.map                     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
-        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null }] }
+        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null } + report_assets] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
@@ -886,8 +1081,12 @@ workflow {
             ch_family_versions,
             ch_traits_versions,
             ch_bloodtype_versions,
+            ch_archaic_versions,
+            ch_ancient_versions,
             ch_lpa_versions,
-            ch_viral_versions
+            ch_viral_versions,
+            ch_chip_versions,
+            ch_exomiser_versions
         )
         .map { f -> f.text }
         .unique()

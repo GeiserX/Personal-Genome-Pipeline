@@ -70,7 +70,8 @@ The report contains:
 - **Telomere content (relative)** — TelomereHunter's `tel_content`: intratelomeric reads per million reads with 48-52% GC. It is a relative measure, not a telomere length
 - **Mitochondrial** — chrM PASS variants and heteroplasmic calls (allele fraction 0.05 to 0.95; below 5% NUMT reads and noise dominate)
 - **Clinical Filter** and **slivar** — variant counts from steps 23 and 31
-- **Secondary-Findings Genes (ACMG SF v3.3)** — the step 06 ClinVar hits and the clinical filter's rare HIGH-impact records in the 84 genes of the ACMG list, as a list to review with a clinician: the list's per-gene reporting rules (for example HFE homozygous C282Y only) are not applied
+- **Secondary-Findings Genes (ACMG SF v3.3)** — the step 06 ClinVar hits, the clinical filter's rare HIGH-impact records and step 05's class 4 and 5 SVs in the 84 genes of the ACMG list, each gene's reporting rule applied (`assets/acmg_sf.tsv`, for example HFE homozygous C282Y only), and the variants a rule does not report listed apart with the reason
+- **Carrier List (this sample)** — the step 06 ClinVar hits in the recessive and X-linked genes of `assets/carrier_genes.tsv`, for this sample alone; hypomorph and pseudodeficiency alleles set aside
 - **Fine-Grained Ancestry** — when step 26b ran: the continental and regional fractions with their bootstrap ranges, and the chromosome painting
 - **Traits** — step 42's panel: each row read with its genotype, reading and PubMed ids, the rows with no genotype, and the APOE lines folded away behind a warning; "Not run" without step 42
 - **Steps Not Run** and **Not Assessed by This Pipeline**

@@ -240,9 +240,9 @@ include { STRANGER; STRANGER_RFC1 } from '${REPO}/modules/local/stranger/main'
 include { MITO_VARIANTS_ANNOTATE } from '${REPO}/modules/local/mito_variants/main'
 
 workflow {
-    STRANGER(channel.of([[id: '${S}'], file('${SD}/expansion_hunter/${S}_eh.vcf')]))
+    STRANGER(channel.of([[id: '${S}'], file('${SD}/expansion_hunter/${S}_eh.vcf')]), [])
     STRANGER_RFC1(STRANGER.out.vcf.map { meta, vcf ->
-        [meta, vcf, file('${SD}/aligned/${S}_sorted.bam'), file('${SD}/aligned/${S}_sorted.bam.bai')] })
+        [meta, vcf, file('${SD}/aligned/${S}_sorted.bam'), file('${SD}/aligned/${S}_sorted.bam.bai')] }, [])
     MITO_VARIANTS_ANNOTATE(channel.of([[id: '${S}'], file('${MT_VCF}')]),
         channel.value(file('${CV}')), channel.value(file('${CV}.tbi')), channel.value(file('${GN}')))
 }

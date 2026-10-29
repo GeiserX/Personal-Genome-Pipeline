@@ -236,6 +236,12 @@
       "enabled": false
     },
     {
+      "description": "hap-ibd (step 38's shared segments), no automated bumps: its tag 1.0.rev20May22.818--hdfd78af_0 carries the release date, which this versioning cannot read. Check https://github.com/browning-lab/hap-ibd by hand and bump it after running the e2e case tests/e2e/ibd-segments-1.sh.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/biocontainers/hap-ibd"],
+      "enabled": false
+    },
+    {
       "description": "Nextflow: every update waits for approval on the dependency dashboard. A new release can change what the strict config parser accepts, and the validated version is also written in nextflow.config and the Nextflow docs, which need reading by hand.",
       "matchDepNames": ["nextflow-io/nextflow"],
       "dependencyDashboardApproval": true
