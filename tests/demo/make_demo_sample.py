@@ -1016,6 +1016,40 @@ def ancient(d, rng):
         "key\tvalue\n" + "".join(f"{k}\t{v}\n" for k, v in info))
 
 
+def exomiser(d):
+    """Step 48: bin/exomiser_report.py's top_rows and words on made-up Exomiser
+    rows for two searched symptoms: two weak candidates of uncertain
+    significance, the shape of a search that finds nothing to act on."""
+    import exomiser_report as er
+    terms = [{"hpo_id": "HP:0001250", "label": "Seizure", "given_as": "HP:0001250"},
+             {"hpo_id": "HP:0002315", "label": "Headache", "given_as": "HP:0002315"}]
+
+    def row(rank, gene, moi, scores, contig, start, ref, alt, gt, cls, hgvs, disease_id, disease):
+        r = dict.fromkeys(er.NEED, "")
+        r.update({"#RANK": str(rank), "GENE_SYMBOL": gene, "MOI": moi, "P-VALUE": scores[3],
+                  "EXOMISER_GENE_COMBINED_SCORE": scores[0], "EXOMISER_GENE_PHENO_SCORE": scores[1],
+                  "EXOMISER_GENE_VARIANT_SCORE": scores[2], "CONTRIBUTING_VARIANT": "1", "CONTIG": contig,
+                  "START": str(start), "REF": ref, "ALT": alt, "GENOTYPE": gt, "FUNCTIONAL_CLASS": cls,
+                  "HGVS": hgvs, "EXOMISER_ACMG_CLASSIFICATION": "UNCERTAIN_SIGNIFICANCE",
+                  "EXOMISER_ACMG_DISEASE_ID": disease_id, "EXOMISER_ACMG_DISEASE_NAME": disease,
+                  "CLINVAR_PRIMARY_INTERPRETATION": "NOT_PROVIDED", "MAX_FREQ_SOURCE": "GNOMAD_E_NFE",
+                  "MAX_FREQ": "0.0123"})
+        return r
+    rows = er.top_rows([
+        row(1, "SCN1A", "AD", ("0.412", "0.788", "0.534", "0.021"), "2", 165991230, "C", "T", "0/1",
+            "missense_variant", "SCN1A:ENST00000674923.1:c.3199G>A:p.(Ala1067Thr)", "OMIM:607208",
+            "Dravet syndrome"),
+        row(2, "CACNA1A", "AD", ("0.297", "0.701", "0.421", "0.048"), "19", 13299371, "G", "A", "0/1",
+            "missense_variant", "CACNA1A:ENST00000360228.11:c.2134C>T:p.(Arg712Cys)", "OMIM:141500",
+            "Migraine, familial hemiplegic, 1")], 10)
+    out = os.path.join(d, "exomiser")
+    put(os.path.join(out, f"{SAMPLE}_exomiser_terms.tsv"),
+        "\t".join(er.TERMS_HEADER) + "\n" + "".join("\t".join(t[k] for k in er.TERMS_HEADER) + "\n" for t in terms))
+    put(os.path.join(out, f"{SAMPLE}_exomiser_top.tsv"),
+        "\t".join(er.OUT_HEADER) + "\n" + "".join("\t".join(r[k] for k in er.OUT_HEADER) + "\n" for r in rows))
+    put(os.path.join(out, f"{SAMPLE}_exomiser.txt"), "\n".join(er.words(rows, terms)) + "\n")
+
+
 def traits(d):
     """Step 42: TRAIT_ALT_COPIES at the panel's positions, read by bin/traits_report.py."""
     import traits_report
@@ -1066,7 +1100,8 @@ def make(a):
              ("bloodtype", lambda r: bloodtype(d)), ("traits", lambda r: traits(d)),
              ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
              ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
-             ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r))]
+             ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
+             ("exomiser", lambda r: exomiser(d))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
