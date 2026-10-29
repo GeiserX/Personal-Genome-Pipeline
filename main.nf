@@ -35,7 +35,7 @@ include { CRAM_ARCHIVE } from './modules/local/cram_archive/main'
 include { TRAITS_SITES } from './modules/local/traits/main'
 include { TRAITS_PHASE } from './modules/local/traits/main'
 include { TRAITS       } from './modules/local/traits/main'
-include { BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
+include { BLOODTYPE_REGIONS; BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/bloodtype/main'
 include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
@@ -845,7 +845,8 @@ workflow {
     ch_bloodtype_versions = Channel.empty()
     if (tools_list.contains('bloodtype')) {
         ch_bloodtype_markers = Channel.value(file("${projectDir}/assets/bloodtype_markers.tsv", checkIfExists: true))
-        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers)
+        BLOODTYPE_REGIONS()
+        BLOODTYPE_DEPTH(ch_bam, ch_bloodtype_markers, BLOODTYPE_REGIONS.out.bed)
         BLOODTYPE(
             ch_vcf
                 .map { meta, vcf, idx -> [meta.id, meta, vcf] }
@@ -855,7 +856,7 @@ workflow {
             ch_bloodtype_markers
         )
         ch_bloodtype          = BLOODTYPE.out.table
-        ch_bloodtype_versions = BLOODTYPE_DEPTH.out.versions.mix(BLOODTYPE.out.versions)
+        ch_bloodtype_versions = BLOODTYPE_REGIONS.out.versions.mix(BLOODTYPE_DEPTH.out.versions, BLOODTYPE.out.versions)
     }
 
     // ─── Archaic ancestry (opt-in: archaic, step 43) ────────────────────

@@ -65,6 +65,7 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
+import copy_number  # noqa: E402  bin/cn_loci.tsv: UGT2B17's thresholds and calls
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -1556,14 +1557,12 @@ def gencode_gene(d, gene):
     return None
 
 
-# CNVpytor's read-depth level (1.0 is two copies) below which a deletion
-# leaves no copy, and below which it leaves one.
-UGT2B17_NO_COPY, UGT2B17_ONE_COPY = 0.25, 0.75
-
-
 def ugt2b17_copy_number(calls, span):
     """UGT2B17 copy number from the CNVpytor call that covers most of its
-    GENCODE span. calls: (type, chrom, start, end, level, e-value)."""
+    GENCODE span. calls: (type, chrom, start, end, level, e-value). The
+    thresholds on CNVpytor's read-depth level (1.0 is two copies) and the
+    words of each call are the UGT2B17 row of bin/cn_loci.tsv."""
+    row = copy_number.load_catalog()["UGT2B17"]
     chrom, gs, ge = span[:3]
     best = None
     for t, c, cs, ce, level, ev in calls:
@@ -1572,16 +1571,12 @@ def ugt2b17_copy_number(calls, span):
             best = (ov, t, c, cs, ce, level, ev)
     out = {"span": f"{chrom}:{gs}-{ge}", "gencode_release": span[3]}
     if best is None:
-        return dict(out, call="two copies", note="no CNVpytor call over the gene")
+        return dict(out, call=copy_number.reading(row, 2), note="no CNVpytor call over the gene")
     ov, t, c, cs, ce, level, ev = best
     if t == "duplication":
-        call = "more than two copies"
-    elif level < UGT2B17_NO_COPY:
-        call = "no copy (deleted on both chromosomes)"
-    elif level < UGT2B17_ONE_COPY:
-        call = "one copy"
+        call = copy_number.reading(row, "dup")
     else:
-        call = "two copies"
+        call = copy_number.reading(row, copy_number.cut_copies(level, row["_call"][1]))
     note = (f"CNVpytor {t} {c}:{cs}-{ce}, depth level {level:.2f}, e-value {ev:.2g}, "
             f"covers {ov / (ge - gs + 1):.0%} of the gene")
     if ev >= 0.01:
