@@ -796,6 +796,8 @@ def text_report(s):
             w(f"  Contamination (VerifyBamID2 FREEMIX): {freemix_text(q)}")
             if q.get("same_person_as"):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
+        for line in karyotype_lines(S):
+            w(f"  {line}")
         w("")
 
     if head("mosaic_sex_loss"):
@@ -1652,14 +1654,65 @@ MITO_NOTE = ("ClinVar and gnomAD v3.1 (chrM sites) annotate the calls in step 20
              "curated disease status of mtDNA variants; it is a manual lookup, as it refuses scripted requests.")
 
 
+ROH_UPD_NOTE = ("Long runs concentrated on one chromosome, with few elsewhere, are the sign of isodisomy: both "
+                "copies of that chromosome from one parent. They can also be chance in a child of related parents. "
+                "Which parent gave both copies cannot be told without the parents' samples, and a heterodisomy (two "
+                "different copies from one parent) leaves no runs at all. The parents' genotypes confirm a UPD. "
+                "Where an imprinted region is listed, a methylation test of that region tests for its imprinting "
+                "disorder; on its own it does not prove a UPD (docs/11-roh-analysis.md).")
+ROH_F_NOTE = "F_ROH is the share of the autosomes (outside the bands) in runs of 5 MB or more."
+ROH_BAND_NOTE = ("The band is the row of docs/11-roh-analysis.md's table it is nearest to: an average, and neighbouring "
+                 "rows overlap, so it is consistent with that relationship, not a proof of it.")
+
+
 def roh_lines(d):
     """Step 11's lines under the headline, the same in both reports."""
     lines = []
+    if isinstance(d.get("f_roh"), (int, float)):
+        band = d.get("relationship") or "no band (one chromosome holds most of the runs)"
+        lines.append(f"F_ROH: {d['f_roh']:.4f} ({d.get('long_mb')} MB in runs of 5 MB or more); nearest: {band}")
+    u = d.get("upd_flag")
+    if u:
+        lines.append(f"** {u['chrom']} carries {u['mb']} MB, more than 50% of the length in runs of 5 MB or more: "
+                     f"both copies may come from one parent (uniparental isodisomy) **")
+        for r in u.get("imprinted", []):
+            lines.append(f"Imprinted {r['region']}: from the mother: {r['maternal_upd']}; from the father: "
+                         f"{r['paternal_upd']} (PMID {r['pmid']})")
+        if not u.get("imprinted"):
+            lines.append(f"No listed imprinting-disorder region overlaps the flagged runs on {u['chrom']} "
+                         "(assets/imprinted_regions.tsv); "
+                         "a recessive variant in the run, if there is one, would be homozygous")
+        lines.append(ROH_UPD_NOTE)
+    if isinstance(d.get("f_roh"), (int, float)):
+        lines.append(ROH_F_NOTE + (" " + ROH_BAND_NOTE if d.get("relationship") else ""))
     if d.get("masked_mb"):
         lines.append(f"Left out in centromere and heterochromatin bands: {d['masked_mb']} MB")
     if d.get("sex_chromosome_segments"):
         lines.append(f"Segments on chrX/chrY, not counted: {d['sex_chromosome_segments']}")
     return lines + [ROH_NOTE]
+
+
+KARYOTYPE_NOTE = ("Named from the copy number of chrX and chrY in the reads. A mixed sample or a sample swap can "
+                  "give the same numbers. A mosaic in about 30 to 70% of the cells gives numbers between whole ones "
+                  "and no name; one in more of the cells can round to a whole number and be named (a Y lost in 75% "
+                  "of the cells reads 45,X). Confirm with "
+                  "a karyotype or a chromosomal microarray (docs/33-sample-qc.md).")
+
+
+def karyotype_lines(S):
+    """One line per source that names a sex-chromosome karyotype (indexcov, step
+    16; somalier, step 33), then the note; none when neither names one."""
+    out = []
+    sc, sq = S.get("sex_check", {}), S.get("sample_qc", {})
+    if sc.get("state") in ("ok", "stale") and sc["data"].get("karyotype"):
+        q = sc["data"]
+        out.append(f"Sex chromosomes: {q['karyotype']} (indexcov copy number chrX {q.get('cn_chrX')}, "
+                   f"chrY {q.get('cn_chrY')})")
+    if sq.get("state") in ("ok", "stale") and sq["data"].get("karyotype"):
+        q = sq["data"]
+        out.append(f"Sex chromosomes: {q['karyotype']} (somalier depth over the autosomes chrX "
+                   f"{q.get('x_depth_ratio')}, chrY {q.get('y_depth_ratio')}; one copy reads 0.5)")
+    return out + [KARYOTYPE_NOTE] if out else []
 
 
 def roh_region(r):
@@ -1864,6 +1917,8 @@ def html_report(s):
             qc.append(stat("The same person as", badge(q["same_person_as"], "red")))
     else:
         qc.append(stat("Identity and contamination (step 33)", badge("Not run", "gray")))
+    kl = karyotype_lines(S)
+    qc += [stat("Sex chromosomes", badge(x.split(": ", 1)[1], "red")) for x in kl[:-1]] + [small_note(x) for x in kl[-1:]]
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a("coverage", ['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
