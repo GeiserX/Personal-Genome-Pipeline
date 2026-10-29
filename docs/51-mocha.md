@@ -57,7 +57,7 @@ With `run-all.sh`: `TOOLS=...,mocha`; a run lists step 51 only when `TOOLS` name
 A call is reported when all of these hold:
 
 - it is on chr1 to chr22;
-- MoChA's own filter of the UK Biobank callset (MoChA README, "Filter callset") keeps it: not a germline copy-number polymorphism, not a likely constitutional event (a BAF deviation of 0.1 or more with sparse heterozygous sites), not a likely germline duplication;
+- MoChA's own filter of the UK Biobank callset (MoChA README, "Filter callset") keeps it: not a germline copy-number polymorphism, not a likely constitutional event (a BAF deviation of 0.1 or more with sparse heterozygous sites), not a weak call (no BAF deviation estimate and a BAF-and-phase LOD of 10 or less), not a likely germline duplication;
 - MoChA estimated its cell fraction, and it is at or above the floor.
 
 **The floor** is the larger of two numbers:
