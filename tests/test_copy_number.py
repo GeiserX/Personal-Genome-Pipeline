@@ -259,6 +259,16 @@ def main():
         except ValueError as e:
             got = str(e)
         check("bedcov: a region listed twice is refused, not overwritten", "appears twice" in got, got)
+        with open(b, "w") as f:
+            f.write(first.split("\t")[0] + "\t50000\t50000\tTESTG\t0\n")
+        try:
+            cn.read_bedcov(b, g0)
+            got = "read"
+        except ValueError as e:
+            got = str(e)
+        except ZeroDivisionError as e:
+            got = f"ZeroDivisionError: {e}"
+        check("bedcov: an empty region is refused with its name", "is empty or reversed" in got, got)
 
     # 2. one owner per locus
     models = {}
@@ -344,6 +354,13 @@ def main():
         got = f"ZeroDivisionError: {e}"
     check("synthetic: no control depth with no minimum set is low_control_depth, not a crash",
           got == "low_control_depth", got)
+    try:
+        b = cn.assess(z, {"fl_a": 0.0, "fl_b": 30.0, "TESTG": 30.0}, {"fl_a": 0.0, "fl_b": 30.0, "TESTG": 30.0})
+        got = b["reason"]
+    except ZeroDivisionError as e:
+        got = f"ZeroDivisionError: {e}"
+    check("synthetic: a flank with no read, no minimum set, is controls_disagree, not a crash",
+          got == "controls_disagree", got)
     iv = cn.parse_row(row(kind="interval", target_depth="pooled", control_depth="pooled", mapq0_max=".",
                           bedcov=".", targets="seg1:50000-50500;seg2:50500-51000"))
     b = cn.assess(iv, {"fl_a": 20.0, "fl_b": 40.0, "seg1": 45.0, "seg2": 45.0})

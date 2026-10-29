@@ -194,6 +194,8 @@ def read_bedcov(path, row):
             if len(c) < 5:
                 raise ValueError(f"{path}: expected chrom, start, end, name, depth sum; got {line.strip()!r}")
             chrom, start, end, name = c[0], int(c[1]), int(c[2]), c[3]
+            if end <= start:
+                raise ValueError(f"{path}: region {name} {chrom}:{start}-{end} is empty or reversed")
             if (chrom, start, end, name) in seen:
                 raise ValueError(f"{path}: region {name} {chrom}:{start}-{end} appears twice")
             seen.add((chrom, start, end, name))
@@ -269,7 +271,7 @@ def assess(row, m, q1=None):
         return b
     if row["control_depth"] == "flanks" and row["_max_ratio"] is not None and len(ct) > 1:
         vals = [m[n] for n, *_ in ct]
-        if max(vals) / min(vals) > row["_max_ratio"]:
+        if min(vals) <= 0 or max(vals) / min(vals) > row["_max_ratio"]:
             b["reason"] = "controls_disagree"
             return b
     total = row["_scale"] * T / C
