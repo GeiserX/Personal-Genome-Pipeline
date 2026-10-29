@@ -34,8 +34,10 @@ if [ ! -f "${SAMPLE_DIR}/run_manifest.tsv" ]; then
 fi
 
 rm -f "$REPORT"
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+# assets/: the ACMG SF rules (acmg_sf.tsv) and the carrier list (carrier_genes.tsv).
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/render_report.py \
+    --assets /pgp-assets \
     --sample "$SAMPLE" \
     --sample-dir "/genome/${SAMPLE}" \
     --json "/genome/${SAMPLE}/summary.json" \

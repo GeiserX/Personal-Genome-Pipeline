@@ -46,6 +46,8 @@ Only the ClinVar screen is required. Each of the others is used when its file is
 - marked as ACOG too, the genes of the conditions in ACOG Committee Opinions 690 and 691 (2017): cystic fibrosis, spinal muscular atrophy, the hemoglobinopathies, fragile X and the Ashkenazi Jewish panel. All 20 are also in the ACMG list;
 - every other gene of an Orphanet disorder with autosomal recessive or X-linked inheritance and a disease-causing germline association Orphanet assessed (Orphadata of 2026-06-23, CC BY 4.0). These rows cover the recessive genes of a ClinVar hit outside the ACMG list. A gene on chrX outside the pseudoautosomal regions is X-linked, every other gene autosomal recessive.
 
+The `severity` column names the alleles of a gene that are not a full loss of function: a hypomorph (BTD p.Asp444His, the GALT Duarte variants) or a pseudodeficiency allele (HEXA c.739C>T and c.745C>T). Such an allele is never a carrier finding on its own; the couple report lists it under what the screen does not see, and the sample report's own carrier list sets it aside.
+
 A ClinVar hit in a gene outside the list (a dominant gene, for example) is not part of this screen; each partner's own ClinVar section lists it. An emptied or damaged list stops the step instead of reporting no shared gene.
 
 ## Docker Image
