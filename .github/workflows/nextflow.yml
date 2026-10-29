@@ -348,6 +348,10 @@ jobs:
                   seen[proc].setdefault(int(row['attempt']), {}).setdefault(row['name'], []).append(got)
           for proc, (cpus, mem, time) in want.items():
               first, second = seen[proc].get(1, {}), seen[proc].get(2, {})
+              unexpected = sorted(set(seen[proc]) - {1, 2})
+              if unexpected:
+                  print(f"FAIL {proc}: attempt(s) {unexpected} in the trace, want only a first attempt and one retry")
+                  bad += 1
               if not first:
                   print(f"FAIL {proc}: no first attempt in the trace")
                   bad += 1
