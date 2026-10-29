@@ -10,13 +10,14 @@ coverage/coverage_summary.tsv as one header and one data line):
      (160 of 161 runs);
   2. a Low_Precision call, and a High_Precision call VNtyper flagged, are
      possible, never positive; a call over a VNTR more than half without
-     reads is possible;
+     reads is possible, and so is one where VNtyper gave no uncovered share;
   3. no call with coverage PASS (148x) or REDUCED (70x) is negative, with the
      band of its depth (160 of 161; 95 of 108); no call with coverage FAIL
      (20x) is not assessed, never negative, with the below-50x band (48 of
      109); no measured depth (NA) says the sensitivity is not known;
   4. VNtyper's non-zero exit code, or a run folder without its files, is not
-     assessed; the exit on a BAM with no read over MUC1 says so;
+     assessed, and so is a Kestrel file with a header and no result row;
+     the exit on a BAM with no read over MUC1 says so;
   5. the CLI writes every metric row and exits 0, and a table a reader cannot
      parse exits 2;
   6. both reports: the card and the text section carry the result, the
@@ -94,6 +95,9 @@ def cases(mod, t):
     r = mod.read(run_dir(t, "holes", call(), uncovered="62.00", qc="FAIL"), 0)
     out.append(("2. a call over a VNTR 62% without reads is possible",
                 r["status"] == "possible" and "62% of the VNTR has no read" in r["message"], r))
+    r = mod.read(run_dir(t, "nounc", call(), uncovered="NA"), 0)
+    out.append(("2. a call with no uncovered share from VNtyper is possible, not positive",
+                r["status"] == "possible" and "no share of the VNTR without reads" in r["message"], r))
     r = mod.read(run_dir(t, "neg", NEG, mean="147.94"), 0)
     out.append(("3. no call at 148x, coverage PASS: negative, 100x band",
                 r["status"] == "negative" and r["variant"] == "." and "160 of 161" in r["sensitivity"]
@@ -115,6 +119,9 @@ def cases(mod, t):
     r = mod.read(run_dir(t, "empty"), 1, "ValueError: FASTQ layout 'empty' cannot be consumed without dropping reads.")
     out.append(("4. exit 1 on a BAM with no read over MUC1: not assessed, saying so",
                 r["status"] == "not assessed" and "no read in the MUC1 region" in r["message"], r))
+    r = mod.read(run_dir(t, "hdr", NEG.split("\n")[0] + "\n", mean="147.94"), 0)
+    out.append(("4. a Kestrel file with a header and no result row at 148x: not assessed, never negative",
+                r["status"] == "not assessed" and "no result row" in r["message"], r))
     r = mod.read(run_dir(t, "nok"), 0)
     out.append(("4. no kestrel_result.tsv: not assessed, naming the file",
                 r["status"] == "not assessed" and "kestrel/kestrel_result.tsv" in r["message"], r))

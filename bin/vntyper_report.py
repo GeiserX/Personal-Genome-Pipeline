@@ -14,7 +14,8 @@ sample has over the VNTR.
 
 DIR is VNtyper's --output-dir: kestrel/kestrel_result.tsv and
 coverage/coverage_summary.tsv. --exit-code is VNtyper's own exit status; a
-non-zero one, or a missing file, gives "not assessed"; --log, VNtyper's
+non-zero one, a missing file, or a Kestrel file with no result row gives
+"not assessed"; --log, VNtyper's
 console output, tells a BAM with no read over MUC1 (VNtyper 2.0.47 stops on
 it with "FASTQ layout 'empty'") from other errors. TABLE gets metric<TAB>
 value rows. Standard library only: it runs in VNTYPER_IMAGE's Python, in the
@@ -95,7 +96,11 @@ def read(run_dir, exit_code, log_text=""):
     mean, uncovered = number(cov.get("mean")), number(cov.get("percent_uncovered"))
     qc = (cov.get("coverage_qc") or "").strip() or "NOT_EVALUATED"
     k = rows(kpath)
-    best = k[0] if k else {}
+    if not k:
+        out.update(status="not assessed", message="VNtyper wrote kestrel/kestrel_result.tsv with no result row.",
+                   advice=ADVICE_NONE)
+        return out
+    best = k[0]
     conf = (best.get("Confidence") or "").strip() or "Negative"
     flag = (best.get("Flag") or "").strip()
     flagged = bool(flag) and flag != "Not flagged"
@@ -110,12 +115,13 @@ def read(run_dir, exit_code, log_text=""):
                    region_depth=best.get("Estimated_Depth_Variant_ActiveRegion") or ".",
                    depth_score=best.get("Depth_Score") or ".", advice=ADVICE_CALL)
         what = f"a MUC1 VNTR frameshift ({out['variant']}), Kestrel confidence {conf}"
-        if conf.startswith("High_Precision") and not flagged and (uncovered is None or uncovered <= 50):
+        if conf.startswith("High_Precision") and not flagged and uncovered is not None and uncovered <= 50:
             out.update(status="positive", message=f"VNtyper calls {what}.")
         else:
             why = ([f"flagged: {flag}"] if flagged else []) \
                 + (["low precision"] if conf == "Low_Precision" else []) \
-                + ([f"{uncovered:.0f}% of the VNTR has no read"] if uncovered is not None and uncovered > 50 else [])
+                + ([f"{uncovered:.0f}% of the VNTR has no read"] if uncovered is not None and uncovered > 50 else []) \
+                + (["VNtyper measured no share of the VNTR without reads"] if uncovered is None else [])
             out.update(status="possible", message=f"VNtyper calls {what}, with caveats ({'; '.join(why)}).")
         return out
     if covered:

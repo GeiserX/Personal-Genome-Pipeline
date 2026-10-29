@@ -42,9 +42,9 @@ VNtyper slices the reads of chr1:155,184,000-155,194,000, genotypes the VNTR wit
 | Result | When |
 |---|---|
 | `positive` | Kestrel calls a frameshift with confidence `High_Precision` or `High_Precision*`, VNtyper did not flag it, and at most half of the VNTR has no read |
-| `possible` | a call with confidence `Low_Precision`, a call VNtyper flagged, or a call over a VNTR more than half without reads |
+| `possible` | a call with confidence `Low_Precision`, a call VNtyper flagged, a call over a VNTR more than half without reads, or a call where VNtyper reported no share of the VNTR without reads |
 | `negative` | no call, and VNtyper's coverage check is `PASS` or `REDUCED` (on GRCh38, a mean of 100x or more, or 50x to 100x) |
-| `not assessed` | no call and a coverage check of `FAIL` or `NOT_EVALUATED` (under 50x, or no depth measured), VNtyper stopped with an error, or it wrote no result |
+| `not assessed` | no call and a coverage check of `FAIL` or `NOT_EVALUATED` (under 50x, or no depth measured), VNtyper stopped with an error, or it wrote no result (a missing file, or a Kestrel file with no result row) |
 
 ### Sensitivity at the observed depth
 
