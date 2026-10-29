@@ -614,3 +614,145 @@ jobs:
           path: ${{ runner.temp }}/nextflow-logs
           if-no-files-found: ignore
           retention-days: 14
+
+  # TEMPORARY (removed before merge): repeats the retry-memory step to show
+  # the fix holds, plus two mutations that must turn it red.
+  retry-repeat:
+    name: retry-repeat (${{ matrix.case }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [rep01, rep02, rep03, rep04, rep05, rep06, rep07, rep08, rep09, rep10, mutate-fixed-memory, mutate-no-retry]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the Nextflow version
+        id: nf
+        run: |
+          . ./versions.env
+          echo "version=${NEXTFLOW_VERSION}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: "nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914" # v3.0.1
+        with:
+          version: ${{ steps.nf.outputs.version }}
+      - name: The retry-memory step, five times
+        timeout-minutes: 25
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          case "$CASE" in
+            mutate-fixed-memory) MUTATION="process { withName: 'MANTA' { memory = '16.GB' } }" ;;
+            mutate-no-retry) MUTATION="process { withName: 'VEP' { errorStrategy = 'ignore' } }" ;;
+            *) MUTATION= ;;
+          esac
+          export MUTATION
+          fails=0
+          for i in 1 2 3 4 5; do
+            echo "::group::iteration $i"
+            base="$RUNNER_TEMP"; export RUNNER_TEMP="$base/it$i"; mkdir -p "$RUNNER_TEMP"
+            if ! (
+          exec_cpus=512 exec_mem_gb=2048
+          cat > "${RUNNER_TEMP}/resources.config" <<CICONF
+          params.kir = false
+          executor.cpus = ${exec_cpus}
+          executor.memory = '${exec_mem_gb}.GB'
+          process.resourceLimits = [ cpus: 16, memory: '64.GB', time: '48.h' ]
+          process {
+              withName: 'DEEPVARIANT|FASTP|ALIGN_MINIMAP2|MANTA|CNVPYTOR|VEP|PRS_PREPARE|PRS_SCORE_SITES|PRS' {
+                  beforeScript = { task.attempt == 1 ? 'exit 137' : 'true' }
+              }
+          }
+          trace.enabled = true
+          trace.raw = true
+          trace.fields = 'task_id,name,attempt,exit,cpus,memory,time'
+          timeline.enabled = false
+          report.enabled = false
+          dag.enabled = false
+          CICONF
+          [ -z "$MUTATION" ] || printf '%s\n' "$MUTATION" >> "${RUNNER_TEMP}/resources.config"
+          nextflow run main.nf -profile test_all -stub -ansi-log false -c "${RUNNER_TEMP}/resources.config" \
+            --tools vep,manta,cnvpytor,prs --max_cpus 16 --max_memory 64.GB --max_time 48.h \
+            --outdir "${RUNNER_TEMP}/resources" -work-dir "${RUNNER_TEMP}/resources-work"
+          python3 - "${RUNNER_TEMP}"/resources/pipeline_info/trace_*.txt "$exec_cpus" "$exec_mem_gb" <<'PY'
+          import csv, sys
+          GB, H = 1024 ** 3, 3600 * 1000
+          exec_cpus, exec_mem = int(sys.argv[2]), int(sys.argv[3]) * GB
+          # process: (cpus, memory, time) of the first attempt
+          want = {
+              'DEEPVARIANT':   (8, 32 * GB, 48 * H),
+              'FASTP':         (8, 8 * GB, 8 * H),
+              'ALIGN_MINIMAP2': (8, 32 * GB, 24 * H),
+              'MANTA':         (8, 16 * GB, 24 * H),
+              'CNVPYTOR':      (4, 8 * GB, 24 * H),
+              'VEP':           (8, 16 * GB, 24 * H),
+              'PRS_PREPARE':   (1, 16 * GB, 2 * H),
+              'PRS_SCORE_SITES': (2, 4 * GB, 4 * H),
+              'PRS':           (4, 24 * GB, 8 * H),
+          }
+          seen, bad = {p: {} for p in want}, 0
+          attempts = all_cpus = all_mem = 0
+          rows = {}
+          with open(sys.argv[1]) as fh:
+              for row in csv.DictReader(fh, delimiter='\t'):
+                  first_row = rows.setdefault(row['task_id'], row)
+                  if first_row is not row:
+                      # The late copy can be built before the exit status was
+                      # set, so it may read '-' there; nothing else may differ.
+                      exits = {first_row['exit'], row['exit']} - {'-'}
+                      if len(exits) > 1 or any(first_row[k] != row[k] for k in row if k != 'exit'):
+                          print(f"FAIL: task {row['task_id']} has two different rows in the trace: {first_row} and {row}")
+                          bad += 1
+                      else:
+                          print(f"{row['name']}: attempt {row['attempt']} is written twice in the trace; counted once")
+                      continue
+                  attempts += 1
+                  all_cpus += int(row['cpus'])
+                  all_mem += int(row['memory'])
+                  proc = row['name'].split(' (')[0].split(':')[-1]
+                  if proc not in want:
+                      continue
+                  got = (int(row['cpus']), int(row['memory']), int(row['time']))
+                  print(f"{row['name']}: attempt {row['attempt']}, exit {row['exit']}, "
+                        f"cpus {got[0]}, memory {got[1] / GB:g} GB, time {got[2] / H:g} h")
+                  seen[proc].setdefault(int(row['attempt']), {}).setdefault(row['name'], []).append(got)
+          for proc, (cpus, mem, time) in want.items():
+              first, second = seen[proc].get(1, {}), seen[proc].get(2, {})
+              if not first:
+                  print(f"FAIL {proc}: no first attempt in the trace")
+                  bad += 1
+                  continue
+              for name in sorted(set(first) | set(second)):
+                  n1, n2 = len(first.get(name, [])), len(second.get(name, []))
+                  if n1 != 1 or n2 != 1:
+                      print(f"FAIL {name}: {n1} first and {n2} second attempts in the trace, want one of each")
+                      bad += 1
+              for got in (g for gs in first.values() for g in gs):
+                  if got != (cpus, mem, time):
+                      print(f"FAIL {proc}: first attempt asks for cpus {got[0]}, memory {got[1] / GB:g} GB, "
+                            f"time {got[2] / H:g} h; want {cpus}, {mem / GB:g} GB, {time / H:g} h")
+                      bad += 1
+              for got in (g for gs in second.values() for g in gs):
+                  if got[1] != 2 * mem:
+                      print(f"FAIL {proc}: the retry asks for {got[1] / GB:g} GB, want {2 * mem / GB:g} GB")
+                      bad += 1
+          # Every attempt takes its request once and gives it back once. If
+          # the executor has at least the sum, losing every release still
+          # leaves room for the next task.
+          print(f"{attempts} task attempts ask for {all_cpus} CPUs and {all_mem / GB:g} GB added together; "
+                f"the executor is told it has {exec_cpus} CPUs and {exec_mem / GB:g} GB")
+          if all_cpus > exec_cpus or all_mem > exec_mem:
+              print("FAIL: executor.cpus or executor.memory of this step is below that sum; raise exec_cpus / exec_mem_gb")
+              bad += 1
+          print(f"{bad} failure(s)")
+          sys.exit(1 if bad else 0)
+          PY
+            ); then fails=$((fails + 1)); echo "ITERATION $i FAILED"; fi
+            export RUNNER_TEMP="$base"
+            echo "::endgroup::"
+          done
+          echo "$fails of 5 iterations failed"
+          [ "$fails" -eq 0 ]
