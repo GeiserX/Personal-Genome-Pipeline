@@ -16,7 +16,9 @@
     name is the user's. indexcov's folder becomes indexcov/ itself (the
     sex check reads indexcov/indexcov-indexcov.ped), and CPIC_LOOKUP's
     PharmCAT comparison goes beside the pypgx summary, where
-    collect_summary.py looks for it.
+    collect_summary.py looks for it. assets/acmg_sf.tsv (the ACMG SF rules)
+    and assets/carrier_genes.tsv (the carrier list) come in the same list
+    and go to assets/, which --assets names.
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,12 +94,14 @@ process HTML_REPORT {
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
             ${id}_mocha.tsv|${id}_mocha_summary.tsv)      place mosaic "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
+            acmg_sf.tsv|carrier_genes.tsv)                mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
     done
     find layout | sort
 
     render_report.py \\
+        --assets assets \\
         --sample ${id} \\
         --sample-dir "\$S" \\
         --json summary.json \\
