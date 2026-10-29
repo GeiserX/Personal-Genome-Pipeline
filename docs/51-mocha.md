@@ -63,11 +63,11 @@ A call is reported when all of these hold:
 **The floor** is the larger of two numbers:
 
 - 0.05. This one is our choice: below a cell fraction of 0.05 the pipeline reports nothing, whatever the depth.
-- the read-sampling floor at the sample's depth, `6 / sqrt(D x H)`, with `D` MoChA's median depth and `H` the heterozygous sites per 10 Mb. This is the cell fraction at which a 10 Mb loss or gain of one copy moves the allele balance by three standard errors of read sampling alone. A loss or gain of one copy in a fraction `c` of the cells moves the balance by about `c / 4`; CN-LOH moves it by `c / 2`, so it shows at half that floor.
+- the read-sampling floor at the sample's depth, `6 / sqrt(D x H)`, with `D` MoChA's median depth and `H` the heterozygous sites per 10 Mb. This is the cell fraction at which a 10 Mb loss or gain of one copy moves the allele balance by three standard errors of read sampling alone. A loss or gain of one copy in a fraction `c` of the cells moves the balance by about `c / 4`; CN-LOH moves it by `c / 2`, so its signal shows at half that floor. A CN-LOH is still reported only at or above the same floor as a loss or gain.
 
 At 30x with about 3,000 heterozygous sites per 10 Mb the read-sampling floor is about 0.02, so the floor is 0.05. At 5x with 300 sites per 10 Mb it is about 0.15. The floor is a lower bound: phasing errors and read bias are not in it, so an event above it is not always found.
 
-The sample is **not assessed** when MoChA's sample filter of the same README fails (a call rate under 0.97, or a phased BAF autocorrelation over 0.03), when MoChA gives no value for one of the two, or when no heterozygous site is phased. Then no call is reported, and the reports say why.
+The sample is **not assessed** when MoChA's sample filter of the same README fails (a call rate under 0.97, or a phased BAF autocorrelation over 0.03), when MoChA gives no value for one of the two, when MoChA gives no median depth (so no floor can be set), or when no heterozygous site on chr1 to chr22 reached MoChA or none is phased. Then no call is reported, and the reports say why.
 
 ## Output
 
