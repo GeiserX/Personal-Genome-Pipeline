@@ -99,12 +99,15 @@ COMMON_AF = 0.01
 AB_FLOOR = {"HET_AB": (0.2, 0.8), "HOM_AB": 0.8}
 IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 
-# Steps run-all.sh runs and records in logs/run_status.tsv. A section whose
-# step is not here (variant calling, step 03, which run-all reuses on purpose)
-# is never marked stale.
-RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
-                 "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "04b"}
+# Steps run-all.sh runs and records in logs/run_status.tsv: the rows of
+# assets/steps.tsv with recorded=yes (tests/test_run_state.py keeps the two
+# equal; the set stays written here because this file also runs where only
+# bin/ is mounted). A section whose step is not here (variant calling, step
+# 03, which run-all reuses on purpose) is never marked stale.
+RUN_ALL_STEPS = {"03a", "03b", "03c", "03d", "04", "04b", "05", "06", "07", "08", "09", "09b", "10", "11",
+                 "12", "13", "14", "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
+                 "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "40", "41", "42", "43",
+                 "44", "45", "46", "47", "48", "49"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
