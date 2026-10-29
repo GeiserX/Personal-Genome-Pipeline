@@ -1512,9 +1512,9 @@ ROH_UPD_NOTE = ("Long runs concentrated on one chromosome, with few elsewhere, a
                 "different copies from one parent) leaves no runs at all. The parents' genotypes confirm a UPD. "
                 "Where an imprinted region is listed, a methylation test of that region tests for its imprinting "
                 "disorder; on its own it does not prove a UPD (docs/11-roh-analysis.md).")
-ROH_F_NOTE = ("F_ROH is the share of the autosomes (outside the bands) in runs of 5 MB or more. The band is the row of "
-              "docs/11-roh-analysis.md's table it is nearest to: an average, and neighbouring rows overlap, so it "
-              "is consistent with that relationship, not a proof of it.")
+ROH_F_NOTE = "F_ROH is the share of the autosomes (outside the bands) in runs of 5 MB or more."
+ROH_BAND_NOTE = ("The band is the row of docs/11-roh-analysis.md's table it is nearest to: an average, and neighbouring "
+                 "rows overlap, so it is consistent with that relationship, not a proof of it.")
 
 
 def roh_lines(d):
@@ -1525,17 +1525,18 @@ def roh_lines(d):
         lines.append(f"F_ROH: {d['f_roh']:.4f} ({d.get('long_mb')} MB in runs of 5 MB or more); nearest: {band}")
     u = d.get("upd_flag")
     if u:
-        lines.append(f"** {u['chrom']} carries {u['mb']} MB, {u['share'] * 100:.0f}% of the length in runs of 5 MB or more: "
+        lines.append(f"** {u['chrom']} carries {u['mb']} MB, more than 50% of the length in runs of 5 MB or more: "
                      f"both copies may come from one parent (uniparental isodisomy) **")
         for r in u.get("imprinted", []):
             lines.append(f"Imprinted {r['region']}: from the mother: {r['maternal_upd']}; from the father: "
                          f"{r['paternal_upd']} (PMID {r['pmid']})")
         if not u.get("imprinted"):
-            lines.append(f"No imprinting disorder is listed for {u['chrom']} (assets/imprinted_regions.tsv); "
+            lines.append(f"No listed imprinting-disorder region overlaps the flagged runs on {u['chrom']} "
+                         "(assets/imprinted_regions.tsv); "
                          "a recessive variant in the run, if there is one, would be homozygous")
         lines.append(ROH_UPD_NOTE)
     if isinstance(d.get("f_roh"), (int, float)):
-        lines.append(ROH_F_NOTE)
+        lines.append(ROH_F_NOTE + (" " + ROH_BAND_NOTE if d.get("relationship") else ""))
     if d.get("masked_mb"):
         lines.append(f"Left out in centromere and heterochromatin bands: {d['masked_mb']} MB")
     if d.get("sex_chromosome_segments"):

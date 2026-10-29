@@ -1324,7 +1324,7 @@ def roh_upd_karyotype(work, schema):
                               "RG\tS\tchr3\t10000001\t34900000\t24900000\t900\t50\n")
     _, txt5, html5 = render(d)
     check("ROH UPD: a share just over half reads more than 50%, never 50%, in both reports",
-          all("chr2 carries 25.1 MB, more than 50% of the length" in t and " 50% of the length" not in t
+          all("chr2 carries 25.1 MB, more than 50% of the length" in t and "MB, 50%" not in t
               for t in (txt5, html5)), txt5)
     # chr7 joins as a whole chromosome.
     put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr7\t70000001\t110000000\t40000000\t900\t50\n")

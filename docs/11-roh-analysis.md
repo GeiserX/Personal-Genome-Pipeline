@@ -65,14 +65,12 @@ These are averages. Inheritance is random, so one person's total can be well abo
 
 Both reports print this as **F_ROH**, the measure of McQuillan et al. 2008 (PMID 18760389): the length of the autosomal segments of 5 Mb or more, without their band parts, divided by the length of chr1 to chr22 without the bands (2,875,001,522 bp less 217,000,000 bp, so 2,658,001,522 bp). Beside it they name the row of the table above whose F is nearest to F_ROH on a log scale: the boundaries are the geometric means of neighbouring rows (for example 1/16 and 1/8 meet at about 0.088), and an F_ROH under 1/128 (about 21 Mb) reads "no sign of related parents". When one chromosome carries most of the runs (next section), there is no band: that chromosome fills F_ROH by itself.
 
-To compute the total from the output:
+To compute the total the table means from the summary file, which takes the band parts out before it keeps the segments of 5 Mb or more, as the reports do:
 
 ```bash
-grep '^RG' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh.txt" \
-  | awk '$3 ~ /^chr[0-9]+$/ && $6 >= 5000000 {sum += $6; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}'
+awk -F'\t' 'NR > 3 {sum += $4; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}' \
+  "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"
 ```
-
-That sums the raw segments; the summary file already has the band parts taken out, so `awk -F'\t' 'NR > 3 {sum += $4; n++} END {printf "%d segments, %.0f Mb\n", n, sum / 1e6}' "${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}_roh_summary.txt"` gives the total the table means.
 
 ### One chromosome carrying most of the runs: possible uniparental disomy
 

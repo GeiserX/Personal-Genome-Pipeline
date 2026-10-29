@@ -3350,7 +3350,8 @@ def sec_sample_qc(d, s):
     xr, yr = num(data.get("x_depth_ratio")), num(data.get("y_depth_ratio"))
     xs = num(data.get("x_sites"))
     data["karyotype"] = (karyotype(2 * xr, 2 * yr)
-                         if xr is not None and yr is not None and xs is not None and xs > 10 else None)
+                         if xr is not None and yr is not None and xs is not None and math.isfinite(xs) and xs > 10
+                         else None)
     return p, data
 
 
