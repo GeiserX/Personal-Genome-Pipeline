@@ -12,9 +12,13 @@
 #     a BAM whose header lacks the gene's ALT contig and not for one that has
 #     it, and not printed when the column says yes;
 #  4. the PYPGX module reads the same table and spells no gene list;
-#  5. the reports: every bam gene has a row in the PGx copy number block (its
-#     call, or why there is none), and a not-callable gene gets its
-#     not-assessable line (two planted summaries must be reported).
+#  5. the reports: every bam gene has exactly one row in the PGx copy number
+#     block (its call, or why there is none), pypgx's, even beside a CNVpytor
+#     section, and a not-callable gene gets its not-assessable line (two
+#     planted summaries must be reported);
+#  6. one owner per gene: no row of the depth engine's catalog
+#     (bin/cn_loci.tsv) is a gene pypgx calls from the BAM (a planted UGT2B17
+#     row must be reported).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -234,11 +238,14 @@ def problems(lines):
         with open(os.path.join(d, "pypgx", "s1_pypgx_summary.tsv"), "w") as f:
             f.write("\n".join("\t".join(r) for r in [hdr] + lines) + "\n")
         _, data = collect_summary.sec_pypgx(d, "s1")
-    # The pypgx rows of the block (gene, text); UGT2B17's CNVpytor row may sit beside them
-    cn = {g: t for g, t in render_report.pgx_copy_number({"pypgx": {"state": "ok", "data": data}})
-          if t.endswith("(pypgx, read depth)")}
+    # The rows of the block (gene, text), with CNVpytor's section beside pypgx's:
+    # pypgx owns every bam gene, so each has one row, and it is pypgx's.
+    block = render_report.pgx_copy_number({"pypgx": {"state": "ok", "data": data},
+                                           "cnvpytor": {"state": "ok", "data": {}}})
+    cn = dict(block)
     text = "\n".join(render_report.pypgx_lines(data))
-    bad = []
+    bad = [f"{g}: {n} rows in the copy-number block" for g in sorted({g for g, _ in block})
+           if (n := sum(x == g for x, _ in block)) > 1]
     for g in bam:
         want = ("not called: pypgx failed" if g == "CYP2E1" else f"CNV-{g}") + " (pypgx, read depth)"
         if g == "GSTT1":
@@ -265,6 +272,27 @@ for name, planted in (("GSTT1 read as called", summary(gstt1_status="no call")),
         bad.append(name)
 sys.exit(1 if bad else 0)
 PY
+
+# --- 6. one owner per gene ------------------------------------------------------
+# A gene pypgx calls from the BAM (a bam row) is pypgx's: the depth engine's
+# catalog has no row for it. A copy of the catalog with a UGT2B17 row planted
+# back must be reported.
+CN="${REPO}/bin/cn_loci.tsv"
+cn_owner_clash() {   # prints the catalog loci that are bam rows of the table
+  awk -F'\t' 'NR == FNR { if ($0 !~ /^#/ && $2 == "bam") bam[$1] = 1; next }
+              $0 !~ /^#/ && $1 != "locus" && ($1 in bam) { print $1 }' "$CAT" "$1"
+}
+if [ ! -s "$CN" ]; then
+  bad "bin/cn_loci.tsv is missing or empty"
+else
+  clash=$(cn_owner_clash "$CN")
+  if [ -n "$clash" ]; then bad "bin/cn_loci.tsv has a row for a gene pypgx calls from the BAM: $clash"
+  else ok "bin/cn_loci.tsv has no row for any of the $(awk -F'\t' '$2 == "bam"' "$CAT" | wc -l | tr -d ' ') bam genes"; fi
+  { cat "$CN"; printf 'UGT2B17\tgene\tchr4\tUGT2B17:68516300-68627039\n'; } > "${WORK}/planted-cn-ugt2b17.tsv"
+  clash=$(cn_owner_clash "${WORK}/planted-cn-ugt2b17.tsv")
+  if [ "$clash" = "UGT2B17" ]; then ok "control, a planted UGT2B17 catalog row reported"
+  else bad "control, a planted UGT2B17 catalog row passed (got '${clash}')"; fi
+fi
 
 if [ "$FAILS" -gt 0 ]; then
   echo "${FAILS} check(s) failed"
