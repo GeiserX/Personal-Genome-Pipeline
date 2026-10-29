@@ -33,6 +33,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(REPO, "bin", "mei_report.py")
@@ -167,6 +168,14 @@ with tempfile.TemporaryDirectory() as d:
           cs.MEI_NOT_ASSESSED in summ["not_assessed"] and cs.MEI_NOT_ASSESSED.startswith("Mobile element insertions"),
           True)
     check("5 no table: no section", cs.sec_mei(f"{d}/S", "S"), (None, {}))
+    # A step 50 that ran and failed was looked for: it is listed as failed, not as opt-in.
+    os.makedirs(f"{d}/F/logs")
+    with open(f"{d}/F/logs/run_status.tsv", "w") as f:
+        f.write(f"meta\tstarted_epoch\t{time.time() - 60}\nstep\t50\tfailed (exit 1)\n")
+    summ = cs.collect("F", f"{d}/F")
+    check("5 a failed step 50 is listed under not run, not as not looked for",
+          (summ["sections"]["mei"]["state"], cs.MEI_NOT_ASSESSED in summ["not_assessed"],
+           any("step 50 failed" in x for x in summ["not_run"])), ("failed", False, True))
     os.makedirs(f"{d}/S/mei")
     for name, text in (("m.vcf", HEAD + FKTN_SVA + rec("chr20", 5040478, "SINE/Alu")), ("sites.tsv", SITES),
                        ("depth.tsv", DEPTH_30X)):

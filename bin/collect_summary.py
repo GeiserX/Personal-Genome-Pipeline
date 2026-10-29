@@ -119,7 +119,8 @@ NOT_ASSESSED = [
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
                     "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
 
-# Added to NOT_ASSESSED unless step 50 (opt-in, MEGAnE) wrote its tables.
+# Added to NOT_ASSESSED when step 50 (opt-in, MEGAnE) did not run; a failed
+# step 50 is listed under not run, and unreadable tables under their section.
 MEI_NOT_ASSESSED = ("Mobile element insertions (Alu, L1 and SVA, the FKTN, TAF1 and BBS1 SVA insertions among them): "
                     "not looked for (step 50, MEGAnE, is opt-in)")
 
@@ -3539,7 +3540,7 @@ def collect(sample, sample_dir, declared_sex=None):
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
            else [HBA_NOT_ASSESSED])
-        + ([] if sections["mei"]["state"] in ("ok", "stale") else [MEI_NOT_ASSESSED]),
+        + ([MEI_NOT_ASSESSED] if sections["mei"]["state"] == "missing" else []),
     }
     return summary
 
