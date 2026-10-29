@@ -466,9 +466,12 @@ install_chip_data() {
 # overrides it): reference/megane/<reference file name without extension>.mk,
 # with MEGAnE's .mi count file beside it.
 megane_kmers_path() {
-  local n
+  local n p
   n=$(basename "$REF_FASTA"); n=${n%.gz}; n=${n%.*}
-  printf '%s\n' "${MEGANE_KMERS:-${GENOME_DIR}/reference/megane/${n}.mk}"
+  p=${MEGANE_KMERS:-${GENOME_DIR}/reference/megane/${n}.mk}
+  # A relative MEGANE_KMERS is inside GENOME_DIR, as scripts/50-mei.sh reads it.
+  case "$p" in /*) ;; *) p="${GENOME_DIR}/${p}" ;; esac
+  printf '%s\n' "$p"
 }
 
 # install_megane_kmers: MEGAnE's build_kmerset on the reference (step 50):

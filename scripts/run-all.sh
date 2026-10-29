@@ -204,6 +204,7 @@ if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
 else KNOWN+=" exomiser"; fi
 # Step 50 (Alu, L1 and SVA insertions, MEGAnE) is opt-in and listed only when TOOLS names it; it reads the BAM.
 MN=$(basename "$REF_FASTA"); MN=${MN%.gz}; MN=${MN%.*}; MK=${MEGANE_KMERS:-${G}/reference/megane/${MN}.mk}
+case "$MK" in /*) ;; *) MK="${G}/${MK}" ;; esac
 if [[ ",${T// /}," == *",mei,"* ]]; then plan "50 Mobile element insertions" mei "$(if [ -z "$NOBAM" ]; then echo 'no BAM'; else need "$MK" "${MK%.mk}.mi"; fi)" \
   && NF+=(--megane_kmers "$MK") || true; else KNOWN+=" mei"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
