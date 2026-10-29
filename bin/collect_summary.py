@@ -107,7 +107,7 @@ RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "1
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
-    "Mosaic and low-fraction small variants (only chrM heteroplasmy is reported)",
+    "Mosaic and low-fraction small variants (only chrM heteroplasmy is reported, and with step 49 the CHIP genes)",
     "Methylation and imprinting",
     "Repeat expansions outside the ExpansionHunter catalog",
     "Phase: two variants in one gene are compound-het candidates, not confirmed",

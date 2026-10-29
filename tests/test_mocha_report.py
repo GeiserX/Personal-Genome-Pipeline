@@ -162,7 +162,7 @@ check("6 and the not-assessed line stays", cs.MCA_NOT_ASSESSED in cs.collect("S"
 check("6 no reported call: the text says none is reported, not that none exists",
       rr.mosaic_mca_lines(cs.sec_mocha(f"{run([call(cf=0.04)])[3]}/S", "S")[1])[1].startswith("No mosaic alteration reported"), True)
 check("6 the pipeline-wide not-assessed list keeps large mosaic alterations out of its chrM-only line",
-      [x for x in cs.NOT_ASSESSED if x.startswith("Mosaic")], ["Mosaic and low-fraction small variants (only chrM heteroplasmy is reported)"])
+      [x for x in cs.NOT_ASSESSED if x.startswith("Mosaic")], ["Mosaic and low-fraction small variants (only chrM heteroplasmy is reported, and with step 49 the CHIP genes)"])
 
 
 def unreadable(d):
