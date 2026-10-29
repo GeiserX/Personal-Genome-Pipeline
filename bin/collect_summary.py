@@ -52,6 +52,7 @@ import csv
 import glob
 import gzip
 import json
+import math
 import os
 import re
 import struct
@@ -1921,6 +1922,72 @@ def masked_overlap(bands, chrom, start, end):
     return sum(max(0, min(end, b) - max(start - 1, a)) for a, b in bands.get(chrom, ()))
 
 
+# GRCh38's chr1 to chr22 (UCSC hg38.chrom.sizes), and the part of them outside
+# MASKED_BANDS: the length F_ROH is a share of, since a run's part in a band is
+# not counted either.
+AUTOSOME_BP = 2875001522
+ROH_MIN_BP = 5e6     # the segments F_ROH and the one-chromosome flag count (docs/11-roh-analysis.md)
+# One chromosome carrying most of the long runs: at least UPD_MIN_BP of it in
+# segments of 5 Mb or more, and more than UPD_SHARE of the length of all such
+# autosomal runs.
+# Our thresholds: a run over 20 Mb on one chromosome is the long-standing sign
+# of isodisomy, and related parents spread their runs over many chromosomes.
+UPD_MIN_BP = 20e6
+UPD_SHARE = 0.5
+# The rows of docs/11-roh-analysis.md's table: F of a child of the parents.
+# A value is placed at the row whose F is nearest on a log scale (the
+# boundaries are the geometric means of neighbouring rows), and under 1/128
+# (half the second-cousin F) as no sign of related parents.
+ROH_BANDS = [(1 / 128, "no sign of related parents"),
+             ((1 / 64 * 1 / 32) ** 0.5, "second cousins (F 1/64)"),
+             ((1 / 32 * 1 / 16) ** 0.5, "first cousins once removed (F 1/32)"),
+             ((1 / 16 * 1 / 8) ** 0.5, "first cousins (F 1/16)"),
+             ((1 / 8 * 1 / 4) ** 0.5, "half siblings, uncle and niece, double first cousins (F 1/8)"),
+             (float("inf"), "parent and child, full siblings (F 1/4)")]
+
+# assets/imprinted_regions.tsv, the same rows (tests/test_collect_summary.py
+# checks that the two agree). Held here too because the Nextflow report task
+# sees bin/ but not assets/. (chrom, start, end, region, maternal UPD,
+# paternal UPD, PMIDs); start and end None for the whole chromosome.
+IMPRINTED_REGIONS = [
+    ("chr6", None, None, "6q24 (PLAGL1, HYMAI)", "-", "Transient neonatal diabetes mellitus (6q24-related)",
+     "20301706"),
+    ("chr7", None, None, "7p12 (GRB10), 7q32 (MEST)", "Silver-Russell syndrome", "-", "27585961"),
+    ("chr11", 0, 22000000, "11p15 (H19/IGF2, KCNQ1OT1)", "Silver-Russell syndrome", "Beckwith-Wiedemann syndrome",
+     "29377879;27585961"),
+    ("chr14", None, None, "14q32.2 (DLK1-MEG3)", "Temple syndrome", "Kagami-Ogata syndrome", "24891339;26377239"),
+    ("chr15", 20500000, 33400000, "15q11-q13 (SNRPN, UBE3A)", "Prader-Willi syndrome", "Angelman syndrome",
+     "22237428;27615419"),
+    ("chr20", None, None, "20q13.32 (GNAS)", "Mulchandani-Bhoj-Conlin syndrome (growth failure)",
+     "Pseudohypoparathyroidism type 1B", "26248010;29959430"),
+]
+
+
+def autosome_unmasked_bp(bands=None):
+    """AUTOSOME_BP without the autosomal MASKED_BANDS."""
+    bands = masked_bands() if bands is None else bands
+    return AUTOSOME_BP - sum(b - a for c, spans in bands.items() if c[3:] in AUTOSOMES for a, b in spans)
+
+
+def roh_band(f):
+    """The row of docs/11-roh-analysis.md's table an F_ROH is nearest to."""
+    return next(label for top, label in ROH_BANDS if f < top)
+
+
+def imprinted_rows(chrom, segs):
+    """The IMPRINTED_REGIONS rows a flagged chromosome joins: its own
+    chromosome's rows, and of a row with a region only when one of the runs
+    (1-based, inclusive start-end) overlaps it."""
+    out = []
+    for c, a, b, region, mat, pat, pmid in IMPRINTED_REGIONS:
+        if c != chrom:
+            continue
+        if a is not None and not any(masked_overlap({c: [(a, b)]}, c, s, e) for s, e in segs):
+            continue
+        out.append({"region": region, "maternal_upd": mat, "paternal_upd": pat, "pmid": pmid})
+    return out
+
+
 def sec_roh(d, s):
     """Step 11's bcftools roh output. Segments on chrX and chrY are left out
     (a man's single X is one long run), segments on any other contig that is
@@ -1934,6 +2001,7 @@ def sec_roh(d, s):
     bands = masked_bands()
     total = largest = masked = 0.0
     segs, sex_segs, big = 0, 0, []
+    per_chrom = {}   # chrom -> [long bp, [(start, end), ...]] of the segments over ROH_MIN_BP
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1943,6 +2011,8 @@ def sec_roh(d, s):
                 start, end, length = int(c[3]), int(c[4]), float(c[5])
             except ValueError:
                 continue
+            if not math.isfinite(length):
+                raise Unreadable(f"{os.path.basename(p)} has a run of length {c[5]}")
             if c[2] in ("chrX", "chrY", "X", "Y"):
                 sex_segs += 1
                 continue
@@ -1956,13 +2026,27 @@ def sec_roh(d, s):
             segs += 1
             total += length
             largest = max(largest, length)
-            if length > 5e6:
+            if length >= ROH_MIN_BP:
+                pc = per_chrom.setdefault(c[2], [0.0, []])
+                pc[0] += length
+                pc[1].append((start, end))
                 row = {"region": f"{c[2]}:{c[3]}-{c[4]}", "mb": round(length / 1e6, 1)}
                 if inside:
                     row["masked_mb"] = round(inside / 1e6, 1)
                 big.append(row)
+    long_bp = sum(v[0] for v in per_chrom.values())
+    f_roh = long_bp / autosome_unmasked_bp(bands)
+    upd = None
+    if per_chrom:
+        chrom, (bp, spans) = max(per_chrom.items(), key=lambda kv: kv[1][0])
+        if bp >= UPD_MIN_BP and bp > UPD_SHARE * long_bp:
+            upd = {"chrom": chrom, "mb": round(bp / 1e6, 1), "share": round(bp / long_bp, 2),
+                   "imprinted": imprinted_rows(chrom, spans)}
     return p, {"segments": segs, "total_mb": round(total / 1e6, 1), "largest_mb": round(largest / 1e6, 1),
-               "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs}
+               "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs,
+               "long_mb": round(long_bp / 1e6, 1), "f_roh": round(f_roh, 4),
+               # a chromosome that may come from one parent fills F_ROH by itself, so no band then
+               "relationship": None if upd else roh_band(f_roh), "upd_flag": upd}
 
 
 # Pages that show more of a called branch, free and with no upload. The URL
@@ -3089,6 +3173,33 @@ def sec_coverage(d, s):
     return p, {"mean_depth": float(mean) if mean not in (None, "") else None}
 
 
+# How far a chrX or chrY copy number may sit from a whole number and still be
+# read as that number. Further off (a mosaic, a mixed sample, a noisy run)
+# names no karyotype.
+KARYOTYPE_TOL = 0.3
+
+
+# The sex-chromosome aneuploidies named, by (chrX, chrY) copies. Any other pair of
+# whole numbers (chrY 4, chrX 6, a degenerate 100000) names nothing: in a run it is
+# far more often depth noise or a broken input than a karyotype.
+KARYOTYPES = {(1, 0): "45,X", (2, 1): "47,XXY", (1, 2): "47,XYY", (3, 0): "47,XXX",
+              (2, 2): "48,XXYY", (3, 1): "48,XXXY", (4, 0): "48,XXXX",
+              (4, 1): "49,XXXXY", (5, 0): "49,XXXXX"}
+
+
+def karyotype(cn_x, cn_y, tol=KARYOTYPE_TOL):
+    """The sex-chromosome karyotype the two copy numbers name, one of
+    KARYOTYPES; None for 46,XX and 46,XY, for a missing value, for a value
+    between whole numbers, and for any pair of copies not in KARYOTYPES."""
+    x, y = num(cn_x), num(cn_y)
+    if x is None or y is None or not (-1 < x < 10 and -1 < y < 10):   # also keeps inf from round()
+        return None
+    rx, ry = int(round(x)), int(round(y))
+    if abs(x - rx) > tol or abs(y - ry) > tol:
+        return None
+    return KARYOTYPES.get((rx, ry))
+
+
 def sec_sex_check(d, s):
     p = first_existing(d, ["indexcov/indexcov-indexcov.ped", "indexcov/*-indexcov.ped"])
     if not p:
@@ -3100,7 +3211,8 @@ def sec_sex_check(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no sex column or no sample row")
     row = dict(zip(head, lines[-1]))
     sex = {"1": "male", "2": "female"}.get(row.get("sex", ""), "unknown")
-    return p, {"inferred_sex": sex, "cn_chrX": row.get("CNchrX", ""), "cn_chrY": row.get("CNchrY", "")}
+    return p, {"inferred_sex": sex, "cn_chrX": row.get("CNchrX", ""), "cn_chrY": row.get("CNchrY", ""),
+               "karyotype": karyotype(row.get("CNchrX"), row.get("CNchrY"))}
 
 
 # --- sample identity and contamination (step 33) ----------------------------------
@@ -3232,6 +3344,14 @@ def sec_sample_qc(d, s):
             data[r["key"]] = r.get("value", "")
     if "inferred_sex" not in data:
         raise Unreadable(f"{os.path.basename(p)} has no inferred_sex row")
+    # somalier's chrX and chrY depth over the autosomal depth: one copy reads 0.5.
+    # Named only from more than 10 chrX sites, the floor somalier's own sex
+    # call needs (somalier_x_sex); a thinner ratio is noise.
+    xr, yr = num(data.get("x_depth_ratio")), num(data.get("y_depth_ratio"))
+    xs = num(data.get("x_sites"))
+    data["karyotype"] = (karyotype(2 * xr, 2 * yr)
+                         if xr is not None and yr is not None and xs is not None and math.isfinite(xs) and xs > 10
+                         else None)
     return p, data
 
 
