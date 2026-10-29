@@ -12,6 +12,10 @@ genes: four on a genome without a deletion (aa/aa), three with one gene lost
 on one chromosome (-a3.7 or -a4.2), two with both lost on one chromosome
 (--SEA and other large deletions) or one on each (-a/-a).
 
+The method and the regions are the HBA row of bin/cn_loci.tsv, run by
+bin/copy_number.py (steps 35 and the PARASCOPY module call that engine);
+this file lays out the step's table and keeps its own command line.
+
   hba_copy_number.py bed
       print the regions (GRCh38, 0-based BED, name in column 4) to stdout
   hba_copy_number.py check --bedcov BEDCOV.tsv --bedcov-mapq1 BEDCOV_Q1.tsv --out HBA.tsv
@@ -33,114 +37,80 @@ it runs in the Parascopy image and under tests/test_hba_copy_number.py.
 import argparse
 import sys
 
-# GRCh38, 0-based. The gene bodies are the MANE Select transcripts (HBA2
-# NM_000517.6, chr16:172,876-173,710; HBA1 NM_000558.5, chr16:176,680-177,522).
-# The flanks are 40 kb of single-copy sequence on each side of the cluster,
-# outside the --SEA deletion (about chr16:165,400-184,700) and away from the
-# HBZ/HBZP1 and HBM paralogs.
-REGIONS = [
-    ("chr16", 100000, 140000, "flank_left"),
-    ("chr16", 172875, 173710, "HBA2"),
-    ("chr16", 176679, 177522, "HBA1"),
-    ("chr16", 190000, 230000, "flank_right"),
-]
-# Below this mean flank depth the ratio is noise: not assessed.
-MIN_FLANK_DEPTH = 8.0
-# The two flanks must agree within this factor: a deletion that reaches one
-# flank, or a dropout, would otherwise skew the ratio.
-MAX_FLANK_RATIO = 1.5
-# An estimate further than this from a whole number is not called.
-MAX_OFF = 0.3
-# Part of the gene-body depth from reads of MAPQ 0 under which the BAM is
-# taken to leave out the reads that fit HBA1 and HBA2 equally. The reference
-# holds both genes, so an aligner that reports such reads gives them MAPQ 0
-# whatever the sample carries: on HG002's reads about 18% to 30% of the depth
-# over each gene with BWA-MEM or minimap2. GIAB's novoalign BAM of HG002 has
-# none (novoalign leaves a read with several equally good places unaligned
-# unless told otherwise), and over HBA2 it holds about half the depth: the
-# count comes out three where HG002 has four.
-MIN_MAPQ0_SHARE = 0.02
+import copy_number as cn
 
-READINGS = {
-    0: "no alpha-globin gene: the pattern of Hb Bart's hydrops fetalis (--/--)",
-    1: "one alpha-globin gene: the pattern of HbH disease (--/-a)",
-    2: ("two alpha-globin genes: alpha-thalassaemia trait, either both genes lost on one chromosome "
-        "(--/aa, as --SEA; a child with a partner who carries the same can have Hb Bart's) or one on "
-        "each (-a/-a); depth cannot tell these apart"),
-    3: "three alpha-globin genes: one gene lost on one chromosome (-a/aa, as -a3.7 or -a4.2), a silent carrier",
-    4: "four alpha-globin genes (aa/aa): no deletion seen",
-}
+LOCUS = "HBA"
+_ROW = []
 
 
-# The count has been checked on one real genome only, HG002 (four genes; the
-# e2e case paralog-checks-and-doc-fixes-1-hba). So a count under four is
-# reported with this note, never as a finding on its own.
-UNDER_FOUR = ("; unconfirmed: this short-read count has been checked on one real genome only (HG002, four "
-              "genes), so a count under four needs a clinical test before it means anything")
+def row():
+    """The HBA row of the catalog, read once."""
+    if not _ROW:
+        _ROW.append(cn.load_catalog()[LOCUS])
+    return _ROW[0]
 
 
-def reading(n):
-    if n in READINGS:
-        return READINGS[n] + (UNDER_FOUR if n < 4 else "")
-    return f"{n} alpha-globin genes: more than four, a triplication (as aaa/aa)"
+def __getattr__(name):
+    # The regions and thresholds come from the catalog row, read on first use.
+    r = row()
+    vals = {"REGIONS": cn.regions(r), "MIN_FLANK_DEPTH": r["_min_control"], "MAX_FLANK_RATIO": r["_max_ratio"],
+            "MAX_OFF": r["_call"][1][0], "MIN_MAPQ0_SHARE": r["_mapq0_min"]}
+    if name in vals:
+        return vals[name]
+    raise AttributeError(name)
 
 
 def read_bedcov(path):
     """{'flank_left': mean, 'HBA2': mean, ...} from `samtools bedcov` output
-    over the regions of REGIONS, which must all be there and nothing else."""
-    means, seen = {}, set()
-    with open(path, errors="replace") as f:
-        for line in f:
-            if not line.strip() or line.startswith("#"):
-                continue
-            c = line.rstrip("\n").split("\t")
-            if len(c) < 5:
-                raise ValueError(f"{path}: expected chrom, start, end, name, depth sum; got {line.strip()!r}")
-            chrom, start, end, name = c[0], int(c[1]), int(c[2]), c[3]
-            seen.add((chrom, start, end, name))
-            means[name] = float(c[4]) / (end - start)
-    # The regions must be the ones `bed` prints, so a drift in a copy of
-    # them cannot compare other stretches unnoticed.
-    if seen != set(REGIONS):
-        raise ValueError(f"{path}: its regions differ from the ones `hba_copy_number.py bed` prints")
-    return means
+    over the regions, which must all be there and nothing else."""
+    m = cn.read_bedcov(path, row())
+    if not m:
+        raise ValueError(f"{path}: its regions differ from the ones `hba_copy_number.py bed` prints (empty)")
+    return m
+
+
+def table(b):
+    """([(metric, value)], summary line) of the engine's HBA block."""
+    r, m = row(), b["depths"]
+    if b["reason"] == "no_data":
+        out = {k: "." for k in ORDER}
+        out.update(status="not assessed", message="not assessed: the BAM has no chr16 reads, so HBA1 and HBA2 have none")
+        return [(k, out[k]) for k in ORDER], f"HBA1/HBA2: {out['message']}"
+    left, right = m.get("flank_left"), m.get("flank_right")
+    share = b["mapq0_share"]
+    out = {"hba2_depth": round(m["HBA2"], 2), "hba1_depth": round(m["HBA1"], 2),
+           "flank_left_depth": round(left, 2), "flank_right_depth": round(right, 2),
+           "mapq0_share": f"{share:.3f}",
+           "estimate": ".", "alpha_globin_genes": ".", "status": "not assessed"}
+    reason, est = b["reason"], b["estimate"]
+    if est is not None:
+        out["estimate"] = f"{est:.2f}"
+    if reason == "low_control_depth":
+        out["message"] = (f"not assessed: flank depth under {r['_min_control']:g}x "
+                          f"({left:.1f}x and {right:.1f}x), too low to compare")
+    elif reason == "controls_disagree":
+        out["message"] = (f"not assessed: the two flanks disagree ({left:.1f}x and {right:.1f}x); "
+                          "a deletion larger than --SEA, or uneven coverage, would skew the count")
+    elif reason == "low_mapq0_share":
+        out["message"] = (f"not assessed: reads of mapping quality 0 make up {100 * share:.1f}% of the depth "
+                          "over HBA1 and HBA2, so the aligner left out the reads that fit both genes (as "
+                          "novoalign does by default) and the count would come out low; realign with "
+                          "minimap2 (step 02) or BWA-MEM")
+    elif reason == "between_counts":
+        out["message"] = (f"not assessed: the estimate {est:.2f} lies between {int(est)} and {int(est) + 1} "
+                          "alpha-globin genes")
+    else:
+        out.update(status="called", alpha_globin_genes=str(b["copies"]), message=b["reading"])
+    line = (f"HBA1/HBA2: {out['message']} (estimate {out['estimate']}; HBA2 {out['hba2_depth']}x, "
+            f"HBA1 {out['hba1_depth']}x, flanks {out['flank_left_depth']}x and {out['flank_right_depth']}x; "
+            f"MAPQ 0 share over the genes {out['mapq0_share']})")
+    return [(k, out[k]) for k in ORDER], line
 
 
 def assess(m, q1):
     """The result dict for the mean depths of read_bedcov: m over every
     read, q1 over reads of MAPQ 1 or more."""
-    left, right = m["flank_left"], m["flank_right"]
-    flank = (left + right) / 2
-    genes = m["HBA2"] + m["HBA1"]
-    share = 1 - (q1["HBA2"] + q1["HBA1"]) / genes if genes > 0 else 0.0
-    out = {"hba2_depth": round(m["HBA2"], 2), "hba1_depth": round(m["HBA1"], 2),
-           "flank_left_depth": round(left, 2), "flank_right_depth": round(right, 2),
-           "mapq0_share": f"{share:.3f}",
-           "estimate": ".", "alpha_globin_genes": ".", "status": "not assessed"}
-    if min(left, right) < MIN_FLANK_DEPTH:
-        out["message"] = (f"not assessed: flank depth under {MIN_FLANK_DEPTH:g}x "
-                          f"({left:.1f}x and {right:.1f}x), too low to compare")
-        return out
-    if max(left, right) / min(left, right) > MAX_FLANK_RATIO:
-        out["message"] = (f"not assessed: the two flanks disagree ({left:.1f}x and {right:.1f}x); "
-                          "a deletion larger than --SEA, or uneven coverage, would skew the count")
-        return out
-    est = 2 * (m["HBA2"] + m["HBA1"]) / flank
-    n = round(est)
-    out["estimate"] = f"{est:.2f}"
-    # With no gene left there is no read to judge the aligner by.
-    if n >= 1 and share < MIN_MAPQ0_SHARE:
-        out["message"] = (f"not assessed: reads of mapping quality 0 make up {100 * share:.1f}% of the depth "
-                          "over HBA1 and HBA2, so the aligner left out the reads that fit both genes (as "
-                          "novoalign does by default) and the count would come out low; realign with "
-                          "minimap2 (step 02) or BWA-MEM")
-        return out
-    if abs(est - n) > MAX_OFF:
-        out["message"] = (f"not assessed: the estimate {est:.2f} lies between {int(est)} and {int(est) + 1} "
-                          "alpha-globin genes")
-        return out
-    out.update(status="called", alpha_globin_genes=str(n), message=reading(n))
-    return out
+    return dict(table(cn.assess(row(), m, q1))[0])
 
 
 ORDER = ("status", "alpha_globin_genes", "estimate", "hba2_depth", "hba1_depth",
@@ -149,21 +119,22 @@ ORDER = ("status", "alpha_globin_genes", "estimate", "hba2_depth", "hba1_depth",
 
 def check(args):
     try:
-        res = assess(read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1))
+        rows, line = table(cn.assess(row(), read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1)))
+    except cn.BrokenControl as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 3
     except (OSError, ValueError, KeyError, ZeroDivisionError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
     try:
         with open(args.out, "w") as f:
             f.write("metric\tvalue\n")
-            for k in ORDER:
-                f.write(f"{k}\t{res[k]}\n")
+            for k, v in rows:
+                f.write(f"{k}\t{v}\n")
     except OSError as e:
         print(f"ERROR: cannot write {args.out}: {e}", file=sys.stderr)
         return 2
-    print(f"HBA1/HBA2: {res['message']} (estimate {res['estimate']}; HBA2 {res['hba2_depth']}x, "
-          f"HBA1 {res['hba1_depth']}x, flanks {res['flank_left_depth']}x and {res['flank_right_depth']}x; "
-          f"MAPQ 0 share over the genes {res['mapq0_share']})")
+    print(line)
     return 0
 
 
@@ -177,7 +148,7 @@ def main(argv=None):
     c.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     if args.cmd == "bed":
-        for r in REGIONS:
+        for r in cn.regions(row()):
             print("\t".join(map(str, r)))
         return 0
     return check(args)

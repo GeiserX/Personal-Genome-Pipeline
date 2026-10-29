@@ -2,8 +2,9 @@
 # Step 35 runs Parascopy once per row of the paralog catalog. This case adds a
 # GBA row (GBA1 with its pseudogene GBAP1, model GBA.gz of the pinned data) to
 # a copy of assets/paralog_loci.tsv and runs the step on HG002 reads:
-#   - assets/parascopy_models_v1.7.txt is the list.txt that
-#     `setup.sh --parascopy-data` installs, for each of the five populations;
+#   - the genes of assets/parascopy_models_v1.7.txt, each as <gene>.gz, are
+#     the names of the list.txt that `setup.sh --parascopy-data` installs, for
+#     each of the five populations;
 #   - the BAM is the fixture's GIAB slice plus GIAB's 60x HG002 BAM over
 #     chr1:155.20-155.26 Mb (GBA1 and GBAP1), read over HTTPS and sampled to
 #     about 30x as the fixture is; the GBA table must hold an integer
@@ -24,11 +25,12 @@
 echo "+ scripts/setup.sh --parascopy-data"
 "${REPO}/scripts/setup.sh" --parascopy-data "$GENOME_DIR"
 DATA="${GENOME_DIR}/reference/parascopy-${PARASCOPY_DATA_VERSION}"
+COMMITTED="$(awk -F'\t' '!/^#/ && $3 == "main" {print $1 ".gz"}' "${REPO}/assets/parascopy_models_v1.7.txt" | LC_ALL=C sort)"
 for pop in AFR AMR EAS EUR SAS; do
-  check "the committed model list is the installed ${pop} list.txt" \
-    cmp -s "${REPO}/assets/parascopy_models_v1.7.txt" "${DATA}/models_GRCh38_1KGP/${pop}/list.txt"
+  check "the committed models are the installed ${pop} list.txt" \
+    cmp -s <(grep . "${DATA}/models_GRCh38_1KGP/${pop}/list.txt" | LC_ALL=C sort) <(printf '%s\n' "$COMMITTED")
 done
-check_eq "models on the list" "$(grep -c . "${REPO}/assets/parascopy_models_v1.7.txt")" 167
+check_eq "models on the list" "$(printf '%s\n' "$COMMITTED" | grep -c .)" 167
 
 # --- the stand-in reference (as pgx-4-parascopy.sh) -------------------------------
 REF="${GENOME_DIR}/reference/paralog_catalog_ref.fasta"

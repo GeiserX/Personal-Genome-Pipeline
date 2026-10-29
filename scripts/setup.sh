@@ -12,7 +12,11 @@
 #        ./scripts/setup.sh --ancestry-fine-panel <genome_dir>
 #        ./scripts/setup.sh --yleaf-data <genome_dir>
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
+#        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --exomiser-data <genome_dir>
+#        ./scripts/setup.sh --strchive-data <genome_dir>
+#        ./scripts/setup.sh --chip-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -24,7 +28,16 @@
 #                                            Yleaf's marker tables plus its image
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
-#                                            viral genomes of step 47
+#                                            AADR panel of step 44, the
+#                                            viral genomes of step 47, Ensembl's
+#                                            gene annotation (step 49), Exomiser's
+#                                            hg38 and phenotype data plus its image
+#                                            (step 48), the STRchive catalog of
+#                                            steps 09 and 9b (also part of a full
+#                                            setup)
+#        ./scripts/setup.sh --archaic <genome_dir>
+#                                            the archaic genomes and 1000 Genomes
+#                                            frequencies of step 43, as one table
 #        ./scripts/setup.sh --annotsv-data <genome_dir>
 #                                            AnnotSV's data for step 5 (the bundle
 #                                            when missing, gnomAD-SV's common SVs
@@ -44,7 +57,8 @@
 #      GENCODE gene coordinates T1K needs (~350 MB) and GENCODE's exons for
 #      the cDNA read check of steps 06 and 17, both from one ~80 MB download,
 #      and somalier's sites and VerifyBamID2's marker panel for step 33 (~10 MB),
-#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB)
+#      and gnomAD v3.1's mitochondrial sites for step 20 (~5 MB), and the
+#      STRchive repeat catalog of steps 09 and 9b (~0.5 MB)
 #   5. AnnotSV annotation data for step 5 (~5.3 GB download, ~20 GB unpacked),
 #      plus gnomAD-SV's common SVs (~1.7 GB download, kept as a few MB) and the
 #      MANE Select transcript list
@@ -78,7 +92,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--viral-data|--vep-cache|--annotsv-data)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -103,7 +117,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --viral-data | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -130,7 +144,20 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
+  echo "  --archaic     Build the archaic table of step 43: the Altai and Vindija Neanderthals and the Altai Denisovan"
+  echo "                (MPI-EVA, ~165 GB read one chromosome at a time) with 1000 Genomes frequencies, lifted to GRCh38"
+  echo "                (only the table is kept; hours on a home connection); then exit."
+  echo "  --ancient-panel"
+  echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
+  echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --exomiser-data"
+  echo "                Install Exomiser ${EXOMISER_DATA_VERSION:-}'s hg38 and phenotype data (step 48: about 37 GB to download, 58 GB"
+  echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
+  echo "  --chip-data   Install Ensembl ${ENSEMBL_GFF_RELEASE:-}'s GRCh38 gene annotation (step 49, the CHIP genes' MANE Select"
+  echo "                transcripts; ~110 MB) and exit."
+  echo "  --strchive-data"
+  echo "                Install only the STRchive ${STRCHIVE_VERSION:-} repeat catalog of steps 09 and 9b (~0.5 MB) and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -368,6 +395,108 @@ install_viral_data() {
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
 }
 
+# install_exomiser_data: Exomiser's hg38 and phenotype data of release
+# EXOMISER_DATA_VERSION (step 48) into reference/exomiser-<release>/, the
+# folder Exomiser reads as its data directory. Each archive is checked against
+# its sha256 in versions.env, unpacked with Python's zipfile (no unzip on the
+# host needed), and deleted. A folder is moved into place only once whole.
+install_exomiser_data() {
+  local dest="${GENOME_DIR}/reference/exomiser-${EXOMISER_DATA_VERSION}" part sha zip
+  if [ -d "${dest}/${EXOMISER_DATA_VERSION}_hg38" ] && [ -d "${dest}/${EXOMISER_DATA_VERSION}_phenotype" ]; then
+    echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} data (step 48) already present: ${dest}"
+    return 0
+  fi
+  mkdir -p "$dest"
+  while read -r part sha; do
+    [ -d "${dest}/${EXOMISER_DATA_VERSION}_${part}" ] && continue
+    zip="${dest}/${EXOMISER_DATA_VERSION}_${part}.zip"
+    # A zip kept by an unpack that failed is used again once its sha256 still matches.
+    if [ -f "$zip" ] && [ "$(_digest sha256 "$zip")" = "$sha" ]; then
+      echo "Using the checked ${zip##*/} kept from the last run."
+    elif echo "Downloading Exomiser's ${EXOMISER_DATA_VERSION}_${part}.zip (resumes when run again)..." \
+        && ! fetch "https://g-879a9f.f5dc97.75bc.dn.glob.us/data/${EXOMISER_DATA_VERSION}_${part}.zip" "$zip" sha256 "$sha"; then
+      echo "[WARN] Could not download Exomiser's ${part} data. Step 48 needs it; run: $0 --exomiser-data ${GENOME_DIR}"
+      return 1
+    fi
+    rm -rf "${dest}/unpack.part"
+    # shellcheck disable=SC2016  # $1 and $2 expand in the container's shell
+    if ! run_in --rw "$dest" --cpus 1 --memory 2g "$PYTHON_IMAGE" bash -euo pipefail -c \
+        'python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$1" "$2"' \
+        _ "$(cpath "$zip")" "$(cpath "${dest}/unpack.part")" \
+        || [ ! -d "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" ]; then
+      rm -rf "${dest}/unpack.part"
+      echo "[WARN] Could not unpack ${zip}; it is kept: run this command again."
+      return 1
+    fi
+    mv "${dest}/unpack.part/${EXOMISER_DATA_VERSION}_${part}" "${dest}/${EXOMISER_DATA_VERSION}_${part}"
+    rm -rf "${dest}/unpack.part" "$zip"
+  done <<EOF2
+hg38 ${EXOMISER_HG38_SHA256}
+phenotype ${EXOMISER_PHENOTYPE_SHA256}
+EOF2
+  echo "[OK] Exomiser ${EXOMISER_DATA_VERSION} hg38 and phenotype data (step 48): ${dest}"
+}
+
+# install_chip_data: Ensembl ENSEMBL_GFF_RELEASE's GRCh38 GFF3 (step 49 reads
+# the CHIP genes' MANE Select transcripts from it), checked against
+# ENSEMBL_GFF_SHA256. A file that is there with another sha256 is downloaded again.
+install_chip_data() {
+  local name="Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
+  local dest="${GENOME_DIR}/reference/ensembl/${name}"
+  if [ -s "$dest" ] && [ "$(_digest sha256 "$dest")" = "$ENSEMBL_GFF_SHA256" ]; then
+    echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49) already present."
+    return 0
+  fi
+  rm -f "$dest"
+  if ! fetch "https://ftp.ensembl.org/pub/release-${ENSEMBL_GFF_RELEASE}/gff3/homo_sapiens/${name}" "$dest" sha256 "$ENSEMBL_GFF_SHA256"; then
+    echo "[WARN] Could not download Ensembl ${ENSEMBL_GFF_RELEASE}'s gene annotation. Step 49 needs it; run setup.sh --chip-data again."
+    return 1
+  fi
+  echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49): ${dest}"
+}
+
+# install_strchive_data: STRchive's ExpansionHunter catalog and loci file
+# (STRCHIVE_VERSION), each checked against its sha256 in versions.env, joined
+# by bin/strchive_convert.py into reference/strchive-<version>/catalog.json,
+# the catalog steps 09 and 9b and the pipeline use by default, and
+# str_ranges.tsv beside it, the size ranges of each locus. A file that
+# fails its check is removed and nothing is converted; the steps then use
+# the catalogs inside their images. catalog.stamp names the inputs and the
+# converter, so a changed one converts again.
+install_strchive_data() {
+  local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" url name sha stamp
+  # Whole URLs, one per line, so scripts/ci/check-links.sh asks each one.
+  local eh_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json"
+  local loci_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-loci-${STRCHIVE_VERSION}.json"
+  local eh=${eh_url##*/} loci=${loci_url##*/}
+  stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
+  if [ -s "${dir}/catalog.json" ] && [ -s "${dir}/str_ranges.tsv" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
+    return 0
+  fi
+  # A stale catalog goes first, so a failed refetch leaves none for step 09.
+  rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv" "${dir}/catalog.stamp"
+  for url in "${eh_url}|${STRCHIVE_EH_SHA256}" "${loci_url}|${STRCHIVE_LOCI_SHA256}"; do
+    sha=${url#*|} url=${url%%|*} name=${url##*/}
+    [ -s "${dir}/${name}" ] && [ "$(_digest sha256 "${dir}/${name}")" = "$sha" ] && continue
+    rm -f "${dir}/${name}"
+    if ! fetch "$url" "${dir}/${name}" sha256 "$sha"; then
+      echo "[WARN] Could not install STRchive's ${name}. Steps 09 and 9b use the catalogs inside their images; re-run setup.sh to try again."
+      return 1
+    fi
+  done
+  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
+       --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
+       --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" \
+       || [ ! -s "${dir}/catalog.json" ] || [ ! -s "${dir}/str_ranges.tsv" ]; then
+    rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv"
+    echo "[WARN] Could not convert the STRchive ${STRCHIVE_VERSION} catalog (bin/strchive_convert.py). Steps 09 and 9b use the catalogs inside their images."
+    return 1
+  fi
+  printf '%s\n' "$stamp" > "${dir}/catalog.stamp"
+  echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b): ${dir}/catalog.json"
+}
+
 # install_consumer_sites: the site table of the raw-data export (step 40). The
 # 23andMe v5 site list (GRCh37 positions and reference bases) of
 # CONSUMER_SITES_COMMIT, checked against CONSUMER_SITES_SHA256, is joined by
@@ -445,6 +574,128 @@ consumer_sites_pin_check() {
     echo "[WARN] Site table of step 40 $2: $1 differs from the pinned build (content sha256 ${got}, pinned ${CONSUMER_SITES_TABLE_SHA256})."
     echo "       It was built by another version of bin/export_consumer.py build-sites. Step 40 uses it; to rebuild it, remove it and run this command again."
   fi
+}
+
+# --- Step 44: the ancient populations panel (opt-in) ---------------------------------
+# The Allen Ancient DNA Resource's 1240K files (AADR_VERSION, by Dataverse file
+# id, each checked against the md5 Dataverse publishes) become the panel of
+# step 44 in reference/ancient/aadr_<release>:
+#   panel.ind, poplist.txt, ancients.tsv  who builds the axes (the present-day
+#        West Eurasians of bin/ancient_report.py's MODERN_GROUPS) and who is
+#        projected (dated West Eurasians with 100,000 sites or more);
+#   sites_grch38.tsv  the autosomal sites on GRCh38 (UCSC's hg19ToHg38 chain,
+#        each kept only when one of its alleles is the GRCh38 base);
+#   moderns.geno/.snp/.ind  the present-day people in EIGENSTRAT text, which
+#        step 44 adds the person to;
+#   panel.evec, panel.eval  smartpca's axes with the ancient people projected
+#        (lsqproject), read by step 44's report;
+#   DONE, written last, once a second smartpca run on moderns.* alone gives
+#        the same axes, which is how step 44 runs.
+# smartpca holds the whole genotype file in memory (7.1 GB for the 23,089
+# people of v66.p1), so the install gives it a 12 GB container and needs that
+# much free RAM. The AADR downloads (7.3 GB) are deleted once the panel is
+# built. ANCIENT_SOURCE_DIR=<folder> takes the four files (.anno, .ind, .snp,
+# .geno) from that folder instead, unchecked (the tests' synthetic panel).
+HG19_TO_HG38_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+install_ancient_panel() {
+  local base="${GENOME_DIR}/reference/ancient" dir part raw chain e url md5 f src=${ANCIENT_SOURCE_DIR:-}
+  dir="${base}/aadr_${AADR_VERSION}" part="${base}/.aadr_${AADR_VERSION}.part" raw="${base}/raw_${AADR_VERSION}"
+  chain="${GENOME_DIR}/reference/liftover/hg19ToHg38.over.chain.gz"
+  if [ -s "${dir}/DONE" ]; then
+    echo "[OK] ancient populations panel AADR ${AADR_VERSION} (step 44) already present: ${dir}"
+    return 0
+  fi
+  for f in "$REF_FASTA" "${REF_FASTA}.fai"; do
+    [ -s "$f" ] || { echo "[WARN] ${f} is missing: install the reference first (${0} ${GENOME_DIR})."; return 1; }
+  done
+  echo "Installing the ancient populations panel, AADR ${AADR_VERSION} 1240K (step 44) in ${dir}"
+  ensure_image EIGENSOFT_IMAGE 44 || return 1
+  mkdir -p "$raw"
+  for e in anno ind snp geno; do
+    f="${raw}/aadr.${e}"
+    if [ -n "$src" ]; then
+      cp "$(compgen -G "${src}/*.${e}" | head -n 1)" "$f" 2>/dev/null \
+        || { echo "[WARN] ANCIENT_SOURCE_DIR=${src} has no .${e} file."; return 1; }
+      continue
+    fi
+    [ -s "$f" ] && continue
+    # One URL per file, spelled out so scripts/ci/check-links.sh asks each pinned id.
+    case "$e" in
+      anno) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_ANNO_ID}" md5=$AADR_ANNO_MD5 ;;
+      ind) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_IND_ID}" md5=$AADR_IND_MD5 ;;
+      snp) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_SNP_ID}" md5=$AADR_SNP_MD5 ;;
+      geno) url="https://dataverse.harvard.edu/api/access/datafile/${AADR_GENO_ID}" md5=$AADR_GENO_MD5 ;;
+    esac
+    [ "$e" != geno ] || echo "  Downloading the AADR genotypes (7.1 GB; an interrupted download resumes)..."
+    if ! fetch "$url" "$f" md5 "$md5"; then
+      echo "[WARN] Could not download the AADR ${AADR_VERSION} .${e} file; run: $0 --ancient-panel ${GENOME_DIR}"
+      return 1
+    fi
+  done
+  if [ -n "${ANCIENT_CHAIN:-}" ]; then
+    chain=$ANCIENT_CHAIN
+  elif [ ! -s "$chain" ] && ! fetch "$HG19_TO_HG38_CHAIN_URL" "$chain" sha256 "$HG19_TO_HG38_CHAIN_SHA256"; then
+    echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --ancient-panel ${GENOME_DIR}"
+    return 1
+  fi
+  rm -rf "$part"
+  mkdir -p "$part"
+  local P R C
+  P=$(cpath "$part") R=$(cpath "$raw")
+  C=$(cpath "$chain") || { echo "[WARN] the chain file ${chain} must be inside GENOME_DIR."; return 1; }
+  echo "  [1/5] Choosing the present-day reference people and the ancient people to project..."
+  echo "  [2/5] Placing the 1240K sites on GRCh38..."
+  # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+  if ! run_in --rw "$part" -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 4g "$PYTHON_IMAGE" \
+         bash -euo pipefail -c '
+           python3 /pgp-bin/ancient_report.py select --anno "$1/aadr.anno" --ind "$1/aadr.ind" \
+             --out-ind "$2/panel.ind" --poplist "$2/poplist.txt" --ancients "$2/ancients.tsv"
+           python3 /pgp-bin/ancient_report.py lift --snp "$1/aadr.snp" --chain "$3" --fasta "$4" --out "$2/sites_grch38.tsv"' \
+         _ "$R" "$P" "$C" "$REF_FASTA_C"; then
+    echo "[WARN] Could not choose the panel's people or place its sites (the lines above say why)."
+    return 1
+  fi
+  # The parameter files name container paths; EIGENSOFT reads one per run.
+  printf '%s\n' "genotypename: ${R}/aadr.geno" "snpname: ${R}/aadr.snp" "indivname: ${P}/panel.ind" \
+    "poplistname: ${P}/poplist.txt" "outputformat: EIGENSTRAT" "genooutfilename: ${P}/moderns.geno" \
+    "snpoutfilename: ${P}/moderns.snp" "indoutfilename: ${P}/moderns.ind" "hashcheck: NO" > "${part}/convertf.par"
+  ancient_smartpca_par "${R}/aadr.geno" "${R}/aadr.snp" "${P}/panel.ind" "${P}/poplist.txt" "${P}/panel" > "${part}/panel.par"
+  ancient_smartpca_par "${P}/moderns.geno" "${P}/moderns.snp" "${P}/moderns.ind" "${P}/poplist.txt" "${P}/check" > "${part}/check.par"
+  echo "  [3/5] The present-day people in EIGENSTRAT format (convertf)..."
+  echo "  [4/5] The axes, with the ancient people projected (smartpca, lsqproject)..."
+  echo "  [5/5] The same axes again from the present-day people alone, as step 44 runs..."
+  # shellcheck disable=SC2016  # $1 belongs to the inner shell
+  if ! run_in --rw "$part" --cpus "$THREADS" --memory 12g "$EIGENSOFT_IMAGE" sh -euc '
+         convertf -p "$1/convertf.par" > "$1/convertf.log"
+         smartpca -p "$1/panel.par" > "$1/panel.log"
+         smartpca -p "$1/check.par" > "$1/check.log"' _ "$P"; then
+    tail -n 20 "${part}"/*.log 2>/dev/null || true
+    echo "[WARN] EIGENSOFT failed on the AADR files (logs in ${part}); run: $0 --ancient-panel ${GENOME_DIR}"
+    return 1
+  fi
+  if ! run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$PYTHON_IMAGE" \
+         python3 /pgp-bin/ancient_report.py align --panel-evec "${P}/panel.evec" --run-evec "${P}/check.evec"; then
+    echo "[WARN] The two smartpca runs on the same present-day people gave different axes (logs in ${part})."
+    return 1
+  fi
+  rm -f "${part}/check.evec" "${part}/check.eval"
+  printf 'release\t%s\nsites_grch38\t%s\nbuilt\t%s\n' "$AADR_VERSION" "$(($(wc -l < "${part}/sites_grch38.tsv") - 1))" \
+    "$(date -u '+%Y-%m-%d')" > "${part}/DONE"
+  rm -rf "$dir"
+  mv "$part" "$dir"
+  rm -rf "$raw"
+  echo "[OK] ancient populations panel AADR ${AADR_VERSION} (step 44): ${dir} ($(wc -l < "${dir}/moderns.ind" | tr -d ' ') present-day people, $(($(wc -l < "${dir}/ancients.tsv") - 1)) ancient people)"
+}
+
+# ancient_smartpca_par GENO SNP IND POPLIST OUT: the smartpca parameters of
+# setup.sh and step 44 (scripts/44-ancient.sh writes the same lines): axes from
+# the present-day groups of POPLIST, everyone else projected by least squares
+# (lsqproject, for samples with missing sites), no outlier removal, so both
+# runs build their axes from the same people.
+ancient_smartpca_par() {
+  printf '%s\n' "genotypename: $1" "snpname: $2" "indivname: $3" "poplistname: $4" \
+    "evecoutname: $5.evec" "evaloutname: $5.eval" "lsqproject: YES" "numoutevec: 10" \
+    "numoutlieriter: 0" "hashcheck: NO" "numthreads: ${THREADS}"
 }
 
 # --- Step 25 and 26: pgsc_calc, its scores and its ancestry panel ---------------------
@@ -1101,6 +1352,159 @@ ensure_image() {
   keep_image "$img"
 }
 
+# --- Step 43: the archaic data (opt-in) ----------------------------------------------
+# The snpAD genotypes of three high-coverage archaic genomes (Prüfer et al.
+# 2017, the Vindija 33.19 Neanderthal, with the Altai Neanderthal and the
+# Altai Denisovan genotyped the same way), one GRCh37 file per chromosome and
+# genome on MPI-EVA's server; the 1000 Genomes phase 3 sites file (GRCh37),
+# whose allele frequencies stand for the modern population; UCSC's
+# hg19ToHg38 chain. Each archaic file is checked against the md5 its folder's
+# md5sums.txt lists, and each md5sums.txt against the sha256 in versions.env.
+ARCHAIC_URL=https://cdna.eva.mpg.de/neandertal/Vindija/VCF
+ARCHAIC_1KG_SITES_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
+ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+
+# install_archaic: the table of step 43 in reference/archaic/ARCHAIC_DATA_VERSION
+# (ARCHAIC_DIR: another folder inside GENOME_DIR), one chrN.tsv.gz per
+# autosome, GRCh38: position, REF, ALT, the ALT count of the Altai, Vindija
+# and Denisova genomes (9: not called there) and the 1000 Genomes ALT
+# frequency of all and of each continental group. The rows are the 1000
+# Genomes biallelic SNVs where an archaic genome was called, and the sites
+# where one of the three carries a non-reference allele: the sites IBDmix's
+# own generate_gt would keep from the same files. Per chromosome: the three
+# archaic files are downloaded (about 165 GB in all, 13 GB at most at a time)
+# and deleted once the chromosome is built, so an interrupted install
+# resumes at the chromosome it stopped in. The 1000 Genomes file (1.5 GB) is
+# deleted at the end. ARCHAIC_REGIONS (a GRCh37 BED, chromosomes named 1 to
+# 22) keeps only those regions: the e2e case builds a slice of chr22 with it.
+install_archaic() {
+  local dir=${ARCHAIC_DIR:-${GENOME_DIR}/reference/archaic/${ARCHAIC_DATA_VERSION}}
+  local regions=${ARCHAIC_REGIONS:-} rstamp=all chroms="" c g v k stamp wk n
+  local genomes="Altai:Altai Vindija33.19:Vindija Denisova:Denisova"
+  cpath "$dir" >/dev/null || return 1
+  echo "Installing the archaic data ${ARCHAIC_DATA_VERSION} (step 43) in ${dir}"
+  for v in BCFTOOLS_IMAGE PICARD_IMAGE PYTHON_IMAGE IBDMIX_IMAGE; do ensure_image "$v" 43 || return 1; done
+  [ -s "$REF_DICT" ] || { echo "[WARN] ${REF_DICT} is missing: run $0 ${GENOME_DIR} first (it writes the sequence dictionary)"; return 1; }
+  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work"
+  for v in "Altai|${ARCHAIC_ALTAI_MD5SUMS_SHA256}" "Vindija33.19|${ARCHAIC_VINDIJA_MD5SUMS_SHA256}" "Denisova|${ARCHAIC_DENISOVA_MD5SUMS_SHA256}"; do
+    IFS='|' read -r g k <<< "$v"
+    [ -s "${dir}/md5/${g}.txt" ] && [ "$(_digest sha256 "${dir}/md5/${g}.txt")" = "$k" ] && continue
+    if ! fetch "${ARCHAIC_URL}/${g}/md5sums.txt" "${dir}/md5/${g}.txt" sha256 "$k"; then
+      echo "[WARN] The md5 list of ${g} at ${ARCHAIC_URL}/${g}/ is not the one versions.env pins: read what changed before moving the pin."
+      return 1
+    fi
+  done
+  if ! { [ -s "${dir}/hg19ToHg38.over.chain.gz" ] && [ "$(_digest sha256 "${dir}/hg19ToHg38.over.chain.gz")" = "$ARCHAIC_CHAIN_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_CHAIN_URL" "${dir}/hg19ToHg38.over.chain.gz" sha256 "$ARCHAIC_CHAIN_SHA256"; then
+    echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
+  if [ -n "$regions" ]; then
+    [ -s "$regions" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} is not a file"; return 1; }
+    cp "$regions" "${dir}/regions.bed"
+    rstamp=$(_digest sha256 "${dir}/regions.bed")
+    chroms=$(awk '$1 ~ /^([1-9]|1[0-9]|2[0-2])$/ {print $1}' "${dir}/regions.bed" | sort -un | tr '\n' ' ')
+  else
+    rm -f "${dir}/regions.bed"
+    chroms=$(seq 1 22 | tr '\n' ' ')
+  fi
+  [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
+  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
+  local have=1
+  for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
+  if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
+    echo "[OK] archaic data ${ARCHAIC_DATA_VERSION} (step 43): ${dir}"
+    return 0
+  fi
+  rm -f "${dir}/DONE"
+  local sites="${dir}/download/1kg_sites.vcf.gz"
+  for c in $chroms; do
+    [ -s "${dir}/chr${c}.tsv.gz" ] && [ "$(cat "${dir}/chr${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
+    if [ ! -s "${sites}.tbi" ]; then
+      fetch "$ARCHAIC_1KG_SITES_URL" "$sites" md5 "$ARCHAIC_1KG_SITES_MD5" \
+        || { echo "[WARN] Could not download the 1000 Genomes sites file; run: $0 --archaic ${GENOME_DIR}"; return 1; }
+      run_in --rw "$dir" "$BCFTOOLS_IMAGE" bcftools index -t -f "$(cpath "$sites")" \
+        || { echo "[WARN] Could not index ${sites}"; return 1; }
+    fi
+    wk="${dir}/work/${c}"
+    rm -rf "$wk"; mkdir -p "$wk"
+    if [ -n "$regions" ]; then awk -v c="$c" '$1 == c' "${dir}/regions.bed" > "${wk}/regions.bed"; fi
+    echo "  chr${c}: the 1000 Genomes SNVs and their frequencies..."
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+          r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
+          bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
+            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"' \
+          _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
+      echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
+    fi
+    for v in $genomes; do
+      g=${v%%:*}
+      fetch "${ARCHAIC_URL}/${g}/chr${c}_mq25_mapab100.vcf.gz" "${dir}/download/${g}.chr${c}.vcf.gz" md5 "file://${dir}/md5/${g}.txt" \
+        || { echo "[WARN] Could not download chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
+    done
+    echo "  chr${c}: the archaic genotypes at those SNVs and at every archaic non-reference site..."
+    # The sites to keep: the 1000 Genomes SNVs, and every position where one of
+    # the three genomes has a non-reference call. Then each genome's called
+    # genotypes at them. The downloads have no index: -T (targets) streams
+    # through a file, where -R would need one. They have no ##contig lines
+    # either, so they are read as text only: htslib adds the contig while it
+    # parses, but a BCF stream (-Ou) carries the header written before that
+    # and the next reader stops on "Invalid CONTIG id".
+    # shellcheck disable=SC2016  # $1 to $4 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+          r=(); [ ! -s "$4" ] || r=(-T "$4")
+          for g in Altai Vindija33.19 Denisova; do
+            bcftools query "${r[@]}" -i "GT=\"alt\"" -f "%POS\n" "$1/$g.chr$2.vcf.gz"
+          done > "$3/nonref.pos"
+          { cut -f1 "$3/modern.tsv"; cat "$3/nonref.pos"; } | sort -nu | awk -v c="$2" "{print c \"\t\" \$1}" > "$3/keep.tsv"
+          for g in Altai Vindija33.19 Denisova; do
+            bcftools query -T "$3/keep.tsv" -i "GT!=\"mis\"" -f "%POS\t%REF\t%ALT\t[%GT]\n" "$1/$g.chr$2.vcf.gz" > "$3/$g.tsv"
+          done' _ "$(cpath "${dir}/download")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
+      echo "[WARN] Could not read the archaic genotypes of chr${c}"; return 1
+    fi
+    if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+          python3 /pgp-bin/archaic_report.py table --chrom "$c" --modern "$(cpath "${wk}/modern.tsv")" \
+            --archaic "Altai=$(cpath "${wk}/Altai.tsv")" --archaic "Vindija=$(cpath "${wk}/Vindija33.19.tsv")" \
+            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" --out "$(cpath "${wk}/hg19.vcf")"; then
+      echo "[WARN] Could not merge chr${c}"; return 1
+    fi
+    echo "  chr${c}: lifting to GRCh38 (Picard LiftoverVcf, UCSC's chain)..."
+    if ! run_in --rw "$dir" --cpus 2 --memory 10g "$PICARD_IMAGE" java -Xmx8g -jar /usr/picard/picard.jar LiftoverVcf \
+          I="$(cpath "${wk}/hg19.vcf")" O="$(cpath "${wk}/hg38.vcf")" CHAIN="$(cpath "${dir}/hg19ToHg38.over.chain.gz")" \
+          R="$REF_FASTA_C" REJECT="$(cpath "${wk}/rejected.vcf")" WARN_ON_MISSING_CONTIG=true \
+          TMP_DIR="$(cpath "$wk")" > "${wk}/liftover.log" 2>&1; then
+      tail -n 20 "${wk}/liftover.log"
+      echo "[WARN] Picard could not lift chr${c}"; return 1
+    fi
+    # The rows that land on the same chromosome, once per position.
+    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    if ! { printf 'chrom\tpos\tref\talt\tAltai\tVindija\tDenisova\tAF_ALL\tAF_AFR\tAF_AMR\tAF_EAS\tAF_EUR\tAF_SAS\n'
+           run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
+             'bcftools query -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
+             _ "$(cpath "${wk}/hg38.vcf")" "$c" | awk -F'\t' '!seen[$2]++'
+         } | gzip -c > "${dir}/chr${c}.tsv.gz.part"; then
+      echo "[WARN] Could not write chr${c} of the table"; return 1
+    fi
+    n=$(gzip -dc "${dir}/chr${c}.tsv.gz.part" | awk 'END {print NR - 1}')
+    if [ "$n" -lt 1 ]; then echo "[WARN] chr${c} of the table has no row"; rm -f "${dir}/chr${c}.tsv.gz.part"; return 1; fi
+    mv "${dir}/chr${c}.tsv.gz.part" "${dir}/chr${c}.tsv.gz"
+    echo "$stamp" > "${dir}/chr${c}.stamp"
+    echo "  chr${c}: ${n} sites ($(awk '!/^#/ {n++} END {print n+0}' "${wk}/rejected.vcf" 2>/dev/null || echo 0) not lifted)"
+    for v in $genomes; do rm -f "${dir}/download/${v%%:*}.chr${c}.vcf.gz"; done
+    rm -rf "$wk"
+  done
+  # A table of other chromosomes left by an earlier install with other regions goes.
+  for v in "${dir}"/chr*.tsv.gz; do
+    [ -e "$v" ] || continue
+    c=$(basename "$v" .tsv.gz); c=${c#chr}
+    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp"
+  done
+  rm -rf "${dir}/download" "${dir}/work"
+  echo "$stamp" > "${dir}/DONE"
+  echo "[OK] archaic data ${ARCHAIC_DATA_VERSION} (step 43): ${dir} ($(echo "$chroms" | wc -w | tr -d ' ') chromosomes)"
+}
+
 # install_vep_cache_opt_in: the VEP cache step 13 and the Nextflow VEP read,
 # installed before the first run; without it run-all.sh skips VEP, vcfanno,
 # the clinical filter and slivar. The tarball (~26 GB) and the unpacked tree
@@ -1127,9 +1531,14 @@ case "$OPT_IN" in
   kir-data) install_kir_data; exit $? ;;
   yleaf-data) install_yleaf_data && ensure_image YLEAF_IMAGE 37; exit $? ;;
   consumer-sites) install_consumer_sites; exit $? ;;
+  ancient-panel) install_ancient_panel; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
+  chip-data) install_chip_data; exit $? ;;
+  strchive-data) install_strchive_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
+  archaic) install_archaic; exit $? ;;
 esac
 
 # pull_images: pull every image setup pre-pulls (versions.env, minus the
@@ -1471,6 +1880,7 @@ else
 fi
 # A failed download does not stop setup here either.
 install_sample_qc_data || true
+install_strchive_data || true
 # Step 25: its scores, pgsc_calc and its plugin (warnings only).
 install_prs
 

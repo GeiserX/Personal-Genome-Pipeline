@@ -102,7 +102,7 @@ H="${SAMPLE}bt"
 sample "$H" "${T}/truth.vcf.gz" "${T}/win.bam"
 step "$H"
 cat "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null
-check_eq "a row per system" "$(awk 'END {print NR - 1}' "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null)" 17
+check_eq "a row per system" "$(awk 'END {print NR - 1}' "${G}/${H}/bloodtype/${H}_bloodtype.tsv" 2>/dev/null)" 22
 check_eq "ABO: GIAB has no c.261 insertion, both alleles O.01" "$(cell "$H" ABO phenotype)/$(cell "$H" ABO genotype)" "O/O.01/O.01"
 check_eq "RhD: two RHD copies by depth" "$(cell "$H" RhD phenotype)" "D+"
 check "RhD genotype RHD/RHD" has '^RHD/RHD \(RHD copies by read depth (1\.[5-9]|2\.[0-4])' "$(cell "$H" RhD genotype)"
@@ -110,9 +110,9 @@ check_eq "Duffy: GIAB's c.125G>A 0/1" "$(cell "$H" Duffy phenotype)" "Fy(a+b+)"
 check "Kell: no c.578C>T in GIAB's calls" has '^K-k\+ ' "$(cell "$H" Kell phenotype)"
 check_eq "Kidd: GIAB's c.838G>A 1/1" "$(cell "$H" Kidd phenotype)" "Jk(a-b+)"
 check_eq "ABO confidence (every site has reads)" "$(cell "$H" ABO confidence)" "high"
-check_eq "the evidence file has a row per site and per RhD region" \
+check_eq "the evidence file has a row per site and per RhD region (the RHD row of bin/cn_loci.tsv)" \
   "$(awk 'END {print NR - 1}' "${G}/${H}/bloodtype/${H}_bloodtype_evidence.tsv" 2>/dev/null)" \
-  "$(grep -v '^#' "$MARKERS" | awk 'END {print NR - 1}')"
+  "$(( $(grep -v '^#' "$MARKERS" | awk 'END {print NR - 1}') + $(python3 "${REPO}/bin/copy_number.py" bed --locus RHD | wc -l) ))"
 
 # --- planted -------------------------------------------------------------------------
 P="${SAMPLE}btp"

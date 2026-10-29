@@ -60,6 +60,11 @@ nextflow run main.nf \
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
+#    --tools '...,archaic'                     + --archaic_data (setup.sh --archaic), --archaic_pop, --hla_genes for the
+#                                                genes of each segment (docs/43-archaic.md)
+#    --hpo HP:0001250,HP:0001263               + --exomiser_data (setup.sh --exomiser-data): Exomiser ranks the
+#                                                variants against these symptoms; --exomiser_proband names
+#                                                the sample when there are several (docs/48-exomiser.md)
 #    mito_variants (a default tool) takes --mito_clinvar <clinvar/clinvar_chr.vcf.gz, its .tbi beside it>
 #                                                and --gnomad_mito <gnomad_mito/gnomad.genomes.v3.1.sites.chrM.vcf.bgz>
 #                                                (setup.sh installs both): ClinVar and gnomAD for each chrM call,
@@ -203,6 +208,7 @@ results/
 │   │                       #   from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
+│   ├── archaic/            # Neanderthal and Denisovan share and segments (IBDmix, opt-in: archaic)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
 │   ├── telomere/           # Telomere length estimation
@@ -212,7 +218,7 @@ results/
 │   ├── kir/                # KIR genotypes and the IPD-KIR release (--kir)
 │   ├── paralogs/           # SMN1/SMN2 copy number (Parascopy, opt-in) and HBA1/HBA2 from depth; Paraphase's copy number and variant
 │   │                       #   tables and its own folder (opt-in: paraphase, PacBio HiFi BAMs only)
-│   ├── traits/             # <sample>_traits.tsv and <sample>_traits_genotypes.tsv: the traits panel (traits)
+│   ├── traits/             # <sample>_traits.tsv, <sample>_genotype_rules.tsv and <sample>_traits_genotypes.tsv: the traits panel (traits)
 │   ├── consumer_export/    # 23andMe-layout and AncestryDNA-layout raw-data zips and the summary table
 │   │                       #   (opt-in: consumer_export)
 │   ├── couple/             # <sample>_couple_carrier.tsv: the couple carrier screen for this partner (--pedigree)
@@ -299,7 +305,8 @@ The pipeline and the scripts run the same commands at the same tool releases, so
 | prs | each score's sum, matched variant count and input (gVCF or VCF) |
 | sv_merged | each SV consensus record (position, end, type, length, support and each caller's GT); on the Nextflow hardening run, against steps 22 and 37 on the same calls and BAM |
 | y_haplogroup | Yleaf's prediction table; on the same hardening run |
-| traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF |
+| traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF. `<sample>_genotype_rules.tsv` with WhatsHap's phase from a BAM, byte for byte, in case `genotype-rules-1-phase` |
+| archaic | `<sample>_archaic.tsv`, `<sample>_archaic_segments.tsv` and `<sample>_archaic.txt`, byte for byte; in case `archaic-ancestry-1`, which runs step 43 and `--tools archaic` on the same VCF and table |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 
@@ -312,7 +319,7 @@ Where a module and its script differ on purpose:
 | DeepVariant (03) | `MODEL_TYPE` picks WGS, WES, PACBIO or ONT_R104 | the WGS model only: the pipeline takes paired short reads |
 | HLA typing (08) | keeps the T1K index under `t1k_idx/`, named after the T1K version, the IPD-IMGT/HLA release and the GENCODE release | `T1K_BUILD` builds it once per run for every sample; the task hash covers the same three, and `-resume` reuses it |
 | PRS (25) | scores the list in `assets/pgs_scores.tsv`, downloading a missing file | scores every file `--pgs_scoring` holds, labelled from `assets/pgs_scores.tsv` (an id not in it is labelled with its file's `trait_reported`); `PRS` runs pgsc_calc on the host, see [No network inside the containers](#no-network-inside-the-containers) |
-| ExpansionHunter (09) | uses the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` |
+| ExpansionHunter (09) | uses STRchive's catalog when `setup.sh` built it, else the GRCh38 catalog inside the image, or `EH_CATALOG` | needs `--expansion_catalog` (`run-all.sh` passes the same one) |
 | Mito variants (20) | extracts the chrM reads with `samtools view`; annotates the calls with `clinvar/clinvar_chr.vcf.gz` and the gnomAD chrM sites under `gnomad_mito/` when they are installed | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`). `MITO_VARIANTS_ANNOTATE` runs the same annotation (`bin/collect_summary.py mito-annotate`) with the files of `--mito_clinvar` and `--gnomad_mito`; without them the table names each file as not given and leaves its columns `.`. `run-all.sh` passes `--mito_clinvar` when `clinvar/clinvar_chr.vcf.gz` and its `.tbi` are installed, and `--gnomad_mito` when the gnomAD chrM sites are |
 | AnnotSV (05) | annotates step 15's duphold-filtered calls; without them, or when Manta's calls are newer, Manta's calls, and says so | `ANNOTSV` always reads `DUPHOLD_FILTER`'s output: `annotsv` in `--tools` needs `duphold` and `manta` |
 | Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |

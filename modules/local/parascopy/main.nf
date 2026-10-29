@@ -26,9 +26,9 @@
 
     HBA1 and HBA2 have no Parascopy model: samtools bedcov (in the same
     image) sums the depth over both gene bodies and two single-copy flanks,
-    over all reads and over reads of MAPQ 1 or more, and
-    bin/hba_copy_number.py turns it into a count of alpha-globin genes (not
-    assessed when no read over the genes has MAPQ 0: the aligner then left
+    over all reads and over reads of MAPQ 1 or more, and bin/copy_number.py
+    (the HBA row of bin/cn_loci.tsv) turns it into a count of alpha-globin
+    genes (not assessed when no read over the genes has MAPQ 0: the aligner then left
     out the reads that fit both genes).
     A failure there writes an HBA table that says not assessed (so a
     published table from an earlier run is replaced) and does not fail the
@@ -122,11 +122,11 @@ process PARASCOPY {
     # end of the paralog loci
 
     # HBA1/HBA2 from depth (as scripts/35-paralogs.sh): all MAPQ and MAPQ 1 or more, then the verdict
-    if hba_copy_number.py bed > hba_regions.bed \\
+    if copy_number.py bed --locus HBA > hba_regions.bed \\
         && samtools bedcov hba_regions.bed ${bam} > hba_bedcov.tsv \\
         && samtools bedcov -Q 1 hba_regions.bed ${bam} > hba_bedcov_q1.tsv \\
-        && hba_copy_number.py check --bedcov hba_bedcov.tsv --bedcov-mapq1 hba_bedcov_q1.tsv \\
-            --out ${meta.id}_hba_copy_number.tsv.tmp; then
+        && copy_number.py call --locus HBA --bedcov hba_bedcov.tsv --bedcov-mapq1 hba_bedcov_q1.tsv \\
+            --table ${meta.id}_hba_copy_number.tsv.tmp; then
         mv ${meta.id}_hba_copy_number.tsv.tmp ${meta.id}_hba_copy_number.tsv
     else
         rm -f ${meta.id}_hba_copy_number.tsv.tmp

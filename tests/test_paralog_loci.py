@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""assets/paralog_loci.tsv against assets/parascopy_models_v1.7.txt.
+"""assets/paralog_loci.tsv against the models of assets/parascopy_models_v1.7.txt.
 
 Step 35 runs `parascopy cn-using` once per row of the catalog, with the model
-file the row names. The model list is list.txt of Parascopy's pinned data
-(models_GRCh38_1KGP_v1.7.tar.gz, Zenodo record 15019940, archive sha256
-2e9be08b69936f13a49d52c7764f2414beac27a99b95e0c48b2e2ccafbb8c846; the five
-populations' lists are the same file).
-  1. the model list: 167 names, each once, each <name>.gz, and the sha256 of
-     the file as committed;
+file the row names. The models are the genes of
+assets/parascopy_models_v1.7.txt (every region of each model of Parascopy's
+pinned data, models_GRCh38_1KGP_v1.7.tar.gz, Zenodo record 15019940), each as
+<gene>.gz, the file name list.txt gives it (the e2e case paralog-catalog-1-gba
+compares the two names lists for the five populations).
+  1. the model list: 167 genes, each with exactly one main region, each name
+     <gene>.gz;
   2. the catalog: its columns in order, and every row valid: a model on the
      list, a GRCh38 region, pscn_reliable yes or no, a known tag, a table
      name used once, a source; the SMN1 row writes the table `smn` the reports
@@ -24,7 +25,6 @@ populations' lists are the same file).
 
 Run: python3 tests/test_paralog_loci.py
 """
-import hashlib
 import os
 import re
 import subprocess
@@ -34,7 +34,6 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = os.path.join(REPO, "assets", "parascopy_models_v1.7.txt")
 CATALOG = os.path.join(REPO, "assets", "paralog_loci.tsv")
-MODELS_SHA256 = "4ef9d7a4f3c9749281348509de8f6cf695b896073836944f5305a665e0a179a2"
 COLUMNS = ["model", "genes", "region", "reading", "pscn_reliable", "tag", "cross_check", "table", "source"]
 TAGS = {"carrier", "SF", "PGx", "trait"}
 CONTIGS = {f"chr{c}" for c in list(range(1, 23)) + ["X", "Y"]}
@@ -50,8 +49,10 @@ def check(desc, ok, detail=""):
 
 
 def read_models(path):
+    """One <gene>.gz per main line of the region file."""
     with open(path) as f:
-        return [line.rstrip("\n") for line in f if line.strip()]
+        rows = [line.rstrip("\n").split("\t") for line in f if line.strip() and not line.startswith("#")]
+    return [r[0] + ".gz" for r in rows if len(r) == 3 and r[2] == "main"]
 
 
 def problems(lines, models):
@@ -95,11 +96,11 @@ def problems(lines, models):
 def main():
     # 1. the model list
     models = read_models(MODELS)
-    with open(MODELS, "rb") as f:
-        sha = hashlib.sha256(f.read()).hexdigest()
-    check("the model list is the committed list.txt (sha256)", sha == MODELS_SHA256, sha)
+    with open(MODELS) as f:
+        genes = {line.split("\t")[0] for line in f if line.strip() and not line.startswith("#")}
     check("the model list has 167 names", len(models) == 167, len(models))
-    check("each model is named once", len(set(models)) == len(models))
+    check("each model has exactly one main region", len(set(models)) == len(models) == len(genes),
+          (len(set(models)), len(models), len(genes)))
     check("each name is <model>.gz", all(re.fullmatch(r"[A-Za-z0-9._-]+\.gz", m) for m in models),
           [m for m in models if not m.endswith(".gz")])
     check("SMN1.gz and GBA.gz are on the list", {"SMN1.gz", "GBA.gz"} <= set(models))
