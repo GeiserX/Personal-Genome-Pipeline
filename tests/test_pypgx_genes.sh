@@ -202,8 +202,10 @@ if grep -qE '"(CYP[0-9A-Z]+ ){2,}' "$NF"; then bad "the PYPGX module spells a ge
 
 # --- 5. the reports ------------------------------------------------------------
 # A summary with every gene of the table: GSTT1 not callable, CYP2E1 failed in
-# pypgx, every other bam gene with a copy-number call. Every bam gene must have
-# a row in the PGx copy number block (its call, or "not called: pypgx failed"),
+# pypgx, CYP2D6 withheld by the depth check, every other bam gene with a
+# copy-number call. Every bam gene must have a row in the PGx copy number block
+# (its call, "not called: pypgx failed" or "not called: the CYP2D6 depth check
+# failed"),
 # and GSTT1 its not-assessable line. Two planted summaries must be reported: one
 # where GSTT1 reads as called (no not-assessable line), and one where a bam
 # gene's row says VCF (it drops out of the block).
@@ -226,6 +228,10 @@ def summary(gstt1_status="not callable on this reference", vcf_source_for=None):
             lines.append([g, "N/A", "N/A", "N/A", src, gstt1_status] + ["N/A"] * 5)
         elif g == "CYP2E1":
             lines.append([g, "FAILED", "N/A", "N/A", src, "failed"] + ["N/A"] * 5)
+        elif g == "CYP2D6":
+            # what step 32 writes when the depth check rejects CYP2D6
+            lines.append([g, "Indeterminate", "Indeterminate (CYP2D6 depth check)", "N/A (CYP2D6 depth check)",
+                          src, "no call (CYP2D6 depth check)"] + ["N/A"] * 5)
         else:
             lines.append([g, "*1/*1", "Normal Metabolizer", f"CNV-{g}" if mode == "bam" else "N/A", src, "called"]
                          + ["none", "N/A", "N/A", "N/A", "N/A"])
@@ -247,7 +253,8 @@ def problems(lines):
     bad = [f"{g}: {n} rows in the copy-number block" for g in sorted({g for g, _ in block})
            if (n := sum(x == g for x, _ in block)) > 1]
     for g in bam:
-        want = ("not called: pypgx failed" if g == "CYP2E1" else f"CNV-{g}") + " (pypgx, read depth)"
+        want = {"CYP2E1": "not called: pypgx failed",
+                "CYP2D6": "not called: the CYP2D6 depth check failed"}.get(g, f"CNV-{g}") + " (pypgx, read depth)"
         if g == "GSTT1":
             if "Not assessable on this reference: GSTT1" not in text:
                 bad.append("GSTT1 has no not-assessable line")
@@ -260,8 +267,8 @@ bad = problems(summary())
 for b in bad:
     print("FAIL:", b)
 if not bad:
-    print(f"ok: the reports show the copy-number call of {len(bam) - 2} bam genes, CYP2E1's failed call "
-          "and GSTT1's not-assessable line")
+    print(f"ok: the reports show the copy-number call of {len(bam) - 3} bam genes, CYP2E1's failed call, "
+          "CYP2D6's depth-check no call and GSTT1's not-assessable line")
 for name, planted in (("GSTT1 read as called", summary(gstt1_status="no call")),
                       ("SLC22A2's row says VCF", summary(vcf_source_for="SLC22A2"))):
     got = problems(planted)
