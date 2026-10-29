@@ -14,7 +14,8 @@
 # HBA1 and HBA2 (alpha-thalassaemia deletions) have no Parascopy model, so the
 # step counts them from read depth: the depth over both gene bodies against
 # single-copy sequence on each side of the cluster gives the number of
-# alpha-globin genes (bin/hba_copy_number.py). A failure there writes an HBA
+# alpha-globin genes (bin/copy_number.py on the HBA row of bin/cn_loci.tsv,
+# laid out by bin/hba_copy_number.py). A failure there writes an HBA
 # table that says not assessed, and does not stop the step.
 #
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
@@ -96,22 +97,22 @@ OUT="${OUTDIR}/${SAMPLE}_smn_copy_number.tsv"
 mv "${OUT}.tmp" "$OUT"
 
 # HBA1/HBA2 from depth (as the PARASCOPY module): samtools bedcov over the
-# regions bin/hba_copy_number.py prints, all MAPQ and MAPQ 1 or more (a BAM
-# with no MAPQ 0 read over the genes left out the reads that fit both), then
-# its verdict.
+# regions of the HBA row of bin/cn_loci.tsv, all MAPQ and MAPQ 1 or more (a
+# BAM with no MAPQ 0 read over the genes left out the reads that fit both),
+# then the engine's verdict (bin/copy_number.py).
 HBA_OUT="${OUTDIR}/${SAMPLE}_hba_copy_number.tsv"
 HBA_WORK="${OUTDIR}/hba_depth.part"
 rm -rf "$HBA_OUT" "$HBA_WORK"
 mkdir -p "$HBA_WORK"
 if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
-     python3 /pgp-bin/hba_copy_number.py bed > "${HBA_WORK}/regions.bed" \
+     python3 /pgp-bin/copy_number.py bed --locus HBA > "${HBA_WORK}/regions.bed" \
    && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
      samtools bedcov "$(cpath "${HBA_WORK}/regions.bed")" "$(cpath "$BAM")" > "${HBA_WORK}/bedcov.tsv" \
    && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
      samtools bedcov -Q 1 "$(cpath "${HBA_WORK}/regions.bed")" "$(cpath "$BAM")" > "${HBA_WORK}/bedcov_q1.tsv" \
    && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
-     python3 /pgp-bin/hba_copy_number.py check --bedcov "$(cpath "${HBA_WORK}/bedcov.tsv")" \
-       --bedcov-mapq1 "$(cpath "${HBA_WORK}/bedcov_q1.tsv")" --out "$(cpath "${HBA_OUT}.tmp")"; then
+     python3 /pgp-bin/copy_number.py call --locus HBA --bedcov "$(cpath "${HBA_WORK}/bedcov.tsv")" \
+       --bedcov-mapq1 "$(cpath "${HBA_WORK}/bedcov_q1.tsv")" --table "$(cpath "${HBA_OUT}.tmp")"; then
   mv "${HBA_OUT}.tmp" "$HBA_OUT"
 else
   rm -f "${HBA_OUT}.tmp"

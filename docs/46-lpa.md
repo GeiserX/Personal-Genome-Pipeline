@@ -20,7 +20,7 @@ A VCF cannot show the repeat count: the six KIV-2 units in GRCh38 are near-ident
 ## Tool
 
 - samtools `bedcov -j` for the read depth over the exons
-- `bin/lpa_kiv2.py` (standard library Python) for the count, its interval and the reading
+- `bin/copy_number.py` (standard library Python), the copy-number engine, on the LPA_KIV2 row of `bin/cn_loci.tsv` for the count, its interval and the reading; `bin/lpa_kiv2.py` lays out the table. See [Copy number from depth](cn-loci.md)
 
 ## Docker Image
 
@@ -45,7 +45,7 @@ With `run-all.sh`: `TOOLS=...,lpa`. It is opt-in and needs no data, so a run lis
 
 The method is the one published short-read estimators use: depth over the KIV-2 repeat against depth over single-copy sequence (Zekavat et al., Nat Commun 2018, PMID 29973585; Behera et al., BMC Med Genomics 2024, PMID 39449055). Behera et al. give the KIV-2 region in GRCh38 as chr6:160,611,568-160,646,868, six units, and its reads reach into the last exon of KIV-1 and the first exon of KIV-3, which resemble KIV-2.
 
-The regions are exons of the MANE Select transcript ENST00000316300.10 (Ensembl, checked 2026-10-25), numbered from its first exon. `bin/lpa_kiv2.py bed` prints them:
+The regions are exons of the MANE Select transcript ENST00000316300.10 (Ensembl, checked 2026-10-25), numbered from its first exon. They are the LPA_KIV2 row of `bin/cn_loci.tsv`, and `bin/copy_number.py bed --locus LPA_KIV2` prints them:
 
 | Group | Exons | What they are |
 |---|---|---|

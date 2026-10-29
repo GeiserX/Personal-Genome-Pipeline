@@ -14,8 +14,8 @@
 #   GRCh38 through Ensembl VEP on the gene's transcript, which also checked the REF base
 #   (2026-10-25). dbSNP places some FCGR3B ids on FCGR3A, its near copy: the positions here
 #   are FCGR3B's (exon 3, minus strand, so ref and alt are the complement of the c. bases).
-# kind region: read depth for the RhD copy number: the RHD gene, its ten exons (Ensembl
-#   ENST00000328664) and two flanks outside the common RHD deletion (RHD*01N.01).
+# The RhD depth regions (the RHD gene, its ten exons and two flanks outside the common RHD
+#   deletion) are the RHD row of bin/cn_loci.tsv; step 41 adds them to this table's sites for bedcov.
 # caveat: why a short-read call at that site is less certain (confidence low in the table).
 # meaning: for the platelet and neutrophil antigens, what lacking one of them means, written
 #   into the note of the system's row when the genome predicts the person lacks it. It is
@@ -59,16 +59,3 @@ chr1	161629780	161629781	site	HNA-1	FCGR3B_316	T	C	1b	1a	FCGR3B c.316G>A	rs22908
 chr19	10631493	10631494	site	HNA-3	HNA3_461	A	G	3b	3a	SLC44A2 c.461G>A	rs2288904		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
 chr16	31265489	31265490	site	HNA-4	HNA4_230	G	A	4a	4b	ITGAM c.230G>A	rs1143679		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
 chr16	30506719	30506720	site	HNA-5	HNA5_2372	G	C	5a	5b	ITGAL c.2372G>C	rs2230433		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	25199999	25260000	region	RhD	RHD_FLANK_UP					flank 12 kb upstream of RHD, outside the RHD deletion		
-chr1	25334999	25360000	region	RhD	RHD_FLANK_DOWN					flank downstream of RHD (TMEM50A), outside the RHD deletion		
-chr1	25272392	25330445	region	RhD	RHD_GENE					RHD, first to last base (ENST00000328664)		
-chr1	25272508	25272695	region	RhD	RHD_EX1					RHD exon 1		
-chr1	25284572	25284759	region	RhD	RHD_EX2					RHD exon 2		
-chr1	25290640	25290791	region	RhD	RHD_EX3					RHD exon 3		
-chr1	25300945	25301093	region	RhD	RHD_EX4					RHD exon 4		
-chr1	25301519	25301686	region	RhD	RHD_EX5					RHD exon 5		
-chr1	25303321	25303459	region	RhD	RHD_EX6					RHD exon 6		
-chr1	25306595	25306729	region	RhD	RHD_EX7					RHD exon 7		
-chr1	25316999	25317079	region	RhD	RHD_EX8					RHD exon 8		
-chr1	25321888	25321962	region	RhD	RHD_EX9					RHD exon 9		
-chr1	25328897	25330445	region	RhD	RHD_EX10					RHD exon 10		
