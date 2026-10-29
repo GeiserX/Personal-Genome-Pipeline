@@ -1312,6 +1312,20 @@ def roh_upd_karyotype(work, schema):
     u0 = collect_summary.sec_roh(d, "S")[1].get("upd_flag") or {}
     check("ROH UPD red control: a chr15 run outside 15q11-q13 is flagged but joins no row",
           u0.get("chrom") == "chr15" and u0.get("imprinted") == [], u0)
+    _, txt0, html0 = render(d)
+    check("ROH UPD: a flagged chr15 run outside 15q11-q13 says no listed region overlaps it, in both reports",
+          all("No listed imprinting-disorder region overlaps the flagged runs on chr15" in t
+              and "No imprinting disorder is listed" not in t for t in (txt0, html0)), txt0)
+    check("ROH UPD: with a flag there is no band, so the band sentence of the F_ROH note is left out",
+          all("F_ROH is the share of the autosomes" in t and "The band is the row" not in t for t in (txt0, html0)),
+          txt0)
+    # Just over half: 25.1 of 50 Mb is 50.2%, which a whole percent rounds to 50%.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t35100000\t25100000\t900\t50\n"
+                              "RG\tS\tchr3\t10000001\t34900000\t24900000\t900\t50\n")
+    _, txt5, html5 = render(d)
+    check("ROH UPD: a share just over half reads more than 50%, never 50%, in both reports",
+          all("chr2 carries 25.1 MB, more than 50% of the length" in t and " 50% of the length" not in t
+              for t in (txt5, html5)), txt5)
     # chr7 joins as a whole chromosome.
     put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr7\t70000001\t110000000\t40000000\t900\t50\n")
     u7 = collect_summary.sec_roh(d, "S")[1].get("upd_flag") or {}
@@ -1332,6 +1346,7 @@ def roh_upd_karyotype(work, schema):
     check("ROH spread: both reports print F_ROH and the band, and no flag",
           all(f"F_ROH: {12 * each / denom:.4f}" in t and "first cousins once removed" in t
               and "may come from one parent" not in t for t in (txt, html)), txt)
+    check("ROH spread: with a band the F_ROH note says what the band is", all("The band is the row" in t for t in (txt, html)), txt)
     # Short runs only: F_ROH 0, no sign of related parents.
     put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t13000000\t3000000\t900\t50\n")
     r = collect_summary.sec_roh(d, "S")[1]
@@ -1363,7 +1378,7 @@ def roh_upd_karyotype(work, schema):
         check(f"karyotype: both reports {'name ' + want if want else 'say nothing'} for chrX {x}, chrY {y}",
               (len(shown) == 2 and all(want in t for t in shown)) if want else not shown, txt[:200])
     # somalier's ratios from 10 chrX sites or fewer name nothing: its own sex call needs more.
-    for n in (10, ""):
+    for n in (10, "", "inf"):
         put(f"{k}/qc/S_sample_qc.tsv", qc.format(n=n, x="1.02", y="0.49"))
         got = collect_summary.sec_sample_qc(k, "S")[1].get("karyotype")
         check(f"karyotype: somalier's chrX 2.04, chrY 0.98 from x_sites '{n}' names nothing", got is None, got)
