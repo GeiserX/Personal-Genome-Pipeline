@@ -64,6 +64,19 @@ The most common "pathogenic" finding in any genome is **heterozygous carrier sta
 - **Note — MUTYH**: Biallelic (homozygous or compound het) MUTYH carriers have a well-established high colorectal cancer risk. For **monoallelic** (single-copy) carriers, the evidence is more nuanced: some meta-analyses show a modest risk increase, but a counseling framework for moderate-penetrance CRC genes (Genetics in Medicine) notes that risk estimates for monoallelic MUTYH are conflicting and that screening recommendations (e.g., earlier colonoscopy) were historically tied to carriers with a CRC family history. Discuss with a genetic counselor, especially if you have a family history of CRC
 - Examples: GJB2 (hearing loss), CFTR (cystic fibrosis), HFE (hemochromatosis)
 
+**Your own carrier list (step 24 report).** The ClinVar card of both reports is followed by a carrier list for this one sample, with no partner needed: every step 6 ClinVar hit in the 3,292 recessive and X-linked genes of `assets/carrier_genes.tsv` (the list of the [couple screen](39-couple.md#the-carrier-list)). An allele that list marks as a hypomorph (for example BTD p.Asp444His or the GALT Duarte variants) or a pseudodeficiency allele (HEXA c.739C>T and c.745C>T, which lower the enzyme test result but cause no Tay-Sachs disease) is listed as set aside, never as a carrier finding on its own.
+
+**Secondary findings follow each gene's ACMG rule.** The secondary-findings card (step 23's section of the report) applies the reporting rule of each of the 84 ACMG SF v3.3 genes (Lee et al., Genet Med 2025;27(8):101454, Table 1), written gene by gene in `assets/acmg_sf.tsv`:
+
+- a dominant gene (BRCA1, LDLR, MYH7 and most others): one pathogenic or likely pathogenic variant is reported;
+- a recessive gene (MUTYH, ATP7B, BTD, CYP27A1, GAA, RPE65, CASQ2, TRDN): two variants are needed, a homozygote or two different ones even when their phase is unknown. One heterozygous MUTYH variant is listed apart as not reported, with the reason;
+- HFE: only homozygous p.Cys282Tyr. A heterozygous p.Cys282Tyr or a homozygous p.His63Asp is not reported;
+- X-linked: GLA (Fabry disease) and OTC are reported in a hemizygous male and a heterozygous female alike. ABCD1 (X-linked adrenoleukodystrophy) is reported hemizygous, homozygous or with two heterozygous variants, never for one heterozygous variant;
+- BTD with p.Asp444His: reported as partial, not profound, biotinidase deficiency;
+- AnnotSV class 4 and 5 structural variants (step 5) in BRCA1, BRCA2, MLH1, MSH2 and LDLR reach the same card, and so does a deletion of the 3' end of EPCAM (exons 8 and 9), which silences MSH2 (Kovacs et al., Hum Mutat 2009;30(2):197-203).
+
+A deletion in trans with a small variant in a recessive gene is not counted as two variants yet. The TTN rule (truncating variants only) and the LMNA rule (missense only with cardiac evidence) are printed beside the finding, not applied. It is still a list to review with a clinician.
+
 ---
 
 ## Start Here: The Three Most Important Outputs
