@@ -57,7 +57,7 @@ With Nextflow: `--tools ...,parascopy --parascopy_data ${GENOME_DIR}/reference/p
 1. `parascopy depth`: background read depth of the sample, over Parascopy's GRCh38 windows (or `PARASCOPY_DEPTH_BED`).
 2. `parascopy cn-using models_GRCh38_1KGP/<population>/SMN1.gz`: the copy number of the SMN1/SMN2 locus with those model parameters.
 3. Writes one row per region of the copy-number profile to `${SAMPLE}_smn_copy_number.tsv`.
-4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, once over every read and once over reads of mapping quality 1 or more (`-Q 1`), and `bin/hba_copy_number.py check` writes `${SAMPLE}_hba_copy_number.tsv`. A failure here prints a warning and writes a table that says not assessed; the SMN result stands.
+4. `samtools bedcov` (in the Parascopy image) sums the depth over HBA2, HBA1 and two flanks, once over every read and once over reads of mapping quality 1 or more (`-Q 1`), and `bin/copy_number.py call --locus HBA` (the copy-number engine, on the HBA row of `bin/cn_loci.tsv`; see [Copy number from depth](cn-loci.md)) writes `${SAMPLE}_hba_copy_number.tsv`, laid out by `bin/hba_copy_number.py`. A failure here prints a warning and writes a table that says not assessed; the SMN result stands.
 
 ## Output
 
@@ -91,7 +91,7 @@ On the CI fixture the step takes 8 seconds: one thread, the background depth ove
 
 ## HBA1 and HBA2 from Depth
 
-HBA1 and HBA2 are near-identical, so a short read from one may be placed on the other. But an aligner that reports every read puts each read from either on one of the two, with mapping quality 0 where it fits both equally. So the depth over both gene bodies together, against single-copy sequence on each side of the cluster, counts the genes: `bin/hba_copy_number.py` computes
+HBA1 and HBA2 are near-identical, so a short read from one may be placed on the other. But an aligner that reports every read puts each read from either on one of the two, with mapping quality 0 where it fits both equally. So the depth over both gene bodies together, against single-copy sequence on each side of the cluster, counts the genes: the HBA row of `bin/cn_loci.tsv`, run by `bin/copy_number.py` ([the locus catalog](cn-loci.md)), computes
 
     estimate = 2 x (depth over HBA2 + depth over HBA1) / mean flank depth
 
@@ -118,7 +118,7 @@ Limits:
 
 ## How It Is Tested
 
-- `tests/test_hba_copy_number.py` gives `bin/hba_copy_number.py` made-up depth tables: four genes at even depth, three with HBA2 at half depth, two, a triplication, an estimate between two whole numbers, low flanks, flanks that disagree, and no read of mapping quality 0 over the genes (the depths of the novoalign BAM, and a clean three), which must be not assessed.
+- `tests/test_copy_number.py` checks the HBA row and that these depth tables give, through the engine, the same tables as the code before it. `tests/test_hba_copy_number.py` gives `bin/hba_copy_number.py` made-up depth tables: four genes at even depth, three with HBA2 at half depth, two, a triplication, an estimate between two whole numbers, low flanks, flanks that disagree, and no read of mapping quality 0 over the genes (the depths of the novoalign BAM, and a clean three), which must be not assessed.
 - The e2e case `paralog-checks-and-doc-fixes-1-hba` writes synthetic 30x reads over chr16:95,001-235,000 for two samples, one with every second read over HBA2 left out (a planted one-gene loss), runs step 35 on each and checks four and three genes. A synthetic read whose bases occur more than once in that stretch gets mapping quality 0, as an aligner gives it. The HBA block of `modules/local/parascopy/main.nf`, cut from the file, then runs on the same BAMs in the same image and must write the same table. Last, the block runs on HG002's real Illumina reads at the cluster, three ways: GIAB's 60x novoalign BAM sampled to about 30x must be not assessed, naming the missing mapping quality 0 reads; Google's 35x NovaSeq BWA-MEM BAM must count four; and the same reads realigned with `minimap2 -a -x sr` to chr16:1-300,000 must count four. The truth is four, from Paraphase on HG002's HiFi reads. The run's notes record each estimate, the four depths and the share of mapping quality 0.
 - The e2e case `hba-short-read-accuracy-1-nf-report` runs the Nextflow `HTML_REPORT` with and without an HBA table and checks the HBA line and the not-assessed list, then stub-runs every tool and checks that `main.nf` passes the table to each `HTML_REPORT` task that got the SMN table, against a copy of the pipeline with that join removed.
 
