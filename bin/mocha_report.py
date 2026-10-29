@@ -45,6 +45,8 @@ it is found.
 
 The sample is not assessed when MoChA's sample filter of the same README
 fails: a call rate under 0.97, or a phased BAF autocorrelation over 0.03.
+It is not assessed either when MoChA left one of the two as nan, since the
+filter cannot be applied then.
 
 S_mocha_summary.tsv is metric<TAB>value: status (assessed or not assessed),
 message, depth, het_sites, phased_het_sites, het_per_10mb, analysed_mb,
@@ -183,6 +185,8 @@ def report(sample, calls, stats, sites, phasing):
         why = "no heterozygous site is phased, so MoChA cannot follow a haplotype"
     elif math.isnan(floor):
         why = "MoChA gave no median depth, so no floor can be set"
+    elif math.isnan(call_rate) or math.isnan(baf_auto):
+        why = "MoChA gave no call rate or phased BAF autocorrelation, so its sample filter cannot be applied"
     elif call_rate < CALL_RATE_MIN:
         why = f"call rate {call_rate:.4f} is under {CALL_RATE_MIN} (MoChA's sample filter)"
     elif baf_auto > BAF_AUTO_MAX:

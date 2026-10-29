@@ -67,7 +67,7 @@ A call is reported when all of these hold:
 
 At 30x with about 3,000 heterozygous sites per 10 Mb the read-sampling floor is about 0.02, so the floor is 0.05. At 5x with 300 sites per 10 Mb it is about 0.15. The floor is a lower bound: phasing errors and read bias are not in it, so an event above it is not always found.
 
-The sample is **not assessed** when MoChA's sample filter of the same README fails (a call rate under 0.97, or a phased BAF autocorrelation over 0.03), or when no heterozygous site is phased. Then no call is reported, and the reports say why.
+The sample is **not assessed** when MoChA's sample filter of the same README fails (a call rate under 0.97, or a phased BAF autocorrelation over 0.03), when MoChA gives no value for one of the two, or when no heterozygous site is phased. Then no call is reported, and the reports say why.
 
 ## Output
 

@@ -17,8 +17,8 @@ site counts with chosen numbers, runs the script, and checks what it writes:
      coverage 3, BAF deviation 0.16) and a call on chrX are each kept out, with their reason; a
      call with no cell fraction is not reported
   4. the sample filter: a call rate under 0.97 or a BAF autocorrelation over
-     0.03 is 'not assessed', and then no call is reported; no phased het is
-     'not assessed'
+     0.03 is 'not assessed', and then no call is reported; no phased het, or a
+     call rate or BAF autocorrelation MoChA left as nan, is 'not assessed'
   5. the CLI: a stats table without cov_median, or a short sites row, exits 2
   6. collect_summary.py's mosaic section and render_report.py's lines read the
      tables: the reported call only; with no reported call the not-assessed
@@ -124,7 +124,9 @@ check("3 calls_reported 1 of 6", (s["calls_reported"], s["calls_mocha"]), ("1", 
 
 # 4. the sample filter
 for kw, why in (({"call_rate": 0.95}, "call rate"), ({"baf_auto": 0.05}, "phased BAF autocorrelation"),
-                ({"phased": False}, "no heterozygous site is phased")):
+                ({"phased": False}, "no heterozygous site is phased"),
+                ({"call_rate": "nan"}, "MoChA gave no call rate or phased BAF autocorrelation"),
+                ({"baf_auto": "nan"}, "MoChA gave no call rate or phased BAF autocorrelation")):
     _, rows, s, _ = run([call()], **kw)
     check(f"4 {why}: not assessed", (s["status"], s["message"].startswith(why.split(':')[0]) or why in s["message"]),
           ("not assessed", True))
