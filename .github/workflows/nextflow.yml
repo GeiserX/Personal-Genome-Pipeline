@@ -450,9 +450,14 @@ jobs:
           # One row per task_id: the trace can list a finished task twice
           # (the retry step above says why), and the first row is the one
           # written when the task completed.
+          # A repeated row must match the first; only its exit may read '-'.
           rows = {}
           for r in csv.DictReader(open(sys.argv[1]), delimiter='\t'):
-              rows.setdefault(r['task_id'], r)
+              first = rows.setdefault(r['task_id'], r)
+              exits = {first['exit'], r['exit']} - {'-'}
+              if len(exits) > 1 or any(first[k] != r[k] for k in r if k != 'exit'):
+                  print(f"FAIL: task {r['task_id']} has two different rows in the trace: {first} and {r}")
+                  sys.exit(1)
           rows = [r for r in rows.values() if 'ALIGN_MINIMAP2' in r['name']]
           got = [(int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows]
           want = [(1, '137', 32), (2, '0', 64)]
@@ -567,7 +572,11 @@ jobs:
           # One row per task_id, as in the ALIGN_MINIMAP2 step above.
           rows = {}
           for r in csv.DictReader(open(sys.argv[1]), delimiter='\t'):
-              rows.setdefault(r['task_id'], r)
+              first = rows.setdefault(r['task_id'], r)
+              exits = {first['exit'], r['exit']} - {'-'}
+              if len(exits) > 1 or any(first[k] != r[k] for k in r if k != 'exit'):
+                  print(f"FAIL: task {r['task_id']} has two different rows in the trace: {first} and {r}")
+                  sys.exit(1)
           rows = list(rows.values())
           want, ok = [(1, '137', 24), (2, '0', 48)], sys.argv[2] == '0'
           for sample in ('sigkill', 'pool'):
