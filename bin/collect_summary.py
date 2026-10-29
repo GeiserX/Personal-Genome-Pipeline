@@ -65,7 +65,6 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
-import copy_number  # noqa: E402  bin/cn_loci.tsv: UGT2B17's thresholds and calls
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -1542,52 +1541,6 @@ def sec_delly(d, s):
     return p, {"total": t, "pass": ps}
 
 
-def gencode_gene(d, gene):
-    """(chrom, start, end, release) of GENCODE's gene line for gene, 1-based,
-    from the gene lines setup.sh installs beside the sample folders
-    (reference/gencode.v<N>.basic.genes.gtf, the newest release there), or
-    None when there are none or the gene is not in them."""
-    files = glob.glob(os.path.join(d, os.pardir, "reference", "gencode.v*.basic.genes.gtf"))
-    rel = {f: int(m.group(1)) for f in files for m in [re.search(r"gencode\.v(\d+)\.basic", os.path.basename(f))] if m}
-    if not rel:
-        return None
-    path = max(rel, key=rel.get)
-    want = f'gene_name "{gene}";'
-    with open(path, errors="replace") as f:
-        for line in f:
-            c = line.split("\t", 9)
-            if len(c) >= 9 and c[2] == "gene" and want in c[8] and re.fullmatch(r"chr([0-9]+|X|Y)", c[0]):
-                return c[0], int(c[3]), int(c[4]), str(rel[path])
-    return None
-
-
-def ugt2b17_copy_number(calls, span):
-    """UGT2B17 copy number from the CNVpytor call that covers most of its
-    GENCODE span. calls: (type, chrom, start, end, level, e-value). The
-    thresholds on CNVpytor's read-depth level (1.0 is two copies) and the
-    words of each call are the UGT2B17 row of bin/cn_loci.tsv."""
-    row = copy_number.load_catalog()["UGT2B17"]
-    chrom, gs, ge = span[:3]
-    best = None
-    for t, c, cs, ce, level, ev in calls:
-        ov = min(ce, ge) - max(cs, gs) + 1
-        if c == chrom and ov > 0 and (best is None or ov > best[0]):
-            best = (ov, t, c, cs, ce, level, ev)
-    out = {"span": f"{chrom}:{gs}-{ge}", "gencode_release": span[3]}
-    if best is None:
-        return dict(out, call=copy_number.reading(row, 2), note="no CNVpytor call over the gene")
-    ov, t, c, cs, ce, level, ev = best
-    if t == "duplication":
-        call = copy_number.reading(row, "dup")
-    else:
-        call = copy_number.reading(row, copy_number.cut_copies(level, row["_call"][1]))
-    note = (f"CNVpytor {t} {c}:{cs}-{ce}, depth level {level:.2f}, e-value {ev:.2g}, "
-            f"covers {ov / (ge - gs + 1):.0%} of the gene")
-    if ev >= 0.01:
-        note += "; not significant (e-value 0.01 or above)"
-    return dict(out, call=call, note=note, level=level, e_value=ev)
-
-
 # A CNVpytor call is kept in the filtered count when fewer than half of its
 # reads have mapping quality 0 (q0, column 9) and fewer than half of its bases
 # are N (pN, column 10), it touches no centromere or heterochromatin band
@@ -1603,7 +1556,6 @@ def sec_cnvpytor(d, s):
     bands = masked_bands()
     total = dels = dups = sig = kept = kept_y = 0
     dropped = {"q0": 0, "gap": 0, "band": 0}
-    calls = []
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1613,11 +1565,6 @@ def sec_cnvpytor(d, s):
             dels += c[0] == "deletion"
             dups += c[0] == "duplication"
             m = re.fullmatch(r"(\S+):(\d+)-(\d+)", c[1]) if len(c) > 4 else None
-            try:
-                if m:
-                    calls.append((c[0], m.group(1), int(m.group(2)), int(m.group(3)), float(c[3]), float(c[4])))
-            except ValueError:
-                pass
             try:
                 if float(c[4]) >= 0.01:
                     continue
@@ -1634,12 +1581,8 @@ def sec_cnvpytor(d, s):
             else:
                 kept += 1
                 kept_y += bool(m) and m.group(1) in ("chrY", "Y")
-    span = gencode_gene(d, "UGT2B17")
-    ugt = (ugt2b17_copy_number(calls, span) if span else
-           {"call": "not assessed", "note": "no GENCODE gene lines beside the results "
-            "(reference/gencode.v<N>.basic.genes.gtf, which setup.sh installs) to place the gene"})
     return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig,
-               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped, "ugt2b17": ugt}
+               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped}
 
 
 def cnvpytor_sex_filter(data, declared_sex):
