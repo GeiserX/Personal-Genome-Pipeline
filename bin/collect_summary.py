@@ -107,7 +107,7 @@ RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "1
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
-    "Mosaic and low-fraction variants (only chrM heteroplasmy is reported)",
+    "Mosaic and low-fraction small variants (only chrM heteroplasmy is reported)",
     "Methylation and imprinting",
     "Repeat expansions outside the ExpansionHunter catalog",
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
@@ -2222,11 +2222,18 @@ def sec_mocha(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no status row (assessed or not assessed)")
     data = {k: kv.get(k) or "." for k in MOCHA_SUMMARY_KEYS}
     c = first_existing(d, [f"mosaic/{s}_mocha.tsv"])
-    rows = read_tsv(c) if c else []
-    if rows and any(k not in rows[0] for k in MOCHA_CALL_KEYS):
+    if not c:
+        raise Unreadable(f"{os.path.basename(p)} has no {s}_mocha.tsv beside it")
+    with open_text(c) as f:
+        head = f.readline().rstrip("\r\n").split("\t")
+    if any(k not in head for k in MOCHA_CALL_KEYS):
         raise Unreadable(f"{os.path.basename(c)} lacks a column of {', '.join(MOCHA_CALL_KEYS)}")
+    rows = read_tsv(c)
     data["calls"] = [{k: r[k] or "." for k in MOCHA_CALL_KEYS} for r in rows if r.get("reported") == "yes"]
     data["not_reported"] = sum(1 for r in rows if r.get("reported") != "yes")
+    if data["calls_reported"] != "." and data["calls_reported"] != str(len(data["calls"])):
+        raise Unreadable(f"{os.path.basename(c)} has {len(data['calls'])} reported calls, "
+                         f"{os.path.basename(p)} says {data['calls_reported']}")
     return p, data
 
 

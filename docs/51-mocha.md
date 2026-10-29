@@ -42,10 +42,10 @@ The 22 downloads come to about 30 GB (29.8 GB by the server's sizes on 2026-10-2
 
 ```bash
 ./scripts/setup.sh --mocha-data /path/to/genome_dir
-./scripts/51-mocha.sh your_name
+GENOME_DIR=/path/to/genome_dir ./scripts/51-mocha.sh your_name
 ```
 
-With `run-all.sh`: `TOOLS=...,mocha`; a run lists step 51 only when `TOOLS` names it. In the Nextflow pipeline: `mocha` in `--tools` with `--mocha_data reference/mocha-20220422` (processes `MOCHA_PREP`, `MOCHA_PHASE`, `MOCHA_CALL` and `MOCHA_REPORT`).
+With `run-all.sh`: `TOOLS=...,mocha`; a run lists step 51 only when `TOOLS` names it. In the Nextflow pipeline: `mocha` in `--tools` with `--mocha_data /path/to/genome_dir/reference/mocha-20220422` (processes `MOCHA_PREP`, `MOCHA_PHASE`, `MOCHA_CALL` and `MOCHA_REPORT`).
 
 ## How it works
 

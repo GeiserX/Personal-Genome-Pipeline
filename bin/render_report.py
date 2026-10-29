@@ -1515,7 +1515,7 @@ def mosaic_mca_lines(d):
         out.append(f"{x['type']} on {x['arms']}, {x['chrom']}:{x['start']}-{x['end']} ({x['length_mb']} Mb): "
                    f"about {x['cell_fraction']} of the cells")
     if not d.get("calls"):
-        out.append(f"No mosaic alteration above the floor ({d.get('calls_mocha', '0')} MoChA calls, none reported).")
+        out.append(f"No mosaic alteration reported ({d.get('calls_mocha', '0')} MoChA calls, none kept).")
     return out + [MCA_NOTE]
 
 
@@ -1526,7 +1526,7 @@ def mosaic_mca_body(d):
     rows = "".join(f"<tr><td>{E(x['type'])}</td><td>{E(x['arms'])}</td><td>{E(x['chrom'])}:{E(x['start'])}-{E(x['end'])}</td>"
                    f"<td>{E(x['length_mb'])}</td><td>{E(x['cell_fraction'])}</td></tr>" for x in d.get("calls", []))
     table = ("    <table><tr><th>Type</th><th>Arm</th><th>Region</th><th>Mb</th><th>Cell fraction</th></tr>"
-             + rows + "</table>") if rows else small_note("No mosaic alteration above the floor.")
+             + rows + "</table>") if rows else small_note("No mosaic alteration reported.")
     lines = mosaic_mca_lines(d)
     return [stat("Calls reported", E(d.get("calls_reported", "0"))), stat("Cell-fraction floor", E(d.get("floor", "."))),
             table, small_note(lines[0]), small_note(MCA_NOTE)]

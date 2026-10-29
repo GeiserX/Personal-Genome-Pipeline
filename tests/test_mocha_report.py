@@ -22,7 +22,9 @@ site counts with chosen numbers, runs the script, and checks what it writes:
   5. the CLI: a stats table without cov_median, or a short sites row, exits 2
   6. collect_summary.py's mosaic section and render_report.py's lines read the
      tables: the reported call only; with no reported call the not-assessed
-     list names autosomal mosaic alterations unless step 51 assessed the sample
+     list names autosomal mosaic alterations unless step 51 assessed the sample;
+     a missing call table, one with fewer reported calls than the summary, or
+     one without MoChA's columns is unreadable
   7. versions.env pins the MoChA image by digest and the plugin by commit,
      those of the e2e case (tests/e2e/mocha-1.sh)
 
@@ -157,6 +159,32 @@ _, _, _, d = run([call()], baf_auto=0.05)
 data = cs.sec_mocha(f"{d}/S", "S")[1]
 check("6 not assessed: the text says why", rr.mosaic_mca_lines(data)[0].startswith("Not assessed: phased BAF"), True)
 check("6 and the not-assessed line stays", cs.MCA_NOT_ASSESSED in cs.collect("S", f"{d}/S")["not_assessed"], True)
+check("6 no reported call: the text says none is reported, not that none exists",
+      rr.mosaic_mca_lines(cs.sec_mocha(f"{run([call(cf=0.04)])[3]}/S", "S")[1])[1].startswith("No mosaic alteration reported"), True)
+check("6 the pipeline-wide not-assessed list keeps large mosaic alterations out of its chrM-only line",
+      [x for x in cs.NOT_ASSESSED if x.startswith("Mosaic")], ["Mosaic and low-fraction small variants (only chrM heteroplasmy is reported)"])
+
+
+def unreadable(d):
+    try:
+        cs.sec_mocha(f"{d}/S", "S")
+    except cs.Unreadable as e:
+        return str(e)
+    return None
+
+
+_, _, _, d = run([call()])
+os.remove(f"{d}/S/mosaic/S_mocha.tsv")
+check("6 a summary without its call table is unreadable", bool(unreadable(d)), True)
+_, _, _, d = run([call()])
+with open(f"{d}/S/mosaic/S_mocha.tsv") as f:
+    head = f.readline()
+with open(f"{d}/S/mosaic/S_mocha.tsv", "w") as f:
+    f.write(head)
+check("6 a call table with fewer reported calls than the summary is unreadable", bool(unreadable(d)), True)
+with open(f"{d}/S/mosaic/S_mocha.tsv", "w") as f:
+    f.write("chrom\tstart\n")
+check("6 a header-only call table without MoChA's columns is unreadable", bool(unreadable(d)), True)
 
 # 7. the pins
 env = open(os.path.join(REPO, "versions.env")).read()
