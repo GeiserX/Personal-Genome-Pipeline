@@ -535,6 +535,8 @@ def sec_pypgx(d, s):
             out["cnv_call"][r["Gene"]] = v
         elif status.lower() == "failed" or (r.get("Diplotype") or "").strip().upper() == "FAILED":
             out["cnv_call"][r["Gene"]] = "not called: pypgx failed"
+        elif "depth check" in status or "depth check" in v:
+            out["cnv_call"][r["Gene"]] = "not called: the CYP2D6 depth check failed"
         else:
             out["cnv_call"][r["Gene"]] = "not called: pypgx gave no copy-number call"
     out["not_callable"] = [r["Gene"] for r in rows
