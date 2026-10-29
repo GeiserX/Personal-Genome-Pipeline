@@ -104,7 +104,7 @@
             "properties": {
                 "tools": {
                     "type": "string",
-                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), ancient (needs --ancient_panel; samples with a gVCF), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), y_str (Y-STR repeat counts, male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), lpa (the LPA KIV-2 repeat count; needs the BAM), viral (viral DNA in the unmapped reads; needs --viral_ref and a BAM), chip (clonal haematopoiesis from the BAM; needs --chip_gff), archaic (needs --archaic_data)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
+                    "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), ancient (needs --ancient_panel; samples with a gVCF), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), y_str (Y-STR repeat counts, male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), lpa (the LPA KIV-2 repeat count; needs the BAM), viral (viral DNA in the unmapped reads; needs --viral_ref and a BAM), exomiser (runs when --hpo is set), chip (clonal haematopoiesis from the BAM; needs --chip_gff), archaic (needs --archaic_data)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
                     "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
@@ -239,7 +239,7 @@
                 "ancestry_fine_panel": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Step 26b's reference: the folder setup.sh --ancestry-fine-panel writes (reference/ancestry_fine/hgdp1kgp_v2, gnomAD's phased HGDP + 1000 Genomes panel with ADMIXTURE's group frequencies). With ancestry_fine in --tools, ADMIXTURE projects the sample on the panel's groups and RFMix paints its chromosomes. ADMIXTURE is free for academic use and RFMix for academic research use only.",
+                    "description": "Step 26b's reference: the folder setup.sh --ancestry-fine-panel writes (reference/ancestry_fine/hgdp1kgp_v2, gnomAD's phased HGDP + 1000 Genomes panel with ADMIXTURE's group frequencies). With ancestry_fine in --tools, ADMIXTURE projects the sample on the panel's groups and RFMix paints its chromosomes. With --pedigree, the family workflow also phases the joint call against it with Beagle and lists the DNA segments each pair of members shares (hap-ibd). ADMIXTURE is free for academic use and RFMix for academic research use only.",
                     "fa_icon": "fas fa-globe"
                 },
                 "ancient_panel": {
@@ -331,6 +331,30 @@
                     "format": "directory-path",
                     "description": "Yleaf's data folder (GRCh38 marker positions and haplogroup tree), which `scripts/setup.sh --yleaf-data` installs as reference/yleaf-<version>/data: the Yleaf image ships the code only. Its ytree/ subfolder, from the same command, holds the current YFull YTree the step also places the sample on. Required with y_haplogroup.",
                     "fa_icon": "fas fa-folder"
+                },
+                "hpo": {
+                    "type": "string",
+                    "pattern": "^HP:[0-9]{7}([,\\s]+HP:[0-9]{7})*$",
+                    "description": "The symptoms of one person as Human Phenotype Ontology ids, comma separated (HP:0001250,HP:0001263; look them up at https://hpo.jax.org). Setting it runs exomiser (step 48), which ranks the genes and variants that could explain them; it needs --exomiser_data.",
+                    "fa_icon": "fas fa-notes-medical"
+                },
+                "exomiser_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Exomiser's data folder, which `scripts/setup.sh --exomiser-data` installs as reference/exomiser-<release> (its <release>_hg38 and <release>_phenotype folders). Required with --hpo.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "exomiser_proband": {
+                    "type": "string",
+                    "description": "The sample the --hpo terms describe. Needed when the samplesheet has more than one sample.",
+                    "fa_icon": "fas fa-user"
+                },
+                "exomiser_assembly": {
+                    "type": "string",
+                    "enum": ["hg38", "hg19"],
+                    "default": "hg38",
+                    "description": "The assembly of the Exomiser data. Keep hg38: hg19 is there for Exomiser's cut-down test release, which CI runs.",
+                    "fa_icon": "fas fa-dna"
                 },
                 "medications": {
                     "type": "string",

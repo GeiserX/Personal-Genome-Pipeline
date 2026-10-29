@@ -56,6 +56,9 @@ TRAITS_NOTE = ("Each reading is what the cited studies found on average in the p
                "diagnosis. A row marked ancestry reads differently in other populations; its note says how.")
 APOE_WARNING = ("APOE and Alzheimer's disease: a risk factor, not a diagnosis. Many people choose not to learn "
                 "their APOE result; docs/42-traits.md explains it.")
+EXOMISER_NOTE = ("A ranking to bring to a clinical geneticist, not a diagnosis: a high score means a rare, likely "
+                 "damaging variant in a gene linked to symptoms like these, not that it causes them, and an empty or "
+                 "low list does not rule a genetic cause out. Coding and splice variants only (docs/48-exomiser.md).")
 ANCIENT_NOTE = ("Closeness on this PCA is genetic similarity, not descent: a genome near an ancient group shares "
                 "ancestry with it and does not descend from those people. qpAdm models are not part of step 44; "
                 "docs/44-ancient.md says how to read the plot.")
@@ -505,6 +508,45 @@ def ancestry_fine_painted(d):
     return text + (f"; not painted: RFMix failed on {failed}" if failed else "")
 
 
+def exomiser_terms(d):
+    return ", ".join(f"{t['label']} ({t['id']})" if t.get("label") else t["id"] for t in d.get("terms", [])) or "."
+
+
+def exomiser_text(d, sample):
+    """The Exomiser section of the text report: the terms, then each rank."""
+    out = [f"  Symptoms searched: {exomiser_terms(d)}"]
+    if not d["genes"]:
+        out.append("  No gene passed Exomiser's filters with a variant that fits a mode of inheritance.")
+    for g in d["genes"]:
+        out.append(f"  {g['rank']}. {g['gene']} ({g['moi']}) score {g['exomiser_score']} (symptom match {g['phenotype_score']})")
+        for v in g["variants"]:
+            out.append(f"       {v['variant']} {v['genotype']} {v['consequence']} {v['hgvs']} ACMG {v['acmg']}"
+                       + (f"; {v['disease']}" if v["disease"] != "." else ""))
+    out.append(f"  {EXOMISER_NOTE} In words: exomiser/{sample}_exomiser.txt")
+    return out
+
+
+def exomiser_html(d, sample):
+    """The Exomiser card's body: one table row per rank and variant."""
+    rows = []
+    for g in d["genes"]:
+        for i, v in enumerate(g["variants"]):
+            lead = (f"<td>{E(g['rank'])}</td><td>{E(g['gene'])}</td><td>{E(g['moi'])}</td><td>{E(g['exomiser_score'])}"
+                    f"</td><td>{E(g['phenotype_score'])}</td>") if i == 0 else "<td></td>" * 5
+            rows.append(f"      <tr>{lead}<td>{E(v['variant'])} {E(v['genotype'])}<br><span style=\"font-size:12px;"
+                        f"color:#666\">{E(v['consequence'])} {E(v['hgvs'])}</span></td><td>{E(v['acmg'])}</td>"
+                        f"<td>{E(v['disease'])}</td></tr>")
+    body = [stat("Symptoms searched", E(exomiser_terms(d)))]
+    if rows:
+        body += ["    <table>", "      <tr><th>Rank</th><th>Gene</th><th>Inheritance</th><th>Score</th>"
+                 "<th>Symptom match</th><th>Variant</th><th>ACMG (Exomiser)</th><th>Linked disease</th></tr>"]
+        body += rows + ["    </table>"]
+    else:
+        body.append(stat("Ranked genes", "none passed Exomiser's filters"))
+    body += [small_note(EXOMISER_NOTE), small_note(f"Exomiser's own report: exomiser/{sample}_exomiser.html")]
+    return body
+
+
 def traits_text(d, sample):
     """The traits section of the text report: the rows read, the ones not read,
     and the APOE lines last, after a warning."""
@@ -718,6 +760,12 @@ def text_report(s):
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
         w(f"  {CLINVAR_FREQ_NOTE}")
+        w("")
+
+    if head("carrier", "Carrier List (this sample)"):
+        for line in carrier_lines(S["carrier"]["data"]):
+            w(f"  {line}")
+        w(f"  {CARRIER_NOTE}")
         w("")
 
     if head("couple", "Couple Carrier Screen (step 39)"):
@@ -1003,6 +1051,10 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("exomiser", "Symptom-Driven Ranking (Exomiser, step 48)"):
+        out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
+        w("")
+
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
         d = S["cpsr"]["data"]
         if d.get("html_report"):
@@ -1027,14 +1079,17 @@ def text_report(s):
         if "weak_calls" in d:
             w(f"  Weak genotype calls (check the reads): {d['weak_calls']}")
         sf = d.get("acmg_sf")
-        if sf:
-            w(f"  Secondary-findings genes ({sf['version']}, {sf['genes_on_list']} genes): "
-              f"{len(sf['clinvar_hits'])} ClinVar P/LP, {high_rare(sf)} rare HIGH impact" + high_apart(sf))
-            for x in sf["clinvar_hits"]:
-                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  ClinVar {x['significance']}"
-                  + ("  (low-confidence call: check the reads)" if x.get("low_confidence") else ""))
-            for x in sf["high_impact"]:
-                w(f"    {x['gene']:<8} {x['variant']}  {x['genotype']}  {x['consequence']}" + high_marks(x, "  ("))
+        if sf and sf.get("unavailable"):
+            w(f"  {sf_apart_lines(sf)[0]}")
+        elif sf:
+            w(f"  Secondary-findings genes ({sf['version']}, {sf.get('genes_on_list', '?')} genes): "
+              f"{len(sf['clinvar_hits'])} ClinVar P/LP, {high_rare(sf)} rare HIGH impact" + high_apart(sf)
+              + (f", {len(sf['structural'])} class 4/5 SV(s)" if sf.get("structural_checked") else "")
+              + (f", {len(sf['not_reported'])} not reported by the gene's rule" if sf.get("not_reported") else ""))
+            for g, v, z, ev in sf_rows(sf):
+                w(f"    {g:<8} {v}  {z}  {ev}")
+            for line in sf_apart_lines(sf):
+                w(f"    {line}")
             w(f"    {ACMG_NOTE}")
         w("")
 
@@ -1247,8 +1302,59 @@ def paralogs_unchecked(S):
     return f"Paralog copy number: not checked ({why})"
 
 
-ACMG_NOTE = ("A list to review with a clinician: the ACMG reporting rules per gene (for example HFE "
-             "homozygous C282Y only, BTD and CYP27A1 two variants) are not applied here.")
+ACMG_NOTE = ("A list to review with a clinician, not a diagnosis. Each gene's ACMG SF v3.3 reporting rule "
+             "(assets/acmg_sf.tsv) is applied: one variant in a dominant gene; two in a recessive gene such as "
+             "MUTYH, BTD or ATP7B, even when their phase is unknown; HFE only as homozygous p.C282Y. A variant the "
+             "rule does not report is listed apart with the reason. A rare HIGH-impact record is not a ClinVar "
+             "classification.")
+CARRIER_NOTE = ("Carrier list: the ClinVar P/LP hits of this sample in the genes of assets/carrier_genes.tsv "
+                "(autosomal recessive and X-linked conditions), one person, no partner needed. A carrier of one "
+                "recessive change is usually healthy; the result matters for a child when a partner carries a "
+                "change in the same gene (step 39). A hypomorph or pseudodeficiency allele is set aside.")
+
+
+def sf_rows(sf):
+    """The secondary findings as (gene, variant, genotype, evidence) rows,
+    the same in both reports: ClinVar hits, rare HIGH-impact records, then
+    class 4 and 5 SVs."""
+    def extra(x):
+        return "".join(f"; {v}" for v in (x.get("severity"), x.get("rule_note")) if v)
+    rows = [(x["gene"], x["variant"], x["genotype"],
+             "ClinVar " + x["significance"] + ("; low-confidence call: check the reads" if x.get("low_confidence") else "")
+             + extra(x)) for x in sf["clinvar_hits"]]
+    rows += [(x["gene"], x["variant"], x["genotype"], x["consequence"] + high_marks(x, "; ") + extra(x))
+             for x in sf["high_impact"]]
+    def support(x):
+        if x["support"] is None:
+            return "caller support not known (no step 22 consensus)"
+        return f"single caller ({x['caller']})" if x["support"] == 1 else f"{x['support']} callers"
+    rows += [(x["gene"], x["variant"], ".", f"AnnotSV class {x['acmg_class']}, {support(x)}"
+              + (f"; through {x['via']}" if x.get("via") else "") + extra(x)) for x in sf.get("structural", [])]
+    return rows
+
+
+def sf_apart_lines(sf):
+    """The variants in SF genes that the gene's rule does not report, or why
+    no rule could be applied."""
+    if sf.get("unavailable"):
+        return [f"Secondary findings: not assessed, {sf['unavailable']}"]
+    return [f"{x['gene']} {x['variant']} {x.get('genotype') or '.'} ({x['source']}): not reported, {x['reason']}"
+            for x in sf.get("not_reported", [])]
+
+
+def carrier_lines(c):
+    """The sample's own carrier list (no partner), the same in both reports."""
+    if c.get("unavailable"):
+        return [f"Carrier list: not made, {c['unavailable']}"]
+    lines = [f"Carrier list ({c['genes_on_list']} genes): {len(c['carriers'])} finding(s)"
+             + (f", {len(c['set_aside'])} set aside" if c["set_aside"] else "")]
+    for x in c["carriers"]:
+        lines.append(f"{x['gene']} ({x['condition']}; {x['inheritance']}): {x['variant']} {x['genotype']}, "
+                     f"ClinVar {x['significance']}")
+    for x in c["set_aside"]:
+        lines.append(f"Set aside: {x['gene']} {x['variant']} {x['genotype']}: {x['name']} is a {x['kind']} allele, "
+                     "not a carrier finding on its own")
+    return lines
 
 
 def contamination_text(d):
@@ -1635,6 +1741,11 @@ def html_report(s):
     if clinvar_freq_line(c):
         cv_body.insert(-1, small_note(clinvar_freq_line(c)))
     a(card(S["clinvar"], "ClinVar Screening", cv_body))
+    if S.get("carrier", MISSING)["state"] != "missing":
+        car_ok = S["carrier"]["state"] in ("ok", "stale")
+        a(card(S["carrier"], "Carrier List (this sample)",
+               [f"    <p>{E(line)}</p>" for line in (carrier_lines(S["carrier"]["data"]) if car_ok else [])]
+               + [f"    <p>{E(CARRIER_NOTE)}</p>"], full=True))
     if S.get("couple", MISSING)["state"] != "missing":
         a(card(S["couple"], "Couple Carrier Screen",
                [f"    <p>{E(line)}</p>" for line in couple_lines(S["couple"]["data"])], full=True))
@@ -1870,15 +1981,14 @@ def html_report(s):
            + ([stat("Frequency unknown (not rare)", cl["frequency_unknown"])] if "frequency_unknown" in cl else [])
            + ([stat("Weak genotype calls", cl["weak_calls"])] if "weak_calls" in cl else [])))
     sf = cl.get("acmg_sf")
-    if sf and (sf["clinvar_hits"] or sf["high_impact"]):
-        rows = "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
-                       f"<td>{E('ClinVar ' + x['significance'] + ('; low-confidence call: check the reads' if x.get('low_confidence') else ''))}</td></tr>\n"
-                       for x in sf["clinvar_hits"])
-        rows += "".join(f"<tr><td>{E(x['gene'])}</td><td>{E(x['variant'])}</td><td>{E(x['genotype'])}</td>"
-                        f"<td>{E(x['consequence'] + high_marks(x, '; '))}</td></tr>\n" for x in sf["high_impact"])
+    if sf and (sf["clinvar_hits"] or sf["high_impact"] or sf.get("structural") or sf.get("not_reported")
+               or sf.get("unavailable")):
+        rows = "".join(f"<tr><td>{E(g)}</td><td>{E(v)}</td><td>{E(z)}</td><td>{E(ev)}</td></tr>\n"
+                       for g, v, z, ev in sf_rows(sf))
         a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
                 rows.rstrip("\n"), "    </table>"]
+               + [f"    <p>{E(line)}</p>" for line in sf_apart_lines(sf)]
                + viewer_links((*variant_site(x["variant"]), f"{x['gene']} {x['variant'].split(' ')[0]}")
                               for x in sf["clinvar_hits"] + sf["high_impact"])
                + [f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
@@ -1929,6 +2039,10 @@ def html_report(s):
     a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
 
+    ex_sec = S.get("exomiser", MISSING)
+    if ex_sec["state"] != "missing":
+        a(card(ex_sec, "Symptom-Driven Ranking (Exomiser)",
+               exomiser_html(ex_sec["data"], s["sample"]) if ex_sec["state"] in ("ok", "stale") else [], full=True))
     if S.get("ancient", MISSING)["state"] != "missing":
         d = S["ancient"]["data"]
         lines = ancient_lines(d)
@@ -2019,6 +2133,8 @@ def main(argv=None):
     ap.add_argument("--sample-dir")
     ap.add_argument("--json", help="where to write the collected summary (default SAMPLE_DIR/summary.json)")
     ap.add_argument("--declared-sex", help="the samplesheet's sex, when no run status or manifest records it")
+    ap.add_argument("--assets", help="the folder holding acmg_sf.tsv and carrier_genes.tsv "
+                                     "(default: the repository's assets/ beside bin/)")
     ap.add_argument("-o", "--out", action="append", default=[],
                     help="report to write: .txt for text, .html for HTML (repeatable)")
     a = ap.parse_args(argv)
@@ -2029,6 +2145,8 @@ def main(argv=None):
         with open(a.summary) as f:
             s = json.load(f)
     elif a.sample and a.sample_dir:
+        if a.assets:
+            collect_summary.ASSETS_DIR = a.assets
         s = collect_summary.collect(a.sample, a.sample_dir, a.declared_sex)
         write(a.json or os.path.join(a.sample_dir, "summary.json"), json.dumps(s, indent=1) + "\n")
     else:

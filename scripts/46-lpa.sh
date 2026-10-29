@@ -6,7 +6,8 @@
 # of apo(a); a low total goes with a higher Lp(a) level, a mostly inherited
 # cardiovascular risk factor. The step counts the repeats from the depth over
 # the KIV-2 exons against the depth over single-copy LPA exons
-# (bin/lpa_kiv2.py, the same code as the LPA Nextflow processes), with a 95%
+# (bin/copy_number.py on the LPA_KIV2 row of bin/cn_loci.tsv, laid out by
+# bin/lpa_kiv2.py; the same code as the LPA Nextflow processes), with a 95%
 # interval. The two common risk variants, rs10455872 and rs3798220, are rows
 # of step 42's traits panel; the report's Lp(a) section reads both. A research
 # estimate, not a diagnostic test: the actionable test is a blood Lp(a)
@@ -44,10 +45,10 @@ echo "BAM: ${BAM}"
 mkdir -p "$OUTDIR"
 rm -f "$TABLE" "$DEPTH" "$DEPTH_Q1" "$BED"
 
-echo "[1/3] The regions (bin/lpa_kiv2.py bed)..."
+echo "[1/3] The regions (bin/copy_number.py bed --locus LPA_KIV2)..."
 # shellcheck disable=SC2016  # $1 belongs to the inner shell
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 1g "$PYTHON_IMAGE" \
-  sh -c 'python3 /pgp-bin/lpa_kiv2.py bed > "$1"' _ "$(cpath "$BED")"
+  sh -c 'python3 /pgp-bin/copy_number.py bed --locus LPA_KIV2 > "$1"' _ "$(cpath "$BED")"
 
 echo "[2/3] Read depth over the KIV-2 and single-copy LPA exons (samtools bedcov -j, all MAPQ and MAPQ >= 1)..."
 # bedcov stops on a contig the BAM has no @SQ line for: without chr6 both
@@ -63,10 +64,10 @@ run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c '
   '$1 == "@SQ" {for (i = 2; i <= NF; i++) if ($i == "SN:chr6") f = 1} END {exit !f}'
 rm -f "$BED"
 
-echo "[3/3] The count and its interval (bin/lpa_kiv2.py estimate)..."
+echo "[3/3] The count and its interval (bin/copy_number.py call --locus LPA_KIV2)..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 1g "$PYTHON_IMAGE" \
-  python3 /pgp-bin/lpa_kiv2.py estimate --bedcov "$(cpath "$DEPTH")" --bedcov-mapq1 "$(cpath "$DEPTH_Q1")" \
-    --out "$(cpath "$TABLE")"
+  python3 /pgp-bin/copy_number.py call --locus LPA_KIV2 --bedcov "$(cpath "$DEPTH")" \
+    --bedcov-mapq1 "$(cpath "$DEPTH_Q1")" --table "$(cpath "$TABLE")"
 
 [ -s "$TABLE" ] || { echo "ERROR: no table written (${TABLE})" >&2; exit 1; }
 echo ""

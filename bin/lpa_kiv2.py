@@ -14,6 +14,10 @@ the published short-read estimators (Zekavat et al. 2018, PMID 29973585;
 Behera et al. 2024, PMID 39449055, which also gives the GRCh38 region and the
 six reference units).
 
+The regions and the method are the LPA_KIV2 row of bin/cn_loci.tsv, run by
+bin/copy_number.py (step 46 and the LPA processes call that engine); this
+file lays out the step's table and keeps its own command line.
+
   lpa_kiv2.py bed
       print the regions (GRCh38, 0-based BED, name in column 4) to stdout
   lpa_kiv2.py estimate --bedcov BEDCOV.tsv --bedcov-mapq1 BEDCOV_Q1.tsv --out LPA.tsv
@@ -52,173 +56,89 @@ Lp(a) measurement. Standard library only: it runs in the Python image and
 under tests/test_lpa_kiv2.py.
 """
 import argparse
-import math
 import sys
 
-# GRCh38, 0-based, from Ensembl's ENST00000316300.10 (checked 2026-10-25).
-REGIONS = [
-    ("chr6", 160646213, 160646395, "kiv2_e03"),
-    ("chr6", 160644846, 160645006, "kiv2_e04"),
-    ("chr6", 160640666, 160640848, "kiv2_e05"),
-    ("chr6", 160639299, 160639459, "kiv2_e06"),
-    ("chr6", 160635122, 160635304, "kiv2_e07"),
-    ("chr6", 160633752, 160633912, "kiv2_e08"),
-    ("chr6", 160629573, 160629755, "kiv2_e09"),
-    ("chr6", 160628206, 160628366, "kiv2_e10"),
-    ("chr6", 160624029, 160624211, "kiv2_e11"),
-    ("chr6", 160622662, 160622822, "kiv2_e12"),
-    ("chr6", 160618483, 160618665, "kiv2_e13"),
-    ("chr6", 160617116, 160617276, "kiv2_e14"),
-    ("chr6", 160612931, 160613113, "kiv2_e15"),
-    ("chr6", 160611561, 160611721, "kiv2_e16"),
-    ("chr6", 160600916, 160601098, "flank_e19"),
-    ("chr6", 160599499, 160599659, "flank_e20"),
-    ("chr6", 160595353, 160595535, "flank_e21"),
-    ("chr6", 160593957, 160594117, "flank_e22"),
-    ("chr6", 160590943, 160591101, "flank_e23"),
-    ("chr6", 160589552, 160589712, "flank_e24"),
-    ("chr6", 160586448, 160586630, "flank_e25"),
-    ("chr6", 160585045, 160585205, "flank_e26"),
-    ("chr6", 160578522, 160578704, "flank_e27"),
-    ("chr6", 160577135, 160577295, "flank_e28"),
-    ("chr6", 160557389, 160557571, "flank_e29"),
-    ("chr6", 160556024, 160556184, "flank_e30"),
-    ("chr6", 160548477, 160548659, "flank_e31"),
-    ("chr6", 160547788, 160547937, "flank_e32"),
-    ("chr6", 160545439, 160545533, "flank_e33"),
-]
-# Copies of the 342 bp exon pair in the KIV-2 block of GRCh38: six KIV-2
-# units and the KIV-1/KIV-3 pair. One single-copy pair per chromosome is
-# taken off the total.
-BLOCK_PAIRS = 7
-SINGLE_COPY_PAIRS = 2
-# Below this mean flank depth the ratio is noise.
-MIN_FLANK_DEPTH = 10.0
-# Part of the KIV-2 block depth from reads of MAPQ 0 under which the BAM is
-# taken to leave out the reads that fit several KIV-2 copies (novoalign does
-# by default): the count would come out low.
-MIN_MAPQ0_SHARE = 0.2
-# About 70% of the 1000 Genomes samples had a total of 30 to 45 KIV-2 copies
-# (Behera et al. 2024, DRAGEN's caller; mean 37.5 in Europeans, 35.7 in
-# Africans, 44.6 in East Asians).
-LOW, HIGH = 30, 45
-Z95 = 1.96
+import copy_number as cn
 
-READINGS = {
-    "low": (f"fewer KIV-2 repeats than most people (the whole 95% interval is under {LOW}; about 70% of "
-            f"the 1000 Genomes samples had {LOW} to {HIGH}): a low count goes with small apo(a) isoforms "
-            "and a higher Lp(a) level"),
-    "typical": (f"within or overlapping the range most people have ({LOW} to {HIGH} for about 70% of the "
-                "1000 Genomes samples)"),
-    "high": (f"more KIV-2 repeats than most people (the whole 95% interval is over {HIGH}): a high count "
-             "goes with large apo(a) isoforms and, on average, a lower Lp(a) level"),
-}
+LOCUS = "LPA_KIV2"
+_ROW = []
 ADVICE = ("A research estimate from read depth, not a diagnostic test. Lp(a) is measured in blood; a 2022 "
           "European Atherosclerosis Society consensus advises measuring it at least once in every adult.")
 
 
+def row():
+    """The LPA_KIV2 row of the catalog, read once."""
+    if not _ROW:
+        _ROW.append(cn.load_catalog()[LOCUS])
+    return _ROW[0]
+
+
+def __getattr__(name):
+    # The regions and thresholds come from the catalog row, read on first use.
+    r = row()
+    if name == "REGIONS":   # in catalog order: the KIV-2 block, then the single-copy exons
+        return [(r["chrom"], s, e, n) for n, s, e, _ in r["_targets"] + r["_controls"]]
+    vals = {"MIN_FLANK_DEPTH": r["_min_control"], "MIN_MAPQ0_SHARE": r["_mapq0_min"],
+            "LOW": r["_call"][1][0], "HIGH": r["_call"][1][1], "READINGS": r["_readings"]}
+    if name in vals:
+        return vals[name]
+    raise AttributeError(name)
+
+
 def bed_lines():
-    return ["\t".join(map(str, r)) for r in REGIONS]
+    return ["\t".join(map(str, r)) for r in cn.regions(row())]
 
 
 def read_bedcov(path):
-    """{name: mean depth} from `samtools bedcov` output over REGIONS, which
-    must all be there and nothing else; {} for an empty table (no chr6)."""
-    means, seen = {}, set()
-    with open(path, errors="replace") as f:
-        for line in f:
-            if not line.strip() or line.startswith("#"):
-                continue
-            c = line.rstrip("\n").split("\t")
-            if len(c) < 5:
-                raise ValueError(f"{path}: expected chrom, start, end, name, depth sum; got {line.strip()!r}")
-            chrom, start, end, name = c[0], int(c[1]), int(c[2]), c[3]
-            seen.add((chrom, start, end, name))
-            means[name] = float(c[4]) / (end - start)
-    if seen and seen != set(REGIONS):
-        raise ValueError(f"{path}: its regions differ from the ones `lpa_kiv2.py bed` prints")
-    return means
+    """{name: mean depth} from `samtools bedcov` output over the regions,
+    which must all be there and nothing else; {} for an empty table (no chr6)."""
+    return cn.read_bedcov(path, row())
 
 
-def _cv(values):
-    """Coefficient of variation (sample standard deviation over the mean)."""
-    m = sum(values) / len(values)
-    if m <= 0 or len(values) < 2:
-        return 0.0
-    var = sum((v - m) ** 2 for v in values) / (len(values) - 1)
-    return math.sqrt(var) / m
+def table(b):
+    """([(metric, value)], summary line) of the engine's LPA_KIV2 block."""
+    r = row()
+    out = {"status": "not assessed", "kiv2_copies": ".", "ci95_low": ".", "ci95_high": ".", "class": ".",
+           "kiv2_depth": ".", "flank_depth": ".", "mapq0_share": ".", "message": "", "advice": ADVICE}
+    reason = b["reason"]
+    if reason == "no_data":
+        out["message"] = "not assessed: the BAM has no chr6, so LPA has no reads"
+    else:
+        kdepth, fdepth, share = b["target_depth"], b["control_depth"], b["mapq0_share"]
+        out.update(kiv2_depth=f"{kdepth:.2f}", flank_depth=f"{fdepth:.2f}", mapq0_share=f"{share:.3f}")
+        if reason == "low_control_depth":
+            out["status"] = "too little depth"
+            out["message"] = (f"too little depth: {fdepth:.1f}x over the single-copy LPA exons, under the "
+                              f"{r['_min_control']:g}x the count needs")
+        elif reason == "low_mapq0_share":
+            out["message"] = (f"not assessed: reads of mapping quality 0 make up {100 * share:.1f}% of the depth "
+                              "over the KIV-2 exons, so the aligner left out the reads that fit several KIV-2 "
+                              "copies (as novoalign does by default) and the count would come out low; realign "
+                              "with minimap2 (step 02) or BWA-MEM")
+        elif reason == "below_floor":
+            out["message"] = (f"not assessed: the KIV-2 exons have {kdepth:.1f}x against {fdepth:.1f}x over the "
+                              "single-copy exons, too little for any repeat count (a deletion or a mapping problem)")
+        else:
+            est, (lo, hi) = b["estimate"], b["ci95"]
+            out.update(status="estimated", kiv2_copies=f"{est:.1f}", ci95_low=f"{lo:.1f}", ci95_high=f"{hi:.1f}",
+                       **{"class": b["class"]},
+                       message=(f"about {est:.0f} KIV-2 repeats in total (95% interval {lo:.1f} to {hi:.1f}): "
+                                f"{b['reading']}"))
+    line = (f"LPA KIV-2: {out['message']} (KIV-2 exons {out['kiv2_depth']}x, single-copy exons "
+            f"{out['flank_depth']}x, MAPQ 0 share {out['mapq0_share']})")
+    return [(k, out[k]) for k in ORDER], line
 
 
 def assess(m, q1):
     """The result dict for the mean depths of read_bedcov: m over every read,
     q1 over reads of MAPQ 1 or more."""
-    out = {"status": "not assessed", "kiv2_copies": ".", "ci95_low": ".", "ci95_high": ".", "class": ".",
-           "kiv2_depth": ".", "flank_depth": ".", "mapq0_share": ".", "message": ""}
-    if not m:
-        out["message"] = "not assessed: the BAM has no chr6, so LPA has no reads"
-        return out
-    kiv = [r for r in REGIONS if r[3].startswith("kiv2_")]
-    fl = [r for r in REGIONS if r[3].startswith("flank_")]
-    klen = sum(e - s for _, s, e, _ in kiv)
-    flen = sum(e - s for _, s, e, _ in fl)
-    kdepth = sum(m[n] * (e - s) for _, s, e, n in kiv) / klen
-    fdepth = sum(m[n] * (e - s) for _, s, e, n in fl) / flen
-    kq1 = sum(q1.get(n, 0.0) * (e - s) for _, s, e, n in kiv) / klen
-    share = 1 - kq1 / kdepth if kdepth > 0 else 0.0
-    out.update(kiv2_depth=f"{kdepth:.2f}", flank_depth=f"{fdepth:.2f}", mapq0_share=f"{share:.3f}")
-    if fdepth < MIN_FLANK_DEPTH:
-        out["status"] = "too little depth"
-        out["message"] = (f"too little depth: {fdepth:.1f}x over the single-copy LPA exons, under the "
-                          f"{MIN_FLANK_DEPTH:g}x the count needs")
-        return out
-    if share < MIN_MAPQ0_SHARE:
-        out["message"] = (f"not assessed: reads of mapping quality 0 make up {100 * share:.1f}% of the depth over "
-                          "the KIV-2 exons, so the aligner left out the reads that fit several KIV-2 copies (as "
-                          "novoalign does by default) and the count would come out low; realign with minimap2 "
-                          "(step 02) or BWA-MEM")
-        return out
-    total = BLOCK_PAIRS * 2 * kdepth / fdepth          # N + 2
-    est = total - SINGLE_COPY_PAIRS
-    if est <= 0:
-        out["message"] = (f"not assessed: the KIV-2 exons have {kdepth:.1f}x against {fdepth:.1f}x over the "
-                          "single-copy exons, too little for any repeat count (a deletion or a mapping problem)")
-        return out
-    rel = math.sqrt(_cv([m[n] for *_, n in kiv]) ** 2 / len(kiv) + _cv([m[n] for *_, n in fl]) ** 2 / len(fl))
-    lo = max(0.0, total * math.exp(-Z95 * rel) - SINGLE_COPY_PAIRS)
-    hi = total * math.exp(Z95 * rel) - SINGLE_COPY_PAIRS
-    cls = "low" if hi < LOW else "high" if lo > HIGH else "typical"
-    out.update(status="estimated", kiv2_copies=f"{est:.1f}", ci95_low=f"{lo:.1f}", ci95_high=f"{hi:.1f}",
-               **{"class": cls},
-               message=f"about {est:.0f} KIV-2 repeats in total (95% interval {lo:.1f} to {hi:.1f}): {READINGS[cls]}")
+    out = dict(table(cn.assess(row(), m, q1))[0])
+    del out["advice"]
     return out
 
 
 ORDER = ("status", "kiv2_copies", "ci95_low", "ci95_high", "class", "kiv2_depth", "flank_depth",
          "mapq0_share", "message", "advice")
-
-
-def estimate(args):
-    try:
-        m, q1 = read_bedcov(args.bedcov), read_bedcov(args.bedcov_mapq1)
-        if bool(m) != bool(q1):
-            raise ValueError(f"{args.bedcov_mapq1 if m else args.bedcov} is empty but the other table is not: "
-                             "both must cover the regions, or both be empty (no chr6)")
-        res = assess(m, q1)
-    except (OSError, ValueError, KeyError) as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 2
-    res["advice"] = ADVICE
-    try:
-        with open(args.out, "w") as f:
-            f.write("metric\tvalue\n")
-            for k in ORDER:
-                f.write(f"{k}\t{res[k]}\n")
-    except OSError as e:
-        print(f"ERROR: cannot write {args.out}: {e}", file=sys.stderr)
-        return 2
-    print(f"LPA KIV-2: {res['message']} (KIV-2 exons {res['kiv2_depth']}x, single-copy exons "
-          f"{res['flank_depth']}x, MAPQ 0 share {res['mapq0_share']})")
-    return 0
 
 
 def main(argv=None):
@@ -233,7 +153,8 @@ def main(argv=None):
     if args.cmd == "bed":
         print("\n".join(bed_lines()))
         return 0
-    return estimate(args)
+    return cn.main(["call", "--locus", LOCUS, "--bedcov", args.bedcov, "--bedcov-mapq1", args.bedcov_mapq1,
+                    "--table", args.out])
 
 
 if __name__ == "__main__":

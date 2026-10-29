@@ -17,7 +17,9 @@
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
-#   REF_FASTA, EH_CATALOG, MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
+#   HPO=HP:0001250,HP:0001263 (the symptoms as HPO ids: step 48 ranks the variants that could explain them with Exomiser,
+#   after setup.sh --exomiser-data);
+#   REF_FASTA, EH_CATALOG (a file, or bundled), MANTA_CALL_REGIONS, PARASCOPY_POPULATION, PARAPHASE_REGIONS, ANCESTRY_PANEL (--ancestry_ref; none: raw
 #   scores), ANCESTRY_FINE_DIR (--ancestry_fine_panel, step 26b,
 #   always 100 bootstrap replicates; none: skip), ARCHAIC_DIR and ARCHAIC_POP (--archaic_data and --archaic_pop,
 #   step 43; ARCHAIC_DIR=none: skip) and PGSC_CALC_DIR (--pgsc_calc) as for
@@ -68,9 +70,14 @@ plan() {  # plan "STEP Label" TOOL [REASON]: 0 when TOOL runs
   printf '  %-28s skipped    (%s)\n' "$1" "$r"; printf 'step\t%s\tskipped (%s)\n' "${1%% *}" "$r" >> "$STATUS"; return 1
 }
 arg() { [ ! -e "$2" ] || NF+=("$1" "$2"); }  # arg --param FILE: pass FILE when it exists
-CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" A="${G}/annotations" CAT=${EH_CATALOG:-${G}/reference/expansionhunter_variant_catalog.json}
-# Step 09 reads the catalog inside its image; the pipeline takes it as a file.
-[ -n "${EH_CATALOG:-}" ] || [ -s "$CAT" ] || { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
+CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" A="${G}/annotations" CAT=${EH_CATALOG:-}
+# The catalog of steps 09 and 9b: STRchive's when setup.sh built it, as step 09
+# picks it; EH_CATALOG=bundled or no STRchive file: the one inside the image,
+# which step 09 reads there and the pipeline takes as a file.
+STRCHIVE_CAT="${G}/reference/strchive-${STRCHIVE_VERSION}/catalog.json"
+if [ -z "$CAT" ] && [ -s "$STRCHIVE_CAT" ]; then CAT=$STRCHIVE_CAT; fi
+if [ -z "$CAT" ] || [ "$CAT" = bundled ]; then CAT="${G}/reference/expansionhunter_variant_catalog.json"; fi
+[ "${EH_CATALOG:-bundled}" != bundled ] || [ "$CAT" = "$STRCHIVE_CAT" ] || [ -s "$CAT" ] || { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
   > "${CAT}.tmp" && [ -s "${CAT}.tmp" ] && mv "${CAT}.tmp" "$CAT"; } || rm -f "${CAT}.tmp"
 VEPW=$(need "${G}/vep_cache/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt") SCORES=()
 for s in whole_genome_SNVs.tsv.gz:cadd_snv gnomad.genomes.r4.0.indel.tsv.gz:cadd_indel spliceai_scores.raw.snv.hg38.vcf.gz:spliceai_snv \
@@ -186,6 +193,15 @@ else KNOWN+=" y_str"; fi
 VR=${VIRAL_REF:-${G}/reference/viral-${VIRAL_REF_VERSION}/viral_genomes.fa}
 if [[ ",${T// /}," == *",viral,"* ]]; then plan "47 Viral DNA" viral "$(if [ -z "$NOBAM" ]; then echo 'no BAM'; else need "$VR"; fi)" \
   && NF+=(--viral_ref "$VR") || true; else KNOWN+=" viral"; fi
+# Step 48 (Exomiser) runs when HPO names the symptoms, against the data setup.sh --exomiser-data installs.
+ED="${G}/reference/exomiser-${EXOMISER_DATA_VERSION}"
+if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
+  # A set HPO turns step 48 on even when TOOLS leaves exomiser out, as --hpo does in main.nf.
+  if TOOLS=$([ -n "${HPO:-}" ] && echo exomiser || echo "${TOOLS:-}") plan "48 Exomiser (HPO terms)" exomiser "$([ -n "${HPO:-}" ] || echo 'HPO not set: HPO=HP:0001250,...'; [ -z "${HPO:-}" ] \
+       || need "${ED}/${EXOMISER_DATA_VERSION}_hg38" "${ED}/${EXOMISER_DATA_VERSION}_phenotype")"; then
+    NF+=(--hpo "$HPO" --exomiser_data "$ED")
+  fi
+else KNOWN+=" exomiser"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.

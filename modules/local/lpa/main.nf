@@ -3,12 +3,12 @@
     LPA — the LPA KIV-2 repeat count estimated from read depth (Lp(a))
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Opt-in ('lpa' in --tools). Three processes, as in scripts/46-lpa.sh:
-      LPA_REGIONS  bin/lpa_kiv2.py bed, once: the KIV-2 and single-copy LPA
-                   exons (the regions live only in that script)
+      LPA_REGIONS  bin/copy_number.py bed --locus LPA_KIV2, once: the KIV-2
+                   and single-copy LPA exons (the LPA_KIV2 row of bin/cn_loci.tsv)
       LPA_DEPTH    samtools bedcov -j over them, all MAPQ and MAPQ >= 1, for
                    each sample with a BAM; empty tables when the BAM has no chr6
-      LPA          bin/lpa_kiv2.py estimate: the count, its 95% interval and
-                   the message
+      LPA          bin/copy_number.py call --locus LPA_KIV2: the count, its
+                   95% interval and the message (laid out by bin/lpa_kiv2.py)
 
     Equivalent to: scripts/46-lpa.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -26,7 +26,7 @@ process LPA_REGIONS {
 
     script:
     """
-    lpa_kiv2.py bed > lpa_regions.bed
+    copy_number.py bed --locus LPA_KIV2 > lpa_regions.bed
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -109,7 +109,7 @@ process LPA {
 
     script:
     """
-    lpa_kiv2.py estimate --bedcov ${depth} --bedcov-mapq1 ${depth_q1} --out ${meta.id}_lpa_kiv2.tsv
+    copy_number.py call --locus LPA_KIV2 --bedcov ${depth} --bedcov-mapq1 ${depth_q1} --table ${meta.id}_lpa_kiv2.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

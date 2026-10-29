@@ -9,9 +9,14 @@
 #   - --vcf/--json/--log → --output-prefix (auto-generates .vcf, .json)
 #   - Multithreading support (--threads)
 #   - Bundled GRCh38 variant catalog (31 pathogenic loci) inside the container
-# EH_CATALOG: another catalog (a JSON file under GENOME_DIR) instead of the
-# bundled one. ExpansionHunter stops when a catalog locus is on a contig the
-# reference lacks, so a reduced reference needs a reduced catalog.
+# Catalog: STRchive's 82 disease loci (reference/strchive-<version>/catalog.json,
+# which setup.sh builds with bin/strchive_convert.py), or the bundled 31 when
+# that file is missing. EH_CATALOG=bundled picks the bundled one;
+# EH_CATALOG=FILE another catalog (a JSON file under GENOME_DIR).
+# ExpansionHunter stops when a catalog locus is on a contig the reference
+# lacks, so a reduced reference needs a reduced catalog. The catalog that ran
+# is copied beside the VCF (<sample>_eh_catalog.json): step 9b grades with it
+# when it carries Stranger's thresholds, so the two steps read one catalog.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name> <male|female>}
@@ -42,10 +47,28 @@ mkdir -p "$OUTPUT_DIR"
 # The variant catalog (31 pathogenic GRCh38 loci) is bundled inside the container
 # at /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json
 CATALOG_C=/usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json
-if [ -n "${EH_CATALOG:-}" ]; then
-  [ -f "$EH_CATALOG" ] || { echo "ERROR: EH_CATALOG not found: ${EH_CATALOG}" >&2; exit 1; }
-  CATALOG_C=$(cpath "$EH_CATALOG") || exit 2
-  echo "Variant catalog: ${EH_CATALOG} (EH_CATALOG)"
+STRCHIVE_CATALOG="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}/catalog.json"
+CATALOG=""
+case "${EH_CATALOG:-}" in
+  bundled) echo "Variant catalog: the 31 loci inside the image (EH_CATALOG=bundled)" ;;
+  "")
+    if [ -s "$STRCHIVE_CATALOG" ]; then
+      CATALOG=$STRCHIVE_CATALOG
+      echo "Variant catalog: STRchive ${STRCHIVE_VERSION}, ${CATALOG}"
+    else
+      echo "Variant catalog: the 31 loci inside the image (${STRCHIVE_CATALOG#"${GENOME_DIR}"/} not found; setup.sh --strchive-data installs STRchive's 82)"
+    fi ;;
+  *)
+    [ -f "$EH_CATALOG" ] || { echo "ERROR: EH_CATALOG not found: ${EH_CATALOG}" >&2; exit 1; }
+    CATALOG=$EH_CATALOG
+    echo "Variant catalog: ${EH_CATALOG} (EH_CATALOG)" ;;
+esac
+if [ -n "$CATALOG" ]; then
+  CATALOG_C=$(cpath "$CATALOG") || exit 2
+  # bin/strchive_convert.py leaves Stranger's thresholds off a locus whose
+  # repeat short reads cannot size, or that STRchive gives no pathogenic size
+  # (NoThresholds, one field per line as it writes them): its count is not a call.
+  awk -F'"' '$2 == "LocusId" {id = $4} $2 == "NoThresholds" {print "  Not graded (no call from this count): " id ": " $4}' "$CATALOG"
 fi
 run_in \
   --cpus "${THREADS}" --memory 4g \
@@ -58,10 +81,18 @@ run_in \
     --threads "${THREADS}" \
     --sex "$SEX"
 
+# The catalog that ran, for step 9b; none for the bundled one, so 9b falls
+# back to Stranger's bundled GRCh38 catalog as before.
+if [ -n "$CATALOG" ]; then
+  cp "$CATALOG" "${OUTPUT_DIR}/${SAMPLE}_eh_catalog.json.part"
+  mv -f "${OUTPUT_DIR}/${SAMPLE}_eh_catalog.json.part" "${OUTPUT_DIR}/${SAMPLE}_eh_catalog.json"
+else
+  rm -f "${OUTPUT_DIR}/${SAMPLE}_eh_catalog.json"
+fi
+
 echo "=== ExpansionHunter complete ==="
 echo "VCF:  ${OUTPUT_DIR}/${SAMPLE}_eh.vcf"
 echo "JSON: ${OUTPUT_DIR}/${SAMPLE}_eh.json"
 echo ""
-echo "Key disease thresholds (alleles >= threshold = pathogenic):"
-echo "  HTT(Huntington): 36  FMR1(FragileX): 55  FXN(Friedreich): 66"
-echo "  C9ORF72(ALS/FTD): 30  DMPK(MyotonicDystrophy): 50  ATXN1(SCA1): 39"
+echo "Step 9b (Stranger) grades each count with the thresholds of the catalog that ran;"
+echo "docs/09-str-expansions.md lists the key ones."

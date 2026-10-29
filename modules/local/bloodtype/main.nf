@@ -2,10 +2,13 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     BLOODTYPE — Blood group antigens (red cell, platelet, neutrophil) predicted from the genome
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Opt-in ('bloodtype' in --tools). Two processes, as in scripts/41-bloodtype.sh:
-      BLOODTYPE_DEPTH  samtools bedcov -Q 20 -j over assets/bloodtype_markers.tsv,
-                       for each sample with a BAM: the read depth at every marker
-                       site and over RHD and its flanks
+    Opt-in ('bloodtype' in --tools). Three processes, as in scripts/41-bloodtype.sh:
+      BLOODTYPE_REGIONS bin/copy_number.py bed --locus RHD, once: RHD, its
+                       exons and flanks (the RHD row of bin/cn_loci.tsv)
+      BLOODTYPE_DEPTH  samtools bedcov -Q 20 -j over the sites of
+                       assets/bloodtype_markers.tsv and those regions, for each
+                       sample with a BAM: the read depth at every marker site
+                       and over RHD and its flanks
       BLOODTYPE        bin/bloodtype_report.py on the VCF and that depth; without
                        a BAM ([] in its place) RhD is not determined and sites
                        with no VCF record are read as reference (confidence medium)
@@ -13,6 +16,37 @@
     Equivalent to: scripts/41-bloodtype.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+
+process BLOODTYPE_REGIONS {
+    label 'process_single'
+
+    output:
+    path "rhd_regions.bed", emit: bed
+    path "versions.yml",    emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    copy_number.py bed --locus RHD > rhd_regions.bed
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    touch rhd_regions.bed
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        python: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
 
 process BLOODTYPE_DEPTH {
     tag "$meta.id"
@@ -23,6 +57,7 @@ process BLOODTYPE_DEPTH {
     input:
     tuple val(meta), path(bam), path(bai)
     path(markers)   // assets/bloodtype_markers.tsv
+    path(rhd_bed)   // BLOODTYPE_REGIONS' BED
 
     output:
     tuple val(meta), path("${meta.id}_bloodtype_depth.tsv"), emit: depth
@@ -33,12 +68,12 @@ process BLOODTYPE_DEPTH {
 
     script:
     // The marker table is a BED with extra columns; bedcov reads it once the
-    // comment and header lines are gone. bedcov stops on a contig the BAM has
+    // comment and header lines are gone; the RHD regions follow it. bedcov stops on a contig the BAM has
     // no @SQ line for, so those rows are left out (their sites are then not
     // determined). The same commands as scripts/41-bloodtype.sh.
     """
     samtools view -H ${bam} | awk -F '\\t' '\$1 == "@SQ" {for (i = 2; i <= NF; i++) if (\$i ~ /^SN:/) print substr(\$i, 4)}' > contigs.txt
-    grep -v '^#' ${markers} | tail -n +2 | awk -F '\\t' 'NR == FNR {c[\$1] = 1; next} \$1 in c' contigs.txt - > targets.bed
+    { grep -v '^#' ${markers} | tail -n +2; cat ${rhd_bed}; } | awk -F '\\t' 'NR == FNR {c[\$1] = 1; next} \$1 in c' contigs.txt - > targets.bed
     if [ -s targets.bed ]; then samtools bedcov -Q 20 -j targets.bed ${bam} > ${meta.id}_bloodtype_depth.tsv; else : > ${meta.id}_bloodtype_depth.tsv; fi
 
     cat <<-END_VERSIONS > versions.yml

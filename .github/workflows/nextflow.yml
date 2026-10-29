@@ -160,12 +160,15 @@ jobs:
       # FASTQ and BAM-only rows (the two DEEPVARIANT gives a gVCF). It is given
       # here and not in conf/test_all.config, because other runs of the profile
       # bring their own samplesheet, which the stub pedigree does not name.
+      # --hpo turns on exomiser (step 48) for the one sample it names, for the
+      # same reason here too.
       - name: Stub run of every tool (test_all profile)
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
-            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv
+            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv \
+            --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db
 
       # The stub samplesheet has four samples with alignments (one aligned
       # from FASTQ, one given as CRAM): the T1K index is built once for all of
@@ -266,6 +269,16 @@ jobs:
       # (docs/lessons-learned.md, "The local executor can lose track of free
       # memory"). 26.10.0 fixes the race (nextflow-io/nextflow#7816); the
       # large executor stays so the step cannot hang on an older release.
+      #
+      # The trace can hold the same failed attempt twice. A stub task that
+      # exits 137 at once can have its submit or start event handled after
+      # its complete event, which puts it back in the trace's list of running
+      # tasks, and Nextflow writes that list again when the run ends
+      # (TraceFileObserver, still so in 26.10.x; docs/lessons-learned.md,
+      # "The trace file can list a finished task twice"). So rows are keyed
+      # by task_id: a repeated row must match the first (its exit status may
+      # still read '-') and is counted once, and each task name must have
+      # exactly one first attempt and one retry.
       - name: The heavy tasks ask for what the bash steps give them, and a retry doubles memory
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
@@ -283,7 +296,7 @@ jobs:
           }
           trace.enabled = true
           trace.raw = true
-          trace.fields = 'name,attempt,exit,cpus,memory,time'
+          trace.fields = 'task_id,name,attempt,exit,cpus,memory,time'
           timeline.enabled = false
           report.enabled = false
           dag.enabled = false
@@ -309,8 +322,20 @@ jobs:
           }
           seen, bad = {p: {} for p in want}, 0
           attempts = all_cpus = all_mem = 0
+          rows = {}
           with open(sys.argv[1]) as fh:
               for row in csv.DictReader(fh, delimiter='\t'):
+                  first_row = rows.setdefault(row['task_id'], row)
+                  if first_row is not row:
+                      # The late copy can be built before the exit status was
+                      # set, so it may read '-' there; nothing else may differ.
+                      exits = {first_row['exit'], row['exit']} - {'-'}
+                      if len(exits) > 1 or any(first_row[k] != row[k] for k in row if k != 'exit'):
+                          print(f"FAIL: task {row['task_id']} has two different rows in the trace: {first_row} and {row}")
+                          bad += 1
+                      else:
+                          print(f"{row['name']}: attempt {row['attempt']} is written twice in the trace; counted once")
+                      continue
                   attempts += 1
                   all_cpus += int(row['cpus'])
                   all_mem += int(row['memory'])
@@ -320,19 +345,28 @@ jobs:
                   got = (int(row['cpus']), int(row['memory']), int(row['time']))
                   print(f"{row['name']}: attempt {row['attempt']}, exit {row['exit']}, "
                         f"cpus {got[0]}, memory {got[1] / GB:g} GB, time {got[2] / H:g} h")
-                  seen[proc].setdefault(int(row['attempt']), []).append(got)
+                  seen[proc].setdefault(int(row['attempt']), {}).setdefault(row['name'], []).append(got)
           for proc, (cpus, mem, time) in want.items():
-              first, second = seen[proc].get(1, []), seen[proc].get(2, [])
-              if not first or len(second) != len(first):
-                  print(f"FAIL {proc}: {len(first)} first and {len(second)} second attempts in the trace")
+              first, second = seen[proc].get(1, {}), seen[proc].get(2, {})
+              unexpected = sorted(set(seen[proc]) - {1, 2})
+              if unexpected:
+                  print(f"FAIL {proc}: attempt(s) {unexpected} in the trace, want only a first attempt and one retry")
+                  bad += 1
+              if not first:
+                  print(f"FAIL {proc}: no first attempt in the trace")
                   bad += 1
                   continue
-              for got in first:
+              for name in sorted(set(first) | set(second)):
+                  n1, n2 = len(first.get(name, [])), len(second.get(name, []))
+                  if n1 != 1 or n2 != 1:
+                      print(f"FAIL {name}: {n1} first and {n2} second attempts in the trace, want one of each")
+                      bad += 1
+              for got in (g for gs in first.values() for g in gs):
                   if got != (cpus, mem, time):
                       print(f"FAIL {proc}: first attempt asks for cpus {got[0]}, memory {got[1] / GB:g} GB, "
                             f"time {got[2] / H:g} h; want {cpus}, {mem / GB:g} GB, {time / H:g} h")
                       bad += 1
-              for got in second:
+              for got in (g for gs in second.values() for g in gs):
                   if got[1] != 2 * mem:
                       print(f"FAIL {proc}: the retry asks for {got[1] / GB:g} GB, want {2 * mem / GB:g} GB")
                       bad += 1
@@ -402,7 +436,7 @@ jobs:
           trace.enabled = true
           trace.raw = true
           trace.file = '$t/trace.txt'
-          trace.fields = 'name,attempt,exit,memory'
+          trace.fields = 'task_id,name,attempt,exit,memory'
           timeline.enabled = false
           report.enabled = false
           dag.enabled = false
@@ -417,7 +451,18 @@ jobs:
           python3 - "$t/trace.txt" "$rc" <<'PY'
           import csv, sys
           GB = 1024 ** 3
-          rows = [r for r in csv.DictReader(open(sys.argv[1]), delimiter='\t') if 'ALIGN_MINIMAP2' in r['name']]
+          # One row per task_id: the trace can list a finished task twice
+          # (the retry step above says why), and the first row is the one
+          # written when the task completed.
+          # A repeated row must match the first; only its exit may read '-'.
+          rows = {}
+          for r in csv.DictReader(open(sys.argv[1]), delimiter='\t'):
+              first = rows.setdefault(r['task_id'], r)
+              exits = {first['exit'], r['exit']} - {'-'}
+              if len(exits) > 1 or any(first[k] != r[k] for k in r if k != 'exit'):
+                  print(f"FAIL: task {r['task_id']} has two different rows in the trace: {first} and {r}")
+                  sys.exit(1)
+          rows = [r for r in rows.values() if 'ALIGN_MINIMAP2' in r['name']]
           got = [(int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows]
           want = [(1, '137', 32), (2, '0', 64)]
           print(f"ALIGN_MINIMAP2 attempts (attempt, exit, GB): {got}; want {want}")
@@ -513,7 +558,7 @@ jobs:
           trace.enabled = true
           trace.raw = true
           trace.file = '$t/trace.txt'
-          trace.fields = 'name,attempt,exit,memory'
+          trace.fields = 'task_id,name,attempt,exit,memory'
           timeline.enabled = false
           report.enabled = false
           dag.enabled = false
@@ -528,7 +573,15 @@ jobs:
           python3 - "$t/trace.txt" "$rc" <<'PY'
           import csv, sys
           GB = 1024 ** 3
-          rows = list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
+          # One row per task_id, as in the ALIGN_MINIMAP2 step above.
+          rows = {}
+          for r in csv.DictReader(open(sys.argv[1]), delimiter='\t'):
+              first = rows.setdefault(r['task_id'], r)
+              exits = {first['exit'], r['exit']} - {'-'}
+              if len(exits) > 1 or any(first[k] != r[k] for k in r if k != 'exit'):
+                  print(f"FAIL: task {r['task_id']} has two different rows in the trace: {first} and {r}")
+                  sys.exit(1)
+          rows = list(rows.values())
           want, ok = [(1, '137', 24), (2, '0', 48)], sys.argv[2] == '0'
           for sample in ('sigkill', 'pool'):
               got = sorted((int(r['attempt']), r['exit'], int(r['memory']) // GB) for r in rows if r['name'] == f'PRS ({sample})')

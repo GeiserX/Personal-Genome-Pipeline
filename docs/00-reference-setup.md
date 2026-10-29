@@ -376,6 +376,10 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 > **Key metrics:** LOEUF (oe_lof_upper) < 0.35 = constrained for LoF; pLI >= 0.9 = intolerant to LoF; missense Z > 3.09 = constrained for missense.
 
+## Exomiser Data (Optional, for Step 48, ~37 GB)
+
+Only needed for step 48, the symptom-driven ranking that runs when you give HPO terms. `./scripts/setup.sh --exomiser-data ${GENOME_DIR}` downloads Exomiser's data release `EXOMISER_DATA_VERSION` (hg38 and phenotype archives, 37 GB, each checked against its sha256 in `versions.env`), unpacks it into `${GENOME_DIR}/reference/exomiser-<release>/` (58 GB; about 72 GB free while it runs), deletes the archives and pulls `EXOMISER_IMAGE`. An interrupted download resumes when the command runs again. See [Step 48](48-exomiser.md).
+
 ## Docker Images — Pre-Pull All
 
 `setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. A failed pull is tried three times (`FETCH_TRIES` and `FETCH_WAIT` change that), and Docker's own message is printed: `toomanyrequests` is Docker Hub's rate limit, `manifest unknown` a tag that does not exist. `--parascopy-data` and `--yleaf-data` pull their step's optional image along with its data. Each image pinned by digest (`name:tag@sha256:...`) also gets a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`: Docker gives an image pulled by digest no tag, and a dangling-image cleanup such as `docker image prune` would delete it ([Troubleshooting](troubleshooting.md#images-that-were-pulled-are-missing-after-a-docker-cleanup)). Tasks still run the digest reference. To pull every image in advance, the optional ones included, from the repository root in bash (then run `scripts/setup.sh --pull-only` once to tag the digest-pinned ones):
