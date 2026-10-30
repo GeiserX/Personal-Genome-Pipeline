@@ -1,6 +1,6 @@
 # Copy Number from Depth (the locus catalog)
 
-Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41, the LPA KIV-2 repeat in step 46, and the UGT2B17 deletion in the report. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
+Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
 
 The table sits in `bin/` because `bin/` is the one repository folder that every container mounts: the bash steps mount it as `/pgp-bin`, and Nextflow puts it on every task's PATH.
 
@@ -57,18 +57,18 @@ Then the row's `call` column decides:
 | HBA | 35 | HBA2 and HBA1 gene bodies against two 40 kb flanks outside the `--SEA` deletion | whole number of alpha-globin genes ([step 35](35-paralogs.md)) |
 | LPA_KIV2 | 46 | the 14 exons of the KIV-2 block against 15 single-copy LPA exons | repeat count with a 95% interval, low, typical or high ([step 46](46-lpa.md)) |
 | RHD | 41 | the RHD gene against two flanks outside the common RHD deletion; the ten exons as details | 0, 1 or 2 copies ([step 41](41-bloodtype.md)) |
-| UGT2B17 | report | the gene (for the owner check) | CNVpytor's level over the gene: under 0.25 no copy, under 0.75 one, else two ([step 18](18-cnvpytor.md)) |
 
 ## One owner per locus
 
 A gene gets a row only when no pinned caller already counts it. The pinned Parascopy data (version 1.7) models 167 genes, among them AMY1C, C4A, CFH, CFHR4, FCGR3A, CHRNA7, APOBEC3A and GYPA. Parascopy owns those, so the engine never gets a row for them. A model covers its main region and the paralog copies it counts with it: C4A's model also covers C4B. `assets/parascopy_models_v1.7.txt` lists every one of those regions, and `tests/test_copy_number.py` fails when a row's targets or controls overlap one. Naming the model in `cross_check` does not lift that. Planted rows on AMY1C and on C4B show the check catching them.
 
-Two rows are exempt on purpose, and the test lists them by name:
+One row is exempt on purpose, and the test lists it by name:
 
 - **RHD**: RHCE's model holds most of RHD as one of its paralog copies. Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a depth row. `cross_check` names RHCE as a second opinion, not a second owner.
-- **UGT2B17**: UGT2B15's model holds stretches of UGT2B17 as paralog copies. The row only records the thresholds the report applies to CNVpytor's level; the engine does not count it from bedcov.
 
 The test also fails when an exemption no longer matches an overlap, so the list cannot go stale.
+
+pypgx owns the genes it calls from the BAM, the `bam` rows of `assets/pgx_genes.tsv` (UGT2B17 among them), so none of them gets a row here either; `tests/test_pypgx_genes.sh` fails when one does.
 
 ## Adding a locus
 

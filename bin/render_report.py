@@ -328,18 +328,10 @@ def pypgx_lines(d):
 
 def pgx_copy_number(S):
     """(gene, copy number) rows, the same in both reports: pypgx's call from
-    read depth for its BAM-based genes, and UGT2B17 from CNVpytor's calls
-    over its GENCODE span."""
-    pg, cn = S.get("pypgx", MISSING), S.get("cnvpytor", MISSING)
-    if pg["state"] == "missing" and cn["state"] == "missing":
-        return []
-    rows = [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
-    u = cn["data"].get("ugt2b17") if cn["state"] in ("ok", "stale") else None
-    if u:
-        rows.append(("UGT2B17", f"{u['call']} ({u['note']})"))
-    else:
-        rows.append(("UGT2B17", f"not assessed (CNVpytor, step 18, {'failed' if cn['state'] == 'failed' else 'did not run' if cn['state'] == 'missing' else 'gave no UGT2B17 result'})"))
-    return rows
+    read depth for each BAM-mode gene of assets/pgx_genes.tsv (UGT2B17 among
+    them), or the reason it has none."""
+    pg = S.get("pypgx", MISSING)
+    return [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
 
 
 # A section the summary lacks (one written before the section existed).
