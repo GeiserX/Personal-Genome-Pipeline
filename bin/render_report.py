@@ -1057,6 +1057,11 @@ def text_report(s):
         out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
         w("")
 
+    if head("mosaic", "Mosaic Chromosomal Alterations (MoChA, step 51)"):
+        for line in mosaic_mca_lines(S["mosaic"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
         d = S["cpsr"]["data"]
         if d.get("html_report"):
@@ -1491,6 +1496,42 @@ def viral_body(d):
     table = ("    <table><tr><th>Virus</th><th>Call</th><th>Reads</th><th>Breadth</th><th>Depth / human</th>"
              "<th>Copies per cell</th></tr>" + rows + "</table>") if rows else small_note("No read on any viral genome.")
     return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
+
+
+MCA_NOTE = ("Large gains, losses and copy-neutral losses of heterozygosity (CN-LOH) carried by a share of the "
+            "blood cells, from MoChA on the phased heterozygous sites of chr1 to chr22. In a UK Biobank study they "
+            "became more common with age and went with a higher risk of a later blood cancer (Loh et al. 2018). "
+            "That is a population-level association, not a diagnosis; an event is confirmed on a new blood sample. "
+            "Below the floor nothing is reported, and an event above it can still be missed. "
+            "Every MoChA call, with the reason it was or was not reported: mosaic/<sample>_mocha.tsv.")
+
+
+def mosaic_mca_lines(d):
+    """Step 51's lines, the same in both reports: the floor, then each call or the reason none is shown."""
+    if d.get("status") != "assessed":
+        return [f"Not assessed: {d.get('message', '.')}", MCA_NOTE]
+    out = [f"Reported at a cell fraction of {d.get('floor', '.')} or more at {d.get('depth', '.')}x "
+           f"(read-sampling floor {d.get('floor_read', '.')}, minimum {d.get('floor_min', '.')}; "
+           f"{d.get('het_sites', '.')} heterozygous sites on {d.get('chromosomes', '.')})"]
+    for x in d.get("calls", []):
+        out.append(f"{x['type']} on {x['arms']}, {x['chrom']}:{x['start']}-{x['end']} ({x['length_mb']} Mb): "
+                   f"about {x['cell_fraction']} of the cells")
+    if not d.get("calls"):
+        out.append(f"No mosaic alteration reported ({d.get('calls_mocha', '0')} MoChA calls, none kept).")
+    return out + [MCA_NOTE]
+
+
+def mosaic_mca_body(d):
+    """The MoChA card: a row per reported call, or the reason there is none."""
+    if d.get("status") != "assessed":
+        return [stat("Status", badge("Not assessed", "gray")), small_note(d.get("message", ".")), small_note(MCA_NOTE)]
+    rows = "".join(f"<tr><td>{E(x['type'])}</td><td>{E(x['arms'])}</td><td>{E(x['chrom'])}:{E(x['start'])}-{E(x['end'])}</td>"
+                   f"<td>{E(x['length_mb'])}</td><td>{E(x['cell_fraction'])}</td></tr>" for x in d.get("calls", []))
+    table = ("    <table><tr><th>Type</th><th>Arm</th><th>Region</th><th>Mb</th><th>Cell fraction</th></tr>"
+             + rows + "</table>") if rows else small_note("No mosaic alteration reported.")
+    lines = mosaic_mca_lines(d)
+    return [stat("Calls reported", E(d.get("calls_reported", "0"))), stat("Cell-fraction floor", E(d.get("floor", "."))),
+            table, small_note(lines[0]), small_note(MCA_NOTE)]
 
 
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
@@ -1995,6 +2036,10 @@ def html_report(s):
                [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
                + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
                + [small_note(CHIP_NOTE)], full=True))
+    if S.get("mosaic", MISSING)["state"] != "missing":
+        mo = S["mosaic"]
+        a(card(mo, "Mosaic Chromosomal Alterations (MoChA)",
+               mosaic_mca_body(mo["data"]) if mo["state"] in ("ok", "stale") else [], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
