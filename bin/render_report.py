@@ -673,6 +673,7 @@ CHAPTERS = (
         ("exomiser", "Symptom-driven ranking", ("exomiser",)),
         ("structural-variants", "Structural variants", ("manta", "delly", "cnvpytor", "sv_consensus", "annotsv")),
         ("expansions", "Repeat expansions", ("expansions",)),
+        ("vntyper", "MUC1 repeat (ADTKD)", ("vntyper",)),
         ("mito", "Mitochondrial variants", ("mito",)),
         ("lpa", "Lp(a)", ("lpa",)),
         ("chip", "Clonal haematopoiesis", ("chip",)),
@@ -2199,7 +2200,7 @@ def html_report(s):
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("vntyper", MISSING)["state"] != "missing":
         vn = S["vntyper"]["data"]
-        a(card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
+        a("vntyper", card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
                ([stat("Result", badge(vn.get("status", "."), {"positive": "red", "possible": "yellow",
                                                               "negative": "green"}.get(vn.get("status"), "gray")))])
                + [f"    <p>{E(line)}</p>" for line in vntyper_lines(vn)]))

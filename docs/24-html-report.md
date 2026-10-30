@@ -48,7 +48,7 @@ The report is one HTML file in seven chapters, in this order, each opening with 
 | Chapter | Question | Sections |
 |---|---|---|
 | Quality | Can I trust this data? | Quality control (steps 16b, 16, 33, 02), variant calling (03) |
-| Clinical | Is there anything to take to a doctor? | ClinVar screen and hits (06), clinical filter and secondary findings (23), cancer predisposition (17), variant prioritization (31), symptom-driven ranking (48), structural variants (04, 19, 18, 22, 05), repeat expansions (09), mitochondrial variants (20), Lp(a) (46), clonal haematopoiesis (49), mosaic loss of chromosome Y or X (33) |
+| Clinical | Is there anything to take to a doctor? | ClinVar screen and hits (06), clinical filter and secondary findings (23), cancer predisposition (17), variant prioritization (31), symptom-driven ranking (48), structural variants (04, 19, 18, 22, 05), repeat expansions (09), MUC1 repeat (52), mitochondrial variants (20), Lp(a) (46), clonal haematopoiesis (49), mosaic loss of chromosome Y or X (33), mosaic chromosomal alterations (51) |
 | Carrier | What could I pass on to a child? | Carrier list (06), couple carrier screen (39), paralog genes and SMN1 (35b, 35) |
 | Medicines | How might I respond to medicines? | PharmCAT (07), CPIC recommendations (27), pypgx, Cyrius and CYP2D6 (32, 21), HLA typing (08) |
 | Ancestry | Where do my ancestors come from? | Fine-grained ancestry (26b), mitochondrial haplogroup (12), Y chromosome (37, 45), archaic ancestry (43), ancient populations (44), runs of homozygosity (11) |
