@@ -144,12 +144,16 @@ for spec in $SPECS; do
            -@ "${THREADS}"; then
     # One row per region of the locus profile: aggregate and paralog-specific
     # copy number, each with its filter and quality (as the PARASCOPY module).
-    {
+    # Parascopy can exit 0 with no result file when no region succeeds; that
+    # row is not assessed too, and the later rows still run.
+    if {
       header
       gzip -dc "${WORK}/${name}/res.samples.bed.gz" \
         | awk -F'\t' -v OFS='\t' '!/^#/ {print $1, $2, $3, $4, $6, $7, $8, $9, $10, $11, $13}'
-    } > "$out"
-    continue
+    } > "$out"; then
+      continue
+    fi
+    reason="parascopy cn-using wrote no readable result; see the log of step 35"
   else
     reason="parascopy cn-using failed; see the log of step 35"
   fi

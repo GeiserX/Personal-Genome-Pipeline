@@ -8,8 +8,9 @@
 #   - PARASCOPY_POPULATION=AFR takes the AFR model files;
 #   - a row whose region has no read is not assessed: no Parascopy call for it,
 #     a table that says why, and the other rows still run;
-#   - a row whose model file is not installed, and a row whose Parascopy run
-#     fails, are not assessed the same way, and the step still exits 0;
+#   - a row whose model file is not installed, a row whose Parascopy run
+#     fails, and one that exits 0 with no result file, are not assessed the
+#     same way, and the step still exits 0;
 #   - the catalog in the repository runs its SMN1 row into the table the
 #     reports read, and removes the tables of rows it no longer has (not the
 #     HBA or Paraphase ones);
@@ -51,6 +52,8 @@ case "$*" in
     model=$3
     case "$model" in *"/${FAKE_CN_FAIL:-none}") echo "fake parascopy: failed on ${model}" >&2; exit 1 ;; esac
     FLAG=-o; o=$(host_path "$(arg "$@")"); mkdir -p "$o"
+    # FAKE_CN_EMPTY: exit 0 with no result file, as when no region succeeds
+    case "$model" in *"/${FAKE_CN_EMPTY:-none}") exit 0 ;; esac
     name=$(basename "$model" .gz)
     printf '#chrom\tstart\tend\tlocus\tsample\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\tinfo\thomologous_regions\nchr1\t100\t200\t%s\tsample1\tPASS\t4\t40\tPASS\t2,2\t30,30\t.\tchr1:300-400:+\n' \
       "$name" | gzip -c > "${o}/res.samples.bed.gz" ;;
@@ -123,6 +126,15 @@ esac
 output_has missing-and-failed 'WARNING: GBA\.gz: not assessed'
 [ "$(awk -F'\t' 'NR == 2 {print $6}' "${OUT}/sample1_smn_copy_number.tsv")" = 4 ] || fail "the SMN row did not run"
 printf 'x\n' > "${D}/models_GRCh38_1KGP/EUR/PMS2.gz"
+
+# --- a Parascopy run that exits 0 but writes no result -------------------------------
+: > "$FAKE_DOCKER_LOG"
+PARALOG_LOCI="$L" FAKE_CN_EMPTY=GBA.gz run_expect 0 empty-result "${SCRIPTS}/35-paralogs.sh" sample1
+case "$(na "${OUT}/sample1_gba_copy_number.tsv")" in
+  "not assessed: parascopy cn-using wrote no readable result"*) ;;
+  *) fail "the GBA table does not say Parascopy wrote no result: $(cat "${OUT}/sample1_gba_copy_number.tsv" 2>&1)" ;;
+esac
+[ "$(awk -F'\t' 'NR == 2 {print $6}' "${OUT}/sample1_pms2_copy_number.tsv")" = 4 ] || fail "the PMS2 row after it did not run"
 
 # --- the catalog in the repository --------------------------------------------------
 # It has only the SMN1 row, so the GBA and PMS2 tables of the runs above go,

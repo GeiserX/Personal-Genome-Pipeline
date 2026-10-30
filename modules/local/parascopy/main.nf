@@ -103,12 +103,15 @@ process PARASCOPY {
             reason="no read over \$region"
         elif parascopy cn-using "\$models/\$model" -i ${bam}::${meta.id} -f ${reference} \\
                 -t ${parascopy_data}/homology_table/GRCh38.bed.gz -d depth -o ${meta.id}_parascopy/\$name -@ ${task.cpus}; then
-            {
+            # no result file although Parascopy exited 0: not assessed, as in step 35
+            if {
                 header
                 gzip -dc ${meta.id}_parascopy/\$name/res.samples.bed.gz \\
                     | awk -F'\\t' -v OFS='\\t' '!/^#/ {print \$1, \$2, \$3, \$4, \$6, \$7, \$8, \$9, \$10, \$11, \$13}'
-            } > "\$out"
-            continue
+            } > "\$out"; then
+                continue
+            fi
+            reason="parascopy cn-using wrote no readable result; see the log of step 35"
         else
             reason="parascopy cn-using failed; see the log of step 35"
         fi
