@@ -105,11 +105,11 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "50", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "50", "51", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
-    "Mosaic and low-fraction variants (only chrM heteroplasmy is reported)",
+    "Mosaic and low-fraction small variants (only chrM heteroplasmy is reported, and with step 49 the CHIP genes)",
     "Methylation and imprinting",
     "Repeat expansions outside the ExpansionHunter catalog",
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
@@ -125,6 +125,10 @@ HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neith
 # step 50 is listed under not run, and unreadable tables under their section.
 MEI_NOT_ASSESSED = ("Mobile element insertions (Alu, L1 and SVA, the FKTN, TAF1 and BBS1 SVA insertions among them): "
                     "not looked for (step 50, MEGAnE, is opt-in)")
+
+# Added to NOT_ASSESSED unless step 51 (MoChA) assessed the sample.
+MCA_NOT_ASSESSED = ("Autosomal mosaic chromosomal alterations (large gains, losses and copy-neutral LOH in a share "
+                    "of the blood cells): step 51 (MoChA) did not assess this sample")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -2309,6 +2313,38 @@ def sec_mei(d, s):
                "sites": [{k: r[k] or "." for k in need} for r in sites]}
 
 
+MOCHA_SUMMARY_KEYS = ("status", "message", "depth", "het_sites", "het_per_10mb", "chromosomes", "floor_read",
+                      "floor_min", "floor", "calls_mocha", "calls_reported", "phasing")
+MOCHA_CALL_KEYS = ("chrom", "start", "end", "length_mb", "arms", "type", "cell_fraction", "n_hets", "lod_baf_phase",
+                   "reported", "reason")
+
+
+def sec_mocha(d, s):
+    """Step 51's tables (mosaic/<id>_mocha_summary.tsv and _mocha.tsv,
+    bin/mocha_report.py): the status, the floor, and the calls reported."""
+    p = first_existing(d, [f"mosaic/{s}_mocha_summary.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in ("assessed", "not assessed"):
+        raise Unreadable(f"{os.path.basename(p)} has no status row (assessed or not assessed)")
+    data = {k: kv.get(k) or "." for k in MOCHA_SUMMARY_KEYS}
+    c = first_existing(d, [f"mosaic/{s}_mocha.tsv"])
+    if not c:
+        raise Unreadable(f"{os.path.basename(p)} has no {s}_mocha.tsv beside it")
+    with open_text(c) as f:
+        head = f.readline().rstrip("\r\n").split("\t")
+    if any(k not in head for k in MOCHA_CALL_KEYS):
+        raise Unreadable(f"{os.path.basename(c)} lacks a column of {', '.join(MOCHA_CALL_KEYS)}")
+    rows = read_tsv(c)
+    data["calls"] = [{k: r[k] or "." for k in MOCHA_CALL_KEYS} for r in rows if r.get("reported") == "yes"]
+    data["not_reported"] = sum(1 for r in rows if r.get("reported") != "yes")
+    if data["calls_reported"] != "." and data["calls_reported"] != str(len(data["calls"])):
+        raise Unreadable(f"{os.path.basename(c)} has {len(data['calls'])} reported calls, "
+                         f"{os.path.basename(p)} says {data['calls_reported']}")
+    return p, data
+
+
 def sec_traits(d, s):
     """Step 42's traits table (traits/<id>_traits.tsv, bin/traits_report.py):
     every row with its genotype, status and reading, the counts per status,
@@ -3475,6 +3511,7 @@ SECTIONS = [
     ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),
     ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
     ("mei", "Mobile element insertions (MEGAnE)", "50", sec_mei),
+    ("mosaic", "Mosaic chromosomal alterations (MoChA)", "51", sec_mocha),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
@@ -3655,7 +3692,8 @@ def collect(sample, sample_dir, declared_sex=None):
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
            else [HBA_NOT_ASSESSED])
-        + ([MEI_NOT_ASSESSED] if sections["mei"]["state"] == "missing" else []),
+        + ([MEI_NOT_ASSESSED] if sections["mei"]["state"] == "missing" else [])
+        + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
     return summary
 
