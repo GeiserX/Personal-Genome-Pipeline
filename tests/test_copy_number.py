@@ -21,8 +21,9 @@ copy-number locus.
   6. the CLI: `bed` prints every bedcov locus, `call --json` writes one block;
   7. the wiring: steps 35, 41 and 46 and their Nextflow modules call
      copy_number.py, never hba_copy_number.py or lpa_kiv2.py, with the
-     bedcov options of the catalog row; collect_summary reads UGT2B17's
-     thresholds from the catalog.
+     bedcov options of the catalog row. UGT2B17 has no row: pypgx calls it
+     in BAM mode (assets/pgx_genes.tsv), and tests/test_pypgx_genes.sh
+     checks that no catalog row names a gene pypgx calls from the BAM.
 
 Run: python3 tests/test_copy_number.py
 """
@@ -172,9 +173,6 @@ EXEMPT = {
     # Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a
     # depth row; RHCE's model holds RHD as a paralog copy and is its cross-check.
     ("RHD", "RHCE"),
-    # The row only records the thresholds the report applies to CNVpytor's level;
-    # UGT2B15's model holds stretches of UGT2B17 as paralog copies. Owner moves to pypgx.
-    ("UGT2B17", "UGT2B15"),
 }
 
 
@@ -196,7 +194,7 @@ def owner_violations(cat, models):
 def main():
     # 1. the catalog
     cat = cn.load_catalog(CATALOG)
-    check("catalog: the four loci", list(cat) == ["HBA", "LPA_KIV2", "RHD", "UGT2B17"], list(cat))
+    check("catalog: the three loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"], list(cat))
     for loc, r in cat.items():
         check(f"catalog {loc}: owner cn-depth, cross_check named, PMIDs numbers or '.'",
               r["owner"] == "cn-depth" and re.fullmatch(r"none|[a-z]+:[A-Za-z0-9_]+(,[a-z]+:[A-Za-z0-9_]+)*",
@@ -218,9 +216,6 @@ def main():
             want = {"low", "typical", "high"} if mode == "class" else {str(i) for i in range(int(len(vals) + 1))} \
                 if mode == "cut" else None
             check(f"catalog {loc}: a reading for every call", want is None or want <= set(readings), readings)
-    ug = cat["UGT2B17"]["_readings"]
-    check("catalog UGT2B17: a reading for 0, 1, 2 copies and for a duplication",
-          all(ug.get(k) for k in ("0", "1", "2", "dup")), ug)
     with tempfile.TemporaryDirectory() as t:
         p = os.path.join(t, "c.tsv")
         for desc, kw, err in (("a bad kind", {"kind": "exon"}, "kind"),
@@ -408,8 +403,6 @@ def main():
         want = sum(len(cn.regions(r)) for r in cat.values() if r["input"] == "bedcov")
         check("bed: every segment of the bedcov loci, once", out.returncode == 0 and len(names) == len(set(names)) == want,
               (out.returncode, len(names), want))
-        out = subprocess.run([sys.executable, SCRIPT, "bed", "--locus", "UGT2B17"], capture_output=True, text=True)
-        check("bed: UGT2B17 (read from CNVpytor) has no bedcov regions", out.returncode == 2, out)
         depth = {n: 30.0 for *_, n in cn.regions(lrow)}
         for n in depth:
             if n.startswith("kiv2_"):
@@ -462,9 +455,6 @@ def main():
                   sorted(c.strip() for c in calls) == sorted(passes), calls)
         check(f"{path}: no call of the old per-gene scripts",
               not re.search(r"(hba_copy_number|lpa_kiv2)\.py (bed|check|estimate)", text))
-    cs = read("bin/collect_summary.py")
-    check("collect_summary: UGT2B17's thresholds come from the catalog, none is written there",
-          'load_catalog()["UGT2B17"]' in cs and "0.25" not in cs.split("def ugt2b17_copy_number")[1].split("\ndef ")[0])
 
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0

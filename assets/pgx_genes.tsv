@@ -1,0 +1,48 @@
+# pgx_genes.tsv: the genes step 32 (scripts/32-pypgx.sh, the PYPGX module) calls with pypgx,
+# one row per gene, in the order they run. Adding a gene is adding a row.
+#
+# mode: bam = copy number from read depth plus the VCF (prepare-depth-of-coverage, then
+#   run-ngs-pipeline --depth-of-coverage --variants); vcf = star alleles from the VCF only.
+#   A bam row must be a gene pypgx's own gene table marks SV=TRUE (it has a CNV model in the
+#   pypgx-bundle): pypgx/api/data/gene-table.csv at the pinned tag (PYPGX_BUNDLE_VERSION in
+#   versions.env). In 0.26.0 those are the 13 bam rows below; tests/test_pypgx_genes.sh fails
+#   when a bam row is not one of them, or when one of them is not a bam row.
+# callable_without_alt: no = the gene lies on an ALT contig in GRCh38, so a BAM aligned to the
+#   default no-ALT reference cannot hold it. The step checks the BAM for alt_contig; without it
+#   the gene is left out of depth preparation (which would fail for every bam gene) and its
+#   summary row says "not callable on this reference".
+# alt_contig: the contig a callable_without_alt=no gene needs; . otherwise.
+# second_caller: the other tool in this pipeline that calls the gene; none otherwise.
+# pharmcat_outside_call: a record, not a switch: yes = step 36 (bin/pgx_outside_calls.py) can pass
+#   this gene's call to PharmCAT as an outside call (CYP2D6, only when pypgx and Cyrius agree); no
+#   otherwise. Step 36 decides that in its own code and does not read this column.
+gene	mode	callable_without_alt	alt_contig	second_caller	pharmcat_outside_call
+CYP2D6	bam	yes	.	cyrius	yes
+CYP2A6	bam	yes	.	none	no
+GSTM1	bam	yes	.	none	no
+GSTT1	bam	no	chr22_KI270879v1_alt	none	no
+CYP2B6	bam	yes	.	pharmcat	no
+CYP2E1	bam	yes	.	none	no
+CYP4F2	bam	yes	.	pharmcat	no
+G6PD	bam	yes	.	pharmcat	no
+SLC22A2	bam	yes	.	none	no
+SULT1A1	bam	yes	.	none	no
+UGT1A4	bam	yes	.	none	no
+UGT2B15	bam	yes	.	none	no
+UGT2B17	bam	yes	.	none	no
+CYP1A2	vcf	yes	.	none	no
+CYP2C9	vcf	yes	.	pharmcat	no
+CYP2C19	vcf	yes	.	pharmcat	no
+CYP3A4	vcf	yes	.	pharmcat	no
+CYP3A5	vcf	yes	.	pharmcat	no
+DPYD	vcf	yes	.	pharmcat	no
+TPMT	vcf	yes	.	pharmcat	no
+NUDT15	vcf	yes	.	pharmcat	no
+UGT1A1	vcf	yes	.	pharmcat	no
+SLCO1B1	vcf	yes	.	pharmcat	no
+VKORC1	vcf	yes	.	pharmcat	no
+NAT2	vcf	yes	.	pharmcat	no
+COMT	vcf	yes	.	none	no
+MTHFR	vcf	yes	.	none	no
+ABCB1	vcf	yes	.	none	no
+IFNL3	vcf	yes	.	pharmcat	no

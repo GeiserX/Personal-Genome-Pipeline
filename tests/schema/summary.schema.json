@@ -1522,39 +1522,6 @@
            "type": "integer",
            "minimum": 0
           },
-          "ugt2b17": {
-           "type": "object",
-           "required": [
-            "call",
-            "note"
-           ],
-           "properties": {
-            "call": {
-             "enum": [
-              "no copy (deleted on both chromosomes)",
-              "one copy",
-              "two copies",
-              "more than two copies",
-              "not assessed"
-             ]
-            },
-            "note": {
-             "type": "string"
-            },
-            "span": {
-             "type": "string"
-            },
-            "gencode_release": {
-             "type": "string"
-            },
-            "level": {
-             "type": "number"
-            },
-            "e_value": {
-             "type": "number"
-            }
-           }
-          },
           "significant_filtered": {
            "type": "integer",
            "minimum": 0
