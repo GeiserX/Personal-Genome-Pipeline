@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, viral and chip run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip and mocha run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -168,6 +168,8 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 46 (Lp(a), the LPA KIV-2 count) is opt-in and listed only when TOOLS names it; it reads the BAM.
 if [[ ",${T// /}," == *",lpa,"* ]]; then plan "46 Lp(a) KIV-2 count" lpa "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" lpa"; fi
+# Step 52 (MUC1 VNTR frameshifts, VNtyper) is opt-in and listed only when TOOLS names it; it reads the BAM.
+if [[ ",${T// /}," == *",vntyper,"* ]]; then plan "52 MUC1 VNTR (VNtyper)" vntyper "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" vntyper"; fi
 # Step 49 (CHIP) is opt-in and listed only when TOOLS names it: Mutect2 on the BAM, with step 29's gnomAD and panel of normals when installed.
 CG="${G}/reference/ensembl/Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
 if [[ ",${T// /}," == *",chip,"* ]]; then plan "49 CHIP (clonal blood cells)" chip "$(need "$CG")" && NF+=(--chip_gff "$CG") \
@@ -202,6 +204,10 @@ if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
     NF+=(--hpo "$HPO" --exomiser_data "$ED")
   fi
 else KNOWN+=" exomiser"; fi
+# Step 51 (mosaic chromosomal alterations, MoChA) is opt-in and listed only when TOOLS names it; it reads the VCF.
+MD=${MOCHA_DATA:-${G}/reference/mocha-${MOCHA_PANEL_VERSION}}
+if [[ ",${T// /}," == *",mocha,"* ]]; then plan "51 Mosaic alterations (MoChA)" mocha "$(need "${MD}/DONE")" \
+  && NF+=(--mocha_data "$MD") || true; else KNOWN+=" mocha"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.

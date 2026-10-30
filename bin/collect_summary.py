@@ -52,6 +52,7 @@ import csv
 import glob
 import gzip
 import json
+import math
 import os
 import re
 import struct
@@ -65,7 +66,6 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
-import copy_number  # noqa: E402  bin/cn_loci.tsv: UGT2B17's thresholds and calls
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -104,11 +104,11 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "51", "52", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
-    "Mosaic and low-fraction variants (only chrM heteroplasmy is reported)",
+    "Mosaic and low-fraction small variants (only chrM heteroplasmy is reported, and with step 49 the CHIP genes)",
     "Methylation and imprinting",
     "Repeat expansions outside the ExpansionHunter catalog",
     "Phase: two variants in one gene are compound-het candidates, not confirmed",
@@ -119,6 +119,15 @@ NOT_ASSESSED = [
 # short reads) or step 35b (Paraphase, PacBio HiFi, both genes) made a call.
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
                     "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
+
+# Added to NOT_ASSESSED unless step 51 (MoChA) assessed the sample.
+MCA_NOT_ASSESSED = ("Autosomal mosaic chromosomal alterations (large gains, losses and copy-neutral LOH in a share "
+                    "of the blood cells): step 51 (MoChA) did not assess this sample")
+
+# Added to NOT_ASSESSED unless step 52 (VNtyper) gave a positive, possible or
+# negative reading: no other step can see a frameshift inside the MUC1 VNTR.
+VNTYPER_NOT_ASSESSED = ("MUC1 VNTR frameshifts (ADTKD-MUC1): step 52 (VNtyper, opt-in) gave no reading; "
+                        "no standard caller sees them")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -522,13 +531,24 @@ def sec_pypgx(d, s):
     cyp_row = next((r for r in rows if r.get("Gene") == "CYP2D6"), None)
     cyp = (cyp_row or {}).get("Diplotype", "")
     out = {"genes_total": len(rows), "genes_called": len(called), "cyp2d6": cyp or "not called"}
-    # pypgx's copy-number call from read depth, BAM-based genes only; 'N/A'
-    # (a VCF gene, GSTT1 without its contig, CYP2D6 after a failed depth check)
-    # is none.
-    out["cnv_call"] = {r["Gene"]: r["CNV_call"].strip() for r in rows
-                       if (r.get("Source") or "").strip().upper() == "BAM"
-                       and (r.get("CNV_call") or "").strip() not in ("", ".")
-                       and not r["CNV_call"].strip().startswith("N/A")}
+    # pypgx's copy-number call from read depth, one entry per BAM-based gene
+    # (a VCF gene has none). A gene not callable on this reference gets its
+    # own line below instead; one without a call ('N/A': pypgx failed, or
+    # CYP2D6 after a failed depth check) says so, so no gene drops out.
+    out["cnv_call"] = {}
+    for r in rows:
+        status = (r.get("Status") or "").strip()
+        if (r.get("Source") or "").strip().upper() != "BAM" or status == pgx_outside_calls.NOT_CALLABLE:
+            continue
+        v = (r.get("CNV_call") or "").strip()
+        if v not in ("", ".") and not v.startswith("N/A"):
+            out["cnv_call"][r["Gene"]] = v
+        elif status.lower() == "failed" or (r.get("Diplotype") or "").strip().upper() == "FAILED":
+            out["cnv_call"][r["Gene"]] = "not called: pypgx failed"
+        elif "depth check" in status or "depth check" in v:
+            out["cnv_call"][r["Gene"]] = "not called: the CYP2D6 depth check failed"
+        else:
+            out["cnv_call"][r["Gene"]] = "not called: pypgx gave no copy-number call"
     out["not_callable"] = [r["Gene"] for r in rows
                            if (r.get("Status") or "").strip() == pgx_outside_calls.NOT_CALLABLE]
     out["low_gq"] = [{"gene": r["Gene"], "diplotype": (r.get("Diplotype") or "").strip(),
@@ -1533,52 +1553,6 @@ def sec_delly(d, s):
     return p, {"total": t, "pass": ps}
 
 
-def gencode_gene(d, gene):
-    """(chrom, start, end, release) of GENCODE's gene line for gene, 1-based,
-    from the gene lines setup.sh installs beside the sample folders
-    (reference/gencode.v<N>.basic.genes.gtf, the newest release there), or
-    None when there are none or the gene is not in them."""
-    files = glob.glob(os.path.join(d, os.pardir, "reference", "gencode.v*.basic.genes.gtf"))
-    rel = {f: int(m.group(1)) for f in files for m in [re.search(r"gencode\.v(\d+)\.basic", os.path.basename(f))] if m}
-    if not rel:
-        return None
-    path = max(rel, key=rel.get)
-    want = f'gene_name "{gene}";'
-    with open(path, errors="replace") as f:
-        for line in f:
-            c = line.split("\t", 9)
-            if len(c) >= 9 and c[2] == "gene" and want in c[8] and re.fullmatch(r"chr([0-9]+|X|Y)", c[0]):
-                return c[0], int(c[3]), int(c[4]), str(rel[path])
-    return None
-
-
-def ugt2b17_copy_number(calls, span):
-    """UGT2B17 copy number from the CNVpytor call that covers most of its
-    GENCODE span. calls: (type, chrom, start, end, level, e-value). The
-    thresholds on CNVpytor's read-depth level (1.0 is two copies) and the
-    words of each call are the UGT2B17 row of bin/cn_loci.tsv."""
-    row = copy_number.load_catalog()["UGT2B17"]
-    chrom, gs, ge = span[:3]
-    best = None
-    for t, c, cs, ce, level, ev in calls:
-        ov = min(ce, ge) - max(cs, gs) + 1
-        if c == chrom and ov > 0 and (best is None or ov > best[0]):
-            best = (ov, t, c, cs, ce, level, ev)
-    out = {"span": f"{chrom}:{gs}-{ge}", "gencode_release": span[3]}
-    if best is None:
-        return dict(out, call=copy_number.reading(row, 2), note="no CNVpytor call over the gene")
-    ov, t, c, cs, ce, level, ev = best
-    if t == "duplication":
-        call = copy_number.reading(row, "dup")
-    else:
-        call = copy_number.reading(row, copy_number.cut_copies(level, row["_call"][1]))
-    note = (f"CNVpytor {t} {c}:{cs}-{ce}, depth level {level:.2f}, e-value {ev:.2g}, "
-            f"covers {ov / (ge - gs + 1):.0%} of the gene")
-    if ev >= 0.01:
-        note += "; not significant (e-value 0.01 or above)"
-    return dict(out, call=call, note=note, level=level, e_value=ev)
-
-
 # A CNVpytor call is kept in the filtered count when fewer than half of its
 # reads have mapping quality 0 (q0, column 9) and fewer than half of its bases
 # are N (pN, column 10), it touches no centromere or heterochromatin band
@@ -1594,7 +1568,6 @@ def sec_cnvpytor(d, s):
     bands = masked_bands()
     total = dels = dups = sig = kept = kept_y = 0
     dropped = {"q0": 0, "gap": 0, "band": 0}
-    calls = []
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1604,11 +1577,6 @@ def sec_cnvpytor(d, s):
             dels += c[0] == "deletion"
             dups += c[0] == "duplication"
             m = re.fullmatch(r"(\S+):(\d+)-(\d+)", c[1]) if len(c) > 4 else None
-            try:
-                if m:
-                    calls.append((c[0], m.group(1), int(m.group(2)), int(m.group(3)), float(c[3]), float(c[4])))
-            except ValueError:
-                pass
             try:
                 if float(c[4]) >= 0.01:
                     continue
@@ -1625,12 +1593,8 @@ def sec_cnvpytor(d, s):
             else:
                 kept += 1
                 kept_y += bool(m) and m.group(1) in ("chrY", "Y")
-    span = gencode_gene(d, "UGT2B17")
-    ugt = (ugt2b17_copy_number(calls, span) if span else
-           {"call": "not assessed", "note": "no GENCODE gene lines beside the results "
-            "(reference/gencode.v<N>.basic.genes.gtf, which setup.sh installs) to place the gene"})
     return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig,
-               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped, "ugt2b17": ugt}
+               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped}
 
 
 def cnvpytor_sex_filter(data, declared_sex):
@@ -1921,6 +1885,72 @@ def masked_overlap(bands, chrom, start, end):
     return sum(max(0, min(end, b) - max(start - 1, a)) for a, b in bands.get(chrom, ()))
 
 
+# GRCh38's chr1 to chr22 (UCSC hg38.chrom.sizes), and the part of them outside
+# MASKED_BANDS: the length F_ROH is a share of, since a run's part in a band is
+# not counted either.
+AUTOSOME_BP = 2875001522
+ROH_MIN_BP = 5e6     # the segments F_ROH and the one-chromosome flag count (docs/11-roh-analysis.md)
+# One chromosome carrying most of the long runs: at least UPD_MIN_BP of it in
+# segments of 5 Mb or more, and more than UPD_SHARE of the length of all such
+# autosomal runs.
+# Our thresholds: a run over 20 Mb on one chromosome is the long-standing sign
+# of isodisomy, and related parents spread their runs over many chromosomes.
+UPD_MIN_BP = 20e6
+UPD_SHARE = 0.5
+# The rows of docs/11-roh-analysis.md's table: F of a child of the parents.
+# A value is placed at the row whose F is nearest on a log scale (the
+# boundaries are the geometric means of neighbouring rows), and under 1/128
+# (half the second-cousin F) as no sign of related parents.
+ROH_BANDS = [(1 / 128, "no sign of related parents"),
+             ((1 / 64 * 1 / 32) ** 0.5, "second cousins (F 1/64)"),
+             ((1 / 32 * 1 / 16) ** 0.5, "first cousins once removed (F 1/32)"),
+             ((1 / 16 * 1 / 8) ** 0.5, "first cousins (F 1/16)"),
+             ((1 / 8 * 1 / 4) ** 0.5, "half siblings, uncle and niece, double first cousins (F 1/8)"),
+             (float("inf"), "parent and child, full siblings (F 1/4)")]
+
+# assets/imprinted_regions.tsv, the same rows (tests/test_collect_summary.py
+# checks that the two agree). Held here too because the Nextflow report task
+# sees bin/ but not assets/. (chrom, start, end, region, maternal UPD,
+# paternal UPD, PMIDs); start and end None for the whole chromosome.
+IMPRINTED_REGIONS = [
+    ("chr6", None, None, "6q24 (PLAGL1, HYMAI)", "-", "Transient neonatal diabetes mellitus (6q24-related)",
+     "20301706"),
+    ("chr7", None, None, "7p12 (GRB10), 7q32 (MEST)", "Silver-Russell syndrome", "-", "27585961"),
+    ("chr11", 0, 22000000, "11p15 (H19/IGF2, KCNQ1OT1)", "Silver-Russell syndrome", "Beckwith-Wiedemann syndrome",
+     "29377879;27585961"),
+    ("chr14", None, None, "14q32.2 (DLK1-MEG3)", "Temple syndrome", "Kagami-Ogata syndrome", "24891339;26377239"),
+    ("chr15", 20500000, 33400000, "15q11-q13 (SNRPN, UBE3A)", "Prader-Willi syndrome", "Angelman syndrome",
+     "22237428;27615419"),
+    ("chr20", None, None, "20q13.32 (GNAS)", "Mulchandani-Bhoj-Conlin syndrome (growth failure)",
+     "Pseudohypoparathyroidism type 1B", "26248010;29959430"),
+]
+
+
+def autosome_unmasked_bp(bands=None):
+    """AUTOSOME_BP without the autosomal MASKED_BANDS."""
+    bands = masked_bands() if bands is None else bands
+    return AUTOSOME_BP - sum(b - a for c, spans in bands.items() if c[3:] in AUTOSOMES for a, b in spans)
+
+
+def roh_band(f):
+    """The row of docs/11-roh-analysis.md's table an F_ROH is nearest to."""
+    return next(label for top, label in ROH_BANDS if f < top)
+
+
+def imprinted_rows(chrom, segs):
+    """The IMPRINTED_REGIONS rows a flagged chromosome joins: its own
+    chromosome's rows, and of a row with a region only when one of the runs
+    (1-based, inclusive start-end) overlaps it."""
+    out = []
+    for c, a, b, region, mat, pat, pmid in IMPRINTED_REGIONS:
+        if c != chrom:
+            continue
+        if a is not None and not any(masked_overlap({c: [(a, b)]}, c, s, e) for s, e in segs):
+            continue
+        out.append({"region": region, "maternal_upd": mat, "paternal_upd": pat, "pmid": pmid})
+    return out
+
+
 def sec_roh(d, s):
     """Step 11's bcftools roh output. Segments on chrX and chrY are left out
     (a man's single X is one long run), segments on any other contig that is
@@ -1934,6 +1964,7 @@ def sec_roh(d, s):
     bands = masked_bands()
     total = largest = masked = 0.0
     segs, sex_segs, big = 0, 0, []
+    per_chrom = {}   # chrom -> [long bp, [(start, end), ...]] of the segments over ROH_MIN_BP
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1943,6 +1974,8 @@ def sec_roh(d, s):
                 start, end, length = int(c[3]), int(c[4]), float(c[5])
             except ValueError:
                 continue
+            if not math.isfinite(length):
+                raise Unreadable(f"{os.path.basename(p)} has a run of length {c[5]}")
             if c[2] in ("chrX", "chrY", "X", "Y"):
                 sex_segs += 1
                 continue
@@ -1956,13 +1989,27 @@ def sec_roh(d, s):
             segs += 1
             total += length
             largest = max(largest, length)
-            if length > 5e6:
+            if length >= ROH_MIN_BP:
+                pc = per_chrom.setdefault(c[2], [0.0, []])
+                pc[0] += length
+                pc[1].append((start, end))
                 row = {"region": f"{c[2]}:{c[3]}-{c[4]}", "mb": round(length / 1e6, 1)}
                 if inside:
                     row["masked_mb"] = round(inside / 1e6, 1)
                 big.append(row)
+    long_bp = sum(v[0] for v in per_chrom.values())
+    f_roh = long_bp / autosome_unmasked_bp(bands)
+    upd = None
+    if per_chrom:
+        chrom, (bp, spans) = max(per_chrom.items(), key=lambda kv: kv[1][0])
+        if bp >= UPD_MIN_BP and bp > UPD_SHARE * long_bp:
+            upd = {"chrom": chrom, "mb": round(bp / 1e6, 1), "share": round(bp / long_bp, 2),
+                   "imprinted": imprinted_rows(chrom, spans)}
     return p, {"segments": segs, "total_mb": round(total / 1e6, 1), "largest_mb": round(largest / 1e6, 1),
-               "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs}
+               "autosomal_over_5mb": big, "masked_mb": round(masked / 1e6, 1), "sex_chromosome_segments": sex_segs,
+               "long_mb": round(long_bp / 1e6, 1), "f_roh": round(f_roh, 4),
+               # a chromosome that may come from one parent fills F_ROH by itself, so no band then
+               "relationship": None if upd else roh_band(f_roh), "upd_flag": upd}
 
 
 # Pages that show more of a called branch, free and with no upload. The URL
@@ -2145,6 +2192,22 @@ def sec_lpa(d, s):
     return p, data
 
 
+VNTYPER_STATUSES = ("positive", "possible", "negative", "not assessed")
+
+
+def sec_vntyper(d, s):
+    """Step 52's table (vntyper/<id>_vntyper.tsv, bin/vntyper_report.py):
+    VNtyper's MUC1 VNTR reading with its depth and sensitivity line."""
+    p = first_existing(d, [f"vntyper/{s}_vntyper.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in VNTYPER_STATUSES:
+        raise Unreadable(f"{os.path.basename(p)} has no status row ({', '.join(VNTYPER_STATUSES)})")
+    return p, {k: kv.get(k) or "." for k in ("status", "confidence", "variant", "flag", "alt_depth",
+                                             "vntr_mean_depth", "coverage_qc", "sensitivity", "message", "advice")}
+
+
 def sec_viral(d, s):
     """Step 47's table (viral/<id>_viral.tsv, bin/viral_report.py): one row per
     viral genome; the HHV-6 line and the genomes with reads (phiX included)."""
@@ -2194,6 +2257,38 @@ def sec_chip(d, s):
                          for r in depth],
                "median_depth": med, "median_limit": chip_report.detection_limit(med) if med is not None else None,
                "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
+
+
+MOCHA_SUMMARY_KEYS = ("status", "message", "depth", "het_sites", "het_per_10mb", "chromosomes", "floor_read",
+                      "floor_min", "floor", "calls_mocha", "calls_reported", "phasing")
+MOCHA_CALL_KEYS = ("chrom", "start", "end", "length_mb", "arms", "type", "cell_fraction", "n_hets", "lod_baf_phase",
+                   "reported", "reason")
+
+
+def sec_mocha(d, s):
+    """Step 51's tables (mosaic/<id>_mocha_summary.tsv and _mocha.tsv,
+    bin/mocha_report.py): the status, the floor, and the calls reported."""
+    p = first_existing(d, [f"mosaic/{s}_mocha_summary.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in ("assessed", "not assessed"):
+        raise Unreadable(f"{os.path.basename(p)} has no status row (assessed or not assessed)")
+    data = {k: kv.get(k) or "." for k in MOCHA_SUMMARY_KEYS}
+    c = first_existing(d, [f"mosaic/{s}_mocha.tsv"])
+    if not c:
+        raise Unreadable(f"{os.path.basename(p)} has no {s}_mocha.tsv beside it")
+    with open_text(c) as f:
+        head = f.readline().rstrip("\r\n").split("\t")
+    if any(k not in head for k in MOCHA_CALL_KEYS):
+        raise Unreadable(f"{os.path.basename(c)} lacks a column of {', '.join(MOCHA_CALL_KEYS)}")
+    rows = read_tsv(c)
+    data["calls"] = [{k: r[k] or "." for k in MOCHA_CALL_KEYS} for r in rows if r.get("reported") == "yes"]
+    data["not_reported"] = sum(1 for r in rows if r.get("reported") != "yes")
+    if data["calls_reported"] != "." and data["calls_reported"] != str(len(data["calls"])):
+        raise Unreadable(f"{os.path.basename(c)} has {len(data['calls'])} reported calls, "
+                         f"{os.path.basename(p)} says {data['calls_reported']}")
+    return p, data
 
 
 def sec_traits(d, s):
@@ -3089,6 +3184,33 @@ def sec_coverage(d, s):
     return p, {"mean_depth": float(mean) if mean not in (None, "") else None}
 
 
+# How far a chrX or chrY copy number may sit from a whole number and still be
+# read as that number. Further off (a mosaic, a mixed sample, a noisy run)
+# names no karyotype.
+KARYOTYPE_TOL = 0.3
+
+
+# The sex-chromosome aneuploidies named, by (chrX, chrY) copies. Any other pair of
+# whole numbers (chrY 4, chrX 6, a degenerate 100000) names nothing: in a run it is
+# far more often depth noise or a broken input than a karyotype.
+KARYOTYPES = {(1, 0): "45,X", (2, 1): "47,XXY", (1, 2): "47,XYY", (3, 0): "47,XXX",
+              (2, 2): "48,XXYY", (3, 1): "48,XXXY", (4, 0): "48,XXXX",
+              (4, 1): "49,XXXXY", (5, 0): "49,XXXXX"}
+
+
+def karyotype(cn_x, cn_y, tol=KARYOTYPE_TOL):
+    """The sex-chromosome karyotype the two copy numbers name, one of
+    KARYOTYPES; None for 46,XX and 46,XY, for a missing value, for a value
+    between whole numbers, and for any pair of copies not in KARYOTYPES."""
+    x, y = num(cn_x), num(cn_y)
+    if x is None or y is None or not (-1 < x < 10 and -1 < y < 10):   # also keeps inf from round()
+        return None
+    rx, ry = int(round(x)), int(round(y))
+    if abs(x - rx) > tol or abs(y - ry) > tol:
+        return None
+    return KARYOTYPES.get((rx, ry))
+
+
 def sec_sex_check(d, s):
     p = first_existing(d, ["indexcov/indexcov-indexcov.ped", "indexcov/*-indexcov.ped"])
     if not p:
@@ -3100,7 +3222,8 @@ def sec_sex_check(d, s):
         raise Unreadable(f"{os.path.basename(p)} has no sex column or no sample row")
     row = dict(zip(head, lines[-1]))
     sex = {"1": "male", "2": "female"}.get(row.get("sex", ""), "unknown")
-    return p, {"inferred_sex": sex, "cn_chrX": row.get("CNchrX", ""), "cn_chrY": row.get("CNchrY", "")}
+    return p, {"inferred_sex": sex, "cn_chrX": row.get("CNchrX", ""), "cn_chrY": row.get("CNchrY", ""),
+               "karyotype": karyotype(row.get("CNchrX"), row.get("CNchrY"))}
 
 
 # --- sample identity and contamination (step 33) ----------------------------------
@@ -3232,6 +3355,14 @@ def sec_sample_qc(d, s):
             data[r["key"]] = r.get("value", "")
     if "inferred_sex" not in data:
         raise Unreadable(f"{os.path.basename(p)} has no inferred_sex row")
+    # somalier's chrX and chrY depth over the autosomal depth: one copy reads 0.5.
+    # Named only from more than 10 chrX sites, the floor somalier's own sex
+    # call needs (somalier_x_sex); a thinner ratio is noise.
+    xr, yr = num(data.get("x_depth_ratio")), num(data.get("y_depth_ratio"))
+    xs = num(data.get("x_sites"))
+    data["karyotype"] = (karyotype(2 * xr, 2 * yr)
+                         if xr is not None and yr is not None and xs is not None and math.isfinite(xs) and xs > 10
+                         else None)
     return p, data
 
 
@@ -3318,6 +3449,7 @@ SECTIONS = [
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
+    ("vntyper", "MUC1 VNTR frameshifts (VNtyper)", "52", sec_vntyper),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
@@ -3325,6 +3457,7 @@ SECTIONS = [
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
     ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),
     ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
+    ("mosaic", "Mosaic chromosomal alterations (MoChA)", "51", sec_mocha),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
     ("slivar", "Variant prioritization (slivar)", "31", sec_slivar),
@@ -3504,7 +3637,11 @@ def collect(sample, sample_dir, declared_sex=None):
         + ([] if {"HBA1", "HBA2"} <= {g["gene"] for g in sections["paralogs"]["data"].get("genes", [])
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
-           else [HBA_NOT_ASSESSED]),
+           else [HBA_NOT_ASSESSED])
+        + ([] if sections["vntyper"]["state"] == "ok"
+           and sections["vntyper"]["data"].get("status") in ("positive", "possible", "negative")
+           else [VNTYPER_NOT_ASSESSED])
+        + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
     return summary
 

@@ -90,9 +90,8 @@ Checks:
      spliced reads at a P/LP row are flagged, genomic reads at the same row
      are clear, and CPSR's "13" finds the BAM's "chr13").
  23. step 32's summary beyond the diplotypes: pypgx's copy-number calls for
-     its BAM genes and UGT2B17's copy number from CNVpytor over its GENCODE
-     span (no copy, one copy, two copies with no call; not assessed without
-     the gene lines or without CNVpytor) in a PGx copy number block; GSTT1
+     its BAM genes in a PGx copy number block, and no UGT2B17 estimate from
+     CNVpytor's calls beside them (pypgx owns UGT2B17); GSTT1
      not assessable on this reference; a call resting on a GQ 12 defining
      variant flagged; the CYP2D6 depth check with its MAPQ shares; the
      probable CYP2D6 call of pypgx alone in both reports, and none after a
@@ -509,9 +508,6 @@ PYPGX_ROWS = (
 DEPTH_OK = ("metric\tvalue\nstatus\tok\nmessage\tCYP2D6 depth is fit for a copy-number call\ngene_depth_all\t18.53\n"
             "gene_mapq1_share\t0.91\ngene_mapq20_share\t0.84\nbody_depth_all\t30.10\nbody_mapq1_share\t0.99\n"
             "body_mapq20_share\t0.97\n")
-GENES_GTF = ('chr4\tHAVANA\tgene\t68516301\t68627039\t.\t-\t.\tgene_id "ENSG00000197888.11"; gene_type "protein_coding"; '
-             'gene_name "UGT2B17"; level 2;\n'
-             'chr4\tHAVANA\tgene\t68670652\t68694000\t.\t-\t.\tgene_id "ENSG1"; gene_name "UGT2B15"; level 2;\n')
 
 
 def clinical_mane_quality(work, schema):
@@ -640,7 +636,6 @@ def pypgx_section(work, schema):
     d = os.path.join(root, "S")
     put(f"{d}/pypgx/S_pypgx_summary.tsv", PYPGX_HEAD + PYPGX_ROWS)
     put(f"{d}/pypgx/S_cyp2d6_depth_check.tsv", DEPTH_OK)
-    put(f"{root}/reference/gencode.v50.basic.genes.gtf", GENES_GTF)
     put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:68500001-68650000\t150000\t0.0300\t1.2e-30\t1e-20\t1\t1\t0.01\t0\t9\n"
         "deletion\tchr4:68660001-68700000\t40000\t0.5\t1e-5\t1\t1\t1\t0\t0\t9\n")
     summ, txt, html_ = render(d)
@@ -653,16 +648,13 @@ def pypgx_section(work, schema):
     check("pypgx: the GQ 12 call is flagged with its weakest variant",
           pd["low_gq"] == [{"gene": "CYP2C19", "diplotype": "*1/*2", "min_gq": 12,
                             "weakest": "chr10:94781859 G>A GQ 12 AD 26,3"}], pd.get("low_gq"))
-    ugt = summ["sections"]["cnvpytor"]["data"]["ugt2b17"]
-    check("UGT2B17: the deletion over its GENCODE span leaves no copy",
-          ugt["call"] == "no copy (deleted on both chromosomes)" and ugt["span"] == "chr4:68516301-68627039"
-          and ugt["gencode_release"] == "50", ugt)
-    cn_lines = ["GSTM1    WholeDel2 (pypgx, read depth)",
-                "UGT2B17  no copy (deleted on both chromosomes) (CNVpytor deletion chr4:68500001-68650000, "
-                "depth level 0.03, e-value 1.2e-30, covers 100% of the gene)"]
-    check("text report: the PGx copy number block", "## PGx copy number" in txt and all(x in txt for x in cn_lines), txt)
+    check("UGT2B17: CNVpytor's section carries no UGT2B17 estimate (pypgx owns the gene)",
+          "ugt2b17" not in summ["sections"]["cnvpytor"]["data"], summ["sections"]["cnvpytor"]["data"])
+    check("text report: the PGx copy number block, pypgx rows only",
+          "## PGx copy number" in txt and "GSTM1    WholeDel2 (pypgx, read depth)" in txt
+          and "UGT2B17" not in txt.split("## PGx copy number")[1].split("##")[0], txt)
     check("HTML report: the PGx Copy Number card", "PGx Copy Number" in html_ and "WholeDel2 (pypgx, read depth)" in html_
-          and "no copy (deleted on both chromosomes) (CNVpytor deletion chr4:68500001-68650000" in html_)
+          and "CNVpytor deletion chr4:68500001-68650000" not in html_)
     lines = ["Not assessable on this reference: GSTT1 (GRCh38 has it only on the ALT contig chr22_KI270879v1_alt",
              "Low-confidence: CYP2C19 *1/*2 rests on chr10:94781859 G>A GQ 12 AD 26,3: check the reads",
              "CYP2D6 depth check: ok; share of the depth at MAPQ >= 1 / >= 20: Cyrius's region with REP6 0.91 / 0.84, "
@@ -697,24 +689,6 @@ def pypgx_section(work, schema):
     check("CYP2D6: a summary without the evidence columns gives no probable call, no flags",
           summ["cyp2d6"]["probable"] is None and summ["sections"]["pypgx"]["data"]["low_gq"] == []
           and summ["sections"]["pypgx"]["data"]["not_callable"] == [], summ["cyp2d6"])
-
-    # UGT2B17: one copy, no call, no gene lines, no CNVpytor
-    put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:68530001-68600000\t70000\t0.4800\t3e-9\t1\t1\t1\t0\t0\t9\n")
-    u = render(d)[0]["sections"]["cnvpytor"]["data"]["ugt2b17"]
-    check("UGT2B17: a level 0.48 deletion leaves one copy", u["call"] == "one copy", u)
-    put(f"{d}/cnvpytor/S_cnvs.txt", "deletion\tchr4:1000001-1100000\t100000\t0.0\t1e-9\t1\t1\t1\t0\t0\t9\n")
-    u = render(d)[0]["sections"]["cnvpytor"]["data"]["ugt2b17"]
-    check("UGT2B17: no CNVpytor call over the gene reads two copies, and says why",
-          u["call"] == "two copies" and u["note"] == "no CNVpytor call over the gene", u)
-    os.remove(f"{root}/reference/gencode.v50.basic.genes.gtf")
-    summ, txt, _ = render(d)
-    check("UGT2B17: without the GENCODE gene lines it is not assessed, and the report says why",
-          summ["sections"]["cnvpytor"]["data"]["ugt2b17"]["call"] == "not assessed"
-          and "UGT2B17  not assessed (no GENCODE gene lines" in txt, txt)
-    os.remove(f"{d}/cnvpytor/S_cnvs.txt")
-    txt = render(d)[1]
-    check("UGT2B17: without CNVpytor the block says it did not run",
-          "UGT2B17  not assessed (CNVpytor, step 18, did not run)" in txt, txt)
 
 
 def comphet_phase_section(work, schema):
@@ -1267,6 +1241,129 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
     summ, txt, _ = render(d)
     check("mito: an annotation table older than the calls is not read, and the report says to rerun step 20",
           "older than the chrM calls: rerun step 20" in txt, txt)
+
+
+def roh_upd_karyotype(work, schema):
+    """F_ROH, the one-chromosome isodisomy flag joined to
+    assets/imprinted_regions.tsv, and the sex-chromosome karyotype label."""
+    # The catalog and the rows the summary holds (the Nextflow report task sees bin/, not assets/).
+    with open(os.path.join(REPO, "assets/imprinted_regions.tsv")) as f:
+        rows = list(csv.DictReader((l for l in f if not l.startswith("#")), delimiter="\t"))
+    asset = [(r["chrom"], int(r["start"]) if r["start"] else None, int(r["end"]) if r["end"] else None,
+              r["region"], r["maternal_upd"], r["paternal_upd"], r["pmid"]) for r in rows]
+    check("ROH catalog: assets/imprinted_regions.tsv holds the rows of collect_summary.IMPRINTED_REGIONS",
+          asset and asset == [tuple(x) for x in getattr(collect_summary, "IMPRINTED_REGIONS", [])], asset[:2])
+    check("ROH catalog: the six imprinted chromosomes, each row with a PMID",
+          [r[0] for r in asset] == ["chr6", "chr7", "chr11", "chr14", "chr15", "chr20"]
+          and all(x.isdigit() for r in asset for x in r[6].split(";")), asset)
+
+    # The length F_ROH is a share of: chr1-22 of GRCh38 (2,875,001,522 bp, UCSC
+    # hg38.chrom.sizes) less the 217,000,000 bp of autosomal bands, written out
+    # here rather than recomputed from the code under test.
+    denom = 2875001522 - 217000000
+    d = os.path.join(work, "roh_upd", "S")
+    # Isodisomy: the whole of chr15 in one run (chr15 is 102 Mb; its first
+    # 20.5 Mb are the acrocentric band, so 81.5 Mb count) and 8 Mb on chr2.
+    upd = "RG\tS\tchr15\t1\t101991189\t101991189\t9000\t50\nRG\tS\tchr2\t10000001\t18000000\t8000000\t900\t50\n"
+    put(f"{d}/vcf/S_roh.txt", upd)
+    summ, txt, html = render(d)
+    r = summ["sections"]["roh"]["data"]
+    u = r.get("upd_flag") or {}
+    long_bp = (101991189 - 20500000) + 8000000
+    check("ROH UPD: chr15 holding most of the long runs raises the flag", u.get("chrom") == "chr15"
+          and u.get("mb") == 81.5 and r.get("relationship") is None, r)
+    check("ROH UPD: the flag joins the 15q11-q13 row, Prader-Willi from the mother and Angelman from the father",
+          [(x["region"], x["maternal_upd"], x["paternal_upd"]) for x in u.get("imprinted", [])]
+          == [("15q11-q13 (SNRPN, UBE3A)", "Prader-Willi syndrome", "Angelman syndrome")], u)
+    check("ROH UPD: F_ROH of the two runs", abs((r.get("f_roh") or -1) - long_bp / denom) < 0.001, r.get("f_roh"))
+    check("ROH UPD: both reports carry the flag and the syndromes",
+          all("chr15 carries 81.5 MB" in t and "Prader-Willi syndrome" in t and "Angelman syndrome" in t
+              for t in (txt, html)), txt)
+    check("ROH UPD summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    # Red control: the run on chr15 cut to 15q21 onwards misses 15q11-q13, so no row joins.
+    put(f"{d}/vcf/S_roh.txt", upd.replace("chr15\t1\t101991189\t101991189", "chr15\t40000001\t101991189\t61991189"))
+    u0 = collect_summary.sec_roh(d, "S")[1].get("upd_flag") or {}
+    check("ROH UPD red control: a chr15 run outside 15q11-q13 is flagged but joins no row",
+          u0.get("chrom") == "chr15" and u0.get("imprinted") == [], u0)
+    _, txt0, html0 = render(d)
+    check("ROH UPD: a flagged chr15 run outside 15q11-q13 says no listed region overlaps it, in both reports",
+          all("No listed imprinting-disorder region overlaps the flagged runs on chr15" in t
+              and "No imprinting disorder is listed" not in t for t in (txt0, html0)), txt0)
+    check("ROH UPD: with a flag there is no band, so the band sentence of the F_ROH note is left out",
+          all("F_ROH is the share of the autosomes" in t and "The band is the row" not in t for t in (txt0, html0)),
+          txt0)
+    # Just over half: 25.1 of 50 Mb is 50.2%, which a whole percent rounds to 50%.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t35100000\t25100000\t900\t50\n"
+                              "RG\tS\tchr3\t10000001\t34900000\t24900000\t900\t50\n")
+    _, txt5, html5 = render(d)
+    check("ROH UPD: a share just over half reads more than 50%, never 50%, in both reports",
+          all("chr2 carries 25.1 MB, more than 50% of the length" in t and "MB, 50%" not in t
+              for t in (txt5, html5)), txt5)
+    # chr7 joins as a whole chromosome.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr7\t70000001\t110000000\t40000000\t900\t50\n")
+    u7 = collect_summary.sec_roh(d, "S")[1].get("upd_flag") or {}
+    check("ROH UPD: 40 Mb on chr7 joins the whole-chromosome Silver-Russell row",
+          [x["maternal_upd"] for x in u7.get("imprinted", [])] == ["Silver-Russell syndrome"], u7)
+
+    # The same long total over 12 chromosomes: no flag, F_ROH the same, a relationship band.
+    each = long_bp // 12
+    spread = "".join(f"RG\tS\tchr{c}\t10000001\t{10000000 + each}\t{each}\t900\t50\n" for c in range(1, 13))
+    put(f"{d}/vcf/S_roh.txt", spread)
+    summ, txt, html = render(d)
+    r = summ["sections"]["roh"]["data"]
+    check("ROH spread: 12 chromosomes raise no flag", "upd_flag" in r and r["upd_flag"] is None, r)
+    check("ROH spread: F_ROH within 0.001 of the computed share",
+          isinstance(r.get("f_roh"), float) and abs(r["f_roh"] - 12 * each / denom) < 0.001, r.get("f_roh"))
+    check("ROH spread: F about 1/30 is nearest the first cousins once removed row",
+          r.get("relationship") == "first cousins once removed (F 1/32)", r.get("relationship"))
+    check("ROH spread: both reports print F_ROH and the band, and no flag",
+          all(f"F_ROH: {12 * each / denom:.4f}" in t and "first cousins once removed" in t
+              and "may come from one parent" not in t for t in (txt, html)), txt)
+    check("ROH spread: with a band the F_ROH note says what the band is", all("The band is the row" in t for t in (txt, html)), txt)
+    # Short runs only: F_ROH 0, no sign of related parents.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t13000000\t3000000\t900\t50\n")
+    r = collect_summary.sec_roh(d, "S")[1]
+    check("ROH: runs under 5 Mb only give F_ROH 0 and no sign of related parents",
+          r.get("f_roh") == 0 and r.get("relationship") == "no sign of related parents", r)
+    # A run of exactly 5 Mb counts, as in step 11's summary (5 Mb or more).
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t15000000\t5000000\t900\t50\n")
+    r = collect_summary.sec_roh(d, "S")[1]
+    check("ROH: a run of exactly 5 Mb counts in F_ROH and the long-run list, as in step 11",
+          r.get("long_mb") == 5.0 and len(r.get("autosomal_over_5mb") or []) == 1, r)
+
+    # Karyotype from indexcov's copy numbers (step 16) and somalier's depth ratios (step 33).
+    k = os.path.join(work, "karyo", "S")
+    ped = "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\tCNchrX\tCNchrY\nS\tS\t-9\t-9\t{s}\t-9\t{x}\t{y}\n"
+    qc = "key\tvalue\nsample\tS\ninferred_sex\tunknown\nx_sites\t{n}\nx_depth_ratio\t{x}\ny_depth_ratio\t{y}\n"
+    for x, y, want in ((2.04, 0.97, "47,XXY"), (0.98, 1.95, "47,XYY"), (2.9, 0.02, "47,XXX"), (1.03, 0.05, "45,X"),
+                       (2.02, 1.97, "48,XXYY"), (1.98, 0.03, None), (1.01, 0.99, None), (1.5, 0.0, None),
+                       # Implausible whole numbers name nothing: indexcov on a slice can read chrY at
+                       # about 4, and a degenerate run at 100000.
+                       (1.98, 3.91, None), (1.95, 100000.0, None), (6.0, 0.0, None), (1.0, 3.0, None)):
+        put(f"{k}/indexcov/indexcov-indexcov.ped", ped.format(s=1 if y > 0.5 else 2, x=x, y=y))
+        put(f"{k}/qc/S_sample_qc.tsv", qc.format(n=400, x=f"{x / 2:.2f}", y=f"{y / 2:.2f}"))
+        summ, txt, html = render(k)
+        got = (summ["sections"]["sex_check"]["data"].get("karyotype"),
+               summ["sections"]["sample_qc"]["data"].get("karyotype"))
+        check(f"karyotype: chrX {x}, chrY {y} names {want or 'none'} from indexcov and somalier alike",
+              got == (want, want) and ("karyotype" in summ["sections"]["sex_check"]["data"]), got)
+        shown = [t for t in (txt, html) if "Sex chromosomes" in t]
+        check(f"karyotype: both reports {'name ' + want if want else 'say nothing'} for chrX {x}, chrY {y}",
+              (len(shown) == 2 and all(want in t for t in shown)) if want else not shown, txt[:200])
+    # somalier's ratios from 10 chrX sites or fewer name nothing: its own sex call needs more.
+    for n in (10, "", "inf"):
+        put(f"{k}/qc/S_sample_qc.tsv", qc.format(n=n, x="1.02", y="0.49"))
+        got = collect_summary.sec_sample_qc(k, "S")[1].get("karyotype")
+        check(f"karyotype: somalier's chrX 2.04, chrY 0.98 from x_sites '{n}' names nothing", got is None, got)
+
+    # A run of infinite length makes the ROH file unreadable, not a crash in the band lookup.
+    put(f"{d}/vcf/S_roh.txt", "RG\tS\tchr2\t10000001\t13000000\tinf\t900\t50\n")
+    try:
+        r = collect_summary.sec_roh(d, "S")
+    except collect_summary.Unreadable as e:
+        r = e
+    check("ROH: an RG row of length inf is unreadable", isinstance(r, collect_summary.Unreadable), r)
 
 
 def main():
@@ -1967,6 +2064,7 @@ def main():
         annotsv_section(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
+        roh_upd_karyotype(work, schema)
         hla_optitype_kir_section(work, schema)
     finally:
         shutil.rmtree(work)

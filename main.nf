@@ -14,6 +14,9 @@
 */
 
 nextflow.enable.dsl = 2
+// Module-scoped tools in modules/local/<module>/resources/usr/bin (the MoChA
+// image needs a ps for the task metrics).
+nextflow.enable.moduleBinaries = true
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,9 +42,11 @@ include { BLOODTYPE_REGIONS; BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/
 include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
+include { VNTYPER } from './modules/local/vntyper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
+include { MOCHA_PREP; MOCHA_PHASE; MOCHA_CALL; MOCHA_REPORT } from './modules/local/mocha/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -89,6 +94,7 @@ workflow {
         'consumer_export',
         'bloodtype',
         'lpa',
+        'vntyper',
         'traits',
         'archaic',
         'ancient',
@@ -96,6 +102,7 @@ workflow {
         'viral',
         'exomiser',
         'chip',
+        'mocha',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -150,6 +157,7 @@ workflow {
         ['viral',            'viral_ref',          '--viral_ref'],
         ['exomiser',         'exomiser_data',      '--exomiser_data'],
         ['chip',             'chip_gff',           '--chip_gff'],
+        ['mocha',            'mocha_data',         '--mocha_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -893,6 +901,17 @@ workflow {
         ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
     }
 
+    // ─── MUC1 VNTR frameshifts (opt-in: vntyper, step 52) ───────────────
+    // VNtyper on each sample with a BAM: the ADTKD-MUC1 frameshifts no
+    // standard caller sees. Equivalent to scripts/52-vntyper.sh.
+    ch_vntyper          = Channel.empty()
+    ch_vntyper_versions = Channel.empty()
+    if (tools_list.contains('vntyper')) {
+        VNTYPER(ch_bam)
+        ch_vntyper          = VNTYPER.out.table
+        ch_vntyper_versions = VNTYPER.out.versions
+    }
+
     // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
     // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
     // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
@@ -977,6 +996,29 @@ workflow {
                                                          CHIP_REPORT.out.versions)
     }
 
+    // ─── Mosaic chromosomal alterations (opt-in: mocha, step 51) ───────
+    // The VCF's heterozygous SNVs phased with Beagle against the panel of
+    // --mocha_data (setup.sh --mocha-data), then MoChA on chr1 to chr22 and
+    // the calls above the floor. Equivalent to scripts/51-mocha.sh.
+    ch_mocha          = Channel.empty()
+    ch_mocha_summary  = Channel.empty()
+    ch_mocha_versions = Channel.empty()
+    if (tools_list.contains('mocha')) {
+        ch_mocha_data = Channel.value(file(params.mocha_data, checkIfExists: true))
+        MOCHA_PREP(ch_vcf, ch_reference, ch_reference_fai)
+        MOCHA_PHASE(MOCHA_PREP.out.phase_in, ch_mocha_data)
+        MOCHA_CALL(
+            MOCHA_PREP.out.prep.map { meta, bcf, csi -> [meta.id, meta, bcf, csi] }
+                .join(MOCHA_PHASE.out.phased.map { meta, d -> [meta.id, d] })
+                .map { id, meta, bcf, csi, d -> [meta, bcf, csi, d] }
+        )
+        MOCHA_REPORT(MOCHA_CALL.out.tables)
+        ch_mocha          = MOCHA_REPORT.out.tables.map { meta, calls, summary -> [meta, calls] }
+        ch_mocha_summary  = MOCHA_REPORT.out.tables.map { meta, calls, summary -> [meta, summary] }
+        ch_mocha_versions = MOCHA_PREP.out.versions.mix(MOCHA_PHASE.out.versions, MOCHA_CALL.out.versions,
+                                                        MOCHA_REPORT.out.versions)
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -1046,11 +1088,14 @@ workflow {
         .join(ch_ancient_info.map                 { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_vntyper.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_exomiser.map                     { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_mocha.map                        { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null } + report_assets] }
@@ -1084,9 +1129,11 @@ workflow {
             ch_archaic_versions,
             ch_ancient_versions,
             ch_lpa_versions,
+            ch_vntyper_versions,
             ch_viral_versions,
             ch_chip_versions,
-            ch_exomiser_versions
+            ch_exomiser_versions,
+            ch_mocha_versions
         )
         .map { f -> f.text }
         .unique()

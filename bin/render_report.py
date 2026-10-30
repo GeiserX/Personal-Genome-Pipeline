@@ -328,18 +328,10 @@ def pypgx_lines(d):
 
 def pgx_copy_number(S):
     """(gene, copy number) rows, the same in both reports: pypgx's call from
-    read depth for its BAM-based genes, and UGT2B17 from CNVpytor's calls
-    over its GENCODE span."""
-    pg, cn = S.get("pypgx", MISSING), S.get("cnvpytor", MISSING)
-    if pg["state"] == "missing" and cn["state"] == "missing":
-        return []
-    rows = [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
-    u = cn["data"].get("ugt2b17") if cn["state"] in ("ok", "stale") else None
-    if u:
-        rows.append(("UGT2B17", f"{u['call']} ({u['note']})"))
-    else:
-        rows.append(("UGT2B17", f"not assessed (CNVpytor, step 18, {'failed' if cn['state'] == 'failed' else 'did not run' if cn['state'] == 'missing' else 'gave no UGT2B17 result'})"))
-    return rows
+    read depth for each BAM-mode gene of assets/pgx_genes.tsv (UGT2B17 among
+    them), or the reason it has none."""
+    pg = S.get("pypgx", MISSING)
+    return [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
 
 
 # A section the summary lacks (one written before the section existed).
@@ -714,6 +706,8 @@ def text_report(s):
             w(f"  Contamination (VerifyBamID2 FREEMIX): {freemix_text(q)}")
             if q.get("same_person_as"):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
+        for line in karyotype_lines(S):
+            w(f"  {line}")
         w("")
 
     if head("mosaic_sex_loss"):
@@ -1017,6 +1011,11 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("vntyper", "MUC1 VNTR Frameshifts (ADTKD-MUC1, VNtyper)"):
+        for line in vntyper_lines(S["vntyper"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
         out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
         w("")
@@ -1053,6 +1052,11 @@ def text_report(s):
 
     if head("exomiser", "Symptom-Driven Ranking (Exomiser, step 48)"):
         out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
+        w("")
+
+    if head("mosaic", "Mosaic Chromosomal Alterations (MoChA, step 51)"):
+        for line in mosaic_mca_lines(S["mosaic"]["data"]):
+            w(f"  {line}")
         w("")
 
     if head("cpsr", "Cancer Predisposition Screening (CPSR)"):
@@ -1464,6 +1468,19 @@ def lpa_lines(d):
     return out
 
 
+def vntyper_lines(d):
+    """Step 52's reading: the result, the call, the depth with its
+    sensitivity, and the advice; the lines of the text section and the card."""
+    out = [f"Result: {d.get('status', '.')}", d.get("message", ".")]
+    if d.get("variant", ".") != ".":
+        out.append(f"Variant: {d['variant']} (Kestrel confidence {d.get('confidence', '.')}, "
+                   f"{d.get('alt_depth', '.')} k-mer paths for the variant)")
+    out.append(f"VNtyper's coverage check: {d.get('coverage_qc', '.')}")
+    out.append(d.get("sensitivity", "."))
+    out.append(d.get("advice", "."))
+    return out
+
+
 VIRAL_NOTE = ("From the reads that do not map to the human genome, realigned to a fixed set of human viral "
               "genomes. Not a test for an infection: most adults carry herpesviruses that stay in their cells, and "
               "reagents carry viral DNA too. HHV-6 integration follows Liu et al. 2020 (depth over the viral genome "
@@ -1491,6 +1508,42 @@ def viral_body(d):
     return [stat("HHV-6", E(d.get("hhv6", "."))), table, small_note(VIRAL_NOTE)]
 
 
+MCA_NOTE = ("Large gains, losses and copy-neutral losses of heterozygosity (CN-LOH) carried by a share of the "
+            "blood cells, from MoChA on the phased heterozygous sites of chr1 to chr22. In a UK Biobank study they "
+            "became more common with age and went with a higher risk of a later blood cancer (Loh et al. 2018). "
+            "That is a population-level association, not a diagnosis; an event is confirmed on a new blood sample. "
+            "Below the floor nothing is reported, and an event above it can still be missed. "
+            "Every MoChA call, with the reason it was or was not reported: mosaic/<sample>_mocha.tsv.")
+
+
+def mosaic_mca_lines(d):
+    """Step 51's lines, the same in both reports: the floor, then each call or the reason none is shown."""
+    if d.get("status") != "assessed":
+        return [f"Not assessed: {d.get('message', '.')}", MCA_NOTE]
+    out = [f"Reported at a cell fraction of {d.get('floor', '.')} or more at {d.get('depth', '.')}x "
+           f"(read-sampling floor {d.get('floor_read', '.')}, minimum {d.get('floor_min', '.')}; "
+           f"{d.get('het_sites', '.')} heterozygous sites on {d.get('chromosomes', '.')})"]
+    for x in d.get("calls", []):
+        out.append(f"{x['type']} on {x['arms']}, {x['chrom']}:{x['start']}-{x['end']} ({x['length_mb']} Mb): "
+                   f"about {x['cell_fraction']} of the cells")
+    if not d.get("calls"):
+        out.append(f"No mosaic alteration reported ({d.get('calls_mocha', '0')} MoChA calls, none kept).")
+    return out + [MCA_NOTE]
+
+
+def mosaic_mca_body(d):
+    """The MoChA card: a row per reported call, or the reason there is none."""
+    if d.get("status") != "assessed":
+        return [stat("Status", badge("Not assessed", "gray")), small_note(d.get("message", ".")), small_note(MCA_NOTE)]
+    rows = "".join(f"<tr><td>{E(x['type'])}</td><td>{E(x['arms'])}</td><td>{E(x['chrom'])}:{E(x['start'])}-{E(x['end'])}</td>"
+                   f"<td>{E(x['length_mb'])}</td><td>{E(x['cell_fraction'])}</td></tr>" for x in d.get("calls", []))
+    table = ("    <table><tr><th>Type</th><th>Arm</th><th>Region</th><th>Mb</th><th>Cell fraction</th></tr>"
+             + rows + "</table>") if rows else small_note("No mosaic alteration reported.")
+    lines = mosaic_mca_lines(d)
+    return [stat("Calls reported", E(d.get("calls_reported", "0"))), stat("Cell-fraction floor", E(d.get("floor", "."))),
+            table, small_note(lines[0]), small_note(MCA_NOTE)]
+
+
 ROH_NOTE = ("Autosomes only: chrX and chrY are left out, and so is the part of a segment in a centromere or "
             "heterochromatin band (GRCh38 cytoband acen, gvar, stalk), where few markers map. No population allele "
             "frequencies were used (bcftools roh --AF-dflt 0.4): read the total and the short segments as rough; "
@@ -1504,14 +1557,65 @@ MITO_NOTE = ("ClinVar and gnomAD v3.1 (chrM sites) annotate the calls in step 20
              "curated disease status of mtDNA variants; it is a manual lookup, as it refuses scripted requests.")
 
 
+ROH_UPD_NOTE = ("Long runs concentrated on one chromosome, with few elsewhere, are the sign of isodisomy: both "
+                "copies of that chromosome from one parent. They can also be chance in a child of related parents. "
+                "Which parent gave both copies cannot be told without the parents' samples, and a heterodisomy (two "
+                "different copies from one parent) leaves no runs at all. The parents' genotypes confirm a UPD. "
+                "Where an imprinted region is listed, a methylation test of that region tests for its imprinting "
+                "disorder; on its own it does not prove a UPD (docs/11-roh-analysis.md).")
+ROH_F_NOTE = "F_ROH is the share of the autosomes (outside the bands) in runs of 5 MB or more."
+ROH_BAND_NOTE = ("The band is the row of docs/11-roh-analysis.md's table it is nearest to: an average, and neighbouring "
+                 "rows overlap, so it is consistent with that relationship, not a proof of it.")
+
+
 def roh_lines(d):
     """Step 11's lines under the headline, the same in both reports."""
     lines = []
+    if isinstance(d.get("f_roh"), (int, float)):
+        band = d.get("relationship") or "no band (one chromosome holds most of the runs)"
+        lines.append(f"F_ROH: {d['f_roh']:.4f} ({d.get('long_mb')} MB in runs of 5 MB or more); nearest: {band}")
+    u = d.get("upd_flag")
+    if u:
+        lines.append(f"** {u['chrom']} carries {u['mb']} MB, more than 50% of the length in runs of 5 MB or more: "
+                     f"both copies may come from one parent (uniparental isodisomy) **")
+        for r in u.get("imprinted", []):
+            lines.append(f"Imprinted {r['region']}: from the mother: {r['maternal_upd']}; from the father: "
+                         f"{r['paternal_upd']} (PMID {r['pmid']})")
+        if not u.get("imprinted"):
+            lines.append(f"No listed imprinting-disorder region overlaps the flagged runs on {u['chrom']} "
+                         "(assets/imprinted_regions.tsv); "
+                         "a recessive variant in the run, if there is one, would be homozygous")
+        lines.append(ROH_UPD_NOTE)
+    if isinstance(d.get("f_roh"), (int, float)):
+        lines.append(ROH_F_NOTE + (" " + ROH_BAND_NOTE if d.get("relationship") else ""))
     if d.get("masked_mb"):
         lines.append(f"Left out in centromere and heterochromatin bands: {d['masked_mb']} MB")
     if d.get("sex_chromosome_segments"):
         lines.append(f"Segments on chrX/chrY, not counted: {d['sex_chromosome_segments']}")
     return lines + [ROH_NOTE]
+
+
+KARYOTYPE_NOTE = ("Named from the copy number of chrX and chrY in the reads. A mixed sample or a sample swap can "
+                  "give the same numbers. A mosaic in about 30 to 70% of the cells gives numbers between whole ones "
+                  "and no name; one in more of the cells can round to a whole number and be named (a Y lost in 75% "
+                  "of the cells reads 45,X). Confirm with "
+                  "a karyotype or a chromosomal microarray (docs/33-sample-qc.md).")
+
+
+def karyotype_lines(S):
+    """One line per source that names a sex-chromosome karyotype (indexcov, step
+    16; somalier, step 33), then the note; none when neither names one."""
+    out = []
+    sc, sq = S.get("sex_check", {}), S.get("sample_qc", {})
+    if sc.get("state") in ("ok", "stale") and sc["data"].get("karyotype"):
+        q = sc["data"]
+        out.append(f"Sex chromosomes: {q['karyotype']} (indexcov copy number chrX {q.get('cn_chrX')}, "
+                   f"chrY {q.get('cn_chrY')})")
+    if sq.get("state") in ("ok", "stale") and sq["data"].get("karyotype"):
+        q = sq["data"]
+        out.append(f"Sex chromosomes: {q['karyotype']} (somalier depth over the autosomes chrX "
+                   f"{q.get('x_depth_ratio')}, chrY {q.get('y_depth_ratio')}; one copy reads 0.5)")
+    return out + [KARYOTYPE_NOTE] if out else []
 
 
 def roh_region(r):
@@ -1706,6 +1810,8 @@ def html_report(s):
             qc.append(stat("The same person as", badge(q["same_person_as"], "red")))
     else:
         qc.append(stat("Identity and contamination (step 33)", badge("Not run", "gray")))
+    kl = karyotype_lines(S)
+    qc += [stat("Sex chromosomes", badge(x.split(": ", 1)[1], "red")) for x in kl[:-1]] + [small_note(x) for x in kl[-1:]]
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
@@ -1932,6 +2038,12 @@ def html_report(s):
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
                ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
+    if S.get("vntyper", MISSING)["state"] != "missing":
+        vn = S["vntyper"]["data"]
+        a(card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
+               ([stat("Result", badge(vn.get("status", "."), {"positive": "red", "possible": "yellow",
+                                                              "negative": "green"}.get(vn.get("status"), "gray")))])
+               + [f"    <p>{E(line)}</p>" for line in vntyper_lines(vn)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     if S.get("chip", MISSING)["state"] != "missing":
@@ -1940,6 +2052,10 @@ def html_report(s):
                [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
                + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
                + [small_note(CHIP_NOTE)], full=True))
+    if S.get("mosaic", MISSING)["state"] != "missing":
+        mo = S["mosaic"]
+        a(card(mo, "Mosaic Chromosomal Alterations (MoChA)",
+               mosaic_mca_body(mo["data"]) if mo["state"] in ("ok", "stale") else [], full=True))
     a(card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
