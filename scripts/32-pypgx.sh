@@ -14,7 +14,8 @@
 # star allele called, the variants that define it in the VCF, and marks a call
 # 'low-confidence: check the reads' when one of them has a GQ below
 # PYPGX_GQ_FLOOR (default 20). GSTT1, which GRCh38 has only on an ALT contig,
-# is 'not callable on this reference' on a BAM without that contig.
+# is 'not callable on this reference' on a BAM without that contig. The gene
+# list and the mode of each gene are assets/pgx_genes.tsv.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -79,6 +80,33 @@ if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
   exit 1
 fi
 
+# The genes and how each is called come from assets/pgx_genes.tsv (one row per
+# gene; PGX_GENES names another table). bam rows get copy number from read
+# depth plus the VCF, vcf rows the VCF only. tests/test_pypgx_genes.sh checks
+# the bam rows against pypgx's own gene table (SV=TRUE) at the pinned tag.
+PGX_GENES=${PGX_GENES:-${PGP_ROOT}/assets/pgx_genes.tsv}
+if [ ! -s "$PGX_GENES" ]; then
+  echo "ERROR: gene table not found or empty: ${PGX_GENES}" >&2
+  exit 1
+fi
+# A malformed row stops the step: a gene name goes into a command line, and a
+# typo in a mode would drop a gene without a word.
+BAD=$(awk -F'\t' '/^#/ || $1 == "gene" || NF == 0 {next}
+  NF != 6 || $1 !~ /^[A-Za-z0-9-]+$/ || ($2 != "bam" && $2 != "vcf") || ($3 != "yes" && $3 != "no") \
+     || ($3 == "no" && $4 !~ /^[A-Za-z0-9_.-]+$/) || ($3 == "no" && $4 == ".") || seen[$1]++ {print NR": "$0}' "$PGX_GENES")
+if [ -n "$BAD" ]; then
+  echo "ERROR: ${PGX_GENES} has rows that are not gene<TAB>bam|vcf<TAB>yes|no<TAB>alt_contig<TAB>second_caller<TAB>pharmcat_outside_call, or a gene twice:" >&2
+  echo "$BAD" >&2
+  exit 1
+fi
+genes_of() { awk -F'\t' -v m="$1" '!/^#/ && $1 != "gene" && $2 == m {printf "%s%s", s, $1; s = " "}' "$PGX_GENES"; }
+BAM_GENES=$(genes_of bam)
+VCF_GENES=$(genes_of vcf)
+if [ -z "${BAM_GENES}${VCF_GENES}" ]; then
+  echo "ERROR: ${PGX_GENES} lists no gene" >&2
+  exit 1
+fi
+
 GQ_FLOOR=${PYPGX_GQ_FLOOR:-20}
 [[ "$GQ_FLOOR" =~ ^[0-9]+$ ]] || { echo "ERROR: PYPGX_GQ_FLOOR must be a whole number, got '${GQ_FLOOR}'" >&2; exit 1; }
 
@@ -116,28 +144,34 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
 # A check that wrote nothing counts as failed: CYP2D6 is then Indeterminate.
 DEPTH_STATUS=$(awk -F'\t' '$1 == "status" {print $2}' "$CHECK" 2>/dev/null || true)
 
-# Curated gene list: CPIC Level A/B + key genes PharmCAT misses
-# BAM-based (structural variation): CYP2D6, CYP2A6, GSTM1, GSTT1
-# VCF-based (additional coverage): CYP1A2, CYP2B6, CYP2C9, CYP2C19, CYP3A4, CYP3A5,
-#   CYP4F2, DPYD, TPMT, NUDT15, UGT1A1, SLCO1B1, VKORC1, NAT2, COMT, MTHFR, ABCB1, G6PD, IFNL3
-BAM_GENES="CYP2D6 CYP2A6 GSTM1 GSTT1"
-VCF_GENES="CYP1A2 CYP2B6 CYP2C9 CYP2C19 CYP3A4 CYP3A5 CYP4F2 DPYD TPMT NUDT15 UGT1A1 SLCO1B1 VKORC1 NAT2 COMT MTHFR ABCB1 G6PD IFNL3"
-
-# GSTT1 lies on chr22_KI270879v1_alt in GRCh38. A BAM aligned to a reference
-# without ALT contigs has no such contig, and depth preparation then fails for
-# every SV gene. Leave GSTT1 out in that case: the summary says it is not
+# A gene whose callable_without_alt is no lies on an ALT contig of GRCh38
+# (GSTT1 on chr22_KI270879v1_alt). A BAM aligned to a reference without ALT
+# contigs has no such contig, and depth preparation then fails for every bam
+# gene. Leave such a gene out in that case: the summary says it is not
 # callable on this reference (a property of the reference, not a tool error).
-NOT_CALLABLE="" CALL_BAM_GENES=$BAM_GENES
-rc=0
-run_in "${PYPGX_IMAGE}" python3 -c \
-  "import pysam, sys; sys.exit(0 if 'chr22_KI270879v1_alt' in pysam.AlignmentFile(sys.argv[1]).references else 3)" \
-  "$(cpath "$BAM")" || rc=$?
-case "$rc" in
-  0) ;;
-  3) echo "NOTICE: the BAM has no chr22_KI270879v1_alt contig (reference without ALT contigs); GSTT1 is not callable on this reference and is skipped"
-     NOT_CALLABLE=GSTT1 CALL_BAM_GENES="CYP2D6 CYP2A6 GSTM1" ;;
-  *) echo "ERROR: could not read the contigs of ${BAM} (exit ${rc})" >&2; exit 1 ;;
-esac
+NOT_CALLABLE=() CALL_BAM_GENES=$BAM_GENES
+mapfile -t NEED < <(awk -F'\t' '!/^#/ && $1 != "gene" && $2 == "bam" && $3 == "no" {print $1 "\t" $4}' "$PGX_GENES")
+if [ "${#NEED[@]}" -gt 0 ]; then
+  CONTIGS=()
+  for n in "${NEED[@]}"; do CONTIGS+=("${n#*$'\t'}"); done
+  rc=0
+  MISSING=$(run_in "${PYPGX_IMAGE}" python3 -c \
+    "import pysam, sys; refs = set(pysam.AlignmentFile(sys.argv[1]).references); print(' '.join(c for c in sys.argv[2:] if c not in refs))" \
+    "$(cpath "$BAM")" "${CONTIGS[@]}") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "ERROR: could not read the contigs of ${BAM} (exit ${rc})" >&2
+    exit 1
+  fi
+  for n in "${NEED[@]}"; do
+    g=${n%%$'\t'*} c=${n#*$'\t'}
+    case " ${MISSING} " in
+      *" ${c} "*)
+        echo "NOTICE: the BAM has no ${c} contig (reference without ALT contigs); ${g} is not callable on this reference and is skipped"
+        NOT_CALLABLE+=("$g")
+        CALL_BAM_GENES=$(tr ' ' '\n' <<<"$CALL_BAM_GENES" | grep -vxF "$g" | paste -sd ' ' -) || CALL_BAM_GENES="" ;;
+    esac
+  done
+fi
 
 echo ""
 echo "Running pypgx for $(echo "$BAM_GENES" "$VCF_GENES" | wc -w | tr -d ' ') genes..."
@@ -170,8 +204,10 @@ run_in --cpus 4 --memory 8g \
     SUCCEEDED=0
 
     # Phase 1: Prepare depth of coverage for the SV genes (one-time, from BAM)
-    echo "--- Preparing depth of coverage for SV genes: ${BAM_GENES} ---"
-    if ! pypgx prepare-depth-of-coverage \
+    echo "--- Preparing depth of coverage for SV genes: ${BAM_GENES:-none} ---"
+    if [ -z "$BAM_GENES" ]; then
+      DOC=""
+    elif ! pypgx prepare-depth-of-coverage \
       "$DOC" "$BAM" --assembly GRCh38 --genes $BAM_GENES 2>&1; then
       echo "ERROR: prepare-depth-of-coverage failed — cannot call SV genes"
       # Fall through to VCF-only genes; mark all BAM genes as failed
@@ -236,14 +272,14 @@ echo "Extracting results and building summary..."
 # that stops in between never leaves an unchecked CYP2D6 call for step 36.
 SUMMARY="${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv"
 NC_ARG=()
-[ -z "$NOT_CALLABLE" ] || NC_ARG=(--not-callable "$NOT_CALLABLE")
+for g in ${NOT_CALLABLE[@]+"${NOT_CALLABLE[@]}"}; do NC_ARG+=(--not-callable "$g"); done
 run_in --cpus 2 --memory 4g \
   -v "${PYPGX_BUNDLE}:/tmp/pypgx-bundle:ro" -e PYPGX_BUNDLE=/tmp/pypgx-bundle \
   -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
   "${PYPGX_IMAGE}" \
   python3 /pgp-bin/pgx_outside_calls.py pypgx-summary \
     --outbase "$(cpath "$OUTPUT_DIR")" --bam-genes "$BAM_GENES" --vcf-genes "$VCF_GENES" \
-    --vcf "$(cpath "$VCF")" --gq-floor "$GQ_FLOOR" "${NC_ARG[@]}" \
+    --vcf "$(cpath "$VCF")" --gq-floor "$GQ_FLOOR" ${NC_ARG[@]+"${NC_ARG[@]}"} \
     --out "$(cpath "${SUMMARY}.partial")" 2>&1
 
 # A CYP2D6 call from multi-mapped depth is not a call: the row says so; the

@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, viral, chip and mocha run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip and mocha run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -168,6 +168,8 @@ plan "40 Raw-data export" consumer_export "$(optin consumer_export || if [ -n "$
 if [[ ",${T// /}," == *",bloodtype,"* ]]; then plan "41 Blood groups" bloodtype || true; else KNOWN+=" bloodtype"; fi
 # Step 46 (Lp(a), the LPA KIV-2 count) is opt-in and listed only when TOOLS names it; it reads the BAM.
 if [[ ",${T// /}," == *",lpa,"* ]]; then plan "46 Lp(a) KIV-2 count" lpa "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" lpa"; fi
+# Step 52 (MUC1 VNTR frameshifts, VNtyper) is opt-in and listed only when TOOLS names it; it reads the BAM.
+if [[ ",${T// /}," == *",vntyper,"* ]]; then plan "52 MUC1 VNTR (VNtyper)" vntyper "$([ -n "$NOBAM" ] || echo 'no BAM')" || true; else KNOWN+=" vntyper"; fi
 # Step 49 (CHIP) is opt-in and listed only when TOOLS names it: Mutect2 on the BAM, with step 29's gnomAD and panel of normals when installed.
 CG="${G}/reference/ensembl/Homo_sapiens.GRCh38.${ENSEMBL_GFF_RELEASE}.chr.gff3.gz"
 if [[ ",${T// /}," == *",chip,"* ]]; then plan "49 CHIP (clonal blood cells)" chip "$(need "$CG")" && NF+=(--chip_gff "$CG") \
