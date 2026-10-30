@@ -55,6 +55,9 @@ STEPS_TSV = os.path.join(os.path.dirname(HERE), "assets", "steps.tsv")
 # Trace and weblog task statuses
 DONE_OK = {"COMPLETED", "CACHED"}
 DONE_BAD = {"FAILED", "ABORTED"}
+# Processes that run once per run with a tag that is not a sample id (the reference
+# basename, the score set): never a sample's task, even when the tag equals the id.
+SHARED_PROCESSES = {"MINIMAP2_INDEX", "PRS_PREPARE"}
 
 
 def iso(epoch):
@@ -176,7 +179,7 @@ def read_trace(paths, sample):
             for line in f:
                 r = dict(zip(header, line.rstrip("\n").split("\t")))
                 proc, tag = task_name(r.get("name"))
-                if not proc or not is_sample(tag, sample):
+                if not proc or proc in SHARED_PROCESSES or not is_sample(tag, sample):
                     continue
                 start = parse_trace_time(r.get("submit"))
                 dur = parse_duration(r.get("duration"))
@@ -216,7 +219,7 @@ def event_tasks(events, sample):
             continue
         name = tr.get("name") or (f"{tr.get('process')} ({tr['tag']})" if tr.get("tag") else tr.get("process"))
         proc, tag = task_name(name)
-        if not proc or not is_sample(tag, sample):
+        if not proc or proc in SHARED_PROCESSES or not is_sample(tag, sample):
             continue
         st = status_of.get(kind) or str(tr.get("status") or "").upper()
         if kind == "process_completed" and st not in DONE_OK | DONE_BAD:

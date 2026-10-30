@@ -44,7 +44,7 @@ In `process_status.tsv`, a process with no task had not started, so its step is 
 
 A `waiting` or `running` step whose report file is older than the run start has `earlier_result`: that file comes from an earlier run and is being redone. It is not stale yet; the reports call it stale only if the step does not end `ok`.
 
-Only tasks tagged with the sample count. A task shared by every sample has no tag, so it never moves its step. Step 28 (MultiQC) has only such a task, so it shows `waiting` until its result row. The same holds for the shared preparation processes (`T1K_BUILD`, `KIR_BUILD`, `Y_POSITIONS`, `LPA_REGIONS`, `BLOODTYPE_REGIONS`, `CHIP_PREPARE`) and for `SOMALIER_RELATE`: they never count toward their steps.
+Only tasks tagged with the sample count. A task shared by every sample has no tag, so it never moves its step. Step 28 (MultiQC) has only such a task, so it shows `waiting` until its result row. The same holds for the shared preparation processes (`T1K_BUILD`, `KIR_BUILD`, `Y_POSITIONS`, `LPA_REGIONS`, `BLOODTYPE_REGIONS`, `CHIP_PREPARE`) and for `SOMALIER_RELATE`: they never count toward their steps. `MINIMAP2_INDEX` and `PRS_PREPARE` run once per run under the reference or score-set name, so they never count either, even when that name equals the sample id.
 
 While the run goes, a step whose tasks have all finished shows `done`. If a later process of the same step then starts, the step shows `running` again. Times are in UTC; a step's start and end come from its tasks.
 

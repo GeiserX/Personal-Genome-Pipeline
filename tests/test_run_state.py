@@ -123,6 +123,15 @@ def state_checks(rs, steps):
     out["a process with no task: not finished, except haplocheck without step 20"] = (
         z["22"]["state"] == "not finished" and z["12"]["state"] == "done" and z20["12"]["state"] == "not finished",
         (z["22"]["state"], z["12"]["state"], z20["12"]["state"]))
+    with tempfile.TemporaryDirectory() as td:
+        tp = os.path.join(td, "trace.txt")
+        with open(tp, "w") as f:
+            f.write("task_id\tname\tstatus\texit\tsubmit\tduration\n"
+                    f"1\tUPSTREAM:MINIMAP2_INDEX ({SAMPLE})\tCOMPLETED\t0\t2026-01-02 10:00:00.000\t1s\n"
+                    f"2\tPRS:PRS_PREPARE ({SAMPLE})\tCOMPLETED\t0\t2026-01-02 10:00:00.000\t1s\n")
+        shared = rs.read_trace([tp], SAMPLE) + rs.event_tasks(
+            [{"event": "process_started", "trace": {"name": f"PRS:PRS_PREPARE ({SAMPLE})"}}], SAMPLE)
+    out["a shared task whose tag equals the sample id is not the sample's"] = (shared == [], shared)
     r = by_step(build(rs, steps, status("step\t10\tok\nstep\t11\tfailed\n", finished=True)))
     out["run-all.sh's result row wins over the tasks"] = (r["10"]["state"] == "done" and r["11"]["state"] == "failed",
                                                          (r["10"]["state"], r["11"]["state"]))
@@ -286,6 +295,7 @@ def mutants(steps):
             run_state.build(sample, steps, st, pt, tt, et, ev, {k: (v[0], 0) for k, v in (sources or {}).items()}, now)),
         "a step's times come from its tasks": mutant(parse_trace_time=lambda v: None, event_tasks=lambda ev, sample: [
             dict(t, start=None, end=None) for t in run_state.event_tasks(ev, sample)]),
+        "a shared task whose tag equals the sample id is not the sample's": mutant(SHARED_PROCESSES=set()),
         "run-all.sh's result row wins over the tasks": mutant(
             from_row=lambda row: ("planned", None) if row in ("ok", "failed") else run_state.from_row(row)),
     }
