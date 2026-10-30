@@ -85,9 +85,10 @@ while IFS= read -r spec; do
   # The table name starts with a letter or digit and has no dot, so it is
   # never "." or ".." in a path the step removes. It is used once, and never
   # hba or paraphase, or one table would overwrite another. The region is on
-  # a GRCh38 chromosome, with 1 <= start <= end.
+  # a GRCh38 chromosome, with 1 <= start <= end and no leading zero (bash
+  # would read 070951946 as octal).
   span=${spec#*|} span=${span%|*} span=${span#*:}
-  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr([1-9]|1[0-9]|2[0-2]|X|Y):[0-9]+-[0-9]+\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+  if ! [[ "$spec" =~ ^[A-Za-z0-9._-]+\.gz\|chr([1-9]|1[0-9]|2[0-2]|X|Y):[1-9][0-9]*-[1-9][0-9]*\|[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
      || [ "${span%-*}" -lt 1 ] || [ "${span%-*}" -gt "${span#*-}" ] \
      || [ -n "${SEEN[${spec##*|}]:-}" ]; then
     echo "ERROR: ${LOCI}: a row reads '${spec}' (model|region|table: a region chr1-22, X or Y with 1 <= start <= end, a table name used once and not hba or paraphase); see tests/test_paralog_loci.py." >&2

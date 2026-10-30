@@ -78,7 +78,7 @@ def problems(lines, models):
             out.append(f"row {n}: tag {c['tag']}")
         # model, region and table reach a shell loop and file names: the
         # patterns of scripts/35-paralogs.sh (a table is never "." or "..")
-        for k, pat in (("model", r"[A-Za-z0-9._-]+\.gz"), ("region", r"chr[0-9XY]+:[0-9]+-[0-9]+"),
+        for k, pat in (("model", r"[A-Za-z0-9._-]+\.gz"), ("region", r"chr[0-9XY]+:[1-9][0-9]*-[1-9][0-9]*"),
                        ("table", r"[A-Za-z0-9][A-Za-z0-9_-]*")):
             if not re.fullmatch(pat, c[k]):
                 out.append(f"row {n}: {k} {c[k]!r} is not what the step accepts")

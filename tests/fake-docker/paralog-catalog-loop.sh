@@ -150,8 +150,9 @@ printf 'GBA.gz\tGBA1\tchr1:1-2\tx\tno\tcarrier\tnone\t..\ts\n' >> "$L"
 PARALOG_LOCI="$L" run_expect 1 dotdot-table "${SCRIPTS}/35-paralogs.sh" sample1
 [ "$(calls)" = 0 ] || fail "a table named .. still ran Parascopy"
 [ -d "$OUT" ] || fail "the paralogs directory is gone"
-# a region off the GRCh38 chromosomes, or with its start past its end
-for r in chr0:1-2 chr5:20-10 chr5:0-10; do
+# a region off the GRCh38 chromosomes, or with its start past its end,
+# or with a leading zero, which bash arithmetic would read as octal
+for r in chr0:1-2 chr5:20-10 chr5:0-10 chr5:070951946-070951946; do
   sed -i.bak '$d' "$L" && rm -f "${L}.bak"
   printf 'GBA.gz\tGBA1\t%s\tx\tno\tcarrier\tnone\tgba2\ts\n' "$r" >> "$L"
   : > "$FAKE_DOCKER_LOG"
