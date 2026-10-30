@@ -1066,6 +1066,43 @@ def traits(d):
     traits_report.write_tsv(os.path.join(d, "traits", f"{SAMPLE}_traits.tsv"), traits_report.report(rows, recs))
 
 
+def mocha(d):
+    """Step 51: bin/mocha_report.py's report on made-up MoChA tables for a
+    30x genome with no mosaic call: chr1 to chr22 read, the sample filter met."""
+    import mocha_report as mr
+    stats = [{"sample_id": SAMPLE, "call_rate": "0.9981", "cov_median": "31", "baf_auto": "0.0124",
+              "n_hets": "2100000"}]
+    sites = [(f"chr{i}", 10001, 10001 + 100_000_000, 120_000, 95_000, 94_000) for i in range(1, 23)]
+    rows, summary = mr.report(SAMPLE, [], stats, sites, "beagle")
+    os.makedirs(os.path.join(d, "mosaic"), exist_ok=True)
+    with open(os.path.join(d, "mosaic", f"{SAMPLE}_mocha.tsv"), "w", encoding="utf-8") as f:
+        f.write("\t".join(mr.CALL_COLUMNS) + "\n")
+        for x in rows:
+            f.write("\t".join(str(x[k]) for k in mr.CALL_COLUMNS) + "\n")
+    with open(os.path.join(d, "mosaic", f"{SAMPLE}_mocha_summary.tsv"), "w", encoding="utf-8") as f:
+        f.write("metric\tvalue\n")
+        for k, v in summary.items():
+            f.write(f"{k}\t{v}\n")
+
+
+def vntyper(d):
+    """Step 52: bin/vntyper_report.py's reading of a made-up VNtyper run with
+    no MUC1 frameshift at a depth its coverage check passes."""
+    import tempfile
+    import vntyper_report as vr
+    with tempfile.TemporaryDirectory() as run:
+        put(os.path.join(run, "kestrel", "kestrel_result.tsv"),
+            "Motif\tVariant\tConfidence\tFlag\nnone\tNone\tNegative\tNot flagged\n")
+        put(os.path.join(run, "coverage", "coverage_summary.tsv"),
+            "mean\tpercent_uncovered\tcoverage_qc\n212.4\t0.0\tPASS\n")
+        t = vr.read(run, 0)
+    os.makedirs(os.path.join(d, "vntyper"), exist_ok=True)
+    with open(os.path.join(d, "vntyper", f"{SAMPLE}_vntyper.tsv"), "w", encoding="utf-8") as f:
+        f.write("metric\tvalue\n")
+        for k in vr.FIELDS:
+            f.write(f"{k}\t{t[k]}\n")
+
+
 def run_status(d, started):
     """logs/run_status.tsv as run-all.sh writes it, every step ok."""
     lines = ["# run-all.sh: when this run started and how each step ended",
@@ -1101,7 +1138,8 @@ def make(a):
              ("y_str", lambda r: y_str(d, r)), ("viral", lambda r: viral(d)),
              ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
              ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
-             ("exomiser", lambda r: exomiser(d))]
+             ("exomiser", lambda r: exomiser(d)), ("mocha", lambda r: mocha(d)),
+             ("vntyper", lambda r: vntyper(d))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
