@@ -1,0 +1,21 @@
+#!/bin/sh
+# MoChA's image (Debian, no procps) has no ps, and Nextflow's task metrics stop
+# the task without one ("Command 'ps' required by nextflow to collect task
+# metrics cannot be found"). The metrics call one form only, ps -e -o pid= -o
+# ppid= (Nextflow's command-trace.txt). This module-scoped shim (main.nf sets
+# nextflow.enable.moduleBinaries) runs a real ps when the image has one, and
+# otherwise prints that one listing from /proc.
+here=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+for d in $PATH; do
+  [ "$d" != "$here" ] && [ -x "$d/ps" ] && exec "$d/ps" "$@"
+done
+unset IFS
+if [ "$*" != "-e -o pid= -o ppid=" ]; then
+  echo "ps (MoChA module shim): only 'ps -e -o pid= -o ppid=' is supported here" >&2
+  exit 1
+fi
+for p in /proc/[0-9]*; do
+  [ -r "$p/status" ] && awk -v pid="${p#/proc/}" '/^PPid:/ { print pid, $2; exit }' "$p/status" 2>/dev/null
+done
+exit 0
