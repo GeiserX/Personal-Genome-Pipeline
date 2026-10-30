@@ -66,3 +66,4 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from
 48	Exomiser (HPO terms)	exomiser	yes	EXOMISER_PREPARE,EXOMISER,EXOMISER_REPORT	exomiser	03		
 49	CHIP (clonal blood cells)	chip	yes	CHIP_PREPARE,CHIP_MUTECT2,CHIP_ANNOTATE,CHIP_REPORT	chip	02		
 51	Mosaic alterations (MoChA)	mocha	yes	MOCHA_PREP,MOCHA_PHASE,MOCHA_CALL,MOCHA_REPORT	mosaic	03		
+52	MUC1 VNTR (VNtyper)	vntyper	yes	VNTYPER	vntyper	02		

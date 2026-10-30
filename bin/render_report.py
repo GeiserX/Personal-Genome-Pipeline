@@ -328,18 +328,10 @@ def pypgx_lines(d):
 
 def pgx_copy_number(S):
     """(gene, copy number) rows, the same in both reports: pypgx's call from
-    read depth for its BAM-based genes, and UGT2B17 from CNVpytor's calls
-    over its GENCODE span."""
-    pg, cn = S.get("pypgx", MISSING), S.get("cnvpytor", MISSING)
-    if pg["state"] == "missing" and cn["state"] == "missing":
-        return []
-    rows = [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
-    u = cn["data"].get("ugt2b17") if cn["state"] in ("ok", "stale") else None
-    if u:
-        rows.append(("UGT2B17", f"{u['call']} ({u['note']})"))
-    else:
-        rows.append(("UGT2B17", f"not assessed (CNVpytor, step 18, {'failed' if cn['state'] == 'failed' else 'did not run' if cn['state'] == 'missing' else 'gave no UGT2B17 result'})"))
-    return rows
+    read depth for each BAM-mode gene of assets/pgx_genes.tsv (UGT2B17 among
+    them), or the reason it has none."""
+    pg = S.get("pypgx", MISSING)
+    return [(g, f"{v} (pypgx, read depth)") for g, v in (pg["data"].get("cnv_call") or {}).items()]
 
 
 # A section the summary lacks (one written before the section existed).
@@ -1019,6 +1011,11 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    if head("vntyper", "MUC1 VNTR Frameshifts (ADTKD-MUC1, VNtyper)"):
+        for line in vntyper_lines(S["vntyper"]["data"]):
+            w(f"  {line}")
+        w("")
+
     if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
         out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
         w("")
@@ -1467,6 +1464,19 @@ def lpa_lines(d):
     if not d.get("variants"):
         out.append("rs10455872 and rs3798220: not read (step 42, the traits panel, did not run)")
     out.append(d.get("flag_text", "."))
+    out.append(d.get("advice", "."))
+    return out
+
+
+def vntyper_lines(d):
+    """Step 52's reading: the result, the call, the depth with its
+    sensitivity, and the advice; the lines of the text section and the card."""
+    out = [f"Result: {d.get('status', '.')}", d.get("message", ".")]
+    if d.get("variant", ".") != ".":
+        out.append(f"Variant: {d['variant']} (Kestrel confidence {d.get('confidence', '.')}, "
+                   f"{d.get('alt_depth', '.')} k-mer paths for the variant)")
+    out.append(f"VNtyper's coverage check: {d.get('coverage_qc', '.')}")
+    out.append(d.get("sensitivity", "."))
     out.append(d.get("advice", "."))
     return out
 
@@ -2028,6 +2038,12 @@ def html_report(s):
         a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
                ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
+    if S.get("vntyper", MISSING)["state"] != "missing":
+        vn = S["vntyper"]["data"]
+        a(card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
+               ([stat("Result", badge(vn.get("status", "."), {"positive": "red", "possible": "yellow",
+                                                              "negative": "green"}.get(vn.get("status"), "gray")))])
+               + [f"    <p>{E(line)}</p>" for line in vntyper_lines(vn)]))
     if S.get("viral", MISSING)["state"] != "missing":
         a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     if S.get("chip", MISSING)["state"] != "missing":
