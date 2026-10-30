@@ -461,7 +461,10 @@ def main(argv=None):
         with os.fdopen(fd, "w") as f:
             json.dump(state, f, indent=1)
             f.write("\n")
-        os.chmod(tmp, 0o644)
+        # The mode a plain open() would give, as for every other output: mkstemp's 0600 ignores the umask.
+        mask = os.umask(0)
+        os.umask(mask)
+        os.chmod(tmp, 0o666 & ~mask)
         os.replace(tmp, out)
     except BaseException:
         if os.path.exists(tmp):
