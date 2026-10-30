@@ -46,6 +46,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 SCHEMA_VERSION = 1
@@ -454,11 +455,18 @@ def main(argv=None):
     a = ap.parse_args(argv)
     state = collect(a.sample, a.sample_dir, a.trace, a.events, a.steps)
     out = a.out or os.path.join(a.sample_dir, "run_state.json")
-    tmp = out + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(state, f, indent=1)
-        f.write("\n")
-    os.replace(tmp, out)
+    # A temporary file of its own beside the JSON, so two runs at once never write into one file.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(out)), prefix=".run_state.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=1)
+            f.write("\n")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, out)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     print(f"Run state written: {out}")
     return 0
 
