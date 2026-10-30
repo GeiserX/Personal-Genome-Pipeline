@@ -42,6 +42,7 @@ include { BLOODTYPE_REGIONS; BLOODTYPE_DEPTH; BLOODTYPE } from './modules/local/
 include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/local/archaic/main'
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
+include { VNTYPER } from './modules/local/vntyper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
@@ -94,6 +95,7 @@ workflow {
         'consumer_export',
         'bloodtype',
         'lpa',
+        'vntyper',
         'traits',
         'archaic',
         'ancient',
@@ -902,6 +904,17 @@ workflow {
         ch_lpa_versions = LPA_REGIONS.out.versions.mix(LPA_DEPTH.out.versions, LPA.out.versions)
     }
 
+    // ─── MUC1 VNTR frameshifts (opt-in: vntyper, step 52) ───────────────
+    // VNtyper on each sample with a BAM: the ADTKD-MUC1 frameshifts no
+    // standard caller sees. Equivalent to scripts/52-vntyper.sh.
+    ch_vntyper          = Channel.empty()
+    ch_vntyper_versions = Channel.empty()
+    if (tools_list.contains('vntyper')) {
+        VNTYPER(ch_bam)
+        ch_vntyper          = VNTYPER.out.table
+        ch_vntyper_versions = VNTYPER.out.versions
+    }
+
     // ─── Viral DNA in the unmapped reads (opt-in: viral, step 47) ──────
     // The BAM's unmapped and chrEBV reads realigned to the viral genomes of
     // --viral_ref (setup.sh --viral-data). A sample without a BAM has no
@@ -1097,6 +1110,7 @@ workflow {
         .join(ch_ancient_info.map                 { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient_svg.map                  { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_lpa.map                          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_vntyper.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_viral.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_exomiser.map                     { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
@@ -1139,6 +1153,7 @@ workflow {
             ch_archaic_versions,
             ch_ancient_versions,
             ch_lpa_versions,
+            ch_vntyper_versions,
             ch_viral_versions,
             ch_chip_versions,
             ch_mei_versions,

@@ -89,6 +89,7 @@ process HTML_REPORT {
             ${id}_archaic.tsv)                            place archaic "\$f" ;;
             ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
             ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
+            ${id}_vntyper.tsv)                            place vntyper "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
             ${id}_exomiser_top.tsv|${id}_exomiser_terms.tsv) place exomiser "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;

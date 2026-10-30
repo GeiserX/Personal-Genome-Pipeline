@@ -203,6 +203,7 @@ nav:
           - "Step 47: Viral DNA in the Unmapped Reads": 47-viral.md
           - "Step 49: Clonal Haematopoiesis (CHIP)": 49-chip.md
           - "Step 51: Mosaic Chromosomal Alterations (MoChA)": 51-mocha.md
+          - "Step 52: MUC1 VNTR Frameshifts (VNtyper)": 52-vntyper.md
       - Quality control and reports:
           - "Step 16: Coverage QC and Sex Chromosome Verification": 16-indexcov.md
           - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md

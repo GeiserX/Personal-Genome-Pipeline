@@ -66,7 +66,6 @@ import ancestry_fine_report  # noqa: E402  step 26b's group names and painting c
 import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule beside Parascopy
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
-import copy_number  # noqa: E402  bin/cn_loci.tsv: UGT2B17's thresholds and calls
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -105,7 +104,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # is never marked stale.
 RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
                  "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "50", "51", "04b"}
+                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "50", "51", "52", "04b"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -129,6 +128,11 @@ MEI_NOT_ASSESSED = ("Mobile element insertions (Alu, L1 and SVA, the FKTN, TAF1 
 # Added to NOT_ASSESSED unless step 51 (MoChA) assessed the sample.
 MCA_NOT_ASSESSED = ("Autosomal mosaic chromosomal alterations (large gains, losses and copy-neutral LOH in a share "
                     "of the blood cells): step 51 (MoChA) did not assess this sample")
+
+# Added to NOT_ASSESSED unless step 52 (VNtyper) gave a positive, possible or
+# negative reading: no other step can see a frameshift inside the MUC1 VNTR.
+VNTYPER_NOT_ASSESSED = ("MUC1 VNTR frameshifts (ADTKD-MUC1): step 52 (VNtyper, opt-in) gave no reading; "
+                        "no standard caller sees them")
 
 # Added to NOT_ASSESSED unless step 25 ran with an ancestry reference panel.
 PRS_NOT_ADJUSTED = "Polygenic score percentiles: no ancestry reference panel was used, so the scores are raw sums"
@@ -532,13 +536,24 @@ def sec_pypgx(d, s):
     cyp_row = next((r for r in rows if r.get("Gene") == "CYP2D6"), None)
     cyp = (cyp_row or {}).get("Diplotype", "")
     out = {"genes_total": len(rows), "genes_called": len(called), "cyp2d6": cyp or "not called"}
-    # pypgx's copy-number call from read depth, BAM-based genes only; 'N/A'
-    # (a VCF gene, GSTT1 without its contig, CYP2D6 after a failed depth check)
-    # is none.
-    out["cnv_call"] = {r["Gene"]: r["CNV_call"].strip() for r in rows
-                       if (r.get("Source") or "").strip().upper() == "BAM"
-                       and (r.get("CNV_call") or "").strip() not in ("", ".")
-                       and not r["CNV_call"].strip().startswith("N/A")}
+    # pypgx's copy-number call from read depth, one entry per BAM-based gene
+    # (a VCF gene has none). A gene not callable on this reference gets its
+    # own line below instead; one without a call ('N/A': pypgx failed, or
+    # CYP2D6 after a failed depth check) says so, so no gene drops out.
+    out["cnv_call"] = {}
+    for r in rows:
+        status = (r.get("Status") or "").strip()
+        if (r.get("Source") or "").strip().upper() != "BAM" or status == pgx_outside_calls.NOT_CALLABLE:
+            continue
+        v = (r.get("CNV_call") or "").strip()
+        if v not in ("", ".") and not v.startswith("N/A"):
+            out["cnv_call"][r["Gene"]] = v
+        elif status.lower() == "failed" or (r.get("Diplotype") or "").strip().upper() == "FAILED":
+            out["cnv_call"][r["Gene"]] = "not called: pypgx failed"
+        elif "depth check" in status or "depth check" in v:
+            out["cnv_call"][r["Gene"]] = "not called: the CYP2D6 depth check failed"
+        else:
+            out["cnv_call"][r["Gene"]] = "not called: pypgx gave no copy-number call"
     out["not_callable"] = [r["Gene"] for r in rows
                            if (r.get("Status") or "").strip() == pgx_outside_calls.NOT_CALLABLE]
     out["low_gq"] = [{"gene": r["Gene"], "diplotype": (r.get("Diplotype") or "").strip(),
@@ -1543,52 +1558,6 @@ def sec_delly(d, s):
     return p, {"total": t, "pass": ps}
 
 
-def gencode_gene(d, gene):
-    """(chrom, start, end, release) of GENCODE's gene line for gene, 1-based,
-    from the gene lines setup.sh installs beside the sample folders
-    (reference/gencode.v<N>.basic.genes.gtf, the newest release there), or
-    None when there are none or the gene is not in them."""
-    files = glob.glob(os.path.join(d, os.pardir, "reference", "gencode.v*.basic.genes.gtf"))
-    rel = {f: int(m.group(1)) for f in files for m in [re.search(r"gencode\.v(\d+)\.basic", os.path.basename(f))] if m}
-    if not rel:
-        return None
-    path = max(rel, key=rel.get)
-    want = f'gene_name "{gene}";'
-    with open(path, errors="replace") as f:
-        for line in f:
-            c = line.split("\t", 9)
-            if len(c) >= 9 and c[2] == "gene" and want in c[8] and re.fullmatch(r"chr([0-9]+|X|Y)", c[0]):
-                return c[0], int(c[3]), int(c[4]), str(rel[path])
-    return None
-
-
-def ugt2b17_copy_number(calls, span):
-    """UGT2B17 copy number from the CNVpytor call that covers most of its
-    GENCODE span. calls: (type, chrom, start, end, level, e-value). The
-    thresholds on CNVpytor's read-depth level (1.0 is two copies) and the
-    words of each call are the UGT2B17 row of bin/cn_loci.tsv."""
-    row = copy_number.load_catalog()["UGT2B17"]
-    chrom, gs, ge = span[:3]
-    best = None
-    for t, c, cs, ce, level, ev in calls:
-        ov = min(ce, ge) - max(cs, gs) + 1
-        if c == chrom and ov > 0 and (best is None or ov > best[0]):
-            best = (ov, t, c, cs, ce, level, ev)
-    out = {"span": f"{chrom}:{gs}-{ge}", "gencode_release": span[3]}
-    if best is None:
-        return dict(out, call=copy_number.reading(row, 2), note="no CNVpytor call over the gene")
-    ov, t, c, cs, ce, level, ev = best
-    if t == "duplication":
-        call = copy_number.reading(row, "dup")
-    else:
-        call = copy_number.reading(row, copy_number.cut_copies(level, row["_call"][1]))
-    note = (f"CNVpytor {t} {c}:{cs}-{ce}, depth level {level:.2f}, e-value {ev:.2g}, "
-            f"covers {ov / (ge - gs + 1):.0%} of the gene")
-    if ev >= 0.01:
-        note += "; not significant (e-value 0.01 or above)"
-    return dict(out, call=call, note=note, level=level, e_value=ev)
-
-
 # A CNVpytor call is kept in the filtered count when fewer than half of its
 # reads have mapping quality 0 (q0, column 9) and fewer than half of its bases
 # are N (pN, column 10), it touches no centromere or heterochromatin band
@@ -1604,7 +1573,6 @@ def sec_cnvpytor(d, s):
     bands = masked_bands()
     total = dels = dups = sig = kept = kept_y = 0
     dropped = {"q0": 0, "gap": 0, "band": 0}
-    calls = []
     with open(p, errors="replace") as f:
         for line in f:
             c = line.split()
@@ -1614,11 +1582,6 @@ def sec_cnvpytor(d, s):
             dels += c[0] == "deletion"
             dups += c[0] == "duplication"
             m = re.fullmatch(r"(\S+):(\d+)-(\d+)", c[1]) if len(c) > 4 else None
-            try:
-                if m:
-                    calls.append((c[0], m.group(1), int(m.group(2)), int(m.group(3)), float(c[3]), float(c[4])))
-            except ValueError:
-                pass
             try:
                 if float(c[4]) >= 0.01:
                     continue
@@ -1635,12 +1598,8 @@ def sec_cnvpytor(d, s):
             else:
                 kept += 1
                 kept_y += bool(m) and m.group(1) in ("chrY", "Y")
-    span = gencode_gene(d, "UGT2B17")
-    ugt = (ugt2b17_copy_number(calls, span) if span else
-           {"call": "not assessed", "note": "no GENCODE gene lines beside the results "
-            "(reference/gencode.v<N>.basic.genes.gtf, which setup.sh installs) to place the gene"})
     return p, {"total": total, "deletions": dels, "duplications": dups, "significant": sig,
-               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped, "ugt2b17": ugt}
+               "significant_filtered": kept, "filtered_chry": kept_y, "dropped": dropped}
 
 
 def cnvpytor_sex_filter(data, declared_sex):
@@ -2236,6 +2195,22 @@ def sec_lpa(d, s):
                            "Not determined: neither the KIV-2 count nor the two risk variants could be read. "
                            "Measure Lp(a) in blood."))
     return p, data
+
+
+VNTYPER_STATUSES = ("positive", "possible", "negative", "not assessed")
+
+
+def sec_vntyper(d, s):
+    """Step 52's table (vntyper/<id>_vntyper.tsv, bin/vntyper_report.py):
+    VNtyper's MUC1 VNTR reading with its depth and sensitivity line."""
+    p = first_existing(d, [f"vntyper/{s}_vntyper.tsv"])
+    if not p:
+        return None, {}
+    kv = {r.get("metric"): r.get("value") for r in read_tsv(p)}
+    if kv.get("status") not in VNTYPER_STATUSES:
+        raise Unreadable(f"{os.path.basename(p)} has no status row ({', '.join(VNTYPER_STATUSES)})")
+    return p, {k: kv.get(k) or "." for k in ("status", "confidence", "variant", "flag", "alt_depth",
+                                             "vntr_mean_depth", "coverage_qc", "sensitivity", "message", "advice")}
 
 
 def sec_viral(d, s):
@@ -3503,6 +3478,7 @@ SECTIONS = [
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
+    ("vntyper", "MUC1 VNTR frameshifts (VNtyper)", "52", sec_vntyper),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
@@ -3693,6 +3669,9 @@ def collect(sample, sample_dir, declared_sex=None):
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
            else [HBA_NOT_ASSESSED])
         + ([MEI_NOT_ASSESSED] if sections["mei"]["state"] == "missing" else [])
+        + ([] if sections["vntyper"]["state"] == "ok"
+           and sections["vntyper"]["data"].get("status") in ("positive", "possible", "negative")
+           else [VNTYPER_NOT_ASSESSED])
         + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
     return summary

@@ -548,6 +548,18 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** each task's `.command.run` starts with a YAML header. Up to 26.10.2 Nextflow wrote `### name: 'X'`; 26.10.3 writes `### name: "X"` (BashWrapperBuilder now renders the values as YAML double-quoted strings). The counts matched single quotes only.
 - **Fix:** every reader of that header (four steps in `.github/workflows/nextflow.yml` and `tests/e2e/couple-carrier-1.sh`) accepts either quote, so the pinned release and the newest one both count.
 
+## MUC1 VNTR with VNtyper (2026-10)
+
+### VNtyper's image runs only its own command words
+- **Failed:** `docker run VNTYPER_IMAGE bash -c ...` and Nextflow's task wrapper started VNtyper's entrypoint, which accepts `vntyper`, `celery`, `beat`, `health` and `bash`, and ignores the arguments of `bash`.
+- **Why:** the image's `/usr/local/bin/entrypoint.sh` dispatches on its first word. VNtyper also reads its references through paths relative to `/opt/vntyper`.
+- **Fix:** step 52 passes `--entrypoint ""` and runs `cd /opt/vntyper && vntyper pipeline ...`; `nextflow.config`'s docker profile gives the VNTYPER process the same `--entrypoint ""`.
+
+### VNtyper refuses an output folder inside the BAM's folder
+- **Failed:** the VNTYPER process read "not assessed" on a BAM the bash step called positive. Its log said `Pipeline log file is inside an operator-owned input tree`.
+- **Why:** VNtyper 2.0.47 will not write its log under the folder of `--bam`, the link's folder or the file's. Nextflow stages the BAM as a link in the task folder, which is where `run/` goes. The bash step writes to `vntyper/`, beside `aligned/`, so it never hit this.
+- **Fix:** the process links the BAM and its index into `in/` and passes `in/<bam>`; `run/` is then outside both folders. The e2e case `vntyper-1` compares the process's table with the bash step's byte for byte.
+
 ## Nextflow's trace file (2026-10)
 
 ### The trace file can list a finished task twice
