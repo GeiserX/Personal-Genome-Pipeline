@@ -138,5 +138,9 @@ echo "mei: HG002 chr20 30x (minimap2, unmapped reads dropped${MEI_E2E_DROP_ALU:+
   "$(awk -F'\t' 'NR > 1 {n[$4]++} END {for (k in n) printf "%s %d ", k, n[k]}' "${M}_mei.tsv" 2>/dev/null)" >> "$E2E_NOTES"
 
 rm -rf "${G:?}/${H}/aligned" "${R:?}" "${G:?}/reference/megane" "${T:?}"/*.bam "${T:?}"/*.bai "${T:?}/truth.vcf.gz"
+# MEGAnE's image (about 6.4 GB) serves this case alone, and the cases after it
+# need the disk: the runner ran out of space in mocha-1 with it still loaded.
+# It is pinned by digest, so the e2e image cache never saves it anyway.
+docker image rm "$MEGANE_IMAGE" > /dev/null 2>&1 || true
 unset REF_FASTA
 finish

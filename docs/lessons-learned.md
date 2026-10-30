@@ -603,3 +603,8 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** streaming the GIAB BAM's chr20 with `SAMTOOLS_IMAGE` failed with libcurl error 60.
 - **Why:** the image has no CA certificate bundle.
 - **Fix:** the e2e case mounts the runner's `/etc/ssl/certs` and sets `CURL_CA_BUNDLE`, as the LPA case does.
+
+### MEGAnE's image leaves the e2e runner short of disk
+- **Failed:** with steps 50, 51 and 52 all on main, the e2e job stopped with "No space left on device" in `mocha-1`, the case after `mei-1`.
+- **Why:** the e2e job pulls every image before the first case, and MEGAnE's image is about 6.4 GB. It stayed on the disk after `mei-1`, the only case that uses it.
+- **Fix:** `tests/e2e/mei-1.sh` removes the image when it ends. It is pinned by digest, so the e2e image cache never saves it anyway.
