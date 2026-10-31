@@ -363,7 +363,11 @@ def load_plugins(app, plugin_dir):
     for f in names:
         spec = importlib.util.spec_from_file_location(f[:-3], os.path.join(plugin_dir, f))
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True  # no __pycache__ beside a plugin
+        try:
+            spec.loader.exec_module(mod)
+        finally:
+            sys.dont_write_bytecode = keep
         if not callable(getattr(mod, "register", None)):
             raise SystemExit(f"ERROR: plugin {f} has no register(app)")
         mod.register(app)
