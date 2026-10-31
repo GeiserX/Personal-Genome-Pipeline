@@ -252,6 +252,12 @@ results/
 
 ---
 
+## Watching a run live
+
+`nextflow.config` has a `weblog` block that is off unless `PGP_LIVE_URL` is set. With it set, Nextflow posts each task's progress to `PGP_LIVE_URL/ingest/<PGP_LIVE_RUN>`, which the live site (`bin/pgp_live.py`) turns into a step map in the browser. `run-all.sh` sets `PGP_LIVE_RUN` to the sample; for a bare `nextflow run`, set both variables yourself. A `-with-weblog` option replaces the block. [Watch a Run Live](live-site.md) has the setup.
+
+---
+
 ## Before you share outputs
 
 The pipeline does not anonymise anything: the outputs carry whatever identified you in the input. Before you share a file, know what it holds:
