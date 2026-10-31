@@ -177,6 +177,8 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 
 **Where things land.** Results go to `${GENOME_DIR}/<sample>/`, in the folders of the pipeline's [output structure](nextflow.md#output-structure). Most match the single scripts' folders; the pipeline writes PharmCAT to `pharmcat/`, ROH to `roh/`, depth to `coverage/` and HLA types to `hla/`, where the scripts use `vcf/`, `vcf/`, `mosdepth/` and `hla_t1k/`. The reports read both. At the end `run-all.sh` renders the full HTML report (`<sample>_report.html`, step 24), the text report (`<sample>_report.txt`) and the `summary.json` both are made from.
 
+**Families.** When several of your samples are related, say once who is related to whom in a families file ([`assets/families.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/families.example.tsv): family, sample, sex, father, mother, partner) and pass it with each run: `FAMILIES=families.tsv ./scripts/run-all.sh your_name male`. Each run still processes its own sample only. The file must give the same sex (exit 2 before the pipeline otherwise). Before the reports, `run-all.sh` writes `${GENOME_DIR}/<family>/family_plan.tsv` and runs the family analysis (step 38) and the couple carrier screen (step 39) once the members they need have been processed; until then it records the step as `skipped (waiting: ...)` and names who is missing. [Family analysis](multi-sample.md#family-analysis-step-38-opt-in) has the details.
+
 | Log | Where |
 |---|---|
 | Nextflow's own log | `<sample>/nextflow/.nextflow.log` |
