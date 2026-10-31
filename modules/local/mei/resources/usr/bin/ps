@@ -1,0 +1,16 @@
+#!/bin/sh
+# ps for the tasks of modules/local/mei; MEI is the one that needs it.
+# MEGAnE's image has no ps, and Nextflow's task wrapper stops without it: it
+# lists the processes with `ps -e -o pid= -o ppid=` to measure the task's
+# memory. This prints those two columns from /proc and nothing else. A
+# Nextflow module binary: on the PATH of this module's tasks only
+# (nextflow.enable.moduleBinaries in nextflow.config).
+for s in /proc/[0-9]*/stat; do
+  # shellcheck disable=SC2015  # skip the entry when either fails
+  [ -r "$s" ] && read -r line < "$s" 2>/dev/null || continue
+  # stat: pid (comm) state ppid ...; comm can hold spaces and parentheses.
+  rest=${line##*) }
+  # shellcheck disable=SC2086  # split into its fields on purpose
+  set -- $rest
+  echo "${line%% *} $2"
+done

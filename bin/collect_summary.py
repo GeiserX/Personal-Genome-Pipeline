@@ -107,7 +107,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 RUN_ALL_STEPS = {"03a", "03b", "03c", "03d", "04", "04b", "05", "06", "07", "08", "09", "09b", "10", "11",
                  "12", "13", "14", "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
                  "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "40", "41", "42", "43",
-                 "44", "45", "46", "47", "48", "49", "51", "52"}
+                 "44", "45", "46", "47", "48", "49", "50", "51", "52"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -122,6 +122,11 @@ NOT_ASSESSED = [
 # short reads) or step 35b (Paraphase, PacBio HiFi, both genes) made a call.
 HBA_NOT_ASSESSED = ("HBA1/HBA2 copy number (alpha-thalassaemia deletions): neither step 35's read-depth count "
                     "(short reads) nor step 35b (Paraphase, PacBio HiFi) made a call")
+
+# Added to NOT_ASSESSED when step 50 (opt-in, MEGAnE) did not run; a failed
+# step 50 is listed under not run, and unreadable tables under their section.
+MEI_NOT_ASSESSED = ("Mobile element insertions (Alu, L1 and SVA, the FKTN, TAF1 and BBS1 SVA insertions among them): "
+                    "not looked for (step 50, MEGAnE, is opt-in)")
 
 # Added to NOT_ASSESSED unless step 51 (MoChA) assessed the sample.
 MCA_NOT_ASSESSED = ("Autosomal mosaic chromosomal alterations (large gains, losses and copy-neutral LOH in a share "
@@ -2266,6 +2271,30 @@ def sec_chip(d, s):
                "not_covered": [r["gene"] for r in depth if r["status"] != "covered"]}
 
 
+def sec_mei(d, s):
+    """Step 50's tables (mei/<id>_mei.tsv and _mei_sites.tsv, bin/mei_report.py):
+    the insertions MEGAnE calls, counted per element, and every row of the
+    known-site catalog with seen, not seen or not callable."""
+    p = first_existing(d, [f"mei/{s}_mei_sites.tsv"])
+    if not p:
+        return None, {}
+    sites = read_tsv(p)
+    need = ("gene", "element", "condition", "inheritance", "status", "mean_depth", "call")
+    if not sites or any(k not in sites[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} has no rows or lacks a column of {', '.join(need)}")
+    cp = os.path.join(os.path.dirname(p), f"{s}_mei.tsv")
+    if not os.path.isfile(cp):
+        raise Unreadable(f"{os.path.basename(cp)} is missing beside {os.path.basename(p)}")
+    calls = read_tsv(cp)
+    if calls and any(k not in calls[0] for k in ("chrom", "pos", "element", "copies")):
+        raise Unreadable(f"{os.path.basename(cp)} lacks a column of chrom, pos, element, copies")
+    counts = {}
+    for c in calls:
+        counts[c["element"]] = counts.get(c["element"], 0) + 1
+    return p, {"calls": len(calls), "by_element": dict(sorted(counts.items())),
+               "sites": [{k: r[k] or "." for k in need} for r in sites]}
+
+
 MOCHA_SUMMARY_KEYS = ("status", "message", "depth", "het_sites", "het_per_10mb", "chromosomes", "floor_read",
                       "floor_min", "floor", "calls_mocha", "calls_reported", "phasing")
 MOCHA_CALL_KEYS = ("chrom", "start", "end", "length_mb", "arms", "type", "cell_fraction", "n_hets", "lod_baf_phase",
@@ -3464,6 +3493,7 @@ SECTIONS = [
     ("viral", "Viral DNA in the unmapped reads", "47", sec_viral),
     ("exomiser", "Symptom-driven ranking (Exomiser)", "48", sec_exomiser),
     ("chip", "Clonal haematopoiesis (CHIP)", "49", sec_chip),
+    ("mei", "Mobile element insertions (MEGAnE)", "50", sec_mei),
     ("mosaic", "Mosaic chromosomal alterations (MoChA)", "51", sec_mocha),
     ("cpsr", "Cancer predisposition (CPSR)", "17", sec_cpsr),
     ("clinical", "Clinical variant filter", "23", sec_clinical),
@@ -3645,6 +3675,7 @@ def collect(sample, sample_dir, declared_sex=None):
                                       if g["region"] == "hba" and g["status"] == "called"}
            or (sections["parascopy"]["data"].get("hba") or {}).get("status") == "called"
            else [HBA_NOT_ASSESSED])
+        + ([MEI_NOT_ASSESSED] if sections["mei"]["state"] == "missing" else [])
         + ([] if sections["vntyper"]["state"] == "ok"
            and sections["vntyper"]["data"].get("status") in ("positive", "possible", "negative")
            else [VNTYPER_NOT_ASSESSED])

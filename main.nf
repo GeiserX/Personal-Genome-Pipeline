@@ -46,6 +46,7 @@ include { VNTYPER } from './modules/local/vntyper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
+include { MEI_DEPTH; MEI; MEI_REPORT } from './modules/local/mei/main'
 include { MOCHA_PREP; MOCHA_PHASE; MOCHA_CALL; MOCHA_REPORT } from './modules/local/mocha/main'
 
 /*
@@ -102,6 +103,7 @@ workflow {
         'viral',
         'exomiser',
         'chip',
+        'mei',
         'mocha',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
@@ -157,6 +159,7 @@ workflow {
         ['viral',            'viral_ref',          '--viral_ref'],
         ['exomiser',         'exomiser_data',      '--exomiser_data'],
         ['chip',             'chip_gff',           '--chip_gff'],
+        ['mei',              'megane_kmers',       '--megane_kmers'],
         ['mocha',            'mocha_data',         '--mocha_data'],
     ]
 
@@ -996,6 +999,25 @@ workflow {
                                                          CHIP_REPORT.out.versions)
     }
 
+    // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
+    // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
+    // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
+    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
+    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    ch_mei          = Channel.empty()
+    ch_mei_versions = Channel.empty()
+    if (tools_list.contains('mei')) {
+        def mk = file(params.megane_kmers, checkIfExists: true)
+        ch_megane_kmers = Channel.value([mk, file(mk.toString().replaceFirst(/\.mk$/, '.mi'), checkIfExists: true)])
+        ch_mei_sites = Channel.value(file("${projectDir}/assets/mei_sites.tsv", checkIfExists: true))
+        MEI_DEPTH(ch_bam, ch_mei_sites)
+        MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
+            ch_reference, ch_reference_fai, ch_megane_kmers)
+        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        ch_mei          = MEI_REPORT.out.tables
+        ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
+    }
+
     // ─── Mosaic chromosomal alterations (opt-in: mocha, step 51) ───────
     // The VCF's heterozygous SNVs phased with Beagle against the panel of
     // --mocha_data (setup.sh --mocha-data), then MoChA on chr1 to chr22 and
@@ -1094,6 +1116,8 @@ workflow {
         .join(ch_exomiser_terms.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip.map                         { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_chip_depth.map                   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_mei.map                          { meta, calls, sites -> [meta.id, calls] }, remainder: true)
+        .join(ch_mei.map                          { meta, calls, sites -> [meta.id, sites] }, remainder: true)
         .join(ch_mocha.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
@@ -1132,6 +1156,7 @@ workflow {
             ch_vntyper_versions,
             ch_viral_versions,
             ch_chip_versions,
+            ch_mei_versions,
             ch_exomiser_versions,
             ch_mocha_versions
         )

@@ -161,6 +161,7 @@ nav:
           - "Step 18: Depth-Based CNV Calling with CNVpytor": 18-cnvpytor.md
           - "Step 19: Structural Variant Calling with Delly": 19-delly.md
           - "Step 22: Structural Variant Consensus Merge": 22-survivor-merge.md
+          - "Step 50: Mobile Element Insertions (Alu, L1, SVA)": 50-mei.md
       - Clinical screening and annotation:
           - "Step 6: ClinVar Pathogenic Variant Screening": 06-clinvar-screen.md
           - "Step 13: Variant Effect Predictor (VEP) Annotation": 13-vep-annotation.md

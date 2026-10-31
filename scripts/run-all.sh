@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip and mocha run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip, mei and mocha run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -213,6 +213,11 @@ if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
     NF+=(--hpo "$HPO" --exomiser_data "$ED")
   fi
 else KNOWN+=" exomiser"; fi
+# Step 50 (Alu, L1 and SVA insertions, MEGAnE) is opt-in and listed only when TOOLS names it; it reads the BAM.
+MN=$(basename "$REF_FASTA"); MN=${MN%.gz}; MN=${MN%.*}; MK=${MEGANE_KMERS:-${G}/reference/megane/${MN}.mk}
+case "$MK" in /*) ;; *) MK="${G}/${MK}" ;; esac
+if [[ ",${T// /}," == *",mei,"* ]]; then plan "50 Mobile element insertions" mei "$(if [ -z "$NOBAM" ]; then echo 'no BAM'; else need "$MK" "${MK%.mk}.mi"; fi)" \
+  && NF+=(--megane_kmers "$MK") || true; else KNOWN+=" mei"; fi
 # Step 51 (mosaic chromosomal alterations, MoChA) is opt-in and listed only when TOOLS names it; it reads the VCF.
 MD=${MOCHA_DATA:-${G}/reference/mocha-${MOCHA_PANEL_VERSION}}
 if [[ ",${T// /}," == *",mocha,"* ]]; then plan "51 Mosaic alterations (MoChA)" mocha "$(need "${MD}/DONE")" \

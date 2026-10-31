@@ -650,6 +650,12 @@ CYP2D6 is the hard gene: a nearby pseudogene and frequent copy-number changes co
 
 One SMN1 copy suggests SMA carrier status; two do not rule it out (two copies on one chromosome, none on the other). Trust a value only with quality 20 or more and filter `PASS`, and confirm anything that matters with a clinical SMN1 test. [Step 35](35-paralogs.md#interpreting-results) explains the columns.
 
+## Mobile Element Insertions (Step 50, opt-in)
+
+**Where to look:** `${SAMPLE}/mei/${SAMPLE}_mei_sites.tsv` for the three known disease insertions (SVA insertions in FKTN, TAF1 and BBS1), and `${SAMPLE}/mei/${SAMPLE}_mei.tsv` for every Alu, L1 and SVA insertion MEGAnE called, with one or two copies.
+
+Expect many calls: a genome carries about 1,200 such insertions, nearly all common and harmless. Read the catalog first. **Seen** means an insertion of the same element was called inside the site's window; one copy of the FKTN or BBS1 insertion is carrier status for a recessive condition, and the TAF1 insertion on a male's single X is what causes X-linked dystonia-parkinsonism. **Not seen** is not proof of absence: short reads find an SVA's edges, not its body. **Not callable** means too few reads there (under 10x) to tell. Confirm anything that matters in a clinical laboratory. [Step 50](50-mei.md) explains the columns.
+
 ## Polygenic Risk Scores (Step 25)
 
 **Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one row per condition, and the PRS section of the report.
@@ -840,7 +846,7 @@ The pipeline uses VEP because it is the most widely used and well-maintained too
 A clean result from these steps says nothing about the following. Each needs a different test or a different kind of data.
 
 - **Copy-number changes in genes with a near-identical copy**, except SMN1/SMN2 and the number of alpha-globin genes with the opt-in step 35. Most alpha-thalassaemia (HBA1/HBA2 deletions), GBA1 and CYP21A2 changes sit in regions where short reads cannot tell the gene from its paralog. The VCF-based screens do not see them, and without step 35 neither is SMA carrier status. Step 35 counts HBA1 and HBA2 together from read depth: it can show a gene lost, not which one or on which chromosome. The count has been checked on one real genome only (HG002, four genes), so a count under four is marked unconfirmed and needs a clinical test. When the estimate is one gene or more, a BAM whose aligner gives no mapping-quality-0 reads over the two genes (novoalign by default) is reported as not assessed, because the reads that fit both genes are missing from it. Step 35 estimates SMN1 copy number but cannot see a "2+0" carrier; SMA carrier status still needs a clinical SMN1 test.
-- **Mobile-element insertions.** Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions, and no step looks for them.
+- **Mobile-element insertions**, unless the opt-in step 50 ran. Manta reports insertions but does not classify them as Alu, LINE-1 or SVA insertions; step 50 (MEGAnE) does, and reads three known disease insertions.
 - **Methylation and phasing from long reads.** The long-read branch stops at alignment, small variants and structural variants; see the [long-read guide](long-read-guide.md).
 - **Mosaic copy-neutral loss of heterozygosity**, present in only some cells (common in blood with age). Step 11 sees runs of homozygosity that are in every cell; it cannot see a change carried by a fraction of them.
 - **Repeat expansions outside STRchive's 82 disease loci** (ExpansionHunter's 31 without `setup.sh`'s STRchive catalog), the seven of them whose repeat short reads cannot size or STRchive gives no threshold for, and accurate sizing of very large expansions.

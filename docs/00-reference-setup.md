@@ -247,6 +247,17 @@ wget -c https://storage.googleapis.com/gatk-best-practices/somatic-hg38/1000g_po
   -O ${GENOME_DIR}/somatic/1000g_pon.hg38.vcf.gz.tbi
 ```
 
+## MEGAnE k-mer Set (Optional, for Step 50)
+
+Only needed for step 50, the mobile element insertions ([50-mei.md](50-mei.md)). MEGAnE drops reads that map to many places by a list of every 32-mer seen more than once in the reference, which it builds from the reference itself:
+
+```bash
+./scripts/setup.sh --megane-kmers ${GENOME_DIR}
+# Creates: ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk and .mi
+```
+
+It pulls `MEGANE_IMAGE` (about 6.4 GB) and runs MEGAnE's `build_kmerset` on `REF_FASTA`. The builder holds two 8-byte k-mers per reference base in memory, so GRCh38 needs about 50 GB of RAM (MEGAnE's authors give 48 GB and about 10 minutes); `setup.sh` checks the memory Docker has first and stops with a message when it is short. On a smaller machine, build it where the memory is and copy `reference/megane/` over. A set newer than the reference is kept; a new reference needs a new set.
+
 ## Annotation Databases (Optional, for Steps 30-31)
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.
@@ -382,7 +393,7 @@ Only needed for step 48, the symptom-driven ranking that runs when you give HPO 
 
 ## Docker Images — Pre-Pull All
 
-`setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. A failed pull is tried three times (`FETCH_TRIES` and `FETCH_WAIT` change that), and Docker's own message is printed: `toomanyrequests` is Docker Hub's rate limit, `manifest unknown` a tag that does not exist. `--parascopy-data` and `--yleaf-data` pull their step's optional image along with its data. Each image pinned by digest (`name:tag@sha256:...`) also gets a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`: Docker gives an image pulled by digest no tag, and a dangling-image cleanup such as `docker image prune` would delete it ([Troubleshooting](troubleshooting.md#images-that-were-pulled-are-missing-after-a-docker-cleanup)). Tasks still run the digest reference. To pull every image in advance, the optional ones included, from the repository root in bash (then run `scripts/setup.sh --pull-only` once to tag the digest-pinned ones):
+`setup.sh` pulls every image in `versions.env` except the lines marked `# optional`, and `scripts/setup.sh --pull-only` pulls the same list without the rest of setup. A failed pull is tried three times (`FETCH_TRIES` and `FETCH_WAIT` change that), and Docker's own message is printed: `toomanyrequests` is Docker Hub's rate limit, `manifest unknown` a tag that does not exist. `--parascopy-data`, `--yleaf-data` and `--megane-kmers` pull their step's optional image along with its data. Each image pinned by digest (`name:tag@sha256:...`) also gets a local tag, `localhost/pgp-pinned/<name>:sha256-<digest>`: Docker gives an image pulled by digest no tag, and a dangling-image cleanup such as `docker image prune` would delete it ([Troubleshooting](troubleshooting.md#images-that-were-pulled-are-missing-after-a-docker-cleanup)). Tasks still run the digest reference. To pull every image in advance, the optional ones included, from the repository root in bash (then run `scripts/setup.sh --pull-only` once to tag the digest-pinned ones):
 
 ```bash
 source versions.env

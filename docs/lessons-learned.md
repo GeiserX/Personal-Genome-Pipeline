@@ -566,3 +566,45 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** the nextflow (pinned) job's retry-memory step failed at random, once with `FAIL MANTA: 5 first and 4 second attempts in the trace` and once with `FAIL DEEPVARIANT: 3 first and 2 second attempts in the trace`. A rerun of the job passed both times. No retry was missing: the run's log shows every task submitted once and retried once.
 - **Why:** the extra row was the same failed first attempt, written a second time as the last line of the trace. Nextflow's trace observer keeps a map of running tasks: a submit or start event puts a task in it, the complete event removes it and writes its row, and at the end of the run every task still in the map is written again. A stub task that exits 137 at once can have its submit event handled after its complete event (the failing run's log prints the retry note before the task's own "Submitted process" line), so the task goes back into the map and gets a second row. The code is the same on 26.10.2 and on Nextflow's main branch.
 - **Fix:** the step adds `task_id` to the trace fields and counts each task once. A repeated row must match the first one (only its exit status may read `-`), and each task name must have exactly one first attempt and one retry. The two steps that read back the memory retries of ALIGN_MINIMAP2 and PRS key their rows on `task_id` the same way. Any other trace reader that counts rows should too.
+
+## Mobile element insertions with MEGAnE (2026-10)
+
+### MEGAnE stops on a BAM that lacks one of its GRCh38 contigs
+- **Failed:** `call_genotype_38` on a BAM of chr20 alone stopped with "Chromosomes ... were NOT found" before reading a read.
+- **Why:** the wrapper passes `-mainchr` with its own list of every GRCh38 contig, ALT contigs included, and MEGAnE refuses a BAM that misses any of them. A BAM aligned to the no-ALT analysis set has none of the ALT contigs.
+- **Fix:** step 50 writes the list from the BAM's header (chr1 to chr22, chrX, chrY as the BAM names them) and passes it as `-mainchr` after the wrapper's own, so it wins.
+
+### MEGAnE stops when chrX is missing, unless told the sample has no sex chromosomes
+- **Failed:** with that list, a chr20-only BAM stopped with "Sex chromosome {'chrX', 'X'} was NOT found".
+- **Why:** MEGAnE measures the depth of chrX to genotype it against the autosomes.
+- **Fix:** when the BAM has no chrX, step 50 passes `-no_sex_chr`, which reads every chromosome as an autosome.
+
+### MEGAnE refuses a `.fai` that is not newer than its FASTA
+- **Failed:** MEGAnE stops with "Fasta index ... was older than fasta" when the `.fai` is not strictly newer than the FASTA, which a copied or unpacked reference can be (MEGAnE's `scripts/setup.py`).
+- **Why:** MEGAnE checks that the index was written after the FASTA. A Nextflow task stages both as links, which carry the times of the files they point to.
+- **Fix:** step 50 and the MEI process give MEGAnE a link to the FASTA with a fresh copy of the `.fai` beside it.
+
+### On one chromosome MEGAnE writes `MEI_final_failed_genotyped.vcf`, not the percentile VCF
+- **Failed:** on HG002's chr20 the step found no `MEI_final_percentile_genotyped.vcf`, the file MEGAnE's log recommends for one sample, although the run ended with exit 0.
+- **Why:** MEGAnE fits the read support of its candidates to set its filter thresholds and needs at least three clean candidates for the fit. One chromosome gave fewer, so it logged "Cannot automatically determine thresholds" and wrote its calls under fixed thresholds to `MEI_final_failed_genotyped.vcf`.
+- **Fix:** step 50 reads the percentile VCF and falls back to that file with a warning. A whole genome gives the percentile VCF.
+
+### MEGAnE crashes on a few hundred kilobases of reads
+- **Failed:** on the image test's 500 kb slice, `call_genotype_38` stopped with an IndexError in `process_mapped_seq.py` (`check_true_pos`).
+- **Why:** with so few reads one of its read lists is empty, and the code indexes it anyway.
+- **Fix:** the image test builds the k-mer set and checks the options; the call is tested on all of chr20 in the e2e case `mei-1`.
+
+### MEGAnE's image has no `ps`, and every Nextflow task in it stops
+- **Failed:** the MEI process exited 1 within seconds with "Command 'ps' required by nextflow to collect task metrics cannot be found"; the bash step on the same BAM ran.
+- **Why:** with a trace, report or timeline on, Nextflow's task wrapper lists the task's processes with `ps -e -o pid= -o ppid=` to measure its memory, and checks for `ps` first. MEGAnE's image does not have it, and it is the only image there is.
+- **Fix:** `modules/local/mei/resources/usr/bin/ps` prints those two columns from `/proc`. It is a module binary (`nextflow.enable.moduleBinaries = true`), so it is on the PATH of the three tasks of `modules/local/mei` only.
+
+### The staphb samtools image cannot read a BAM over https
+- **Failed:** streaming the GIAB BAM's chr20 with `SAMTOOLS_IMAGE` failed with libcurl error 60.
+- **Why:** the image has no CA certificate bundle.
+- **Fix:** the e2e case mounts the runner's `/etc/ssl/certs` and sets `CURL_CA_BUNDLE`, as the LPA case does.
+
+### MEGAnE's case left the e2e runner short of disk
+- **Failed:** with steps 50, 51 and 52 all on main, the e2e job stopped with "No space left on device" in `mocha-1`, the case after `mei-1`, and later in `nextflow-hardening-1-manta`.
+- **Why:** `mei-1` left its sample directory, with MEGAnE's work files, on the disk. Removing it, the chr20 reference copy, the k-mer set and MEGAnE's 6.4 GB image took the free disk from 7.6 GB to 28 GB.
+- **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory when it ends, and logs the free disk before and after. It keeps the image: when a case removed it, the job's "Image sizes" step stopped with `numfmt: invalid number: ''`, because `docker image inspect -f` prints an empty line for an image that is gone and that step reads every image the cases use.

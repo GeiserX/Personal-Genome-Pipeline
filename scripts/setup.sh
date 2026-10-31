@@ -17,6 +17,7 @@
 #        ./scripts/setup.sh --exomiser-data <genome_dir>
 #        ./scripts/setup.sh --strchive-data <genome_dir>
 #        ./scripts/setup.sh --chip-data <genome_dir>
+#        ./scripts/setup.sh --megane-kmers <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
@@ -33,10 +34,11 @@
 #                                            viral genomes of step 47, Ensembl's
 #                                            gene annotation (step 49), Exomiser's
 #                                            hg38 and phenotype data plus its image
-#                                            (step 48), the STRchive catalog of
-#                                            steps 09 and 9b (also part of a full
-#                                            setup), MoChA's phasing panel plus
-#                                            its images (step 51)
+#                                            (step 48), MEGAnE's k-mer set of the
+#                                            reference plus its image (step 50), the
+#                                            STRchive catalog of steps 09 and 9b
+#                                            (also part of a full setup), MoChA's
+#                                            phasing panel plus its images (step 51)
 #        ./scripts/setup.sh --archaic <genome_dir>
 #                                            the archaic genomes and 1000 Genomes
 #                                            frequencies of step 43, as one table
@@ -94,7 +96,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -119,7 +121,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -160,6 +162,10 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                transcripts; ~110 MB) and exit."
   echo "  --strchive-data"
   echo "                Install only the STRchive ${STRCHIVE_VERSION:-} repeat catalog of steps 09 and 9b (~0.5 MB) and exit."
+  echo "  --megane-kmers"
+  echo "                Build MEGAnE's k-mer set of the reference for step 50 (Alu, L1 and SVA insertions; ~1.8 GB,"
+  echo "                about 10 minutes, and about 16 bytes of RAM per reference base: ~50 GB for GRCh38), pull its"
+  echo "                image (~6.4 GB) and exit."
   echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~30 GB read,"
   echo "                one chromosome at a time) and the genetic map, pull its images and exit."
   echo "  --annotsv-data"
@@ -457,6 +463,55 @@ install_chip_data() {
     return 1
   fi
   echo "[OK] Ensembl ${ENSEMBL_GFF_RELEASE} gene annotation (step 49): ${dest}"
+}
+
+# megane_kmers_path: where step 50 reads MEGAnE's k-mer set of REF_FASTA, the
+# path scripts/50-mei.sh and run-all.sh build the same way (MEGANE_KMERS
+# overrides it): reference/megane/<reference file name without extension>.mk,
+# with MEGAnE's .mi count file beside it.
+megane_kmers_path() {
+  local n p
+  n=$(basename "$REF_FASTA"); n=${n%.gz}; n=${n%.*}
+  p=${MEGANE_KMERS:-${GENOME_DIR}/reference/megane/${n}.mk}
+  # A relative MEGANE_KMERS is inside GENOME_DIR, as scripts/50-mei.sh reads it.
+  case "$p" in /*) ;; *) p="${GENOME_DIR}/${p}" ;; esac
+  printf '%s\n' "$p"
+}
+
+# install_megane_kmers: MEGAnE's build_kmerset on the reference (step 50):
+# every 32-mer seen more than once in it, which MEGAnE uses to drop reads
+# that map to many places. It is built from the reference itself, so a new
+# reference needs a new set; one newer than the reference is kept. The
+# builder holds two 8-byte k-mers per reference base in memory and sorts
+# them in one thread: about 50 GB for GRCh38 (MEGAnE's own figure: 48 GB).
+install_megane_kmers() {
+  local mk dir need have
+  mk=$(megane_kmers_path); dir=$(dirname "$mk")
+  if [ ! -s "$REF_FASTA" ] || [ ! -s "${REF_FASTA}.fai" ]; then
+    echo "[WARN] Step 50's k-mer set is built from the reference, and ${REF_FASTA} (with its .fai) is not there yet: run ./scripts/setup.sh ${GENOME_DIR} first."
+    return 1
+  fi
+  if [ -s "$mk" ] && [ -s "${mk%.mk}.mi" ] && [ "$mk" -nt "$REF_FASTA" ]; then
+    echo "[OK] MEGAnE k-mer set (step 50) already present: ${mk}"
+    return 0
+  fi
+  need=$(awk '{ b += $2 } END { printf "%d", b * 16 / 1e9 + 4 }' "${REF_FASTA}.fai")
+  have=$("$CONTAINER_ENGINE" info --format '{{.MemTotal}}' 2>/dev/null | awk '{ printf "%d", $1 / 1e9 }')
+  if [ -n "$have" ] && [ "$have" -gt 0 ] && [ "$have" -lt "$need" ]; then
+    echo "[WARN] MEGAnE's k-mer set of this reference needs about ${need} GB of RAM and ${CONTAINER_ENGINE} has ${have} GB."
+    echo "       Build it on a machine with more memory (./scripts/setup.sh --megane-kmers <genome_dir> there) and copy ${dir#"$GENOME_DIR"/}/ here."
+    return 1
+  fi
+  mkdir -p "$dir"
+  echo "Building MEGAnE's k-mer set of $(basename "$REF_FASTA") (step 50; about 10 minutes, about ${need} GB of RAM)..."
+  rm -f "$mk" "${mk%.mk}.mi"
+  if ! run_in --rw "$dir" --memory "${need}g" "$MEGANE_IMAGE" build_kmerset -fa "$REF_FASTA_C" \
+      -prefix "$(basename "${mk%.mk}")" -outdir "$(cpath "$dir")" || [ ! -s "$mk" ] || [ ! -s "${mk%.mk}.mi" ]; then
+    rm -f "$mk" "${mk%.mk}.mi"
+    echo "[WARN] Could not build MEGAnE's k-mer set (step 50); its log is ${dir}/megane_build_kmer_set.log."
+    return 1
+  fi
+  echo "[OK] MEGAnE k-mer set (step 50, $(cat "${mk%.mk}.mi") repeated 32-mers): ${mk}"
 }
 
 # install_strchive_data: STRchive's ExpansionHunter catalog and loci file
@@ -1631,6 +1686,7 @@ case "$OPT_IN" in
   exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   chip-data) install_chip_data; exit $? ;;
   strchive-data) install_strchive_data; exit $? ;;
+  megane-kmers) ensure_image MEGANE_IMAGE 50 && install_megane_kmers; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
