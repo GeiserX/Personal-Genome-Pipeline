@@ -30,7 +30,10 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: pgp-live.sh needs python3 o
 if [ "${1:-}" = hash-password ]; then
   mkdir -p "$(dirname "$PWF")"
   h=$(python3 "${PGP_ROOT}/bin/pgp_live.py" hash-password)
-  (umask 077 && printf '%s\n' "$h" > "${PWF}.tmp") && chmod 600 "${PWF}.tmp" && mv "${PWF}.tmp" "$PWF"
+  # One command per line: under set -e a failure inside an && list would not stop the script.
+  (umask 077; printf '%s\n' "$h" > "${PWF}.tmp")
+  chmod 600 "${PWF}.tmp"
+  mv "${PWF}.tmp" "$PWF"
   echo "Password hash written: ${PWF} (mode 600). Start the site with: GENOME_DIR=${GENOME_DIR} $0"
   exit 0
 fi

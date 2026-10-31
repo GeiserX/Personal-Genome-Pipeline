@@ -5,6 +5,9 @@
 # sent, and that with the site down it warns once and returns 0 every time, so
 # a run never stops for it. It first proves the store check can fail: a
 # message to another run must not show up in this run's file.
+# It also checks that scripts/pgp-live.sh hash-password exits non-zero, with no
+# success line, when it cannot write the hash file; the control is the old
+# one-line `a && b && c` form, under which set -e let the script go on.
 #
 # LIVE_POST_FROM=FILE takes the function from another file.
 set -euo pipefail
@@ -62,3 +65,41 @@ eval "$(printf '%s\n' "$SRC" | sed -e 's/^live_post()/live_post_bad()/' -e 's/^ 
 rc=0; live_post_bad demo1 "$MSG" 2>/dev/null || rc=$?
 [ "$rc" -ne 0 ] || fail "control: the planted live_post_bad returned 0, so the exit check cannot fail"
 echo "Control: a live_post that returns the failure is caught."
+
+# hash-password: a hash file it cannot write is an error, never "Password hash written"
+hash_into() {  # SCRIPT DIR: run hash-password into DIR/password; prints the exit code, output in WORK/hash.out
+  local rc=0
+  printf 'synthetic test password 7\n' | GENOME_DIR="${WORK}/genome" PGP_LIVE_PASSWORD_FILE="$2/password" \
+    "$1" hash-password > "${WORK}/hash.out" 2>&1 || rc=$?
+  echo "$rc"
+}
+if [ "$(id -u)" -eq 0 ]; then
+  echo "SKIP: hash-password write failure (root writes into a read-only folder)"
+else
+  mkdir -p "${WORK}/ok" "${WORK}/ro" && chmod 555 "${WORK}/ro"
+  rc=$(hash_into "${REPO}/scripts/pgp-live.sh" "${WORK}/ok")
+  [ "$rc" -eq 0 ] && [ "$(stat -c %a "${WORK}/ok/password" 2>/dev/null || stat -f %Lp "${WORK}/ok/password")" = 600 ] \
+    || fail "hash-password into a writable folder: exit ${rc}, $(cat "${WORK}/hash.out")"
+  rc=$(hash_into "${REPO}/scripts/pgp-live.sh" "${WORK}/ro")
+  { [ "$rc" -ne 0 ] && ! grep -q 'Password hash written' "${WORK}/hash.out"; } \
+    || fail "hash-password into a read-only folder: exit ${rc}, $(cat "${WORK}/hash.out")"
+  echo "PASS: hash-password fails, with no success line, when it cannot write the hash"
+  # Control: the && chain it replaced. A copy beside links to the rest of the repo.
+  mkdir -p "${WORK}/tree/scripts"
+  for f in "${REPO}"/* "${REPO}"/.[!.]*; do [ "$(basename "$f")" = scripts ] || ln -s "$f" "${WORK}/tree/"; done
+  ln -s "${REPO}/scripts/lib" "${WORK}/tree/scripts/lib"
+  python3 - "${REPO}/scripts/pgp-live.sh" "${WORK}/tree/scripts/pgp-live.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+fixed = ("  (umask 077; printf '%s\\n' \"$h\" > \"${PWF}.tmp\")\n  chmod 600 \"${PWF}.tmp\"\n"
+         "  mv \"${PWF}.tmp\" \"$PWF\"\n")
+old = "  (umask 077 && printf '%s\\n' \"$h\" > \"${PWF}.tmp\") && chmod 600 \"${PWF}.tmp\" && mv \"${PWF}.tmp\" \"$PWF\"\n"
+open(sys.argv[2], "w").write(s.replace(fixed, old) if fixed in s else s)
+PY
+  chmod +x "${WORK}/tree/scripts/pgp-live.sh"
+  grep -q 'umask 077 && printf' "${WORK}/tree/scripts/pgp-live.sh" || fail "control: the planted copy was not made"
+  rc=$(hash_into "${WORK}/tree/scripts/pgp-live.sh" "${WORK}/ro")
+  { [ "$rc" -ne 0 ] && ! grep -q 'Password hash written' "${WORK}/hash.out"; } \
+    && fail "control: the && chain also failed (exit ${rc}), so the check cannot tell them apart"
+  echo "Control: the old && chain exits ${rc} with a success line; the check catches it."
+fi
