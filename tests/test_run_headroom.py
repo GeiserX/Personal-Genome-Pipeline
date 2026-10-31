@@ -15,6 +15,7 @@ Checks:
  11. the snapshot holds no '/' in any string value, and takes its folders from the weblog metadata;
  12. MEMORY_EXITS are the exits conf/base.config's errorStrategy retries;
  13. a real statvfs on a temp folder gives a used ratio in 0..1 and the command exits 0.
+ 14. a running row read after a finished row of the same attempt keeps the finished ratio.
 Each check is then run against a planted mistake (a mutant of run_headroom.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
