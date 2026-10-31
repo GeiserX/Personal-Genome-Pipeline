@@ -1,16 +1,37 @@
 #!/usr/bin/env python3
 """family_report.py: the family analysis of step 38 (scripts/38-family.sh) and
-of the Nextflow FAMILY workflow (workflows/family.nf). Both run the same three
-commands, in this order. Standard library only, so it runs in the plain python
-image.
+of the Nextflow FAMILY workflow (workflows/family.nf). Both run prepare, check
+and report, in this order; plan says beforehand which family analyses run.
+Standard library only, so it runs in the plain python image.
 
-  family_report.py prepare --pedigree P.tsv --gvcf ID=PATH ... [--declared-sex ID=SEX ...] --out-dir D
-      Reads and checks the pedigree (assets/pedigree.example.tsv has the
-      format) and checks that each gVCF names its own sample. Writes
+  A families file is a pedigree (assets/pedigree.example.tsv: sample, sex,
+  father, mother, partner, tab separated) with an optional leading family
+  column (assets/families.example.tsv), so one file can declare several
+  families. A file without the column is one family, read as before.
+
+  family_report.py plan --families F [--family NAME] [--sample S [--sex SEX]]
+                        [--have-gvcf ID ...] [--have-clinvar ID ...] [--ibd-panel yes|no]
+                        [--write-pedigree DIR] [--which] [--out family_plan.tsv]
+      Checks the file and picks one family: NAME, else the family of S,
+      else the file's only one. With --sex, S's sex in the file must agree.
+      --which prints the family's name (nothing when S is in none) and
+      stops. Otherwise writes, for each analysis of steps 38 and 39
+      (joint_call, trio_phasing, inheritance_map, shared_segments, and
+      couple_carrier per couple), whether it runs, is skipped or is waiting
+      for a member's own run, and why (family, analysis, members, decision,
+      reason); --write-pedigree writes DIR/<family>/pedigree.tsv, the
+      family's rows without the family column. Exits 2 on a problem, naming
+      the file and line.
+
+  family_report.py prepare --pedigree P.tsv [--family NAME] --gvcf ID=PATH ... [--declared-sex ID=SEX ...]
+                           [--have-clinvar ID ...] [--ibd-panel yes|no] [--pedigree-out PED] --out-dir D
+      Reads and checks the pedigree, or one family of a families file, and
+      checks that each gVCF names its own sample. Writes
       D/members.tsv (every person of the pedigree, sequenced or not),
-      D/family.ped (somalier relate's pedigree: the sequenced members) and
+      D/family.ped (somalier relate's pedigree: the sequenced members),
       D/trios.ped (WhatsHap's: the children whose two parents are
-      sequenced; empty when there is none). Exits 2 on a problem.
+      sequenced; empty when there is none) and D/family_plan.tsv (plan's
+      table for these members). Exits 2 on a problem.
 
   family_report.py check --members D/members.tsv --pairs family.pairs.tsv --out relationships.tsv
       For every pair of sequenced members, compares the relatedness the
@@ -36,7 +57,17 @@ import os
 import re
 import sys
 
-COLUMNS = ("sample", "sex", "father", "mother", "partner")
+COLUMNS = ("family", "sample", "sex", "father", "mother", "partner")
+# The pedigree's own columns: a families file is a pedigree with a leading
+# family column (assets/families.example.tsv), and each family's rows are
+# written out as a pedigree of their own, without it.
+PED_COLUMNS = COLUMNS[1:]
+# The family of a file without the family column.
+DEFAULT_FAMILY = "family"
+# The analyses plan decides, in order: step 38's four, then step 39's (one row
+# per couple).
+ANALYSES = ("joint_call", "trio_phasing", "inheritance_map", "shared_segments", "couple_carrier")
+PLAN_COLUMNS = ("family", "analysis", "members", "decision", "reason")
 MISSING = {"", ".", "0", "-9"}
 SEX = {"male": "male", "m": "male", "1": "male",
        "female": "female", "f": "female", "2": "female",
@@ -129,15 +160,12 @@ def read_pedigree(path):
     return rows, errors
 
 
-def build_members(rows, declared, path):
+def build_members(rows, declared, path, source="the samplesheet"):
     """Every person the pedigree names: its rows, and the parents and
     partners it names without a row of their own (not sequenced, no
     parents known). Returns (members, errors); a member is a dict with
     sex, father, mother, partner (None when not given) and row (bool)."""
     errors, members = [], {}
-
-    def bad_name(v):
-        return not NAME.match(v) or v.startswith("-")
 
     for r in rows:
         where = "%s line %d" % (path, r["line"])
@@ -174,8 +202,8 @@ def build_members(rows, declared, path):
         d = declared.get(s)
         if d:
             if m["sex"] and m["sex"] != d:
-                errors.append("%s: the pedigree says '%s' is %s, the samplesheet says %s"
-                              % (where, s, m["sex"], d))
+                errors.append("%s: the pedigree says '%s' is %s, %s says %s"
+                              % (where, s, m["sex"], source, d))
             m["sex"] = m["sex"] or d
         members[s] = m
 
@@ -219,6 +247,227 @@ def build_members(rows, declared, path):
                     seen.add(p)
                     todo.append(p)
     return members, errors
+
+
+# --- families file ------------------------------------------------------------
+
+def bad_name(v):
+    return not NAME.match(v) or v.startswith("-")
+
+
+def split_families(rows, path):
+    """{family: rows} of a families file, and the problems found. A file
+    without the family column is one family, keyed None. The family column
+    is filled on every row or on none; a person is in one family; the
+    parents and partner a row names are in its own family; a family name
+    follows the sample-name rule and is no person's name (it names the
+    family's folder beside the samples' folders)."""
+    has = any("family" in r for r in rows)
+    if not has:
+        return ({None: rows} if rows else {}), []
+    errors, fams, where_of = [], {}, {}
+    filled = [r for r in rows if not missing(r.get("family"))]
+    for r in rows:
+        fam = r.get("family", "").strip()
+        where = "%s line %d" % (path, r["line"])
+        if missing(fam):
+            if filled:
+                errors.append("%s: no family name, but other rows have one (line %d: '%s'); fill the family "
+                              "column on every row, or leave it out of the file"
+                              % (where, filled[0]["line"], filled[0]["family"].strip()))
+            continue
+        if bad_name(fam):
+            errors.append("%s: family name '%s' may hold only letters, digits, '.', '_' and '-' and may not start "
+                          "with '-' (it names the family's folder)" % (where, fam))
+            continue
+        s = r.get("sample", "").strip()
+        if s and not missing(s):
+            if s in where_of and where_of[s][0] != fam:
+                errors.append("%s: sample '%s' is in family '%s' here and in family '%s' on line %d; a person "
+                              "belongs to one family" % (where, s, fam, where_of[s][0], where_of[s][1]))
+                continue
+            where_of.setdefault(s, (fam, r["line"]))
+        fams.setdefault(fam, []).append(r)
+    if not filled:
+        return ({None: rows} if rows else {}), errors
+    people = {}
+    for r in rows:
+        for k in ("sample", "father", "mother", "partner"):
+            v = r.get(k, "").strip()
+            if v and not missing(v):
+                people.setdefault(v, r["line"])
+    for fam in sorted(fams):
+        if fam in people:
+            errors.append("%s: the family name '%s' is also a person's name (line %d); its folder would be the "
+                          "sample's. Give the family another name" % (path, fam, people[fam]))
+    for fam, rs in fams.items():
+        for r in rs:
+            s = r.get("sample", "").strip()
+            for k in ("father", "mother", "partner"):
+                v = r.get(k, "").strip()
+                if v and not missing(v) and v in where_of and where_of[v][0] != fam:
+                    errors.append("%s line %d: the %s of '%s', '%s', is in family '%s' (line %d), '%s' in family "
+                                  "'%s'; a family lists its own parents and partners"
+                                  % (path, r["line"], k, s, v, where_of[v][0], where_of[v][1], s, fam))
+    return fams, errors
+
+
+def family_rows(path, family=None, sample=None):
+    """(name, rows) of one family of a families file (or a pedigree): the
+    family named, else the one --sample is in, else the file's only family.
+    name is DEFAULT_FAMILY (or the --family given) for a file without the
+    family column; rows is [] when sample is in no family. Exits 2 on a
+    problem."""
+    rows, errors = read_pedigree(path)
+    if errors:
+        die(errors)
+    fams, errors = split_families(rows, path)
+    if errors:
+        die(errors)
+    if None in fams:
+        rs, name = fams[None], family or DEFAULT_FAMILY
+        if bad_name(name):
+            die(["family name '%s' may hold only letters, digits, '.', '_' and '-' and may not start with '-' "
+                 "(it names the family's folder)" % name])
+        for r in rs:
+            if name in (r.get(k, "").strip() for k in ("sample", "father", "mother", "partner")):
+                die(["%s line %d: the family name '%s' is also a person's name; its folder would be the "
+                     "sample's. Give the family another name" % (path, r["line"], name)])
+        if sample and not family and not any(r.get("sample", "").strip() == sample for r in rs):
+            return name, []
+        return name, rs
+    names = sorted(fams)
+    if family:
+        if family not in fams:
+            die(["%s has no family '%s'; its families are: %s" % (path, family, ", ".join(names) or "none")])
+        return family, fams[family]
+    if sample:
+        for name in names:
+            if any(r.get("sample", "").strip() == sample for r in fams[name]):
+                return name, fams[name]
+        return None, []
+    if len(names) > 1:
+        die(["%s holds %d families (%s); name the one to run (--family, or --family_name in Nextflow)"
+             % (path, len(names), ", ".join(names))])
+    return (names[0], fams[names[0]]) if names else (DEFAULT_FAMILY, [])
+
+
+def write_pedigree(path, rows):
+    """A family's rows as a pedigree of its own (the pedigree columns, no
+    family column), read back the same way."""
+    with open(path, "w") as f:
+        f.write("\t".join(PED_COLUMNS) + "\n")
+        for r in rows:
+            f.write("\t".join(r.get(k, "").strip() or "." for k in PED_COLUMNS) + "\n")
+
+
+def plan_family(name, members, have_gvcf, have_clinvar, ibd_panel):
+    """The rows of family_plan.tsv: for each analysis of steps 38 and 39,
+    whether it runs, is skipped, or waits for a member's own run, and why,
+    in words. members is build_members' table; have_gvcf and have_clinvar
+    are the samples with a gVCF and with step 06's ClinVar hits."""
+    rows_of = sorted(s for s, m in members.items() if m["row"])
+    seq = [s for s in rows_of if s in have_gvcf]
+    lacking = [s for s in rows_of if s not in have_gvcf]
+
+    def no_gvcf(ss):
+        return "; ".join("%s has no gVCF yet: run run-all.sh %s first" % (s, s) for s in ss)
+
+    out = []
+
+    def row(analysis, who, decision, reason):
+        out.append({"family": name, "analysis": analysis, "members": ",".join(who) or ".",
+                    "decision": decision, "reason": reason})
+
+    if len(rows_of) < 2:
+        joint = ("skipped", "the family has %d sample with a row (%s); the family analysis needs two or more"
+                 % (len(rows_of), ", ".join(rows_of) or "none"))
+    elif len(seq) < 2:
+        joint = ("waiting", no_gvcf(lacking))
+    else:
+        why = "GLnexus joint call, somalier relationship check and the family report of %s" % ", ".join(seq)
+        if lacking:
+            why += "; left out: %s (run step 38 again after its run)" % no_gvcf(lacking)
+        joint = ("runs", why)
+    row("joint_call", seq if joint[0] == "runs" else rows_of, *joint)
+
+    trios = [s for s in seq if members[s]["father"] in seq and members[s]["mother"] in seq]
+    duos = [s for s in seq if s not in trios and (members[s]["father"] in seq or members[s]["mother"] in seq)]
+    if joint[0] != "runs":
+        row("trio_phasing", rows_of, *joint)
+        row("inheritance_map", rows_of, *joint)
+        row("shared_segments", rows_of, *joint)
+    else:
+        if trios:
+            row("trio_phasing", trios, "runs", "WhatsHap phases %s by inheritance from both parents" % ", ".join(trios))
+        else:
+            row("trio_phasing", duos, "skipped", "no child has both parents sequenced%s; phasing by inheritance "
+                "needs a trio" % ((" (%s has one)" % ", ".join(duos)) if duos else ""))
+        kids = trios + duos
+        if kids:
+            row("inheritance_map", sorted(kids), "runs", "the allele each sequenced parent passed on, and the "
+                "chromosome map, of %s" % ", ".join(sorted(kids)))
+        else:
+            row("inheritance_map", [], "skipped", "no child has a sequenced parent")
+        if ibd_panel:
+            row("shared_segments", seq, "runs", "Beagle phases the joint call against step 26b's panel and hap-ibd "
+                "lists the DNA each pair shares")
+        else:
+            row("shared_segments", seq, "skipped", "no phasing panel: install it with setup.sh --ancestry-fine-panel")
+
+    couples = sorted({tuple(sorted((s, members[s]["partner"]))) for s in rows_of
+                      if members[s]["partner"] and members[members[s]["partner"]]["row"]})
+    if not couples:
+        row("couple_carrier", [], "skipped", "no two samples of the family are marked as partners")
+    for a, b in couples:
+        waiting = [s for s in (a, b) if s not in have_gvcf]
+        lack = [s for s in (a, b) if s in have_gvcf and s not in have_clinvar]
+        if waiting:
+            row("couple_carrier", [a, b], "waiting", no_gvcf(waiting))
+        elif lack:
+            row("couple_carrier", [a, b], "skipped", "; ".join(
+                "%s has no ClinVar hits (step 06 writes clinvar/%s_clinvar_hits.vcf)" % (s, s) for s in lack))
+        else:
+            row("couple_carrier", [a, b], "runs", "carrier screen of %s and %s" % (a, b))
+    return out
+
+
+def write_plan(path, rows):
+    with open(path, "w") as f:
+        f.write("\t".join(PLAN_COLUMNS) + "\n")
+        for r in rows:
+            f.write("\t".join(r[k] for k in PLAN_COLUMNS) + "\n")
+
+
+def cmd_plan(a):
+    sex = (a.sex or "").strip().lower()
+    if sex and sex not in ("male", "female"):
+        die(["--sex %s: the sex is male or female" % a.sex])
+    if sex and not a.sample:
+        die(["--sex needs --sample"])
+    name, rows = family_rows(a.families, a.family, a.sample)
+    if a.sample and not rows:
+        if a.which:
+            return
+        die(["%s is in no family of %s" % (a.sample, a.families)])
+    declared = {a.sample: sex} if sex else {}
+    members, errors = build_members(rows, declared, a.families, "the sex given to run-all.sh")
+    if errors:
+        die(errors)
+    if a.sample and rows and a.sample not in members:
+        die(["%s: '%s' is not in family '%s'" % (a.families, a.sample, name)])
+    if a.which:
+        print(name)
+        return
+    if a.write_pedigree:
+        d = os.path.join(a.write_pedigree, name)
+        os.makedirs(d, exist_ok=True)
+        write_pedigree(os.path.join(d, "pedigree.tsv"), rows)
+    plan = plan_family(name, members, set(a.have_gvcf or []), set(a.have_clinvar or []), a.ibd_panel == "yes")
+    if a.out:
+        write_plan(a.out, plan)
+    for r in plan:
+        print("%s %-16s %-8s %s" % (r["family"], r["analysis"], r["decision"], r["reason"]))
 
 
 def gvcf_samples(path):
@@ -307,9 +556,8 @@ def cmd_prepare(a):
             if v not in ("male", "female"):
                 die(["--declared-sex %s: the sex is male or female" % kv])
             declared[k] = v
-    rows, errors = read_pedigree(a.pedigree)
-    members, more = build_members(rows, declared, a.pedigree)
-    errors += more
+    name, rows = family_rows(a.pedigree, a.family)
+    members, errors = build_members(rows, declared, a.pedigree)
     gvcfs = {}
     for kv in a.gvcf or []:
         k, _, v = kv.partition("=")
@@ -352,6 +600,11 @@ def cmd_prepare(a):
         for s in trios:
             m = members[s]
             f.write("\t".join(["family", s, m["father"], m["mother"], code.get(m["sex"], "0"), "0"]) + "\n")
+    if a.pedigree_out:
+        write_pedigree(a.pedigree_out, rows)
+    # The same decision plan writes before the step runs (run-all.sh)
+    write_plan(os.path.join(a.out_dir, "family_plan.tsv"),
+               plan_family(name, members, set(seq), set(a.have_clinvar or []), a.ibd_panel == "yes"))
     print("Family: %d people in the pedigree, %d sequenced (%s)" % (len(members), len(seq), ", ".join(seq)))
     for x, y in itertools.combinations(seq, 2):
         e = 2 * phi(x, y)
@@ -816,7 +1069,22 @@ def main(argv=None):
     q.add_argument("--pedigree", required=True)
     q.add_argument("--gvcf", action="append", metavar="ID=PATH")
     q.add_argument("--declared-sex", action="append", metavar="ID=SEX")
+    q.add_argument("--family", help="the family of a families file to read (needed when it holds more than one)")
+    q.add_argument("--have-clinvar", nargs="*", metavar="ID", help="the members with step 06's ClinVar hits")
+    q.add_argument("--ibd-panel", choices=("yes", "no"), default="no")
+    q.add_argument("--pedigree-out", help="also write the family's rows here, as a pedigree")
     q.add_argument("--out-dir", required=True)
+    q = sub.add_parser("plan")
+    q.add_argument("--families", required=True)
+    q.add_argument("--family")
+    q.add_argument("--sample")
+    q.add_argument("--sex")
+    q.add_argument("--have-gvcf", nargs="*", metavar="ID")
+    q.add_argument("--have-clinvar", nargs="*", metavar="ID")
+    q.add_argument("--ibd-panel", choices=("yes", "no"), default="no")
+    q.add_argument("--write-pedigree", metavar="DIR", help="write DIR/<family>/pedigree.tsv")
+    q.add_argument("--which", action="store_true", help="print the family of --sample (nothing when none) and stop")
+    q.add_argument("--out", help="family_plan.tsv")
     q = sub.add_parser("check")
     q.add_argument("--members", required=True)
     q.add_argument("--pairs", required=True)
@@ -830,7 +1098,7 @@ def main(argv=None):
     q.add_argument("--par-bed")
     q.add_argument("--out-dir", required=True)
     a = p.parse_args(argv)
-    {"prepare": cmd_prepare, "check": cmd_check, "report": cmd_report}[a.cmd](a)
+    {"prepare": cmd_prepare, "plan": cmd_plan, "check": cmd_check, "report": cmd_report}[a.cmd](a)
 
 
 if __name__ == "__main__":
