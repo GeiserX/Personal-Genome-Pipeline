@@ -163,6 +163,8 @@ mane_summary | gzip -c > "${ANN}/MANE.GRCh38.v${MANE_RELEASE}.summary.txt.gz"
 rc=0
 GENOME_DIR="$G" "${REPO}/scripts/setup.sh" --annotsv-data "$G" > "${WORK}/setup1.log" 2>&1 || rc=$?
 expect "setup.sh --annotsv-data exits 0" "$rc" '^0$'
+# A failed setup run shows its own output, AnnotSV's merge log included.
+[ "$rc" -eq 0 ] || { echo "--- setup1.log"; tail -n 60 "${WORK}/setup1.log"; }
 BEN="${H}/SVincludedInFt/BenignSV/GRCh38"
 ADAPTER="${BEN}/gnomad.v4.0.sv.chrAll.from-v${GNOMAD_SV_VERSION}-sites.vcf.gz"
 expect "setup.sh had AnnotSV merge and remove the gnomAD-SV file" "$([ -e "$ADAPTER" ] && echo present || echo gone)" '^gone$'
