@@ -246,7 +246,10 @@ results/
 └── pipeline_info/
     ├── timeline_*.html
     ├── report_*.html
-    ├── trace_*.txt
+    ├── trace_*.txt       # one row per task: the 14 default columns, then process, tag, attempt, cpus,
+    │                     #   memory, start, complete (trace.fields in nextflow.config)
+    ├── step_history/     # <box>.tsv: bin/run_eta.py's per-task history of this box, for the step times
+    │                     #   and the hours left (Where a Run Stands); no sample id, no path
     └── dag_*.svg
 ```
 
@@ -260,7 +263,7 @@ The pipeline does not anonymise anything: the outputs carry whatever identified 
 - **The input's header lines** pass through into the ClinVar VCFs, including the provider's and bcftools' command lines, which often name the sample or a file.
 - **A BAM the pipeline aligned** names the sample label in its `@RG` line, and its `@PG` lines hold the command lines with your file paths.
 - **The input file name** is in the `##bcftools_viewCommand` and `##bcftools_normCommand` lines of the ClinVar VCFs, and can be in the command lines other tools print into their outputs.
-- **`pipeline_info/`** (report, timeline, trace) holds absolute paths of your machine.
+- **`pipeline_info/`** (report, timeline, trace) holds absolute paths of your machine, and the trace names each sample in its `name` and `tag` columns. `step_history/` holds neither, but it does say what ran on your box and when.
 - **The samplesheet's `sample` label** names every output folder and file.
 
 A neutral input removes the metadata that names you. Use a label that does not name you, name the file after it, and keep only the header lines the tools read. The recipe below lists the lines to keep and renames the sample column. A list of keys to delete would miss lines, because callers name them differently.
