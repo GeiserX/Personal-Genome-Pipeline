@@ -84,7 +84,7 @@ ssh -L 8787:127.0.0.1:8787 user@your-server     # then open http://127.0.0.1:878
 PGP_LIVE_BIND=0.0.0.0 PGP_LIVE_ALLOWED_HOSTS="genome.example.org" ./scripts/pgp-live.sh
 ```
 
-Without TLS the password crosses the network in clear; use this on a network you trust, or add `--tls-cert` and `--tls-key`.
+`PGP_LIVE_ALLOWED_HOSTS` lists every name or address you will type in the browser: with `0.0.0.0` the site knows none of the machine's addresses, so `http://192.0.2.10:8787` is 403 until `192.0.2.10` is listed. Without TLS the password crosses the network in clear; use this on a network you trust, or add `--tls-cert` and `--tls-key`.
 
 **In Docker.** The image is `PYTHON_IMAGE` from `versions.env`, the data read-only, the state folder writable outside it:
 

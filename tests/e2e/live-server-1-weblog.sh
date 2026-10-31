@@ -13,7 +13,7 @@ check "run-all.sh pins nf-weblog with a version" has '^nf-weblog@[0-9]+\.[0-9]+\
 
 G="$GENOME_DIR"
 ROOT="${CASE_TMP}/root" STATE="${CASE_TMP}/state"
-mkdir -p "${ROOT}/${SAMPLE}"
+mkdir -p "${ROOT}/${SAMPLE}/nextflow"   # a run folder the site lists (it has nextflow/)
 port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 WEB=$(port) ING=$(port)
 python3 "${REPO}/bin/pgp_live.py" --root "$ROOT" --state-dir "$STATE" --port "$WEB" --ingest-port "$ING" --quiet \
@@ -22,7 +22,8 @@ SITE=$!
 trap 'kill "$SITE" 2>/dev/null' EXIT
 for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:${WEB}/" && break; sleep 0.2; done
 state11() { curl -s "http://127.0.0.1:${WEB}/runs/${SAMPLE}/state.json" \
-  | python3 -c 'import json, sys; print(next(s["state"] for s in json.load(sys.stdin)["steps"] if s["step"] == "11"))'; }
+  | python3 -c 'import json, sys; print(next(s["state"] for s in json.load(sys.stdin)["steps"] if s["step"] == "11"))' 2>/dev/null \
+  || echo "no state.json"; }
 check_eq "control: before the run, step 11 is not planned" "$(state11)" "not planned"
 
 SHEET="${CASE_TMP}/samplesheet.csv"
