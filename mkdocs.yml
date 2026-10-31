@@ -216,6 +216,7 @@ nav:
   - Guides:
       - Interpreting Your Results: interpreting-results.md
       - "Genome Viewer: See the Reads Behind a Finding": viewer.md
+      - Watch a Run Live: live-site.md
       - Multi-Sample Comparison Guide: multi-sample.md
       - Long-Read Sequencing Guide: long-read-guide.md
       - Whole Exome Sequencing (WES) Guide: wes-guide.md

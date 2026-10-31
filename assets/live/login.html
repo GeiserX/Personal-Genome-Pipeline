@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in</title>
+<link rel="stylesheet" href="/assets/live.css">
+</head>
+<body class="login">
+<main>
+  <form method="post" action="/login" class="card">
+    <h1>Personal Genome Pipeline</h1>
+    <p class="msg">{{message}}</p>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+    <input type="hidden" name="next" value="{{next}}">
+    <button type="submit">Log in</button>
+  </form>
+</main>
+</body>
+</html>

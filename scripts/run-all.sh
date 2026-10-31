@@ -61,6 +61,8 @@ printf '# run-all.sh: when this run started and how each step ended\nmeta\tstart
 # As run-all.sh ends, however it ends: a step still 'planned' did not finish, and the time is recorded
 # (bin/run_state.py reads both). A planned row gives way to the step's result, so each step keeps one row.
 finish_status() {
+  local rc=$?
+  live_post "$SAMPLE" "{\"event\":\"pgp_run_finished\",\"exit\":${rc},\"utcTime\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
   awk -F'\t' -v OFS='\t' 'NR == FNR { if ($1 == "step" && $3 != "planned") ended[$2] = 1; next }
     $1 == "step" && $3 == "planned" { if ($2 in ended) next; $3 = "not finished" } { print }' "$STATUS" "$STATUS" \
     > "${STATUS}.tmp" && mv "${STATUS}.tmp" "$STATUS" || true
@@ -245,6 +247,22 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 [ -z "${MAX_JOBS:-}" ] || echo "NOTE: MAX_JOBS is no longer read. --max_cpus (THREADS) and --max_memory cap each task; Nextflow fills the machine's CPUs and RAM."
 [ -z "${ANCESTRY:-}" ] || echo "NOTE: ANCESTRY is no longer read: step 26 runs in the pipeline whenever the ancestry panel is installed (setup.sh --ancestry-panel)."
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
+# The live site (docs/live-site.md). Nextflow's weblog is the nf-weblog plugin, which Nextflow 26.10 loads only when
+# a config names it, so the block lives in a config of this run's own, passed only when PGP_LIVE_URL is set: a run
+# without it neither downloads the plugin nor warns about an unknown weblog scope. Bump the pin with its release.
+NF_WEBLOG_PLUGIN=nf-weblog@1.2.0
+if [ -n "${PGP_LIVE_URL:-}" ]; then
+  [[ "$PGP_LIVE_URL" =~ ^https?://[A-Za-z0-9.:_-]+(/[A-Za-z0-9._~/-]*)?$ ]] \
+    || { echo "ERROR: PGP_LIVE_URL must be a plain http(s)://host:port URL, got '${PGP_LIVE_URL}'" >&2; PGP_LIVE_URL=""; exit 2; }
+  export PGP_LIVE_RUN=$SAMPLE
+  printf "plugins {\n    id '%s'\n}\nweblog {\n    enabled = true\n    url     = '%s'\n}\n" "$NF_WEBLOG_PLUGIN" \
+    "${PGP_LIVE_URL%/}/ingest/${SAMPLE}" > "${S}/nextflow/live.config"
+  NF+=(-c "${S}/nextflow/live.config")
+  echo "Live site: messages go to ${PGP_LIVE_URL%/}/ingest/${SAMPLE} (${NF_WEBLOG_PLUGIN}, downloaded by Nextflow on first use)"
+else
+  rm -f "${S}/nextflow/live.config"
+fi
+live_step() { live_post "$SAMPLE" "{\"event\":\"pgp_step\",\"step\":\"$1\",\"state\":\"$2\",\"utcTime\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"; }
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
 FT="${S}/nextflow/failed_tasks.tsv" PT="${S}/nextflow/process_status.tsv"; rm -f "$FT" "$PT"  # main.nf writes both as the run ends
 # Every step that will run, before it starts: 'planned' until its result row (bin/run_state.py shows the run as it goes).
@@ -293,8 +311,9 @@ done
 [ "$rc" -eq 0 ] || { echo "ERROR: the pipeline failed (exit ${rc}): see above and ${S}/nextflow/.nextflow.log. Fix the cause and run the same command; -resume reruns only what did not finish. Writing the reports of what finished." >&2; OPTIN=(); }
 for sc in "${OPTIN[@]}" 24-html-report.sh generate-report.sh; do
   [ "$sc" != 24-html-report.sh ] || GENOME_DIR="$G" HLA_DAT="${H:-}" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" || true
+  if [[ "$sc" == [0-9]*-*.sh && "$sc" != 24-* ]]; then live_step "${sc%%-*}" started; fi
   r=ok; echo "[${sc%.sh}] log: ${LOG_DIR}/${sc%.sh}.log"; bash "${SCRIPT_DIR}/${sc}" "$SAMPLE" > "${LOG_DIR}/${sc%.sh}.log" 2>&1 || { r=failed failed=1; echo "  FAILED"; }
-  if [[ "$sc" == [0-9]*-*.sh && "$sc" != 24-* ]]; then printf 'step\t%s\t%s\n' "${sc%%-*}" "$r" >> "$STATUS"; fi
+  if [[ "$sc" == [0-9]*-*.sh && "$sc" != 24-* ]]; then printf 'step\t%s\t%s\n' "${sc%%-*}" "$r" >> "$STATUS"; live_step "${sc%%-*}" "$r"; fi
 done
 [ "$rc" -eq 0 ] || exit "$rc"
 echo "Done: results in ${S}/, the HTML report ${S}/${SAMPLE}_report.html, the text report ${S}/${SAMPLE}_report.txt"

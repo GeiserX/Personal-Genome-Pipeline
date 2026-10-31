@@ -1,0 +1,11 @@
+{"interval_ms": 100, "frames": [
+ {"t": "2026-01-02T10:00:00Z", "state": {"run": {"state": "running"}, "headlines": {}, "plugins": {}, "steps": [
+  {"step": "03", "label": "Variant calling (DeepVariant)", "state": "done", "upstream": [], "sections": ["variants"], "processes": {}},
+  {"step": "11", "label": "ROH", "state": "waiting", "upstream": ["03"], "sections": ["roh"], "processes": {}}]}},
+ {"t": "2026-01-02T10:05:02Z", "state": {"run": {"state": "running"}, "headlines": {}, "plugins": {}, "steps": [
+  {"step": "03", "label": "Variant calling (DeepVariant)", "state": "done", "upstream": [], "sections": ["variants"], "processes": {}},
+  {"step": "11", "label": "ROH", "state": "running", "upstream": ["03"], "sections": ["roh"], "processes": {"ROH": {"waiting": 0, "running": 1, "done": 0, "cached": 0, "failed": 0}}}]}},
+ {"t": "2026-01-02T10:05:40Z", "state": {"run": {"state": "finished"}, "headlines": {"roh": {"text": "Runs of homozygosity: finished, see the report", "tone": "info", "step": "11"}}, "plugins": {}, "steps": [
+  {"step": "03", "label": "Variant calling (DeepVariant)", "state": "done", "upstream": [], "sections": ["variants"], "processes": {}},
+  {"step": "11", "label": "ROH", "state": "done", "upstream": ["03"], "sections": ["roh"], "processes": {"ROH": {"waiting": 0, "running": 0, "done": 1, "cached": 0, "failed": 0}}}]}}
+]}
