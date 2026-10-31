@@ -54,7 +54,7 @@ weblog {
 | `--bind`, `--port` | `127.0.0.1`, `8787` | The browser's address |
 | `--ingest-bind`, `--ingest-port` | `127.0.0.1`, `8788` | Where Nextflow and `run-all.sh` post |
 | `--session-hours` | 12 | A login lasts at most this long |
-| `--session-idle-minutes` | 120 | A login unused this long ends |
+| `--session-idle-minutes` | 120 | A login unused this long ends; an open page counts as use only when it reads the state after a message, and its stream closes when the login ends |
 | `--login-max-failures` | 5 | Failed logins per client in 15 minutes; then 429 until the window passes |
 | `--max-streams` | 32 | Open live pages at once |
 | `--max-body-kb` | 1024 | Largest message taken (413 above it) |

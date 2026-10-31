@@ -8,14 +8,17 @@ Checks:
      password is 401 with a login-fail row; the right one sets an HttpOnly,
      SameSite=Strict cookie; an expired session is 401; after 5 failures the
      6th try is 429; the plain password is in no log, no stderr and no stored
-     message;
+     message; a negative or non-numeric Content-Length on /login is 413;
   3. Host: a foreign Host header is 403, an --allowed-host name is served;
   4. ingest: POST /ingest on the browser port is 404; a 2 MiB body is 413,
-     a body that is not JSON 400, a run named '../x' 400; metadata.parameters
+     a negative Content-Length 413, a body that is not JSON 400, a run named
+     '../x' 400; metadata.parameters
      (an HPO list, a VCF path) and a task's script are not stored;
   5. the event stream sends a posted message within 2 s, Last-Event-ID
-     resumes after the id given, and what it sends equals messages();
-  6. state.json's step states are run_state's for the same files; ClinVar's
+     resumes after the id given, what it sends equals messages(), and an open
+     stream ends at logout;
+  6. state.json's step states are run_state's for the same files; a run is
+     finished only while pgp_run_finished is its newest message; ClinVar's
      headline is never 'ok' and carries the report's caveat;
   7. every browser response carries the Content-Security-Policy, and
      assets/live/ holds no outside URL, no inline script and no on* attribute;
@@ -27,8 +30,10 @@ Checks:
  10. in a headless Chrome (skipped without Chrome, except in CI): the login
      form, the step map, a box that repaints after a posted message, the
      replay mode playing tests/fixtures/live/frames.json, and no policy
-     violation.
-Checks 2, 4, 7 and 8 are also run against a planted mistake and must fail
+     violation;
+ 11. with --tls-cert, a client that connects and sends nothing does not hold
+     up another client's HTTPS request.
+Checks 2, 4, 5, 6, 7, 8 and 11 are also run against a planted mistake and must fail
 there: a check that cannot fail is no check.
 
 Run: python3 tests/test_pgp_live.py
@@ -143,6 +148,7 @@ class Stream:
     """An open /events stream, read in a thread."""
 
     def __init__(self, port, cookie, last=None):
+        self.closed = False
         self.items, self.sock = [], socket.create_connection(("127.0.0.1", port), timeout=30)
         hdr = f"GET /runs/{RUN}/events HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: pgp_live={cookie}\r\n"
         if last is not None:
@@ -156,6 +162,7 @@ class Stream:
             while True:
                 chunk = self.sock.recv(65536)
                 if not chunk:
+                    self.closed = True
                     return
                 buf += chunk
                 while b"\n" in buf:
@@ -182,6 +189,65 @@ class Stream:
             self.sock.close()
         except OSError:
             pass
+
+
+def raw(port, head, body=b"", half_close=True, timeout=10):
+    """Send a hand-made request and return the status line ('' when the server sent nothing)."""
+    sk = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    try:
+        sk.sendall(head.encode() + body)
+        if half_close:
+            sk.shutdown(socket.SHUT_WR)  # a server that reads to the end returns instead of hanging
+        return sk.recv(200).decode(errors="replace").split("\r\n", 1)[0]
+    except OSError as e:
+        return f"error {type(e).__name__}"
+    finally:
+        sk.close()
+
+
+def tls_checks(root, work, pwfile):
+    """11. One silent client must not stop the HTTPS listener. Returns (ok, detail) for a given
+    wrap: the real server, and a planted one that shakes hands in accept()."""
+    cert, key = os.path.join(work, "c.pem"), os.path.join(work, "k.pem")
+    r = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+                        "-days", "1", "-subj", "/CN=localhost"], capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        check("openssl makes a test certificate", False, r.stderr)
+        return
+
+    def one(planted):
+        argv = ["--root", root, "--state-dir", os.path.join(work, "state-tls"), "--port", "0", "--ingest-port", "0",
+                "--password-file", pwfile, "--tls-cert", cert, "--tls-key", key, "--quiet"]
+        real_wrap = pgp_live.ssl.SSLContext.wrap_socket
+        if planted:
+            def wrap(self, sock, **kw):
+                kw.pop("do_handshake_on_connect", None)
+                return real_wrap(self, sock, **kw)
+            pgp_live.ssl.SSLContext.wrap_socket = wrap
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                srv = serve(argv)
+        finally:
+            pgp_live.ssl.SSLContext.wrap_socket = real_wrap
+        live, web, ingest = srv
+        port = web.server_address[1]
+        silent = socket.create_connection(("127.0.0.1", port), timeout=10)
+        time.sleep(0.3)  # let accept() take the silent one first
+        ctx = pgp_live.ssl.create_default_context()
+        ctx.check_hostname, ctx.verify_mode = False, pgp_live.ssl.CERT_NONE
+        try:
+            c = http.client.HTTPSConnection("127.0.0.1", port, timeout=3, context=ctx)
+            c.request("GET", "/login", headers={"Host": f"127.0.0.1:{port}"})
+            code = c.getresponse().status
+            c.close()
+        except OSError as e:
+            code = type(e).__name__
+        silent.close()
+        stop(srv)
+        return code
+    code = one(False)
+    check("with --tls-cert, a silent client does not hold up another's HTTPS request", code == 200, code)
+    control("the handshake done in accept()", one(True) == 200)
 
 
 def asset_problems(texts):
@@ -447,6 +513,12 @@ def main():
         code, _, _ = login(port)
         check("the right password is refused too while blocked", code == 429, code)
         live.failures.clear()
+        bad_len = [raw(port, f"POST /login HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: "
+                             f"application/x-www-form-urlencoded\r\nContent-Length: {n}\r\n\r\n", b"password=x")
+                   for n in ("-1", "abc")]
+        check("a negative or non-numeric Content-Length on /login is 413, before the body is read",
+              all(" 413 " in x for x in bad_len), bad_len)
+        live.failures.clear()
 
         def leaks():
             files = [os.path.join(state_dir, "access.log"), live.store.path(RUN)]
@@ -472,6 +544,9 @@ def main():
         head = sk.recv(200).decode(errors="replace")
         sk.close()
         check("a 2 MiB message is 413", head.startswith("HTTP/1.0 413") or head.startswith("HTTP/1.1 413"), head)
+        line = raw(INGEST_PORT, f"POST /ingest/{RUN} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json"
+                                f"\r\nContent-Length: -1\r\n\r\n", b'{"event":"started"}')
+        check("a negative Content-Length on /ingest is 413", " 413 " in line, line)
         code, _, _ = post(INGEST_PORT, RUN, "not json")
         check("a message that is not JSON is 400", code == 400, code)
         code, _, _ = post(INGEST_PORT, "../x", {"event": "started"})
@@ -510,6 +585,18 @@ def main():
         check("Last-Event-ID resumes after the id given", [i for i, _ in st2.items] == [n0, n0 + 1],
               [i for i, _ in st2.items])
         st2.close()
+        _, _, gone = login(port)
+        st3 = Stream(port, gone)
+        st3.wait(n0 + 1, 5)
+        k = len(st3.items)
+        live.end_session(__import__("hashlib").sha256(gone.encode()).hexdigest())
+        post(INGEST_PORT, RUN, {"event": "pgp_step", "step": "06", "state": "ok", "utcTime": "2026-01-02T10:06:40Z"})
+        end = time.time() + 3
+        while time.time() < end and not st3.closed:
+            time.sleep(0.02)
+        check("an open stream ends when its session does, and sends nothing after", st3.closed and len(st3.items) == k,
+              (st3.closed, len(st3.items), k))
+        st3.close()
         check("no message carries a path or a tag",
               not any(k in json.dumps(want) for k in ("/data/", "workDir", "outdir", '"tag"')), json.dumps(want)[:300])
 
@@ -526,6 +613,11 @@ def main():
         check("state.json names each section's report anchor (ClinVar: clinvar, the carrier list: carrier-list)",
               s.get("anchors", {}).get("clinvar") == "clinvar" and s["anchors"].get("carrier") == "carrier-list"
               and s["anchors"].get("roh") == "roh", s.get("anchors"))
+        done = [{"event": "started"}, {"event": "pgp_run_finished", "exit": 0}]
+        rerun = done + [{"event": "pgp_step", "step": "14", "state": "started"}]
+        check("a run is finished while pgp_run_finished is its newest message, not once a later run posts",
+              pgp_live.run_finished(done) and not pgp_live.run_finished(rerun) and not pgp_live.run_finished([]))
+        control("any pgp_run_finished in the file counts", not any(e.get("event") == "pgp_run_finished" for e in rerun))
         check("a state hook's answer is under plugins", s["plugins"].get("fixture", {}).get("steps") == len(s["steps"]),
               s.get("plugins"))
         import render_report
@@ -599,6 +691,9 @@ def main():
 
         # 10. the browser
         browser_checks(port, work)
+
+        # 11. TLS
+        tls_checks(root, work, pwfile)
     finally:
         stop(*servers)
         shutil.rmtree(work, ignore_errors=True)

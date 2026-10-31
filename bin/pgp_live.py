@@ -71,6 +71,7 @@ import run_state  # noqa: E402
 PBKDF2_ITERATIONS = 600000
 COOKIE = "pgp_live"
 HEARTBEAT_SECONDS = 15
+TLS_HANDSHAKE_SECONDS = 10
 FAIL_WINDOW_SECONDS = 15 * 60
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -196,6 +197,12 @@ def cut(ev):
             raise ValueError("pgp_run_finished needs an integer 'exit'")
         out["exit"] = ev["exit"]
     return out
+
+
+def run_finished(events):
+    """run-all.sh posts pgp_run_finished as its last message, so a run is over only when that is the
+    newest message: a message after it is a later run of the same sample (events.jsonl only grows)."""
+    return bool(events) and events[-1].get("event") == "pgp_run_finished"
 
 
 def step_of_process(steps):
@@ -500,6 +507,17 @@ class Live:
             s["seen"] = now
         return sid
 
+    def alive(self, token):
+        """Whether the cookie's session is still live, without counting this as a visit: an open
+        event stream must not keep an idle session alive."""
+        if not token:
+            return False
+        now = time.time()
+        with self.lock:
+            s = self.sessions.get(hashlib.sha256(token.encode()).hexdigest())
+            return bool(s) and now - s["created"] <= self.cfg.session_hours * 3600 \
+                and now - s["seen"] <= self.cfg.session_idle_minutes * 60
+
     def end_session(self, sid):
         with self.lock:
             self.sessions.pop(sid, None)
@@ -549,7 +567,7 @@ class Live:
         events_path = self.store.path(run["name"])
         st = run_state.collect(run["name"], d, events_path=events_path, steps_path=self.cfg.steps)
         events = self.store.events(run["name"])
-        if any(e.get("event") == "pgp_run_finished" for e in events) and st["run"]["state"] == "running":
+        if run_finished(events) and st["run"]["state"] == "running":
             st["run"]["state"] = "finished"
         st["events"] = len(events)  # the page paints a message ahead of state.json only past this id
         # The report's anchor of each section (bin/render_report.py's chapters), for the step detail's link.
@@ -617,6 +635,21 @@ class BrowserHandler(BaseHTTPRequestHandler):
     server_version = "pgp-live"
     sys_version = ""
     live = None  # set per server
+    tls_failed = False
+
+    def setup(self):
+        if isinstance(self.request, ssl.SSLSocket):
+            try:
+                self.request.settimeout(TLS_HANDSHAKE_SECONDS)
+                self.request.do_handshake()
+                self.request.settimeout(None)
+            except (ssl.SSLError, OSError):
+                self.tls_failed = True
+        super().setup()
+
+    def handle(self):
+        if not self.tls_failed:
+            super().handle()
 
     # helpers
     def log_message(self, fmt, *args):
@@ -770,8 +803,12 @@ class BrowserHandler(BaseHTTPRequestHandler):
         if self.live.blocked(client):
             self.log("login-blocked", status=429)
             return self.login_page(429, "Too many failed logins. Wait 15 minutes.", [("Retry-After", "900")])
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > 4096:
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0 or n > 4096:  # read(-1) would read to the end of the connection
+            self.close_connection = True
             return self.deny(413, "too large")
         form = urllib.parse.parse_qs(self.rfile.read(n).decode(errors="replace"))
         pw = (form.get("password") or [""])[0]
@@ -889,8 +926,11 @@ class BrowserHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"retry: 3000\n\n")
             self.wfile.flush()
             sent = after
+            token = self.cookie_token()
             while not self.live.stopping:
                 new = self.live.store.wait(name, sent, HEARTBEAT_SECONDS)
+                if self.live.password_hash and not self.live.alive(token):
+                    break  # logged out or expired: an open stream ends with the session
                 if not new:
                     self.wfile.write(b": heartbeat\n\n")
                 else:
@@ -938,7 +978,7 @@ class IngestHandler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length"))
         except (TypeError, ValueError):
             return self.reply(411, "Content-Length required")
-        if n > self.live.cfg.max_body_kb * 1024:
+        if n < 0 or n > self.live.cfg.max_body_kb * 1024:
             self.close_connection = True
             return self.reply(413, "too large")
         raw = self.rfile.read(n)
@@ -958,7 +998,9 @@ def make_server(handler, live, bind, port, tls=None):
     if tls:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(*tls)
-        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        # The handshake runs in the request's thread (BrowserHandler.setup), not in accept(): one
+        # client that connects and sends nothing must not hold up every other connection.
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True, do_handshake_on_connect=False)
     return srv
 
 

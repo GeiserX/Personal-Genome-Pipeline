@@ -220,6 +220,11 @@
       plugins.forEach(function (p) { if (p.onEvent) { try { p.onEvent(m); } catch (x) { console.error(p.name, x); } } });
       later();
     };
+    // EventSource retries a dropped stream by itself, but a 401 (the session ended) closes it for
+    // good; then ask state.json, whose 401 goes to the login.
+    es.onerror = function () {
+      if (es.readyState === EventSource.CLOSED) { root.setAttribute('data-pgp-status', 'offline'); refresh(); }
+    };
   }
 
   // --- replay: frames.json on a timer ---
