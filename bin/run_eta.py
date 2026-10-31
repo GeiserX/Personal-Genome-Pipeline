@@ -423,18 +423,23 @@ def current_traces(sample_dir, state):
 
 def live_traces(outdir):
     """The trace files of every run that run-all.sh started under OUTDIR and has not ended: its
-    run_status.tsv has a 'meta started_epoch' row and no 'meta finished_utc' row. A run started
-    with a bare 'nextflow run' writes no run_status.tsv and cannot be told apart this way."""
+    run_status.tsv has a 'meta started_epoch' row and no 'meta finished_utc' row. A run_status.tsv
+    that cannot be read leaves out the newest trace, as a run whose start is not known. A run
+    started with a bare 'nextflow run' writes no run_status.tsv and cannot be told apart this way."""
     out = set()
     for p in glob.glob(os.path.join(outdir, "*", "logs", "run_status.tsv")):
-        meta = (run_state.read_run_status(p) or {}).get("meta", {})
+        sample_dir = os.path.dirname(os.path.dirname(p))
+        try:
+            meta = (run_state.read_run_status(p) or {}).get("meta", {})
+        except OSError:
+            out |= {os.path.basename(t) for t in run_state.trace_files(sample_dir, None)}
+            continue
         if "finished_utc" in meta:
             continue
         try:
             started = float(meta["started_epoch"])
         except (KeyError, ValueError):
             continue
-        sample_dir = os.path.dirname(os.path.dirname(p))
         out |= {os.path.basename(t) for t in run_state.trace_files(sample_dir, started)}
     return out
 

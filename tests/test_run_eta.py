@@ -23,13 +23,15 @@ Checks:
  13. a step with a task whose last attempt failed or was stopped gives no span;
  14. the command writes the estimate and the history from an OUTDIR;
  15. without --sample, the trace of a run that run-all.sh has not finished is left
-     out of the step times, and counts once run_status.tsv says it finished.
+     out of the step times, and counts once run_status.tsv says it finished; a
+     run_status.tsv that cannot be read leaves out the newest trace, never a crash.
 Each check is then run against a planted mistake (a mutant of run_eta.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
 Run: python3 tests/test_run_eta.py
 """
 import contextlib
+import glob
 import importlib.util
 import io
 import json
@@ -278,6 +280,18 @@ def command_checks(m):
         f.write("meta\tfinished_utc\t2026-01-02 12:00:00 UTC\n")
     ended = m.estimate(d, cores=16, box="ci")["steps"]["02"]["source"]
     out["without --sample, a run not finished yet is left out"] = ((going, ended) == ("docs", "box"), (going, ended))
+
+    def unreadable(path):
+        raise PermissionError(13, "Permission denied", path)
+    keep = run_state.read_run_status
+    run_state.read_run_status = unreadable
+    try:
+        got = m.estimate(d, cores=16, box="ci")["steps"]["02"]["source"]
+    except OSError as e:
+        got = repr(e)
+    finally:
+        run_state.read_run_status = keep
+    out["an unreadable run_status.tsv leaves out the newest trace"] = (got == "docs", got)
     return out
 
 
@@ -325,6 +339,17 @@ def mutants():
         orig = mod.step_ranges
         return lambda history, steps, *a, **k: orig(history, [dict(s, hours_low="") for s in steps], *a, **k)
 
+    def no_guard(mod):
+        def f(outdir):
+            out = set()
+            for p in glob.glob(os.path.join(outdir, "*", "logs", "run_status.tsv")):
+                meta = (run_state.read_run_status(p) or {}).get("meta", {})
+                if "finished_utc" not in meta and "started_epoch" in meta:
+                    d = os.path.dirname(os.path.dirname(p))
+                    out |= {os.path.basename(t) for t in run_state.trace_files(d, float(meta["started_epoch"]))}
+            return out
+        return f
+
     def finished_ignored(mod):
         orig = mod.remaining
         return lambda st, *a: orig(dict(st, run={"state": "running"}), *a)
@@ -336,7 +361,7 @@ def mutants():
             return orig(argv[:i] + argv[i + 2:])
         return f
 
-    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero, estimates_count, no_low,
+    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero, estimates_count, no_low, no_guard,
               finished_ignored, out_ignored):
         f.wants_mod = True
     return {
@@ -352,6 +377,7 @@ def mutants():
         "a 32-core box is not scaled below the docs hours": mutant(docs_scale=lambda c: 16.0 / c),
         "on 16 and 32 cores every measured step has low < high": mutant(step_ranges=no_low),
         "without --sample, a run not finished yet is left out": mutant(live_traces=lambda outdir: set()),
+        "an unreadable run_status.tsv leaves out the newest trace": mutant(live_traces=no_guard),
         "the hours left are the longest chain": mutant(remaining=None),  # replaced below
         "the CPU-work bound when it is larger": mutant(cpu_work=lambda *a: 0.0),
         "a running step past its high end: high unknown, and said": mutant(
