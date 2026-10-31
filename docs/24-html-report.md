@@ -59,6 +59,12 @@ After them, "What this report leaves out" lists the steps not run and what no st
 
 - **Contents.** A list on the left (on top on a narrow screen) names every chapter and section shown, each section with a dot for its state: blue complete, yellow stale or part not run (a section of several steps where one did not run), red failed, gray not run. A section with no card (a step such as step 39 that shows nothing when it did not run) is left out of both.
 - **Each section** has an anchor (`#clinvar`, `#cpic`, ...). Under its first card title a line gives the step, the state, the newest file date and a link to the section itself. The state badge is never green: a step that ran is not a finding. The caveat each card already printed (a `*_NOTE` sentence of `bin/render_report.py`) now sits right under that card's title, before the numbers. The PRS caption keeps its ancestry caveat inside its own sentence.
+- **Five charts** show how sure each finding is, each in its section and right below that section's caveat (the PRS chart below the caption whose sentence holds the caveat). They are inline SVG drawn by `bin/report_charts.py` from the same summary, with no script: hover a mark for its value, click it to jump to the table or section it comes from.
+  - **ClinVar** (`#clinvar`): one bar per review star, 4 to 0, and a grey bar for the low-confidence calls (GQ or DP below the call floor), which the star counts leave out. Yellow and grey only, never green. With no hit, a grey frame says that no hit is not an all-clear.
+  - **Chromosomes** (`#roh`): chromosomes 1 to 22, X and Y of GRCh38 with the runs of homozygosity of 5 MB or more and a tick per ClinVar hit, grey for a low-confidence call. A hit on chrM or on another contig is not drawn; the line under the chart counts it. A tick for one of the first 50 hits links to the hits table, a later one to the ClinVar section.
+  - **chrM** (`#mito`): each heteroplasmic site by position and allele fraction, the D-loop poly-C length variants as grey squares apart from them.
+  - **Fine-grained ancestry** (`#ancestry-fine`): each group the tables list, its share as a dot and its bootstrap range as a line.
+  - **PRS** (`#prs`): the percentiles on a 0 to 100 strip, only when pgsc_calc had an ancestry panel. A score with no percentile, or one of the other sex, says "no percentile" and gets no dot. Without a panel there is no strip: a raw score has no scale, and the caption already says so.
 - **Links to the step's own files**, relative to the report, when the summary says they exist: the PharmCAT HTML report, the CPIC recommendations per gene, the CPSR HTML report (or the `cpsr/` folder that holds it) and the Exomiser ranking table. The report sits in the sample folder beside each step's folder, in the bash layout and in a Nextflow `--outdir`. MultiQC and the couple report are not linked: the summary does not record them, and the couple report sits in the family folder.
 - **Nothing is fetched.** A Content-Security-Policy (`default-src 'none'; img-src data:; style-src 'unsafe-inline'`) lets the browser load nothing but the file itself and its inline pictures, and there is no JavaScript. The only addresses off this computer are the haplogroup links (FamilyTreeDNA, YFull, the docs) and the project link in the footer, each marked "opens a website"; the FamilyTreeDNA and YFull ones add that the address carries the haplogroup. The genome viewer links go to `127.0.0.1`, this computer.
 - **Dark on screen, light on paper.**
@@ -66,7 +72,7 @@ After them, "What this report leaves out" lists the steps not run and what no st
 
 ## Output
 
-`${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html` and `${GENOME_DIR}/${SAMPLE}/summary.json`.
+`${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html`, `${GENOME_DIR}/${SAMPLE}/summary.json` and `${GENOME_DIR}/${SAMPLE}/${SAMPLE}_charts.json`. The last one holds the five charts as data and as SVG (`schema_version`, `sample`, `generated_utc`, `charts`), each with its section, its caveat and one entry per mark (value, range, locus, detail). The Nextflow `HTML_REPORT` process writes the same file beside its report. It holds findings, so treat it like the report: keep it on this machine.
 
 The cards, by chapter (cards not listed here are named in the chapter table above):
 
