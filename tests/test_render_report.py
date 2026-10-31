@@ -253,6 +253,14 @@ def chapter_checks(work):
     finally:
         render_report.SECTION_OF = real_section_of
 
+    fs = render_report.frame_state
+    check("chapters: a section with a step run and a step not run is part not run, not complete",
+          [fs([{"state": a}, {"state": b}]) for a, b in (("ok", "missing"), ("stale", "missing"), ("ok", "ok"),
+                                                        ("missing", "missing"), ("ok", "failed"))]
+          == ["incomplete", "stale", "ok", "missing", "part"],
+          [fs([{"state": a}, {"state": b}]) for a, b in (("ok", "missing"), ("stale", "missing"), ("ok", "ok"),
+                                                        ("missing", "missing"), ("ok", "failed"))])
+
     for kind, hg in (("y", "R-M269*(xR-L23)"), ("mt", "H1a+16189")):
         rows = render_report.explore_html({"haplogroup": hg, "explore": collect_summary.haplogroup_explore(kind, hg)})
         marks = re.findall(r'<span class="offsite-note">\(([^)]*)\)</span>', "".join(rows))

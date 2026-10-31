@@ -1254,7 +1254,7 @@ CSS = """
   .toc a { color: var(--fg); text-decoration: none; }
   .toc a:hover { color: var(--accent); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-  .dot-ok { background: #5b9ee6; } .dot-stale { background: #e0b94a; }
+  .dot-ok { background: #5b9ee6; } .dot-stale, .dot-incomplete { background: #e0b94a; }
   .dot-failed, .dot-part { background: #e2685d; } .dot-missing { background: #6b717c; }
   .header { background: var(--hdr); color: var(--hdr-fg); padding: 26px 30px; border-radius: 12px; margin-bottom: 16px; }
   .header h1 { font-size: 28px; margin-bottom: 8px; }
@@ -2383,7 +2383,7 @@ STEP_OF = {k: step for k, _, step, _ in collect_summary.SECTIONS}
 # A section's state from the states of its keys. Never green: a section that
 # ran is not a finding, and the ClinVar section must show no green at all.
 STATE_BADGE = {"ok": ("Complete", "state"), "stale": ("Stale", "yellow"), "failed": ("Failed", "red"),
-               "part": ("Part failed", "red"), "missing": ("Not run", "gray")}
+               "part": ("Part failed", "red"), "incomplete": ("Part not run", "yellow"), "missing": ("Not run", "gray")}
 LIMITS = ("limits", "What this report leaves out", "Which steps did not run, and what does no step look at?")
 
 
@@ -2391,7 +2391,10 @@ def frame_state(secs):
     st = {x["state"] for x in secs}
     if st & {"failed", "unreadable"}:
         return "part" if st & {"ok", "stale"} else "failed"
-    return "stale" if "stale" in st else "ok" if "ok" in st else "missing"
+    if "stale" in st:
+        return "stale"
+    # A section whose steps did not all run is not complete.
+    return ("incomplete" if "missing" in st else "ok") if "ok" in st else "missing"
 
 
 def caveat_notes():
