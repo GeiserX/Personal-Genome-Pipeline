@@ -90,7 +90,8 @@
     if (key === shownKey) { return; }
     shownKey = key;
     fetch(encodeURIComponent(c.file), { credentials: 'same-origin', cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      // A refused or missing file (an expired session, a file mid-rewrite) clears the key, so the next state retries.
+      .then(function (r) { if (!r.ok) { shownKey = null; return null; } return r.json(); })
       .then(draw)
       .catch(function () { shownKey = null; });
   }
