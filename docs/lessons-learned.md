@@ -604,7 +604,7 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** the image has no CA certificate bundle.
 - **Fix:** the e2e case mounts the runner's `/etc/ssl/certs` and sets `CURL_CA_BUNDLE`, as the LPA case does.
 
-### MEGAnE's image leaves the e2e runner short of disk
-- **Failed:** with steps 50, 51 and 52 all on main, the e2e job stopped with "No space left on device" in `mocha-1`, the case after `mei-1`. Removing the image by its name moved the failure to `nextflow-hardening-1-manta`.
-- **Why:** the e2e job pulls every image before the first case, and MEGAnE's image is about 6.4 GB. It stayed on the disk after `mei-1`, the only case that uses it, and so did the case's sample directory with MEGAnE's work files. The log could not show whether removing the image by a name with both a tag and a digest worked, because the case hid the error.
-- **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory and the image by its id when it ends, and logs the free disk before and after. The image is pinned by digest, so the e2e image cache never saves it anyway.
+### MEGAnE's case left the e2e runner short of disk
+- **Failed:** with steps 50, 51 and 52 all on main, the e2e job stopped with "No space left on device" in `mocha-1`, the case after `mei-1`, and later in `nextflow-hardening-1-manta`.
+- **Why:** `mei-1` left its sample directory, with MEGAnE's work files, on the disk. Removing it, the chr20 reference copy, the k-mer set and MEGAnE's 6.4 GB image took the free disk from 7.6 GB to 28 GB.
+- **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory when it ends, and logs the free disk before and after. It keeps the image: when a case removed it, the job's "Image sizes" step stopped with `numfmt: invalid number: ''`, because `docker image inspect -f` prints an empty line for an image that is gone and that step reads every image the cases use.

@@ -137,15 +137,12 @@ echo "mei: HG002 chr20 30x (minimap2, unmapped reads dropped${MEI_E2E_DROP_ALU:+
   "precision ${PP}/${NP} within 100 bp of GIAB v5.0q; calls per element:" \
   "$(awk -F'\t' 'NR > 1 {n[$4]++} END {for (k in n) printf "%s %d ", k, n[k]}' "${M}_mei.tsv" 2>/dev/null)" >> "$E2E_NOTES"
 
-# Leave nothing behind: the cases after this one need the disk, and the runner
-# ran out of space in them with MEGAnE's output and image still there.
-# The image (about 6.4 GB) serves this case alone and is pinned by digest, so
-# the e2e image cache never saves it. It goes by id, and the log says if it
-# stayed.
+# Leave no sample data behind: the cases after this one need the disk, and the
+# runner ran out of space in them with this case's files still there (about
+# 14 GB, MEGAnE's work files most of it). MEGAnE's image stays: the job's image-size table after the cases
+# reads every image the cases use, and stops on one that is gone.
 echo "disk before the clean-up: $(df -h --output=avail "$E2E_WORK" | tail -1 | tr -d ' ')"
 rm -rf "${G:?}/${H}" "${R:?}" "${G:?}/reference/megane" "${T:?}/truth.vcf.gz"
-id=$(docker image inspect -f '{{.Id}}' "$MEGANE_IMAGE" 2>/dev/null) && docker image rm -f "$id" > /dev/null
-docker image inspect "$MEGANE_IMAGE" > /dev/null 2>&1 && echo "WARNING: MEGAnE's image is still on the disk"
 echo "disk after the clean-up: $(df -h --output=avail "$E2E_WORK" | tail -1 | tr -d ' ')"
 unset REF_FASTA
 finish
