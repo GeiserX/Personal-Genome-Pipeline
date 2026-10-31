@@ -2481,7 +2481,7 @@ def frame(S, sample, sid, lines, keys=None, always=False):
     files = step_files(S, sample, sid)
     return ([f'  <section class="sec{" full-width" if wide else ""}{" always" if always else ""}" id="{sid}">']
             + hoist_caveats(lines, meta)
-            + ([f'    <p class="files">Files of this step, beside this report: '
+            + (['    <p class="files">Files of this step, beside this report: '
                 + " &middot; ".join(f'<a href="{E(h)}">{E(t)}</a>' for h, t in files) + "</p>"] if files else [])
             + ["  </section>"])
 
