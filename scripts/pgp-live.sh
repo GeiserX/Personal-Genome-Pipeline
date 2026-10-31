@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # pgp-live.sh: start the live site of the runs under GENOME_DIR (bin/pgp_live.py, docs/live-site.md)
-# Usage: GENOME_DIR=/data ./scripts/pgp-live.sh [extra pgp_live.py flags]
+# Usage: GENOME_DIR=/data ./scripts/pgp-live.sh [sample] [extra pgp_live.py flags]
 #        GENOME_DIR=/data ./scripts/pgp-live.sh hash-password
+#
+# With a sample, it checks the name and prints the address of that run's page.
 #
 # hash-password asks for a password and writes its hash (never the password) to
 # PGP_LIVE_PASSWORD_FILE, mode 600. The site then asks for that password.
@@ -33,8 +35,12 @@ if [ "${1:-}" = hash-password ]; then
   exit 0
 fi
 
+OPEN=""
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then validate_sample "$1"; OPEN=$1; shift; fi
+
 args=(--root "$GENOME_DIR" --state-dir "$STATE" --bind "${PGP_LIVE_BIND:-127.0.0.1}" --port "${PGP_LIVE_PORT:-8787}"
   --ingest-port "${PGP_LIVE_INGEST_PORT:-8788}")
 if [ -s "$PWF" ]; then args+=(--password-file "$PWF"); fi
 for h in ${PGP_LIVE_ALLOWED_HOSTS:-}; do args+=(--allowed-host "$h"); done
+[ -z "$OPEN" ] || echo "The run's page: http://${PGP_LIVE_BIND:-127.0.0.1}:${PGP_LIVE_PORT:-8787}/runs/${OPEN}/"
 exec python3 "${PGP_ROOT}/bin/pgp_live.py" "${args[@]}" "$@"

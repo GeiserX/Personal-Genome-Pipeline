@@ -247,8 +247,21 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 [ -z "${MAX_JOBS:-}" ] || echo "NOTE: MAX_JOBS is no longer read. --max_cpus (THREADS) and --max_memory cap each task; Nextflow fills the machine's CPUs and RAM."
 [ -z "${ANCESTRY:-}" ] || echo "NOTE: ANCESTRY is no longer read: step 26 runs in the pipeline whenever the ancestry panel is installed (setup.sh --ancestry-panel)."
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
-# The live site (docs/live-site.md): nextflow.config's weblog posts to PGP_LIVE_URL/ingest/PGP_LIVE_RUN.
-if [ -n "${PGP_LIVE_URL:-}" ]; then export PGP_LIVE_RUN=$SAMPLE; echo "Live site: messages go to ${PGP_LIVE_URL%/}/ingest/${SAMPLE}"; fi
+# The live site (docs/live-site.md). Nextflow's weblog is the nf-weblog plugin, which Nextflow 26.10 loads only when
+# a config names it, so the block lives in a config of this run's own, passed only when PGP_LIVE_URL is set: a run
+# without it neither downloads the plugin nor warns about an unknown weblog scope. Bump the pin with its release.
+NF_WEBLOG_PLUGIN=nf-weblog@1.2.0
+if [ -n "${PGP_LIVE_URL:-}" ]; then
+  [[ "$PGP_LIVE_URL" =~ ^https?://[A-Za-z0-9.:_-]+(/[A-Za-z0-9._~/-]*)?$ ]] \
+    || { echo "ERROR: PGP_LIVE_URL must be a plain http(s)://host:port URL, got '${PGP_LIVE_URL}'" >&2; PGP_LIVE_URL=""; exit 2; }
+  export PGP_LIVE_RUN=$SAMPLE
+  printf "plugins {\n    id '%s'\n}\nweblog {\n    enabled = true\n    url     = '%s'\n}\n" "$NF_WEBLOG_PLUGIN" \
+    "${PGP_LIVE_URL%/}/ingest/${SAMPLE}" > "${S}/nextflow/live.config"
+  NF+=(-c "${S}/nextflow/live.config")
+  echo "Live site: messages go to ${PGP_LIVE_URL%/}/ingest/${SAMPLE} (${NF_WEBLOG_PLUGIN}, downloaded by Nextflow on first use)"
+else
+  rm -f "${S}/nextflow/live.config"
+fi
 live_step() { live_post "$SAMPLE" "{\"event\":\"pgp_step\",\"step\":\"$1\",\"state\":\"$2\",\"utcTime\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"; }
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
 FT="${S}/nextflow/failed_tasks.tsv" PT="${S}/nextflow/process_status.tsv"; rm -f "$FT" "$PT"  # main.nf writes both as the run ends
