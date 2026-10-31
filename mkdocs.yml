@@ -208,6 +208,7 @@ nav:
           - "Step 16b: mosdepth Coverage Statistics": 16b-mosdepth.md
           - "Step 24: HTML Report": 24-html-report.md
           - What Changed Since the Previous Run: delta-report.md
+          - Where a Run Stands: run-state.md
           - Look Up a Variant, an rsID or a Gene: lookup.md
           - "Step 28: MultiQC Aggregated QC Report": 28-multiqc.md
           - "Step 33: Sample Identity and Contamination": 33-sample-qc.md
