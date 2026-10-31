@@ -53,8 +53,8 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from
 35b	Paraphase (PacBio HiFi)	paraphase	yes	PARAPHASE_CHECK,PARAPHASE,PARAPHASE_REPORT	paralogs	02		
 36	PGx consensus		no	PGX_CONSENSUS		07,21,32	0.01	measured
 37	Y haplogroup (Yleaf)	y_haplogroup	yes	Y_POSITIONS,Y_PILEUP,Y_HAPLOGROUP	y_haplogroup	02		
-38	Family		no	FAMILY_PREPARE,GLNEXUS,GLNEXUS_VCF,FAMILY_RELATE,FAMILY_CHECK,WHATSHAP_PED,FAMILY_REPORT,FAMILY_IBD_SITES,FAMILY_IBD_PHASE,FAMILY_IBD_SEGMENTS,FAMILY_IBD_REPORT		03		
-39	Couple carrier screen		no	COUPLE_CARRIER	couple	03		
+38	Family		yes	FAMILY_PREPARE,GLNEXUS,GLNEXUS_VCF,FAMILY_RELATE,FAMILY_CHECK,WHATSHAP_PED,FAMILY_REPORT,FAMILY_IBD_SITES,FAMILY_IBD_PHASE,FAMILY_IBD_SEGMENTS,FAMILY_IBD_REPORT		03		
+39	Couple carrier screen		yes	COUPLE_CARRIER	couple	06,19,09,35		
 40	Raw-data export	consumer_export	yes	CONSUMER_EXPORT	consumer_export	03		
 41	Blood groups	bloodtype	yes	BLOODTYPE_REGIONS,BLOODTYPE_DEPTH,BLOODTYPE	bloodtype	03		
 42	Traits panel	traits	yes	TRAITS_SITES,TRAITS_PHASE,TRAITS	traits	03		
