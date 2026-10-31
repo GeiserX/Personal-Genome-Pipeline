@@ -183,7 +183,7 @@ DeepVariant 1.10 with 8 shards took 8 h 50 min to 13 h 30 min. In the 13.5 h run
 
 A step the end test did not run says "not measured"; where it shows a time, that is the step page's estimate. Step pages link here instead of giving their own figure.
 
-The upper end of each figure is also in `assets/steps.tsv`. Until a box has run a step under Nextflow, `bin/run_eta.py` uses that figure as the low end, and that figure times 16 / cores as the high end on a box with fewer than 16 cores; it never scales it down. A step this table does not measure, including one that shows only an estimate, gets no number. Once the box has a trace of the step, it uses the step's own times from the last 5 runs on that box instead ([How long is left](run-state.md#how-long-is-left)).
+Both ends of each measured figure are also in `assets/steps.tsv` (`hours_low` and `hours`). Until a box has run a step under Nextflow, `bin/run_eta.py` uses the lower end as the low end, never scaled, and the upper end as the high end; only the high end is multiplied by 16 / cores, on a box with fewer than 16 cores, and it is never scaled down. A step this table does not measure, including one that shows only an estimate, gets no number. Once the box has a trace of the step, it uses the step's own times from the last 5 runs on that box instead ([How long is left](run-state.md#how-long-is-left)).
 
 | Step | Wall time | Peak memory | CPU (cores) | Notes |
 |---|---|---|---|---|

@@ -12,20 +12,26 @@ Checks:
   6. two boxes write two history files;
   7. the history holds no sample id and no '/';
   8. three runs give the min-max range with n=3, and only the last 5 runs count;
-  9. with no history, an 8-core box doubles the catalogue's hours and a 32-core box
-     is not scaled below them;
+  9. with no history, the low end is the catalogue's measured lower end (hours_low)
+     and the high end its upper end (hours), doubled on an 8-core box and not scaled
+     below it on a 32-core box; on 16 and on 32 cores every measured step has
+     low < high, never one figure;
  10. the hours left are the hand-computed longest chain, and the CPU-work bound when
      it is larger;
  11. a running step past its high end makes the high end unknown and says so;
  12. a step the catalogue does not time, or only estimates, lands in unknown_steps, never 0;
  13. a step with a task whose last attempt failed or was stopped gives no span;
- 14. the command writes the estimate and the history from an OUTDIR.
+ 14. the command writes the estimate and the history from an OUTDIR;
+ 15. without --sample, the trace of a run that run-all.sh has not finished is left
+     out of the step times, and counts once run_status.tsv says it finished; a
+     run_status.tsv that cannot be read leaves out the newest trace, never a crash.
 Each check is then run against a planted mistake (a mutant of run_eta.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
 Run: python3 tests/test_run_eta.py
 """
 import contextlib
+import glob
 import importlib.util
 import io
 import json
@@ -160,12 +166,20 @@ def range_checks(m):
         (r["low_s"], r["high_s"], r["n"], r["source"]) == (3 * H, 5 * H, 3, "box"), r)
     r = m.step_ranges(hist("02", [9, 3, 4, 5, 6, 7]), STEPS, 16)["02"]
     out["only the last 5 runs count"] = ((r["low_s"], r["high_s"], r["n"]) == (3 * H, 7 * H, 5), r)
-    dv = [s for s in STEPS if s["step"] == "03"][0]["hours"] * H
+    row = [s for s in STEPS if s["step"] == "03"][0]
+    dv, dv_low = row["hours"] * H, float(row["hours_low"]) * H
     r8 = m.step_ranges([], STEPS, 8)["03"]
     r32 = m.step_ranges([], STEPS, 32)["03"]
-    out["an 8-core box doubles the docs hours"] = (
-        r8["source"] == "docs" and r8["low_s"] == dv and r8["high_s"] == 2 * dv and "16 threads" in r8["label"], r8)
-    out["a 32-core box is not scaled below the docs hours"] = (r32["low_s"] == r32["high_s"] == dv, r32)
+    out["an 8-core box: the measured low end, the high end doubled"] = (
+        r8["source"] == "docs" and r8["low_s"] == dv_low and r8["high_s"] == 2 * dv and "16 threads" in r8["label"], r8)
+    out["a 32-core box is not scaled below the docs hours"] = (
+        r32["low_s"] == dv_low and r32["high_s"] == dv, r32)
+    measured = [s["step"] for s in STEPS if s["hours_from"] == "measured"]
+    one = {c: [k for k in measured if not (m.step_ranges([], STEPS, c)[k]["source"] == "docs"
+                                           and m.step_ranges([], STEPS, c)[k]["low_s"]
+                                           < m.step_ranges([], STEPS, c)[k]["high_s"])] for c in (16, 32)}
+    out["on 16 and 32 cores every measured step has low < high"] = (
+        len(measured) >= 25 and not one[16] and not one[32], (len(measured), one))
 
     # Steps 14 and 04b have hours in the catalogue, but only the step page's estimate.
     est = m.step_ranges([], STEPS, 16)
@@ -252,7 +266,33 @@ def command_checks(m):
     ok = (rc == 0 and est.get("box") == "ci" and est["steps"]["02"]["source"] == "box"
           and est["steps"]["02"]["high_s"] == 4 * H and est["steps"]["13"]["source"] == "docs"
           and est["remaining"] is None and os.path.isfile(m.history_path(d, "ci")))
-    return {"the command writes the estimate and the history": (ok, est.get("steps", {}).get("02"))}
+    out = {"the command writes the estimate and the history": (ok, est.get("steps", {}).get("02"))}
+
+    # A run-all.sh run still going: its run_status.tsv has a start and no 'meta finished_utc'.
+    d = outdir(("trace_2026-01-02_09-59-00.txt", "trace_new.txt"))
+    logs = os.path.join(d, "demo1", "logs")
+    os.makedirs(logs)
+    status = os.path.join(logs, "run_status.tsv")
+    with open(status, "w") as f:
+        f.write(f"meta\tstarted_epoch\t{int(time.time()) - 60}\nstep\t02\tplanned\n")
+    going = m.estimate(d, cores=16, box="ci")["steps"]["02"]["source"]
+    with open(status, "a") as f:
+        f.write("meta\tfinished_utc\t2026-01-02 12:00:00 UTC\n")
+    ended = m.estimate(d, cores=16, box="ci")["steps"]["02"]["source"]
+    out["without --sample, a run not finished yet is left out"] = ((going, ended) == ("docs", "box"), (going, ended))
+
+    def unreadable(path):
+        raise PermissionError(13, "Permission denied", path)
+    keep = run_state.read_run_status
+    run_state.read_run_status = unreadable
+    try:
+        got = m.estimate(d, cores=16, box="ci")["steps"]["02"]["source"]
+    except OSError as e:
+        got = repr(e)
+    finally:
+        run_state.read_run_status = keep
+    out["an unreadable run_status.tsv leaves out the newest trace"] = (got == "docs", got)
+    return out
 
 
 def all_checks(m):
@@ -295,6 +335,21 @@ def mutants():
         orig = mod.step_ranges
         return lambda history, steps, *a, **k: orig(history, [dict(s, hours_from="measured") for s in steps], *a, **k)
 
+    def no_low(mod):
+        orig = mod.step_ranges
+        return lambda history, steps, *a, **k: orig(history, [dict(s, hours_low="") for s in steps], *a, **k)
+
+    def no_guard(mod):
+        def f(outdir):
+            out = set()
+            for p in glob.glob(os.path.join(outdir, "*", "logs", "run_status.tsv")):
+                meta = (run_state.read_run_status(p) or {}).get("meta", {})
+                if "finished_utc" not in meta and "started_epoch" in meta:
+                    d = os.path.dirname(os.path.dirname(p))
+                    out |= {os.path.basename(t) for t in run_state.trace_files(d, float(meta["started_epoch"]))}
+            return out
+        return f
+
     def finished_ignored(mod):
         orig = mod.remaining
         return lambda st, *a: orig(dict(st, run={"state": "running"}), *a)
@@ -306,7 +361,7 @@ def mutants():
             return orig(argv[:i] + argv[i + 2:])
         return f
 
-    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero, estimates_count,
+    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero, estimates_count, no_low, no_guard,
               finished_ignored, out_ignored):
         f.wants_mod = True
     return {
@@ -318,8 +373,11 @@ def mutants():
         "the history holds no sample id and no '/'": mutant(history_rows=slash),
         "three runs give min-max with n=3": mutant(LAST_RUNS=2),
         "only the last 5 runs count": mutant(LAST_RUNS=6),
-        "an 8-core box doubles the docs hours": mutant(DOCS_THREADS=8),
+        "an 8-core box: the measured low end, the high end doubled": mutant(DOCS_THREADS=8),
         "a 32-core box is not scaled below the docs hours": mutant(docs_scale=lambda c: 16.0 / c),
+        "on 16 and 32 cores every measured step has low < high": mutant(step_ranges=no_low),
+        "without --sample, a run not finished yet is left out": mutant(live_traces=lambda outdir: set()),
+        "an unreadable run_status.tsv leaves out the newest trace": mutant(live_traces=no_guard),
         "the hours left are the longest chain": mutant(remaining=None),  # replaced below
         "the CPU-work bound when it is larger": mutant(cpu_work=lambda *a: 0.0),
         "a running step past its high end: high unknown, and said": mutant(
