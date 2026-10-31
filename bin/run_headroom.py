@@ -83,6 +83,12 @@ def _row(r, i):
             "memory": mem, "peak": peak}
 
 
+def _precedence(t):
+    """Later attempt first; within one attempt a finished row beats a submitted or running one, so a
+    weblog message read after a trace row of the same attempt cannot erase its peak_rss."""
+    return (t["attempt"], t["status"] in DONE, t["order"])
+
+
 def task_memory(rows, warn=None, steps=None):
     """[{step, process, attempt, state, request_bytes, peak_rss_bytes, ratio, warn, oom_retry}], one per
     task (process and tag), from its last attempt. ROWS are weblog trace objects (the latest message
@@ -99,7 +105,7 @@ def task_memory(rows, warn=None, steps=None):
         groups.setdefault((t["process"], t["tag"]), []).append(t)
     out = []
     for (proc, _tag), ts in sorted(groups.items(), key=lambda kv: min(t["order"] for t in kv[1])):
-        ts.sort(key=lambda t: (t["attempt"], t["order"]))
+        ts.sort(key=_precedence)
         last = ts[-1]
         retries = len({t["attempt"] for t in ts if t["attempt"] < last["attempt"] and t["exit"] in MEMORY_EXITS})
         running = last["status"] not in DONE

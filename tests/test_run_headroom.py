@@ -196,6 +196,14 @@ def memory_checks(m):
         and ev["DEEPVARIANT"]["state"] == "running" and ev["DEEPVARIANT"]["ratio"] is None
         and ev["DEEPVARIANT"]["request_bytes"] == 16 * G and ev["DEEPVARIANT"]["peak_rss_bytes"] is None, ev)
 
+    done = {"process": "FASTP", "tag": "demo", "hash": "ab/1", "attempt": "1", "status": "COMPLETED",
+            "exit": "0", "memory_bytes": 8 * G, "peak_rss_bytes": 6 * G}
+    late = {"process": "FASTP", "tag": "demo", "hash": "ab/2", "attempt": "1", "status": "RUNNING",
+            "exit": "", "memory_bytes": 8 * G, "peak_rss_bytes": None}
+    mixed = m.task_memory([done, late])
+    out["a running row read after a finished one of the same attempt keeps the finished ratio"] = (
+        len(mixed) == 1 and mixed[0]["state"] == "completed" and abs((mixed[0]["ratio"] or 0) - 0.75) < 1e-6, mixed)
+
     small = m.host_memory("64.GB", physical=32 * G)
     big = m.host_memory("64.GB", physical=128 * G)
     out["64 GB max on a 32 GB host warns, on 128 GB not"] = (
@@ -295,6 +303,8 @@ def mutants():
     ms["no memory column gives no ratio"] = mutant(_row=zero_request_is_8g)
     ms["exit 137 then attempt 2 counts one retry; a running task shows its request only"] = mutant(
         MEMORY_EXITS={"143"})
+    ms["a running row read after a finished one of the same attempt keeps the finished ratio"] = mutant(
+        _precedence=lambda t: (t["attempt"], t["order"]))
     ms["64 GB max on a 32 GB host warns, on 128 GB not"] = mutant(
         host_memory=lambda max_memory=None, physical=None: {"memory_bytes": physical, "max_memory_bytes": None,
                                                             "warn": False})
