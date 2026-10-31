@@ -1,0 +1,61 @@
+/* live.css: the dark theme of the live page and the login page (assets/live). */
+:root { color-scheme: dark; --bg: #0f1216; --card: #171b21; --line: #2a313b; --fg: #e3e7ec; --muted: #8b96a3;
+  --waiting: #3a4350; --running: #2f6fb3; --done: #2e7d4f; --failed: #b33a3a; --skipped: #4a3f5c;
+  --notfinished: #8a6d1f; --notplanned: #23282f; --accent: #6aa9ff; --attention: #e0a23a; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+header { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 18px; margin: 0; }
+header nav a { margin-left: 14px; }
+main { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+.map-wrap { flex: 1 1 auto; overflow: auto; min-width: 0; }
+aside { flex: 0 0 360px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.card h2 { font-size: 15px; margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--waiting); vertical-align: middle; }
+.badge.run-running { background: var(--running); }
+.badge.run-finished { background: var(--done); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.legend .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+.edges line { stroke: var(--line); stroke-width: 1.2; }
+.box { cursor: pointer; }
+.box rect { stroke: var(--line); stroke-width: 1; }
+.box text { fill: var(--fg); font-size: 12px; pointer-events: none; }
+.box.selected rect { stroke: var(--accent); stroke-width: 2; }
+.s-waiting rect, .s-waiting .swatch { fill: var(--waiting); background: var(--waiting); }
+.s-running rect, .s-running .swatch { fill: var(--running); background: var(--running); }
+.s-done rect, .s-done .swatch { fill: var(--done); background: var(--done); }
+.s-failed rect, .s-failed .swatch { fill: var(--failed); background: var(--failed); }
+.s-skipped rect, .s-skipped .swatch { fill: var(--skipped); background: var(--skipped); }
+.s-notfinished rect, .s-notfinished .swatch { fill: var(--notfinished); background: var(--notfinished); }
+.s-notplanned rect, .s-notplanned .swatch { fill: var(--notplanned); background: var(--notplanned); }
+.s-skipped text, .s-notplanned text { fill: var(--muted); }
+.s-running rect { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .7; } }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0 0 8px; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+table.tasks { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 8px; }
+table.tasks th, table.tasks td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: right; }
+table.tasks th:first-child, table.tasks td:first-child { text-align: left; }
+.found { list-style: none; margin: 0; padding: 0; }
+.found li { padding: 6px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.found .step { display: inline-block; min-width: 30px; color: var(--muted); }
+.tone-attention { border-left: 3px solid var(--attention); padding-left: 6px; }
+.tone-info { border-left: 3px solid var(--line); padding-left: 6px; }
+.headline { margin: 6px 0; }
+.replay { display: flex; gap: 10px; align-items: center; padding: 8px 18px; border-bottom: 1px solid var(--line); }
+.replay[hidden] { display: none; }
+.replay input[type=range] { flex: 1; }
+button { background: var(--waiting); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+ul.runs { list-style: none; padding: 0; }
+ul.runs li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.kind { color: var(--muted); font-size: 12px; margin-left: 6px; }
+body.login main { justify-content: center; padding-top: 12vh; }
+body.login form { width: 320px; display: flex; flex-direction: column; gap: 8px; }
+body.login h1 { font-size: 18px; margin: 0 0 4px; }
+body.login .msg { color: var(--attention); min-height: 1em; margin: 0; }
+input[type=password] { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 7px; }
+@media (max-width: 900px) { main { flex-direction: column; } aside { flex: 1 1 auto; width: 100%; } }
