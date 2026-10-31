@@ -689,6 +689,9 @@ def sec_parascopy(d, s):
                          "psCN_filter column")
     smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
     smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+    # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
+    # when the locus was not run (no read over it, no model, Parascopy failed).
+    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
     hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
@@ -696,7 +699,8 @@ def sec_parascopy(d, s):
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
                # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
-               "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
+               "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
+                           else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
 
 
