@@ -216,6 +216,20 @@ grep -E '(%%|!!) executor|^~> ' "$GENOME_DIR/<sample>/nextflow/.nextflow.log" | 
 
 ---
 
+### The work disk is filling
+
+**Symptom:** A long run is still going and free space on the disk of the work folder (`<sample>/nextflow/work` with `run-all.sh`) or of `GENOME_DIR` keeps dropping.
+
+**Check:** `bin/run_headroom.py` gives the used share of both disks, and warns at 90% (`--disk-warn-percent` or `PGP_DISK_WARN_PERCENT` to change it):
+
+```bash
+python3 bin/run_headroom.py --work-dir "$GENOME_DIR/<sample>/nextflow/work" --outdir "$GENOME_DIR"
+```
+
+A line `disk work and results` means both folders sit on one filesystem. The inode share counts too: a disk can run out of inodes before it runs out of bytes. [Where a run stands](run-state.md#memory-and-disk-headroom) says what each figure means.
+
+**Fix:** free space before the disk fills, with the steps of the next entry. Deleting the work folder while the run goes breaks the run; delete only files of finished steps outside it. To move the work folder to a larger disk for the next run, pass Nextflow's `-work-dir` (or `-w`).
+
 ### "No space left on device" mid-analysis
 
 **Symptom:** Container crashes with "No space left on device", "ENOSPC", or "write failed: No space left".
