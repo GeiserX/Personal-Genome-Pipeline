@@ -26,7 +26,7 @@
 process WHATSHAP_PED {
     label 'process_medium'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
     tuple path(vcf), path(vcf_index)
@@ -72,7 +72,7 @@ process WHATSHAP_PED {
 process FAMILY_REPORT {
     label 'process_low'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
     path(members)

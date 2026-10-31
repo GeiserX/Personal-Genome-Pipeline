@@ -337,11 +337,175 @@ def test_report():
               "The father is not sequenced. At 2 of these sites (66.7%)" in md and "needs both parents sequenced" in md, md)
 
 
+FIX = os.path.join(REPO, "tests", "fixtures", "families")
+TWO = os.path.join(FIX, "two_families.tsv")
+
+
+def plan(*args):
+    return run("plan", *args)
+
+
+def plan_rows(path):
+    return {(r["analysis"], r["members"]): r for r in tsv(path)}
+
+
+def by_analysis(path):
+    out = {}
+    for r in tsv(path):
+        out.setdefault(r["analysis"], []).append(r)
+    return out
+
+
+def test_families_file():
+    with tempfile.TemporaryDirectory() as d:
+        # the two-family file splits into two pedigrees
+        for fam, want in (("family_a", ["child_a", "father_a", "mother_a"]), ("family_b", ["partner_x", "partner_y"])):
+            rc, out = plan("--families", TWO, "--family", fam, "--write-pedigree", d)
+            ped = os.path.join(d, fam, "pedigree.tsv")
+            rows = tsv(ped) if os.path.exists(ped) else []
+            check("plan --write-pedigree: %s gets its own pedigree (exit %d)" % (fam, rc),
+                  rc == 0 and [r["sample"] for r in rows] == want, out + str(rows))
+            check("%s's pedigree has the pedigree columns, no family column" % fam,
+                  rows and list(rows[0]) == list(fr.PED_COLUMNS), str(rows[:1]))
+        rows, errors = fr.read_pedigree(os.path.join(d, "family_a", "pedigree.tsv"))
+        members, more = fr.build_members(rows, {}, "x")
+        check("the written pedigree reads back: child_a's parents are father_a and mother_a",
+              not errors + more and (members["child_a"]["father"], members["child_a"]["mother"]) == ("father_a", "mother_a"),
+              str(errors + more))
+
+        # a file without the column gives the same members.tsv as before the column existed
+        args = ["prepare", "--pedigree", os.path.join(REPO, "assets", "pedigree.example.tsv"), "--out-dir",
+                os.path.join(d, "old")]
+        for s in ("child_a", "father_a", "mother_a"):
+            args += ["--gvcf", "%s=%s" % (s, gvcf(d, s + ".g.vcf.gz", s))]
+        rc, out = run(*args)
+        got = open(os.path.join(d, "old", "members.tsv"), "rb").read() if rc == 0 else b""
+        check("a pedigree without the family column: members.tsv is byte for byte the golden file",
+              got == open(os.path.join(FIX, "members.golden.tsv"), "rb").read(), out + repr(got))
+        # the same family from the families file: the same members.tsv
+        args[2], args[4] = TWO, os.path.join(d, "new")
+        rc, out = run(*(args + ["--family", "family_a"]))
+        check("the same family from the families file gives the same members.tsv",
+              rc == 0 and open(os.path.join(d, "new", "members.tsv"), "rb").read() == got, out)
+        rc, out = run(*args)
+        check("prepare on a two-family file without --family stops and lists the families",
+              rc == 2 and "holds 2 families (family_a, family_b)" in out, out)
+        rc, out = plan("--families", TWO)
+        check("plan on a two-family file without --family or --sample stops and lists the families",
+              rc == 2 and "holds 2 families (family_a, family_b)" in out, out)
+        rc, out = plan("--families", TWO, "--family", "family_c")
+        check("an unknown --family is named, with the file's families",
+              rc == 2 and "no family 'family_c'; its families are: family_a, family_b" in out, out)
+        rc, out = plan("--families", TWO, "--sample", "partner_y", "--which")
+        check("--which prints the family of the sample", rc == 0 and out.strip().splitlines()[-1] == "family_b", out)
+        rc, out = plan("--families", TWO, "--sample", "nobody", "--which")
+        check("--which: a sample in no family prints no family and exits 0",
+              rc == 0 and "family_" not in out, out)
+
+    head = "family\tsample\tsex\tfather\tmother\tpartner\n"
+    bad = [
+        ("a sample in two families", head + "fa\tkid\tmale\t.\t.\t.\nfb\tkid\tmale\t.\t.\t.\nfb\tmum\tfemale\t.\t.\t.\n",
+         "line 3: sample 'kid' is in family 'fb' here and in family 'fa' on line 2"),
+        ("a family name breaking the sample-name rule", head + "f/a\tkid\tmale\t.\t.\t.\n",
+         "line 2: family name 'f/a' may hold only letters"),
+        ("a family name equal to a sample", head + "kid\tkid\tmale\t.\t.\t.\nkid\tmum\tfemale\t.\t.\t.\n",
+         "the family name 'kid' is also a person's name (line 2)"),
+        ("a parent in another family", head + "fa\tkid\tmale\tdad\t.\t.\nfb\tdad\tmale\t.\t.\t.\n",
+         "line 2: the father of 'kid', 'dad', is in family 'fb' (line 3)"),
+        ("a partner in another family", head + "fa\tdad\tmale\t.\t.\tmum\nfb\tmum\tfemale\t.\t.\tdad\n",
+         "line 2: the partner of 'dad', 'mum', is in family 'fb' (line 3)"),
+        ("the column filled on some rows only", head + "fa\tkid\tmale\t.\t.\t.\n.\tmum\tfemale\t.\t.\t.\n",
+         "line 3: no family name, but other rows have one (line 2: 'fa')"),
+    ]
+    for desc, text, msg in bad:
+        with tempfile.TemporaryDirectory() as d:
+            rc, out = plan("--families", write(os.path.join(d, "f.tsv"), text), "--family", "fa")
+            check("plan stops on %s (exit %d), naming the file and line" % (desc, rc),
+                  rc == 2 and msg in out and "f.tsv" in out, out)
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = plan("--families", TWO, "--sample", "partner_x", "--sex", "female")
+        check("a sex that contradicts the file stops plan (exit %d)" % rc,
+              rc == 2 and "says 'partner_x' is male, the sex given to run-all.sh says female" in out, out)
+        rc, out = plan("--families", TWO, "--sample", "partner_x", "--sex", "male")
+        check("the sex the file gives passes", rc == 0, out)
+
+
+def test_plan():
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "plan.tsv")
+        # one member with a gVCF: everything waits, naming the missing one
+        rc, log = plan("--families", TWO, "--sample", "partner_x", "--have-gvcf", "partner_x", "--out", out)
+        p = by_analysis(out) if rc == 0 else {}
+        check("plan writes the columns family, analysis, members, decision, reason",
+              rc == 0 and open(out).readline().rstrip("\n").split("\t") == list(fr.PLAN_COLUMNS), log)
+        check("one member with a gVCF: the joint call waits for partner_y",
+              p.get("joint_call", [{}])[0].get("decision") == "waiting"
+              and p["joint_call"][0]["reason"] == "partner_y has no gVCF yet: run run-all.sh partner_y first", str(p))
+        check("and the couple screen waits too", p.get("couple_carrier", [{}])[0].get("decision") == "waiting", str(p))
+        check("every row is family_b's", all(r["family"] == "family_b" for rs in p.values() for r in rs), str(p))
+
+        # the trio: phasing runs
+        rc, log = plan("--families", TWO, "--family", "family_a", "--have-gvcf", "child_a", "father_a", "mother_a",
+                       "--have-clinvar", "child_a", "father_a", "mother_a", "--ibd-panel", "yes", "--out", out)
+        p = by_analysis(out)
+        check("a trio: the joint call runs on the three", p["joint_call"][0]["decision"] == "runs"
+              and p["joint_call"][0]["members"] == "child_a,father_a,mother_a", str(p))
+        check("a trio: phasing by inheritance runs for child_a",
+              (p["trio_phasing"][0]["decision"], p["trio_phasing"][0]["members"]) == ("runs", "child_a"), str(p))
+        check("a trio: the chromosome map runs", p["inheritance_map"][0]["decision"] == "runs", str(p))
+        check("with the panel the shared segments run", p["shared_segments"][0]["decision"] == "runs", str(p))
+        check("the parents, partners with ClinVar hits, get the couple screen",
+              (p["couple_carrier"][0]["decision"], p["couple_carrier"][0]["members"]) == ("runs", "father_a,mother_a"),
+              str(p))
+
+        # a duo: phasing skipped, the map runs; no panel: segments skipped; a partner without ClinVar: couple skipped
+        rc, log = plan("--families", TWO, "--family", "family_a", "--have-gvcf", "child_a", "mother_a",
+                       "--have-clinvar", "mother_a", "--ibd-panel", "no", "--out", out)
+        p = by_analysis(out)
+        check("a duo: the joint call runs on two and names the one left out",
+              p["joint_call"][0]["decision"] == "runs" and p["joint_call"][0]["members"] == "child_a,mother_a"
+              and "left out: father_a has no gVCF yet" in p["joint_call"][0]["reason"], str(p))
+        check("a duo: phasing by inheritance is skipped", p["trio_phasing"][0]["decision"] == "skipped"
+              and "no child has both parents sequenced" in p["trio_phasing"][0]["reason"], str(p))
+        check("a duo: the chromosome map runs", p["inheritance_map"][0]["decision"] == "runs", str(p))
+        check("--ibd-panel no: the shared segments are skipped", p["shared_segments"][0]["decision"] == "skipped"
+              and "setup.sh --ancestry-fine-panel" in p["shared_segments"][0]["reason"], str(p))
+        check("a partner without a gVCF: the couple screen waits for him",
+              p["couple_carrier"][0]["decision"] == "waiting" and "father_a has no gVCF yet" in p["couple_carrier"][0]["reason"],
+              str(p))
+        rc, log = plan("--families", TWO, "--family", "family_b", "--have-gvcf", "partner_x", "partner_y",
+                       "--have-clinvar", "partner_x", "--out", out)
+        p = by_analysis(out)
+        check("a partner with no ClinVar hits: the couple screen is skipped, naming her",
+              p["couple_carrier"][0]["decision"] == "skipped" and "partner_y has no ClinVar hits" in p["couple_carrier"][0]["reason"],
+              str(p))
+        check("partners only: no child, so no phasing and no map",
+              p["trio_phasing"][0]["decision"] == "skipped" and p["inheritance_map"][0]["decision"] == "skipped", str(p))
+
+        # prepare writes the same table as plan, for the same members
+        rc, log = plan("--families", TWO, "--family", "family_a", "--have-gvcf", "child_a", "father_a", "mother_a",
+                       "--have-clinvar", "father_a", "--ibd-panel", "yes", "--out", out)
+        args = ["prepare", "--pedigree", TWO, "--family", "family_a", "--have-clinvar", "father_a", "--ibd-panel", "yes",
+                "--pedigree-out", os.path.join(d, "ped.tsv"), "--out-dir", os.path.join(d, "prep")]
+        for s in ("child_a", "father_a", "mother_a"):
+            args += ["--gvcf", "%s=%s" % (s, gvcf(d, s + ".g.vcf.gz", s))]
+        rc2, log2 = run(*args)
+        pp = os.path.join(d, "prep", "family_plan.tsv")
+        check("prepare's family_plan.tsv is plan's, byte for byte",
+              rc == 0 and rc2 == 0 and os.path.exists(pp) and open(pp, "rb").read() == open(out, "rb").read(),
+              log + log2)
+        check("prepare --pedigree-out writes the family's own pedigree",
+              rc2 == 0 and [r["sample"] for r in tsv(os.path.join(d, "ped.tsv"))] == ["child_a", "father_a", "mother_a"],
+              log2)
+
+
 if __name__ == "__main__":
     test_prepare()
     test_kinship()
     test_check()
     test_report()
+    test_families_file()
+    test_plan()
     if FAILS:
         print("%d check(s) failed" % len(FAILS))
         sys.exit(1)

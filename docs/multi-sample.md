@@ -21,9 +21,35 @@ father_a	male	.	.	mother_a
 mother_a	female	.	.	father_a
 ```
 
-`sample` is the sample name the pipeline uses. `sex` is `male`, `female` or `unknown`. `father`, `mother` and `partner` name another person, or `.` (or empty) for none. A parent or partner named without a row of their own is a person who was not sequenced: a child's unsequenced father can still be named. The step stops, before any work, when a column name is unknown, a person has two rows, a father is female or a mother male, someone is their own parent or ancestor, two people name different partners, the samplesheet's sex contradicts the pedigree's, a gVCF holds another sample name than its own, or fewer than two named people have a gVCF.
+`sample` is the sample name the pipeline uses. One row per sample you sequence, or will. `sex` is `male`, `female` or `unknown`. `father`, `mother` and `partner` name another person, or `.` (or empty) for none. A parent or partner named without a row of their own is a person who was not sequenced: a child's unsequenced father can still be named. The step stops, before any work, when a column name is unknown, a person has two rows, a father is female or a mother male, someone is their own parent or ancestor, two people name different partners, the samplesheet's sex contradicts the pedigree's, a gVCF holds another sample name than its own, or fewer than two named people have a gVCF.
+
+### Several families in one file
+
+A families file is the same table with a leading `family` column, so one file says who is related to whom across all your samples ([`assets/families.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/families.example.tsv)):
+
+```text
+family	sample	sex	father	mother	partner
+family_a	child_a	female	father_a	mother_a	.
+family_a	father_a	male	.	.	mother_a
+family_a	mother_a	female	.	.	father_a
+family_b	partner_x	male	.	.	partner_y
+family_b	partner_y	female	.	.	partner_x
+```
+
+A child is a row whose `father` or `mother` is filled; partners name each other. Each family gets its own folder, `$GENOME_DIR/<family>/` (or `<outdir>/<family>/` with `--family_name`), so a family name follows the sample-name rule and is nobody's name. A file without the column is one family and reads exactly as before. On top of the pedigree checks, a families file stops before any work, naming the file and line, when the column is filled on some rows only, a person is in two families, a family name breaks the sample-name rule or is a person's name, or a row names a parent or partner who has a row in another family. A person therefore belongs to one family: a child who has a family of their own appears in only one of the two.
 
 ### Running it
+
+With a families file, `run-all.sh` runs the family steps for you:
+
+```bash
+GENOME_DIR=/path/to/data FAMILIES=families.tsv ./scripts/run-all.sh partner_x male
+GENOME_DIR=/path/to/data FAMILIES=families.tsv ./scripts/run-all.sh partner_y female
+```
+
+Each call processes its own sample only; the other members are never run as part of it. Before the pipeline starts, the sex given must be the one the file gives the sample (exit 2 otherwise). After the pipeline and before the reports, `bin/family_report.py plan` looks at what the family has under `GENOME_DIR` (each member's gVCF with its index, step 06's ClinVar hits, step 26b's panel) and writes `$GENOME_DIR/<family>/family_plan.tsv`, one row per analysis: `joint_call`, `trio_phasing`, `inheritance_map`, `shared_segments` (step 38) and `couple_carrier` per couple (step 39), each `runs`, `skipped` or `waiting`, with the reason in words. Step 38 runs when two or more members have a gVCF (a member still without one is left out and named); step 39 runs when both partners have ClinVar hits. Otherwise the step is recorded in `logs/run_status.tsv` as `skipped (waiting: partner_y has no gVCF yet: run run-all.sh partner_y first)` or `skipped (<reason>)`, so the first member's run waits and the last member's run does the family. A step that ran is recorded `ok` or `failed`, with its log in `logs/38-family.log` and `logs/39-couple.log`. Run step 38 again by hand after a later member is processed if it ran without them.
+
+By hand, from the scripts, once each member has a gVCF from step 03 (`<sample>/vcf/<sample>.g.vcf.gz`) and somalier's sites are installed (`setup.sh --sample-qc-data`):
 
 From the scripts, once each member has a gVCF from step 03 (`<sample>/vcf/<sample>.g.vcf.gz`) and somalier's sites are installed (`setup.sh --sample-qc-data`):
 
@@ -31,9 +57,9 @@ From the scripts, once each member has a gVCF from step 03 (`<sample>/vcf/<sampl
 GENOME_DIR=/path/to/data ./scripts/38-family.sh my_family pedigree.tsv
 ```
 
-The results go to `$GENOME_DIR/my_family/`, a folder of its own: the family name follows the sample-name rule and may not be a sample's name. Without the second argument the step reads `$GENOME_DIR/my_family/pedigree.tsv`.
+The results go to `$GENOME_DIR/my_family/`, a folder of its own: the family name follows the sample-name rule and may not be a sample's name. Without the second argument the step reads `$GENOME_DIR/my_family/pedigree.tsv`. The second argument may also be a families file: the step then copies it to `$GENOME_DIR/my_family/families.tsv` and reads the rows of family `my_family`, written out as `$GENOME_DIR/my_family/pedigree.tsv`. Step 39 takes the same two arguments.
 
-In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree pedigree.tsv --somalier_sites <sites.hg38.vcf.gz>`. A person processed earlier is a VCF row with the `gvcf` and `gvcf_index` columns; a row from FASTQ or a BAM is called in the same run and its gVCF is used. The family results go to `<outdir>/family/`.
+In the Nextflow pipeline, give each member a samplesheet row and add `--pedigree pedigree.tsv --somalier_sites <sites.hg38.vcf.gz>`. A person processed earlier is a VCF row with the `gvcf` and `gvcf_index` columns; a row from FASTQ or a BAM is called in the same run and its gVCF is used. The family results go to `<outdir>/family/`, or to `<outdir>/<name>/` with `--family_name <name>`. `--pedigree` may be a families file: with one family it runs that family, with more `--family_name` names the one to run, and without it the run stops before any task and lists the families. `FAMILY_PREPARE` writes the same `family_plan.tsv` as `run-all.sh` does, for the members of the samplesheet.
 
 The shared segments (item 6 below) need the phased reference panel and genetic maps of [step 26b](26b-ancestry-fine.md) (`setup.sh --ancestry-fine-panel`). Step 38 reads them from `ANCESTRY_FINE_DIR` (default `reference/ancestry_fine/<ANCESTRY_FINE_PANEL>`) and skips the segments with one line when they are not there; the Nextflow family workflow runs them when `--ancestry_fine_panel` is given. To add the segments to a family analysed before the panel was installed, without joint-calling again:
 
@@ -66,12 +92,14 @@ Two members marked as partners also get the couple carrier screen of [step 39](3
 
 ### Outputs
 
-The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR/<family_name>/` (with the `pedigree.tsv` it read).
+The Nextflow pipeline writes them to `<outdir>/family/` (`<outdir>/<name>/` with `--family_name`), step 38 to `$GENOME_DIR/<family_name>/` (with the `pedigree.tsv` it read, and `families.tsv` when it was given a families file).
 
 | File | Content |
 |---|---|
 | `family.vcf.gz` (+ `.tbi`) | the joint call |
 | `members.tsv`, `family.ped`, `trios.ped` | the pedigree as read, somalier's pedigree, WhatsHap's trios |
+| `family_plan.tsv` | family, analysis, members, decision (`runs`, `skipped`, `waiting`) and reason, for each analysis of steps 38 and 39 |
+| `pedigree.tsv` | the family's own rows (from a families file, without the family column) |
 | `somalier/family.pairs.tsv`, `family.samples.tsv`, `family.html` | somalier relate's own tables and plot |
 | `relationships.tsv` | each pair: declared relationship, expected and measured relatedness, opposite homozygotes, sites, verdict and reason |
 | `family.phased.vcf.gz` (+ `.tbi`) | WhatsHap's phasing (only when a child has both parents sequenced) |
@@ -89,6 +117,8 @@ The Nextflow pipeline writes them to `<outdir>/family/`, step 38 to `$GENOME_DIR
 ### Limits
 
 - The gVCFs must be DeepVariant's: the GLnexus preset reads DeepVariant's fields.
+- `run-all.sh` decides from the files under `GENOME_DIR`, not from whether a member's run succeeded: a member whose gVCF is there counts as ready. Step 38 runs on the members ready at that moment; a member processed later needs step 38 run again (the next member's `run-all.sh` does it, or `38-family.sh` by hand).
+- In the Nextflow pipeline the folder is `family/` unless `--family_name` names it, also when a families file holds one family.
 - No reads are used for phasing, so an all-heterozygous trio site stays unphased, and a duo is phased only where the genotypes tell.
 - somalier's relatedness is one number per pair for the whole genome. The chromosome map covers a child and its parents (and grandparents). Stretches shared by any other pair, such as siblings or cousins, come from the shared segments, which need step 26b's panel.
 - The shared segments see only stretches of 2 cM or more, and only on the chromosomes the panel covers (chr1 to chr22). Phasing errors can split a long stretch into shorter ones, so the count of stretches can be too high and the longest stretch too short. Pairs from one endogamous population share many short stretches by chance. The degree estimate of a pair beyond the third degree is rough, and it is rough for any pair when fewer than the 22 autosomes are analysed.

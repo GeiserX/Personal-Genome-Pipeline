@@ -1,0 +1,20 @@
+family	sample	sex	father	mother	partner
+# assets/families.example.tsv: who is related to whom, for steps 38 and 39.
+# One row per sample you sequence (or will), tab separated. The family column
+# groups the rows into families; each family gets its own folder,
+# GENOME_DIR/<family>/, so a family name follows the sample-name rule and is
+# no person's name. Leave the column out for a single family (the file then
+# reads as assets/pedigree.example.tsv).
+#   father, mother  the sample's parents: a sample of the same family, or a
+#                   name with no row of its own for a parent not sequenced
+#   partner         the other parent of the sample's children, or a partner
+#                   planning children (step 39's couple carrier screen)
+#   a child         is a row whose father and/or mother are filled
+#   sex             male, female or unknown ('.' for unknown)
+# '.' or an empty field means not known. A person is in one family, and the
+# parents and partner a row names are in that same family.
+family_a	child_a	female	father_a	mother_a	.
+family_a	father_a	male	.	.	mother_a
+family_a	mother_a	female	.	.	father_a
+family_b	partner_x	male	.	.	partner_y
+family_b	partner_y	female	.	.	partner_x

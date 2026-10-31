@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Step 38: family analysis of two or more processed samples (opt-in)
-# Usage: ./scripts/38-family.sh <family_name> [pedigree.tsv]
+# Usage: ./scripts/38-family.sh <family_name> [pedigree.tsv | families.tsv]
 # Input: a pedigree (assets/pedigree.example.tsv: sample, sex, father, mother,
-#        partner, tab separated; default $GENOME_DIR/<family_name>/pedigree.tsv)
+#        partner, tab separated; default $GENOME_DIR/<family_name>/pedigree.tsv),
+#        or a families file (assets/families.example.tsv: the same with a
+#        leading family column) holding the family <family_name>,
 #        naming two or more samples that have a DeepVariant gVCF in
 #        $GENOME_DIR/<sample>/vcf/<sample>.g.vcf.gz (step 03), and somalier's
 #        sites (setup.sh --sample-qc-data)
 # Output: $GENOME_DIR/<family_name>/, a folder of its own (the name may not be
 #   a sample's):
-#   pedigree.tsv           the pedigree the step read
+#   pedigree.tsv           the pedigree the step read (the family's rows of a
+#                          families file, copied beside it as families.tsv)
+#   family_plan.tsv        which family analyses ran and why (family_report.py plan's table)
 #   family.vcf.gz          the members joint-called by GLnexus
 #   somalier/              somalier relate over the members' gVCFs
 #   relationships.tsv      each pair's declared and measured relatedness, verdict
@@ -49,7 +53,7 @@
 #                      panel, without joint-calling again)
 set -euo pipefail
 
-FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv]}
+FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv | families.tsv]}
 PEDIGREE=${2:-}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # No one sample's folder is writable here: run_in mounts only the family folder.
@@ -141,6 +145,31 @@ for f in "${NEED[@]}"; do
 done
 [ "$IBD_ONLY" = true ] || SITES_C=$(cpath "$SITES") || exit 1
 
+# A families file (a family column: assets/families.example.tsv) holds several
+# families: this family's rows become its own ${OUT}/pedigree.tsv, written by
+# bin/family_report.py plan (which checks the whole file first), and the step
+# reads that. A pedigree without the column is read as it is.
+if awk -F'\t' '{ sub(/\r+$/, "") } /^[ \t]*$/ { next }
+     { sub(/^#+/, ""); for (i = 1; i <= NF; i++) { f = tolower($i); gsub(/^[ \t]+|[ \t]+$/, "", f); if (f == "family") found = 1 }; exit }
+     END { exit !found }' "$PEDIGREE"; then
+  if [ -d "${OUT}/vcf" ] || [ -d "${OUT}/aligned" ]; then
+    echo "ERROR: ${OUT} holds a sample's vcf/ or aligned/ folder; give the family a name of its own." >&2
+    exit 2
+  fi
+  NEW_OUT=$([ -d "$OUT" ] || echo yes)
+  mkdir -p "$OUT"
+  [ "$PEDIGREE" -ef "${OUT}/families.tsv" ] || cp -f "$PEDIGREE" "${OUT}/families.tsv"
+  if ! run_in --rw "$OUT" --cpus 1 --memory 1g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+      python3 /pgp-bin/family_report.py plan --families "${OUT_C}/families.tsv" --family "$FAMILY" --write-pedigree /genome \
+      > /dev/null; then
+    echo "  (families.tsv is the step's copy of ${PEDIGREE})" >&2
+    [ -z "$NEW_OUT" ] || rm -rf "$OUT"
+    exit 2
+  fi
+  echo "Family ${FAMILY} of ${PEDIGREE}: its rows are ${OUT}/pedigree.tsv"
+  PEDIGREE="${OUT}/pedigree.tsv"
+fi
+
 # The samples the pedigree names (its sample column; the first non-blank
 # line is the header), and which of them have a gVCF here. Read as
 # family_report.py reads it: CRLF line ends, whitespace-only lines and spaces
@@ -211,7 +240,11 @@ for s in "${MEMBERS[@]}"; do
   GVCF_ARGS+=(--gvcf "${s}=/genome/${s}/vcf/${s}.g.vcf.gz")
   GVCFS_C+=("/genome/${s}/vcf/${s}.g.vcf.gz")
 done
-"${PY[@]}" prepare --pedigree "${OUT_C}/pedigree.tsv" "${GVCF_ARGS[@]}" --out-dir "$OUT_C"
+# family_plan.tsv: the same decision run-all.sh's plan makes, from the members' ClinVar hits and the panel
+CLINVAR_HAVE=()
+for s in ${NAMED[@]+"${NAMED[@]}"}; do [ ! -f "${GENOME_DIR}/${s}/clinvar/${s}_clinvar_hits.vcf" ] || CLINVAR_HAVE+=("$s"); done
+"${PY[@]}" prepare --pedigree "${OUT_C}/pedigree.tsv" --family "$FAMILY" "${GVCF_ARGS[@]}" \
+  --have-clinvar ${CLINVAR_HAVE[@]+"${CLINVAR_HAVE[@]}"} --ibd-panel "$(ibd_panel_ok && echo yes || echo no)" --out-dir "$OUT_C"
 
 # --- 2. Joint call (GLnexus) --------------------------------------------------------------
 echo ""

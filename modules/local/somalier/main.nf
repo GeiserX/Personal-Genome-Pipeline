@@ -189,8 +189,8 @@ process SAMPLE_QC {
     runs somalier extract on each member's gVCF (a gVCF also gives the
     depth where the sample matches the reference) and somalier relate over
     them with the family's pedigree (FAMILY_PREPARE's family.ped). Its files
-    go to <outdir>/family/somalier, apart from SOMALIER_RELATE's, so a run
-    with sample_qc keeps both.
+    go to <outdir>/<family>/somalier (--family_name, default family), apart
+    from SOMALIER_RELATE's, so a run with sample_qc keeps both.
 
     FAMILY_CHECK compares, pair by pair, the relatedness the pedigree implies
     with somalier's (bin/family_report.py check, the rule scripts/38-family.sh
@@ -204,7 +204,7 @@ process SAMPLE_QC {
 process FAMILY_RELATE {
     label 'process_single'
 
-    publishDir { "${params.outdir}/family/somalier" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}/somalier" }, mode: params.publish_dir_mode
 
     input:
     val(ids)
@@ -262,7 +262,7 @@ process FAMILY_RELATE {
 process FAMILY_CHECK {
     label 'process_single'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
     path(members)

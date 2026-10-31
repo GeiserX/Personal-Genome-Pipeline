@@ -305,11 +305,16 @@ workflow {
     // ─── Pedigree (opt-in: --pedigree) ──────────────────────────────────
     // The family workflow runs only when --pedigree is given, and only on
     // the samples of the samplesheet the pedigree names: two or more, each
-    // with a gVCF (DEEPVARIANT's, or the row's gvcf column). Here only the
-    // sample column is read; FAMILY_PREPARE (bin/family_report.py prepare)
+    // with a gVCF (DEEPVARIANT's, or the row's gvcf column). --pedigree may
+    // be a families file (assets/families.example.tsv), a pedigree with a
+    // leading family column: one family runs, the one --family_name names
+    // (needed when the file holds more than one). Here only the family and
+    // sample columns are read; FAMILY_PREPARE (bin/family_report.py prepare)
     // checks the rest before the joint call starts. Read with containsKey,
     // so a run without the option is not told about an undefined parameter.
     def pedigree   = params.containsKey('pedigree') ? params.pedigree : null
+    // The family's folder under --outdir: --family_name, else 'family'
+    def family_dir = params.family_name ?: 'family'
     def family_ids = []
     def couple_ids = []
     if (pedigree) {
@@ -318,18 +323,37 @@ workflow {
         def si        = ped_cols.indexOf('sample')
         if (si < 0) {
             error "--pedigree ${pedigree}: the first line must be a header with a 'sample' column " +
-                  "(sample, sex, father, mother, partner, tab separated; see assets/pedigree.example.tsv)."
+                  "(sample, sex, father, mother, partner, tab separated, after an optional family column; see " +
+                  "assets/pedigree.example.tsv and assets/families.example.tsv)."
         }
-        def ped_samples = ped_lines.drop(1).findAll { l -> !l.startsWith('#') }.collect { l ->
-            def v = l.split('\t', -1)
-            si < v.size() ? v[si].trim() : ''
+        if (!(family_dir ==~ /^[a-zA-Z0-9._-]+$/) || family_dir.startsWith('-')) {
+            error "--family_name '${family_dir}' names the family's folder: use only a-z, A-Z, 0-9, '.', '_', '-', " +
+                  "and do not start it with '-'."
         }
+        def ped_rows = ped_lines.drop(1).findAll { l -> !l.startsWith('#') }
+            .collect { l -> l.split('\t', -1).collect { c -> c.trim() } }
+        def fi = ped_cols.indexOf('family')
+        if (fi >= 0) {
+            def families = ped_rows.collect { v -> fi < v.size() ? v[fi] : '' }.findAll { f -> f && f != '.' }.unique().sort()
+            if (params.family_name && !families.contains(params.family_name)) {
+                error "--family_name ${params.family_name}: ${pedigree} has no such family; its families are: " +
+                      "${families ? families.join(', ') : 'none'}."
+            }
+            if (!params.family_name && families.size() > 1) {
+                error "--pedigree ${pedigree} holds ${families.size()} families (${families.join(', ')}): name the " +
+                      "one to run with --family_name."
+            }
+            def chosen = params.family_name ?: (families ? families[0] : null)
+            if (chosen) {
+                ped_rows = ped_rows.findAll { v -> fi < v.size() && v[fi] == chosen }
+            }
+        }
+        def ped_samples = ped_rows.collect { v -> si < v.size() ? v[si] : '' }
         family_ids = ped_samples.findAll { s -> seen_samples.contains(s) }.unique()
         // Partners (the partner column) among those samples: the couple
         // carrier screen (step 39) runs inside FAMILY when there are two.
         def pi = ped_cols.indexOf('partner')
-        couple_ids = ped_lines.drop(1).findAll { l -> !l.startsWith('#') }
-            .collect { l -> l.split('\t', -1).collect { c -> c.trim() } }
+        couple_ids = ped_rows
             .findAll { v -> pi >= 0 && si < v.size() && pi < v.size() && family_ids.contains(v[si]) && family_ids.contains(v[pi]) }
             .collectMany { v -> [v[si], v[pi]] }
             .unique()
@@ -339,9 +363,9 @@ workflow {
                   "${params.input} (${family_ids ? family_ids.join(', ') : 'none'}): the family analysis needs two " +
                   "or more. Add the other members' rows to the samplesheet, or leave --pedigree out."
         }
-        if (seen_samples.contains('family')) {
-            error "A sample is named 'family', the folder of <outdir> where --pedigree writes the family results. " +
-                  "Rename the sample."
+        if (seen_samples.contains(family_dir)) {
+            error "A sample is named '${family_dir}', the folder of <outdir> where --pedigree writes the family " +
+                  "results. Rename the sample, or give the family another name with --family_name."
         }
         if (!params.somalier_sites) {
             error "--pedigree checks the declared relationships with somalier and needs --somalier_sites " +
@@ -826,6 +850,8 @@ workflow {
             ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
             ANNOTATION.out.clinical_vcf.filter { meta, f -> family_ids.contains(meta.id) },
             Channel.value(file(pedigree, checkIfExists: true)),
+            // The partners with ClinVar hits this run (family_plan.tsv's couple row)
+            Channel.value(couple_ids && tools_list.contains('clinvar') ? couple_ids : []),
             ch_somalier_sites,
             ch_reference,
             ch_reference_fai,
@@ -1179,13 +1205,13 @@ workflow {
     // this run, beside a data file this run replaced, it may index other
     // data; a hard link shares its time with the task's file in work/, and
     // touching that would make the next -resume run its downstream tasks
-    // again. The search covers each sample's folder and family/ under
+    // again. The search covers each sample's folder and the family's under
     // --outdir, six levels down, and skips the folder that holds the work
     // directory (run-all.sh puts it in <sample>/nextflow/). An index named
     // sample.bai or sample.crai belongs to sample.bam or sample.cram when
     // there is no sample.bai's data file.
     def index_ext   = ['.bai', '.crai', '.csi', '.tbi']
-    def index_roots = (samplesheet_rows.collect { row -> row.sample } + ['family']).unique()
+    def index_roots = (samplesheet_rows.collect { row -> row.sample } + [params.family_name ?: 'family']).unique()
         .collect { d -> file("${params.outdir}/${d}") }
     def index_skip  = workflow.workDir.toAbsolutePath().normalize().toString() + '/'
     run_info.onComplete {

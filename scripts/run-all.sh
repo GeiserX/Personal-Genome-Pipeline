@@ -27,6 +27,11 @@
 # Run as scripts after the pipeline: GRIDSS=true (04b), IMPUTATION=true (14),
 #   SOMATIC=true (29), EXTRA_CALLERS=gatk,freebayes,strelka2,octopus (03a-03d), BENCHMARK=true (needs
 #   EXTRA_CALLERS or a second caller VCF); then the HTML report (24) and the text report, also after a failed pipeline.
+# FAMILIES=families.tsv (who is related to whom, assets/families.example.tsv): when the sample is in a family, the sex
+#   must agree with the file (exit 2 before the pipeline). After the pipeline, before the reports, bin/family_report.py
+#   plan writes GENOME_DIR/<family>/family_plan.tsv from what the members have, and step 38 (38-family.sh) and step 39
+#   (39-couple.sh) run when it says so, or are recorded as skipped with the reason (waiting: a member has no gVCF yet).
+#   The other members are never run here: run run-all.sh for each, and the last one runs the family steps.
 #   A step without its data or BAM is skipped. A report-only tool whose task fails is skipped, and its step is marked
 #   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem,
 #   you passed no -w, -c or --publish_dir_mode, and you run as root or Linux's fs.protected_hardlinks is 0 (then a user
@@ -53,6 +58,21 @@ if ! command -v nextflow >/dev/null 2>&1 || [[ ! "${java_major:-}" =~ ^[0-9]+$ ]
     "  Or run the steps one by one: ./scripts/<step>.sh ${SAMPLE} (docs/getting-started.md)." >&2; exit 2; fi
 on SKIP_VALIDATION || "${SCRIPT_DIR}/validate-setup.sh" "$SAMPLE" \
   || { echo "ERROR: setup validation failed; fix the items above. To bypass: SKIP_VALIDATION=true $0 ${SAMPLE} ${SEX}" >&2; exit 1; }
+# The sample's family (FAMILIES): the file is checked and the sex must be the one it gives, before anything runs.
+FAM=""
+famplan() {  # famplan [run_in options] -- [plan options]: bin/family_report.py plan on the FAMILIES file
+  local o=(); while [ "$1" != -- ]; do o+=("$1"); shift; done; shift
+  run_in ${o[@]+"${o[@]}"} --cpus 1 --memory 1g -v "${FAMILIES}:/pgp/families.tsv:ro" -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
+    "$PYTHON_IMAGE" python3 /pgp-bin/family_report.py plan --families /pgp/families.tsv "$@"
+}
+if [ -n "${FAMILIES:-}" ]; then
+  [ -f "$FAMILIES" ] || { echo "ERROR: FAMILIES=${FAMILIES}: no such file (assets/families.example.tsv shows the format)" >&2; exit 2; }
+  FAMILIES="$(cd "$(dirname "$FAMILIES")" && pwd)/$(basename "$FAMILIES")"
+  FAM=$(famplan -- --sample "$SAMPLE" --sex "$SEX" --which) || { echo "ERROR: FAMILIES=${FAMILIES}: fix the file or the sex (above)." >&2; exit 2; }
+  FAM=$(tail -n 1 <<< "$FAM")
+  if [ -n "$FAM" ]; then echo "[Family] ${SAMPLE} is in family ${FAM} (${FAMILIES}): steps 38 and 39 are planned after the pipeline"
+  else echo "[Family] ${SAMPLE} is in no family of ${FAMILIES}"; fi
+fi
 mkdir -p "${S}/nextflow" "$LOG_DIR"
 GENOME_DIR="$G" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" || echo "WARNING: could not write ${S}/run_manifest.tsv"
 STATUS="${LOG_DIR}/run_status.tsv"  # bin/collect_summary.py marks results older than this run stale
@@ -291,7 +311,40 @@ for n in "${RUNS[@]}"; do
 done
 # The reports are written after a failed pipeline too: they show what finished and mark older results stale.
 [ "$rc" -eq 0 ] || { echo "ERROR: the pipeline failed (exit ${rc}): see above and ${S}/nextflow/.nextflow.log. Fix the cause and run the same command; -resume reruns only what did not finish. Writing the reports of what finished." >&2; OPTIN=(); }
+# Steps 38 and 39 for the sample's family, after the pipeline and the opt-in scripts and before the reports (so they
+# show this run's couple table), as family_report.py plan decides from what is under GENOME_DIR now: each member's
+# gVCF (with its index) and step 06's ClinVar hits, and step 26b's panel for the shared segments.
+family_steps() {
+  [ -n "$FAM" ] && [ "$rc" -eq 0 ] || return 0
+  HG=() HC=()
+  for f in "$G"/*/vcf/*.g.vcf.gz; do m=${f#"$G"/}; m=${m%%/*}; [ "$f" != "${G}/${m}/vcf/${m}.g.vcf.gz" ] || [ ! -f "${f}.tbi" ] || HG+=("$m"); done
+  for f in "$G"/*/clinvar/*_clinvar_hits.vcf; do m=${f#"$G"/}; m=${m%%/*}; [ "$f" != "${G}/${m}/clinvar/${m}_clinvar_hits.vcf" ] || [ ! -f "$f" ] || HC+=("$m"); done
+  IBD=no; [ "$AF" = none ] || { [ -s "${AF}/panel/DONE" ] && [ -d "${AF}/maps" ] && IBD=yes; } || true
+  FP="${G}/${FAM}/family_plan.tsv"; mkdir -p "${G}/${FAM}"
+  echo "[Family] ${FAM}: ${FP}"
+  famplan --rw "${G}/${FAM}" -- --family "$FAM" --have-gvcf ${HG[@]+"${HG[@]}"} --have-clinvar ${HC[@]+"${HC[@]}"} \
+    --ibd-panel "$IBD" --out "/genome/${FAM}/family_plan.tsv" || { echo "  FAILED: family_report.py plan" >&2; failed=1; }
+  # decision<TAB>reason of step 38 (the joint call) and step 39 (a couple that runs, else the first couple)
+  d38=$(awk -F'\t' '$2 == "joint_call" {print $4 "\t" $5; exit}' "$FP" 2>/dev/null)
+  d39=$(awk -F'\t' '$2 == "couple_carrier" {r = r ? r : $4 "\t" $5; if ($4 == "runs") {r = $4 "\t" $5; exit}} END {print r}' "$FP" 2>/dev/null)
+  famstep() {  # famstep STEP SCRIPT: run the family step's script on the family, record ok or failed
+    local r=ok; printf 'step\t%s\tplanned\n' "$1" >> "$STATUS"; echo "[${2%.sh}] ${FAM}, log: ${LOG_DIR}/${2%.sh}.log"
+    bash "${SCRIPT_DIR}/$2" "$FAM" "$FAMILIES" > "${LOG_DIR}/${2%.sh}.log" 2>&1 || { r=failed failed=1; echo "  FAILED"; }
+    printf 'step\t%s\t%s\n' "$1" "$r" >> "$STATUS"
+  }
+  case "${d38%%$'\t'*}" in
+    runs) famstep 38 38-family.sh ;;
+    waiting) printf 'step\t38\tskipped (waiting: %s)\n' "${d38#*$'\t'}" >> "$STATUS"; echo "  38 Family: waiting: ${d38#*$'\t'}" ;;
+    *) printf 'step\t38\tskipped (%s)\n' "${d38#*$'\t'}" >> "$STATUS"; echo "  38 Family: skipped: ${d38#*$'\t'}" ;;
+  esac
+  case "${d39%%$'\t'*}" in
+    runs) famstep 39 39-couple.sh ;;
+    waiting) printf 'step\t39\tskipped (waiting: %s)\n' "${d39#*$'\t'}" >> "$STATUS"; echo "  39 Couple carrier screen: waiting: ${d39#*$'\t'}" ;;
+    *) printf 'step\t39\tskipped (%s)\n' "${d39#*$'\t'}" >> "$STATUS"; echo "  39 Couple carrier screen: skipped: ${d39#*$'\t'}" ;;
+  esac
+}
 for sc in "${OPTIN[@]}" 24-html-report.sh generate-report.sh; do
+  [ "$sc" != 24-html-report.sh ] || family_steps
   [ "$sc" != 24-html-report.sh ] || GENOME_DIR="$G" HLA_DAT="${H:-}" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" || true
   r=ok; echo "[${sc%.sh}] log: ${LOG_DIR}/${sc%.sh}.log"; bash "${SCRIPT_DIR}/${sc}" "$SAMPLE" > "${LOG_DIR}/${sc%.sh}.log" 2>&1 || { r=failed failed=1; echo "  FAILED"; }
   if [[ "$sc" == [0-9]*-*.sh && "$sc" != 24-* ]]; then printf 'step\t%s\t%s\n' "${sc%%-*}" "$r" >> "$STATUS"; fi

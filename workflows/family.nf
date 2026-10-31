@@ -7,7 +7,8 @@
     needs a gVCF: the one DEEPVARIANT writes, or the samplesheet's gvcf
     column.
 
-      FAMILY_PREPARE  check the pedigree and each gVCF's sample name
+      FAMILY_PREPARE  check the pedigree and each gVCF's sample name, pick
+                      the family of a families file, write family_plan.tsv
       GLNEXUS         joint call of the gVCFs (GLnexus, DeepVariantWGS)
       GLNEXUS_VCF     the joint VCF, family.vcf.gz
       FAMILY_RELATE   somalier extract on each gVCF, relate over the family
@@ -24,8 +25,11 @@
                       when the pedigree marks two members as partners and
                       main.nf hands their ClinVar hits over
 
-    Everything is published under <outdir>/family/, and each partner's copy
-    of the couple table under <outdir>/<id>/couple/. docs/multi-sample.md
+    Everything is published under <outdir>/<family>/ (--family_name, default
+    family/), and each partner's copy of the couple table under
+    <outdir>/<id>/couple/. With a families file (a leading family column)
+    FAMILY_PREPARE writes the family's own rows as pedigree.tsv, which the
+    steps after it read, and family_plan.tsv says which analyses run. docs/multi-sample.md
     describes the pedigree, the outputs and the limits; docs/39-couple.md the
     couple screen.
 
@@ -44,7 +48,8 @@ workflow FAMILY {
     take:
     ch_gvcf           // channel: [meta, g.vcf.gz, index] of each member
     ch_candidates     // channel: [meta, clinical.vcf.gz] of the members clinical_filter ran for
-    ch_pedigree       // channel: val(path) — the --pedigree file
+    ch_pedigree       // channel: val(path) — the --pedigree file (a pedigree, or a families file)
+    ch_clinvar_ids    // channel: val(list) — the partners whose ClinVar hits this run hands over, for family_plan.tsv
     ch_sites          // channel: val(path) — somalier's sites VCF
     ch_reference      // channel: val(path) — reference FASTA
     ch_reference_fai  // channel: val(path) — reference .fai
@@ -65,7 +70,9 @@ workflow FAMILY {
     ch_files   = ch_members.map { rows -> rows.collect { r -> r[1] } }
     ch_indexes = ch_members.map { rows -> rows.collect { r -> r[2] } }
 
-    FAMILY_PREPARE(ch_pedigree, ch_ids, ch_sexes, ch_files)
+    FAMILY_PREPARE(ch_pedigree, ch_ids, ch_sexes, ch_files, ch_clinvar_ids)
+    // The family's own rows (one family of a families file), for the steps after
+    ch_family_ped = FAMILY_PREPARE.out.pedigree
     GLNEXUS(ch_ids, ch_files, FAMILY_PREPARE.out.members)
     GLNEXUS_VCF(GLNEXUS.out.bcf)
     FAMILY_RELATE(ch_ids, ch_files, ch_indexes, ch_sites, ch_reference, ch_reference_fai, FAMILY_PREPARE.out.ped)
@@ -89,7 +96,7 @@ workflow FAMILY {
     FAMILY_IBD_SITES(GLNEXUS_VCF.out.vcf, ch_ibd_panel, FAMILY_CHECK.out.relationships)
     FAMILY_IBD_PHASE(FAMILY_IBD_SITES.out.sites, ch_ibd_panel)
     FAMILY_IBD_SEGMENTS(FAMILY_IBD_PHASE.out.phased, FAMILY_IBD_SITES.out.sites, ch_ibd_panel)
-    FAMILY_IBD_REPORT(ch_pedigree, FAMILY_IBD_SITES.out.sites, FAMILY_IBD_PHASE.out.phased,
+    FAMILY_IBD_REPORT(ch_family_ped, FAMILY_IBD_SITES.out.sites, FAMILY_IBD_PHASE.out.phased,
                       FAMILY_IBD_SEGMENTS.out.segments, ch_ibd_panel)
 
     // The couple screen reads each partner's own step outputs, not the joint
@@ -100,7 +107,7 @@ workflow FAMILY {
     def benign = params.annotsv_annotations ?
         file("${params.annotsv_annotations}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/benign_Loss_SV_GRCh38.sorted.bed") : null
     COUPLE_CARRIER(
-        ch_pedigree, ch_ids, ch_sexes, ch_couple_outputs.collect(sort: true),
+        ch_family_ped, ch_ids, ch_sexes, ch_couple_outputs.collect(sort: true),
         ch_carrier_genes, ch_exons, Channel.value(benign && benign.exists() ? benign : []), ch_par_bed
     )
 
