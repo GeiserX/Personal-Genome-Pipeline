@@ -240,12 +240,25 @@ def chapter_checks(work):
     twice = render_report.CHAPTERS + (("x", "X", "?", (("x", "X", ("clinvar",)),)),)
     check("chapters: red control: a key in two sections is caught", chapter_key_problems(twice) == ["twice clinvar"],
           chapter_key_problems(twice))
+    real_section_of = render_report.SECTION_OF
+    render_report.SECTION_OF = {k: v for k, v in real_section_of.items() if k != "telomere"}
     try:
-        render_report.SECTION_OF["no_such_step"]
-        unknown = False
-    except KeyError:
-        unknown = True
-    check("chapters: a card for a key no section lists stops the report", unknown)
+        for name, fn in (("HTML", render_report.html_report), ("text", render_report.text_report)):
+            try:
+                fn(summ)
+                stopped = False
+            except KeyError:
+                stopped = True
+            check(f"chapters: a card for a key no section lists stops the {name} report", stopped)
+    finally:
+        render_report.SECTION_OF = real_section_of
+
+    for kind, hg in (("y", "R-M269*(xR-L23)"), ("mt", "H1a+16189")):
+        rows = render_report.explore_html({"haplogroup": hg, "explore": collect_summary.haplogroup_explore(kind, hg)})
+        marks = re.findall(r'<span class="offsite-note">\(([^)]*)\)</span>', "".join(rows))
+        want = [render_report.OFFSITE_HAPLOGROUP] * (len(marks) - 1) + [render_report.OFFSITE]
+        check(f"chapters: {hg}: the FamilyTreeDNA and YFull links say the address carries the haplogroup, the docs link does not",
+              len(marks) >= 3 and marks == want, marks)
 
     check("chapters: the Content-Security-Policy forbids every fetch",
           '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; '

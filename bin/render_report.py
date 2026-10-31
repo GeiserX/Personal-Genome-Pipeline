@@ -1873,8 +1873,10 @@ def offsite_link(url, text, why=OFFSITE):
 
 
 def explore_html(d):
-    hg = d.get("haplogroup") or ""
-    rows = [stat(x["name"], offsite_link(x["url"], x["url"], OFFSITE_HAPLOGROUP if hg and hg in x["url"] else OFFSITE))
+    # Every explore address but the docs one carries the haplogroup, percent-encoded
+    # and for Y cut at its "*", so it is told by where it goes, not by a substring.
+    rows = [stat(x["name"], offsite_link(x["url"], x["url"],
+                                         OFFSITE if x["url"].startswith(collect_summary.EXPLORE_DOCS) else OFFSITE_HAPLOGROUP))
             for x in d.get("explore", [])]
     return rows + [small_note(EXPLORE_NOTE)] if rows else []
 
