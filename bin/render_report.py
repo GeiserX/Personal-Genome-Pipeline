@@ -652,10 +652,92 @@ def annotsv_lines(d):
     return lines
 
 
+# --- chapters ----------------------------------------------------------------------
+
+# Both reports in reading order. A chapter is (id, title, question, sections);
+# a section is (id, title, keys), the keys of collect_summary.SECTIONS whose
+# results it shows. Every key is in exactly one section, and a report that
+# writes for a key no section lists stops with a KeyError: a new step gets its
+# row here. The section ids are the HTML anchors; the titles are the table of
+# contents. The steps not run and the limits come after the last chapter.
+CHAPTERS = (
+    ("quality", "Quality", "Can I trust this data?", (
+        ("qc", "Quality control", ("coverage", "sex_check", "sample_qc", "read_count")),
+        ("variants", "Variant calling", ("variants",)),
+    )),
+    ("clinical", "Clinical", "Is there anything to take to a doctor?", (
+        ("clinvar", "ClinVar screen and hits", ("clinvar",)),
+        ("clinical-filter", "Clinical filter and secondary findings", ("clinical",)),
+        ("cpsr", "Cancer predisposition", ("cpsr",)),
+        ("slivar", "Variant prioritization", ("slivar",)),
+        ("exomiser", "Symptom-driven ranking", ("exomiser",)),
+        ("structural-variants", "Structural variants", ("manta", "delly", "cnvpytor", "sv_consensus", "annotsv")),
+        ("expansions", "Repeat expansions", ("expansions",)),
+        ("vntyper", "MUC1 repeat (ADTKD)", ("vntyper",)),
+        ("mito", "Mitochondrial variants", ("mito",)),
+        ("lpa", "Lp(a)", ("lpa",)),
+        ("chip", "Clonal haematopoiesis", ("chip",)),
+        ("mosaic", "Mosaic loss of chromosome Y or X", ("mosaic_sex_loss",)),
+        ("mosaic-mca", "Mosaic chromosomal alterations", ("mosaic",)),
+    )),
+    ("carrier", "Carrier", "What could I pass on to a child?", (
+        ("carrier-list", "Carrier list", ("carrier",)),
+        ("couple", "Couple carrier screen", ("couple",)),
+        ("paralogs", "Paralog genes and SMN1", ("paralogs", "parascopy")),
+    )),
+    ("medicines", "Medicines", "How might I respond to medicines?", (
+        ("pharmcat", "PharmCAT", ("pharmcat",)),
+        ("cpic", "CPIC recommendations", ("cpic",)),
+        ("cyp2d6", "pypgx, Cyrius and CYP2D6", ("pypgx", "cyrius")),
+        ("hla", "HLA typing", ("hla",)),
+    )),
+    ("ancestry", "Ancestry", "Where do my ancestors come from?", (
+        ("ancestry-fine", "Fine-grained ancestry", ("ancestry_fine",)),
+        ("mt-haplogroup", "Mitochondrial haplogroup", ("haplogroup",)),
+        ("y-chromosome", "Y chromosome", ("y_haplogroup", "y_str")),
+        ("archaic", "Archaic ancestry", ("archaic",)),
+        ("ancient", "Ancient populations", ("ancient",)),
+        ("roh", "Runs of homozygosity", ("roh",)),
+    )),
+    ("traits", "Traits and scores", "What do studies say about my traits and risk scores?", (
+        ("traits-panel", "Traits", ("traits",)),
+        ("prs", "Polygenic risk scores", ("prs",)),
+        ("bloodtype", "Blood groups", ("bloodtype",)),
+        ("telomere", "Telomere content", ("telomere",)),
+    )),
+    ("other", "Other and exports", "What else did the run find or write?", (
+        ("viral", "Viral DNA", ("viral",)),
+        ("consumer-export", "Raw-data export", ("consumer_export",)),
+    )),
+)
+# The section id of each summary key.
+SECTION_OF = {k: sid for _, _, _, secs in CHAPTERS for sid, _, keys in secs for k in keys}
+
+
+def section_keys(sid):
+    return next(keys for _, _, _, secs in CHAPTERS for x, _, keys in secs if x == sid)
+
+
 def text_report(s):
     S = s["sections"]
-    out = []
-    w = out.append
+    # Each block writes into its section's list (at(key), or head(key));
+    # the lists are joined in CHAPTERS order at the end.
+    parts = {"top": []}
+    out = parts["top"]
+
+    class Sink:
+        def append(self, line):
+            out.append(line)
+
+        def extend(self, lines):
+            out.extend(lines)
+
+    def at(key):
+        nonlocal out
+        out = parts.setdefault(key if key in ("top", "end") else SECTION_OF[key], [])
+
+    sink = Sink()
+    w = sink.append
     w("=" * 80)
     w("  GENOMICS ANALYSIS REPORT")
     w(f"  Sample: {s['sample']}")
@@ -667,6 +749,7 @@ def text_report(s):
 
     def head(key, title=None):
         sec = S.get(key, MISSING)
+        at(key)
         if sec["state"] == "missing":
             return False
         w(f"## {title or sec['title']}")
@@ -679,6 +762,7 @@ def text_report(s):
         return sec["state"] in ("ok", "stale")
 
     # QC
+    at("coverage")
     cov, sexc, sqc = S["coverage"], S["sex_check"], S.get("sample_qc", MISSING)
     rdc = S.get("read_count", MISSING)
     if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
@@ -801,6 +885,7 @@ def text_report(s):
             w(f"  {line}")
         w("")
 
+    at("pypgx")
     cn_rows = pgx_copy_number(S)
     if cn_rows:
         w("## PGx copy number")
@@ -809,6 +894,7 @@ def text_report(s):
             w(f"  {g:<8} {v}")
         w("")
 
+    at("cyrius")
     calls = s["cyp2d6"]["calls"]
     verdict = cyp2d6_verdict(s["cyp2d6"])
     if any(calls.values()) or verdict:
@@ -836,6 +922,7 @@ def text_report(s):
             w(f"  {line}")
         w(f"  {PARASCOPY_NOTE}")
         w("")
+    at("paralogs")
     unchecked = paralogs_unchecked(S)
     if unchecked:
         w("## Paralog Copy Number")
@@ -1017,7 +1104,7 @@ def text_report(s):
         w("")
 
     if head("chip", "Clonal Haematopoiesis (CHIP, step 49)"):
-        out.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
+        sink.extend(f"  {line}" for line in chip_lines(S["chip"]["data"], s["sample"]))
         w("")
 
     if head("mito", "Mitochondrial Variants (Mutect2)"):
@@ -1032,7 +1119,7 @@ def text_report(s):
         w("")
 
     if head("traits", "Traits Panel (step 42)"):
-        out.extend(traits_text(S["traits"]["data"], s["sample"]))
+        sink.extend(traits_text(S["traits"]["data"], s["sample"]))
         w("")
 
     if head("archaic", "Archaic Ancestry (IBDmix, step 43)"):
@@ -1051,7 +1138,7 @@ def text_report(s):
         w("")
 
     if head("exomiser", "Symptom-Driven Ranking (Exomiser, step 48)"):
-        out.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
+        sink.extend(exomiser_text(S["exomiser"]["data"], s["sample"]))
         w("")
 
     if head("mosaic", "Mosaic Chromosomal Alterations (MoChA, step 51)"):
@@ -1111,6 +1198,7 @@ def text_report(s):
             w("  (Candidates only: unphased single-sample data. See docs/31-slivar.md)")
         w("")
 
+    at("end")
     w("## Steps Not Run")
     w("---")
     if s["not_run"]:
@@ -1133,47 +1221,109 @@ def text_report(s):
     w("  DISCLAIMER: This is NOT a clinical report. Discuss findings with a")
     w("  qualified healthcare professional before making medical decisions.")
     w("=" * 80)
-    return "\n".join(out) + "\n"
+    lines = parts["top"]
+    for n, (_, title, question, secs) in enumerate(CHAPTERS, 1):
+        chapter = [x for sid, _, _ in secs for x in parts.get(sid, [])]
+        if chapter:
+            lines += ["#" * 80, f"#  {n}. {title.upper()}: {question}", "#" * 80, ""] + chapter
+    return "\n".join(lines + parts["end"]) + "\n"
 
 
 # --- html ------------------------------------------------------------------------
 
 CSS = """
+  :root { --bg: #15171c; --card: #1e2128; --fg: #e3e5ea; --muted: #a3a9b4; --line: #2e333c; --head: #262a32;
+          --accent: #8cbcf0; --hdr: linear-gradient(135deg, #12324d 0%, #1f5f8f 100%); --hdr-fg: #f2f6fa;
+          --green-bg: #1d3b2a; --green-fg: #8ee0ae; --yellow-bg: #3f3618; --yellow-fg: #f2d77c;
+          --red-bg: #4a2424; --red-fg: #f5a9a2; --gray-bg: #2d3139; --gray-fg: #b6bbc4;
+          --state-bg: #1f3550; --state-fg: #a9cdf5; --stale-bg: #3c2e16; --stale-fg: #f4ca8c;
+          --caveat-bg: #232a35; --disc-bg: #3a3214; --disc-line: #a8861c; color-scheme: dark; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-         background: #f5f5f5; color: #333; line-height: 1.6; }
-  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
-  .header { background: linear-gradient(135deg, #1a5276 0%, #2e86c1 100%);
-            color: white; padding: 30px; border-radius: 12px; margin-bottom: 24px; }
+         background: var(--bg); color: var(--fg); line-height: 1.6; }
+  a { color: var(--accent); }
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; max-width: 1400px;
+            margin: 0 auto; padding: 20px; }
+  .toc { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 8px 0;
+         font-size: 13px; }
+  .toc .toc-title { font-size: 15px; color: var(--accent); margin-bottom: 8px; }
+  .toc ol { list-style: none; }
+  .toc > ol > li { margin-bottom: 10px; }
+  .toc > ol > li > a { font-weight: 600; }
+  .toc ol ol { margin: 2px 0 0 4px; }
+  .toc a { color: var(--fg); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot-ok { background: #5b9ee6; } .dot-stale, .dot-incomplete { background: #e0b94a; }
+  .dot-failed, .dot-part { background: #e2685d; } .dot-missing { background: #6b717c; }
+  .header { background: var(--hdr); color: var(--hdr-fg); padding: 26px 30px; border-radius: 12px; margin-bottom: 16px; }
   .header h1 { font-size: 28px; margin-bottom: 8px; }
-  .header .meta { opacity: 0.85; font-size: 14px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 24px; }
-  .card { background: white; border-radius: 10px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  .card h2 { font-size: 18px; color: #1a5276; margin-bottom: 16px;
-             padding-bottom: 8px; border-bottom: 2px solid #eee; }
+  .header .meta { opacity: 0.9; font-size: 14px; }
+  .print-hint { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+  .chapter { margin-bottom: 32px; }
+  .chapter-title { font-size: 22px; color: var(--accent); }
+  .question { color: var(--muted); margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  .sec { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 12px; }
+  .sec:target .card { outline: 2px solid var(--accent); }
+  .card { background: var(--card); border-radius: 10px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .card h2 { font-size: 18px; color: var(--accent); margin-bottom: 8px;
+             padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+  .card h3 { font-size: 15px; margin: 12px 0 6px; }
+  .sec-meta { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .sec-meta .anchor { color: var(--muted); }
+  .caveat { font-size: 13px; background: var(--caveat-bg); border-left: 3px solid var(--accent);
+            padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .files { font-size: 13px; color: var(--muted); }
+  .offsite-note { font-size: 12px; color: var(--muted); font-weight: normal; }
   .stat { display: flex; justify-content: space-between; padding: 8px 0;
-          border-bottom: 1px solid #f0f0f0; gap: 12px; }
+          border-bottom: 1px solid var(--line); gap: 12px; }
   .stat:last-child { border-bottom: none; }
-  .stat .label { color: #666; }
+  .stat .label { color: var(--muted); }
   .stat .value { font-weight: 600; text-align: right; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 12px;
            font-size: 13px; font-weight: 600; }
-  .badge-green { background: #d5f5e3; color: #196f3d; }
-  .badge-yellow { background: #fef9e7; color: #7d6608; }
-  .badge-red { background: #fadbd8; color: #922b21; }
-  .badge-gray { background: #eee; color: #666; }
-  .stale { background: #fdebd0; color: #7e5109; border-radius: 6px; padding: 6px 10px;
+  .badge-green { background: var(--green-bg); color: var(--green-fg); }
+  .badge-yellow { background: var(--yellow-bg); color: var(--yellow-fg); }
+  .badge-red { background: var(--red-bg); color: var(--red-fg); }
+  .badge-gray { background: var(--gray-bg); color: var(--gray-fg); }
+  .badge-state { background: var(--state-bg); color: var(--state-fg); }
+  .stale { background: var(--stale-bg); color: var(--stale-fg); border-radius: 6px; padding: 6px 10px;
            font-size: 13px; margin-bottom: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
-  th { background: #f8f9fa; font-weight: 600; color: #555; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { background: var(--head); font-weight: 600; color: var(--muted); }
   .full-width { grid-column: 1 / -1; }
   ul.plain { margin-left: 18px; }
-  .disclaimer { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
+  .disclaimer { background: var(--disc-bg); border: 1px solid var(--disc-line); border-radius: 8px;
                 padding: 16px; margin-top: 24px; font-size: 14px; }
-  .footer { text-align: center; color: #999; font-size: 13px; margin-top: 24px; padding: 16px; }
-  .footer table { font-size: 12px; color: #666; margin-top: 8px; }
+  .footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 24px; padding: 16px; }
+  .footer table { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  @media (max-width: 900px) { .layout { display: block; } .toc { position: static; max-height: none; } }
   @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  /* Print is light. With a section or a chapter in the address (#id, from
+     the contents), only it prints, with the header, the list of what is not
+     assessed (.always) and the disclaimer. A browser without :has() prints
+     everything. */
+  @media print {
+    :root { --bg: #fff; --card: #fff; --fg: #111; --muted: #444; --line: #ccc; --head: #f0f0f0; --accent: #1a5276;
+            --hdr: #fff; --hdr-fg: #111; --green-bg: #d5f5e3; --green-fg: #196f3d; --yellow-bg: #fef9e7;
+            --yellow-fg: #7d6608; --red-bg: #fadbd8; --red-fg: #922b21; --gray-bg: #eee; --gray-fg: #555;
+            --state-bg: #e3eefa; --state-fg: #1a4a7a; --stale-bg: #fdebd0; --stale-fg: #7e5109;
+            --caveat-bg: #f4f6f8; --disc-bg: #fff3cd; --disc-line: #c9a227; color-scheme: light; }
+    .toc, .print-hint, .sec-meta .anchor { display: none; }
+    .layout { display: block; padding: 0; max-width: none; }
+    .header { border: 1px solid #999; padding: 12px 16px; }
+    .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+    .sec:target .card { outline: none; }
+    .grid { display: block; } .sec { margin-bottom: 16px; }
+    body:has(main :target) .chapter:not(:target):not(:has(:target)):not(:has(.always)) { display: none; }
+    body:has(.sec:target) .sec:not(:target):not(.always) { display: none; }
+    body:has(.chapter:target) .chapter:not(:target) .sec:not(.always) { display: none; }
+    body:has(main :target) .chapter:not(:target):not(:has(:target)) > .chapter-title,
+    body:has(main :target) .chapter:not(:target):not(:has(:target)) > .question { display: none; }
+  }
 """
 
 
@@ -1711,8 +1861,23 @@ def explore_lines(d):
     return lines + [EXPLORE_NOTE] if lines else []
 
 
+# An address that leaves this computer: marked, so a reader knows before
+# opening it. The haplogroup links carry the haplogroup in the address.
+OFFSITE = "opens a website"
+OFFSITE_HAPLOGROUP = "opens a website; the address carries the haplogroup"
+
+
+def offsite_link(url, text, why=OFFSITE):
+    return (f'<span class="offsite"><a href="{E(url)}">{E(text)}</a> '
+            f'<span class="offsite-note">({E(why)})</span></span>')
+
+
 def explore_html(d):
-    rows = [stat(x["name"], f'<a href="{E(x["url"])}">{E(x["url"])}</a>') for x in d.get("explore", [])]
+    # Every explore address but the docs one carries the haplogroup, percent-encoded
+    # and for Y cut at its "*", so it is told by where it goes, not by a substring.
+    rows = [stat(x["name"], offsite_link(x["url"], x["url"],
+                                         OFFSITE if x["url"].startswith(collect_summary.EXPLORE_DOCS) else OFFSITE_HAPLOGROUP))
+            for x in d.get("explore", [])]
     return rows + [small_note(EXPLORE_NOTE)] if rows else []
 
 
@@ -1722,7 +1887,7 @@ def stat(label, value):
 
 def small_note(text):
     """A sentence under a card's numbers."""
-    return f'    <p style="font-size:13px;color:#555;margin-top:8px">{E(text)}</p>'
+    return f'    <p class="note">{E(text)}</p>'
 
 
 def badge(text, colour):
@@ -1768,15 +1933,12 @@ def card(sec, title, body, full=False):
 
 def html_report(s):
     S = s["sections"]
-    out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '<meta charset="UTF-8">',
-           '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-           "<title>Personal Genome Pipeline Report</title>", "<style>" + CSS + "</style>", "</head>",
-           "<body>", '<div class="container">', '<div class="header">', "  <h1>Genomic Analysis Report</h1>",
-           '  <div class="meta">',
-           f"    Sample: <strong>{E(s['sample'])}</strong> &nbsp;|&nbsp; Generated: {E(s['generated_utc'])}"
-           + (f" &nbsp;|&nbsp; Latest run: {E(s['run']['started_utc'])}" if s["run"]["started_utc"] else ""),
-           "  </div>", "</div>", '<div class="grid">']
-    a = out.extend
+    # Each card goes into its section's list; html_page() lays the lists out
+    # in CHAPTERS order.
+    parts = {}
+
+    def a(key, lines):
+        parts.setdefault(SECTION_OF[key], []).extend(lines)
 
     # QC
     cov, sexc = S["coverage"], S["sex_check"]
@@ -1814,7 +1976,7 @@ def html_report(s):
     qc += [stat("Sex chromosomes", badge(x.split(": ", 1)[1], "red")) for x in kl[:-1]] + [small_note(x) for x in kl[-1:]]
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
-    a(['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
+    a("coverage", ['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
 
     mo = S.get("mosaic_sex_loss", MISSING)
     q = mo["data"]
@@ -1822,10 +1984,10 @@ def html_report(s):
     mo_body = [stat(q.get("chrom") or "chrY or chrX", badge(label, colour)),
                stat("Why", f'<span style="font-weight:normal;font-size:13px">{E(q.get("reason") or "")}</span>')]
     mo_body += [small_note(line) for line in mosaic_lines(q)] + [small_note(MOSAIC_NOTE)]
-    a(card(mo, "Mosaic Loss of Chromosome Y or X", mo_body))
+    a("mosaic_sex_loss", card(mo, "Mosaic Loss of Chromosome Y or X", mo_body))
 
     v = S["variants"]["data"]
-    a(card(S["variants"], "Variant Calling", [stat("Total variants", v.get("total")), stat("PASS variants", v.get("pass")),
+    a("variants", card(S["variants"], "Variant Calling", [stat("Total variants", v.get("total")), stat("PASS variants", v.get("pass")),
                                               stat("SNPs", v.get("snps")), stat("Indels", v.get("indels"))]))
 
     c = S["clinvar"]["data"]
@@ -1846,14 +2008,14 @@ def html_report(s):
                                badge(c["low_confidence"], "yellow" if c["low_confidence"] else "gray")))
     if clinvar_freq_line(c):
         cv_body.insert(-1, small_note(clinvar_freq_line(c)))
-    a(card(S["clinvar"], "ClinVar Screening", cv_body))
+    a("clinvar", card(S["clinvar"], "ClinVar Screening", cv_body))
     if S.get("carrier", MISSING)["state"] != "missing":
         car_ok = S["carrier"]["state"] in ("ok", "stale")
-        a(card(S["carrier"], "Carrier List (this sample)",
+        a("carrier", card(S["carrier"], "Carrier List (this sample)",
                [f"    <p>{E(line)}</p>" for line in (carrier_lines(S["carrier"]["data"]) if car_ok else [])]
                + [f"    <p>{E(CARRIER_NOTE)}</p>"], full=True))
     if S.get("couple", MISSING)["state"] != "missing":
-        a(card(S["couple"], "Couple Carrier Screen",
+        a("couple", card(S["couple"], "Couple Carrier Screen",
                [f"    <p>{E(line)}</p>" for line in couple_lines(S["couple"]["data"])], full=True))
 
     pg = S["pharmcat"]["data"]
@@ -1864,16 +2026,16 @@ def html_report(s):
         pgx_body.append(stat("PharmCAT version", E(pg["version"])))
     if S["pypgx"]["state"] in ("ok", "stale") and "comparison" in S["pypgx"]["data"]:
         pgx_body.append(stat("PharmCAT vs pypgx conflicts", S["pypgx"]["data"]["comparison"]["conflicts"]))
-    a(card(S["pharmcat"], "Pharmacogenomics", pgx_body))
+    a("pharmcat", card(S["pharmcat"], "Pharmacogenomics", pgx_body))
     if S["pypgx"]["state"] != "missing":
         pd = S["pypgx"]["data"]
-        a(card(S["pypgx"], "pypgx Pharmacogenomics",
+        a("pypgx", card(S["pypgx"], "pypgx Pharmacogenomics",
                [stat("Genes called", f"{pd.get('genes_called')}/{pd.get('genes_total')}"),
                 stat("CYP2D6 diplotype", E(pd.get("cyp2d6") or "not called"))]
                + [f"    <p>{E(line)}</p>" for line in pypgx_lines(pd)]))
     cn_rows = pgx_copy_number(S)
     if cn_rows:
-        a(card(None, "PGx Copy Number", [stat(g, E(v)) for g, v in cn_rows]))
+        a("pypgx", card(None, "PGx Copy Number", [stat(g, E(v)) for g, v in cn_rows]))
 
     cpic_body = [stat("Status", done_badge(S["cpic"]))]
     if not cp.get("parse_failed"):
@@ -1885,7 +2047,7 @@ def html_report(s):
         cpic_body.append(stat("PharmCAT report", badge("could not be parsed", "red")))
     cpic_body.append(stat("Tip", '<span style="font-weight:normal;font-size:13px">Recommendations per gene: '
                                  f'cpic/{E(s["sample"])}_cpic_recommendations.txt</span>'))
-    a(card(S["cpic"], "CPIC Drug Recommendations", cpic_body))
+    a("cpic", card(S["cpic"], "CPIC Drug Recommendations", cpic_body))
 
     calls = s["cyp2d6"]["calls"]
     agree = s["cyp2d6"]["agree"]
@@ -1901,7 +2063,7 @@ def html_report(s):
     prob = s["cyp2d6"].get("probable")
     if prob:
         cy_body.append(stat(prob["label"].capitalize(), E(probable_text(prob))))
-    a(["  <div class=\"card\">", "    <h2>CYP2D6 Across Callers</h2>"]
+    a("cyrius", ["  <div class=\"card\">", "    <h2>CYP2D6 Across Callers</h2>"]
       + [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
          for k in ("cpic", "pypgx", "cyrius") if S[k]["state"] in ("stale", "failed")]
       + cy_body + ["  </div>"])
@@ -1917,7 +2079,7 @@ def html_report(s):
     if hla.get("kir") is not None:
         hla_body += [stat(g, E(line)) if g else small_note(line) for g, line in kir_lines(hla["kir"])]
         hla_body.append(small_note(KIR_NOTE))
-    a(card(S["hla"], "HLA Typing", hla_body))
+    a("hla", card(S["hla"], "HLA Typing", hla_body))
 
     m, dl, cn, sv = (S[k]["data"] for k in ("manta", "delly", "cnvpytor", "sv_consensus"))
     sv_body = [stat("Manta SVs (total / PASS)", f"{m.get('total', 'N/A')} / {m.get('pass', 'N/A')}"),
@@ -1929,7 +2091,7 @@ def html_report(s):
     sv_body.append(stat("Consensus SVs (2+ callers)", sv.get("consensus", "N/A")))
     notes = [f'    <div class="stale">{E(S[k]["title"] + ": " + stale_note(S[k]))}</div>'
              for k in ("manta", "delly", "cnvpytor", "sv_consensus") if stale_note(S[k])]
-    a(['  <div class="card">', "    <h2>Structural Variants</h2>"] + notes + sv_body + ["  </div>"])
+    a("manta", ['  <div class="card">', "    <h2>Structural Variants</h2>"] + notes + sv_body + ["  </div>"])
     if S.get("annotsv", MISSING)["state"] != "missing":
         av = S["annotsv"]["data"]
         body = [stat("Status", done_badge(S["annotsv"]))] + ([small_note(x) for x in annotsv_lines(av)] if av else [])
@@ -1940,14 +2102,14 @@ def html_report(s):
                                   f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td></tr>" for x in av["rows"])
                         + "</table>")
             body.append(small_note(ANNOTSV_NOTE))
-        a(card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
+        a("annotsv", card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
 
     cs = S["cpsr"]["data"]
     cpsr_body = [stat("CPSR report", badge("Complete", "green") if cs.get("html_report") else badge("No HTML", "gray"))]
     for k, val in (cs.get("classification") or {}).items():
         cpsr_body.append(stat(k, val))
     cpsr_body += [small_note(line.strip()) for line in cpsr_lines(cs, s["databases"])]
-    a(card(S["cpsr"], "Cancer Predisposition", cpsr_body))
+    a("cpsr", card(S["cpsr"], "Cancer Predisposition", cpsr_body))
 
     eh = S["expansions"]["data"]
     eh_body = [stat("Status", done_badge(S["expansions"]))]
@@ -1975,10 +2137,10 @@ def html_report(s):
                        + "".join("<tr>" + "".join(f"<td>{E(str(x))}</td>" for x in r) + "</tr>" for r in rows)
                        + "</table>")
     eh_body.append(small_note(EH_NOTE))
-    a(card(S["expansions"], "Repeat Expansions", eh_body))
+    a("expansions", card(S["expansions"], "Repeat Expansions", eh_body))
 
     r, hg, tl = S["roh"]["data"], S["haplogroup"]["data"], S["telomere"]["data"]
-    a(card(S["roh"], "Runs of Homozygosity",
+    a("roh", card(S["roh"], "Runs of Homozygosity",
            [stat("Status", done_badge(S["roh"])),
             stat("ROH total", f"{r.get('total_mb', 0):.1f} MB"),
             stat("ROH largest segment", f"{r.get('largest_mb', 0):.1f} MB"),
@@ -1986,7 +2148,7 @@ def html_report(s):
             stat("Autosomal ROH > 5 MB", len(r.get("autosomal_over_5mb", [])))]
            + [small_note(roh_region(x)) for x in r.get("autosomal_over_5mb", [])]
            + [small_note(x) for x in roh_lines(r)]))
-    a(card(S["haplogroup"], "Mitochondrial Haplogroup",
+    a("haplogroup", card(S["haplogroup"], "Mitochondrial Haplogroup",
            [stat("Status", done_badge(S["haplogroup"])), stat("Haplogroup", E(hg.get("haplogroup", "."))),
             stat("Contamination (haplocheck)", E(contamination_text(hg)))] + explore_html(hg)))
     if S.get("paralogs", MISSING)["state"] != "missing":
@@ -2004,59 +2166,59 @@ def html_report(s):
             body.append(stat("Other Paraphase regions", f"{pg['other_regions']} ({pg['other_regions_called']} with a call)"))
         body.append(stat("Variants on phased haplotypes", sum(pg.get("variants", {}).values())))
         body.append(small_note(PARALOG_NOTE))
-        a(card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
+        a("paralogs", card(S["paralogs"], "Paralog Genes (Paraphase)", body, full=True))
     if S.get("parascopy", MISSING)["state"] != "missing":
-        a(card(S["parascopy"], "SMN1/SMN2 Copy Number (Parascopy)",
+        a("parascopy", card(S["parascopy"], "SMN1/SMN2 Copy Number (Parascopy)",
                [stat("Status", done_badge(S["parascopy"]))]
                + [stat(*(E(x) for x in line.split(": ", 1))) for line in parascopy_lines(S["parascopy"]["data"])]
                + [small_note(PARASCOPY_NOTE)]))
     unchecked = paralogs_unchecked(S)
     if unchecked:
-        a(card(None, "Paralog Copy Number", [stat("Status", badge("Not checked", "gray")), small_note(unchecked)]))
+        a("paralogs", card(None, "Paralog Copy Number", [stat("Status", badge("Not checked", "gray")), small_note(unchecked)]))
     if S.get("y_haplogroup", MISSING)["state"] != "missing":
         yh = S["y_haplogroup"]["data"]
-        a(card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
+        a("y_haplogroup", card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
     if S.get("y_str", MISSING)["state"] != "missing":
         ys = S["y_str"]
-        a(card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
+        a("y_str", card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],
                full=True))
     if S.get("consumer_export", MISSING)["state"] != "missing":
-        a(card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
+        a("consumer_export", card(S["consumer_export"], "Raw-Data Export (23andMe v5 layout)",
                [f"    <p>{E(line)}</p>" for line in consumer_export_lines(S["consumer_export"]["data"])]))
     if S.get("bloodtype", MISSING)["state"] != "missing":
-        a(card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
+        a("bloodtype", card(S["bloodtype"], "Blood Groups (predicted)", bloodtype_body(S["bloodtype"]["data"]), full=True))
     if S.get("archaic", MISSING)["state"] != "missing":
         ah = S["archaic"]["data"]
-        a(card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
+        a("archaic", card(S["archaic"], "Archaic Ancestry (Neanderthal, Denisovan)",
                [stat("Neanderthal", E(f"{ah['neanderthal_percent']}%")), stat("Denisovan", E(f"{ah['denisovan_percent']}%"))]
                + [f"    <p>{E(line)}</p>" for line in archaic_lines(ah)] + [small_note(ARCHAIC_NOTE)]
                if S["archaic"]["state"] in ("ok", "stale") else []))
     if S.get("lpa", MISSING)["state"] != "missing":
         lp = S["lpa"]["data"]
-        a(card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
+        a("lpa", card(S["lpa"], "Lp(a): LPA KIV-2 Repeat Count",
                ([stat("Genetic sign of high Lp(a)", badge("Yes", "yellow"))] if lp.get("flag") == "high" else [])
                + [f"    <p>{E(line)}</p>" for line in lpa_lines(lp)]))
     if S.get("vntyper", MISSING)["state"] != "missing":
         vn = S["vntyper"]["data"]
-        a(card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
+        a("vntyper", card(S["vntyper"], "MUC1 VNTR Frameshifts (VNtyper)",
                ([stat("Result", badge(vn.get("status", "."), {"positive": "red", "possible": "yellow",
                                                               "negative": "green"}.get(vn.get("status"), "gray")))])
                + [f"    <p>{E(line)}</p>" for line in vntyper_lines(vn)]))
     if S.get("viral", MISSING)["state"] != "missing":
-        a(card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
+        a("viral", card(S["viral"], "Viral DNA in the Unmapped Reads", viral_body(S["viral"]["data"]), full=True))
     if S.get("chip", MISSING)["state"] != "missing":
         ch = S["chip"]["data"]   # the card shows its body only for a section that was read
-        a(card(S["chip"], "Clonal Haematopoiesis (CHIP)",
+        a("chip", card(S["chip"], "Clonal Haematopoiesis (CHIP)",
                [stat("CHIP calls", E(str(len(ch.get("calls", [])))))]
                + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
                + [small_note(CHIP_NOTE)], full=True))
     if S.get("mosaic", MISSING)["state"] != "missing":
         mo = S["mosaic"]
-        a(card(mo, "Mosaic Chromosomal Alterations (MoChA)",
+        a("mosaic", card(mo, "Mosaic Chromosomal Alterations (MoChA)",
                mosaic_mca_body(mo["data"]) if mo["state"] in ("ok", "stale") else [], full=True))
-    a(card(S["telomere"], "Telomere content (relative)",
+    a("telomere", card(S["telomere"], "Telomere content (relative)",
            [stat("Telomere content", E(str(tl.get("tel_content", "."))))]
            + [stat("Warning", badge(x[len("WARNING: "):], "yellow")) if x.startswith("WARNING: ") else small_note(x)
               for x in telomere_lines(tl)]
@@ -2087,10 +2249,10 @@ def html_report(s):
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
     mito_body.append(small_note(MITO_NOTE))
-    a(card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
+    a("mito", card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
 
     cl = S["clinical"]["data"]
-    a(card(S["clinical"], "Clinical Variant Filter",
+    a("clinical", card(S["clinical"], "Clinical Variant Filter",
            [stat("Total interesting variants", cl.get("variants"))]
            + ([stat("Genes", cl["genes"])] if "genes" in cl else [])
            + [stat(f"{k} impact", v) for k, v in sorted((cl.get("by_impact") or {}).items())]
@@ -2101,7 +2263,7 @@ def html_report(s):
                or sf.get("unavailable")):
         rows = "".join(f"<tr><td>{E(g)}</td><td>{E(v)}</td><td>{E(z)}</td><td>{E(ev)}</td></tr>\n"
                        for g, v, z, ev in sf_rows(sf))
-        a(card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
+        a("clinical", card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
                ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
                 rows.rstrip("\n"), "    </table>"]
                + [f"    <p>{E(line)}</p>" for line in sf_apart_lines(sf)]
@@ -2117,7 +2279,7 @@ def html_report(s):
         sl_body.append(stat("Compound het candidates", f"{sl['compound_het_variants']} variants, {sl['compound_het_genes']} genes"))
     if "compound_het_phase" in sl:
         sl_body += comphet_phase_html(sl)
-    a(card(S["slivar"], "Variant Prioritization (slivar)", sl_body))
+    a("slivar", card(S["slivar"], "Variant Prioritization (slivar)", sl_body))
 
     if S["prs"]["state"] in ("ok", "stale"):
         d = S["prs"]["data"]
@@ -2125,7 +2287,7 @@ def html_report(s):
                        f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
                        f"<td>{E(prs_percentile(x) or 'raw score only')}</td></tr>\n"
                        for x in d["scores"])
-        a(card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
+        a("prs", card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
                ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
 
@@ -2149,15 +2311,15 @@ def html_report(s):
             body.append("    <p>" + " ".join(f'<span style="color:{E(x["colour"])}">&#9632;</span> {E(x["group"])}'
                                              for x in d.get("legend", [])) + " <span style=\"color:#e1e1e1\">&#9632;</span> not painted</p>")
         body.append(f"    <p>{E(ANCESTRY_FINE_NOTE)}</p>")
-        a(card(S["ancestry_fine"], "Fine-Grained Ancestry", body, full=True))
+        a("ancestry_fine", card(S["ancestry_fine"], "Fine-Grained Ancestry", body, full=True))
 
     tr_sec = S.get("traits", MISSING)
-    a(card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
+    a("traits", card(tr_sec, "Traits", traits_html(tr_sec["data"], s["sample"]) if tr_sec["state"] in ("ok", "stale") else [],
            full=True))
 
     ex_sec = S.get("exomiser", MISSING)
     if ex_sec["state"] != "missing":
-        a(card(ex_sec, "Symptom-Driven Ranking (Exomiser)",
+        a("exomiser", card(ex_sec, "Symptom-Driven Ranking (Exomiser)",
                exomiser_html(ex_sec["data"], s["sample"]) if ex_sec["state"] in ("ok", "stale") else [], full=True))
     if S.get("ancient", MISSING)["state"] != "missing":
         d = S["ancient"]["data"]
@@ -2173,7 +2335,7 @@ def html_report(s):
             body.append('    <img alt="PC1 against PC2: present-day West Eurasians in grey, ancient people coloured by '
                         f'age, the sample marked" style="max-width:100%" src="data:image/svg+xml;base64,{d["plot_svg"]}">')
         body.append(f"    <p>{E(ANCIENT_NOTE)}</p>")
-        a(card(S["ancient"], "Ancient Populations", body, full=True))
+        a("ancient", card(S["ancient"], "Ancient Populations", body, full=True))
 
     if S["cpic"]["state"] in ("ok", "stale") and (cp["non_normal"] or cp.get("ambiguous")):
         rows = "".join(f"<tr><td>{E(g['gene'])}</td><td>{E(g['diplotype'])}</td><td>{E(g['phenotype'])}</td></tr>\n"
@@ -2182,7 +2344,7 @@ def html_report(s):
                 "    </table>"]
         body += [f'    <div class="stale">WARNING: {E(x)}</div>' for x in cp["warnings"]]
         body.append(f"    <p>Drugs for each gene: cpic/{E(s['sample'])}_cpic_recommendations.txt</p>")
-        a(card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
+        a("cpic", card(S["cpic"], "Genes With a Non-Normal or Unresolved Phenotype (CPIC)", body, full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and c.get("hits"):
         # The combined-allele cell is empty, not '.', for a hit that is
@@ -2200,7 +2362,7 @@ def html_report(s):
                 + (f"<td>{E(af_text(h))}</td>" if freq else "")
                 + (f"<td>{E(call_text(h))}</td>" if call else "")
                 + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
-        a(card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(nh, 50)} of {nh})",
+        a("clinvar", card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(nh, 50)} of {nh})",
                ["    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
                 "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
@@ -2211,27 +2373,191 @@ def html_report(s):
                + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
                full=True))
 
-    lists = ['  <div class="card full-width">', "    <h2>Steps Not Run</h2>"]
-    lists += (['    <ul class="plain">'] + [f"      <li>{E(t)}</li>" for t in s["not_run"]] + ["    </ul>"]
-              if s["not_run"] else ["    <p>All major steps completed.</p>"])
-    lists += ["    <h2 style=\"margin-top:16px\">Not Assessed by This Pipeline</h2>", '    <ul class="plain">']
-    lists += [f"      <li>{E(t)}</li>" for t in s["not_assessed"]] + ["    </ul>", "  </div>"]
-    a(lists)
-    a(["</div>", "", '<div class="disclaimer">',
-       "  <strong>Disclaimer:</strong> This report is for educational and research purposes only.",
-       "  It is not a clinical diagnosis. Always discuss genomic findings with a qualified healthcare",
-       "  professional before making any medical decisions. Variants of Uncertain Significance (VUS)",
-       "  are not clinically actionable.", "</div>", "", '<div class="footer">',
-       '  Generated by <a href="https://github.com/GeiserX/Personal-Genome-Pipeline">Personal-Genome-Pipeline</a>',
-       "  &mdash; 100% local analysis, no data uploaded"])
+    return html_page(s, parts)
+
+
+# --- html page: chapters, contents, section frames -----------------------------
+
+CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+STEP_OF = {k: step for k, _, step, _ in collect_summary.SECTIONS}
+# A section's state from the states of its keys. Never green: a section that
+# ran is not a finding, and the ClinVar section must show no green at all.
+STATE_BADGE = {"ok": ("Complete", "state"), "stale": ("Stale", "yellow"), "failed": ("Failed", "red"),
+               "part": ("Part failed", "red"), "incomplete": ("Part not run", "yellow"), "missing": ("Not run", "gray")}
+LIMITS = ("limits", "What this report leaves out", "Which steps did not run, and what does no step look at?")
+
+
+def frame_state(secs):
+    st = {x["state"] for x in secs}
+    if st & {"failed", "unreadable"}:
+        return "part" if st & {"ok", "stale"} else "failed"
+    if "stale" in st:
+        return "stale"
+    # A section whose steps did not all run is not complete.
+    return ("incomplete" if "missing" in st else "ok") if "ok" in st else "missing"
+
+
+def caveat_notes():
+    """Every *_NOTE sentence of this file: shown under the card title it belongs to."""
+    return [v for k, v in globals().items() if k.endswith("_NOTE") and isinstance(v, str)]
+
+
+def hoist_caveats(lines, meta):
+    """The card lines of one section with META under the first card title and
+    each *_NOTE line a card prints moved up to right under that card's title."""
+    notes = {}
+    for n in caveat_notes():
+        notes[small_note(n).strip()] = n
+        notes[f"<p>{E(n)}</p>"] = n
+    out, pos = [], None
+    for line in lines:
+        st = line.strip()
+        if st.startswith("<h2>"):
+            out.append(line)
+            if meta:
+                out.append(meta)
+                meta = None
+            pos = len(out)
+        elif pos is not None and (found := notes_in(st, notes)):
+            for n in found:
+                out.insert(pos, f'    <p class="caveat">{E(n)}</p>')
+                pos += 1
+        else:
+            out.append(line)
+    return out
+
+
+def notes_in(line, notes):
+    """The *_NOTE sentences a note line is made of: one, or several joined by
+    spaces (step 11's F_ROH and band notes); [] when it holds anything else."""
+    if line in notes:
+        return [notes[line]]
+    m = re.fullmatch(r'<p class="note">(.*)</p>', line)
+    rest, found = m.group(1) if m else "", []
+    while rest:
+        n = next((n for n in caveat_notes() if rest == E(n) or rest.startswith(E(n) + " ")), None)
+        if n is None:
+            return []
+        found.append(n)
+        rest = rest[len(E(n)) + 1:]
+    return found
+
+
+def step_files(S, sample, sid):
+    """(relative path, label) of the step's own files beside this report, from
+    the summary: the report sits in the sample folder, as each step's output
+    does (scripts/24-html-report.sh, and publishDir in the Nextflow modules)."""
+    def ran(k):
+        return S.get(k, MISSING)["state"] in ("ok", "stale") and S[k].get("source")
+    out = []
+    if sid == "pharmcat" and ran("pharmcat") and S["pharmcat"]["data"].get("html_report"):
+        out.append((S["pharmcat"]["source"][:-len(".json")] + ".html", "PharmCAT HTML report"))
+    if sid == "cpic" and ran("cpic"):
+        out.append((os.path.join(os.path.dirname(S["cpic"]["source"]), f"{sample}_cpic_recommendations.txt"),
+                    "CPIC recommendations per gene (text)"))
+    if sid == "cpsr" and ran("cpsr") and S["cpsr"]["data"].get("html_report"):
+        src = S["cpsr"]["source"]
+        out.append((src, "CPSR HTML report") if src.endswith(".html")
+                   else (os.path.dirname(src) + "/", "the cpsr folder, which holds the CPSR HTML report"))
+    if sid == "exomiser" and ran("exomiser"):
+        out.append((S["exomiser"]["source"], "Exomiser ranking table"))
+    return out
+
+
+def frame(S, sample, sid, lines, keys=None, always=False):
+    """One section: an anchor, the step, state and file date under its first
+    card title, each caveat under its card's title, the cards, then links to
+    the step's own files."""
+    secs = [S.get(k, MISSING) for k in keys or ()]
+    meta = None
+    if keys:
+        steps = list(dict.fromkeys(STEP_OF[k] for k in keys))
+        label, colour = STATE_BADGE[frame_state(secs)]
+        dates = [x["file_date"] for x in secs if x.get("file_date")]
+        meta = (f'    <p class="sec-meta">Step{"s" if len(steps) > 1 else ""} {E(", ".join(steps))} &middot; '
+                f"{badge(label, colour)}" + (f" &middot; file date {E(max(dates))}" if dates else "")
+                + f' &middot; <a class="anchor" href="#{sid}">link to this section</a></p>')
+    wide = len([x for x in lines if x.strip().startswith("<h2>")]) > 1 or any(x.startswith('  <div class="card full-width"') for x in lines)
+    files = step_files(S, sample, sid)
+    return ([f'  <section class="sec{" full-width" if wide else ""}{" always" if always else ""}" id="{sid}">']
+            + hoist_caveats(lines, meta)
+            + (['    <p class="files">Files of this step, beside this report: '
+                + " &middot; ".join(f'<a href="{E(h)}">{E(t)}</a>' for h, t in files) + "</p>"] if files else [])
+            + ["  </section>"])
+
+
+def limits_cards(s):
+    not_run = ['  <div class="card">', "    <h2>Steps Not Run</h2>"]
+    not_run += (['    <ul class="plain">'] + [f"      <li>{E(t)}</li>" for t in s["not_run"]] + ["    </ul>"]
+                if s["not_run"] else ["    <p>All major steps completed.</p>"])
+    not_assessed = ['  <div class="card">', "    <h2>Not Assessed by This Pipeline</h2>", '    <ul class="plain">']
+    not_assessed += [f"      <li>{E(t)}</li>" for t in s["not_assessed"]] + ["    </ul>"]
+    return not_run + ["  </div>"], not_assessed + ["  </div>"]
+
+
+def html_page(s, parts):
+    S = s["sections"]
     m = s["manifest"]
+    commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
+    db = s["databases"]
+    toc, body = ['<nav class="toc" aria-label="Contents">', '  <h2 class="toc-title">Contents</h2>', "  <ol>"], []
+    for cid, title, question, secs in CHAPTERS:
+        shown = [(sid, t, keys) for sid, t, keys in secs if parts.get(sid)]
+        if not shown:
+            continue
+        toc += [f'    <li><a href="#ch-{cid}">{E(title)}</a>', "      <ol>"]
+        body += [f'<section class="chapter" id="ch-{cid}">', f'  <h2 class="chapter-title">{E(title)}</h2>',
+                 f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
+        for sid, t, keys in shown:
+            state = frame_state([S.get(k, MISSING) for k in keys])
+            toc.append(f'        <li><a href="#{sid}"><span class="dot dot-{state}" '
+                       f'title="{STATE_BADGE[state][0]}"></span>{E(t)}</a></li>')
+            body += frame(S, s["sample"], sid, parts[sid], keys)
+        toc += ["      </ol>", "    </li>"]
+        body += ["  </div>", "</section>"]
+    cid, title, question = LIMITS
+    not_run, not_assessed = limits_cards(s)
+    toc += [f'    <li><a href="#ch-{cid}">{E(title)}</a>', "      <ol>",
+            '        <li><a href="#not-run">Steps not run</a></li>',
+            '        <li><a href="#not-assessed">Not assessed</a></li>', "      </ol>", "    </li>", "  </ol>", "</nav>"]
+    body += [f'<section class="chapter" id="ch-{cid}">', f'  <h2 class="chapter-title">{E(title)}</h2>',
+             f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
+    body += frame(S, s["sample"], "not-run", not_run) + frame(S, s["sample"], "not-assessed", not_assessed, always=True)
+    body += ["  </div>", "</section>"]
+
+    out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '<meta charset="UTF-8">',
+           f'<meta http-equiv="Content-Security-Policy" content="{CSP}">',
+           '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+           "<title>Personal Genome Pipeline Report</title>", "<style>" + CSS + "</style>", "</head>",
+           "<body>", '<div class="layout">'] + toc + [
+           "<main>", '<header class="header">', "  <h1>Genomic Analysis Report</h1>",
+           '  <div class="meta">',
+           f"    Sample: <strong>{E(s['sample'])}</strong> &nbsp;|&nbsp; Generated: {E(s['generated_utc'])}"
+           + (f" &nbsp;|&nbsp; Latest run: {E(s['run']['started_utc'])}" if s["run"]["started_utc"] else ""),
+           "  </div>", '  <div class="meta">',
+           f"    Pipeline commit: {E(commit or 'unknown')} &nbsp;|&nbsp; ClinVar file: {E(db['clinvar_release'] or 'unknown')}"
+           f" &nbsp;|&nbsp; ClinVar in CPSR's bundle: {E(db['cpsr_clinvar_release'] or 'unknown')}"
+           f" &nbsp;|&nbsp; HLA database: {E(db['hla_database'] or 'unknown')}",
+           "  </div>", "</header>",
+           '<p class="print-hint">To print one section, open it from the contents (or its "link to this section"), '
+           "then print: the printout holds that section, this header, the list of what is not assessed and the "
+           "disclaimer. A chapter prints the same way. In a browser without CSS :has() the whole report prints.</p>"]
+    out += body
+    out += ['<div class="disclaimer">',
+            "  <strong>Disclaimer:</strong> This report is for educational and research purposes only.",
+            "  It is not a clinical diagnosis. Always discuss genomic findings with a qualified healthcare",
+            "  professional before making any medical decisions. Variants of Uncertain Significance (VUS)",
+            "  are not clinically actionable.", "</div>", "", '<div class="footer">',
+            "  Generated by " + offsite_link("https://github.com/GeiserX/Personal-Genome-Pipeline",
+                                             "Personal-Genome-Pipeline"),
+            "  &mdash; 100% local analysis, no data uploaded"]
     if m:
-        a(["  <details><summary>Run manifest (run_manifest.tsv)</summary>", "  <table>"]
-          + [f"    <tr><td>{E(r[0])}</td><td>{E(r[1])}</td><td>{E(r[2])}</td></tr>" for r in m]
-          + ["  </table></details>"])
+        out += (["  <details><summary>Run manifest (run_manifest.tsv)</summary>", "  <table>"]
+                + [f"    <tr><td>{E(r[0])}</td><td>{E(r[1])}</td><td>{E(r[2])}</td></tr>" for r in m]
+                + ["  </table></details>"])
     else:
-        a(["  <p>No run_manifest.tsv in the sample folder.</p>"])
-    a(["</div>", "", "</div>", "</body>", "</html>"])
+        out.append("  <p>No run_manifest.tsv in the sample folder.</p>")
+    out += ["</div>", "</main>", "</div>", "</body>", "</html>"]
     return "\n".join(out) + "\n"
 
 

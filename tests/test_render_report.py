@@ -80,10 +80,23 @@ Checks:
      child and both partners' findings, and point to a genetic counsellor;
      without the table there is no card and no text section.
 
+ 14. the chapters (bin/render_report.py CHAPTERS), on DEMO-001, the invented
+     sample of tests/demo/make_demo_sample.py: every key of
+     collect_summary.SECTIONS is in exactly one chapter section; the HTML has
+     a Content-Security-Policy, no <script and no http(s) src or href other
+     than the loopback viewer and the links marked as opening a website;
+     every id is unique and every contents link reaches one; the ClinVar
+     section shows no green badge; the text report has the chapters in the
+     same order; the card titles are the golden list of the report before
+     the chapters; each caveat sits once, under its card title. Every
+     detector is run on a planted bad input as well, which it must catch.
+
 Run: python3 tests/test_render_report.py
 """
+import contextlib
 import glob
 import gzip
+import io
 import json
 import os
 import re
@@ -151,6 +164,181 @@ def pgsc_results(d, adjusted):
         "sampleset\tFID\tIID\tPC1\tPC2\tPC10\tSuperPop\tUnrelated\tRF_P_AFR\tRF_P_EUR\tMostSimilarPop\tMostSimilarPop_LowConfidence\tREFERENCE\n"
         "reference\tR1\tR1\t-1\t2\t0\tAFR\tTrue\t0.9\t0.1\tAFR\tFalse\tTrue\n"
         "sample\tHG\tHG\t0.012\t-0.034\t0.5\t\t\t0.05\t0.95\tEUR\tFalse\tFalse\n", gz=True)
+
+
+# The card titles of DEMO-001's HTML report before the chapters (check 14):
+# the chapters move cards, they never add, drop or rename one.
+GOLDEN_TITLES = sorted([
+    "Quality Control", "Mosaic Loss of Chromosome Y or X", "Variant Calling", "ClinVar Screening",
+    "Carrier List (this sample)", "Couple Carrier Screen", "Pharmacogenomics", "pypgx Pharmacogenomics",
+    "PGx Copy Number", "CPIC Drug Recommendations", "CYP2D6 Across Callers", "HLA Typing", "Structural Variants",
+    "Structural Variants, Class 4 and 5 (AnnotSV)", "Cancer Predisposition", "Repeat Expansions",
+    "Runs of Homozygosity", "Mitochondrial Haplogroup", "Paralog Genes (Paraphase)",
+    "SMN1/SMN2 Copy Number (Parascopy)", "Y-Chromosome Haplogroup", "Y-STR Markers (HipSTR)",
+    "Raw-Data Export (23andMe v5 layout)", "Blood Groups (predicted)", "Archaic Ancestry (Neanderthal, Denisovan)",
+    "Lp(a): LPA KIV-2 Repeat Count", "MUC1 VNTR Frameshifts (VNtyper)", "Viral DNA in the Unmapped Reads",
+    "Clonal Haematopoiesis (CHIP)", "Mosaic Chromosomal Alterations (MoChA)",
+    "Telomere content (relative)", "Mitochondrial Analysis", "Clinical Variant Filter",
+    "Variant Prioritization (slivar)", "Symptom-Driven Ranking (Exomiser)", "Polygenic Risk Scores", "Fine-Grained Ancestry", "Traits",
+    "Ancient Populations", "ClinVar Hits (best-reviewed first, 3 of 3)", "Steps Not Run",
+    "Not Assessed by This Pipeline"])
+
+
+def chapter_key_problems(chapters):
+    """The SECTIONS keys missing from CHAPTERS, in two sections, or unknown."""
+    seen = [k for _, _, _, secs in chapters for _, _, keys in secs for k in keys]
+    want = [k for k, *_ in collect_summary.SECTIONS]
+    return ([f"missing {k}" for k in want if k not in seen] + [f"twice {k}" for k in set(seen) if seen.count(k) > 1]
+            + [f"unknown {k}" for k in seen if k not in want])
+
+
+def external_problems(html):
+    """Every http(s) src or href that is not the loopback viewer and not
+    inside a link marked as opening a website."""
+    marked = re.sub(r'<span class="offsite"><a href="[^"]*">.*?</a> <span class="offsite-note">\(opens a website[^)]*\)</span></span>',
+                    "", html)
+    return [m for m in re.findall(r'(?:src|href)\s*=\s*["\']?(https?:[^"\' >]*)', marked, re.I)
+            if not m.startswith(render_report.VIEWER_URL)]
+
+
+def anchor_problems(html):
+    ids = re.findall(r'\sid="([^"]+)"', html)
+    links = re.findall(r'href="#([^"]+)"', html.split("</nav>", 1)[0])
+    return ([f"id twice: {i}" for i in sorted(set(ids)) if ids.count(i) > 1]
+            + [f"contents link to nothing: {x}" for x in links if x not in ids]
+            + ([] if links else ["no contents links"]))
+
+
+def frame_of(html, sid):
+    return html.split(f'id="{sid}">', 1)[-1].split("</section>", 1)[0] if f'id="{sid}">' in html else ""
+
+
+def text_chapter_order(txt):
+    return re.findall(r"^#  \d+\. (.+?): ", txt, re.M)
+
+
+def chapter_checks(work):
+    """Check 14 (the docstring)."""
+    sys.path.insert(0, os.path.join(REPO, "tests", "demo"))
+    import make_demo_sample
+    g = f"{work}/demo"
+    os.makedirs(g)
+    # Step 42's writer is left out: these checks are about the layout, and the
+    # Traits card has its title whether step 42 ran or not.
+    make_demo_sample.traits = lambda d: None
+    with contextlib.redirect_stdout(io.StringIO()):
+        make_demo_sample.main(["--genome-dir", g, "--records", "20000"])
+    summ = collect_summary.collect("DEMO-001", f"{g}/DEMO-001")
+    txt, html = render_report.text_report(summ), render_report.html_report(summ)
+
+    check("chapters: every SECTIONS key in exactly one section", chapter_key_problems(render_report.CHAPTERS) == [],
+          chapter_key_problems(render_report.CHAPTERS))
+    cut = tuple((c, t, q, tuple((sid, st, tuple(k for k in keys if k != "telomere")) for sid, st, keys in secs))
+                for c, t, q, secs in render_report.CHAPTERS)
+    check("chapters: red control: a key taken out is caught", chapter_key_problems(cut) == ["missing telomere"],
+          chapter_key_problems(cut))
+    twice = render_report.CHAPTERS + (("x", "X", "?", (("x", "X", ("clinvar",)),)),)
+    check("chapters: red control: a key in two sections is caught", chapter_key_problems(twice) == ["twice clinvar"],
+          chapter_key_problems(twice))
+    real_section_of = render_report.SECTION_OF
+    render_report.SECTION_OF = {k: v for k, v in real_section_of.items() if k != "telomere"}
+    try:
+        for name, fn in (("HTML", render_report.html_report), ("text", render_report.text_report)):
+            try:
+                fn(summ)
+                stopped = False
+            except KeyError:
+                stopped = True
+            check(f"chapters: a card for a key no section lists stops the {name} report", stopped)
+    finally:
+        render_report.SECTION_OF = real_section_of
+
+    fs = render_report.frame_state
+    check("chapters: a section with a step run and a step not run is part not run, not complete",
+          [fs([{"state": a}, {"state": b}]) for a, b in (("ok", "missing"), ("stale", "missing"), ("ok", "ok"),
+                                                        ("missing", "missing"), ("ok", "failed"))]
+          == ["incomplete", "stale", "ok", "missing", "part"],
+          [fs([{"state": a}, {"state": b}]) for a, b in (("ok", "missing"), ("stale", "missing"), ("ok", "ok"),
+                                                        ("missing", "missing"), ("ok", "failed"))])
+
+    for kind, hg in (("y", "R-M269*(xR-L23)"), ("mt", "H1a+16189")):
+        rows = render_report.explore_html({"haplogroup": hg, "explore": collect_summary.haplogroup_explore(kind, hg)})
+        marks = re.findall(r'<span class="offsite-note">\(([^)]*)\)</span>', "".join(rows))
+        want = [render_report.OFFSITE_HAPLOGROUP] * (len(marks) - 1) + [render_report.OFFSITE]
+        check(f"chapters: {hg}: the FamilyTreeDNA and YFull links say the address carries the haplogroup, the docs link does not",
+              len(marks) >= 3 and marks == want, marks)
+
+    check("chapters: the Content-Security-Policy forbids every fetch",
+          '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; '
+          'style-src \'unsafe-inline\'">' in html, html[:600])
+    check("chapters: no script", "<script" not in html.lower())
+    check("chapters: no off-machine address but the marked links", external_problems(html) == [], external_problems(html))
+    check("chapters: the marked links are there (FamilyTreeDNA, YFull, GitHub)",
+          all(f'<span class="offsite"><a href="{u}' in html for u in
+              ("https://discover.familytreedna.com/", "https://www.yfull.com/", "https://github.com/")))
+    for bad in ('<a href="https://example.org/x">x</a>', '<img src="https://example.org/i.png">',
+                '<a class="offsite" href="https://example.org/y">y</a>'):
+        check(f"chapters: red control: {bad} is caught", external_problems(html + bad) != [])
+
+    check("chapters: ids unique, every contents link reaches one", anchor_problems(html) == [], anchor_problems(html))
+    check("chapters: red control: a second id and a dead contents link are caught",
+          len(anchor_problems(html.replace('id="variants"', 'id="qc"').replace('href="#hla"', 'href="#gone"'))) == 3,
+          anchor_problems(html.replace('id="variants"', 'id="qc"').replace('href="#hla"', 'href="#gone"')))
+    sids = [sid for _, _, _, secs in render_report.CHAPTERS for sid, _, _ in secs]
+    shown = [x for x in re.findall(r'<section class="sec[^"]*" id="([^"]+)"', html) if x in sids]
+    check("chapters: the HTML sections are in CHAPTERS order", shown == [x for x in sids if x in shown], shown)
+
+    cv = frame_of(html, "clinvar")
+    check("chapters: the ClinVar section has its two cards and no green badge",
+          "<h2>ClinVar Screening</h2>" in cv and "<h2>ClinVar Hits" in cv and "badge-green" not in cv, cv[:800])
+    check("chapters: red control: the detector sees green where there is green (the QC sex badge)",
+          "badge-green" in frame_of(html, "qc"))
+    nohit = json.loads(json.dumps(summ))
+    nohit["sections"]["clinvar"]["data"].update(count=0, hits=[])
+    check("chapters: no ClinVar hit, still no green", "badge-green" not in frame_of(render_report.html_report(nohit), "clinvar"))
+    check("chapters: the CPIC table sits in the CPIC section", "CPIC Drug Recommendations" in frame_of(html, "cpic"))
+
+    titles = [c[1] for c in render_report.CHAPTERS]
+    check("chapters: the text report has the chapters in CHAPTERS order", text_chapter_order(txt) == [t.upper() for t in titles],
+          text_chapter_order(txt))
+    saved = render_report.CHAPTERS
+    try:
+        render_report.CHAPTERS = tuple(reversed(saved))
+        flipped = text_chapter_order(render_report.text_report(summ))
+    finally:
+        render_report.CHAPTERS = saved
+    check("chapters: red control: another order is caught", flipped != [t.upper() for t in titles], flipped)
+    heads = {"QUALITY": "## Quality control", "CLINICAL": "## ClinVar Pathogenic Screen",
+             "CARRIER": "## Carrier List (this sample)", "MEDICINES": "## Pharmacogenomics (PharmCAT)",
+             "ANCESTRY": "## Mitochondrial Haplogroup", "TRAITS AND SCORES": "## Polygenic Risk Scores",
+             "OTHER AND EXPORTS": "## Raw-Data Export (23andMe v5 layout)"}
+    chunks = dict(zip(text_chapter_order(txt), re.split(r"^#  \d+\. .*$", txt, flags=re.M)[1:]))
+    check("chapters: each text chapter holds its sections", all(h in chunks.get(c, "") for c, h in heads.items()),
+          {c: h in chunks.get(c, "") for c, h in heads.items()})
+
+    got = sorted(re.findall(r"<h2>([^<]*)</h2>", html))
+    check("chapters: the card titles are the golden list", got == GOLDEN_TITLES,
+          sorted(set(got) ^ set(GOLDEN_TITLES)))
+    check("chapters: red control: a dropped card is caught",
+          sorted(re.findall(r"<h2>([^<]*)</h2>", html.replace("<h2>Traits</h2>", ""))) != GOLDEN_TITLES)
+    shown = [n for n in render_report.caveat_notes() if render_report.E(n) in html]
+    # PRS_ANCESTRY_NOTE is part of the PRS caption's sentence (prs_note), not a line of its own.
+    loose = [n[:40] for n in shown if n != render_report.PRS_ANCESTRY_NOTE
+             and html.count(render_report.E(n)) != html.count(f'<p class="caveat">{render_report.E(n)}</p>')]
+    check("chapters: every caveat shown is under a card title, never left in the body", len(shown) > 20 and not loose,
+          loose or len(shown))
+    check("chapters: red control: a caveat left in a body is caught",
+          html.replace('<p class="caveat">' + render_report.E(render_report.EH_NOTE), "<p>" + render_report.E(render_report.EH_NOTE))
+          .count('<p class="caveat">' + render_report.E(render_report.EH_NOTE)) == 0)
+    mo = html.split("<h2>Mosaic Loss of Chromosome Y or X</h2>", 1)[-1]
+    check("chapters: the caveat comes right after the title and the step line",
+          re.match(r'\s*<p class="sec-meta">Step 33 .*?</p>\s*<p class="caveat">' + re.escape(render_report.E(render_report.MOSAIC_NOTE)),
+                   mo) is not None, mo[:400])
+    check("chapters: print rules: light colours, one section or chapter by :target, the limits kept",
+          "@media print" in html and ".sec:not(:target):not(.always)" in html and 'class="sec always" id="not-assessed"' in html)
+    check("chapters: the header carries the provenance a printout needs",
+          all(x in html.split("</header>", 1)[0] for x in ("Sample: <strong>DEMO-001</strong>", "Pipeline commit:",
+                                                            "ClinVar file:", "HLA database:")))
 
 
 def main():
@@ -674,6 +862,9 @@ def main():
         txt, html = render_report.text_report(summ), render_report.html_report(summ)
         check("couple: without the table there is no card and no text section",
               "Couple Carrier Screen" not in html and "Couple Carrier Screen" not in txt)
+
+        # 14. chapters
+        chapter_checks(work)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
