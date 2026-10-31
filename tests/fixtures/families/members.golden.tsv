@@ -1,0 +1,4 @@
+sample	sex	father	mother	partner	in_pedigree	sequenced
+child_a	female	father_a	mother_a		yes	yes
+father_a	male			mother_a	yes	yes
+mother_a	female			father_a	yes	yes

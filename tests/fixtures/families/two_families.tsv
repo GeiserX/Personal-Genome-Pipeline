@@ -1,0 +1,7 @@
+family	sample	sex	father	mother	partner
+# Two invented families: a trio and a couple.
+family_a	child_a	female	father_a	mother_a	.
+family_a	father_a	male	.	.	mother_a
+family_a	mother_a	female	.	.	father_a
+family_b	partner_x	male	.	.	partner_y
+family_b	partner_y	female	.	.	partner_x
