@@ -1,0 +1,69 @@
+# assets/steps.tsv: one row per step of a run, read by bin/run_state.py and bin/collect_summary.py.
+# step: the step number (scripts/<step>-*.sh, docs/<step>-*.md). label: as scripts/run-all.sh prints it.
+# tool: the main.nf --tools name (empty: the step has none). recorded: yes when scripts/run-all.sh writes the
+# step's row in logs/run_status.tsv. processes: the Nextflow processes of the step, by name without the
+# workflow prefix. sections: the summary.json sections it feeds. upstream: the steps whose output it reads.
+# hours: the upper end of its wall time in docs/hardware-requirements.md (runtime per step); hours_from:
+# measured (the end test), estimate (the page's estimate), or empty when that table has no time for it.
+# tests/test_run_state.py checks this table against run-all.sh, main.nf, modules/local and collect_summary.py.
+step	label	tool	recorded	processes	sections	upstream	hours	hours_from
+01b	fastp (read trimming)		no	FASTP			0.33	measured
+02	Alignment (minimap2)		no	MINIMAP2_INDEX,ALIGN_MINIMAP2,CRAM_TO_BAM	read_count	01b	5.4	measured
+03	Variant calling (DeepVariant)		no	DEEPVARIANT,VCF_PRECHECK	variants	02	13.5	measured
+03a	GATK HaplotypeCaller		yes			02		
+03b	freebayes		yes			02		
+03c	Strelka2		yes			02		
+03d	Octopus		yes			02	4	estimate
+04	Manta	manta	yes	MANTA	manta	02	0.68	measured
+04b	GRIDSS		yes			02	8	estimate
+05	AnnotSV	annotsv	yes	ANNOTSV	annotsv	15,19,18	0.03	measured
+06	ClinVar screen	clinvar	yes	CLINVAR_SCREEN,CLINVAR_CDNA_CHECK	clinvar,carrier	03	0.02	measured
+07	PharmCAT	pharmcat	yes	PHARMCAT_PREPROCESS,PHARMCAT	pharmcat	03	0.02	measured
+08	HLA typing (T1K)	hla_typing	yes	T1K_BUILD,HLA_TYPING,KIR_BUILD,KIR_TYPING,HLA_QC_READS,HLA_QC	hla	02	1.09	measured
+09	ExpansionHunter	expansion_hunter	yes	EXPANSION_HUNTER	expansions	02	0.01	measured
+09b	Stranger	stranger	yes	STRANGER,STRANGER_RFC1		09	0.01	measured
+10	TelomereHunter	telomere_hunter	yes	TELOMERE_HUNTER	telomere	02	1.53	measured
+11	ROH	roh	yes	ROH	roh	03	0.01	measured
+12	Mito haplogroup	mito_haplogroup	yes	MITO_EXTRACT_CHRM,MITO_HAPLOGROUP,HAPLOCHECK	haplogroup	03,20	0.01	measured
+13	VEP	vep	yes	VEP_NORM,VEP		03	4.62	measured
+14	Imputation prep		yes			03	0.17	estimate
+15	duphold	duphold	yes	DUPHOLD,DUPHOLD_FILTER		04	0.07	measured
+16	indexcov (sex check)		yes	INDEXCOV	sex_check	02	0.01	measured
+16b	mosdepth	mosdepth	yes	MOSDEPTH	coverage	02	0.05	measured
+17	CPSR	cpsr	yes	CPSR	cpsr	03	0.6	measured
+18	CNVpytor	cnvpytor	yes	CNVPYTOR,CNVPYTOR_VCF	cnvpytor	02	0.33	measured
+19	Delly	delly	yes	DELLY,DELLY_BCF2VCF	delly	02	3.32	measured
+20	Mito variants (Mutect2)	mito_variants	yes	MITO_VARIANTS,MITO_VARIANTS_ANNOTATE	mito	02	0.03	measured
+21	Cyrius CYP2D6	cyrius	yes	CYRIUS	cyrius	02	0.25	estimate
+22	SV consensus merge	survivor_merge	yes	SURVIVOR_PREP,SURVIVOR_MERGE,SURVIVOR_SORT	sv_consensus	04,19,18	0.01	measured
+23	Clinical filter	clinical_filter	yes	CLINICAL_FILTER	clinical	13	0.11	measured
+24	HTML report	html_report	no	HTML_REPORT			0.05	estimate
+25	PRS	prs	yes	PRS_PREPARE,PRS_SCORE_SITES,PRS,PRS_SUMMARY	prs	03	1.47	measured
+26	Ancestry (pgsc_calc)	ancestry	yes	PRS		25		
+26b	Fine-grained ancestry	ancestry_fine	yes	ANCESTRY_FINE_GENOTYPE,ANCESTRY_FINE_PREPARE,ANCESTRY_FINE_ADMIXTURE,ANCESTRY_FINE_PHASE,ANCESTRY_FINE_PAINT,ANCESTRY_FINE_REPORT	ancestry_fine	03		
+27	CPIC lookup	cpic	yes	CPIC_LOOKUP	cpic	07	0.01	measured
+28	MultiQC	multiqc	yes	MULTIQC		16b	0.01	measured
+29	Somatic (Mutect2)		yes			02	6	estimate
+30	vcfanno	vcfanno	yes	VCFANNO,VCFANNO_INDEX		13	0.3	estimate
+31	slivar	slivar	yes	SLIVAR_PRIORITIZE,SLIVAR,COMPHET_PHASE	slivar	13	0.17	measured
+32	pypgx	pypgx	yes	PYPGX,CYP2D6_DEPTH	pypgx	02,03	0.17	measured
+33	Sample identity and QC	sample_qc	yes	SOMALIER,SOMALIER_RELATE,VERIFYBAMID2,SAMPLE_QC	sample_qc,mosaic_sex_loss	02		
+34	CRAM archive	cram_archive	no	CRAM_ARCHIVE		02		
+35	Parascopy SMN1/SMN2	parascopy	yes	PARASCOPY	parascopy	02		
+35b	Paraphase (PacBio HiFi)	paraphase	yes	PARAPHASE_CHECK,PARAPHASE,PARAPHASE_REPORT	paralogs	02		
+36	PGx consensus		no	PGX_CONSENSUS		07,21,32	0.01	measured
+37	Y haplogroup (Yleaf)	y_haplogroup	yes	Y_POSITIONS,Y_PILEUP,Y_HAPLOGROUP	y_haplogroup	02		
+38	Family		no	FAMILY_PREPARE,GLNEXUS,GLNEXUS_VCF,FAMILY_RELATE,FAMILY_CHECK,WHATSHAP_PED,FAMILY_REPORT,FAMILY_IBD_SITES,FAMILY_IBD_PHASE,FAMILY_IBD_SEGMENTS,FAMILY_IBD_REPORT		03		
+39	Couple carrier screen		no	COUPLE_CARRIER	couple	03		
+40	Raw-data export	consumer_export	yes	CONSUMER_EXPORT	consumer_export	03		
+41	Blood groups	bloodtype	yes	BLOODTYPE_REGIONS,BLOODTYPE_DEPTH,BLOODTYPE	bloodtype	03		
+42	Traits panel	traits	yes	TRAITS_SITES,TRAITS_PHASE,TRAITS	traits	03		
+43	Archaic ancestry (IBDmix)	archaic	yes	ARCHAIC_GENOTYPES,ARCHAIC_IBDMIX,ARCHAIC_REPORT	archaic	03		
+44	Ancient populations	ancient	yes	ANCIENT_SITES,ANCIENT_GENO,ANCIENT_PCA,ANCIENT_REPORT	ancient	03		
+45	Y-STR markers (HipSTR)	y_str	yes	Y_STR	y_str	02		
+46	Lp(a) KIV-2 count	lpa	yes	LPA_REGIONS,LPA_DEPTH,LPA	lpa	02		
+47	Viral DNA	viral	yes	VIRAL_READS,VIRAL_REPORT	viral	02		
+48	Exomiser (HPO terms)	exomiser	yes	EXOMISER_PREPARE,EXOMISER,EXOMISER_REPORT	exomiser	03		
+49	CHIP (clonal blood cells)	chip	yes	CHIP_PREPARE,CHIP_MUTECT2,CHIP_ANNOTATE,CHIP_REPORT	chip	02		
+51	Mosaic alterations (MoChA)	mocha	yes	MOCHA_PREP,MOCHA_PHASE,MOCHA_CALL,MOCHA_REPORT	mosaic	03		
+52	MUC1 VNTR (VNtyper)	vntyper	yes	VNTYPER	vntyper	02		
