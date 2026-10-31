@@ -552,6 +552,9 @@ class Live:
         if any(e.get("event") == "pgp_run_finished" for e in events) and st["run"]["state"] == "running":
             st["run"]["state"] = "finished"
         st["events"] = len(events)  # the page paints a message ahead of state.json only past this id
+        # The report's anchor of each section (bin/render_report.py's chapters), for the step detail's link.
+        sec_of = getattr(_rr(), "SECTION_OF", {})
+        st["anchors"] = {k: sec_of[k] for s in st["steps"] for k in s["sections"] if k in sec_of}
         st["headlines"] = self.headlines(run["name"], d, st)
         st["plugins"] = {}
         for name, fn in self.app.state_hooks:

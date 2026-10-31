@@ -331,6 +331,11 @@ def browser_checks(port, work):
         detail = b.wait("document.getElementById('detail').textContent.indexOf('Step 11') >= 0 && "
                         "document.getElementById('detail').textContent")
         check("browser: a click on a box opens its detail with its tasks", detail and "ROH" in detail, detail)
+        b.eval("document.querySelector('g.box[data-step=\"06\"]').dispatchEvent(new MouseEvent('click', {bubbles: true})); true")
+        links = b.wait("document.getElementById('detail').textContent.indexOf('Step 06') >= 0 && "
+                       "Array.from(document.querySelectorAll('#detail a')).map(function (a) { return a.getAttribute('href'); }).join(' ')")
+        check("browser: the detail links each section to its report anchor",
+              links and "report.html#clinvar" in links and "report.html#carrier-list" in links, links)
         blocked = b.eval("document.documentElement.dataset.pgpBlocked || ''")
         check("browser: the policy blocked nothing on the live page", not blocked, blocked)
 
@@ -518,6 +523,9 @@ def main():
         mine = {x["step"]: x["state"] for x in s["steps"]}
         check("the fixture's steps: 06 done, 07 waiting, 11 done, 12 skipped",
               (mine["06"], mine["07"], mine["11"], mine["12"]) == ("done", "waiting", "done", "skipped"), mine)
+        check("state.json names each section's report anchor (ClinVar: clinvar, the carrier list: carrier-list)",
+              s.get("anchors", {}).get("clinvar") == "clinvar" and s["anchors"].get("carrier") == "carrier-list"
+              and s["anchors"].get("roh") == "roh", s.get("anchors"))
         check("a state hook's answer is under plugins", s["plugins"].get("fixture", {}).get("steps") == len(s["steps"]),
               s.get("plugins"))
         import render_report

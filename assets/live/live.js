@@ -161,7 +161,8 @@
       var hl = (last.headlines || {})[k];
       if (hl) { box.appendChild(el('p', { 'class': 'headline tone-' + hl.tone }, hl.text)); }
       if (root.getAttribute('data-mode') === 'live') {
-        box.appendChild(el('a', { href: 'report.html#' + encodeURIComponent(k) }, 'Open in the report: ' + k));
+        var anchor = (last.anchors || {})[k] || k;
+        box.appendChild(el('a', { href: 'report.html#' + encodeURIComponent(anchor) }, 'Open in the report: ' + k));
       }
     });
     drawMap(shown(last.steps));
