@@ -2561,7 +2561,7 @@ def sec_mito(d, s):
     if not p:
         return None, {}
     passed = het = 0
-    polyc = []
+    polyc, sites = [], []
     for r in vcf_records(p):
         if len(r) < 10 or r[6] != "PASS":
             continue
@@ -2583,6 +2583,8 @@ def sec_mito(d, s):
             polyc.append({"variant": f"{r[0]}:{r[1]} {r[3]}>{r[4]}", "af": round(af, 3)})
         else:
             het += 1
+            # Each counted site, for the report's chart (bin/report_charts.py).
+            sites.append({"pos": int(r[1]), "ref": r[3], "alt": r[4], "af": round(af, 3)})
     ann = mito_annotation(d, s, p)
     listed, plp = [], 0
     for r in ann.pop("rows", []):
@@ -2598,7 +2600,8 @@ def sec_mito(d, s):
                           | {"polyc": in_polyc(int(r["pos"]), r["ref"], r["alt"])})
     if "source" in ann:
         ann.update(variants=listed, clinvar_plp=plp)
-    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmy_floor": 0.05, "polyc_heteroplasmic": polyc,
+    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
+               "polyc_heteroplasmic": polyc,
                "polyc_tracts": [f"m.{a}-{b}" for a, b in POLYC_TRACTS], "annotation": ann}
 
 
