@@ -13,13 +13,13 @@ import os
 
 
 def charts_state(run_dir, state, events):
-    """{file, mtime} of the run's <run>_charts.json, or {} while there is none."""
+    """{file, mtime (ns)} of the run's <run>_charts.json, or {} while there is none."""
     if not run_dir:
         return {}
     name = f"{os.path.basename(os.path.normpath(run_dir))}_charts.json"
     p = os.path.join(run_dir, name)
     try:
-        return {"file": name, "mtime": int(os.path.getmtime(p))} if os.path.isfile(p) else {}
+        return {"file": name, "mtime": os.stat(p).st_mtime_ns} if os.path.isfile(p) else {}
     except OSError:
         return {}
 

@@ -232,8 +232,13 @@ def unit_checks():
     old = copy.deepcopy(s)
     del old["sections"]["mito"]["data"]["heteroplasmic_sites"]
     om = charts(old)["mito"]
-    check("5. mito: a summary without the site list draws none and says how many it leaves out",
-          'class="site"' not in om["svg"] and om["not_drawn"][0]["count"] == 2, om["not_drawn"])
+    check("5. mito: a summary without the site list draws none, says how many it leaves out and that their "
+          "positions are missing", 'class="site"' not in om["svg"] and om["not_drawn"][0]["count"] == 2
+          and "positions of the heteroplasmic sites are not in this summary" in om["svg"]
+          and "No heteroplasmic site" not in om["svg"], om["not_drawn"])
+    nr = copy.deepcopy(s)
+    nr["sections"]["roh"]["state"] = "missing"
+    check("4. genome: no chart when ROH did not run, even with ClinVar hits", "genome" not in charts(nr))
 
     with open(os.path.join(REPO, "bin", "report_charts.py")) as f:
         src = f.read()
@@ -367,6 +372,9 @@ def live_checks(work, charts_file):
     check("10. the plugin serves *_charts.json and names the run's file in state.json, once it exists",
           fa.globs == ["*_charts.json"] and [n for n, _ in fa.hooks] == ["charts"] and before == {}
           and after.get("file") == "RUNX_charts.json" and isinstance(after.get("mtime"), int), (fa.globs, before, after))
+    os.utime(os.path.join(d, "RUNX_charts.json"), ns=(after["mtime"] + 1000, after["mtime"] + 1000))
+    check("10. a rewrite within the same second gives a new mtime key",
+          pgp_live_charts.charts_state(d, {}, [])["mtime"] == after["mtime"] + 1000)
 
     if not os.path.isfile(os.path.join(REPO, "bin", "pgp_live.py")):
         print("[SKIP] 10. the live page in Chrome: bin/pgp_live.py is not on this branch")

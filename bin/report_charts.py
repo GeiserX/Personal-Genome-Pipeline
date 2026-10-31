@@ -21,7 +21,8 @@ The five charts, each drawn only when its section ran:
             is the report's own note; a score of the other sex, or one with no
             percentile, says "no percentile" and is never placed.
   genome    the chromosomes 1 to 22, X and Y of GRCh38 with the runs of
-            homozygosity of 5 MB or more and a tick for each ClinVar hit.
+            homozygosity of 5 MB or more and a tick for each ClinVar hit;
+            drawn in the ROH section, so only when ROH ran.
             Hits on chrM and on other contigs are counted in not_drawn.
   mito      the heteroplasmic chrM sites by position and allele fraction, the
             D-loop poly-C length variants marked apart.
@@ -177,8 +178,10 @@ REGION_RE = re.compile(r"^(chr[0-9XYM]+):([0-9]+)-([0-9]+)$")
 
 
 def genome_chart(S, notes):
+    # The chart sits in the ROH section, so it is drawn only when ROH ran;
+    # the ClinVar ticks come with it when ClinVar ran too.
     roh, cv = _ok(S, "roh"), _ok(S, "clinvar")
-    if not (roh or cv):
+    if not roh:
         return None
     marks, not_drawn = [], {}
     if roh:
@@ -250,7 +253,8 @@ def mito_chart(S, notes):
                           detail=f"length heteroplasmy in a D-loop poly-C tract, allele fraction {x['af']}; "
                           "not counted as heteroplasmic"))
     return spec("mito", "mito", "scatter", "Heteroplasmic chrM sites", notes, "MITO_NOTE", marks,
-                axis={"min": 0, "max": 1, "unit": "allele fraction", "floor": d.get("heteroplasmy_floor", 0.05)},
+                axis={"min": 0, "max": 1, "unit": "allele fraction", "floor": d.get("heteroplasmy_floor", 0.05),
+                      "sites_missing": int(d["heteroplasmic"]) if sites is None and d.get("heteroplasmic") else 0},
                 not_drawn=not_drawn)
 
 
@@ -446,7 +450,10 @@ def svg_scatter(sp):
     for lo, hi in ((303, 315), (16184, 16193)):
         body.append(f'<rect x="{_f(sx(lo) - 1)}" y="{y0}" width="{_f(max(sx(hi) - sx(lo), 2))}" '
                     f'height="{y1 - y0}" fill="{TONE["muted"]}" opacity="0.25"/>')
-    if not sp["marks"]:
+    if sp["axis"].get("sites_missing"):
+        body.append(_text((x0 + x1) / 2, (y0 + y1) / 2, "The positions of the heteroplasmic sites are not in this "
+                          "summary", 12, "middle"))
+    elif not sp["marks"]:
         body.append(_text((x0 + x1) / 2, (y0 + y1) / 2, "No heteroplasmic site between allele fraction 0.05 and 0.95",
                           12, "middle"))
     for m in sp["marks"]:

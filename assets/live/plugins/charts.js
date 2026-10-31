@@ -62,6 +62,15 @@
     return fig;
   }
 
+  function clear() {
+    shownKey = null;
+    list.textContent = '';
+    list.appendChild(el('p', { 'class': 'muted' }, 'The charts appear when the report step has written them.'));
+    side.hidden = true;
+    side.textContent = '';
+    document.documentElement.removeAttribute('data-pgp-charts');
+  }
+
   function draw(data) {
     if (!data || !data.charts) { return; }
     list.textContent = '';
@@ -71,7 +80,12 @@
 
   function onState(state) {
     var c = state && state.plugins && state.plugins.charts;
-    if (!c || !c.file || !list) { return; }
+    if (!list || !c) { return; }
+    if (!c.file) {
+      // The file went away (step 24 deletes it before it writes the report again).
+      if (shownKey !== null) { clear(); }
+      return;
+    }
     var key = c.file + '@' + c.mtime;
     if (key === shownKey) { return; }
     shownKey = key;
