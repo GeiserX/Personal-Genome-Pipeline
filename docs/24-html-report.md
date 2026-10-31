@@ -72,7 +72,7 @@ After them, "What this report leaves out" lists the steps not run and what no st
 
 ## Output
 
-`${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html`, `${GENOME_DIR}/${SAMPLE}/summary.json` and `${GENOME_DIR}/${SAMPLE}/${SAMPLE}_charts.json`. The last one holds the five charts as data and as SVG (`schema_version`, `sample`, `generated_utc`, `charts`), each with its section, its caveat and one entry per mark (value, range, locus, detail). The Nextflow `HTML_REPORT` process writes the same file beside its report. It holds findings, so treat it like the report: keep it on this machine.
+`${GENOME_DIR}/${SAMPLE}/${SAMPLE}_report.html`, `${GENOME_DIR}/${SAMPLE}/summary.json` and `${GENOME_DIR}/${SAMPLE}/${SAMPLE}_charts.json`. The last one holds the five charts as data and as SVG (`schema_version`, `sample`, `generated_utc`, `charts`), each with its section, its caveat and one entry per mark (value, range, locus, detail). The Nextflow `HTML_REPORT` process writes the same file beside its report. It holds findings, so treat it like the report: keep it on this machine. On the live site its plugin (`bin/pgp_live_charts.py`, `assets/live/plugins/charts.js`) serves this file only behind the site's password and shows the same charts; a click on a mark opens a panel with its detail, its caveat, a `viewer/#<locus>` link to the reads and a link to its section of the report.
 
 The cards, by chapter (cards not listed here are named in the chapter table above):
 
