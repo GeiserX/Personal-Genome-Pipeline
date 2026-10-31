@@ -29,7 +29,8 @@ The five charts, each drawn only when its section ran:
 A spec is {id, section, kind, title, caveat_key, caveat, axis, marks,
 not_drawn}: section is the collect_summary.SECTIONS key whose data it shows;
 each mark is {id, label, value, low, high, chrom, pos, end, tone, anchor,
-locus, detail}, with None for what does not apply. anchor is the id of the
+locus, detail}, with None for what does not apply; a ClinVar tick on the
+genome chart also carries the ClinVar caveat, the chart's own being ROH's. anchor is the id of the
 report element the mark links to (the ClinVar hits table, or the section); locus
 is "chrom:pos" or "chrom:start-end" for the genome viewer. The caveat text
 is passed in by the caller (notes), never written here, so the chart and the
@@ -213,7 +214,7 @@ def genome_chart(S, notes):
             low = bool(h.get("low_confidence"))
             marks.append(mark(f"hit-{i}", hit_label(h), h.get("stars"), chrom=chrom, pos=int(h["pos"]),
                               tone="muted" if low else "attention", anchor=hit_anchor(i),
-                              locus=f"{chrom}:{h['pos']}", kind="hit",
+                              locus=f"{chrom}:{h['pos']}", kind="hit", caveat=notes["CLINVAR_FREQ_NOTE"],
                               detail=f"{h.get('significance') or '.'}, {h.get('stars')} star"
                               f"{'' if h.get('stars') == 1 else 's'}, {h.get('genotype') or '.'}"
                               + (", low-confidence call" if low else "")))
