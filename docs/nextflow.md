@@ -254,7 +254,7 @@ results/
 
 ## Watching a run live
 
-`nextflow.config` has a `weblog` block that is off unless `PGP_LIVE_URL` is set. With it set, Nextflow posts each task's progress to `PGP_LIVE_URL/ingest/<PGP_LIVE_RUN>`, which the live site (`bin/pgp_live.py`) turns into a step map in the browser. `run-all.sh` sets `PGP_LIVE_RUN` to the sample; for a bare `nextflow run`, set both variables yourself. A `-with-weblog` option replaces the block. [Watch a Run Live](live-site.md) has the setup.
+Nextflow's weblog, which posts each task's progress to a URL, is the nf-weblog plugin, and Nextflow 26.10 loads it only when a config names it. So `nextflow.config` has no weblog block: with `PGP_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config`, which loads the pinned plugin and points the weblog at `PGP_LIVE_URL/ingest/<sample>`, and passes it with `-c`. A run without `PGP_LIVE_URL` loads no plugin. Nextflow downloads the plugin on the first live run and keeps it in `~/.nextflow/plugins`. For a bare `nextflow run`, write the same file and pass `-c`; [Watch a Run Live](live-site.md) has it and the live site that reads the messages.
 
 ---
 

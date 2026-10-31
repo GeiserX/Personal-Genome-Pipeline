@@ -13,11 +13,21 @@ export GENOME_DIR=/path/to/your/data
 PGP_LIVE_URL=http://127.0.0.1:8788 ./scripts/run-all.sh your_name male   # in another terminal
 ```
 
-`hash-password` writes `GENOME_DIR/.pgp-live/password` with mode 600. The file holds a PBKDF2-SHA256 hash, never the password. Open http://127.0.0.1:8787, log in, and pick the run.
+`./scripts/pgp-live.sh your_name` does the same and prints the address of that run's page. `hash-password` writes `GENOME_DIR/.pgp-live/password` with mode 600. The file holds a PBKDF2-SHA256 hash, never the password. Open http://127.0.0.1:8787, log in, and pick the run.
 
-With `PGP_LIVE_URL` set, `run-all.sh` sets `PGP_LIVE_RUN` to the sample, and the `weblog` block of `nextflow.config` posts every task's progress to `PGP_LIVE_URL/ingest/<sample>`. The script steps that run after the pipeline (GRIDSS, the extra callers, the benchmark) post when they start and how they end, and `run-all.sh` posts once more as it ends, with its exit code. A site that is down or slow costs one warning; the run never waits for it and never fails for it.
+With `PGP_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config` and passes it to Nextflow with `-c`. That config loads the nf-weblog plugin (pinned in `run-all.sh`; Nextflow downloads it on the first live run) and points it at `PGP_LIVE_URL/ingest/<sample>`, so every task's progress is posted. The script steps that run after the pipeline (GRIDSS, the extra callers, the benchmark) post when they start and how they end, and `run-all.sh` posts once more as it ends, with its exit code. A site that is down or slow costs one warning; the run never waits for it and never fails for it. `PGP_LIVE_URL` must be a plain `http://host:port` URL.
 
-A bare `nextflow run main.nf` reports through the same block: set `PGP_LIVE_URL`, and `PGP_LIVE_RUN` to the sample id, since the page counts only the tasks tagged with it. A `-with-weblog URL` on the command line replaces the block.
+A bare `nextflow run main.nf` can report too. Write a config like this one, with the sample id at the end of the URL (the page counts only the tasks tagged with it), and pass it with `-c`:
+
+```groovy
+plugins {
+    id 'nf-weblog@1.2.0'
+}
+weblog {
+    enabled = true
+    url     = 'http://127.0.0.1:8788/ingest/your_name'
+}
+```
 
 ## What the page shows
 
@@ -56,7 +66,7 @@ A bare `nextflow run main.nf` reports through the same block: set `PGP_LIVE_URL`
 
 The session cookie is random (32 bytes), `HttpOnly` and `SameSite=Strict`. A POST from another site is refused.
 
-The ingest port has no password, because Nextflow's weblog cannot send one. That is why it listens on loopback by default: a local user can post fake progress there, but the port serves nothing, so nobody can read a run through it. A browser's post to it (one with an `Origin` header) is refused.
+The ingest port has no password: it takes messages from the processes of the run's own machine. That is why it listens on loopback by default: a local user can post fake progress there, but the port serves nothing, so nobody can read a run through it. A browser's post to it (one with an `Origin` header) is refused.
 
 ## Deploy it on a server
 
