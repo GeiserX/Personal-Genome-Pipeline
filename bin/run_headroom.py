@@ -207,16 +207,21 @@ def disk(paths, warn=None):
 # --- one snapshot ----------------------------------------------------------------------------
 
 def metadata(events):
-    """(workDir, outdir, max_memory) from the last weblog message that carries metadata."""
-    work = outdir = cap = None
+    """(workDir, outdir, max_memory) from the last weblog message that carries metadata. A relative
+    outdir (the default './results') is relative to Nextflow's launch folder, so it is joined to the
+    message's launchDir rather than to this command's own folder."""
+    work = outdir = cap = launch = None
     for ev in events:
         md = ev.get("metadata") if isinstance(ev, dict) else None
         if not isinstance(md, dict):
             continue
         wf, params = md.get("workflow") or {}, md.get("parameters") or {}
         work = wf.get("workDir") or work
+        launch = wf.get("launchDir") or launch
         outdir = params.get("outdir") or outdir
         cap = params.get("max_memory") or cap
+    if outdir and launch and not os.path.isabs(str(outdir)):
+        outdir = os.path.join(str(launch), str(outdir))
     return work, outdir, cap
 
 
@@ -228,7 +233,8 @@ def event_rows(events):
 def snapshot(events=(), work_dir=None, outdir=None, disk_warn_percent=None, mem_warn_percent=None,
              max_memory=None, trace_rows=(), steps=None, physical=None):
     """{disk, tasks, host, warn_used_ratio, mem_warn_ratio}. Folders and max_memory not given come
-    from the weblog metadata in EVENTS; tasks come from TRACE_ROWS then EVENTS (the later wins)."""
+    from the weblog metadata in EVENTS; tasks come from TRACE_ROWS and EVENTS; per task the last
+    attempt wins, and within one attempt a finished row beats a running one."""
     dw = warn_percent(disk_warn_percent, "PGP_DISK_WARN_PERCENT")
     mw = warn_percent(mem_warn_percent, "PGP_MEM_WARN_PERCENT")
     events = list(events)

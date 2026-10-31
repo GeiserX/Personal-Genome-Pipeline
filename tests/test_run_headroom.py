@@ -15,7 +15,8 @@ Checks:
  11. the snapshot holds no '/' in any string value, and takes its folders from the weblog metadata;
  12. MEMORY_EXITS are the exits conf/base.config's errorStrategy retries;
  13. a real statvfs on a temp folder gives a used ratio in 0..1 and the command exits 0.
- 14. a running row read after a finished row of the same attempt keeps the finished ratio.
+ 14. a running row read after a finished row of the same attempt keeps the finished ratio;
+ 15. a relative outdir in the metadata is joined to the run's launchDir, an absolute one is kept.
 Each check is then run against a planted mistake (a mutant of run_headroom.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
@@ -228,6 +229,14 @@ def snapshot_checks(m):
         not bad and [e["fs"] for e in snap["disk"]] == ["work", "results"] and snap["host"]["warn"]
         and snap["warn_used_ratio"] == 0.9 and snap["mem_warn_ratio"] == 0.9
         and {t["process"] for t in snap["tasks"]} == {"FASTP", "VEP", "DEEPVARIANT"}, (bad, snap))
+
+    rel = m.metadata([{"metadata": {"workflow": {"workDir": "/x/work", "launchDir": "/x"},
+                                    "parameters": {"outdir": "./results"}}}])
+    ab = m.metadata([{"metadata": {"workflow": {"workDir": "/x/work", "launchDir": "/x"},
+                                   "parameters": {"outdir": "/y/results"}}}])
+    out["a relative outdir is joined to launchDir, an absolute one is kept"] = (
+        rel == ("/x/work", os.path.join("/x", "./results"), None) and ab == ("/x/work", "/y/results", None),
+        (rel, ab))
     return out
 
 
@@ -315,6 +324,18 @@ def mutants():
         orig = mod.disk
         return lambda paths, warn=None: orig([(p or label, p) for label, p in paths], warn)
     ms["the snapshot holds no '/' and takes its folders from the metadata"] = mutant(disk=path_label)
+
+    @with_mod
+    def no_launch_dir(mod):
+        orig = mod.metadata
+
+        def md(events):
+            evs = [{**ev, "metadata": {**ev["metadata"], "workflow": {
+                k: v for k, v in (ev["metadata"].get("workflow") or {}).items() if k != "launchDir"}}}
+                   if isinstance(ev, dict) and isinstance(ev.get("metadata"), dict) else ev for ev in events]
+            return orig(evs)
+        return md
+    ms["a relative outdir is joined to launchDir, an absolute one is kept"] = mutant(metadata=no_launch_dir)
     return ms
 
 
