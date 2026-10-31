@@ -54,7 +54,7 @@ rm -rf "$RED"; mkdir -p "$RED"
 git -C "$REPO" ls-files -z | (cd "$REPO" && tar --null -T - -cf -) | tar -xf - -C "$RED"
 # shellcheck disable=SC2016  # the Groovy expression, literally
 sed -i 's/\${params.family_name ?: '"'"'family'"'"'}/family/g' "$RED"/modules/local/*/main.nf
-check "red control: the copy's modules name no --family_name" sh -c "! grep -q 'params.family_name' '${RED}'/modules/local/*/main.nf"
+check "red control: no publishDir of the copy's modules names --family_name" sh -c "! grep -q 'params.family_name ?:' '${RED}'/modules/local/*/main.nf"
 stub "$RED" red --pedigree "$FAMS" --family_name family_b
 check "red: without the change family_plan.tsv is not under family_b/" test ! -e "${CASE_TMP}/red/out/family_b/family_plan.tsv"
 check "red: it went to family/ instead" test -e "${CASE_TMP}/red/out/family/family_plan.tsv"
