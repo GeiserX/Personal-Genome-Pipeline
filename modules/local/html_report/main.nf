@@ -18,7 +18,8 @@
     PharmCAT comparison goes beside the pypgx summary, where
     collect_summary.py looks for it. assets/acmg_sf.tsv (the ACMG SF rules)
     and assets/carrier_genes.tsv (the carrier list) come in the same list
-    and go to assets/, which --assets names.
+    and go to assets/, which --assets names. The report's charts also go
+    to ${id}_charts.json beside it, for the live page (docs/24-html-report.md).
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -36,6 +37,7 @@ process HTML_REPORT {
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
     tuple val(meta), path("summary.json"),             emit: summary
+    tuple val(meta), path("${meta.id}_charts.json"),   emit: charts
     path "versions.yml",                              emit: versions
 
     when:
@@ -107,14 +109,15 @@ process HTML_REPORT {
         --sample-dir "\$S" \\
         --json summary.json \\
         --declared-sex "${meta.sex ?: ''}" \\
-        -o ${id}_report.html
+        -o ${id}_report.html \\
+        --charts-json ${id}_charts.json
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
-    touch ${meta.id}_report.html summary.json
+    touch ${meta.id}_report.html summary.json ${meta.id}_charts.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

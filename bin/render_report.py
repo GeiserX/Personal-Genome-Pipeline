@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect_summary  # noqa: E402
+import report_charts  # noqa: E402
 
 E = html.escape
 
@@ -1295,6 +1296,8 @@ CSS = """
   th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
   th { background: var(--head); font-weight: 600; color: var(--muted); }
   .full-width { grid-column: 1 / -1; }
+  figure.chart { margin: 4px 0 12px; } figure.chart svg { display: block; max-width: 760px; }
+  figure.chart a:focus, figure.chart a:hover { opacity: 0.8; }
   ul.plain { margin-left: 18px; }
   .disclaimer { background: var(--disc-bg); border: 1px solid var(--disc-line); border-radius: 8px;
                 padding: 16px; margin-top: 24px; font-size: 14px; }
@@ -2361,9 +2364,11 @@ def html_report(s):
                 f"<td>{E(combined_cell(h))}</td>"
                 + (f"<td>{E(af_text(h))}</td>" if freq else "")
                 + (f"<td>{E(call_text(h))}</td>" if call else "")
-                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>" for h in c["hits"][:50]]
+                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>"
+                for h in c["hits"][:report_charts.HITS_SHOWN]]
         a("clinvar", card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(nh, 50)} of {nh})",
-               ["    <table>",
+               # The anchor the charts link a listed hit to (report_charts.hit_anchor).
+               [f'    <a id="{report_charts.HITS_ANCHOR}"></a>', "    <table>",
                 "      <tr><th>Chr</th><th>Position</th><th>Ref</th><th>Alt</th><th>Genotype</th><th>Gene</th>"
                 "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
                 + ("<th>gnomAD frequency</th>" if freq else "")
@@ -2373,7 +2378,39 @@ def html_report(s):
                + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
                full=True))
 
+    add_charts(parts, chart_specs(s))
     return html_page(s, parts)
+
+
+# --- charts --------------------------------------------------------------------------
+
+def chart_specs(s):
+    """The report's charts (bin/report_charts.py), with this file's caveats and helpers."""
+    notes = {k: v for k, v in globals().items() if k.endswith("_NOTE") and isinstance(v, str)}
+    helpers = {"ancestry_fine_rows": ancestry_fine_rows, "ANCESTRY_FINE_LEVELS": ANCESTRY_FINE_LEVELS,
+               "prs_percentile": prs_percentile, "prs_note": prs_note, "PRS_NOT_APPLICABLE": PRS_NOT_APPLICABLE}
+    return report_charts.build(s, notes, helpers)
+
+
+def add_charts(parts, specs):
+    """Each chart's SVG into its section, below its caveat: right under the
+    first card title when the caveat is a note line hoist_caveats() moves up
+    there, else right after the paragraph the caveat is part of (PRS). A
+    text-only chart (PRS without a panel) is the note the card already prints,
+    so the HTML report leaves it out; the live page shows it."""
+    for sp in specs:
+        lines = parts.get(SECTION_OF[sp["section"]])
+        if sp["kind"] == "text" or not lines:
+            continue
+        cav = E(sp["caveat"])
+        inside = [i for i, x in enumerate(lines) if cav in x and not notes_in(x.strip(), {})]
+        at = (inside[0] if inside else next(i for i, x in enumerate(lines) if x.strip().startswith("<h2>"))) + 1
+        lines.insert(at, f'    <figure class="chart">{sp["svg"]}</figure>')
+
+
+def charts_json(s):
+    return {"schema_version": report_charts.SCHEMA_VERSION, "sample": s["sample"],
+            "generated_utc": s["generated_utc"], "charts": chart_specs(s)}
 
 
 # --- html page: chapters, contents, section frames -----------------------------
@@ -2579,6 +2616,8 @@ def main(argv=None):
                                      "(default: the repository's assets/ beside bin/)")
     ap.add_argument("-o", "--out", action="append", default=[],
                     help="report to write: .txt for text, .html for HTML (repeatable)")
+    ap.add_argument("--charts-json", help="also write the report's charts, as data and SVG, to this JSON file "
+                                          "(the live page reads it)")
     a = ap.parse_args(argv)
     for o in a.out:
         if not o.endswith((".txt", ".html")):
@@ -2595,6 +2634,8 @@ def main(argv=None):
         ap.error("give --summary, or --sample and --sample-dir")
     for o in a.out:
         write(o, text_report(s) if o.endswith(".txt") else html_report(s))
+    if a.charts_json:
+        write(a.charts_json, json.dumps(charts_json(s), indent=1) + "\n")
     states = {}
     for sec in s["sections"].values():
         states[sec["state"]] = states.get(sec["state"], 0) + 1
