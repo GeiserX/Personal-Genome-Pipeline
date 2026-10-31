@@ -672,6 +672,7 @@ CHAPTERS = (
         ("slivar", "Variant prioritization", ("slivar",)),
         ("exomiser", "Symptom-driven ranking", ("exomiser",)),
         ("structural-variants", "Structural variants", ("manta", "delly", "cnvpytor", "sv_consensus", "annotsv")),
+        ("mei", "Mobile element insertions", ("mei",)),
         ("expansions", "Repeat expansions", ("expansions",)),
         ("vntyper", "MUC1 repeat (ADTKD)", ("vntyper",)),
         ("mito", "Mitochondrial variants", ("mito",)),
