@@ -17,7 +17,7 @@
       FAMILY_IBD_SEGMENTS  hap-ibd's segments (Zhou et al. 2020) on the
                            phased genotypes, its default 2 cM minimum
       FAMILY_IBD_REPORT    bin/ibd_report.py: ibd_pairs.tsv, ibd_segments.tsv
-                           and ibd_report.md, published under family/
+                           and ibd_report.md, published under the family folder
 
     Equivalent to: scripts/38-family.sh (its ibd_segments function)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -155,7 +155,7 @@ process FAMILY_IBD_SEGMENTS {
 process FAMILY_IBD_REPORT {
     label 'process_single'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
     path(pedigree, stageAs: 'pedigree.tsv')
