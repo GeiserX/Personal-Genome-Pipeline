@@ -89,16 +89,22 @@ def _precedence(t):
     return (t["attempt"], t["status"] in DONE, t["order"])
 
 
+def _replaces(new, old):
+    """True when NEW (read later) should replace OLD of the same task key: a later attempt, or the same
+    attempt unless OLD is finished and NEW is not (a late 'running' message of one task_id)."""
+    return old is None or (new["attempt"], new["status"] in DONE) >= (old["attempt"], old["status"] in DONE)
+
+
 def task_memory(rows, warn=None, steps=None):
     """[{step, process, attempt, state, request_bytes, peak_rss_bytes, ratio, warn, oom_retry}], one per
     task (process and tag), from its last attempt. ROWS are weblog trace objects (the latest message
-    of a task wins) or run_eta.read_trace rows."""
+    of a task wins, unless it says running after a finished one) or run_eta.read_trace rows."""
     warn = warn_percent(warn)
     proc_step = run_eta.process_steps(steps if steps is not None else run_state.read_steps())
     latest = {}
     for i, r in enumerate(rows):
         t = _row(r, i)
-        if t["process"]:
+        if t["process"] and _replaces(t, latest.get(t["key"])):
             latest[t["key"]] = t
     groups = {}
     for t in latest.values():
@@ -215,7 +221,7 @@ def metadata(events):
         md = ev.get("metadata") if isinstance(ev, dict) else None
         if not isinstance(md, dict):
             continue
-        wf, params = md.get("workflow") or {}, md.get("parameters") or {}
+        wf, params = md.get("workflow") or {}, md.get("parameters") or md.get("params") or {}
         work = wf.get("workDir") or work
         launch = wf.get("launchDir") or launch
         outdir = params.get("outdir") or outdir

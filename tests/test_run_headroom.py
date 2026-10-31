@@ -16,7 +16,9 @@ Checks:
  12. MEMORY_EXITS are the exits conf/base.config's errorStrategy retries;
  13. a real statvfs on a temp folder gives a used ratio in 0..1 and the command exits 0.
  14. a running row read after a finished row of the same attempt keeps the finished ratio;
- 15. a relative outdir in the metadata is joined to the run's launchDir, an absolute one is kept.
+ 15. a relative outdir in the metadata is joined to the run's launchDir, an absolute one is kept;
+ 16. metadata under 'params' (instead of Nextflow's 'parameters') gives the same outdir and max_memory;
+ 17. a running weblog message read after a finished one of the same task_id keeps the finished ratio.
 Each check is then run against a planted mistake (a mutant of run_headroom.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
@@ -206,6 +208,14 @@ def memory_checks(m):
     out["a running row read after a finished one of the same attempt keeps the finished ratio"] = (
         len(mixed) == 1 and mixed[0]["state"] == "completed" and abs((mixed[0]["ratio"] or 0) - 0.75) < 1e-6, mixed)
 
+    fin = {"task_id": 7, "process": "VEP", "name": "VEP (demo)", "attempt": 1, "status": "COMPLETED",
+           "exit": 0, "memory": 8 * G, "peak_rss": 6 * G}
+    run = {"task_id": 7, "process": "VEP", "name": "VEP (demo)", "attempt": 1, "status": "RUNNING",
+           "memory": 8 * G}
+    same = m.task_memory([fin, run])
+    out["a running message after a finished one of the same task_id keeps the finished ratio"] = (
+        len(same) == 1 and same[0]["state"] == "completed" and abs((same[0]["ratio"] or 0) - 0.75) < 1e-6, same)
+
     small = m.host_memory("64.GB", physical=32 * G)
     big = m.host_memory("64.GB", physical=128 * G)
     out["64 GB max on a 32 GB host warns, on 128 GB not"] = (
@@ -237,6 +247,10 @@ def snapshot_checks(m):
     out["a relative outdir is joined to launchDir, an absolute one is kept"] = (
         rel == ("/x/work", os.path.join("/x", "./results"), None) and ab == ("/x/work", "/y/results", None),
         (rel, ab))
+
+    alt = m.metadata([{"metadata": {"workflow": {"workDir": "/x/work"},
+                                    "params": {"outdir": "/y/r", "max_memory": "8.GB"}}}])
+    out["metadata under 'params' gives the outdir and max_memory"] = (alt == ("/x/work", "/y/r", "8.GB"), alt)
     return out
 
 
@@ -336,6 +350,16 @@ def mutants():
             return orig(evs)
         return md
     ms["a relative outdir is joined to launchDir, an absolute one is kept"] = mutant(metadata=no_launch_dir)
+
+    @with_mod
+    def parameters_only(mod):
+        orig = mod.metadata
+        return lambda events: orig([{**ev, "metadata": {k: v for k, v in ev["metadata"].items() if k != "params"}}
+                                    if isinstance(ev, dict) and isinstance(ev.get("metadata"), dict) else ev
+                                    for ev in events])
+    ms["metadata under 'params' gives the outdir and max_memory"] = mutant(metadata=parameters_only)
+    ms["a running message after a finished one of the same task_id keeps the finished ratio"] = mutant(
+        _replaces=lambda new, old: True)
     return ms
 
 
