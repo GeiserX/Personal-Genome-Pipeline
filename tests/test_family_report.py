@@ -470,16 +470,30 @@ def test_plan():
         check("a duo: the chromosome map runs", p["inheritance_map"][0]["decision"] == "runs", str(p))
         check("--ibd-panel no: the shared segments are skipped", p["shared_segments"][0]["decision"] == "skipped"
               and "setup.sh --ancestry-fine-panel" in p["shared_segments"][0]["reason"], str(p))
-        check("a partner without a gVCF: the couple screen waits for him",
-              p["couple_carrier"][0]["decision"] == "waiting" and "father_a has no gVCF yet" in p["couple_carrier"][0]["reason"],
-              str(p))
+        check("a partner without ClinVar hits: the couple screen waits for him",
+              p["couple_carrier"][0]["decision"] == "waiting"
+              and p["couple_carrier"][0]["reason"] == "father_a has no ClinVar hits yet (step 06 writes "
+              "clinvar/father_a_clinvar_hits.vcf): run run-all.sh father_a first", str(p))
         rc, log = plan("--families", TWO, "--family", "family_b", "--have-gvcf", "partner_x", "partner_y",
                        "--have-clinvar", "partner_x", "--out", out)
         p = by_analysis(out)
-        check("a partner with no ClinVar hits: the couple screen is skipped, naming her",
-              p["couple_carrier"][0]["decision"] == "skipped" and "partner_y has no ClinVar hits" in p["couple_carrier"][0]["reason"],
+        check("a partner with a gVCF but no ClinVar hits: the couple screen waits, naming her",
+              p["couple_carrier"][0]["decision"] == "waiting" and "partner_y has no ClinVar hits yet" in p["couple_carrier"][0]["reason"],
               str(p))
         check("partners only: no child, so no phasing and no map",
+              p["trio_phasing"][0]["decision"] == "skipped" and p["inheritance_map"][0]["decision"] == "skipped", str(p))
+        # step 39 never reads a gVCF: a partner run from a VCF alone, with ClinVar hits, still gets the screen
+        rc, log = plan("--families", TWO, "--family", "family_b", "--have-gvcf", "partner_x",
+                       "--have-clinvar", "partner_x", "partner_y", "--out", out)
+        p = by_analysis(out)
+        check("both partners with ClinVar hits, one without a gVCF: the couple screen runs",
+              (p["couple_carrier"][0]["decision"], p["couple_carrier"][0]["members"]) == ("runs", "partner_x,partner_y"),
+              str(p))
+        check("while the joint call waits for partner_y's gVCF", p["joint_call"][0]["decision"] == "waiting", str(p))
+        rc, log = plan("--families", TWO, "--family", "family_b", "--have-gvcf", "partner_x", "partner_y",
+                       "--have-clinvar", "partner_x", "--out", out)
+        p = by_analysis(out)
+        check("partners only, again: no child, so no phasing and no map",
               p["trio_phasing"][0]["decision"] == "skipped" and p["inheritance_map"][0]["decision"] == "skipped", str(p))
 
         # prepare writes the same table as plan, for the same members

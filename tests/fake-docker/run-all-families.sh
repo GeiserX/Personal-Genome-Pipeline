@@ -77,8 +77,8 @@ grep -q $'^family_b\tjoint_call\tpartner_x,partner_y\twaiting\tpartner_y has no 
   || fail "the plan does not wait for partner_y's gVCF: $(cat "$PLAN" 2>/dev/null)"
 status partner_x | grep -q $'^step\t38\tskipped (waiting: partner_y has no gVCF yet' \
   || fail "step 38 is not recorded as waiting for partner_y: $(status partner_x)"
-status partner_x | grep -q $'^step\t39\tskipped (waiting: partner_y has no gVCF yet' \
-  || fail "step 39 is not recorded as waiting for partner_y: $(status partner_x)"
+status partner_x | grep -qF $'step\t39\tskipped (waiting: partner_y has no ClinVar hits yet (step 06 writes clinvar/partner_y_clinvar_hits.vcf): run run-all.sh partner_y first)' \
+  || fail "step 39 is not recorded as waiting for partner_y's ClinVar hits: $(status partner_x)"
 [ ! -e "$STEPS_LOG" ] || fail "a family script ran while partner_y has no gVCF: $(cat "$STEPS_LOG")"
 # run-all.sh never passes the other members to the pipeline
 grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | grep -q partner_y && fail "partner_y reached the pipeline of partner_x's run"

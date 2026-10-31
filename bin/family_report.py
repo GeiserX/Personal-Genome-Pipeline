@@ -419,14 +419,14 @@ def plan_family(name, members, have_gvcf, have_clinvar, ibd_panel):
                       if members[s]["partner"] and members[members[s]["partner"]]["row"]})
     if not couples:
         row("couple_carrier", [], "skipped", "no two samples of the family are marked as partners")
+    # Step 39 reads each partner's ClinVar hits (and Delly, EH, SMN when present),
+    # never a gVCF: a partner run from a VCF alone still gets the screen.
     for a, b in couples:
-        waiting = [s for s in (a, b) if s not in have_gvcf]
-        lack = [s for s in (a, b) if s in have_gvcf and s not in have_clinvar]
-        if waiting:
-            row("couple_carrier", [a, b], "waiting", no_gvcf(waiting))
-        elif lack:
-            row("couple_carrier", [a, b], "skipped", "; ".join(
-                "%s has no ClinVar hits (step 06 writes clinvar/%s_clinvar_hits.vcf)" % (s, s) for s in lack))
+        lack = [s for s in (a, b) if s not in have_clinvar]
+        if lack:
+            row("couple_carrier", [a, b], "waiting", "; ".join(
+                "%s has no ClinVar hits yet (step 06 writes clinvar/%s_clinvar_hits.vcf): run run-all.sh %s first"
+                % (s, s, s) for s in lack))
         else:
             row("couple_carrier", [a, b], "runs", "carrier screen of %s and %s" % (a, b))
     return out

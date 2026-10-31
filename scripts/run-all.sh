@@ -30,7 +30,7 @@
 # FAMILIES=families.tsv (who is related to whom, assets/families.example.tsv): when the sample is in a family, the sex
 #   must agree with the file (exit 2 before the pipeline). After the pipeline, before the reports, bin/family_report.py
 #   plan writes GENOME_DIR/<family>/family_plan.tsv from what the members have, and step 38 (38-family.sh) and step 39
-#   (39-couple.sh) run when it says so, or are recorded as skipped with the reason (waiting: a member has no gVCF yet).
+#   (39-couple.sh) run when it says so, or are recorded as skipped with the reason (waiting: a member has no gVCF, or for step 39 no ClinVar hits, yet).
 #   The other members are never run here: run run-all.sh for each, and the last one runs the family steps.
 #   A step without its data or BAM is skipped. A report-only tool whose task fails is skipped, and its step is marked
 #   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem,
