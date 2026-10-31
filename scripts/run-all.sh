@@ -58,6 +58,15 @@ GENOME_DIR="$G" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$
 STATUS="${LOG_DIR}/run_status.tsv"  # bin/collect_summary.py marks results older than this run stale
 printf '# run-all.sh: when this run started and how each step ended\nmeta\tstarted_epoch\t%s\nmeta\tstarted_utc\t%s\nmeta\tdeclared_sex\t%s\n' \
   "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" > "$STATUS"
+# As run-all.sh ends, however it ends: a step still 'planned' did not finish, and the time is recorded
+# (bin/run_state.py reads both). A planned row gives way to the step's result, so each step keeps one row.
+finish_status() {
+  awk -F'\t' -v OFS='\t' 'NR == FNR { if ($1 == "step" && $3 != "planned") ended[$2] = 1; next }
+    $1 == "step" && $3 == "planned" { if ($2 in ended) next; $3 = "not finished" } { print }' "$STATUS" "$STATUS" \
+    > "${STATUS}.tmp" && mv "${STATUS}.tmp" "$STATUS" || true
+  printf 'meta\tfinished_utc\t%s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$STATUS" || true
+}
+trap finish_status EXIT
 NF=() SEL=() RUNS=() KNOWN="" OPTIN=()  # every step of a default run: it runs, or it is skipped with the reason
 declare -A TOOL_OF=()                   # step number -> its --tools name, for the steps that run
 need() { local f; for f in "$@"; do [ -e "$f" ] || { echo "data not installed: ${f#"$G"/}"; return; }; done; }
@@ -243,6 +252,8 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 echo "[Nextflow ${NXF_VER}] launch directory ${S}/nextflow: .nextflow.log, and every task's files under work/"
 FT="${S}/nextflow/failed_tasks.tsv" PT="${S}/nextflow/process_status.tsv"; rm -f "$FT" "$PT"  # main.nf writes both as the run ends
+# Every step that will run, before it starts: 'planned' until its result row (bin/run_state.py shows the run as it goes).
+for n in "${RUNS[@]}" "${OPTIN[@]}"; do n=${n%%-*}; [[ "$n" != [0-9]* ]] || printf 'step\t%s\tplanned\n' "$n" >> "$STATUS"; done
 rc=0; (cd "${S}/nextflow" && nextflow run "${PGP_ROOT}/main.nf" -profile docker -resume --input "$SHEET" --reference "$REF_FASTA" \
   --outdir "$G" --tools "$(IFS=,; echo "${SEL[*]}")" "${NF[@]}" "$@") || rc=$?
 # A step's result is what Nextflow says of its tool's processes in this run. 'failed': a task failed (a report-only

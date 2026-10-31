@@ -99,12 +99,15 @@ COMMON_AF = 0.01
 AB_FLOOR = {"HET_AB": (0.2, 0.8), "HOM_AB": 0.8}
 IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 
-# Steps run-all.sh runs and records in logs/run_status.tsv. A section whose
-# step is not here (variant calling, step 03, which run-all reuses on purpose)
-# is never marked stale.
-RUN_ALL_STEPS = {"04", "05", "06", "07", "08", "09", "09b", "10", "11", "12", "13", "14",
-                 "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26", "26b",
-                 "27", "29", "30", "31", "32", "35", "35b", "37", "40", "41", "42", "43", "47", "48", "50", "51", "52", "04b"}
+# Steps run-all.sh runs and records in logs/run_status.tsv: the rows of
+# assets/steps.tsv with recorded=yes (tests/test_run_state.py keeps the two
+# equal; the set stays written here because this file also runs where only
+# bin/ is mounted). A section whose step is not here (variant calling, step
+# 03, which run-all reuses on purpose) is never marked stale.
+RUN_ALL_STEPS = {"03a", "03b", "03c", "03d", "04", "04b", "05", "06", "07", "08", "09", "09b", "10", "11",
+                 "12", "13", "14", "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
+                 "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "40", "41", "42", "43",
+                 "44", "45", "46", "47", "48", "49", "50", "51", "52"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -694,6 +697,9 @@ def sec_parascopy(d, s):
                          "psCN_filter column")
     smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
     smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+    # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
+    # when the locus was not run (no read over it, no model, Parascopy failed).
+    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
     hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
@@ -701,7 +707,8 @@ def sec_parascopy(d, s):
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
                # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
-               "reading": ("no row of step 35's table covers SMN1 exon 7: no carrier reading"
+               "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
+                           else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
 
 
