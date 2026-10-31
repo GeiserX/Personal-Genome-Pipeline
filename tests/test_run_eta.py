@@ -17,14 +17,17 @@ Checks:
  10. the hours left are the hand-computed longest chain, and the CPU-work bound when
      it is larger;
  11. a running step past its high end makes the high end unknown and says so;
- 12. a step the catalogue does not time lands in unknown_steps, never 0;
- 13. the command writes the estimate and the history from an OUTDIR.
+ 12. a step the catalogue does not time, or only estimates, lands in unknown_steps, never 0;
+ 13. a step with a task whose last attempt failed or was stopped gives no span;
+ 14. the command writes the estimate and the history from an OUTDIR.
 Each check is then run against a planted mistake (a mutant of run_eta.py or a
 broken config) and must fail there: a check that cannot fail is no check.
 
 Run: python3 tests/test_run_eta.py
 """
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -163,6 +166,28 @@ def range_checks(m):
     out["an 8-core box doubles the docs hours"] = (
         r8["source"] == "docs" and r8["low_s"] == dv and r8["high_s"] == 2 * dv and "16 threads" in r8["label"], r8)
     out["a 32-core box is not scaled below the docs hours"] = (r32["low_s"] == r32["high_s"] == dv, r32)
+
+    # Steps 14 and 04b have hours in the catalogue, but only the step page's estimate.
+    est = m.step_ranges([], STEPS, 16)
+    unk = m.remaining(state([("03", "done", None), ("14", "waiting", None)]), est, NOW, 16)
+    out["a step the table only estimates gets no number"] = (
+        est["14"]["source"] == est["04b"]["source"] == "none" and est["14"]["low_s"] is None
+        and unk["unknown_steps"] == ["14"] and unk["low_s"] == 0, (est["14"], est["04b"], unk))
+
+    # Step 07: the preprocessor ended, then PharmCAT was stopped (a killed run). Step 03: a
+    # failed first attempt that a second one replaced still counts.
+    def task(h, proc, status, ex, start, end, attempt="1"):
+        return {"trace_file": "trace_x.txt", "hash": h, "attempt": attempt, "process": proc, "tag": "s1",
+                "status": status, "exit": ex, "cpus": 1, "memory_bytes": None, "peak_rss_bytes": None,
+                "realtime_s": end - start, "start": start, "complete": end}
+    rows = m.history_rows([task("p1", "PHARMCAT_PREPROCESS", "COMPLETED", "0", 0.0, 40.0),
+                           task("p2", "PHARMCAT", "ABORTED", "-", 41.0, 50.0),
+                           task("d1", "DEEPVARIANT", "FAILED", "137", 0.0, 100.0),
+                           task("d2", "DEEPVARIANT", "COMPLETED", "0", 110.0, 300.0, "2")],
+                          m.process_steps(STEPS), 16)
+    got = {(r["step"], r["process"]): r["step_span_s"] for r in rows}
+    out["a step with a task that failed or was stopped gives no span"] = (
+        got == {("07", "PHARMCAT_PREPROCESS"): None, ("03", "DEEPVARIANT"): 300.0}, got)
     return out
 
 
@@ -221,9 +246,10 @@ def remaining_checks(m):
 def command_checks(m):
     d = outdir(("trace_2026-01-02_09-59-00.txt", "trace_new.txt"))
     o = os.path.join(d, "eta.json")
-    rc = m.main([d, "--box", "ci", "--cores", "8", "--out", o])
-    est = json.load(open(o))
-    ok = (rc == 0 and est["box"] == "ci" and est["steps"]["02"]["source"] == "box"
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = m.main([d, "--box", "ci", "--cores", "8", "--out", o])
+    est = json.load(open(o)) if os.path.isfile(o) else {}
+    ok = (rc == 0 and est.get("box") == "ci" and est["steps"]["02"]["source"] == "box"
           and est["steps"]["02"]["high_s"] == 4 * H and est["steps"]["13"]["source"] == "docs"
           and est["remaining"] is None and os.path.isfile(m.history_path(d, "ci")))
     return {"the command writes the estimate and the history": (ok, est.get("steps", {}).get("02"))}
@@ -265,7 +291,23 @@ def mutants():
         return lambda *a, **k: {s: (dict(r, low_s=0.0, high_s=0.0) if r["source"] == "none" else r)
                                 for s, r in orig(*a, **k).items()}
 
-    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero):
+    def estimates_count(mod):
+        orig = mod.step_ranges
+        return lambda history, steps, *a, **k: orig(history, [dict(s, hours_from="measured") for s in steps], *a, **k)
+
+    def finished_ignored(mod):
+        orig = mod.remaining
+        return lambda st, *a: orig(dict(st, run={"state": "running"}), *a)
+
+    def out_ignored(mod):
+        orig = mod.main
+        def f(argv=None):
+            i = argv.index("--out")
+            return orig(argv[:i] + argv[i + 2:])
+        return f
+
+    for f in (forced_ok, old_start_is_submit, slash, sample_in, none_is_zero, estimates_count,
+              finished_ignored, out_ignored):
         f.wants_mod = True
     return {
         "an old and a new trace give the same spans": mutant(read_trace=old_start_is_submit),
@@ -283,6 +325,12 @@ def mutants():
         "a running step past its high end: high unknown, and said": mutant(
             left_of=lambda lo, hi, gone: (max(0.0, lo - gone), max(0.0, hi - gone), False)),
         "a step with no time lands in unknown_steps, never 0": mutant(step_ranges=none_is_zero),
+        "a step the table only estimates gets no number": mutant(step_ranges=estimates_count),
+        "a step with a task that failed or was stopped gives no span": mutant(finished=lambda ts: True),
+        "a running step counts only what is left of it": mutant(left_of=lambda lo, hi, gone: (lo, hi, False)),
+        "a finished run has nothing left": mutant(remaining=finished_ignored),
+        "the command writes the estimate and the history": mutant(main=out_ignored),
+        "the box name keeps only letters, digits, '_' and '-'": mutant(box_name=lambda box=None: box or "box"),
         "the history mutant for samples": mutant(history_rows=sample_in),
     }
 

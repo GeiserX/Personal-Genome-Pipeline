@@ -20,7 +20,9 @@ last 5 runs on this box that hold it, with n the number of runs. A step with no
 history on this box takes the hours of assets/steps.tsv (the upper end of the
 runtime table in docs/hardware-requirements.md, measured on 16 threads): the low
 end is that figure, the high end is that figure times 16 / cores when the box has
-fewer than 16 cores. A step that table does not time gets no number.
+fewer than 16 cores. A step that table does not measure (no time, or only the step
+page's estimate) gets no number. A run in which a task of the step failed or was
+stopped, or took part of the step from the cache, does not count for that step.
 
 With --sample, the hours left of that sample's run (bin/run_state.py gives the
 state): the low end is the longest chain of waiting and running steps at their
@@ -166,10 +168,22 @@ def run_level(t):
     return t["process"] in run_state.SHARED_PROCESSES or t["tag"] is None
 
 
+def finished(ts):
+    """True when every task of a step's group ended well: per process and tag, the attempt that
+    ended last is COMPLETED with exit 0. A failed attempt that a later one replaced is fine."""
+    last = {}
+    for i, t in enumerate(ts):
+        k = (t["process"], t["tag"])
+        order = (t["complete"] if t["complete"] is not None else float("-inf"), i)
+        if k not in last or order > last[k][0]:
+            last[k] = (order, t)
+    return all(t["status"] == "COMPLETED" and t["exit"] == "0" for _, t in last.values())
+
+
 def history_rows(tasks, proc_step, box_cpus):
     """The history rows of one trace. A step's span is its first start to its last end among the
-    tasks of one sample (or of the run-level tasks); a span with a cached task in it is not the
-    step's full time and is left empty."""
+    tasks of one sample (or of the run-level tasks); a span with a cached task in it, or with a
+    task whose last attempt failed or was stopped, is not the step's full time and is left empty."""
     groups = {}
     for t in tasks:
         step = proc_step.get(t["process"])
@@ -179,7 +193,7 @@ def history_rows(tasks, proc_step, box_cpus):
         groups.setdefault(key, []).append(t)
     span_of = {}
     for key, ts in groups.items():
-        if any(t["status"] == "CACHED" for t in ts):
+        if any(t["status"] == "CACHED" for t in ts) or not finished(ts):
             span_of[key] = None
             continue
         starts = [t["start"] for t in ts if t["start"] is not None]
@@ -309,7 +323,8 @@ def docs_scale(cores):
 
 def step_ranges(history, steps, cores, exclude=()):
     """{step: {low_s, high_s, n, source, label, cpus}}. source 'box': the last LAST_RUNS runs on
-    this box; 'docs': the catalogue's hours scaled to the cores; 'none': no number."""
+    this box; 'docs': the catalogue's measured hours scaled to the cores; 'none': no number
+    (the catalogue has no time for the step, or only an estimate)."""
     runs = {}
     for r in history:
         if r["trace_file"] in exclude:
@@ -329,11 +344,11 @@ def step_ranges(history, steps, cores, exclude=()):
             out[s["step"]] = {"low_s": min(spans), "high_s": max(spans), "n": len(mine), "source": "box",
                               "label": f"on this box, {len(mine)} run{'s' if len(mine) > 1 else ''}",
                               "cpus": max(v["cpus"] for v in mine) or 1}
-        elif s["hours"] is not None:
+        elif s["hours"] is not None and s["hours_from"] == "measured":
             h = s["hours"] * 3600.0
-            how = "measured on 16 threads" if s["hours_from"] == "measured" else "an estimate for 16 threads"
             out[s["step"]] = {"low_s": h, "high_s": h * scale, "n": 0, "source": "docs",
-                              "label": f"from the docs, {how}" + (f", scaled to {cores} cores" if scale > 1 else ""),
+                              "label": "from the docs, measured on 16 threads"
+                                       + (f", scaled to {cores} cores" if scale > 1 else ""),
                               "cpus": 1}
         else:
             out[s["step"]] = {"low_s": None, "high_s": None, "n": 0, "source": "none",
