@@ -225,12 +225,12 @@ def step_of_process(steps):
     return {p: s["step"] for s in steps for p in s["processes"]}
 
 
-def messages(events, steps):
+def messages(events, steps, start=0):
     """What the browser is sent for each stored message, in order: (id, payload). The id is the
-    message's line number in events.jsonl. No path, parameter or tag leaves here."""
+    message's line number in events.jsonl (events[0] is line start + 1). No path, parameter or tag leaves here."""
     owner = step_of_process(steps)
     out = []
-    for i, ev in enumerate(events, 1):
+    for i, ev in enumerate(events, start + 1):
         p = {"event": ev.get("event"), "utc": ev.get("utcTime")}
         tr = ev.get("trace")
         if isinstance(tr, dict):
@@ -556,16 +556,17 @@ class Live:
         with self.lock:
             self.sessions.pop(sid, None)
 
-    def blocked(self, client):
+    def reserve_attempt(self, client):
+        """False while the client is blocked; else count this attempt now, in the same lock, so
+        parallel wrong guesses cannot all pass the check (a right password removes the count)."""
         now = time.time()
         with self.lock:
             f = [t for t in self.failures.get(client, []) if now - t < FAIL_WINDOW_SECONDS]
             self.failures[client] = f
-            return len(f) >= self.cfg.login_max_failures
-
-    def failed(self, client):
-        with self.lock:
-            self.failures.setdefault(client, []).append(time.time())
+            if len(f) >= self.cfg.login_max_failures:
+                return False
+            f.append(now)
+            return True
 
     # runs
     def runs(self):
@@ -628,9 +629,9 @@ class Live:
 
     def headlines(self, sample, d, st):
         """{section: {text, tone, step}} for the sections of the steps that are done. The summary
-        is read again only when the set of done steps changes."""
+        is read again only when the set of done steps or the message count changes."""
         done = tuple(s["step"] for s in st["steps"] if s["state"] == "done")
-        key = (sample, done)
+        key = (sample, done, st.get("events"))  # a section's file can land after its step's last message
         hit = self.headline_cache.get(sample)
         if hit and hit[0] == key:
             return hit[1]
@@ -848,7 +849,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
         client = self.client
         if not self.live.password_hash:
             return self.send_body(303, "text/plain", "", [("Location", "/")])
-        if self.live.blocked(client):
+        if not self.live.reserve_attempt(client):
             self.log("login-blocked", status=429)
             return self.login_page(429, "Too many failed logins. Wait 15 minutes.", [("Retry-After", "900")])
         try:
@@ -868,7 +869,6 @@ class BrowserHandler(BaseHTTPRequestHandler):
         except ValueError:
             ok = False
         if not ok:
-            self.live.failed(client)
             self.log("login-fail", status=401)
             return self.login_page(401, "Wrong password.")
         with self.live.lock:
@@ -962,7 +962,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
             return self.deny(503, "too many open event streams")
         try:
             try:
-                after = int(self.headers.get("Last-Event-ID") or 0)
+                after = max(0, int(self.headers.get("Last-Event-ID") or 0))
             except ValueError:
                 after = 0
             self.log("events", name, status=200)
@@ -982,8 +982,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
                 if not new:
                     self.wfile.write(b": heartbeat\n\n")
                 else:
-                    all_events = self.live.store.events(name)
-                    for i, payload in messages(all_events, self.live.steps)[sent:sent + len(new)]:
+                    for i, payload in messages(new, self.live.steps, sent):
                         self.wfile.write(f"id: {i}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n".encode())
                     sent += len(new)
                 self.wfile.flush()

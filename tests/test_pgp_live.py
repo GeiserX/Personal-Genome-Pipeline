@@ -518,6 +518,36 @@ def main():
         check("five wrong passwords are 401, the sixth try is 429", codes == [401] * 5 + [429], codes)
         code, _, _ = login(port)
         check("the right password is refused too while blocked", code == 429, code)
+
+        def burst(n=12):
+            live.failures.clear()
+            gate = threading.Barrier(n)
+            got = []
+
+            def one(i):
+                gate.wait()
+                try:
+                    got.append(login(port, f"parallel wrong {i}")[0])
+                except OSError:  # a 429 sent before the body is read can reset the connection
+                    got.append("reset")
+            ts = [threading.Thread(target=one, args=(i,)) for i in range(n)]
+            for x in ts:
+                x.start()
+            for x in ts:
+                x.join(60)
+            return got
+        got = burst()
+        check("parallel wrong passwords get at most five checks; the rest are refused",
+              got.count(401) <= live.cfg.login_max_failures and len(got) == 12
+              and all(x in (401, 429, "reset") for x in got), sorted(map(str, got)))
+        reserve = live.reserve_attempt
+        live.reserve_attempt = lambda client: True  # planted: the attempt is never counted
+        try:
+            planted = burst()
+        finally:
+            live.reserve_attempt = reserve
+        control("an attempt that is not counted before the password check",
+                planted.count(401) <= live.cfg.login_max_failures)
         live.failures.clear()
         bad_len = [raw(port, f"POST /login HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: "
                              f"application/x-www-form-urlencoded\r\nContent-Length: {n}\r\n\r\n", b"password=x")
