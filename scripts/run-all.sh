@@ -257,8 +257,9 @@ export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 # without it neither downloads the plugin nor warns about an unknown weblog scope. Bump the pin with its release.
 NF_WEBLOG_PLUGIN=nf-weblog@1.2.0
 if [ -n "${PGP_LIVE_URL:-}" ]; then
-  [[ "$PGP_LIVE_URL" =~ ^https?://[A-Za-z0-9.:_-]+(/[A-Za-z0-9._~/-]*)?$ ]] \
-    || { echo "ERROR: PGP_LIVE_URL must be a plain http(s)://host:port URL, got '${PGP_LIVE_URL}'" >&2; PGP_LIVE_URL=""; exit 2; }
+  # The ingest listener speaks plain HTTP and serves /ingest/<run> at its root, so https or a path would lose every post.
+  [[ "$PGP_LIVE_URL" =~ ^http://[A-Za-z0-9.:_-]+/?$ ]] \
+    || { echo "ERROR: PGP_LIVE_URL must be a plain http://host:port URL, got '${PGP_LIVE_URL}'" >&2; PGP_LIVE_URL=""; exit 2; }
   export PGP_LIVE_RUN=$SAMPLE
   printf "plugins {\n    id '%s'\n}\nweblog {\n    enabled = true\n    url     = '%s'\n}\n" "$NF_WEBLOG_PLUGIN" \
     "${PGP_LIVE_URL%/}/ingest/${SAMPLE}" > "${S}/nextflow/live.config"

@@ -70,6 +70,11 @@ if grep '^nextflow :: ' "$FAKE_DOCKER_LOG" | tail -1 | grep -q 'live\.config'; t
 [ ! -e "${G}/sample1/nextflow/live.config" ] || fail "an earlier run's live.config was left in place"
 run_expect 2 badurl env PATH="$P" PGP_LIVE_URL="http://127.0.0.1:8788/x'y" "${SCRIPTS}/run-all.sh" sample1 male
 output_has badurl 'PGP_LIVE_URL must be a plain'
+# The ingest listener is plain HTTP at its root: https or a path prefix would lose every post.
+run_expect 2 httpsurl env PATH="$P" PGP_LIVE_URL="https://127.0.0.1:8788" "${SCRIPTS}/run-all.sh" sample1 male
+output_has httpsurl 'PGP_LIVE_URL must be a plain'
+run_expect 2 pathurl env PATH="$P" PGP_LIVE_URL="http://127.0.0.1:8788/live" "${SCRIPTS}/run-all.sh" sample1 male
+output_has pathurl 'PGP_LIVE_URL must be a plain'
 
 # --- 3. the site refuses every post -------------------------------------------------------------
 run_rc down env PATH="$P" GRIDSS=true PGP_LIVE_URL="$URL" FAKE_DOWNLOAD_FAIL='/ingest/' "${SCRIPTS}/run-all.sh" sample1 male

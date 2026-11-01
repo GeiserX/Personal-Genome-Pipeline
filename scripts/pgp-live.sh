@@ -45,5 +45,7 @@ args=(--root "$GENOME_DIR" --state-dir "$STATE" --bind "${PGP_LIVE_BIND:-127.0.0
   --ingest-port "${PGP_LIVE_INGEST_PORT:-8788}")
 if [ -s "$PWF" ]; then args+=(--password-file "$PWF"); fi
 for h in ${PGP_LIVE_ALLOWED_HOSTS:-}; do args+=(--allowed-host "$h"); done
-[ -z "$OPEN" ] || echo "The run's page: http://${PGP_LIVE_BIND:-127.0.0.1}:${PGP_LIVE_PORT:-8787}/runs/${OPEN}/"
+scheme=http
+for a in "$@"; do [ "$a" != --tls-cert ] && [[ "$a" != --tls-cert=* ]] || scheme=https; done
+[ -z "$OPEN" ] || echo "The run's page: ${scheme}://${PGP_LIVE_BIND:-127.0.0.1}:${PGP_LIVE_PORT:-8787}/runs/${OPEN}/"
 exec python3 "${PGP_ROOT}/bin/pgp_live.py" "${args[@]}" "$@"

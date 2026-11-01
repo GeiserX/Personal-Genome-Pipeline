@@ -583,6 +583,15 @@ def main():
         line = raw(INGEST_PORT, f"POST /ingest/{RUN} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json"
                                 f"\r\nContent-Length: -1\r\n\r\n", b'{"event":"started"}')
         check("a negative Content-Length on /ingest is 413", " 413 " in line, line)
+        numeric = pgp_live.cut({"event": "process_started", "trace": {"name": 123, "process": 7, "tag": 9, "status": 1}})
+        try:
+            pgp_live.messages([numeric], run_state.read_steps())
+            run_state.event_tasks([numeric], RUN)
+            survived = True
+        except TypeError as e:
+            survived = e
+        check("a trace with numeric name, process, tag or status is stored as text and read without error",
+              survived is True and numeric["trace"]["name"] == "123", (survived, numeric))
 
         def dropped(p, handler, t):
             """Does a client that promises a body and sends none lose its connection within 4 s?"""

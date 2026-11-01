@@ -97,7 +97,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
   --bind 0.0.0.0 --ingest-bind 0.0.0.0 --password-file /state/password
 ```
 
-Inside the container both listeners bind every address, and `-p 127.0.0.1:...` keeps them on the host's loopback. Write the hash first with `python3 bin/pgp_live.py hash-password > ~/.pgp-live/password` and `chmod 600` it.
+Inside the container both listeners bind every address, and `-p 127.0.0.1:...` keeps them on the host's loopback. Write the hash first: `mkdir -p -m 700 ~/.pgp-live`, then `(umask 077; python3 bin/pgp_live.py hash-password > ~/.pgp-live/password)`, so the file is mode 600 from the moment it exists.
 
 **Behind a reverse proxy.** Point the proxy at `127.0.0.1:8787`, pass the Host header, and turn off response buffering for `/runs/<run>/events` (the server sends `X-Accel-Buffering: no`, which nginx honours). Then:
 

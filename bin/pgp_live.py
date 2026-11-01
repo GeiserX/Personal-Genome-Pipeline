@@ -170,6 +170,9 @@ def cut(ev):
     tr = ev.get("trace")
     if isinstance(tr, dict):
         out["trace"] = {k: scalar(tr[k]) for k in TRACE_KEYS if k in tr and not isinstance(tr[k], (dict, list))}
+        for k in ("name", "process", "tag", "status", "hash"):  # parsed as text later; a number would raise there
+            if out["trace"].get(k) is not None:
+                out["trace"][k] = str(out["trace"][k])[:200]
     md = ev.get("metadata")
     if isinstance(md, dict):
         keep = {}
