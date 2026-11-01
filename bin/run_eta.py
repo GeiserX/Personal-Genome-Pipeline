@@ -17,12 +17,14 @@ letters, digits, '_' and '-'.
 
 Per step, the range is the shortest and the longest time the step took in the
 last 5 runs on this box that hold it, with n the number of runs. A step with no
-history on this box takes the hours of assets/steps.tsv (the upper end of the
-runtime table in docs/hardware-requirements.md, measured on 16 threads): the low
-end is that figure, the high end is that figure times 16 / cores when the box has
-fewer than 16 cores. A step that table does not measure (no time, or only the step
-page's estimate) gets no number. A run in which a task of the step failed or was
-stopped, or took part of the step from the cache, does not count for that step.
+history on this box takes the two ends of its time in the runtime table of
+docs/hardware-requirements.md, measured on 16 threads (assets/steps.tsv: hours_low
+and hours): the low end is the measured lower end, the high end is the upper end,
+times 16 / cores when the box has fewer than 16 cores. A step that table does not
+measure (no time, or only the step page's estimate) gets no number. A run in which a
+task of the step failed or was stopped, or took part of the step from the cache, does
+not count for that step, and neither does a run that run-all.sh is still running (its
+run_status.tsv has no 'meta finished_utc' yet): a half-done step is not a short one.
 
 With --sample, the hours left of that sample's run (bin/run_state.py gives the
 state): the low end is the longest chain of waiting and running steps at their
@@ -346,7 +348,9 @@ def step_ranges(history, steps, cores, exclude=()):
                               "cpus": max(v["cpus"] for v in mine) or 1}
         elif s["hours"] is not None and s["hours_from"] == "measured":
             h = s["hours"] * 3600.0
-            out[s["step"]] = {"low_s": h, "high_s": h * scale, "n": 0, "source": "docs",
+            lo = num(s.get("hours_low"))
+            out[s["step"]] = {"low_s": lo * 3600.0 if lo is not None else h, "high_s": h * scale, "n": 0,
+                              "source": "docs",
                               "label": "from the docs, measured on 16 threads"
                                        + (f", scaled to {cores} cores" if scale > 1 else ""),
                               "cpus": 1}
@@ -417,6 +421,29 @@ def current_traces(sample_dir, state):
     return {os.path.basename(p) for p in run_state.trace_files(sample_dir, started)}
 
 
+def live_traces(outdir):
+    """The trace files of every run that run-all.sh started under OUTDIR and has not ended: its
+    run_status.tsv has a 'meta started_epoch' row and no 'meta finished_utc' row. A run_status.tsv
+    that cannot be read leaves out the newest trace, as a run whose start is not known. A run
+    started with a bare 'nextflow run' writes no run_status.tsv and cannot be told apart this way."""
+    out = set()
+    for p in glob.glob(os.path.join(outdir, "*", "logs", "run_status.tsv")):
+        sample_dir = os.path.dirname(os.path.dirname(p))
+        try:
+            meta = (run_state.read_run_status(p) or {}).get("meta", {})
+        except OSError:
+            out |= {os.path.basename(t) for t in run_state.trace_files(sample_dir, None)}
+            continue
+        if "finished_utc" in meta:
+            continue
+        try:
+            started = float(meta["started_epoch"])
+        except (KeyError, ValueError):
+            continue
+        out |= {os.path.basename(t) for t in run_state.trace_files(sample_dir, started)}
+    return out
+
+
 def estimate(outdir, sample=None, state=None, now=None, cores=None, box=None, steps=None):
     """{box, cores, steps: {step: range}, remaining: {...} or None}."""
     steps = steps if steps is not None else run_state.read_steps()
@@ -426,7 +453,7 @@ def estimate(outdir, sample=None, state=None, now=None, cores=None, box=None, st
     sample_dir = os.path.join(outdir, sample) if sample else None
     if sample and state is None:
         state = run_state.collect(sample, sample_dir)
-    exclude = current_traces(sample_dir, state) if state and sample_dir else set()
+    exclude = live_traces(outdir) | (current_traces(sample_dir, state) if state and sample_dir else set())
     ranges = step_ranges(history, steps, cores, exclude)
     return {"box": box_name(box), "cores": cores, "generated_utc": iso(now),
             "steps": ranges, "remaining": remaining(state, ranges, now, cores) if state else None}
