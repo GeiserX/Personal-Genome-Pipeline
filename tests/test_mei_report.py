@@ -21,7 +21,7 @@ the script, and checks what it writes:
      that is not MEGAnE's (no SVTYPE or MEPRED), a depth file that is not
      samtools bedcov -c output, a catalog without its columns
   5. collect_summary.py's mei section and render_report.py's text block and
-     HTML card read the tables; without them the summary's "not assessed"
+     HTML card read the tables, and the full HTML report renders the card; without them the summary's "not assessed"
      list names mobile element insertions, with them it does not
   6. the real catalog: every row is an SVA, its window is the site -/+ 500,
      and the script reads it
@@ -191,6 +191,11 @@ with tempfile.TemporaryDirectory() as d:
     summ = cs.collect("S", f"{d}/S")
     check("5 with step 50's tables, mobile element insertions are not listed as not assessed",
           cs.MEI_NOT_ASSESSED in summ["not_assessed"], False)
+    try:
+        page = rr.html_report(summ)
+    except Exception as e:  # the whole step 24 page is lost if the card raises
+        page = f"html_report raised {e!r}"
+    check("5 the full HTML report renders the card", "Mobile Element Insertions" in page and "SVA_F" in page, True)
     lines = rr.mei_lines(data)
     check("5 the text block opens with the counts", lines[0], "Insertions called: 2 (Alu 1, SVA 1)")
     check("5 the FKTN line", lines[1], "FKTN SVA (Fukuyama congenital muscular dystrophy; autosomal recessive): "
