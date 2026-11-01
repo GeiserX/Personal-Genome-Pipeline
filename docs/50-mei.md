@@ -49,7 +49,7 @@ The catalog is `assets/mei_sites.tsv`: one row per insertion, with its GRCh38 si
 ./scripts/50-mei.sh your_name male
 ```
 
-With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers reference/megane/GRCh38_no_alt_analysis_set.mk` (processes `MEI_DEPTH`, `MEI` and `MEI_REPORT`).
+With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk` (Nextflow reads a relative path from the launch directory; `run-all.sh` passes it for you) (processes `MEI_DEPTH`, `MEI` and `MEI_REPORT`).
 
 ## How it works
 

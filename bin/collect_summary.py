@@ -2285,8 +2285,10 @@ def sec_mei(d, s):
     cp = os.path.join(os.path.dirname(p), f"{s}_mei.tsv")
     if not os.path.isfile(cp):
         raise Unreadable(f"{os.path.basename(cp)} is missing beside {os.path.basename(p)}")
-    calls = read_tsv(cp)
-    if calls and any(k not in calls[0] for k in ("chrom", "pos", "element", "copies")):
+    with open_text(cp) as f:   # the header alone: a run with no insertion writes no row
+        r = csv.DictReader(f, delimiter="\t")
+        head, calls = r.fieldnames or [], list(r)
+    if any(k not in head for k in ("chrom", "pos", "element", "copies")):
         raise Unreadable(f"{os.path.basename(cp)} lacks a column of chrom, pos, element, copies")
     counts = {}
     for c in calls:
