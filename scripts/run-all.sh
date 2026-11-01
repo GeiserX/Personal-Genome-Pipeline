@@ -323,7 +323,10 @@ family_steps() {
   FP="${G}/${FAM}/family_plan.tsv"; mkdir -p "${G}/${FAM}"
   echo "[Family] ${FAM}: ${FP}"
   famplan --rw "${G}/${FAM}" -- --family "$FAM" --have-gvcf ${HG[@]+"${HG[@]}"} --have-clinvar ${HC[@]+"${HC[@]}"} \
-    --ibd-panel "$IBD" --out "/genome/${FAM}/family_plan.tsv" || { echo "  FAILED: family_report.py plan" >&2; failed=1; }
+    --ibd-panel "$IBD" --out "/genome/${FAM}/family_plan.tsv" || {
+    # never act on an older family_plan.tsv: the family steps wait for a plan that worked
+    echo "  FAILED: family_report.py plan; steps 38 and 39 not run" >&2; failed=1
+    printf 'step\t%s\tskipped (family_report.py plan failed)\n' 38 39 >> "$STATUS"; return 0; }
   # decision<TAB>reason of step 38 (the joint call) and step 39 (a couple that runs, else the first couple)
   d38=$(awk -F'\t' '$2 == "joint_call" {print $4 "\t" $5; exit}' "$FP" 2>/dev/null)
   d39=$(awk -F'\t' '$2 == "couple_carrier" {r = r ? r : $4 "\t" $5; if ($4 == "runs") {r = $4 "\t" $5; exit}} END {print r}' "$FP" 2>/dev/null)
