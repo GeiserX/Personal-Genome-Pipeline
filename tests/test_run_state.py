@@ -21,7 +21,8 @@ Checks (sample demo1; the trace and weblog files are tests/fixtures/run_state):
      records has a row with the same label and --tools name, the recorded
      steps are collect_summary.RUN_ALL_STEPS, every SECTIONS key belongs to
      the row of its step, every process in modules/local belongs to a row,
-     and the tools are main.nf's known tools.
+     the tools are main.nf's known tools, and every measured row has an
+     hours_low below its hours (no other row has one).
 Each check is then run against a planted mistake (a mutant of the builder or
 of the catalogue) and must fail there: a check that cannot fail is no check.
 
@@ -242,6 +243,18 @@ def catalogue_checks(steps, sections, run_all_set):
                                                     and set(procs) <= mods, (lost, twice, sorted(set(procs) - mods)))
     tools = {s["tool"] for s in steps if s["tool"]}
     out["the tools are main.nf's known tools"] = (tools == main_nf_tools(), sorted(tools ^ main_nf_tools()))
+    def low_ok(s):
+        try:
+            lo = float(s.get("hours_low") or "nan")
+        except ValueError:
+            return False
+        if s["hours_from"] != "measured":
+            return not s.get("hours_low")
+        return s["hours"] is not None and 0 < lo < s["hours"]
+    bad_low = [(s["step"], s.get("hours_low"), s["hours"], s["hours_from"]) for s in steps if not low_ok(s)]
+    measured = sum(s["hours_from"] == "measured" for s in steps)
+    out["every measured row has hours_low below hours, no other row has one"] = (
+        measured >= 25 and not bad_low, (measured, bad_low))
     nums = [s["step"] for s in steps]
     out["one row per step, every upstream step has a row"] = (
         len(nums) == len(set(nums)) and all(u in row for s in steps for u in s["upstream"]), nums)
@@ -342,6 +355,12 @@ def main():
          [dict(s, processes=[p for p in s["processes"] if p != "Y_STR"]) for s in steps], None),
         ("the tools are main.nf's known tools", [dict(s, tool="") if s["step"] == "34" else s for s in steps], None),
         ("one row per step, every upstream step has a row", steps + [copy.deepcopy(steps[0])], None),
+        ("every measured row has hours_low below hours, no other row has one",
+         [dict(s, hours_low="") if s["step"] == "03" else s for s in steps], None),
+        ("every measured row has hours_low below hours, no other row has one",
+         [dict(s, hours_low=str(s["hours"])) if s["step"] == "04" else s for s in steps], None),
+        ("every measured row has hours_low below hours, no other row has one",
+         [dict(s, hours_low="0.1") if s["step"] == "14" else s for s in steps], None),
     ]
     for name, st, ras in cat:
         got = catalogue_checks(st, collect_summary.SECTIONS, collect_summary.RUN_ALL_STEPS if ras is None else ras)[name]
