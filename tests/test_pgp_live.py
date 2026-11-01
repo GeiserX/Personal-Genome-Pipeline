@@ -209,6 +209,12 @@ def tls_checks(root, work, pwfile):
     """11. One silent client must not stop the HTTPS listener. Returns (ok, detail) for a given
     wrap: the real server, and a planted one that shakes hands in accept()."""
     cert, key = os.path.join(work, "c.pem"), os.path.join(work, "k.pem")
+    if not shutil.which("openssl"):
+        ci = os.environ.get("CI") == "true"
+        print(("[FAIL] " if ci else "[SKIP] ") + "no openssl to make a test certificate")
+        if ci:
+            FAILS.append("no openssl in CI")
+        return
     r = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
                         "-days", "1", "-subj", "/CN=localhost"], capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
