@@ -106,8 +106,8 @@ chmod 444 "$PLAN"
 run_rc planfail env FAMILIES="$FAMS" "${R}/scripts/run-all.sh" partner_y female
 chmod 644 "$PLAN"
 [ "$RC" -eq 1 ] || fail "a failed plan exited ${RC}, expected 1"
-output_has planfail 'FAILED: family_report.py plan; steps 38 and 39 not run'
 [ "$(grep -c '' "$STEPS_LOG")" -eq 2 ] || fail "a family step ran from the older plan: $(cat "$STEPS_LOG")"
+output_has planfail 'FAILED: family_report.py plan; steps 38 and 39 not run'
 status partner_y | grep -q $'^step\t38\tskipped (family_report.py plan failed)$' \
   || fail "step 38 is not recorded as skipped after the failed plan: $(status partner_y)"
 status partner_y | grep -q $'^step\t39\tskipped (family_report.py plan failed)$' \
