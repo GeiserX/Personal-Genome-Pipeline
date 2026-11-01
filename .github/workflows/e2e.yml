@@ -506,7 +506,9 @@ jobs:
               fi
               echo "| ${g} | ${ref} | ${shown} | ${state} |" >> "$table"
             done < <(awk -v g="$g" '$1 == g {print $2}' "${RUNNER_TEMP}/image-groups.txt" | while read -r ref; do
-                       echo "$(docker image inspect -f '{{.Size}}' "$ref" 2> /dev/null || echo 0) ${ref}"
+                       # A missing image prints an empty line and fails: read the size first.
+                       size=$(docker image inspect -f '{{.Size}}' "$ref" 2> /dev/null) || size=0
+                       echo "${size:-0} ${ref}"
                      done | sort -n)
             if [ "$used" -gt 0 ]; then
               echo "save${g}=true" >> "$GITHUB_OUTPUT"
