@@ -223,7 +223,7 @@ grep -E '(%%|!!) executor|^~> ' "$GENOME_DIR/<sample>/nextflow/.nextflow.log" | 
 **Check:** `bin/run_headroom.py` gives the used share of both disks, and warns at 90% (`--disk-warn-percent` or `PGP_DISK_WARN_PERCENT` to change it):
 
 ```bash
-python3 bin/run_headroom.py --work-dir "$GENOME_DIR/<sample>/nextflow/work" --outdir "$GENOME_DIR"
+python3 bin/run_headroom.py --work-dir "${GENOME_DIR:?Set GENOME_DIR to your data directory}/<sample>/nextflow/work" --outdir "$GENOME_DIR"
 ```
 
 A line `disk work and results` means both folders sit on one filesystem. The inode share counts too: a disk can run out of inodes before it runs out of bytes. [Where a run stands](run-state.md#memory-and-disk-headroom) says what each figure means.

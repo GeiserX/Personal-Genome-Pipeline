@@ -81,7 +81,7 @@ With or without `--sample`, the trace files of every run that `run-all.sh` start
 `bin/run_headroom.py` says how close each task came to the memory it asked for, and how full the disks of the work folder and the results folder are. It works the same on any Linux, macOS or WSL2 machine and needs no host path set in advance.
 
 ```bash
-python3 bin/run_headroom.py --work-dir "$GENOME_DIR/<sample>/nextflow/work" --outdir "$GENOME_DIR" \
+python3 bin/run_headroom.py --work-dir "${GENOME_DIR:?Set GENOME_DIR to your data directory}/<sample>/nextflow/work" --outdir "$GENOME_DIR" \
   --trace "$GENOME_DIR"/pipeline_info/trace_<time>.txt
 python3 bin/run_headroom.py --events events.jsonl   # folders and max_memory from the weblog metadata
 ```

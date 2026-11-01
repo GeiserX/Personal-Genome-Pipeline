@@ -366,6 +366,8 @@ def mutants():
 def main():
     global TMP
     TMP = tempfile.mkdtemp(prefix="test_run_headroom.")
+    # the checks assume the default warn percents: a threshold set in the caller's shell must not leak in
+    env_saved = {k: os.environ.pop(k) for k in ("PGP_DISK_WARN_PERCENT", "PGP_MEM_WARN_PERCENT") if k in os.environ}
     try:
         base = open(os.path.join(REPO, "conf", "base.config")).read()
         got = base_config_exits(base)
@@ -388,6 +390,7 @@ def main():
               all(ok for ok, _ in same.values()), [k for k, (ok, _) in same.items() if not ok])
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
+        os.environ.update(env_saved)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0
 
