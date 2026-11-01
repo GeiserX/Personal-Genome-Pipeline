@@ -72,6 +72,7 @@ PBKDF2_ITERATIONS = 600000
 COOKIE = "pgp_live"
 HEARTBEAT_SECONDS = 15
 TLS_HANDSHAKE_SECONDS = 10
+REQUEST_SECONDS = 60  # a client that stops sending mid-request frees its thread (an event stream writes every 15 s)
 FAIL_WINDOW_SECONDS = 15 * 60
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -682,6 +683,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
     sys_version = ""
     live = None  # set per server
     tls_failed = False
+    timeout = REQUEST_SECONDS
 
     def setup(self):
         if isinstance(self.request, ssl.SSLSocket):
@@ -996,6 +998,7 @@ class IngestHandler(BaseHTTPRequestHandler):
     server_version = "pgp-live-ingest"
     sys_version = ""
     live = None
+    timeout = REQUEST_SECONDS
 
     def log_message(self, fmt, *args):
         pass

@@ -553,6 +553,28 @@ def main():
         line = raw(INGEST_PORT, f"POST /ingest/{RUN} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json"
                                 f"\r\nContent-Length: -1\r\n\r\n", b'{"event":"started"}')
         check("a negative Content-Length on /ingest is 413", " 413 " in line, line)
+
+        def dropped(p, handler, t):
+            """Does a client that promises a body and sends none lose its connection within 4 s?"""
+            saved = handler.timeout
+            handler.timeout = t
+            sk = socket.create_connection(("127.0.0.1", p), timeout=4)
+            try:
+                sk.sendall(f"POST /login HTTP/1.1\r\nHost: 127.0.0.1:{p}\r\nContent-Length: 4096\r\n\r\n".encode())
+                while sk.recv(4096):
+                    pass
+                return True
+            except OSError:
+                return False
+            finally:
+                sk.close()
+                handler.timeout = saved
+        check("both listeners bound a request's reads (BrowserHandler and IngestHandler timeout set)",
+              pgp_live.BrowserHandler.timeout and pgp_live.IngestHandler.timeout,
+              (pgp_live.BrowserHandler.timeout, pgp_live.IngestHandler.timeout))
+        check("a client that stops sending mid-request is dropped (browser and ingest, timeout 1 s)",
+              dropped(port, pgp_live.BrowserHandler, 1) and dropped(INGEST_PORT, pgp_live.IngestHandler, 1))
+        control("no timeout on the browser listener", dropped(port, pgp_live.BrowserHandler, None))
         code, _, _ = post(INGEST_PORT, RUN, "not json")
         check("a message that is not JSON is 400", code == 400, code)
         code, _, _ = post(INGEST_PORT, "../x", {"event": "started"})
