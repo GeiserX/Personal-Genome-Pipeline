@@ -205,6 +205,21 @@ def run_finished(events):
     return bool(events) and events[-1].get("event") == "pgp_run_finished"
 
 
+def current_run(events):
+    """The messages of the newest run of a sample: those after the last pgp_run_finished that is not
+    the newest message, and from the last weblog 'started' when that comes later (a bare nextflow
+    run posts no pgp_run_finished)."""
+    start = 0
+    for i, ev in enumerate(events[:-1]):
+        if ev.get("event") == "pgp_run_finished":
+            start = i + 1
+    for i in range(len(events) - 1, start - 1, -1):
+        if events[i].get("event") == "started":
+            start = i
+            break
+    return events[start:]
+
+
 def step_of_process(steps):
     return {p: s["step"] for s in steps for p in s["processes"]}
 
@@ -288,8 +303,26 @@ def _h_lpa(d, summary):
     return _rr().lpa_lines(d)[0], False
 
 
+def _h_cpsr(d, summary):
+    """The P/LP count of CPSR's final rows, then the report's first CPSR line (the two ClinVar
+    releases); no line while the classification table was not read."""
+    lines = _rr().cpsr_lines(d, summary.get("databases") or {})
+    if not lines:
+        return None, False
+    plp = d.get("plp") or []
+    return f"Pathogenic/Likely Pathogenic rows: {len(plp)}. {lines[0]}", bool(plp)
+
+
+def _h_mito(d, summary):
+    a = d.get("annotation") or {}
+    lines = _rr().mito_lines(d)
+    first = next((x for x in lines if x.startswith("ClinVar pathogenic")), lines[0] if lines else None)
+    return first, (a.get("clinvar_plp") or 0) > 0
+
+
 HEADLINES = {"clinvar": _h_clinvar, "carrier": _h_carrier, "couple": _h_couple, "roh": _h_roh,
-             "pypgx": _h_pypgx, "annotsv": _h_annotsv, "viral": _h_viral, "archaic": _h_archaic, "lpa": _h_lpa}
+             "pypgx": _h_pypgx, "annotsv": _h_annotsv, "viral": _h_viral, "archaic": _h_archaic, "lpa": _h_lpa,
+             "cpsr": _h_cpsr, "mito": _h_mito}
 
 
 def headline(key, sec, summary=None):
@@ -564,9 +597,22 @@ class Live:
 
     def state(self, run):
         d = run["dir"] or os.path.join(self.root, run["name"])
-        events_path = self.store.path(run["name"])
-        st = run_state.collect(run["name"], d, events_path=events_path, steps_path=self.cfg.steps)
         events = self.store.events(run["name"])
+        cur = current_run(events)
+        # run_state.collect, on the current run's messages only (an earlier run's 'completed' would
+        # mark this one finished, and its tasks would mark this run's steps done).
+        status = run_state.read_run_status(os.path.join(d, "logs", "run_status.tsv"))
+        try:
+            started = float(status["meta"]["started_epoch"]) if status else None
+        except (KeyError, ValueError):
+            started = None
+        pt_path = os.path.join(d, "nextflow", "process_status.tsv")
+        pt = run_state.read_process_status(pt_path)
+        if pt is not None and started is not None and os.path.getmtime(pt_path) < started:
+            pt = None  # an earlier run's table
+        st = run_state.build(run["name"], run_state.read_steps(self.cfg.steps), status, pt,
+                             run_state.read_trace(run_state.trace_files(d, started), run["name"]),
+                             run_state.event_tasks(cur, run["name"]), cur, run_state.summary_sources(d))
         if run_finished(events) and st["run"]["state"] == "running":
             st["run"]["state"] = "finished"
         st["events"] = len(events)  # the page paints a message ahead of state.json only past this id

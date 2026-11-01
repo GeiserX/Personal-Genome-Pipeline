@@ -618,6 +618,51 @@ def main():
         check("a run is finished while pgp_run_finished is its newest message, not once a later run posts",
               pgp_live.run_finished(done) and not pgp_live.run_finished(rerun) and not pgp_live.run_finished([]))
         control("any pgp_run_finished in the file counts", not any(e.get("event") == "pgp_run_finished" for e in rerun))
+        # A second run of a sample: events.jsonl still holds the first run, which finished with step 11 done.
+        again = "DEMO-RERUN"
+        ad = os.path.join(work, "rerun", again)
+        os.makedirs(os.path.join(ad, "logs"))
+        with open(os.path.join(ad, "logs", "run_status.tsv"), "w") as f:
+            f.write(f"meta\tstarted_epoch\t{int(time.time())}\nstep\t11\tplanned\n")
+        roh = {"task_id": 8, "name": f"CLINICAL:ROH ({again})", "process": "CLINICAL:ROH", "tag": again,
+               "status": "COMPLETED", "exit": 0, "submit": 1767348300000, "start": 1767348302000,
+               "complete": 1767348340000}
+        old = [{"event": "started"}, {"event": "process_completed", "trace": roh}, {"event": "completed"},
+               {"event": "pgp_run_finished", "exit": 0}, {"event": "started"}]
+        live.store.runs[again] = list(old)
+        rs = live.state({"name": again, "dir": ad})
+        r11 = next(x["state"] for x in rs["steps"] if x["step"] == "11")
+        check("a rerun's state.json is the new run's: running, step 11 not done, every message still counted",
+              rs["run"]["state"] == "running" and r11 != "done" and rs["events"] == len(old), (rs["run"], r11))
+        evf = os.path.join(work, "rerun", "events.jsonl")
+        with open(evf, "w") as f:
+            f.writelines(json.dumps(e) + "\n" for e in old)
+        whole = run_state.collect(again, ad, events_path=evf)
+        control("state built from the whole events file",
+                whole["run"]["state"] == "running"
+                and next(x["state"] for x in whole["steps"] if x["step"] == "11") != "done")
+        check("a bare nextflow rerun (no pgp_run_finished) starts at its own 'started'",
+              pgp_live.current_run([{"event": "started"}, {"event": "completed"}, {"event": "started"},
+                                    {"event": "process_started"}]) == [{"event": "started"}, {"event": "process_started"}])
+        check("a finished run keeps its own messages while pgp_run_finished is the newest",
+              pgp_live.current_run(old[:4]) == old[:4])
+        cp = {"plp": [{"gene": "GENEA"}], "call_floor_dp": 10, "low_confidence": 0}
+        tc = [pgp_live.headline("cpsr", {"state": "ok", "title": "CPSR", "data": dict(cp, plp=p)}, {"databases": {}})
+              for p in ([], cp["plp"])]
+        tm = [pgp_live.headline("mito", {"state": "ok", "title": "Mito",
+                                         "data": {"annotation": {"source": "VEP", "clinvar_plp": n}}}) for n in (0, 2)]
+        check("CPSR and mito headlines: attention with P/LP rows, info with none, the report's own lines",
+              [t[1] for t in tc + tm] == ["info", "attention", "info", "attention"]
+              and "Pathogenic/Likely Pathogenic rows: 1" in tc[1][0]
+              and tm[1][0] == "ClinVar pathogenic or likely pathogenic: 2", tc + tm)
+        table = pgp_live.HEADLINES
+        pgp_live.HEADLINES = {k: v for k, v in table.items() if k not in ("cpsr", "mito")}
+        try:
+            planted = [pgp_live.headline(k, {"state": "ok", "title": k, "data": data}, {"databases": {}})[1]
+                       for k, data in (("cpsr", cp), ("mito", {"annotation": {"source": "VEP", "clinvar_plp": 2}}))]
+        finally:
+            pgp_live.HEADLINES = table
+        control("the headline table without cpsr and mito", planted == ["attention", "attention"])
         check("a state hook's answer is under plugins", s["plugins"].get("fixture", {}).get("steps") == len(s["steps"]),
               s.get("plugins"))
         import render_report
