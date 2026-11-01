@@ -21,8 +21,10 @@ the script, and checks what it writes:
      that is not MEGAnE's (no SVTYPE or MEPRED), a depth file that is not
      samtools bedcov -c output, a catalog without its columns
   5. collect_summary.py's mei section and render_report.py's text block and
-     HTML card read the tables, and the full HTML report renders the card; without them the summary's "not assessed"
-     list names mobile element insertions, with them it does not
+     HTML card read the tables, and the full HTML report renders the card;
+     an empty calls table, or one without its columns, is unreadable;
+     without the tables the summary's "not assessed" list names mobile
+     element insertions, with them it does not
   6. the real catalog: every row is an SVA, its window is the site -/+ 500,
      and the script reads it
 
@@ -203,6 +205,21 @@ with tempfile.TemporaryDirectory() as d:
     check("5 and it ends with the note", lines[-1], rr.MEI_NOTE)
     html = "".join(rr.mei_body(data))
     check("5 the HTML card has the FKTN row and the call", "<td>FKTN</td>" in html and "SVA_F" in html, True)
+    calls_path = f"{d}/S/mei/S_mei.tsv"
+    good_calls = open(calls_path).read()
+    with open(calls_path, "w") as f:
+        f.write(good_calls.splitlines()[0] + "\n")
+    check("5 a calls table with its header and no row is zero calls", cs.sec_mei(f"{d}/S", "S")[1]["calls"], 0)
+    for name, text in (("an empty calls table", ""), ("a calls table without its columns", "chrom\tpos\n")):
+        with open(calls_path, "w") as f:
+            f.write(text)
+        try:
+            cs.sec_mei(f"{d}/S", "S")
+            check(f"5 {name} is unreadable", "read", "Unreadable")
+        except cs.Unreadable:
+            check(f"5 {name} is unreadable", "Unreadable", "Unreadable")
+    with open(calls_path, "w") as f:
+        f.write(good_calls)
     with open(f"{d}/S/mei/S_mei_sites.tsv", "w") as f:
         f.write("gene\tstatus\nFKTN\tseen\n")
     try:
