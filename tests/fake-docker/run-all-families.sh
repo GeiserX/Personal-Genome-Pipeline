@@ -8,6 +8,9 @@
 #   2. partner_y runs next: both members have a gVCF and ClinVar hits, so
 #      step 38 (38-family.sh family_b <file>) and step 39 run, and both are
 #      recorded ok;
+#   2b. partner_y again with a plan that cannot be written: steps 38 and 39
+#      are recorded as skipped, and the older plan, which says runs, is
+#      never acted on;
 #   3. partner_x again with the sex the file contradicts: exit 2 before
 #      nextflow starts;
 #   4. the real 39-couple.sh given the families file writes family_b's own
@@ -97,6 +100,18 @@ status partner_y | grep -q $'^step\t38\tok$' || fail "step 38 is not recorded ok
 status partner_y | grep -q $'^step\t39\tok$' || fail "step 39 is not recorded ok: $(status partner_y)"
 if status partner_y | grep -q $'\tplanned$'; then fail "a planned row is left: $(status partner_y)"; fi
 [ "$(grep -c '' "$STEPS_LOG")" -eq 2 ] || fail "the family scripts ran $(grep -c '' "$STEPS_LOG") times, want 2"
+
+# --- 2b. a plan that fails: the family steps do not run from the older plan -----------------
+chmod 444 "$PLAN"
+run_rc planfail env FAMILIES="$FAMS" "${R}/scripts/run-all.sh" partner_y female
+chmod 644 "$PLAN"
+[ "$RC" -eq 1 ] || fail "a failed plan exited ${RC}, expected 1"
+output_has planfail 'FAILED: family_report.py plan; steps 38 and 39 not run'
+[ "$(grep -c '' "$STEPS_LOG")" -eq 2 ] || fail "a family step ran from the older plan: $(cat "$STEPS_LOG")"
+status partner_y | grep -q $'^step\t38\tskipped (family_report.py plan failed)$' \
+  || fail "step 38 is not recorded as skipped after the failed plan: $(status partner_y)"
+status partner_y | grep -q $'^step\t39\tskipped (family_report.py plan failed)$' \
+  || fail "step 39 is not recorded as skipped after the failed plan: $(status partner_y)"
 
 # --- 3. a sex the file contradicts stops before nextflow -------------------------------------
 before=$(nf_runs)
