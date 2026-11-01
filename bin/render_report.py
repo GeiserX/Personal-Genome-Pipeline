@@ -2251,7 +2251,7 @@ def html_report(s):
                + [f"    <p>{E(line)}</p>" for line in chip_lines(ch, s["sample"])[:-1]]
                + [small_note(CHIP_NOTE)], full=True))
     if S.get("mei", MISSING)["state"] != "missing":
-        a(card(S["mei"], "Mobile Element Insertions", mei_body(S["mei"]["data"]), full=True))
+        a("mei", card(S["mei"], "Mobile Element Insertions", mei_body(S["mei"]["data"]), full=True))
     if S.get("mosaic", MISSING)["state"] != "missing":
         mo = S["mosaic"]
         a("mosaic", card(mo, "Mosaic Chromosomal Alterations (MoChA)",
