@@ -4,9 +4,11 @@
 # _get serves each try from a script of answers: "good" (the right file),
 # "bad" (a whole gzip file with the wrong content), "trunc" (the first bytes
 # of the file, with no transfer error), "broken" (the first bytes, then a
-# transfer error). The same cases run against a planted mutant that returns
-# at the first failed check, the behaviour before this test: it must fail the
-# "bad once, then good" case, or the test could not catch the old bug.
+# transfer error), "fresh" (the right file, only if no .part is there) and
+# "resume" (the right file, only if the 100-byte .part of "broken" is there).
+# Two planted mutants show the test can fail: one returns at the first failed
+# check, the behaviour before this test, and one drops the .part of a broken
+# transfer instead of resuming it.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,15 +21,21 @@ printf 'line %s\n' $(seq 1 2000) | gzip -c > "${WORK}/good.gz"
 printf 'not the file\n' | gzip -c > "${WORK}/bad.gz"
 GOOD_MD5=$(bash -c '. "$1" && _digest md5 "$2"' _ "${REPO}/scripts/lib/common.sh" "${WORK}/good.gz")
 
-# A mutant copy of the library: a failed check returns at once, no new try.
-mkdir -p "${WORK}/mutant/scripts/lib"
-cp "${REPO}/versions.env" "${WORK}/mutant/"
+# mutant NAME SED: a copy of the library with SED applied to it, at
+# ${WORK}/NAME/scripts/lib/common.sh; exits when SED changes nothing.
+mutant() {
+  mkdir -p "${WORK}/$1/scripts/lib"
+  cp "${REPO}/versions.env" "${WORK}/$1/"
+  sed "$2" "${REPO}/scripts/lib/common.sh" > "${WORK}/$1/scripts/lib/common.sh"
+  if cmp -s "${REPO}/scripts/lib/common.sh" "${WORK}/$1/scripts/lib/common.sh"; then
+    echo "FAIL: mutant $1 is the same as common.sh; its sed no longer matches fetch"
+    exit 1
+  fi
+}
 # shellcheck disable=SC2016  # the $ is sed's, not the shell's
-sed 's/^\(      rm -f "\$part"\)$/\1; return 1/' "${REPO}/scripts/lib/common.sh" > "${WORK}/mutant/scripts/lib/common.sh"
-if cmp -s "${REPO}/scripts/lib/common.sh" "${WORK}/mutant/scripts/lib/common.sh"; then
-  echo "FAIL: the mutant is the same as common.sh; the sed no longer matches fetch"
-  exit 1
-fi
+mutant no-retry 's/^\(      rm -f "\$part"\)$/\1; return 1/'
+# shellcheck disable=SC2016
+mutant no-resume 's/^\(      bad=""\)$/\1; rm -f "$part"/'
 
 # run_case LIB NAME ANSWERS KIND: fetch with the fake _get answering ANSWERS
 # (space-separated, one per try) and check KIND (md5 or gz). Prints
@@ -48,6 +56,8 @@ run_case() {
         good) cat "${WORK}/good.gz" > "$2" ;;
         bad) cat "${WORK}/bad.gz" > "$2" ;;
         trunc) head -c 200 "${WORK}/good.gz" > "$2" ;;
+        fresh) [ ! -e "$2" ] || return 22; cat "${WORK}/good.gz" > "$2" ;;
+        resume) [ "$(wc -c < "$2" 2>/dev/null)" -eq 100 ] || return 22; cat "${WORK}/good.gz" > "$2" ;;
         broken) head -c 100 "${WORK}/good.gz" > "$2"; return 18 ;;
         *) return 22 ;;
       esac
@@ -80,11 +90,11 @@ expect() {
 
 LIB="${REPO}/scripts/lib/common.sh"
 export FETCH_TRIES=3
-expect "md5 bad once, then good" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" md5-once 'bad good' md5)"
+expect "md5 bad once, then a fresh download" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" md5-once 'bad fresh' md5)"
 expect "md5 bad every time" "rc=1 calls=3 dest=none part=no" "$(run_case "$LIB" md5-always 'bad bad bad' md5)"
-expect "gzip bad once, then good" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" gz-once 'trunc good' gz)"
+expect "gzip bad once, then a fresh download" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" gz-once 'trunc fresh' gz)"
 expect "gzip bad every time" "rc=1 calls=3 dest=none part=no" "$(run_case "$LIB" gz-always 'trunc trunc trunc' gz)"
-expect "broken transfer, then good" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" broken-once 'broken good' md5)"
+expect "broken transfer, then resumed" "rc=0 calls=2 dest=good part=no" "$(run_case "$LIB" broken-once 'broken resume' md5)"
 expect "broken every time keeps the .part" "rc=1 calls=3 dest=none part=yes" "$(run_case "$LIB" broken-always 'broken broken broken' md5)"
 expect "one try, bad: no second download" "rc=1 calls=1 dest=none part=no" "$(FETCH_TRIES=1 run_case "$LIB" one-try 'bad good' md5)"
 
@@ -99,12 +109,18 @@ else
   echo "FAIL: expected 3 'failed its check' lines:"; cat "${WORK}/md5-always.err"; FAILS=$((FAILS + 1))
 fi
 
-# Control: the mutant must fail the retry case.
-got=$(run_case "${WORK}/mutant/scripts/lib/common.sh" mutant 'bad good' md5)
+# Controls: each mutant must fail the case it breaks.
+got=$(run_case "${WORK}/no-retry/scripts/lib/common.sh" no-retry 'bad fresh' md5)
 if [ "$got" = "rc=1 calls=1 dest=none part=no" ]; then
-  echo "ok:   control: the no-retry mutant fails 'bad once, then good' (${got})"
+  echo "ok:   control: the no-retry mutant fails 'bad once, then a fresh download' (${got})"
 else
   echo "FAIL: control: the no-retry mutant gave '${got}'; the test cannot tell it from the fix"; FAILS=$((FAILS + 1))
+fi
+got=$(run_case "${WORK}/no-resume/scripts/lib/common.sh" no-resume 'broken resume' md5)
+if [ "$got" != "rc=0 calls=2 dest=good part=no" ]; then
+  echo "ok:   control: the no-resume mutant fails 'broken transfer, then resumed' (${got})"
+else
+  echo "FAIL: control: the no-resume mutant passed; the test cannot see a dropped .part"; FAILS=$((FAILS + 1))
 fi
 
 [ "$FAILS" -eq 0 ]
