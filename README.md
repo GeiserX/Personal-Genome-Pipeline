@@ -64,6 +64,7 @@ The full documentation is at **https://geiserx.github.io/OwnGenome/**, one page 
 - [Vendor compatibility guide](https://geiserx.github.io/OwnGenome/vendor-guide/): what each provider delivers and how to get it
 - [Pipeline overview](https://geiserx.github.io/OwnGenome/pipeline-overview/): every step with its tool and image, which ones a default run includes, and the page for each step
 - [Nextflow](https://geiserx.github.io/OwnGenome/nextflow/): the workflow runner, parallel steps and resume
+- [Watch a run live](https://geiserx.github.io/OwnGenome/live-site/): a step map in the browser while the run goes, behind a password
 - [Interpreting your results](https://geiserx.github.io/OwnGenome/interpreting-results/): what each report means and what to do with it
 - [Multi-sample comparison](https://geiserx.github.io/OwnGenome/multi-sample/): partners, siblings, parents
 - [Long-read guide](https://geiserx.github.io/OwnGenome/long-read-guide/): Nanopore and PacBio HiFi
