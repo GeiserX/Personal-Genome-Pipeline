@@ -10,7 +10,7 @@ name: E2E
 #                  file is on main), on a push to main and on dispatch; it
 #                  does nothing when the release already exists and was
 #                  built by the same script.
-#   e2e-plan, e2e-shards, e2e
+#   e2e-plan, e2e-base, e2e-shards, e2e
 #                  run every case in tests/e2e/ on that data set exactly once,
 #                  split over parallel legs: e2e-plan splits the cases
 #                  (scripts/ci/e2e-shards.sh), the leg "e2e base" runs the
@@ -94,9 +94,8 @@ permissions:
 env:
   E2E_SCOPE_DIRS: scripts modules workflows bin conf assets tests/e2e
   E2E_SCOPE_FILES: tests/fixtures/VERSION main.nf nextflow.config versions.env .github/workflows/e2e.yml
-  # The shard legs besides the base leg. Each leg sets up for about 13
-  # minutes (cache load, pulls); the cases took 230 minutes in one job on
-  # 2026-11-02 (run 41390434697).
+  # The shard legs besides the base leg. The cases took 230 minutes in one
+  # job on 2026-11-02 (run 41390434697).
   E2E_SHARDS: 6
 
 concurrency:
@@ -328,7 +327,7 @@ jobs:
               exit 1
             fi
           done
-          jobs=$(seq 1 "$n" | jq -R . | jq -sc '["base"] + .')
+          jobs=$(seq 1 "$n" | jq -R . | jq -sc .)
           { echo "jobs=${jobs}"; echo "shards=${n}"; echo "trace=${TRACE}"; } >> "$GITHUB_OUTPUT"
           {
             echo "### E2E split: base and ${n} shards"
@@ -343,31 +342,32 @@ jobs:
               scripts/ci/e2e-case-times.tsv <(scripts/ci/e2e-shards.sh base) "${RUNNER_TEMP}/plan.tsv"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-  # One leg per job of the split, all started at once. The base leg runs the
-  # base cases and uploads what they wrote as the artifact e2e-base; every
-  # shard leg sets up while it runs, waits for that artifact, unpacks it at the
-  # same paths and runs its own cases. Only the base leg saves the image cache.
-  # The legs' checks are named "e2e base" and "e2e shard N"; the required check
-  # is the job e2e below, which sums them up.
-  e2e-shards:
+  # The legs. The base leg runs the base cases and uploads what they wrote as
+  # the artifact e2e-base; the shard legs start once it passed, unpack that
+  # artifact at the same paths and run their own cases. A shard does not take
+  # a runner before the base leg is done: in a busy queue, shards that start
+  # first and wait would hold runners the base legs of every run need. Both
+  # jobs run the same steps (the YAML anchor leg-steps); matrix.job tells
+  # them apart. Only the base leg saves the image cache. The checks are named
+  # "e2e base" and "e2e shard N"; the required check is the job e2e below,
+  # which sums them up.
+  e2e-base:
     needs: [e2e-scope, e2e-plan]
     if: ${{ !cancelled() && needs.e2e-plan.result == 'success' }}
     name: ${{ matrix.job == 'base' && 'e2e base' || format('e2e shard {0}', matrix.job) }}
     runs-on: ubuntu-latest
-    # A shard leg waits for the base leg, which waits up to 75 minutes for a
-    # fixture a pull request bumps (scripts/ci/e2e-run.sh). A traced run is one
-    # serial leg of every case: 230 minutes on 2026-11-02 before the scans.
-    timeout-minutes: ${{ needs.e2e-plan.outputs.trace == 'true' && 355 || 240 }}
+    # The base leg waits up to 75 minutes for a fixture a pull request bumps
+    # (scripts/ci/e2e-run.sh).
+    timeout-minutes: 240
     permissions:
       contents: read
       actions: read
     strategy:
-      fail-fast: false
       matrix:
-        job: ${{ fromJSON(needs.e2e-plan.outputs.jobs) }}
+        job: [base]
     env:
       JOB: ${{ matrix.job }}
-    steps:
+    steps: &leg-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -495,29 +495,26 @@ jobs:
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
-      # While the base leg runs: the base leg pulls the same images first.
+      # Before the base outputs: the base leg pulled the same images.
       - name: Pull the images the cases use
         if: matrix.job != 'base'
         run: scripts/ci/e2e-run.sh --pull-images
 
-      # The base leg uploads e2e-base only once its cases all passed, so a
-      # shard stops as soon as the base leg ends without it. A rerun of failed
-      # legs finds the artifact of the earlier attempt. A failed API call is
-      # asked again on the next round, until the deadline.
-      - name: Wait for the base leg's outputs
+      # The base leg uploads e2e-base only once its cases all passed, and this
+      # leg starts only after it passed. A rerun of failed legs finds the
+      # artifact of the earlier attempt. A broken transfer is tried again.
+      - name: Fetch the base leg's outputs
         if: matrix.job != 'base'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
-          ATTEMPT: ${{ github.run_attempt }}
         run: |
-          api="repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
-          deadline=$((SECONDS + 180 * 60))
-          while :; do
-            id=$(gh api "${api}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty') || id=""
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty')
+          [ -n "$id" ] || { echo "::error::The base leg passed but this run has no e2e-base artifact."; exit 1; }
+          for try in 1 2 3 4 5; do
             t0=$(date +%s)
             # curl, not gh api: gh took 5 minutes for the 3 GB of run 41455829120.
-            if [ -n "$id" ] && curl -sSfL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/e2e-base.zip" \
+            if curl -sSfL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/e2e-base.zip" \
                  "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
                && unzip -o -q "${RUNNER_TEMP}/e2e-base.zip" -d "${RUNNER_TEMP}/e2e-base"; then
               rm -f "${RUNNER_TEMP}/e2e-base.zip"
@@ -528,21 +525,15 @@ jobs:
               fi
               sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
               echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
-              echo "Base outputs after $((SECONDS / 60)) minutes of waiting, $(( $(date +%s) - t0 )) s to fetch and unzip: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
-              break
+              echo "Base outputs in $(( $(date +%s) - t0 )) s to fetch and unzip: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
+              exit 0
             fi
-            state=$(gh api "${api}/attempts/${ATTEMPT}/jobs?per_page=100" \
-                      --jq '.jobs[] | select(.name == "e2e base") | "\(.status) \(.conclusion)"') || state=""
-            if [[ "$state" == completed* ]]; then
-              echo "::error::The job e2e base ended (${state#completed }) without uploading e2e-base: its cases did not all pass, so this shard cannot run."
-              exit 1
-            fi
-            if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::No e2e-base artifact after 180 minutes."
-              exit 1
-            fi
+            echo "::warning::Fetching or unpacking e2e-base failed (try ${try} of 5)."
+            rm -rf "${RUNNER_TEMP}/e2e-base.zip" "${RUNNER_TEMP}/e2e-base"
             sleep 30
           done
+          echo "::error::Could not fetch e2e-base in 5 tries."
+          exit 1
 
       - name: Run the e2e cases
         id: cases
@@ -723,13 +714,32 @@ jobs:
           path: ${{ runner.temp }}/images/g3
           key: ${{ steps.keys.outputs.g3 }}
 
+  e2e-shards:
+    needs: [e2e-scope, e2e-plan, e2e-base]
+    if: ${{ !cancelled() && needs.e2e-plan.result == 'success' && needs.e2e-base.result == 'success' }}
+    name: ${{ matrix.job == 'base' && 'e2e base' || format('e2e shard {0}', matrix.job) }}
+    runs-on: ubuntu-latest
+    # A traced run is one serial leg of every case: 230 minutes on 2026-11-02
+    # before the scans.
+    timeout-minutes: ${{ needs.e2e-plan.outputs.trace == 'true' && 355 || 240 }}
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.e2e-plan.outputs.jobs) }}
+    env:
+      JOB: ${{ matrix.job }}
+    steps: *leg-steps
+
   # The required check. Green when e2e-scope finds nothing to run; otherwise
   # green only when the plan and every leg succeeded, every case of the split
   # reported exactly one pass (one table of every case goes to the summary)
   # and each parity check passed once. A leg that was skipped, cancelled or
   # cut by its time limit leaves cases without a result, which is red too.
   e2e:
-    needs: [e2e-scope, e2e-plan, e2e-shards]
+    needs: [e2e-scope, e2e-plan, e2e-base, e2e-shards]
     if: >-
       ${{ always() && (
         github.event_name == 'pull_request' ||
@@ -763,14 +773,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
           PLAN: ${{ needs.e2e-plan.result }}
+          BASE: ${{ needs.e2e-base.result }}
           LEGS: ${{ needs.e2e-shards.result }}
           SHARDS: ${{ needs.e2e-plan.outputs.shards }}
           TRACE: ${{ needs.e2e-plan.outputs.trace }}
         run: |
           set -o pipefail
           rc=0
-          if [ "$PLAN" != success ] || [ "$LEGS" != success ]; then
-            echo "::error::The plan job ended ${PLAN:-unknown} and the legs ${LEGS:-unknown}; e2e needs both to succeed."
+          if [ "$PLAN" != success ] || [ "$BASE" != success ] || [ "$LEGS" != success ]; then
+            echo "::error::The plan job ended ${PLAN:-unknown}, the base leg ${BASE:-unknown} and the shard legs ${LEGS:-unknown}; e2e needs all three to succeed."
             rc=1
           fi
           dir="${RUNNER_TEMP}/reports"
