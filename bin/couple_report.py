@@ -368,6 +368,11 @@ def eh_findings(path, genes):
 def smn_finding(path, genes):
     """SMN1 copy number (step 35): ([findings], text of what was read)."""
     p = paraphase_report.parascopy_smn1(path)
+    # Step 35 writes a row it could not assess with the filter "not assessed:
+    # <reason>"; the reason is what the reader needs, not the empty values.
+    na = re.search(r"filter not assessed: (.*)\), not resolved$", p["text"])
+    if na:
+        return [], "SMN1 not assessed: %s" % na.group(1)
     if p["cn"] is None or "SMN1" not in genes:
         return [], "SMN1 copy number %s" % p["text"]
     if p["cn"] >= 2:
@@ -605,7 +610,7 @@ def cmd_screen(a):
                 m, txt = smn_finding(smn[s], genes)
                 info["smn"] = txt
                 f += m
-                if not m and ("not resolved" in txt or "no row" in txt):
+                if not m and ("not resolved" in txt or "not assessed" in txt or "no row" in txt):
                     gaps.append("SMN1 copy number of %s: %s." % (s, txt))
             else:
                 info["smn"] = "not assessed (no Parascopy, step 35)"
