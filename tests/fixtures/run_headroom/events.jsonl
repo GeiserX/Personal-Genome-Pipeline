@@ -1,0 +1,5 @@
+{"event": "process_submitted", "trace": {"task_id": 1, "name": "PGP:VARIANTS:DEEPVARIANT (demo1)", "process": "PGP:VARIANTS:DEEPVARIANT", "tag": "demo1", "status": "SUBMITTED", "attempt": 1, "memory": 17179869184}}
+{"event": "process_started", "trace": {"task_id": 1, "name": "PGP:VARIANTS:DEEPVARIANT (demo1)", "process": "PGP:VARIANTS:DEEPVARIANT", "tag": "demo1", "status": "RUNNING", "attempt": 1, "memory": 17179869184}}
+{"event": "process_completed", "trace": {"task_id": 2, "name": "PGP:ANNOTATE:VEP (demo1)", "process": "PGP:ANNOTATE:VEP", "tag": "demo1", "status": "FAILED", "exit": 137, "attempt": 1, "memory": 8589934592, "peak_rss": 8482560409}}
+{"event": "process_completed", "trace": {"task_id": 3, "name": "PGP:ANNOTATE:VEP (demo1)", "process": "PGP:ANNOTATE:VEP", "tag": "demo1", "status": "COMPLETED", "exit": 0, "attempt": 2, "memory": 17179869184, "peak_rss": 9663676416}}
+{"event": "process_completed", "trace": {"task_id": 4, "name": "PGP:UPSTREAM:FASTP (demo1)", "process": "PGP:UPSTREAM:FASTP", "tag": "demo1", "status": "COMPLETED", "exit": 0, "attempt": 1, "memory": 8589934592, "peak_rss": 8160437862}}
