@@ -211,9 +211,14 @@
     }).then(function (s) { if (s) { show(s); } }).catch(function () { root.setAttribute('data-pgp-status', 'offline'); });
   }
   function later() { if (timer) { clearTimeout(timer); } timer = setTimeout(refresh, 800); }
+  var opens = 0;
   function live() {
     refresh();
+    stream();
+  }
+  function stream() {
     var es = new EventSource('events');
+    root.setAttribute('data-pgp-streams', String(++opens));
     es.onmessage = function (e) {
       var m;
       try { m = JSON.parse(e.data); } catch (x) { return; }
@@ -224,10 +229,15 @@
       plugins.forEach(function (p) { if (p.onEvent) { try { p.onEvent(m); } catch (x) { console.error(p.name, x); } } });
       later();
     };
-    // EventSource retries a dropped stream by itself, but a 401 (the session ended) closes it for
-    // good; then ask state.json, whose 401 goes to the login.
+    // EventSource retries a dropped stream by itself, but any refusal (a 401 when the session ended,
+    // a 503 when every stream slot is taken) closes it for good. Then ask state.json, whose 401 goes
+    // to the login, and open the stream again a little later.
     es.onerror = function () {
-      if (es.readyState === EventSource.CLOSED) { root.setAttribute('data-pgp-status', 'offline'); refresh(); }
+      if (es.readyState === EventSource.CLOSED) {
+        root.setAttribute('data-pgp-status', 'offline');
+        refresh();
+        setTimeout(stream, 3000);
+      }
     };
   }
 

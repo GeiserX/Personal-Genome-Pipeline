@@ -365,7 +365,7 @@ class ReplayHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def browser_checks(port, work):
+def browser_checks(port, work, live):
     chrome = find_chrome()
     if not chrome:
         ci = os.environ.get("CI") == "true"
@@ -399,6 +399,29 @@ def browser_checks(port, work):
         after = b.wait("document.querySelector('g.box[data-step=\"07\"]').dataset.state === 'running' && 'running'", 10)
         check("browser: a box repaints after a posted message (07 waiting -> running)",
               before == "waiting" and after == "running", (before, after))
+
+        class Refuse:  # every stream slot taken: the stream answers 503
+            def acquire(self, blocking=True):
+                return False
+
+            def release(self):
+                pass
+        real_streams, live.streams = live.streams, Refuse()
+        try:
+            b.go(f"{base}/runs/{RUN}/")
+            refused = b.wait("document.documentElement.dataset.pgpStatus === 'offline' || "
+                             "(document.documentElement.dataset.pgpStreams === '1' && "
+                             "document.documentElement.dataset.pgpStatus === 'ready' && window.PGP.state && 'loaded')", 10)
+            time.sleep(1)
+        finally:
+            live.streams = real_streams
+        reopened = b.wait("Number(document.documentElement.dataset.pgpStreams) >= 2 && 'reopened'", 15)
+        n0 = b.eval("window.PGP.state.events")
+        time.sleep(1)
+        post(INGEST_PORT, RUN, {"event": "pgp_step", "step": "06", "state": "ok", "utcTime": "2026-01-02T10:07:30Z"})
+        n1 = b.wait(f"window.PGP.state && window.PGP.state.events > {n0} && window.PGP.state.events", 10)
+        check("browser: a stream refused with 503 is opened again, and its messages update the page",
+              refused and reopened == "reopened" and n1, (refused, reopened, n0, n1))
         b.eval("document.querySelector('g.box[data-step=\"11\"]').dispatchEvent(new MouseEvent('click', {bubbles: true})); true")
         detail = b.wait("document.getElementById('detail').textContent.indexOf('Step 11') >= 0 && "
                         "document.getElementById('detail').textContent")
@@ -825,7 +848,7 @@ def main():
               log[-600:])
 
         # 10. the browser
-        browser_checks(port, work)
+        browser_checks(port, work, live)
 
         # 11. TLS
         tls_checks(root, work, pwfile)
