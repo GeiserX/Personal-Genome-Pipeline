@@ -515,7 +515,10 @@ jobs:
           deadline=$((SECONDS + 180 * 60))
           while :; do
             id=$(gh api "${api}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty') || id=""
-            if [ -n "$id" ] && gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/e2e-base.zip" \
+            t0=$(date +%s)
+            # curl, not gh api: gh took 5 minutes for the 3 GB of run 41455829120.
+            if [ -n "$id" ] && curl -sSfL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/e2e-base.zip" \
+                 "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
                && unzip -o -q "${RUNNER_TEMP}/e2e-base.zip" -d "${RUNNER_TEMP}/e2e-base"; then
               rm -f "${RUNNER_TEMP}/e2e-base.zip"
               read -r work repo < "${RUNNER_TEMP}/e2e-base/base.tar.zst.from"
@@ -525,7 +528,7 @@ jobs:
               fi
               sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
               echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
-              echo "Base outputs after $((SECONDS / 60)) minutes of waiting: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
+              echo "Base outputs after $((SECONDS / 60)) minutes of waiting, $(( $(date +%s) - t0 )) s to fetch and unzip: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
               break
             fi
             state=$(gh api "${api}/attempts/${ATTEMPT}/jobs?per_page=100" \

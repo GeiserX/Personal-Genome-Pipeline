@@ -447,7 +447,8 @@ if [ -n "${E2E_BASE_OUT:-}" ] && [ "$failed" -eq 0 ]; then
       -o -path "${REPO}/.git" -o -path "$E2E_NOTES" -o -path "${E2E_WORK}/all-cases-ran" \) -prune \
       -o -cnewer "${E2E_WORK}/.layout-done" -print0 \
     | sudo tar -P --format=posix --no-recursion --null -T - -cf - | zstd -T0 -3 -q -o "$E2E_BASE_OUT"
-  echo "Packed the base outputs: $(du -h "$E2E_BASE_OUT" | cut -f1), $(zstd -dc "$E2E_BASE_OUT" | tar -tf - | wc -l) entries"
+  echo "Packed the base outputs: $(du -h "$E2E_BASE_OUT" | cut -f1), $(zstd -dc "$E2E_BASE_OUT" | tar -tf - | wc -l) entries. The largest:"
+  zstd -dc "$E2E_BASE_OUT" | tar -tvf - | sort -k3,3n | tail -n 5
 fi
 
 [ "$failed" -eq 0 ]
