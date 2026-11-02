@@ -84,10 +84,10 @@ mei-1	shard	608	-
 mocha-1	shard	439	-
 mosaic-loy-lox-1	shard	106	-
 nextflow-from-fastq-1-bash	shard	524	-
-nextflow-from-fastq-2-nextflow	shard	665	-
+nextflow-from-fastq-2-nextflow	shard	665	nextflow-from-fastq-1-bash
 nextflow-from-fastq-3-sexcheck	shard	66	-
 nextflow-hardening-1-manta	shard	21	-
-nextflow-hardening-2-nf	shard	500	-
+nextflow-hardening-2-nf	shard	500	nextflow-hardening-1-manta
 nextflow-report-parity-1-sections	shard	126	-
 paralog-catalog-1-gba	shard	96	-
 paralog-checks-and-doc-fixes-1-hba	shard	45	-

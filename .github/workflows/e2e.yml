@@ -312,6 +312,7 @@ jobs:
         env:
           TRACE: ${{ inputs.trace && 'true' || 'false' }}
         run: |
+          set -o pipefail
           n=$E2E_SHARDS
           [ "$TRACE" = true ] && n=1
           scripts/ci/e2e-shards.sh plan "$n" > "${RUNNER_TEMP}/plan.tsv"
@@ -484,6 +485,7 @@ jobs:
         env:
           SHARDS: ${{ needs.e2e-plan.outputs.shards }}
         run: |
+          set -o pipefail
           list="${RUNNER_TEMP}/cases.txt"
           if [ "$JOB" = base ]; then scripts/ci/e2e-shards.sh base > "$list"
           else scripts/ci/e2e-shards.sh plan "$SHARDS" | awk -F'\t' -v k="$JOB" '$1 == k {print $2}' > "$list"; fi
@@ -748,6 +750,7 @@ jobs:
           SHARDS: ${{ needs.e2e-plan.outputs.shards }}
           TRACE: ${{ needs.e2e-plan.outputs.trace }}
         run: |
+          set -o pipefail
           rc=0
           if [ "$PLAN" != success ] || [ "$LEGS" != success ]; then
             echo "::error::The plan job ended ${PLAN:-unknown} and the legs ${LEGS:-unknown}; e2e needs both to succeed."
