@@ -1,0 +1,9 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr7,length=159345973>
+##contig=<ID=chr13,length=114364328>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYNTH
+chr7	1000	900001	C	T	50	PASS	GENEINFO=CFTR:1080;CLNSIG=Pathogenic;CLNREVSTAT=reviewed_by_expert_panel	GT:GQ:DP	0/1:50:40
+chr13	2000	900002	G	A	50	PASS	GENEINFO=BRCA2:675;CLNSIG=Likely_pathogenic;CLNREVSTAT=criteria_provided,_single_submitter	GT:GQ:DP	0/1:45:35
