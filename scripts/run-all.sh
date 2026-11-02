@@ -208,7 +208,7 @@ if [[ ",${T// /}," == *",viral,"* ]]; then plan "47 Viral DNA" viral "$(if [ -z 
 ED="${G}/reference/exomiser-${EXOMISER_DATA_VERSION}"
 if [ -n "${HPO:-}" ] || [[ ",${T// /}," == *",exomiser,"* ]]; then
   # A set HPO turns step 48 on even when TOOLS leaves exomiser out, as --hpo does in main.nf.
-  if TOOLS=$([ -n "${HPO:-}" ] && echo exomiser || echo "${TOOLS:-}") plan "48 Exomiser (HPO terms)" exomiser "$([ -n "${HPO:-}" ] || echo 'HPO not set: HPO=HP:0001250,...'; [ -z "${HPO:-}" ] \
+  if plan "48 Exomiser (HPO terms)" exomiser "$([ -n "${HPO:-}" ] || echo 'HPO not set: HPO=HP:0001250,...'; [ -z "${HPO:-}" ] \
        || need "${ED}/${EXOMISER_DATA_VERSION}_hg38" "${ED}/${EXOMISER_DATA_VERSION}_phenotype")"; then
     NF+=(--hpo "$HPO" --exomiser_data "$ED")
   fi

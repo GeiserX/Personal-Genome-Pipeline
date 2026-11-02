@@ -285,6 +285,19 @@ def case_report():
               "chr6:1000 G>A heterozygous" in words and "chr6:2000 C>T heterozygous" in words
               and "chrX:5000 A>G hemizygous" in words and "X-linked recessive" in words, words)
         check("words: the note says it is not a diagnosis", "not a diagnosis" in words and "GENED" not in words, words)
+    # A family run: one genotype per member in the VCF's order, named from the PED prepare wrote.
+    with tempfile.TemporaryDirectory() as d:
+        write(os.path.join(d, "S1_exomiser.ped"), "family\tM\t0\t0\t2\t1\nfamily\tF\t0\t0\t1\t1\n"
+              "family\tS1\tF\tM\t1\t2\n")
+        r = report(d, [variant(1, "GENEA", "AD", "chr10", 123256215, "T", "G", "0/0:0/1:0/1", "missense_variant",
+                               "GENEA:ENST1:c.1688A>C:p.(Glu563Ala)", "PATHOGENIC")])
+        words = open(os.path.join(d, "words.txt")).read()
+        check("words: a family genotype names each member",
+              r.returncode == 0 and "chr10:123256215 T>G [M no copy, F heterozygous, S1 heterozygous], missense_variant"
+              in words, r.stderr + words)
+        check("report: the table keeps Exomiser's genotype as it is",
+              read_rows(os.path.join(d, "top.tsv"))[0]["genotype"] == "0/0:0/1:0/1")
+    with tempfile.TemporaryDirectory() as d:
         r = report(d, [])
         check("report: a header-only file gives no rank and says so",
               r.returncode == 0 and read_rows(os.path.join(d, "top.tsv")) == []
