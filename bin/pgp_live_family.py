@@ -77,6 +77,8 @@ def read_tsv(path):
 
 def members_of(d):
     order, members, _ = pedigree_svg.load(d)
+    if not order:
+        raise ValueError("the pedigree names no one")
     return order, members
 
 

@@ -225,6 +225,16 @@ def main():
         os.replace(rep + ".moved", rep)
         check("every read is in the access log", ("family", "family_a", "pedigree.svg", 200) in app.logs and
               ("family", "family_a", "notes.txt", 404) in app.logs, app.logs)
+        empty = os.path.join(root, "family_empty")
+        os.makedirs(empty)
+        with open(os.path.join(FIX, "family_a", "members.tsv")) as f, \
+                open(os.path.join(empty, "members.tsv"), "w") as g:
+            g.write(f.readline())
+        es = hook(empty, {}, [])
+        code = app.get("/family/family_empty/pedigree.svg")[0]
+        check("a members file with a header and no rows: an error on the page, 404 for the pedigree",
+              "error" in (es or {}) and code == 404, (es, code))
+        shutil.rmtree(empty)
 
         # Planted mistake: child_a's father swapped for its grandfather in the copy.
         bad = os.path.join(work, "swapped")

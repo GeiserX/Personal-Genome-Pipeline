@@ -76,7 +76,8 @@ def read_members_tsv(path):
 
 def read_pedigree_tsv(path):
     """(order, members) from a pedigree file, with step 38's own reader."""
-    sys.path.insert(0, HERE)
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
     import family_report
     rows, errors = family_report.read_pedigree(path)
     members, more = family_report.build_members(rows, {}, path) if not errors else ({}, [])
