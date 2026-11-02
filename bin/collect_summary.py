@@ -23,6 +23,10 @@ Each section has a state:
 
 The run manifest (S/run_manifest.tsv, bin/write_manifest.sh) is copied in for
 the report footer, with the ClinVar release date and the HLA database release.
+Two optional keys, for the report's run facts and badges: recheck, the last
+database re-check (S/recheck/state.json, bin/pgp_recheck.py), and new_since,
+the date of the previous run kept in S/history/ and the sections whose results
+changed since it (bin/run_delta.py's comparison).
 
   collect_summary.py sample-qc --sample S --somalier-samples F --selfsm F [...]
 
@@ -67,6 +71,7 @@ import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule besid
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
+import run_delta  # noqa: E402  the comparison with the previous run, for the "New since" badges
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -3683,7 +3688,29 @@ def collect(sample, sample_dir, declared_sex=None):
            else [VNTYPER_NOT_ASSESSED])
         + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
+    recheck = run_delta.read_recheck(os.path.join(sample_dir, "recheck", "state.json"))
+    if recheck:
+        summary["recheck"] = recheck
+    since = new_since(sample_dir, summary)
+    if since:
+        summary["new_since"] = since
     return summary
+
+
+def new_since(sample_dir, summary):
+    """{previous_utc, sections}: what changed since the newest run kept in history/ (generate-report.sh
+    keeps one per run), or None without one. A folder that cannot be read counts as none."""
+    prev_dir = run_delta.newest_history(sample_dir)
+    if not prev_dir:
+        return None
+    try:
+        with open(os.path.join(prev_dir, "summary.json")) as f:
+            prev = json.load(f)
+        changes = run_delta.compare(prev, run_delta.read_manifest(os.path.join(prev_dir, "run_manifest.tsv")),
+                                    summary, run_delta.read_manifest(os.path.join(sample_dir, "run_manifest.tsv")))
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+    return {"previous_utc": prev.get("generated_utc"), "sections": run_delta.changed_sections(changes)}
 
 
 def sample_qc_main(argv):

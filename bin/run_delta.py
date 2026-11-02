@@ -27,7 +27,11 @@ What it compares:
            PRS_BAND points or more, or appeared or went away.
 For each result change it lists the changed inputs that feed that section, or
 says that the inputs it tracks are the same and the call itself differs.
-With no --previous it writes that there is no previous run on record.
+With no --previous it writes that there is no previous run on record. With a
+previous run, previous_utc (when its report was written) heads the changes as
+"New since <date>", and new_since_sections lists the summary sections they
+change. The last database re-check (recheck/state.json beside the summary,
+bin/pgp_recheck.py) is added as the recheck block when there is one.
 Exits 2 when an input cannot be read.
 """
 import argparse
@@ -49,6 +53,9 @@ WHY_TOKENS = {
     "prs": ["pgs:", "PGSC", "PLINK2", "ancestry_panel", "DEEPVARIANT"],
 }
 IGNORED_RUN_KEYS = ("written_utc", "written_by")
+# The summary section of each result area (diff_states names its own).
+SECTION_OF_AREA = {"ClinVar": "clinvar", "CPSR": "cpsr", "PGx (CPIC)": "cpic", "PGx (pypgx)": "pypgx",
+                   "PGx (CYP2D6 consensus)": "pypgx", "PRS": "prs"}
 
 
 def read_manifest(path):
@@ -83,10 +90,12 @@ def manifest_items(rows):
     return out
 
 
-def change(area, kind, item, before, after, why=None):
+def change(area, kind, item, before, after, why=None, section=None):
     c = {"area": area, "kind": kind, "item": item, "before": before, "after": after}
     if why is not None:
         c["why"] = why
+    if section is not None:
+        c["section"] = section  # the summary.json section it changes: the report marks it "new since"
     return c
 
 
@@ -124,7 +133,7 @@ def diff_states(p, c):
         # missing on both sides, so a pipeline upgrade lists no noise rows.
         sa, sb = a.get("state", "missing"), b.get("state", "missing")
         if sa != sb:
-            out.append(change(b.get("title") or a.get("title") or k, "section", k, sa, sb))
+            out.append(change(b.get("title") or a.get("title") or k, "section", k, sa, sb, section=k))
     return out
 
 
@@ -233,8 +242,40 @@ def compare(prev_summary, prev_manifest, summary, manifest):
                      ("cyp2d6", diff_cyp2d6), ("prs", diff_prs)):
         for ch in fn(prev_summary, summary):
             ch["why"] = why_for(area, inputs)
+            ch["section"] = SECTION_OF_AREA.get(ch["area"], area)
             results.append(ch)
     return inputs + diff_states(prev_summary, summary) + results
+
+
+def changed_sections(changes):
+    """The summary sections a delta changes, in order: what the report marks 'New since'."""
+    return list(dict.fromkeys(c["section"] for c in changes if c.get("section")))
+
+
+def newest_history(sample_dir):
+    """The newest history/<stamp>/ folder with a summary.json, or None."""
+    h = os.path.join(sample_dir, "history")
+    try:
+        names = sorted(n for n in os.listdir(h) if os.path.isfile(os.path.join(h, n, "summary.json")))
+    except OSError:
+        return None
+    return os.path.join(h, names[-1]) if names else None
+
+
+def read_recheck(path):
+    """<sample>/recheck/state.json (bin/pgp_recheck.py) as a short block, or None."""
+    try:
+        with open(path) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(st, dict) or not isinstance(st.get("items"), list):
+        return None
+    return {"checked_utc": st.get("checked_utc"),
+            "items": [{k: i.get(k) for k in ("item", "label", "class", "ran_with", "upstream", "action")}
+                      for i in st["items"] if isinstance(i, dict)],
+            "affected_steps": st.get("affected_steps") or [],
+            "rerun": st.get("rerun")}
 
 
 def load_json(path):
@@ -250,11 +291,12 @@ def render_text(d):
         return "\n".join(w) + "\n"
     w.append(f"Previous run: history/{d['previous']} (summary of {d['previous_generated'] or 'unknown date'})")
     w.append(f"This run:     summary of {d['current_generated'] or 'unknown date'}")
+    w.extend(recheck_text(d.get("recheck")))
     w.append("")
     if not d["changes"]:
         w.append("No change: the same inputs and the same results as the previous run.")
         return "\n".join(w) + "\n"
-    w.append(f"{len(d['changes'])} change(s):")
+    w.append(f"New since {d['previous_utc'] or 'the previous run'}: {len(d['changes'])} change(s):")
     area = None
     for ch in d["changes"]:
         if ch["area"] != area:
@@ -266,6 +308,21 @@ def render_text(d):
     return "\n".join(w) + "\n"
 
 
+def recheck_text(r):
+    """The database re-check lines (bin/pgp_recheck.py), or none without a check."""
+    if not r:
+        return []
+    newer = [i for i in r["items"] if i.get("class") not in ("no-newer-release", None)]
+    out = [f"Database re-check of {r.get('checked_utc') or 'unknown date'}: "
+           + (f"{len(newer)} item(s) to look at" if newer else "nothing newer than this run")]
+    out += [f"  {i.get('label') or i.get('item')}: {i.get('class')}"
+            + (f" ({i['action']})" if i.get("action") else "") for i in newer]
+    rr = r.get("rerun") or {}
+    if rr:
+        out.append(f"  last rerun: {rr.get('finished_utc') or 'unfinished'} (exit {rr.get('rc')})")
+    return out
+
+
 def render_html(d):
     e = html.escape
     body = [f"<h1>What changed since the previous run: {e(d['sample'])}</h1>"]
@@ -275,10 +332,13 @@ def render_html(d):
     else:
         body.append(f"<p>Previous run: history/{e(d['previous'])} (summary of {e(d['previous_generated'] or 'unknown date')}). "
                     f"This run: summary of {e(d['current_generated'] or 'unknown date')}.</p>")
+        rc = recheck_text(d.get("recheck"))
+        if rc:
+            body.append("<p>" + "<br>".join(e(x.strip()) for x in rc) + "</p>")
         if not d["changes"]:
             body.append("<p>No change: the same inputs and the same results as the previous run.</p>")
         else:
-            body.append(f"<p>{len(d['changes'])} change(s).</p>")
+            body.append(f"<p>New since {e(d['previous_utc'] or 'the previous run')}: {len(d['changes'])} change(s).</p>")
             body.append("<table><tr><th>Area</th><th>Change</th><th>Item</th><th>Before</th><th>Now</th><th>Why</th></tr>")
             for ch in d["changes"]:
                 body.append("<tr>" + "".join(f"<td>{e(str(ch.get(k, '')))}</td>"
@@ -297,6 +357,7 @@ def main(argv=None):
     ap.add_argument("--manifest", help="this run's run_manifest.tsv")
     ap.add_argument("--previous", help="the previous run's history folder (summary.json, run_manifest.tsv)")
     ap.add_argument("--out", required=True, help="output prefix: writes OUT.txt, OUT.html, OUT.json")
+    ap.add_argument("--recheck", help="bin/pgp_recheck.py's state.json (default: recheck/state.json beside --summary)")
     a = ap.parse_args(argv)
     try:
         cur = load_json(a.summary)
@@ -308,8 +369,14 @@ def main(argv=None):
          "previous_generated": (prev or {}).get("generated_utc"), "current_generated": cur.get("generated_utc"),
          "prs_band": PRS_BAND, "changes": []}
     if prev is not None:
+        # "New since" this date: when the previous run's report was written.
+        d["previous_utc"] = prev.get("generated_utc")
         d["changes"] = compare(prev, read_manifest(os.path.join(a.previous, "run_manifest.tsv")),
                                cur, read_manifest(a.manifest))
+        d["new_since_sections"] = changed_sections(d["changes"])
+    recheck = read_recheck(a.recheck or os.path.join(os.path.dirname(os.path.abspath(a.summary)), "recheck", "state.json"))
+    if recheck:
+        d["recheck"] = recheck
     for ext, text in (("txt", render_text(d)), ("html", render_html(d)), ("json", json.dumps(d, indent=1) + "\n")):
         with open(f"{a.out}.{ext}", "w") as f:
             f.write(text)
