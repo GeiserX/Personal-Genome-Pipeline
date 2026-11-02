@@ -81,8 +81,9 @@ for kind in ("full", "bare"):
     os.remove(f"{d}/annotsv/{s}_sv_class4_5.tsv")
     # Steps 09 and 9b: MUC1 without a status, SAMD12 flagged.
     vhead = "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
-    eh = ("chr1\t155188000\t.\tC\t<STR25>\t.\tPASS\tEND=155188001;REPID=MUC1;VARID=MUC1\tGT:REPCN\t0/1:20/25\n"
-          "chr8\t118366913\t.\tA\t<STR40>\t.\tPASS\tEND=118366918;REPID=SAMD12;VARID=SAMD12{st}\tGT:REPCN\t0/1:1/40\n")
+    fmt = "GT:REPCN"
+    eh = ("chr1\t155188000\t.\tC\t<STR25>\t.\tPASS\tEND=155188001;REPID=MUC1;VARID=MUC1\t" + fmt + "\t0/1:20/25\n"
+          "chr8\t118366913\t.\tA\t<STR40>\t.\tPASS\tEND=118366918;REPID=SAMD12;VARID=SAMD12{st}\t" + fmt + "\t0/1:1/40\n")
     put(f"{d}/expansion_hunter/{s}_eh.vcf", vhead + eh.format(st=""))
     t = os.path.getmtime(f"{d}/expansion_hunter/{s}_eh.vcf") - 60
     os.utime(f"{d}/expansion_hunter/{s}_eh.vcf", (t, t))
