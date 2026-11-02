@@ -31,6 +31,8 @@
 #   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem,
 #   you passed no -w, -c or --publish_dir_mode, and you run as root or Linux's fs.protected_hardlinks is 0 (then a user
 #   may link the tasks' root-owned files).
+# logs/run_status.tsv keeps this command with its switches: bin/pgp_recheck.py --rerun replays it when a newer
+#   ClinVar or catalog changes a result (docs/recheck.md).
 set -euo pipefail
 case "${1:-}" in -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;; esac
 SAMPLE=${1:-} SEX=${2:-}
@@ -38,6 +40,15 @@ SAMPLE=${1:-} SEX=${2:-}
   [ -z "$SEX" ] || echo "ERROR: sex must be 'male' or 'female', got '${SEX}'."; } >&2; exit 2; }
 ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404)) || { echo "ERROR: run-all.sh needs bash 4.4 or later (this is ${BASH_VERSION}); on macOS: brew install bash" >&2; exit 2; }
 shift 2; SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) USER_THREADS=${THREADS:-}
+# This command as given, for bin/pgp_recheck.py --rerun (logs/run_status.tsv, 'meta command'): the switches
+# below that are set, then the arguments, each shell-quoted. 'meta switches' names them all, so a replay drops
+# one set now that the run did not have.
+SWITCHES=(GENOME_DIR SKIP_VALIDATION THREADS SKIP_TRIM INTERVALS ALIGN_DIR TOOLS KIR HLA_QC HPO REF_FASTA EH_CATALOG
+  MANTA_CALL_REGIONS PARASCOPY_POPULATION PARAPHASE_REGIONS ANCESTRY_PANEL ANCESTRY_FINE_DIR ARCHAIC_DIR ARCHAIC_POP
+  PGSC_CALC_DIR ANCIENT_PANEL_DIR VIRAL_REF MEGANE_KMERS MOCHA_DATA GRIDSS IMPUTATION SOMATIC EXTRA_CALLERS BENCHMARK
+  NXF_VER NXF_WORK)
+RERUN_CMD=""; for v in "${SWITCHES[@]}"; do [ -z "${!v+x}" ] || RERUN_CMD+="${v}=$(printf '%q' "${!v}") "; done
+RERUN_CMD+=$(printf '%q ' "${SCRIPT_DIR}/run-all.sh" "$SAMPLE" "$SEX" "$@"); RERUN_CMD=${RERUN_CMD% }
 # With -bg nextflow returns at once, and the steps would be recorded and the reports written before the run ends.
 for a in "$@"; do [ "$a" != -bg ] || { echo "ERROR: run-all.sh does not take -bg: it waits for the pipeline to record each step and write the reports. Run it inside tmux or screen, or with nohup." >&2; exit 2; }; done
 export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
@@ -56,8 +67,8 @@ on SKIP_VALIDATION || "${SCRIPT_DIR}/validate-setup.sh" "$SAMPLE" \
 mkdir -p "${S}/nextflow" "$LOG_DIR"
 GENOME_DIR="$G" bash "${PGP_ROOT}/bin/write_manifest.sh" "$SAMPLE" run-all.sh "$SEX" || echo "WARNING: could not write ${S}/run_manifest.tsv"
 STATUS="${LOG_DIR}/run_status.tsv"  # bin/collect_summary.py marks results older than this run stale
-printf '# run-all.sh: when this run started and how each step ended\nmeta\tstarted_epoch\t%s\nmeta\tstarted_utc\t%s\nmeta\tdeclared_sex\t%s\n' \
-  "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" > "$STATUS"
+printf '# run-all.sh: when this run started and how each step ended\nmeta\tstarted_epoch\t%s\nmeta\tstarted_utc\t%s\nmeta\tdeclared_sex\t%s\nmeta\tcommand\t%s\nmeta\tswitches\t%s\n' \
+  "$(date +%s)" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$SEX" "$RERUN_CMD" "${SWITCHES[*]}" > "$STATUS"
 # As run-all.sh ends, however it ends: a step still 'planned' did not finish, and the time is recorded
 # (bin/run_state.py reads both). A planned row gives way to the step's result, so each step keeps one row.
 finish_status() {
