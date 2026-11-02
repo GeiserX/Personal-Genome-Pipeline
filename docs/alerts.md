@@ -39,9 +39,10 @@ The paths it measures are the run's folder, its `nextflow/work` folder, and for 
 
 ## Scrape it with Prometheus
 
-Without a password the site listens on loopback only, and `/metrics` is open like every page. With a password, `/metrics` answers a logged-in browser or the bearer token, nothing else. Make a token and keep it out of the repository:
+Without a password the site listens on loopback only, and `/metrics` is open like every page. With a password, `/metrics` answers a logged-in browser or the bearer token, nothing else. Make a token and keep it out of the repository. The site reads the file at each scrape that needs it, so a new token works without a restart; a file it cannot read makes `/metrics` answer 503.
 
 ```bash
+mkdir -p ~/.config/owngenome
 python3 -c "import secrets; print(secrets.token_urlsafe(32))" > ~/.config/owngenome/metrics.token
 chmod 600 ~/.config/owngenome/metrics.token
 python3 bin/pgp_live.py --root "${GENOME_DIR:?Set GENOME_DIR to your data directory}" \
@@ -57,12 +58,12 @@ scrape_configs:
     authorization:
       credentials_file: /etc/prometheus/owngenome.token
     static_configs:
-      - targets: ["127.0.0.1:8787"]
+      - targets: ["localhost:8787"]
 rule_files:
   - /etc/prometheus/rules/pgp-alerts.yml
 ```
 
-Copy `assets/monitoring/pgp-alerts.yml` to the rules folder. It is an example: the thresholds the page also shows come from the site's flags (`pgp_disk_warn_ratio` carries the disk one, and `pgp_run_stalled` already applies `--stall-minutes`), so the rules and the card agree. The `for:` times and the 98% line of `OwnGenomeDiskFull` are yours to tune. `assets/monitoring/pgp-alerts.test.yml` tests every rule; run `promtool test rules assets/monitoring/pgp-alerts.test.yml` after a change. Alertmanager then sends the alerts wherever you route them.
+Copy `assets/monitoring/pgp-alerts.yml` to the rules folder. It is an example: the thresholds the page also shows come from the site's flags (`pgp_disk_warn_ratio` carries the disk one, and `pgp_run_stalled` already applies `--stall-minutes`), so the rules and the card agree. Each disk is compared with the warn ratio of the site it came from (`on(job, instance)`), so one Prometheus can scrape several sites. The `for:` times and the 98% line of `OwnGenomeDiskFull` are yours to tune. `assets/monitoring/pgp-alerts.test.yml` tests every rule; run `promtool test rules assets/monitoring/pgp-alerts.test.yml` after a change. Alertmanager then sends the alerts wherever you route them.
 
 ## The metrics
 

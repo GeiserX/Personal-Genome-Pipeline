@@ -14,7 +14,8 @@ Checks:
   9. a bare 'nextflow run' (no run folder, folders from the weblog) gives the same metric series as
      the run-all.sh run;
  10. the result holds none of the run's paths, and the metrics carry only the labels run and fs;
- 11. /metrics is open without a password, needs a login or the bearer token with one;
+ 11. /metrics is open without a password, needs a login or the bearer token with one, and reads
+     the token file only when a token is needed;
  12. every metric /metrics can write is in docs/alerts.md, and every metric the example rules use
      is one /metrics writes;
  13. the step history is read, never written;
@@ -224,7 +225,19 @@ def auth_checks(mod):
           and not mod.metrics_allowed(req("h", header="Bearer wrong"), "s3cret")
           and not mod.metrics_allowed(req("h", header="Basic s3cret"), "s3cret")
           and mod.metrics_allowed(req("h", sid="abc"), None))
-    check("11. /metrics: open without a password; with one, a login or the bearer token only", ok)
+
+    def unreadable():
+        raise FileNotFoundError("no token file")
+    try:
+        mod.metrics_allowed(req("h", header="Bearer s3cret"), unreadable)
+        raised = False
+    except OSError:
+        raised = True
+    lazy = (mod.metrics_allowed(req("h", sid="abc"), unreadable) and mod.metrics_allowed(req(), unreadable)
+            and mod.metrics_allowed(req("h", header="Bearer s3cret"), lambda: "s3cret"))
+    check("11. /metrics: open without a password; with one, a login or the bearer token only; the token "
+          "file is read only when a token is needed, and an unreadable one is an error", ok and raised and lazy,
+          (ok, raised, lazy))
 
 
 def doc_and_rule_checks(mod):

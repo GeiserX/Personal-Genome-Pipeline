@@ -298,7 +298,8 @@ def read_token(path):
 
 def metrics_allowed(req, token):
     """Without a password the site is loopback only and /metrics is open, like every page. With
-    one: a logged-in browser, or the bearer token of --metrics-token-file."""
+    one: a logged-in browser, or the bearer token of --metrics-token-file. TOKEN is the token or a
+    function that reads it, called only when a token is needed (OSError when the file is unreadable)."""
     live = getattr(req, "live", None)
     if not getattr(live, "password_hash", None):
         return True
@@ -306,6 +307,8 @@ def metrics_allowed(req, token):
         return True
     auth = (req.headers.get("Authorization") or "") if getattr(req, "headers", None) is not None else ""
     scheme, _, given = auth.partition(" ")
+    if callable(token):
+        token = token()
     return bool(token) and scheme.lower() == "bearer" and hmac.compare_digest(given.strip().encode(), token.encode())
 
 
@@ -317,7 +320,6 @@ def register(app):
     app.add_argument("--metrics-token-file", help="the bearer token Prometheus sends to /metrics")
     app.add_argument("--eta-box", help="the step history to read (default PGP_BOX or the short host name)")
     app.add_argument("--eta-cores", type=int, help="the cores of the box that runs the pipeline")
-    token = {}
 
     def hook(run_dir, state, events):
         try:
@@ -326,9 +328,14 @@ def register(app):
             return {"error": str(e)[:200]}
 
     def metrics(req, _m):
-        if "t" not in token:
-            token["t"] = read_token(getattr(app.config, "metrics_token_file", None))
-        if not metrics_allowed(req, token["t"]):
+        # The file is read at each scrape that needs it, so a new token works without a restart.
+        try:
+            allowed = metrics_allowed(req, lambda: read_token(getattr(app.config, "metrics_token_file", None)))
+        except OSError as e:
+            print(f"pgp_live_ops: --metrics-token-file cannot be read: {type(e).__name__}", file=sys.stderr)
+            app.log("metrics", status=503)
+            return req.send_body(503, "text/plain; charset=utf-8", "the metrics token file cannot be read\n")
+        if not allowed:
             app.log("metrics", status=401)
             return req.send_body(401, "text/plain; charset=utf-8", "login or bearer token required\n")
         live = req.live
