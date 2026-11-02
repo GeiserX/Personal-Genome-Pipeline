@@ -725,6 +725,7 @@ workflow {
     // variant-only VCF cannot tell a reference match from a position
     // without reads.
     ch_traits          = Channel.empty()
+    ch_genotype_rules  = Channel.empty()   // [meta, <id>_genotype_rules.tsv], for the report
     ch_traits_versions = Channel.empty()
     if (tools_list.contains('traits')) {
         ch_traits_table = Channel.value(file("${projectDir}/assets/traits.tsv", checkIfExists: true))
@@ -756,6 +757,7 @@ workflow {
             ch_traits_table, ch_traits_rules
         )
         ch_traits          = TRAITS.out.traits
+        ch_genotype_rules  = TRAITS.out.rules
         ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS_PHASE.out.versions, TRAITS.out.versions)
     }
 
@@ -1091,6 +1093,8 @@ workflow {
         .join(BAM_ANALYSIS.out.expansion_vcf.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.stranger_vcf.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.rfc1_motif.map     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.str_motifs.map     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.eh_catalog.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.manta_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.delly_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.cnvpytor_calls.map           { meta, f -> [meta.id, f] }, remainder: true)
@@ -1104,6 +1108,7 @@ workflow {
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_genotype_rules.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_archaic.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient.map                      { meta, f -> [meta.id, f] }, remainder: true)
