@@ -25,7 +25,6 @@ output_lacks hpo-no-data '48 Exomiser.*not in TOOLS'
 
 # 2. with the data: step 48 runs
 mkdir -p "${ED}/${EXOMISER_DATA_VERSION}_hg38" "${ED}/${EXOMISER_DATA_VERSION}_phenotype"
-: > "$FAKE_DOCKER_LOG"
 run_expect 0 hpo-tools env TOOLS=hla_typing HPO=HP:0001250 "${SCRIPTS}/run-all.sh" sample1 male
 output_has hpo-tools '^  48 Exomiser \(HPO terms\) +runs$'
 L=$(NFL)
