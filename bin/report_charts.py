@@ -142,7 +142,8 @@ def ancestry_chart(S, notes, rows_of, levels):
             marks.append(mark(f"{level}-{r.get('code') or len(marks)}", r["group"], v, low=low, high=high,
                               anchor="ancestry-fine", group=title,
                               detail=f"{title}: {v:.0f}%"
-                              + (f" (bootstrap range {low:.0f}% to {high:.0f}%)" if low is not None else "")))
+                              + (f" (bootstrap range {low:.0f}% to {high:.0f}%)"
+                                 if low is not None and high is not None else "")))
     if not marks:
         return None
     return spec("ancestry-fine", "ancestry_fine", "ranges", "Fine-grained ancestry, with bootstrap ranges", notes,

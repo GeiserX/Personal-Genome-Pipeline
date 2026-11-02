@@ -91,9 +91,14 @@
     shownKey = key;
     fetch(encodeURIComponent(c.file), { credentials: 'same-origin', cache: 'no-store' })
       // A refused or missing file (an expired session, a file mid-rewrite) clears the key, so the next state retries.
-      .then(function (r) { if (!r.ok) { shownKey = null; return null; } return r.json(); })
-      .then(draw)
-      .catch(function () { shownKey = null; });
+      // A reply to an older request does nothing: a newer key has taken its place.
+      .then(function (r) {
+        if (key !== shownKey) { return null; }
+        if (!r.ok) { shownKey = null; return null; }
+        return r.json();
+      })
+      .then(function (data) { if (key === shownKey) { draw(data); } })
+      .catch(function () { if (key === shownKey) { shownKey = null; } });
   }
 
   window.PGP.register({ name: 'charts', panel: panel, onState: onState });

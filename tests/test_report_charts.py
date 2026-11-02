@@ -197,6 +197,15 @@ def unit_checks():
     off["marks"][0]["value"] = 99.0
     off["svg"] = report_charts.svg(off)
     check("3. red control: a dot moved outside its range is caught", whisker_problems(off["svg"]) != [])
+    half = {"ancestry_fine": {"state": "ok", "data": {}}}
+    try:
+        hm = report_charts.ancestry_chart(half, {"ANCESTRY_FINE_NOTE": "n"},
+                                          lambda d, lv: [{"group": "Invented group D", "fraction": 0.3, "low": 0.2}],
+                                          [("lv", "Level")])["marks"][0]
+        half_ok, half_why = "bootstrap range" not in hm["detail"] and hm["high"] is None, hm["detail"]
+    except (TypeError, ValueError) as e:
+        half_ok, half_why = False, repr(e)
+    check("3. ancestry: a range with only one bound is left out of the detail, not half-printed", half_ok, half_why)
 
     g = c["genome"]
     roh = [m for m in g["marks"] if m.get("kind") == "roh"]
