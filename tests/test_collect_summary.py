@@ -79,7 +79,10 @@ Checks:
      a bgzipped, tabix-indexed VEP file (two BGZF blocks, two contigs), a hit
      above 1% is common, one VEP lacks is unknown, and without VEP output the
      reports say why; both reports print the AF, the call mark and the
-     frequency caveat on every hit;
+     frequency caveat on every hit; 21b. each hit carries the rsIDs of VEP's
+     Existing_variation ('rs123&COSV1' gives ['rs123']; another allele's ids
+     are not taken), [] with no VEP record or no VEP file, and the run delta
+     (bin/run_delta.py) reads the same with or without them;
  22. CPSR beside ClinVar (step 17): the P/LP rows by final or own class, the
      rows where CLINVAR_CLASSIFICATION and CPSR_CLASSIFICATION disagree on
      P/LP with CPSR's ACMG codes, the final P/LP rows CPSR's own rules class
@@ -362,6 +365,43 @@ def clinvar_quality(work, schema):
     summ_n, txt_n, _ = render(d)
     check("gnomAD AF: without step 13 the text report says the frequency is unknown and why",
           "gnomAD AF: unknown for every hit (no VEP output (step 13) in this folder)" in txt_n, txt_n)
+
+
+CSQ_EV_HEAD = ('##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '
+               'Format: Allele|Consequence|IMPACT|SYMBOL|Existing_variation|gnomADe_AF|gnomADg_AF">\n')
+
+
+def clinvar_rsids(work, schema):
+    """21b. the rsIDs of each ClinVar hit, from VEP's Existing_variation."""
+    import run_delta
+    d = os.path.join(work, "clinvar-rsids", "S")
+    put(f"{d}/clinvar/S_clinvar_hits.vcf", FLOOR_HITS)
+    vep_head = "##fileformat=VCFv4.2\n" + CSQ_EV_HEAD + VCF_HEAD.split("\n", 1)[1]
+    write_tabixed_vcf(f"{d}/vep/S_vep.vcf.gz", vep_head, [
+        ["chr1\t100\t.\tC\tT\t50\tPASS\tCSQ=T|missense_variant|MODERATE|GENEA|rs123&COSV1|0.03|0.02,"
+         "T|intron_variant|MODIFIER|GENEZ|rs123|.|.\tGT\t0/1",
+         "chr1\t40000\t.\tG\tA,C\t50\tPASS\tCSQ=A|stop_gained|HIGH|GENEB|rs77&rs9||,"
+         "C|missense_variant|MODERATE|GENEB|rs555||\tGT\t0/1"],
+        ["chr2\t20000\t.\tCA\tC\t50\tPASS\tCSQ=-|frameshift_variant|HIGH|GENEC|COSV9|0.0001|\tGT\t0/1"]])
+    summ = collect_summary.collect("S", d)
+    by = {h["gene"]: h["rsids"] for h in summ["sections"]["clinvar"]["data"]["hits"]}
+    check("ClinVar rsIDs: Existing_variation's rs ids only, of the hit's own allele; none without a record",
+          by == {"GENEA": ["rs123"], "GENEB": ["rs9", "rs77"], "GENEC": [], "GENED": []}, by)
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("ClinVar rsIDs: the summary validates", not errs, errs)
+    bare = json.loads(json.dumps(summ))
+    for h in bare["sections"]["clinvar"]["data"]["hits"]:
+        h.pop("rsids")
+    check("ClinVar rsIDs: the run delta reads the same with or without them",
+          run_delta.compare(bare, {}, summ, {}) == run_delta.compare(summ, {}, summ, {}), "")
+    moved = json.loads(json.dumps(summ))
+    moved["sections"]["clinvar"]["data"]["hits"][0]["significance"] = "Benign"
+    check("ClinVar rsIDs: red control, the run delta does see a reclassified hit",
+          run_delta.compare(bare, {}, moved, {}) != run_delta.compare(summ, {}, summ, {}), "")
+    shutil.rmtree(f"{d}/vep")
+    none = collect_summary.collect("S", d)["sections"]["clinvar"]["data"]["hits"]
+    check("ClinVar rsIDs: without step 13 every hit has [] and the section still reads",
+          [h["rsids"] for h in none] == [[], [], [], []], none)
 
 
 CPSR_COLS = ("VAR_ID\tGENOMIC_CHANGE\tSYMBOL\tCLINVAR_CLASSIFICATION\tCPSR_CLASSIFICATION\tACMG_CODE\t"
@@ -2057,6 +2097,7 @@ def main():
               render(d)[0]["sections"]["couple"]["state"] == "missing"
               and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
         clinvar_quality(work, schema)
+        clinvar_rsids(work, schema)
         cpsr_beside_clinvar(work, schema)
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
