@@ -282,11 +282,10 @@ for d in "${F}"/nfwork/*/*/; do
   [ "$(cat "${d}.exitcode" 2>/dev/null)" = 0 ] && continue
   FC_ERR="${d}.command.err"
 done
+check "a failed FAMILY_CHECK task was found" test -n "$FC_ERR"
 PAIR_MSG='HG003 and HG004: declared parent-child \(first degree\), but somalier measures (unrelated|third degree)'
 check "the failed FAMILY_CHECK task's error names a pair that disagrees (${FC_ERR:-no failed task found})" \
   has "$PAIR_MSG" "$(cat "$FC_ERR" 2>/dev/null)"
-check "that check is caught when the pair line is missing" \
-  lacks "$PAIR_MSG" "$(grep -v 'declared parent-child' "$FC_ERR" 2>/dev/null)"
 check "no report and no phasing after the stop" test ! -e "${OUT}/family/family_report.md" -a ! -e "${OUT}/family/family.phased.vcf.gz"
 
 # A planted de novo: a site HG002 inherited from HG004 (HG002 0/1, HG003 0/0,

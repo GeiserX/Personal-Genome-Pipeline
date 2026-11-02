@@ -314,10 +314,13 @@ jobs:
             sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
           fi
           echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
-          # Beside the work area, on the same disk, so e2e-run.sh hard-links
-          # the cached downloads into it instead of copying them.
-          sudo mkdir -p "${work}-data" && sudo chown "$(id -u):$(id -g)" "${work}-data"
-          echo "E2E_DATA_CACHE=${work}-data" >> "$GITHUB_ENV"
+          # One fixed path: actions/cache counts the path in an entry's
+          # version, so a path that followed the work area would miss on a
+          # runner that picked the other disk. e2e-run.sh hard-links the
+          # cached downloads into the work area, or copies them when the
+          # work area is on /mnt.
+          mkdir -p "${RUNNER_TEMP}/e2e-data"
+          echo "E2E_DATA_CACHE=${RUNNER_TEMP}/e2e-data" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -404,7 +407,7 @@ jobs:
       # The two largest downloads of the cases, from EBI's 1000 Genomes
       # server, which is slow and stalls at times: MoChA's chr20 panel and
       # its manifest (mocha-1, 0.64 GB), keyed on the manifest's pin and the
-      # fixture (whose chr20 slice picks the chromosome), and the 1000
+      # chromosome (the whole raw chr20 panel, which no fixture changes), and the 1000
       # Genomes sites VCF (archaic-ancestry-1, 1.36 GB), keyed on its md5.
       # e2e-run.sh hands them to the two cases ("Downloads kept between
       # runs" there) and downloads what a miss leaves out. Saved like the
@@ -413,7 +416,7 @@ jobs:
         id: data-keys
         run: |
           . versions.env
-          echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-$(sha256sum tests/fixtures/VERSION | cut -c1-16)" | tee -a "$GITHUB_OUTPUT"
+          echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-chr20" | tee -a "$GITHUB_OUTPUT"
           echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore cached data, MoChA panel

@@ -310,7 +310,8 @@ data_name() {
   esac
 }
 # data_seed CASE: before CASE, its files from E2E_DATA_CACHE. A failure here
-# only costs the download: setup.sh in the case fetches what is not there.
+# only warns and costs the download: setup.sh in the case fetches what is
+# not there.
 data_seed() {
   local n dest f t
   [ -n "$DATA_CACHE" ] || return 0
@@ -324,8 +325,9 @@ data_seed() {
   data_fetch "$n" || { echo "::warning::Data cache: could not fill ${n}; ${1%.sh} downloads it itself"; return 0; }
   while IFS= read -r f; do
     t="${dest}/${f#./}"
-    mkdir -p "${t%/*}"
-    ln -f "${DATA_CACHE}/${n}/${f#./}" "$t" 2> /dev/null || cp -f "${DATA_CACHE}/${n}/${f#./}" "$t"
+    mkdir -p "${t%/*}" \
+      && { ln -f "${DATA_CACHE}/${n}/${f#./}" "$t" 2> /dev/null || cp -f "${DATA_CACHE}/${n}/${f#./}" "$t"; } \
+      || echo "::warning::Data cache: could not place ${f#./}; ${1%.sh} downloads it itself"
   done < <(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part')
   echo "Data cache: ${n}: $(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part' | wc -l | tr -d ' ') files in ${dest}"
 }
