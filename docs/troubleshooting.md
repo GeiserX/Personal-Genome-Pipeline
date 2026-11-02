@@ -1214,7 +1214,7 @@ If any output is significantly smaller than expected (especially 0 bytes), see [
 
 ### Opening a GitHub issue
 
-File an issue at: **[github.com/GeiserX/Personal-Genome-Pipeline/issues](https://github.com/GeiserX/Personal-Genome-Pipeline/issues)**
+File an issue at: **[github.com/GeiserX/OwnGenome/issues](https://github.com/GeiserX/OwnGenome/issues)**
 
 Include:
 - Which step failed (step number and script name)

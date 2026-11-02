@@ -58,7 +58,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags.
 
 ## Command
 
-The partners are a pedigree row each, with each other in the `partner` column ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv), the format of [step 38](multi-sample.md#the-pedigree)):
+The partners are a pedigree row each, with each other in the `partner` column ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pedigree.example.tsv), the format of [step 38](multi-sample.md#the-pedigree)):
 
 ```text
 sample	sex	father	mother	partner

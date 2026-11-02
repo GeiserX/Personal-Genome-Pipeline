@@ -10,10 +10,10 @@ hide:
 </p>
 
 <p align="center">
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/releases"><img alt="Release" src="https://img.shields.io/github/v/release/GeiserX/Personal-Genome-Pipeline?style=flat-square"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/actions/workflows/lint.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/GeiserX/Personal-Genome-Pipeline/lint.yml?style=flat-square&label=CI"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/github/license/GeiserX/Personal-Genome-Pipeline?style=flat-square"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/releases"><img alt="Release" src="https://img.shields.io/github/v/release/GeiserX/OwnGenome?style=flat-square"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/actions/workflows/lint.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/GeiserX/OwnGenome/lint.yml?style=flat-square&label=CI"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/GeiserX/OwnGenome?style=flat-square&logo=github"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/blob/main/LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/github/license/GeiserX/OwnGenome?style=flat-square"></a>
 </p>
 
 ---
@@ -125,10 +125,10 @@ graph LR
 
 ## Getting help
 
-- Something broken: the [Troubleshooting guide](troubleshooting.md) first, then an [issue](https://github.com/GeiserX/Personal-Genome-Pipeline/issues) with the step number, the full error text, your platform and your input type.
-- A security problem: follow the [security policy](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/SECURITY.md), never a public issue.
-- What is planned: the [roadmap on GitHub](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/ROADMAP.md). Sending a fix or a new step: [CONTRIBUTING.md](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/CONTRIBUTING.md).
+- Something broken: the [Troubleshooting guide](troubleshooting.md) first, then an [issue](https://github.com/GeiserX/OwnGenome/issues) with the step number, the full error text, your platform and your input type.
+- A security problem: follow the [security policy](https://github.com/GeiserX/OwnGenome/blob/main/SECURITY.md), never a public issue.
+- What is planned: the [roadmap on GitHub](https://github.com/GeiserX/OwnGenome/blob/main/ROADMAP.md). Sending a fix or a new step: [CONTRIBUTING.md](https://github.com/GeiserX/OwnGenome/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Personal Genome Pipeline is released under the [GPL-3.0-or-later](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/LICENSE) license. It is for educational and research use; it is not a medical device.
+Personal Genome Pipeline is released under the [GPL-3.0-or-later](https://github.com/GeiserX/OwnGenome/blob/main/LICENSE) license. It is for educational and research use; it is not a medical device.

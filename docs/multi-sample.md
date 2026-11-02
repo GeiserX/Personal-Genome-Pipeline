@@ -12,7 +12,7 @@ When two or more related people are processed, step 38 analyses them together: o
 
 ### The pedigree
 
-A tab-separated file with a header line and one row per person ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)):
+A tab-separated file with a header line and one row per person ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pedigree.example.tsv)):
 
 ```text
 sample	sex	father	mother	partner
