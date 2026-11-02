@@ -44,16 +44,8 @@ TYPED_GENES="HLA-A HLA-B HLA-C HLA-DRB1 HLA-DQB1 HLA-DPB1"
 
 echo "=== T1K HLA Typing: ${SAMPLE} ==="
 
-for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
-  if [ ! -f "$f" ]; then
-    echo "ERROR: File not found: ${f}" >&2
-    exit 1
-  fi
-done
-
-mkdir -p "$OUTPUT_DIR"
-# A run that stops anywhere below must not leave the last run's types behind
-# for step 36 to read.
+# A run that stops anywhere below, even on a missing input, must not leave
+# the last run's types behind for step 36 to read.
 rm -f "${OUTPUT_DIR}/${SAMPLE}_hla_genotype.tsv"
 
 # This step feeds step 36's outside calls for PharmCAT. Remove the ones made
@@ -67,9 +59,20 @@ QC_DIR="${GENOME_DIR}/${SAMPLE}/hla_optitype"
 OT_RESULT="${QC_DIR}/${SAMPLE}_optitype_result.tsv"
 rm -f "$OT_RESULT" "${QC_DIR}/${SAMPLE}_hla_concordance.tsv"
 # The same for the KIR genotype (KIR=true): the report reads it whenever it
-# exists, so a run without KIR, or one that stops early, must not leave it.
+# exists, here or where the Nextflow pipeline publishes it (kir/), so a run
+# without KIR, or one that stops early, must not leave it.
 KIR_DIR="${GENOME_DIR}/${SAMPLE}/kir_t1k"
-rm -f "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv" "${KIR_DIR}/${SAMPLE}_kir_t1k_genotype.tsv"
+rm -f "${KIR_DIR}/${SAMPLE}_kir_genotype.tsv" "${KIR_DIR}/${SAMPLE}_kir_t1k_genotype.tsv" \
+  "${GENOME_DIR}/${SAMPLE}/kir/${SAMPLE}_kir_genotype.tsv"
+
+for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: File not found: ${f}" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$OUTPUT_DIR"
 
 # The HLA database and the gene coordinates are installed by setup.sh. Without
 # them there is nothing to type against: the step says so and stops without

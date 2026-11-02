@@ -2,8 +2,9 @@
 # Step 08 run with KIR=true, then again without it, as after a realignment:
 # the second run must not leave the first run's KIR genotype files, or the
 # report (collect_summary.kir_genotypes reads kir_t1k/<sample>_kir_genotype.tsv
-# whenever it exists) shows them as this run's. A run that stops early, here
-# with the HLA database removed, must not leave them either.
+# or kir/<sample>_kir_genotype.tsv, where the Nextflow pipeline publishes it,
+# whenever it exists) shows them as this run's. A run that stops early, with
+# the HLA database removed or on a missing BAM index, must not leave them either.
 # shellcheck source=../../scripts/ci/fake-docker/lib.sh
 . "${REPO_ROOT:?}/scripts/ci/fake-docker/lib.sh"
 
@@ -63,10 +64,14 @@ output_lacks kir-on 'unbound variable'
 [ "$(shown)" = True ] || fail "the report's summary does not read the KIR result of the KIR=true run (the control)"
 
 : > "${K}/sample1_kir_t1k_genotype.tsv"   # T1K's raw table, as a real run leaves it
+NK="${G}/sample1/kir"   # where a Nextflow run with KIR publishes its genotype
+mkdir -p "$NK"
+cp "${K}/sample1_kir_genotype.tsv" "${NK}/sample1_kir_genotype.tsv"
 run_expect 0 kir-off "${SCRIPTS}/08-hla-typing.sh" sample1
 for f in sample1_kir_genotype.tsv sample1_kir_t1k_genotype.tsv; do
   [ ! -e "${K}/${f}" ] || fail "a run without KIR=true left the earlier ${f}"
 done
+[ ! -e "${NK}/sample1_kir_genotype.tsv" ] || fail "a run without KIR=true left the Nextflow pipeline's KIR genotype"
 [ "$(shown)" = False ] || fail "the report's summary still shows a KIR result after a run without KIR=true"
 
 KIR=true run_expect 0 kir-on-again "${SCRIPTS}/08-hla-typing.sh" sample1
@@ -75,4 +80,12 @@ rm -f "$HLA_DAT"
 run_expect 0 kir-early-stop "${SCRIPTS}/08-hla-typing.sh" sample1
 output_has kir-early-stop 'SKIPPED: IPD-IMGT/HLA'
 [ ! -e "${K}/sample1_kir_genotype.tsv" ] || fail "a run that stopped early left the earlier KIR genotype file"
+# A missing input stops the step before anything runs; the old result must go too.
+: > "${K}/sample1_kir_genotype.tsv"
+BAI="${G}/sample1/aligned/sample1_sorted.bam.bai"
+mv "$BAI" "${BAI}.away"
+run_expect 1 kir-missing-input "${SCRIPTS}/08-hla-typing.sh" sample1
+output_has kir-missing-input 'ERROR: File not found: '
+[ ! -e "${K}/sample1_kir_genotype.tsv" ] || fail "a run that stopped on a missing input left the earlier KIR genotype file"
+mv "${BAI}.away" "$BAI"
 echo "Step 08 removes an earlier KIR result before its KIR gate, so a run without KIR=true shows none."
