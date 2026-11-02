@@ -789,6 +789,44 @@ def annotsv_section(work, schema):
     check("annotsv: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
           validate.validate(schema, json.loads(json.dumps(summ))))
 
+    check("annotsv: without a rule table no call is moved to class 3",
+          av.get("downgraded") == [] and "Moved to class 3" not in txt + html_, av.get("downgraded"))
+
+    # Step 05's rules: a rule table that puts SV3 over half inside an IG
+    # locus moves it to class 3. The reports list it apart with the reason,
+    # and the class 4-5 count and rows leave it out.
+    put(f"{work}/annotsv/rules.tsv", "#chrom\tstart\tend\trule\taction\tname\tsource\n"
+        "chr20\t19990000\t20500000\tig_tr_locus\tclass_3\tIGFIX\tfixture\n")
+    annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv", "--genes",
+                             f"{work}/annotsv/genes.RefSeq.sorted.bed", "--rules", f"{work}/annotsv/rules.tsv",
+                             "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+    summ, txt, html_ = render(d)
+    html_ = htmlmod.unescape(html_)
+    av = summ["sections"]["annotsv"]["data"]
+    moved = av.get("downgraded") or []
+    check("annotsv rules: SV3 is moved out of the class 4-5 rows and the count",
+          av["count"] == 2 and "20:20000000-20450000" not in {x["sv"] for x in av["rows"]}, av)
+    check("annotsv rules: SV3 is listed apart, AnnotSV class 4, now 3, with the rule and its detail",
+          [(x["sv"], x["annotsv_class"], x["acmg_class"], x["rule"]) for x in moved]
+          == [("20:20000000-20450000", "4", "3", "ig_tr_locus")] and "IGFIX" in moved[0]["rule_detail"], moved)
+    check("annotsv rules: the counts leave the moved call out (single caller 1, not 2)",
+          (av["single_caller"], av["exon_edge"], av["common"]) == (1, 1, 1), av)
+    check("annotsv rules: the text report counts 2 and lists SV3 apart with the reason",
+          "Class 4-5 SVs: 2 (single caller: 1; deletions on exon edges: 1; common: 1)" in txt
+          and "Moved to class 3 by step 05's rules, not counted above: 1" in txt
+          and "DEL 20:20000000-20450000  G9  AnnotSV class 4 -> 3  (ig_tr_locus: " in txt
+          and "DEL  20:20000000-20450000  class" not in txt, txt)
+    check("annotsv rules: the HTML card has the moved table with the rule and the reason",
+          "<h3>Moved to class 3 by step 05's rules</h3>" in html_
+          and "<td>DEL 20:20000000-20450000</td><td>4</td><td>3</td><td>G9</td><td>ig_tr_locus</td>" in html_
+          and "inside the IGFIX locus" in html_, html_)
+    check("annotsv rules: the note names the rules", "Step 05's rules" in render_report.ANNOTSV_NOTE
+          and render_report.ANNOTSV_NOTE in txt)
+    check("annotsv rules: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv", "--genes",
+                             f"{work}/annotsv/genes.RefSeq.sorted.bed", "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+
     # red control: an empty consensus gives support 1 to every row
     put(f"{d}/sv_merged/S_sv_consensus.vcf.gz", SV_CONSENSUS.split("chr20")[0], gz=True)
     av = render(d)[0]["sections"]["annotsv"]["data"]
@@ -820,6 +858,102 @@ def annotsv_section(work, schema):
     check("annotsv: without the table the section is missing, listed as not run, with no card",
           summ["sections"]["annotsv"]["state"] == "missing" and any("AnnotSV" in x for x in summ["not_run"])
           and "Class 4 and 5 (AnnotSV)" not in txt + html_, summ["not_run"])
+
+
+def report_followups_sections(work, schema):
+    """26. step 42's genotype rules, step 9b's motif table of the other
+    flagged motif loci and the loci the repeat catalog leaves without
+    thresholds reach both reports."""
+    import html as htmlmod
+    import traits_report
+    # The genotype rules: TAS2R38 homozygous for the taster haplotype PAV
+    # (G, G, C on the plus strand; rs1726866's G is the reference base).
+    t = os.path.join(work, "rules", "S")
+    rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
+    rules = traits_report.read_rules(os.path.join(REPO, "assets", "genotype_rules.tsv"))
+    g = os.path.join(work, "rules_g.tsv")
+    put(g, "chr7\t141972804\tT\tC\tC/C\t40\nchr7\t141972905\tG\t.\tG/G\t40\nchr7\t141973545\tC\tG\tG/G\t40\n"
+           "chr19\t44908684\tT\t.\tT/T\t40\nchr19\t44908822\tC\t.\tC/C\t40\n")
+    recs = traits_report.read_genotypes(g)
+    lines = traits_report.rule_lines(rules, recs)
+    os.makedirs(f"{t}/traits", exist_ok=True)
+    traits_report.write_tsv(f"{t}/traits/S_traits.tsv", traits_report.report(rows, recs, rules, None, lines))
+    summ, txt, html_ = render(t)
+    check("rules: without the rules table the section has no rule lines and the reports none",
+          summ["sections"]["traits"]["data"].get("rules") is None and "Genotype rules (several sites" not in txt + html_,
+          summ["sections"]["traits"]["data"].get("rules"))
+    traits_report.write_tsv(f"{t}/traits/S_genotype_rules.tsv", lines, traits_report.RULE_OUT_COLUMNS)
+    summ, txt, html_ = render(t)
+    html_ = htmlmod.unescape(html_)
+    rl = summ["sections"]["traits"]["data"].get("rules") or []
+    check("rules: the TAS2R38 line is read, PAV/PAV, and APOE (in the traits table) is left out",
+          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl] == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
+          rl)
+    trait = rules["TAS2R38"]["trait"]
+    check("rules: the text report prints the rule line with its result and sites",
+          f"{trait} (TAS2R38 rs713598, rs1726866, rs10246939): PAV/PAV (no phase needed). " in txt
+          and "traits/S_genotype_rules.tsv" in txt, txt)
+    card = html_.split("<h2>Traits</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("rules: the HTML Traits card has the rules table with the genotypes and the result",
+          "<h3>Genotype rules (several sites read together)</h3>" in card
+          and "<td>G/G, G/G, C/C</td><td>PAV/PAV (no phase needed)</td>" in card, card)
+    check("rules: the APOE lines stay folded away only", "rs429358+rs7412" in card.split("<details>", 1)[-1]
+          and "APOE" not in card.split("<h3>Genotype rules", 1)[-1].split("<details>", 1)[0], card)
+    check("rules: the TAS2R38 rows of the table point at the rule line",
+          all("genotype rule" in r["note"] for r in rows if r["gene"] == "TAS2R38")
+          and not any("is not known here" in r["note"] for r in rows if r["gene"] == "TAS2R38"), [r["note"] for r in rows if r["gene"] == "TAS2R38"])
+    check("rules: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{t}/traits/S_genotype_rules.tsv", "rule\tgene\tresult\nTAS2R38\tTAS2R38\tPAV/PAV\n")
+    check("rules: a rules table without the reading column is unreadable",
+          collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
+
+    # The repeats: the catalog step 09 ran on gives MUC1 no thresholds, so
+    # Stranger gives it no status; SAMD12 is flagged and step 9b counted its
+    # motif; NOTINCAT is outside the catalog.
+    x = os.path.join(work, "str-ng", "S")
+    fmt = "GT:REPCN"
+    eh = ("chr1\t155188000\t.\tC\t<STR9>\t.\tPASS\tEND=1;REPID=MUC1;VARID=MUC1\t" + fmt + "\t0/1:20/25\n"
+          "chr8\t118366913\t.\tA\t<STR40>\t.\tPASS\tEND=1;REPID=SAMD12;VARID=SAMD12{st}\t" + fmt + "\t0/1:1/40\n"
+          "chr9\t100\t.\tA\t<STR9>\t.\tPASS\tEND=1;REPID=NOTINCAT;VARID=NOTINCAT\t" + fmt + "\t0/1:5/9\n")
+    put(f"{x}/expansion_hunter/S_eh.vcf", VCF_HEAD + eh.format(st=""), age_days=2)
+    put(f"{x}/expansion_hunter/S_eh_stranger.vcf", VCF_HEAD + eh.format(st=";STR_STATUS=pre_mutation"), age_days=1)
+    why = "the reference repeat is 1200 bases, longer than 300: short reads cannot size it"
+    put(f"{x}/expansion_hunter/S_eh_catalog.json", json.dumps([
+        {"LocusId": "MUC1", "NoThresholds": why}, {"LocusId": "SAMD12", "NormalMax": 1, "PathologicMin": 105}]))
+    motifs = ("locus\tchrom\tstart\tend\trepeat_reads\tdominant_motif\tdominant_class\tdominant_share\tmotif_shares"
+              "\tverdict\tnote\nSAMD12\tchr8\t118366812\t118366918\t5\tTGAAA\tpathogenic\t1.0\tTGAAA=1.0"
+              "\tpathogenic_motif\tmotif TGAAA (pathogenic) in 5 of 5 repeat reads: confirm with repeat-primed PCR\n")
+    put(f"{x}/expansion_hunter/S_str_motifs.tsv", motifs)
+    summ, txt, html_ = render(x)
+    ed = summ["sections"]["expansions"]["data"]
+    by = {l["locus"]: l for l in ed.get("loci", [])}
+    check("not graded: MUC1 is not graded with the catalog's reason, and not counted as outside the catalog",
+          ed.get("not_graded") == {"MUC1": why} and ed.get("no_status") == 1 and by["MUC1"].get("not_graded") == why, ed)
+    muc = [line for line in txt.splitlines() if line.strip().startswith("MUC1 ")]
+    check("not graded: the text report marks MUC1 not graded, with the reason and the note",
+          len(muc) == 1 and "not graded" in muc[0] and why in muc[0]
+          and f"Not graded (no thresholds in the catalog): 1 (MUC1: {why})" in txt
+          and render_report.NOT_GRADED_NOTE in txt, txt)
+    card = htmlmod.unescape(html_).split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("not graded: the HTML card counts MUC1 not graded and its row says so",
+          "Not graded (no thresholds in the catalog)" in card and "<td>MUC1</td><td>20/25</td><td>not graded</td>" in card,
+          card)
+    check("motifs: the flagged SAMD12 carries step 9b's motif verdict",
+          [f.get("motif", {}).get("verdict") for f in ed.get("flagged", [])] == ["pathogenic_motif"], ed.get("flagged"))
+    check("motifs: both reports print the SAMD12 motif count",
+          "SAMD12 motif count: pathogenic_motif: motif TGAAA (pathogenic) in 5 of 5 repeat reads" in txt
+          and "SAMD12 motif count: pathogenic_motif" in card, txt)
+    check("not graded and motifs: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{x}/expansion_hunter/S_str_motifs.tsv", motifs, age_days=3)
+    check("motifs: a table older than Stranger's output is not read",
+          not any("motif" in f for f in render(x)[0]["sections"]["expansions"]["data"]["flagged"]))
+    os.remove(f"{x}/expansion_hunter/S_eh_catalog.json")
+    ed = render(x)[0]["sections"]["expansions"]["data"]
+    check("not graded red control: without the catalog MUC1 is a locus without a status, not marked not graded",
+          ed.get("not_graded") == {} and ed.get("no_status") == 2 and "not_graded" not in
+          {k for l in ed["loci"] for k in l}, ed)
 
 
 SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
@@ -2062,6 +2196,7 @@ def main():
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
+        report_followups_sections(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
         roh_upd_karyotype(work, schema)
