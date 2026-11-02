@@ -10,8 +10,8 @@ parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs exactly once.
   `<package-key>-<what>.sh`; they run after the base cases and can read their
   outputs. Add a file; do not edit the runner, the workflow or another case.
 - The base cases of [`scripts/ci/e2e-case-times.tsv`](../../scripts/ci/e2e-case-times.tsv)
-  (stage `base`) run first, in their own job, and every shard starts from
-  what they wrote. A case that reads what another, non-base case wrote must
+  (stage `base`: the numbered files and `bash-step-08-hla`) run first, in
+  their own job, and every shard starts from what they wrote. A case that reads what another, non-base case wrote must
   name that case in its `needs` column, so both run in the same shard, in
   name order. A new case with no row runs in some shard and needs nothing.
 - `lib.sh` holds the shared checks (`check`, `check_eq`, `check_ge`, `has`,
