@@ -1,7 +1,8 @@
 # Example Prometheus alert rules for OwnGenome runs, on the metrics of bin/pgp_live_ops.py
 # (GET /metrics of the live site). docs/alerts.md says how to scrape them and what each one means.
 # The thresholds the page also shows (disk warn percent, stall minutes) are flags of the site,
-# so the page and these rules always agree; the 'for' times and the 98% disk line are yours to tune.
+# so the page and these rules always agree. Each disk is compared with the warn ratio of the site
+# it came from (on job and instance), so one Prometheus can scrape several sites; the 'for' times and the 98% disk line are yours to tune.
 # assets/monitoring/pgp-alerts.test.yml tests every rule with promtool.
 groups:
   - name: owngenome-runs
@@ -38,7 +39,7 @@ groups:
           severity: warning
         annotations:
           summary: "Run {{ $labels.run }}: a task was retried after a memory or time kill"
-          description: "{{ $value }} task attempt(s) ended with an exit conf/base.config retries. A task can run out of memory again on its last attempt."
+          description: "{{ $value }} task attempt(s) ended with an exit code that conf/base.config retries, usually a memory or time kill. A task can run out of memory again on its last attempt."
 
       - alert: OwnGenomeMaxMemoryAboveRam
         expr: pgp_run_max_memory_above_ram == 1 and pgp_run_running == 1
@@ -49,7 +50,7 @@ groups:
           description: "A task can ask for more memory than there is. Lower --max_memory."
 
       - alert: OwnGenomeDiskFilling
-        expr: pgp_disk_used_ratio >= on() group_left() pgp_disk_warn_ratio
+        expr: pgp_disk_used_ratio >= on(job, instance) group_left() pgp_disk_warn_ratio
         for: 5m
         labels:
           severity: warning
@@ -58,7 +59,7 @@ groups:
           description: "{{ $value | humanizePercentage }} used, at or above --disk-warn-percent."
 
       - alert: OwnGenomeDiskInodesFilling
-        expr: pgp_disk_inodes_used_ratio >= on() group_left() pgp_disk_warn_ratio
+        expr: pgp_disk_inodes_used_ratio >= on(job, instance) group_left() pgp_disk_warn_ratio
         for: 5m
         labels:
           severity: warning
