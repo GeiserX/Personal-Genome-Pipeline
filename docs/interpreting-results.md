@@ -275,7 +275,7 @@ Add up the autosomal segments of 5 Mb or more and compare the total with the tab
 
 - **No segments of 5 Mb or more, or only a few:** no sign that your parents are related
 - **Many small segments (1-5 Mb):** population-level background, typical of population isolates (Ashkenazi, Finnish, etc.)
-- **A single segment over 10 Mb on one chromosome, with little elsewhere:** possible uniparental disomy rather than related parents
+- **One chromosome carrying most of the long runs:** possible uniparental disomy rather than related parents. The reports flag a chromosome when its segments of 5 Mb or more add up to at least 20 Mb and to more than half of all such autosomal segments ([step 11](11-roh-analysis.md#one-chromosome-carrying-most-of-the-runs-possible-uniparental-disomy))
 
 ### Centromeric Artifacts
 
