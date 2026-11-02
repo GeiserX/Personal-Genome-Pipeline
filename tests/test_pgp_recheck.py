@@ -42,8 +42,10 @@ FIX = os.path.join(REPO, "tests", "fixtures", "recheck")
 TOOL = os.path.join(REPO, "bin", "pgp_recheck.py")
 FAILS = 0
 CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "38", "39"]
-THIS_PINS = {"VEP_CACHE_RELEASE": "116", "PCGR_DATA_BUNDLE": "20260620", "PYPGX_BUNDLE_VERSION": "0.26.0",
-             "PHARMCAT_IMAGE": "pgkb/pharmcat:3.4.0"}
+# The pins "here" are the run's own: the version rows of the fixture manifest
+# (the image name stays in the fixture, never as a literal in a test).
+with open(os.path.join(FIX, "run_manifest.tsv")) as _f:
+    THIS_PINS = {r[1]: r[2] for r in (line.rstrip("\n").split("\t") for line in _f) if r[0] == "version"}
 
 
 def check(desc, ok, detail=""):
