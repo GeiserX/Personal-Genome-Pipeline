@@ -295,7 +295,7 @@ def genotype_word(gt):
     if g == "1":
         return "hemizygous"
     if g in ("0/0", "0"):
-        return "no copy"
+        return "does not carry it"
     return gt
 
 

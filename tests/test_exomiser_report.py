@@ -293,7 +293,7 @@ def case_report():
                                "GENEA:ENST1:c.1688A>C:p.(Glu563Ala)", "PATHOGENIC")])
         words = open(os.path.join(d, "words.txt")).read()
         check("words: a family genotype names each member",
-              r.returncode == 0 and "chr10:123256215 T>G [M no copy, F heterozygous, S1 heterozygous], missense_variant"
+              r.returncode == 0 and "chr10:123256215 T>G [M does not carry it, F heterozygous, S1 heterozygous], missense_variant"
               in words, r.stderr + words)
         check("report: the table keeps Exomiser's genotype as it is",
               read_rows(os.path.join(d, "top.tsv"))[0]["genotype"] == "0/0:0/1:0/1")
