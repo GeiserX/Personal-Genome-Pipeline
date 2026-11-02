@@ -370,9 +370,11 @@ def smn_finding(path, genes):
     p = paraphase_report.parascopy_smn1(path)
     # Step 35 writes a row it could not assess with the filter "not assessed:
     # <reason>"; the reason is what the reader needs, not the empty values.
+    # "not resolved" stays in the text: it is what marks a gap, here and in
+    # tests/test_paralog_loci.py.
     na = re.search(r"filter not assessed: (.*)\), not resolved$", p["text"])
     if na:
-        return [], "SMN1 not assessed: %s" % na.group(1)
+        return [], "SMN1 not assessed: %s; copy number not resolved" % na.group(1)
     if p["cn"] is None or "SMN1" not in genes:
         return [], "SMN1 copy number %s" % p["text"]
     if p["cn"] >= 2:

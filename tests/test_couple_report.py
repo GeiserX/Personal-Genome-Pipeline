@@ -247,7 +247,7 @@ def main():
         md6n = open(f"{t}/smnn/couple_A_B.md").read()
         check("a not-assessed SMN1 row (step 35) is named with its reason, not as empty values",
               [r["findings_a"] for r in rows(f"{t}/smnn/couple_A_B.tsv") if r["gene"] == "SMN1"] == ["."]
-              and "SMN1 copy number of A: SMN1 not assessed: no read over chr5:70951946-70951946." in md6n, md6n)
+              and "SMN1 copy number of A: SMN1 not assessed: no read over chr5:70951946-70951946; copy number not resolved." in md6n, md6n)
 
         # 3b. read depth: a long Delly deletion counts only when RDCN shows the loss
         genes_mid = {g: mid(g) for g in ("GBA1", "PAH", "CFTR", "HBB", "DMD", "OTC")}
