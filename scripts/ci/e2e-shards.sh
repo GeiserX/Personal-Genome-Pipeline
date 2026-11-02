@@ -180,7 +180,10 @@ times() {
     {
       if (NF < 4) next
       tsecs[$1] = $2; reads += $4
-      if ($3 != "-" && $3 != "") { tw[$1] = $3; edges++ }
+      if ($3 != "-" && $3 != "") tw[$1] = $3
+      # An edge is a read of a file another case wrote, not the layout.
+      m = split($3, e, ",")
+      for (j = 1; j <= m; j++) if (e[j] != "setup" && e[j] != "-" && e[j] != "" && e[j] != $1) { edges++; break }
     }
     END {
       if (reads == 0 || edges == 0) {

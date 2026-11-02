@@ -382,8 +382,8 @@ jobs:
 
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk. The
-      # base outputs unpack only under the work area they were packed in, and
-      # e2e-run.sh stops a shard whose choice differs from the base leg's.
+      # base outputs unpack only under the work area they were packed in, so
+      # a shard leg takes the base leg's choice when its artifact arrives.
       - name: Free disk space and pick the work area
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
@@ -495,9 +495,15 @@ jobs:
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
+      # While the base leg runs: the base leg pulls the same images first.
+      - name: Pull the images the cases use
+        if: matrix.job != 'base'
+        run: scripts/ci/e2e-run.sh --pull-images
+
       # The base leg uploads e2e-base only once its cases all passed, so a
       # shard stops as soon as the base leg ends without it. A rerun of failed
-      # legs finds the artifact of the earlier attempt.
+      # legs finds the artifact of the earlier attempt. A failed API call is
+      # asked again on the next round, until the deadline.
       - name: Wait for the base leg's outputs
         if: matrix.job != 'base'
         env:
@@ -508,16 +514,22 @@ jobs:
           api="repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
           deadline=$((SECONDS + 180 * 60))
           while :; do
-            id=$(gh api "${api}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty')
-            if [ -n "$id" ]; then
-              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/e2e-base.zip"
-              unzip -o -q "${RUNNER_TEMP}/e2e-base.zip" -d "${RUNNER_TEMP}/e2e-base"
+            id=$(gh api "${api}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty') || id=""
+            if [ -n "$id" ] && gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "${RUNNER_TEMP}/e2e-base.zip" \
+               && unzip -o -q "${RUNNER_TEMP}/e2e-base.zip" -d "${RUNNER_TEMP}/e2e-base"; then
               rm -f "${RUNNER_TEMP}/e2e-base.zip"
-              echo "Base outputs after $((SECONDS / 60)) minutes of waiting: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1)"
+              read -r work repo < "${RUNNER_TEMP}/e2e-base/base.tar.zst.from"
+              if [ "$repo" != "$GITHUB_WORKSPACE" ]; then
+                echo "::error::The base leg ran in the checkout ${repo}, this leg in ${GITHUB_WORKSPACE}."
+                exit 1
+              fi
+              sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+              echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
+              echo "Base outputs after $((SECONDS / 60)) minutes of waiting: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
               break
             fi
             state=$(gh api "${api}/attempts/${ATTEMPT}/jobs?per_page=100" \
-                      --jq '.jobs[] | select(.name == "e2e base") | "\(.status) \(.conclusion)"')
+                      --jq '.jobs[] | select(.name == "e2e base") | "\(.status) \(.conclusion)"') || state=""
             if [[ "$state" == completed* ]]; then
               echo "::error::The job e2e base ended (${state#completed }) without uploading e2e-base: its cases did not all pass, so this shard cannot run."
               exit 1
@@ -545,7 +557,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-base
-          path: ${{ runner.temp }}/base.tar.zst
+          path: |
+            ${{ runner.temp }}/base.tar.zst
+            ${{ runner.temp }}/base.tar.zst.from
           compression-level: 0
           retention-days: 1
           overwrite: true

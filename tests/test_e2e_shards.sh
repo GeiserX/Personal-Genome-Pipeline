@@ -118,6 +118,9 @@ else bad "times failed on a good trace"; fi
 printf '%s\n' "c1${TAB}5${TAB}-${TAB}0" "c2${TAB}5${TAB}-${TAB}0" > "${WORK}/blind.tsv"
 if "$S" times "${WORK}/blind.tsv" > /dev/null 2>&1; then bad "times accepted a trace that saw no read"
 else ok "a trace that saw no read is refused"; fi
+printf '%s\n' "c1${TAB}5${TAB}setup${TAB}7" "c2${TAB}5${TAB}setup${TAB}3" > "${WORK}/setup-only.tsv"
+if "$S" times "${WORK}/setup-only.tsv" > /dev/null 2>&1; then bad "times accepted a trace whose reads were all of layout files"
+else ok "a trace with reads of layout files only is refused"; fi
 
 # --- the real table splits the real cases once each --------------------------
 unset E2E_CASE_DIR E2E_TIMES

@@ -2,7 +2,7 @@
 # e2e-run.sh — run every end-to-end case in tests/e2e/ on the HG002 fixture.
 #
 # Usage: scripts/ci/e2e-run.sh [pattern]
-#        scripts/ci/e2e-run.sh --self-test-pull | --image-groups
+#        scripts/ci/e2e-run.sh --self-test-pull | --image-groups | --pull-images
 #   pattern  optional shell glob; runs only the cases whose file name matches
 #            (e.g. '2*' or '*cyrius*'). Later cases read earlier cases' outputs,
 #            so a partial run is for debugging only.
@@ -10,6 +10,7 @@
 #            (seconds, no network) and the image cache groups, and exits.
 #   --image-groups  prints "GROUP IMAGE" for every image the cases use (the
 #            e2e workflow's image cache entries) and exits.
+#   --pull-images  pulls those images, as step 3 below does, and exits.
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -18,7 +19,8 @@
 #                gives each of its parallel jobs its list from e2e-shards.sh.
 #      E2E_JOB   the job name written beside each result (default local)
 #      E2E_BASE_OUT  after the cases, pack every file they wrote or changed
-#                (under E2E_WORK and the checkout) into this .tar.zst
+#                (under E2E_WORK and the checkout) into this .tar.zst, and
+#                write "E2E_WORK CHECKOUT" to E2E_BASE_OUT.from
 #      E2E_BASE_IN   after the layout, unpack this .tar.zst from E2E_BASE_OUT,
 #                which must have been packed with the same E2E_WORK and checkout
 #      E2E_TRACE=true  after each case, record how long it took and which
@@ -129,6 +131,25 @@ image_groups() {
 if [ "${1:-}" = --image-groups ]; then
   image_groups
   exit 0
+fi
+
+# pull_all: pull every image of case_images that is not here yet.
+pull_all() {
+  local image pulled=0
+  mapfile -t IMAGES < <(case_images)
+  [ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; return 1; }
+  for image in "${IMAGES[@]}"; do
+    docker image inspect "$image" > /dev/null 2>&1 && continue
+    pull_image "$image" || return 1
+    pulled=$((pulled + 1))
+  done
+  echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+}
+
+# The e2e workflow's shard legs pull while the base leg runs.
+if [ "${1:-}" = --pull-images ]; then
+  pull_all
+  exit
 fi
 
 if [ "${1:-}" = --self-test-pull ]; then
@@ -272,11 +293,14 @@ touch "${E2E_WORK}/.layout-done"
 # the paths in the archive would land beside the files the cases read.
 if [ -n "${E2E_BASE_IN:-}" ]; then
   echo "=== Unpacking the base cases' outputs ==="
-  zstd -dc "$E2E_BASE_IN" | sudo tar -P -xpf -
-  if [ "$(cat "${E2E_WORK}/base-from" 2> /dev/null)" != "${E2E_WORK} ${REPO}" ]; then
-    echo "ERROR: ${E2E_BASE_IN} was not packed with E2E_WORK=${E2E_WORK} and the checkout at ${REPO}" >&2
+  # Checked before anything is written: an archive from another work area
+  # would put its files where no case reads them.
+  from=$(zstd -dc "$E2E_BASE_IN" | tar -P -xOf - "${E2E_WORK}/base-from" 2> /dev/null || true)
+  if [ "$from" != "${E2E_WORK} ${REPO}" ]; then
+    echo "ERROR: ${E2E_BASE_IN} was not packed with E2E_WORK=${E2E_WORK} and the checkout at ${REPO} (it says: ${from:-nothing})" >&2
     exit 1
   fi
+  zstd -dc "$E2E_BASE_IN" | sudo tar -P -xpf -
   echo "Unpacked $(zstd -dc "$E2E_BASE_IN" | tar -tf - | wc -l) entries"
 fi
 
@@ -286,15 +310,7 @@ fi
 # partial run lets its cases pull their own, without the retry.
 if [ "$PATTERN" = "*" ]; then
   echo "=== Pulling the images the cases use ==="
-  mapfile -t IMAGES < <(case_images)
-  [ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; exit 1; }
-  pulled=0
-  for image in "${IMAGES[@]}"; do
-    docker image inspect "$image" > /dev/null 2>&1 && continue
-    pull_image "$image" || exit 1
-    pulled=$((pulled + 1))
-  done
-  echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+  pull_all
 else
   echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
 fi
@@ -425,6 +441,8 @@ fi
 # the fixture copies of the layout stay out.
 if [ -n "${E2E_BASE_OUT:-}" ] && [ "$failed" -eq 0 ]; then
   echo "${E2E_WORK} ${REPO}" > "${E2E_WORK}/base-from"
+  # Beside the archive too, so a shard learns the work area before it unpacks.
+  cp "${E2E_WORK}/base-from" "${E2E_BASE_OUT}.from"
   sudo find "$E2E_WORK" "$REPO" \( -path "$FIXTURE_DIR" -o -path "$REPORT_DIR" \
       -o -path "${REPO}/.git" -o -path "$E2E_NOTES" -o -path "${E2E_WORK}/all-cases-ran" \) -prune \
       -o -cnewer "${E2E_WORK}/.layout-done" -print0 \
