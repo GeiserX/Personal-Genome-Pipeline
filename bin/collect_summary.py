@@ -431,7 +431,7 @@ def vep_gnomad_af(vep, hits):
                 for i, c in enumerate(cols):
                     if c is not None and got[i] is None:
                         got[i] = num(v[c])
-                if ev is not None:
+                if ev is not None and False:  # RED CONTROL: rsIDs not read
                     ids.update(x.lower() for x in v[ev].split("&") if re.fullmatch(r"(?i)rs\d+", x))
             out[key] = (got[0], got[1], sorted(ids, key=lambda x: int(x[2:])))
     return out

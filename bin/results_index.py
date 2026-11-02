@@ -157,7 +157,7 @@ def vcf_names(path, gene_tag, with_rsids):
 
 
 # The sections whose genes are in their step's table, not in summary.json.
-TABLES = {"clinical": clinical_names, "slivar": slivar_names}
+TABLES = {"clinical": clinical_names}  # RED CONTROL: step 31 mentions missing
 
 
 def build(summary, sample_dir=None, anchors=None):
