@@ -57,7 +57,7 @@ assert r["rc"] == 0 and r["command"] and r["finished_utc"] and "predicted_vs_red
 assert all(i["class"] == "no-newer-release" for i in s["items"]), s["items"]
 PY
 rows1=$(wc -l < "${S}/recheck/log.tsv")
-grep -q $'\trerun-start\t' "${S}/recheck/log.tsv" && grep -q $'\trerun-end\t' "${S}/recheck/log.tsv" || fail "log.tsv lacks the rerun rows"
+for e in rerun-start rerun-end; do grep -q $'\t'"$e"$'\t' "${S}/recheck/log.tsv" || fail "log.tsv lacks the ${e} row"; done
 
 # 3. Control: a command row with one argument dropped replays something else
 awk -F'\t' -v OFS='\t' '$1 == "meta" && $2 == "command" {sub(/ --sex_check warn$/, "", $3)} {print}' "$ST" > "${ST}.new" && mv "${ST}.new" "$ST"
