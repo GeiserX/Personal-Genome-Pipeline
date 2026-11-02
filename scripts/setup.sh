@@ -1424,6 +1424,14 @@ annotsv_merge_benign() {
     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' > "${probe}/probe.vcf"
   printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tprobe\n' >> "${probe}/probe.vcf"
   printf 'chr20\t1000001\tsetup_probe\tN\t<DEL>\t100\tPASS\tEND=1001000;SVTYPE=DEL;SVLEN=-1000\tGT\t0/1\n' >> "${probe}/probe.vcf"
+  # The image first, with pull_image's retries: left to `docker run`, one
+  # broken pull (a short read from the registry) failed the merge in two
+  # seconds with exit 125.
+  if ! "$CONTAINER_ENGINE" image inspect "$ANNOTSV_IMAGE" &>/dev/null && ! pull_image "$ANNOTSV_IMAGE"; then
+    echo "[WARN] Could not pull ${ANNOTSV_IMAGE} for AnnotSV's merge run; Docker's message is above."
+    rm -rf "$probe"
+    return 1
+  fi
   echo "  AnnotSV merges the records into its benign set (one run, a few minutes)..."
   # The annotations directory is writable: AnnotSV rewrites its benign files there.
   run_in --rw "$ANNOTSV_DIR" --cpus 2 --memory 8g "$ANNOTSV_IMAGE" \
@@ -1571,7 +1579,9 @@ install_archaic() {
   for c in $chroms; do
     [ -s "${dir}/chr${c}.tsv.gz" ] && [ "$(cat "${dir}/chr${c}.stamp" 2>/dev/null)" = "$stamp" ] && continue
     if [ ! -s "${sites}.tbi" ]; then
-      fetch "$ARCHAIC_1KG_SITES_URL" "$sites" md5 "$ARCHAIC_1KG_SITES_MD5" \
+      # A whole copy already there (an earlier run that stopped at the index) is kept.
+      { [ -s "$sites" ] && [ "$(_digest md5 "$sites")" = "$ARCHAIC_1KG_SITES_MD5" ]; } \
+        || fetch "$ARCHAIC_1KG_SITES_URL" "$sites" md5 "$ARCHAIC_1KG_SITES_MD5" \
         || { echo "[WARN] Could not download the 1000 Genomes sites file; run: $0 --archaic ${GENOME_DIR}"; return 1; }
       run_in --rw "$dir" "$BCFTOOLS_IMAGE" bcftools index -t -f "$(cpath "$sites")" \
         || { echo "[WARN] Could not index ${sites}"; return 1; }

@@ -314,6 +314,10 @@ jobs:
             sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
           fi
           echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
+          # Beside the work area, on the same disk, so e2e-run.sh hard-links
+          # the cached downloads into it instead of copying them.
+          sudo mkdir -p "${work}-data" && sudo chown "$(id -u):$(id -g)" "${work}-data"
+          echo "E2E_DATA_CACHE=${work}-data" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -397,11 +401,79 @@ jobs:
           rm -rf "${RUNNER_TEMP}/images"
           echo "Image cache: $(wc -l < "$loaded") images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # The two largest downloads of the cases, from EBI's 1000 Genomes
+      # server, which is slow and stalls at times: MoChA's chr20 panel and
+      # its manifest (mocha-1, 0.64 GB), keyed on the manifest's pin and the
+      # fixture (whose chr20 slice picks the chromosome), and the 1000
+      # Genomes sites VCF (archaic-ancestry-1, 1.36 GB), keyed on its md5.
+      # e2e-run.sh hands them to the two cases ("Downloads kept between
+      # runs" there) and downloads what a miss leaves out. Saved like the
+      # images: on main, or a run by hand with save_images, on a miss.
+      - name: Data cache keys
+        id: data-keys
+        run: |
+          . versions.env
+          echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-$(sha256sum tests/fixtures/VERSION | cut -c1-16)" | tee -a "$GITHUB_OUTPUT"
+          echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Restore cached data, MoChA panel
+        id: data-mocha
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/mocha
+          key: ${{ steps.data-keys.outputs.mocha }}
+
+      - name: Restore cached data, 1000 Genomes sites
+        id: data-archaic
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/archaic
+          key: ${{ steps.data-keys.outputs.archaic }}
+
       - name: Run the e2e cases
         id: cases
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/ci/e2e-run.sh
+          # Keep the downloads to the end of the job only when a save step uses them.
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && (steps.data-mocha.outputs.cache-hit != 'true' || steps.data-archaic.outputs.cache-hit != 'true') && 'true' || 'false' }}
+          HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
+          HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
+        run: |
+          echo "Data cache: exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}" | tee -a "$GITHUB_STEP_SUMMARY"
+          scripts/ci/e2e-run.sh
+
+      # A miss saves what e2e-run.sh downloaded, checked against its pin
+      # (data_fetch there), when every file of the entry is in place.
+      - name: Data cache, what to save
+        id: data-save
+        if: >-
+          always() && steps.cases.outcome != 'skipped' &&
+          (github.ref == 'refs/heads/main' || inputs.save_images)
+        env:
+          HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit }}
+          HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
+        run: |
+          d=$E2E_DATA_CACHE
+          if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
+             && [ "$(find "${d}/mocha/raw" -type f ! -name '*.part' 2> /dev/null | wc -l)" -eq 2 ]; then
+            echo "mocha=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$HIT_ARCHAIC" != true ] && [ -s "${d}/archaic/1kg_sites.vcf.gz" ]; then
+            echo "archaic=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh "${d}"/* 2> /dev/null || echo "Data cache: nothing downloaded"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.mocha == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/mocha
+          key: ${{ steps.data-keys.outputs.mocha }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.archaic == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/archaic
+          key: ${{ steps.data-keys.outputs.archaic }}
 
       # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
       # and the Nextflow pipeline on the same reads as sample HG002P. Runs
@@ -444,9 +516,10 @@ jobs:
       # readable by that pull request alone, and every entry counts against
       # the repository's 10 GB, so it would only push main's entries out.
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
-      # output; the rest are pulled on every run. Four groups of 1900 MB are
-      # 7.4 GB, and while main replaces one group the old and the new entry
-      # both count: 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # output; the rest are pulled on every run. Four groups of 1500 MB are
+      # 5.9 GB, and while main replaces one group the old and the new entry
+      # both count: 7.3 GB. With the two data entries above (2.0 GB) that is
+      # 9.3 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
@@ -454,7 +527,7 @@ jobs:
         if: always() && steps.keys.outcome == 'success'
         env:
           SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
-          GROUP_BUDGET_MB: 1900
+          GROUP_BUDGET_MB: 1500
           HIT0: ${{ steps.images0.outputs.cache-hit }}
           HIT1: ${{ steps.images1.outputs.cache-hit }}
           HIT2: ${{ steps.images2.outputs.cache-hit }}

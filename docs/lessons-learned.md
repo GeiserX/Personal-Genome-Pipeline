@@ -609,3 +609,15 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** the e2e job pulls every image before the first case, and MEGAnE's image is about 6.4 GB to download and much more unpacked. It stayed on the disk after `mei-1`, the only case that uses it.
 - **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory and the image by its id when it ends, and logs the free disk before and after. With the image gone every case passed. The image is pinned by digest, so the e2e image cache never saves it anyway.
 - **Image sizes step:** the job's "Image sizes" step then stopped with `numfmt: invalid number: ''`. For an image that is gone, `docker image inspect -f` prints an empty line before the `|| echo 0` fallback, so the step's own "not here" branch never ran. The fix in `.github/workflows/e2e.yml` reads the size into a variable first (`size=$(docker image inspect ...) || size=0`) and prints `${size:-0}`.
+
+## CI flakes (2026-11)
+
+### AnnotSV's merge run in `setup.sh` failed in two seconds
+- **Failed:** `tests/test_annotsv_benign_mane.sh` failed now and then with `setup.sh --annotsv-data` exiting 1, and the rerun passed. Its log showed AnnotSV's merge run ending with exit 125 two seconds after it started, and the gnomAD-SV file left unmerged.
+- **Why:** the merge run was the first use of the AnnotSV image on the runner, so `docker run` pulled it. One pull broke off (`short read: expected 603618355 bytes but got 8388608: unexpected EOF`), and `docker run` does not try a pull again: it exits 125 before AnnotSV starts.
+- **Fix:** `annotsv_merge_benign` pulls the image first with `pull_image`, which tries `FETCH_TRIES` times. The **Repeat a test** workflow (`.github/workflows/repeat-test.yml`) runs the test 30 times on fresh runners to show it no longer flakes.
+
+### A slow download used up an e2e case's hour
+- **Failed:** `archaic-ancestry-1` ran into the 3600-second case timeout on one e2e run (run 40933547961, attempt 1) and pushed the job past its own limit; the rerun passed.
+- **Why:** `setup.sh --archaic` downloads the 1000 Genomes phase 3 sites VCF (1.36 GB) from EBI. On that run EBI sent it at about 440 KB/s, and the download alone took 53 minutes, so the case's Nextflow half started with minutes left. The download never stopped: it was slow, not stalled. MoChA's chr20 panel in `mocha-1` comes from the same server.
+- **Fix:** the e2e job caches both files (keyed on their pins) and `scripts/ci/e2e-run.sh` hands them to the two cases, so a run with a cache hit downloads neither. Separately, `_get` now bounds a real stall, which nothing did before: `curl` gets `--connect-timeout 30 --speed-limit 1024 --speed-time ${FETCH_STALL:-120}` and `wget` `--connect-timeout=30 --read-timeout=${FETCH_STALL:-120}`, so a transfer under 1 KB/s for two minutes fails and `fetch` tries again, resuming the `.part`. A slow but moving transfer like the one above is left alone.

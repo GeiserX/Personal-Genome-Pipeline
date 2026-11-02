@@ -13,6 +13,8 @@
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
+#      E2E_DATA_CACHE  a folder of downloads kept between runs (see "Downloads
+#                kept between runs" below); E2E_DATA_KEEP=true keeps it whole
 #
 # What it does:
 #   1. downloads the release named in tests/fixtures/VERSION and checks
@@ -257,6 +259,84 @@ else
   echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
 fi
 
+# --- Downloads kept between runs ----------------------------------------------
+# The two largest downloads of the cases come from EBI's 1000 Genomes server,
+# which is slow and stalls at times: MoChA's chr20 panel (mocha-1, about
+# 655 MB, with its manifest) and the 1000 Genomes phase 3 sites VCF
+# (archaic-ancestry-1, about 1.5 GB). With E2E_DATA_CACHE set (the e2e
+# workflow restores it from the Actions cache), the runner gives each of
+# these cases its files before it starts, at the paths setup.sh reads them
+# from, so setup.sh finds them and downloads nothing. A file missing from
+# E2E_DATA_CACHE is downloaded there first, checked against its pin. The
+# files are hard links where they can be (setup.sh deletes its copy, the
+# cache keeps its own). Without E2E_DATA_KEEP=true (the workflow sets it on
+# a run that saves the cache) a case's cached files are deleted after it,
+# to give the disk back.
+DATA_CACHE=${E2E_DATA_CACHE:-}
+# data_fetch NAME: fills E2E_DATA_CACHE/NAME with what is missing, in a
+# subshell that sources scripts/lib/common.sh for fetch and the pins.
+data_fetch() (
+  d="${DATA_CACHE}/$1"
+  # shellcheck source=../lib/common.sh
+  . "${REPO}/scripts/lib/common.sh" || exit 1
+  case "$1" in
+    mocha)
+      m="${d}/manifest.txt"
+      { [ -s "$m" ] && [ "$(_digest sha256 "$m")" = "$MOCHA_PANEL_MANIFEST_SHA256" ]; } \
+        || fetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "$m" sha256 "$MOCHA_PANEL_MANIFEST_SHA256" || exit 1
+      # mocha-1 cuts the panel to the fixture's chr20 slice.
+      f=1kGP_high_coverage_Illumina.chr20.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
+      for e in "" .tbi; do
+        md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "$m")
+        [ -n "$md5" ] || { echo "ERROR: ${f}${e} is not in the panel manifest" >&2; exit 1; }
+        [ -s "${d}/raw/${f}${e}" ] && [ "$(_digest md5 "${d}/raw/${f}${e}")" = "$md5" ] && continue
+        fetch "${MOCHA_PANEL_URL}/${f}${e}" "${d}/raw/${f}${e}" md5 "$md5" || exit 1
+      done ;;
+    archaic)
+      url=$(sed -n 's/^ARCHAIC_1KG_SITES_URL=//p' "${REPO}/scripts/setup.sh")
+      [ -n "$url" ] || { echo "ERROR: no ARCHAIC_1KG_SITES_URL line in scripts/setup.sh" >&2; exit 1; }
+      s="${d}/1kg_sites.vcf.gz"
+      [ -s "$s" ] && [ "$(_digest md5 "$s")" = "$ARCHAIC_1KG_SITES_MD5" ] && exit 0
+      fetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
+    *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
+  esac
+)
+# data_name CASE: the E2E_DATA_CACHE entry CASE reads, and where setup.sh wants it.
+data_name() {
+  # shellcheck source=../../versions.env
+  case "$1" in
+    mocha-1.sh) echo "mocha ${GENOME_DIR}/reference/mocha-$(. "${REPO}/versions.env" && echo "$MOCHA_PANEL_VERSION")" ;;
+    archaic-ancestry-1.sh) echo "archaic ${GENOME_DIR}/reference/archaic/$(. "${REPO}/versions.env" && echo "$ARCHAIC_DATA_VERSION")/download" ;;
+  esac
+}
+# data_seed CASE: before CASE, its files from E2E_DATA_CACHE. A failure here
+# only costs the download: setup.sh in the case fetches what is not there.
+data_seed() {
+  local n dest f t
+  [ -n "$DATA_CACHE" ] || return 0
+  read -r n dest <<< "$(data_name "$1")"
+  [ -n "$n" ] || return 0
+  if [ -n "$(find "${DATA_CACHE}/${n}" -type f ! -name '*.part' 2> /dev/null | head -n 1)" ]; then
+    echo "Data cache: ${n} restored from the Actions cache"
+  else
+    echo "Data cache: ${n} not in the Actions cache; downloading it"
+  fi
+  data_fetch "$n" || { echo "::warning::Data cache: could not fill ${n}; ${1%.sh} downloads it itself"; return 0; }
+  while IFS= read -r f; do
+    t="${dest}/${f#./}"
+    mkdir -p "${t%/*}"
+    ln -f "${DATA_CACHE}/${n}/${f#./}" "$t" 2> /dev/null || cp -f "${DATA_CACHE}/${n}/${f#./}" "$t"
+  done < <(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part')
+  echo "Data cache: ${n}: $(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part' | wc -l | tr -d ' ') files in ${dest}"
+}
+# data_drop CASE: after CASE, its cache files go, unless this run saves them.
+data_drop() {
+  local n dest
+  [ -n "$DATA_CACHE" ] && [ "${E2E_DATA_KEEP:-false}" != true ] || return 0
+  read -r n dest <<< "$(data_name "$1")"
+  [ -z "$n" ] || rm -rf "${DATA_CACHE:?}/${n}"
+}
+
 # --- 4. Cases -----------------------------------------------------------------
 mapfile -t CASES < <(cd "${REPO}/tests/e2e" && find . -maxdepth 1 -type f -name '*.sh' ! -name lib.sh -printf '%f\n' | LC_ALL=C sort)
 names=() results=() times=()
@@ -268,10 +348,12 @@ for c in "${CASES[@]}"; do
   log="${LOG_DIR}/${name}.log"
   start=$(date +%s)
   echo "::group::${name}"
+  data_seed "$c"
   set +e
   timeout -k 30 "$CASE_TIMEOUT" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
   rc=${PIPESTATUS[0]}
   set -e
+  data_drop "$c"
   echo "::endgroup::"
   case "$rc" in
     0)   result=pass ;;
