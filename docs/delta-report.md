@@ -52,6 +52,10 @@ Each run of `generate-report.sh` adds a folder to `history/`, so running it twic
 
 A bare `nextflow run main.nf` writes no text report, so it writes no delta and keeps no history either. `run-all.sh` writes both after the pipeline. On the output of a bare Nextflow run, run `24-html-report.sh` and then `generate-report.sh` with `GENOME_DIR` set to the `--outdir`.
 
+## New since the previous run
+
+With a previous run on record, the delta heads its changes with "New since" and the date the previous run's report was written, and `<sample>_delta.json` holds that date as `previous_utc` and the report sections the changes touch as `new_since_sections`. The HTML and text reports put the same badge on those sections: they compare with the newest folder in `history/` themselves. The last database re-check (`<sample>/recheck/state.json`, [Newer Databases Since a Run](recheck.md)) is added to the delta as its `recheck` block, and its line is printed under the run dates.
+
 ## When to rerun
 
 | Resource | How often it changes | What to rerun |
@@ -59,5 +63,7 @@ A bare `nextflow run main.nf` writes no text report, so it writes no delta and k
 | ClinVar | Monthly | `./scripts/setup.sh --refresh clinvar <genome_dir>`, then the same `run-all.sh` command |
 | PharmCAT | With each release | Steps 07 and 27 |
 | PGS Catalog | When a score you use gets a new version | Step 25 |
+
+`bin/pgp_recheck.py` finds these for you: it says which database your run used has a newer release, which steps that changes, and with `--rerun` runs the same `run-all.sh` command again ([Newer Databases Since a Run](recheck.md)).
 
 `run-all.sh` runs Nextflow with `-resume`, so running the same command again redoes only the processes whose inputs or code changed. A new ClinVar file reruns the ClinVar screen and what reads it; the alignment and the variant calls come from the cache. The delta then shows what the new release moved.

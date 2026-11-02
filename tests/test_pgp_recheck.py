@@ -17,7 +17,10 @@ Checks:
   7. --rerun refuses (exit 3) while run_status.tsv has no finished_utc;
   8. the comparison after a rerun names a predicted step that was not redone, a
      redone step that was not predicted, and a predicted script step as not redone;
-  9. --launch-dir prints the last command of .nextflow/history with -resume.
+  9. --launch-dir prints the last command of .nextflow/history with -resume;
+ 10. the live-site plugin (bin/pgp_live_recheck.py) lets the browser fetch
+     recheck/state.json, and its state hook gives each step its badges ("newer
+     ClinVar available", "redone <date>") and {} when there is no check.
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_pgp_recheck.py
@@ -287,7 +290,55 @@ def mutants():
     return ms
 
 
+def load_plugin():
+    spec = importlib.util.spec_from_file_location("pgp_live_recheck_test", os.path.join(REPO, "bin", "pgp_live_recheck.py"))
+    p = importlib.util.module_from_spec(spec)
+    keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(p)
+    finally:
+        sys.dont_write_bytecode = keep
+    return p
+
+
+def plugin_ok(p):
+    class App:
+        def __init__(self):
+            self.globs, self.hooks = [], {}
+
+        def run_file(self, g):
+            self.globs.append(g)
+
+        def state_hook(self, name, fn):
+            self.hooks[name] = fn
+    app = App()
+    p.register(app)
+    tmp = tempfile.mkdtemp(prefix="recheck-live.")
+    try:
+        run = os.path.join(tmp, "S1")
+        none = app.hooks["recheck"](run, {}, [])
+        os.makedirs(os.path.join(run, "recheck"))
+        json.dump({"checked_utc": "2026-10-06T00:00:00Z", "items": [
+            {"item": "clinvar_file_date", "label": "ClinVar (step 06's file)", "class": "refresh-available", "steps": ["06", "24"]},
+            {"item": "VEP_CACHE_RELEASE", "label": "Ensembl / VEP cache", "class": "no-newer-release", "steps": ["13"]}],
+            "rerun": {"finished_utc": "2026-10-05T10:00:00Z", "predicted_vs_redone": {"redone": ["06"]}}},
+            open(os.path.join(run, "recheck", "state.json"), "w"))
+        got = app.hooks["recheck"](run, {}, [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ok = (app.globs == ["recheck/state.json"] and none == {}
+          and got.get("steps") == {"06": ["newer ClinVar available", "redone 2026-10-05"], "24": ["newer ClinVar available"]}
+          and got.get("banner") == "Database re-check of 2026-10-06T00:00:00Z: newer ClinVar available")
+    return ok, (app.globs, none, got)
+
+
 def main():
+    ok, detail = plugin_ok(load_plugin())
+    check("the live-site plugin serves the check and gives each step its badges", ok, detail)
+    bad = load_plugin()
+    bad.ACT = dict(bad.ACT, **{"refresh-available": "newer {name}"})
+    check("fails on a planted mistake: the live-site plugin serves the check and gives each step its badges",
+          not plugin_ok(bad)[0], "passed on the mutant")
     results = all_checks(load())
     for name, (ok, detail) in results.items():
         check(name, ok, detail)
