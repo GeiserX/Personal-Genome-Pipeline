@@ -2679,7 +2679,10 @@ def main(argv=None):
         write(a.json or os.path.join(a.sample_dir, "summary.json"), json.dumps(s, indent=1) + "\n")
     else:
         ap.error("give --summary, or --sample and --sample-dir")
-    index = results_index.build(s, a.sample_dir, SECTION_OF)
+    # Only the HTML report and --search-index read the index: a text-only run
+    # does not read the step 23 and 31 tables.
+    need_index = bool(a.search_index) or any(o.endswith(".html") for o in a.out)
+    index = results_index.build(s, a.sample_dir, SECTION_OF) if need_index else None
     for o in a.out:
         write(o, text_report(s) if o.endswith(".txt") else html_report(s, index))
     if a.search_index:

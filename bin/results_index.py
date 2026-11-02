@@ -43,10 +43,12 @@ for scripts/pgp-lookup.sh.
 Standard library only.
 """
 import argparse
+import csv
 import json
 import os
 import re
 import sys
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect_summary  # noqa: E402
@@ -197,7 +199,14 @@ def build(summary, sample_dir=None, anchors=None):
         if reader and src and sample_dir:
             path = src if os.path.isabs(src) else os.path.join(sample_dir, src)
             if os.path.isfile(path):
-                for text, locus, genes, rsids in reader(path):
+                # A table that cannot be read (truncated gzip, a bad row) adds
+                # nothing, and the report is still written.
+                try:
+                    records = reader(path)
+                except (OSError, EOFError, csv.Error, zlib.error) as e:
+                    print(f"[WARN] {key}: cannot read {src} for the search index: {e}", file=sys.stderr)
+                    records = []
+                for text, locus, genes, rsids in records:
                     for n in sorted(genes | rsids):
                         add(n, key, sec, text, locus)
     for items in terms.values():

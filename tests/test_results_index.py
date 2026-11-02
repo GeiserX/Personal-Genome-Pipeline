@@ -16,6 +16,9 @@ Checks:
   3. Existing_variation 'rs123&COSV1' gives rs123 only, and query('RS123')
      finds it;
   4. a stale section's entries say stale; a failed or missing one gives none;
+     a recorded table that cannot be read adds nothing and the report is
+     still written (red: the reader raises on it); a text-only report never
+     builds the index (red: an HTML report does);
   5. query('BRCA') lists BRCA1 and BRCA2; a position gets the pgp-lookup.sh
      hint; nothing else is a query;
   6. the HTML report closes with one line per term, each link resolves to a
@@ -196,6 +199,48 @@ def main():
         ok["sections"]["mito"]["state"] = "ok"
         check("red control: the same data in an ok section is indexed",
               "MT-ND4" in results_index.build(ok, tsv, render_report.SECTION_OF)["terms"])
+        # A recorded table that cannot be read (a truncated gzip) adds nothing,
+        # and the HTML report is still written.
+        bad = sample(work, "bad")
+        os.remove(os.path.join(bad, "clinical/SYNTH_clinical_summary.tsv"))
+        os.remove(os.path.join(bad, "slivar/SYNTH_slivar_summary.tsv"))
+        gz = os.path.join(bad, "slivar/SYNTH_prioritized.vcf.gz")
+        with open(gz, "rb") as f:
+            head = f.read(40)
+        with open(gz, "wb") as f:
+            f.write(head)
+        try:
+            results_index.slivar_names(gz)
+            raises = False
+        except (OSError, EOFError):
+            raises = True
+        check("red control: the truncated table makes the slivar reader raise", raises)
+        # The summary of the readable run (slivar ok, its VCF recorded), the
+        # tables of the damaged copy: the table broke after step 31 ran.
+        sb = os.path.join(work, "sb.json")
+        with open(sb, "w") as f:
+            json.dump(s_vcf, f)
+        with redirect_stdout(io.StringIO()):
+            rc = render_report.main(["--summary", sb, "--sample-dir", bad, "-o", os.path.join(work, "rb.html"),
+                                     "--search-index", os.path.join(work, "rb.json")])
+        with open(os.path.join(work, "rb.json")) as f:
+            bi = json.load(f)
+        check("an unreadable table: the report and the index are written, the table adds no entry",
+              rc == 0 and os.path.isfile(os.path.join(work, "rb.html")) and not table_entries(bi, "slivar")
+              and table_entries(bi, "clinical"), (rc, table_entries(bi, "slivar")))
+        # A text-only run never builds the index (it would read the tables).
+        keep_build, calls = results_index.build, []
+        results_index.build = lambda *a, **k: calls.append(1) or keep_build(*a, **k)
+        try:
+            with redirect_stdout(io.StringIO()):
+                render_report.main(["--summary", spath, "-o", os.path.join(work, "t.txt")])
+            txt_calls = len(calls)
+            with redirect_stdout(io.StringIO()):
+                render_report.main(["--summary", spath, "-o", os.path.join(work, "t.html")])
+        finally:
+            results_index.build = keep_build
+        check("a text-only report does not build the index", txt_calls == 0, txt_calls)
+        check("red control: an HTML report does build it", len(calls) > txt_calls, calls)
 
         # 5. queries
         r = results_index.query(idx, "brca")
