@@ -13,6 +13,22 @@
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
+#      E2E_CASES  a file of case names (without .sh): run only those, as a
+#                full run (pre-pull, all-cases-ran marker). The e2e workflow
+#                gives each of its parallel jobs its list from e2e-shards.sh.
+#      E2E_JOB   the job name written beside each result (default local)
+#      E2E_BASE_OUT  after the cases, pack every file they wrote or changed
+#                (under E2E_WORK and the checkout) into this .tar.zst
+#      E2E_BASE_IN   after the layout, unpack this .tar.zst from E2E_BASE_OUT,
+#                which must have been packed with the same E2E_WORK and checkout
+#      E2E_TRACE=true  after each case, record how long it took and which
+#                earlier case wrote each file it read (atime and ctime, with
+#                the file systems remounted strictatime; needs sudo), in
+#                $E2E_WORK/report/trace.tsv for `e2e-shards.sh times`
+#
+# Every run writes $E2E_WORK/report/results.tsv ("CASE RESULT SECONDS JOB",
+# tab-separated) and report/extra.md (failed checks and notes), which the
+# e2e workflow merges into one table across its jobs.
 #
 # What it does:
 #   1. downloads the release named in tests/fixtures/VERSION and checks
@@ -22,10 +38,10 @@
 #   3. pulls every image the cases use that is not on the machine yet,
 #      trying a pull again only when the registry answered with a 5xx;
 #   4. runs tests/e2e/*.sh in name order (C locale: numbered cases first, then
-#      the <package-key>-*.sh cases later packages add) and keeps going after a
-#      failure, so one run lists every broken step;
-#   5. prints a case / result / time / log table to the job summary and exits
-#      1 if any case failed.
+#      the <package-key>-*.sh cases later packages add), or those of E2E_CASES,
+#      and keeps going after a failure, so one run lists every broken step;
+#   5. prints a case / result / time / log table to the job summary;
+#   6. with E2E_BASE_OUT, packs what the cases wrote; exits 1 if any case failed.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -186,8 +202,18 @@ FAKE
   exit "$st_failed"
 fi
 
-mkdir -p "$E2E_WORK" "$FIXTURE_DIR" "$LOG_DIR"
+REPORT_DIR="${E2E_WORK}/report"
+JOB=${E2E_JOB:-local}
+TRACE=${E2E_TRACE:-false}
+CASE_LIST=${E2E_CASES:-}
+if [ -n "$CASE_LIST" ]; then
+  [ -f "$CASE_LIST" ] || { echo "ERROR: E2E_CASES names no file: ${CASE_LIST}" >&2; exit 1; }
+  [ "$PATTERN" = "*" ] || { echo "ERROR: give E2E_CASES or a pattern, not both" >&2; exit 1; }
+fi
+mkdir -p "$E2E_WORK" "$FIXTURE_DIR" "$LOG_DIR" "$REPORT_DIR"
 : > "$E2E_NOTES"
+: > "${REPORT_DIR}/results.tsv"
+: > "${REPORT_DIR}/extra.md"
 
 fixture_complete() {
   [ -f "${FIXTURE_DIR}/SHA256SUMS" ] && (cd "$FIXTURE_DIR" && sha256sum --quiet -c SHA256SUMS)
@@ -237,6 +263,22 @@ cp "${FIXTURE_DIR}/revel_synthetic.tsv.gz.tbi" "${GENOME_DIR}/annotations/revel_
 cp "${FIXTURE_DIR}/${SAMPLE}_R1.fastq.gz" "${FIXTURE_DIR}/${SAMPLE}_R2.fastq.gz" "${GENOME_DIR}/${SAMPLE}/fastq/"
 cp "${FIXTURE_DIR}/${SAMPLE}_vep.vcf" "${GENOME_DIR}/${SAMPLE}/vep/"
 df -h "$E2E_WORK"
+# Files whose ctime is newer than this were written by the cases (or unpacked
+# from the base job), not by the layout above.
+touch "${E2E_WORK}/.layout-done"
+
+# The files the cases of the base job wrote, at the paths they were written to.
+# base-from names the work area and checkout of the packing run; anywhere else
+# the paths in the archive would land beside the files the cases read.
+if [ -n "${E2E_BASE_IN:-}" ]; then
+  echo "=== Unpacking the base cases' outputs ==="
+  zstd -dc "$E2E_BASE_IN" | sudo tar -P -xpf -
+  if [ "$(cat "${E2E_WORK}/base-from" 2> /dev/null)" != "${E2E_WORK} ${REPO}" ]; then
+    echo "ERROR: ${E2E_BASE_IN} was not packed with E2E_WORK=${E2E_WORK} and the checkout at ${REPO}" >&2
+    exit 1
+  fi
+  echo "Unpacked $(zstd -dc "$E2E_BASE_IN" | tar -tf - | wc -l) entries"
+fi
 
 # --- 3. Images ----------------------------------------------------------------
 # Only a full run pre-pulls. A case reaches most images through the steps it
@@ -257,16 +299,74 @@ else
   echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
 fi
 
+# --- Trace -------------------------------------------------------------------
+# With E2E_TRACE=true each case's reads are told apart by atime, which only
+# moves on every read under strictatime, and its writes by ctime, which no
+# copy can carry over from the source. trace_scan prints "CTIME ATIME PATH" for
+# every file under the work area and the checkout, without the fixture, the
+# report and .git. The logs stay in: a case may read an earlier case's log.
+TRACE_DIR="${REPORT_DIR}/trace-state"
+trace_scan() {
+  sudo find "$E2E_WORK" "$REPO" \( -path "$FIXTURE_DIR" -o -path "$REPORT_DIR" -o -path "${REPO}/.git" \) \
+    -prune -o -type f -printf '%C@\t%A@\t%p\n' 2> /dev/null || true
+}
+if [ "$TRACE" = true ]; then
+  mkdir -p "$TRACE_DIR"
+  for d in "$E2E_WORK" "$REPO"; do sudo mount -o remount,strictatime "$(findmnt -n -o TARGET -T "$d")"; done
+  # Positive control: a second read must move atime too (relatime moves it on
+  # the first read after a write only), or the trace would miss readers.
+  for d in "$E2E_WORK" "$REPO"; do
+    probe="${d}/.atime-probe"
+    echo x > "$probe"; sleep 1.1; cat "$probe" > /dev/null
+    before=$(stat -c %x "$probe"); sleep 1.1; cat "$probe" > /dev/null
+    if [ "$(stat -c %x "$probe")" = "$before" ]; then
+      echo "ERROR: E2E_TRACE: a second read did not move atime under ${d}" >&2; exit 1
+    fi
+    rm -f "$probe"
+  done
+  # Every file there before the first case was written by the layout or the base job.
+  trace_scan | awk -F'\t' '{print $3 "\tsetup"}' > "${TRACE_DIR}/writers.tsv"
+  : > "${REPORT_DIR}/trace.tsv"
+fi
+# trace_case NAME START SECONDS: one trace.tsv line for the case that just ran,
+# "NAME SECONDS WRITERS READS", WRITERS being the comma-separated cases (or
+# "setup") that wrote the files it read, READS how many such files it read.
+trace_case() {
+  trace_scan > "${TRACE_DIR}/scan.tsv"
+  awk -F'\t' -v s="$2" -v k="$1" -v secs="$3" -v out="${TRACE_DIR}/writers.new" '
+    FILENAME == ARGV[1] { w[$1] = $2; next }
+    {
+      p = $3
+      if (p in w) {
+        if ($2 + 0 >= s + 0) { reads++; if (!(w[p] in seen)) { seen[w[p]] = 1; list = (list == "" ? w[p] : list "," w[p]) } }
+        if ($1 + 0 >= s + 0) w[p] = k
+      } else w[p] = k
+      print p "\t" w[p] > out
+    }
+    END { printf "%s\t%s\t%s\t%d\n", k, secs, (list == "" ? "-" : list), reads }' \
+    "${TRACE_DIR}/writers.tsv" "${TRACE_DIR}/scan.tsv" >> "${REPORT_DIR}/trace.tsv"
+  mv "${TRACE_DIR}/writers.new" "${TRACE_DIR}/writers.tsv"
+}
+
 # --- 4. Cases -----------------------------------------------------------------
 mapfile -t CASES < <(cd "${REPO}/tests/e2e" && find . -maxdepth 1 -type f -name '*.sh' ! -name lib.sh -printf '%f\n' | LC_ALL=C sort)
+if [ -n "$CASE_LIST" ]; then
+  unknown=$(grep -vxF -f <(printf '%s\n' "${CASES[@]%.sh}") "$CASE_LIST" || true)
+  [ -z "$unknown" ] || { echo "ERROR: E2E_CASES lists names that are no case: ${unknown//$'\n'/ }" >&2; exit 1; }
+fi
 names=() results=() times=()
 failed=0
 for c in "${CASES[@]}"; do
-  # shellcheck disable=SC2053  # PATTERN is a glob on purpose
-  [[ "$c" == $PATTERN ]] || continue
   name="${c%.sh}"
+  if [ -n "$CASE_LIST" ]; then
+    grep -qxF "$name" "$CASE_LIST" || continue
+  else
+    # shellcheck disable=SC2053  # PATTERN is a glob on purpose
+    [[ "$c" == $PATTERN ]] || continue
+  fi
   log="${LOG_DIR}/${name}.log"
   start=$(date +%s)
+  tstart=$(date +%s.%N)
   echo "::group::${name}"
   set +e
   timeout -k 30 "$CASE_TIMEOUT" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
@@ -278,11 +378,14 @@ for c in "${CASES[@]}"; do
     124) result="FAIL (timeout ${CASE_TIMEOUT}s)"; failed=$((failed + 1)) ;;
     *)   result="FAIL (exit ${rc})"; failed=$((failed + 1)) ;;
   esac
-  names+=("$name"); results+=("$result"); times+=("$(( $(date +%s) - start ))s")
+  secs=$(( $(date +%s) - start ))
+  names+=("$name"); results+=("$result"); times+=("${secs}s")
+  printf '%s\t%s\t%s\t%s\n' "$name" "$result" "$secs" "$JOB" >> "${REPORT_DIR}/results.tsv"
+  [ "$TRACE" = true ] && trace_case "$name" "$tstart" "$secs"
   echo "${name}: ${result}"
 done
 if [ "${#names[@]}" -eq 0 ]; then
-  echo "ERROR: no case matches '${PATTERN}'" >&2
+  echo "ERROR: no case matches '${PATTERN}'${CASE_LIST:+ or is listed in ${CASE_LIST}}" >&2
   exit 1
 fi
 # Tells the workflow every case ran, so the pulled images are complete enough to cache.
@@ -298,19 +401,35 @@ fi
     echo "| ${names[$i]} | ${results[$i]} | ${times[$i]} | logs/${names[$i]}.log |"
   done
   echo
-  echo "Logs are in the e2e-logs artifact of this run."
-  for i in "${!names[@]}"; do
-    [ "${results[$i]}" = pass ] && continue
-    echo
-    echo "#### ${names[$i]}"
-    echo '```'
-    grep -E '^\[FAIL\]' "${LOG_DIR}/${names[$i]}.log" || tail -n 15 "${LOG_DIR}/${names[$i]}.log"
-    echo '```'
-  done
-  if [ -s "$E2E_NOTES" ]; then
-    echo
-    cat "$E2E_NOTES"
-  fi
+  echo "Logs are in the e2e-logs artifacts of this run."
+  {
+    for i in "${!names[@]}"; do
+      [ "${results[$i]}" = pass ] && continue
+      echo
+      echo "#### ${names[$i]}"
+      echo '```'
+      grep -E '^\[FAIL\]' "${LOG_DIR}/${names[$i]}.log" || tail -n 15 "${LOG_DIR}/${names[$i]}.log"
+      echo '```'
+    done
+    if [ -s "$E2E_NOTES" ]; then
+      echo
+      cat "$E2E_NOTES"
+    fi
+  } | tee "${REPORT_DIR}/extra.md"
 } | tee -a "$SUMMARY"
+
+# --- 6. Pack for the shards ---------------------------------------------------
+# Everything the cases wrote or changed, at its absolute path, owners, modes
+# and times (ns) kept, the base cases' logs too (a case may read one).
+# Directories go in as entries alone (--no-recursion), so the reference and
+# the fixture copies of the layout stay out.
+if [ -n "${E2E_BASE_OUT:-}" ] && [ "$failed" -eq 0 ]; then
+  echo "${E2E_WORK} ${REPO}" > "${E2E_WORK}/base-from"
+  sudo find "$E2E_WORK" "$REPO" \( -path "$FIXTURE_DIR" -o -path "$REPORT_DIR" \
+      -o -path "${REPO}/.git" -o -path "$E2E_NOTES" -o -path "${E2E_WORK}/all-cases-ran" \) -prune \
+      -o -cnewer "${E2E_WORK}/.layout-done" -print0 \
+    | sudo tar -P --format=posix --no-recursion --null -T - -cf - | zstd -T0 -3 -q -o "$E2E_BASE_OUT"
+  echo "Packed the base outputs: $(du -h "$E2E_BASE_OUT" | cut -f1), $(zstd -dc "$E2E_BASE_OUT" | tar -tf - | wc -l) entries"
+fi
 
 [ "$failed" -eq 0 ]
