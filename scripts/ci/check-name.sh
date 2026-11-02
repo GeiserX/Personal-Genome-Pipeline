@@ -8,6 +8,7 @@
 #   name      any spelling of the old name (Personal-Genome-Pipeline,
 #             Personal Genome Pipeline, personal_genome_pipeline, any case)
 #   command   the old command and variable names: pgp-view.sh, pgp-lookup.sh,
+#             pgp-live.sh, pgp_live.py, PGP_LIVE_*,
 #             PGP_VIEW_PORT, PGP_DISK_WARN_PERCENT, PGP_MEM_WARN_PERCENT
 # Lines that keep the old name on purpose are listed in ALLOW below, by file
 # and exact line text. Internal identifiers that keep the PGP prefix (the
@@ -21,7 +22,7 @@
 set -euo pipefail
 
 NAME_RE='personal[-_ ]genome[-_ ]pipeline'
-CMD_RE='pgp-view\.sh|pgp-lookup\.sh|PGP_VIEW_PORT|PGP_DISK_WARN_PERCENT|PGP_MEM_WARN_PERCENT'
+CMD_RE='pgp-view\.sh|pgp-lookup\.sh|pgp-live\.sh|pgp_live|PGP_LIVE_|PGP_VIEW_PORT|PGP_DISK_WARN_PERCENT|PGP_MEM_WARN_PERCENT'
 
 # file<TAB>exact line text
 ALLOW=$(cat <<'EOF'
@@ -79,6 +80,6 @@ fi
 if scan "$(git rev-parse --show-toplevel)"; then
   echo "OK: no old project name"
 else
-  echo "Rename these to OwnGenome (owngenome-view.sh, owngenome-lookup.sh, OWNGENOME_*), or list a line that keeps the old name on purpose in ALLOW in scripts/ci/check-name.sh." >&2
+  echo "Rename these to OwnGenome (owngenome-view.sh, owngenome-lookup.sh, owngenome-live.sh, owngenome_live.py, OWNGENOME_*), or list a line that keeps the old name on purpose in ALLOW in scripts/ci/check-name.sh." >&2
   exit 1
 fi

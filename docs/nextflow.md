@@ -257,7 +257,7 @@ results/
 
 ## Watching a run live
 
-Nextflow's weblog, which posts each task's progress to a URL, is the nf-weblog plugin, and Nextflow 26.10 loads it only when a config names it. So `nextflow.config` has no weblog block: with `PGP_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config`, which loads the pinned plugin and points the weblog at `PGP_LIVE_URL/ingest/<sample>`, and passes it with `-c`. A run without `PGP_LIVE_URL` loads no plugin. Nextflow downloads the plugin on the first live run and keeps it in `~/.nextflow/plugins`. For a bare `nextflow run`, write the same file and pass `-c`; [Watch a Run Live](live-site.md) has it and the live site that reads the messages.
+Nextflow's weblog, which posts each task's progress to a URL, is the nf-weblog plugin, and Nextflow 26.10 loads it only when a config names it. So `nextflow.config` has no weblog block: with `OWNGENOME_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config`, which loads the pinned plugin and points the weblog at `OWNGENOME_LIVE_URL/ingest/<sample>`, and passes it with `-c`. A run without `OWNGENOME_LIVE_URL` loads no plugin. Nextflow downloads the plugin on the first live run and keeps it in `~/.nextflow/plugins`. For a bare `nextflow run`, write the same file and pass `-c`; [Watch a Run Live](live-site.md) has it and the live site that reads the messages.
 
 ---
 

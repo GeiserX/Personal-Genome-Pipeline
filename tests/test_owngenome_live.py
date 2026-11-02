@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/pgp_live.py and assets/live/ on the synthetic DEMO-001 run (tests/fixtures/live).
+"""bin/owngenome_live.py and assets/live/ on the synthetic DEMO-001 run (tests/fixtures/live).
 
 Checks:
   1. hash-password: the hash verifies the password and no other; the server
@@ -36,7 +36,7 @@ Checks:
 Checks 2, 4, 5, 6, 7, 8 and 11 are also run against a planted mistake and must fail
 there: a check that cannot fail is no check.
 
-Run: python3 tests/test_pgp_live.py
+Run: python3 tests/test_owngenome_live.py
 """
 import contextlib
 import http.client
@@ -57,7 +57,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
-import pgp_live  # noqa: E402
+import owngenome_live  # noqa: E402
 import run_state  # noqa: E402
 
 FIX = os.path.join(REPO, "tests", "fixtures", "live")
@@ -117,7 +117,7 @@ def make_root(work):
 
 
 def serve(argv, app=None):
-    live, web, ingest = pgp_live.start(argv, app)
+    live, web, ingest = owngenome_live.start(argv, app)
     for s in (web, ingest):
         threading.Thread(target=s.serve_forever, daemon=True).start()
     return live, web, ingest
@@ -135,7 +135,7 @@ def stop(*servers):
 def login(port, password=PASSWORD):
     code, h, _ = request(port, "POST", "/login", urllib.parse.urlencode({"password": password, "next": "/"}),
                          {"Content-Type": "application/x-www-form-urlencoded"})
-    m = re.match(r"pgp_live=([^;]+)", h.get("set-cookie", ""))
+    m = re.match(r"owngenome_live=([^;]+)", h.get("set-cookie", ""))
     return code, h, (m.group(1) if m else None)
 
 
@@ -150,7 +150,7 @@ class Stream:
     def __init__(self, port, cookie, last=None):
         self.closed = False
         self.items, self.sock = [], socket.create_connection(("127.0.0.1", port), timeout=30)
-        hdr = f"GET /runs/{RUN}/events HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: pgp_live={cookie}\r\n"
+        hdr = f"GET /runs/{RUN}/events HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: owngenome_live={cookie}\r\n"
         if last is not None:
             hdr += f"Last-Event-ID: {last}\r\n"
         self.sock.sendall((hdr + "\r\n").encode())
@@ -224,23 +224,23 @@ def tls_checks(root, work, pwfile):
     def one(planted):
         argv = ["--root", root, "--state-dir", os.path.join(work, "state-tls"), "--port", "0", "--ingest-port", "0",
                 "--password-file", pwfile, "--tls-cert", cert, "--tls-key", key, "--quiet"]
-        real_wrap = pgp_live.ssl.SSLContext.wrap_socket
+        real_wrap = owngenome_live.ssl.SSLContext.wrap_socket
         if planted:
             def wrap(self, sock, **kw):
                 kw.pop("do_handshake_on_connect", None)
                 return real_wrap(self, sock, **kw)
-            pgp_live.ssl.SSLContext.wrap_socket = wrap
+            owngenome_live.ssl.SSLContext.wrap_socket = wrap
         try:
             with contextlib.redirect_stderr(io.StringIO()):
                 srv = serve(argv)
         finally:
-            pgp_live.ssl.SSLContext.wrap_socket = real_wrap
+            owngenome_live.ssl.SSLContext.wrap_socket = real_wrap
         live, web, ingest = srv
         port = web.server_address[1]
         silent = socket.create_connection(("127.0.0.1", port), timeout=10)
         time.sleep(0.3)  # let accept() take the silent one first
-        ctx = pgp_live.ssl.create_default_context()
-        ctx.check_hostname, ctx.verify_mode = False, pgp_live.ssl.CERT_NONE
+        ctx = owngenome_live.ssl.create_default_context()
+        ctx.check_hostname, ctx.verify_mode = False, owngenome_live.ssl.CERT_NONE
         try:
             c = http.client.HTTPSConnection("127.0.0.1", port, timeout=3, context=ctx)
             c.request("GET", "/login", headers={"Host": f"127.0.0.1:{port}"})
@@ -358,7 +358,7 @@ class Chrome:
 
 class ReplayHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
-        self.send_header("Content-Security-Policy", pgp_live.CSP)
+        self.send_header("Content-Security-Policy", owngenome_live.CSP)
         super().end_headers()
 
     def log_message(self, *a):
@@ -482,7 +482,7 @@ INGEST_PORT = None
 
 def main():
     global INGEST_PORT
-    work = tempfile.mkdtemp(prefix="pgp-live-")
+    work = tempfile.mkdtemp(prefix="owngenome-live-")
     servers = []
     err = io.StringIO()
     try:
@@ -491,24 +491,24 @@ def main():
         pwfile = os.path.join(work, "password")
 
         # 1. the password
-        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "pgp_live.py"), "hash-password"],
+        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "owngenome_live.py"), "hash-password"],
                            input=PASSWORD + "\n", capture_output=True, text=True, timeout=60)
         h = r.stdout.strip()
         check("hash-password prints a pbkdf2_sha256 hash of 600000 rounds, not the password",
               r.returncode == 0 and h.startswith("pbkdf2_sha256$600000$") and PASSWORD not in r.stdout + r.stderr,
               (r.returncode, r.stderr))
         check("the hash verifies the password and no other",
-              pgp_live.verify_password(PASSWORD, h) and not pgp_live.verify_password(PASSWORD + "x", h))
+              owngenome_live.verify_password(PASSWORD, h) and not owngenome_live.verify_password(PASSWORD + "x", h))
         with open(pwfile, "w") as f:
             f.write(h + "\n")
-        env = {k: v for k, v in os.environ.items() if k != "PGP_LIVE_PASSWORD_HASH"}
-        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "pgp_live.py"), "--root", root, "--state-dir",
+        env = {k: v for k, v in os.environ.items() if k != "OWNGENOME_LIVE_PASSWORD_HASH"}
+        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "owngenome_live.py"), "--root", root, "--state-dir",
                             state_dir, "--bind", "0.0.0.0", "--port", "0", "--ingest-port", "0"],
                            capture_output=True, text=True, timeout=60, env=env)
         check("a non-loopback --bind without a password hash exits 2", r.returncode == 2 and "password" in r.stderr,
               (r.returncode, r.stderr))
 
-        app = pgp_live.App()
+        app = owngenome_live.App()
         argv = ["--root", root, "--state-dir", state_dir, "--port", "0", "--ingest-port", "0", "--password-file",
                 pwfile, "--allowed-host", "live.example.org", "--plugin-dir", os.path.join(FIX, "plugins"),
                 "--fixture-word", "planted-flag", "--quiet"]
@@ -536,15 +536,15 @@ def main():
         sc = hd.get("set-cookie", "")
         check("the right password sets an HttpOnly, SameSite=Strict session cookie",
               code == 303 and cookie and "HttpOnly" in sc and "SameSite=Strict" in sc, (code, sc))
-        auth = {"Cookie": f"pgp_live={cookie}"}
+        auth = {"Cookie": f"owngenome_live={cookie}"}
         code, _, _ = request(port, "GET", f"/runs/{RUN}/state.json", headers=auth)
         check("a valid session reads state.json", code == 200, code)
-        code, _, _ = request(port, "GET", "/", headers={"Cookie": "pgp_live=made-up"})
+        code, _, _ = request(port, "GET", "/", headers={"Cookie": "owngenome_live=made-up"})
         check("a made-up cookie is not a session", code == 303, code)
         _, _, old = login(port)
         sid = __import__("hashlib").sha256(old.encode()).hexdigest()
         live.sessions[sid]["created"] -= live.cfg.session_hours * 3600 + 1
-        code, _, _ = request(port, "GET", f"/runs/{RUN}/state.json", headers={"Cookie": f"pgp_live={old}"})
+        code, _, _ = request(port, "GET", f"/runs/{RUN}/state.json", headers={"Cookie": f"owngenome_live={old}"})
         check("an expired session is 401", code == 401, code)
         live.failures.clear()
         codes = [login(port, f"wrong {i}")[0] for i in range(6)]
@@ -596,7 +596,7 @@ def main():
         app.access.write("127.0.0.1", "-", "planted", RUN, PASSWORD, 200)
         control("the password written into the access log", not leaks())
         with open(os.path.join(state_dir, "access.log"), "w") as f:
-            f.write(pgp_live.AccessLog.HEADER)
+            f.write(owngenome_live.AccessLog.HEADER)
 
         # 3. Host
         code, _, _ = request(port, "GET", "/", headers=dict(auth, Host="evil.example.net"))
@@ -621,17 +621,17 @@ def main():
         cfgf = os.path.join(work, "live.conf")
         with open(cfgf, "w") as f:
             f.write(f"root = {root}\n")
-        got = pgp_live.configure(["--config", cfgf], pgp_live.App())
+        got = owngenome_live.configure(["--config", cfgf], owngenome_live.App())
         check("--root may come from --config", got.root == root, got.root)
         try:
-            pgp_live.configure([], pgp_live.App())
+            owngenome_live.configure([], owngenome_live.App())
             no_root = "accepted"
         except SystemExit as e:
             no_root = e.code
         check("no --root anywhere stops with exit 2", no_root == 2, no_root)
-        numeric = pgp_live.cut({"event": "process_started", "trace": {"name": 123, "process": 7, "tag": 9, "status": 1}})
+        numeric = owngenome_live.cut({"event": "process_started", "trace": {"name": 123, "process": 7, "tag": 9, "status": 1}})
         try:
-            pgp_live.messages([numeric], run_state.read_steps())
+            owngenome_live.messages([numeric], run_state.read_steps())
             run_state.event_tasks([numeric], RUN)
             survived = True
         except TypeError as e:
@@ -655,11 +655,11 @@ def main():
                 sk.close()
                 handler.timeout = saved
         check("both listeners bound a request's reads (BrowserHandler and IngestHandler timeout set)",
-              pgp_live.BrowserHandler.timeout and pgp_live.IngestHandler.timeout,
-              (pgp_live.BrowserHandler.timeout, pgp_live.IngestHandler.timeout))
+              owngenome_live.BrowserHandler.timeout and owngenome_live.IngestHandler.timeout,
+              (owngenome_live.BrowserHandler.timeout, owngenome_live.IngestHandler.timeout))
         check("a client that stops sending mid-request is dropped (browser and ingest, timeout 1 s)",
-              dropped(port, pgp_live.BrowserHandler, 1) and dropped(INGEST_PORT, pgp_live.IngestHandler, 1))
-        control("no timeout on the browser listener", dropped(port, pgp_live.BrowserHandler, None))
+              dropped(port, owngenome_live.BrowserHandler, 1) and dropped(INGEST_PORT, owngenome_live.IngestHandler, 1))
+        control("no timeout on the browser listener", dropped(port, owngenome_live.BrowserHandler, None))
         code, _, _ = post(INGEST_PORT, RUN, "not json")
         check("a message that is not JSON is 400", code == 400, code)
         code, _, _ = post(INGEST_PORT, "../x", {"event": "started"})
@@ -690,7 +690,7 @@ def main():
         check("the stream sends a posted process_completed within 2 s",
               got_all and live_ok and st.items[-1][1].get("event") == "process_completed" and st.items[-1][1].get("step") == "06",
               (got_all, live_ok, time.time() - t0, st.items[-1:]))
-        want = pgp_live.messages(live.store.events(RUN), steps)
+        want = owngenome_live.messages(live.store.events(RUN), steps)
         check("what the stream sent equals messages()", st.items == want, (st.items[:3], want[:3]))
         st.close()
         st2 = Stream(port, cookie, last=n0 - 1)
@@ -729,7 +729,7 @@ def main():
         done = [{"event": "started"}, {"event": "pgp_run_finished", "exit": 0}]
         rerun = done + [{"event": "pgp_step", "step": "14", "state": "started"}]
         check("a run is finished while pgp_run_finished is its newest message, not once a later run posts",
-              pgp_live.run_finished(done) and not pgp_live.run_finished(rerun) and not pgp_live.run_finished([]))
+              owngenome_live.run_finished(done) and not owngenome_live.run_finished(rerun) and not owngenome_live.run_finished([]))
         control("any pgp_run_finished in the file counts", not any(e.get("event") == "pgp_run_finished" for e in rerun))
         # A second run of a sample: events.jsonl still holds the first run, which finished with step 11 done.
         again = "DEMO-RERUN"
@@ -755,36 +755,36 @@ def main():
                 whole["run"]["state"] == "running"
                 and next(x["state"] for x in whole["steps"] if x["step"] == "11") != "done")
         check("a bare nextflow rerun (no pgp_run_finished) starts at its own 'started'",
-              pgp_live.current_run([{"event": "started"}, {"event": "completed"}, {"event": "started"},
+              owngenome_live.current_run([{"event": "started"}, {"event": "completed"}, {"event": "started"},
                                     {"event": "process_started"}]) == [{"event": "started"}, {"event": "process_started"}])
         check("a finished run keeps its own messages while pgp_run_finished is the newest",
-              pgp_live.current_run(old[:4]) == old[:4])
+              owngenome_live.current_run(old[:4]) == old[:4])
         cp = {"plp": [{"gene": "GENEA"}], "call_floor_dp": 10, "low_confidence": 0}
-        tc = [pgp_live.headline("cpsr", {"state": "ok", "title": "CPSR", "data": dict(cp, plp=p)}, {"databases": {}})
+        tc = [owngenome_live.headline("cpsr", {"state": "ok", "title": "CPSR", "data": dict(cp, plp=p)}, {"databases": {}})
               for p in ([], cp["plp"])]
-        tm = [pgp_live.headline("mito", {"state": "ok", "title": "Mito",
+        tm = [owngenome_live.headline("mito", {"state": "ok", "title": "Mito",
                                          "data": {"annotation": {"source": "VEP", "clinvar_plp": n}}}) for n in (0, 2)]
         check("CPSR and mito headlines: attention with P/LP rows, info with none, the report's own lines",
               [t[1] for t in tc + tm] == ["info", "attention", "info", "attention"]
               and "Pathogenic/Likely Pathogenic rows: 1" in tc[1][0]
               and tm[1][0] == "ClinVar pathogenic or likely pathogenic: 2", tc + tm)
-        table = pgp_live.HEADLINES
-        pgp_live.HEADLINES = {k: v for k, v in table.items() if k not in ("cpsr", "mito")}
+        table = owngenome_live.HEADLINES
+        owngenome_live.HEADLINES = {k: v for k, v in table.items() if k not in ("cpsr", "mito")}
         try:
-            planted = [pgp_live.headline(k, {"state": "ok", "title": k, "data": data}, {"databases": {}})[1]
+            planted = [owngenome_live.headline(k, {"state": "ok", "title": k, "data": data}, {"databases": {}})[1]
                        for k, data in (("cpsr", cp), ("mito", {"annotation": {"source": "VEP", "clinvar_plp": 2}}))]
         finally:
-            pgp_live.HEADLINES = table
+            owngenome_live.HEADLINES = table
         control("the headline table without cpsr and mito", planted == ["attention", "attention"])
         check("a state hook's answer is under plugins", s["plugins"].get("fixture", {}).get("steps") == len(s["steps"]),
               s.get("plugins"))
         import render_report
-        tones = [pgp_live.headline("clinvar", {"state": "ok", "title": "ClinVar screen", "data": {"count": c, "hits": []}})
+        tones = [owngenome_live.headline("clinvar", {"state": "ok", "title": "ClinVar screen", "data": {"count": c, "hits": []}})
                  for c in (0, 3)]
         check("the ClinVar headline is never 'ok' and carries the report's caveat word for word",
               all(t[1] in ("info", "attention") for t in tones) and tones[1][1] == "attention"
               and all(render_report.CLINVAR_FREQ_NOTE in t[0] for t in tones), tones)
-        check("a section with no file has no headline", pgp_live.headline("roh", {"state": "missing"}) is None)
+        check("a section with no file has no headline", owngenome_live.headline("roh", {"state": "missing"}) is None)
 
         # 7. the policy
         code, _, _ = request(port, "GET", "/login")
