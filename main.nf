@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Personal Genome Pipeline — whole genome, from reads to report
+    OwnGenome — whole genome, from reads to report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Each samplesheet row starts from FASTQ (trimmed, aligned and called
     here), from a BAM or CRAM (called here), or from a VCF with an optional
@@ -9,7 +9,7 @@
     pharmacogenomics, variant annotation, clinical screening, BAM analysis,
     structural variant calling, and consolidated reporting.
 
-    https://github.com/GeiserX/Personal-Genome-Pipeline
+    https://github.com/GeiserX/OwnGenome
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 

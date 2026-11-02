@@ -1,4 +1,4 @@
-// The page of scripts/pgp-view.sh: reads config.json from the local server
+// The page of scripts/owngenome-view.sh: reads config.json from the local server
 // (assets/viewer/serve.py) and opens igv.js on it at the locus in the URL
 // after '#', else the one the config names. The report's links set that
 // part, so a click on a finding opens the reads at it.

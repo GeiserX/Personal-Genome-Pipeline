@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/genome_lookup.py (scripts/pgp-lookup.sh) on a synthetic gVCF, annotated VCF and summary.
+"""bin/genome_lookup.py (scripts/owngenome-lookup.sh) on a synthetic gVCF, annotated VCF and summary.
 
 Checks:
   1. a query is read as an rsID, a position (chr7:1,234 / 7:1234 / chrMT:5)

@@ -32,7 +32,7 @@ mkdir -p "$OUT_ARG"
 W="$(cd "$OUT_ARG" && pwd)"
 THREADS=${THREADS:-4}
 IDX_PART=${IDX_PART:-1G}
-GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
+GH_REPO=${GITHUB_REPOSITORY:-GeiserX/OwnGenome}
 TAG=${FIXTURE_TAG:-$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")}
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 

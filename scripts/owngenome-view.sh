@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# pgp-view.sh — Open a sample's reads and variants in a local genome viewer
-# Usage: ./scripts/pgp-view.sh <sample_name> [locus]
+# owngenome-view.sh — Open a sample's reads and variants in a local genome viewer
+# Usage: ./scripts/owngenome-view.sh <sample_name> [locus]
 #   locus: chr1, chr1:12345 or chr1:12000-13000 (default: the first contig)
 #
-# Serves an igv.js page on http://127.0.0.1:PGP_VIEW_PORT (default 8765) with
+# Serves an igv.js page on http://127.0.0.1:OWNGENOME_VIEW_PORT (default 8765) with
 # the reference (REF_FASTA), the sample's BAM or CRAM, its small-variant VCF
 # and its SV VCF, and prints the address to open. The report's positions link
 # to the same address, so with the viewer running a click on a ClinVar hit
@@ -36,7 +36,7 @@ IGV_JS_VERSION=3.8.10
 IGV_JS_SHA256=87b991ae2a720978172e269dd5127c495e56df5af31144dff19c83124e2f5744
 IGV_JS_URL="https://cdn.jsdelivr.net/npm/igv@${IGV_JS_VERSION}/dist/igv.min.js"
 
-PORT=${PGP_VIEW_PORT:-8765}
+PORT=${OWNGENOME_VIEW_PORT:-8765}
 S="${GENOME_DIR}/${SAMPLE}"
 ALN="${S}/${ALIGN_DIR:-aligned}"
 
@@ -49,7 +49,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 case "$PORT" in
-  ''|*[!0-9]*) echo "ERROR: PGP_VIEW_PORT must be a port number, got '${PORT}'" >&2; exit 2 ;;
+  ''|*[!0-9]*) echo "ERROR: OWNGENOME_VIEW_PORT must be a port number, got '${PORT}'" >&2; exit 2 ;;
 esac
 
 first_file() {

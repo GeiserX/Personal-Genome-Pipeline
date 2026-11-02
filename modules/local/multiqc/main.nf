@@ -35,7 +35,7 @@ process MULTIQC {
         --no-ai \\
         -o . \\
         -n "multiqc_report.html" \\
-        --title "Personal Genome Pipeline QC"
+        --title "OwnGenome QC"
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
