@@ -78,6 +78,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The project is OwnGenome; a branch from before the rename must not
+      # bring the old name or the old command names back.
+      - name: Check the project name
+        run: |
+          scripts/ci/check-name.sh --self-test
+          scripts/ci/check-name.sh
+
       - name: Check for broken internal links
         run: |
           echo "Checking internal markdown links..."
