@@ -93,6 +93,7 @@ process HTML_REPORT {
             ${id}_viral.tsv)                              place viral "\$f" ;;
             ${id}_exomiser_top.tsv|${id}_exomiser_terms.tsv) place exomiser "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;
+            ${id}_mei.tsv|${id}_mei_sites.tsv)            place mei "\$f" ;;
             ${id}_mocha.tsv|${id}_mocha_summary.tsv)      place mosaic "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
             acmg_sf.tsv|carrier_genes.tsv)                mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;

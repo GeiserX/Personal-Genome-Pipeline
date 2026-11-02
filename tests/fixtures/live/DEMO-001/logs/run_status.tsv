@@ -1,0 +1,8 @@
+# run-all.sh: when this run started and how each step ended
+meta	started_epoch	1767347940
+meta	started_utc	2026-01-02 09:59:00 UTC
+meta	declared_sex	female
+step	06	planned
+step	07	planned
+step	11	planned
+step	12	skipped (not in TOOLS)
