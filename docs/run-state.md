@@ -76,6 +76,28 @@ With `--sample`, the trace files of that run, while it is still going, are left 
 
 With or without `--sample`, the trace files of every run that `run-all.sh` started under `GENOME_DIR` and has not ended are left out too: a `<sample>/logs/run_status.tsv` with a `meta started_epoch` row and no `meta finished_utc` row, and the traces written since that start. When `run-all.sh` exits, its exit trap writes `meta finished_utc` and the next call counts that run. A `run-all.sh` killed with SIGKILL runs no trap, and a reboot or power loss has the same effect. Then every trace written since that run's start, from any sample under `GENOME_DIR`, stays out until that sample's next `run-all.sh` starts. A `run_status.tsv` that cannot be read leaves out the newest trace, as a run whose start is not known. A run started with a bare `nextflow run` writes no `run_status.tsv`, so its trace cannot be told apart and is read while it is written. Its partial step can then count as a short one until the run ends; each call reads every trace again and replaces its rows, so the history is right again on the first call after the run.
 
+## Memory and disk headroom
+
+`bin/run_headroom.py` says how close each task came to the memory it asked for, and how full the disks of the work folder and the results folder are. It works the same on any Linux, macOS or WSL2 machine and needs no host path set in advance.
+
+```bash
+python3 bin/run_headroom.py --work-dir "${GENOME_DIR:?Set GENOME_DIR to your data directory}/<sample>/nextflow/work" --outdir "$GENOME_DIR" \
+  --trace "$GENOME_DIR"/pipeline_info/trace_<time>.txt
+python3 bin/run_headroom.py --events events.jsonl   # folders and max_memory from the weblog metadata
+```
+
+It prints plain lines and exits 0. Standard library only.
+
+**Memory per task.** The tasks come from trace files (`--trace`, repeatable) or from Nextflow's weblog messages (`--events`, the `process_*` messages; the latest message of a task wins, except that a running message never replaces a finished one of the same attempt). For each task, from its last attempt, the ratio is its `peak_rss` over the memory it asked for. At or above the warn percent the line carries a hint. It is a hint, not a fault: `peak_rss` adds up the resident memory of the task's processes, shared and file-mapped pages included, so it can be above what the container was charged ([measured runtimes](hardware-requirements.md#runtime-per-step) show CPSR above its limit without being killed). A task with no request or no `peak_rss` gets no ratio. A task still running shows its request only. An earlier attempt that ended with one of the exits `conf/base.config` retries (143, 137, 104, 134, 139, 247, which usually mean killed for memory or time) counts as one retry.
+
+**Memory of the machine.** Its RAM, as the system running the command sees it. When the pipeline's `max_memory` (`--max-memory`, else the weblog metadata) is above that RAM, it warns: a task can then ask for more memory than there is. Inside WSL2 the RAM is the VM's share. On macOS with Docker Desktop the containers get only the memory set in Docker Desktop, which can be less than the RAM it reports.
+
+**Disks.** The work folder (`--work-dir`, else `workDir` from the weblog metadata) and the results folder (`--outdir`, else `outdir` from the metadata, `parameters` or `params`; a relative one is taken from the run's `launchDir`). For each it gives the used share, the free and total bytes, and the inode use when the filesystem reports inodes. The used share is used over used plus available, as `df` shows it. A folder not created yet is measured on its nearest existing parent and says so. Two folders on one filesystem give one line, `work and results`. The labels are `work` and `results`, never a path.
+
+**Warn percent.** 90 for both by default. `--disk-warn-percent` or `PGP_DISK_WARN_PERCENT` sets the disk one, `--mem-warn-percent` or `PGP_MEM_WARN_PERCENT` the memory one, from 1 to 100.
+
+**As a library.** `snapshot(events, work_dir, outdir, disk_warn_percent, mem_warn_percent, max_memory, trace_rows)` returns `{disk, tasks, host, warn_used_ratio, mem_warn_ratio}`; `task_memory`, `host_memory` and `disk` give each part alone. It holds no path, and it formats nothing: a page or a metrics endpoint formats the numbers itself. It measures when called; it does not poll and does not project when a disk will fill.
+
 ## What it does not do yet
 
 It does not serve a page. It is the data a live view of the run can be built on.

@@ -60,6 +60,7 @@ The full documentation is at **https://geiserx.github.io/Personal-Genome-Pipelin
 - [Vendor compatibility guide](https://geiserx.github.io/Personal-Genome-Pipeline/vendor-guide/): what each provider delivers and how to get it
 - [Pipeline overview](https://geiserx.github.io/Personal-Genome-Pipeline/pipeline-overview/): every step with its tool and image, which ones a default run includes, and the page for each step
 - [Nextflow](https://geiserx.github.io/Personal-Genome-Pipeline/nextflow/): the workflow runner, parallel steps and resume
+- [Watch a run live](https://geiserx.github.io/Personal-Genome-Pipeline/live-site/): a step map in the browser while the run goes, behind a password
 - [Interpreting your results](https://geiserx.github.io/Personal-Genome-Pipeline/interpreting-results/): what each report means and what to do with it
 - [Multi-sample comparison](https://geiserx.github.io/Personal-Genome-Pipeline/multi-sample/): partners, siblings, parents
 - [Long-read guide](https://geiserx.github.io/Personal-Genome-Pipeline/long-read-guide/): Nanopore and PacBio HiFi
