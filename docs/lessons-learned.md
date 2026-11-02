@@ -609,3 +609,10 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** the e2e job pulls every image before the first case, and MEGAnE's image is about 6.4 GB to download and much more unpacked. It stayed on the disk after `mei-1`, the only case that uses it.
 - **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory and the image by its id when it ends, and logs the free disk before and after. With the image gone every case passed. The image is pinned by digest, so the e2e image cache never saves it anyway.
 - **Image sizes step:** the job's "Image sizes" step then stopped with `numfmt: invalid number: ''`. For an image that is gone, `docker image inspect -f` prints an empty line before the `|| echo 0` fallback, so the step's own "not here" branch never ran. The fix in `.github/workflows/e2e.yml` reads the size into a variable first (`size=$(docker image inspect ...) || size=0`) and prints `${size:-0}`.
+
+## Downloads (2026-11)
+
+### One bad transfer of a large file failed the whole setup
+- **Failed:** `setup.sh --archaic` stopped on a wrong md5 for the 1000 Genomes phase 3 sites VCF (about 1.5 GB) in the e2e case `archaic-ancestry-1`. Other runs on the same day downloaded the same file with the right md5.
+- **Why:** `fetch` tried a download again only when the transfer itself failed. A transfer that finished with the wrong bytes failed its check, and `fetch` deleted it and returned 1 at once, so one bad transfer ended the run.
+- **Fix:** a download that fails its checksum, `gzip -t` or non-empty check is deleted and downloaded again from the start, up to `FETCH_TRIES` tries `FETCH_WAIT` apart, the same budget as a broken transfer. A broken transfer still keeps its `.part` and the next try resumes it. `tests/test_fetch_retry.sh` serves a bad file once and then the right one, and a bad file every time, and checks both against a mutant that returns at the first failed check.
