@@ -156,6 +156,10 @@ def scalar(v, n=200):
     return str(v)[:n]
 
 
+def _no_constant(name):
+    raise ValueError(f"{name} is not JSON")  # NaN and Infinity would be written into events.jsonl
+
+
 def cut(ev):
     """The fields of one message the site keeps; ValueError when it is not a message."""
     if not isinstance(ev, dict):
@@ -1034,7 +1038,7 @@ class IngestHandler(BaseHTTPRequestHandler):
             return self.reply(413, "too large")
         raw = self.rfile.read(n)
         try:
-            ev = cut(json.loads(raw.decode("utf-8")))
+            ev = cut(json.loads(raw.decode("utf-8"), parse_constant=_no_constant))
         except (ValueError, UnicodeDecodeError) as e:
             return self.reply(400, f"not a message: {e}"[:200])
         self.live.store.append(run, ev)
@@ -1059,7 +1063,7 @@ def make_server(handler, live, bind, port, tls=None):
 
 def parser():
     ap = argparse.ArgumentParser(prog="pgp_live.py", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--root", required=True, help="GENOME_DIR: the folder holding one folder per run")
+    ap.add_argument("--root", help="GENOME_DIR: the folder holding one folder per run (required, here or in --config)")
     ap.add_argument("--state-dir", help="where messages and the access log are written (default ROOT/.pgp-live)")
     ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8787)
@@ -1120,6 +1124,8 @@ def configure(argv, app):
     if pre.config:
         ap.set_defaults(**read_config(pre.config, ap))
     cfg = ap.parse_args(argv)
+    if not cfg.root:
+        ap.error("--root is required (on the command line or in --config)")
     cfg.state_dir = cfg.state_dir or os.path.join(cfg.root, ".pgp-live")
     cfg.access_log = cfg.access_log or os.path.join(cfg.state_dir, "access.log")
     app.config = cfg

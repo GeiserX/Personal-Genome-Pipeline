@@ -435,6 +435,16 @@ def browser_checks(port, work):
         found = b.eval("document.getElementById('found').textContent")
         check("browser: replay plays frames.json (11 waiting at frame 0, done at the last, its headline listed)",
               first == "waiting" and last == "done" and "Runs of homozygosity" in (found or ""), (first, last, found))
+        aria = b.eval("var m = document.querySelector('#map svg'), g = document.querySelector('g.box[data-step=\"11\"]'); "
+                      "[m.getAttribute('role'), g.getAttribute('aria-label') || ''].join('|')")
+        check("browser: the map is a group (not an image that hides its buttons) and a box names its step and state",
+              aria and aria.startswith("group|11 ") and aria.endswith(": done"), aria)
+        b.eval("document.getElementById('detail').textContent = ''; var li = document.querySelector('#found li[role=button]'); "
+               "li.focus(); li.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); true")
+        keyed = b.wait("document.activeElement && document.activeElement.matches('#found li') && "
+                       "document.getElementById('detail').textContent.indexOf('Step 11') >= 0 && 'opened'", 5)
+        check("browser: a headline takes focus and Enter on it opens its step", keyed == "opened",
+              b.eval("document.activeElement && document.activeElement.outerHTML.slice(0, 200)"))
         blocked = b.eval("document.documentElement.dataset.pgpBlocked || ''")
         check("browser: the policy blocked nothing in replay", not blocked, blocked)
     finally:
@@ -583,6 +593,19 @@ def main():
         line = raw(INGEST_PORT, f"POST /ingest/{RUN} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json"
                                 f"\r\nContent-Length: -1\r\n\r\n", b'{"event":"started"}')
         check("a negative Content-Length on /ingest is 413", " 413 " in line, line)
+        code, _, _ = post(INGEST_PORT, RUN, '{"event": "process_started", "trace": {"attempt": NaN, "exit": Infinity}}')
+        check("a message with NaN or Infinity is 400, so events.jsonl stays plain JSON", code == 400, code)
+        cfgf = os.path.join(work, "live.conf")
+        with open(cfgf, "w") as f:
+            f.write(f"root = {root}\n")
+        got = pgp_live.configure(["--config", cfgf], pgp_live.App())
+        check("--root may come from --config", got.root == root, got.root)
+        try:
+            pgp_live.configure([], pgp_live.App())
+            no_root = "accepted"
+        except SystemExit as e:
+            no_root = e.code
+        check("no --root anywhere stops with exit 2", no_root == 2, no_root)
         numeric = pgp_live.cut({"event": "process_started", "trace": {"name": 123, "process": 7, "tag": 9, "status": 1}})
         try:
             pgp_live.messages([numeric], run_state.read_steps())

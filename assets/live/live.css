@@ -24,6 +24,10 @@ aside { flex: 0 0 360px; display: flex; flex-direction: column; gap: 12px; }
 .box rect { stroke: var(--line); stroke-width: 1; }
 .box text { fill: var(--fg); font-size: 12px; pointer-events: none; }
 .box.selected rect { stroke: var(--accent); stroke-width: 2; }
+.box:focus { outline: none; }
+.box:focus-visible rect { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 4 2; }
+.found li[role=button] { cursor: pointer; }
+.found li[role=button]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .s-waiting rect, .s-waiting .swatch { fill: var(--waiting); background: var(--waiting); }
 .s-running rect, .s-running .swatch { fill: var(--running); background: var(--running); }
 .s-done rect, .s-done .swatch { fill: var(--done); background: var(--done); }

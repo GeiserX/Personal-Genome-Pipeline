@@ -76,7 +76,7 @@
       layoutKey = key;
       boxes = {};
       var L = layout(steps);
-      var s = svg('svg', { viewBox: '0 0 ' + L.w + ' ' + L.h, width: L.w, height: L.h, role: 'img', 'aria-label': 'Steps of the run' });
+      var s = svg('svg', { viewBox: '0 0 ' + L.w + ' ' + L.h, width: L.w, height: L.h, role: 'group', 'aria-label': 'Steps of the run' });
       var edges = svg('g', { 'class': 'edges' });
       s.appendChild(edges);
       steps.forEach(function (st) {
@@ -115,6 +115,7 @@
     g.setAttribute('data-state', state);
     var title = g.querySelector('title');
     if (title && label) { title.textContent = step + ' ' + label + ': ' + cls[1]; }
+    if (label) { g.setAttribute('aria-label', step + ' ' + label + ': ' + cls[1]); }
   }
 
   function legend() {
@@ -176,10 +177,13 @@
     ul.textContent = '';
     if (!keys.length) { ul.appendChild(el('li', { 'class': 'muted' }, 'Nothing finished yet.')); return; }
     keys.forEach(function (k) {
-      var li = el('li', { 'class': 'tone-' + hl[k].tone, 'data-section': k });
+      var li = el('li', { 'class': 'tone-' + hl[k].tone, 'data-section': k, tabindex: '0', role: 'button' });
       li.appendChild(el('span', { 'class': 'step' }, hl[k].step));
       li.appendChild(document.createTextNode(' ' + hl[k].text));
       li.addEventListener('click', function () { selected = hl[k].step; detail(); });
+      li.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selected = hl[k].step; detail(); }
+      });
       ul.appendChild(li);
     });
   }
