@@ -1,0 +1,85 @@
+# Example Prometheus alert rules for OwnGenome runs, on the metrics of bin/pgp_live_ops.py
+# (GET /metrics of the live site). docs/alerts.md says how to scrape them and what each one means.
+# The thresholds the page also shows (disk warn percent, stall minutes) are flags of the site,
+# so the page and these rules always agree; the 'for' times and the 98% disk line are yours to tune.
+# assets/monitoring/pgp-alerts.test.yml tests every rule with promtool.
+groups:
+  - name: owngenome-runs
+    rules:
+      - alert: OwnGenomeRunFailed
+        expr: pgp_run_failed == 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "Run {{ $labels.run }} failed"
+          description: "A step failed, the run ended with a non-zero exit, or Nextflow reported an error. The live page says which."
+
+      - alert: OwnGenomeRunStalled
+        expr: pgp_run_stalled == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }} shows no activity"
+          description: "No message or file change for longer than --stall-minutes, and no running step is still inside its usual time."
+
+      - alert: OwnGenomeRunLate
+        expr: pgp_run_late_steps > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }} is taking longer than usual"
+          description: "{{ $value }} running step(s) are past the high end of their usual time on this box."
+
+      - alert: OwnGenomeTaskMemoryRetried
+        expr: pgp_run_memory_retries > 0 and pgp_run_running == 1
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }}: a task was retried after a memory or time kill"
+          description: "{{ $value }} task attempt(s) ended with an exit conf/base.config retries. A task can run out of memory again on its last attempt."
+
+      - alert: OwnGenomeMaxMemoryAboveRam
+        expr: pgp_run_max_memory_above_ram == 1 and pgp_run_running == 1
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }}: max_memory is above this machine's memory"
+          description: "A task can ask for more memory than there is. Lower --max_memory."
+
+      - alert: OwnGenomeDiskFilling
+        expr: pgp_disk_used_ratio >= on() group_left() pgp_disk_warn_ratio
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }}: the {{ $labels.fs }} disk is filling"
+          description: "{{ $value | humanizePercentage }} used, at or above --disk-warn-percent."
+
+      - alert: OwnGenomeDiskInodesFilling
+        expr: pgp_disk_inodes_used_ratio >= on() group_left() pgp_disk_warn_ratio
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Run {{ $labels.run }}: the {{ $labels.fs }} disk is running out of inodes"
+          description: "{{ $value | humanizePercentage }} of the inodes used, at or above --disk-warn-percent."
+
+      - alert: OwnGenomeDiskFull
+        expr: pgp_disk_used_ratio >= 0.98
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Run {{ $labels.run }}: the {{ $labels.fs }} disk is almost full"
+          description: "{{ $value | humanizePercentage }} used. A task that writes now can fail."
+
+      - alert: OwnGenomeMetricsErrors
+        expr: pgp_metrics_errors > 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "The live site could not read {{ $value }} run(s)"
+          description: "The site's log names the run and the error."
