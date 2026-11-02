@@ -1,0 +1,4 @@
+trace_file	hash	attempt	step	process	run_level	cpus	memory_bytes	peak_rss_bytes	realtime_s	step_span_s	finished_utc	box_cpus
+trace_2025-12-01_10-00-00.txt	aa/000001	1	11	ROH	no	2	2147483648	104857600	58	60	2025-12-01T10:01:00Z	8
+trace_2025-12-02_10-00-00.txt	aa/000002	1	11	ROH	no	2	2147483648	104857600	98	100	2025-12-02T10:01:40Z	8
+trace_2025-12-01_10-00-00.txt	aa/000003	1	06	CLINVAR_SCREEN	no	1	4294967296	1048576000	28	30	2025-12-01T10:00:30Z	8
