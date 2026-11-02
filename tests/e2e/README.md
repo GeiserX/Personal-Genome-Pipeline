@@ -2,12 +2,18 @@
 
 Each `*.sh` file here (except `lib.sh`) is one case: it runs one pipeline step
 on the HG002 fixture with the real containers and checks what the step wrote.
-`scripts/ci/e2e-run.sh` runs them all in name order (C locale), keeps going
-after a failure, and prints a result table.
+`scripts/ci/e2e-run.sh` runs cases in name order (C locale), keeps going
+after a failure, and prints a result table. In CI the cases are split over
+parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs exactly once.
 
 - Numbered files are the base cases. Later packages add
   `<package-key>-<what>.sh`; they run after the base cases and can read their
   outputs. Add a file; do not edit the runner, the workflow or another case.
+- The base cases of [`scripts/ci/e2e-case-times.tsv`](../../scripts/ci/e2e-case-times.tsv)
+  (stage `base`) run first, in their own job, and every shard starts from
+  what they wrote. A case that reads what another, non-base case wrote must
+  name that case in its `needs` column, so both run in the same shard, in
+  name order. A new case with no row runs in some shard and needs nothing.
 - `lib.sh` holds the shared checks (`check`, `check_eq`, `check_ge`, `has`,
   `lacks`, `vcf_count`, ...). Every check is a count, a column or a content
   match, never an exit code alone.
