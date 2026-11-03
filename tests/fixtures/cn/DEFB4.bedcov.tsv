@@ -1,0 +1,6 @@
+# Made-up samtools bedcov (all reads) over the DEFB4 row of bin/cn_loci.tsv: 6 copies, controls at 30x.
+# Read by tests/test_copy_number.py; not from any sample.
+chr8	7414854	7430348	DEFB_UNIT_B	697230
+chr8	7622000	7662000	DEFB_CTRL_MID	1200000
+chr8	7881391	7896716	DEFB_UNIT_A	689625
+chr8	8250000	8290000	DEFB_CTRL_R	1200000

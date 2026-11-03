@@ -1,0 +1,6 @@
+# Made-up samtools bedcov (all reads) over the HP row of bin/cn_loci.tsv: 3 copies, controls at 30x.
+# Read by tests/test_copy_number.py; not from any sample.
+chr16	72005000	72045000	HP_FLANK_L	1200000
+chr16	72056529	72057466	HP_UNIT1	21082
+chr16	72058253	72059190	HP_UNIT2	21082
+chr16	72085000	72125000	HP_FLANK_R	1200000

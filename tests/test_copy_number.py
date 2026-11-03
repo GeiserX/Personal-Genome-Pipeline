@@ -23,7 +23,13 @@ copy-number locus.
      copy_number.py, never hba_copy_number.py or lpa_kiv2.py, with the
      bedcov options of the catalog row. UGT2B17 has no row: pypgx calls it
      in BAM mode (assets/pgx_genes.tsv), and tests/test_pypgx_genes.sh
-     checks that no catalog row names a gene pypgx calls from the BAM.
+     checks that no catalog row names a gene pypgx calls from the BAM;
+  8. the gene-dosage rows (HP, LCE3BC, CCL3L1, DEFB4): made-up depths at 0
+     to 4 copies are each called right; the block of step 35 that counts
+     them, cut out and run on tests/fixtures/cn/, writes the known count of
+     each, and a row shifted by 1 kb no longer matches its fixture; the
+     PARASCOPY module runs the same list; the CCL3L1 reading names no
+     disease (a planted 'HIV' is caught).
 
 Run: python3 tests/test_copy_number.py
 """
@@ -173,7 +179,19 @@ EXEMPT = {
     # Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a
     # depth row; RHCE's model holds RHD as a paralog copy and is its cross-check.
     ("RHD", "RHCE"),
+    # The beta-defensin repeat has two reference copies, 99% alike, and reads that
+    # fit both land on either, so DEFB4 adds up both. The second (DEFB4B) lies in
+    # the paralog copies SPAG11A's model lists; that model calls copy number over
+    # SPAG11A (chr8:7842877-7873867), 21 kb short of DEFB4A, and reports no DEFB4
+    # value. SPAG11A is its cross-check.
+    ("DEFB4", "SPAG11A"),
 }
+DOSAGE = ["HP", "LCE3BC", "CCL3L1", "DEFB4"]
+# The counts tests/fixtures/cn/<locus>.bedcov.tsv was made for.
+FIXTURE_COPIES = {"HP": 3, "LCE3BC": 1, "CCL3L1": 5, "DEFB4": 6}
+# Words a reading of CCL3L1 must not carry: its disease links are disputed.
+DENY = re.compile(r"hiv|aids|infect|disease|risk|suscept|progress|malaria|hepatitis|arthritis|lupus|kawasaki|"
+                  r"psoria|diabet|crohn|vaccin", re.I)
 
 
 def overlaps(loc_row, models):
@@ -194,7 +212,7 @@ def owner_violations(cat, models):
 def main():
     # 1. the catalog
     cat = cn.load_catalog(CATALOG)
-    check("catalog: the three loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"], list(cat))
+    check("catalog: the seven loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE, list(cat))
     for loc, r in cat.items():
         check(f"catalog {loc}: owner cn-depth, cross_check named, PMIDs numbers or '.'",
               r["owner"] == "cn-depth" and re.fullmatch(r"none|[a-z]+:[A-Za-z0-9_]+(,[a-z]+:[A-Za-z0-9_]+)*",
@@ -308,6 +326,10 @@ def main():
     check("owner: naming the model in cross_check does not exempt a row", ("GYPA", "GYPA", "GYPA_T") in v, v)
     check("owner: RHD overlaps RHCE's model only (a paralog copy), the exempt pair",
           {m for m, _ in overlaps(cat["RHD"], models)} == {"RHCE"}, overlaps(cat["RHD"], models))
+    check("owner: DEFB4 overlaps SPAG11A's paralog copies with its second reference copy only, the exempt pair",
+          overlaps(cat["DEFB4"], models) == [("SPAG11A", "DEFB_UNIT_B")]
+          and not any(w == "main" and c == "chr8" and s < 7896716 and 7881391 < e
+                      for c, s, e, w in models["SPAG11A"]), overlaps(cat["DEFB4"], models))
 
     # 3. parity with the code before the engine
     for (h2, h1, left, right, share), want in GOLD["hba"]:
@@ -448,6 +470,8 @@ def main():
             if loc != "RHD":   # step 41's report imports the engine
                 check(f"{path}: copy_number.py call --locus {loc}", f"copy_number.py call --locus {loc}" in text)
             passes = ["" if p == "." else p for p in cat[loc]["_passes"]]
+            if loc == "HBA":   # and the dosage loop's two passes (section 8)
+                passes += ["", "-Q 1"]
             # the commands only: options, then a path, a quoted argument or a variable
             calls = [o for o, arg in re.findall(r"samtools bedcov((?: -[A-Za-z](?: \d+)?)*) (\S+)", text)
                      if re.match(r'["$/]|\S+\.bed\b', arg)]
@@ -456,8 +480,115 @@ def main():
         check(f"{path}: no call of the old per-gene scripts",
               not re.search(r"(hba_copy_number|lpa_kiv2)\.py (bed|check|estimate)", text))
 
+    dosage(cat, read)
+
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0
+
+
+def dosage_depths(r, copies, q1_share=0.5):
+    """Mean depths of a dosage row at a copy number: controls at 30x (two
+    copies), the target copies spread evenly over the row's targets (the
+    reference copies), and the MAPQ >= 1 depths with q1_share of the targets."""
+    tg = {n for n, *_ in r["_targets"]}
+    m = {n: 15.0 * copies / len(tg) if n in tg else 30.0 for *_, n in cn.regions(r)}
+    return m, {n: v * q1_share if n in tg else v for n, v in m.items()}
+
+
+# run_in and cpath for the dosage block of step 35: copy_number.py runs for
+# real, samtools bedcov prints tests/fixtures/cn/<locus>[.q1].bedcov.tsv.
+STUB = r"""
+run_in() {
+  while [ $# -gt 0 ]; do case $1 in -v|--cpus|--memory) shift 2 ;; *) break ;; esac; done
+  shift
+  case "$1 $2" in
+    "python3 /pgp-bin/copy_number.py") shift 2; python3 "${REPO}/bin/copy_number.py" "$@" ;;
+    "samtools bedcov") shift 2; q=""; if [ "$1" = -Q ]; then q=.q1; shift 2; fi
+      d=$(dirname "$1"); cat "${FIX}/${d##*/}${q}.bedcov.tsv" ;;
+    *) return 1 ;;
+  esac
+}
+cpath() { printf '%s' "$1"; }
+"""
+
+
+def dosage(cat, read):
+    step, module = read("scripts/35-paralogs.sh"), read("modules/local/parascopy/main.nf")
+    m = re.search(r'^DOSAGE_LOCI="([^"]*)"$', step, re.M)
+    check("step 35: DOSAGE_LOCI lists the dosage rows", m is not None and m.group(1).split() == DOSAGE,
+          m and m.group(1))
+    m = re.search(r'^ *dosage_loci="([^"]*)"$', module, re.M)
+    check("PARASCOPY module: dosage_loci is step 35's list", m is not None and m.group(1).split() == DOSAGE,
+          m and m.group(1))
+    for path, text, q in (("scripts/35-paralogs.sh", step, '"'), ("modules/local/parascopy/main.nf", module, '"\\')):
+        for cmd in ("bed", "call"):
+            check(f"{path}: copy_number.py {cmd} --locus on each dosage row",
+                  f"copy_number.py {cmd} --locus {q}$loc" in text)
+    for loc in DOSAGE:
+        r = cat[loc]
+        check(f"dosage {loc}: two bedcov passes, all reads then MAPQ >= 1 (what the loop runs)",
+              r["_passes"] == [".", "-Q 1"], r["_passes"])
+        check(f"dosage {loc}: a whole-number call with a reading for 0 and 1 and for more",
+              r["_call"][0] == "round" and {"0", "1", "more"} <= set(r["_readings"]), r["_readings"])
+        check(f"dosage {loc}: a PMID", re.fullmatch(r"\d+(,\d+)*", r["pmids"]) is not None, r["pmids"])
+        for copies in (0, 1, 2, 3, 4):
+            m, q = dosage_depths(r, copies)
+            b = cn.assess(r, m, q)
+            check(f"dosage {loc}: {copies} copies called {copies}, with its reading",
+                  (b["status"], b["copies"]) == ("called", copies) and b["reading"] == cn.reading(r, copies)
+                  and "{n}" not in b["reading"], b)
+        m, q = dosage_depths(r, 2.5)
+        check(f"dosage {loc}: 2.5 copies is between counts", cn.assess(r, m, q)["reason"] == "between_counts")
+    r = cat["DEFB4"]
+    m, q = dosage_depths(r, 6, q1_share=1.0)
+    b = cn.assess(r, m, q)
+    check("dosage DEFB4: no MAPQ 0 read over both reference copies (the aligner left them out): not assessed",
+          (b["status"], b["reason"]) == ("not assessed", "low_mapq0_share"), b)
+    hp = cat["HP"]
+    m, q = dosage_depths(hp, 4)
+    m["HP_UNIT1"], m["HP_UNIT2"] = 60.0, 0.0
+    check("dosage HP: reads of both copies on one reference copy still add up to 4",
+          cn.assess(hp, m, q)["copies"] == 4)
+
+    readings = " ".join(cat["CCL3L1"]["_readings"].values())
+    check("dosage CCL3L1: no reading names a disease", not DENY.search(readings), DENY.findall(readings))
+    planted = readings + " more copies go with slower HIV progression"
+    check("dosage CCL3L1: a planted 'HIV' reading is caught", DENY.search(planted) is not None)
+
+    # The block of step 35, cut out and run on the fixtures.
+    blk = re.search(r'\n(DOSAGE_LOCI=.*?\nrm -rf "\$DOSAGE_WORK"\n)', step, re.S)
+    check("step 35 holds the dosage block", blk is not None)
+    fix = os.path.join(REPO, "tests", "fixtures", "cn")
+    with tempfile.TemporaryDirectory() as t:
+        env = dict(os.environ, REPO=REPO, FIX=fix, OUTDIR=t, SAMPLE="S", PGP_ROOT=REPO, PARASCOPY_IMAGE="img",
+                   BAM=os.path.join(t, "S.bam"))
+        out = subprocess.run(["bash", "-euo", "pipefail", "-c", STUB + (blk.group(1) if blk else "false\n")],
+                             capture_output=True, text=True, env=env)
+        tab = os.path.join(t, "S_cn_dosage.tsv")
+        rows = {}
+        if os.path.exists(tab):
+            lines = open(tab).read().splitlines()
+            rows = {x.split("\t")[0]: x.split("\t") for x in lines[1:]}
+            check("step 35 dosage table: its header", lines[0] == "locus\tstatus\tcopies\testimate\treason\treading",
+                  lines[0])
+        check("step 35 dosage block: exit 0, one line per dosage row", out.returncode == 0 and list(rows) == DOSAGE,
+              (out.returncode, out.stderr[-600:], list(rows)))
+        for loc, n in FIXTURE_COPIES.items():
+            got = rows.get(loc, [])
+            check(f"step 35 on tests/fixtures/cn/{loc}: called {n}, with its reading",
+                  got[1:3] == ["called", str(n)] and got[5:] == [cn.reading(cat[loc], n)], got)
+
+    # A row shifted by 1 kb no longer matches the fixture made for its place.
+    for loc in DOSAGE:
+        r = dict(cat[loc])
+        r["targets"] = ";".join(f"{n}:{s + 1000}-{e + 1000}" for n, s, e, _ in r["_targets"])
+        shifted = cn.parse_row({k: v for k, v in r.items() if not k.startswith("_")})
+        try:
+            cn.read_bedcov(os.path.join(fix, f"{loc}.bedcov.tsv"), shifted)
+            got = "read"
+        except ValueError as e:
+            got = str(e)
+        check(f"dosage {loc}: shifted 1 kb, its fixture is refused", "regions differ" in got, got)
 
 
 if __name__ == "__main__":
