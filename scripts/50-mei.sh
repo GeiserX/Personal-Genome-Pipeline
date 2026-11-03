@@ -14,8 +14,8 @@
 # step 05 reads it), AnnotSV annotates the insertions the table lists: the
 # genes each falls in, where in them, the frequency of a benign insertion at
 # that place, and AnnotSV's class (NA for every insertion: AnnotSV 3.5 scores
-# deletions and duplications only). The same commands as the MEI_DEPTH, MEI,
-# MEI_ANNOTSV and MEI_REPORT Nextflow processes.
+# deletions and duplications only). The same commands as the MEI_DEPTH, MEI
+# and MEI_REPORT Nextflow processes (MEI_REPORT runs AnnotSV too).
 #
 # Input:  aligned/<sample>_sorted.bam with its .bai (ALIGN_DIR as for the other
 #         BAM steps), paired-end short reads; the reference; MEGAnE's k-mer

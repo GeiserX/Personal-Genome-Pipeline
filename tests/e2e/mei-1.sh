@@ -195,7 +195,7 @@ if command -v nextflow > /dev/null; then
   check_eq "nextflow run exits 0" "${PIPESTATUS[0]}" 0
   cp "${T}/.nextflow.log" "${E2E_WORK}/logs/${CASE_NAME}.nextflow.log" 2>/dev/null
   NM="${NF_OUT}/${H}/mei/${H}"
-  check "MEI_ANNOTSV's table is published" test -s "${NM}_mei_annotsv.tsv"
+  check "MEI_REPORT publishes AnnotSV's table" test -s "${NM}_mei_annotsv.tsv"
   check "Nextflow's calls table is the bash step's" cmp -s "${M}_mei.tsv" "${NM}_mei.tsv"
   cmp -s "${M}_mei.tsv" "${NM}_mei.tsv" || diff "${M}_mei.tsv" "${NM}_mei.tsv" | head -20
   # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash

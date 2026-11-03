@@ -29,7 +29,7 @@ Manta, Delly and the other SV callers see an insertion as a break in the alignme
 
 - `MEGANE_IMAGE`: MEGAnE's only image (amd64 only, about 6.4 GB to download, 19.5 GB unpacked), its last release, pinned to its digest. It carries its own GRCh38 RepeatMasker annotation and BLAST database.
 - `SAMTOOLS_IMAGE` and `PYTHON_IMAGE`
-- `ANNOTSV_IMAGE`, the image of [step 05](05-annotsv.md), when AnnotSV's data is there
+- `ANNOTSV_IMAGE`, the image of [step 05](05-annotsv.md): the step runs AnnotSV in it when AnnotSV's data is there, and the Nextflow `MEI_REPORT` process runs in it (it has Python too)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tags. `MEGANE_IMAGE` is an `# optional` line: `setup.sh --megane-kmers` pulls it.
 
@@ -52,7 +52,7 @@ The catalog is `assets/mei_sites.tsv`: one row per insertion, with its GRCh38 si
 ./scripts/50-mei.sh your_name male
 ```
 
-With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk` (Nextflow reads a relative path from the launch directory; `run-all.sh` passes it for you) (processes `MEI_DEPTH`, `MEI`, `MEI_ANNOTSV` and `MEI_REPORT`). `MEI_ANNOTSV` runs when `--annotsv_annotations` is set, which `run-all.sh` does when AnnotSV's data is there and `annotsv` is in `TOOLS`.
+With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk` (Nextflow reads a relative path from the launch directory; `run-all.sh` passes it for you) (processes `MEI_DEPTH`, `MEI` and `MEI_REPORT`). `MEI_REPORT` runs AnnotSV on the calls when `--annotsv_annotations` is set, which `run-all.sh` does when AnnotSV's data is there and `annotsv` is in `TOOLS`.
 
 ## How it works
 

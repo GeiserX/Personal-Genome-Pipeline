@@ -21,7 +21,7 @@ classes (DNA transposons, old LTRs) are left out: none of them is active in
 human genomes, so a call of one is read as an artefact.
 
 With --annotsv (AnnotSV's table of the same calls, which scripts/50-mei.sh
-and the MEI_ANNOTSV process write from --annotsv-input), four more columns:
+and the MEI_REPORT process write from --annotsv-input), four more columns:
 genes (the genes the insertion falls in, AnnotSV's Gene_name), location (each
 gene with where in it the insertion falls, AnnotSV's Location: exon3,
 intron2-intron2, ...), benign_af (AnnotSV's B_ins_AFmax, the highest allele
