@@ -37,8 +37,8 @@ derived than ancestral ones. The terminal branch is the deepest positive
 branch with no blocking branch above it (ties: more derived SNPs on the
 path, then the name). A negative branch blocks the branches below it, except
 one with a single ancestral SNP: the branches below it on the path outvote
-that one site when they carry at least OUTVOTE derived SNPs, and the site is
-reported (Outvoted_ancestral). One site, not one read: a call already needs
+that one site when they carry derived SNPs at OUTVOTE or more distinct
+positions, and the site is reported (Outvoted_ancestral). One site, not one read: a call already needs
 --min-depth reads and 90% of them. A wrong reference base, a mismapped
 stretch or a recurrent mutation at one site should not stop a placement that
 many SNPs below support. Two ancestral SNPs on one branch still block, and
@@ -56,7 +56,7 @@ from pathlib import Path
 
 MIN_DEPTH = 10      # Yleaf's -r default
 MAJORITY = 0.9      # Yleaf's -b default (90%)
-OUTVOTE = 2         # derived SNPs below a single-ancestral-SNP branch that outvote it
+OUTVOTE = 2         # distinct derived sites below a single-ancestral-SNP branch that outvote it
 PAR1_END = 2781479  # GRCh38 chrY PAR1 is 10,001-2,781,479
 PAR2_START = 56887903  # GRCh38 chrY PAR2 is 56,887,903-57,217,415
 TABLES = ("positions_ftdna_hg38.txt", "positions_yfull_hg38.txt")
@@ -194,7 +194,7 @@ def place(tree_dir, pileup_path, sample, prefix, min_depth=MIN_DEPTH):
     pileup = read_pileup(pileup_path)
     stats = []
     for node, _, _ in nodes:
-        s = {"snps": 0, "on_table": 0, "D": 0, "A": 0, "N": 0, "anc": [], "der": []}
+        s = {"snps": 0, "on_table": 0, "D": 0, "A": 0, "N": 0, "anc": [], "der": [], "der_pos": set()}
         for names in snp_groups(node):
             s["snps"] += 1
             name, snp = place_snp(names, table)
@@ -207,25 +207,31 @@ def place(tree_dir, pileup_path, sample, prefix, min_depth=MIN_DEPTH):
                 s["anc"].append(name)
             elif c == "D":
                 s["der"].append(name)
+                s["der_pos"].add(snp[0])
         stats.append(s)
     positive = [s["D"] >= 1 and s["D"] > s["A"] for s in stats]
     negative = [s["A"] >= 1 and s["D"] <= s["A"] for s in stats]
     single = [negative[i] and s["A"] == 1 for i, s in enumerate(stats)]
     # blocked[i]: on the path from the root to i, i included, a negative
     # branch with two or more ancestral SNPs, or a second single-ancestral-SNP
-    # branch (one odd site is outvoted, two are not). soft_d[i]: the path's
-    # derived count at the single-ancestral-SNP branch on that path (None if
-    # there is none); i is reachable when OUTVOTE derived SNPs lie below it.
+    # branch (one odd site is outvoted, two are not). soft_pos[i]: the
+    # distinct positions of the derived SNPs below the single-ancestral-SNP
+    # branch on that path, down to i (None if there is none); i is reachable
+    # when they are OUTVOTE sites or more. Positions, not names: two names at
+    # one site are one site.
     n = len(nodes)
-    blocked, path_d, soft_d, soft_n = [False] * n, [0] * n, [None] * n, [0] * n
+    blocked, path_d, soft_pos, soft_n = [False] * n, [0] * n, [None] * n, [0] * n
     best = None
     for i, (node, parent, depth) in enumerate(nodes):
         path_d[i] = stats[i]["D"] + (path_d[parent] if parent >= 0 else 0)
         soft_n[i] = int(single[i]) + (soft_n[parent] if parent >= 0 else 0)
         blocked[i] = ((negative[i] and not single[i]) or soft_n[i] >= 2
                       or (parent >= 0 and blocked[parent]))
-        soft_d[i] = path_d[i] if single[i] else (soft_d[parent] if parent >= 0 else None)
-        if positive[i] and not blocked[i] and (soft_d[i] is None or path_d[i] - soft_d[i] >= OUTVOTE):
+        if single[i]:
+            soft_pos[i] = frozenset()
+        elif parent >= 0 and soft_pos[parent] is not None:
+            soft_pos[i] = (soft_pos[parent] | stats[i]["der_pos"]) if stats[i]["der_pos"] else soft_pos[parent]
+        if positive[i] and not blocked[i] and (soft_pos[i] is None or len(soft_pos[i]) >= OUTVOTE):
             key = (depth, path_d[i], node.get("id") or "")
             if best is None or key[:2] > best[0][:2] or (key[:2] == best[0][:2] and key[2] < best[0][2]):
                 best = (key, i)
