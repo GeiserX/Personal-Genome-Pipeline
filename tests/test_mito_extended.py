@@ -280,6 +280,18 @@ def test_copies(tmp):
           re.search(r"mtDNA copy number: 20[0-9]\.[0-9] per cell", text) is not None)
     check("the HTML report gives the copy number",
           re.search(r'mtDNA copies per cell</span><span class="value">20[0-9]\.[0-9]<', html) is not None)
+    # The mito card comes before the ClinVar hits table in html_report: a copy
+    # number there once hid the table, so the same summary with a ClinVar hit
+    # must still show its row.
+    import render_report
+    s = collect_summary.collect("Scn", d)
+    hit = {"chrom": "chr20", "pos": 10243238, "ref": "A", "alt": "G", "genotype": "hom", "gene": "SNAP25",
+           "significance": "Pathogenic", "review_status": "criteria provided, single submitter", "stars": 1}
+    s["sections"]["clinvar"] = dict(s["sections"]["clinvar"], state="ok",
+                                    data={"count": 1, "by_stars": {"1": 1}, "hits": [hit]})
+    html = render_report.html_report(s)
+    check("with a copy number the HTML report still lists the ClinVar hit",
+          re.search(r"<tr><td>chr20</td><td>10243238</td>.*<td>SNAP25</td><td>Pathogenic</td>", html) is not None)
 
 
 def test_deletions(tmp):

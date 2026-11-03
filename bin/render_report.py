@@ -2359,11 +2359,12 @@ def html_report(s):
     elif mi.get("deletions_note"):
         mito_body.append(small_note(f"Large deletions: not looked for ({mi['deletions_note']})"))
     if mi.get("copies"):
-        c = mi["copies"]
-        mito_body.append(stat("mtDNA copies per cell", E(str(c["mtdna_copies"])) if c.get("status") == "called"
+        # mc, not c: c holds the ClinVar data the hits table below reads.
+        mc = mi["copies"]
+        mito_body.append(stat("mtDNA copies per cell", E(str(mc["mtdna_copies"])) if mc.get("status") == "called"
                               else "not assessed"))
-        mito_body.append(small_note(mito_copies_text(c)))
-        if c.get("status") == "called":
+        mito_body.append(small_note(mito_copies_text(mc)))
+        if mc.get("status") == "called":
             mito_body.append(small_note(MITO_COPIES_NOTE))
     mito_body.append(small_note(MITO_NOTE))
     a("mito", card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
