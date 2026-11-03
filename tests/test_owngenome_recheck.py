@@ -153,7 +153,7 @@ def all_checks(m):
             gi = genome(os.path.join(tmp, "impossible"), run_clinvar="20260230")
             ci = by_item(m.check("S1", gi, answers(m, gi), steps, THIS_PINS, "3.66.0"))["clinvar_file_date"]
             out["an impossible ClinVar date of the run is error, not a crash"] = (
-                ci["class"] == "error" and "does not say" in ci["error"], ci)
+                ci["class"] == "error" and "which ClinVar file" in ci["error"], ci)
         except ValueError as e:
             out["an impossible ClinVar date of the run is error, not a crash"] = (False, e)
         gn = genome(os.path.join(tmp, "nodate"), run_clinvar="")

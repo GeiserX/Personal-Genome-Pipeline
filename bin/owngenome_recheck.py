@@ -354,10 +354,15 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
     ran, inst, up = item.get("ran_with"), item.get("installed"), item.get("upstream")
     if inst and ran and ver(inst) > ver(ran):
         return "rerun-ready"
-    if not ran:
-        item.setdefault("error", "the manifest does not say which release the run used")
+    # ClinVar's date is in the manifest whenever step 06 had a file, so a run without one cannot be compared
+    # with the file here. A pin with no run value (HLA data not installed then) compares this checkout's.
+    if clinvar and not ran:
+        item.setdefault("error", "the manifest does not say which ClinVar file the run used")
         return "error"
     base = inst or ran
+    if not base:
+        item.setdefault("error", "the manifest does not say which release the run used")
+        return "error"
     if not ver(up):
         item.setdefault("error", "the answer names no release")
         return "error"
