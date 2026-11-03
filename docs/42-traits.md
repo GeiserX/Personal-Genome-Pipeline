@@ -42,7 +42,7 @@ In the Nextflow pipeline (`traits` in `--tools`, part of the default list) the p
 
 `status` is `called`, `not_covered` (no genotype at the position, from no reads or a no-call: not read) or `other_allele` (an allele the table does not describe, or an indel starting at the position: not read). A record with a missing allele (a no-call or a half call such as `./T`) is dropped by the genotype filter, so its position reads as `not_covered`. A gVCF whose reference base differs from the table's GRCh38 base stops the step: the gVCF is on another build.
 
-Both reports have a Traits section: every row with its genotype, reading, note and PubMed id, and a mark on the rows whose reading depends on ancestry. The APOE lines come last, after a warning, and in the HTML report they are folded away until you open them. The reports do not read the rules table yet: the TAS2R38 haplotype line is in `traits/${SAMPLE}_genotype_rules.tsv` and in the step's own output.
+Both reports have a Traits section: every row with its genotype, reading, note and PubMed id, and a mark on the rows whose reading depends on ancestry. The APOE lines come last, after a warning, and in the HTML report they are folded away until you open them. Both reports also show the genotype rules (`traits/${SAMPLE}_genotype_rules.tsv`) under the traits rows: each rule's sites, genotypes, result or status, how it was phased, and its reading. The APOE rule is left out there, because its line is already in the traits table and stays folded away. The three TAS2R38 rows of the traits table are each read alone, and their note points at the rule line.
 
 ## The Table
 

@@ -2,7 +2,7 @@ name: Docs
 
 # The repository had no Pages site before this workflow. Pages is switched on
 # once with
-# `gh api -X POST repos/GeiserX/Personal-Genome-Pipeline/pages -f build_type=workflow`,
+# `gh api -X POST repos/GeiserX/OwnGenome/pages -f build_type=workflow`,
 # so the source is "GitHub Actions" and there is no gh-pages branch. Until
 # then the deploy job fails, which is the test that the switch happened.
 #

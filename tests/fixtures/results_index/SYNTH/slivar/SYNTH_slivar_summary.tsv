@@ -1,0 +1,3 @@
+CHROM	POS	REF	ALT	IMPACT	SYMBOL	Consequence	Existing_variation	GT	MAX_AF	FREQ_TIER	TRANSCRIPT	MANE_Consequence
+chr7	3000	T	C	HIGH	CFTR	splice_donor_variant	rs123&COSV1	0/1	0.0003	rare	MANE	splice_donor_variant
+chr13	2000	G	A	HIGH	BRCA2	stop_gained	rs1000002	0/1	0.0001	rare	MANE	stop_gained

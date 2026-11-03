@@ -127,6 +127,7 @@ process STRANGER_RFC1 {
     stub:
     """
     printf 'locus\\tchrom\\tstart\\tend\\trepeat_reads\\tdominant_motif\\tdominant_class\\tdominant_share\\tmotif_shares\\tverdict\\tnote\\n' > ${meta.id}_rfc1_motif.tsv
+    cp ${meta.id}_rfc1_motif.tsv ${meta.id}_str_motifs.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

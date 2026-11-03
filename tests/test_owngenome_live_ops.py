@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/pgp_live_ops.py on the made-up run of tests/fixtures/live/ops, with a fake disk and a fake host.
+"""bin/owngenome_live_ops.py on the made-up run of tests/fixtures/live/ops, with a fake disk and a fake host.
 
 Checks:
   1. half a minute into step 11 (usual time 60 to 100 s on this box), the run is not late and not
@@ -19,12 +19,12 @@ Checks:
  12. every metric /metrics can write is in docs/alerts.md, and every metric the example rules use
      is one /metrics writes;
  13. the step history is read, never written;
- 14. with bin/pgp_live.py present, the server loads the plugin: state.json has plugins.ops and
+ 14. with bin/owngenome_live.py present, the server loads the plugin: state.json has plugins.ops and
      GET /metrics answers in the Prometheus text format.
-Checks 1 to 9 then run against planted mistakes (mutants of pgp_live_ops.py) and must fail
+Checks 1 to 9 then run against planted mistakes (mutants of owngenome_live_ops.py) and must fail
 there: a check that cannot fail is no check.
 
-Run: python3 tests/test_pgp_live_ops.py
+Run: python3 tests/test_owngenome_live_ops.py
 """
 import contextlib
 import importlib.util
@@ -63,7 +63,7 @@ def check(desc, ok, detail=""):
     return ok
 
 
-def load(path, name="pgp_live_ops"):
+def load(path, name="owngenome_live_ops"):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -310,8 +310,8 @@ def free_port():
 
 
 def server_check():
-    if not os.path.isfile(os.path.join(BIN, "pgp_live.py")):
-        print("[NOTE] 14. bin/pgp_live.py is not in this tree yet: the server check runs once it is")
+    if not os.path.isfile(os.path.join(BIN, "owngenome_live.py")):
+        print("[NOTE] 14. bin/owngenome_live.py is not in this tree yet: the server check runs once it is")
         return
     tmp = tempfile.mkdtemp(prefix="pgp-ops-")
     proc = None
@@ -323,8 +323,8 @@ def server_check():
             f.write("".join(json.dumps(e) + "\n" for e in events))
         port, iport = free_port(), free_port()
         env = dict(os.environ, PGP_BOX="opsbox")
-        env.pop("PGP_LIVE_PASSWORD_HASH", None)
-        proc = subprocess.Popen([sys.executable, os.path.join(BIN, "pgp_live.py"), "--root", root, "--state-dir",
+        env.pop("OWNGENOME_LIVE_PASSWORD_HASH", None)
+        proc = subprocess.Popen([sys.executable, os.path.join(BIN, "owngenome_live.py"), "--root", root, "--state-dir",
                                  state_dir, "--port", str(port), "--ingest-port", str(iport), "--quiet",
                                  "--stall-minutes", "30"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         base = f"http://127.0.0.1:{port}"
@@ -339,7 +339,7 @@ def server_check():
             except OSError:
                 time.sleep(0.1)
         ops = (st or {}).get("plugins", {}).get("ops")
-        check("14. pgp_live.py loads the plugin: state.json has plugins.ops, /metrics answers",
+        check("14. owngenome_live.py loads the plugin: state.json has plugins.ops, /metrics answers",
               ops is not None and "alerts" in ops and text is not None and "version=0.0.4" in (ctype or "")
               and f'pgp_run_running{{run="{SAMPLE}"}} 1' in text and "pgp_runs 1" in text,
               (st and st.get("plugins"), (text or "")[:400], proc.poll() is not None and proc.stderr.read()))
@@ -364,20 +364,20 @@ MUTANTS = [
 
 
 def mutant_checks():
-    with open(os.path.join(BIN, "pgp_live_ops.py")) as f:
+    with open(os.path.join(BIN, "owngenome_live_ops.py")) as f:
         src = f.read()
     tmp = tempfile.mkdtemp(prefix="pgp-ops-mut-")
     try:
         for name, old, new in MUTANTS:
             if old not in src:
-                check(f"mutant '{name}': its line is in pgp_live_ops.py", False, old)
+                check(f"mutant '{name}': its line is in owngenome_live_ops.py", False, old)
                 continue
-            p = os.path.join(tmp, "pgp_live_ops_mut.py")
+            p = os.path.join(tmp, "owngenome_live_ops_mut.py")
             with open(p, "w") as f:
                 f.write(src.replace(old, new, 1))
             global FAILS
             keep = FAILS
-            n = behaviour_checks(load(p, "pgp_live_ops_mut"), quiet=True)
+            n = behaviour_checks(load(p, "owngenome_live_ops_mut"), quiet=True)
             FAILS = keep
             check(f"mutant '{name}' fails a check ({n} failed)", n > 0)
     finally:
@@ -385,7 +385,7 @@ def mutant_checks():
 
 
 def main():
-    mod = load(os.path.join(BIN, "pgp_live_ops.py"))
+    mod = load(os.path.join(BIN, "owngenome_live_ops.py"))
     behaviour_checks(mod)
     path_and_label_checks(mod)
     auth_checks(mod)

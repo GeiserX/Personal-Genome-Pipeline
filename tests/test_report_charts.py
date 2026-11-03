@@ -27,13 +27,13 @@ Checks, each with a red control that feeds it a broken input:
      generated_utc;
   9. run_delta.py sees no change between a summary without
      heteroplasmic_sites and one with it;
- 10. the live page (bin/pgp_live.py with bin/pgp_live_charts.py and
+ 10. the live page (bin/owngenome_live.py with bin/owngenome_live_charts.py and
      assets/live/plugins/charts.js): the plugin serves <run>_charts.json and
      names it in state.json; in a headless Chrome, signed in, the five charts
      appear, a click on a ClinVar tick opens the panel with its caveat and a
      viewer/#<locus> link, the page fetched nothing off its origin and the
      policy blocked nothing. Red control: the same page without charts.js
-     fails the check. Without bin/pgp_live.py on the branch this part says
+     fails the check. Without bin/owngenome_live.py on the branch this part says
      SKIP; without Chrome it says SKIP, and FAIL in CI.
 """
 import contextlib
@@ -325,7 +325,7 @@ def demo_checks(work):
 
 def page_problems(b, base, run):
     """What is wrong with the live page's charts after a sign-in, from a click on a ClinVar tick."""
-    import test_pgp_live as tl
+    import test_owngenome_live as tl
     b.go(f"{base}/runs/{run}/")
     if not b.wait("location.pathname === '/login' && !!document.getElementById('password')"):
         return ["no login form"]
@@ -361,7 +361,7 @@ def page_problems(b, base, run):
 
 
 def live_checks(work, charts_file):
-    import pgp_live_charts
+    import owngenome_live_charts
 
     class FakeApp:
         globs, hooks = [], []
@@ -372,25 +372,25 @@ def live_checks(work, charts_file):
         def state_hook(self, name, fn):
             self.hooks.append((name, fn))
     fa = FakeApp()
-    pgp_live_charts.register(fa)
+    owngenome_live_charts.register(fa)
     d = os.path.join(work, "plugin", "RUNX")
     os.makedirs(d)
-    before = pgp_live_charts.charts_state(d, {}, [])
+    before = owngenome_live_charts.charts_state(d, {}, [])
     shutil.copy(charts_file, os.path.join(d, "RUNX_charts.json"))
-    after = pgp_live_charts.charts_state(d, {}, [])
+    after = owngenome_live_charts.charts_state(d, {}, [])
     check("10. the plugin serves *_charts.json and names the run's file in state.json, once it exists",
           fa.globs == ["*_charts.json"] and [n for n, _ in fa.hooks] == ["charts"] and before == {}
           and after.get("file") == "RUNX_charts.json" and isinstance(after.get("mtime"), int), (fa.globs, before, after))
     os.utime(os.path.join(d, "RUNX_charts.json"), ns=(after["mtime"] + 1000, after["mtime"] + 1000))
     check("10. a rewrite within the same second gives a new mtime key",
-          pgp_live_charts.charts_state(d, {}, [])["mtime"] == after["mtime"] + 1000)
+          owngenome_live_charts.charts_state(d, {}, [])["mtime"] == after["mtime"] + 1000)
 
-    if not os.path.isfile(os.path.join(REPO, "bin", "pgp_live.py")):
-        print("[SKIP] 10. the live page in Chrome: bin/pgp_live.py is not on this branch")
+    if not os.path.isfile(os.path.join(REPO, "bin", "owngenome_live.py")):
+        print("[SKIP] 10. the live page in Chrome: bin/owngenome_live.py is not on this branch")
         return
     sys.path.insert(0, os.path.join(REPO, "tests"))
-    import pgp_live
-    import test_pgp_live as tl
+    import owngenome_live
+    import test_owngenome_live as tl
     chrome = tl.find_chrome()
     if not chrome:
         ci = os.environ.get("CI") == "true"
@@ -402,7 +402,7 @@ def live_checks(work, charts_file):
     shutil.copy(charts_file, os.path.join(root, tl.RUN, f"{tl.RUN}_charts.json"))
     pw = os.path.join(work, "password")
     with open(pw, "w") as f:
-        f.write(pgp_live.hash_password(tl.PASSWORD) + "\n")
+        f.write(owngenome_live.hash_password(tl.PASSWORD) + "\n")
     bare = os.path.join(work, "assets-without-charts")
     shutil.copytree(os.path.join(REPO, "assets", "live"), bare)
     os.remove(os.path.join(bare, "plugins", "charts.js"))
@@ -410,7 +410,7 @@ def live_checks(work, charts_file):
         argv = ["--root", root, "--state-dir", os.path.join(work, f"state-{tag}"), "--port", "0", "--ingest-port",
                 "0", "--password-file", pw, "--assets", assets, "--quiet"]
         with contextlib.redirect_stderr(io.StringIO()):
-            srv = tl.serve(argv, pgp_live.App())
+            srv = tl.serve(argv, owngenome_live.App())
         b = tl.Chrome(chrome, os.path.join(work, f"chrome-{tag}"))
         try:
             problems = page_problems(b, f"http://127.0.0.1:{srv[1].server_address[1]}", tl.RUN)

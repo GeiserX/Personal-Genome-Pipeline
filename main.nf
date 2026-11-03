@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Personal Genome Pipeline — whole genome, from reads to report
+    OwnGenome — whole genome, from reads to report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Each samplesheet row starts from FASTQ (trimmed, aligned and called
     here), from a BAM or CRAM (called here), or from a VCF with an optional
@@ -9,7 +9,7 @@
     pharmacogenomics, variant annotation, clinical screening, BAM analysis,
     structural variant calling, and consolidated reporting.
 
-    https://github.com/GeiserX/Personal-Genome-Pipeline
+    https://github.com/GeiserX/OwnGenome
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
@@ -675,11 +675,14 @@ workflow {
     // as outside calls
     // ═══════════════════════════════════════════════════════════════════
     // Opt-in (--medications): the user's own list of the drugs taken, never a
-    // default. CPIC_LOOKUP checks it for CYP2D6 and CYP2C19 inhibitors.
+    // default. CPIC_LOOKUP checks it for inhibitors of CYP2D6, CYP2C19, CYP2C9
+    // and CYP3A4/5.
     ch_medications = params.medications
         ? Channel.value(file(params.medications, checkIfExists: true))
         : Channel.value([])
     ch_inhibitors  = Channel.value(file("${projectDir}/assets/pgx_inhibitors.tsv", checkIfExists: true))
+    // The drugs a pathogenic ClinVar hit in a disease gene makes risky (POLG with valproate).
+    ch_contraindications = Channel.value(file("${projectDir}/assets/pgx_contraindications.tsv", checkIfExists: true))
     PGX(
         ch_vcf,
         ch_reference,
@@ -695,7 +698,8 @@ workflow {
         BAM_ANALYSIS.out.mito_vcf,
         BAM_ANALYSIS.out.hla_optitype,
         ch_medications,
-        ch_inhibitors
+        ch_inhibitors,
+        ch_contraindications
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -749,6 +753,7 @@ workflow {
     // variant-only VCF cannot tell a reference match from a position
     // without reads.
     ch_traits          = Channel.empty()
+    ch_genotype_rules  = Channel.empty()   // [meta, <id>_genotype_rules.tsv], for the report
     ch_traits_versions = Channel.empty()
     if (tools_list.contains('traits')) {
         ch_traits_table = Channel.value(file("${projectDir}/assets/traits.tsv", checkIfExists: true))
@@ -780,6 +785,7 @@ workflow {
             ch_traits_table, ch_traits_rules
         )
         ch_traits          = TRAITS.out.traits
+        ch_genotype_rules  = TRAITS.out.rules
         ch_traits_versions = TRAITS_SITES.out.versions.mix(TRAITS_PHASE.out.versions, TRAITS.out.versions)
     }
 
@@ -1028,8 +1034,9 @@ workflow {
     // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
     // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
     // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
-    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
-    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    // and the known-site catalog of assets/mei_sites.tsv. With
+    // --annotsv_annotations, MEI_REPORT runs AnnotSV on the calls first.
+    // A sample without a BAM is left out. Equivalent to scripts/50-mei.sh.
     ch_mei          = Channel.empty()
     ch_mei_versions = Channel.empty()
     if (tools_list.contains('mei')) {
@@ -1039,7 +1046,8 @@ workflow {
         MEI_DEPTH(ch_bam, ch_mei_sites)
         MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
             ch_reference, ch_reference_fai, ch_megane_kmers)
-        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites,
+                   ch_annotsv_annotations)
         ch_mei          = MEI_REPORT.out.tables
         ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
     }
@@ -1077,9 +1085,9 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
-    // The ACMG SF rules and the carrier list the report applies (bin/ is the
-    // only repository folder a task sees).
-    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
+    // The ACMG SF rules, the carrier list and the gene callability table the
+    // report applies (bin/ is the only repository folder a task sees).
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -1106,6 +1114,7 @@ workflow {
         .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.callability.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
@@ -1117,6 +1126,8 @@ workflow {
         .join(BAM_ANALYSIS.out.expansion_vcf.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.stranger_vcf.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.rfc1_motif.map     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.str_motifs.map     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.eh_catalog.map     { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.manta_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.delly_vcf.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(SV.out.cnvpytor_calls.map           { meta, f -> [meta.id, f] }, remainder: true)
@@ -1130,6 +1141,7 @@ workflow {
         .join(UPSTREAM.out.indexcov.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.consumer_export.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_traits.map                       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_genotype_rules.map               { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_bloodtype.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_archaic.map                      { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_ancient.map                      { meta, f -> [meta.id, f] }, remainder: true)

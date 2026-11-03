@@ -17,7 +17,15 @@
 # line, the generic name first; '#' starts a comment). A strong or moderate
 # CYP2D6 inhibitor on it gives CYP2D6 a phenoconverted phenotype by CPIC's
 # activity-score rule, beside the genotype one; a CYP2C19 inhibitor gets a
-# note. The inhibitors and their sources are in assets/pgx_inhibitors.tsv.
+# note, as does a CYP2C9, CYP3A4 or CYP3A5 inhibitor. The inhibitors and
+# their sources are in assets/pgx_inhibitors.tsv.
+#
+# Disease-variant contraindications: with step 06's ClinVar hits
+# (clinvar/<sample>_clinvar_hits.tsv), a pathogenic or likely pathogenic hit
+# in a gene of assets/pgx_contraindications.tsv (POLG and the urea-cycle
+# genes with valproate, HPRT1 with mycophenolate, SCN1A) adds a WARNING
+# naming the drug. Without step 06 the report says those genes were not
+# checked.
 #
 # Requires: PharmCAT output from step 7. No internet connection needed.
 set -euo pipefail
@@ -67,13 +75,28 @@ if [ -n "${MEDICATIONS:-}" ]; then
     exit 1
   fi
   MED_HOST="$(cd "$(dirname "$MEDICATIONS")" && pwd)/$(basename "$MEDICATIONS")"
-  echo "Medication list: ${MED_HOST} (phenoconversion of CYP2D6 and CYP2C19)"
+  echo "Medication list: ${MED_HOST} (CYP2D6 phenoconversion; CYP2C19, CYP2C9, CYP3A4, CYP3A5 notes)"
   if [ ! -f "${PGP_ROOT}/assets/pgx_inhibitors.tsv" ]; then
     echo "ERROR: inhibitor table ${PGP_ROOT}/assets/pgx_inhibitors.tsv not found." >&2
     exit 1
   fi
-  MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro")
+  MED_MOUNT=(-v "${MED_HOST}:/pgp-med/medications.txt:ro")
   MED_ARGS=(--medications /pgp-med/medications.txt --inhibitors /pgp-assets/pgx_inhibitors.tsv)
+fi
+
+# The drugs a pathogenic variant in a disease gene PharmCAT does not call
+# makes risky, checked against step 06's ClinVar hits when they exist.
+if [ ! -f "${PGP_ROOT}/assets/pgx_contraindications.tsv" ]; then
+  echo "ERROR: contraindication table ${PGP_ROOT}/assets/pgx_contraindications.tsv not found." >&2
+  exit 1
+fi
+CONTRA_ARGS=(--contraindications /pgp-assets/pgx_contraindications.tsv)
+CLINVAR_HITS="${GENOME_DIR}/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.tsv"
+if [ -f "$CLINVAR_HITS" ]; then
+  echo "ClinVar hits (step 06): ${CLINVAR_HITS} (drug contraindications of disease genes)"
+  CONTRA_ARGS+=(--clinvar-hits "$(cpath "$CLINVAR_HITS")")
+else
+  echo "ClinVar hits not found (step 06 not run): the disease-gene contraindications are not checked."
 fi
 
 # pypgx (step 32) calls CYP2D6 from read depth, which PharmCAT cannot. Its
@@ -122,13 +145,15 @@ fi
 echo "Parsing PharmCAT results..."
 rm -f "$OUTPUT" "${OUTDIR}/${SAMPLE}_phenotypes.tsv"
 RC=0
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" ${MED_MOUNT[@]+"${MED_MOUNT[@]}"} "${PYTHON_IMAGE}" \
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" \
+  ${MED_MOUNT[@]+"${MED_MOUNT[@]}"} "${PYTHON_IMAGE}" \
   python3 /pgp-bin/pgx_parse.py cpic-report \
     --sample "$SAMPLE" \
     --report "$(cpath "$PHARMCAT_JSON")" \
     --outdir "$(cpath "$OUTDIR")" \
     ${PYPGX_ARGS[@]+"${PYPGX_ARGS[@]}"} \
-    ${MED_ARGS[@]+"${MED_ARGS[@]}"} || RC=$?
+    ${MED_ARGS[@]+"${MED_ARGS[@]}"} \
+    "${CONTRA_ARGS[@]}" || RC=$?
 
 echo ""
 echo "============================================"

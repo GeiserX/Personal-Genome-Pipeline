@@ -1,0 +1,11 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr7,length=159345973>
+##contig=<ID=chr13,length=114364328>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. Format: Allele|Consequence|IMPACT|SYMBOL|MANE_SELECT|CANONICAL|Existing_variation|MAX_AF">
+##INFO=<ID=PGP_GENE,Number=1,Type=String,Description="Gene of the ranked transcript">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYNTH
+chr13	2000	.	G	A	50	PASS	PGP_GENE=BRCA2;CSQ=A|stop_gained|HIGH|BRCA2|NM_1.1|YES|rs1000002|0.0001,A|intron_variant|MODIFIER|BRCA2-AS1|||rs1000002|0.0001	GT:GQ:DP	0/1:45:35
+chr13	5000	.	A	G	50	PASS	PGP_GENE=BRCA1;CSQ=G|missense_variant|MODERATE|BRCA1||YES||0.002	GT:GQ:DP	0/1:50:30

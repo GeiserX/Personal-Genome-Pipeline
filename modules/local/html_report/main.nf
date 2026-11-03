@@ -17,9 +17,12 @@
     sex check reads indexcov/indexcov-indexcov.ped), and CPIC_LOOKUP's
     PharmCAT comparison goes beside the pypgx summary, where
     collect_summary.py looks for it. assets/acmg_sf.tsv (the ACMG SF rules)
-    and assets/carrier_genes.tsv (the carrier list) come in the same list
-    and go to assets/, which --assets names. The report's charts also go
-    to ${id}_charts.json beside it, for the live page (docs/24-html-report.md).
+    and assets/carrier_genes.tsv (the carrier list) and
+    assets/callability_genes.tsv (the hard-to-read genes) come in the same list
+    and go to assets/, which --assets names. Every gene and rsID the
+    results mention also goes to ${id}_search_index.json beside it
+    (bin/results_index.py), for the live site's search, and the report's
+    charts to ${id}_charts.json, for the live page (docs/24-html-report.md).
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -37,6 +40,7 @@ process HTML_REPORT {
     output:
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
     tuple val(meta), path("summary.json"),             emit: summary
+    tuple val(meta), path("${meta.id}_search_index.json"), emit: search_index
     tuple val(meta), path("${meta.id}_charts.json"),   emit: charts
     path "versions.yml",                              emit: versions
 
@@ -65,7 +69,7 @@ process HTML_REPORT {
             ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
             ${id}_y_str.tsv)                              place y_str "\$f" ;;
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_smn_copy_number.tsv|${id}_hba_copy_number.tsv) place paralogs "\$f" ;;
-            ${id}.mosdepth.summary.txt)                   place coverage "\$f" ;;
+            ${id}.mosdepth.summary.txt|${id}_callability.bed.gz) place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
             ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
@@ -75,7 +79,7 @@ process HTML_REPORT {
             ${id}_hla_genotype.tsv)                       place hla_t1k "\$f" ;;
             ${id}_optitype_result.tsv|${id}_hla_concordance.tsv) place hla_optitype "\$f" ;;
             ${id}_kir_genotype.tsv)                       place kir "\$f" ;;
-            ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv) place expansion_hunter "\$f" ;;
+            ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv|${id}_str_motifs.tsv|${id}_eh_catalog.json) place expansion_hunter "\$f" ;;
             diploidSV.vcf.gz)                             place manta "\$f" ;;
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
             ${id}_cnvs.txt)                               place cnvpytor "\$f" ;;
@@ -86,7 +90,7 @@ process HTML_REPORT {
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;
             ${id}_pgx_consensus.tsv)                      place pgx_consensus "\$f" ;;
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
-            ${id}_traits.tsv)                             place traits "\$f" ;;
+            ${id}_traits.tsv|${id}_genotype_rules.tsv)    place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
             ${id}_archaic.tsv)                            place archaic "\$f" ;;
             ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
@@ -98,7 +102,7 @@ process HTML_REPORT {
             ${id}_mei.tsv|${id}_mei_sites.tsv)            place mei "\$f" ;;
             ${id}_mocha.tsv|${id}_mocha_summary.tsv)      place mosaic "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
-            acmg_sf.tsv|carrier_genes.tsv)                mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;
+            acmg_sf.tsv|carrier_genes.tsv|callability_genes.tsv) mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
     done
@@ -111,6 +115,7 @@ process HTML_REPORT {
         --json summary.json \\
         --declared-sex "${meta.sex ?: ''}" \\
         -o ${id}_report.html \\
+        --search-index ${id}_search_index.json \\
         --charts-json ${id}_charts.json
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
@@ -118,7 +123,7 @@ process HTML_REPORT {
 
     stub:
     """
-    touch ${meta.id}_report.html summary.json ${meta.id}_charts.json
+    touch ${meta.id}_report.html summary.json ${meta.id}_search_index.json ${meta.id}_charts.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -66,6 +66,8 @@ workflow BAM_ANALYSIS {
     ch_expansion_vcf    = Channel.empty()
     ch_stranger_vcf     = Channel.empty()
     ch_rfc1_motif       = Channel.empty()   // [meta, <id>_rfc1_motif.tsv] when Stranger flags RFC1
+    ch_str_motifs       = Channel.empty()   // [meta, <id>_str_motifs.tsv] when it flags another motif locus
+    ch_eh_catalog       = Channel.empty()   // [meta, <id>_eh_catalog.json], the catalog ExpansionHunter ran on
     ch_telomere_results = Channel.empty()
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
@@ -83,6 +85,7 @@ workflow BAM_ANALYSIS {
     ch_y_str_csv        = Channel.empty()   // [meta, <id>_y_str.csv]
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
     ch_mosdepth_regions = Channel.empty()   // [meta, regions.bed.gz] when mosdepth runs
+    ch_callability      = Channel.empty()   // [meta, <id>_callability.bed.gz] when mosdepth runs
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -132,6 +135,10 @@ workflow BAM_ANALYSIS {
             ch_reference_fai,
             ch_expansion_catalog        )
         ch_expansion_vcf = EXPANSION_HUNTER.out.vcf
+        // The report reads the loci the catalog gives no thresholds from it.
+        ch_eh_catalog    = EXPANSION_HUNTER.out.json
+            .map { meta, fs -> [meta, (fs instanceof List ? fs : [fs]).find { f -> f.name.endsWith('_eh_catalog.json') }] }
+            .filter { _meta, f -> f != null }
         ch_versions      = ch_versions.mix(EXPANSION_HUNTER.out.versions)
     }
 
@@ -154,6 +161,7 @@ workflow BAM_ANALYSIS {
         )
         ch_stranger_vcf = STRANGER.out.vcf
         ch_rfc1_motif   = STRANGER_RFC1.out.motif
+        ch_str_motifs   = STRANGER_RFC1.out.motifs
         ch_versions     = ch_versions.mix(STRANGER.out.versions, STRANGER_RFC1.out.versions)
     }
 
@@ -173,11 +181,13 @@ workflow BAM_ANALYSIS {
     }
 
     //
-    // MODULE 4: mosdepth (coverage statistics)
+    // MODULE 4: mosdepth (coverage statistics, and the callability of the
+    // genes of assets/callability_genes.tsv)
     // Gates on: params.tools contains 'mosdepth'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mosdepth')) {
-        MOSDEPTH(ch_bam)
+        MOSDEPTH(ch_bam, Channel.value(file("${projectDir}/assets/callability_genes.tsv", checkIfExists: true)))
+        ch_callability    = MOSDEPTH.out.callability
         ch_coverage       = MOSDEPTH.out.summary
         ch_mosdepth_depth = MOSDEPTH.out.summary.join(MOSDEPTH.out.global_dist)
         ch_mosdepth_regions = MOSDEPTH.out.regions_bed
@@ -354,8 +364,11 @@ workflow BAM_ANALYSIS {
     expansion_vcf    = ch_expansion_vcf
     stranger_vcf     = ch_stranger_vcf
     rfc1_motif       = ch_rfc1_motif      // [meta, <id>_rfc1_motif.tsv]
+    str_motifs       = ch_str_motifs      // [meta, <id>_str_motifs.tsv]
+    eh_catalog       = ch_eh_catalog      // [meta, <id>_eh_catalog.json]
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
+    callability      = ch_callability     // [meta, <id>_callability.bed.gz]
     mito_vcf         = ch_mito_vcf
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]

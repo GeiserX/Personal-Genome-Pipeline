@@ -23,8 +23,8 @@ folder not created yet is measured on its nearest existing parent. Two folders
 on the same filesystem are reported once. Labels are 'work' and 'results',
 never a path.
 
-The warn percent is 90 for both, or PGP_DISK_WARN_PERCENT and
-PGP_MEM_WARN_PERCENT, or the options. The command prints plain lines and
+The warn percent is 90 for both, or OWNGENOME_DISK_WARN_PERCENT and
+OWNGENOME_MEM_WARN_PERCENT, or the options. The command prints plain lines and
 exits 0; a warn percent outside 1 to 100 exits 2.
 """
 import argparse
@@ -241,8 +241,8 @@ def snapshot(events=(), work_dir=None, outdir=None, disk_warn_percent=None, mem_
     """{disk, tasks, host, warn_used_ratio, mem_warn_ratio}. Folders and max_memory not given come
     from the weblog metadata in EVENTS; tasks come from TRACE_ROWS and EVENTS; per task the last
     attempt wins, and within one attempt a finished row beats a running one."""
-    dw = warn_percent(disk_warn_percent, "PGP_DISK_WARN_PERCENT")
-    mw = warn_percent(mem_warn_percent, "PGP_MEM_WARN_PERCENT")
+    dw = warn_percent(disk_warn_percent, "OWNGENOME_DISK_WARN_PERCENT")
+    mw = warn_percent(mem_warn_percent, "OWNGENOME_MEM_WARN_PERCENT")
     events = list(events)
     m_work, m_out, m_cap = metadata(events)
     return {"disk": disk([("work", work_dir or m_work), ("results", outdir or m_out)], dw),
@@ -313,8 +313,8 @@ def main(argv=None):
     ap.add_argument("--work-dir", help="the run's work folder (default: workDir from the weblog metadata)")
     ap.add_argument("--outdir", help="the run's results folder (default: outdir from the weblog metadata)")
     ap.add_argument("--max-memory", help="the pipeline's max_memory, e.g. 64.GB (default: from the weblog metadata)")
-    ap.add_argument("--disk-warn-percent", help="warn at this disk use (default: PGP_DISK_WARN_PERCENT or 90)")
-    ap.add_argument("--mem-warn-percent", help="hint at this peak_rss share of a request (default: PGP_MEM_WARN_PERCENT or 90)")
+    ap.add_argument("--disk-warn-percent", help="warn at this disk use (default: OWNGENOME_DISK_WARN_PERCENT or 90)")
+    ap.add_argument("--mem-warn-percent", help="hint at this peak_rss share of a request (default: OWNGENOME_MEM_WARN_PERCENT or 90)")
     a = ap.parse_args(argv)
     try:
         snap = snapshot(run_state.read_events(a.events), a.work_dir, a.outdir, a.disk_warn_percent,

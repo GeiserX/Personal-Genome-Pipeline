@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/pgp-lookup.sh on the HG002 gVCF case 21 wrote and the annotated VCF
+# scripts/owngenome-lookup.sh on the HG002 gVCF case 21 wrote and the annotated VCF
 # case 40 wrote, with the real bcftools and python images:
 #   - an rsID the annotated VCF carries resolves to its position, and the
 #     answer has the genotype bcftools reads from the gVCF there, the gene
@@ -21,8 +21,8 @@ check "case 21 wrote a gVCF" vcf_ok "$GVCF"
 check "case 40 wrote the annotated VCF" nonempty "${SAMPLE}/vep/${SAMPLE}_annotated.vcf.gz.tbi"
 
 lookup() {
-  echo "+ scripts/pgp-lookup.sh ${SAMPLE} $*"
-  "${REPO}/scripts/pgp-lookup.sh" "$SAMPLE" "$@" > "$STEP_LOG" 2>&1
+  echo "+ scripts/owngenome-lookup.sh ${SAMPLE} $*"
+  "${REPO}/scripts/owngenome-lookup.sh" "$SAMPLE" "$@" > "$STEP_LOG" 2>&1
   STEP_RC=$?
   cat "$STEP_LOG"
   echo "+ exit ${STEP_RC}"

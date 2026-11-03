@@ -12,7 +12,7 @@ When two or more related people are processed, step 38 analyses them together: o
 
 ### The pedigree
 
-A tab-separated file with a header line and one row per person ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)):
+A tab-separated file with a header line and one row per person ([`assets/pedigree.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pedigree.example.tsv)):
 
 ```text
 sample	sex	father	mother	partner
@@ -25,7 +25,7 @@ mother_a	female	.	.	father_a
 
 ### Several families in one file
 
-A families file is the same table with a leading `family` column, so one file says who is related to whom across all your samples ([`assets/families.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/families.example.tsv)):
+A families file is the same table with a leading `family` column, so one file says who is related to whom across all your samples ([`assets/families.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/families.example.tsv)):
 
 ```text
 family	sample	sex	father	mother	partner
@@ -111,6 +111,21 @@ The Nextflow pipeline writes them to `<outdir>/family/` (`<outdir>/<name>/` with
 | `ibd_segments.tsv` | each shared stretch: the pair, chrom, start, end (GRCh38), cm, ibd2_cm |
 | `ibd_report.md` | the shared segments in words |
 | `ibd/` | step 38 only: the genotypes at the panel's SNVs, Beagle's phased VCF and hap-ibd's own output, per chromosome |
+
+### On the live site
+
+The live site (`bin/owngenome_live.py`) lists each family folder under `GENOME_DIR` as a run of its own, of kind `family`: any folder holding `members.tsv` or `pedigree.tsv`. The plugin `bin/owngenome_live_family.py` and its page script `assets/live/plugins/family.js` add a Family card to that run's page:
+
+- **The pedigree.** `bin/pedigree_svg.py` draws it from `members.tsv`, or from `pedigree.tsv` when step 38 has not run, each time the page asks. A square is a male, a circle a female, a diamond a sex not known; a filled symbol is a sequenced person (with only `pedigree.tsv`, a person with a row of their own). A line joins partners, and the children hang from it, one generation per row. It draws what the file declares; the relationship check below is what tests it.
+- **Each child's chromosome map**, `<child>_segments.svg`, under the child's name, or a line saying step 38 has not drawn one.
+- **The relationship check** (`relationships.tsv`), **the shared segments** (`ibd_pairs.tsv`) and **the plan** (`family_plan.tsv`, when there is one), row by row as the steps wrote them.
+- **The couple carrier screen**, per couple: how many genes `couple_<a>_<b>.tsv` lists as `shared` and as `x_linked`, and a link to `couple_<a>_<b>.md`. A count of 0 is not an all-clear; the report says what the screen does not see.
+
+A sample's own page gets a link to the family it is in. The plugin reads the files the steps wrote and nothing else: it calls no tool and computes no genetics. It serves only the pedigree it draws and the result files named above, at `/family/<family>/<file>`, behind the site's login; any other file of the folder, such as `family.vcf.gz`, is 404. `tests/test_pedigree_svg.py` and `tests/test_owngenome_live_family.py` check the drawing and the card on an invented family (`tests/fixtures/families_live/`), with a swapped parent as the control that must fail.
+
+```bash
+python3 bin/pedigree_svg.py "$GENOME_DIR/my_family" > pedigree.svg   # the same drawing, without the site
+```
 
 ### Limits
 
