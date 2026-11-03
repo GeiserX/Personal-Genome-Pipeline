@@ -7,7 +7,8 @@
 # before the rename. It checks:
 #   name      any spelling of the old name (Personal-Genome-Pipeline,
 #             Personal Genome Pipeline, personal_genome_pipeline, any case)
-#   command   the old command and variable names: pgp-view.sh, pgp-lookup.sh,
+#   command   the old command and variable names, in file contents and in
+#             tracked file names: pgp-view.sh, pgp-lookup.sh,
 #             pgp-live.sh, pgp_live.py, PGP_LIVE_*,
 #             PGP_VIEW_PORT, PGP_DISK_WARN_PERCENT, PGP_MEM_WARN_PERCENT
 # Lines that keep the old name on purpose are listed in ALLOW below, by file
@@ -53,6 +54,11 @@ scan() {
     echo "OLD COMMAND: ${hit}"
     hits=$((hits + 1))
   done < <(git -C "$dir" grep -n -I -E "$CMD_RE" -- ':!scripts/ci/check-name.sh' || true)
+  # file names too: a plugin named bin/pgp_live_x.py has no old name inside it
+  while IFS= read -r path; do
+    echo "OLD FILE NAME: ${path}"
+    hits=$((hits + 1))
+  done < <(git -C "$dir" ls-files | grep -E "$CMD_RE" ; git -C "$dir" ls-files | grep -i -E "$NAME_RE" || true)
   return $((hits > 0))
 }
 
@@ -74,6 +80,12 @@ if [ "${1:-}" = "--self-test" ]; then
     mv "$scratch/docs/index.md.orig" "$scratch/docs/index.md"
     git -C "$scratch" add docs/index.md
   done
+  # a file whose name alone is old: empty, so no line inside it can be caught
+  : > "$scratch/bin/pgp_live_example.py"
+  git -C "$scratch" add bin/pgp_live_example.py
+  if scan "$scratch" >/dev/null; then echo "self-test FAIL: not caught: file bin/pgp_live_example.py"; fail=1
+  else echo "self-test ok: caught: file bin/pgp_live_example.py"; fi
+  git -C "$scratch" rm -q --cached bin/pgp_live_example.py
   exit $fail
 fi
 
