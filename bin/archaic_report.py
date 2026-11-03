@@ -248,6 +248,31 @@ def read_vcf(path):
             yield c[0], int(c[1]), c[3], c[4], code
 
 
+CLASH = object()
+
+
+def pick_call(prev, call):
+    """The call to keep when a position comes twice, as in a VCF split with
+    bcftools norm -m-: each is (REF, ALT, code), ALT None for an insertion or a
+    multi-allelic record. An SNV wins over such a record, in either order. Of
+    one SNV twice, a usable record wins over code 9. Of two different SNVs, the
+    one that carries its ALT wins over a 0/0 or unusable one (a split 0/1 at
+    A>G,T is A>G 0/1 and A>T 0/0); both 0/0 is the reference; both carrying
+    their ALT, or neither readable, is CLASH (unknown, 9)."""
+    if prev is None:
+        return call
+    if prev[1] is None or call[1] is None:
+        return call if prev[1] is None and call[1] is not None else prev
+    if call[1] == prev[1]:
+        return call if prev[2] == 9 and call[2] != 9 else prev
+    has_prev, has_call = prev[2] in (1, 2), call[2] in (1, 2)
+    if has_prev != has_call:
+        return prev if has_prev else call
+    if not has_prev and prev[2] == 0 and call[2] == 0:
+        return (prev[0], None, 0)
+    return CLASH
+
+
 def read_table(path):
     """Rows of one chromosome of the GRCh38 table, with the header checked."""
     with opener(path) as f:
@@ -290,20 +315,14 @@ def cmd_genotypes(a):
                 pending = next(vcf, None)
             continue
         # The sample's calls on this chromosome, merged with the table by position.
-        # A position can come twice, as in a VCF split with bcftools norm -m-:
-        # an SNV beside an insertion or a multi-allelic record keeps the SNV,
-        # whichever comes first, and two different SNVs make it unknown (9).
         calls, clash = {}, set()
         while pending is not None and pending[0] == chrom:
-            pos, call = pending[1], pending[2:]
-            prev = calls.get(pos)
-            if pos in clash:
-                pass
-            elif prev is None or (prev[1] is None and call[1] is not None):
-                calls[pos] = call
-            elif call[1] is not None and call[1] != prev[1]:
-                calls[pos] = (prev[0], None, 9)
-                clash.add(pos)
+            pos = pending[1]
+            if pos not in clash:
+                calls[pos] = pick_call(calls.get(pos), pending[2:])
+                if calls[pos] is CLASH:
+                    calls[pos] = (pending[2], None, 9)
+                    clash.add(pos)
             pending = next(vcf, None)
         n = first = last = dropped = carried = 0
         num = chrom[3:]

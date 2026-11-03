@@ -12,8 +12,10 @@ Checks:
      column is your ALT count, 0 where your VCF has no record, 9 for a
      non-PASS record; a site where your VCF has another ALT is left out; a
      chromosome your VCF has no record on is not analysed; in a split VCF an
-     SNV keeps its call beside an insertion or a multi-allelic record at the
-     same position, and two different SNVs there are unknown (9);
+     SNV keeps its call beside an insertion, a multi-allelic record or the
+     0/0 half of a split site, in either order, a usable record of the same
+     SNV wins over a filtered one, and two carried SNVs at one position are
+     unknown (9);
   3. report: Altai and Vindija segments merge into Neanderthal ones, a
      Denisova segment that overlaps one is not counted as Denisovan, segments
      under 50 kb or LOD 4 are dropped, the share is of the analysed span, and
@@ -135,26 +137,48 @@ check("samples.txt: SAMPLE and the stand-ins", samples[0] == "SAMPLE" and len(sa
 write(f"{TMP}/two.vcf", "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\n")
 r = run("genotypes", "--table-dir", tdir, "--vcf", f"{TMP}/two.vcf", "--out-dir", f"{TMP}/gt2")
 check("a two-sample VCF stops the step", r.returncode != 0 and "one-sample" in r.stderr, r.stderr)
-# One position twice, as bcftools norm -m- writes it: the SNV is kept beside an
-# insertion or a multi-allelic record, in either order; two SNVs are unknown.
+# One position twice, as bcftools norm -m- writes it. Rows: REF>ALT of the table.
+sdir2 = f"{TMP}/table_split"
+os.makedirs(sdir2)
+split_rows = {1000: "A\tG", 2000: "C\tT", 3000: "G\tA", 4000: "T\tC", 5000: "A\tG", 6000: "C\tT",
+              7000: "G\tA", 8000: "T\tC", 9000: "A\tC"}
+with gzip.open(f"{sdir2}/chr22.tsv.gz", "wt") as f:
+    f.write(hdr + "".join(f"chr22\t{p}\t{ra}\t0\t0\t0\t0.2\t0\t0\t0\t0\t0\n" for p, ra in split_rows.items()))
 write(f"{TMP}/split.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
-      "chr22\t1000\t.\tA\tAT\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t1000\t.\tA\tAT\t50\tPASS\t.\tGT\t0/1\n"        # insertion, then the SNV
       "chr22\t1000\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n"
-      "chr22\t2000\t.\tC\tT\t50\tPASS\t.\tGT\t1/1\n"
+      "chr22\t2000\t.\tC\tT\t50\tPASS\t.\tGT\t1/1\n"         # the SNV, then an insertion
       "chr22\t2000\t.\tC\tCA\t50\tPASS\t.\tGT\t0/1\n"
-      "chr22\t3000\t.\tG\tA,GT\t50\tPASS\t.\tGT\t1/2\n"
+      "chr22\t3000\t.\tG\tA,GT\t50\tPASS\t.\tGT\t1/2\n"      # a multi-allelic record, then the SNV
       "chr22\t3000\t.\tG\tA\t50\tPASS\t.\tGT\t0/1\n"
-      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n"         # two SNVs, both carried
       "chr22\t4000\t.\tT\tG\t50\tPASS\t.\tGT\t0/1\n"
-      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n")
-r = run("genotypes", "--table-dir", tdir, "--vcf", f"{TMP}/split.vcf", "--pseudo", "10", "--out-dir", f"{TMP}/gt3")
+      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t5000\t.\tA\tT\t50\tPASS\t.\tGT\t0/0\n"         # a split 0/1 at A>G,T: 0/0, then 0/1
+      "chr22\t5000\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t6000\t.\tC\tT\t50\tPASS\t.\tGT\t0/1\n"         # 0/1, then the 0/0 half
+      "chr22\t6000\t.\tC\tG\t50\tPASS\t.\tGT\t0/0\n"
+      "chr22\t7000\t.\tG\tA\t50\tLowQual\t.\tGT\t0/1\n"      # the same SNV, filtered, then usable
+      "chr22\t7000\t.\tG\tA\t50\tPASS\t.\tGT\t1/1\n"
+      "chr22\t8000\t.\tT\tA\t50\tPASS\t.\tGT\t0/0\n"         # two 0/0 halves: the reference
+      "chr22\t8000\t.\tT\tG\t50\tPASS\t.\tGT\t0/0\n")
+r = run("genotypes", "--table-dir", sdir2, "--vcf", f"{TMP}/split.vcf", "--pseudo", "10", "--out-dir", f"{TMP}/gt3")
 check("genotypes on a split VCF exits 0", r.returncode == 0, r.stderr)
 g3 = {int(l.split("\t")[1]): l.split("\t") for l in gzip.open(f"{TMP}/gt3/chr22.gt.gz", "rt").read().splitlines()[1:]}
-check("an insertion before the SNV at one position keeps the SNV call", g3.get(1000, [""] * 8)[7] == "1", g3.get(1000))
-check("an insertion after the SNV at one position keeps the SNV call", g3.get(2000, [""] * 8)[7] == "2", g3.get(2000))
-check("a multi-allelic record beside the SNV keeps the SNV call", g3.get(3000, [""] * 8)[7] == "1", g3.get(3000))
-check("two different SNVs at one position are unknown (9), also when a third record follows",
-      g3.get(4000, [""] * 8)[7] == "9", g3.get(4000))
+code3 = lambda p: g3.get(p, ["left out"] * 8)[7]
+check("an insertion before the SNV at one position keeps the SNV call", code3(1000) == "1", g3.get(1000))
+check("an insertion after the SNV at one position keeps the SNV call", code3(2000) == "2", g3.get(2000))
+check("a multi-allelic record beside the SNV keeps the SNV call", code3(3000) == "1", g3.get(3000))
+check("two carried SNVs at one position are unknown (9), also when a third record follows", code3(4000) == "9", g3.get(4000))
+check("a 0/0 half of a split site before the carried SNV keeps the SNV call", code3(5000) == "1", g3.get(5000))
+check("a 0/0 half after the carried SNV keeps the SNV call", code3(6000) == "1", g3.get(6000))
+check("a usable record of the same SNV wins over a filtered one", code3(7000) == "2", g3.get(7000))
+check("two 0/0 halves are the reference (0)", code3(8000) == "0", g3.get(8000))
+pc_code = lambda r: 9 if r is ar.CLASH else r[2]
+check("pick_call gives the same code in either order",
+      all(pc_code(ar.pick_call(x, y)) == pc_code(ar.pick_call(y, x))
+          for x, y in [(("A", "G", 1), ("A", None, 9)), (("A", "G", 1), ("A", "T", 0)), (("A", "G", 9), ("A", "G", 2)),
+                       (("A", "G", 0), ("A", "T", 0)), (("A", "G", 1), ("A", "T", 2)), (("A", "G", 9), ("A", "T", 0))]))
 
 # --- 3. report ---------------------------------------------------------------------
 idir = f"{TMP}/ibd"
