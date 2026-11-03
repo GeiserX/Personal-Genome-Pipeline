@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """y_tree_place.py: place a Y chromosome on a current public tree (step 37).
 
-Yleaf 3.2.1, the only Yleaf image, places the sample on the YFull tree it
-ships (v10.01). The current YFull YTree is several releases newer, so the
-terminal branch Yleaf reports can sit levels above the one the current tree
-resolves. This tool walks the current tree itself, from the reads, and step 37
-reports both results, each with the tree it comes from.
+Yleaf 4.1.6 (YLEAF_IMAGE) places the sample on the YFull tree it ships
+(v14.01, with the SNPs of its own position table). This tool walks the
+YFull YTree release versions.env pins (YTREE_VERSION, newer than v14.01)
+itself, from the reads, with a second, wider position table, and writes the
+path from the root to the terminal branch with the calls of every level.
+Step 37 reports both results, each with the tree it comes from.
 
 The tree folder (`setup.sh --yleaf-data` installs it as <yleaf data>/ytree):
   current_tree.json       YFull YTree (YTREE_VERSION, CC BY 4.0): every branch
@@ -33,9 +34,16 @@ These are Yleaf's own defaults (-r 10, -b 90).
 A branch is positive when it has at least one derived SNP and more derived
 than ancestral ones; it is negative when it has an ancestral SNP and no more
 derived than ancestral ones. The terminal branch is the deepest positive
-branch with no negative branch above it (ties: more derived SNPs on the
-path, then the name). Branches with no call at all neither help nor block,
-so a branch whose SNPs no table places does not stop the walk below it.
+branch with no blocking branch above it (ties: more derived SNPs on the
+path, then the name). A negative branch blocks the branches below it, except
+one with a single ancestral SNP: the branches below it on the path outvote
+that one site when they carry at least OUTVOTE derived SNPs, and the site is
+reported (Outvoted_ancestral). One site, not one read: a call already needs
+--min-depth reads and 90% of them. A wrong reference base, a mismapped
+stretch or a recurrent mutation at one site should not stop a placement that
+many SNPs below support; two ancestral SNPs on one branch still block.
+Branches with no call at all neither help nor block, so a branch whose SNPs
+no table places does not stop the walk below it.
 The ancestral SNPs inside the terminal branch's own block are listed: the
 sample shares only part of that block, a sign of a sub-branch the tree does
 not have yet. Standard library only.
@@ -47,6 +55,7 @@ from pathlib import Path
 
 MIN_DEPTH = 10      # Yleaf's -r default
 MAJORITY = 0.9      # Yleaf's -b default (90%)
+OUTVOTE = 2         # derived SNPs below a single-ancestral-SNP branch that outvote it
 PAR1_END = 2781479  # GRCh38 chrY PAR1 is 10,001-2,781,479
 PAR2_START = 56887903  # GRCh38 chrY PAR2 is 56,887,903-57,217,415
 TABLES = ("positions_ftdna_hg38.txt", "positions_yfull_hg38.txt")
@@ -200,13 +209,18 @@ def place(tree_dir, pileup_path, sample, prefix, min_depth=MIN_DEPTH):
         stats.append(s)
     positive = [s["D"] >= 1 and s["D"] > s["A"] for s in stats]
     negative = [s["A"] >= 1 and s["D"] <= s["A"] for s in stats]
-    # blocked[i]: a negative branch on the path from the root to i, i included
-    blocked, path_d = [False] * len(nodes), [0] * len(nodes)
+    single = [negative[i] and s["A"] == 1 for i, s in enumerate(stats)]
+    # blocked[i]: a negative branch with two or more ancestral SNPs on the
+    # path from the root to i, i included. soft_d[i]: the path's derived
+    # count at the deepest single-ancestral-SNP branch on that path (None if
+    # there is none); i is reachable when OUTVOTE derived SNPs lie below it.
+    blocked, path_d, soft_d = [False] * len(nodes), [0] * len(nodes), [None] * len(nodes)
     best = None
     for i, (node, parent, depth) in enumerate(nodes):
-        blocked[i] = negative[i] or (parent >= 0 and blocked[parent])
         path_d[i] = stats[i]["D"] + (path_d[parent] if parent >= 0 else 0)
-        if positive[i] and not blocked[i]:
+        blocked[i] = (negative[i] and not single[i]) or (parent >= 0 and blocked[parent])
+        soft_d[i] = path_d[i] if single[i] else (soft_d[parent] if parent >= 0 else None)
+        if positive[i] and not blocked[i] and (soft_d[i] is None or path_d[i] - soft_d[i] >= OUTVOTE):
             key = (depth, path_d[i], node.get("id") or "")
             if best is None or key[:2] > best[0][:2] or (key[:2] == best[0][:2] and key[2] < best[0][2]):
                 best = (key, i)
@@ -233,15 +247,18 @@ def place(tree_dir, pileup_path, sample, prefix, min_depth=MIN_DEPTH):
     pa = sum(stats[i]["A"] for i in path)
     pn = sum(stats[i]["N"] for i in path)
     anc_term = ",".join(stats[term]["anc"]) if term is not None and stats[term]["anc"] else "."
+    outvoted = ",".join(stats[i]["anc"][0] for i in path if single[i]) or "."
     with open(f"{prefix}_y_tree.txt", "w") as o:
         o.write("Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\tPath_no_call\tAncestral_in_terminal\t"
-                "SNPs_called\tMin_depth\tTree\tPositions\n")
+                "SNPs_called\tMin_depth\tTree\tPositions\tOutvoted_ancestral\n")
         o.write(f"{sample}\t{hg}\t{len(path)}\t{pd}\t{pa}\t{pn}\t{anc_term}\t{called}\t{min_depth}\t"
-                f"{tree_label}\t{pos_label}\n")
+                f"{tree_label}\t{pos_label}\t{outvoted}\n")
     if term is None:
         print(f"Current tree ({tree_label}): no branch has a derived call ({called} SNPs called at depth >= {min_depth})")
     else:
         extra = f"; ancestral inside its block: {anc_term}" if anc_term != "." else ""
+        if outvoted != ".":
+            extra += f"; ancestral on the path, outvoted by the SNPs below it: {outvoted}"
         print(f"Current tree ({tree_label}): {hg} (level {len(path)}, path SNPs {pd} derived, {pa} ancestral, "
               f"{pn} no call{extra})")
     return hg
