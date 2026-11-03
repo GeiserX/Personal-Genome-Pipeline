@@ -72,6 +72,7 @@ import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17'
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 import run_delta  # noqa: E402  the comparison with the previous run, for the "New since" badges
+import traits_report  # noqa: E402  step 42's genotype-rules columns and the rules the traits table holds
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -1666,8 +1667,15 @@ def sec_annotsv(d, s):
                     "support_callers": sp["Support_callers"].split(",") if sp["Support_callers"] else [],
                     "exon_edge": r["Exon_edge"], "exon_edge_detail": r.get("Exon_edge_detail") or "",
                     "population_af": af, "population_source": r.get("Population_source") or "",
-                    "common": r["Common"] == "yes"})
-    return p, {"count": len(out), "rows": out,
+                    "common": r["Common"] == "yes", "annotsv_class": r.get("AnnotSV_class") or r["ACMG_class"],
+                    "rule": r.get("Rule") or "", "rule_detail": r.get("Rule_detail") or ""})
+    # A call step 05's rules moved from AnnotSV's class 4 or 5 to class 3
+    # (bin/annotsv_postfilter.py: a coding tandem repeat, an IG/TR locus, the
+    # MHC, a pseudogene alias, no read-depth support) is listed apart with
+    # the reason, and the class 4-5 counts leave it out.
+    moved = [x for x in out if str(x["acmg_class"]) not in ("4", "5")]
+    out = [x for x in out if str(x["acmg_class"]) in ("4", "5")]
+    return p, {"count": len(out), "rows": out, "downgraded": moved,
                "consensus": os.path.relpath(cons, d) if cons else None, "consensus_note": cons_note,
                "single_caller": sum(x["support"] == 1 for x in out),
                "exon_edge": sum(x["exon_edge"] == "yes" for x in out),
@@ -1750,6 +1758,39 @@ def rfc1_motif_row(d, s, after):
                                        "dominant_share", "motif_shares", "repeat_reads")}
 
 
+def str_motif_rows(d, s, after):
+    """Step 9b's motif count of the other flagged motif loci (the FAME loci,
+    SCA31, SCA37; expansion_hunter/<id>_str_motifs.tsv, bin/rfc1_motif.py
+    --flagged) by locus, unless the table is older than the Stranger file it
+    was made from."""
+    p = first_existing(d, [f"expansion_hunter/{s}_str_motifs.tsv"])
+    if not p or (after and os.path.getmtime(p) < os.path.getmtime(after)):
+        return {}
+    return {r["locus"]: {k: r.get(k, ".") for k in ("verdict", "note", "dominant_motif", "dominant_class",
+                                                    "dominant_share", "motif_shares", "repeat_reads")}
+            for r in read_tsv(p) if r.get("locus")}
+
+
+def str_not_graded(d, s):
+    """{locus: reason} of the loci the catalog ExpansionHunter ran on gives no
+    thresholds (its NoThresholds field, bin/strchive_convert.py: MUC1, CEL,
+    TYMS and PLIN4 among them), from the copy step 09 keeps beside its VCF
+    (expansion_hunter/<id>_eh_catalog.json). Empty without the copy, or with
+    one that is not a catalog (Stranger's bundled catalog has no such loci)."""
+    p = first_existing(d, [f"expansion_hunter/{s}_eh_catalog.json"])
+    if not p:
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            cat = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(cat, list):
+        return {}
+    return {e["LocusId"]: str(e["NoThresholds"]) for e in cat
+            if isinstance(e, dict) and e.get("LocusId") and e.get("NoThresholds")}
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -1765,7 +1806,9 @@ def sec_expansions(d, s):
         return None, {}
     ranges = str_ranges()
     rfc1 = rfc1_motif_row(d, s, st) if st else None
-    loci, tested, flagged, no_status = [], 0, [], 0
+    motifs = str_motif_rows(d, s, st) if st else {}
+    ungraded = str_not_graded(d, s) if st else {}
+    loci, tested, flagged, no_status, not_graded = [], 0, [], 0, []
     for r in vcf_records(p):
         if len(r) < 10:
             continue
@@ -1798,17 +1841,26 @@ def sec_expansions(d, s):
             item["rfc1_motif"] = rfc1 or {"verdict": "not_checked",
                                           "note": "no motif count beside Stranger's output (step 9b runs it "
                                                   "with the sample's BAM): confirm the flag with repeat-primed PCR"}
+        if rep != "RFC1" and rep in motifs and any(x != "normal" for x in status):
+            item["motif"] = motifs[rep]
+        if st and not status and rep in ungraded:
+            item["not_graded"] = ungraded[rep]
         loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
-            if not status:
+            if not status and "not_graded" in item:
+                if rep not in not_graded:
+                    not_graded.append(rep)
+            elif not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
                 f = {"locus": item["locus"], "repeat_count": item["repeat_count"], "status": item["status"],
                      "sizing": item["sizing"]}
                 if "rfc1_motif" in item:
                     f["rfc1_motif"] = item["rfc1_motif"]
+                if "motif" in item:
+                    f["motif"] = item["motif"]
                 flagged.append(f)
     by = {l["locus"]: l for l in loci}
     # Every locus, the five key loci first, then by name.
@@ -1819,7 +1871,9 @@ def sec_expansions(d, s):
            "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
            "intermediate": [l["locus"] for l in loci if l["zone"]]}
     if st:
-        out.update(flagged=flagged, no_status=no_status)
+        # not_graded: {locus: why} of the loci the catalog gives no thresholds,
+        # so Stranger gives them no status: not graded, never normal.
+        out.update(flagged=flagged, no_status=no_status, not_graded={k: ungraded[k] for k in not_graded})
     return p, out
 
 
@@ -2356,7 +2410,28 @@ def sec_traits(d, s):
     apoe = [r for r in keep if r["gene"] == "APOE"]
     counts = {st: sum(1 for r in keep if r["status"] == st and r["gene"] != "APOE")
               for st in ("called", "not_covered", "other_allele")}
-    return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
+    return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts,
+               "rules": genotype_rules(d, s)}
+
+
+def genotype_rules(d, s):
+    """Step 42's genotype rules (traits/<id>_genotype_rules.tsv): one line per
+    rule that reads several sites together (TAS2R38's haplotypes), or None
+    when the table is not there (a run from before the rules). The rules
+    whose line the traits table already holds (APOE) are left out, so the
+    reports keep folding APOE away."""
+    p = first_existing(d, [f"traits/{s}_genotype_rules.tsv"])
+    if not p:
+        return None
+    with open(p, encoding="utf-8", errors="replace") as f:
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+    need = traits_report.RULE_OUT_COLUMNS
+    if rows and any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    bad = next((i for i, r in enumerate(rows, 2) if None in r or any(r.get(k) is None for k in need)), None)
+    if bad:
+        raise Unreadable(f"{os.path.basename(p)} line {bad} does not have one field per column")
+    return [{k: r[k] for k in need} for r in rows if r["rule"] not in traits_report.TRAITS_TABLE_RULES]
 
 
 def sec_carrier(d, s):

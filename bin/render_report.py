@@ -553,11 +553,44 @@ def traits_text(d, sample):
     if missing:
         out.append(f"  Not read (no genotype in the gVCF): {', '.join(missing)}")
     out.append(f"  {TRAITS_NOTE} Notes per row: traits/{sample}_traits.tsv")
+    if d.get("rules"):
+        out.append(f"  Genotype rules (several sites read together; traits/{sample}_genotype_rules.tsv):")
+        for r in d["rules"]:
+            out.append(f"    {r['trait']} ({r['gene']} {r['rsids'].replace(',', ', ')}): {rule_result(r)}. "
+                       f"{r['reading']} (PMID {r['pmids']})")
     if d.get("apoe"):
         out.append(f"  {APOE_WARNING}")
         for r in d["apoe"]:
             out.append(f"    {r['trait']} ({r['rsid']}): {r['genotype']}. {r['reading']}")
     return out
+
+
+RULE_PHASE_TEXT = {"read_backed": "phased from the reads", "not_needed": "no phase needed",
+                   "not_used": "phase not used", "unphased": "not phased"}
+
+
+def rule_result(r):
+    """A genotype rule's result: its label when called, else its status; and how it was phased."""
+    res = r["result"] if r["status"] == "called" else r["status"].replace("_", " ")
+    ph = RULE_PHASE_TEXT.get(r["phase"])
+    return res + (f" ({ph})" if ph else "")
+
+
+def rules_html(d, sample):
+    """The genotype rules table of the traits card."""
+    rows = []
+    for r in d.get("rules") or []:
+        anc = " " + badge("ancestry", "yellow") if r["ancestry"] == "yes" else ""
+        rows.append(f"      <tr><td>{E(r['trait'])}</td><td>{E(r['gene'])}<br><span style=\"font-size:12px;color:#666\">"
+                    f"{E(r['rsids'].replace(',', ', '))}</span></td><td>{E(r['genotypes'].replace(',', ', '))}</td>"
+                    f"<td>{E(rule_result(r))}{anc}</td><td>{E(r['reading'])}<br><span style=\"font-size:12px;color:#666\">"
+                    f"{E(r['note'])}</span></td><td>PMID {E(r['pmids'])}</td></tr>")
+    if not rows:
+        return []
+    return ["    <h3>Genotype rules (several sites read together)</h3>", "    <table>",
+            "      <tr><th>Trait</th><th>Gene and sites</th><th>Genotypes</th><th>Result</th><th>Reading</th>"
+            "<th>Source</th></tr>"] + rows + ["    </table>",
+                                              small_note(f"Every rule line: traits/{sample}_genotype_rules.tsv")]
 
 
 def traits_html(d, sample):
@@ -571,6 +604,7 @@ def traits_html(d, sample):
     head = "      <tr><th>Trait</th><th>Gene</th><th>Genotype</th><th>Reading</th><th>Source</th></tr>"
     body = [stat("Read / no genotype / other allele", E(f"{d['called']} / {d['not_covered']} / {d['other_allele']}")),
             "    <table>", head] + ["      " + tr(r) for r in d["rows"]] + ["    </table>", small_note(TRAITS_NOTE)]
+    body += rules_html(d, sample)
     if d.get("apoe"):
         body += [f"    <details><summary>{E(APOE_WARNING)} Open to show it.</summary>", "    <table>", head]
         body += ["      " + tr(r) for r in d["apoe"]] + ["    </table></details>"]
@@ -611,7 +645,11 @@ def comphet_phase_html(d):
 
 ANNOTSV_NOTE = ("A class 4 or 5 SV made by one caller, a deletion on the exon edges of a transcript (the reads of "
                "a processed transcript or cDNA aligned across an intron) or one at 1% or more in AnnotSV's benign "
-               "set is unlikely to be a rare pathogenic SV: check the reads before acting on it (docs/05-annotsv.md).")
+               "set is unlikely to be a rare pathogenic SV: check the reads before acting on it (docs/05-annotsv.md). "
+               "Step 05's rules (assets/sv_rule_regions.tsv and the read-depth check) move a class 4 or 5 call to "
+               "class 3 when it lies in a coding tandem repeat, an immunoglobulin or T-cell receptor locus or the "
+               "MHC, names a pseudogene by a disease gene's alias, or its read depth does not show the change; "
+               "those calls are listed apart with the reason and are not counted here.")
 
 
 def annotsv_support_text(x):
@@ -637,7 +675,15 @@ def annotsv_flags(x):
     if x["population_af"] is not None:
         out.append(f"benign-set AF {x['population_af']:g}" + (f" ({x['population_source']})" if x["population_source"] else "")
                    + (", common" if x["common"] else ""))
+    if x.get("rule_detail") and str(x["acmg_class"]) in ("4", "5"):
+        out.append(f"rule {x['rule']}: {x['rule_detail']}")
     return out
+
+
+def annotsv_moved_text(x):
+    """One SV step 05's rules moved to class 3: where, from which class, and why."""
+    return (f"{x['type']} {x['sv']}  {annotsv_genes_text(x)}  AnnotSV class {x['annotsv_class']} -> "
+            f"{x['acmg_class']}  ({x['rule'] or 'rule not named'}: {x['rule_detail'] or 'no detail'})")
 
 
 def annotsv_lines(d):
@@ -647,6 +693,8 @@ def annotsv_lines(d):
         head += (f" (single caller: {d['single_caller'] if d['consensus'] else 'not known'}; deletions on exon edges: "
                  f"{d['exon_edge'] if d['exon_edge_checked'] else 'not checked'}; common: {d['common']})")
     lines = [head]
+    if d.get("downgraded"):
+        lines.append(f"Moved to class 3 by step 05's rules, not counted above: {len(d['downgraded'])}")
     if d["count"] and not d["consensus"]:
         lines.append(d.get("consensus_note") or "Caller support: step 22's consensus did not run, so how many callers "
                      "saw each SV is not known.")
@@ -1021,7 +1069,11 @@ def text_report(s):
               f"support: {annotsv_support_text(x)}")
             for f in annotsv_flags(x):
                 w(f"         {f}")
-        if d["count"]:
+        if d.get("downgraded"):
+            w("  Moved to class 3 by step 05's rules (from AnnotSV's class, with the reason):")
+            for x in d["downgraded"]:
+                w(f"    {annotsv_moved_text(x)}")
+        if d["count"] or d.get("downgraded"):
             w(f"  {ANNOTSV_NOTE}")
         w("")
 
@@ -1039,8 +1091,14 @@ def text_report(s):
                 w(f"    {l['locus']:<8} {str_count(by.get(l['locus'], l))}  {l['status']}")
                 if l.get("rfc1_motif"):
                     w(f"      {rfc1_text(l['rfc1_motif'])}")
+                if l.get("motif"):
+                    w(f"      {motif_text(l['locus'], l['motif'])}")
         else:
             w("  Outside the normal range (Stranger): none")
+        if d.get("not_graded"):
+            w(f"  Not graded (no thresholds in the catalog): {len(d['not_graded'])} ("
+              + "; ".join(f"{k}: {v}" for k, v in d["not_graded"].items()) + ")")
+            w(f"  {NOT_GRADED_NOTE}")
         if d.get("stranger") and d.get("no_status"):
             w(f"  Loci without a Stranger status (not in its catalog): {d['no_status']}")
         if d.get("unsized"):
@@ -1380,6 +1438,8 @@ def str_count(l):
 def str_status(l):
     """Stranger's status, never 'normal' for a locus that was not sized."""
     st = l.get("status") or ""
+    if not st and l.get("not_graded"):
+        return "not graded"
     if st == "normal" and l.get("sizing") not in ("sized", "unknown"):
         return "not sized"
     return st
@@ -1394,6 +1454,10 @@ def str_notes(l):
         out.append(f"normal max {l['normal_max']}")
     if l.get("zone"):
         out.append(f"{l['zone']}: {l['zone_label']}; {l['zone_citation']}")
+    if l.get("not_graded"):
+        out.append(f"no thresholds in the catalog ({l['not_graded']})")
+    if l.get("motif"):
+        out.append(motif_text(l["locus"], l["motif"]))
     return "; ".join(out)
 
 
@@ -1406,7 +1470,18 @@ def str_rows(d):
 
 
 def rfc1_text(m):
-    return f"RFC1 motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+    return motif_text("RFC1", m)
+
+
+def motif_text(locus, m):
+    """Step 9b's motif count of a flagged locus (bin/rfc1_motif.py)."""
+    return f"{locus} motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+
+
+NOT_GRADED_NOTE = ("Not graded: the repeat catalog gives these loci no thresholds (for MUC1, CEL, TYMS and PLIN4 "
+                   "the reference repeat is longer than 300 bases, so no short read spans it), so Stranger gives them no "
+                   "status. "
+                   "Not graded is not normal (docs/09-str-expansions.md).")
 
 
 PARALOG_NOTE = ("Paraphase reads PacBio HiFi reads only. A 'no call' means it saw one haplotype and the depth "
@@ -2154,6 +2229,16 @@ def html_report(s):
                                   f"<td>{E(annotsv_genes_text(x))}</td><td>{E(annotsv_support_text(x))}</td>"
                                   f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td></tr>" for x in av["rows"])
                         + "</table>")
+        if av.get("downgraded"):
+            body.append("    <h3>Moved to class 3 by step 05's rules</h3>")
+            body.append("    <table><tr><th>SV</th><th>AnnotSV class</th><th>Class</th><th>Genes</th><th>Rule</th>"
+                        "<th>Why</th></tr>"
+                        + "".join(f"<tr><td>{E(x['type'] + ' ' + x['sv'])}</td><td>{E(x['annotsv_class'])}</td>"
+                                  f"<td>{E(x['acmg_class'])}</td><td>{E(annotsv_genes_text(x))}</td>"
+                                  f"<td>{E(x['rule'] or 'not named')}</td><td>{E(x['rule_detail'] or 'no detail')}</td></tr>"
+                                  for x in av["downgraded"])
+                        + "</table>")
+        if av.get("rows") or av.get("downgraded"):
             body.append(small_note(ANNOTSV_NOTE))
         a("annotsv", card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
 
@@ -2178,10 +2263,15 @@ def html_report(s):
         eh_body.append(stat("Not sized from short reads (not counted as normal)", badge(len(eh["unsized"]), "yellow")))
     if eh.get("intermediate"):
         eh_body.append(stat("In an intermediate range", badge(", ".join(eh["intermediate"]), "yellow")))
+    if eh.get("not_graded"):
+        eh_body.append(stat("Not graded (no thresholds in the catalog)", badge(", ".join(eh["not_graded"]), "gray")))
+        eh_body.append(small_note(NOT_GRADED_NOTE))
     for l in eh.get("flagged") or []:
         if l.get("rfc1_motif"):
             eh_body.append(small_note(rfc1_text(l["rfc1_motif"])))
             eh_body.append(small_note(RFC1_NOTE))
+        if l.get("motif"):
+            eh_body.append(small_note(motif_text(l["locus"], l["motif"])))
     # Every locus, the five key loci first.
     rows = str_rows(eh)
     if rows:
