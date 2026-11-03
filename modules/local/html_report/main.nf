@@ -75,7 +75,7 @@ process HTML_REPORT {
             ${id}_hla_genotype.tsv)                       place hla_t1k "\$f" ;;
             ${id}_optitype_result.tsv|${id}_hla_concordance.tsv) place hla_optitype "\$f" ;;
             ${id}_kir_genotype.tsv)                       place kir "\$f" ;;
-            ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv) place expansion_hunter "\$f" ;;
+            ${id}_eh.vcf|${id}_eh_stranger.vcf|${id}_rfc1_motif.tsv|${id}_str_motifs.tsv|${id}_eh_catalog.json) place expansion_hunter "\$f" ;;
             diploidSV.vcf.gz)                             place manta "\$f" ;;
             ${id}_sv.vcf.gz)                              place delly "\$f" ;;
             ${id}_cnvs.txt)                               place cnvpytor "\$f" ;;
@@ -86,7 +86,7 @@ process HTML_REPORT {
             ${id}_cyp2d6.tsv)                             place cyrius "\$f" ;;
             ${id}_pgx_consensus.tsv)                      place pgx_consensus "\$f" ;;
             ${id}_consumer_export.tsv)                    place consumer_export "\$f" ;;
-            ${id}_traits.tsv)                             place traits "\$f" ;;
+            ${id}_traits.tsv|${id}_genotype_rules.tsv)    place traits "\$f" ;;
             ${id}_bloodtype.tsv)                          place bloodtype "\$f" ;;
             ${id}_archaic.tsv)                            place archaic "\$f" ;;
             ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
