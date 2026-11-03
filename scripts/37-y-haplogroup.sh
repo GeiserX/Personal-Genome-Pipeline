@@ -5,8 +5,8 @@
 # Opt-in. Yleaf (YLEAF_IMAGE, 4.1.6) reads the BAM's pileup at its
 # Y-chromosome markers and predicts the haplogroup they support on its own
 # tree, YFull v14.01. Its marker tables come from setup.sh --yleaf-data; the
-# pileup is made in SAMTOOLS_IMAGE in the same pass as the chrY BAM and the
-# current tree's pileup, and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
+# pileup is made in the same SAMTOOLS_IMAGE run as the chrY BAM (the current
+# tree's pileup in a second one), and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
 # the reads: the sex comes from indexcov/indexcov-indexcov.ped, not from an
 # argument. A female sample, or one with no Y to read, is skipped with one line.
 #

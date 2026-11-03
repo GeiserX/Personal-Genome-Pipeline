@@ -41,7 +41,8 @@ that one site when they carry at least OUTVOTE derived SNPs, and the site is
 reported (Outvoted_ancestral). One site, not one read: a call already needs
 --min-depth reads and 90% of them. A wrong reference base, a mismapped
 stretch or a recurrent mutation at one site should not stop a placement that
-many SNPs below support; two ancestral SNPs on one branch still block.
+many SNPs below support. Two ancestral SNPs on one branch still block, and
+so does a second single-ancestral-SNP branch on the same path.
 Branches with no call at all neither help nor block, so a branch whose SNPs
 no table places does not stop the walk below it.
 The ancestral SNPs inside the terminal branch's own block are listed: the
@@ -210,15 +211,19 @@ def place(tree_dir, pileup_path, sample, prefix, min_depth=MIN_DEPTH):
     positive = [s["D"] >= 1 and s["D"] > s["A"] for s in stats]
     negative = [s["A"] >= 1 and s["D"] <= s["A"] for s in stats]
     single = [negative[i] and s["A"] == 1 for i, s in enumerate(stats)]
-    # blocked[i]: a negative branch with two or more ancestral SNPs on the
-    # path from the root to i, i included. soft_d[i]: the path's derived
-    # count at the deepest single-ancestral-SNP branch on that path (None if
+    # blocked[i]: on the path from the root to i, i included, a negative
+    # branch with two or more ancestral SNPs, or a second single-ancestral-SNP
+    # branch (one odd site is outvoted, two are not). soft_d[i]: the path's
+    # derived count at the single-ancestral-SNP branch on that path (None if
     # there is none); i is reachable when OUTVOTE derived SNPs lie below it.
-    blocked, path_d, soft_d = [False] * len(nodes), [0] * len(nodes), [None] * len(nodes)
+    n = len(nodes)
+    blocked, path_d, soft_d, soft_n = [False] * n, [0] * n, [None] * n, [0] * n
     best = None
     for i, (node, parent, depth) in enumerate(nodes):
         path_d[i] = stats[i]["D"] + (path_d[parent] if parent >= 0 else 0)
-        blocked[i] = (negative[i] and not single[i]) or (parent >= 0 and blocked[parent])
+        soft_n[i] = int(single[i]) + (soft_n[parent] if parent >= 0 else 0)
+        blocked[i] = ((negative[i] and not single[i]) or soft_n[i] >= 2
+                      or (parent >= 0 and blocked[parent]))
         soft_d[i] = path_d[i] if single[i] else (soft_d[parent] if parent >= 0 else None)
         if positive[i] and not blocked[i] and (soft_d[i] is None or path_d[i] - soft_d[i] >= OUTVOTE):
             key = (depth, path_d[i], node.get("id") or "")

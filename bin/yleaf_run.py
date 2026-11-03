@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """yleaf_run.py: run Yleaf 4.1.6 (YLEAF_IMAGE) offline, on a pileup made beside it.
 
-Step 37 and the Nextflow processes make one samtools pass per BAM in
-SAMTOOLS_IMAGE: Yleaf's pileup, the current tree's pileup (y_tree_place.py)
-and the chrY BAM. Yleaf then reads its pileup from a file instead of running
+Step 37 makes Yleaf's pileup and the chrY BAM in one SAMTOOLS_IMAGE run,
+and the current tree's pileup (y_tree_place.py) in a second one; the
+Nextflow Y_PILEUP task makes all three in one task. Yleaf then reads its pileup from a file instead of running
 samtools itself, with its data folder (marker positions, haplogroup trees)
 set to the copy `setup.sh --yleaf-data` installs from the release archive as
 reference/yleaf-<version>/data, the folder that also holds the current tree.

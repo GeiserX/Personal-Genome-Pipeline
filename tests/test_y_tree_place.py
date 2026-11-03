@@ -4,7 +4,7 @@ synthetic pileups (no real sample).
 
 The tree:
     (root) -> A (a1, a2/a2alt) -> B (b1, b2, b3) -> C (c1, c2)
-                               -> X (x1)        -> Y (y1)
+                               -> X (x1)        -> Y (y1) -> Z (z1) -> W (w1)
 Checks:
   1. every SNP derived along A-B-C: C is the terminal branch at level 3, with
      the counts of each level, and nothing ancestral in its block;
@@ -19,7 +19,8 @@ Checks:
      derived SNPs below (y1, z1) is outvoted, so Z wins and x1 is reported
      as the outvoted site; without x1's call Z wins with nothing reported;
      a branch with two ancestral SNPs (A: a1, a2alt) blocks however much
-     derived support sits below it;
+     derived support sits below it; two single-ancestral-SNP branches on
+     one path (x1, y1) block too, even with two derived SNPs below (z1, w1);
   5. nothing derived anywhere: Hg NA, level 0;
   6. the first table wins for a name both tables place, and a SNP in the
      pseudoautosomal region is never asked for;
@@ -55,12 +56,14 @@ TREE = {"id": "", "snps": "", "children": [
             {"id": "C", "snps": "c1, c2", "children": []}]},
         {"id": "X", "snps": "x1", "children": [
             {"id": "Y", "snps": "y1", "children": [
-                {"id": "Z", "snps": "z1", "children": []}]}]}]}]}
+                {"id": "Z", "snps": "z1", "children": [
+                    {"id": "W", "snps": "w1", "children": []}]}]}]}]}]}
 
 # name -> (position, ancestral, derived); bnot is on no table
 FTDNA = {"a1": (3000100, "C", "T"), "a2alt": (3000200, "G", "A"), "b1": (3000300, "A", "G"),
          "b2": (3000400, "T", "C"), "b3": (3000500, "C", "G"), "c1": (3000600, "G", "T"),
          "x1": (3000800, "A", "C"), "y1": (3000900, "T", "A"), "z1": (3001000, "G", "C"),
+         "w1": (3001100, "C", "A"),
          "par": (2000000, "A", "G")}
 YFULL = {"a1": (3999999, "C", "T"), "c2": (3000700, "A", "T")}
 
@@ -174,6 +177,9 @@ def main():
         r, row, path = run(d, {"a1": "A", "a2alt": "A", **ALL_B, "c1": "D", "c2": "D"}, "twoanc")
         check("4. two ancestral SNPs on A block B and C below it: Hg NA",
               row.get("Hg") == "NA" and path == [], (row, path))
+        r, row, path = run(d, {**ALL_A, **ALL_B, "x1": "A", "y1": "A", "z1": "D", "w1": "D"}, "twosingles")
+        check("4. two single-ancestral branches on one path (X, Y) block Z and W: B is the terminal branch",
+              row.get("Hg") == "B" and row.get("Outvoted_ancestral") == ".", (row, path))
 
         # 5. nothing derived
         r, row, path = run(d, {"a1": "A", "a2alt": "A"}, "none")
