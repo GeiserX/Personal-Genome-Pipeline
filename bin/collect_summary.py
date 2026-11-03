@@ -390,9 +390,12 @@ def tabix_lines(path, index, chrom, pos):
 
 
 def vep_gnomad_af(vep, hits):
-    """gnomAD exome and genome AF of each hit from step 13's VEP output, as
-    {(chrom, pos, ref, alt): (exome, genome)}; a hit with no record is left
-    out. The fields are VEP's gnomADe_AF and gnomADg_AF (--everything)."""
+    """gnomAD exome and genome AF and the rsIDs of each hit from step 13's VEP
+    output, as {(chrom, pos, ref, alt): (exome, genome, rsids)}; a hit with
+    no record is left out. The fields are VEP's gnomADe_AF, gnomADg_AF and
+    Existing_variation (--everything); rsids keeps the rs ids of
+    Existing_variation ("rs123&COSV1" gives ["rs123"]), sorted, [] without
+    the field."""
     fmt = None
     with open_text(vep) as f:
         for line in f:
@@ -404,6 +407,7 @@ def vep_gnomad_af(vep, hits):
     if not fmt or "Allele" not in fmt:
         return {}
     cols = [fmt.index(c) if c in fmt else None for c in ("gnomADe_AF", "gnomADg_AF")]
+    ev = fmt.index("Existing_variation") if "Existing_variation" in fmt else None
 
     def num(v):
         vals = []
@@ -425,7 +429,7 @@ def vep_gnomad_af(vep, hits):
             # VEP's Allele drops the base an indel's alleles share.
             snv = len(ref) == 1 and all(len(a) == 1 for a in alts)
             allele = alt if snv or any(a[:1] != ref[:1] for a in alts) else (alt[1:] or "-")
-            got = [None, None]
+            got, ids = [None, None], set()
             for tr in info_map(r[7]).get("CSQ", "").split(","):
                 v = tr.split("|")
                 if len(v) != len(fmt) or (len(alts) > 1 and v[fmt.index("Allele")] != allele):
@@ -433,13 +437,17 @@ def vep_gnomad_af(vep, hits):
                 for i, c in enumerate(cols):
                     if c is not None and got[i] is None:
                         got[i] = num(v[c])
-            out[key] = tuple(got)
+                if ev is not None:
+                    ids.update(x.lower() for x in v[ev].split("&") if re.fullmatch(r"(?i)rs\d+", x))
+            out[key] = (got[0], got[1], sorted(ids, key=lambda x: int(x[2:])))
     return out
 
 
 def clinvar_frequencies(d, s, rows):
-    """Put the gnomAD AF from step 13's VEP output on each ClinVar hit, and
-    say where it came from or why there is none."""
+    """Put the gnomAD AF and the rsIDs (rsids, [] when unknown) from step
+    13's VEP output on each ClinVar hit, and say where they came from or why
+    there are none. The hits VCF's ID column is ClinVar's own variation id,
+    not an rsID, so VEP is where a hit's rsID comes from."""
     vep = first_existing(d, [f"vep/{s}_vep.vcf.gz"])
     note = None
     if not vep:
@@ -453,9 +461,10 @@ def clinvar_frequencies(d, s, rows):
         except (OSError, EOFError, ValueError, struct.error, gzip.BadGzipFile, zlib.error) as e:
             note = f"{os.path.relpath(vep, d)} could not be read: {e}"
     for x in rows:
-        e, g = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None))
+        e, g, ids = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None, []))
         known = [v for v in (e, g) if v is not None]
         x["gnomad_exome_af"], x["gnomad_genome_af"] = e, g
+        x["rsids"] = ids
         x["af"] = max(known) if known else None
         x["common"] = x["af"] is not None and x["af"] > COMMON_AF
     return {"source": os.path.relpath(vep, d) if note is None else None, "note": note, "common_af": COMMON_AF}
@@ -960,7 +969,14 @@ def sec_prs(d, s):
                      # the sex a sex-specific score applies to, and the check against the declared sex
                      "applies_to": r.get("Applies_To", ""), "sex_check": r.get("Sex_Check", ""),
                      "percentile": "" if pct == "NA" else pct,
-                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
+                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", ""),
+                     # the groups the PGS Catalog has an OR or HR of the score for, and the
+                     # one of the sample's group ("HR 1.53 (EUR, PPM000591)"); empty in older tables
+                     # None when the table has no Evaluated_In column (a score list without
+                     # evaluations, or an older table): nothing is known, so nothing is said
+                     "evaluated_in": ([x for x in r["Evaluated_In"].split(";") if x]
+                                      if r.get("Evaluated_In") is not None else None),
+                     "effect": r.get("Effect", "") or ""})
     data = {"scores": rows,
             # Percentiles exist only when step 25 ran pgsc_calc with an ancestry panel.
             "adjusted": any(r["percentile"] for r in rows)}
@@ -981,6 +997,10 @@ def sec_prs(d, s):
 PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
                "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Ambiguous", "Applies_To",
                "Sex_Check", "Input"]
+# Written before Input when the score list names PGS Catalog evaluations
+# (ppm_id, ancestry and effect in assets/pgs_scores.tsv): the groups a score
+# was evaluated in, and the effect measured in the sample's group.
+PRS_EFFECT_COLUMNS = ["Evaluated_In", "Effect"]
 # prs-format writes it beside the scores: per score, its chrX rows and
 # whether they were kept (scored) or left out (no sex given).
 CHRX_FILE = "chrx_rows.tsv"
@@ -988,7 +1008,13 @@ CHRX_FILE = "chrx_rows.tsv"
 # to (applies_to of assets/pgs_scores.tsv) and its strand-ambiguous rows (an
 # A/T or C/G pair) with what happened to them.
 SCORE_NOTES_FILE = "score_notes.tsv"
+# prs-format writes it beside the scores as well: per score, the PGS Catalog
+# evaluations of assets/pgs_scores.tsv (pgs_id, ppm_id, ancestry, effect).
+EVALS_FILE = "score_evaluations.tsv"
 SEXES = ("female", "male")
+# The 1000 Genomes groups pgsc_calc places a sample in, which the ancestry
+# column of assets/pgs_scores.tsv names.
+PRS_GROUPS = ("AFR", "AMR", "EAS", "EUR", "SAS")
 # Sex_Check of a sex-specific score: the declared sex is the one it applies
 # to, another one (no percentile then), or none was declared.
 SEX_APPLIES = "applies"
@@ -1038,6 +1064,45 @@ def read_applies_to(path):
             if sex and sex not in SEXES:
                 raise Unreadable(f"{os.path.basename(path)}: applies_to of {pid} is '{sex}', expected female, male or empty")
             out[pid] = sex
+    return out
+
+
+def read_metrics(path):
+    """ID -> [(ancestry, effect, ppm_id), ...]: the PGS Catalog evaluations of
+    each score, from the optional ppm_id, ancestry and effect columns of
+    assets/pgs_scores.tsv (entries separated by ";", in the same order in the
+    three). Raises Unreadable when a row with evaluations has no pgs_id or
+    repeats one, the three lists differ in length, an ancestry is not a 1000
+    Genomes group or appears twice, or an effect is not "OR <number>" or
+    "HR <number>"."""
+    out = {}
+    if not path:
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((line for line in f if not line.startswith("#")), delimiter="\t"):
+            pid = (r.get("pgs_id") or "").strip()
+            cols = [[x.strip() for x in (r.get(k) or "").split(";")] if (r.get(k) or "").strip() else []
+                    for k in ("ppm_id", "ancestry", "effect")]
+            name = os.path.basename(path)
+            if not any(cols):
+                continue
+            if not pid:
+                raise Unreadable(f"{name}: a row has ppm_id, ancestry or effect entries but no pgs_id")
+            if pid in out:
+                raise Unreadable(f"{name}: {pid} has evaluations on two rows")
+            ppm, anc, eff = cols
+            if not (len(ppm) == len(anc) == len(eff)):
+                raise Unreadable(f"{name}: {pid} has {len(ppm)} ppm_id, {len(anc)} ancestry and {len(eff)} effect entries")
+            for p_, a_, e_ in zip(ppm, anc, eff):
+                if a_ not in PRS_GROUPS:
+                    raise Unreadable(f"{name}: ancestry of {pid} is '{a_}', expected one of {', '.join(PRS_GROUPS)}")
+                if not re.fullmatch(r"PPM\d{6}", p_):
+                    raise Unreadable(f"{name}: ppm_id of {pid} is '{p_}', expected PPM and six digits")
+                if not re.fullmatch(r"(OR|HR) \d+(\.\d+)?", e_):
+                    raise Unreadable(f"{name}: effect of {pid} is '{e_}', expected 'OR <number>' or 'HR <number>'")
+            if len(set(anc)) != len(anc):
+                raise Unreadable(f"{name}: {pid} lists an ancestry twice")
+            out[pid] = list(zip(anc, eff, ppm))
     return out
 
 
@@ -1224,6 +1289,7 @@ def prs_format_main(argv):
         return 1
     try:
         applies = read_applies_to(a.labels)
+        metrics = read_metrics(a.labels)
         ref = Fasta(a.reference) if a.keep_ambiguous else None
     except (Unreadable, OSError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -1268,6 +1334,12 @@ def prs_format_main(argv):
         w.write("pgs_id\tapplies_to\tambiguous_rows\tambiguous\n")
         for pid, sex, n_amb, amb in notes:
             w.write(f"{pid}\t{sex}\t{n_amb}\t{amb}\n")
+    with open(os.path.join(a.out, EVALS_FILE), "w", encoding="utf-8") as w:
+        w.write("pgs_id\tppm_id\tancestry\teffect\n")
+        for pid, *_ in notes:
+            ev = metrics.get(pid)
+            if ev:
+                w.write("\t".join([pid] + [";".join(e[i] for e in ev) for i in (2, 0, 1)]) + "\n")
 
     def key(t):
         return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
@@ -1355,12 +1427,17 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
             if n not in ("", "0") and r.get("chrx") == "scored":
                 chrx_scored.add(r.get("pgs_id", ""))
     # "" for a score of both sexes; empty for scores formatted before the file existed
-    applies, ambig = {}, {}
-    if os.path.isfile(os.path.join(scores_dir, SCORE_NOTES_FILE)):
-        for r in read_tsv(os.path.join(scores_dir, SCORE_NOTES_FILE)):
+    applies, ambig, evals = {}, {}, {}
+    notes_path = os.path.join(scores_dir, SCORE_NOTES_FILE)
+    if os.path.isfile(notes_path):
+        for r in read_tsv(notes_path):
             pid, n = r.get("pgs_id", ""), r.get("ambiguous_rows", "")
             applies[pid] = r.get("applies_to", "")
             ambig[pid] = f"{n} {r.get('ambiguous', '')}" if n not in ("", "0") else n
+    # The evaluations prs-format copied from assets/pgs_scores.tsv; none in a
+    # folder formatted before it wrote them.
+    if os.path.isfile(os.path.join(scores_dir, EVALS_FILE)):
+        evals = read_metrics(os.path.join(scores_dir, EVALS_FILE))
     sex = (sex or "").lower()
     matched, sums, pct, group = {}, {}, {}, {}
     pops, rate = {}, {}
@@ -1417,7 +1494,15 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
         m, t = matched.get(pid, 0), totals[pid]
         a = applies.get(pid, "")
         check = "" if not a else (SEX_NOT_DECLARED if not sex else (SEX_APPLIES if sex == a else SEX_NOT_APPLICABLE))
-        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, input_kind]
+        ev = evals.get(pid, [])
+        # The effect is printed only for the group pgsc_calc placed the sample
+        # in, and only when that group is one the score was evaluated in: an
+        # odds ratio measured in one ancestry says little about another.
+        g = group.get(pid, "NA")
+        eff = next((f"{e} ({anc}, {ppm})" for anc, e, ppm in ev if anc == g), "")
+        if check == SEX_NOT_APPLICABLE or pct.get(pid, "NA") == "NA" or below_log:
+            eff = ""
+        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, ";".join(x[0] for x in ev), eff, input_kind]
         if below_log:
             rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA"] + extra)
             continue
@@ -1463,10 +1548,14 @@ def prs_table_main(argv):
     except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    # A score list without evaluations (an older or a custom one) gives the
+    # table its older columns; the shipped list names some, so its table has
+    # Evaluated_In and Effect before Input.
+    evaluated = any(r[12] for r in rows)
     with open(a.out + ".tmp", "w", encoding="utf-8") as f:
-        f.write("\t".join(PRS_COLUMNS) + "\n")
+        f.write("\t".join(PRS_COLUMNS[:-1] + PRS_EFFECT_COLUMNS + PRS_COLUMNS[-1:] if evaluated else PRS_COLUMNS) + "\n")
         for r in rows:
-            f.write("\t".join(r) + "\n")
+            f.write("\t".join(r if evaluated else r[:12] + r[14:]) + "\n")
     os.replace(a.out + ".tmp", a.out)
     if a.ancestry_out and ancestry:
         with open(a.ancestry_out + ".tmp", "w") as f:
@@ -1480,6 +1569,8 @@ def prs_table_main(argv):
             extra = f", {r[10]}-specific: {SEX_NOT_APPLICABLE}, no percentile"
         elif r[11] == SEX_NOT_DECLARED:
             extra += f", {r[10]}-specific score: {SEX_NOT_DECLARED}"
+        if r[13]:
+            extra += f", effect in that group {r[13]}"
         if r[3] == "NA":
             print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
         else:
@@ -3305,6 +3396,59 @@ def sec_coverage(d, s):
     return p, {"mean_depth": float(mean) if mean not in (None, "") else None}
 
 
+# A gene of assets/callability_genes.tsv counts as read when at least this
+# share of its bases has the depth step 16b counts (its thresholds column,
+# 10x of reads with MAPQ 20 or more).
+CALLABLE_SHARE = 0.9
+
+
+def callability(catalog, table):
+    """The reading of every gene of the catalog rows from step 16b's per-gene
+    table (mosdepth --thresholds over the catalog's genes: chrom, start, end,
+    gene, bases at the threshold), as the section's data."""
+    with open_text(table) as f:
+        lines = [x.rstrip("\n").split("\t") for x in f if x.strip()]
+    if not lines or not lines[0][0].startswith("#") or len(lines[0]) != 5 \
+            or not re.fullmatch(r"[0-9]+X", lines[0][4]):
+        raise Unreadable(f"{os.path.basename(table)} is not mosdepth's thresholds table of one depth")
+    min_depth = int(lines[0][4][:-1])
+    bases = {}
+    for c in lines[1:]:
+        if len(c) != 5:
+            raise Unreadable(f"{os.path.basename(table)}: a row has {len(c)} columns, not 5")
+        bases[c[3]] = (int(c[2]) - int(c[1]), int(c[4]))
+    genes, unowned, owned, not_on_reference = [], [], [], []
+    for r in catalog:
+        g = {"gene": r["gene"], "hgnc_id": r["hgnc_id"], "reasons": r["reasons"].split(","),
+             "owner": None if r["owner"] == "." else r["owner"], "share": None}
+        if r["start"] == ".":
+            g["status"] = "not on this reference"
+            not_on_reference.append(g["gene"])
+        else:
+            if r["gene"] not in bases:
+                raise Unreadable(f"{os.path.basename(table)} has no row for {r['gene']}: it was written from "
+                                 "another assets/callability_genes.tsv; run step 16b again")
+            n, ok = bases[r["gene"]]
+            g["share"] = round(ok / n, 4) if n else 0.0
+            g["status"] = "read" if g["share"] >= CALLABLE_SHARE else "not read"
+        genes.append(g)
+        if g["status"] != "read":
+            (owned if g["owner"] else unowned).append(g)
+    return {"min_depth": min_depth, "min_mapq": 20, "min_share": CALLABLE_SHARE, "catalog_genes": len(genes),
+            "read": sum(1 for g in genes if g["status"] == "read"),
+            "not_read": [{k: g[k] for k in ("gene", "hgnc_id", "reasons", "share", "status")} for g in unowned],
+            "not_read_owned": [{k: g[k] for k in ("gene", "owner", "share", "status")} for g in owned],
+            "not_on_reference": not_on_reference}
+
+
+def sec_callability(d, s):
+    """Step 16b's gene callability (the MOSDEPTH task's in a Nextflow folder)."""
+    p = first_existing(d, [f"mosdepth/{s}_callability.bed.gz", f"coverage/{s}_callability.bed.gz"])
+    if not p:
+        return None, {}
+    return p, callability(asset_rows("callability_genes.tsv"), p)
+
+
 # How far a chrX or chrY copy number may sit from a whole number and still be
 # read as that number. Further off (a mosaic, a mixed sample, a noisy run)
 # names no karyotype.
@@ -3539,6 +3683,7 @@ NOT_A_STEP = {"read_count", "couple", "carrier"}
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
+    ("callability", "Gene callability (mosdepth)", "16b", sec_callability),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
     ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),

@@ -79,7 +79,7 @@ on:
         type: boolean
         default: false
       save_images:
-        description: 'e2e: save the image cache from this branch too (only main saves by default)'
+        description: 'e2e: save the image and data caches from this branch too (only main saves by default)'
         type: boolean
         default: false
       trace:
@@ -395,6 +395,13 @@ jobs:
             sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
           fi
           echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
+          # One fixed path: actions/cache counts the path in an entry's
+          # version, so a path that followed the work area would miss on a
+          # runner that picked the other disk. e2e-run.sh hard-links the
+          # cached downloads into the work area, or copies them when the
+          # work area is on /mnt.
+          mkdir -p "${RUNNER_TEMP}/e2e-data"
+          echo "E2E_DATA_CACHE=${RUNNER_TEMP}/e2e-data" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -493,6 +500,8 @@ jobs:
           echo "$(wc -l < "$list") cases: $(paste -sd' ' "$list")"
           grep -qx nextflow-from-fastq-2-nextflow "$list" && echo "parity_fastq=true" >> "$GITHUB_OUTPUT"
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
+          grep -qx mocha-1 "$list" && echo "data_mocha=true" >> "$GITHUB_OUTPUT"
+          grep -qx archaic-ancestry-1 "$list" && echo "data_archaic=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
       # Before the base outputs: the base leg pulled the same images.
@@ -535,6 +544,38 @@ jobs:
           echo "::error::Could not fetch e2e-base in 5 tries."
           exit 1
 
+      # The two largest downloads of the cases, from EBI's 1000 Genomes
+      # server, which is slow and stalls at times: MoChA's chr20 panel and
+      # its manifest (mocha-1, 0.64 GB), keyed on the manifest's pin and the
+      # chromosome (the whole raw chr20 panel, which no fixture changes), and the 1000
+      # Genomes sites VCF (archaic-ancestry-1, 1.36 GB), keyed on its md5.
+      # e2e-run.sh hands them to the two cases ("Downloads kept between
+      # runs" there) and downloads what a miss leaves out. Saved like the
+      # images: on main, or a run by hand with save_images, on a miss. Only
+      # the leg whose cases include the case restores and saves its entry.
+      - name: Data cache keys
+        id: data-keys
+        run: |
+          . versions.env
+          echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-chr20" | tee -a "$GITHUB_OUTPUT"
+          echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Restore cached data, MoChA panel
+        id: data-mocha
+        if: steps.cases-list.outputs.data_mocha == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/mocha
+          key: ${{ steps.data-keys.outputs.mocha }}
+
+      - name: Restore cached data, 1000 Genomes sites
+        id: data-archaic
+        if: steps.cases-list.outputs.data_archaic == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/archaic
+          key: ${{ steps.data-keys.outputs.archaic }}
+
       - name: Run the e2e cases
         id: cases
         env:
@@ -544,7 +585,50 @@ jobs:
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
-        run: scripts/ci/e2e-run.sh
+          # Keep the downloads to the end of the job only when a save step uses them.
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true')) && 'true' || 'false' }}
+          HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
+          HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
+          DATA_MOCHA: ${{ steps.cases-list.outputs.data_mocha || 'false' }}
+          DATA_ARCHAIC: ${{ steps.cases-list.outputs.data_archaic || 'false' }}
+        run: |
+          if [ "$DATA_MOCHA" = true ] || [ "$DATA_ARCHAIC" = true ]; then
+            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          scripts/ci/e2e-run.sh
+
+      # A miss saves what e2e-run.sh downloaded, checked against its pin
+      # (data_fetch there), when every file of the entry is in place.
+      - name: Data cache, what to save
+        id: data-save
+        if: >-
+          always() && steps.cases.outcome != 'skipped' &&
+          (github.ref == 'refs/heads/main' || inputs.save_images)
+        env:
+          HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit }}
+          HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
+        run: |
+          d=$E2E_DATA_CACHE
+          if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
+             && [ "$(find "${d}/mocha/raw" -type f ! -name '*.part' 2> /dev/null | wc -l)" -eq 2 ]; then
+            echo "mocha=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$HIT_ARCHAIC" != true ] && [ -s "${d}/archaic/1kg_sites.vcf.gz" ]; then
+            echo "archaic=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh "${d}"/* 2> /dev/null || echo "Data cache: nothing downloaded"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.mocha == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/mocha
+          key: ${{ steps.data-keys.outputs.mocha }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.archaic == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/archaic
+          key: ${{ steps.data-keys.outputs.archaic }}
 
       - name: Upload the base outputs
         if: matrix.job == 'base'
@@ -617,9 +701,10 @@ jobs:
       # readable by that pull request alone, and every entry counts against
       # the repository's 10 GB, so it would only push main's entries out.
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
-      # output; the rest are pulled on every run. Four groups of 1900 MB are
-      # 7.4 GB, and while main replaces one group the old and the new entry
-      # both count: 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # output; the rest are pulled on every run. Four groups of 1500 MB are
+      # 5.9 GB, and while main replaces one group the old and the new entry
+      # both count: 7.3 GB. With the two data entries above (2.0 GB) that is
+      # 9.3 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
@@ -627,7 +712,7 @@ jobs:
         if: always() && matrix.job == 'base' && steps.keys.outcome == 'success'
         env:
           SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
-          GROUP_BUDGET_MB: 1900
+          GROUP_BUDGET_MB: 1500
           HIT0: ${{ steps.images0.outputs.cache-hit }}
           HIT1: ${{ steps.images1.outputs.cache-hit }}
           HIT2: ${{ steps.images2.outputs.cache-hit }}

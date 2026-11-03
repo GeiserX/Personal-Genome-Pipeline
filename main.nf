@@ -675,11 +675,14 @@ workflow {
     // as outside calls
     // ═══════════════════════════════════════════════════════════════════
     // Opt-in (--medications): the user's own list of the drugs taken, never a
-    // default. CPIC_LOOKUP checks it for CYP2D6 and CYP2C19 inhibitors.
+    // default. CPIC_LOOKUP checks it for inhibitors of CYP2D6, CYP2C19, CYP2C9
+    // and CYP3A4/5.
     ch_medications = params.medications
         ? Channel.value(file(params.medications, checkIfExists: true))
         : Channel.value([])
     ch_inhibitors  = Channel.value(file("${projectDir}/assets/pgx_inhibitors.tsv", checkIfExists: true))
+    // The drugs a pathogenic ClinVar hit in a disease gene makes risky (POLG with valproate).
+    ch_contraindications = Channel.value(file("${projectDir}/assets/pgx_contraindications.tsv", checkIfExists: true))
     PGX(
         ch_vcf,
         ch_reference,
@@ -695,7 +698,8 @@ workflow {
         BAM_ANALYSIS.out.mito_vcf,
         BAM_ANALYSIS.out.hla_optitype,
         ch_medications,
-        ch_inhibitors
+        ch_inhibitors,
+        ch_contraindications
     )
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1030,8 +1034,9 @@ workflow {
     // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
     // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
     // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
-    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
-    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    // and the known-site catalog of assets/mei_sites.tsv. With
+    // --annotsv_annotations, MEI_REPORT runs AnnotSV on the calls first.
+    // A sample without a BAM is left out. Equivalent to scripts/50-mei.sh.
     ch_mei          = Channel.empty()
     ch_mei_versions = Channel.empty()
     if (tools_list.contains('mei')) {
@@ -1041,7 +1046,8 @@ workflow {
         MEI_DEPTH(ch_bam, ch_mei_sites)
         MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
             ch_reference, ch_reference_fai, ch_megane_kmers)
-        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites,
+                   ch_annotsv_annotations)
         ch_mei          = MEI_REPORT.out.tables
         ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
     }
@@ -1079,9 +1085,9 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
-    // The ACMG SF rules and the carrier list the report applies (bin/ is the
-    // only repository folder a task sees).
-    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
+    // The ACMG SF rules, the carrier list and the gene callability table the
+    // report applies (bin/ is the only repository folder a task sees).
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -1108,6 +1114,7 @@ workflow {
         .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.callability.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)

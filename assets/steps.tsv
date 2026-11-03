@@ -36,7 +36,7 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 14	Imputation prep		yes			03	0.17	estimate		
 15	duphold	duphold	yes	DUPHOLD,DUPHOLD_FILTER		04	0.07	measured	0.05	
 16	indexcov (sex check)		yes	INDEXCOV	sex_check	02	0.01	measured	0.0002	
-16b	mosdepth	mosdepth	yes	MOSDEPTH	coverage	02	0.05	measured	0.0333	
+16b	mosdepth	mosdepth	yes	MOSDEPTH	coverage,callability	02	0.05	measured	0.0333	
 17	CPSR	cpsr	yes	CPSR	cpsr	03	0.6	measured	0.2833	PCGR_DATA_BUNDLE,cpsr_clinvar_release
 18	CNVpytor	cnvpytor	yes	CNVPYTOR,CNVPYTOR_VCF	cnvpytor	02	0.33	measured	0.2333	
 19	Delly	delly	yes	DELLY,DELLY_BCF2VCF	delly	02	3.32	measured	0.35	

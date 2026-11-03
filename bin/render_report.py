@@ -3,8 +3,12 @@
 
   render_report.py --sample S --sample-dir DIR [--json OUT.json] [-o REPORT.txt] [-o REPORT.html]
   render_report.py --summary IN.json [-o REPORT.txt] [-o REPORT.html]
+  ... [--search-index INDEX.json]
 
 -o writes the text report for a .txt name and the HTML report for .html.
+--search-index also writes every gene and rsID the results mention, with the
+sections that name them (bin/results_index.py); the HTML report closes with
+the same list.
 
 With --sample-dir it first collects the summary (bin/collect_summary.py) and
 writes it to --json (default DIR/summary.json). Every number in both reports
@@ -22,6 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect_summary  # noqa: E402
+import results_index  # noqa: E402
 import report_charts  # noqa: E402
 
 E = html.escape
@@ -41,6 +46,9 @@ def stale_note(sec):
 CLINVAR_FREQ_NOTE = ("Check every P/LP hit's population frequency, a heterozygous hit in a dominant gene as well as "
                      "a homozygous one: a hit above 1% in gnomAD is unlikely to be a high-penetrance finding, and a "
                      "hit whose frequency is unknown has not been checked.")
+CALLABILITY_NOTE = ("A gene listed as not read could not be read reliably: too few of its reads were placed on it "
+                    "with confidence, so a 'no finding' in it says nothing. A gene with a caller of its own is "
+                    "left to that caller's section.")
 HLA_NOTE = ("HLA typing from short-read WGS is approximate. If either HLA-A or HLA-B allele has a T1K quality "
             "of 0 or less, that gene is not passed to PharmCAT (step 36).")
 EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, and a long expansion "
@@ -364,6 +372,26 @@ def pct(x):
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
 
 
+def callability_gene(g):
+    if g["status"] == "not on this reference":
+        return f"{g['gene']} (not on this reference)"
+    return f"{g['gene']} ({100 * g['share']:.0f}%)"
+
+
+def callability_lines(d):
+    """Step 16b's gene callability: the lines of the text section and the card."""
+    out = [f"{d['read']} of the {d['catalog_genes']} hard-to-read genes of assets/callability_genes.tsv were read: "
+           f"{100 * d['min_share']:.0f}% or more of their bases had {d['min_depth']} or more reads of mapping "
+           f"quality {d['min_mapq']} or more."]
+    nr, owned = d["not_read"], d["not_read_owned"]
+    out.append(f"Not read, and no other step calls them ({len(nr)}): "
+               + (", ".join(callability_gene(g) for g in nr) if nr else "none"))
+    if owned:
+        out.append(f"Not read here, called by a step of their own ({len(owned)}): "
+                   + ", ".join(f"{callability_gene(g)} by {g['owner']}" for g in owned))
+    return out
+
+
 def mosaic_lines(q):
     """The estimate from depth and from chrX allele fractions, one line each, as both reports print them."""
     what = "the Y" if q.get("chrom") == "chrY" else "one X"
@@ -414,6 +442,29 @@ def prs_percentile(r):
     return ""
 
 
+def prs_effect(r):
+    """The effect cell of a PRS row in both reports: the odds or hazard ratio
+    the PGS Catalog records for the score in the sample's group ("HR 1.53
+    (EUR, PPM000591)"), a line saying the score has none for that group, or
+    '' when the sample has no group (no panel, or no percentile), the score
+    does not apply to the declared sex, or the table names no evaluations."""
+    if r.get("evaluated_in") is None:
+        return ""
+    if r.get("percentile") and r.get("group") and r.get("sex_check") != PRS_NOT_APPLICABLE:
+        if r.get("effect"):
+            return r["effect"]
+        where = f"; evaluated in {', '.join(r['evaluated_in'])}" if r.get("evaluated_in") else ""
+        return f"no published OR or HR for {r['group']}{where}"
+    return ""
+
+
+# Part of the PRS caption sentence (prs_note), so not a *_NOTE caveat of its own.
+PRS_EFFECT_TEXT = ("Effect: the odds ratio (OR) or hazard ratio (HR) a published evaluation of the score measured "
+                   "in people of the same reference group, in that evaluation's unit (its PGS Catalog PPM page says "
+                   "which). It describes the score in that group, not your own risk, and is shown only for a group "
+                   "the score was evaluated in.")
+
+
 def prs_sex_note(d):
     """A sentence naming the sex-specific scores when no sex was declared, else ''."""
     named = [f"{r['pgs_id']} ({r['applies_to']})" for r in d.get("scores", [])
@@ -432,9 +483,10 @@ def prs_note(d):
         group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
         panel = f" of the {anc['panel']} reference panel" if anc.get("panel") else " of the reference panel"
         low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
+        eff = f" {PRS_EFFECT_TEXT}" if any(r.get("evaluated_in") is not None for r in d["scores"]) else ""
         return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
                 f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
-                f"A percentile is not a risk. {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
+                f"A percentile is not a risk.{eff} {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
     return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
             f"cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). {PRS_ANCESTRY_NOTE} "
             "See docs/25-prs.md." + x)
@@ -712,6 +764,7 @@ def annotsv_lines(d):
 CHAPTERS = (
     ("quality", "Quality", "Can I trust this data?", (
         ("qc", "Quality control", ("coverage", "sex_check", "sample_qc", "read_count")),
+        ("callability", "Genes this genome could not read reliably", ("callability",)),
         ("variants", "Variant calling", ("variants",)),
     )),
     ("clinical", "Clinical", "Is there anything to take to a doctor?", (
@@ -858,6 +911,12 @@ def text_report(s):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         for line in karyotype_lines(S):
             w(f"  {line}")
+        w("")
+
+    if head("callability", "Genes This Genome Could Not Read Reliably"):
+        for line in callability_lines(S["callability"]["data"]):
+            w(f"  {line}")
+        w(f"  {CALLABILITY_NOTE}")
         w("")
 
     if head("mosaic_sex_loss"):
@@ -1025,7 +1084,9 @@ def text_report(s):
         for r in d["scores"]:
             pct = prs_percentile(r)
             pct = f"  {pct}" if r.get("sex_check") == PRS_NOT_APPLICABLE else (f"  percentile {pct}" if pct else "")
-            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
+            e = prs_effect(r)
+            eff = "" if not e else (f"  effect {e}" if r.get("effect") else f"  {e}")
+            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}{eff}")
         w("  " + prs_note(d))
         w("")
 
@@ -2063,7 +2124,10 @@ def card(sec, title, body, full=False):
     return lines
 
 
-def html_report(s):
+def html_report(s, index=None):
+    """The HTML report. INDEX is the search index (results_index.build) its
+    closing appendix lists; without one it is built from the summary alone,
+    which leaves out the step 23 and 31 tables (they need the sample folder)."""
     S = s["sections"]
     # Each card goes into its section's list; html_page() lays the lists out
     # in CHAPTERS order.
@@ -2109,6 +2173,15 @@ def html_report(s):
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a("coverage", ['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
+
+    ca = S.get("callability", MISSING)
+    if ca["state"] != "missing":
+        cd = ca["data"]
+        ca_body = ([stat("Genes read", f"{cd['read']} of {cd['catalog_genes']}"),
+                    stat("Not read, no other caller", badge(len(cd["not_read"]), "red" if cd["not_read"] else "green"))]
+                   if ca["state"] in ("ok", "stale") else [])
+        ca_body += [small_note(line) for line in (callability_lines(cd) if ca["state"] in ("ok", "stale") else [])]
+        a("callability", card(ca, "Genes This Genome Could Not Read Reliably", ca_body + [small_note(CALLABILITY_NOTE)]))
 
     mo = S.get("mosaic_sex_loss", MISSING)
     q = mo["data"]
@@ -2432,12 +2505,17 @@ def html_report(s):
 
     if S["prs"]["state"] in ("ok", "stale"):
         d = S["prs"]["data"]
+        # The effect column only when the table names evaluations (Evaluated_In).
+        show_effect = d.get("adjusted") and any(x.get("evaluated_in") is not None for x in d["scores"])
         rows = "".join(f"<tr><td>{E(x['condition'])}</td><td>{E(x['pgs_id'])}</td><td>{E(x['score'])}</td>"
                        f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
-                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td></tr>\n"
+                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td>"
+                       + (f"<td>{E(prs_effect(x))}</td>" if show_effect else "") + "</tr>\n"
                        for x in d["scores"])
+        effect_th = "<th>Effect in your group</th>" if show_effect else ""
         a("prs", card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
-               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
+               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th>"
+                f"{effect_th}</tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
 
     if S.get("ancestry_fine", MISSING)["state"] != "missing":
@@ -2525,7 +2603,7 @@ def html_report(s):
                full=True))
 
     add_charts(parts, chart_specs(s))
-    return html_page(s, parts)
+    return html_page(s, parts, index if index is not None else results_index.build(s, anchors=SECTION_OF))
 
 
 # --- charts --------------------------------------------------------------------------
@@ -2680,7 +2758,38 @@ def limits_cards(s):
     return not_run + ["  </div>"], not_assessed + ["  </div>"]
 
 
-def html_page(s, parts):
+TERMS = ("terms", "Genes and rsIDs in these results", "Where in this report does a gene or an rsID come up?")
+
+
+def terms_appendix(index, parts):
+    """The closing appendix: one line per gene symbol or rsID of the search
+    index, with a link to each section that names it. No script: the
+    browser's find (Ctrl+F) searches it; the live site's search box filters
+    the same index."""
+    terms = index.get("terms") or {}
+    # No card title: the chapter title above names it (and the cards' titles are tests/test_render_report.py's list).
+    body = ['  <div class="card">',
+            '    <p class="note">Every gene symbol and rsID a section of this report names, with the sections that '
+            "name it and how many times. A gene listed here is a gene the results mention, not a finding: open the "
+            "section to see what it says. The genes of the clinical filter (step 23) and variant prioritization "
+            "(step 31) come from their tables, which the report counts but does not list.</p>"]
+    if not terms:
+        body.append("    <p>No section of this report names a gene or an rsID.</p>")
+    else:
+        body.append('    <ul class="plain terms">')
+        for term, items in terms.items():
+            links = []
+            for it in items:
+                label = E(it["title"]) + (" (stale)" if it["state"] == "stale" else "")
+                a = it.get("anchor")
+                links.append((f'<a href="#{E(a)}">{label}</a>' if a and parts.get(a) else label)
+                             + (f" ({it['count']})" if it["count"] > 1 else ""))
+            body.append(f"      <li><strong>{E(term)}</strong>: {', '.join(links)}</li>")
+        body.append("    </ul>")
+    return body + ["  </div>"]
+
+
+def html_page(s, parts, index=None):
     S = s["sections"]
     m = s["manifest"]
     commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
@@ -2712,6 +2821,13 @@ def html_page(s, parts):
              f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
     body += frame(S, s["sample"], "not-run", not_run) + frame(S, s["sample"], "not-assessed", not_assessed, always=True)
     body += ["  </div>", "</section>"]
+    if index is not None:
+        cid, title, question = TERMS
+        toc.insert(-2, f'    <li><a href="#ch-{cid}">{E(title)}</a></li>')
+        body += [f'<section class="chapter" id="ch-{cid}">', f'  <h2 class="chapter-title">{E(title)}</h2>',
+                 f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
+        body += frame(S, s["sample"], "terms-list", terms_appendix(index, parts))
+        body += ["  </div>", "</section>"]
 
     out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '<meta charset="UTF-8">',
            f'<meta http-equiv="Content-Security-Policy" content="{CSP}">',
@@ -2768,6 +2884,8 @@ def main(argv=None):
                                      "(default: the repository's assets/ beside bin/)")
     ap.add_argument("-o", "--out", action="append", default=[],
                     help="report to write: .txt for text, .html for HTML (repeatable)")
+    ap.add_argument("--search-index", help="also write every gene and rsID the results mention, with the "
+                                           "sections that name them, to this JSON file (the live site's search)")
     ap.add_argument("--charts-json", help="also write the report's charts, as data and SVG, to this JSON file "
                                           "(the live page reads it)")
     a = ap.parse_args(argv)
@@ -2784,8 +2902,14 @@ def main(argv=None):
         write(a.json or os.path.join(a.sample_dir, "summary.json"), json.dumps(s, indent=1) + "\n")
     else:
         ap.error("give --summary, or --sample and --sample-dir")
+    # Only the HTML report and --search-index read the index: a text-only run
+    # does not read the step 23 and 31 tables.
+    need_index = bool(a.search_index) or any(o.endswith(".html") for o in a.out)
+    index = results_index.build(s, a.sample_dir, SECTION_OF) if need_index else None
     for o in a.out:
-        write(o, text_report(s) if o.endswith(".txt") else html_report(s))
+        write(o, text_report(s) if o.endswith(".txt") else html_report(s, index))
+    if a.search_index:
+        write(a.search_index, json.dumps(index, indent=1) + "\n")
     if a.charts_json:
         write(a.charts_json, json.dumps(charts_json(s), indent=1) + "\n")
     states = {}

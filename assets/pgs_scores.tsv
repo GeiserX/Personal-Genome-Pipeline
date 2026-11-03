@@ -6,17 +6,30 @@
 # applies_to names the sex a score was built for (female or male; empty for
 # both). A sample declared as the other sex keeps the score's raw sum in the
 # summary, marked "not applicable to the declared sex", with no percentile.
-pgs_id	trait_reported	applies_to
-PGS000018	Coronary artery disease	
-PGS000014	Type 2 diabetes (T2D)	
-PGS000004	Breast cancer	female
-PGS000662	Prostate cancer	male
-PGS000016	Atrial fibrillation	
-PGS000334	Late-onset Alzheimer’s disease	
-PGS000027	Body mass index (BMI)	
-PGS000017	Inflammatory bowel disease	
-PGS000055	Colorectal cancer	
-PGS002257	Systolic blood pressure	
-PGS000065	LDL cholesterol	
-PGS000064	HDL cholesterol	
-PGS000066	Triglycerides (TG)	
+# ppm_id, ancestry and effect name the PGS Catalog evaluations (PPM ids) whose
+# effect the reports print: one entry per evaluated ancestry, separated by
+# ";" and in the same order in the three columns. ancestry is the 1000
+# Genomes group pgsc_calc compares the sample with (AFR, AMR, EAS, EUR or SAS);
+# effect is the odds ratio (OR) or hazard ratio (HR) the catalog records for
+# that evaluation, in the unit the evaluation used. A report prints it only
+# when pgsc_calc placed the sample in that group. Empty for a score with no
+# OR or HR evaluation in one of those groups (the quantitative traits, and
+# scores evaluated only in mixed or unreported ancestries).
+# scripts/ci/check-pgs-labels.sh checks every entry against
+# https://www.pgscatalog.org/rest/performance/<ppm_id>.
+pgs_id	trait_reported	applies_to	ppm_id	ancestry	effect
+PGS000018	Coronary artery disease		PPM000591;PPM000594;PPM000597	EUR;AFR;AMR	HR 1.53;HR 1.27;HR 1.53
+PGS000014	Type 2 diabetes (T2D)		PPM021437;PPM021589;PPM021615;PPM021635	EUR;AFR;EAS;SAS	OR 1.71;OR 1.27;OR 1.28;OR 1.48
+PGS000004	Breast cancer	female	PPM000004	EUR	OR 1.61
+PGS000662	Prostate cancer	male	PPM022982;PPM015482	EUR;AFR	HR 1.72;OR 1.86
+PGS000016	Atrial fibrillation		PPM014988	EUR	HR 1.4
+PGS000334	Late-onset Alzheimer’s disease		PPM022981	EUR	HR 1.93
+PGS000027	Body mass index (BMI)				
+PGS000017	Inflammatory bowel disease				
+PGS000055	Colorectal cancer				
+PGS002257	Systolic blood pressure				
+PGS000065	LDL cholesterol				
+PGS000064	HDL cholesterol				
+PGS000066	Triglycerides (TG)				
+PGS002727	Asthma		PPM014751;PPM014752;PPM014753;PPM014754;PPM014755	EUR;AFR;AMR;EAS;SAS	OR 1.57;OR 1.43;OR 1.63;OR 1.32;OR 1.32
+PGS002802	Height				

@@ -25,6 +25,16 @@ column says. docs/cn-loci.md describes the columns and how to add a locus.
       coordinates are wrong, or the sample lacks that stretch, and no number
       is given.
 
+  copy_number.py check-bam --header H
+      refuse a BAM aligned to a reference with ALT or HLA contigs. H is
+      `samtools view -H` of the BAM, or its contig names one per line ('-'
+      reads stdin). On such a BAM a read that fits a primary locus and its
+      ALT copy equally gets MAPQ 0 or lands on the ALT copy, so the depth of
+      a duplicated gene drops and a depth-based count reads a deletion that
+      is not there. Exit 0 and no output without such a contig; exit 4 with
+      one REFUSED line on stderr with one. `call --bam-header H` does the
+      same check first.
+
 Two empty tables mean the BAM has no reads on that contig at all (bedcov is
 skipped there): status 'not assessed'. Standard library only: it runs in the
 Python and Parascopy images and under tests/test_copy_number.py.
@@ -50,6 +60,43 @@ TABLES = {"HBA": "hba_copy_number", "LPA_KIV2": "lpa_kiv2"}
 
 class CatalogError(ValueError):
     pass
+
+
+class AltContigs(ValueError):
+    """The BAM was aligned to a reference with ALT or HLA contigs."""
+
+
+def alt_contigs(lines):
+    """The ALT or HLA contigs of `samtools view -H` lines or of contig names
+    one per line (the rule of scripts/validate-setup.sh: a name ending in
+    _alt, or starting with HLA-)."""
+    out = []
+    for line in lines:
+        line = line.rstrip("\n")
+        if line.startswith("@"):
+            if not line.startswith("@SQ"):
+                continue
+            name = next((f[3:] for f in line.split("\t") if f.startswith("SN:")), "")
+        else:
+            name = line.split("\t")[0].strip()
+        if name.endswith("_alt") or name.startswith("HLA-"):
+            out.append(name)
+    return out
+
+
+def check_bam(path):
+    """Raise AltContigs, with the refusal line, when the header at path
+    (or '-' for stdin) names an ALT or HLA contig."""
+    if path == "-":
+        found = alt_contigs(sys.stdin)
+    else:
+        with open(path, errors="replace") as f:
+            found = alt_contigs(f)
+    if found:
+        raise AltContigs(f"REFUSED: the BAM was aligned to a reference with {len(found)} ALT or HLA contigs "
+                         f"(first: {found[0]}). Reads that fit a primary locus and its ALT copy equally get MAPQ 0 "
+                         "or land on the ALT copy, so depth-based copy number reads deletions that are not there. "
+                         "Realign to the default no-ALT reference (docs/realignment.md).")
 
 
 class BrokenControl(ValueError):
@@ -326,6 +373,15 @@ def _bed(args):
 
 def _call_cmd(args):
     try:
+        if args.bam_header:
+            check_bam(args.bam_header)
+    except AltContigs as e:
+        print(e, file=sys.stderr)
+        return 4
+    except OSError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    try:
         cat = load_catalog(args.catalog)
         if args.locus not in cat or cat[args.locus]["input"] != "bedcov":
             raise CatalogError(f"no bedcov locus {args.locus!r} in the catalog")
@@ -389,7 +445,20 @@ def main(argv=None):
     c.add_argument("--bedcov-mapq1", help="samtools bedcov with the row's MAPQ >= 1 pass")
     c.add_argument("--json")
     c.add_argument("--table")
+    c.add_argument("--bam-header", help="refuse a BAM with ALT or HLA contigs first (as check-bam)")
+    k = sub.add_parser("check-bam", help="refuse a BAM aligned to a reference with ALT or HLA contigs")
+    k.add_argument("--header", required=True, help="samtools view -H of the BAM, or contig names; - for stdin")
     args = ap.parse_args(argv)
+    if args.cmd == "check-bam":
+        try:
+            check_bam(args.header)
+        except AltContigs as e:
+            print(e, file=sys.stderr)
+            return 4
+        except OSError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        return 0
     if args.cmd == "bed":
         try:
             return _bed(args)
