@@ -1030,8 +1030,9 @@ workflow {
     // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
     // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
     // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
-    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
-    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    // and the known-site catalog of assets/mei_sites.tsv. With
+    // --annotsv_annotations, MEI_REPORT runs AnnotSV on the calls first.
+    // A sample without a BAM is left out. Equivalent to scripts/50-mei.sh.
     ch_mei          = Channel.empty()
     ch_mei_versions = Channel.empty()
     if (tools_list.contains('mei')) {
@@ -1041,7 +1042,8 @@ workflow {
         MEI_DEPTH(ch_bam, ch_mei_sites)
         MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
             ch_reference, ch_reference_fai, ch_megane_kmers)
-        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites,
+                   ch_annotsv_annotations)
         ch_mei          = MEI_REPORT.out.tables
         ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
     }
