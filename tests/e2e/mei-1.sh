@@ -16,11 +16,22 @@
 #     precision, the Alu calls inside the benchmark regions within 100 bp of
 #     any GIAB insertion, at least 0.80;
 #   - the catalog: the BAM has none of chr9, chrX and chr11, so all three
-#     known disease insertions are not callable.
+#     known disease insertions are not callable;
+#   - AnnotSV on the calls, with the made-up AnnotSV data of
+#     tests/fixtures/annotsv/class45.sh plus one made-up gene, FIXCHR20, over
+#     all of chr20 (two exons at its ends): every call comes back in
+#     FIXCHR20, with its location there, and with AnnotSV's class of an
+#     insertion, NA. Red control: the same VCF through bin/mei_report.py
+#     without AnnotSV's table fails those checks;
+#   - the Nextflow pipeline (--tools mei, with --annotsv_annotations) on the
+#     same BAM writes the same calls table as the bash step, and MEI's peak
+#     memory from its trace goes to the notes.
 # MEI_E2E_DROP_ALU=1 is the red control, run by hand: every read pair within
 # 1 kb of a GIAB Alu insertion is removed before the step, and the recall
 # check must fail.
 . "$(dirname "$0")/lib.sh"
+# shellcheck source=../fixtures/annotsv/class45.sh
+. "${REPO}/tests/fixtures/annotsv/class45.sh"
 
 G="$GENOME_DIR" T="$CASE_TMP"
 SRC="https://giab.s3.amazonaws.com/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.60x.1.bam"
@@ -102,6 +113,22 @@ if [ "${MEI_E2E_DROP_ALU:-}" = 1 ]; then
 fi
 mv "${T}/all.bam" "$BAM" && mv "${T}/all.bam.bai" "${BAM}.bai"
 
+# --- AnnotSV's data: the made-up bundle and a gene over all of chr20 ---------------------
+# Step 50 reads annotsv_annotations/ in GENOME_DIR; one another case left is
+# set aside and put back at the end.
+A="${G}/annotsv_annotations"
+rm -rf "${T:?}/annotsv_saved"
+[ ! -e "$A" ] || mv "$A" "${T}/annotsv_saved"
+class45_bundle "$A"
+GB="${A}/Annotations_Human/Genes/GRCh38"
+for f in RefSeq ENSEMBL; do
+  tx=NM_929999; [ "$f" = RefSeq ] || tx=ENST929999
+  { printf '20\t0\t64444167\t+\tFIXCHR20\t%s\t500\t64443500\t0,64443167,\t1000,64444167,\n' "$tx"
+    cat "${GB}/genes.${f}.sorted.bed"; } | sort -k1,1 -k2,2n > "${T}/genes.bed" && mv "${T}/genes.bed" "${GB}/genes.${f}.sorted.bed"
+  printf '%s\t1\n' "$tx" >> "${GB}/transcript_version.${f}.tsv"
+done
+printf 'NM_929999\n' >> "${A}/mane_select_refseq.txt"
+
 # --- step 50 -----------------------------------------------------------------------------
 run_step 50-mei.sh "$H" male
 check_step_exit 50-mei.sh
@@ -112,6 +139,25 @@ check_ge "the calls table has insertions" "$(awk 'NR > 1' "${M}_mei.tsv" 2>/dev/
 check_eq "the catalog: chr9, chrX and chr11 are not in the BAM, so every row is not callable" \
   "$(awk -F'\t' 'NR > 1 {print $1 ":" $(NF - 2)}' "${M}_mei_sites.tsv" 2>/dev/null | paste -sd, -)" \
   "FKTN:not callable,TAF1:not callable,BBS1:not callable"
+
+# AnnotSV's columns: every call inside FIXCHR20, with a location there, class NA.
+annotsv_cols() {  # annotsv_cols TABLE: "<calls>/<in FIXCHR20>/<with a FIXCHR20 location>/<class NA>"
+  awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
+               {n++; g += ($c["genes"] ~ /(^|,)FIXCHR20(,|$)/); l += ($c["location"] ~ /(^|,)FIXCHR20:/)
+                a += ($c["acmg_class"] == "NA")}
+               END {print n + 0 "/" g + 0 "/" l + 0 "/" a + 0}' "$1" 2>/dev/null
+}
+check "the step ran AnnotSV on the insertions" grep -q 'AnnotSV on the insertions' "$STEP_LOG"
+check "AnnotSV's table of the insertions is kept" test -s "${M}_mei_annotsv.tsv"
+N=$(awk 'NR > 1' "${M}_mei.tsv" 2>/dev/null | wc -l | tr -d ' ')
+echo "AnnotSV columns (calls/in FIXCHR20/with its location/class NA): $(annotsv_cols "${M}_mei.tsv")"
+check_eq "every call is in FIXCHR20, with its location there and AnnotSV's class NA" \
+  "$(annotsv_cols "${M}_mei.tsv")" "${N}/${N}/${N}/${N}"
+# Red control: the same VCF without AnnotSV's table.
+python3 -I "${REPO}/bin/mei_report.py" --sample "$H" --vcf "${M}_megane.vcf" --sites "${REPO}/assets/mei_sites.tsv" \
+  --depth "${M}_mei_depth.tsv" --out-calls "${T}/red_mei.tsv" --out-sites "${T}/red_sites.tsv" > /dev/null
+check "red control: without AnnotSV's table the same check fails" \
+  test "$(annotsv_cols "${T}/red_mei.tsv")" != "${N}/${N}/${N}/${N}" -a "$(annotsv_cols "${T}/red_mei.tsv")" = "${N}/0/0/0"
 
 # Recall and precision of the Alu calls.
 read -r TP NT PP NP < <(python3 -I - "${T}/truth.tsv" "${T}/truth.bed" "${M}_mei.tsv" <<'PY'
@@ -137,6 +183,33 @@ echo "mei: HG002 chr20 30x (minimap2, unmapped reads dropped${MEI_E2E_DROP_ALU:+
   "precision ${PP}/${NP} within 100 bp of GIAB v5.0q; calls per element:" \
   "$(awk -F'\t' 'NR > 1 {n[$4]++} END {for (k in n) printf "%s %d ", k, n[k]}' "${M}_mei.tsv" 2>/dev/null)" >> "$E2E_NOTES"
 
+# --- the Nextflow pipeline on the same BAM ------------------------------------------------
+if command -v nextflow > /dev/null; then
+  SHEET="${T}/samplesheet.csv" V="${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" NF_OUT="${G}/nf-mei"
+  printf 'sample,sex,vcf,vcf_index,bam,bam_index\n%s,male,%s,%s,%s,%s\n' "$H" "$V" "${V}.tbi" "$BAM" "${BAM}.bai" > "$SHEET"
+  rm -rf "${NF_OUT:?}"
+  echo "+ nextflow run main.nf -profile docker --tools mei --annotsv_annotations"
+  ( cd "$T" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -work-dir "${E2E_WORK}/nf-work-mei" \
+      --input "$SHEET" --reference "${R}/chr20.fa" --tools mei --megane_kmers "$MK" --annotsv_annotations "$A" \
+      --sex_check warn --outdir "$NF_OUT" --max_cpus 4 --max_memory 14.GB ) 2>&1 | tee "$STEP_LOG"
+  check_eq "nextflow run exits 0" "${PIPESTATUS[0]}" 0
+  cp "${T}/.nextflow.log" "${E2E_WORK}/logs/${CASE_NAME}.nextflow.log" 2>/dev/null
+  NM="${NF_OUT}/${H}/mei/${H}"
+  check "MEI_REPORT publishes AnnotSV's table" test -s "${NM}_mei_annotsv.tsv"
+  check "Nextflow's calls table is the bash step's" cmp -s "${M}_mei.tsv" "${NM}_mei.tsv"
+  cmp -s "${M}_mei.tsv" "${NM}_mei.tsv" || diff "${M}_mei.tsv" "${NM}_mei.tsv" | head -20
+  # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+  check "control: the comparison sees a difference" bash -c '! cmp -s "$1" "$2"' _ "${T}/red_mei.tsv" "${NM}_mei.tsv"
+  TRACE=$(find "${NF_OUT}/pipeline_info" -name 'trace_*.txt' 2>/dev/null | LC_ALL=C sort | tail -1)
+  PEAK=$(awk -F'\t' 'NR == 1 {for (i = 1; i <= NF; i++) c[$i] = i; next}
+                     $c["process"] == "MEI" {print $c["peak_rss"] " in " $c["realtime"] " on " $c["cpus"] " CPUs"}' "${TRACE:-/dev/null}" 2>/dev/null)
+  echo "MEI (MEGAnE) peak_rss: ${PEAK:-not in the trace}"
+  echo "mei: Nextflow MEI on HG002 chr20 30x, peak_rss ${PEAK:-not in the trace} (k-mer set $(du -h "$MK" | cut -f1))" >> "$E2E_NOTES"
+  rm -rf "${NF_OUT:?}" "${E2E_WORK:?}/nf-work-mei"
+else
+  fail "nextflow is not on PATH"
+fi
+
 # Leave nothing behind: the cases after this one need the disk, and the runner
 # ran out of space in them with MEGAnE's output and image still there
 # (removing the files alone took the free disk from 7.6 GB to 8.9 GB).
@@ -144,7 +217,8 @@ echo "mei: HG002 chr20 30x (minimap2, unmapped reads dropped${MEI_E2E_DROP_ALU:+
 # the e2e image cache never saves it. It goes by id, and the log says if it
 # stayed.
 echo "disk before the clean-up: $(df -h --output=avail "$E2E_WORK" | tail -1 | tr -d ' ')"
-rm -rf "${G:?}/${H}" "${R:?}" "${G:?}/reference/megane" "${T:?}/truth.vcf.gz"
+rm -rf "${G:?}/${H}" "${R:?}" "${G:?}/reference/megane" "${T:?}/truth.vcf.gz" "${A:?}"
+[ ! -e "${T}/annotsv_saved" ] || mv "${T}/annotsv_saved" "$A"
 id=$(docker image inspect -f '{{.Id}}' "$MEGANE_IMAGE" 2>/dev/null) && docker image rm -f "$id" > /dev/null
 docker image inspect "$MEGANE_IMAGE" > /dev/null 2>&1 && echo "WARNING: MEGAnE's image is still on the disk"
 echo "disk after the clean-up: $(df -h --output=avail "$E2E_WORK" | tail -1 | tr -d ' ')"

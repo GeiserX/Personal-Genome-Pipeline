@@ -8,7 +8,8 @@
 # the copy number of the pair (agCN) and, where the sequence differences
 # between the copies allow, of each copy (psCN), each with a Phred quality
 # (20 = 99% likely right). It needs a BAM aligned to a reference without ALT
-# contigs, the default, and the homology table and 1000 Genomes models that
+# contigs, the default (a BAM with ALT or HLA contigs stops the step with a
+# REFUSED line), and the homology table and 1000 Genomes models that
 # `setup.sh --parascopy-data` installs.
 #
 # The loci come from assets/paralog_loci.tsv: one row per Parascopy model of
@@ -23,6 +24,10 @@
 # alpha-globin genes (bin/copy_number.py on the HBA row of bin/cn_loci.tsv,
 # laid out by bin/hba_copy_number.py). A failure there writes an HBA
 # table that says not assessed, and does not stop the step.
+#
+# The gene-dosage rows of the same catalog (HP, LCE3BC, CCL3L1: loci no
+# pinned caller models) are counted the same way, total copies only, one
+# line per locus in ${SAMPLE}_cn_dosage.tsv (docs/cn-loci.md).
 #
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
 # TOOLS=...,parascopy).
@@ -39,6 +44,7 @@
 # Output: ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_<table>_copy_number.tsv
 #           (one per catalog row; the SMN1 row's is ${SAMPLE}_smn_copy_number.tsv)
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_hba_copy_number.tsv
+#         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cn_dosage.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_parascopy/<table>/ (Parascopy's own files)
 set -euo pipefail
 
@@ -64,6 +70,26 @@ for f in "$BAM" "${BAM}.bai" "$REF_FASTA" "${REF_FASTA}.fai" "$LOCI"; do
     exit 1
   fi
 done
+# A BAM aligned to a reference with ALT or HLA contigs is refused: Parascopy
+# and the HBA depth count read copy number from depth, and that depth splits
+# between a gene and its ALT copy (bin/copy_number.py check-bam, exit 4).
+# A header that cannot be read leaves the check undone, with a warning.
+mkdir -p "$OUTDIR"
+HDR="${OUTDIR}/bam_header.part"
+if run_in --cpus 1 --memory 1g "${PARASCOPY_IMAGE}" samtools view -H "$(cpath "$BAM")" > "$HDR"; then
+  rc=0
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+    python3 /pgp-bin/copy_number.py check-bam --header "$(cpath "$HDR")" || rc=$?
+  rm -f "$HDR"
+  if [ "$rc" -eq 4 ]; then
+    exit 1
+  elif [ "$rc" -ne 0 ]; then
+    echo "WARNING: the ALT contig check of the BAM header failed (exit ${rc}); it was not done." >&2
+  fi
+else
+  rm -f "$HDR"
+  echo "WARNING: could not read the BAM header; the ALT contig check was not done." >&2
+fi
 if [ ! -f "$TABLE" ] || [ ! -d "$MODELS" ]; then
   echo "ERROR: Parascopy ${PARASCOPY_DATA_VERSION}'s data is not installed (${TABLE}, ${MODELS}/)." >&2
   echo "  Install it once (~50 MB): ./scripts/setup.sh --parascopy-data ${GENOME_DIR}" >&2
@@ -204,9 +230,45 @@ else
 fi
 rm -rf "$HBA_WORK"
 
+# Gene-dosage rows of bin/cn_loci.tsv that no pinned caller models (as the
+# PARASCOPY module): per locus samtools bedcov, all MAPQ and MAPQ 1 or more,
+# then copy_number.py call; one line per locus in <sample>_cn_dosage.tsv. A
+# locus whose check fails is not assessed there, and the step goes on.
+DOSAGE_LOCI="HP LCE3BC CCL3L1"
+DOSAGE_OUT="${OUTDIR}/${SAMPLE}_cn_dosage.tsv"
+DOSAGE_WORK="${OUTDIR}/cn_dosage.part"
+rm -rf "$DOSAGE_OUT" "$DOSAGE_WORK"
+mkdir -p "$DOSAGE_WORK"
+printf 'locus\tstatus\tcopies\testimate\treason\treading\n' > "${DOSAGE_WORK}/table.tsv"
+for loc in $DOSAGE_LOCI; do
+  d="${DOSAGE_WORK}/${loc}"
+  mkdir -p "$d"
+  if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+       python3 /pgp-bin/copy_number.py bed --locus "$loc" > "${d}/regions.bed" \
+     && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+       samtools bedcov "$(cpath "${d}/regions.bed")" "$(cpath "$BAM")" > "${d}/bedcov.tsv" \
+     && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+       samtools bedcov -Q 1 "$(cpath "${d}/regions.bed")" "$(cpath "$BAM")" > "${d}/bedcov_q1.tsv" \
+     && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+       python3 /pgp-bin/copy_number.py call --locus "$loc" --bedcov "$(cpath "${d}/bedcov.tsv")" \
+         --bedcov-mapq1 "$(cpath "${d}/bedcov_q1.tsv")" --table "$(cpath "${d}/table.tsv")"; then
+    awk -F'\t' -v OFS='\t' -v l="$loc" 'NR > 1 {v[$1] = $2}
+      END {print l, v["status"], v["copies"], v["estimate"], v["reason"], v["reading"]}' "${d}/table.tsv" \
+      >> "${DOSAGE_WORK}/table.tsv"
+  else
+    echo "WARNING: the ${loc} depth check failed; ${DOSAGE_OUT##*/} lists it as not assessed." >&2
+    printf '%s\tnot assessed\t.\t.\tcheck_failed\tthe depth check failed; see the log of step 35\n' "$loc" \
+      >> "${DOSAGE_WORK}/table.tsv"
+  fi
+done
+mv "${DOSAGE_WORK}/table.tsv" "$DOSAGE_OUT"
+rm -rf "$DOSAGE_WORK"
+
 echo ""
 echo "=== Parascopy complete ==="
 echo "HBA1/HBA2:   ${HBA_OUT}"
+echo "Dosage:      ${DOSAGE_OUT}"
+column -t -s $'\t' "$DOSAGE_OUT" 2>/dev/null || cat "$DOSAGE_OUT"
 for t in "${TABLES[@]}"; do
   echo "Copy number: ${OUTDIR}/${t}"
   column -t -s $'\t' "${OUTDIR}/${t}" 2>/dev/null || cat "${OUTDIR}/${t}"

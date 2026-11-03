@@ -42,10 +42,12 @@ workflow PGX {
     ch_hla_optitype   // channel: [meta, <id>_optitype_result.tsv] — HLA_QC's (--hla_qc), the second HLA caller
     ch_medications    // channel: val(path) — the opt-in medication list (--medications), or []
     ch_inhibitors     // channel: val(path) — assets/pgx_inhibitors.tsv
+    ch_contraindications // channel: val(path) — assets/pgx_contraindications.tsv
 
     main:
     ch_versions    = Channel.empty()
     ch_clinvar_dir = Channel.empty()
+    ch_clinvar_hits = Channel.empty()
     ch_clinvar_cdna = Channel.empty()
     def tools = params.tools ? params.tools.split(',').collect { it.trim() } : []
 
@@ -62,6 +64,7 @@ workflow PGX {
             ch_reference_fai
         )
         ch_clinvar_dir = CLINVAR_SCREEN.out.isec_dir
+        ch_clinvar_hits = CLINVAR_SCREEN.out.hits_tsv
         ch_versions    = ch_versions.mix(CLINVAR_SCREEN.out.versions)
 
         // Step 06's cDNA read check: each sample's hits with its BAM, or []
@@ -194,7 +197,9 @@ workflow PGX {
     // Reads PharmCAT JSON output for actionable prescribing guidance. With
     // pypgx, its summary joins by sample, so the report can say when pypgx
     // called a gene PharmCAT could not; with PGX_CONSENSUS, its table says
-    // which calls came from other tools and which were held back.
+    // which calls came from other tools and which were held back. With the
+    // ClinVar screen, its hits table says whether a disease gene of
+    // assets/pgx_contraindications.tsv carries a pathogenic variant.
     //
     ch_cpic_recommendations = Channel.empty()
     ch_cpic_phenotypes      = Channel.empty()
@@ -206,9 +211,10 @@ workflow PGX {
             .map { meta, json -> [meta.id, meta, json] }
             .join(ch_pypgx_summary.map { meta, tsv -> [meta.id, tsv] }, remainder: true)
             .join(ch_consensus.map { meta, tsv -> [meta.id, tsv] }, remainder: true)
+            .join(ch_clinvar_hits.map { meta, tsv -> [meta.id, tsv] }, remainder: true)
             .filter { row -> row[1] != null && row[2] != null }
-            .map { row -> tuple(row[1], row[2], row[3] ?: [], row[4] ?: []) }
-        CPIC_LOOKUP(ch_cpic_input, ch_medications, ch_inhibitors)
+            .map { row -> tuple(row[1], row[2], row[3] ?: [], row[4] ?: [], row[5] ?: []) }
+        CPIC_LOOKUP(ch_cpic_input, ch_medications, ch_inhibitors, ch_contraindications)
         ch_cpic_recommendations = CPIC_LOOKUP.out.recommendations
         ch_cpic_phenotypes      = CPIC_LOOKUP.out.phenotypes
         // Only with a readable pypgx summary (the output is optional)

@@ -1,4 +1,4 @@
-"""pgp_live_charts.py: the live page's charts, a plugin of bin/pgp_live.py.
+"""owngenome_live_charts.py: the live page's charts, a plugin of bin/owngenome_live.py.
 
 Step 24 (and the Nextflow HTML_REPORT process) writes <sample>_charts.json
 beside the report: the report's five charts as data and as SVG

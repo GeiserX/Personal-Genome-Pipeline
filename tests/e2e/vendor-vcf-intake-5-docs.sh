@@ -50,7 +50,7 @@ check "the page's first bash block is its Setup block" \
   has '^# Setup:' "$(awk '/^#--- block 1$/ {on = 1; next} /^#--- block/ {on = 0} on' "${CASE_TMP}/page.sh")"
 {
   echo 'set -euo pipefail'
-  printf 'PGP=%q\nREF=%q\nVCF=%q\nLABEL=%q\n' "$REPO" "$REF" "$VENDOR" sample1
+  printf 'OWNGENOME=%q\nREF=%q\nVCF=%q\nLABEL=%q\n' "$REPO" "$REF" "$VENDOR" sample1
   awk '/^#--- block 1$/ {skip = 1; next} /^#--- block/ {skip = 0} !skip' "${CASE_TMP}/page.sh"
 } > "${CASE_TMP}/run-page.sh"
 echo "+ the page's commands:"; sed 's/^/    /' "${CASE_TMP}/run-page.sh"

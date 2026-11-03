@@ -3,7 +3,7 @@
 
 Checks:
   1. a disk 91% used warns at the default 90, one 89% used does not;
-  2. --disk-warn-percent 80 (and PGP_DISK_WARN_PERCENT=80) warns at 85%;
+  2. --disk-warn-percent 80 (and OWNGENOME_DISK_WARN_PERCENT=80) warns at 85%;
   3. a work folder not created yet is measured on its nearest existing parent;
   4. two folders on one filesystem are reported once, on two filesystems twice;
   5. a filesystem with f_files 0 gives no inode ratio;
@@ -139,8 +139,8 @@ def disk_checks(m):
     with fake_disks(m, FakeVfs(85)):
         _, plain = run_main(m, ["--work-dir", d])
         _, arg = run_main(m, ["--work-dir", d, "--disk-warn-percent", "80"])
-        _, env = run_main(m, ["--work-dir", d], {"PGP_DISK_WARN_PERCENT": "80"})
-    out["--disk-warn-percent 80 and PGP_DISK_WARN_PERCENT=80 warn at 85%"] = (
+        _, env = run_main(m, ["--work-dir", d], {"OWNGENOME_DISK_WARN_PERCENT": "80"})
+    out["--disk-warn-percent 80 and OWNGENOME_DISK_WARN_PERCENT=80 warn at 85%"] = (
         "WARN" not in plain.splitlines()[0] and "WARN: at or above 80%" in arg and "WARN: at or above 80%" in env,
         (plain, arg, env))
 
@@ -270,7 +270,7 @@ def mutants():
     def ignore_percent(mod):
         orig = mod.warn_percent
         return lambda value=None, env=None: orig(None, None)
-    ms["--disk-warn-percent 80 and PGP_DISK_WARN_PERCENT=80 warn at 85%"] = mutant(warn_percent=ignore_percent)
+    ms["--disk-warn-percent 80 and OWNGENOME_DISK_WARN_PERCENT=80 warn at 85%"] = mutant(warn_percent=ignore_percent)
     ms["a missing work folder is measured on its parent"] = mutant(nearest_existing=os.path.abspath)
 
     @with_mod
@@ -367,7 +367,7 @@ def main():
     global TMP
     TMP = tempfile.mkdtemp(prefix="test_run_headroom.")
     # the checks assume the default warn percents: a threshold set in the caller's shell must not leak in
-    env_saved = {k: os.environ.pop(k) for k in ("PGP_DISK_WARN_PERCENT", "PGP_MEM_WARN_PERCENT") if k in os.environ}
+    env_saved = {k: os.environ.pop(k) for k in ("OWNGENOME_DISK_WARN_PERCENT", "OWNGENOME_MEM_WARN_PERCENT") if k in os.environ}
     try:
         base = open(os.path.join(REPO, "conf", "base.config")).read()
         got = base_config_exits(base)

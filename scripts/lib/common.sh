@@ -346,22 +346,35 @@ consumer_sites_digest() {
 # _get URL OUT: download URL to OUT (resuming a partial OUT), curl first and
 # wget when curl is missing. OUT "-" writes to stdout. A server that cannot
 # resume (curl exit 33) gets the partial OUT dropped and one fresh download.
+#
+# A stalled transfer fails instead of hanging: curl gives up on a connection
+# that takes over 30 s, or a transfer slower than 1 KB/s for FETCH_STALL
+# seconds (default 120); wget on a connection over 30 s, or no data for
+# FETCH_STALL seconds, with no retry of its own. fetch then tries again,
+# resuming the partial OUT.
 _get() {
-  local rc=0
+  local rc=0 stall=${FETCH_STALL:-120}
+  # 10# so 00, 08 and 09 read as decimal; curl and wget take 0 as no bound.
+  case "$stall" in ''|*[!0-9]*) stall=0 ;; esac
+  [ "$((10#$stall))" -gt 0 ] || { echo "ERROR: FETCH_STALL must be a whole number of seconds above 0, got '${FETCH_STALL}'" >&2; return 1; }
+  # The URL stays the last argument (scripts/ci/fake-docker/curl takes it from there).
+  local cbound=(--connect-timeout 30 --speed-limit 1024 --speed-time "$stall")
   if command -v curl >/dev/null 2>&1; then
     if [ "$2" = "-" ]; then
-      curl -fsSL "$1"
+      curl -fsSL "${cbound[@]}" "$1"
     else
-      curl -fL -C - -o "$2" "$1" || rc=$?
+      curl -fL "${cbound[@]}" -C - -o "$2" "$1" || rc=$?
       if [ "$rc" -eq 33 ]; then
         rm -f "$2"
-        curl -fL -o "$2" "$1"
+        curl -fL "${cbound[@]}" -o "$2" "$1"
       else
         return "$rc"
       fi
     fi
   elif command -v wget >/dev/null 2>&1; then
-    if [ "$2" = "-" ]; then wget -q -O - "$1"; else wget -c -O "$2" "$1"; fi
+    # --tries=1: fetch does the retries, as it does for curl.
+    local wbound=(--connect-timeout=30 "--read-timeout=${stall}" --tries=1)
+    if [ "$2" = "-" ]; then wget -q "${wbound[@]}" -O - "$1"; else wget -c "${wbound[@]}" -O "$2" "$1"; fi
   else
     echo "ERROR: neither curl nor wget is installed." >&2
     return 1
@@ -807,19 +820,19 @@ run_parallel() {
   return "$rc"
 }
 
-# live_post RUN JSON: send one message to the live site (bin/pgp_live.py,
-# docs/live-site.md) at PGP_LIVE_URL/ingest/RUN; nothing without PGP_LIVE_URL.
+# live_post RUN JSON: send one message to the live site (bin/owngenome_live.py,
+# docs/live-site.md) at OWNGENOME_LIVE_URL/ingest/RUN; nothing without OWNGENOME_LIVE_URL.
 # A site that is down or slow (3 s) costs one warning per script and never the
 # step: it always returns 0.
 live_post() {
-  [ -n "${PGP_LIVE_URL:-}" ] || return 0
+  [ -n "${OWNGENOME_LIVE_URL:-}" ] || return 0
   if printf '%s' "$2" | curl -fsS -m 3 -o /dev/null -H 'Content-Type: application/json' -d @- \
-      "${PGP_LIVE_URL%/}/ingest/$1" 2>/dev/null; then
+      "${OWNGENOME_LIVE_URL%/}/ingest/$1" 2>/dev/null; then
     return 0
   fi
-  if [ -z "${PGP_LIVE_WARNED:-}" ]; then
-    echo "WARNING: the live site at ${PGP_LIVE_URL} did not take a message; the run goes on without it" >&2
-    PGP_LIVE_WARNED=1
+  if [ -z "${OWNGENOME_LIVE_WARNED:-}" ]; then
+    echo "WARNING: the live site at ${OWNGENOME_LIVE_URL} did not take a message; the run goes on without it" >&2
+    OWNGENOME_LIVE_WARNED=1
   fi
   return 0
 }
