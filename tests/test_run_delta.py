@@ -18,7 +18,8 @@ Checks:
   6. with a previous run the delta says "New since <the previous run's date>",
      names the sections whose results changed (new_since_sections), and adds
      the last database re-check (recheck/state.json beside the summary) as its
-     recheck block; with no previous run there is no previous_utc. Each of these
+     recheck block; with no previous run there is no previous_utc, and the
+     re-check line is still printed in the text and the HTML. Each of these
      checks is run again against a planted mistake in a copy of run_delta.py
      and must fail there.
 
@@ -264,6 +265,27 @@ def main():
         check("new since: no previous run, no previous_utc and no changed sections",
               "previous_utc" not in d and "new_since_sections" not in d and "New since" not in txt, d)
         src = open(TOOL).read()
+        # A first run still shows the database re-check, in the text and in the HTML.
+        first_checks = {
+            "first run: the text shows the re-check": lambda t, p: "Database re-check of 2026-02-02T00:00:00Z" in t,
+            "first run: the HTML shows the re-check": lambda t, p: "Database re-check of 2026-02-02T00:00:00Z" in p,
+        }
+        first_planted = {
+            "first run: the text shows the re-check": (
+                'compared with.")\n        w.extend(recheck_text(d.get("recheck")))', 'compared with.")'),
+            "first run: the HTML shows the re-check": (
+                '    rc = recheck_text(d.get("recheck"))\n', '    rc = recheck_text(d.get("recheck")) if d["previous"] else []\n'),
+        }
+        _, txt, page = delta(w, None, cur, "recheck-first")
+        for name, fn in first_checks.items():
+            check(name, fn(txt, page), (txt, page[-600:]))
+            a, b = first_planted[name]
+            check(f"planted mistake is in the copy: {name}", a in src, a)
+            mtool = os.path.join(w, "run_delta_mutant.py")
+            with open(mtool, "w") as f:
+                f.write(src.replace(a, b))
+            _, mtxt, mpage = delta(w, None, cur, "recheck-first-mutant", tool=mtool)
+            check(f"fails on a planted mistake: {name}", not fn(mtxt, mpage), "passed on the mutant")
         planted = {
             "new since: previous_utc is the previous run's date": ('d["previous_utc"] = prev.get("generated_utc")', 'd["previous_utc"] = None'),
             "new since: the text heads the changes with it": ("New since {d['previous_utc'] or 'the previous run'}: ", ""),

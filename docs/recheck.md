@@ -15,10 +15,10 @@ Standard library only, so the plain `python3` on the host is enough. It needs th
 
 | Item | What the run used (`run_manifest.tsv`) | Where the newer release comes from | Steps it feeds |
 |---|---|---|---|
-| ClinVar | `clinvar_file_date`, the `##fileDate` of the ClinVar file | The `Last-Modified` date of NCBI's `clinvar.vcf.gz` | 06, 13 (VEP adds its significance), 20 (the chrM table only), then 23, 30, 31, 38, 39 |
+| ClinVar | `clinvar_file_date`, the `##fileDate` of the ClinVar file | The `Last-Modified` date of NCBI's `clinvar.vcf.gz` | 06, 13 (VEP adds its significance), 20 (the chrM table only), then 23, 27 (the contraindication check), 30, 31, 38, 39 |
 | Ensembl / VEP cache | `VEP_CACHE_RELEASE` | Ensembl's REST API | 13, then 23, 30, 31, 38 |
 | PCGR / CPSR data | `PCGR_DATA_BUNDLE` | PCGR's newest GitHub release | 17 |
-| pypgx and its bundle | `PYPGX_BUNDLE_VERSION` | PyPI, the pypgx biocontainer and the pypgx-bundle tags | 32, then 36 |
+| pypgx and its bundle | `PYPGX_BUNDLE_VERSION` | PyPI, the pypgx biocontainer and the pypgx-bundle tags | 32, then 27, 36 |
 | PharmCAT | `PHARMCAT_IMAGE` | PharmCAT's newest GitHub release | 07, 27, then 36 |
 | IPD-IMGT/HLA | `hla_database` | The `release_version.txt` of the IPD-IMGT/HLA repository | 08 |
 | Each PGS score | `pgs:<ID>`, its `HmPOS_date` | The PGS Catalog's REST API, then the `Last-Modified` date of the harmonised GRCh38 file | 25, then 26 |

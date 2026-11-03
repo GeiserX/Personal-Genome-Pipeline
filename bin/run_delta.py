@@ -298,6 +298,7 @@ def render_text(d):
     if d["previous"] is None:
         w.append("No previous run of this sample on record (its history/ folder is empty).")
         w.append("This run is kept as the baseline the next run is compared with.")
+        w.extend(recheck_text(d.get("recheck")))
         return "\n".join(w) + "\n"
     w.append(f"Previous run: history/{d['previous']} (summary of {d['previous_generated'] or 'unknown date'})")
     w.append(f"This run:     summary of {d['current_generated'] or 'unknown date'}")
@@ -342,9 +343,10 @@ def render_html(d):
     else:
         body.append(f"<p>Previous run: history/{e(d['previous'])} (summary of {e(d['previous_generated'] or 'unknown date')}). "
                     f"This run: summary of {e(d['current_generated'] or 'unknown date')}.</p>")
-        rc = recheck_text(d.get("recheck"))
-        if rc:
-            body.append("<p>" + "<br>".join(e(x.strip()) for x in rc) + "</p>")
+    rc = recheck_text(d.get("recheck"))
+    if rc:
+        body.append("<p>" + "<br>".join(e(x.strip()) for x in rc) + "</p>")
+    if d["previous"] is not None:
         if not d["changes"]:
             body.append("<p>No change: the same inputs and the same results as the previous run.</p>")
         else:

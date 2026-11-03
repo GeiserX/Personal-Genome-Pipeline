@@ -48,7 +48,7 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 25	PRS	prs	yes	PRS_PREPARE,PRS_SCORE_SITES,PRS,PRS_SUMMARY	prs	03	1.47	measured	1	pgs:*
 26	Ancestry (pgsc_calc)	ancestry	yes	PRS		25				
 26b	Fine-grained ancestry	ancestry_fine	yes	ANCESTRY_FINE_GENOTYPE,ANCESTRY_FINE_PREPARE,ANCESTRY_FINE_ADMIXTURE,ANCESTRY_FINE_PHASE,ANCESTRY_FINE_PAINT,ANCESTRY_FINE_REPORT	ancestry_fine	03				
-27	CPIC lookup	cpic	yes	CPIC_LOOKUP	cpic	07	0.01	measured	0.0008	PHARMCAT_IMAGE
+27	CPIC lookup	cpic	yes	CPIC_LOOKUP	cpic	06,07,32,36	0.01	measured	0.0008	PHARMCAT_IMAGE
 28	MultiQC	multiqc	yes	MULTIQC		16b	0.01	measured	0.0008	
 29	Somatic (Mutect2)		yes			02	6	estimate		
 30	vcfanno	vcfanno	yes	VCFANNO,VCFANNO_INDEX		13	0.3	estimate		

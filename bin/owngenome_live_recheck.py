@@ -21,6 +21,24 @@ def short(label):
     return re.sub(r"\s*\(.*\)$", "", label or "").strip() or "database"
 
 
+def utc14(text):
+    """'2026-09-02 12:00:00 UTC' or '2026-09-02T12:00:00Z' as '20260902120000'; '' without one."""
+    return "".join(c for c in str(text or "") if c.isdigit())[:14]
+
+
+def manifest_written(run_dir):
+    """The written_utc row of <run_dir>/run_manifest.tsv, or '' without one."""
+    try:
+        with open(os.path.join(run_dir, "run_manifest.tsv"), errors="replace") as f:
+            for line in f:
+                c = line.rstrip("\n").split("\t")
+                if len(c) >= 3 and c[0] == "run" and c[1] == "written_utc":
+                    return c[2]
+    except OSError:
+        pass
+    return ""
+
+
 def recheck_state(run_dir, state, events):
     """{file, mtime (ns), checked_utc, banner, steps: {step: [badge]}}, or {} while there is no check."""
     if not run_dir:
@@ -32,6 +50,10 @@ def recheck_state(run_dir, state, events):
             st = json.load(f)
         items = [i for i in st.get("items") or [] if isinstance(i, dict)]
     except (OSError, ValueError, AttributeError):
+        return {}
+    # A check older than the run's run_manifest.tsv describes an earlier run: what it calls newer may
+    # be what this run used. Not shown, as in the reports (bin/run_delta.py read_recheck).
+    if utc14(manifest_written(run_dir)) > utc14(st.get("checked_utc")):
         return {}
     steps = {}
     newer = []

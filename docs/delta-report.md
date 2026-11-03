@@ -54,7 +54,7 @@ A bare `nextflow run main.nf` writes no text report, so it writes no delta and k
 
 ## New since the previous run
 
-With a previous run on record, the delta heads its changes with "New since" and the date the previous run's report was written, and `<sample>_delta.json` holds that date as `previous_utc` and the report sections the changes touch as `new_since_sections`. The HTML and text reports put the same badge on those sections: they compare with the newest folder in `history/` themselves. The last database re-check (`<sample>/recheck/state.json`, [Newer Databases Since a Run](recheck.md)) is added to the delta as its `recheck` block, and its line is printed under the run dates. A check older than the run's `run_manifest.tsv` describes an earlier run and is left out.
+With a previous run on record, the delta heads its changes with "New since" and the date the previous run's report was written, and `<sample>_delta.json` holds that date as `previous_utc` and the report sections the changes touch as `new_since_sections`. The HTML and text reports put the same badge on those sections: they compare with the newest folder in `history/` themselves. The last database re-check (`<sample>/recheck/state.json`, [Newer Databases Since a Run](recheck.md)) is added to the delta as its `recheck` block, and its line is printed under the run dates, or under the first-run note when there is no previous run. A check older than the run's `run_manifest.tsv` describes an earlier run and is left out.
 
 ## When to rerun
 

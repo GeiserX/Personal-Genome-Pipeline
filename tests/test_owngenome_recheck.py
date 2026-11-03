@@ -44,7 +44,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIX = os.path.join(REPO, "tests", "fixtures", "recheck")
 TOOL = os.path.join(REPO, "bin", "owngenome_recheck.py")
 FAILS = 0
-CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "38", "39"]
+CLINVAR_STEPS = ["06", "13", "20", "23", "24", "27", "30", "31", "38", "39"]
 # The pins "here" are the run's own: the version rows of the fixture manifest
 # (the image name stays in the fixture, never as a literal in a test).
 with open(os.path.join(FIX, "run_manifest.tsv")) as _f:
@@ -467,6 +467,27 @@ def plugin_odd_rerun_ok(p):
     return ok, out
 
 
+def plugin_stale_ok(p):
+    """A check older than the run's run_manifest.tsv describes an earlier run: no banner, no badge.
+    One written after the manifest is still shown."""
+    tmp = tempfile.mkdtemp(prefix="recheck-live-stale.")
+    try:
+        run = os.path.join(tmp, "S1")
+        os.makedirs(os.path.join(run, "recheck"))
+        json.dump({"checked_utc": "2026-10-06T00:00:00Z", "items": [
+            {"item": "clinvar_file_date", "label": "ClinVar", "class": "refresh-available", "steps": ["06"]}]},
+            open(os.path.join(run, "recheck", "state.json"), "w"))
+        out = []
+        for written in ("2026-10-07 09:00:00 UTC", "2026-10-05 09:00:00 UTC"):
+            with open(os.path.join(run, "run_manifest.tsv"), "w") as f:
+                f.write(f"run\twritten_utc\t{written}\n")
+            out.append(p.recheck_state(run, {}, []))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ok = out[0] == {} and out[1].get("steps") == {"06": ["newer ClinVar available"]}
+    return ok, out
+
+
 def plugin_from_source(src, name):
     p = os.path.join(REPO, "tmp") if os.path.isdir(os.path.join(REPO, "tmp")) else tempfile.gettempdir()
     path = os.path.join(tempfile.mkdtemp(prefix="recheck-plugin.", dir=p), name + ".py")
@@ -492,6 +513,14 @@ def main():
     unguarded = plugin_from_source(src.replace(guard, "rr = rr or {}"), "owngenome_live_recheck_unguarded")
     check("fails on a planted mistake: the live-site plugin survives a rerun block that is not an object",
           not plugin_odd_rerun_ok(unguarded)[0], "passed on the mutant")
+    ok, detail = plugin_stale_ok(load_plugin())
+    check("the live-site plugin leaves out a check older than the run's manifest", ok, detail)
+    stale = "if utc14(manifest_written(run_dir)) > utc14(st.get(\"checked_utc\")):"
+    check("planted mistake is in the copy: the live-site plugin leaves out a check older than the run's manifest",
+          stale in src)
+    unfiltered = plugin_from_source(src.replace(stale, "if False:"), "owngenome_live_recheck_unfiltered")
+    check("fails on a planted mistake: the live-site plugin leaves out a check older than the run's manifest",
+          not plugin_stale_ok(unfiltered)[0], "passed on the mutant")
     results = all_checks(load())
     for name, (ok, detail) in results.items():
         check(name, ok, detail)
