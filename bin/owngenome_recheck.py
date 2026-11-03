@@ -36,7 +36,8 @@ logs/run_status.tsv ('meta command'), with the same switches. Nextflow's
 is going on. Afterwards it compares the steps the run redid with the steps this
 check named, and lists the named script steps (04b, 14, 29, 03a-03d), which
 skip when their output exists, as not redone. --refresh-clinvar runs
-setup.sh --refresh clinvar first. Standard library only.
+setup.sh --refresh clinvar first, and refuses while a run of any sample of
+GENOME_DIR is going on, since they share the ClinVar files. Standard library only.
 """
 import argparse
 import fcntl
@@ -589,6 +590,16 @@ def launch_dir_command(d):
     return cmd if "-resume" in words else cmd + " -resume"
 
 
+def running_samples(genome_dir):
+    """The samples of genome_dir (a folder with logs/run_status.tsv) whose run is going on."""
+    try:
+        names = sorted(os.listdir(genome_dir))
+    except OSError:
+        return []
+    return [n for n in names if os.path.isfile(os.path.join(genome_dir, n, "logs", "run_status.tsv"))
+            and run_state.collect(n, os.path.join(genome_dir, n))["run"]["state"] == "running"]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample")
@@ -624,9 +635,12 @@ def main(argv=None):
         print(f"ERROR: no {sample_dir}/run_manifest.tsv: run the pipeline on {a.sample} first.", file=sys.stderr)
         return 2
     if a.refresh_clinvar:
-        rs = run_state.collect(a.sample, sample_dir)
-        if rs["run"]["state"] == "running":
-            print(f"ERROR: a run of {a.sample} is going on: not refreshing ClinVar under it.", file=sys.stderr)
+        # The ClinVar files are shared by every sample of GENOME_DIR, so a run of any of them blocks the
+        # refresh. This narrows the window; a run that starts during the refresh is not stopped.
+        busy = running_samples(a.genome_dir)
+        if busy:
+            print(f"ERROR: a run of {', '.join(busy)} is going on: not refreshing the ClinVar files it reads.",
+                  file=sys.stderr)
             return 3
         r = subprocess.run([os.path.join(ROOT, "scripts", "setup.sh"), "--refresh", "clinvar", a.genome_dir]).returncode
         if r != 0:

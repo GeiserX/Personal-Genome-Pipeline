@@ -212,6 +212,23 @@ def all_checks(m):
             rc = m.main(["--sample", "S1", "--genome-dir", g4, "--offline", os.path.join(FIX, "offline.json"), "--rerun"])
         out["--rerun refuses while a run is going on"] = (rc == 3 and "going on" in e.getvalue(), (rc, e.getvalue()))
 
+        # --refresh-clinvar: another sample of the same GENOME_DIR is running, and it reads the same files.
+        gs = genome(os.path.join(tmp, "shared"))
+        shutil.copytree(os.path.join(gs, "S1", "logs"), os.path.join(gs, "S2", "logs"))
+        with open(os.path.join(gs, "S2", "logs", "run_status.tsv"), "w") as f:
+            f.write("meta\tstarted_epoch\t1000\nmeta\tstarted_utc\t2026-09-02 10:00:00 UTC\n")
+        keep_sp, ran = m.subprocess, []
+        m.subprocess = type("SP", (), {"run": staticmethod(lambda *a, **k: ran.append(a) or type("R", (), {"returncode": 0})())})
+        e = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(e):
+                rc = m.main(["--sample", "S1", "--genome-dir", gs, "--offline", os.path.join(FIX, "offline.json"),
+                             "--rerun", "--refresh-clinvar"])
+        finally:
+            m.subprocess = keep_sp
+        out["--refresh-clinvar refuses while another sample of GENOME_DIR runs"] = (
+            rc == 3 and "S2" in e.getvalue() and not ran, (rc, e.getvalue(), ran))
+
         gl = genome(os.path.join(tmp, "lock"))
         os.makedirs(os.path.join(gl, "S1", "recheck"), exist_ok=True)
         e = io.StringIO()
@@ -352,6 +369,9 @@ def mutants():
                                   "read_run_status": staticmethod(m.run_state.read_run_status)})
     m.subprocess = type("SP", (), {"run": staticmethod(lambda *a, **k: type("R", (), {"returncode": 0})())})
     ms["--rerun refuses while a run is going on"] = m
+    m = load()
+    m.running_samples = lambda genome_dir: []
+    ms["--refresh-clinvar refuses while another sample of GENOME_DIR runs"] = m
     m = load()
     m.compare_rerun = lambda predicted, rs, steps: {"predicted": predicted, "redone": m.redone_steps(rs),
                                                     "predicted_not_redone": [], "redone_not_predicted": [],

@@ -38,7 +38,7 @@ Each item gets one class:
 | Class | Meaning | What to do |
 |---|---|---|
 | `rerun-ready` | What is installed here is newer than what the run used: a newer ClinVar file or PGS file on disk, or a pin in this checkout | Rerun (for a pin, run `./scripts/setup.sh` first so its data is there) |
-| `refresh-available` | ClinVar only: NCBI's file is more than 2 days newer than the one installed | `./scripts/setup.sh --refresh clinvar $GENOME_DIR`, then rerun; `--rerun --refresh-clinvar` does both |
+| `refresh-available` | ClinVar only: NCBI's file is more than 2 days newer than the one installed | `./scripts/setup.sh --refresh clinvar $GENOME_DIR`, then rerun; `--rerun --refresh-clinvar` does both, and refuses while any sample of `$GENOME_DIR` is running, since they share the ClinVar files |
 | `in-pipeline-release` | A pipeline release pins a newer version | Update the pipeline to that release, run `setup.sh`, then rerun |
 | `upstream-only` | Upstream has a newer release that no pipeline release pins | Nothing yet for a pinned item; for a PGS score, download it again ([step 25](25-prs.md)) |
 | `no-newer-release` | The lookup answered and nothing is newer | Nothing |
