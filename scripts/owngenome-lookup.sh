@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# pgp-lookup.sh — what is my genotype at an rsID, a position, or in a gene?
-# Usage: ./scripts/pgp-lookup.sh <sample_name> <rsID|chr:pos|GENE> [more queries...]
+# owngenome-lookup.sh — what is my genotype at an rsID, a position, or in a gene?
+# Usage: ./scripts/owngenome-lookup.sh <sample_name> <rsID|chr:pos|GENE> [more queries...]
 #
 # Answers from the files the pipeline already wrote, without opening a VCF
 # by hand (docs/lookup.md):

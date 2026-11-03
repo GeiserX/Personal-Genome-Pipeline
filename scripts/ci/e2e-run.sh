@@ -59,7 +59,7 @@ export GENOME_DIR="${E2E_WORK}/genome"
 export E2E_NOTES="${E2E_WORK}/notes.md"
 LOG_DIR="${E2E_WORK}/logs"
 CASE_TIMEOUT=${CASE_TIMEOUT:-3600}
-GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
+GH_REPO=${GITHUB_REPOSITORY:-GeiserX/OwnGenome}
 TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 

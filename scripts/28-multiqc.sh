@@ -59,7 +59,7 @@ run_in --cpus 2 --memory 2g \
     --no-ai \
     -o "/genome/${SAMPLE}/multiqc" \
     -n "multiqc_report.html" \
-    --title "${SAMPLE} — Personal Genome Pipeline QC"
+    --title "${SAMPLE} — OwnGenome QC"
 
 echo "=== MultiQC complete ==="
 echo "Report: ${OUTPUT_DIR}/multiqc_report.html"

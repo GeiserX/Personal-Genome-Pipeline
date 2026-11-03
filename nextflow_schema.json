@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema",
-    "$id": "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/nextflow_schema.json",
-    "title": "Personal Genome Pipeline Parameters",
+    "$id": "https://github.com/GeiserX/OwnGenome/blob/main/nextflow_schema.json",
+    "title": "OwnGenome Parameters",
     "description": "Whole genome sequencing from FASTQ, BAM or VCF to clinical interpretation",
     "type": "object",
     "definitions": {

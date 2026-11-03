@@ -2029,7 +2029,7 @@ def sec_roh(d, s):
 # "Explore your branch further"): FamilyTreeDNA Discover answers its own
 # HaplogroupSearch for R-M269 and H5a7, and YFull's tree pages answer 200 for
 # a branch it has and 404 for one it does not.
-EXPLORE_DOCS = "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/"
+EXPLORE_DOCS = "https://github.com/GeiserX/OwnGenome/blob/main/docs/"
 
 
 def haplogroup_explore(kind, hg):

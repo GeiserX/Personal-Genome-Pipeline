@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pgp_live_ops.py: a plugin of bin/pgp_live.py. How a run is doing, on the page and in Prometheus.
+"""owngenome_live_ops.py: a plugin of bin/owngenome_live.py. How a run is doing, on the page and in Prometheus.
 
 Per run it gives the hours left (bin/run_eta.py), the memory and disk headroom
 (bin/run_headroom.py), when the run last showed activity, and five alerts:
@@ -9,10 +9,10 @@ failed, stalled, late, memory and disk. Two outputs, one source:
   GET /metrics the same numbers in the Prometheus text format, for the
                example rules in assets/monitoring/pgp-alerts.yml
 
-Flags it adds to pgp_live.py (also as KEY=VALUE lines in --config):
+Flags it adds to owngenome_live.py (also as KEY=VALUE lines in --config):
 
-  --disk-warn-percent N   a disk at or above N% used warns (PGP_DISK_WARN_PERCENT, 90)
-  --mem-warn-percent N    a task at or above N% of its memory request is a hint (PGP_MEM_WARN_PERCENT, 90)
+  --disk-warn-percent N   a disk at or above N% used warns (OWNGENOME_DISK_WARN_PERCENT, 90)
+  --mem-warn-percent N    a task at or above N% of its memory request is a hint (OWNGENOME_MEM_WARN_PERCENT, 90)
   --stall-minutes N       a running run with no activity for N minutes, and no running
                           step still inside its usual time, is stalled (60)
   --metrics-token-file F  a file holding the token Prometheus sends as
@@ -73,7 +73,7 @@ METRICS = {
 # --- the numbers of one run -----------------------------------------------------------------
 
 def current_run(events):
-    """The messages of the newest run, as bin/pgp_live.py's current_run: after the last
+    """The messages of the newest run, as bin/owngenome_live.py's current_run: after the last
     pgp_run_finished that is not the newest message, and from the last weblog 'started'."""
     start = 0
     for i, ev in enumerate(events[:-1]):
@@ -135,7 +135,7 @@ def run_ops(run_dir, state, events, cfg, now=None, steps=None, physical=None):
     cur = current_run(list(events))
     sample = state.get("sample") or (os.path.basename(run_dir) if run_dir else "")
     run = state.get("run") or {}
-    # run-all.sh posts pgp_run_finished as its last message; bin/pgp_live.py marks the run finished
+    # run-all.sh posts pgp_run_finished as its last message; bin/owngenome_live.py marks the run finished
     # on it too, before calling this hook.
     ended = bool(cur) and cur[-1].get("event") == "pgp_run_finished"
     run_st = "finished" if ended and run.get("state") == "running" else run.get("state")
@@ -313,8 +313,8 @@ def metrics_allowed(req, token):
 
 
 def register(app):
-    app.add_argument("--disk-warn-percent", help="a disk at or above this use warns (default PGP_DISK_WARN_PERCENT or 90)")
-    app.add_argument("--mem-warn-percent", help="a task at or above this share of its request is a hint (default PGP_MEM_WARN_PERCENT or 90)")
+    app.add_argument("--disk-warn-percent", help="a disk at or above this use warns (default OWNGENOME_DISK_WARN_PERCENT or 90)")
+    app.add_argument("--mem-warn-percent", help="a task at or above this share of its request is a hint (default OWNGENOME_MEM_WARN_PERCENT or 90)")
     app.add_argument("--stall-minutes", type=float, default=DEFAULT_STALL_MINUTES,
                      help="a running run quiet this long, with no step inside its usual time, is stalled")
     app.add_argument("--metrics-token-file", help="the bearer token Prometheus sends to /metrics")
@@ -334,7 +334,7 @@ def register(app):
         try:
             allowed = metrics_allowed(req, lambda: read_token(getattr(app.config, "metrics_token_file", None)))
         except OSError as e:
-            print(f"pgp_live_ops: --metrics-token-file cannot be read: {type(e).__name__}", file=sys.stderr)
+            print(f"owngenome_live_ops: --metrics-token-file cannot be read: {type(e).__name__}", file=sys.stderr)
             app.log("metrics", status=503)
             return req.send_body(503, "text/plain; charset=utf-8", "the metrics token file cannot be read\n")
         if not allowed:
@@ -351,10 +351,10 @@ def register(app):
                 runs.append((name, o))
             except Exception as e:  # one unreadable run must not take the scrape down
                 errors += 1
-                print(f"pgp_live_ops: {name}: {type(e).__name__}", file=sys.stderr)
+                print(f"owngenome_live_ops: {name}: {type(e).__name__}", file=sys.stderr)
         try:
             warn = run_headroom.warn_percent(getattr(app.config, "disk_warn_percent", None),
-                                             "PGP_DISK_WARN_PERCENT") / 100.0
+                                             "OWNGENOME_DISK_WARN_PERCENT") / 100.0
         except ValueError:
             warn = None
         app.log("metrics", status=200)

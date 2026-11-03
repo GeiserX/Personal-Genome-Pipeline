@@ -38,14 +38,14 @@ How an rsID is found, in this order: the consumer site table, then `assets/trait
 ## Command
 
 ```bash
-GENOME_DIR=/path/to/data ./scripts/pgp-lookup.sh your_name rs4988235
-GENOME_DIR=/path/to/data ./scripts/pgp-lookup.sh your_name chr2:135851076 CFTR   # several queries at once
+GENOME_DIR=/path/to/data ./scripts/owngenome-lookup.sh your_name rs4988235
+GENOME_DIR=/path/to/data ./scripts/owngenome-lookup.sh your_name chr2:135851076 CFTR   # several queries at once
 ```
 
 On Nextflow output, which keeps the same per-sample folders, use the output directory as `GENOME_DIR`. When the reference folder is not inside it, point `REF_DIR` at it:
 
 ```bash
-GENOME_DIR=./results REF_DIR=/path/to/data/reference ./scripts/pgp-lookup.sh your_name CFTR
+GENOME_DIR=./results REF_DIR=/path/to/data/reference ./scripts/owngenome-lookup.sh your_name CFTR
 ```
 
 A position is `chr7:117559590`, `7:117559590` or `chr7:117,559,590`; `chrM` and `chrMT` are the same. A gene is its HGNC symbol as GENCODE names it (`CFTR`).
