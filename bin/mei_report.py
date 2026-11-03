@@ -146,7 +146,9 @@ def read_annotsv(path):
     acmg_class from its full row, the location of each gene from its split
     rows. AnnotSV writes an empty file when it had nothing to annotate."""
     with open(path) as f:
-        rows = list(csv.DictReader(f, delimiter="\t"))
+        # QUOTE_NONE: a free-text field that starts with a double quote must
+        # not swallow the tabs and lines after it.
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
         head = rows[0].keys() if rows else []
     if not rows:
         return {}

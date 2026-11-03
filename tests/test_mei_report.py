@@ -301,6 +301,10 @@ check("7 red control: with an ID that matches no call, the Alu is '.'",
       annotsv_run(RECS, TABLE.replace("chr20_5040478_Alu", "chr20_5040479_Alu"))[1][1]["genes"], ".")
 check("7 an empty AnnotSV table: every call '.'",
       {c["acmg_class"] for c in annotsv_run(RECS, "")[1]}, {"."})
+quoted = annotsv_run(RECS, TABLE.replace("\tsplit\tFIXG1\t", "\tsplit\t\"FIXG1\t"))[1]
+check("7 a field that starts with a double quote is read as it is, not as a quoted field",
+      ({c["pos"]: c for c in quoted}["105639660"]["acmg_class"], {c["pos"]: c for c in quoted}["5040478"]["genes"]),
+      ("NA", "FIXG1,FIXG2"))
 err = annotsv_run(RECS, "SV_chrom\tSV_start\n20\t1\n")
 check("7 a table that is not AnnotSV's stops it", isinstance(err, str) and "not AnnotSV's table" in err, True)
 dup = annotsv_run([rec("chr20", 100, "SINE/Alu"), rec("chr20", 100, "SINE/Alu")], AHEAD)
