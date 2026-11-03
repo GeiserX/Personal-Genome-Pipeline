@@ -284,9 +284,8 @@ jobs:
             [ "$(kv analysed_chromosomes)" -eq 22 ] || { echo "${pop}: $(kv analysed_chromosomes) chromosomes, want 22"; exit 1; }
             [ "$(kv analysed_sites)" -gt 0 ] || { echo "${pop}: no site analysed"; exit 1; }
             nea=$(kv neanderthal_percent)
-            band=$(awk -v x="$nea" 'BEGIN {print (x >= 1 && x <= 2) ? "inside" : "outside"}')
             {
-              echo "**1000 Genomes ${pop} frequencies:** Neanderthal ${nea}% ($(kv neanderthal_segments) segments, longest $(kv neanderthal_longest_bp) bp), Denisovan $(kv denisovan_percent)% ($(kv denisovan_segments) segments), over $(kv analysed_chromosomes) autosomes, $(kv analysed_bp) bp, $(kv analysed_sites) sites. The Neanderthal share is ${band} the published 1-2% for people outside Africa."
+              echo "**1000 Genomes ${pop} frequencies:** Neanderthal ${nea}% ($(kv neanderthal_segments) segments, longest $(kv neanderthal_longest_bp) bp), Denisovan $(kv denisovan_percent)% ($(kv denisovan_segments) segments), over $(kv analysed_chromosomes) autosomes, $(kv analysed_bp) bp, $(kv analysed_sites) sites. Compare this share only with other shares from this step, not with published figures (see docs/43-archaic.md)."
               echo ""
             } >> "$GITHUB_STEP_SUMMARY"
           done

@@ -168,7 +168,7 @@ The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` 
 
 `.github/workflows/public-evidence.yml` runs two opt-in steps whole, on public data only, and writes what they measured to the job summary. It is not a gate; it runs by hand only (`workflow_dispatch`).
 
-- `ancient-footprint`: `setup.sh --ancient-panel` on the full AADR release, then step 44 on a gVCF built from GIAB's HG002 v4.2.1 genotypes, with each container's peak memory, the peak disk growth and the time. It fails if a command fails, if the sampler saw no container memory, or if step 44 used no site. What it measured is in [step 44, Runtime](44-ancient.md#runtime).
+- `ancient-footprint`: `setup.sh --ancient-panel` on the full AADR release, then step 44 on a gVCF built from GIAB's HG002 v4.2.1 genotypes, with the peak memory of each step's containers (one maximum per step, not per container), the peak disk growth and the time. It fails if a command fails, if the sampler saw no container memory, or if step 44 used no site. What it measured is in [step 44, Runtime](44-ancient.md#runtime).
 - `archaic-hg002`: `setup.sh --archaic` and step 43 on HG002, one job per autosome; `archaic-share` joins them into one report per population. A job fails if a command fails or step 43 analysed no site, and the job `empty` is its red control: an empty region list must make setup fail. What it measured is in [step 43, Runtime](43-archaic.md#runtime).
 
 ## The prs-memory job

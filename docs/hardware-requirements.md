@@ -68,7 +68,7 @@ While a VEP cache installs, the tarball and the unpacked tree are on disk togeth
 | CNVpytor GC/mask files | ~0.09 GB | step 18 |
 | pypgx bundle | ~0.4 GB | step 32 |
 | Somatic resources (gnomAD AF-only VCF, panel of normals) | ~3 GB | step 29 |
-| AADR ancient panel, 1240K (7.1 GB `.geno`; 1.05 GiB kept, 9.6 GiB of extra disk at the peak while it builds) | ~1.05 GB (9.6 GiB at the peak) | step 44, `setup.sh --ancient-panel` |
+| AADR ancient panel, 1240K (7.1 GB `.geno`; 1.05 GiB kept, 9.6 GiB of extra disk at the peak while it builds) | ~7.1 GB (the `.geno`) plus three small files | step 44, `setup.sh --ancient-panel` |
 
 ### Annotation Databases (Optional, for Steps 30-31)
 
