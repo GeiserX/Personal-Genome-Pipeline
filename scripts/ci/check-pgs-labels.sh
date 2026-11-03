@@ -14,6 +14,16 @@
 # (T2D)" and the older "type_2_diabetes" both match, and
 # "inflammatory_bowel_disease" does not match "Type 2 diabetes (T2D)".
 #
+# The score list also names, per score, the evaluations whose effect the
+# reports print: ppm_id, ancestry and effect, three columns of entries
+# separated by ";" and in the same order (PPM000591;PPM000594 with EUR;AFR
+# and HR 1.53;HR 1.27). Each PPM id is asked of
+# https://www.pgscatalog.org/rest/performance/<PPM>: it must exist, belong to
+# that score, have been measured in samples of that ancestry (the catalog's
+# ancestry_broad, mapped to the 1000 Genomes group pgsc_calc names), and
+# report that odds ratio (OR) or hazard ratio (HR). A wrong PPM id, ancestry
+# or effect is a failure, as a wrong label is.
+#
 # Usage:
 #   scripts/ci/check-pgs-labels.sh [FILE]   check FILE (default assets/pgs_scores.tsv)
 #   scripts/ci/check-pgs-labels.sh --self-test
@@ -22,8 +32,9 @@
 # score; a third column, applies_to, is not read) and the two map formats step
 # 25 used before it: "PGS000018|Coronary artery disease" entries and the older
 # ["coronary_artery_disease"]="PGS000018".
-# Prints a Markdown table on stdout. Exit 0 when every label matches, 1 when a
-# label is wrong, an ID is unknown, the API answers empty or not at all, or the
+# Prints a Markdown table on stdout (and one of the evaluations, when the file
+# has them). Exit 0 when every label and evaluation matches, 1 when a label or
+# an evaluation is wrong, an ID is unknown, the API answers empty or not at all, or the
 # file holds no PGS ID (an empty check is a failure, never a pass).
 set -euo pipefail
 
@@ -77,6 +88,99 @@ sys.exit(0 if label and label <= trait else 1)
 EOF
 }
 
+# Prints "ID<TAB>ppm_id<TAB>ancestry<TAB>effect" for every row of a score
+# list ($1) with a ppm_id, the columns found by the header's names.
+read_metrics() {
+  awk -F'\t' '
+    !h && $1 == "pgs_id" { for (i = 1; i <= NF; i++) c[$i] = i; h = 1; next }
+    h && c["ppm_id"] && $1 ~ /^PGS[0-9]{6}$/ && $c["ppm_id"] != "" {
+      print $1 "\t" $c["ppm_id"] "\t" (c["ancestry"] ? $c["ancestry"] : "") "\t" (c["effect"] ? $c["effect"] : "")
+    }' "$1"
+}
+
+# Exit 0 when evaluation $2 of the PGS Catalog belongs to score $1, was
+# measured in samples of ancestry $3 and reports effect $4 ("OR 1.61").
+# Prints what the catalog says, or why it does not match, on stdout. An
+# API that fails or answers without that id is exit 2.
+metric_matches() {
+  local id=$1 ppm=$2 anc=$3 eff=$4 body api=${PGS_PERF_API:-https://www.pgscatalog.org/rest/performance}
+  body=$(curl -fsS --connect-timeout 10 --max-time 30 --retry "${PGS_RETRY:-3}" --retry-delay 5 --retry-all-errors \
+    -H 'Accept: application/json' "${api}/${ppm}") || { echo "(no answer)"; return 2; }
+  ID="$id" PPM="$ppm" ANC="$anc" EFF="$eff" python3 -c '
+import json, os, re, sys
+# The PGS Catalog ancestry_broad terms of each 1000 Genomes group pgsc_calc
+# reports (its ancestry_distribution uses the same codes).
+GROUPS = {
+    "EUR": {"European"},
+    "AFR": {"African unspecified", "African American or Afro-Caribbean", "Sub-Saharan African"},
+    "AMR": {"Hispanic or Latin American"},
+    "EAS": {"East Asian"},
+    "SAS": {"South Asian"},
+}
+def group(term):
+    for g, terms in GROUPS.items():
+        if term in terms:
+            return g
+    return None
+try:
+    d = json.loads(sys.stdin.read())
+except ValueError:
+    print("(not JSON)"); sys.exit(2)
+if not isinstance(d, dict) or d.get("id") != os.environ["PPM"]:
+    print("(no such evaluation)"); sys.exit(2)
+samples = (d.get("sampleset") or {}).get("samples") or []
+terms = [s.get("ancestry_broad") or "" for s in samples]
+found = {group(t) for t in terms}
+effects = [(e.get("name_short"), e.get("estimate")) for e in (d.get("performance_metrics") or {}).get("effect_sizes") or []]
+said = "%s, %s, %s" % (d.get("associated_pgs_id"), "; ".join(terms) or "no samples",
+                       "; ".join("%s %s" % e for e in effects) or "no effect size")
+print(said)
+m = re.fullmatch(r"(OR|HR) ([0-9]+(?:\.[0-9]+)?)", os.environ["EFF"])
+ok = (d.get("associated_pgs_id") == os.environ["ID"]
+      and os.environ["ANC"] in GROUPS and found == {os.environ["ANC"]}
+      and m is not None
+      and any(n == m.group(1) and isinstance(v, (int, float)) and abs(v - float(m.group(2))) < 1e-9 for n, v in effects))
+sys.exit(0 if ok else 1)
+' <<<"$body"
+}
+
+# The evaluations table of file $1; exit 1 when one is wrong. A score's
+# three lists must have the same number of entries, and an ancestry may
+# appear once per score.
+check_metrics() {
+  local f=$1 bad=0 n=0 id ppms ancs effs i said rc
+  local -a P A E
+  [ -n "$(read_metrics "$f")" ] || return 0
+  echo ""
+  echo "| PGS ID | PPM ID | Ancestry | Effect | PGS Catalog (score, ancestry, effect) | Result |"
+  echo "|---|---|---|---|---|---|"
+  while IFS=$'\t' read -r id ppms ancs effs; do
+    IFS=';' read -r -a P <<<"$ppms"
+    IFS=';' read -r -a A <<<"$ancs"
+    IFS=';' read -r -a E <<<"$effs"
+    if [ "${#P[@]}" -ne "${#A[@]}" ] || [ "${#P[@]}" -ne "${#E[@]}" ]; then
+      echo "| ${id} | ${ppms} | ${ancs} | ${effs} | | ERROR: ppm_id, ancestry and effect have different numbers of entries |"
+      bad=$((bad + 1)); continue
+    fi
+    if [ "$(printf '%s\n' "${A[@]}" | sort | uniq -d)" != "" ]; then
+      echo "| ${id} | ${ppms} | ${ancs} | ${effs} | | ERROR: an ancestry is listed twice |"
+      bad=$((bad + 1)); continue
+    fi
+    for i in "${!P[@]}"; do
+      n=$((n + 1)); rc=0
+      said=$(metric_matches "$id" "${P[$i]}" "${A[$i]}" "${E[$i]}") || rc=$?
+      case $rc in
+        0) echo "| ${id} | ${P[$i]} | ${A[$i]} | ${E[$i]} | ${said} | ok |" ;;
+        1) echo "| ${id} | ${P[$i]} | ${A[$i]} | ${E[$i]} | ${said} | MISMATCH |"; bad=$((bad + 1)) ;;
+        *) echo "| ${id} | ${P[$i]} | ${A[$i]} | ${E[$i]} | ${said} | ERROR: lookup failed or empty |"; bad=$((bad + 1)) ;;
+      esac
+    done
+  done < <(read_metrics "$f")
+  echo ""
+  echo "Checked ${n} evaluations, ${bad} problem(s)."
+  [ "$bad" -eq 0 ]
+}
+
 check_file() {
   local f=$1 n=0 bad=0 id label trait
   if [ ! -f "$f" ]; then
@@ -103,6 +207,7 @@ check_file() {
     return 1
   fi
   echo "Checked ${n} PGS IDs, ${bad} problem(s)."
+  check_metrics "$f" || bad=$((bad + 1))
   [ "$bad" -eq 0 ]
 }
 
@@ -167,14 +272,40 @@ self_test() {
     echo "SELF-TEST FAIL: a file with no PGS ID passed:"; echo "$out"; fail=1
   fi
 
+  # Control 6: the evaluations. Right ones pass (two of one score, in
+  # order); a PPM id of another score, a wrong ancestry, a wrong effect, an
+  # unknown PPM id and lists of different lengths each fail. The labels are
+  # all right, so the failure can only come from the evaluations.
+  printf 'pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+    $'PGS000018\tCoronary artery disease\t\tPPM000591;PPM000594\tEUR;AFR\tHR 1.53;HR 1.27' \
+    $'PGS000004\tBreast cancer\tfemale\tPPM000591\tEUR\tHR 1.53' \
+    $'PGS000016\tAtrial fibrillation\t\tPPM014988\tAFR\tHR 1.4' \
+    $'PGS000334\tLate-onset Alzheimer’s disease\t\tPPM022981\tEUR\tHR 1.99' \
+    $'PGS000662\tProstate cancer\tmale\tPPM999999\tEUR\tOR 2.04' \
+    $'PGS000014\tType 2 diabetes (T2D)\t\tPPM021437;PPM021589\tEUR\tOR 1.71' > "${d}/metrics.tsv"
+  rc=0; out=$(check_file "${d}/metrics.tsv" 2>&1) || rc=$?
+  echo "Control 6, the planted evaluations (three must be a mismatch, two an error, two must pass):"
+  grep '^| PGS0' <<<"$out" | grep 'PPM' || true
+  if [ "$rc" -eq 0 ] || ! grep -q 'Checked 6 PGS IDs, 0 problem(s).' <<<"$out" \
+     || ! grep -q '| PGS000018 | PPM000591 | EUR | HR 1.53 | .*| ok |' <<<"$out" \
+     || ! grep -q '| PGS000018 | PPM000594 | AFR | HR 1.27 | .*| ok |' <<<"$out" \
+     || ! grep -q '| PGS000004 | PPM000591 | EUR | HR 1.53 | .*| MISMATCH |' <<<"$out" \
+     || ! grep -q '| PGS000016 | PPM014988 | AFR | HR 1.4 | .*| MISMATCH |' <<<"$out" \
+     || ! grep -q '| PGS000334 | PPM022981 | EUR | HR 1.99 | .*| MISMATCH |' <<<"$out" \
+     || ! grep -q '| PGS000662 | PPM999999 | EUR | OR 2.04 | .*| ERROR: lookup failed or empty |' <<<"$out" \
+     || ! grep -q '| PGS000014 | .*| ERROR: ppm_id, ancestry and effect have different numbers of entries |' <<<"$out" \
+     || ! grep -q 'Checked 6 evaluations, 5 problem(s).' <<<"$out"; then
+    echo "SELF-TEST FAIL: an evaluation was judged wrongly:"; echo "$out"; fail=1
+  fi
+
   if [ "$fail" -eq 0 ]; then
-    echo "SELF-TEST OK: wrong label (list and map formats), old format, empty answer, no answer and empty map are all caught."
+    echo "SELF-TEST OK: wrong label (list and map formats), old format, empty answer, no answer, empty map, and a wrong PPM id, ancestry or effect are all caught."
   fi
   return "$fail"
 }
 
 case "${1:-}" in
   --self-test) self_test ;;
-  -h|--help) sed -n '2,25p' "$0" ;;
+  -h|--help) awk 'NR > 1 && /^set -euo/ {exit} NR > 1' "$0" ;;
   *) check_file "${1:-${ROOT}/assets/pgs_scores.tsv}" ;;
 esac
