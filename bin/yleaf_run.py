@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""yleaf_run.py: run Yleaf 3.2.1 (YLEAF_IMAGE) offline, on a pileup made beside it.
+"""yleaf_run.py: run Yleaf 4.1.6 (YLEAF_IMAGE) offline, on a pileup made beside it.
 
-The Bioconda image of Yleaf installs its code only: no samtools, which Yleaf
-calls for its BAM input (`samtools idxstats`, `samtools mpileup`), and none of
-its data folder (marker positions, haplogroup tree), which `setup.sh
---yleaf-data` installs from the release archive as reference/yleaf-<version>/data.
-Yleaf also downloads the whole hg38 FASTA unless its read-only config names
-one. So step 37 and the Y_HAPLOGROUP processes run it in three parts:
+Step 37 and the Nextflow processes make one samtools pass per BAM in
+SAMTOOLS_IMAGE: Yleaf's pileup, the current tree's pileup (y_tree_place.py)
+and the chrY BAM. Yleaf then reads its pileup from a file instead of running
+samtools itself, with its data folder (marker positions, haplogroup trees)
+set to the copy `setup.sh --yleaf-data` installs from the release archive as
+reference/yleaf-<version>/data, the folder that also holds the current tree.
+Yleaf also downloads the whole hg38 FASTA when its read-only config names
+none, and checks GitHub for a newer release. So it runs in three parts:
 
   yleaf_run.py positions --data DATA OUT
       (YLEAF_IMAGE) write Yleaf's GRCh38 marker positions as the "chrY<TAB>pos"
       list `samtools mpileup -l` reads
-  samtools idxstats BAM > IDXSTATS; samtools mpileup -l OUT -AQ20q1 BAM > PILEUP
+  samtools idxstats BAM > IDXSTATS; samtools mpileup -l OUT -ABQ20q1 BAM > PILEUP
       (SAMTOOLS_IMAGE) the two commands Yleaf would run, with its default
       quality threshold of 20
   yleaf_run.py predict --data DATA --bam BAM --reference FASTA --idxstats IDXSTATS --pileup PILEUP --out DIR
-      (YLEAF_IMAGE) Yleaf's own flow, with its data folder set to DATA, its
-      reference constant set to FASTA
-      (a BAM never needs the sequence), each samtools call served from those
-      two files, and its multiprocessing pools replaced by a serial map: a
-      failed call raises SystemExit in a pool worker, which kills it and
-      leaves Pool.map waiting forever.
+      (YLEAF_IMAGE) Yleaf's own flow on its default tree (YFull v14.01),
+      with its data folder set to DATA, its reference constant set to FASTA
+      (a BAM never needs the sequence), no update check, each samtools call
+      served from those two files (a pileup made with other flags than the
+      ones Yleaf asks for stops the run), and its multiprocessing pools
+      replaced by a serial map, so every call runs in this process, where
+      the served samtools calls are.
 
 DIR/hg_prediction.hg is Yleaf's prediction table (Hg is NA when too few
 markers had reads). Standard library plus what Yleaf itself imports.
@@ -31,11 +34,15 @@ import sys
 from pathlib import Path
 
 QUALITY = 20   # Yleaf's -q default; the mpileup above uses the same
+FLAGS = f"-ABQ{QUALITY}q1"   # what Yleaf 4 gives samtools mpileup at that quality
 
 
 class SerialPool:
-    def __init__(self, *args, **kwargs):
-        pass
+    """multiprocessing.Pool in this process: the initializer runs here, once."""
+
+    def __init__(self, processes=None, initializer=None, initargs=(), **kwargs):
+        if initializer is not None:
+            initializer(*initargs)
 
     def __enter__(self):
         return self
@@ -45,6 +52,11 @@ class SerialPool:
 
     def map(self, fn, items):
         return list(map(fn, items))
+
+    def imap(self, fn, items):
+        return map(fn, items)
+
+    imap_unordered = imap
 
 
 def use_data(data):
@@ -110,18 +122,23 @@ def predict(argv):
                 shutil.copyfileobj(f, stdout_location)
             stdout_location.flush()
         elif cmd.startswith("samtools mpileup ") and " > " in cmd:
-            shutil.copyfile(a.pileup, cmd.rsplit(" > ", 1)[1].strip())
+            if f" {FLAGS} " not in f" {cmd} ":
+                sys.exit(f"ERROR: Yleaf asks for samtools mpileup with other flags than {FLAGS}, the ones the "
+                         f"pileup was made with: {cmd}")
+            shutil.copyfile(a.pileup, cmd.rsplit(" > ", 1)[1].strip().strip('"'))
         elif cmd.startswith("samtools index "):
             pass   # the BAM is indexed; Yleaf only asks when it finds no .bai
         else:
             sys.exit(f"ERROR: Yleaf asked for a command this launcher does not serve: {cmd}")
 
     Yleaf.call_command = serve
-    sys.argv = ["Yleaf", "-bam", a.bam, "-o", a.out, "-rg", "hg38", "-force", "-t", "1", "-q", str(QUALITY)]
+    sys.argv = ["Yleaf", "-bam", a.bam, "-o", a.out, "-rg", "hg38", "-tree", "yfull", "-force", "-t", "1",
+                "-q", str(QUALITY), "--no-update-check"]
     Yleaf.main()
     pred = Path(a.out) / "hg_prediction.hg"
     if not pred.is_file() or len(pred.read_text().splitlines()) < 2:
-        sys.exit(f"ERROR: Yleaf wrote no prediction ({pred})")
+        # Yleaf 4 logs a failed sample as "Skipping" and goes on: its log says why.
+        sys.exit(f"ERROR: Yleaf wrote no prediction ({pred}); its log is in {a.out}")
 
 
 def main(argv):
