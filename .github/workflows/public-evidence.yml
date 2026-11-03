@@ -108,9 +108,9 @@ jobs:
           : > "${EV}/regions37.bed"
           for c in $CHROMS; do printf '%s\t0\t300000000\n' "$c" >> "${EV}/regions37.bed"; done
           T0=$(date +%s)
-          ARCHAIC_REGIONS="${EV}/regions37.bed" scripts/setup.sh --archaic "$G" 2>&1 | tee "${OUT}/setup.log"
-          rc=${PIPESTATUS[0]}
-          [ "$rc" -eq 0 ] || { echo "setup.sh --archaic exited ${rc}"; exit 1; }
+          if ! ARCHAIC_REGIONS="${EV}/regions37.bed" scripts/setup.sh --archaic "$G" 2>&1 | tee "${OUT}/setup.log"; then
+            echo "setup.sh --archaic failed"; exit 1
+          fi
           DATA="${G}/reference/archaic/${ARCHAIC_DATA_VERSION}"
           printf 'setup_seconds\t%s\ntable_bytes\t%s\ntable_rows\t%s\n' "$(( $(date +%s) - T0 ))" \
             "$(du -sb "$DATA" | cut -f1)" "$(for t in "${DATA}"/chr*.tsv.gz; do gzip -dc "$t" | tail -n +2; done | wc -l)" \
@@ -121,9 +121,9 @@ jobs:
           curl -fsSL --retry 5 -o "${G}/HG002/vcf/HG002.vcf.gz" "${GIAB_HG002}.vcf.gz"
           curl -fsSL --retry 5 -o "${G}/HG002/vcf/HG002.vcf.gz.tbi" "${GIAB_HG002}.vcf.gz.tbi"
           for pop in ALL EUR; do
-            ARCHAIC_POP=$pop GENOME_DIR="$G" scripts/43-archaic.sh HG002 2>&1 | tee "${OUT}/step43-${pop}.log"
-            rc=${PIPESTATUS[0]}
-            [ "$rc" -eq 0 ] || { echo "step 43 (${pop}) exited ${rc}"; exit 1; }
+            if ! ARCHAIC_POP=$pop GENOME_DIR="$G" scripts/43-archaic.sh HG002 2>&1 | tee "${OUT}/step43-${pop}.log"; then
+              echo "step 43 (${pop}) failed"; exit 1
+            fi
             mkdir -p "${OUT}/${pop}"
             cp "${G}/HG002/archaic/work/ibdmix/"chr*.txt "${G}/HG002/archaic/work/ibdmix/spans.tsv" "${OUT}/${pop}/"
             sites=$(awk -F'\t' 'NR > 1 {n += $4} END {print n + 0}' "${OUT}/${pop}/spans.tsv")
@@ -133,31 +133,37 @@ jobs:
             [ "$chroms" -eq "$(echo "$CHROMS" | wc -w)" ] || { echo "step 43 (${pop}) analysed ${chroms} of the part's chromosomes"; exit 1; }
           done
 
-          # The positions where HG002 carries an SNV and another record, as
-          # GIAB writes the VCF and split with bcftools norm -m-, and how
-          # many of them are rows of the table (the rows the fix changes).
+          # The positions of this part where HG002 has two records or more, one
+          # of them an SNV, as GIAB writes the VCF and split with bcftools
+          # norm -m-, and how many of them are rows of the table (the rows the
+          # same-position rule of archaic_report.py decides).
           docker run --rm -u "$(id -u):$(id -g)" -v "${G}:/g" "$BCFTOOLS_IMAGE" \
             bcftools norm -m- -Oz -o /g/HG002/split.vcf.gz /g/HG002/vcf/HG002.vcf.gz
           python3 -I - "${G}/HG002/vcf/HG002.vcf.gz" "${G}/HG002/split.vcf.gz" "$DATA" "$OUT/affected.tsv" <<'PY'
           import glob, gzip, os, sys
           raw, split, data, out = sys.argv[1:]
+          tables = sorted(glob.glob(os.path.join(data, "chr*.tsv.gz")))
+          chroms = {os.path.basename(t)[:-7] for t in tables}  # this part's chromosomes only
           def clashes(path):
-              """Positions with an SNV record and another record (the VCF is sorted)."""
-              hit, key, kinds = set(), None, set()
+              """Positions of this part with two records or more, one an SNV (the VCF is sorted)."""
+              hit, key, n, snvs = set(), None, 0, 0
               for line in gzip.open(path, "rt"):
                   if line.startswith("#"):
                       continue
                   c = line.split("\t", 6)
+                  if c[0] not in chroms:
+                      continue
                   k = (c[0], int(c[1]))
                   if k != key:
-                      key, kinds = k, set()
-                  kinds.add(len(c[3]) == 1 and len(c[4]) == 1)
-                  if len(kinds) == 2:
+                      key, n, snvs = k, 0, 0
+                  n += 1
+                  snvs += len(c[3]) == 1 and len(c[4]) == 1
+                  if n >= 2 and snvs >= 1:
                       hit.add(key)
               return hit
           sets = {"raw": clashes(raw), "split": clashes(split)}
           on_table = {k: 0 for k in sets}
-          for t in glob.glob(os.path.join(data, "chr*.tsv.gz")):
+          for t in tables:
               chrom = os.path.basename(t)[:-7]
               want = {k: {p for c, p in v if c == chrom} for k, v in sets.items()}
               if not any(want.values()):
@@ -180,9 +186,12 @@ jobs:
         if: matrix.expect == 'fail'
         env:
           OUTCOME: ${{ steps.run.outcome }}
+          PART: ${{ matrix.part }}
         run: |
           echo "outcome of the run on an empty region list: ${OUTCOME}"
           [ "$OUTCOME" = failure ]
+          # and for that reason, not an earlier download or install failure
+          grep -F 'regions37.bed is not a file' "${EV}/out/${PART}/setup.log"
 
       - name: Upload the part
         if: matrix.expect == 'pass'
@@ -236,7 +245,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           done
           {
-            echo "HG002 positions with an SNV and another record at once, and how many are table rows:"
+            echo "HG002 positions with two records or more, one an SNV, and how many are table rows:"
             echo ""
             echo "| VCF | positions | on table rows |"
             echo "|---|---|---|"
@@ -301,7 +310,9 @@ jobs:
           export GENOME_DIR="$G"
           mkdir -p "$M"
           # measure NAME: peak memory.peak and memory.swap.peak of any running
-          # container, and peak growth of the disk under G, every 2 s, into
+          # container, and peak growth of the used space of the filesystem that
+          # holds G (df: other writers count, a file made and deleted within
+          # 2 s does not), every 2 s, into
           # M/NAME.peak, until stopped.
           measure() {
             local out="${M}/$1.peak" mem=0 swap=0 disk=0 base v id f
@@ -425,7 +436,7 @@ jobs:
             echo ""
             echo "Runner: $(nproc) CPUs, $(free -g | awk '/^Mem:/ {print $2}') GB RAM, 8 GB swap added. THREADS=4."
             echo ""
-            echo "| run | wall time | peak container memory | peak container swap | peak disk growth | setup.sh or step RSS (/usr/bin/time) |"
+            echo "| run | wall time | peak container memory | peak container swap | peak growth of used disk (df) | setup.sh or step RSS (/usr/bin/time) |"
             echo "|---|---|---|---|---|---|"
             for n in setup step44; do
               kv() { awk -F'\t' -v k="$1" '$1 == k {v = $2} END {print v}' "${M}/${n}.peak"; }
