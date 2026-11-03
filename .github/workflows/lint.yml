@@ -51,6 +51,49 @@ jobs:
       - name: Run actionlint
         run: actionlint -color
 
+  promtool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The tarball must match its line in the release's sha256sums.txt;
+      # a missing line fails too.
+      - name: Install promtool
+        working-directory: ${{ runner.temp }}
+        run: |
+          # Pinned by hand: renovate.json has no manager for this line yet.
+          PROMETHEUS_VERSION=3.15.1
+          base="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}"
+          tarball="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl -sSfLO "${base}/${tarball}"
+          curl -sSfL "${base}/sha256sums.txt" -o sha256sums.txt
+          awk -v f="$tarball" '$2 == f' sha256sums.txt | grep -q . || { echo "ERROR: no checksum line for ${tarball}"; exit 1; }
+          awk -v f="$tarball" '$2 == f' sha256sums.txt | sha256sum -c -
+          tar xzf "$tarball" --strip-components=1 -C /usr/local/bin "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          promtool --version
+
+      - name: Check and test the example alert rules
+        run: |
+          promtool check rules assets/monitoring/pgp-alerts.yml
+          promtool test rules assets/monitoring/pgp-alerts.test.yml
+
+      # A test that cannot fail is no test: change one threshold in a copy
+      # and require the rule tests to fail there.
+      - name: Control, a changed threshold must fail the rule tests
+        run: |
+          ctl=$(mktemp -d)
+          cp assets/monitoring/pgp-alerts.yml assets/monitoring/pgp-alerts.test.yml "$ctl/"
+          sed -i 's/expr: pgp_run_late_steps > 0$/expr: pgp_run_late_steps > 1/' "$ctl/pgp-alerts.yml"
+          if cmp -s assets/monitoring/pgp-alerts.yml "$ctl/pgp-alerts.yml"; then
+            echo "ERROR: the control changed nothing"; exit 1
+          fi
+          if promtool test rules "$ctl/pgp-alerts.test.yml"; then
+            echo "ERROR: the rule tests passed with a changed threshold"; exit 1
+          fi
+          echo "Control: the changed threshold was caught."
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:

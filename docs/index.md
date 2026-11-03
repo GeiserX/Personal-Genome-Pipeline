@@ -57,7 +57,7 @@ hide:
 - **Everything else the reads hold:** clonal haematopoiesis (CHIP) in the blood, with the detection limit at your depth (opt-in), HLA type, repeat expansions at STRchive's 82 disease loci (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
-  ![The step 24 HTML report: cards for quality control, mosaic loss of chromosome Y or X, variant calling, ClinVar, the couple carrier screen, pharmacogenomics, CPIC, CYP2D6 across callers, HLA typing, structural variants, cancer predisposition, repeat expansions, runs of homozygosity, the mitochondrial haplogroup, paralog genes, the Y haplogroup, the raw-data export, blood groups, telomere length, mitochondrial variants, the clinical filter and slivar, then the polygenic risk scores table and the fine-grained ancestry tables with the chromosome painting](images/demo-html-report.png){ loading=lazy }
+  ![The step 24 HTML report: a contents list on the left groups the sections into chapters (Quality, Clinical, Carrier, Medicines, Ancestry, Traits and scores); on the right, the report header with the sample, the run and the database dates, the Quality chapter with the quality control and variant calling cards, and the Clinical chapter opening with the ClinVar screen and a bar chart of its hits by review stars, low-confidence calls shown apart](images/demo-html-report.png){ loading=lazy }
   <figcaption markdown>The HTML report from [step 24](24-html-report.md), run on DEMO-001, an invented sample. Every number in it is made up.</figcaption>
 </figure>
 

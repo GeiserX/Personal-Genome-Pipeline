@@ -10,7 +10,7 @@
     AnnotSV's benign loss set is set aside, the set read from
     --annotsv_annotations when it is there), SMN1 copy number (PARASCOPY) and
     the FMR1 and FXN repeats (EXPANSION_HUNTER). It writes couple_<a>_<b>.tsv and .md, published
-    under <outdir>/family/, and one copy of the table per partner,
+    under the family's folder, <outdir>/<family>/ (--family_name, default family/), and one copy of the table per partner,
     <id>_couple_carrier.tsv, published under <outdir>/<id>/couple/ for that
     partner's report.
 
@@ -27,11 +27,11 @@ process COUPLE_CARRIER {
 
     publishDir "${params.outdir}", mode: params.publish_dir_mode, saveAs: { fn ->
         fn == 'versions.yml' ? null :
-        fn.endsWith('_couple_carrier.tsv') ? "${fn.substring(0, fn.length() - 19)}/couple/${fn}" : "family/${fn}"
+        fn.endsWith('_couple_carrier.tsv') ? "${fn.substring(0, fn.length() - 19)}/couple/${fn}" : "${params.family_name ?: 'family'}/${fn}"
     }
 
     input:
-    path(pedigree, stageAs: 'pedigree.tsv')
+    path(pedigree, stageAs: 'pedigree.tsv')  // the family's own rows (FAMILY_PREPARE's pedigree.tsv)
     val(ids)             // the family members' samplesheet ids, sorted
     val(sexes)           // each id's samplesheet sex ('' when the row gives none), in the same order
     path(outputs, stageAs: 'in/*')
