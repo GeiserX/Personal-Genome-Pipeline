@@ -56,7 +56,9 @@ Checks:
      give a poor metabolizer. A moderate CYP2C9 inhibitor (the FDA lists no
      strong one) and a strong CYP3A inhibitor change the
      Phenoconverted_phenotype column of CYP2C9 and CYP3A5 to a note, and a
-     list without one leaves it '-'.
+     list without one leaves it '-'. A CYP3A5 poor metabolizer gets no line
+     saying the inhibitor can lower its activity, and a line written
+     'lopinavir/ritonavir' is matched as lopinavir, a boosted partner.
   9. disease-variant contraindications (--contraindications with
      assets/pgx_contraindications.tsv and step 06's --clinvar-hits): every
      row of the table has the shape the parser reads; a pathogenic POLG hit
@@ -211,6 +213,9 @@ def phenoconversion_checks(work):
     check("inhibitors: CYP3A4 and CYP3A5 list the same strong inhibitors",
           {r[0] for r in rows if r[1] == "CYP3A4"} == {r[0] for r in rows if r[1] == "CYP3A5"})
     check("inhibitors: the parser reads the table", len(pgx_parse.read_inhibitors(INHIBITORS)) == len(rows))
+    boosted = {"elvitegravir", "indinavir", "lopinavir", "paritaprevir", "saquinavir", "tipranavir"}
+    check("inhibitors: each ritonavir-boosted partner the FDA classes as strong has a CYP3A4 and a CYP3A5 row",
+          all((d, g) in keys for d in boosted for g in ("CYP3A4", "CYP3A5")), boosted)
 
     # 8b. a strong CYP2D6 inhibitor, a CYP2C19 inhibitor, a name not in the table
     rc, rec, rows, _ = run_report(work, "PHENO", pheno_report(),
@@ -324,6 +329,14 @@ def phenoconversion_checks(work):
           in section(rec), section(rec))
     check("CYP3A5: a strong CYP3A inhibitor (ketoconazole) changes the reported column to a note",
           got["CYP3A5"][4].startswith("not computed: ketoconazole inhibits CYP3A5"), got["CYP3A5"])
+    check("CYP3A5 *3/*3 (poor metabolizer): no line says the inhibitor can lower its activity; CYP2C9 keeps it",
+          "can lower CYP3A5 activity" not in section(rec) and "can lower CYP2C9 activity" in section(rec),
+          section(rec))
+    _, rec, rows, _ = run_report(work, "PHENOBOOSTED", rep, medications="lopinavir/ritonavir 400/100 mg\n")
+    got = {r[0]: r for r in rows}
+    check("a boosted combination written 'lopinavir/ritonavir' is matched as lopinavir",
+          got["CYP3A5"][4].startswith("not computed: lopinavir inhibits CYP3A5")
+          and "Not in the inhibitor table" not in section(rec), (got["CYP3A5"], section(rec)))
     _, rec, rows, _ = run_report(work, "PHENO2C9NONE", rep, medications="paroxetine\n")
     got = {r[0]: r for r in rows}
     check("CYP2C9 and CYP3A5: without an inhibitor of theirs on the list the column stays '-'",

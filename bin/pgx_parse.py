@@ -685,12 +685,13 @@ def read_medications(path):
     """The lines of a medication list, one drug per line; '#' starts a
     comment and blank lines are skipped. Returns [(line as written, drug
     name)]: the name is the first word, lower case, so a dose after it ('20
-    mg') does not hide the drug."""
+    mg') does not hide the drug. A slash or a plus also ends a word, so
+    'lopinavir/ritonavir' names lopinavir."""
     out = []
     with open(path) as f:
         for line in f:
             text = line.split("#", 1)[0].strip()
-            name = norm_drug(re.split(r"[\s,;]+", text.strip(" \t,;"))[0]) if text else ""
+            name = norm_drug(re.split(r"[\s,;/+]+", text.strip(" \t,;/+"))[0]) if text else ""
             if name:
                 out.append((text, name))
     return out
@@ -744,7 +745,10 @@ def phenoconversion(calls, meds, inhibitors, guidance, related):
             column[gene] = f"not computed: {', '.join(n for n, _, _ in hits)} inhibits {gene}; {why}"
             lines.append(f"  WARNING: {gene} genotype phenotype {c.shown}; on {on}. {why[0].upper() + why[1:]}, "
                          "so no converted phenotype is computed.")
-            lines.append(f"    The inhibitor can lower {gene} activity below what the genotype predicts.")
+            # A poor metabolizer (CYP3A5 *3/*3, the usual genotype) already has
+            # no or little activity for an inhibitor to lower.
+            if "poor metabolizer" not in c.phenotype.lower():
+                lines.append(f"    The inhibitor can lower {gene} activity below what the genotype predicts.")
         else:
             factor = min(f for _, _, f in hits)
             strongest = [n for n, _, f in hits if f == factor]
