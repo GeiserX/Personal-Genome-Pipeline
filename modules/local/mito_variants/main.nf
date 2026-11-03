@@ -225,11 +225,14 @@ process MITO_DELETIONS {
     # An eKLIPse error, or a run with no CSV, leaves no deletion table but
     # keeps the copy number, as stage 8 of scripts/20-mtoolbox.sh does; the
     # report then says the deletions were not looked for.
-    if ! python3 "\$EK" -in eklipse_input.tsv -ref "\$(dirname "\$EK")/data/NC_012920.1.gb" \\
+    # A failed run can leave a partial CSV, so it is not read.
+    CSV=
+    if python3 "\$EK" -in eklipse_input.tsv -ref "\$(dirname "\$EK")/data/NC_012920.1.gb" \\
         -out eklipse_out -tmp eklipse_tmp -thread ${task.cpus}; then
+        CSV=\$(find eklipse_out -name eKLIPse_deletions.csv | head -n 1)
+    else
         echo "WARNING: eKLIPse failed: no deletion table" >&2
     fi
-    CSV=\$(find eklipse_out -name eKLIPse_deletions.csv | head -n 1)
     if [ -z "\$CSV" ]; then
         echo "WARNING: eKLIPse wrote no eKLIPse_deletions.csv: no deletion table" >&2
     else
