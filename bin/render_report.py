@@ -46,6 +46,9 @@ def stale_note(sec):
 CLINVAR_FREQ_NOTE = ("Check every P/LP hit's population frequency, a heterozygous hit in a dominant gene as well as "
                      "a homozygous one: a hit above 1% in gnomAD is unlikely to be a high-penetrance finding, and a "
                      "hit whose frequency is unknown has not been checked.")
+CALLABILITY_NOTE = ("A gene listed as not read could not be read reliably: too few of its reads were placed on it "
+                    "with confidence, so a 'no finding' in it says nothing. A gene with a caller of its own is "
+                    "left to that caller's section.")
 HLA_NOTE = ("HLA typing from short-read WGS is approximate. If either HLA-A or HLA-B allele has a T1K quality "
             "of 0 or less, that gene is not passed to PharmCAT (step 36).")
 EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, and a long expansion "
@@ -367,6 +370,26 @@ MOSAIC_CALL = {"detected": ("detected", "yellow"), "not_detected": ("not detecte
 
 def pct(x):
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
+
+
+def callability_gene(g):
+    if g["status"] == "not on this reference":
+        return f"{g['gene']} (not on this reference)"
+    return f"{g['gene']} ({100 * g['share']:.0f}%)"
+
+
+def callability_lines(d):
+    """Step 16b's gene callability: the lines of the text section and the card."""
+    out = [f"{d['read']} of the {d['catalog_genes']} hard-to-read genes of assets/callability_genes.tsv were read: "
+           f"{100 * d['min_share']:.0f}% or more of their bases had {d['min_depth']} or more reads of mapping "
+           f"quality {d['min_mapq']} or more."]
+    nr, owned = d["not_read"], d["not_read_owned"]
+    out.append(f"Not read, and no other step calls them ({len(nr)}): "
+               + (", ".join(callability_gene(g) for g in nr) if nr else "none"))
+    if owned:
+        out.append(f"Not read here, called by a step of their own ({len(owned)}): "
+                   + ", ".join(f"{callability_gene(g)} by {g['owner']}" for g in owned))
+    return out
 
 
 def mosaic_lines(q):
@@ -741,6 +764,7 @@ def annotsv_lines(d):
 CHAPTERS = (
     ("quality", "Quality", "Can I trust this data?", (
         ("qc", "Quality control", ("coverage", "sex_check", "sample_qc", "read_count")),
+        ("callability", "Genes this genome could not read reliably", ("callability",)),
         ("variants", "Variant calling", ("variants",)),
     )),
     ("clinical", "Clinical", "Is there anything to take to a doctor?", (
@@ -871,6 +895,12 @@ def text_report(s):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         for line in karyotype_lines(S):
             w(f"  {line}")
+        w("")
+
+    if head("callability", "Genes This Genome Could Not Read Reliably"):
+        for line in callability_lines(S["callability"]["data"]):
+            w(f"  {line}")
+        w(f"  {CALLABILITY_NOTE}")
         w("")
 
     if head("mosaic_sex_loss"):
@@ -2125,6 +2155,15 @@ def html_report(s, index=None):
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a("coverage", ['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
+
+    ca = S.get("callability", MISSING)
+    if ca["state"] != "missing":
+        cd = ca["data"]
+        ca_body = ([stat("Genes read", f"{cd['read']} of {cd['catalog_genes']}"),
+                    stat("Not read, no other caller", badge(len(cd["not_read"]), "red" if cd["not_read"] else "green"))]
+                   if ca["state"] in ("ok", "stale") else [])
+        ca_body += [small_note(line) for line in (callability_lines(cd) if ca["state"] in ("ok", "stale") else [])]
+        a("callability", card(ca, "Genes This Genome Could Not Read Reliably", ca_body + [small_note(CALLABILITY_NOTE)]))
 
     mo = S.get("mosaic_sex_loss", MISSING)
     q = mo["data"]

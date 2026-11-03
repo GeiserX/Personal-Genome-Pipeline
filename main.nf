@@ -1085,9 +1085,9 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
-    // The ACMG SF rules and the carrier list the report applies (bin/ is the
-    // only repository folder a task sees).
-    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
+    // The ACMG SF rules, the carrier list and the gene callability table the
+    // report applies (bin/ is the only repository folder a task sees).
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -1114,6 +1114,7 @@ workflow {
         .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.callability.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)

@@ -86,6 +86,11 @@ process PARASCOPY {
     # one cn-using per catalog row, one table per row with one row per region of
     # the locus profile (aggregate and paralog-specific copy number, each with
     # filter and quality).
+    # A BAM with ALT or HLA contigs is refused, as scripts/35-paralogs.sh does
+    # (bin/copy_number.py check-bam): its depth splits between a gene and its
+    # ALT copy, and a depth-based count reads that as a deletion.
+    samtools view -H ${bam} > bam_header.txt
+    copy_number.py check-bam --header bam_header.txt
     models=${parascopy_data}/models_GRCh38_1KGP/${params.parascopy_population}
     [ -d "\$models" ] || { echo "ERROR: no Parascopy models \$models (populations: AFR AMR EAS EUR SAS)" >&2; exit 1; }
     parascopy depth -i ${bam}::${meta.id} -f ${reference} ${background} -o depth -@ ${task.cpus}

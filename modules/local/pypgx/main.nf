@@ -67,6 +67,12 @@ process PYPGX {
     def alt_needs = pgx_rows.findAll { r -> r[1] == 'bam' && r[2] == 'no' }.collect { r -> "${r[0]}:${r[3]}" }.join(' ')
     def gq_floor = task.ext.gq_floor != null ? task.ext.gq_floor : 20
     """
+    # A BAM with ALT or HLA contigs is refused, as scripts/32-pypgx.sh does
+    # (bin/copy_number.py check-bam): its depth splits between a gene and its
+    # ALT copy, and a depth-based count reads that as a deletion. The contig
+    # names come from pysam, which the image has.
+    python3 -c "import pysam, sys; print(chr(10).join(pysam.AlignmentFile(sys.argv[1]).references))" ${bam} > bam_contigs.txt
+    copy_number.py check-bam --header bam_contigs.txt
     OUTBASE="${meta.id}_pypgx_results"
     mkdir -p "\$OUTBASE"
 
