@@ -272,8 +272,20 @@ check "the pipeline published somalier's tables under family/somalier" test -s "
 
 nf_family swapped "${F}/pedigree_swapped.tsv"
 check "pipeline, HG002 and HG003 swapped: the run stops (exit ${RC})" test "$RC" -ne 0
-check "the message names a pair that disagrees" has 'HG003 and HG004: declared parent-child \(first degree\), but somalier measures (unrelated|third degree)' "$(cat "$LOG")"
 check "FAMILY_CHECK is the task that failed" has "FAMILY:FAMILY_CHECK" "$(cat "$LOG")"
+# The pair message, read from the failed FAMILY_CHECK task's own .command.err.
+# The console's copy of it is not reliable: in one run the task's stdout lines
+# overwrote the start of its stderr there, and the ERROR lines were gone.
+FC_ERR=""
+for d in "${F}"/nfwork/*/*/; do
+  grep -q 'family_report.py check' "${d}.command.sh" 2>/dev/null || continue
+  [ "$(cat "${d}.exitcode" 2>/dev/null)" = 0 ] && continue
+  FC_ERR="${d}.command.err"
+done
+check "a failed FAMILY_CHECK task was found" test -n "$FC_ERR"
+PAIR_MSG='HG003 and HG004: declared parent-child \(first degree\), but somalier measures (unrelated|third degree)'
+check "the failed FAMILY_CHECK task's error names a pair that disagrees (${FC_ERR:-no failed task found})" \
+  has "$PAIR_MSG" "$(cat "$FC_ERR" 2>/dev/null)"
 check "no report and no phasing after the stop" test ! -e "${OUT}/family/family_report.md" -a ! -e "${OUT}/family/family.phased.vcf.gz"
 
 # A planted de novo: a site HG002 inherited from HG004 (HG002 0/1, HG003 0/0,
