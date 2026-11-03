@@ -675,11 +675,14 @@ workflow {
     // as outside calls
     // ═══════════════════════════════════════════════════════════════════
     // Opt-in (--medications): the user's own list of the drugs taken, never a
-    // default. CPIC_LOOKUP checks it for CYP2D6 and CYP2C19 inhibitors.
+    // default. CPIC_LOOKUP checks it for inhibitors of CYP2D6, CYP2C19, CYP2C9
+    // and CYP3A4/5.
     ch_medications = params.medications
         ? Channel.value(file(params.medications, checkIfExists: true))
         : Channel.value([])
     ch_inhibitors  = Channel.value(file("${projectDir}/assets/pgx_inhibitors.tsv", checkIfExists: true))
+    // The drugs a pathogenic ClinVar hit in a disease gene makes risky (POLG with valproate).
+    ch_contraindications = Channel.value(file("${projectDir}/assets/pgx_contraindications.tsv", checkIfExists: true))
     PGX(
         ch_vcf,
         ch_reference,
@@ -695,7 +698,8 @@ workflow {
         BAM_ANALYSIS.out.mito_vcf,
         BAM_ANALYSIS.out.hla_optitype,
         ch_medications,
-        ch_inhibitors
+        ch_inhibitors,
+        ch_contraindications
     )
 
     // ═══════════════════════════════════════════════════════════════════
