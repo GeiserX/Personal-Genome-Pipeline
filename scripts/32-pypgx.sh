@@ -59,26 +59,6 @@ rm -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" "${OUTPUT_DIR}/${SAMPLE}_pypgx
 rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
   "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
 
-# A BAM aligned to a reference with ALT or HLA contigs is refused: pypgx
-# reads copy number from depth, and that depth splits between a gene and its
-# ALT copy, which reads as a deletion (bin/copy_number.py check-bam, exit 4).
-# A header that cannot be read leaves the check undone, with a warning.
-HDR="${OUTPUT_DIR}/bam_header.part"
-if run_in --cpus 1 --memory 1g "${SAMTOOLS_IMAGE}" samtools view -H "$(cpath "$BAM")" > "$HDR"; then
-  rc=0
-  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
-    python3 /pgp-bin/copy_number.py check-bam --header "$(cpath "$HDR")" || rc=$?
-  rm -f "$HDR"
-  if [ "$rc" -eq 4 ]; then
-    exit 1
-  elif [ "$rc" -ne 0 ]; then
-    echo "WARNING: the ALT contig check of the BAM header failed (exit ${rc}); it was not done." >&2
-  fi
-else
-  rm -f "$HDR"
-  echo "WARNING: could not read the BAM header; the ALT contig check was not done." >&2
-fi
-
 # Validate pypgx-bundle (required for Beagle phasing panels and CNV models)
 PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
 if [ ! -d "$PYPGX_BUNDLE" ]; then
@@ -99,6 +79,27 @@ if [ "$BUNDLE_TAG" != "$PYPGX_BUNDLE_VERSION" ]; then
   echo "  Replace it with:" >&2
   echo "  git clone --branch ${PYPGX_BUNDLE_VERSION} --depth 1 https://github.com/sbslee/pypgx-bundle.git ${PYPGX_BUNDLE}" >&2
   exit 1
+fi
+
+# A BAM aligned to a reference with ALT or HLA contigs is refused: pypgx
+# reads copy number from depth, and that depth splits between a gene and its
+# ALT copy, which reads as a deletion (bin/copy_number.py check-bam, exit 4).
+# A header that cannot be read leaves the check undone, with a warning. It runs
+# after the bundle check, which starts no container.
+HDR="${OUTPUT_DIR}/bam_header.part"
+if run_in --cpus 1 --memory 1g "${SAMTOOLS_IMAGE}" samtools view -H "$(cpath "$BAM")" > "$HDR"; then
+  rc=0
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+    python3 /pgp-bin/copy_number.py check-bam --header "$(cpath "$HDR")" || rc=$?
+  rm -f "$HDR"
+  if [ "$rc" -eq 4 ]; then
+    exit 1
+  elif [ "$rc" -ne 0 ]; then
+    echo "WARNING: the ALT contig check of the BAM header failed (exit ${rc}); it was not done." >&2
+  fi
+else
+  rm -f "$HDR"
+  echo "WARNING: could not read the BAM header; the ALT contig check was not done." >&2
 fi
 
 # The genes and how each is called come from assets/pgx_genes.tsv (one row per
