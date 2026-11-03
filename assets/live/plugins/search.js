@@ -1,11 +1,11 @@
-// search.js: find a gene symbol or rsID across one run's results (a plugin, bin/pgp_live_search.py).
+// search.js: find a gene symbol or rsID across one run's results (a plugin, bin/owngenome_live_search.py).
 // When state.json says the run's <sample>_search_index.json exists, it is fetched once from the
 // run folder (same origin, nothing else; again only when the report is written anew). Typing
 // filters that index here in the browser: no request per keystroke, so the query is in no
 // request and no server log. A hit lists each section that names the term, with a link to it in
 // the report and, for a mention with a locus, to the reads in the genome viewer. The query rule
 // is bin/results_index.py's query(): an rsID, a gene symbol (a prefix also lists the terms that
-// start with it), or a position, which the index cannot answer (scripts/pgp-lookup.sh can).
+// start with it), or a position, which the index cannot answer (scripts/owngenome-lookup.sh can).
 // tests/test_results_index.py runs match() under node against the Python rule.
 (function (root) {
   'use strict';
@@ -92,7 +92,7 @@
     document.documentElement.setAttribute('data-pgp-search', String(r.items.length));
     if (r.kind === 'site') {
       out.appendChild(el('p', {}, 'The search finds gene symbols and rsIDs. A position is a question about the genotype: '
-        + 'run scripts/pgp-lookup.sh on this computer.'));
+        + 'run scripts/owngenome-lookup.sh on this computer.'));
       return;
     }
     if (r.kind === 'error') {

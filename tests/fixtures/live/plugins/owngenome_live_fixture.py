@@ -1,4 +1,4 @@
-"""A plugin for tests/test_pgp_live.py: one route, one run file glob and one state hook."""
+"""A plugin for tests/test_owngenome_live.py: one route, one run file glob and one state hook."""
 
 
 def register(app):

@@ -317,7 +317,7 @@ norm() {
 MAIN="${CASE_TMP}/main"
 rm -rf "$MAIN"
 mkdir -p "$MAIN"
-if git -C "$REPO" fetch -q --depth 1 https://github.com/GeiserX/Personal-Genome-Pipeline.git main 2>"${CASE_TMP}/fetch.log"; then
+if git -C "$REPO" fetch -q --depth 1 https://github.com/GeiserX/OwnGenome.git main 2>"${CASE_TMP}/fetch.log"; then
   git -C "$REPO" archive FETCH_HEAD | tar -x -C "$MAIN"
 fi
 check "main's pipeline is checked out" test -s "${MAIN}/main.nf"

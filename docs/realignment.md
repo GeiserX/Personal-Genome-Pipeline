@@ -10,7 +10,7 @@ ALT contigs are second copies of regions that vary a lot between people: the MHC
 
 ### How much depth ALT contigs cost
 
-The `ALT depth A/B` workflow ([`scripts/ci/alt-depth-ab.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/alt-depth-ab.sh)) measures it on the test fixture, a 30x slice of the public GIAB HG002 genome. It maps the fixture's CYP2D6-region and MHC-region read pairs to both whole references with step 02's aligner and preset, and reads the mean depth with mosdepth, for all reads and for MAPQ >= 1, the reads a caller uses:
+The `ALT depth A/B` workflow ([`scripts/ci/alt-depth-ab.sh`](https://github.com/GeiserX/OwnGenome/blob/main/scripts/ci/alt-depth-ab.sh)) measures it on the test fixture, a 30x slice of the public GIAB HG002 genome. It maps the fixture's CYP2D6-region and MHC-region read pairs to both whole references with step 02's aligner and preset, and reads the mean depth with mosdepth, for all reads and for MAPQ >= 1, the reads a caller uses:
 
 | Region | Reference | Depth, all reads | Depth, MAPQ >= 1 | MAPQ >= 1 / all |
 |---|---|---|---|---|

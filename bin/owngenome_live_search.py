@@ -1,4 +1,4 @@
-"""pgp_live_search.py: the live page's search box, a plugin of bin/pgp_live.py.
+"""owngenome_live_search.py: the live page's search box, a plugin of bin/owngenome_live.py.
 
 Step 24 (and the Nextflow HTML_REPORT process) writes <sample>_search_index.json
 beside the report: every gene symbol and rsID the results mention, with the

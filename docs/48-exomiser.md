@@ -47,7 +47,7 @@ into `${GENOME_DIR}/reference/exomiser-2602/`, with `2602_hg38/` (variant freque
 HPO=HP:0001250,HP:0001263 ./scripts/48-exomiser.sh your_name
 ```
 
-With `run-all.sh`: set `HPO=...` and the run adds step 48 (it is reported as skipped when the data is not installed, or when `TOOLS` names `exomiser` and `HPO` is not set). In the Nextflow pipeline: `--hpo HP:0001250,HP:0001263 --exomiser_data ${GENOME_DIR}/reference/exomiser-2602` (processes `EXOMISER_PREPARE`, `EXOMISER` and `EXOMISER_REPORT`). `--hpo` turns the tool on; `exomiser` in `--tools` without `--hpo` stops the run. With more than one sample in the samplesheet, name the person the terms describe with `--exomiser_proband`.
+With `run-all.sh`: set `HPO=...` and the run adds step 48, also when `TOOLS` lists other steps and leaves `exomiser` out (it is reported as skipped when the data is not installed, or when `TOOLS` names `exomiser` and `HPO` is not set). In the Nextflow pipeline: `--hpo HP:0001250,HP:0001263 --exomiser_data ${GENOME_DIR}/reference/exomiser-2602` (processes `EXOMISER_PREPARE`, `EXOMISER` and `EXOMISER_REPORT`). `--hpo` turns the tool on; `exomiser` in `--tools` without `--hpo` stops the run. With more than one sample in the samplesheet, name the person the terms describe with `--exomiser_proband`.
 
 Exomiser gets 16 GB of memory by default (`EXOMISER_MEM`, in GB; Java gets three quarters of it).
 
@@ -77,7 +77,7 @@ HPO=HP:0001156,HP:0001363 EXOMISER_FAMILY=my_family EXOMISER_UNAFFECTED=mother,f
 | File | Contents |
 |---|---|
 | `exomiser/${SAMPLE}_exomiser_top.tsv` | the top 10 ranks, one row per contributing variant: `rank`, `gene`, `moi` (AD, AR, XD, XR, MT), `exomiser_score`, `phenotype_score`, `variant_score`, `p_value`, `variant` (contig:position REF>ALT), `genotype`, `consequence`, `hgvs`, `acmg`, `acmg_evidence`, `disease`, `clinvar`, `max_frequency` |
-| `exomiser/${SAMPLE}_exomiser.txt` | the same in words, with the terms searched and the note on what the ranking is |
+| `exomiser/${SAMPLE}_exomiser.txt` | the same in words, with the terms searched and the note on what the ranking is; in the family mode each variant's genotype is given per member, by name (the `genotype` column of the table keeps Exomiser's value, one genotype per member joined by `:` in the order of `family.vcf.gz`) |
 | `exomiser/${SAMPLE}_exomiser_terms.tsv` | the terms searched: `hpo_id`, `label`, `given_as` |
 | `exomiser/${SAMPLE}_exomiser.variants.tsv`, `.genes.tsv`, `.html` | Exomiser's own files, for the top 50 genes |
 

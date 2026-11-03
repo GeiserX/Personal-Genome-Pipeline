@@ -60,6 +60,10 @@ nextflow run main.nf \
 #    --tools '...,cyrius'                      + --cyrius_install (setup.sh --cyrius; non-commercial licence)
 #    --tools '...,parascopy'                   + --parascopy_data (setup.sh --parascopy-data; docs/35-paralogs.md)
 #    --tools '...,bloodtype'                   no data to install; RhD needs the BAM (docs/41-bloodtype.md)
+#    --tools '...,lpa'                         no data to install; needs the BAM (docs/46-lpa.md)
+#    --tools '...,chip'                        + --chip_gff (setup.sh --chip-data), optional --chip_germline_resource
+#                                                and --chip_pon (each with its .tbi beside it); needs the BAM
+#                                                (docs/49-chip.md)
 #    --tools '...,archaic'                     + --archaic_data (setup.sh --archaic), --archaic_pop, --hla_genes for the
 #                                                genes of each segment (docs/43-archaic.md)
 #    --hpo HP:0001250,HP:0001263               + --exomiser_data (setup.sh --exomiser-data): Exomiser ranks the
@@ -81,7 +85,7 @@ nextflow run main.nf \
 #                                                it names (two or more, each with a gVCF; docs/multi-sample.md)
 ```
 
-**Family workflow (opt-in).** `--pedigree` (tab separated: sample, sex, father, mother, partner; [`assets/pedigree.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pedigree.example.tsv)) runs `workflows/family.nf` over the samplesheet rows it names, the same work as step 38: `FAMILY_PREPARE` checks the pedigree and that each member's gVCF names its own sample, `GLNEXUS` and `GLNEXUS_VCF` joint-call the gVCFs (`GLNEXUS` asks for 16 GB and gives GLnexus half of its memory as `--mem-gbytes`), `FAMILY_RELATE` and `FAMILY_CHECK` stop the run when somalier's relatedness of a pair disagrees with the pedigree (a sample swap), `WHATSHAP_PED` phases the children of complete trios by inheritance, and `FAMILY_REPORT` writes each child's allele origin, de novo candidates when both parents are sequenced, and compound heterozygotes among the clinical filter's candidates. Each member needs a gVCF: DEEPVARIANT's for a FASTQ or BAM row, the `gvcf` column for a VCF row (the run stops on a VCF row without one). Fewer than two named samples, or no `--somalier_sites`, stops the run at the start. When the pedigree marks two of those samples as each other's partner, `COUPLE_CARRIER` runs the couple carrier screen of step 39 on them ([Couple Carrier Screen](39-couple.md)): it reads each partner's ClinVar hits, so it needs `clinvar` in `--tools` (without it the run logs a warning and skips the screen), uses deletions over an exon only with `--gencode_exons` (the GENCODE exons BED `setup.sh` installs as `reference/gencode.v50.basic.exons.bed`), and reads Delly's calls, ExpansionHunter's and Parascopy's SMN1 table when those steps ran. Without `--pedigree` none of these processes exists and a run is unchanged. What it checks and what the files hold: [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in).
+**Family workflow (opt-in).** `--pedigree` (tab separated: sample, sex, father, mother, partner; [`assets/pedigree.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pedigree.example.tsv)) runs `workflows/family.nf` over the samplesheet rows it names. `--pedigree` may be a families file (a leading family column, [`assets/families.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/families.example.tsv)). `--family_name` names the family to run, which a file with more than one family needs, and the folder its results go to (`<outdir>/<name>/` instead of `<outdir>/family/`). The workflow does the same work as step 38: `FAMILY_PREPARE` checks the pedigree and that each member's gVCF names its own sample, `GLNEXUS` and `GLNEXUS_VCF` joint-call the gVCFs (`GLNEXUS` asks for 16 GB and gives GLnexus half of its memory as `--mem-gbytes`), `FAMILY_RELATE` and `FAMILY_CHECK` stop the run when somalier's relatedness of a pair disagrees with the pedigree (a sample swap), `WHATSHAP_PED` phases the children of complete trios by inheritance, and `FAMILY_REPORT` writes each child's allele origin, de novo candidates when both parents are sequenced, and compound heterozygotes among the clinical filter's candidates. With `--ancestry_fine_panel` (the panel folder of step 26b, `setup.sh --ancestry-fine-panel`), four more processes find the DNA each pair shares by descent, once `FAMILY_CHECK` has passed: `FAMILY_IBD_SITES` keeps the joint call's genotypes at the panel's SNVs on each autosome (a chromosome with fewer than 100 is left out), `FAMILY_IBD_PHASE` phases them with Beagle against the panel, `FAMILY_IBD_SEGMENTS` runs hap-ibd (its default 2 cM minimum) with the panel's genetic maps, and `FAMILY_IBD_REPORT` writes `ibd_pairs.tsv`, `ibd_segments.tsv` and `ibd_report.md`. They feed only the report, so a failure of one is logged and the run goes on. Without the panel none of them runs. Each member needs a gVCF: DEEPVARIANT's for a FASTQ or BAM row, the `gvcf` column for a VCF row (the run stops on a VCF row without one). Fewer than two named samples, or no `--somalier_sites`, stops the run at the start. When the pedigree marks two of those samples as each other's partner, `COUPLE_CARRIER` runs the couple carrier screen of step 39 on them ([Couple Carrier Screen](39-couple.md)): it reads each partner's ClinVar hits, so it needs `clinvar` in `--tools` (without it the run logs a warning and skips the screen), uses deletions over an exon only with `--gencode_exons` (the GENCODE exons BED `setup.sh` installs as `reference/gencode.v50.basic.exons.bed`), reads Delly's calls, ExpansionHunter's and Parascopy's SMN1 table when those steps ran, and, when `--annotsv_annotations` holds AnnotSV's benign loss set (`benign_Loss_SV_GRCh38.sorted.bed`, with gnomAD-SV's common deletions merged in by `setup.sh --annotsv-data`), sets aside a Delly deletion that matches a common one there. Without `--pedigree` none of these processes exists and a run is unchanged. What it checks and what the files hold: [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in).
 
 `--reference` is the FASTA the reads are aligned to and the BAMs were aligned to, the GRCh38 no-ALT analysis set that `setup.sh` installs as `reference/GRCh38_no_alt_analysis_set.fasta`. The Nextflow pipeline does not compare a given BAM's header with it; `./scripts/validate-setup.sh <sample>` does, and [Realigning after a reference change](realignment.md) covers a BAM aligned to another reference.
 
@@ -208,6 +212,9 @@ results/
 │   │                       #   from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
 │   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
+│   ├── lpa/                # LPA KIV-2 repeat count from read depth (opt-in: lpa)
+│   ├── chip/               # <sample>_chip.tsv, <sample>_chip_depth.tsv and Mutect2's filtered calls: clonal
+│   │                       #   haematopoiesis in 13 genes (opt-in: chip)
 │   ├── archaic/            # Neanderthal and Denisovan share and segments (IBDmix, opt-in: archaic)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
@@ -239,8 +246,10 @@ results/
 │                           #   CPSR, clinical filter (with its ACMG SF tier), slivar, ROH, mito haplogroup and haplocheck,
 │                           #   Y haplogroup and every other step that ran; "Not run" for a tool not selected
 ├── somalier/               # somalier relate over every sample of the run: samples, pairs, HTML (sample_qc)
-├── family/                 # --pedigree: family.vcf.gz (joint call), relationships.tsv, somalier/, family.phased.vcf.gz,
+├── family/                 # --pedigree (or <name>/ with --family_name): family_plan.tsv, pedigree.tsv,
+│                           #   family.vcf.gz (joint call), relationships.tsv, somalier/, family.phased.vcf.gz,
 │                           #   <child>_inheritance.tsv.gz, de_novo.tsv, compound_het.tsv, family_report.md;
+│                           #   ibd_pairs.tsv, ibd_segments.tsv and ibd_report.md with --ancestry_fine_panel (FAMILY_IBD_REPORT);
 │                           #   couple_<a>_<b>.tsv and .md for two partners (COUPLE_CARRIER)
 ├── multiqc/                # MultiQC report across samples (reads mosdepth: needs a BAM; a VCF-only run logs the skip)
 └── pipeline_info/
@@ -257,7 +266,7 @@ results/
 
 ## Watching a run live
 
-Nextflow's weblog, which posts each task's progress to a URL, is the nf-weblog plugin, and Nextflow 26.10 loads it only when a config names it. So `nextflow.config` has no weblog block: with `PGP_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config`, which loads the pinned plugin and points the weblog at `PGP_LIVE_URL/ingest/<sample>`, and passes it with `-c`. A run without `PGP_LIVE_URL` loads no plugin. Nextflow downloads the plugin on the first live run and keeps it in `~/.nextflow/plugins`. For a bare `nextflow run`, write the same file and pass `-c`; [Watch a Run Live](live-site.md) has it and the live site that reads the messages.
+Nextflow's weblog, which posts each task's progress to a URL, is the nf-weblog plugin, and Nextflow 26.10 loads it only when a config names it. So `nextflow.config` has no weblog block: with `OWNGENOME_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config`, which loads the pinned plugin and points the weblog at `OWNGENOME_LIVE_URL/ingest/<sample>`, and passes it with `-c`. A run without `OWNGENOME_LIVE_URL` loads no plugin. Nextflow downloads the plugin on the first live run and keeps it in `~/.nextflow/plugins`. For a bare `nextflow run`, write the same file and pass `-c`; [Watch a Run Live](live-site.md) has it and the live site that reads the messages.
 
 ---
 
@@ -301,7 +310,7 @@ The pipeline starts from paired short-read FASTQ, from a BAM or from a VCF. The 
 
 ### Bash vs Nextflow parity
 
-The pipeline and the scripts run the same commands at the same tool releases, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
+The pipeline and the scripts run the same commands at the same tool releases, so on the same input they must give the same answers. The E2E workflow checks this on the test fixture: the scripts 01b, 02, 03, 06, 07, 11 and 25, and the pipeline from the same FASTQ pair, then [`scripts/ci/parity-diff.sh`](https://github.com/GeiserX/OwnGenome/blob/main/scripts/ci/parity-diff.sh) compares, item by item:
 
 | Item | Compared |
 |---|---|
@@ -362,12 +371,12 @@ Several tools require large reference databases that are **not automatically dow
 | `--pcgr_data` | CPSR cancer predisposition | ~7 GB bundle (20260620) |
 | `--vep_cache_cpsr` | CPSR | ~24 GB download (release 115) |
 | `--pypgx_bundle` | PyPGx star allele calling | ~370 MB |
-| `--annotsv_annotations` | AnnotSV SV classification | ~5.3 GB download |
+| `--annotsv_annotations` | AnnotSV SV classification; with `--pedigree`, also the couple screen's common-deletion filter (its benign loss set) | ~5.3 GB download |
 | `--cadd_snv`, `--spliceai_snv`, etc. | vcfanno score annotation | ~100 GB total |
 | `--gnomad_constraint` | Slivar gene constraint | ~95 MB |
 | `--pgs_scoring` | Polygenic risk scores | ~400 MB (`setup.sh` fills `<genome_dir>/prs_scores`) |
 | `--ancestry_ref` | PRS percentiles and ancestry (step 26) | ~7 GB (`setup.sh --ancestry-panel`) |
-| `--ancestry_fine_panel` | Fine-grained ancestry (step 26b, `ancestry_fine`) | the folder `setup.sh --ancestry-fine-panel` writes |
+| `--ancestry_fine_panel` | Fine-grained ancestry (step 26b, `ancestry_fine`); with `--pedigree`, also the family's shared segments (`FAMILY_IBD_*`) | the folder `setup.sh --ancestry-fine-panel` writes |
 
 Tools that require external databases (VEP, slivar, clinvar, CPSR, ExpansionHunter, HLA typing, pypgx, AnnotSV, CNVpytor) will **fail at startup** if enabled in `--tools` without their required parameters. vcfanno and prs are in the default tools but are skipped, with a warning, until a score file or `--pgs_scoring` is set. The gnomAD constraint table is optional for slivar; when it is set and no gene matches it, the task fails.
 

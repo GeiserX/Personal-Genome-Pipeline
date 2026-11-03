@@ -8,13 +8,13 @@ Step 24 (scripts/24-html-report.sh) and the Nextflow HTML_REPORT process write
 the index as <sample>_search_index.json beside the report, through
 render_report.py --search-index. The report closes with an appendix built
 from it, "Genes and rsIDs in these results"; the live site's search box
-(bin/pgp_live_search.py, assets/live/plugins/search.js) loads the file once
+(bin/owngenome_live_search.py, assets/live/plugins/search.js) loads the file once
 and filters it in the browser, so a query never leaves the page.
 
 What it reads:
   - every section of summary.json in state ok or stale: each dict in its data
     that names a gene or an rsID, found by bin/genome_lookup.py's names_of(),
-    the same rule pgp-lookup.sh uses for "in the reports" (so the search and a
+    the same rule owngenome-lookup.sh uses for "in the reports" (so the search and a
     lookup cannot disagree);
   - the gene column of step 23 (clinical filter) and step 31 (slivar), whose
     sections keep counts only: from the summary table on the bash path
@@ -40,7 +40,7 @@ report (#anchor), or null for a key no report section shows.
 A query (query(), and the same rule in search.js) is an rsID, a gene symbol
 (a prefix also lists the terms it starts: BRCA gives BRCA1 and BRCA2) or a
 position, which the index cannot answer: a position is a genotype question,
-for scripts/pgp-lookup.sh.
+for scripts/owngenome-lookup.sh.
 
 Standard library only.
 """
@@ -62,7 +62,7 @@ MENTIONS_KEPT = 20
 # Terms listed for a prefix query.
 SUGGESTIONS = 20
 POSITION_HINT = ("The search finds gene symbols and rsIDs in these results. A position is a question about your "
-                 "genotype: run scripts/pgp-lookup.sh <sample> {q}, which reads it from the gVCF on this computer.")
+                 "genotype: run scripts/owngenome-lookup.sh <sample> {q}, which reads it from the gVCF on this computer.")
 
 
 def walk(obj, blocked=frozenset()):

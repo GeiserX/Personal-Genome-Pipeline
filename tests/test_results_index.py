@@ -21,14 +21,14 @@ Checks:
      a recorded table that cannot be read adds nothing and the report is
      still written (red: the reader raises on it); a text-only report never
      builds the index (red: an HTML report does);
-  5. query('BRCA') lists BRCA1 and BRCA2; a position gets the pgp-lookup.sh
+  5. query('BRCA') lists BRCA1 and BRCA2; a position gets the owngenome-lookup.sh
      hint; nothing else is a query;
   6. the HTML report closes with one line per term, each link resolves to a
      section of the page, a term that is missing from the index is missing
      from the appendix (red), and the page has no script;
   7. the command line builds and queries the index (render_report.py
      --search-index writes the same index);
-  8. the live search: pgp_live_search.py registers the file glob and its
+  8. the live search: owngenome_live_search.py registers the file glob and its
      state hook; search.js's match() under node answers each fixture query
      as query() does, and has no request in it besides the one index fetch.
 
@@ -50,7 +50,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
 import collect_summary  # noqa: E402
 import genome_lookup  # noqa: E402
-import pgp_live_search  # noqa: E402
+import owngenome_live_search  # noqa: E402
 import render_report  # noqa: E402
 import results_index  # noqa: E402
 
@@ -116,7 +116,7 @@ def main():
               [(it["section"], it["count"]) for it in T["BRCA2"]]
               == [("clinvar", 1), ("carrier", 1), ("clinical", 1), ("slivar", 1)], T["BRCA2"])
 
-        # 1. the same mentions as pgp-lookup.sh
+        # 1. the same mentions as owngenome-lookup.sh
         spath = os.path.join(work, "summary.json")
         with open(spath, "w") as f:
             json.dump(s_tsv, f)
@@ -267,8 +267,8 @@ def main():
         check("query('brca2') finds BRCA2 in four sections", [it["section"] for it in r["items"]]
               == ["clinvar", "carrier", "clinical", "slivar"] and r["suggestions"] == [], r)
         r = results_index.query(idx, "chr7:1,000")
-        check("a position gets the pgp-lookup.sh hint and no entries", r["kind"] == "site" and not r["items"]
-              and "pgp-lookup.sh" in r["hint"], r)
+        check("a position gets the owngenome-lookup.sh hint and no entries", r["kind"] == "site" and not r["items"]
+              and "owngenome-lookup.sh" in r["hint"], r)
         r = results_index.query(idx, "TP53")
         check("a gene the results do not name: no entries", r["kind"] == "gene" and not r["items"], r)
         check("not a query: an error", results_index.query(idx, "two words")["kind"] == "error")
@@ -308,7 +308,7 @@ def main():
               q.stdout + q.stderr)
         q = subprocess.run([sys.executable, os.path.join(REPO, "bin", "results_index.py"), "query", "--index", out,
                             "7:117559590"], capture_output=True, text=True)
-        check("CLI query of a position: exit 2 with the hint", q.returncode == 2 and "pgp-lookup.sh" in q.stdout, q.stdout)
+        check("CLI query of a position: exit 2 with the hint", q.returncode == 2 and "owngenome-lookup.sh" in q.stdout, q.stdout)
         rr = os.path.join(work, "rr.json")
         with redirect_stdout(io.StringIO()):
             render_report.main(["--sample", "SYNTH", "--sample-dir", tsv, "--json", os.path.join(work, "s2.json"),
@@ -319,9 +319,9 @@ def main():
         # 8. the live search
         run = os.path.join(work, "SYNTH")
         os.makedirs(run)
-        check("live: no index file, no state", pgp_live_search.search_state(run, {}, []) == {})
+        check("live: no index file, no state", owngenome_live_search.search_state(run, {}, []) == {})
         shutil.copy(rr, os.path.join(run, "SYNTH_search_index.json"))
-        st8 = pgp_live_search.search_state(run, {}, [])
+        st8 = owngenome_live_search.search_state(run, {}, [])
         check("live: the state names the file and its mtime", st8.get("file") == "SYNTH_search_index.json"
               and isinstance(st8.get("mtime"), int), st8)
 
@@ -334,9 +334,19 @@ def main():
             def state_hook(self, name, fn):
                 self.hooks[name] = fn
         app_ = App()
-        pgp_live_search.register(app_)
+        owngenome_live_search.register(app_)
         check("live: the plugin serves *_search_index.json and hooks plugins.search",
-              app_.globs == ["*_search_index.json"] and app_.hooks.get("search") is pgp_live_search.search_state)
+              app_.globs == ["*_search_index.json"] and app_.hooks.get("search") is owngenome_live_search.search_state)
+        # the live server finds plugins by file name, so a plugin under a name its loader
+        # does not match would never load; load bin/ the way the server does
+        import owngenome_live
+        import argparse
+        real = owngenome_live.App()
+        real.parser = argparse.ArgumentParser()  # other plugins add flags, as at the server's start
+        loaded = owngenome_live.load_plugins(real, os.path.join(REPO, "bin"))
+        check("live: the server's loader picks up the search plugin",
+              "owngenome_live_search.py" in loaded and "*_search_index.json" in real.run_globs
+              and "search" in [n for n, _ in real.state_hooks], loaded)
         js = open(SEARCH_JS).read()
         check("search.js: one fetch (the index), no XMLHttpRequest, no sendBeacon, no WebSocket, no eval",
               js.count("fetch(") == 1 and not re.search(r"XMLHttpRequest|sendBeacon|WebSocket|eval\(|innerHTML", js))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """genome_lookup.py: answer "what is my genotype at rsX, at chr:pos, or in gene Y".
 
-scripts/pgp-lookup.sh runs it in two passes (docs/lookup.md):
+scripts/owngenome-lookup.sh runs it in two passes (docs/lookup.md):
 
   genome_lookup.py resolve --query Q [--sites SITES.tsv.gz] [--table TSV ...]
                            [--genes GENES.gtf] [--annotated VCF]
@@ -26,7 +26,7 @@ scripts/pgp-lookup.sh runs it in two passes (docs/lookup.md):
       called there. A gene: every variant called in it, with its consequence,
       ClinVar and gnomAD, and how many of the gene's bases have a call. Both
       end with what the pipeline's reports (summary.json) say about the gene
-      or rsID. The inputs may be whole files or the slices pgp-lookup.sh cuts
+      or rsID. The inputs may be whole files or the slices owngenome-lookup.sh cuts
       with bcftools; records outside the region are skipped either way.
 
 Standard library only: it runs in PYTHON_IMAGE and under

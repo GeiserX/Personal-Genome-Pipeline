@@ -239,6 +239,15 @@ def main():
         check("an SMN1 call of quality 5 is not a finding and is named as not resolved",
               [r["findings_a"] for r in rows(f"{t}/smnu/couple_A_B.tsv") if r["gene"] == "SMN1"] == ["."]
               and "SMN1 copy number of A: SMN1 copy number 1 (quality 5, filter PASS), not resolved" in md6, md6)
+        sn = put(f"{t}/N_smn.tsv", smn(1).split("\n")[0] + "\n"
+                 "chr5\t70951945\t70951946\tSMN1\tnot assessed: no read over chr5:70951946-70951946\t.\t.\t"
+                 "not assessed: no read over chr5:70951946-70951946\t.\t.\t.\n")
+        run("screen", "--pedigree", ped, "--genes", GENES, "--clinvar", f"A={a_none}", "--clinvar", f"B={a_none}",
+            "--smn", f"A={sn}", "--smn", f"B={sb}", "--out-dir", f"{t}/smnn")
+        md6n = open(f"{t}/smnn/couple_A_B.md").read()
+        check("a not-assessed SMN1 row (step 35) is named with its reason, not as empty values",
+              [r["findings_a"] for r in rows(f"{t}/smnn/couple_A_B.tsv") if r["gene"] == "SMN1"] == ["."]
+              and "SMN1 copy number of A: SMN1 not assessed: no read over chr5:70951946-70951946; copy number not resolved." in md6n, md6n)
 
         # 3b. read depth: a long Delly deletion counts only when RDCN shows the loss
         genes_mid = {g: mid(g) for g in ("GBA1", "PAH", "CFTR", "HBB", "DMD", "OTC")}

@@ -2,7 +2,7 @@ name: E2E
 
 # Runs the real tools on a small slice of the public GIAB HG002 genome, so a
 # step that is broken in real use cannot pass CI behind a stub or a --version
-# call. Four jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
+# call. The jobs, see docs/testing.md (prs-memory: docs/25-prs.md#memory):
 #
 #   build-fixture  builds the data set and publishes it as release assets
 #                  under the tag in tests/fixtures/VERSION. Runs on pull
@@ -10,17 +10,24 @@ name: E2E
 #                  file is on main), on a push to main and on dispatch; it
 #                  does nothing when the release already exists and was
 #                  built by the same script.
-#   e2e            runs every case in tests/e2e/ on that data set, then the
-#                  parity check: the bash single steps and the Nextflow
-#                  pipeline, both from the fixture's FASTQ, must agree, and
-#                  so must the SV consensus and the Y haplogroup of the
-#                  hardening run (scripts/ci/parity-diff.sh). Runs on pull requests that
-#                  touch the pipeline, on main after every merge that does,
-#                  monthly, on dispatch. Every pull
-#                  request starts this workflow, so main can require the e2e
-#                  check: e2e-scope decides, and on a pull request that
-#                  touches none of the pipeline paths e2e is skipped, which
-#                  GitHub counts as passed.
+#   e2e-plan, e2e-base, e2e-shards, e2e
+#                  run every case in tests/e2e/ on that data set exactly once,
+#                  split over parallel legs: e2e-plan splits the cases
+#                  (scripts/ci/e2e-shards.sh), the leg "e2e base" runs the
+#                  base cases and hands what they wrote to the legs
+#                  "e2e shard N", which run the rest. The shard holding them
+#                  then runs the parity checks: the bash single steps and the
+#                  Nextflow pipeline, both from the fixture's FASTQ, must
+#                  agree, and so must the SV consensus and the Y haplogroup
+#                  of the hardening run (scripts/ci/parity-diff.sh). The job
+#                  e2e is the required check: it merges every leg's results
+#                  into one table and is red unless every case passed once.
+#                  Runs on pull requests that touch the pipeline, on main
+#                  after every merge that does, monthly, on dispatch. Every
+#                  pull request starts this workflow, so main can require the
+#                  e2e check: e2e-scope decides, and on a pull request that
+#                  touches none of the pipeline paths the legs are skipped
+#                  and e2e passes without running anything.
 #   settle-doubts  answers questions a code review could not answer without
 #                  running the tools. Not a gate: it prints a table.
 #   prs-memory     on dispatch only: the memory of PRS_PREPARE and pgsc_calc's
@@ -75,6 +82,10 @@ on:
         description: 'e2e: save the image cache from this branch too (only main saves by default)'
         type: boolean
         default: false
+      trace:
+        description: 'e2e: one serial shard that measures each case and what it reads, and prints a new scripts/ci/e2e-case-times.tsv'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -83,6 +94,9 @@ permissions:
 env:
   E2E_SCOPE_DIRS: scripts modules workflows bin conf assets tests/e2e
   E2E_SCOPE_FILES: tests/fixtures/VERSION main.nf nextflow.config versions.env .github/workflows/e2e.yml
+  # The shard legs besides the base leg. The cases took 230 minutes in one
+  # job on 2026-11-02 (run 41390434697).
+  E2E_SHARDS: 6
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -243,7 +257,11 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-  e2e:
+  # Splits the cases over the parallel jobs below (scripts/ci/e2e-shards.sh,
+  # with the measured times and needs of scripts/ci/e2e-case-times.tsv), and
+  # runs the checks that need no fixture. Runs when e2e runs; a failed or
+  # missing scope answer runs it too.
+  e2e-plan:
     needs: e2e-scope
     if: >-
       ${{ !cancelled() && needs.e2e-scope.outputs.run != 'false' && (
@@ -252,20 +270,11 @@ jobs:
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
     runs-on: ubuntu-latest
-    # The runner decides the time, not the image cache. Measured on this
-    # cache layout in October 2026 (84 cases): 106 and 166 minutes on an
-    # AMD EPYC 9V45 (run 39197502832 with no cache, run 39075176392 with
-    # no cache plus the 12-minute save), 112 minutes on an Intel Xeon
-    # 6973P (run 39088086725, no cache), 156 and 191 minutes on an AMD
-    # EPYC 7763 (run 39075764278 with no cache, run 39075201465 with all
-    # four groups restored), 205 minutes on an AMD EPYC 9V74 (run
-    # 39197512594, three groups saved in 14 minutes). A cache hit saves
-    # about 7 minutes: the pull of every image took 9, restoring and
-    # loading the cache took 2.5. A pull request that bumps the fixture
-    # also waits for it inside this limit (scripts/ci/e2e-run.sh, up to 75
-    # minutes). The slowest run with its save (205) plus the fixture wait
-    # (75) is 280 minutes: 300 leaves a 20-minute margin.
-    timeout-minutes: 300
+    timeout-minutes: 10
+    outputs:
+      jobs: ${{ steps.plan.outputs.jobs }}
+      shards: ${{ steps.plan.outputs.shards }}
+      trace: ${{ steps.plan.outputs.trace }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -293,6 +302,76 @@ jobs:
       - name: Pull retry self-test
         run: scripts/ci/e2e-run.sh --self-test-pull
 
+      # The base job plus E2E_SHARDS shard jobs; a traced run puts every other
+      # case in one shard, in name order, as one serial run would. The two
+      # parity checks below read the outputs of two cases each, so each pair
+      # must share a shard.
+      - name: Split the cases
+        id: plan
+        env:
+          TRACE: ${{ inputs.trace && 'true' || 'false' }}
+        run: |
+          set -o pipefail
+          n=$E2E_SHARDS
+          [ "$TRACE" = true ] && n=1
+          scripts/ci/e2e-shards.sh plan "$n" > "${RUNNER_TEMP}/plan.tsv"
+          { scripts/ci/e2e-shards.sh base; cut -f2 "${RUNNER_TEMP}/plan.tsv"; } > "${RUNNER_TEMP}/all.txt"
+          scripts/ci/e2e-shards.sh cover "${RUNNER_TEMP}/all.txt"
+          for pair in "nextflow-from-fastq-1-bash nextflow-from-fastq-2-nextflow" \
+                      "nextflow-hardening-1-manta nextflow-hardening-2-nf"; do
+            read -r a b <<< "$pair"
+            sa=$(awk -F'\t' -v c="$a" '$2 == c {print $1}' "${RUNNER_TEMP}/plan.tsv")
+            sb=$(awk -F'\t' -v c="$b" '$2 == c {print $1}' "${RUNNER_TEMP}/plan.tsv")
+            if [ -z "$sa" ] || [ "$sa" != "$sb" ]; then
+              echo "::error::${a} (shard ${sa:-none}) and ${b} (shard ${sb:-none}) must share a shard: the parity check reads both. Give ${b} the need ${a} in scripts/ci/e2e-case-times.tsv."
+              exit 1
+            fi
+          done
+          jobs=$(seq 1 "$n" | jq -R . | jq -sc .)
+          { echo "jobs=${jobs}"; echo "shards=${n}"; echo "trace=${TRACE}"; } >> "$GITHUB_OUTPUT"
+          {
+            echo "### E2E split: base and ${n} shards"
+            echo
+            echo "| Job | Cases | Measured minutes |"
+            echo "|---|---|---|"
+            awk -F'\t' 'FILENAME == ARGV[1] { if ($0 !~ /^#/) t[$1] = $3; next }
+                        FILENAME == ARGV[2] { n["base"]++; s["base"] += ($1 in t) ? t[$1] : 300; next }
+                        { n[$1]++; s[$1] += ($2 in t) ? t[$2] : 300 }
+                        END { printf "| base | %d | %.0f |\n", n["base"], s["base"] / 60
+                              for (k = 1; k in n; k++) printf "| shard %d | %d | %.0f |\n", k, n[k], s[k] / 60 }' \
+              scripts/ci/e2e-case-times.tsv <(scripts/ci/e2e-shards.sh base) "${RUNNER_TEMP}/plan.tsv"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The legs. The base leg runs the base cases and uploads what they wrote as
+  # the artifact e2e-base; the shard legs start once it passed, unpack that
+  # artifact at the same paths and run their own cases. A shard does not take
+  # a runner before the base leg is done: in a busy queue, shards that start
+  # first and wait would hold runners the base legs of every run need. Both
+  # jobs run the same steps (the YAML anchor leg-steps); matrix.job tells
+  # them apart. Only the base leg saves the image cache. The checks are named
+  # "e2e base" and "e2e shard N"; the required check is the job e2e below,
+  # which sums them up.
+  e2e-base:
+    needs: [e2e-scope, e2e-plan]
+    if: ${{ !cancelled() && needs.e2e-plan.result == 'success' }}
+    name: ${{ matrix.job == 'base' && 'e2e base' || format('e2e shard {0}', matrix.job) }}
+    runs-on: ubuntu-latest
+    # The base leg waits up to 75 minutes for a fixture a pull request bumps
+    # (scripts/ci/e2e-run.sh).
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      matrix:
+        job: [base]
+    env:
+      JOB: ${{ matrix.job }}
+    steps: &leg-steps
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # The same cases take about a third longer on some runners than on
       # others; the CPU line lets a timing claim name the hardware.
       - name: Runner CPU
@@ -302,7 +381,9 @@ jobs:
           echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
       # Images go to /var/lib/docker on /; the work area goes to whichever of
-      # / and /mnt has more room, so the two do not compete for one disk.
+      # / and /mnt has more room, so the two do not compete for one disk. The
+      # base outputs unpack only under the work area they were packed in, so
+      # a shard leg takes the base leg's choice when its artifact arrives.
       - name: Free disk space and pick the work area
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
@@ -397,49 +478,141 @@ jobs:
           rm -rf "${RUNNER_TEMP}/images"
           echo "Image cache: $(wc -l < "$loaded") images loaded in ${SECONDS} s; exact key hit per group 0-3: ${HITS}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # This leg's cases, from the same split as the plan job (same commit,
+      # same table), and whether one of the parity checks reads them.
+      - name: This leg's cases
+        id: cases-list
+        env:
+          SHARDS: ${{ needs.e2e-plan.outputs.shards }}
+        run: |
+          set -o pipefail
+          list="${RUNNER_TEMP}/cases.txt"
+          if [ "$JOB" = base ]; then scripts/ci/e2e-shards.sh base > "$list"
+          else scripts/ci/e2e-shards.sh plan "$SHARDS" | awk -F'\t' -v k="$JOB" '$1 == k {print $2}' > "$list"; fi
+          [ -s "$list" ] || { echo "::error::The split gave job ${JOB} no case."; exit 1; }
+          echo "$(wc -l < "$list") cases: $(paste -sd' ' "$list")"
+          grep -qx nextflow-from-fastq-2-nextflow "$list" && echo "parity_fastq=true" >> "$GITHUB_OUTPUT"
+          grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
+          echo "list=${list}" >> "$GITHUB_OUTPUT"
+
+      # Before the base outputs: the base leg pulled the same images.
+      - name: Pull the images the cases use
+        if: matrix.job != 'base'
+        run: scripts/ci/e2e-run.sh --pull-images
+
+      # The base leg uploads e2e-base only once its cases all passed, and this
+      # leg starts only after it passed. A rerun of failed legs finds the
+      # artifact of the earlier attempt. A broken transfer is tried again.
+      - name: Fetch the base leg's outputs
+        if: matrix.job != 'base'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=e2e-base" --jq '.artifacts[0].id // empty')
+          [ -n "$id" ] || { echo "::error::The base leg passed but this run has no e2e-base artifact."; exit 1; }
+          for try in 1 2 3 4 5; do
+            t0=$(date +%s)
+            # curl, not gh api: gh took 5 minutes for the 3 GB of run 41455829120.
+            if curl -sSfL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/e2e-base.zip" \
+                 "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
+               && unzip -o -q "${RUNNER_TEMP}/e2e-base.zip" -d "${RUNNER_TEMP}/e2e-base"; then
+              rm -f "${RUNNER_TEMP}/e2e-base.zip"
+              read -r work repo < "${RUNNER_TEMP}/e2e-base/base.tar.zst.from"
+              if [ "$repo" != "$GITHUB_WORKSPACE" ]; then
+                echo "::error::The base leg ran in the checkout ${repo}, this leg in ${GITHUB_WORKSPACE}."
+                exit 1
+              fi
+              sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+              echo "E2E_WORK=${work}" >> "$GITHUB_ENV"
+              echo "Base outputs in $(( $(date +%s) - t0 )) s to fetch and unzip: $(du -h "${RUNNER_TEMP}/e2e-base/base.tar.zst" | cut -f1), work area ${work}"
+              exit 0
+            fi
+            echo "::warning::Fetching or unpacking e2e-base failed (try ${try} of 5)."
+            rm -rf "${RUNNER_TEMP}/e2e-base.zip" "${RUNNER_TEMP}/e2e-base"
+            sleep 30
+          done
+          echo "::error::Could not fetch e2e-base in 5 tries."
+          exit 1
+
       - name: Run the e2e cases
         id: cases
         env:
           GH_TOKEN: ${{ github.token }}
+          E2E_CASES: ${{ steps.cases-list.outputs.list }}
+          E2E_JOB: ${{ matrix.job == 'base' && 'base' || format('shard {0}', matrix.job) }}
+          E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
+          E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
+          E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
         run: scripts/ci/e2e-run.sh
 
+      - name: Upload the base outputs
+        if: matrix.job == 'base'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-base
+          path: |
+            ${{ runner.temp }}/base.tar.zst
+            ${{ runner.temp }}/base.tar.zst.from
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
       # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
-      # and the Nextflow pipeline on the same reads as sample HG002P. Runs
-      # after a failed case too, so a run shows every difference at once.
+      # and the Nextflow pipeline on the same reads as sample HG002P, in this
+      # shard. Runs after a failed case too, so a run shows every difference at
+      # once. Each passing check writes a line the job e2e counts: a parity
+      # check that ran in no shard turns e2e red.
       - name: Parity self-test (a planted difference in each item must be caught)
-        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' && steps.cases-list.outputs.parity_fastq == 'true' }}
         run: scripts/ci/parity-diff.sh --self-test "${E2E_WORK}/genome/HG002P" HG002P
 
       - name: Parity of the bash scripts and the Nextflow pipeline
-        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
-        run: scripts/ci/parity-diff.sh "${E2E_WORK}/genome/HG002P" "${E2E_WORK}/genome/nf-fastq/HG002P" HG002P
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' && steps.cases-list.outputs.parity_fastq == 'true' }}
+        run: |
+          scripts/ci/parity-diff.sh "${E2E_WORK}/genome/HG002P" "${E2E_WORK}/genome/nf-fastq/HG002P" HG002P
+          printf 'fastq\tpass\n' >> "${E2E_WORK}/report/parity.tsv"
 
       # The case nextflow-hardening-2-nf ran the bash steps 22 (SURVIVOR) and 37
       # (Yleaf) beside the pipeline's SURVIVOR and Y haplogroup processes, on
       # the calls of steps 04 and 19 and on the same BAM.
       - name: Parity self-test, SV consensus and Y haplogroup
-        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' && steps.cases-list.outputs.parity_hardening == 'true' }}
         env:
           PARITY_ITEMS: sv_merged y_haplogroup
         run: scripts/ci/parity-diff.sh --self-test "${E2E_WORK}/genome-hardening/HG002" HG002
 
       - name: Parity of the SV consensus and the Y haplogroup
-        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.cases.outcome != 'skipped' && steps.cases-list.outputs.parity_hardening == 'true' }}
         env:
           PARITY_ITEMS: sv_merged y_haplogroup
-        run: scripts/ci/parity-diff.sh "${E2E_WORK}/genome-hardening/HG002" "${E2E_WORK}/genome/nf-hardening/HG002" HG002
+        run: |
+          scripts/ci/parity-diff.sh "${E2E_WORK}/genome-hardening/HG002" "${E2E_WORK}/genome/nf-hardening/HG002" HG002
+          printf 'hardening\tpass\n' >> "${E2E_WORK}/report/parity.tsv"
+
+      - name: Upload this leg's results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ matrix.job }}
+          path: ${{ env.E2E_WORK }}/report/*.*
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
 
       - name: Upload case logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-logs
+          name: e2e-logs-${{ matrix.job }}
           path: ${{ env.E2E_WORK }}/logs/
           if-no-files-found: ignore
+          overwrite: true
 
-      # Prints each image's size and what became of it to the job summary.
-      # Saves only on main (or when a run by hand asks for it with
-      # save_images), only from a run that got through every case, and only
+      # Base leg only. Prints each image's size and what became of it to the
+      # job summary. Saves only on main (or when a run by hand asks for it with
+      # save_images), only from a run whose base leg got through its cases
+      # after pulling every image the cases use, and only
       # the groups whose exact key missed. A cache saved on a pull request is
       # readable by that pull request alone, and every entry counts against
       # the repository's 10 GB, so it would only push main's entries out.
@@ -451,7 +624,7 @@ jobs:
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
         id: save
-        if: always() && steps.keys.outcome == 'success'
+        if: always() && matrix.job == 'base' && steps.keys.outcome == 'success'
         env:
           SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
           GROUP_BUDGET_MB: 1900
@@ -540,6 +713,124 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g3
           key: ${{ steps.keys.outputs.g3 }}
+
+  e2e-shards:
+    needs: [e2e-scope, e2e-plan, e2e-base]
+    if: ${{ !cancelled() && needs.e2e-plan.result == 'success' && needs.e2e-base.result == 'success' }}
+    name: ${{ matrix.job == 'base' && 'e2e base' || format('e2e shard {0}', matrix.job) }}
+    runs-on: ubuntu-latest
+    # A traced run is one serial leg of every case: 230 minutes on 2026-11-02
+    # before the scans.
+    timeout-minutes: ${{ needs.e2e-plan.outputs.trace == 'true' && 355 || 240 }}
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.e2e-plan.outputs.jobs) }}
+    env:
+      JOB: ${{ matrix.job }}
+    steps: *leg-steps
+
+  # The required check. Green when e2e-scope finds nothing to run; otherwise
+  # green only when the plan and every leg succeeded, every case of the split
+  # reported exactly one pass (one table of every case goes to the summary)
+  # and each parity check passed once. A leg that was skipped, cancelled or
+  # cut by its time limit leaves cases without a result, which is red too.
+  e2e:
+    needs: [e2e-scope, e2e-plan, e2e-base, e2e-shards]
+    if: >-
+      ${{ always() && (
+        github.event_name == 'pull_request' ||
+        github.event_name == 'push' ||
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.job == 'e2e')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Does anything need to run
+        id: scope
+        env:
+          RUN: ${{ needs.e2e-scope.outputs.run }}
+        run: |
+          if [ "$RUN" = false ]; then
+            echo "Nothing the e2e cases exercise changed: e2e passes without running." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.scope.outputs.skip != 'true'
+        with:
+          persist-credentials: false
+
+      - name: Every case passed once
+        if: steps.scope.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          PLAN: ${{ needs.e2e-plan.result }}
+          BASE: ${{ needs.e2e-base.result }}
+          LEGS: ${{ needs.e2e-shards.result }}
+          SHARDS: ${{ needs.e2e-plan.outputs.shards }}
+          TRACE: ${{ needs.e2e-plan.outputs.trace }}
+        run: |
+          set -o pipefail
+          rc=0
+          if [ "$PLAN" != success ] || [ "$BASE" != success ] || [ "$LEGS" != success ]; then
+            echo "::error::The plan job ended ${PLAN:-unknown}, the base leg ${BASE:-unknown} and the shard legs ${LEGS:-unknown}; e2e needs all three to succeed."
+            rc=1
+          fi
+          dir="${RUNNER_TEMP}/reports"
+          mkdir -p "$dir"
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("e2e-report-")) | "\(.id) \(.name)"' |
+            while read -r id name; do
+              gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > "${dir}/${name}.zip"
+              unzip -o -q "${dir}/${name}.zip" -d "${dir}/${name}"
+            done
+          expected="${RUNNER_TEMP}/expected.txt"
+          { scripts/ci/e2e-shards.sh base; scripts/ci/e2e-shards.sh plan "${SHARDS:-1}" | cut -f2; } > "$expected"
+          shopt -s nullglob
+          results=("$dir"/*/results.tsv)
+          tag=$(tr -d '[:space:]' < tests/fixtures/VERSION)
+          table="${RUNNER_TEMP}/table.md"
+          scripts/ci/e2e-shards.sh merge "$expected" /dev/null "${results[@]}" > "$table" || rc=1
+          {
+            echo "### E2E on fixture ${tag}: $(tail -n 1 "$table")"
+            echo
+            sed '$d' "$table"
+            echo "Logs are in the e2e-logs-<job> artifacts of this run."
+            for f in "$dir"/*/extra.md; do [ -s "$f" ] && cat "$f"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -n 1 "$table"
+          for p in fastq hardening; do
+            n=$(cat /dev/null "$dir"/*/parity.tsv | grep -cx "${p}"$'\t'"pass" || true)
+            if [ "$n" -ne 1 ]; then
+              echo "::error::The ${p} parity check passed ${n} times; it must pass once."
+              rc=1
+            fi
+          done
+          if [ "$TRACE" = true ]; then
+            traces=("$dir"/*/trace.tsv)
+            if scripts/ci/e2e-shards.sh times "${traces[@]}" > "${RUNNER_TEMP}/e2e-case-times.tsv"; then
+              { echo; echo "### Traced scripts/ci/e2e-case-times.tsv"; echo; echo '```'; cat "${RUNNER_TEMP}/e2e-case-times.tsv"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            else
+              rc=1
+            fi
+          fi
+          exit "$rc"
+
+      - name: Upload the traced table
+        if: always() && needs.e2e-plan.outputs.trace == 'true' && steps.scope.outputs.skip != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-case-times
+          path: ${{ runner.temp }}/e2e-case-times.tsv
+          if-no-files-found: ignore
 
   settle-doubts:
     needs: build-fixture

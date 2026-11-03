@@ -2,20 +2,20 @@
 
 A full run takes a day or more. The live site shows it while it goes, in a browser on any device that can reach the machine: which step is running, which finished, which failed or was skipped, and one line on what each finished step found. The page repaints as messages arrive; nobody has to reload it.
 
-`bin/pgp_live.py` is the server. It uses Python's standard library only, so the `python3` on the host is enough, and it has its own password, access log and limits, so it needs no web server in front of it.
+`bin/owngenome_live.py` is the server. It uses Python's standard library only, so the `python3` on the host is enough, and it has its own password, access log and limits, so it needs no web server in front of it.
 
 ## Start it
 
 ```bash
 export GENOME_DIR=/path/to/your/data
-./scripts/pgp-live.sh hash-password                         # once: asks a password, stores only its hash
-./scripts/pgp-live.sh                                       # the site, on http://127.0.0.1:8787
-PGP_LIVE_URL=http://127.0.0.1:8788 ./scripts/run-all.sh your_name male   # in another terminal
+./scripts/owngenome-live.sh hash-password                         # once: asks a password, stores only its hash
+./scripts/owngenome-live.sh                                       # the site, on http://127.0.0.1:8787
+OWNGENOME_LIVE_URL=http://127.0.0.1:8788 ./scripts/run-all.sh your_name male   # in another terminal
 ```
 
-`./scripts/pgp-live.sh your_name` does the same and prints the address of that run's page. `hash-password` writes `GENOME_DIR/.pgp-live/password` with mode 600. The file holds a PBKDF2-SHA256 hash, never the password. Open http://127.0.0.1:8787, log in, and pick the run.
+`./scripts/owngenome-live.sh your_name` does the same and prints the address of that run's page. `hash-password` writes `GENOME_DIR/.owngenome-live/password` with mode 600. The file holds a PBKDF2-SHA256 hash, never the password. Open http://127.0.0.1:8787, log in, and pick the run.
 
-With `PGP_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config` and passes it to Nextflow with `-c`. That config loads the nf-weblog plugin (pinned in `run-all.sh`; Nextflow downloads it on the first live run) and points it at `PGP_LIVE_URL/ingest/<sample>`, so every task's progress is posted. The numbered script steps that run after the pipeline (GRIDSS, imputation prep, the somatic caller, the extra callers) post when they start and how they end (the benchmark, `benchmark-variants.sh`, has no step number and posts nothing), and `run-all.sh` posts once more as it ends, with its exit code. A site that is down or slow costs one warning; the run never waits for it and never fails for it. `PGP_LIVE_URL` must be a plain `http://host:port` URL.
+With `OWNGENOME_LIVE_URL` set, `run-all.sh` writes `<sample>/nextflow/live.config` and passes it to Nextflow with `-c`. That config loads the nf-weblog plugin (pinned in `run-all.sh`; Nextflow downloads it on the first live run) and points it at `OWNGENOME_LIVE_URL/ingest/<sample>`, so every task's progress is posted. The numbered script steps that run after the pipeline (GRIDSS, imputation prep, the somatic caller, the extra callers) post when they start and how they end (the benchmark, `benchmark-variants.sh`, has no step number and posts nothing), and `run-all.sh` posts once more as it ends, with its exit code. A site that is down or slow costs one warning; the run never waits for it and never fails for it. `OWNGENOME_LIVE_URL` must be a plain `http://host:port` URL.
 
 A bare `nextflow run main.nf` can report too. Write a config like this one, with the sample id at the end of the URL (the page counts only the tasks tagged with it), and pass it with `-c`:
 
@@ -42,7 +42,7 @@ weblog {
 
 - The site serves only its own pages, the run's state, the report and the files the report links to by a relative link. Any other file is 404, and so is a link that leaves the run folder or a symlink out of `GENOME_DIR`. It never lists a folder.
 - Each message is cut to what a progress view needs before it is stored: the task, its process and status, times, CPU and memory figures. Nextflow's parameters, command line and task scripts are dropped. Three paths stay on the server for later views (the output folder, the CPU and memory caps, the work directory); none of them reaches a page.
-- Messages go to `<state dir>/runs/<run>/events.jsonl` (state dir: `GENOME_DIR/.pgp-live`, or `PGP_LIVE_STATE_DIR`). The site writes nowhere else, so `GENOME_DIR` can be mounted read-only.
+- Messages go to `<state dir>/runs/<run>/events.jsonl` (state dir: `GENOME_DIR/.owngenome-live`, or `OWNGENOME_LIVE_STATE_DIR`). The site writes nowhere else, so `GENOME_DIR` can be mounted read-only.
 - The access log, `<state dir>/access.log`, has one tab-separated row per page or file read and per login: time, client, the first 8 characters of a hash of the session, action, run, file, status. It never holds a query string, a request body, a result or the password. It moves to `access.log.1` past `--access-log-max-mb` (10).
 - Every page carries a Content-Security-Policy that lets it talk to this server only, and the page loads no script from anywhere else. The run's own HTML (the report, CPSR, PharmCAT, MultiQC) is sent sandboxed: no script runs and nothing outside is fetched.
 
@@ -50,7 +50,7 @@ weblog {
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--password-file FILE` | `PGP_LIVE_PASSWORD_HASH` | The hash to check logins against. Without one, the site listens on loopback only and asks for nothing; any other `--bind` exits 2 |
+| `--password-file FILE` | `OWNGENOME_LIVE_PASSWORD_HASH` | The hash to check logins against. Without one, the site listens on loopback only and asks for nothing; any other `--bind` exits 2 |
 | `--bind`, `--port` | `127.0.0.1`, `8787` | The browser's address |
 | `--ingest-bind`, `--ingest-port` | `127.0.0.1`, `8788` | Where Nextflow and `run-all.sh` post |
 | `--session-hours` | 12 | A login lasts at most this long |
@@ -81,10 +81,10 @@ ssh -L 8787:127.0.0.1:8787 user@your-server     # then open http://127.0.0.1:878
 **On the local network.** Set the password, then bind the machine's address:
 
 ```bash
-PGP_LIVE_BIND=0.0.0.0 PGP_LIVE_ALLOWED_HOSTS="genome.example.org" ./scripts/pgp-live.sh
+OWNGENOME_LIVE_BIND=0.0.0.0 OWNGENOME_LIVE_ALLOWED_HOSTS="genome.example.org" ./scripts/owngenome-live.sh
 ```
 
-`PGP_LIVE_ALLOWED_HOSTS` lists every name or address you will type in the browser: with `0.0.0.0` the site knows none of the machine's addresses, so `http://192.0.2.10:8787` is 403 until `192.0.2.10` is listed. Without TLS the password crosses the network in clear; use this on a network you trust, or add `--tls-cert` and `--tls-key`.
+`OWNGENOME_LIVE_ALLOWED_HOSTS` lists every name or address you will type in the browser: with `0.0.0.0` the site knows none of the machine's addresses, so `http://192.0.2.10:8787` is 403 until `192.0.2.10` is listed. Without TLS the password crosses the network in clear; use this on a network you trust, or add `--tls-cert` and `--tls-key`.
 
 **In Docker.** The image is `PYTHON_IMAGE` from `versions.env`, the data read-only, the state folder writable outside it:
 
@@ -92,30 +92,30 @@ PGP_LIVE_BIND=0.0.0.0 PGP_LIVE_ALLOWED_HOSTS="genome.example.org" ./scripts/pgp-
 . ./versions.env
 docker run --rm --user "$(id -u):$(id -g)" \
   -p 127.0.0.1:8787:8787 -p 127.0.0.1:8788:8788 \
-  -v "$PWD":/pgp:ro -v "$GENOME_DIR":/genome:ro -v "$HOME/.pgp-live":/state \
-  "$PYTHON_IMAGE" python3 /pgp/bin/pgp_live.py --root /genome --state-dir /state \
+  -v "$PWD":/pgp:ro -v "$GENOME_DIR":/genome:ro -v "$HOME/.owngenome-live":/state \
+  "$PYTHON_IMAGE" python3 /pgp/bin/owngenome_live.py --root /genome --state-dir /state \
   --bind 0.0.0.0 --ingest-bind 0.0.0.0 --password-file /state/password
 ```
 
-Inside the container both listeners bind every address, and `-p 127.0.0.1:...` keeps them on the host's loopback. Write the hash first: `mkdir -p -m 700 ~/.pgp-live`, then `(umask 077; python3 bin/pgp_live.py hash-password > ~/.pgp-live/password)`, so the file is mode 600 from the moment it exists.
+Inside the container both listeners bind every address, and `-p 127.0.0.1:...` keeps them on the host's loopback. Write the hash first: `mkdir -p -m 700 ~/.owngenome-live`, then `(umask 077; python3 bin/owngenome_live.py hash-password > ~/.owngenome-live/password)`, so the file is mode 600 from the moment it exists.
 
 **Behind a reverse proxy.** Point the proxy at `127.0.0.1:8787`, pass the Host header, and turn off response buffering for `/runs/<run>/events` (the server sends `X-Accel-Buffering: no`, which nginx honours). Then:
 
 ```bash
-./scripts/pgp-live.sh --allowed-host live.example.org --trust-proxy 127.0.0.1 --cookie-secure
+./scripts/owngenome-live.sh --allowed-host live.example.org --trust-proxy 127.0.0.1 --cookie-secure
 ```
 
 **As a service.** A systemd unit for the loopback setup:
 
 ```ini
 [Unit]
-Description=Personal Genome Pipeline live site
+Description=OwnGenome live site
 After=network.target
 
 [Service]
 User=genome
 Environment=GENOME_DIR=/path/to/your/data
-ExecStart=/path/to/Personal-Genome-Pipeline/scripts/pgp-live.sh
+ExecStart=/path/to/OwnGenome/scripts/owngenome-live.sh
 Restart=on-failure
 
 [Install]
@@ -124,11 +124,11 @@ WantedBy=multi-user.target
 
 ## Plugins
 
-The core files (`bin/pgp_live.py`, `assets/live/index.html`, `live.js`, `live.css`, `login.html`) are meant to stay small. A new view adds two files instead of editing them:
+The core files (`bin/owngenome_live.py`, `assets/live/index.html`, `live.js`, `live.css`, `login.html`) are meant to stay small. A new view adds two files instead of editing them:
 
-- `bin/pgp_live_<name>.py` with `register(app)`. At start the server imports every such file, sorted, and calls it. `app.route(method, pattern, fn, auth=True)` adds a page or an endpoint (behind the login unless `auth=False`), `app.run_file(glob)` lets the browser fetch more files of a run folder, `app.report_filter(fn)` rewrites the served report, `app.state_hook(name, fn)` adds `plugins[name]` to `state.json`, `app.run_kind(fn)` lists more runs, `app.add_argument(...)` adds a flag, `app.log(...)` writes an access-log row, and `app.config` holds the parsed flags.
+- `bin/owngenome_live_<name>.py` with `register(app)`. At start the server imports every such file, sorted, and calls it. `app.route(method, pattern, fn, auth=True)` adds a page or an endpoint (behind the login unless `auth=False`), `app.run_file(glob)` lets the browser fetch more files of a run folder, `app.report_filter(fn)` rewrites the served report, `app.state_hook(name, fn)` adds `plugins[name]` to `state.json`, `app.run_kind(fn)` lists more runs, `app.add_argument(...)` adds a flag, `app.log(...)` writes an access-log row, and `app.config` holds the parsed flags.
 - `assets/live/plugins/<name>.js`. The run page loads every script in that folder after `live.js`; it calls `window.PGP.register({name, onState, onEvent, panel})`. `onState(state)` gets each new `state.json`, `onEvent(message)` each message from the stream, and `panel(element)` gets a card of its own in the side column.
 
 The page has a replay mode for a demo with no server: `<html data-mode="replay">` reads `frames.json` (`{"interval_ms": 1000, "frames": [{"t": ..., "state": <state.json>}]}`) and plays it with a play button and a slider, through the same drawing code.
 
-`tests/test_pgp_live.py` checks the server, the login, the stored messages, the plugin interface and the page in a headless Chrome; `tests/test_live_post.sh` and `tests/fake-docker/run-all-live.sh` check what `run-all.sh` posts.
+`tests/test_owngenome_live.py` checks the server, the login, the stored messages, the plugin interface and the page in a headless Chrome; `tests/test_live_post.sh` and `tests/fake-docker/run-all-live.sh` check what `run-all.sh` posts.
