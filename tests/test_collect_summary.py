@@ -1174,6 +1174,9 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
     check("mito: the two poly-C tract records are listed apart and not counted; m.3243 is heteroplasmic 1",
           mi["heteroplasmic"] == 1 and [x["variant"] for x in mi["polyc_heteroplasmic"]]
           == ["chrM:302 AC>ACC,A", "chrM:16189 T>C"] and mi["pass"] == 4, mi)
+    check("mito: one listed site per heteroplasmic call (m.3243), the poly-C calls not listed",
+          len(mi["heteroplasmic_sites"]) == mi["heteroplasmic"]
+          and mi["heteroplasmic_sites"] == [{"pos": 3243, "ref": "A", "alt": "G", "af": 0.3}], mi)
     check("mito: both reports show the tract count and the note",
           "Heteroplasmic (AF 0.05 to 0.95, outside the D-loop poly-C tracts): 1" in txt
           and "Length heteroplasmy in the D-loop poly-C tracts (m.303-315, m.16184-16193; common, usually technical): 2"
@@ -1187,6 +1190,8 @@ def report_sections_mito_roh_telomere_cnv(work, schema):
     finally:
         collect_summary.POLYC_TRACTS = saved
     check("mito red control: without the tracts the count is 3 again", m0["heteroplasmic"] == 3, m0)
+    check("mito red control: without the tracts the poly-C calls are listed sites too, so the check above can fail",
+          len(m0["heteroplasmic_sites"]) == 3 and m0["heteroplasmic_sites"] != mi["heteroplasmic_sites"], m0)
     check("mito: an SNV just before a tract is not in it, an insertion anchored there is",
           not collect_summary.in_polyc(302, "A", "G") and collect_summary.in_polyc(302, "A", "AC")
           and collect_summary.in_polyc(315, "C", "T") and not collect_summary.in_polyc(316, "C", "T"))

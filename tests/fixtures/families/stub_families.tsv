@@ -1,0 +1,9 @@
+family	sample	sex	father	mother	partner
+# For tests/e2e/families-file-1.sh: family_b is two samples of
+# assets/test_samplesheet.csv marked as partners; family_a names no sample
+# of it.
+family_a	child_a	female	father_a	mother_a	.
+family_a	father_a	male	.	.	mother_a
+family_a	mother_a	female	.	.	father_a
+family_b	stub_fastq	male	.	.	stub_bam
+family_b	stub_bam	male	.	.	stub_fastq
