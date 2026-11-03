@@ -46,7 +46,7 @@ include { VNTYPER } from './modules/local/vntyper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
-include { MEI_DEPTH; MEI; MEI_REPORT } from './modules/local/mei/main'
+include { MEI_DEPTH; MEI; MEI_ANNOTSV; MEI_REPORT } from './modules/local/mei/main'
 include { MOCHA_PREP; MOCHA_PHASE; MOCHA_CALL; MOCHA_REPORT } from './modules/local/mocha/main'
 
 /*
@@ -1028,8 +1028,9 @@ workflow {
     // ─── Mobile element insertions (opt-in: mei, step 50) ──────────────
     // MEGAnE on each sample's BAM with the k-mer set of --megane_kmers
     // (setup.sh --megane-kmers; its .mi count file beside it), then the calls
-    // and the known-site catalog of assets/mei_sites.tsv. A sample without a
-    // BAM is left out. Equivalent to scripts/50-mei.sh.
+    // and the known-site catalog of assets/mei_sites.tsv. With
+    // --annotsv_annotations, AnnotSV annotates the calls first (MEI_ANNOTSV).
+    // A sample without a BAM is left out. Equivalent to scripts/50-mei.sh.
     ch_mei          = Channel.empty()
     ch_mei_versions = Channel.empty()
     if (tools_list.contains('mei')) {
@@ -1039,9 +1040,18 @@ workflow {
         MEI_DEPTH(ch_bam, ch_mei_sites)
         MEI(ch_bam.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, mainchr] }),
             ch_reference, ch_reference_fai, ch_megane_kmers)
-        MEI_REPORT(MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] }), ch_mei_sites)
+        ch_mei_in = MEI.out.vcf.join(MEI_DEPTH.out.depth.map { meta, mainchr, depth -> [meta, depth] })
+        ch_mei_annotsv_versions = Channel.empty()
+        if (params.annotsv_annotations) {
+            MEI_ANNOTSV(MEI.out.vcf, ch_annotsv_annotations)
+            ch_mei_in = ch_mei_in.join(MEI_ANNOTSV.out.tsv)
+            ch_mei_annotsv_versions = MEI_ANNOTSV.out.versions
+        } else {
+            ch_mei_in = ch_mei_in.map { meta, vcf, depth -> [meta, vcf, depth, []] }
+        }
+        MEI_REPORT(ch_mei_in, ch_mei_sites)
         ch_mei          = MEI_REPORT.out.tables
-        ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, MEI_REPORT.out.versions)
+        ch_mei_versions = MEI_DEPTH.out.versions.mix(MEI.out.versions, ch_mei_annotsv_versions, MEI_REPORT.out.versions)
     }
 
     // ─── Mosaic chromosomal alterations (opt-in: mocha, step 51) ───────

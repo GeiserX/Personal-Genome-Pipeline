@@ -54,6 +54,8 @@ The step passes `-bracketedAltMode DEL,DUP,INS`. By default AnnotSV reads a brea
 
 The step 22 consensus is not AnnotSV's input: it keeps only the calls two callers agree on, and would drop every call only Manta makes.
 
+MEGAnE's mobile element insertions ([step 50](50-mei.md)) are not in this input either. Step 50 runs its own AnnotSV call on them, with the same data, and puts each insertion's genes, location in each gene and benign insertion frequency in its own calls table, `mei/<sample>_mei.tsv`. AnnotSV gives no insertion a class: its ranking scores deletions and duplications only, so `ACMG_class` is `NA` for every insertion.
+
 ## Command
 ```bash
 ./scripts/05-annotsv.sh your_sample female   # or male; leave it out if the sex is not known

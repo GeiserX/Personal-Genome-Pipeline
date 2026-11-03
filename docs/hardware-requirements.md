@@ -125,6 +125,8 @@ Every step runs in a Docker container with a hard `--memory` limit. The two entr
 | 25 (PRS): scoring files written as pgsc_calc reads them | no limit | `PRS_PREPARE` 1 / 16 GB |
 | 25 (PRS): score positions genotyped from the gVCF | 2 / 8 GB | `PRS_SCORE_SITES` 2 / 4 GB |
 | 25 (PRS): pgsc_calc, each of its tasks | `PGSC_MAX_MEMORY` (three quarters of the RAM) | `PRS` 4 / 24 GB, given to pgsc_calc as `--max_memory` |
+| 50 (MEI): MEGAnE | `THREADS` (8) / 16 GB | `MEI` 8 / 16 GB |
+| 50 (MEI): AnnotSV on the insertions, with AnnotSV's data | 4 / 8 GB | `MEI_ANNOTSV` 4 / 8 GB |
 
 These are limits, not measured peaks. The peaks measured for each task in the end test are in the [runtime table](#runtime-per-step): on 30-40x genomes the alignment task (minimap2 and samtools together) peaked at 18.3-18.4 GB and DeepVariant at 15.9-16.5 GB. For step 25, on the nine scores measured before the four small lipid and blood-pressure scores joined the list, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB on a GitHub runner without a genome, and 12.7 to 13.5 GiB on the three end-test genomes ([step 25, Memory](25-prs.md#memory)). Your own run records pgsc_calc's task peaks in `prs/pgsc_calc/pipeline_info/execution_trace.txt`; the `PRS` row of the pipeline's trace is only the launcher.
 

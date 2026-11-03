@@ -3,13 +3,20 @@
     MEI — Mobile element insertions: Alu, L1, SVA with MEGAnE (step 50)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Opt-in ('mei' in --tools, with --megane_kmers: setup.sh --megane-kmers).
-    Three processes, as in scripts/50-mei.sh:
+    Four processes, as in scripts/50-mei.sh:
       MEI_DEPTH   samtools: the chromosomes MEGAnE reads (chr1 to chr22, chrX,
                   chrY as the BAM names them) and samtools bedcov over the
                   windows of assets/mei_sites.tsv on the BAM's contigs
-      MEI         MEGAnE call_genotype_38 -only_ins on the BAM
-      MEI_REPORT  bin/mei_report.py: the calls, and the catalog as seen / not
-                  seen / not callable
+      MEI         MEGAnE call_genotype_38 -only_ins on the BAM; 16 GB, the
+                  figure of the bash step (conf/base.config)
+      MEI_ANNOTSV with --annotsv_annotations: AnnotSV on the insertions the
+                  calls table lists (bin/mei_report.py --annotsv-input): their
+                  genes, the location in each, the benign set's frequency of an
+                  insertion there, and AnnotSV's class, NA for every insertion
+                  (AnnotSV 3.5 scores deletions and duplications only)
+      MEI_REPORT  bin/mei_report.py: the calls with AnnotSV's columns ("."
+                  without MEI_ANNOTSV), and the catalog as seen / not seen /
+                  not callable
 
     MEGAnE's image has no ps, which Nextflow's task wrapper needs:
     resources/usr/bin/ps here gives the MEI task one (a module binary).
@@ -133,6 +140,60 @@ process MEI {
     """
 }
 
+process MEI_ANNOTSV {
+    tag "$meta.id"
+    label 'process_medium'
+
+    publishDir { "${params.outdir}/${meta.id}/mei" }, mode: params.publish_dir_mode,
+        saveAs: { f -> f.endsWith('_mei_annotsv.tsv') ? f : null }
+
+    input:
+    tuple val(meta), path(vcf)   // MEI's ${meta.id}_megane.vcf
+    path(annotations_dir)
+
+    output:
+    tuple val(meta), path("${meta.id}_mei_annotsv.tsv"), emit: tsv
+    path "versions.yml", emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    // The same commands as scripts/50-mei.sh, step 3, with the two files
+    // the ANNOTSV process also requires. AnnotSV writes no table when it had
+    // nothing to annotate.
+    """
+    for f in ${annotations_dir}/mane_select_refseq.txt \\
+             ${annotations_dir}/Annotations_Human/SVincludedInFt/BenignSV/GRCh38/gnomad-sv.installed; do
+        if [ ! -s "\$f" ]; then
+            echo "ERROR: \$f not found: AnnotSV's data lacks the MANE Select list or gnomAD-SV's common SVs." >&2
+            echo "  Run ./scripts/setup.sh --annotsv-data <genome_dir> to add them, or see docs/05-annotsv.md." >&2
+            exit 1
+        fi
+    done
+    mei_report.py --sample ${meta.id} --vcf ${vcf} --annotsv-input ${meta.id}_mei_annotsv_input.vcf
+    AnnotSV -SVinputFile ${meta.id}_mei_annotsv_input.vcf -outputFile ${meta.id}_mei_annotsv.tsv -outputDir . \\
+        -genomeBuild GRCh38 -annotationMode both -annotationsDir ${annotations_dir} \\
+        -txFile ${annotations_dir}/mane_select_refseq.txt
+    [ -s ${meta.id}_mei_annotsv.tsv ] || : > ${meta.id}_mei_annotsv.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        annotsv: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    printf 'AnnotSV_ID\\tID\\tAnnotation_mode\\tGene_name\\tLocation\\tB_ins_AFmax\\tACMG_class\\n' > ${meta.id}_mei_annotsv.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        annotsv: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
 process MEI_REPORT {
     tag "$meta.id"
     label 'process_single'
@@ -140,7 +201,7 @@ process MEI_REPORT {
     publishDir { "${params.outdir}/${meta.id}/mei" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(vcf), path(depth)
+    tuple val(meta), path(vcf), path(depth), path(annotsv)   // annotsv: MEI_ANNOTSV's table or []
     path(sites)
 
     output:
@@ -151,8 +212,9 @@ process MEI_REPORT {
     task.ext.when == null || task.ext.when
 
     script:
+    def annotsv_arg = annotsv ? "--annotsv ${annotsv}" : ''
     """
-    mei_report.py --sample ${meta.id} --vcf ${vcf} --sites ${sites} --depth ${depth} \\
+    mei_report.py --sample ${meta.id} --vcf ${vcf} --sites ${sites} --depth ${depth} ${annotsv_arg} \\
         --out-calls ${meta.id}_mei.tsv --out-sites ${meta.id}_mei_sites.tsv
 
     cat <<-END_VERSIONS > versions.yml
@@ -163,7 +225,7 @@ process MEI_REPORT {
 
     stub:
     """
-    printf 'chrom\\tpos\\tend\\telement\\tsubfamily\\tcopies\\tfilter\\tconfidence\\n' > ${meta.id}_mei.tsv
+    printf 'chrom\\tpos\\tend\\telement\\tsubfamily\\tcopies\\tfilter\\tconfidence\\tgenes\\tlocation\\tbenign_af\\tacmg_class\\n' > ${meta.id}_mei.tsv
     printf 'gene\\tchrom\\tstart\\tend\\tsite\\telement\\tinheritance\\tcondition\\tclinvar\\tpmid\\tstatus\\tmean_depth\\tcall\\n' > ${meta.id}_mei_sites.tsv
     printf 'FKTN\\tchr9\\t1\\t2\\t1\\tSVA\\tautosomal recessive\\tstub\\t.\\t.\\tnot callable\\t.\\t.\\n' >> ${meta.id}_mei_sites.tsv
 
