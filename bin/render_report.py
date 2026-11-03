@@ -721,7 +721,7 @@ def section_keys(sid):
 
 
 def recheck_line(r):
-    """One line of run facts from the last database re-check (bin/pgp_recheck.py)."""
+    """One line of run facts from the last database re-check (bin/owngenome_recheck.py)."""
     newer = [i for i in r.get("items") or [] if i.get("class") not in ("no-newer-release", None)]
     head = f"Database re-check: {r.get('checked_utc') or 'unknown date'}: "
     if not newer:

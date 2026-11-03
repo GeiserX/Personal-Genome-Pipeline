@@ -31,7 +31,7 @@ With no --previous it writes that there is no previous run on record. With a
 previous run, previous_utc (when its report was written) heads the changes as
 "New since <date>", and new_since_sections lists the summary sections they
 change. The last database re-check (recheck/state.json beside the summary,
-bin/pgp_recheck.py) is added as the recheck block when there is one.
+bin/owngenome_recheck.py) is added as the recheck block when there is one.
 Exits 2 when an input cannot be read.
 """
 import argparse
@@ -263,7 +263,7 @@ def newest_history(sample_dir):
 
 
 def read_recheck(path):
-    """<sample>/recheck/state.json (bin/pgp_recheck.py) as a short block, or None."""
+    """<sample>/recheck/state.json (bin/owngenome_recheck.py) as a short block, or None."""
     try:
         with open(path) as f:
             st = json.load(f)
@@ -309,7 +309,7 @@ def render_text(d):
 
 
 def recheck_text(r):
-    """The database re-check lines (bin/pgp_recheck.py), or none without a check."""
+    """The database re-check lines (bin/owngenome_recheck.py), or none without a check."""
     if not r:
         return []
     newer = [i for i in r["items"] if i.get("class") not in ("no-newer-release", None)]
@@ -357,7 +357,7 @@ def main(argv=None):
     ap.add_argument("--manifest", help="this run's run_manifest.tsv")
     ap.add_argument("--previous", help="the previous run's history folder (summary.json, run_manifest.tsv)")
     ap.add_argument("--out", required=True, help="output prefix: writes OUT.txt, OUT.html, OUT.json")
-    ap.add_argument("--recheck", help="bin/pgp_recheck.py's state.json (default: recheck/state.json beside --summary)")
+    ap.add_argument("--recheck", help="bin/owngenome_recheck.py's state.json (default: recheck/state.json beside --summary)")
     a = ap.parse_args(argv)
     try:
         cur = load_json(a.summary)

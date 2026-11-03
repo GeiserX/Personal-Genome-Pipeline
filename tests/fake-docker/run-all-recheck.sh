@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/pgp_recheck.py --rerun replays the last run-all.sh command exactly:
+# bin/owngenome_recheck.py --rerun replays the last run-all.sh command exactly:
 #   1. run-all.sh writes 'meta command' (the switches it reads that are set,
 #      then its arguments, shell-quoted) and 'meta switches' into
 #      logs/run_status.tsv;
@@ -27,7 +27,7 @@ seed_sample "$G" sample1
 printf '##fileformat=VCFv4.1\n##fileDate=20260901\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n' \
   | gzip -c > "${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 ANSWERS="${REPO_ROOT}/tests/fixtures/recheck/offline-nothing-newer.json"
-RECHECK=(python3 "${REPO_ROOT}/bin/pgp_recheck.py" --sample sample1 --offline "$ANSWERS")
+RECHECK=(python3 "${REPO_ROOT}/bin/owngenome_recheck.py" --sample sample1 --offline "$ANSWERS")
 nf_lines() { grep '^nextflow :: .*/main\.nf ' "$FAKE_DOCKER_LOG" || true; }
 meta() { awk -F'\t' -v k="$1" '$1 == "meta" && $2 == k {print $3}' "$ST"; }
 

@@ -326,7 +326,7 @@ def chapter_checks(work):
     check("chapters: red control: a dropped card is caught",
           sorted(re.findall(r"<h2>([^<]*)</h2>", html.replace("<h2>Traits</h2>", ""))) != GOLDEN_TITLES)
 
-    # "New since" and the database re-check (bin/pgp_recheck.py, bin/run_delta.py through collect_summary)
+    # "New since" and the database re-check (bin/owngenome_recheck.py, bin/run_delta.py through collect_summary)
     since = json.loads(json.dumps(summ))
     since["new_since"] = {"previous_utc": "2026-01-01T00:00:00Z", "sections": ["clinvar"]}
     since["recheck"] = {"checked_utc": "2026-02-02T00:00:00Z", "affected_steps": ["06", "24"], "rerun": None,

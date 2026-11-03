@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""pgp_recheck.py: say which of a finished sample's results a newer ClinVar or catalog would change.
+"""owngenome_recheck.py: say which of a finished sample's results a newer ClinVar or catalog would change.
 
-  pgp_recheck.py --sample S [--genome-dir DIR] [--offline FILE] [--pgp-repo OWNER/NAME]
+  owngenome_recheck.py --sample S [--genome-dir DIR] [--offline FILE] [--owngenome-repo OWNER/NAME]
                  [--rerun [--refresh-clinvar]]
-  pgp_recheck.py --affected KEY[,KEY...]      the steps a change of these manifest keys redoes
-  pgp_recheck.py --launch-dir DIR             the last bare `nextflow run` there, with -resume
+  owngenome_recheck.py --affected KEY[,KEY...]      the steps a change of these manifest keys redoes
+  owngenome_recheck.py --launch-dir DIR             the last bare `nextflow run` there, with -resume
 
 It reads the sample's run_manifest.tsv (bin/write_manifest.sh): the databases
 and pinned data the run used. For each one it asks the upstream source for its
@@ -93,8 +93,8 @@ def load_freshness():
         spec.loader.exec_module(mod)
     finally:
         sys.dont_write_bytecode = keep
-    if os.environ.get("PGP_RECHECK_RETRIES"):
-        mod.RETRIES = int(os.environ["PGP_RECHECK_RETRIES"])
+    if os.environ.get("OWNGENOME_RECHECK_RETRIES"):
+        mod.RETRIES = int(os.environ["OWNGENOME_RECHECK_RETRIES"])
     return mod
 
 
@@ -192,8 +192,8 @@ def affected_steps(steps, keys):
 class Online:
     """Answers through freshness.py, printing each host the first time it is asked."""
 
-    def __init__(self, fr, pins, pgp_repo, pgs_api=PGS_API, raw=RAW, out=None):
-        self.fr, self.pins, self.repo, self.pgs_api, self.raw = fr, pins, pgp_repo, pgs_api, raw
+    def __init__(self, fr, pins, owngenome_repo, pgs_api=PGS_API, raw=RAW, out=None):
+        self.fr, self.pins, self.repo, self.pgs_api, self.raw = fr, pins, owngenome_repo, pgs_api, raw
         self.hosts, self.out = [], out or sys.stderr
         orig = fr.request
 
@@ -335,7 +335,7 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
         return "error"
     rel = pin_value(item["item"], release_pins.get(item["item"]))
     if rel and ver(rel) > ver(base):
-        item["in_pgp_release"] = {"tag": release_tag, "pin": rel}
+        item["in_owngenome_release"] = {"tag": release_tag, "pin": rel}
         return "in-pipeline-release"
     return "upstream-only"
 
@@ -345,13 +345,13 @@ def action(item, sample):
     if c == "rerun-ready":
         if item["kind"] == "pin":
             return (f"this checkout pins {item['installed']}: run ./scripts/setup.sh (it installs the data), "
-                    f"then rerun: bin/pgp_recheck.py --sample {sample} --rerun")
-        return f"rerun: bin/pgp_recheck.py --sample {sample} --rerun"
+                    f"then rerun: bin/owngenome_recheck.py --sample {sample} --rerun")
+        return f"rerun: bin/owngenome_recheck.py --sample {sample} --rerun"
     if c == "refresh-available":
         return (f"refresh it with ./scripts/setup.sh --refresh clinvar $GENOME_DIR, then rerun "
-                f"(bin/pgp_recheck.py --sample {sample} --rerun --refresh-clinvar does both)")
+                f"(bin/owngenome_recheck.py --sample {sample} --rerun --refresh-clinvar does both)")
     if c == "in-pipeline-release":
-        r = item["in_pgp_release"]
+        r = item["in_owngenome_release"]
         return f"update the pipeline to {r['tag']} (it pins {r['pin']}), run setup.sh, then rerun"
     if c == "upstream-only":
         if key.startswith("pgs:"):
@@ -532,9 +532,9 @@ def main(argv=None):
     ap.add_argument("--sample")
     ap.add_argument("--genome-dir", default=os.environ.get("GENOME_DIR"), help="default: $GENOME_DIR")
     ap.add_argument("--offline", help="read the upstream answers from this JSON file")
-    ap.add_argument("--pgp-repo", default=DEFAULT_REPO, help=f"the pipeline's repository (default {DEFAULT_REPO})")
+    ap.add_argument("--owngenome-repo", default=DEFAULT_REPO, help=f"the pipeline's repository (default {DEFAULT_REPO})")
     ap.add_argument("--pgs-api", default=PGS_API, help=argparse.SUPPRESS)
-    ap.add_argument("--raw", default=os.environ.get("PGP_RECHECK_RAW", RAW), help=argparse.SUPPRESS)
+    ap.add_argument("--raw", default=os.environ.get("OWNGENOME_RECHECK_RAW", RAW), help=argparse.SUPPRESS)
     ap.add_argument("--rerun", action="store_true", help="replay the last run-all.sh command")
     ap.add_argument("--refresh-clinvar", action="store_true", help="with --rerun: setup.sh --refresh clinvar first")
     ap.add_argument("--affected", help="print the steps a change of these manifest keys redoes")
@@ -581,7 +581,7 @@ def main(argv=None):
     else:
         man = read_manifest(os.path.join(sample_dir, "run_manifest.tsv"))
         pins = {k: v for (sec, k), v in man.items() if sec == "version"}
-        answers = Online(fr, pins, a.pgp_repo, a.pgs_api, a.raw)
+        answers = Online(fr, pins, a.owngenome_repo, a.pgs_api, a.raw)
     state = check(a.sample, a.genome_dir, answers, steps, this_pins, this_hla)
     d = os.path.join(sample_dir, "recheck")
     log = os.path.join(d, "log.tsv")

@@ -36,7 +36,7 @@
 #   failed (logs/run_status.tsv). Results are published by hard link when work/ and GENOME_DIR share a filesystem,
 #   you passed no -w, -c or --publish_dir_mode, and you run as root or Linux's fs.protected_hardlinks is 0 (then a user
 #   may link the tasks' root-owned files).
-# logs/run_status.tsv keeps this command with its switches: bin/pgp_recheck.py --rerun replays it when a newer
+# logs/run_status.tsv keeps this command with its switches: bin/owngenome_recheck.py --rerun replays it when a newer
 #   ClinVar or catalog changes a result (docs/recheck.md).
 set -euo pipefail
 case "${1:-}" in -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;; esac
@@ -45,14 +45,14 @@ SAMPLE=${1:-} SEX=${2:-}
   [ -z "$SEX" ] || echo "ERROR: sex must be 'male' or 'female', got '${SEX}'."; } >&2; exit 2; }
 ((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404)) || { echo "ERROR: run-all.sh needs bash 4.4 or later (this is ${BASH_VERSION}); on macOS: brew install bash" >&2; exit 2; }
 shift 2; SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd) USER_THREADS=${THREADS:-}
-# This command as given, for bin/pgp_recheck.py --rerun (logs/run_status.tsv, 'meta command'): the switches
-# below that are set, then the arguments, each shell-quoted. 'meta switches' names them all, so a replay drops
-# one set now that the run did not have.
+# This command as given, for bin/owngenome_recheck.py --rerun (logs/run_status.tsv, 'meta command'): the switches
+# below that are set, then the arguments, each shell-quoted, run from this directory so relative paths still hold.
+# 'meta switches' names them all, so a replay drops one set now that the run did not have.
 SWITCHES=(GENOME_DIR SKIP_VALIDATION THREADS SKIP_TRIM INTERVALS ALIGN_DIR TOOLS KIR HLA_QC HPO REF_FASTA EH_CATALOG
   MANTA_CALL_REGIONS PARASCOPY_POPULATION PARAPHASE_REGIONS ANCESTRY_PANEL ANCESTRY_FINE_DIR ARCHAIC_DIR ARCHAIC_POP
   PGSC_CALC_DIR ANCIENT_PANEL_DIR VIRAL_REF MEGANE_KMERS MOCHA_DATA GRIDSS IMPUTATION SOMATIC EXTRA_CALLERS BENCHMARK
-  NXF_VER NXF_WORK)
-RERUN_CMD=""; for v in "${SWITCHES[@]}"; do [ -z "${!v+x}" ] || RERUN_CMD+="${v}=$(printf '%q' "${!v}") "; done
+  FAMILIES OWNGENOME_LIVE_URL NXF_VER NXF_WORK)
+RERUN_CMD="cd $(printf '%q' "$PWD") && "; for v in "${SWITCHES[@]}"; do [ -z "${!v+x}" ] || RERUN_CMD+="${v}=$(printf '%q' "${!v}") "; done
 RERUN_CMD+=$(printf '%q ' "${SCRIPT_DIR}/run-all.sh" "$SAMPLE" "$SEX" "$@"); RERUN_CMD=${RERUN_CMD% }
 # With -bg nextflow returns at once, and the steps would be recorded and the reports written before the run ends.
 for a in "$@"; do [ "$a" != -bg ] || { echo "ERROR: run-all.sh does not take -bg: it waits for the pipeline to record each step and write the reports. Run it inside tmux or screen, or with nohup." >&2; exit 2; }; done

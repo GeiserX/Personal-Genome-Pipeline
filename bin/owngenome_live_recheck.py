@@ -1,6 +1,6 @@
-"""pgp_live_recheck.py: the database re-check on the live page, a plugin of bin/pgp_live.py.
+"""owngenome_live_recheck.py: the database re-check on the live page, a plugin of bin/owngenome_live.py.
 
-bin/pgp_recheck.py writes <run>/recheck/state.json: which databases the run
+bin/owngenome_recheck.py writes <run>/recheck/state.json: which databases the run
 used have a newer release, which steps that would change, and the last rerun.
 This plugin lets the signed-in browser fetch that file
 (/runs/<run>/recheck/state.json) and puts a short form of it in state.json

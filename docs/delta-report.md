@@ -64,6 +64,6 @@ With a previous run on record, the delta heads its changes with "New since" and 
 | PharmCAT | With each release | Steps 07 and 27 |
 | PGS Catalog | When a score you use gets a new version | Step 25 |
 
-`bin/pgp_recheck.py` finds these for you: it says which database your run used has a newer release, which steps that changes, and with `--rerun` runs the same `run-all.sh` command again ([Newer Databases Since a Run](recheck.md)).
+`bin/owngenome_recheck.py` finds these for you: it says which database your run used has a newer release, which steps that changes, and with `--rerun` runs the same `run-all.sh` command again ([Newer Databases Since a Run](recheck.md)).
 
 `run-all.sh` runs Nextflow with `-resume`, so running the same command again redoes only the processes whose inputs or code changed. A new ClinVar file reruns the ClinVar screen and what reads it; the alignment and the variant calls come from the cache. One exception: when the sample started from FASTQ, the first call after that run ended with every task done starts from the BAM and VCF it published instead, so the steps after the variant calls run once more, without aligning or calling again; later calls hit the cache as usual. The delta then shows what the new release moved.

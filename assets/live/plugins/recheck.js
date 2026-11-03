@@ -1,4 +1,4 @@
-// recheck.js: the database re-check on the live page (a plugin, bin/pgp_live_recheck.py).
+// recheck.js: the database re-check on the live page (a plugin, bin/owngenome_live_recheck.py).
 // state.json's plugins.recheck holds a banner line and, per step, its badges ("newer ClinVar
 // available", "redone 2026-10-05"). The panel shows the banner and one line per marked step; on
 // the step map a marked step gets a small dot with the badges as its tooltip. No inline script,
@@ -18,7 +18,7 @@
 
   function panel(box) {
     box.appendChild(el('h2', {}, 'Database re-check'));
-    banner = el('p', { 'class': 'muted' }, 'No re-check yet: bin/pgp_recheck.py writes one (docs/recheck.md).');
+    banner = el('p', { 'class': 'muted' }, 'No re-check yet: bin/owngenome_recheck.py writes one (docs/recheck.md).');
     list = el('ul', { 'class': 'plain recheck-steps' });
     box.appendChild(banner);
     box.appendChild(list);
@@ -58,13 +58,13 @@
     shownKey = key;
     list.textContent = '';
     if (!key) {
-      banner.textContent = 'No re-check yet: bin/pgp_recheck.py writes one (docs/recheck.md).';
-      document.documentElement.removeAttribute('data-pgp-recheck');
+      banner.textContent = 'No re-check yet: bin/owngenome_recheck.py writes one (docs/recheck.md).';
+      document.documentElement.removeAttribute('data-owngenome-recheck');
       return;
     }
     banner.textContent = r.banner;
     Object.keys(steps).sort().forEach(function (n) { list.appendChild(el('li', {}, 'Step ' + n + ': ' + steps[n].join('; '))); });
-    document.documentElement.setAttribute('data-pgp-recheck', String(Object.keys(steps).length));
+    document.documentElement.setAttribute('data-owngenome-recheck', String(Object.keys(steps).length));
   }
 
   window.PGP.register({ name: 'recheck', panel: panel, onState: onState });

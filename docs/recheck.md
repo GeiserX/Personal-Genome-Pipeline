@@ -2,11 +2,11 @@
 
 ## What This Does
 
-A finished sample keeps the results of the databases it ran with. ClinVar publishes a new file every month, and Ensembl, PCGR, pypgx, PharmCAT, IPD-IMGT/HLA and the PGS Catalog release less often. `bin/pgp_recheck.py` says which of them has a newer release than the one your run used, which steps that would change, and what to do about it. With `--rerun` it then runs the same `run-all.sh` command again, so Nextflow redoes only those steps and takes the rest from its cache.
+A finished sample keeps the results of the databases it ran with. ClinVar publishes a new file every month, and Ensembl, PCGR, pypgx, PharmCAT, IPD-IMGT/HLA and the PGS Catalog release less often. `bin/owngenome_recheck.py` says which of them has a newer release than the one your run used, which steps that would change, and what to do about it. With `--rerun` it then runs the same `run-all.sh` command again, so Nextflow redoes only those steps and takes the rest from its cache.
 
 ```bash
 export GENOME_DIR=/path/to/your/data
-python3 bin/pgp_recheck.py --sample your_sample
+python3 bin/owngenome_recheck.py --sample your_sample
 ```
 
 Standard library only, so the plain `python3` on the host is enough. It needs the sample's `run_manifest.tsv`, which `run-all.sh` writes (`bin/write_manifest.sh`).
@@ -15,8 +15,8 @@ Standard library only, so the plain `python3` on the host is enough. It needs th
 
 | Item | What the run used (`run_manifest.tsv`) | Where the newer release comes from | Steps it feeds |
 |---|---|---|---|
-| ClinVar | `clinvar_file_date`, the `##fileDate` of the ClinVar file | The `Last-Modified` date of NCBI's `clinvar.vcf.gz` | 06, 13 (VEP adds its significance), 20 (the chrM table only), then 23, 30, 31, 38, 39 |
-| Ensembl / VEP cache | `VEP_CACHE_RELEASE` | Ensembl's REST API | 13, then 23, 30, 31, 38, 39 |
+| ClinVar | `clinvar_file_date`, the `##fileDate` of the ClinVar file | The `Last-Modified` date of NCBI's `clinvar.vcf.gz` | 06, 13 (VEP adds its significance), 20 (the chrM table only), then 23, 30, 31, 39 |
+| Ensembl / VEP cache | `VEP_CACHE_RELEASE` | Ensembl's REST API | 13, then 23, 30, 31 |
 | PCGR / CPSR data | `PCGR_DATA_BUNDLE` | PCGR's newest GitHub release | 17 |
 | pypgx and its bundle | `PYPGX_BUNDLE_VERSION` | PyPI, the pypgx biocontainer and the pypgx-bundle tags | 32, then 36 |
 | PharmCAT | `PHARMCAT_IMAGE` | PharmCAT's newest GitHub release | 07, 27, then 36 |
@@ -25,7 +25,7 @@ Standard library only, so the plain `python3` on the host is enough. It needs th
 
 The HTML report (24) and the text report are written again after any of them. The ClinVar release inside the PCGR bundle (`cpsr_clinvar_release`) moves with the PCGR bundle, never with step 06's ClinVar file.
 
-The lookups are the ones the monthly CI check uses (`scripts/ci/freshness.py`). It also reads the newest release of this pipeline (`--pgp-repo`, default `GeiserX/OwnGenome`) and that release's `versions.env`, to say whether a newer pin is already in a release.
+The lookups are the ones the monthly CI check uses (`scripts/ci/freshness.py`). It also reads the newest release of this pipeline (`--owngenome-repo`, default `GeiserX/OwnGenome`) and that release's `versions.env`, to say whether a newer pin is already in a release.
 
 ### What is sent
 
@@ -50,20 +50,20 @@ The 2-day margin for ClinVar is there because NCBI dates the file a day or two a
 
 `assets/steps.tsv` has a `reads` column: the manifest keys of the databases each step reads itself. A step whose key moved is marked, then every step downstream of it through the `upstream` column, then the reports. A key with `@self` (step 20's ClinVar) changes only a table of that step's own, so nothing below it is marked.
 
-The Nextflow workflow checks this on every pull request: it runs the all-tools stub again with `-resume` and a ClinVar file of another date, and the steps with a task that ran again must be exactly the steps `bin/pgp_recheck.py --affected clinvar_file_date` names.
+The Nextflow workflow checks this on every pull request: it runs the all-tools stub again with `-resume` and a ClinVar file of another date, and the steps with a task that ran again must be exactly the steps `bin/owngenome_recheck.py --affected clinvar_file_date` names.
 
 ## Rerunning
 
 ```bash
-python3 bin/pgp_recheck.py --sample your_sample --rerun
-python3 bin/pgp_recheck.py --sample your_sample --rerun --refresh-clinvar   # refresh ClinVar first
+python3 bin/owngenome_recheck.py --sample your_sample --rerun
+python3 bin/owngenome_recheck.py --sample your_sample --rerun --refresh-clinvar   # refresh ClinVar first
 ```
 
-`run-all.sh` writes its own command into `logs/run_status.tsv` (`meta command`: the switches it reads that were set, then its arguments, each shell-quoted; `meta switches`: the names of those switches). `--rerun` runs that command again with those switches only, so a `TOOLS` set in your shell today does not change the run. Nextflow's `-resume` then redoes only the tasks whose inputs changed.
+`run-all.sh` writes its own command into `logs/run_status.tsv` (`meta command`: a `cd` to the directory it was run from, the switches it reads that were set, then its arguments, each shell-quoted; `meta switches`: the names of those switches). `--rerun` runs that command again with those switches only, so a `TOOLS` set in your shell today does not change the run. Nextflow's `-resume` then redoes only the tasks whose inputs changed.
 
 It refuses while a run of the sample is going on (`run_status.tsv` has no `finished_utc`). A run that was killed without its exit trap leaves no `finished_utc` either: run `run-all.sh` by hand once, and the next check can rerun again.
 
-When the run ends, it compares the steps that ran a task again with the steps the check named, and records the difference. The script steps (04b, 14, 29, 03a to 03d) skip when their output exists, so a named one is listed as not redone: delete its output and run its script.
+When the run ends, it compares the steps that ran a task again with the steps the check named, and records the difference. The script steps (04b, 14, 29, 03a to 03d) skip when their output exists, so a named one is listed as not redone: delete its output and run its script. A sample that started from FASTQ redoes more once: the first `run-all.sh` call after a run that ended with every task done starts from the BAM and VCF that run published ([the delta report](delta-report.md)), so every step after the variant calls runs again and is listed as redone but not named. Later reruns redo only what the check names.
 
 A sample last run by an older `run-all.sh` has no `meta command` row: run the same command once by hand.
 
@@ -72,17 +72,17 @@ A sample last run by an older `run-all.sh` has no `meta command` row: run the sa
 A bare `nextflow run main.nf` writes no run manifest, so there is nothing to check. To get the command back, `--launch-dir` prints the last command of that launch directory (its `.nextflow/history`) with `-resume` added. It never runs it.
 
 ```bash
-python3 bin/pgp_recheck.py --launch-dir /path/to/launch/dir
+python3 bin/owngenome_recheck.py --launch-dir /path/to/launch/dir
 ```
 
 ## The files it writes
 
-- `<sample>/recheck/state.json`, replaced whole on each check: `checked_utc`, the hosts asked, the pipeline release it read, one entry per item (`item`, `label`, `ran_with`, `installed`, `upstream`, `class`, `steps`, `action`, and `error` or `in_pgp_release` when they apply), `affected_steps` (the steps a rerun would redo for the `rerun-ready` and `refresh-available` items), and after a rerun a `rerun` block (`started_utc`, `finished_utc`, `rc`, `command`, `predicted_vs_redone`). The last rerun stays until another one replaces it.
+- `<sample>/recheck/state.json`, replaced whole on each check: `checked_utc`, the hosts asked, the pipeline release it read, one entry per item (`item`, `label`, `ran_with`, `installed`, `upstream`, `class`, `steps`, `action`, and `error` or `in_owngenome_release` when they apply), `affected_steps` (the steps a rerun would redo for the `rerun-ready` and `refresh-available` items), and after a rerun a `rerun` block (`started_utc`, `finished_utc`, `rc`, `command`, `predicted_vs_redone`). The last rerun stays until another one replaces it.
 - `<sample>/recheck/log.tsv`, only ever appended: one row per item and check, and a row as each rerun starts and ends.
 
 ## In the reports and on the live site
 
-The next reports read `recheck/state.json`: both show one "Database re-check" line in the run facts. When the sample has a previous run in `history/` ([the delta report](delta-report.md)), a section whose results changed since it carries a badge such as "New since 2026-10-01T09:15:00Z", in both reports, and the delta report heads its changes the same way. The live site's re-check plugin (`bin/pgp_live_recheck.py`, `assets/live/plugins/recheck.js`) shows the same line as a banner and marks each named step on the step map with a dot whose tooltip says "newer ClinVar available" or "redone 2026-10-05".
+The next reports read `recheck/state.json`: both show one "Database re-check" line in the run facts. When the sample has a previous run in `history/` ([the delta report](delta-report.md)), a section whose results changed since it carries a badge such as "New since 2026-10-01T09:15:00Z", in both reports, and the delta report heads its changes the same way. The live site's re-check plugin (`bin/owngenome_live_recheck.py`, `assets/live/plugins/recheck.js`) shows the same line as a banner and marks each named step on the step map with a dot whose tooltip says "newer ClinVar available" or "redone 2026-10-05".
 
 The Nextflow `HTML_REPORT` process sees no `history/` folder, so its report has no "New since" badge.
 
@@ -93,11 +93,11 @@ Nothing here installs itself. To check once a month, copy one of these. Each run
 crontab (`crontab -e`), at 06:00 on the 5th of each month:
 
 ```text
-0 6 5 * * GENOME_DIR=/path/to/your/data /usr/bin/python3 /path/to/OwnGenome/bin/pgp_recheck.py --sample your_sample >> /path/to/your/data/your_sample/recheck-cron.log 2>&1
-# 0 6 5 * * GENOME_DIR=/path/to/your/data /usr/bin/python3 /path/to/OwnGenome/bin/pgp_recheck.py --sample your_sample --rerun >> /path/to/your/data/your_sample/recheck-cron.log 2>&1
+0 6 5 * * GENOME_DIR=/path/to/your/data /usr/bin/python3 /path/to/OwnGenome/bin/owngenome_recheck.py --sample your_sample >> /path/to/your/data/your_sample/recheck-cron.log 2>&1
+# 0 6 5 * * GENOME_DIR=/path/to/your/data /usr/bin/python3 /path/to/OwnGenome/bin/owngenome_recheck.py --sample your_sample --rerun >> /path/to/your/data/your_sample/recheck-cron.log 2>&1
 ```
 
-systemd (Linux, as your user): `~/.config/systemd/user/pgp-recheck.service`
+systemd (Linux, as your user): `~/.config/systemd/user/owngenome-recheck.service`
 
 ```ini
 [Unit]
@@ -106,11 +106,11 @@ Description=Check a genome against newer databases
 [Service]
 Type=oneshot
 Environment=GENOME_DIR=/path/to/your/data
-ExecStart=/usr/bin/python3 /path/to/OwnGenome/bin/pgp_recheck.py --sample your_sample
-# ExecStart=/usr/bin/python3 /path/to/OwnGenome/bin/pgp_recheck.py --sample your_sample --rerun
+ExecStart=/usr/bin/python3 /path/to/OwnGenome/bin/owngenome_recheck.py --sample your_sample
+# ExecStart=/usr/bin/python3 /path/to/OwnGenome/bin/owngenome_recheck.py --sample your_sample --rerun
 ```
 
-and `~/.config/systemd/user/pgp-recheck.timer`, then `systemctl --user enable --now pgp-recheck.timer`:
+and `~/.config/systemd/user/owngenome-recheck.timer`, then `systemctl --user enable --now owngenome-recheck.timer`:
 
 ```ini
 [Unit]
@@ -137,7 +137,7 @@ launchd (macOS): `~/Library/LaunchAgents/org.owngenome.recheck.plist`, then `lau
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>/path/to/OwnGenome/bin/pgp_recheck.py</string>
+    <string>/path/to/OwnGenome/bin/owngenome_recheck.py</string>
     <string>--sample</string><string>your_sample</string>
     <!-- <string>--rerun</string> -->
   </array>
@@ -155,4 +155,4 @@ launchd runs an interval missed during sleep when the Mac wakes; one missed whil
 
 ## Tests
 
-`tests/test_pgp_recheck.py` checks the classes, the steps each item names, a failed lookup, the files it writes, the refusal during a run, the comparison after a rerun and the live-site plugin, each against a planted mistake too. `tests/fake-docker/run-all-recheck.sh` checks that `--rerun` replays the recorded command exactly, with a control where one dropped argument makes it differ.
+`tests/test_owngenome_recheck.py` checks the classes, the steps each item names, a failed lookup, the files it writes, the refusal during a run, the comparison after a rerun and the live-site plugin, each against a planted mistake too. `tests/fake-docker/run-all-recheck.sh` checks that `--rerun` replays the recorded command exactly, with a control where one dropped argument makes it differ.

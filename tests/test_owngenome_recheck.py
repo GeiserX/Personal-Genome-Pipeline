@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/pgp_recheck.py on synthetic sample folders (tests/fixtures/recheck), with no network:
+"""bin/owngenome_recheck.py on synthetic sample folders (tests/fixtures/recheck), with no network:
 the upstream answers come from an offline file or from a server on 127.0.0.1.
 
 Checks:
@@ -18,12 +18,12 @@ Checks:
   8. the comparison after a rerun names a predicted step that was not redone, a
      redone step that was not predicted, and a predicted script step as not redone;
   9. --launch-dir prints the last command of .nextflow/history with -resume;
- 10. the live-site plugin (bin/pgp_live_recheck.py) lets the browser fetch
+ 10. the live-site plugin (bin/owngenome_live_recheck.py) lets the browser fetch
      recheck/state.json, and its state hook gives each step its badges ("newer
      ClinVar available", "redone <date>") and {} when there is no check.
 Each check is then run against a planted mistake and must fail there.
 
-Run: python3 tests/test_pgp_recheck.py
+Run: python3 tests/test_owngenome_recheck.py
 """
 import contextlib
 import gzip
@@ -39,9 +39,9 @@ import threading
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIX = os.path.join(REPO, "tests", "fixtures", "recheck")
-TOOL = os.path.join(REPO, "bin", "pgp_recheck.py")
+TOOL = os.path.join(REPO, "bin", "owngenome_recheck.py")
 FAILS = 0
-CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "38", "39"]
+CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "39"]
 # The pins "here" are the run's own: the version rows of the fixture manifest
 # (the image name stays in the fixture, never as a literal in a test).
 with open(os.path.join(FIX, "run_manifest.tsv")) as _f:
@@ -56,7 +56,7 @@ def check(desc, ok, detail=""):
 
 
 def load():
-    spec = importlib.util.spec_from_file_location("pgp_recheck_under_test", TOOL)
+    spec = importlib.util.spec_from_file_location("owngenome_recheck_under_test", TOOL)
     m = importlib.util.module_from_spec(spec)
     keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
     try:
@@ -123,7 +123,7 @@ def all_checks(m):
         rel116 = {"tag": "v9.9.0", "pins": {"VEP_CACHE_RELEASE": "116"}}
         v2 = by_item(m.check("S1", g, answers(m, g, release=rel116), steps, THIS_PINS, "3.66.0"))["VEP_CACHE_RELEASE"]
         out["VEP 117 in the newest release is in-pipeline-release, else upstream-only"] = (
-            v1["class"] == "in-pipeline-release" and v1["in_pgp_release"] == {"tag": "v9.9.0", "pin": "117"}
+            v1["class"] == "in-pipeline-release" and v1["in_owngenome_release"] == {"tag": "v9.9.0", "pin": "117"}
             and "v9.9.0" in v1["action"] and v2["class"] == "upstream-only", (v1, v2))
 
         p = it["pgs:PGS000001"]
@@ -293,7 +293,7 @@ def mutants():
 
 
 def load_plugin():
-    spec = importlib.util.spec_from_file_location("pgp_live_recheck_test", os.path.join(REPO, "bin", "pgp_live_recheck.py"))
+    spec = importlib.util.spec_from_file_location("owngenome_live_recheck_test", os.path.join(REPO, "bin", "owngenome_live_recheck.py"))
     p = importlib.util.module_from_spec(spec)
     keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
     try:

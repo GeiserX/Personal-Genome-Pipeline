@@ -9,7 +9,7 @@
 # reference, such as building an index, left out); always below hours.
 # reads: the run_manifest.tsv keys (bin/write_manifest.sh) of the databases and pinned data the step reads
 # itself (pgs:* is every PGS score file; key@self: only a table of the step's own that no other step reads
-# changes). bin/pgp_recheck.py marks a step whose key moved, then every step downstream of it through
+# changes). bin/owngenome_recheck.py marks a step whose key moved, then every step downstream of it through
 # upstream, then the reports; the Nextflow workflow checks that a stub rerun with a new ClinVar file redoes
 # exactly the steps it names.
 # tests/test_run_state.py checks this table against run-all.sh, main.nf, modules/local and collect_summary.py.

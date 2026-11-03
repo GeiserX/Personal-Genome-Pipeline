@@ -171,7 +171,7 @@ jobs:
             --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db \
             --mito_clinvar assets/stub/db/clinvar.vcf.gz
 
-      # bin/pgp_recheck.py names the steps a new ClinVar release changes, from the
+      # bin/owngenome_recheck.py names the steps a new ClinVar release changes, from the
       # reads and upstream columns of assets/steps.tsv. The all-tools run again
       # with -resume and a ClinVar file of another ##fileDate (as --clinvar and
       # --mito_clinvar, as run-all.sh passes them): the steps with a task that ran
@@ -179,7 +179,7 @@ jobs:
       # steps the first run had. The control: the same names from a steps.tsv with
       # ClinVar taken out of step 13's reads must differ from what ran, so the
       # comparison can fail. Right after the all-tools run, so -resume resumes it.
-      - name: A new ClinVar file redoes exactly the steps pgp_recheck.py names
+      - name: A new ClinVar file redoes exactly the steps owngenome_recheck.py names
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
         run: |
@@ -192,8 +192,8 @@ jobs:
             --clinvar "${d}/clinvar.vcf.gz" --clinvar_index "${d}/clinvar.vcf.gz.tbi" --mito_clinvar "${d}/clinvar.vcf.gz"
           awk -F'\t' -v OFS='\t' '$1 == "13" {sub(/clinvar_file_date,/, "", $11)} {print}' assets/steps.tsv > "${d}/steps-control.tsv"
           python3 - "${RUNNER_TEMP}/all-tools" "${RUNNER_TEMP}/all-tools-recheck" \
-            "$(python3 bin/pgp_recheck.py --affected clinvar_file_date)" \
-            "$(python3 bin/pgp_recheck.py --affected clinvar_file_date --steps "${d}/steps-control.tsv")" <<'PY'
+            "$(python3 bin/owngenome_recheck.py --affected clinvar_file_date)" \
+            "$(python3 bin/owngenome_recheck.py --affected clinvar_file_date --steps "${d}/steps-control.tsv")" <<'PY'
           import csv, glob, os, sys
           sys.path.insert(0, "bin")
           import run_state
@@ -213,7 +213,7 @@ jobs:
           want = named & had
           print(f"tasks: {len(first)} in the first run, {len(second)} in the rerun "
                 f"({sum(st == 'COMPLETED' for _, st in second)} ran again, {sum(st == 'CACHED' for _, st in second)} cached)")
-          print("named by pgp_recheck.py, of the steps the run had:", " ".join(sorted(want)))
+          print("named by owngenome_recheck.py, of the steps the run had:", " ".join(sorted(want)))
           print("redone:", " ".join(sorted(redone)))
           print("control names:", " ".join(sorted(control & had)))
           bad = 0

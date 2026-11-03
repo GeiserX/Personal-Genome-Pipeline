@@ -24,7 +24,7 @@ Each section has a state:
 The run manifest (S/run_manifest.tsv, bin/write_manifest.sh) is copied in for
 the report footer, with the ClinVar release date and the HLA database release.
 Two optional keys, for the report's run facts and badges: recheck, the last
-database re-check (S/recheck/state.json, bin/pgp_recheck.py), and new_since,
+database re-check (S/recheck/state.json, bin/owngenome_recheck.py), and new_since,
 the date of the previous run kept in S/history/ and the sections whose results
 changed since it (bin/run_delta.py's comparison).
 
