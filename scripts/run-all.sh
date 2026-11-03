@@ -104,12 +104,16 @@ arg() { [ ! -e "$2" ] || NF+=("$1" "$2"); }  # arg --param FILE: pass FILE when 
 CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz" A="${G}/annotations" CAT=${EH_CATALOG:-}
 # The catalog of steps 09 and 9b: STRchive's when setup.sh built it, as step 09
 # picks it; EH_CATALOG=bundled or no STRchive file: the one inside the image,
-# which step 09 reads there and the pipeline takes as a file.
+# which step 09 reads there and the pipeline takes as a file. Its copy is
+# named after the image tag, so an image bump extracts a fresh one.
 STRCHIVE_CAT="${G}/reference/strchive-${STRCHIVE_VERSION}/catalog.json"
 if [ -z "$CAT" ] && [ -s "$STRCHIVE_CAT" ]; then CAT=$STRCHIVE_CAT; fi
-if [ -z "$CAT" ] || [ "$CAT" = bundled ]; then CAT="${G}/reference/expansionhunter_variant_catalog.json"; fi
-[ "${EH_CATALOG:-bundled}" != bundled ] || [ "$CAT" = "$STRCHIVE_CAT" ] || [ -s "$CAT" ] || { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json \
-  > "${CAT}.tmp" && [ -s "${CAT}.tmp" ] && mv "${CAT}.tmp" "$CAT"; } || rm -f "${CAT}.tmp"
+EH_TAG=${EXPANSIONHUNTER_IMAGE##*:} EH_TAG=${EH_TAG//\//_}
+if [ -z "$CAT" ] || [ "$CAT" = bundled ]; then CAT="${G}/reference/expansionhunter_variant_catalog-${EH_TAG}.json"; fi
+# Each run extracts to its own temporary file, so two runs after an image bump never share one.
+[ "${EH_CATALOG:-bundled}" != bundled ] || [ "$CAT" = "$STRCHIVE_CAT" ] || [ -s "$CAT" ] || { CT=$(mktemp "${CAT}.XXXXXX") \
+  && { { run_in "$EXPANSIONHUNTER_IMAGE" cat /usr/local/share/ExpansionHunter/variant_catalog/grch38/variant_catalog.json > "$CT" \
+  && [ -s "$CT" ] && chmod 644 "$CT" && mv "$CT" "$CAT"; } || rm -f "$CT"; }; } || :
 VEPW=$(need "${G}/vep_cache/homo_sapiens/${VEP_CACHE_RELEASE}_GRCh38/info.txt") SCORES=()
 for s in whole_genome_SNVs.tsv.gz:cadd_snv gnomad.genomes.r4.0.indel.tsv.gz:cadd_indel spliceai_scores.raw.snv.hg38.vcf.gz:spliceai_snv \
          spliceai_scores.raw.indel.hg38.vcf.gz:spliceai_indel revel_grch38.tsv.gz:revel AlphaMissense_hg38.tsv.gz:alphamissense; do
