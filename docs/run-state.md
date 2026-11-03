@@ -94,7 +94,7 @@ It prints plain lines and exits 0. Standard library only.
 
 **Disks.** The work folder (`--work-dir`, else `workDir` from the weblog metadata) and the results folder (`--outdir`, else `outdir` from the metadata, `parameters` or `params`; a relative one is taken from the run's `launchDir`). For each it gives the used share, the free and total bytes, and the inode use when the filesystem reports inodes. The used share is used over used plus available, as `df` shows it. A folder not created yet is measured on its nearest existing parent and says so. Two folders on one filesystem give one line, `work and results`. The labels are `work` and `results`, never a path.
 
-**Warn percent.** 90 for both by default. `--disk-warn-percent` or `PGP_DISK_WARN_PERCENT` sets the disk one, `--mem-warn-percent` or `PGP_MEM_WARN_PERCENT` the memory one, from 1 to 100.
+**Warn percent.** 90 for both by default. `--disk-warn-percent` or `OWNGENOME_DISK_WARN_PERCENT` sets the disk one, `--mem-warn-percent` or `OWNGENOME_MEM_WARN_PERCENT` the memory one, from 1 to 100.
 
 **As a library.** `snapshot(events, work_dir, outdir, disk_warn_percent, mem_warn_percent, max_memory, trace_rows)` returns `{disk, tasks, host, warn_used_ratio, mem_warn_ratio}`; `task_memory`, `host_memory` and `disk` give each part alone. It holds no path, and it formats nothing: a page or a metrics endpoint formats the numbers itself. It measures when called; it does not poll and does not project when a disk will fill.
 

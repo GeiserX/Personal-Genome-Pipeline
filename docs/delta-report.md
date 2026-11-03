@@ -60,4 +60,4 @@ A bare `nextflow run main.nf` writes no text report, so it writes no delta and k
 | PharmCAT | With each release | Steps 07 and 27 |
 | PGS Catalog | When a score you use gets a new version | Step 25 |
 
-`run-all.sh` runs Nextflow with `-resume`, so running the same command again redoes only the processes whose inputs or code changed. A new ClinVar file reruns the ClinVar screen and what reads it; the alignment and the variant calls come from the cache. The delta then shows what the new release moved.
+`run-all.sh` runs Nextflow with `-resume`, so running the same command again redoes only the processes whose inputs or code changed. A new ClinVar file reruns the ClinVar screen and what reads it; the alignment and the variant calls come from the cache. One exception: when the sample started from FASTQ, the first call after that run ended with every task done starts from the BAM and VCF it published instead, so the steps after the variant calls run once more, without aligning or calling again; later calls hit the cache as usual. The delta then shows what the new release moved.

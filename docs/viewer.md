@@ -2,7 +2,7 @@
 
 ## What it does
 
-`scripts/pgp-view.sh` opens a sample in [igv.js](https://github.com/igvteam/igv.js), the web version of the Integrative Genomics Viewer, served from your own computer. One page shows:
+`scripts/owngenome-view.sh` opens a sample in [igv.js](https://github.com/igvteam/igv.js), the web version of the Integrative Genomics Viewer, served from your own computer. One page shows:
 
 - the reference genome (`REF_FASTA`),
 - the sample's reads (the BAM, or the CRAM from step 34),
@@ -17,7 +17,7 @@ A variant call is a summary of the reads. Before you act on a finding, look at t
 
 ## Tool
 
-- **igv.js** 3.8.10 (`IGV_JS_VERSION` in `scripts/pgp-view.sh`, checked against a pinned sha256) draws the reads and variants in the browser.
+- **igv.js** 3.8.10 (`IGV_JS_VERSION` in `scripts/owngenome-view.sh`, checked against a pinned sha256) draws the reads and variants in the browser.
 - **`assets/viewer/serve.py`** (Python standard library) serves the page and the sample's files on `127.0.0.1`.
 
 ## Docker Image
@@ -27,7 +27,7 @@ None. The viewer runs on the host's `python3`, so it needs no image and no port 
 ## Command
 
 ```bash
-GENOME_DIR=/path/to/data ./scripts/pgp-view.sh <sample> [locus]
+GENOME_DIR=/path/to/data ./scripts/owngenome-view.sh <sample> [locus]
 ```
 
 `locus` is `chr17`, `chr17:43045000` or `chr17:43044000-43046000`. Without one the viewer opens the first chromosome of the reference. Zoom in to a few kilobases or less to see the reads. The script prints the address to open:
@@ -41,7 +41,7 @@ Open it in a browser. To jump somewhere else, type a locus in igv.js's search bo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PGP_VIEW_PORT` | `8765` | The port. The report's links use 8765, so keep it unless the port is taken. |
+| `OWNGENOME_VIEW_PORT` | `8765` | The port. The report's links use 8765, so keep it unless the port is taken. |
 | `READS` | `<sample>/aligned/<sample>_sorted.bam`, else `..._sorted.cram` | The reads; `none` leaves them out. `ALIGN_DIR` picks another folder, as in the steps. |
 | `VCF` | `<sample>/vcf/<sample>.vcf.gz` | The small-variant VCF (`VCF_DIR` as in the steps). |
 | `SV_VCF` | `<sample>/sv_merged/<sample>_sv_consensus.vcf.gz`, else `<sample>/manta/results/variants/diploidSV.vcf.gz` | The structural-variant VCF. |
@@ -71,7 +71,7 @@ If the data and the pipeline are on another machine (a server, a NAS), run the v
 ssh -N -L 8765:127.0.0.1:8765 user@remote-machine
 
 # on the remote machine (a second ssh session)
-GENOME_DIR=/path/to/data ./scripts/pgp-view.sh your_name chr17:43045000
+GENOME_DIR=/path/to/data ./scripts/owngenome-view.sh your_name chr17:43045000
 ```
 
 Then open `http://127.0.0.1:8765/` on your computer. The report's links work the same way. The reads travel inside the ssh connection, and only the ranges igv.js asks for. Do not expose the port any other way: the server has no login, so anyone who can reach it can read the sample.
@@ -96,7 +96,7 @@ The server starts at once. How fast a view loads depends on the disk and the rea
 
 ## Notes
 
-- **The report links assume port 8765.** With another `PGP_VIEW_PORT`, type the locus into the viewer yourself.
+- **The report links assume port 8765.** With another `OWNGENOME_VIEW_PORT`, type the locus into the viewer yourself.
 - **CRAM** is decoded in the browser against the same reference. It must be the FASTA the CRAM was written with.
 - **Gene names** are not searchable (see Privacy). Use the coordinates the report shows.
 - igv.js is MIT-licensed. Reference: Robinson JT, Thorvaldsdottir H, Turner D, Mesirov JP. igv.js: an embeddable JavaScript implementation of the Integrative Genomics Viewer (IGV). *Bioinformatics* 39(1), btac830 (2023). https://doi.org/10.1093/bioinformatics/btac830

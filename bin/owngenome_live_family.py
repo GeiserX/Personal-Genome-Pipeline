@@ -1,4 +1,4 @@
-"""pgp_live_family.py: the family page of the live site (a bin/pgp_live.py plugin).
+"""owngenome_live_family.py: the family page of the live site (a bin/owngenome_live.py plugin).
 
 A family folder under GENOME_DIR (one holding members.tsv or pedigree.tsv, as
 steps 38 and 39 and the Nextflow family workflow leave it) is listed as a run

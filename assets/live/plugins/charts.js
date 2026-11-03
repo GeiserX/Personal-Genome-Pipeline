@@ -1,4 +1,4 @@
-// charts.js: the report's charts on the live page (a plugin, bin/pgp_live_charts.py).
+// charts.js: the report's charts on the live page (a plugin, bin/owngenome_live_charts.py).
 // When state.json says the run's <sample>_charts.json exists, it is fetched from the run
 // folder (same origin, nothing else) and each chart's SVG is shown with its caveat. A click on
 // a mark opens a panel with the mark's detail, the chart's caveat, a link to the reads in the

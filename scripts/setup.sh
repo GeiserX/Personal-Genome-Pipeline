@@ -1820,7 +1820,7 @@ refresh_clinvar() {
 }
 
 echo "============================================"
-echo "  Personal Genome Pipeline — Setup"
+echo "  OwnGenome — Setup"
 echo "  Data directory: ${GENOME_DIR:-(none: --pull-only)}"
 echo "============================================"
 echo ""

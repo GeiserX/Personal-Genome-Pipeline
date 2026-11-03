@@ -35,7 +35,7 @@ Every command below runs in the folder that holds your VCF, writes its new files
 
 ```bash
 # Setup: change these four lines to your own paths.
-PGP=/path/to/Personal-Genome-Pipeline        # this repository
+OWNGENOME=/path/to/OwnGenome                 # this repository
 REF=/path/to/GRCh38_no_alt_analysis_set.fasta   # with its .fai beside it
 VCF=/path/to/your_vendor_file.vcf.gz         # with its .tbi beside it
 LABEL=sample1                                # a neutral name for the samplesheet and the outputs
@@ -43,7 +43,7 @@ LABEL=sample1                                # a neutral name for the sampleshee
 
 ```bash
 cd "$(dirname "$VCF")"
-source "$PGP/versions.env"
+source "$OWNGENOME/versions.env"
 bcftools() { docker run --rm -i -u "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" "$BCFTOOLS_IMAGE" bcftools "$@"; }
 IN=$(basename "$VCF")
 ```
@@ -99,7 +99,7 @@ This keeps only the header lines the tools need and renames the sample column to
 
 ```bash
 printf 'sample,vcf,vcf_index\n%s,%s,%s\n' "$LABEL" "$PWD/$LABEL.vcf.gz" "$PWD/$LABEL.vcf.gz.tbi" > samplesheet.csv
-nextflow run "$PGP/main.nf" -profile docker --input samplesheet.csv --reference "$REF" \
+nextflow run "$OWNGENOME/main.nf" -profile docker --input samplesheet.csv --reference "$REF" \
     --tools pharmcat,cpic,roh,mito_haplogroup,html_report --outdir results
 ```
 

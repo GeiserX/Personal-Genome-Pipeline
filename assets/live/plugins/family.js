@@ -1,4 +1,4 @@
-// family.js: the family card of the live page (bin/pgp_live_family.py fills plugins.family).
+// family.js: the family card of the live page (bin/owngenome_live_family.py fills plugins.family).
 // On a family's page: the pedigree, each child's chromosome map, the relationship check, the
 // shared segments and the couple carrier screen, as steps 38 and 39 wrote them. On a sample's
 // page: a link to its family. Text only through textContent; images from this server only.

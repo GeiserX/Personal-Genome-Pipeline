@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bin/pgp_live_family.py and assets/live/plugins/family.js on tests/fixtures/families_live.
+"""bin/owngenome_live_family.py and assets/live/plugins/family.js on tests/fixtures/families_live.
 
 Checks:
   1. the family folders (family_a with members.tsv, family_b with pedigree.tsv
@@ -16,7 +16,7 @@ Checks:
      folder and an unknown family are 404;
   5. family.js loads nothing from outside, sets no innerHTML and has no eval;
      node --check reads it when node is installed;
-  6. with bin/pgp_live.py present (the live-server change), the same through
+  6. with bin/owngenome_live.py present (the live-server change), the same through
      the real server: the run list, state.json's plugins.family, the route
      behind the login, and a family page that loads the script; in a headless
      Chrome (skipped without Chrome, except in CI) the card, the pedigree and a
@@ -24,7 +24,7 @@ Checks:
 Checks 2 and 4 are run again on a copy of the fixture with two parents swapped
 and must fail there: a check that cannot fail is no check.
 
-Run: python3 tests/test_pgp_live_family.py
+Run: python3 tests/test_owngenome_live_family.py
 """
 import http.client
 import json
@@ -40,7 +40,7 @@ import xml.etree.ElementTree as ET
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
-import pgp_live_family  # noqa: E402
+import owngenome_live_family  # noqa: E402
 
 FIX = os.path.join(REPO, "tests", "fixtures", "families_live")
 JS = os.path.join(REPO, "assets", "live", "plugins", "family.js")
@@ -72,7 +72,7 @@ def control(name, passed):
 
 
 class FakeApp:
-    """The plugin interface of bin/pgp_live.py's App, as docs/live-site.md describes it."""
+    """The plugin interface of bin/owngenome_live.py's App, as docs/live-site.md describes it."""
 
     def __init__(self, root):
         self.config = types.SimpleNamespace(root=root)
@@ -119,7 +119,7 @@ class FakeReq:
         if r:
             return r["dir"]
         d = os.path.join(self.app.config.root, name)
-        return d if os.path.isdir(d) else None  # a sample run, as bin/pgp_live.py lists one
+        return d if os.path.isdir(d) else None  # a sample run, as bin/owngenome_live.py lists one
 
     def send_body(self, code, ctype, body, headers=()):
         self.code, self.ctype, self.body = code, ctype, body.encode() if isinstance(body, str) else body
@@ -162,7 +162,7 @@ def main():
         shutil.copytree(FIX, root, symlinks=True)
         os.makedirs(os.path.join(root, "loner", "logs"))
         app = FakeApp(root)
-        pgp_live_family.register(app)
+        owngenome_live_family.register(app)
 
         # 1. the runs
         runs = app.runs()
@@ -245,7 +245,7 @@ def main():
         with open(p, "w") as f:
             f.write(text.replace("child_a\tfemale\tfather_a\tmother_a", "child_a\tfemale\tgf_a\tmother_a"))
         app2 = FakeApp(bad)
-        pgp_live_family.register(app2)
+        owngenome_live_family.register(app2)
         control("a swapped parent in the state", state_checks(app2, bad)[1][0][1])
         control("a swapped parent in the drawing", route_checks(app2)[0][1])
 
@@ -276,13 +276,10 @@ def main():
 
 
 def real_server(root):
-    if not os.path.isfile(os.path.join(REPO, "bin", "pgp_live.py")):
-        print("[SKIP] bin/pgp_live.py is not in this tree yet: the real-server checks run once it is")
-        return
-    import pgp_live
+    import owngenome_live  # on main: no skip, so a renamed server fails here instead of passing quietly
     state = os.path.join(os.path.dirname(root), "state")
-    live, web, ingest = pgp_live.start(["--root", root, "--state-dir", state, "--port", "0", "--ingest-port", "0",
-                                        "--quiet"])
+    live, web, ingest = owngenome_live.start(["--root", root, "--state-dir", state, "--port", "0", "--ingest-port", "0",
+                                              "--quiet"])
     threading.Thread(target=web.serve_forever, daemon=True).start()
     port = web.server_address[1]
 
@@ -318,7 +315,7 @@ def real_server(root):
 
 def browser_checks(port, work):
     sys.path.insert(0, os.path.join(REPO, "tests"))
-    import test_pgp_live as tpl
+    import test_owngenome_live as tpl
     chrome = tpl.find_chrome()
     if not chrome:
         ci = os.environ.get("CI") == "true"

@@ -424,7 +424,7 @@ Three full-size tests on each release:
 
 ---
 
-## 10. Key Implications for Personal-Genome-Pipeline
+## 10. Key Implications for OwnGenome
 
 ### If targeting official nf-core inclusion:
 

@@ -36,7 +36,7 @@ esac
 FAKE
 chmod +x "${WORK}/bin/curl"
 
-GOOD=https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/LICENSE
+GOOD=https://github.com/GeiserX/OwnGenome/blob/main/LICENSE
 
 # run_self_test NAME 5XX_CALLS: the self-test with the fake curl; sets RC and OUT
 run_self_test() {

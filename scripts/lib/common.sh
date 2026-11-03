@@ -807,19 +807,19 @@ run_parallel() {
   return "$rc"
 }
 
-# live_post RUN JSON: send one message to the live site (bin/pgp_live.py,
-# docs/live-site.md) at PGP_LIVE_URL/ingest/RUN; nothing without PGP_LIVE_URL.
+# live_post RUN JSON: send one message to the live site (bin/owngenome_live.py,
+# docs/live-site.md) at OWNGENOME_LIVE_URL/ingest/RUN; nothing without OWNGENOME_LIVE_URL.
 # A site that is down or slow (3 s) costs one warning per script and never the
 # step: it always returns 0.
 live_post() {
-  [ -n "${PGP_LIVE_URL:-}" ] || return 0
+  [ -n "${OWNGENOME_LIVE_URL:-}" ] || return 0
   if printf '%s' "$2" | curl -fsS -m 3 -o /dev/null -H 'Content-Type: application/json' -d @- \
-      "${PGP_LIVE_URL%/}/ingest/$1" 2>/dev/null; then
+      "${OWNGENOME_LIVE_URL%/}/ingest/$1" 2>/dev/null; then
     return 0
   fi
-  if [ -z "${PGP_LIVE_WARNED:-}" ]; then
-    echo "WARNING: the live site at ${PGP_LIVE_URL} did not take a message; the run goes on without it" >&2
-    PGP_LIVE_WARNED=1
+  if [ -z "${OWNGENOME_LIVE_WARNED:-}" ]; then
+    echo "WARNING: the live site at ${OWNGENOME_LIVE_URL} did not take a message; the run goes on without it" >&2
+    OWNGENOME_LIVE_WARNED=1
   fi
   return 0
 }

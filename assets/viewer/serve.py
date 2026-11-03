@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Serve the local genome viewer (igv.js) for one sample on 127.0.0.1.
 
-scripts/pgp-view.sh finds the sample's files and starts this server. It
+scripts/owngenome-view.sh finds the sample's files and starts this server. It
 serves exactly these, and nothing else from the disk:
 
   /               index.html of this folder
   /viewer.js      the page's script, from this folder
-  /igv.min.js     the pinned igv.js release pgp-view.sh checked by sha256
+  /igv.min.js     the pinned igv.js release owngenome-view.sh checked by sha256
   /config.json    the reference, the tracks and the start locus (build_config)
   /data/<n>/<name>  (name percent-encoded in the URL) the n-th file of the config: the reference FASTA and its
                   .fai, the BAM or CRAM and its index, the VCF and the SV VCF
@@ -130,7 +130,7 @@ def parse_range(header, size):
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    server_version = "pgp-view"
+    server_version = "owngenome-view"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -243,7 +243,7 @@ def main(argv=None):
     try:
         srv = make_server(cfg, files, a.igv_js, a.port)
     except OSError as e:
-        print(f"ERROR: cannot listen on {BIND}:{a.port}: {e}. Set PGP_VIEW_PORT to a free port.", file=sys.stderr)
+        print(f"ERROR: cannot listen on {BIND}:{a.port}: {e}. Set OWNGENOME_VIEW_PORT to a free port.", file=sys.stderr)
         return 1
     print(f"Viewer for {a.sample}: http://{BIND}:{srv.server_address[1]}/#{cfg['locus']}", flush=True)
     print("Press Ctrl-C to stop it.", flush=True)

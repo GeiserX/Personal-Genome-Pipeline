@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The local genome viewer: scripts/pgp-view.sh and assets/viewer/serve.py,
+"""The local genome viewer: scripts/owngenome-view.sh and assets/viewer/serve.py,
 and the report's links to it (bin/render_report.py), on a synthetic sample.
 
 The sample is made here: a random 3 kb chr1 and 1 kb chr2 reference with its
@@ -10,7 +10,7 @@ byte by byte (no samtools or htslib needed).
 Checks:
   1. build_config names the sample's files and the locus, and refuses a locus
      that is not chr[:pos[-end]] of the reference, and a BAM with no index;
-  2. pgp-view.sh downloads the pinned igv.js and checks its sha256, finds the
+  2. owngenome-view.sh downloads the pinned igv.js and checks its sha256, finds the
      BAM, VCF and SV VCF in the sample folder, and starts the server, which
      listens on 127.0.0.1 and not on the machine's other address;
   3. the server sends the page with a Content-Security-Policy that keeps it
@@ -234,11 +234,11 @@ def main():
             check("config: a BAM without an index is refused", "samtools index" in str(e), e)
         os.rename(f"{work}/bai", f"{s}/aligned/S_sorted.bam.bai")
 
-        # 2. pgp-view.sh
+        # 2. owngenome-view.sh
         port = free_port()
-        env = dict(os.environ, GENOME_DIR=gd, REF_FASTA="reference/synthetic.fasta", PGP_VIEW_PORT=str(port))
+        env = dict(os.environ, GENOME_DIR=gd, REF_FASTA="reference/synthetic.fasta", OWNGENOME_VIEW_PORT=str(port))
         log = open(f"{work}/server.log", "w")
-        proc = subprocess.Popen(["bash", f"{REPO}/scripts/pgp-view.sh", "S", "chr1:451"], env=env,
+        proc = subprocess.Popen(["bash", f"{REPO}/scripts/owngenome-view.sh", "S", "chr1:451"], env=env,
                                 stdout=log, stderr=subprocess.STDOUT)
         base = f"http://127.0.0.1:{port}"
         up = False
@@ -252,11 +252,11 @@ def main():
             except OSError:
                 time.sleep(0.5)
         out = open(f"{work}/server.log").read()
-        check("pgp-view.sh: the server starts and prints its address", up and f"{base}/#chr1:451" in out, out)
+        check("owngenome-view.sh: the server starts and prints its address", up and f"{base}/#chr1:451" in out, out)
         if not up:
             raise SystemExit(1)
-        igv = f"{gd}/tools/igv.js-{re.search(r'IGV_JS_VERSION=(.+)', open(f'{REPO}/scripts/pgp-view.sh').read()).group(1)}/igv.min.js"
-        check("pgp-view.sh: the pinned igv.js is downloaded into GENOME_DIR/tools", os.path.getsize(igv) > 100000, igv)
+        igv = f"{gd}/tools/igv.js-{re.search(r'IGV_JS_VERSION=(.+)', open(f'{REPO}/scripts/owngenome-view.sh').read()).group(1)}/igv.min.js"
+        check("owngenome-view.sh: the pinned igv.js is downloaded into GENOME_DIR/tools", os.path.getsize(igv) > 100000, igv)
         ip = other_address()
         if ip:
             try:
@@ -347,7 +347,7 @@ def main():
                     "CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n")
         html = render_report.html_report(collect_summary.collect("S", d))
         check("report: the ClinVar hit links to the viewer at its position",
-              'href="http://127.0.0.1:8765/#chr1:451"' in html and "scripts/pgp-view.sh" in html,
+              'href="http://127.0.0.1:8765/#chr1:451"' in html and "scripts/owngenome-view.sh" in html,
               [l for l in html.splitlines() if "ClinVar" in l][:5])
         summ = collect_summary.collect("S", d)
         for k in ("mito", "clinical"):
