@@ -964,7 +964,14 @@ def sec_prs(d, s):
                      # the sex a sex-specific score applies to, and the check against the declared sex
                      "applies_to": r.get("Applies_To", ""), "sex_check": r.get("Sex_Check", ""),
                      "percentile": "" if pct == "NA" else pct,
-                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
+                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", ""),
+                     # the groups the PGS Catalog has an OR or HR of the score for, and the
+                     # one of the sample's group ("HR 1.53 (EUR, PPM000591)"); empty in older tables
+                     # None when the table has no Evaluated_In column (a score list without
+                     # evaluations, or an older table): nothing is known, so nothing is said
+                     "evaluated_in": ([x for x in r["Evaluated_In"].split(";") if x]
+                                      if r.get("Evaluated_In") is not None else None),
+                     "effect": r.get("Effect", "") or ""})
     data = {"scores": rows,
             # Percentiles exist only when step 25 ran pgsc_calc with an ancestry panel.
             "adjusted": any(r["percentile"] for r in rows)}
@@ -985,6 +992,10 @@ def sec_prs(d, s):
 PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
                "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Ambiguous", "Applies_To",
                "Sex_Check", "Input"]
+# Written before Input when the score list names PGS Catalog evaluations
+# (ppm_id, ancestry and effect in assets/pgs_scores.tsv): the groups a score
+# was evaluated in, and the effect measured in the sample's group.
+PRS_EFFECT_COLUMNS = ["Evaluated_In", "Effect"]
 # prs-format writes it beside the scores: per score, its chrX rows and
 # whether they were kept (scored) or left out (no sex given).
 CHRX_FILE = "chrx_rows.tsv"
@@ -992,7 +1003,13 @@ CHRX_FILE = "chrx_rows.tsv"
 # to (applies_to of assets/pgs_scores.tsv) and its strand-ambiguous rows (an
 # A/T or C/G pair) with what happened to them.
 SCORE_NOTES_FILE = "score_notes.tsv"
+# prs-format writes it beside the scores as well: per score, the PGS Catalog
+# evaluations of assets/pgs_scores.tsv (pgs_id, ppm_id, ancestry, effect).
+EVALS_FILE = "score_evaluations.tsv"
 SEXES = ("female", "male")
+# The 1000 Genomes groups pgsc_calc places a sample in, which the ancestry
+# column of assets/pgs_scores.tsv names.
+PRS_GROUPS = ("AFR", "AMR", "EAS", "EUR", "SAS")
 # Sex_Check of a sex-specific score: the declared sex is the one it applies
 # to, another one (no percentile then), or none was declared.
 SEX_APPLIES = "applies"
@@ -1042,6 +1059,45 @@ def read_applies_to(path):
             if sex and sex not in SEXES:
                 raise Unreadable(f"{os.path.basename(path)}: applies_to of {pid} is '{sex}', expected female, male or empty")
             out[pid] = sex
+    return out
+
+
+def read_metrics(path):
+    """ID -> [(ancestry, effect, ppm_id), ...]: the PGS Catalog evaluations of
+    each score, from the optional ppm_id, ancestry and effect columns of
+    assets/pgs_scores.tsv (entries separated by ";", in the same order in the
+    three). Raises Unreadable when a row with evaluations has no pgs_id or
+    repeats one, the three lists differ in length, an ancestry is not a 1000
+    Genomes group or appears twice, or an effect is not "OR <number>" or
+    "HR <number>"."""
+    out = {}
+    if not path:
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((line for line in f if not line.startswith("#")), delimiter="\t"):
+            pid = (r.get("pgs_id") or "").strip()
+            cols = [[x.strip() for x in (r.get(k) or "").split(";")] if (r.get(k) or "").strip() else []
+                    for k in ("ppm_id", "ancestry", "effect")]
+            name = os.path.basename(path)
+            if not any(cols):
+                continue
+            if not pid:
+                raise Unreadable(f"{name}: a row has ppm_id, ancestry or effect entries but no pgs_id")
+            if pid in out:
+                raise Unreadable(f"{name}: {pid} has evaluations on two rows")
+            ppm, anc, eff = cols
+            if not (len(ppm) == len(anc) == len(eff)):
+                raise Unreadable(f"{name}: {pid} has {len(ppm)} ppm_id, {len(anc)} ancestry and {len(eff)} effect entries")
+            for p_, a_, e_ in zip(ppm, anc, eff):
+                if a_ not in PRS_GROUPS:
+                    raise Unreadable(f"{name}: ancestry of {pid} is '{a_}', expected one of {', '.join(PRS_GROUPS)}")
+                if not re.fullmatch(r"PPM\d{6}", p_):
+                    raise Unreadable(f"{name}: ppm_id of {pid} is '{p_}', expected PPM and six digits")
+                if not re.fullmatch(r"(OR|HR) \d+(\.\d+)?", e_):
+                    raise Unreadable(f"{name}: effect of {pid} is '{e_}', expected 'OR <number>' or 'HR <number>'")
+            if len(set(anc)) != len(anc):
+                raise Unreadable(f"{name}: {pid} lists an ancestry twice")
+            out[pid] = list(zip(anc, eff, ppm))
     return out
 
 
@@ -1228,6 +1284,7 @@ def prs_format_main(argv):
         return 1
     try:
         applies = read_applies_to(a.labels)
+        metrics = read_metrics(a.labels)
         ref = Fasta(a.reference) if a.keep_ambiguous else None
     except (Unreadable, OSError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -1272,6 +1329,12 @@ def prs_format_main(argv):
         w.write("pgs_id\tapplies_to\tambiguous_rows\tambiguous\n")
         for pid, sex, n_amb, amb in notes:
             w.write(f"{pid}\t{sex}\t{n_amb}\t{amb}\n")
+    with open(os.path.join(a.out, EVALS_FILE), "w", encoding="utf-8") as w:
+        w.write("pgs_id\tppm_id\tancestry\teffect\n")
+        for pid, *_ in notes:
+            ev = metrics.get(pid)
+            if ev:
+                w.write("\t".join([pid] + [";".join(e[i] for e in ev) for i in (2, 0, 1)]) + "\n")
 
     def key(t):
         return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
@@ -1359,12 +1422,17 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
             if n not in ("", "0") and r.get("chrx") == "scored":
                 chrx_scored.add(r.get("pgs_id", ""))
     # "" for a score of both sexes; empty for scores formatted before the file existed
-    applies, ambig = {}, {}
-    if os.path.isfile(os.path.join(scores_dir, SCORE_NOTES_FILE)):
-        for r in read_tsv(os.path.join(scores_dir, SCORE_NOTES_FILE)):
+    applies, ambig, evals = {}, {}, {}
+    notes_path = os.path.join(scores_dir, SCORE_NOTES_FILE)
+    if os.path.isfile(notes_path):
+        for r in read_tsv(notes_path):
             pid, n = r.get("pgs_id", ""), r.get("ambiguous_rows", "")
             applies[pid] = r.get("applies_to", "")
             ambig[pid] = f"{n} {r.get('ambiguous', '')}" if n not in ("", "0") else n
+    # The evaluations prs-format copied from assets/pgs_scores.tsv; none in a
+    # folder formatted before it wrote them.
+    if os.path.isfile(os.path.join(scores_dir, EVALS_FILE)):
+        evals = read_metrics(os.path.join(scores_dir, EVALS_FILE))
     sex = (sex or "").lower()
     matched, sums, pct, group = {}, {}, {}, {}
     pops, rate = {}, {}
@@ -1421,7 +1489,15 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
         m, t = matched.get(pid, 0), totals[pid]
         a = applies.get(pid, "")
         check = "" if not a else (SEX_NOT_DECLARED if not sex else (SEX_APPLIES if sex == a else SEX_NOT_APPLICABLE))
-        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, input_kind]
+        ev = evals.get(pid, [])
+        # The effect is printed only for the group pgsc_calc placed the sample
+        # in, and only when that group is one the score was evaluated in: an
+        # odds ratio measured in one ancestry says little about another.
+        g = group.get(pid, "NA")
+        eff = next((f"{e} ({anc}, {ppm})" for anc, e, ppm in ev if anc == g), "")
+        if check == SEX_NOT_APPLICABLE or pct.get(pid, "NA") == "NA" or below_log:
+            eff = ""
+        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, ";".join(x[0] for x in ev), eff, input_kind]
         if below_log:
             rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA"] + extra)
             continue
@@ -1467,10 +1543,14 @@ def prs_table_main(argv):
     except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    # A score list without evaluations (an older or a custom one) gives the
+    # table its older columns; the shipped list names some, so its table has
+    # Evaluated_In and Effect before Input.
+    evaluated = any(r[12] for r in rows)
     with open(a.out + ".tmp", "w", encoding="utf-8") as f:
-        f.write("\t".join(PRS_COLUMNS) + "\n")
+        f.write("\t".join(PRS_COLUMNS[:-1] + PRS_EFFECT_COLUMNS + PRS_COLUMNS[-1:] if evaluated else PRS_COLUMNS) + "\n")
         for r in rows:
-            f.write("\t".join(r) + "\n")
+            f.write("\t".join(r if evaluated else r[:12] + r[14:]) + "\n")
     os.replace(a.out + ".tmp", a.out)
     if a.ancestry_out and ancestry:
         with open(a.ancestry_out + ".tmp", "w") as f:
@@ -1484,6 +1564,8 @@ def prs_table_main(argv):
             extra = f", {r[10]}-specific: {SEX_NOT_APPLICABLE}, no percentile"
         elif r[11] == SEX_NOT_DECLARED:
             extra += f", {r[10]}-specific score: {SEX_NOT_DECLARED}"
+        if r[13]:
+            extra += f", effect in that group {r[13]}"
         if r[3] == "NA":
             print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
         else:

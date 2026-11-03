@@ -419,6 +419,29 @@ def prs_percentile(r):
     return ""
 
 
+def prs_effect(r):
+    """The effect cell of a PRS row in both reports: the odds or hazard ratio
+    the PGS Catalog records for the score in the sample's group ("HR 1.53
+    (EUR, PPM000591)"), a line saying the score has none for that group, or
+    '' when the sample has no group (no panel, or no percentile), the score
+    does not apply to the declared sex, or the table names no evaluations."""
+    if r.get("evaluated_in") is None:
+        return ""
+    if r.get("percentile") and r.get("group") and r.get("sex_check") != PRS_NOT_APPLICABLE:
+        if r.get("effect"):
+            return r["effect"]
+        where = f"; evaluated in {', '.join(r['evaluated_in'])}" if r.get("evaluated_in") else ""
+        return f"no published OR or HR for {r['group']}{where}"
+    return ""
+
+
+# Part of the PRS caption sentence (prs_note), so not a *_NOTE caveat of its own.
+PRS_EFFECT_TEXT = ("Effect: the odds ratio (OR) or hazard ratio (HR) a published evaluation of the score measured "
+                   "in people of the same reference group, in that evaluation's unit (its PGS Catalog PPM page says "
+                   "which). It describes the score in that group, not your own risk, and is shown only for a group "
+                   "the score was evaluated in.")
+
+
 def prs_sex_note(d):
     """A sentence naming the sex-specific scores when no sex was declared, else ''."""
     named = [f"{r['pgs_id']} ({r['applies_to']})" for r in d.get("scores", [])
@@ -437,9 +460,10 @@ def prs_note(d):
         group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
         panel = f" of the {anc['panel']} reference panel" if anc.get("panel") else " of the reference panel"
         low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
+        eff = f" {PRS_EFFECT_TEXT}" if any(r.get("evaluated_in") is not None for r in d["scores"]) else ""
         return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
                 f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
-                f"A percentile is not a risk. {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
+                f"A percentile is not a risk.{eff} {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
     return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
             f"cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). {PRS_ANCESTRY_NOTE} "
             "See docs/25-prs.md." + x)
@@ -1012,7 +1036,9 @@ def text_report(s):
         for r in d["scores"]:
             pct = prs_percentile(r)
             pct = f"  {pct}" if r.get("sex_check") == PRS_NOT_APPLICABLE else (f"  percentile {pct}" if pct else "")
-            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
+            e = prs_effect(r)
+            eff = "" if not e else (f"  effect {e}" if r.get("effect") else f"  {e}")
+            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}{eff}")
         w("  " + prs_note(d))
         w("")
 
@@ -2422,12 +2448,17 @@ def html_report(s, index=None):
 
     if S["prs"]["state"] in ("ok", "stale"):
         d = S["prs"]["data"]
+        # The effect column only when the table names evaluations (Evaluated_In).
+        show_effect = d.get("adjusted") and any(x.get("evaluated_in") is not None for x in d["scores"])
         rows = "".join(f"<tr><td>{E(x['condition'])}</td><td>{E(x['pgs_id'])}</td><td>{E(x['score'])}</td>"
                        f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
-                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td></tr>\n"
+                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td>"
+                       + (f"<td>{E(prs_effect(x))}</td>" if show_effect else "") + "</tr>\n"
                        for x in d["scores"])
+        effect_th = "<th>Effect in your group</th>" if show_effect else ""
         a("prs", card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
-               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
+               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th>"
+                f"{effect_th}</tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
 
     if S.get("ancestry_fine", MISSING)["state"] != "missing":

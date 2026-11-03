@@ -142,6 +142,16 @@ Checks:
      them, or the 'not typed' line of a BAM with too few KIR reads; bash
      (hla_optitype/, kir_t1k/) and Nextflow (hla_optitype/, kir/) folders
      alike, in both reports; without either file there is no such line.
+ 27. step 25's PGS Catalog evaluations (ppm_id, ancestry and effect of
+     assets/pgs_scores.tsv): the shipped list is read entry by entry, and a
+     list with lists of different lengths, an ancestry outside the five
+     1000 Genomes groups or listed twice, a malformed PPM id or an effect
+     that is not an OR or HR is refused; prs-format copies them beside the
+     scores; prs-table writes Evaluated_In and Effect, the effect only for
+     the group pgsc_calc placed the sample in (EUR: HR 1.53 of PPM000591;
+     EAS, where the score was not evaluated: none), and none without the
+     panel; a list without evaluations keeps the older columns; both reports print the effect for EUR and say there
+     is none for EAS.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -237,6 +247,135 @@ def bash_folder(d, s="S"):
     put(f"{d}/cpic/{s}_cpic_recommendations.txt", "Pharmacogenomic Drug Recommendations\n")
     put(f"{d}/pypgx/{s}_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\nCYP2D6\t*4/*1\tIM\t.\tbam\n")
     put(f"{d}/cyrius/{s}_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\t*1/*4\tPASS\n")
+
+
+def prs_evaluations(work, schema):
+    """Check 27: the PGS Catalog evaluations of each score, from the list to both reports."""
+    assets = os.path.join(REPO, "assets", "pgs_scores.tsv")
+    ev = collect_summary.read_metrics(assets)
+    check("27: the shipped list: PGS000018's three evaluations in order",
+          ev.get("PGS000018") == [("EUR", "HR 1.53", "PPM000591"), ("AFR", "HR 1.27", "PPM000594"),
+                                  ("AMR", "HR 1.53", "PPM000597")], ev.get("PGS000018"))
+    check("27: the shipped list: the eMERGE asthma score in all five groups, height and the lipids with none",
+          [x[0] for x in ev.get("PGS002727", [])] == ["EUR", "AFR", "AMR", "EAS", "SAS"]
+          and "PGS002802" not in ev and "PGS000065" not in ev, ev)
+    head = "pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n"
+    for why, row in (("lists of different lengths", "PGS000018\tx\t\tPPM000591;PPM000594\tEUR\tHR 1.53"),
+                     ("an ancestry that is not a 1000 Genomes group", "PGS000018\tx\t\tPPM000591\tEuropean\tHR 1.53"),
+                     ("an ancestry listed twice", "PGS000018\tx\t\tPPM000591;PPM000594\tEUR;EUR\tHR 1.53;HR 1.27"),
+                     ("a malformed PPM id", "PGS000018\tx\t\tPGS000018\tEUR\tHR 1.53"),
+                     ("a beta, not an OR or HR", "PGS000018\tx\t\tPPM000591\tEUR\tbeta 1.53"),
+                     ("evaluations but no pgs_id", "\tx\t\tPPM000591\tEUR\tHR 1.53"),
+                     ("one score's evaluations on two rows",
+                      "PGS000018\tx\t\tPPM000591\tEUR\tHR 1.53\nPGS000018\tx\t\tPPM000594\tAFR\tHR 1.27")):
+        put(f"{work}/ev_bad.tsv", head + row + "\n")
+        try:
+            collect_summary.read_metrics(f"{work}/ev_bad.tsv")
+            got = "read"
+        except collect_summary.Unreadable as e:
+            got = str(e)
+        check(f"27: a list with {why} is refused", got != "read", got)
+
+    # prs-format with the shipped list copies the evaluations beside the scores.
+    score = ("#pgs_id=PGS000018\n#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\tother_allele\teffect_weight\n"
+             "1\t1100\tA\tG\t0.5\n")
+    put(f"{work}/ev_in/PGS000018.txt.gz", score, gz=True)
+    rc = collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", assets,
+                               "--out", f"{work}/ev_pgs", "--alleles", f"{work}/ev_alleles.tsv"])
+    with open(f"{work}/ev_pgs/{collect_summary.EVALS_FILE}") as f:
+        lines = f.read().splitlines()
+    check("27: prs-format writes the score's evaluations beside it",
+          rc == 0 and lines == ["pgs_id\tppm_id\tancestry\teffect",
+                                "PGS000018\tPPM000591;PPM000594;PPM000597\tEUR;AFR;AMR\tHR 1.53;HR 1.27;HR 1.53"],
+          (rc, lines))
+
+    def results(d, group):
+        """A pgsc_calc --outdir that placed the sample in GROUP (no panel when None)."""
+        put(f"{d}/sample/match/sample_summary.csv", "dataset,accession,match_status,count\nsample,PGS000018,matched,1\n")
+        if group is None:
+            put(f"{d}/sample/score/aggregated_scores.txt.gz",
+                "sampleset\tFID\tIID\tPGS\tSUM\tDENOM\nsample\tHG\tHG\tPGS000018\t0.5\t2\n", gz=True)
+            return
+        put(f"{d}/sample/score/sample_pgs.txt.gz", "sampleset\tFID\tIID\tPGS\tSUM\tpercentile_MostSimilarPop\n"
+            "sample\tHG\tHG\tPGS000018\t0.5\t81.2\n", gz=True)
+        put(f"{d}/sample/score/sample_popsimilarity.txt.gz", "sampleset\tFID\tIID\tPC1\tMostSimilarPop\t"
+            f"MostSimilarPop_LowConfidence\tREFERENCE\nsample\tHG\tHG\t0.1\t{group}\tFalse\tFalse\n", gz=True)
+
+    def table(group, pgs=f"{work}/ev_pgs", sex=""):
+        res = f"{work}/ev_res_{group}_{os.path.basename(pgs)}_{sex}"
+        results(res, group)
+        out = f"{res}.tsv"
+        rc = collect_summary.main(["prs-table", "--sample", "S", "--results", res, "--sampleset", "sample",
+                                   "--scores", pgs, "--input-kind", "gvcf", "--out", out]
+                                  + (["--panel", "pgsc_1000G_v1"] if group else []) + (["--sex", sex] if sex else []))
+        with open(out) as f:
+            rows = [line.rstrip("\n").split("\t") for line in f]
+        return rc, rows[0], dict(zip(rows[0], rows[1])), out
+
+    rc, hdr, eur, eur_out = table("EUR")
+    check("27: prs-table: Evaluated_In and Effect before Input",
+          rc == 0 and hdr == collect_summary.PRS_COLUMNS[:-1] + ["Evaluated_In", "Effect", "Input"], hdr)
+    check("27: placed in EUR: the effect of the EUR evaluation, with its PPM id",
+          eur.get("Evaluated_In") == "EUR;AFR;AMR" and eur.get("Effect") == "HR 1.53 (EUR, PPM000591)", eur)
+    rc, _, eas, eas_out = table("EAS")
+    check("27: placed in EAS, where PGS000018 was not evaluated: no effect",
+          rc == 0 and eas.get("Ancestry_Group") == "EAS" and eas.get("Evaluated_In") == "EUR;AFR;AMR"
+          and eas.get("Effect") == "", eas)
+    rc, _, raw, _ = table(None)
+    check("27: no panel, so no group: no effect", rc == 0 and raw.get("Effect") == "" and raw.get("Percentile") == "NA", raw)
+    # Red control: the same run from a list without the evaluations keeps the older columns.
+    put(f"{work}/ev_plain.tsv", "pgs_id\ttrait_reported\nPGS000018\tCoronary artery disease\n")
+    collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_plain.tsv",
+                          "--out", f"{work}/ev_pgs_plain", "--alleles", f"{work}/ev_alleles_plain.tsv"])
+    rc, hdr, plain, plain_out = table("EUR", pgs=f"{work}/ev_pgs_plain")
+    check("27: control: a list without evaluations gives the older columns and no effect",
+          rc == 0 and hdr == collect_summary.PRS_COLUMNS and "Effect" not in plain, hdr)
+    # A score for one sex, with a EUR evaluation, run for the other sex in EUR: no effect.
+    put(f"{work}/ev_female.tsv", "pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n"
+        "PGS000018\tCoronary artery disease\tfemale\tPPM000591\tEUR\tHR 1.53\n")
+    collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_female.tsv",
+                          "--out", f"{work}/ev_pgs_female", "--alleles", f"{work}/ev_alleles_female.tsv"])
+    rc, _, man, man_out = table("EUR", pgs=f"{work}/ev_pgs_female", sex="male")
+    check("27: a female-only score for a male sample in EUR: no effect",
+          rc == 0 and man.get("Sex_Check") == collect_summary.SEX_NOT_APPLICABLE and man.get("Evaluated_In") == "EUR"
+          and man.get("Effect") == "", man)
+    rc, _, woman, _ = table("EUR", pgs=f"{work}/ev_pgs_female", sex="female")
+    check("27: control: the same score for a female sample in EUR has its effect",
+          rc == 0 and woman.get("Effect") == "HR 1.53 (EUR, PPM000591)", woman)
+    # A hand-edited row with an effect but a score that does not apply: the reports print none.
+    check("27: the reports print no effect for a score that does not apply to the declared sex",
+          render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"], "percentile": "",
+                                    "group": "EUR", "sex_check": render_report.PRS_NOT_APPLICABLE}) == ""
+          and render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"],
+                                        "percentile": "81.2", "group": "EUR", "sex_check": ""})
+          == "HR 1.53 (EUR, PPM000591)")
+
+    # The reports, one sample placed in EUR and one in EAS.
+    got = {}
+    for tag, src in (("EUR", eur_out), ("EAS", eas_out), ("PLAIN", plain_out)):
+        d = f"{work}/ev_sample_{tag}/S"
+        os.makedirs(f"{d}/prs", exist_ok=True)
+        shutil.copy(src, f"{d}/prs/S_prs_summary.tsv")
+        put(f"{d}/ancestry/S_ancestry.tsv", "key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\n"
+            f"population\t{'EUR' if tag == 'PLAIN' else tag}\n")
+        summ, txt, html = render(d)
+        got[tag] = (summ, txt, html)
+        check(f"27: {tag} summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+              validate.validate(schema, json.loads(json.dumps(summ))))
+    _, txt, html = got["EUR"]
+    check("27: EUR: both reports print the effect with its PPM id",
+          "effect HR 1.53 (EUR, PPM000591)" in txt and "<td>HR 1.53 (EUR, PPM000591)</td>" in html
+          and "<th>Effect in your group</th>" in html, txt)
+    _, txt, html = got["EAS"]
+    check("27: EAS: no effect in either report, and a line saying the score has none for EAS",
+          "HR 1.53" not in txt and "HR 1.53" not in html
+          and "no published OR or HR for EAS; evaluated in EUR, AFR, AMR" in txt
+          and "<td>no published OR or HR for EAS; evaluated in EUR, AFR, AMR</td>" in html, txt)
+    _, txt, html = got["PLAIN"]
+    check("27: a table without evaluation columns: neither report claims the score has no published effect",
+          "no published OR" not in txt and "no published OR" not in html
+          and "Effect in your group" not in html and "Effect: the odds ratio" not in txt
+          and "percentile 81.2 (EUR)" in txt, txt)
 
 
 def render(d, s="S"):
@@ -2247,6 +2386,7 @@ def main():
         report_sections_mito_roh_telomere_cnv(work, schema)
         roh_upd_karyotype(work, schema)
         hla_optitype_kir_section(work, schema)
+        prs_evaluations(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
