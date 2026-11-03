@@ -100,6 +100,7 @@ Run: python3 tests/test_render_report.py
 import contextlib
 import glob
 import gzip
+import importlib.util
 import io
 import json
 import os
@@ -345,6 +346,46 @@ def chapter_checks(work):
     every["new_since"]["sections"] = [k for k, *_ in collect_summary.SECTIONS]
     check("new since: red control: a badge on every section is caught",
           badge_problems(render_report.html_report(every), ["clinvar"]) != [])
+    def text_with(sections, missing=None, mod=render_report):
+        x = json.loads(json.dumps(since))
+        if missing:
+            x["sections"][missing]["state"] = "missing"
+        x["new_since"] = dict(since["new_since"], sections=sections)
+        return mod.html_report(x), mod.text_report(x)
+
+    def under(txt, title):
+        i = txt.find(title)
+        return txt[i:i + 120] if i >= 0 else ""
+    marks = {
+        "new since: the text Quality control block carries the badge when coverage changed":
+            (["coverage"], None, lambda h, t: f"[{badge}]" in under(t, "## Quality control") and t.count(badge) == 1),
+        "new since: the text CYP2D6 block carries the badge when pypgx changed":
+            (["pypgx"], None, lambda h, t: f"[{badge}]" in under(t, "## CYP2D6 across callers")),
+        "new since: a section gone missing keeps its badge on its HTML card, the text leaves the section out":
+            (["roh"], "roh", lambda h, t: badge in frame_of(h, "roh") and "Not run" in frame_of(h, "roh")
+             and "## Runs of Homozygosity" not in t and badge not in t),
+    }
+    for name, (secs, miss, fn) in marks.items():
+        check(name, fn(*text_with(secs, miss)), under(text_with(secs, miss)[1], "## "))
+    rsrc = open(os.path.join(REPO, "bin", "render_report.py")).read()
+    planted = {
+        "new since: the text Quality control block carries the badge when coverage changed":
+            'for k in ("coverage", "sex_check", "sample_qc", "read_count")):',
+        "new since: the text CYP2D6 block carries the badge when pypgx changed":
+            'for k in ("pypgx", "cyrius")):',
+        "new since: a section gone missing keeps its badge on its HTML card, the text leaves the section out":
+            '(f" &middot; {badge(f\'New since {since}\', \'yellow\')}" if since else "")',
+    }
+    for name, needle in planted.items():
+        check(f"planted mistake is in the copy: {name}", needle in rsrc, needle)
+        mut = rsrc.replace(needle, "for k in ()):" if needle.startswith("for k") else '""')
+        mdir = tempfile.mkdtemp(prefix="render-mutant.", dir=work)
+        open(os.path.join(mdir, "render_report_mutant.py"), "w").write(mut)
+        spec = importlib.util.spec_from_file_location("render_report_mutant", os.path.join(mdir, "render_report_mutant.py"))
+        mm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mm)
+        secs, miss, fn = marks[name]
+        check(f"fails on a planted mistake: {name}", not fn(*text_with(secs, miss, mod=mm)), "passed on the mutant")
     check("new since: the card titles stay the golden list", sorted(re.findall(r"<h2>([^<]*)</h2>", h2)) == GOLDEN_TITLES,
           sorted(set(re.findall(r"<h2>([^<]*)</h2>", h2)) ^ set(GOLDEN_TITLES)))
     rc_line = "Database re-check: 2026-02-02T00:00:00Z: ClinVar refresh-available"

@@ -832,6 +832,8 @@ def text_report(s):
     if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
         w("## Quality control")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("coverage", "sex_check", "sample_qc", "read_count")):
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for sec in (cov, sexc, sqc, rdc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
@@ -964,6 +966,8 @@ def text_report(s):
     if any(calls.values()) or verdict:
         w("## CYP2D6 across callers")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("pypgx", "cyrius")):  # the consensus change is filed under pypgx
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for k, v in calls.items():
             w(f"  {CYP2D6_LABELS.get(k, k):<26} {v or 'not run'}")
         agree = s["cyp2d6"]["agree"]
