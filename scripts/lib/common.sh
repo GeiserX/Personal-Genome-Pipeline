@@ -374,15 +374,18 @@ _get() {
 # it, then renames it to DEST. Nothing ever writes DEST directly, so a DEST
 # that exists is whole. The check is the checksum when one is given (VALUE, or
 # the file at CHECKSUM_URL: its only line, or the line naming URL's file), else
-# `gzip -t` for a .gz file, else non-empty. A failed check deletes DEST.part
-# and returns 1, so the next run downloads it again.
+# `gzip -t` for a .gz file, else non-empty.
 #
-# A failed download, of the file or of its CHECKSUM_URL, is tried FETCH_TRIES
-# times (default 3), FETCH_WAIT seconds apart (default 5, then 10, ...). A
-# larger FETCH_TRIES and FETCH_WAIT wait out a server that answers 404 for
-# minutes at a time and then comes back.
+# Each try downloads, then checks. A transfer that broke keeps DEST.part, and
+# the next try resumes it. A download that fails its check is deleted, and the
+# next try downloads it from the start: one bad transfer, or a bad .part left
+# by an earlier run, does not fail the call. The file and its CHECKSUM_URL are
+# each tried FETCH_TRIES times (default 3), FETCH_WAIT seconds apart (default
+# 5, then 10, ...); after the last try fetch returns 1. A larger FETCH_TRIES
+# and FETCH_WAIT wait out a server that answers 404 for minutes at a time and
+# then comes back.
 fetch() {
-  local url=$1 dest=$2 kind=${3:-} want=${4:-} part="${2}.part" name got line i ok=false
+  local url=$1 dest=$2 kind=${3:-} want=${4:-} part="${2}.part" name line i rc bad=""
   local tries=${FETCH_TRIES:-3} wait=${FETCH_WAIT:-}
   case "$tries" in ''|*[!0-9]*) tries=0 ;; *) tries=$((10#$tries)) ;; esac
   [ "$tries" -gt 0 ] || { echo "ERROR: FETCH_TRIES must be a whole number above 0, got '${FETCH_TRIES}'" >&2; return 1; }
@@ -411,39 +414,53 @@ fetch() {
   fi
   mkdir -p "$(dirname "$dest")"
   for ((i = 1; i <= tries; i++)); do
-    if _get "$url" "$part"; then ok=true; break; fi
-    echo "  Download attempt ${i}/${tries} failed: ${url}" >&2
+    if _get "$url" "$part"; then
+      rc=0
+      bad=$(_fetch_check "$kind" "$want" "$part" "$dest" "$name") || rc=$?
+      [ "$rc" -eq 0 ] && { mv -f "$part" "$dest"; return; }
+      [ "$rc" -eq 2 ] && return 1
+      rm -f "$part"
+      echo "  Download attempt ${i}/${tries} failed its check: ${bad}. Removed it." >&2
+    else
+      bad=""
+      echo "  Download attempt ${i}/${tries} failed: ${url}" >&2
+    fi
     [ "$i" -lt "$tries" ] && sleep "${wait:-$((i * 5))}"
   done
-  if ! $ok; then
+  if [ -n "$bad" ]; then
+    echo "ERROR: ${bad}. Removed the download after ${tries} tries; run again to fetch it anew." >&2
+  else
     echo "ERROR: could not download ${url} (the partial file ${part} is kept and resumed next time)" >&2
-    return 1
   fi
+  return 1
+}
+
+# _fetch_check KIND WANT PART DEST NAME: fetch's check of one download. Exit 0
+# when PART is good; 1 with the reason on stdout when it is not, and fetch
+# downloads it again; 2 for an error a new download cannot fix.
+_fetch_check() {
+  local kind=$1 want=$2 part=$3 dest=$4 name=$5 got
   if [ -n "$kind" ]; then
-    got=$(_digest "$kind" "$part") || return 1
+    got=$(_digest "$kind" "$part") || return 2
     if [ "$kind" = sum ]; then
       case "$want" in
-        ''|*[!0-9]*) echo "ERROR: '${want}' is not a sum checksum for ${name}" >&2; return 1 ;;
+        ''|*[!0-9]*) echo "ERROR: '${want}' is not a sum checksum for ${name}" >&2; return 2 ;;
       esac
       want=$((10#${want}))
     fi
     if [ "$got" != "$want" ]; then
-      rm -f "$part"
-      echo "ERROR: ${kind} checksum of ${name} is ${got}, expected ${want}. Removed the download; run again to fetch it anew." >&2
+      echo "${kind} checksum of ${name} is ${got}, expected ${want}"
       return 1
     fi
   elif [[ "$dest" == *.gz ]]; then
     if ! gzip -t "$part" 2>/dev/null; then
-      rm -f "$part"
-      echo "ERROR: ${name} is not a complete gzip file. Removed the download; run again to fetch it anew." >&2
+      echo "${name} is not a complete gzip file"
       return 1
     fi
   elif [ ! -s "$part" ]; then
-    rm -f "$part"
-    echo "ERROR: ${name} downloaded empty." >&2
+    echo "${name} downloaded empty"
     return 1
   fi
-  mv -f "$part" "$dest"
 }
 
 # --- Pinned data files ----------------------------------------------------------
