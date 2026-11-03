@@ -25,7 +25,7 @@ mother_a	female	.	.	father_a
 
 ### Several families in one file
 
-A families file is the same table with a leading `family` column, so one file says who is related to whom across all your samples ([`assets/families.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/families.example.tsv)):
+A families file is the same table with a leading `family` column, so one file says who is related to whom across all your samples ([`assets/families.example.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/families.example.tsv)):
 
 ```text
 family	sample	sex	father	mother	partner
