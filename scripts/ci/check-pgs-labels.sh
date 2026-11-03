@@ -29,7 +29,8 @@
 #   scripts/ci/check-pgs-labels.sh --self-test
 #
 # Reads the score list (a "PGS000018<TAB>Coronary artery disease" line per
-# score; a third column, applies_to, is not read) and the two map formats step
+# score; a third column, applies_to, is not read; ppm_id, ancestry and effect
+# are read by name, see above) and the two map formats step
 # 25 used before it: "PGS000018|Coronary artery disease" entries and the older
 # ["coronary_artery_disease"]="PGS000018".
 # Prints a Markdown table on stdout (and one of the evaluations, when the file

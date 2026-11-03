@@ -63,7 +63,7 @@ The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome
 
 The blood pressure score comes from a GWAS of over a million people and has been evaluated by four other publications in the catalog. The three lipid scores come from a study of how lipid loci transfer across ancestries: they were evaluated in five cohorts of three ancestries. All four are GRCh38-harmonised, additive and on the autosomes only.
 
-The asthma score is the one the eMERGE network chose for its asthma result (Lennon et al. 2024, Nat Med, [PMID 38374346](https://pubmed.ncbi.nlm.nih.gov/38374346/), Supplementary Table 3). Height is there as a check of the engine on a trait everyone has and that is easy to measure; its evaluations in the catalog report no odds or hazard ratio, so it shows no effect. eMERGE's chronic kidney disease and type 1 diabetes scores are not in the list. The paper gives no PGS Catalog id for its kidney score, which also adds an APOL1 term. Its type 1 diabetes score starts from [PGS000024](https://www.pgscatalog.org/score/PGS000024/), whose file holds HLA interaction terms. This pipeline scores additive weights only, so it cannot score either one.
+The asthma score is the one the eMERGE network chose for its asthma result (Lennon et al. 2024, Nat Med, [PMID 38374346](https://pubmed.ncbi.nlm.nih.gov/38374346/), Supplementary Table 3). Height is there as a check of the engine on a trait everyone has and that is easy to measure; its evaluations in the catalog report no odds or hazard ratio, so it shows no effect. eMERGE's chronic kidney disease and type 1 diabetes scores are not in the list. Its kidney model is the Khan et al. 2022 score ([PGS002237](https://www.pgscatalog.org/score/PGS002237/)) plus a recessive APOL1 term, so it cannot be scored as published from additive weights alone. Its type 1 diabetes score starts from [PGS000024](https://www.pgscatalog.org/score/PGS000024/), whose file holds HLA interaction terms. This pipeline scores additive weights only, so it cannot score either one.
 
 The third column of the file, `applies_to`, names the sex a score was built for: `female` for PGS000004 (breast cancer), `male` for PGS000662 (prostate cancer), empty for the rest. When you declare the other sex, the score keeps its raw sum and gets no percentile, and its `Sex_Check` says `not applicable to the declared sex`. A percentile of breast cancer for a man, or prostate cancer for a woman, would read as a risk the score was never built to give. Without a declared sex the two scores are reported as usual, with `Sex_Check` `no sex declared` and a line in the reports.
 
@@ -80,7 +80,7 @@ The evaluations used today:
 | Score | Evaluations (ancestry, effect) | Publication |
 |---|---|---|
 | PGS000018, coronary artery disease | PPM000591 (EUR, HR 1.53), PPM000594 (AFR, HR 1.27), PPM000597 (AMR, HR 1.53) | Dikilitas et al. 2020, Am J Hum Genet |
-| PGS000014, type 2 diabetes | PPM021437 (EUR, OR 1.71), PPM021589 (AFR, OR 1.27), PPM021615 (EAS, OR 1.28), PPM021635 (SAS, OR 1.48) | Ritchie et al. 2024 |
+| PGS000014, type 2 diabetes | PPM021437 (EUR, OR 1.71), PPM021589 (AFR, OR 1.27), PPM021615 (EAS, OR 1.28), PPM021635 (SAS, OR 1.48) | Ritchie et al. 2024, medRxiv (preprint) |
 | PGS000004, breast cancer | PPM000004 (EUR, OR 1.61) | Mavaddat et al. 2018, Am J Hum Genet |
 | PGS000662, prostate cancer | PPM022982 (EUR, HR 1.72), PPM015482 (AFR, OR 1.86) | Liu et al. 2024; Kim et al. 2022 |
 | PGS000016, atrial fibrillation | PPM014988 (EUR, HR 1.4) | Marston et al. 2022 |
