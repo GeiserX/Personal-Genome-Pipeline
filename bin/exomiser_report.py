@@ -28,7 +28,10 @@ Exomiser does not filter on. A name that is not a member of the VCF stops it.
 report reads Exomiser's variants TSV and writes the top --top ranks (a gene
 under one mode of inheritance is one rank) with each variant that contributes
 to the gene's score: one row per variant, columns OUT_HEADER. The text file
-says the same in words, with what the ranking is and is not.
+says the same in words, with what the ranking is and is not. In a family run
+Exomiser's GENOTYPE holds one genotype per member, joined by ':' in the order
+of the family VCF; the PED prepare wrote (<sample>_exomiser.ped, beside the
+variants TSV, its lines in the same order) names each one in the text file.
 
 Used by scripts/48-exomiser.sh and the EXOMISER_PREPARE and EXOMISER_REPORT
 processes (bin/ is on the task PATH); tests/test_exomiser_report.py checks it.
@@ -291,7 +294,26 @@ def genotype_word(gt):
         return "homozygous"
     if g == "1":
         return "hemizygous"
+    if g in ("0/0", "0"):
+        return "does not carry it"
     return gt
+
+
+def ped_members(path):
+    """The members of the PED prepare wrote, in its line order (the VCF's); [] without one."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return [c[1] for c in (line.rstrip("\n").split("\t") for line in f) if len(c) >= 2]
+    except OSError:
+        return []
+
+
+def genotype_text(gt, members):
+    """One person's genotype in a word; a family's as each member's, named."""
+    gts = gt.split(":")
+    if len(members) > 1 and len(gts) == len(members):
+        return "[%s]" % ", ".join("%s %s" % (m, genotype_word(g)) for m, g in zip(members, gts))
+    return genotype_word(gt)
 
 
 def read_variants(path):
@@ -348,7 +370,7 @@ def top_rows(rows, top):
     return out
 
 
-def words(rows, terms):
+def words(rows, terms, members=()):
     """The text file: what was searched, each rank in a sentence, then the note."""
     named = ", ".join("%s (%s)" % (t["label"], t["hpo_id"]) if t["label"] else t["hpo_id"] for t in terms)
     lines = ["Symptoms searched: %s." % named]
@@ -364,7 +386,7 @@ def words(rows, terms):
             g["variant_score"])
         parts = []
         for v in vs:
-            p = "%s %s, %s %s, ACMG %s" % (v["variant"], genotype_word(v["genotype"]), v["consequence"], v["hgvs"],
+            p = "%s %s, %s %s, ACMG %s" % (v["variant"], genotype_text(v["genotype"], members), v["consequence"], v["hgvs"],
                                           v["acmg"].replace("_", " ").lower())
             if v["acmg_evidence"] != ".":
                 p += " (%s)" % v["acmg_evidence"]
@@ -386,7 +408,8 @@ def cmd_report(a):
         f.write("\t".join(OUT_HEADER) + "\n")
         for r in rows:
             f.write("\t".join(r[k].replace("\t", " ") for k in OUT_HEADER) + "\n")
-    text = words(rows, terms)
+    ped = os.path.join(os.path.dirname(os.path.abspath(a.variants)), "%s_exomiser.ped" % a.sample)
+    text = words(rows, terms, ped_members(ped))
     with open(a.text, "w") as f:
         f.write("\n".join(text) + "\n")
     print("\n".join(text[:1 + min(len(rows), a.top)]))

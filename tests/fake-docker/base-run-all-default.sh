@@ -45,9 +45,12 @@ CV="${G}/clinvar/clinvar_pathogenic_chr.vcf.gz"
 # run-all.sh exports NXF_VER from versions.env, so the case reads the same line.
 NV=$(sed -n 's/^NEXTFLOW_VERSION="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
 [ -n "$NV" ] || fail "cannot read NEXTFLOW_VERSION from versions.env"
+# The bundled catalog's copy is named after the ExpansionHunter image tag.
+EXPANSIONHUNTER_IMAGE=$(sed -n 's/^EXPANSIONHUNTER_IMAGE="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
+[ -n "$EXPANSIONHUNTER_IMAGE" ] || fail "cannot read EXPANSIONHUNTER_IMAGE from versions.env"
 want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=${NV} :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
-  --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog.json" \
+  --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog-${EXPANSIONHUNTER_IMAGE##*:}.json" \
   --mito_clinvar "${G}/clinvar/clinvar_chr.vcf.gz" --max_cpus "$(host_cpus)" --max_memory "$(host_mem_gb).GB")"
 if [ "$(id -u)" -eq 0 ] || [ "$(cat /proc/sys/fs/protected_hardlinks 2>/dev/null)" = 0 ]; then want+="--publish_dir_mode link "; fi
 [ "$NFLOG" = "$want" ] || fail "nextflow arguments differ:
