@@ -1,0 +1,5 @@
+# Made-up samtools bedcov (all reads) over the LCE3BC row of bin/cn_loci.tsv: 1 copies, controls at 30x.
+# Read by tests/test_copy_number.py; not from any sample.
+chr1	152520000	152560000	LCE3_FLANK_L	1200000
+chr1	152600233	152614098	LCE3BC_DEL	207975
+chr1	152640000	152680000	LCE3_FLANK_R	1200000

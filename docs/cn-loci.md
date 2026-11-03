@@ -1,6 +1,6 @@
 # Copy Number from Depth (the locus catalog)
 
-Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
+Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. Step 35 also counts three gene-dosage loci that no pinned caller models: HP, LCE3B/LCE3C and CCL3L1. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
 
 The table sits in `bin/` because `bin/` is the one repository folder that every container mounts: the bash steps mount it as `/pgp-bin`, and Nextflow puts it on every task's PATH.
 
@@ -57,6 +57,20 @@ Then the row's `call` column decides:
 | HBA | 35 | HBA2 and HBA1 gene bodies against two 40 kb flanks outside the `--SEA` deletion | whole number of alpha-globin genes ([step 35](35-paralogs.md)) |
 | LPA_KIV2 | 46 | the 14 exons of the KIV-2 block against 15 single-copy LPA exons | repeat count with a 95% interval, low, typical or high ([step 46](46-lpa.md)) |
 | RHD | 41 | the RHD gene against two flanks outside the common RHD deletion; the ten exons as details | 0, 1 or 2 copies ([step 41](41-bloodtype.md)) |
+| HP | 35 | the two reference copies of the duplicated HP exons (exons 3-4 and 5-6) against flanks outside HP and HPR | copies of the duplicated exons: 2 for Hp1-1, 3 for Hp2-1, 4 for Hp2-2 |
+| LCE3BC | 35 | LCE3C to LCE3B, inside the LCE3C_LCE3B deletion, against flanks outside it | 0, 1 or 2 copies: the deletion on both, one or no chromosome |
+| CCL3L1 | 35 | CCL3L3, the one reference copy of CCL3L1/CCL3L3, against single-copy flanks outside the duplications | total copies of CCL3L1 and CCL3L3, with no reading |
+
+### The gene-dosage rows
+
+Step 35 (and the PARASCOPY module) runs these three rows one after the other and writes one line per locus to `<sample>_cn_dosage.tsv`: locus, status, copies, estimate, reason and reading. They give total copies only, never which copy or haplotype. A locus whose check fails is not assessed there, with reason `check_failed`, and the step goes on. Every row runs two bedcov passes, all reads and MAPQ >= 1, as the HBA row does; none of the three sets a MAPQ 0 guard, and the dosage table does not keep the MAPQ 0 share. The coordinates come from Ensembl 116, and every flank lies outside UCSC's segmental duplication track (`genomicSuperDups`), both checked on 2026-11-03.
+
+- **HP**: the reference carries the Hp2 allele, the exon 3-4 duplication that Hp1 lacks (Boettger 2016, PMID 26901066): exons 3-4 and 5-6 in Ensembl's HP-201. The two copies are 98% alike, so a read can land on either. The row adds both up, as HBA does. 2 copies read as Hp1-1, 3 as Hp2-1, 4 as Hp2-2. A deletion of the whole gene (Hp-del) on one chromosome gives the same 2 as Hp1-1 when the other carries Hp2, and the reading says so.
+- **LCE3BC**: the 32 kb LCE3C_LCE3B deletion (de Cid 2009, PMID 19169253) removes both genes, so the stretch from LCE3C to LCE3B lies inside it. 0 copies means the deletion on both chromosomes, a common genotype the paper links with psoriasis.
+- **CCL3L1**: the no-ALT reference holds one copy of CCL3L1/CCL3L3 (CCL3L3), so every read of either lands there and the row counts both together. The count goes back to Gonzalez 2005 (PMID 15637236), but the disease links reported for it are disputed, so no reading is given. The test fails when a CCL3L1 reading names a disease.
+- **DEFB4** has no row. The beta-defensin repeat that carries it (DEFB4B to DEFB103B) lies in the paralog copies of SPAG11A's Parascopy model, so Parascopy owns it under the rule below. The test plants a DEFB4 row there and checks that the owner check catches it.
+
+The report does not show `<sample>_cn_dosage.tsv` yet; the table and the step log are where to read it.
 
 ## One owner per locus
 
@@ -80,6 +94,6 @@ pypgx owns the genes it calls from the BAM, the `bam` rows of `assets/pgx_genes.
 
 ## How it is tested
 
-- `tests/test_copy_number.py` checks every row and refuses broken ones. It runs the owner check with planted AMY1C and C4B rows. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
+- `tests/test_copy_number.py` checks every row and refuses broken ones. For the three gene-dosage rows it calls made-up depths at 0 to 4 copies, cuts the dosage block out of step 35 and runs it on the made-up bedcov tables in `tests/fixtures/cn/` (HP 3, LCE3BC 1, CCL3L1 5 copies), checks that a row shifted by 1 kb no longer matches its table, and that the PARASCOPY module runs the same list. It runs the owner check with planted AMY1C, C4B and DEFB4 rows. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
 - The fake-docker case `cn-engine-calls` runs steps 35, 41 and 46 with made-up depths. Each step calls `copy_number.py` once for its regions, step 35 and 46 once more for the call, and none calls the old per-gene scripts. A control exon with no read fails step 46 with `BROKEN_CONTROL`.
 - The e2e case `cn-engine-1-parity` runs steps 41 and 46 and the HBA block of step 35 on HG002's real reads at the three loci, at full depth and at an eighth of it. The code before the engine is fetched by its commit, 6056452, so the comparison still means something after this change is on main. The LPA and HBA tables and the RhD rows of step 41's table and evidence file must be byte for byte what it wrote.
