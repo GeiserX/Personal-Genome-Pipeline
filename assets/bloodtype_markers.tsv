@@ -18,7 +18,10 @@
 #   SMIM1 (Vel), ABCB6 (Lan), ABCG2 (Jra), FUT1 (H), FUT2 (secretor), KEL (K0) and SLC14A1
 #   (Jk(a-b-)): an allele that makes no antigen. Left out: alleles of two or more variants, the
 #   deletions over 50 bp (JK*01N.01, ABCG2*01N.27), and KEL*02N.58, whose position KEL*02N.23
-#   holds with another REF. Null alleles at one position with one REF share a row: alt is then
+#   holds with another REF, and three alleles too common for a null on their own: gnomAD v4
+#   (2026-11-03) gives FUT2 c.772G>A (rs602662) about 0.5 and c.335C>T (rs200157007) 0.14 in
+#   South Asians, both on the c.461G>A haplotype, and SLC14A1 c.810G>A (rs17675299) 0.08 in Finns.
+#   Null alleles at one position with one REF share a row: alt is then
 #   a comma list, and any of them is a null copy. The HPA-7 to -35 rows (HPA-15 aside) are
 #   RBCeq2's HPA alleles; that database lists them at GRCh37 positions, so each was mapped to
 #   GRCh38 with Ensembl's assembly map (2026-11-03). Every null and HPA-7 to -35 row was checked
@@ -144,7 +147,6 @@ chr18	45739217	45739218	site	Kidd	JK_02N19	G	A	Jk3	null	SLC14A1 c.719G>A	rs20472
 chr18	45739220	45739221	site	Kidd	JK_01N07	CA	C	Jk3	null	SLC14A1 c.723delA	rs759505281			Jk3	Jkb Jka
 chr18	45739235	45739236	site	Kidd	JK_01N22	T	G	Jk3	null	SLC14A1 c.737T>G				Jk3	Jka
 chr18	45739250	45739251	site	Kidd	JK_01N15	TCTC	T	Jk3	null	SLC14A1 c.757_759delTCC	rs2144802213			Jk3	Jka
-chr18	45739308	45739309	site	Kidd	JK_01N19	G	A	Jk3	null	SLC14A1 c.810G>A	rs17675299			Jk3	Jkb Jka
 chr18	45739314	45739315	site	Kidd	JK_01N10	G	A	Jk3	null	SLC14A1 c.811+5G>A	rs1414947682			Jk3	Jka
 chr18	45739527	45739528	site	Kidd	JK_01N26	G	T	Jk3	null	SLC14A1 c.812G>T	rs372299852			Jk3	Jka
 chr18	45739570	45739571	site	Kidd	JK_02N16	CT	C	Jk3	null	SLC14A1 c.856delT	rs1444093504			Jk3	Jkb
@@ -256,7 +258,6 @@ chr19	48750920	48750921	site	H	FUT1_01N28	C	T	H	null	FUT1 c.361G>A				H
 chr19	48750993	48750994	site	H	FUT1_01N25	A	T	H	null	FUT1 c.288T>A				H	
 chr19	48751232	48751233	site	H	FUT1_01N27	A	G	H	null	FUT1 c.49T>C				H	
 chr19	48751261	48751262	site	H	FUT1_01N21	C	CGATGGCT	H	null	FUT1 c.13_19dupAGCCATC	rs1220576904			H	
-chr19	48703290	48703291	site	Secretor	FUT2_01N15	C	T	Se	null	FUT2 c.335C>T	rs200157007				
 chr19	48703400	48703401	site	Secretor	FUT2_01N17	G	A	Se	null	FUT2 c.445G>A	rs200543547				
 chr19	48703416	48703417	site	Secretor	FUT2_01N02	G	A	Se	null	FUT2 c.461G>A	rs601338				
 chr19	48703557	48703558	site	Secretor	FUT2_01N03	G	A	Se	null	FUT2 c.602G>A	rs572832908				
@@ -266,7 +267,6 @@ chr19	48703646	48703647	site	Secretor	FUT2_01N06	C	T	Se	null	FUT2 c.691C>T	rs144
 chr19	48703652	48703653	site	Secretor	FUT2_01N07	C	T	Se	null	FUT2 c.697C>T	rs768236330				
 chr19	48703672	48703673	site	Secretor	FUT2_01N08	CGT	C	Se	null	FUT2 c.719_720delGT					
 chr19	48703675	48703676	site	Secretor	FUT2_01N09	GGTC	G	Se	null	FUT2 c.721_723delGTC					
-chr19	48703727	48703728	site	Secretor	FUT2_01N16	G	A	Se	null	FUT2 c.772G>A	rs602662				
 chr19	48703765	48703766	site	Secretor	FUT2_01N11	AC	A	Se	null	FUT2 c.812delC	rs1799761				
 chr19	48703806	48703807	site	Secretor	FUT2_01N18	C	A	Se	null	FUT2 c.851C>A	rs371279676				
 chr19	48703837	48703838	site	Secretor	FUT2_01N12	G	A	Se	null	FUT2 c.882G>A	rs1800030				

@@ -305,10 +305,13 @@ def apply_depth(sites, depth):
 
 def level_of(used):
     """Confidence from the sites a call used: low for a caveat or a stray allele,
-    medium for a site read as reference without depth, else high."""
+    medium for a site read as reference without depth, else high. Another ALT at
+    a null row's position is not that null allele and leaves the antigens read,
+    so it is only named in the note."""
     lv = "high"
     for s in used:
-        if s.caveat or s.note.startswith("another allele"):
+        stray = s.note.startswith("another allele") and s.row.get("alt_means") != "null"
+        if s.caveat or stray:
             return "low"
         if s.status == "assumed":
             lv = "medium"
